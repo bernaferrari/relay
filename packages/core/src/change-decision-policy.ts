@@ -3,6 +3,7 @@ import type {
   ApprovalPolicyFinding,
   ApprovalPolicyInput,
 } from "@relay/protocol";
+import { VERIFY_CHANGE_POLICY } from "@relay/protocol";
 
 export type ChangeDecision = "proved" | "rejected" | "needs-review" | "insufficient-evidence";
 
@@ -11,14 +12,62 @@ export type ChangeDecisionPolicyResult = Omit<ApprovalPolicyDecision, "decision"
   decision: ChangeDecision;
 };
 
-const DEFINITIVE_FAILURES = new Set<ApprovalPolicyFinding["category"]>([
-  "crash",
-  "path-loss",
-  "assertion",
-  "security",
-  "privacy",
-  "policy",
-]);
+/** Complete, versioned semantics for newly created Proofs. The durable policy
+ * digest closes over this object, while the evaluator below consumes its
+ * categories and precedence rather than relying on an identity-only label. */
+export const VERIFY_CHANGE_POLICY_DEFINITION = Object.freeze({
+  id: VERIFY_CHANGE_POLICY.id,
+  version: VERIFY_CHANGE_POLICY.version,
+  ruleIds: Object.freeze([
+    "exact-head-and-build",
+    "all-required-cases",
+    "mandatory-evidence-complete",
+    "deterministic-selector-resolution",
+    "reconciled-input-outcomes",
+    "cleanup-restored",
+    "execution-authority-frozen",
+  ] as const),
+  decisionPrecedence: Object.freeze([
+    "execution-prohibited",
+    "definitive-failure",
+    "confirmation-required",
+    "evidence-incomplete",
+    "human-review",
+    "verification-unproved",
+    "proved",
+  ] as const),
+  execution: Object.freeze({
+    prohibitedDecision: "rejected" as const,
+    confirmationDecision: "needs-review" as const,
+    safeWithoutConfirmation: true,
+  }),
+  evidence: Object.freeze({
+    requiredChannels: Object.freeze(["frozen-run", "trace-pack"] as const),
+    incompleteDecision: "insufficient-evidence" as const,
+  }),
+  verification: Object.freeze({
+    requiredPaths: "passed" as const,
+    selectorResolution: "deterministic" as const,
+    unresolvedCount: 0,
+    cleanupRequiredWhenDeclared: true,
+  }),
+  findings: Object.freeze({
+    definitiveCategories: Object.freeze([
+      "crash",
+      "path-loss",
+      "assertion",
+      "security",
+      "privacy",
+      "policy",
+    ] as const satisfies readonly ApprovalPolicyFinding["category"][]),
+    blockerIsDefinitive: true,
+    reviewScope: "exact-finding-run-evidence" as const,
+  }),
+});
+
+const DEFINITIVE_FAILURES = new Set<ApprovalPolicyFinding["category"]>(
+  VERIFY_CHANGE_POLICY_DEFINITION.findings.definitiveCategories,
+);
 
 function unique(values: readonly string[]): string[] {
   return [...new Set(values)];
@@ -76,8 +125,7 @@ export function approvalPolicyFindingReviewIsValid(
     review.scope.findingId !== finding.id ||
     review.scope.runId !== finding.runId ||
     !Array.isArray(review.scope.evidenceRefs) ||
-    !exactStringSet(finding.evidenceRefs, finding.evidenceRefs) ||
-    !finding.evidenceRefs.every((ref) => review.scope.evidenceRefs.includes(ref))
+    !exactStringSet(finding.evidenceRefs, review.scope.evidenceRefs)
   ) {
     return false;
   }
@@ -87,7 +135,7 @@ export function approvalPolicyFindingReviewIsValid(
     Array.isArray(currentRunIds) &&
     currentRunIds.includes(finding.runId) &&
     Array.isArray(currentEvidenceRefs) &&
-    exactStringSet(review.scope.evidenceRefs, currentEvidenceRefs)
+    review.scope.evidenceRefs.every((ref) => currentEvidenceRefs.includes(ref))
   );
 }
 

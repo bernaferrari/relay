@@ -79,6 +79,48 @@ test("POST /builds accepts local paths and https sources but rejects other schem
     assert.equal(httpsBody.build.sourceUrl, "https://artifacts.example.com/app.apk");
     assert.equal(httpsBody.build.sourceSha256, `a${"b".repeat(63)}`);
 
+    const web = await fetch(`${base}/builds`, {
+      method: "POST",
+      headers: headers("build.save"),
+      body: JSON.stringify({
+        id: "web-preview",
+        name: "Web preview",
+        platform: "web",
+        sourceUrl: "https://preview.example.com/pr-184",
+        sourceSha: "2".repeat(40),
+        deploymentDigest: `sha256:${"c".repeat(64)}`,
+        configuration: "web.production",
+        environmentRevision: "preview-v12",
+        status: "ready",
+      }),
+    });
+    assert.equal(web.status, 201);
+    const webBody = (await web.json()) as {
+      build: {
+        platform: string;
+        sourceUrl?: string;
+        sourceSha?: string;
+        deploymentDigest?: string;
+      };
+    };
+    assert.equal(webBody.build.platform, "web");
+    assert.equal(webBody.build.sourceUrl, "https://preview.example.com/pr-184");
+    assert.equal(webBody.build.sourceSha, "2".repeat(40));
+    assert.equal(webBody.build.deploymentDigest, `sha256:${"c".repeat(64)}`);
+
+    const incompleteWeb = await fetch(`${base}/builds`, {
+      method: "POST",
+      headers: headers("build.save"),
+      body: JSON.stringify({
+        id: "incomplete-web",
+        name: "Incomplete web",
+        platform: "web",
+        sourceUrl: "https://preview.example.com/pr-184",
+        status: "ready",
+      }),
+    });
+    assert.equal(incompleteWeb.status, 400);
+
     for (const sourceUrl of ["http://artifacts.example.com/app.apk", "file:///tmp/app.apk"]) {
       const rejected = await fetch(`${base}/builds`, {
         method: "POST",

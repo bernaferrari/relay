@@ -6,10 +6,17 @@ import test from "node:test";
 import { ApiError, RelayClient } from "@relay/client";
 import {
   advanceChangeVerification,
+  canonicalSha256,
+  compileVerificationPlan,
   createChangeProofExecutionCoordinator,
   resetControlDatabaseCache,
 } from "@relay/core";
-import type { ChangeProofCaseResult, ChangeVerification, OperationInput } from "@relay/protocol";
+import {
+  verificationPlanSchema,
+  type ChangeProofCaseResult,
+  type ChangeVerification,
+  type OperationInput,
+} from "@relay/protocol";
 import type { PersistedRun } from "@relay/core";
 import { startServer } from "./index.js";
 
@@ -19,6 +26,15 @@ const baseSha = "1".repeat(40);
 const headSha = "2".repeat(40);
 const repairedHeadSha = "3".repeat(40);
 const digest = `sha256:${"a".repeat(64)}`;
+const safeExecutionRisk = {
+  schemaVersion: 1 as const,
+  level: "safe" as const,
+  reasons: [],
+  externalEffects: [],
+  confirmation: "none" as const,
+  expectedAppBoundaries: [],
+  cleanupRequired: false,
+};
 
 function client(
   port: number,
@@ -95,6 +111,8 @@ function selection(): ChangeVerification["selection"] {
         requirement: "required",
         selectionReason: "Compact Arabic web is required coverage.",
         dimensions: { locale: "ar", viewport: "compact" },
+        executionRisk: safeExecutionRisk,
+        executionRiskDigest: canonicalSha256(safeExecutionRisk),
         cleanupRequired: false,
       },
     ],
@@ -128,6 +146,116 @@ function startInput(): OperationInput<"proof.start"> {
     policy: { id: "relay.default", version: 3 },
   };
 }
+
+function preparedPlan() {
+  const start = startInput();
+  const plan = compileVerificationPlan({
+    change: start.change,
+    changed: {
+      files: ["src/settings/language.ts"],
+      symbols: [],
+      routes: [],
+      resources: [],
+      localizationKeys: [],
+      apiContracts: [],
+    },
+    associations: [
+      {
+        id: "settings-language-source",
+        appMapId: "settings",
+        testId: "settings-language",
+        signals: {
+          files: ["src/settings"],
+          symbols: [],
+          routes: [],
+          resources: [],
+          localizationKeys: [],
+          apiContracts: [],
+        },
+        confidence: "definite",
+        reason: "Settings source is reviewed coverage for this journey.",
+        review: {
+          status: "reviewed",
+          revision: 1,
+          reviewedBy: "human:reviewer",
+          reviewedAt: 1,
+        },
+      },
+    ],
+    builds: start.builds ?? [],
+    targetCases: start.selection?.targetCases ?? [],
+    cells: start.selection?.cells ?? [],
+    pilotCellId: start.selection?.pilotCellId,
+    policy: start.policy,
+  });
+  return verificationPlanSchema.parse({
+    ...plan,
+    selection: {
+      ...plan.selection,
+      affectedJourneys: plan.selection.affectedJourneys.map((journey) => ({
+        ...journey,
+        appMapRevision: 7,
+      })),
+    },
+  });
+}
+
+test("proof.prepare derives one active Proof identity independent of caller request ids", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-proof-prepare-"));
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = root;
+  resetControlDatabaseCache();
+  const plan = preparedPlan();
+  let prepares = 0;
+  const server = await startServer({
+    host: "127.0.0.1",
+    port: 0,
+    proofRouteRuntime: {
+      prepare: async ({ request }) => {
+        prepares += 1;
+        assert.deepEqual(request, { baseRef: "origin/main" });
+        return { plan, blockers: [] };
+      },
+    },
+  });
+  const relay = client(server.port);
+  try {
+    const first = await relay.invoke(
+      "proof.prepare",
+      { baseRef: "origin/main" },
+      { requestId: "prepare-first" },
+    );
+    assert.equal(first.disposition, "created");
+    assert.equal(first.nextAction.kind, "approve-plan");
+    assert.deepEqual(first.blockers, []);
+    assert.deepEqual(first.plan, plan);
+
+    const second = await relay.invoke(
+      "proof.prepare",
+      { baseRef: "origin/main" },
+      { requestId: "prepare-second" },
+    );
+    assert.equal(second.disposition, "existing");
+    assert.equal(second.proof.id, first.proof.id);
+    assert.equal(prepares, 2);
+
+    await assert.rejects(
+      relay.invoke("proof.prepare", { baseRef: "origin/main", headSha } as never, {
+        requestId: "forged",
+      }),
+      (error: unknown) =>
+        error instanceof Error &&
+        error.message.includes("Unrecognized key") &&
+        error.message.includes("headSha"),
+    );
+  } finally {
+    await server.close();
+    resetControlDatabaseCache();
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 test("Proof routes share one scoped, idempotent, versioned lifecycle", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-proof-routes-"));

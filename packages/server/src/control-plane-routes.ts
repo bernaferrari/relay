@@ -73,7 +73,11 @@ export async function handleControlPlaneRoute(input: ControlPlaneRouteInput): Pr
   }
   if (method === "POST" && pathname === "/builds") {
     const body = (await parseJsonBody(request)) as Partial<Build>;
-    if (!body.id || !body.name || (body.platform !== "android" && body.platform !== "ios")) {
+    if (
+      !body.id ||
+      !body.name ||
+      (body.platform !== "android" && body.platform !== "ios" && body.platform !== "web")
+    ) {
       throw new HttpError(400, "id, name, and a valid platform are required");
     }
     let sourceUrl: string | undefined;
@@ -85,6 +89,7 @@ export async function handleControlPlaneRoute(input: ControlPlaneRouteInput): Pr
     const configuration = body.configuration?.trim() || undefined;
     const environmentRevision = body.environmentRevision?.trim() || undefined;
     const applicationId = body.applicationId?.trim() || undefined;
+    const deploymentDigest = body.deploymentDigest?.trim().toLowerCase() || undefined;
     const rawSource = body.sourceUrl?.trim();
     if (rawSource) {
       if (/^[a-z][a-z0-9+.-]*:\/\//i.test(rawSource)) {
@@ -111,6 +116,46 @@ export async function handleControlPlaneRoute(input: ControlPlaneRouteInput): Pr
         throw new HttpError(400, "sourceSha256 must be a hex sha256 digest");
       }
     }
+    if (body.platform === "web") {
+      if (!sourceUrl) {
+        throw new HttpError(400, "Web deployments require an immutable https sourceUrl");
+      }
+      let deploymentUrl: URL;
+      try {
+        deploymentUrl = new URL(sourceUrl);
+      } catch {
+        throw new HttpError(400, "Web deployment sourceUrl must be an absolute URL");
+      }
+      const loopback =
+        deploymentUrl.protocol === "http:" &&
+        (deploymentUrl.hostname === "localhost" ||
+          deploymentUrl.hostname === "127.0.0.1" ||
+          deploymentUrl.hostname === "[::1]");
+      if (deploymentUrl.protocol !== "https:" && !loopback) {
+        throw new HttpError(400, "Web deployment sourceUrl must use https or a loopback URL");
+      }
+      if (!deploymentDigest || !/^sha256:[a-f0-9]{64}$/u.test(deploymentDigest)) {
+        throw new HttpError(400, "Web deployments require a sha256 deploymentDigest");
+      }
+      if (!sourceSha || !/^[a-f0-9]{40}$/u.test(sourceSha)) {
+        throw new HttpError(
+          400,
+          "Web deployments require an exact lowercase 40-character sourceSha",
+        );
+      }
+      if (!configuration || !environmentRevision) {
+        throw new HttpError(
+          400,
+          "Web deployments require configuration and environmentRevision provenance",
+        );
+      }
+      if (sourceSha256) {
+        throw new HttpError(
+          400,
+          "Web deployments use deploymentDigest instead of mobile sourceSha256",
+        );
+      }
+    }
     const build = await saveBuild({
       id: body.id,
       projectId: scope.projectId,
@@ -122,6 +167,7 @@ export async function handleControlPlaneRoute(input: ControlPlaneRouteInput): Pr
       configuration,
       environmentRevision,
       applicationId,
+      deploymentDigest,
       status: body.status ?? "uploaded",
     });
     json(response, 201, { build });

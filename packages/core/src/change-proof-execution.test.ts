@@ -17,12 +17,22 @@ import {
 import { resetControlDatabaseCache } from "./collaboration-db.js";
 import { withControlStore } from "./collaboration-store.js";
 import { listChangeProofPublicationOutbox } from "./change-proof-publication-outbox.js";
+import { canonicalSha256 } from "./canonical-json.js";
 
 const scope = { organizationId: "acme", projectId: "relay" } as const;
 const baseSha = "1".repeat(40);
 const headSha = "2".repeat(40);
 const buildDigest = `sha256:${"a".repeat(64)}` as const;
 const requestDigest = `sha256:${"b".repeat(64)}` as const;
+const safeExecutionRisk = {
+  schemaVersion: 1 as const,
+  level: "safe" as const,
+  reasons: [],
+  externalEffects: [],
+  confirmation: "none" as const,
+  expectedAppBoundaries: [],
+  cleanupRequired: false,
+};
 
 async function withStateRoot(operation: () => Promise<void>): Promise<void> {
   const root = await mkdtemp(join(tmpdir(), "relay-proof-execution-"));
@@ -102,6 +112,8 @@ function selection(cellCount = 1): ChangeVerification["selection"] {
       requirement: "required" as const,
       selectionReason: "Arabic is the reviewed pilot coverage.",
       dimensions: { locale: "ar" },
+      executionRisk: safeExecutionRisk,
+      executionRiskDigest: canonicalSha256(safeExecutionRisk),
       cleanupRequired: false,
     },
     {
@@ -112,6 +124,8 @@ function selection(cellCount = 1): ChangeVerification["selection"] {
       requirement: "required" as const,
       selectionReason: "English is required expansion coverage.",
       dimensions: { locale: "en" },
+      executionRisk: safeExecutionRisk,
+      executionRiskDigest: canonicalSha256(safeExecutionRisk),
       cleanupRequired: false,
     },
   ];
@@ -331,6 +345,122 @@ test("the first reattached run reconciles an expired dispatch fence before targe
     assert.equal(result.status, "uncertain");
     assert.equal(dispatches, 0);
     assert.equal((await readChangeVerification(scope, proof.id))?.state, "needs-review");
+  });
+});
+
+test("startup recovery autonomously continues a queued Proof from frozen authority", async () => {
+  await withStateRoot(async () => {
+    const proof = await readyProof();
+    const input = submit(proof);
+    const beforeRestart = createChangeProofExecutionCoordinator({
+      now: () => 300,
+      workerId: "worker:before-restart",
+    });
+    const queued = await beforeRestart.submit(input);
+    assert.equal(queued.status, "queued");
+
+    const afterRestart = createChangeProofExecutionCoordinator({
+      now: () => 350,
+      workerId: "worker:after-restart",
+      readRun: async (id) => fakeRun(id),
+      projectRun: async ({ run }) => projectedPass((run as { id: string }).id),
+    });
+    let dispatches = 0;
+    const recovered = await afterRestart.recover!(async () => {
+      dispatches += 1;
+      return { runId: "run-recovered", wait: async () => fakeRun("run-recovered") };
+    });
+    assert.equal(dispatches, 1);
+    assert.equal(recovered.length, 1);
+    assert.equal(recovered[0]?.status, "completed");
+    assert.equal((await readChangeVerification(scope, proof.id))?.state, "proved");
+  });
+});
+
+test("startup recovery retries after another worker's unexpired lease instead of abandoning the Proof", async () => {
+  await withStateRoot(async () => {
+    const proof = await readyProof();
+    const input = submit(proof);
+    const beforeRestart = createChangeProofExecutionCoordinator({
+      now: () => 300,
+      workerId: "worker:before-restart",
+    });
+    const queued = await beforeRestart.submit(input);
+    await withControlStore((store) => {
+      store.updateChangeProofExecution({
+        ...queued,
+        status: "running",
+        lease: {
+          workerId: "worker:other",
+          token: "other-token",
+          claimedAt: 300,
+          expiresAt: 400,
+        },
+        updatedAt: 350,
+      });
+    });
+
+    let now = 350;
+    let retry: (() => void) | undefined;
+    let retryDelay = -1;
+    let dispatches = 0;
+    const afterRestart = createChangeProofExecutionCoordinator({
+      now: () => now,
+      workerId: "worker:after-restart",
+      readRun: async (id) => fakeRun(id),
+      projectRun: async ({ run }) => projectedPass((run as { id: string }).id),
+      recoveryRetryMs: 20,
+      scheduleRecoveryRetry: (callback, delayMs) => {
+        retry = callback;
+        retryDelay = delayMs;
+      },
+    });
+    const first = await afterRestart.recover!(async () => {
+      dispatches += 1;
+      return { runId: "run-recovered", wait: async () => fakeRun("run-recovered") };
+    });
+    assert.equal(first[0]?.lease?.workerId, "worker:other");
+    assert.equal(dispatches, 0);
+    assert.equal(retryDelay, 50);
+    assert.ok(retry);
+
+    now = 500;
+    retry!();
+    // The scheduled callback starts recovery asynchronously. Yield once for
+    // its durable reconciliation and execution to complete.
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const recovered = await afterRestart.read(scope, proof.id);
+    assert.equal(dispatches, 1);
+    assert.equal(recovered?.status, "completed");
+    assert.equal((await readChangeVerification(scope, proof.id))?.state, "proved");
+  });
+});
+
+test("execution admission ignores unrelated historical Runs when choosing the next frozen cell", async () => {
+  await withStateRoot(async () => {
+    const proof = await readyProof();
+    const running = await advanceChangeVerification({
+      ...scope,
+      proofId: proof.id,
+      expectedVersion: proof.version,
+      state: "running-pilot",
+      actorId: "runner:proof-test",
+      requestId: "record-unrelated",
+      requestDigest,
+      action: "record-runs",
+      at: 300,
+      runIds: ["manual-unrelated-run"],
+      smallestNextVerification: { kind: "run-pilot", reason: "Run the pilot." },
+    });
+    const coordinator = createChangeProofExecutionCoordinator({
+      now: () => 400,
+      readRun: async () => null,
+      projectRun: async ({ run }) => projectedPass((run as { id: string }).id),
+    });
+    const admitted = await coordinator.submit(submit(running));
+    assert.equal(admitted.cursor, 0);
+    assert.equal(admitted.cells[0]?.status, "pending");
+    assert.deepEqual(admitted.runIds, ["manual-unrelated-run"]);
   });
 });
 

@@ -49,6 +49,10 @@ import {
   defaultProofExecutionCoordinator,
   proofExecutionCoordinator,
 } from "./change-proof-execution-runtime.js";
+import {
+  prepareCurrentChangeVerification,
+  proofPreparationStartInput,
+} from "./change-proof-preparation.js";
 
 export type ChangeVerificationRouteRuntime = {
   now: typeof now;
@@ -71,6 +75,7 @@ export type ChangeVerificationRouteRuntime = {
    * target control. */
   executionCoordinator: ChangeProofExecutionCoordinator;
   executeCell?: ChangeProofCellExecutor;
+  prepare: typeof prepareCurrentChangeVerification;
 };
 
 const defaultRuntime: ChangeVerificationRouteRuntime = {
@@ -86,6 +91,7 @@ const defaultRuntime: ChangeVerificationRouteRuntime = {
   readRun: readPersistedRun,
   caseResultFromRun: changeProofCaseResultFromPersistedRun,
   executionCoordinator: defaultProofExecutionCoordinator,
+  prepare: prepareCurrentChangeVerification,
 };
 
 function sameValue(left: unknown, right: unknown): boolean {
@@ -369,6 +375,111 @@ export async function handleChangeVerificationRoute(input: {
     }
     json(input.response, 200, { proofs });
     return true;
+  }
+
+  if (input.method === "POST" && input.pathname === "/proofs/prepare") {
+    if (!requestId) throw new HttpError(400, "Actor-aware operation context is required");
+    const body = (await parseJsonBody(input.request)) as OperationInput<"proof.prepare">;
+    let prepared: Awaited<ReturnType<ChangeVerificationRouteRuntime["prepare"]>>;
+    try {
+      prepared = await runtime.prepare({ projectId: scope.projectId, request: body });
+    } catch (error) {
+      throw new HttpError(
+        409,
+        error instanceof Error ? error.message : "The current change could not be prepared",
+        { code: "PROOF_PREPARATION_BLOCKED" },
+      );
+    }
+    const start = proofPreparationStartInput(prepared.plan);
+    const intentDigest = canonicalSha256(start);
+    const stableId = scopedProofId(input.scope, `prepare:${intentDigest}`);
+    const activeStates = new Set<ChangeVerification["state"]>([
+      "planning",
+      "awaiting-build",
+      "needs-review",
+      "ready",
+      "running-pilot",
+      "awaiting-expansion",
+      "running",
+    ]);
+    const stable = await runtime.read(scope, stableId);
+    if (stable && activeStates.has(stable.state)) {
+      if (!sameStartIntent(stable, stable.requestedBy, start)) {
+        throw new HttpError(409, "Prepared Proof identity conflicts with another plan", {
+          code: "PROOF_PREPARATION_CONFLICT",
+        });
+      }
+      json(input.response, 200, {
+        proof: verifyDurableChangeVerification(stable),
+        plan: prepared.plan,
+        disposition: "existing",
+        nextAction: stable.smallestNextVerification ?? start.smallestNextVerification!,
+        blockers: [
+          ...new Set([
+            ...prepared.blockers,
+            ...prepared.plan.coverageGaps.map(({ reason }) => reason),
+          ]),
+        ],
+      });
+      return true;
+    }
+    // Terminal Proofs are immutable audit records. A deliberate new request
+    // for the same exact revision gets a new request-scoped identity rather
+    // than mutating or silently reusing the terminal decision.
+    const proofId = stable
+      ? scopedProofId(input.scope, `prepare:${intentDigest}:${requestId}`)
+      : stableId;
+    const digest = requestDigest(undefined, { request: body, prepared: start });
+    try {
+      const proof = await runtime.create({
+        ...scope,
+        id: proofId,
+        ...start,
+        requestedBy: actorId,
+        actorId,
+        requestId,
+        requestDigest: digest,
+        at,
+      });
+      recordAudit(input.scope, { action: "proof.prepare", resource: proof.id, result: "allow" });
+      json(input.response, 201, {
+        proof,
+        plan: prepared.plan,
+        disposition: "created",
+        nextAction: proof.smallestNextVerification ?? start.smallestNextVerification!,
+        blockers: [
+          ...new Set([
+            ...prepared.blockers,
+            ...prepared.plan.coverageGaps.map(({ reason }) => reason),
+          ]),
+        ],
+      });
+      return true;
+    } catch (error) {
+      if (!(error instanceof ChangeVerificationConflictError) || error.code !== "PROOF_EXISTS") {
+        routeError(error);
+      }
+      const existing = await currentProof(runtime, scope, proofId);
+      const creation = (await runtime.history(scope, proofId))[0];
+      if (!creation || creation.lastMutation.requestDigest !== digest) {
+        throw new HttpError(409, "Proof preparation request is already bound to another intent", {
+          code: "PROOF_REQUEST_CONFLICT",
+        });
+      }
+      json(input.response, 200, {
+        proof: existing,
+        plan: prepared.plan,
+        disposition: "existing",
+        nextAction: existing.smallestNextVerification ?? start.smallestNextVerification!,
+        blockers: [
+          ...new Set([
+            ...prepared.blockers,
+            ...prepared.plan.coverageGaps.map(({ reason }) => reason),
+          ]),
+        ],
+      });
+      return true;
+    }
   }
 
   if (input.method === "POST" && input.pathname === "/proofs") {

@@ -9,6 +9,7 @@ import {
   changeVerificationSchema,
   changeVerificationSelectionSchema,
 } from "./change-verification.js";
+import { verificationPlanSchema } from "./change-impact.js";
 import { changeProofPublicationReceiptSchema } from "./change-proof-decision.js";
 import { changeProofPublicationOutboxRecordSchema } from "./change-proof-publication-outbox.js";
 import {
@@ -32,6 +33,22 @@ const initialProofFields = {
 } as const;
 
 export const changeVerificationOperationInputSchemas = {
+  "proof.prepare": z
+    .object({
+      baseRef: z.string().trim().min(1).max(512).optional(),
+      pullRequest: z.number().int().positive().optional(),
+      agentClaim: z
+        .object({
+          summary: reason,
+          acceptanceCriteria: z.array(reason).max(64).readonly(),
+        })
+        .strict()
+        .optional(),
+      policy: changeVerificationPolicySchema.optional(),
+      targetIds: z.array(identifier).min(1).max(250).readonly().optional(),
+      buildIds: z.array(identifier).min(1).max(32).readonly().optional(),
+    })
+    .strict(),
   "proof.start": z.object(initialProofFields).strict(),
   "proof.list": z
     .object({
@@ -168,6 +185,15 @@ const mutationOutputSchema = z
   .strict();
 
 export const changeVerificationOperationOutputSchemas = {
+  "proof.prepare": z
+    .object({
+      proof: changeVerificationSchema,
+      plan: verificationPlanSchema,
+      disposition: z.enum(["created", "existing"]),
+      nextAction: changeVerificationNextSchema,
+      blockers: z.array(reason).max(512).readonly(),
+    })
+    .strict(),
   "proof.start": mutationOutputSchema.extend({ disposition: z.enum(["created", "existing"]) }),
   "proof.list": z
     .object({ proofs: z.array(changeVerificationSchema).max(100).readonly() })

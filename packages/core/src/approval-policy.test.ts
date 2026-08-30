@@ -249,7 +249,42 @@ describe("evaluateApprovalPolicy", () => {
           findings: [{ ...finding, review: validReview }],
         }),
       ).decision,
+      "approve",
+      "unrelated current Proof evidence must not broaden or revoke a finding-scoped review",
+    );
+    assert.equal(
+      evaluateApprovalPolicy(
+        input({
+          evidence: { ...evidence, evidenceRefs: [] },
+          findings: [{ ...finding, review: validReview }],
+        }),
+      ).decision,
       "ask-human",
+      "reviewed evidence that is no longer current must fail closed",
+    );
+    assert.equal(
+      evaluateApprovalPolicy(
+        input({
+          evidence: {
+            ...evidence,
+            runIds: [finding.runId, "run-other"],
+            evidenceRefs: [...finding.evidenceRefs, "sha256:other-evidence"],
+          },
+          findings: [
+            { ...finding, review: validReview },
+            {
+              id: "visual-other",
+              runId: "run-other",
+              category: "visual",
+              severity: "review",
+              summary: "Another surface still needs review.",
+              evidenceRefs: ["sha256:other-evidence"],
+            },
+          ],
+        }),
+      ).decision,
+      "ask-human",
+      "reviewing one finding must not authorize another finding",
     );
 
     assert.equal(

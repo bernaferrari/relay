@@ -19,6 +19,8 @@ import {
 import { materializeChangeVerificationIntegrity } from "./change-proof-integrity.js";
 import { agentRepairPacketForDecision } from "./change-proof-decision.js";
 import { compileVerificationPlan, verificationCellId } from "./change-impact.js";
+import { canonicalSha256 } from "./canonical-json.js";
+import { compileExecutionRisk } from "./execution-risk-compiler.js";
 import { exportTracePack } from "./trace-pack.js";
 import type { PersistedRun } from "./runs.js";
 
@@ -41,13 +43,19 @@ export const CHANGE_PROOF_GOLDEN_DEMO = {
   appMapId: "settings",
   testId: "settings-language-arabic",
   appMapRevision: 17,
-  policy: { id: "relay.verify-change", version: 1 },
+  policy: { id: "relay.verify-change", version: 2 },
 } as const;
 
 const FAILED_WEB_DIGEST = `sha256:${"a".repeat(64)}` as const;
 const FAILED_ANDROID_DIGEST = `sha256:${"b".repeat(64)}` as const;
 const REPAIRED_WEB_DIGEST = `sha256:${"c".repeat(64)}` as const;
 const REPAIRED_ANDROID_DIGEST = `sha256:${"d".repeat(64)}` as const;
+const GOLDEN_EXECUTION_RISK = compileExecutionRisk({
+  kind: "recipe-graph",
+  rootRecipeId: "golden-proof-root",
+  recipes: { "golden-proof-root": { id: "golden-proof-root", steps: [] } },
+});
+const GOLDEN_EXECUTION_RISK_DIGEST = canonicalSha256(GOLDEN_EXECUTION_RISK);
 
 let goldenBrowserEvidenceDir: string | undefined;
 
@@ -271,6 +279,8 @@ export function goldenDemoReadyProof(
       ...cell.journey,
       appMapRevision: CHANGE_PROOF_GOLDEN_DEMO.appMapRevision,
     },
+    executionRisk: GOLDEN_EXECUTION_RISK,
+    executionRiskDigest: GOLDEN_EXECUTION_RISK_DIGEST,
   }));
   const pilotCellId = cells?.find(
     (_, index) => plan.selection.cells?.[index]?.id === plan.selection.pilotCellId,
@@ -534,6 +544,20 @@ export function goldenDemoPersistedRun(input: {
       },
       startedAt: 1_001,
       finishedAt: capturedAt + 2,
+      ...(browser
+        ? {
+            collectionPolicy: {
+              schemaVersion: 1 as const,
+              sensitive: {
+                "browser-trace": {
+                  grantedAt: 900,
+                  grantedBy: "human:golden-demo-reviewer",
+                  reason: "Reviewed browser trace retained for the public golden Proof fixture",
+                },
+              },
+            },
+          }
+        : {}),
       channels: {},
       events: [],
     } as never,

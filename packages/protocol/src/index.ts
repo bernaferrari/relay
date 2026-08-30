@@ -116,7 +116,7 @@ export type RedactionPolicy = {
   updatedAt?: number;
 };
 
-export type SensitiveEvidenceChannel = "audio" | "crash" | "network-body";
+export type SensitiveEvidenceChannel = "audio" | "crash" | "network-body" | "browser-trace";
 
 export type EvidenceConsentGrant = {
   grantedAt: number;
@@ -605,7 +605,11 @@ export type Build = {
   id: string;
   projectId: string;
   name: string;
-  platform: "android" | "ios";
+  /** Mobile artifacts are installable builds; web entries are immutable
+   * provider-verified deployments. Keeping them in one registry lets a
+   * Proof bind every surface to the same source/build vocabulary without
+   * sending a browser deployment through APK/IPA preflight. */
+  platform: "android" | "ios" | "web";
   sourceUrl?: string;
   /** Hex sha256 of the remote artifact; verified when the source is ingested. */
   sourceSha256?: string;
@@ -618,6 +622,8 @@ export type Build = {
   environmentRevision?: string;
   /** Package or bundle identity observed during build ingestion. */
   applicationId?: string;
+  /** Provider-reported immutable deployment digest for a web build. */
+  deploymentDigest?: string;
   status: "uploaded" | "ready" | "failed" | "archived";
   createdAt: number;
   updatedAt: number;

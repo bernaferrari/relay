@@ -23,9 +23,20 @@ import {
 import { resetControlDatabaseCache } from "./collaboration-db.js";
 import { materializeChangeVerificationIntegrity } from "./change-proof-integrity.js";
 import { evaluateChangeDecisionPolicy } from "./change-decision-policy.js";
+import { canonicalSha256 } from "./canonical-json.js";
 
 const headSha = "2".repeat(40);
 const digest = (character: string) => `sha256:${character.repeat(64)}` as const;
+const safeExecutionRisk = {
+  schemaVersion: 1 as const,
+  level: "safe" as const,
+  reasons: [],
+  externalEffects: [],
+  confirmation: "none" as const,
+  expectedAppBoundaries: [],
+  cleanupRequired: false,
+};
+const safeExecutionRiskDigest = canonicalSha256(safeExecutionRisk);
 
 function targetCase(id: string): ChangeVerification["selection"]["targetCases"][number] {
   return {
@@ -112,6 +123,8 @@ function proof(): ChangeVerification {
           requirement: "required",
           selectionReason: "Chromium compact Arabic is required coverage.",
           dimensions: { locale: "ar", engine: "chromium" },
+          executionRisk: safeExecutionRisk,
+          executionRiskDigest: safeExecutionRiskDigest,
           cleanupRequired: false,
         },
         {
@@ -122,6 +135,8 @@ function proof(): ChangeVerification {
           requirement: "required",
           selectionReason: "WebKit compact Arabic is required coverage.",
           dimensions: { locale: "ar", engine: "webkit" },
+          executionRisk: safeExecutionRisk,
+          executionRiskDigest: safeExecutionRiskDigest,
           cleanupRequired: false,
         },
       ],
@@ -357,6 +372,78 @@ test("proves only the complete required journey and target matrix", () => {
   assert.equal(check.headSha, headSha);
   assert.equal(check.conclusion, "success");
   assert.match(check.text, /Required cases: 2\/2 passed/);
+});
+
+test("durable decisions fail closed when a required cell has no risk authority", () => {
+  const base = proof();
+  const value: ChangeVerification = {
+    ...base,
+    selection: {
+      ...base.selection,
+      cells: base.selection.cells!.map((cell, index) =>
+        index === 0
+          ? (({ executionRisk: _risk, executionRiskDigest: _digest, ...withoutAuthority }) =>
+              withoutAuthority)(cell)
+          : cell,
+      ),
+    },
+  };
+  const decision = decideChangeVerification({
+    proof: value,
+    caseResults: [result("chromium-compact-ar"), result("webkit-compact-ar")],
+  });
+  assert.equal(decision.decision, "needs-review");
+  assert.deepEqual(decision.ruleIds, ["execution.authority-missing"]);
+  assert.match(decision.coverageGaps[0]!, /missing or mismatched execution authority/u);
+});
+
+test("durable decisions reject a passing Run under prohibited frozen risk", () => {
+  const prohibited = {
+    ...safeExecutionRisk,
+    level: "prohibited" as const,
+    confirmation: "human-only" as const,
+    reasons: [{ code: "reviewed-effect.purchase", explanation: "Purchase effect." }],
+    externalEffects: ["purchase" as const],
+  };
+  const value: ChangeVerification = {
+    ...proof(),
+    selection: {
+      ...proof().selection,
+      cells: proof().selection.cells!.map((cell, index) =>
+        index === 0
+          ? {
+              ...cell,
+              executionRisk: prohibited,
+              executionRiskDigest: canonicalSha256(prohibited),
+            }
+          : cell,
+      ),
+    },
+  };
+  const decision = decideChangeVerification({
+    proof: value,
+    caseResults: [result("chromium-compact-ar"), result("webkit-compact-ar")],
+  });
+  assert.equal(decision.decision, "rejected");
+  assert.equal(decision.state, "rejected");
+});
+
+test("durable decisions reject a forged cell risk digest", () => {
+  const value: ChangeVerification = {
+    ...proof(),
+    selection: {
+      ...proof().selection,
+      cells: proof().selection.cells!.map((cell, index) =>
+        index === 0 ? { ...cell, executionRiskDigest: digest("0") } : cell,
+      ),
+    },
+  };
+  const decision = decideChangeVerification({
+    proof: value,
+    caseResults: [result("chromium-compact-ar"), result("webkit-compact-ar")],
+  });
+  assert.equal(decision.decision, "needs-review");
+  assert.deepEqual(decision.ruleIds, ["execution.authority-missing"]);
 });
 
 test("missing or incomplete mandatory proof is action-required, never green", () => {

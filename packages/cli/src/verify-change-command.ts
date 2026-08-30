@@ -10,13 +10,10 @@ import {
   changeRefSchema,
   journeyAssociationSchema,
   verificationCellSchema,
+  verificationPlanSchema,
 } from "@relay/protocol";
-import {
-  compileVerificationPlan,
-  proofStartInputFromVerificationPlan,
-  verificationCellId,
-} from "@relay/core";
-import { invokeOperation, type OperationInvoker } from "./invoke.js";
+import { compileVerificationPlan, proofStartInputFromVerificationPlan } from "@relay/core";
+import { invokeOperation } from "./invoke.js";
 import { UsageError } from "./errors.js";
 import {
   assertExecutablePlanTargets,
@@ -314,27 +311,6 @@ function exactSha(value: string, label: string): string {
   return sha;
 }
 
-async function exactAppMapRevision(
-  client: OperationInvoker,
-  appMapId: string,
-  signal: AbortSignal,
-): Promise<number> {
-  const response = record(
-    await invokeOperation(client, "app-map.get", { appMapId }, signal),
-    "app-map.get",
-  );
-  const appMap = record(response.appMap, "app-map.get appMap");
-  if (
-    appMap.id !== appMapId ||
-    typeof appMap.revision !== "number" ||
-    !Number.isSafeInteger(appMap.revision) ||
-    appMap.revision < 1
-  ) {
-    throw new UsageError(`App Map ${appMapId} did not return one exact numeric revision`);
-  }
-  return appMap.revision;
-}
-
 /** Compile the reviewed Git/config inputs; confirmed executable plans enter the
  * server-owned Proof lifecycle in verify-change-live.ts. */
 export async function runVerifyChangeCommand(
@@ -461,7 +437,7 @@ export async function runVerifyChangeCommand(
     ...(config.pullRequest === undefined ? {} : { pullRequest: config.pullRequest }),
     ...(config.agentClaim === undefined ? {} : { agentClaim: config.agentClaim }),
   });
-  const plan = compileVerificationPlan({
+  let plan = compileVerificationPlan({
     change,
     changed: {
       files: changedFiles,
@@ -500,58 +476,28 @@ export async function runVerifyChangeCommand(
   if (input.confirm) {
     if (!input.client) throw new UsageError("verify-change --confirm requires a Relay client");
     const signal = input.signal ?? new AbortController().signal;
-    if (isExecutableVerificationPlan(plan)) {
-      const revisions = new Map<string, number>();
-      for (const journey of plan.selection.affectedJourneys) {
-        if (!revisions.has(journey.appMapId)) {
-          revisions.set(
-            journey.appMapId,
-            await exactAppMapRevision(input.client, journey.appMapId, signal),
-          );
-        }
-      }
-      const remappedCells = plan.selection.cells?.map((cell) => ({
-        ...cell,
-        id: verificationCellId({
-          appMapId: cell.journey.appMapId,
-          testId: cell.journey.testId,
-          appMapRevision: revisions.get(cell.journey.appMapId)!,
-          targetCaseId: cell.targetCaseId,
-          buildId: cell.buildId,
-        }),
-        journey: {
-          ...cell.journey,
-          appMapRevision: revisions.get(cell.journey.appMapId)!,
-        },
-      }));
-      const pilotCellId = plan.selection.pilotCellId
-        ? remappedCells?.find(
-            (_, index) => plan.selection.cells?.[index]?.id === plan.selection.pilotCellId,
-          )?.id
-        : undefined;
-      proofStart = {
-        ...proofStart,
-        selection: {
-          ...plan.selection,
-          affectedJourneys: plan.selection.affectedJourneys.map((journey) => ({
-            ...journey,
-            appMapRevision: revisions.get(journey.appMapId)!,
-          })),
-          cells: remappedCells,
-          ...(pilotCellId ? { pilotCellId } : {}),
-        },
-      };
-    }
-
+    const prepareInput = {
+      baseRef,
+      ...(config.pullRequest === undefined ? {} : { pullRequest: config.pullRequest }),
+      ...(config.agentClaim === undefined ? {} : { agentClaim: config.agentClaim }),
+      policy: config.policy,
+      ...(plan.selection.targetCases.length
+        ? { targetIds: plan.selection.targetCases.map(({ id }) => id) }
+        : {}),
+      ...(plan.builds.length ? { buildIds: plan.builds.map(({ id }) => id) } : {}),
+    };
     proofStartResponse = await invokeOperation(
       input.client,
-      "proof.start",
-      proofStart,
+      "proof.prepare",
+      prepareInput,
       signal,
-      verifyChangeRequestIdentity("proof-start", JSON.stringify(proofStart)),
+      verifyChangeRequestIdentity("proof-prepare", JSON.stringify(prepareInput)),
     );
-    proof = proofRecord(proofStartResponse);
-    if (!proof) throw new UsageError("proof.start returned no durable Proof");
+    const prepared = record(proofStartResponse, "proof.prepare");
+    plan = verificationPlanSchema.parse(prepared.plan);
+    proofStart = proofStartInputFromVerificationPlan(plan);
+    proof = proofRecord(prepared);
+    if (!proof) throw new UsageError("proof.prepare returned no durable Proof");
     if (isExecutableVerificationPlan(plan)) {
       const live = await executeVerifyChangeLive({
         client: input.client,

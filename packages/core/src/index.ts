@@ -56,6 +56,7 @@ export * from "./offline-test-preflight.js";
 export * from "./frozen-raw-accessibility.js";
 export * from "./app-map-test-execution-intent.js";
 export * from "./app-map-runtime-target-profile.js";
+export * from "./app-map-test-compiler.js";
 export * from "./app-map-test-route-variants.js";
 export * from "./app-map-test-raw-accessibility.js";
 export * from "./app-map-test-execution-gate.js";

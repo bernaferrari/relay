@@ -38,6 +38,11 @@ export type BindRegisteredBuildToProofInput = {
 export async function bindRegisteredBuildToProof(
   input: BindRegisteredBuildToProofInput,
 ): Promise<ChangeVerificationBuild> {
+  if (input.build.platform === "web") {
+    throw new Error(
+      "Web Proof builds require a provider-verified deployment; use bindRegisteredWebDeploymentToProof",
+    );
+  }
   const expectedSha = input.changeTestedSha ?? input.changeHeadSha;
   if (!expectedSha || !EXACT_GIT_SHA.test(expectedSha)) {
     throw new Error(
@@ -99,6 +104,47 @@ export type VerifiedWebDeployment = {
   environmentRevision: string;
 };
 
+export type VerifiedWebBuild = Omit<ChangeVerificationBuild, "platform" | "artifactDigest"> & {
+  platform: "web";
+  artifactDigest: `sha256:${string}`;
+};
+
+/** Convert a registered web build into the provider-verified deployment
+ * contract used by Proof preparation and execution. Web entries deliberately
+ * have no local artifact path: their immutable deployment digest, exact
+ * source SHA, URL, configuration, and environment revision are the complete
+ * server-owned identity. */
+export function bindRegisteredWebDeploymentToProof(input: {
+  build: Build;
+  /** Compatibility alias. New callers should bind against changeTestedSha. */
+  changeHeadSha?: string;
+  changeTestedSha?: string;
+}): VerifiedWebBuild {
+  if (input.build.platform !== "web") {
+    throw new Error("Registered web Proof binding requires a web build");
+  }
+  const url = requiredProvenance(input.build.sourceUrl, "web deployment URL");
+  const deploymentDigest = requiredProvenance(input.build.deploymentDigest, "deploymentDigest");
+  const sourceSha = requiredProvenance(input.build.sourceSha, "sourceSha");
+  const configuration = requiredProvenance(input.build.configuration, "configuration");
+  const environmentRevision = requiredProvenance(
+    input.build.environmentRevision,
+    "environmentRevision",
+  );
+  return bindVerifiedWebDeploymentToProof({
+    deployment: {
+      id: input.build.id,
+      url,
+      sourceSha,
+      deploymentDigest: deploymentDigest as `sha256:${string}`,
+      configuration,
+      environmentRevision,
+    },
+    ...(input.changeTestedSha ? { changeTestedSha: input.changeTestedSha } : {}),
+    ...(input.changeHeadSha ? { changeHeadSha: input.changeHeadSha } : {}),
+  }) as VerifiedWebBuild;
+}
+
 /** Bind provider-observed web deployment provenance. This does not infer a
  * digest from a URL: the deployment system must report an exact immutable
  * digest, otherwise the build is insufficient evidence. */
@@ -107,8 +153,13 @@ export function bindVerifiedWebDeploymentToProof(input: {
   /** Compatibility alias. New callers should bind against changeTestedSha. */
   changeHeadSha?: string;
   changeTestedSha?: string;
-}): ChangeVerificationBuild {
+}): VerifiedWebBuild {
   const expectedSha = input.changeTestedSha ?? input.changeHeadSha;
+  if (!expectedSha || !EXACT_GIT_SHA.test(expectedSha)) {
+    throw new Error(
+      "changeTestedSha (legacy changeHeadSha) must be an exact lowercase 40-character Git SHA",
+    );
+  }
   const url = new URL(input.deployment.url);
   const local =
     url.protocol === "http:" &&
@@ -128,5 +179,5 @@ export function bindVerifiedWebDeploymentToProof(input: {
     sourceSha: input.deployment.sourceSha,
     configuration: input.deployment.configuration,
     environmentRevision: input.deployment.environmentRevision,
-  });
+  }) as VerifiedWebBuild;
 }

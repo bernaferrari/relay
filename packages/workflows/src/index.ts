@@ -8,6 +8,7 @@ export {
   type ContinueChangeVerificationInput,
   type InspectChangeVerificationInput,
   type ListChangeVerificationsInput,
+  type PrepareChangeVerificationInput,
   type ProofWorkflow,
   type RerunAffectedVerificationInput,
   type StartChangeVerificationInput,

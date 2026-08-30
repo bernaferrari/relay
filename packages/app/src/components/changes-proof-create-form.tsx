@@ -25,14 +25,14 @@ export function ChangesProofCreateForm(props: {
   return (
     <form
       class="mx-auto grid w-full max-w-[760px] gap-5 rounded-2xl bg-surface-raised-stronger-non-alpha p-[clamp(1rem,3vw,1.75rem)] ring-1 ring-inset ring-border-weak-base"
-      aria-label="Start a Proof"
+      aria-label="Prepare a Proof"
       onSubmit={props.onSubmit}
     >
       <div class="grid gap-1">
         <h2 class="m-0 text-title font-semibold text-text-strong">Review the current change</h2>
         <p class="m-0 text-body/[1.5] text-text-base">
-          This starts an awaiting-build Proof. It cannot clear a merge until exact builds, affected
-          journeys, required targets, and complete evidence are attached.
+          Relay prepares the exact builds, affected journeys, targets, and Verification Cells from
+          reviewed repository policy. Missing authority stays visible and can never clear a merge.
         </p>
       </div>
 
@@ -217,7 +217,7 @@ export function ChangesProofCreateForm(props: {
               props.submitting || props.resolvingWorkspace || !props.workspaceChange?.readyForProof
             }
           >
-            {props.submitting ? "Starting…" : "Start Proof"}
+            {props.submitting ? "Preparing…" : "Prepare Proof"}
           </Button>
         </div>
       </div>

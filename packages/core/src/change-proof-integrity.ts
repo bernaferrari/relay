@@ -7,6 +7,7 @@ import {
   type ChangeVerificationDecision,
 } from "@relay/protocol";
 import { canonicalSha256, type CanonicalSha256 } from "./canonical-json.js";
+import { VERIFY_CHANGE_POLICY_DEFINITION } from "./change-decision-policy.js";
 
 /** The complete, server-owned definition for the live Change Proof policy.
  *
@@ -14,9 +15,18 @@ import { canonicalSha256, type CanonicalSha256 } from "./canonical-json.js";
  * frozen definition is the version-dispatched implementation that identity
  * names, and its digest is what makes a durable Proof portable across hosts.
  * Keep `ruleIds` in lock-step with the ruleIds emitted by decideChangeVerification. */
-export const VERIFY_CHANGE_POLICY_DEFINITION = Object.freeze({
+export { VERIFY_CHANGE_POLICY_DEFINITION } from "./change-decision-policy.js";
+
+type VerifyChangePolicyDefinition = Readonly<{
+  id: string;
+  version: number;
+  ruleIds: readonly string[];
+  [key: string]: unknown;
+}>;
+
+const LEGACY_VERIFY_CHANGE_POLICY_V1 = Object.freeze({
   id: VERIFY_CHANGE_POLICY_IDENTITY.id,
-  version: VERIFY_CHANGE_POLICY_IDENTITY.version,
+  version: 1,
   ruleIds: Object.freeze([
     "exact-head-and-build",
     "all-required-cases",
@@ -27,12 +37,6 @@ export const VERIFY_CHANGE_POLICY_DEFINITION = Object.freeze({
   ] as const),
 });
 
-type VerifyChangePolicyDefinition = Readonly<{
-  id: string;
-  version: number;
-  ruleIds: readonly string[];
-}>;
-
 const POLICY_DEFINITIONS: ReadonlyMap<string, VerifyChangePolicyDefinition> = new Map<
   string,
   VerifyChangePolicyDefinition
@@ -41,6 +45,7 @@ const POLICY_DEFINITIONS: ReadonlyMap<string, VerifyChangePolicyDefinition> = ne
     `${VERIFY_CHANGE_POLICY_DEFINITION.id}@${VERIFY_CHANGE_POLICY_DEFINITION.version}`,
     VERIFY_CHANGE_POLICY_DEFINITION,
   ],
+  [`${LEGACY_VERIFY_CHANGE_POLICY_V1.id}@1`, LEGACY_VERIFY_CHANGE_POLICY_V1],
   // Historical durable fixtures used this identity. It remains an explicit,
   // versioned server-owned definition so they cannot inject arbitrary rules;
   // newly unknown ids/versions are still rejected before persistence.
@@ -49,7 +54,7 @@ const POLICY_DEFINITIONS: ReadonlyMap<string, VerifyChangePolicyDefinition> = ne
     Object.freeze({
       id: "relay.default",
       version: 3,
-      ruleIds: VERIFY_CHANGE_POLICY_DEFINITION.ruleIds,
+      ruleIds: LEGACY_VERIFY_CHANGE_POLICY_V1.ruleIds,
     }),
   ],
 ]);

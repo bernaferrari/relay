@@ -39,7 +39,7 @@ import {
 } from "../lib/shell-layout";
 import { appMapOpeningMode, appMapStartupDecision } from "../lib/app-map-startup";
 import { appMapLibraryItem } from "../lib/app-map-library";
-import { normalizeMapLibraryArea, type MapLibraryArea } from "../lib/map-library-area";
+import { initialMapLibraryArea, type MapLibraryArea } from "../lib/map-library-area";
 import { appMapPrimaryAction } from "../lib/app-map-primary-action";
 import { matchLiveScreen } from "../lib/app-map-live-location";
 import type { AppMapRunReadiness as GraphRunReadiness } from "../lib/app-map-run-readiness";
@@ -71,9 +71,7 @@ export function StudioShell(props: {
   const recorder = useRecorder();
   const workspaceController = props.workspaceController;
   const [area, setArea] = createSignal<MapLibraryArea>(
-    normalizeMapLibraryArea(
-      new URLSearchParams(window.location.search).has("run") ? "runs" : "maps",
-    ),
+    initialMapLibraryArea(window.location.search),
   );
   const [mapMode, setMapMode] = createSignal<MapMode>("map");
   const authoringMap = () => mapMode() !== "test";

@@ -8,6 +8,7 @@ import type { Build } from "@relay/protocol";
 import {
   artifactDigestForProof,
   bindRegisteredBuildToProof,
+  bindRegisteredWebDeploymentToProof,
   bindVerifiedWebDeploymentToProof,
 } from "./change-build-binding.js";
 
@@ -177,5 +178,42 @@ test("binds only provider-verified web deployments for the exact tested revision
         changeHeadSha: headSha,
       }),
     /must use https/,
+  );
+});
+
+test("binds a registered web build without invoking mobile artifact preflight", () => {
+  const build = {
+    id: "web-preview",
+    projectId: "project",
+    name: "Web preview",
+    platform: "web" as const,
+    sourceUrl: "https://preview.example.com/pr-184",
+    sourceSha: headSha,
+    deploymentDigest: `sha256:${"b".repeat(64)}`,
+    configuration: "web.production",
+    environmentRevision: "preview-v12",
+    status: "ready" as const,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  assert.deepEqual(bindRegisteredWebDeploymentToProof({ build, changeTestedSha: headSha }), {
+    id: build.id,
+    platform: "web",
+    artifactDigest: build.deploymentDigest,
+    sourceSha: headSha,
+    configuration: build.configuration,
+    environmentRevision: build.environmentRevision,
+  });
+  assert.throws(
+    () => bindRegisteredWebDeploymentToProof({ build, changeTestedSha: baseSha }),
+    /does not match the exact Proof testedSha/u,
+  );
+  assert.throws(
+    () =>
+      bindRegisteredWebDeploymentToProof({
+        build: { ...build, deploymentDigest: undefined },
+        changeTestedSha: headSha,
+      }),
+    /requires deploymentDigest/u,
   );
 });

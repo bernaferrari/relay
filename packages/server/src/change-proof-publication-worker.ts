@@ -1,9 +1,12 @@
 import {
   claimChangeProofPublicationOutbox,
+  changeProofPublicationIntentFromOutboxRecord,
   listAllChangeProofPublicationOutbox,
   listChangeProofPublicationOutbox,
   markChangeProofPublicationRetry,
+  recoverChangeProofPublicationOutbox,
   reconcileChangeProofPublicationOutbox,
+  withChangeProofPublicationLeaseHeartbeat,
   type ChangeVerificationScope,
 } from "@relay/core";
 import type {
@@ -43,6 +46,8 @@ export async function processChangeProofPublicationRecord(input: {
   proof: ChangeVerification;
   publish: ChangeProofTerminalPublisher;
   workerId: string;
+  leaseMs?: number;
+  heartbeatMs?: number;
 }): Promise<void> {
   const scope = {
     organizationId: input.record.organizationId,
@@ -52,10 +57,26 @@ export async function processChangeProofPublicationRecord(input: {
     ...scope,
     id: input.record.id,
     workerId: input.workerId,
+    ...(input.leaseMs !== undefined ? { leaseMs: input.leaseMs } : {}),
   });
   if (!claimed) return;
   try {
-    await input.publish({ scope, proof: input.proof, intent: claimed });
+    await withChangeProofPublicationLeaseHeartbeat(
+      {
+        ...scope,
+        id: claimed.id,
+        workerId: claimed.lease!.workerId,
+        leaseToken: claimed.lease!.token,
+        ...(input.leaseMs !== undefined ? { leaseMs: input.leaseMs } : {}),
+        ...(input.heartbeatMs !== undefined ? { heartbeatMs: input.heartbeatMs } : {}),
+      },
+      () =>
+        input.publish({
+          scope,
+          proof: input.proof,
+          intent: changeProofPublicationIntentFromOutboxRecord(claimed),
+        }),
+    );
   } catch {
     await retryClaim(claimed, "provider-error");
     return;
@@ -101,7 +122,12 @@ export async function drainChangeProofPublicationOutbox(input: {
   ) => Promise<ChangeVerification | undefined>;
   workerId?: string;
   limit?: number;
+  leaseMs?: number;
+  heartbeatMs?: number;
 }): Promise<number> {
+  // Recovery is deliberately part of every pass. Startup recovery alone
+  // leaves a claim that expires during a long-lived server stranded forever.
+  await recoverChangeProofPublicationOutbox();
   const now = Date.now();
   const due = (await listAllChangeProofPublicationOutbox())
     .filter(
@@ -121,6 +147,8 @@ export async function drainChangeProofPublicationOutbox(input: {
       proof,
       publish: input.publish,
       workerId: input.workerId ?? `relay-proof-worker:${process.pid}`,
+      ...(input.leaseMs !== undefined ? { leaseMs: input.leaseMs } : {}),
+      ...(input.heartbeatMs !== undefined ? { heartbeatMs: input.heartbeatMs } : {}),
     });
     processed += 1;
   }

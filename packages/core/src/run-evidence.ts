@@ -90,6 +90,10 @@ export function initializeRunEvidence(job: TestJob): RunEvidenceHandle {
   audio.status = "denied";
   audio.message = "audio probing requires an explicit workspace consent grant";
   for (const [name, grant] of Object.entries(job.evidencePolicy.sensitive)) {
+    // Browser trace consent is recorded in the frozen collection policy and
+    // enforced by the browser-proof collector. It is not a generic Evidence
+    // channel, so do not emit an invalid `browser-trace` manifest event.
+    if (name === "browser-trace") continue;
     const channelName: EvidenceChannel =
       name === "network-body" ? "network" : (name as EvidenceChannel);
     event(handle, channelName, "consent.granted", {

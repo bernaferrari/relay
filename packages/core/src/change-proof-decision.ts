@@ -3,8 +3,10 @@ import {
   changeProofCaseResultSchema,
   changeProofDecisionSchema,
   changeProofProviderCheckSchema,
+  executionRiskSchema,
   parseChangeVerification,
   changeTestedSha,
+  type ExecutionRisk,
   type AgentRepairPacket,
   type ChangeProofCaseResult,
   type ChangeProofDecision,
@@ -24,6 +26,7 @@ import {
   materializeChangeVerificationIntegrity,
 } from "./change-proof-integrity.js";
 import { evaluateChangeDecisionPolicy } from "./change-decision-policy.js";
+import { canonicalSha256 } from "./canonical-json.js";
 
 function legacyIdentityKey(value: {
   appMapId: string;
@@ -73,6 +76,75 @@ function bounded(values: readonly string[], limit = 128): string[] {
 }
 
 const INFRASTRUCTURE_GAP_PREFIX = "Infrastructure failure in Run ";
+
+type FrozenVerificationCell = NonNullable<ChangeVerification["selection"]["cells"]>[number];
+
+const RISK_RANK: Record<ExecutionRisk["level"], number> = {
+  safe: 0,
+  guarded: 1,
+  destructive: 2,
+  prohibited: 3,
+};
+
+const CONFIRMATION_RANK: Record<ExecutionRisk["confirmation"], number> = {
+  none: 0,
+  "once-per-run": 1,
+  "per-step": 2,
+  "human-only": 3,
+};
+
+/** Read the immutable risk authority from the Proof cells. Missing or forged
+ * authority is a review condition, never permission to use a safe default. */
+function aggregateCellExecutionRisk(cells: readonly FrozenVerificationCell[]): {
+  risk?: ExecutionRisk;
+  invalidCellIds: string[];
+} {
+  const invalidCellIds: string[] = [];
+  const values: ExecutionRisk[] = [];
+  for (const cell of cells) {
+    if (!cell.executionRisk || !cell.executionRiskDigest) {
+      invalidCellIds.push(cell.id);
+      continue;
+    }
+    try {
+      const risk = executionRiskSchema.parse(cell.executionRisk);
+      if (
+        canonicalSha256(risk) !== cell.executionRiskDigest ||
+        risk.cleanupRequired !== cell.cleanupRequired
+      ) {
+        invalidCellIds.push(cell.id);
+        continue;
+      }
+      values.push(risk);
+    } catch {
+      invalidCellIds.push(cell.id);
+    }
+  }
+  if (invalidCellIds.length || !values.length) return { invalidCellIds };
+  const level = values.reduce(
+    (current, risk) => (RISK_RANK[risk.level] > RISK_RANK[current] ? risk.level : current),
+    "safe" as ExecutionRisk["level"],
+  );
+  const confirmation = values.reduce(
+    (current, risk) =>
+      CONFIRMATION_RANK[risk.confirmation] > CONFIRMATION_RANK[current]
+        ? risk.confirmation
+        : current,
+    "none" as ExecutionRisk["confirmation"],
+  );
+  return {
+    risk: {
+      schemaVersion: 1,
+      level,
+      reasons: values.flatMap((risk) => risk.reasons),
+      externalEffects: [...new Set(values.flatMap((risk) => risk.externalEffects))],
+      confirmation,
+      expectedAppBoundaries: [...new Set(values.flatMap((risk) => risk.expectedAppBoundaries))],
+      cleanupRequired: values.some((risk) => risk.cleanupRequired),
+    },
+    invalidCellIds,
+  };
+}
 
 function providerClassification(
   proof: ChangeVerification,
@@ -208,22 +280,59 @@ export function decideChangeVerification(input: {
   ]);
 
   // Durable cells are an adapter of the same policy input consumed by
-  // offline verify-change. Keep this translation deliberately boring: the
-  // evaluator owns precedence, while this module only supplies immutable
-  // cell facts and preserves the durable decision envelope below.
+  // offline verify-change. Risk is read from the frozen cell authority; a
+  // missing or forged authority must never be replaced with a safe default.
+  const requiredCells = proof.selection.cells!.filter(
+    ({ requirement }) => requirement === "required",
+  );
+  const authority = aggregateCellExecutionRisk(requiredCells);
+  if (authority.invalidCellIds.length || !authority.risk) {
+    const authorityCoverageGaps = bounded([
+      ...coverageGaps,
+      ...authority.invalidCellIds.map(
+        (cellId) => `Verification Cell ${cellId} has missing or mismatched execution authority.`,
+      ),
+    ]);
+    const authorityDecision = firstRejected ? ("rejected" as const) : ("needs-review" as const);
+    const authorityFailure = firstRejected?.failure
+      ? {
+          runId: firstRejected.runId,
+          testId: firstRejected.testId,
+          targetCaseId: firstRejected.targetCaseId,
+          ...(firstRejected.failure.checkId ? { checkId: firstRejected.failure.checkId } : {}),
+          summary: firstRejected.failure.summary,
+          evidenceRefs: firstRejected.failure.evidenceRefs,
+        }
+      : undefined;
+    return changeProofDecisionSchema.parse({
+      schemaVersion: 1,
+      decision: authorityDecision,
+      state: authorityDecision,
+      summary: {
+        required: requiredCellIds.length,
+        passed: requiredResults.filter(({ outcome }) => outcome === "passed").length,
+        rejected: requiredResults.filter(({ outcome }) => outcome === "rejected").length,
+        needsReview: requiredResults.filter(({ outcome }) => outcome === "needs-review").length,
+        insufficient: insufficient.length,
+        missing: missing.length,
+      },
+      runIds: unique(results.map(({ runId }) => runId)),
+      evidenceDigests: unique(results.flatMap(({ evidenceDigests }) => evidenceDigests)),
+      ...(authorityFailure ? { firstCausalFailure: authorityFailure } : {}),
+      coverageGaps: authorityCoverageGaps,
+      residualRisk,
+      smallestNextVerification: {
+        kind: "review",
+        reason: "Review the frozen execution authority before this Proof can authorize merge.",
+      },
+      ruleIds: ["execution.authority-missing"],
+    });
+  }
   const policyDecision = evaluateChangeDecisionPolicy({
     schemaVersion: 1,
     policy: proof.policy,
-    executionRisk: {
-      schemaVersion: 1,
-      level: "safe",
-      reasons: [],
-      externalEffects: [],
-      confirmation: "none",
-      expectedAppBoundaries: [],
-      cleanupRequired: false,
-    },
-    confirmationSatisfied: true,
+    executionRisk: authority.risk,
+    confirmationSatisfied: authority.risk.confirmation === "none",
     evidence: {
       status: coverageGaps.length === 0 && insufficient.length === 0 ? "complete" : "partial",
       requiredChannels: ["frozen-run", "trace-pack"],
@@ -287,13 +396,19 @@ export function decideChangeVerification(input: {
     decision === "proved"
       ? { kind: "none" as const, reason: "Every policy-required case has complete proof." }
       : decision === "rejected"
-        ? {
-            kind: "review" as const,
-            reason: "Repair the first causal regression, then create a new Proof for the new head.",
-            appMapId: firstRejected!.appMapId,
-            testId: firstRejected!.testId,
-            targetCaseId: firstRejected!.targetCaseId,
-          }
+        ? firstRejected
+          ? {
+              kind: "review" as const,
+              reason:
+                "Repair the first causal regression, then create a new Proof for the new head.",
+              appMapId: firstRejected.appMapId,
+              testId: firstRejected.testId,
+              targetCaseId: firstRejected.targetCaseId,
+            }
+          : {
+              kind: "review" as const,
+              reason: "Review the execution authority before retrying this Proof.",
+            }
         : decision === "needs-review"
           ? {
               kind: "review" as const,

@@ -148,6 +148,10 @@ function artifactChannel(kind: string): string | undefined {
   return undefined;
 }
 
+function browserTraceRetentionAllowed(run: PersistedRun): boolean {
+  return Boolean(run.evidence?.collectionPolicy?.sensitive["browser-trace"]);
+}
+
 function looksLikeRunArtifact(path: string, channel?: string): boolean {
   if (!path.includes("/")) return false;
   if (channel && ["video", "screenshot", "audio", "crash"].includes(channel)) return true;
@@ -367,6 +371,22 @@ async function closeArtifact(
   const channelRecords = run.evidence?.channels as
     | Record<string, { status: EvidenceChannelStatus }>
     | undefined;
+  // Browser traces are privileged archives. Older Runs may have captured one
+  // before this consent existed; keep the immutable local Run intact, but
+  // never copy the bytes into a portable TracePack without an explicit frozen
+  // browser-trace grant. This also makes legacy policy records fail closed.
+  if (channels.includes("trace") && !browserTraceRetentionAllowed(run)) {
+    return {
+      reference: {
+        path: request.path,
+        status: "redacted",
+        sources,
+        channels,
+        ...(expectedBytes === undefined ? {} : { expectedBytes }),
+        reason: "redacted-channel",
+      },
+    };
+  }
   if (channels.some((channel) => channelRecords?.[channel]?.status === "redacted")) {
     return {
       reference: {

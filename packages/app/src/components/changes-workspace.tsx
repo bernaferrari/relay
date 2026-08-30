@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo, createSignal, onMount } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { Button } from "@relay/ui/button";
 import {
   VERIFY_CHANGE_POLICY,
@@ -28,6 +28,7 @@ import { confirmAction } from "./confirm-dialog";
 import { Icon } from "./icon";
 import type { StatusChipTone } from "./status-chip";
 import { ProofDetail } from "./proof-detail";
+import { proofPlanSummary } from "./proof-plan-review";
 
 const statePresentation: Record<ChangeVerificationState, { label: string; tone: StatusChipTone }> =
   {
@@ -61,6 +62,7 @@ function changeTitle(proof: ChangeVerification): string {
 export function ChangesWorkspace(props: {
   onOpenRun: (runId: string) => void;
   onOpenMap: (appMapId: string) => void;
+  liveRefreshMs?: number;
 }) {
   const server = useServer();
   const initialProofId = new URLSearchParams(window.location.search).get("proof");
@@ -83,11 +85,14 @@ export function ChangesWorkspace(props: {
   const [draftErrors, setDraftErrors] = createSignal<ProofDraftErrors>({});
   const [createError, setCreateError] = createSignal<string | null>(null);
   const [workspaceChange, setWorkspaceChange] = createSignal<WorkspaceChangeContext | null>(null);
+  const [proofBaseRef, setProofBaseRef] = createSignal<string | null>(null);
   const [resolvingWorkspace, setResolvingWorkspace] = createSignal(false);
   const [proofActionBusy, setProofActionBusy] = createSignal<string | null>(null);
   const [proofActionError, setProofActionError] = createSignal<string | null>(null);
   const [execution, setExecution] = createSignal<ChangeProofExecutionSummary | null>(null);
+  const [inspecting, setInspecting] = createSignal(false);
   let page: HTMLElement | undefined;
+  let inspectionRequest = 0;
 
   function resetMobileScroll(): void {
     queueMicrotask(() => {
@@ -103,6 +108,51 @@ export function ChangesWorkspace(props: {
         : [proof, ...current];
     });
     setSelected(proof);
+  }
+
+  function clearSelectedProof(): void {
+    inspectionRequest += 1;
+    setSelectedId(null);
+    setSelected(null);
+    setHistory([]);
+    setPublications([]);
+    setPublicationOutbox([]);
+    setExecution(null);
+    setProofActionError(null);
+    setInspecting(false);
+  }
+
+  function primeSelectedProof(proofId: string): void {
+    const changed = selectedId() !== proofId;
+    setSelectedId(proofId);
+    if (!changed && selected()) return;
+    setSelected(proofs().find(({ id }) => id === proofId) ?? null);
+    setHistory([]);
+    setPublications([]);
+    setPublicationOutbox([]);
+    setExecution(null);
+    setProofActionError(null);
+  }
+
+  async function inspectProof(proofId: string): Promise<void> {
+    const request = ++inspectionRequest;
+    setInspecting(true);
+    try {
+      const result = await server.runAction("proof.inspect", { proofId, includeHistory: true });
+      if (selectedId() !== proofId || request !== inspectionRequest) return;
+      adoptProof(result.proof);
+      setHistory(result.history ?? []);
+      setPublications(result.publications);
+      setPublicationOutbox(result.publicationOutbox);
+      setExecution(result.execution ?? null);
+      setProofActionError(null);
+    } catch (cause) {
+      if (selectedId() === proofId && request === inspectionRequest) {
+        setError(humanError(cause, "Could not inspect this Proof"));
+      }
+    } finally {
+      if (request === inspectionRequest) setInspecting(false);
+    }
   }
 
   async function runProof(proof: ChangeVerification): Promise<void> {
@@ -124,9 +174,10 @@ export function ChangesWorkspace(props: {
   }
 
   function approvePlan(proof: ChangeVerification): void {
+    const plan = proofPlanSummary(proof);
     confirmAction({
       title: "Approve this Verification Plan?",
-      body: "Relay will freeze this exact build, journey, target, and policy plan before any target is controlled.",
+      body: `Relay will freeze ${plan.total} verification ${plan.total === 1 ? "cell" : "cells"} (${plan.required} required, ${plan.advisory} advisory), including the explicit pilot, before any target is controlled.`,
       confirmLabel: "Approve plan",
       tone: "default",
       onConfirm: async () => {
@@ -190,7 +241,8 @@ export function ChangesWorkspace(props: {
         },
       });
       adoptProof(result.replacement);
-      setSelectedId(result.replacement.id);
+      primeSelectedProof(result.replacement.id);
+      void inspectProof(result.replacement.id);
       setMobileDetailOpen(true);
       resetMobileScroll();
     } catch (cause) {
@@ -227,7 +279,7 @@ export function ChangesWorkspace(props: {
   }
 
   function invokePrimaryProofAction(proof: ChangeVerification): void {
-    const action = proofPrimaryAction(proof);
+    const action = proofPrimaryAction(proof, execution());
     if (!action || proofActionBusy()) return;
     if (action.kind === "approve-plan") approvePlan(proof);
     else if (action.kind === "run") void runProof(proof);
@@ -263,7 +315,12 @@ export function ChangesWorkspace(props: {
     setResolvingWorkspace(true);
     setCreateError(null);
     try {
-      const result = await server.runAction("workspace.change.inspect", baseRef ? { baseRef } : {});
+      const selectedBaseRef = baseRef ?? proofBaseRef();
+      const result = await server.runAction(
+        "workspace.change.inspect",
+        selectedBaseRef ? { baseRef: selectedBaseRef } : {},
+      );
+      if (baseRef) setProofBaseRef(baseRef);
       setWorkspaceChange(result.change);
     } catch (cause) {
       setWorkspaceChange(null);
@@ -276,6 +333,7 @@ export function ChangesWorkspace(props: {
   function openCreation(): void {
     setCreating(true);
     setCreateError(null);
+    setProofBaseRef(null);
     void resolveWorkspaceChange();
   }
 
@@ -303,48 +361,47 @@ export function ChangesWorkspace(props: {
         .split("\n")
         .map((criterion) => criterion.trim())
         .filter(Boolean);
-      const result = await server.runAction("proof.start", {
-        change: {
-          repository: change.repository,
-          baseSha: change.base.sha,
-          headSha: change.head.sha,
-          ...change.changeRef,
-          ...(normalized.pullRequest ? { pullRequest: Number(normalized.pullRequest) } : {}),
-          ...(normalized.summary
-            ? {
-                agentClaim: {
-                  summary: normalized.summary,
-                  acceptanceCriteria: criteria,
-                },
-              }
-            : {}),
-        },
+      const result = await server.runAction("proof.prepare", {
+        ...(proofBaseRef() ? { baseRef: proofBaseRef()! } : {}),
+        ...(normalized.pullRequest ? { pullRequest: Number(normalized.pullRequest) } : {}),
+        ...(normalized.summary
+          ? {
+              agentClaim: {
+                summary: normalized.summary,
+                acceptanceCriteria: criteria,
+              },
+            }
+          : {}),
         policy: VERIFY_CHANGE_POLICY,
       });
       setDraft({ ...emptyProofDraft });
       setCreating(false);
-      await refresh();
-      setSelectedId(result.proof.id);
+      await refresh(result.proof.id);
       setMobileDetailOpen(true);
       resetMobileScroll();
     } catch (cause) {
-      setCreateError(humanError(cause, "Could not start this Proof"));
+      setCreateError(humanError(cause, "Could not prepare this Proof"));
     } finally {
       setSubmitting(false);
     }
   }
 
-  async function refresh(): Promise<void> {
+  async function refresh(preferredProofId?: string): Promise<void> {
     setLoading(true);
     setError(null);
     try {
       const result = await server.runAction("proof.list", { limit: 100 });
       setProofs(result.proofs);
-      setSelectedId((current) =>
-        current && result.proofs.some(({ id }) => id === current)
-          ? current
-          : (result.proofs[0]?.id ?? null),
-      );
+      const requestedId = preferredProofId ?? selectedId();
+      const nextId =
+        requestedId && result.proofs.some(({ id }) => id === requestedId)
+          ? requestedId
+          : (result.proofs[0]?.id ?? null);
+      if (!nextId) clearSelectedProof();
+      else {
+        primeSelectedProof(nextId);
+        await inspectProof(nextId);
+      }
     } catch (cause) {
       setError(humanError(cause, "Could not load Proofs"));
     } finally {
@@ -352,37 +409,14 @@ export function ChangesWorkspace(props: {
     }
   }
 
-  let inspectedId: string | null = null;
   createEffect(() => {
     const proofId = selectedId();
-    if (!proofId) {
-      inspectedId = null;
-      setSelected(null);
-      setHistory([]);
-      setPublications([]);
-      setPublicationOutbox([]);
-      setExecution(null);
-      return;
-    }
-    const immediate = proofs().find(({ id }) => id === proofId) ?? null;
-    setSelected(immediate);
-    setExecution(null);
-    if (inspectedId === proofId) return;
-    inspectedId = proofId;
-    void server
-      .runAction("proof.inspect", { proofId, includeHistory: true })
-      .then((result) => {
-        if (selectedId() !== proofId) return;
-        setSelected(result.proof);
-        setHistory(result.history ?? []);
-        setPublications(result.publications);
-        setPublicationOutbox(result.publicationOutbox);
-        setExecution(result.execution ?? null);
-        setProofActionError(null);
-      })
-      .catch((cause) => {
-        if (selectedId() === proofId) setError(humanError(cause, "Could not inspect this Proof"));
-      });
+    const executionStatus = execution()?.status;
+    if (!proofId || (executionStatus !== "queued" && executionStatus !== "running")) return;
+    const timer = window.setInterval(() => {
+      if (!inspecting()) void inspectProof(proofId);
+    }, props.liveRefreshMs ?? 2_000);
+    onCleanup(() => window.clearInterval(timer));
   });
 
   onMount(() => void refresh());
@@ -416,14 +450,14 @@ export function ChangesWorkspace(props: {
         <div class="flex shrink-0 items-center gap-2 max-[620px]:self-stretch">
           <Show when={!creating()}>
             <Button variant="primary" onClick={openCreation}>
-              Start a Proof
+              Prepare a Proof
             </Button>
           </Show>
           <button
             type="button"
             class={productIconButton}
             aria-label="Refresh Proofs"
-            disabled={loading()}
+            disabled={loading() || inspecting()}
             onClick={() => void refresh()}
           >
             <Icon name="refresh" size={16} />
@@ -493,7 +527,7 @@ export function ChangesWorkspace(props: {
                   builds, and incomplete evidence stay visible instead of becoming an invented pass.
                 </p>
                 <Button variant="primary" onClick={openCreation}>
-                  Start a Proof
+                  Prepare a Proof
                 </Button>
               </div>
             </Show>
@@ -523,7 +557,8 @@ export function ChangesWorkspace(props: {
                     )}
                     aria-current={active() ? "page" : undefined}
                     onClick={() => {
-                      setSelectedId(proof.id);
+                      primeSelectedProof(proof.id);
+                      void inspectProof(proof.id);
                       setMobileDetailOpen(true);
                       resetMobileScroll();
                     }}
@@ -589,7 +624,7 @@ export function ChangesWorkspace(props: {
                   publications={publications()}
                   publicationOutbox={publicationOutbox()}
                   execution={execution()}
-                  primaryAction={proofPrimaryAction(proof())}
+                  primaryAction={proofPrimaryAction(proof(), execution())}
                   actionBusy={proofActionBusy()}
                   actionError={proofActionError()}
                   canCancel={proofCanCancel(proof())}

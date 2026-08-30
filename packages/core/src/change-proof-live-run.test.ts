@@ -7,9 +7,23 @@ import {
   executeLiveChangeProof,
 } from "./change-proof-live-run.js";
 import type { PersistedRun } from "./runs.js";
+import { canonicalSha256 } from "./canonical-json.js";
+import { compileExecutionRisk } from "./execution-risk-compiler.js";
 
 const headSha = "2".repeat(40);
 const digest = (character: string) => `sha256:${character.repeat(64)}` as const;
+const safeExecutionRisk = {
+  schemaVersion: 1 as const,
+  level: "safe" as const,
+  reasons: [],
+  externalEffects: [],
+  confirmation: "none" as const,
+  expectedAppBoundaries: [],
+  maximumActions: 0,
+  maximumDurationMs: 0,
+  cleanupRequired: false,
+};
+const safeExecutionRiskDigest = canonicalSha256(safeExecutionRisk);
 
 function targetCase(id: string): ChangeVerification["selection"]["targetCases"][number] {
   return {
@@ -91,6 +105,8 @@ function proof(): ChangeVerification {
           requirement: "required",
           selectionReason: "Chromium Arabic is required coverage.",
           dimensions: { locale: "ar" },
+          executionRisk: safeExecutionRisk,
+          executionRiskDigest: safeExecutionRiskDigest,
           cleanupRequired: false,
         },
         {
@@ -101,6 +117,8 @@ function proof(): ChangeVerification {
           requirement: "required",
           selectionReason: "WebKit Arabic is required coverage.",
           dimensions: { locale: "ar" },
+          executionRisk: safeExecutionRisk,
+          executionRiskDigest: safeExecutionRiskDigest,
           cleanupRequired: false,
         },
       ],
@@ -199,7 +217,7 @@ function failedPersistedRun(): PersistedRun {
   };
 }
 
-function passedPersistedRun(): PersistedRun {
+function passedPersistedRun(withCleanup = false): PersistedRun {
   const run = failedPersistedRun();
   run.id = "persisted-pass";
   run.status = "ok";
@@ -231,11 +249,44 @@ function passedPersistedRun(): PersistedRun {
     channels: {},
     events: [],
   } as never;
+  if (withCleanup) {
+    const planArtifact = run.artifacts.find((artifact) => artifact.kind === "app-map-test-plan");
+    assert.ok(planArtifact);
+    const plan = planArtifact.data as {
+      rootRecipeId: string;
+      recipes: Record<
+        string,
+        { id?: string; title?: string; parameters?: unknown[]; steps: unknown[] }
+      >;
+    };
+    plan.recipes[plan.rootRecipeId]!.steps = [
+      {
+        kind: "module",
+        recipeId: "cleanup-routine",
+        check: {
+          id: "localized",
+          title: "Settings are displayed in Arabic",
+          cleanup: {
+            recipeId: "cleanup-routine",
+            terminalScreenId: "settings",
+            onCancel: "skip",
+          },
+        },
+      },
+    ];
+    plan.recipes["cleanup-routine"] = {
+      id: "cleanup-routine",
+      title: "Cleanup",
+      parameters: [],
+      steps: [],
+    };
+  }
   return run;
 }
 
 function proofWithRequiredCleanup(): ChangeVerification {
   const base = proof();
+  const cleanupRisk = { ...safeExecutionRisk, cleanupRequired: true };
   return {
     ...base,
     selection: {
@@ -244,7 +295,12 @@ function proofWithRequiredCleanup(): ChangeVerification {
         ...targetCase,
         cleanupRequired: true,
       })),
-      cells: base.selection.cells!.map((cell) => ({ ...cell, cleanupRequired: true })),
+      cells: base.selection.cells!.map((cell) => ({
+        ...cell,
+        executionRisk: cleanupRisk,
+        executionRiskDigest: canonicalSha256(cleanupRisk),
+        cleanupRequired: true,
+      })),
     },
   };
 }
@@ -257,28 +313,9 @@ function persistedRunWithCleanupArtifact(
     status: string;
   }> = {},
 ): PersistedRun {
-  const run = passedPersistedRun();
+  const run = passedPersistedRun(true);
   const planArtifact = run.artifacts.find((artifact) => artifact.kind === "app-map-test-plan");
   assert.ok(planArtifact);
-  const plan = planArtifact.data as {
-    rootRecipeId: string;
-    recipes: Record<string, { steps: unknown[] }>;
-  };
-  plan.recipes[plan.rootRecipeId]!.steps = [
-    {
-      kind: "module",
-      recipeId: "cleanup-routine",
-      check: {
-        id: "localized",
-        title: "Settings are displayed in Arabic",
-        cleanup: {
-          recipeId: "cleanup-routine",
-          terminalScreenId: "settings",
-          onCancel: "skip",
-        },
-      },
-    },
-  ];
   run.artifacts.push({
     kind: "campaign-check-cleanup",
     capturedAt: 321,
@@ -291,6 +328,24 @@ function persistedRunWithCleanupArtifact(
     },
   });
   return run;
+}
+
+function proofForPersistedRun(run: PersistedRun, base: ChangeVerification): ChangeVerification {
+  const planArtifact = run.artifacts.find((artifact) => artifact.kind === "app-map-test-plan");
+  assert.ok(planArtifact);
+  const risk = compileExecutionRisk({ kind: "compiled-test", test: planArtifact.data as never });
+  return {
+    ...base,
+    selection: {
+      ...base.selection,
+      cells: base.selection.cells!.map((cell) => ({
+        ...cell,
+        executionRisk: risk,
+        executionRiskDigest: canonicalSha256(risk),
+        cleanupRequired: risk.cleanupRequired,
+      })),
+    },
+  };
 }
 
 function persistedRunFor(
@@ -418,28 +473,31 @@ test("persisted Run projection accepts complete recorded selector proof", async 
 });
 
 test("required cleanup without a recorded restoration cannot prove a case", async () => {
-  const value = proofWithRequiredCleanup();
+  const run = passedPersistedRun(true);
+  const value = proofForPersistedRun(run, proofWithRequiredCleanup());
   const projected = await changeProofCaseResultFromPersistedRun({
     proof: value,
-    run: passedPersistedRun(),
+    run,
   });
   assert.equal(projected.cleanup, "unproved");
   assert.equal(projected.outcome, "insufficient-evidence");
 });
 
 test("persisted Proof accepts exactly one cleanup artifact for the frozen check", async () => {
+  const run = persistedRunWithCleanupArtifact();
   const projected = await changeProofCaseResultFromPersistedRun({
-    proof: proofWithRequiredCleanup(),
-    run: persistedRunWithCleanupArtifact(),
+    proof: proofForPersistedRun(run, proofWithRequiredCleanup()),
+    run,
   });
   assert.equal(projected.cleanup, "restored");
   assert.equal(projected.outcome, "passed");
 });
 
 test("persisted Proof does not use an unrelated cleanup artifact", async () => {
+  const run = persistedRunWithCleanupArtifact({ checkId: "unrelated-check" });
   const projected = await changeProofCaseResultFromPersistedRun({
-    proof: proofWithRequiredCleanup(),
-    run: persistedRunWithCleanupArtifact({ checkId: "unrelated-check" }),
+    proof: proofForPersistedRun(run, proofWithRequiredCleanup()),
+    run,
   });
   assert.equal(projected.cleanup, "unproved");
   assert.equal(projected.outcome, "insufficient-evidence");
@@ -451,7 +509,7 @@ test("persisted Proof does not use duplicate cleanup artifacts", async () => {
   assert.ok(cleanup);
   run.artifacts.push(structuredClone(cleanup));
   const projected = await changeProofCaseResultFromPersistedRun({
-    proof: proofWithRequiredCleanup(),
+    proof: proofForPersistedRun(run, proofWithRequiredCleanup()),
     run,
   });
   assert.equal(projected.cleanup, "unproved");

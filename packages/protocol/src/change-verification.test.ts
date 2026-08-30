@@ -198,6 +198,40 @@ test("approved v2 Proofs without cells migrate to review before execution or mer
   assert.equal(migrated.smallestNextVerification?.kind, "review");
 });
 
+test("v2 Proofs created before reviewed cell classification remain inspectable", () => {
+  const value = fixture({
+    state: "proved",
+    decision: "proved",
+    runIds: ["run-1"],
+    evidenceDigests: [digest],
+  });
+  const {
+    requirement: _requirement,
+    selectionReason: _selectionReason,
+    dimensions: _dimensions,
+    ...legacyCell
+  } = value.selection.cells![0]!;
+  const migrated = parseChangeVerification({
+    ...value,
+    selection: { ...value.selection, cells: [legacyCell] },
+  });
+
+  assert.equal(migrated.state, "needs-review");
+  assert.equal(migrated.decision, "needs-review");
+  assert.equal(migrated.planApproval, undefined);
+  assert.equal(migrated.policyDigest, undefined);
+  assert.equal(migrated.planDigest, undefined);
+  assert.equal(migrated.decisionDigest, undefined);
+  assert.equal(migrated.selection.cells?.[0]?.requirement, "required");
+  assert.deepEqual(migrated.selection.cells?.[0]?.dimensions, {
+    locale: "ar",
+    viewport: "compact",
+  });
+  assert.match(migrated.selection.cells?.[0]?.selectionReason ?? "", /predates reviewed/u);
+  assert.equal(migrated.lastMutation.action, "legacy-plan-cell-migration");
+  assert.equal(migrated.smallestNextVerification?.kind, "review");
+});
+
 test("a Proof can retain an unselected target without forcing Cartesian cells", () => {
   const value = fixture();
   const targetCase = value.selection.targetCases[0]!;

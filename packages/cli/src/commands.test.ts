@@ -29,15 +29,31 @@ test("every registry operation is mapped or excluded exactly once", () => {
   );
 });
 
-test("friendly command paths are unique", () => {
+test("friendly command signatures are unique", () => {
   const paths = mappedCommandDescriptors.flatMap((descriptor) =>
-    descriptor.paths.map((candidate) => candidate.command),
+    descriptor.paths.map(
+      (candidate) => `${candidate.command} ${(candidate.arguments ?? []).join(" ")}`,
+    ),
   );
-  paths.push(...cliResourceDescriptors.map((descriptor) => descriptor.path.command));
+  paths.push(
+    ...cliResourceDescriptors.map(
+      (descriptor) => `${descriptor.path.command} ${(descriptor.path.arguments ?? []).join(" ")}`,
+    ),
+  );
   assert.equal(new Set(paths).size, paths.length);
 });
 
 test("Proof lifecycle commands resolve to canonical operations", () => {
+  assert.deepEqual(resolveCommand(["prove"], { baseRef: "origin/main" }), {
+    operationId: "proof.prepare",
+    commandPath: "prove",
+    input: { baseRef: "origin/main" },
+  });
+  assert.deepEqual(resolveCommand(["proof", "prepare"]), {
+    operationId: "proof.prepare",
+    commandPath: "proof prepare",
+    input: {},
+  });
   assert.deepEqual(resolveCommand(["proof", "start"]), {
     operationId: "proof.start",
     commandPath: "proof start",

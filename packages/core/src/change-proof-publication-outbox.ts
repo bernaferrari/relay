@@ -118,6 +118,29 @@ function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
+/** Project the immutable provider request out of a durable outbox row. The
+ * worker must not pass mutable lifecycle fields (lease, retry counters, or a
+ * receipt) through the provider boundary. */
+export function changeProofPublicationIntentFromOutboxRecord(
+  record: ChangeProofPublicationOutboxRecord,
+): ChangeProofPublicationIntent {
+  const parsed = changeProofPublicationOutboxRecordSchema.parse(record);
+  return changeProofPublicationIntentSchema.parse({
+    schemaVersion: parsed.schemaVersion,
+    id: parsed.id,
+    organizationId: parsed.organizationId,
+    projectId: parsed.projectId,
+    proofId: parsed.proofId,
+    proofVersion: parsed.proofVersion,
+    provider: parsed.provider,
+    repository: parsed.repository,
+    headSha: parsed.headSha,
+    externalId: parsed.externalId,
+    check: parsed.check,
+    createdAt: parsed.createdAt,
+  });
+}
+
 function scopeOf(value: ChangeProofPublicationScope): ChangeProofPublicationScope {
   return {
     organizationId: nonEmpty(value.organizationId, "organizationId"),
@@ -480,6 +503,61 @@ export async function heartbeatChangeProofPublicationOutbox(
   return withControlStore((store) => heartbeatChangeProofPublicationOutboxInStore(store, input));
 }
 
+/** Keep one exact claimed publication alive while its provider call is in
+ * flight. Heartbeats are serialized so a late tick cannot race the terminal
+ * receipt/retry transition, and a lost lease fails the provider operation
+ * closed instead of allowing a stale worker to publish. */
+export async function withChangeProofPublicationLeaseHeartbeat<T>(
+  input: ChangeProofPublicationScope & {
+    id: string;
+    workerId: string;
+    leaseToken: string;
+    leaseMs?: number;
+    heartbeatMs?: number;
+  },
+  operation: () => Promise<T>,
+): Promise<T> {
+  const leaseMs = positiveInteger(
+    input.leaseMs ?? DEFAULT_CHANGE_PROOF_PUBLICATION_LEASE_MS,
+    "leaseMs",
+    24 * 60 * 60_000,
+  );
+  const heartbeatMs = positiveInteger(
+    input.heartbeatMs ?? Math.max(1, Math.floor(leaseMs / 2)),
+    "heartbeatMs",
+    24 * 60 * 60_000,
+  );
+  let heartbeatFailure: unknown;
+  let pendingHeartbeat = Promise.resolve();
+  const heartbeat = setInterval(() => {
+    pendingHeartbeat = pendingHeartbeat.then(async () => {
+      if (heartbeatFailure !== undefined) return;
+      try {
+        await heartbeatChangeProofPublicationOutbox({
+          organizationId: input.organizationId,
+          projectId: input.projectId,
+          id: input.id,
+          workerId: input.workerId,
+          leaseToken: input.leaseToken,
+          leaseMs,
+        });
+      } catch (error) {
+        heartbeatFailure = error;
+      }
+    });
+  }, heartbeatMs);
+  heartbeat.unref?.();
+  try {
+    const result = await operation();
+    await pendingHeartbeat;
+    if (heartbeatFailure !== undefined) throw heartbeatFailure;
+    return result;
+  } finally {
+    clearInterval(heartbeat);
+    await pendingHeartbeat;
+  }
+}
+
 export function markChangeProofPublicationRetryInStore(
   store: ControlStore,
   input: ChangeProofPublicationOutboxFailureInput,
@@ -635,12 +713,26 @@ export async function recoverChangeProofPublicationOutbox(
  * the existing `publishChangeProofToGitHub` adapter; this module owns only
  * durable claim/retry/reconciliation state and never receives credentials. */
 export async function runNextChangeProofPublicationOutbox(
-  input: ClaimChangeProofPublicationInput & { publish: ChangeProofPublicationExecutor },
+  input: ClaimChangeProofPublicationInput & {
+    publish: ChangeProofPublicationExecutor;
+    heartbeatMs?: number;
+  },
 ): Promise<ChangeProofPublicationOutboxWorkerResult> {
   const claimed = await claimChangeProofPublicationOutbox(input);
   if (!claimed) return { status: "idle" };
   try {
-    const receipt = await input.publish(clone(claimed));
+    const receipt = await withChangeProofPublicationLeaseHeartbeat(
+      {
+        organizationId: claimed.organizationId,
+        projectId: claimed.projectId,
+        id: claimed.id,
+        workerId: claimed.lease!.workerId,
+        leaseToken: claimed.lease!.token,
+        ...(input.leaseMs !== undefined ? { leaseMs: input.leaseMs } : {}),
+        ...(input.heartbeatMs !== undefined ? { heartbeatMs: input.heartbeatMs } : {}),
+      },
+      () => input.publish(changeProofPublicationIntentFromOutboxRecord(claimed)),
+    );
     const published = await markChangeProofPublicationPublished({
       organizationId: claimed.organizationId,
       projectId: claimed.projectId,

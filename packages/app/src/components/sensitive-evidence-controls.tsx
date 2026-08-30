@@ -16,6 +16,12 @@ const CHANNELS: Array<{
     description: "Request and response payloads, capped at 256 KB per browser response.",
   },
   {
+    id: "browser-trace",
+    label: "Browser traces",
+    description:
+      "Playwright trace archives, which may contain page pixels, text, and request metadata.",
+  },
+  {
     id: "audio",
     label: "Audio probe",
     description: "Time-bucketed device audio levels when the target adapter supports probing.",

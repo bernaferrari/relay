@@ -166,7 +166,7 @@ export async function inspectWorkspaceChange(
       ? { sha: mergeBaseSha, label: selectedBase!.label }
       : undefined;
   const changeRef =
-    selectedBase && mergeBaseSha && /^[a-f0-9]{40}$/u.test(mergeBaseSha)
+    selectedBase && mergeBaseSha && /^[a-f0-9]{40}$/u.test(mergeBaseSha) && mergeBaseSha !== headSha
       ? {
           baseTipSha: selectedBase.sha,
           mergeBaseSha,

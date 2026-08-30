@@ -9,7 +9,8 @@ Relay is the local-first trust layer for turning AI-authored changes into reprod
 proof across web, Android, and iOS. It selects explained user journeys, binds exact
 source/build/target identities, replays reviewed Tests, and retains immutable evidence—such as
 screenshots, UI trees, actions, assertions, and failure provenance—for a deterministic merge
-decision. End-to-end build and execution orchestration remains explicit work in progress; terminal
+decision. Proof preparation, cell execution, restart recovery, and terminal decision ownership live
+on the server. Automatic production-build ingestion remains explicit work in progress; terminal
 Proof publication is durable and opt-in through the server's GitHub Checks configuration.
 
 The loop Relay exists to close:
@@ -31,7 +32,8 @@ Where the loop stands today:
 | -------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
 | Immutable, versioned Proof lifecycle; explained Verification Plan compiler; authoring, replay, repair, evidence, and source-revision binding | **Shipped** |
 | Active-workspace diff resolution and durable, exact-revision GitHub check publication                                                        | **Shipped** |
-| Automatic build ingestion and server-owned execution expansion                                                                               | **Pending** |
+| Server-owned Proof preparation, pilot/required-cell execution, restart recovery, and deterministic decision                                  | **Shipped** |
+| Automatic production-build ingestion                                                                                                         | **Pending** |
 
 [docs/PR_PROOF_CI.md](./docs/PR_PROOF_CI.md) shows the copy-paste CI wiring available today.
 

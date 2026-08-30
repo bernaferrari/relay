@@ -42,6 +42,7 @@ const proof = {
       {
         appMapId: "settings",
         testId: "settings-language",
+        appMapRevision: 3,
         reason: "The changed localization resource is bound to this Test.",
         confidence: "definite",
       },
@@ -86,6 +87,37 @@ const proof = {
         required: true,
       },
     ],
+    cells: [
+      {
+        id: "cell-ar-pilot",
+        journey: { appMapId: "settings", testId: "settings-language", appMapRevision: 3 },
+        targetCaseId: "chromium-compact-ar",
+        buildId: "web-production",
+        requirement: "required",
+        selectionReason: "The changed localization resource is bound to this Test.",
+        dimensions: { locale: "ar" },
+        routeVariantDigest: digest,
+        evidencePolicyDigest: digest,
+        executionRiskDigest: digest,
+        estimatedDurationMs: 45_000,
+        cleanupRequired: true,
+      },
+      {
+        id: "cell-ar-advisory",
+        journey: { appMapId: "settings", testId: "settings-language", appMapRevision: 3 },
+        targetCaseId: "chromium-compact-ar",
+        buildId: "web-production",
+        requirement: "advisory",
+        selectionReason: "Visual evidence adds useful confidence without blocking merge.",
+        dimensions: { locale: "ar", lens: "visual" },
+        routeVariantDigest: digest,
+        evidencePolicyDigest: digest,
+        executionRiskDigest: digest,
+        estimatedDurationMs: 75_000,
+        cleanupRequired: true,
+      },
+    ],
+    pilotCellId: "cell-ar-pilot",
   },
   planApproval: {
     decisionId: "decision-1",
@@ -94,6 +126,9 @@ const proof = {
     reason: "Reviewed exact plan.",
   },
   policy: { id: "relay.default", version: 3 },
+  policyDigest: digest,
+  planDigest: digest,
+  decisionDigest: digest,
   runIds: ["run-rtl-failed"],
   evidenceDigests: [digest],
   firstCausalFailure: {
@@ -199,8 +234,21 @@ test("presents one Change-first Proof without internal orchestration vocabulary"
   await vi.waitFor(() => expect(root.textContent).toContain("Add Arabic Settings support"));
   expect(root.textContent).toContain("Prove a change");
   expect(root.textContent).toContain("Rejected");
+  expect(root.textContent).toContain("Verification plan");
+  expect(root.textContent).toContain("2 verification cells · About 2 minutes");
+  expect(root.textContent).toContain("1 required · 1 advisory");
+  expect(root.textContent).toContain("Pilot");
+  expect(root.textContent).toContain("Required");
+  expect(root.textContent).toContain("Advisory");
+  expect(root.textContent).toContain("cell-ar-pilot");
+  expect(root.textContent).toContain("cell-ar-advisory");
   expect(root.textContent).toContain("The changed localization resource is bound to this Test.");
+  expect(root.textContent).toContain(
+    "Visual evidence adds useful confidence without blocking merge.",
+  );
   expect(root.textContent).toContain("chromium · 390 × 844 · ar");
+  expect(root.textContent).toContain("Cleanup must be proved");
+  expect(root.textContent).toContain("Technical plan identity");
   expect(root.textContent).toContain("Primary action overlaps the Arabic description by 22 px.");
   expect(root.textContent).toContain("Physical iOS is advisory for this repository.");
   await vi.waitFor(() => expect(root.textContent).toContain("GitHub · failure"));
@@ -211,6 +259,10 @@ test("presents one Change-first Proof without internal orchestration vocabulary"
     "Repair the first causal regression, then create a new Proof for the new head.",
   );
   expect(root.textContent).not.toMatch(/campaign|lease|raw operation/i);
+  const planCells = root.querySelector<HTMLOListElement>("[data-proof-plan-cells]");
+  expect(planCells?.tagName).toBe("OL");
+  expect(planCells?.children).toHaveLength(2);
+  expect(planCells?.querySelector("dl")?.className).toContain("max-[700px]:grid-cols-1");
 
   [...root.querySelectorAll<HTMLButtonElement>("button")]
     .find((button) => button.textContent?.includes("Open run-rtl-failed"))
@@ -246,12 +298,30 @@ test("runs an approved Proof through one server-owned outcome", async () => {
     state: "running-pilot",
     lastMutation: { ...readyProof.lastMutation, previousVersion: 2, version: 3 },
   } as unknown as ChangeVerification;
+  const provedProof = {
+    ...runningProof,
+    version: 5,
+    state: "proved",
+    decision: "proved",
+    runIds: ["run-pilot", "run-advisory"],
+    smallestNextVerification: {
+      kind: "none",
+      reason: "No further verification is required for this exact change.",
+    },
+    lastMutation: { ...runningProof.lastMutation, previousVersion: 4, version: 5 },
+  } as unknown as ChangeVerification;
+  let runStarted = false;
+  const liveInspections: Array<(value: unknown) => void> = [];
   mocks.runAction.mockImplementation(async (operationId: string) => {
     if (operationId === "proof.list") return { proofs: [readyProof] };
     if (operationId === "proof.inspect") {
+      if (runStarted) {
+        return new Promise((resolve) => liveInspections.push(resolve));
+      }
       return { proof: readyProof, history: [readyProof], publications: [], publicationOutbox: [] };
     }
     if (operationId === "proof.run") {
+      runStarted = true;
       return {
         proof: runningProof,
         execution: {
@@ -259,7 +329,7 @@ test("runs an approved Proof through one server-owned outcome", async () => {
           proofId: proof.id,
           status: "running",
           cursor: 0,
-          total: 1,
+          total: 2,
           runIds: [],
           deadlineAt: Date.now() + 60_000,
           nextAction: "inspect",
@@ -271,7 +341,10 @@ test("runs an approved Proof through one server-owned outcome", async () => {
 
   const root = document.createElement("div");
   document.body.append(root);
-  const dispose = render(() => <ChangesWorkspace onOpenRun={vi.fn()} onOpenMap={vi.fn()} />, root);
+  const dispose = render(
+    () => <ChangesWorkspace onOpenRun={vi.fn()} onOpenMap={vi.fn()} liveRefreshMs={10} />,
+    root,
+  );
 
   await vi.waitFor(() => expect(root.textContent).toContain("Run pilot"));
   [...root.querySelectorAll<HTMLButtonElement>("button")]
@@ -285,9 +358,83 @@ test("runs an approved Proof through one server-owned outcome", async () => {
       wait: false,
     }),
   );
-  await vi.waitFor(() => expect(root.textContent).toContain("Resume pilot"));
-  expect(root.textContent).toContain("Running required verification");
-  expect(root.textContent).toContain("0 of 1 required case complete");
+  await vi.waitFor(() => expect(root.textContent).toContain("Running verification"));
+  expect(root.textContent).not.toContain("Resume pilot");
+  expect(root.textContent).toContain(
+    "0 of 2 verification cells complete · 1 required · 1 advisory",
+  );
+
+  await vi.waitFor(() => expect(liveInspections).toHaveLength(1));
+  liveInspections.shift()!({
+    proof: runningProof,
+    history: [readyProof, runningProof],
+    publications: [],
+    publicationOutbox: [],
+    execution: {
+      id: "proof-execution",
+      proofId: proof.id,
+      status: "running",
+      cursor: 1,
+      total: 2,
+      runIds: ["run-pilot"],
+      deadlineAt: Date.now() + 60_000,
+      nextAction: "inspect",
+    },
+  });
+  await vi.waitFor(() => expect(root.textContent).toContain("1 of 2 verification cells complete"));
+  expect(root.textContent).not.toContain("Resume pilot");
+
+  await vi.waitFor(() => expect(liveInspections).toHaveLength(1));
+  liveInspections.shift()!({
+    proof: provedProof,
+    history: [readyProof, runningProof, provedProof],
+    publications: [],
+    publicationOutbox: [],
+    execution: {
+      id: "proof-execution",
+      proofId: proof.id,
+      status: "completed",
+      cursor: 2,
+      total: 2,
+      runIds: ["run-pilot", "run-advisory"],
+      deadlineAt: Date.now() + 60_000,
+      nextAction: "complete",
+    },
+  });
+  await vi.waitFor(() => expect(root.textContent).toContain("Verification complete"));
+  expect(root.textContent).toContain("2 of 2 verification cells complete");
+
+  dispose();
+  root.remove();
+});
+
+test("manual refresh re-inspects the selected Proof instead of keeping a stale detail", async () => {
+  let inspectCount = 0;
+  mocks.runAction.mockImplementation(async (operationId: string) => {
+    if (operationId === "proof.list") return { proofs: [proof] };
+    if (operationId === "proof.inspect") {
+      inspectCount += 1;
+      return {
+        proof: {
+          ...proof,
+          residualRisk: [inspectCount === 1 ? "Initial risk." : "Refreshed risk."],
+        },
+        history: [proof],
+        publications: [],
+        publicationOutbox: [],
+      };
+    }
+    throw new Error(`unexpected ${operationId}`);
+  });
+
+  const root = document.createElement("div");
+  document.body.append(root);
+  const dispose = render(() => <ChangesWorkspace onOpenRun={vi.fn()} onOpenMap={vi.fn()} />, root);
+
+  await vi.waitFor(() => expect(root.textContent).toContain("Initial risk."));
+  root.querySelector<HTMLButtonElement>('button[aria-label="Refresh Proofs"]')?.click();
+  await vi.waitFor(() => expect(root.textContent).toContain("Refreshed risk."));
+  expect(inspectCount).toBe(2);
 
   dispose();
   root.remove();
@@ -357,7 +504,7 @@ test("starts from the active workspace and never asks humans to type revision pl
         },
       };
     }
-    if (operationId === "proof.start") {
+    if (operationId === "proof.prepare") {
       await startBarrier;
       created = true;
       return { proof: createdProof, receipt: createdProof.lastMutation, disposition: "created" };
@@ -379,7 +526,7 @@ test("starts from the active workspace and never asks humans to type revision pl
 
   await vi.waitFor(() => expect(root.textContent).toContain("No Proofs yet"));
   [...root.querySelectorAll<HTMLButtonElement>("button")]
-    .find((button) => button.textContent?.trim() === "Start a Proof")
+    .find((button) => button.textContent?.trim() === "Prepare a Proof")
     ?.click();
   await vi.waitFor(() => expect(root.textContent).toContain("Add Arabic Settings support"));
   expect(root.textContent).toContain("feature/arabic-settings · 3 changed files");
@@ -392,7 +539,7 @@ test("starts from the active workspace and never asks humans to type revision pl
   expect(root.querySelector("#proof-headSha")).toBeNull();
   expect(
     [...root.querySelectorAll<HTMLButtonElement>("button")].find(
-      (button) => button.textContent?.trim() === "Start Proof",
+      (button) => button.textContent?.trim() === "Prepare Proof",
     )?.disabled,
   ).toBe(true);
 
@@ -405,31 +552,26 @@ test("starts from the active workspace and never asks humans to type revision pl
   enterValue(root, "proof-pullRequest", "184");
   enterValue(root, "proof-summary", "Add Arabic Settings support");
   enterValue(root, "proof-acceptanceCriteria", "Settings render in Arabic without RTL overlap");
-  const form = root.querySelector<HTMLFormElement>('form[aria-label="Start a Proof"]')!;
+  const form = root.querySelector<HTMLFormElement>('form[aria-label="Prepare a Proof"]')!;
   form.dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true }));
   form.dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true }));
 
   await vi.waitFor(() =>
-    expect(mocks.runAction).toHaveBeenCalledWith("proof.start", {
-      change: {
-        repository: "acme/settings",
-        baseSha: "a".repeat(40),
-        headSha: "b".repeat(40),
-        pullRequest: 184,
-        agentClaim: {
-          summary: "Add Arabic Settings support",
-          acceptanceCriteria: ["Settings render in Arabic without RTL overlap"],
-        },
+    expect(mocks.runAction).toHaveBeenCalledWith("proof.prepare", {
+      pullRequest: 184,
+      agentClaim: {
+        summary: "Add Arabic Settings support",
+        acceptanceCriteria: ["Settings render in Arabic without RTL overlap"],
       },
-      policy: { id: "relay.verify-change", version: 1 },
+      policy: { id: "relay.verify-change", version: 2 },
     }),
   );
   expect(
-    mocks.runAction.mock.calls.filter(([operationId]) => operationId === "proof.start"),
+    mocks.runAction.mock.calls.filter(([operationId]) => operationId === "proof.prepare"),
   ).toHaveLength(1);
   expect(
     [...root.querySelectorAll<HTMLButtonElement>("button")].find(
-      (button) => button.textContent?.trim() === "Starting…",
+      (button) => button.textContent?.trim() === "Preparing…",
     )?.disabled,
   ).toBe(true);
 

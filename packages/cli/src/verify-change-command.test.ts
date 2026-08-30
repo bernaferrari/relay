@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { ChangeVerification, OperationId } from "@relay/protocol";
+import { VERIFY_CHANGE_POLICY, type ChangeVerification, type OperationId } from "@relay/protocol";
+import {
+  canonicalSha256,
+  compileVerificationPlan,
+  proofStartInputFromVerificationPlan,
+  verificationCellId,
+} from "@relay/core";
 import { runVerifyChangeCommand, type VerifyChangeGitRunner } from "./verify-change-command.js";
 
 const baseSha = "a".repeat(40);
@@ -91,6 +97,85 @@ function executableConfig() {
         required: true,
       },
     ],
+  };
+}
+
+const safeExecutionRisk = {
+  schemaVersion: 1 as const,
+  level: "safe" as const,
+  reasons: [],
+  externalEffects: [],
+  confirmation: "none" as const,
+  expectedAppBoundaries: [],
+  cleanupRequired: false,
+};
+
+function preparedPlan(
+  config: ReturnType<typeof reviewedConfig> | ReturnType<typeof executableConfig>,
+) {
+  const plan = compileVerificationPlan({
+    change: {
+      repository: config.repository,
+      baseSha,
+      headSha,
+      baseTipSha: baseSha,
+      mergeBaseSha: baseSha,
+      requestedHeadSha: headSha,
+      testedSha: headSha,
+      testedKind: "head",
+      repositoryId: config.repository,
+    },
+    changed: {
+      files: ["src/settings/Language.tsx"],
+      symbols: [],
+      routes: [],
+      resources: [],
+      localizationKeys: config.changed.localizationKeys,
+      apiContracts: [],
+    },
+    associations: config.associations,
+    builds: config.builds,
+    targetCases: config.targetCases,
+    policy: VERIFY_CHANGE_POLICY,
+  });
+  const cells = plan.selection.cells?.map((cell) => ({
+    ...cell,
+    id: verificationCellId({
+      appMapId: cell.journey.appMapId,
+      testId: cell.journey.testId,
+      appMapRevision: 7,
+      targetCaseId: cell.targetCaseId,
+      buildId: cell.buildId,
+    }),
+    journey: { ...cell.journey, appMapRevision: 7 },
+    executionRisk: safeExecutionRisk,
+    executionRiskDigest: canonicalSha256(safeExecutionRisk),
+    cleanupRequired: false,
+  }));
+  const idMap = new Map(
+    (plan.selection.cells ?? []).map((cell, index) => [cell.id, cells?.[index]?.id ?? cell.id]),
+  );
+  const pilotCellId = plan.selection.pilotCellId
+    ? idMap.get(plan.selection.pilotCellId)
+    : undefined;
+  return {
+    ...plan,
+    selection: {
+      ...plan.selection,
+      affectedJourneys: plan.selection.affectedJourneys.map((journey) => ({
+        ...journey,
+        appMapRevision: 7,
+      })),
+      cells,
+      ...(pilotCellId ? { pilotCellId } : {}),
+    },
+    ...(pilotCellId ? { pilotCellId } : {}),
+    expansion: {
+      ...plan.expansion,
+      ...(plan.expansion.cellIds
+        ? { cellIds: plan.expansion.cellIds.map((id) => idMap.get(id) ?? id) }
+        : {}),
+    },
   };
 }
 
@@ -208,6 +293,8 @@ test("verify-change compiles exact local Git provenance without mutating when un
 test("verify-change safely passes an untrusted base ref to execFile and starts one Proof only when confirmed", async () => {
   const calls: string[][] = [];
   const invoked: Array<{ id: OperationId; input: unknown }> = [];
+  const plan = preparedPlan(reviewedConfig());
+  const start = proofStartInputFromVerificationPlan(plan);
   const result = await runVerifyChangeCommand({
     base: "main; echo NOT_EXECUTED",
     configFile: "reviewed.json",
@@ -235,15 +322,14 @@ test("verify-change safely passes an untrusted base ref to execFile and starts o
       invoke: async (id, input) => {
         invoked.push({ id, input });
         return {
-          proof: {
-            id: "proof-1",
-            version: 1,
-            state: "planning",
-            smallestNextVerification: {
-              kind: "provide-build",
-              reason: "Provide the exact build.",
-            },
+          proof: proofFixture("planning", 1, start),
+          plan,
+          disposition: "created",
+          nextAction: {
+            kind: "provide-build",
+            reason: "Provide the exact build.",
           },
+          blockers: [],
         };
       },
       events: async () => {},
@@ -251,12 +337,12 @@ test("verify-change safely passes an untrusted base ref to execFile and starts o
   });
 
   assert.equal(invoked.length, 1);
-  assert.equal(invoked[0]?.id, "proof.start");
+  assert.equal(invoked[0]?.id, "proof.prepare");
   assert.equal(
     result.proof && typeof result.proof === "object" && "id" in result.proof
       ? result.proof.id
       : undefined,
-    "proof-1",
+    "proof-live-cli",
   );
   assert.equal(result.execution.proofStarted, true);
   assert.equal(result.execution.pilot.attempted, false);
@@ -268,18 +354,23 @@ test("verify-change safely passes an untrusted base ref to execFile and starts o
 test("verify-change delegates the complete Proof decision to one server-owned proof.run", async () => {
   const calls: Array<{ id: OperationId; input: unknown }> = [];
   const config = executableConfig();
-  let startInput: Record<string, unknown> | undefined;
+  const plan = preparedPlan(config);
+  const startInput = proofStartInputFromVerificationPlan(plan) as Record<string, unknown>;
   const client = {
     async invoke(id: OperationId, input: unknown) {
       calls.push({ id, input });
-      if (id === "proof.start") {
-        startInput = input as Record<string, unknown>;
-        return { proof: proofFixture("planning", 1, startInput) };
+      if (id === "proof.prepare") {
+        return {
+          proof: proofFixture("planning", 1, startInput),
+          plan,
+          disposition: "created",
+          nextAction: { kind: "approve-plan", reason: "Review the exact plan." },
+          blockers: [],
+        };
       }
       if (id === "proof.plan.approve") {
         return { proof: proofFixture("ready", 2, startInput!) };
       }
-      if (id === "app-map.get") return { appMap: { id: "settings", revision: 7 } };
       if (id === "proof.run") {
         return {
           proof: proofFixture("rejected", 3, startInput!, ["run-failed"]),
@@ -332,24 +423,24 @@ test("verify-change delegates the complete Proof decision to one server-owned pr
   assert.equal(result.execution.nextAction.kind, "complete");
   assert.deepEqual(
     calls.map(({ id }) => id),
-    ["app-map.get", "proof.start", "proof.plan.approve", "proof.run"],
+    ["proof.prepare", "proof.plan.approve", "proof.run"],
     "the CLI must not dispatch App Map runs, poll jobs, or mutate Proof state client-side",
   );
+  assert.deepEqual(calls[0]?.input, {
+    baseRef: "main",
+    policy: VERIFY_CHANGE_POLICY,
+    targetIds: ["local-browser-ar"],
+    buildIds: ["web-build"],
+  });
   assert.deepEqual(calls.at(-1)?.input, { proofId: "proof-live-cli", wait: true });
   assert.ok(startInput);
-  assert.equal(
-    (
-      (startInput.selection as ChangeVerification["selection"]).affectedJourneys[0] as {
-        appMapRevision?: number;
-      }
-    ).appMapRevision,
-    7,
-  );
 });
 
 test("verify-change does not self-approve a complete plan for an agent actor", async () => {
   const calls: OperationId[] = [];
   const config = executableConfig();
+  const plan = preparedPlan(config);
+  const start = proofStartInputFromVerificationPlan(plan) as Record<string, unknown>;
   await assert.rejects(
     runVerifyChangeCommand({
       base: "main",
@@ -362,20 +453,26 @@ test("verify-change does not self-approve a complete plan for an agent actor", a
       client: {
         async invoke(id) {
           calls.push(id);
-          if (id === "app-map.get") return { appMap: { id: "settings", revision: 7 } };
-          return { proof: proofFixture("planning", 1, {}) };
+          return {
+            proof: proofFixture("planning", 1, start),
+            plan,
+            disposition: "created",
+            nextAction: { kind: "approve-plan", reason: "Review the exact plan." },
+            blockers: [],
+          };
         },
         events: async () => {},
       },
     }),
     /human actor/u,
   );
-  assert.deepEqual(calls, ["app-map.get", "proof.start"]);
+  assert.deepEqual(calls, ["proof.prepare"]);
 });
 
 test("verify-change resumes server-owned Proof execution with one stable proof.run identity", async () => {
   const config = executableConfig();
-  let startInput: Record<string, unknown> | undefined;
+  const plan = preparedPlan(config);
+  const startInput = proofStartInputFromVerificationPlan(plan) as Record<string, unknown>;
   const identities: Array<{
     id: OperationId;
     requestId?: string;
@@ -388,22 +485,27 @@ test("verify-change resumes server-owned Proof execution with one stable proof.r
       options?: { requestId?: string; idempotencyKey?: string },
     ) {
       identities.push({ id, ...options });
-      if (id === "app-map.get") return { appMap: { id: "settings", revision: 7 } };
-      if (id === "proof.start") {
-        startInput = input as Record<string, unknown>;
+      if (id === "proof.prepare") {
         return {
           proof: proofFixture(
-            identities.filter(({ id: candidate }) => candidate === "proof.start").length === 1
+            identities.filter(({ id: candidate }) => candidate === "proof.prepare").length === 1
               ? "planning"
               : "running",
-            identities.filter(({ id: candidate }) => candidate === "proof.start").length === 1
+            identities.filter(({ id: candidate }) => candidate === "proof.prepare").length === 1
               ? 1
               : 3,
             startInput,
-            identities.filter(({ id: candidate }) => candidate === "proof.start").length === 1
+            identities.filter(({ id: candidate }) => candidate === "proof.prepare").length === 1
               ? []
               : ["job-adopted"],
           ),
+          plan,
+          disposition:
+            identities.filter(({ id: candidate }) => candidate === "proof.prepare").length === 1
+              ? "created"
+              : "existing",
+          nextAction: { kind: "approve-plan", reason: "Review the exact plan." },
+          blockers: [],
         };
       }
       if (id === "proof.plan.approve") {
@@ -458,7 +560,7 @@ test("verify-change resumes server-owned Proof execution with one stable proof.r
       : undefined,
     "rejected",
   );
-  const starts = identities.filter(({ id }) => id === "proof.start");
+  const starts = identities.filter(({ id }) => id === "proof.prepare");
   const runs = identities.filter(({ id }) => id === "proof.run");
   assert.equal(starts.length, 2);
   assert.equal(runs.length, 2);
@@ -469,14 +571,6 @@ test("verify-change resumes server-owned Proof execution with one stable proof.r
   assert.match(runs[0]?.requestId ?? "", /^verify-change-proof-run-/u);
   assert.deepEqual(
     identities.map(({ id }) => id),
-    [
-      "app-map.get",
-      "proof.start",
-      "proof.plan.approve",
-      "proof.run",
-      "app-map.get",
-      "proof.start",
-      "proof.run",
-    ],
+    ["proof.prepare", "proof.plan.approve", "proof.run", "proof.prepare", "proof.run"],
   );
 });

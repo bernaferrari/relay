@@ -178,6 +178,16 @@ async function persistedBrowserRun(dir: string): Promise<PersistedRun> {
       },
       startedAt: 2,
       finishedAt: 3,
+      collectionPolicy: {
+        schemaVersion: 1,
+        sensitive: {
+          "browser-trace": {
+            grantedAt: 1,
+            grantedBy: "human:reviewer",
+            reason: "Reviewed portable browser-trace fixture",
+          },
+        },
+      },
       channels: Object.fromEntries(
         [
           "input",

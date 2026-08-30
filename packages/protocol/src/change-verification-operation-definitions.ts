@@ -2,6 +2,7 @@ import { createOperationBuilders } from "./operation-builders.js";
 import type { RelayOperationMap } from "./operation-map.js";
 
 type ChangeVerificationOperationId =
+  | "proof.prepare"
   | "proof.start"
   | "proof.list"
   | "proof.inspect"
@@ -15,6 +16,10 @@ const { command, query } =
   createOperationBuilders<Pick<RelayOperationMap, ChangeVerificationOperationId>>();
 
 export const changeVerificationOperationDefinitions = [
+  command("proof.prepare", "Prepare current change Proof", "POST", "/proofs/prepare", {
+    category: "authoring",
+    idempotency: "inherent",
+  }),
   command("proof.start", "Start Proof", "POST", "/proofs", {
     category: "authoring",
     idempotency: "inherent",

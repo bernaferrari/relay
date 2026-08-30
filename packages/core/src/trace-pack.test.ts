@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { compileBrowserEnvironment, type BrowserProofEvidence } from "@relay/protocol";
 import { persistAuthoringEvidence } from "./authoring-evidence.js";
 import { analyzeTracePack, exportTracePack, verifyTracePack } from "./trace-pack.js";
 import type { PersistedRun } from "./runs.js";
@@ -365,6 +366,120 @@ test("captured video with absent or redacted bytes cannot produce a complete pac
       redacted.objects.some((object) => object.path === "files/video/run.mp4"),
       false,
     );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("TracePack export does not embed a legacy browser trace without frozen consent", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "relay-trace-pack-browser-trace-"));
+  try {
+    await mkdir(join(directory, "browser"));
+    const secretTrace = Buffer.from("trace.zip contains Authorization: Bearer legacy-secret");
+    await writeFile(join(directory, "browser", "trace.zip"), secretTrace);
+    const environment = compileBrowserEnvironment({ viewport: { width: 800, height: 600 } });
+    const channel = (status: "captured" | "partial") => ({
+      status,
+      entries: status === "captured" ? 1 : 0,
+      bytes: status === "captured" ? secretTrace.byteLength : 0,
+      dropped: 0,
+      redactions: 0,
+      artifactRefs: status === "captured" ? ["browser/trace.zip"] : [],
+    });
+    const evidence: BrowserProofEvidence = {
+      schemaVersion: 1,
+      runId: "legacy-browser-run",
+      target: { targetId: "browser-target", targetProfileId: "browser-profile" },
+      build: { sourceSha: "a".repeat(40), artifactDigest: `sha256:${"b".repeat(64)}` },
+      browser: { engine: environment.engine, version: environment.revision ?? "browser" },
+      environment,
+      channels: {
+        screenshot: channel("partial"),
+        accessibility: channel("partial"),
+        "console-errors": channel("partial"),
+        "page-errors": channel("partial"),
+        network: channel("partial"),
+        trace: channel("captured"),
+        "popup-topology": channel("partial"),
+      },
+      traceReference: {
+        path: "browser/trace.zip",
+        digest: `sha256:${createHash("sha256").update(secretTrace).digest("hex")}`,
+        format: "playwright-trace",
+      },
+      completeness: {
+        status: "partial",
+        required: [
+          "screenshot",
+          "accessibility",
+          "console-errors",
+          "page-errors",
+          "network",
+          "trace",
+          "popup-topology",
+        ],
+        captured: ["trace"],
+        missing: [
+          "screenshot",
+          "accessibility",
+          "console-errors",
+          "page-errors",
+          "network",
+          "popup-topology",
+        ],
+      },
+    };
+    const run = {
+      ...persistedRun(),
+      id: "legacy-browser-run",
+      serial: "browser-target",
+      platform: "browser",
+      targetProfile: {
+        id: "browser-profile",
+        targetId: "browser-target",
+        source: "browser",
+        platform: "browser",
+        name: "Browser",
+        viewport: environment.viewport,
+        browserCaseProfile: environment,
+        capabilities: ["screenshot"],
+        observedAt: 1,
+      },
+      browserCaseProfile: environment,
+      sourceRevision: {
+        vcs: "git",
+        sha: "a".repeat(40),
+        artifactDigest: `sha256:${"b".repeat(64)}`,
+      },
+      dir: directory,
+      artifacts: [{ kind: "browser-proof-evidence", capturedAt: 3, data: evidence }],
+      evidence: {
+        schemaVersion: 1,
+        runId: "legacy-browser-run",
+        target: { kind: "browser", platform: "browser", id: "browser-target" },
+        startedAt: 2,
+        finishedAt: 3,
+        collectionPolicy: { schemaVersion: 1, sensitive: {} },
+        channels: {},
+        events: [],
+      } as unknown as PersistedRun["evidence"],
+    } as unknown as PersistedRun;
+
+    const pack = await exportTracePack(run);
+    assert.equal(pack.completeness.status, "partial");
+    assert.equal(
+      pack.completeness.artifacts?.some(
+        ({ path, status, reason }) =>
+          path === "browser/trace.zip" && status === "redacted" && reason === "redacted-channel",
+      ),
+      true,
+    );
+    assert.equal(
+      pack.objects.some((object) => object.path === "files/browser/trace.zip"),
+      false,
+    );
+    assert.doesNotMatch(JSON.stringify(pack), /legacy-secret/u);
+    assert.deepEqual(verifyTracePack(pack), pack);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

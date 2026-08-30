@@ -77,6 +77,29 @@ test("browser target operations round-trip the frozen environment contract", () 
   ]);
 });
 
+test("build registration accepts a verified web deployment identity", () => {
+  const build = {
+    id: "web-preview",
+    name: "Web preview",
+    platform: "web" as const,
+    sourceUrl: "https://preview.example.com/pr-184",
+    sourceSha: "a".repeat(40),
+    deploymentDigest: `sha256:${"b".repeat(64)}`,
+    configuration: "web.production",
+    environmentRevision: "preview-v12",
+    status: "ready",
+  };
+  assert.deepEqual(operationDefinition("build.save").input.parse(build), build);
+  assert.throws(
+    () =>
+      operationDefinition("build.save").input.parse({
+        ...build,
+        deploymentDigest: "not-a-digest",
+      }),
+    /deploymentDigest/u,
+  );
+});
+
 test("compiled Recipe storage is absent from the public operation registry", () => {
   assert.deepEqual(
     operationDefinitions.filter(({ id }) => id.startsWith("recipe.")),
@@ -101,6 +124,7 @@ test("Proof exposes its canonical lifecycle operations plus execution and list q
     .filter(({ id }) => id.startsWith("proof."))
     .map(({ id }) => id);
   assert.deepEqual(proofIds, [
+    "proof.prepare",
     "proof.start",
     "proof.list",
     "proof.inspect",
@@ -113,6 +137,7 @@ test("Proof exposes its canonical lifecycle operations plus execution and list q
   assert.deepEqual(
     proofIds.filter((id) => id !== "proof.list"),
     [
+      "proof.prepare",
       "proof.start",
       "proof.inspect",
       "proof.plan.approve",
@@ -140,6 +165,14 @@ test("Proof exposes its canonical lifecycle operations plus execution and list q
     }),
   );
   assert.deepEqual(metadata, {
+    "proof.prepare": {
+      role: "author",
+      confirmation: "none",
+      lease: "none",
+      progress: false,
+      cancellable: false,
+      transport: { method: "POST", path: "/proofs/prepare" },
+    },
     "proof.start": {
       role: "author",
       confirmation: "none",
@@ -206,6 +239,12 @@ test("Proof exposes its canonical lifecycle operations plus execution and list q
     },
   });
 
+  assert.throws(() =>
+    operationDefinition("proof.prepare").input.parse({
+      baseRef: "main",
+      headSha: "2".repeat(40),
+    }),
+  );
   assert.throws(() =>
     operationDefinition("proof.start").input.parse({
       change: { repository: "acme/relay", baseSha: "1".repeat(40), headSha: "2".repeat(40) },

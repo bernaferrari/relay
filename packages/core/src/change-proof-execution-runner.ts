@@ -10,6 +10,7 @@ import {
   type ChangeProofPublicationRequest,
 } from "./change-verification-store.js";
 import { decideChangeVerification } from "./change-proof-decision.js";
+import { verifyChangePlanDigest, verifyChangePolicyDigest } from "./change-proof-integrity.js";
 import { withControlStore, type ControlStore } from "./collaboration-store.js";
 import type { PersistedRun } from "./runs.js";
 import {
@@ -42,6 +43,25 @@ type ActiveDispatch = Pick<ChangeProofCellDispatch, "cancel">;
 
 function cellStatusForResult(result: ChangeProofCaseResult): ChangeProofExecutionCellStatus {
   return result.outcome;
+}
+
+/** Lifecycle mutations may advance a Proof version while execution is in
+ * flight, but they must never replace the immutable plan or policy authority
+ * used to dispatch and project a Run. */
+function sameFrozenProofAuthority(
+  frozen: ChangeVerification,
+  current: ChangeVerification,
+): boolean {
+  try {
+    return (
+      verifyChangePlanDigest(frozen) === verifyChangePlanDigest(current) &&
+      verifyChangePolicyDigest(frozen.policy) === verifyChangePolicyDigest(current.policy) &&
+      frozen.planDigest === current.planDigest &&
+      frozen.policyDigest === current.policyDigest
+    );
+  } catch {
+    return false;
+  }
 }
 
 export async function reconcileClaimedRecord(
@@ -219,11 +239,22 @@ export async function runOne(
         }
         let recoveredResult: ChangeProofCaseResult;
         try {
+          const recoveryProof = await readChangeVerification(submitInput, record.proofId);
+          if (recoveryProof && !sameFrozenProofAuthority(record.frozenProof, recoveryProof)) {
+            record = await markUncertain(
+              record,
+              "The persisted Proof plan or policy changed while its Run was awaiting recovery.",
+              options.now(),
+              options,
+              submitInput,
+              currentCell.runId,
+            );
+            break;
+          }
           recoveredResult =
             currentCell.result ??
             (await options.projectRun({
-              proof:
-                (await readChangeVerification(submitInput, record.proofId)) ?? record.frozenProof,
+              proof: record.frozenProof,
               run: recoveredRun,
             }));
         } catch (error) {
@@ -407,8 +438,20 @@ export async function runOne(
       }
       let result: ChangeProofCaseResult;
       try {
+        const projectionProof = await readChangeVerification(submitInput, record.proofId);
+        if (projectionProof && !sameFrozenProofAuthority(record.frozenProof, projectionProof)) {
+          record = await markUncertain(
+            record,
+            "The persisted Proof plan or policy changed before its Run was projected.",
+            options.now(),
+            options,
+            submitInput,
+            dispatched.runId,
+          );
+          break;
+        }
         result = await options.projectRun({
-          proof: (await readChangeVerification(submitInput, record.proofId)) ?? record.frozenProof,
+          proof: record.frozenProof,
           run,
         });
       } catch (error) {
@@ -492,6 +535,16 @@ async function recordRunResult(
       submitInput,
       result.runId,
     );
+  if (!sameFrozenProofAuthority(record.frozenProof, current)) {
+    return markUncertain(
+      record,
+      "The persisted Proof plan or policy changed before its Run result was recorded.",
+      at,
+      options,
+      submitInput,
+      result.runId,
+    );
+  }
   const cells = record.cells.map((candidate, index) =>
     index === record.cursor
       ? {
@@ -530,7 +583,12 @@ async function recordRunResult(
     state = decision.state;
     action = "record-runs";
   }
-  const nextCursor = record.cursor + 1;
+  // The cursor is the next *pending* frozen cell, not the number of Run ids
+  // recorded on the Proof. Historical/manual Runs can be out of order (and
+  // the admission path may have reconstructed sparse completed cells), so a
+  // numeric increment would either replay a completed cell or skip one.
+  const nextCursor = cells.findIndex((cell) => cell.status === "pending");
+  const normalizedNextCursor = nextCursor < 0 ? cells.length : nextCursor;
   await advanceChangeVerification({
     organizationId: current.organizationId,
     projectId: current.projectId,
@@ -538,7 +596,7 @@ async function recordRunResult(
     expectedVersion: current.version,
     state,
     actorId: submitInput.actorId,
-    requestId: `${record.id}:${action}:${nextCursor}`,
+    requestId: `${record.id}:${action}:${normalizedNextCursor}`,
     requestDigest: mutationDigest(record, action, at),
     action,
     at,
@@ -578,7 +636,7 @@ async function recordRunResult(
       {
         ...record,
         cells,
-        cursor: nextCursor,
+        cursor: normalizedNextCursor,
         runIds,
         status: completed ? "completed" : "running",
         lease: completed ? undefined : record.lease,

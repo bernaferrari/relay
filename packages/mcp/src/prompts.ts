@@ -116,6 +116,7 @@ export const relayMcpPrompts = [
     description:
       "Prove one code change on real devices: pick the affected flows, run one approved server-owned Proof, inspect its durable report, and return a structured verdict.",
     requiredOperationIds: [
+      "proof.prepare",
       "proof.start",
       "proof.list",
       "proof.inspect",

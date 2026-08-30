@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { access, mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import http from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -158,6 +158,68 @@ test("browser proof collection denies visual and body secrets before durable wri
   }
 });
 
+test("browser proof popup topology masks credentials even when broad redaction is off", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-browser-popup-secrets-"));
+  const environment = compileBrowserEnvironment({ viewport: { width: 800, height: 600 } });
+  const runDir = join(root, "run");
+  let traceCalls = 0;
+  const runtime: BrowserProofRuntime = {
+    profile: environment,
+    version: "test-browser",
+    screenshot: async (path) => void (await writeFile(path, "image")),
+    ariaSnapshot: async () => "button Save",
+    pages: async () => ({
+      pages: [
+        {
+          id: "page-1",
+          kind: "page",
+          title: "Authorization: Bearer popup-secret",
+          url: "https://example.test/callback?token=popup-secret",
+          active: true,
+          closed: false,
+        },
+      ],
+      dropped: 0,
+    }),
+    console: [],
+    consoleDropped: 0,
+    pageErrors: [],
+    pageErrorsDropped: 0,
+    network: [],
+    networkDropped: 0,
+    stopTrace: async (path) => {
+      traceCalls += 1;
+      await writeFile(path, "trace contains Authorization: Bearer popup-secret");
+    },
+  };
+  try {
+    const evidence = await captureBrowserProofEvidence({
+      targetId: "popup-target",
+      runId: "popup-run",
+      targetProfileId: "popup-profile",
+      sourceSha: "a".repeat(40),
+      artifactDigest: `sha256:${"b".repeat(64)}`,
+      environment,
+      runDir,
+      evidencePolicy: {
+        schemaVersion: 1,
+        sensitive: {},
+        redaction: { enabled: false, source: "workspace", locked: false },
+      },
+      runtime,
+    });
+    const artifact = await readFile(join(runDir, "browser/popup-topology.json"), "utf8");
+    assert.doesNotMatch(artifact, /popup-secret/u);
+    assert.match(artifact, /\[REDACTED\]/u);
+    assert.doesNotMatch(JSON.stringify(evidence.popupTopology), /popup-secret/u);
+    assert.equal(evidence.channels.trace.status, "denied");
+    assert.equal(traceCalls, 0, "trace collection must not start without explicit consent");
+    await assert.rejects(stat(join(runDir, "browser/trace.zip")), /ENOENT/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("production browser proof captures one complete artifact across multiple steps", async (t) => {
   await access(CHROME).catch(() => t.skip("Google Chrome is not installed"));
   if (t.signal.aborted) return;
@@ -261,7 +323,16 @@ test("production browser proof captures one complete artifact across multiple st
       runDir,
       artifacts: [],
       resolvedInputs: {},
-      evidencePolicy: { schemaVersion: 1, sensitive: {} },
+      evidencePolicy: {
+        schemaVersion: 1,
+        sensitive: {
+          "browser-trace": {
+            grantedAt: 1,
+            grantedBy: "test-reviewer",
+            reason: "Trace archive required for this reviewed browser proof",
+          },
+        },
+      },
     } as unknown as TestJob;
     const handle = initializeRunEvidence(job);
     await stopRunEvidence(handle, job, device, () => undefined);

@@ -55,6 +55,7 @@ test("Proof facade maps friendly lifecycle names to canonical operations", async
     change,
   } satisfies OperationInput<"proof.rerun-affected">;
 
+  await proof.prepareChangeVerification();
   await proof.startChangeVerification(startInput);
   await proof.listChangeVerifications();
   await proof.inspectChangeVerification(inspectInput);
@@ -64,6 +65,7 @@ test("Proof facade maps friendly lifecycle names to canonical operations", async
   await proof.rerunAffectedVerification(rerunInput);
 
   assert.deepEqual(calls, [
+    { id: "proof.prepare", input: {} },
     { id: "proof.start", input: startInput },
     { id: "proof.list", input: {} },
     { id: "proof.inspect", input: inspectInput },

@@ -7,6 +7,9 @@ import type { RelayOperationPort } from "./operation-port.js";
  * humans and agents without adding a second state machine to workflows.
  */
 export interface ProofWorkflow {
+  prepareChangeVerification(
+    input?: OperationInput<"proof.prepare">,
+  ): Promise<OperationOutput<"proof.prepare">>;
   startChangeVerification(
     input: OperationInput<"proof.start">,
   ): Promise<OperationOutput<"proof.start">>;
@@ -32,6 +35,7 @@ export interface ProofWorkflow {
 
 export type ChangeVerificationWorkflow = ProofWorkflow;
 
+export type PrepareChangeVerificationInput = OperationInput<"proof.prepare">;
 export type StartChangeVerificationInput = OperationInput<"proof.start">;
 export type InspectChangeVerificationInput = OperationInput<"proof.inspect">;
 export type ApproveVerificationPlanInput = OperationInput<"proof.plan.approve">;
@@ -47,6 +51,8 @@ export type ListChangeVerificationsInput = OperationInput<"proof.list">;
  */
 export function createProofWorkflow(operations: RelayOperationPort): ProofWorkflow {
   return Object.freeze({
+    prepareChangeVerification: (input: OperationInput<"proof.prepare"> = {}) =>
+      operations.invoke("proof.prepare", input),
     startChangeVerification: (input: OperationInput<"proof.start">) =>
       operations.invoke("proof.start", input),
     inspectChangeVerification: (input: OperationInput<"proof.inspect">) =>

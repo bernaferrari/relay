@@ -1,7 +1,9 @@
 import {
   changeProofCaseResultSchema,
+  executionRiskSchema,
   parseChangeVerification,
   changeTestedSha,
+  type ExecutionRisk,
   type ChangeProofCaseResult,
   type ChangeVerification,
 } from "@relay/protocol";
@@ -13,6 +15,8 @@ import {
 import { parseCanonicalAppMapTestPlan } from "./app-map-test-execution-intent.js";
 import type { PersistedRun } from "./runs.js";
 import { analyzeTracePack, exportTracePack } from "./trace-pack.js";
+import { canonicalSha256 } from "./canonical-json.js";
+import { compileExecutionRisk } from "./execution-risk-compiler.js";
 
 export type ChangeProofRunCase = Readonly<{
   cellId: string;
@@ -22,6 +26,38 @@ export type ChangeProofRunCase = Readonly<{
   targetCaseId: string;
   buildId: string;
 }>;
+
+type FrozenVerificationCell = NonNullable<ChangeVerification["selection"]["cells"]>[number];
+
+/** Validate the risk authority frozen into one Verification Cell. The
+ * structured risk and its digest are both required for executable Proofs so
+ * a caller cannot replace a prohibited Test with an unlabelled safe default. */
+export function frozenCellExecutionRisk(cell: FrozenVerificationCell): ExecutionRisk {
+  const risk = cell.executionRisk;
+  if (!risk || !cell.executionRiskDigest) {
+    throw new Error(`Verification Cell ${cell.id} has no frozen execution-risk authority`);
+  }
+  const parsed = executionRiskSchema.parse(risk);
+  if (canonicalSha256(parsed) !== cell.executionRiskDigest) {
+    throw new Error(`Verification Cell ${cell.id} execution-risk digest does not match`);
+  }
+  if (parsed.cleanupRequired !== cell.cleanupRequired) {
+    throw new Error(`Verification Cell ${cell.id} cleanup authority disagrees with execution risk`);
+  }
+  return parsed;
+}
+
+/** The first safe execution slice deliberately admits only Tests whose
+ * frozen risk needs no confirmation and has no external mutation effect. */
+export function assertSafeCellExecutionAuthority(cell: FrozenVerificationCell): ExecutionRisk {
+  const risk = frozenCellExecutionRisk(cell);
+  if (risk.level !== "safe" || risk.confirmation !== "none") {
+    throw new Error(
+      `Verification Cell ${cell.id} requires ${risk.level}/${risk.confirmation} authority; only safe/none Proof execution is currently supported`,
+    );
+  }
+  return risk;
+}
 
 function platformForTargetCase(
   item: ChangeVerification["selection"]["targetCases"][number],
@@ -70,6 +106,7 @@ export function changeProofRequiredRunCases(value: unknown): ChangeProofRunCase[
     if (build.platform !== expectedPlatform || build.sourceSha !== changeTestedSha(proof.change)) {
       throw new Error(`Verification Cell ${cell.id} does not bind a compatible exact build.`);
     }
+    assertSafeCellExecutionAuthority(cell);
     return {
       cellId: cell.id,
       appMapId: journey.appMapId,
@@ -88,15 +125,6 @@ function planForRun(run: PersistedRun): ReturnType<typeof parseCanonicalAppMapTe
     if (plan) return plan;
   }
   return undefined;
-}
-
-function planIdentity(
-  run: PersistedRun,
-): { appMapId: string; testId: string; appMapRevision: number } | undefined {
-  const plan = planForRun(run);
-  return plan
-    ? { appMapId: plan.appMapId, testId: plan.test.id, appMapRevision: plan.appMapRevision }
-    : undefined;
 }
 
 type ExpectedCleanupCheck = {
@@ -180,6 +208,47 @@ function buildForRun(
     );
   }
   return matching[0]!;
+}
+
+/** Resolve a persisted Run to the one frozen Verification Cell it claims to
+ * execute. This deliberately only proves identity, not outcome or evidence;
+ * callers that need a result must still use
+ * `changeProofCaseResultFromPersistedRun`. Returning `undefined` makes an
+ * unrelated/manual Run harmless to execution progress rather than allowing
+ * its position in `proof.runIds` to skip a cell. */
+export function changeProofCellIdFromPersistedRun(input: {
+  proof: unknown;
+  run: PersistedRun;
+}): string | undefined {
+  try {
+    const proof = parseChangeVerification(input.proof);
+    const run = input.run;
+    const runPlan = planForRun(run);
+    if (!runPlan) return undefined;
+    const targetCase = targetCaseForRun(proof, run);
+    const build = buildForRun(proof, run);
+    const identity = {
+      appMapId: runPlan.appMapId,
+      testId: runPlan.test.id,
+      appMapRevision: runPlan.appMapRevision,
+    };
+    const matchingCells =
+      proof.selection.cells?.filter(
+        (candidate) =>
+          candidate.journey.appMapId === identity.appMapId &&
+          candidate.journey.testId === identity.testId &&
+          candidate.journey.appMapRevision === identity.appMapRevision &&
+          candidate.targetCaseId === targetCase.id &&
+          candidate.buildId === build.id &&
+          Object.entries(candidate.dimensions).every(
+            ([dimension, value]) =>
+              targetCase.dimensions[dimension] === value || run.resolvedInputs[dimension] === value,
+          ),
+      ) ?? [];
+    return matchingCells.length === 1 ? matchingCells[0]!.id : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function assertBuildProvenanceReceipt(
@@ -269,8 +338,13 @@ export async function changeProofCaseResultFromPersistedRun(input: {
 }): Promise<ChangeProofCaseResult> {
   const proof = parseChangeVerification(input.proof);
   const run = input.run;
-  const identity = planIdentity(run);
-  if (!identity) throw new Error(`Run ${run.id} has no frozen App Map Test identity.`);
+  const runPlan = planForRun(run);
+  if (!runPlan) throw new Error(`Run ${run.id} has no frozen App Map Test identity.`);
+  const identity = {
+    appMapId: runPlan.appMapId,
+    testId: runPlan.test.id,
+    appMapRevision: runPlan.appMapRevision,
+  };
   if (
     !proof.selection.affectedJourneys.some(
       (journey) =>
@@ -287,25 +361,23 @@ export async function changeProofCaseResultFromPersistedRun(input: {
   const targetCase = targetCaseForRun(proof, run);
   const build = buildForRun(proof, run);
   assertBuildProvenanceReceipt(run, targetCase, build);
-  const matchingCells =
-    proof.selection.cells?.filter(
-      (candidate) =>
-        candidate.journey.appMapId === identity.appMapId &&
-        candidate.journey.testId === identity.testId &&
-        candidate.journey.appMapRevision === identity.appMapRevision &&
-        candidate.targetCaseId === targetCase.id &&
-        candidate.buildId === build.id &&
-        Object.entries(candidate.dimensions).every(
-          ([dimension, value]) =>
-            targetCase.dimensions[dimension] === value || run.resolvedInputs[dimension] === value,
-        ),
-    ) ?? [];
-  if (matchingCells.length !== 1) {
+  const cellId = changeProofCellIdFromPersistedRun({ proof, run });
+  if (!cellId) {
+    throw new Error(`Run ${run.id} must bind exactly one frozen Verification Cell; found none.`);
+  }
+  const cell = proof.selection.cells!.find(({ id }) => id === cellId)!;
+  frozenCellExecutionRisk(cell);
+  const runRisk = compileExecutionRisk({ kind: "compiled-test", test: runPlan });
+  if (canonicalSha256(runRisk) !== cell.executionRiskDigest) {
     throw new Error(
-      `Run ${run.id} must bind exactly one frozen Verification Cell; found ${matchingCells.length}.`,
+      `Run ${run.id} execution risk does not match the frozen authority for Verification Cell ${cell.id}`,
     );
   }
-  const cell = matchingCells[0]!;
+  if (runRisk.level !== "safe" || runRisk.confirmation !== "none") {
+    throw new Error(
+      `Run ${run.id} requires ${runRisk.level}/${runRisk.confirmation} authority; only safe/none Proof execution is currently supported`,
+    );
+  }
   const pack = await exportTracePack(run);
   const analysis = analyzeTracePack(pack);
   const recomputed = analysis.recomputed ?? [];

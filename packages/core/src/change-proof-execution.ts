@@ -9,8 +9,11 @@ import {
   readChangeVerification,
   type ChangeVerificationScope,
 } from "./change-verification-store.js";
-import { changeProofRequiredRunCases } from "./change-proof-live-run.js";
-import { changeProofCaseResultFromPersistedRun } from "./change-proof-live-run.js";
+import {
+  changeProofCaseResultFromPersistedRun,
+  changeProofCellIdFromPersistedRun,
+  changeProofRequiredRunCases,
+} from "./change-proof-live-run.js";
 import { readPersistedRun, type PersistedRun } from "./runs.js";
 import { readControlStore, withControlStore } from "./collaboration-store.js";
 import { canonicalSha256 } from "./canonical-json.js";
@@ -87,7 +90,9 @@ export function summarizeChangeProofExecution(
 
 async function ensureStarted(
   input: ChangeProofExecutionSubmitInput,
-  options: Required<Pick<ChangeProofExecutionCoordinatorOptions, "now" | "maxDurationMs">> &
+  options: Required<
+    Pick<ChangeProofExecutionCoordinatorOptions, "now" | "maxDurationMs" | "readRun" | "projectRun">
+  > &
     Pick<ChangeProofExecutionCoordinatorOptions, "publication">,
 ): Promise<ChangeProofExecutionRecord> {
   nonEmpty(input.requestId, "requestId");
@@ -142,7 +147,48 @@ async function ensureStarted(
       "PROOF_EXECUTION_NOT_READY",
       "Proof has no executable Verification Cells",
     );
+  // `proof.runIds` is append-only history, not an execution cursor. A manual
+  // or unrelated Run may be present there, and its position must never skip a
+  // frozen Verification Cell. Reconstruct only cells whose persisted Run
+  // proves the exact App Map, target, build, and dimensions; project the Run
+  // through the canonical result authority before treating it as complete.
+  const priorResults = new Map<
+    string,
+    {
+      runId: string;
+      result: Awaited<
+        ReturnType<NonNullable<ChangeProofExecutionCoordinatorOptions["projectRun"]>>
+      >;
+    }
+  >();
+  for (const runId of current.runIds) {
+    const run = await options.readRun(runId);
+    if (!run) continue;
+    const cellId = changeProofCellIdFromPersistedRun({ proof: current, run });
+    if (!cellId || priorResults.has(cellId)) continue;
+    try {
+      const result = await options.projectRun({ proof: current, run });
+      priorResults.set(cellId, { runId, result });
+    } catch {
+      // A historical Run that cannot be projected is not execution progress.
+      // Leave its cell pending; the next durable attempt will either produce
+      // a fresh result or end in explicit uncertainty.
+    }
+  }
   const at = options.now();
+  const cells = cases.map((cell) => {
+    const prior = priorResults.get(cell.cellId);
+    return prior
+      ? {
+          cell,
+          status: prior.result.outcome,
+          runId: prior.runId,
+          result: prior.result,
+          updatedAt: at,
+        }
+      : { cell, status: "pending" as const, updatedAt: at };
+  });
+  const nextPending = cells.findIndex((cell) => cell.status === "pending");
   const id = executionId(input, current.id);
   const base: ChangeProofExecutionRecord = {
     schemaVersion: CHANGE_PROOF_EXECUTION_SCHEMA_VERSION,
@@ -159,8 +205,8 @@ async function ensureStarted(
       ? { publication: input.publication ?? options.publication }
       : {}),
     frozenProof: clone(current),
-    cells: cases.map((cell) => ({ cell, status: "pending", updatedAt: at })),
-    cursor: current.runIds.length,
+    cells,
+    cursor: nextPending < 0 ? cases.length : nextPending,
     total: cases.length,
     deadlineAt: at + options.maxDurationMs,
     status: "queued",
@@ -230,10 +276,25 @@ export function createChangeProofExecutionCoordinator(
   const projectRun = configured.projectRun ?? changeProofCaseResultFromPersistedRun;
   const active = new Set<string>();
   const activeDispatches = new Map<string, { cancel?: () => Promise<void> | void }>();
+  const recoveryRetryMs = Math.max(0, configured.recoveryRetryMs ?? 1_000);
+  const scheduleRecoveryRetry =
+    configured.scheduleRecoveryRetry ??
+    ((callback: () => void, delayMs: number) => {
+      const timer = setTimeout(callback, delayMs);
+      timer.unref?.();
+      return timer;
+    });
+  const scheduledRecovery = new Set<string>();
 
-  return {
+  const coordinator: ChangeProofExecutionCoordinator = {
     async submit(input) {
-      return ensureStarted(input, { now, maxDurationMs, publication: configured.publication });
+      return ensureStarted(input, {
+        now,
+        maxDurationMs,
+        publication: configured.publication,
+        readRun,
+        projectRun,
+      });
     },
     async read(scope, proofId) {
       return readExecution(scope, proofId);
@@ -327,11 +388,69 @@ export function createChangeProofExecutionCoordinator(
       }
       return reconciled;
     },
+    async recover(executor) {
+      await coordinator.reconcile(undefined, now());
+      const records = await readControlStore((store) =>
+        store
+          .changeProofExecutions()
+          .map(normalizeRecord)
+          .filter((record) => record.status === "queued" || record.status === "running"),
+      );
+      const recovered: ChangeProofExecutionRecord[] = [];
+      for (const record of records) {
+        const live = await readExecution(record, record.proofId);
+        if (!live || ["completed", "cancelled", "uncertain"].includes(live.status)) {
+          if (live) recovered.push(live);
+          continue;
+        }
+        const result = await coordinator.run(
+          {
+            organizationId: live.organizationId,
+            projectId: live.projectId,
+            proof: live.frozenProof,
+            requestId: live.requestId,
+            requestDigest: live.requestDigest,
+            actorId: live.actorId,
+            authority: live.authority,
+            ...(live.publication ? { publication: live.publication } : {}),
+          },
+          executor,
+        );
+        recovered.push(result);
+        // A different live worker is allowed to keep its lease. Do not leave
+        // the Proof permanently queued just because this startup raced it;
+        // retry after the lease's expiry with a bounded backoff. The timer is
+        // deduplicated per execution and unref'd by the default scheduler.
+        if (
+          result.lease &&
+          result.lease.workerId !== workerId &&
+          result.lease.expiresAt > now() &&
+          !scheduledRecovery.has(result.id)
+        ) {
+          scheduledRecovery.add(result.id);
+          const delayMs = Math.max(recoveryRetryMs, result.lease.expiresAt - now());
+          scheduleRecoveryRetry(() => {
+            scheduledRecovery.delete(result.id);
+            void (async () => {
+              try {
+                await coordinator.recover?.(executor);
+              } catch {
+                // Startup recovery is best effort; the next retry or a
+                // foreground proof.run will surface a durable failure.
+              }
+            })();
+          }, delayMs);
+        }
+      }
+      return recovered;
+    },
     async run(input, executor) {
       let admitted = await ensureStarted(input, {
         now,
         maxDurationMs,
         publication: configured.publication,
+        readRun,
+        projectRun,
       });
       // A caller may be the first process to reattach after the prior server
       // died. Reconcile an expired in-flight lease before attempting a new
@@ -365,6 +484,7 @@ export function createChangeProofExecutionCoordinator(
       }
     },
   };
+  return coordinator;
 }
 
 export type ChangeProofExecutionCoordinator = {
@@ -386,6 +506,9 @@ export type ChangeProofExecutionCoordinator = {
     },
   ): Promise<ChangeProofExecutionRecord | undefined>;
   reconcile(scope?: ChangeVerificationScope, at?: number): Promise<ChangeProofExecutionRecord[]>;
+  /** Reconcile expired dispatch fences, then autonomously continue every
+   * queued/running execution from its frozen authority after server restart. */
+  recover?(executor: ChangeProofCellExecutor): Promise<ChangeProofExecutionRecord[]>;
   run(
     input: ChangeProofExecutionSubmitInput,
     executor: ChangeProofCellExecutor,

@@ -3,6 +3,7 @@ import type http from "node:http";
 import {
   cancelJob,
   currentOperationContext,
+  assertSafeCellExecutionAuthority,
   readPersistedRun,
   runWithOperationContext,
   waitForJobCompletion,
@@ -14,9 +15,9 @@ import type { RequestContext } from "./security.js";
 import { handleAppMapRunRoute } from "./app-map-run-routes.js";
 
 /** Build the exact one-cell App Map Test request from the frozen Proof plan.
- * Browser deployments deliberately omit buildId because the canonical route
- * requires a provider-verified deployment identity there; device runs retain
- * the registered build identity for installed-build provenance. */
+ * Both browser deployments and device builds retain the registered build
+ * identity. Browser entries are provider-verified deployments and are admitted
+ * through their exact digest without entering mobile APK/IPA preflight. */
 export function changeProofCellRunInput(
   execution: Pick<ChangeProofExecutionRecord, "frozenProof">,
   cell: {
@@ -43,6 +44,7 @@ export function changeProofCellRunInput(
   if (!verificationCell) {
     throw new Error(`Proof cell ${cell.cellId} is absent from the frozen Verification Plan`);
   }
+  assertSafeCellExecutionAuthority(verificationCell);
   const repeatDimensions = Object.fromEntries(
     Object.entries(verificationCell.dimensions).filter(
       ([dimension, value]) => targetCase.dimensions[dimension] !== value,
@@ -66,7 +68,7 @@ export function changeProofCellRunInput(
     vcs: "git" as const,
     sha: changeTestedSha(execution.frozenProof.change),
     artifactDigest: build.artifactDigest,
-    ...(platform === "browser" ? {} : { buildId: build.id }),
+    buildId: build.id,
   };
   return {
     appMapId: cell.appMapId,
@@ -91,6 +93,16 @@ export function createDefaultChangeProofCellExecutor(
 ): ChangeProofCellExecutor {
   return async ({ execution, cell }) => {
     const body = changeProofCellRunInput(execution, cell);
+    const verificationCell = execution.frozenProof.selection.cells?.find(
+      (candidate) => candidate.id === cell.cellId,
+    );
+    if (!verificationCell) {
+      throw new Error(`Proof cell ${cell.cellId} is absent from the frozen Verification Plan`);
+    }
+    const build = execution.frozenProof.builds.find((candidate) => candidate.id === cell.buildId);
+    if (!build) {
+      throw new Error(`Proof cell ${cell.cellId} is absent from the frozen build matrix`);
+    }
     const outer = currentOperationContext();
     const requestId = `${execution.requestId}:${cell.cellId}`;
     const operation = {
@@ -133,6 +145,12 @@ export function createDefaultChangeProofCellExecutor(
         request,
         response,
         scope,
+        proofExecutionAuthority: {
+          executionRiskDigest: verificationCell.executionRiskDigest!,
+          buildId: build.id,
+          sourceSha: build.sourceSha,
+          artifactDigest: build.artifactDigest,
+        },
       });
       if (!handled || !responsePayload) {
         throw new Error(`Canonical App Map Test route did not enqueue Proof cell ${cell.cellId}`);

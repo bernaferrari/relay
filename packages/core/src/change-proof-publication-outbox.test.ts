@@ -226,3 +226,31 @@ test("worker catches provider failures without persisting provider error text", 
     );
   });
 });
+
+test("worker heartbeats the exact claim while the provider call is in flight", async () => {
+  await withState(async () => {
+    await enqueueChangeProofPublicationOutbox(enqueueInput({ maxAttempts: 2 }));
+    const result = await runNextChangeProofPublicationOutbox({
+      ...scope,
+      workerId: "worker-heartbeat",
+      leaseMs: 20,
+      heartbeatMs: 5,
+      publish: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 55));
+        const rows = await listChangeProofPublicationOutbox(scope);
+        const claimed = rows[0];
+        assert.ok(claimed);
+        const live = await readChangeProofPublicationOutbox(scope, claimed.id);
+        assert.equal(live?.id, claimed.id);
+        assert.equal(claimed?.status, "claimed");
+        assert.equal(claimed?.lease?.workerId, "worker-heartbeat");
+        assert.ok(
+          claimed?.lease && claimed.lease.expiresAt > claimed.lease.claimedAt + 20,
+          "a long provider call must extend the original claim",
+        );
+        return receipt();
+      },
+    });
+    assert.equal(result.status, "published");
+  });
+});

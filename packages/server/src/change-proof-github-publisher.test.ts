@@ -5,7 +5,10 @@ import { join } from "node:path";
 import test from "node:test";
 import {
   advanceChangeVerification,
+  changeProofPublicationIntentFromOutboxRecord,
   createChangeVerification,
+  enqueueChangeProofPublicationOutbox,
+  providerCheckForStoredChangeProof,
   readChangeProofPublications,
   resetControlDatabaseCache,
   supersedeChangeVerification,
@@ -177,5 +180,48 @@ test("restart publication acknowledges the exact queued historical Proof version
     const receipt = (await readChangeProofPublications(scope, terminal.id)).at(-1);
     assert.equal(receipt?.proofVersion, terminal.version);
     assert.equal(receipt?.conclusion, "action-required");
+  });
+});
+
+test("publication uses the frozen outbox check when mutable details configuration drifts", async () => {
+  await withStateRoot(async () => {
+    const proof = await createTerminalProof();
+    const frozenDetailsUrl = "https://relay.example/frozen-proof";
+    const check = providerCheckForStoredChangeProof({ proof, detailsUrl: frozenDetailsUrl });
+    const outbox = await enqueueChangeProofPublicationOutbox({
+      ...scope,
+      proofId: proof.id,
+      proofVersion: proof.version,
+      provider: "github",
+      repository: proof.change.repository,
+      headSha,
+      externalId: proof.id,
+      check,
+      createdAt: proof.updatedAt,
+    });
+    const intent = changeProofPublicationIntentFromOutboxRecord(outbox);
+    let requestBody: Record<string, unknown> | undefined;
+    await publishChangeProofToGitHub({
+      ...scope,
+      proofId: intent.proofId,
+      proofVersion: intent.proofVersion,
+      intent,
+      config: { owner: "acme", repository: "settings", token: "installation-token" },
+      detailsUrl: "https://relay.example/drifted-config",
+      fetchImpl: async (_url, init) => {
+        if (init?.method === "GET") {
+          return new Response(JSON.stringify({ total_count: 0, check_runs: [] }), { status: 200 });
+        }
+        requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return new Response(JSON.stringify({ id: 45, head_sha: headSha, external_id: proof.id }), {
+          status: 201,
+        });
+      },
+      now: () => 300,
+    });
+
+    assert.equal(requestBody?.details_url, frozenDetailsUrl);
+    const output = requestBody?.output as { summary?: string };
+    assert.equal(output.summary, intent.check.summary);
   });
 });

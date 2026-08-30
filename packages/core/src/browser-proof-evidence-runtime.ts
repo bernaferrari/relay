@@ -142,6 +142,12 @@ export async function captureBrowserProofEvidence(
   const visualAllowed = visualEvidenceAllowed(redactionPolicy);
   const networkBodyAllowed =
     visualAllowed && hasSensitiveEvidenceConsent(input.evidencePolicy, "network-body");
+  // Playwright traces are archives, not ordinary logs: they can contain page
+  // snapshots, screenshots, request metadata, and post-action state. Treat
+  // them as a separately consented sensitive channel. Missing consent is the
+  // safe default for legacy policies and must never create a trace file.
+  const traceAllowed =
+    visualAllowed && hasSensitiveEvidenceConsent(input.evidencePolicy, "browser-trace");
   const channels = {} as Record<BrowserProofEvidenceChannel, BrowserProofEvidenceChannelRecord>;
   const payloads: {
     consoleErrors?: BrowserProofEvidence["consoleErrors"];
@@ -342,11 +348,13 @@ export async function captureBrowserProofEvidence(
   }
 
   const tracePath = artifact("trace.zip");
-  if (!visualAllowed) {
+  if (!traceAllowed) {
     channels.trace = channel(
       "denied",
       undefined,
-      "disabled because trace snapshots can contain visual and semantic content",
+      visualAllowed
+        ? "disabled because Playwright trace retention requires explicit reviewed consent"
+        : "disabled because trace snapshots can contain visual and semantic content",
       0,
       1,
     );
@@ -379,7 +387,11 @@ export async function captureBrowserProofEvidence(
     let pagesDropped = 0;
     const popupFile = await capture("popup-topology", popupPath, async () => {
       const projection = await runtime.pages();
-      pages = projection.pages;
+      // Browser privacy mode is intentionally broader than credential
+      // masking. A Proof may retain popup topology when broad redaction is
+      // disabled, but URL queries, cookies, tokens, and authorization values
+      // are never valid durable evidence.
+      pages = projection.pages.map((page) => redactSensitiveEvidenceValue(page) as typeof page);
       pagesDropped = projection.dropped;
       await writeJson(absoluteArtifactPath(input.runDir, popupPath), {
         pages,

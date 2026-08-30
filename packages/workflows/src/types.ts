@@ -18,6 +18,8 @@ import type {
   TracePack,
   TracePackExportResponse,
   ChangeProofRunOutput,
+  OperationInput,
+  OperationOutput,
   VerifyChangeIntent,
   VerifyChangeResult,
 } from "@relay/protocol";
@@ -505,12 +507,14 @@ export type EvidenceExportResult = TracePackExportResponse;
 
 export type ProveChangeOutcomeIntent = {
   kind: "prove-change";
-  proofId: string;
+  proofId?: string;
   expectedVersion?: number;
   wait?: boolean;
-};
+} & Omit<OperationInput<"proof.prepare">, "policy"> & {
+    policy?: OperationInput<"proof.prepare">["policy"];
+  };
 
-export type ProveChangeOutcome = ChangeProofRunOutput;
+export type ProveChangeOutcome = ChangeProofRunOutput | OperationOutput<"proof.prepare">;
 
 /** Small jobs-to-be-done interface for ordinary humans and agents. The
  * canonical operation registry remains the authority behind every method. */

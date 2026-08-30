@@ -6,6 +6,7 @@ import {
   changeVerificationBuildSchema,
   changeVerificationChangeSchema,
 } from "./change-verification-change-schemas.js";
+import { executionRiskSchema } from "./approval-policy.js";
 
 export {
   changeMergeBaseSha,
@@ -48,7 +49,7 @@ export const CHANGE_VERIFICATION_DECISIONS = [
  * smuggle policy rules into a Proof document. */
 export const VERIFY_CHANGE_POLICY = Object.freeze({
   id: "relay.verify-change",
-  version: 1,
+  version: 2,
 } as const);
 
 export const CHANGE_VERIFICATION_MUTATIONS = [
@@ -225,6 +226,9 @@ export const verificationCellSchema = z
     dimensions: z.record(identifier, identifier),
     routeVariantDigest: sha256.optional(),
     evidencePolicyDigest: sha256.optional(),
+    /** The exact risk classification reviewed for this cell. Optional while
+     * reading legacy planning documents; executable Proofs require it. */
+    executionRisk: executionRiskSchema.optional(),
     executionRiskDigest: sha256.optional(),
     estimatedDurationMs: z.number().int().positive().max(86_400_000).optional(),
     cleanupRequired: z.boolean(),
@@ -242,6 +246,19 @@ export const changeVerificationSelectionSchema = z
     pilotCellId: identifier.optional(),
   })
   .strict();
+
+/** Durable v2 documents created before reviewed cell classification existed.
+ * This shape is accepted only by `parseChangeVerification`, which projects it
+ * into a non-executable review state. It is never accepted for new writes. */
+const legacyUnclassifiedVerificationCellSchema = verificationCellSchema.omit({
+  requirement: true,
+  selectionReason: true,
+  dimensions: true,
+});
+
+const legacyUnclassifiedSelectionSchema = changeVerificationSelectionSchema.extend({
+  cells: z.array(legacyUnclassifiedVerificationCellSchema).max(1_000).readonly(),
+});
 
 export const changeVerificationPolicySchema = z
   .object({ id: identifier, version: z.number().int().positive() })
@@ -586,6 +603,16 @@ const legacyPlanChangeVerificationSchema = sharedChangeVerificationSchema
   .strict()
   .superRefine((proof, context) => validateChangeVerification(proof, context, true, false));
 
+const legacyUnclassifiedCellChangeVerificationSchema = sharedChangeVerificationSchema
+  .extend({
+    schemaVersion: z.literal(2),
+    selection: legacyUnclassifiedSelectionSchema,
+    planApproval: changeVerificationPlanApprovalSchema.optional(),
+    cancellation: changeVerificationCancellationSchema.optional(),
+    lastMutation: changeVerificationMutationReceiptSchema,
+  })
+  .strict();
+
 export const changeVerificationSchema = sharedChangeVerificationSchema
   .extend({
     schemaVersion: z.literal(2),
@@ -665,6 +692,58 @@ export function parseChangeVerification(value: unknown): ChangeVerification {
     });
   }
   if (document.schemaVersion === 2) {
+    const unclassified = legacyUnclassifiedCellChangeVerificationSchema.safeParse(value);
+    if (unclassified.success) {
+      const migrationGap =
+        "This Proof predates reviewed Verification Cell classification; its historical result remains visible, but review is required before execution or merge.";
+      const targets = new Map(
+        unclassified.data.selection.targetCases.map((target) => [target.id, target]),
+      );
+      const pilotCellId =
+        unclassified.data.selection.pilotCellId ?? unclassified.data.selection.cells[0]?.id;
+      const failClosedState =
+        unclassified.data.state === "cancelled" || unclassified.data.state === "superseded"
+          ? unclassified.data.state
+          : "needs-review";
+      return changeVerificationSchema.parse({
+        ...unclassified.data,
+        state: failClosedState,
+        decision: failClosedState === "needs-review" ? "needs-review" : undefined,
+        planApproval: undefined,
+        policyDigest: undefined,
+        planDigest: undefined,
+        decisionDigest: undefined,
+        selection: {
+          ...unclassified.data.selection,
+          ...(pilotCellId ? { pilotCellId } : {}),
+          cells: unclassified.data.selection.cells.map((cell) => {
+            const target = targets.get(cell.targetCaseId);
+            return {
+              ...cell,
+              requirement:
+                cell.id === pilotCellId || target?.required !== false ? "required" : "advisory",
+              selectionReason: migrationGap,
+              dimensions: target?.dimensions ?? {},
+            };
+          }),
+        },
+        coverageGaps:
+          unclassified.data.coverageGaps.includes(migrationGap) ||
+          unclassified.data.coverageGaps.length >= 128
+            ? unclassified.data.coverageGaps
+            : [...unclassified.data.coverageGaps, migrationGap],
+        smallestNextVerification:
+          failClosedState === "cancelled" || failClosedState === "superseded"
+            ? unclassified.data.smallestNextVerification
+            : { kind: "review", reason: migrationGap },
+        lastMutation: {
+          ...unclassified.data.lastMutation,
+          requestId: "legacy-unclassified-cell-migration",
+          requestDigest: `sha256:${"0".repeat(64)}`,
+          action: "legacy-plan-cell-migration",
+        },
+      });
+    }
     const legacy = legacyPlanChangeVerificationSchema.safeParse(value);
     if (legacy.success && !legacy.data.selection.cells?.length) {
       const needsMigration =

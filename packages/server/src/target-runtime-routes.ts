@@ -714,6 +714,11 @@ export async function handleTargetRuntimeRoute(context: {
   if (method === "POST" && buildPreflight) {
     const build = await readBuild(scope.projectId, buildPreflight.id!);
     if (!build) throw new HttpError(404, "Build not found");
+    if (build.platform === "web") {
+      throw new HttpError(409, "Web deployments do not support mobile build preflight", {
+        code: "PROOF_WEB_DEPLOYMENT_REQUIRED",
+      });
+    }
     const body = (await parseJsonBody(request)) as { serial?: unknown };
     const serial = typeof body.serial === "string" ? body.serial.trim() : "";
     const target = serial
@@ -732,6 +737,11 @@ export async function handleTargetRuntimeRoute(context: {
   if (method === "POST" && installMatch) {
     const build = await readBuild(scope.projectId, installMatch.id!);
     if (!build) throw new HttpError(404, "Build not found");
+    if (build.platform === "web") {
+      throw new HttpError(409, "Web deployments cannot be installed on a device", {
+        code: "PROOF_WEB_DEPLOYMENT_REQUIRED",
+      });
+    }
     const body = (await parseJsonBody(request)) as {
       serial?: unknown;
       launch?: unknown;
@@ -779,6 +789,11 @@ export async function handleTargetRuntimeRoute(context: {
   if (method === "POST" && launchMatch) {
     const build = await readBuild(scope.projectId, launchMatch.id!);
     if (!build) throw new HttpError(404, "Build not found");
+    if (build.platform === "web") {
+      throw new HttpError(409, "Web deployments cannot be launched as mobile builds", {
+        code: "PROOF_WEB_DEPLOYMENT_REQUIRED",
+      });
+    }
     const body = (await parseJsonBody(request)) as { serial?: unknown; applicationId?: unknown };
     const serial = typeof body.serial === "string" ? body.serial.trim() : "";
     if (!serial) throw new HttpError(400, "serial is required");

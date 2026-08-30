@@ -76,17 +76,17 @@ export function proofPublicationRuntimeFromEnvironment():
   return proofRepository && proofToken
     ? {
         ...(proofDetailsUrl ? { publicationDetailsUrl: proofDetailsUrl } : {}),
-        publishTerminal: async ({ scope, proof }) => {
+        publishTerminal: async ({ scope, intent }) => {
           await publishChangeProofToGitHub({
             ...scope,
-            proofId: proof.id,
-            proofVersion: proof.version,
+            proofId: intent.proofId,
+            proofVersion: intent.proofVersion,
+            intent,
             config: {
               owner: repositoryParts[0]!,
               repository: repositoryParts[1]!,
               token: proofToken,
             },
-            ...(proofDetailsUrl ? { detailsUrl: proofDetailsUrl } : {}),
           });
         },
       }

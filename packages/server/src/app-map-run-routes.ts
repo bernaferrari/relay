@@ -5,6 +5,7 @@ import {
   AppMapTestCompileError,
   activeReviewedDocumentOriginsForAppMap,
   appMapRuntimeTargetProfileKey,
+  bindRegisteredWebDeploymentToProof,
   CasePlanError,
   buildTargetProfiles,
   compileAppMapConnection,
@@ -13,6 +14,7 @@ import {
   findActiveCombineCampaignForCombine,
   frozenRawAccessibilityTargetProfiles,
   createAppMapTestExecutionIntent,
+  canonicalSha256,
   currentOperationContext,
   enqueueJob,
   listDevices,
@@ -190,6 +192,16 @@ export type AppMapRunRouteContext = {
   request: http.IncomingMessage;
   response: http.ServerResponse;
   scope: RequestContext;
+  /** Proof-only admission membrane. The canonical Test preflight must match
+   * the risk authority frozen by the calling Verification Cell before any
+   * target lease or job enqueue is attempted. */
+  proofExecutionAuthority?: {
+    executionRiskDigest: string;
+    /** Proof execution also freezes the exact build/deployment identity. */
+    buildId?: string;
+    sourceSha?: string;
+    artifactDigest?: string;
+  };
   runtime?: Partial<AppMapTestRunRouteRuntime>;
   combineRuntime?: Partial<JobRouteRuntime>;
 };
@@ -427,6 +439,39 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
       );
     }
 
+    if (input.proofExecutionAuthority) {
+      const actualRiskDigest = canonicalSha256(preflight.executionRisk);
+      if (actualRiskDigest !== input.proofExecutionAuthority.executionRiskDigest) {
+        throw new HttpError(
+          409,
+          "Proof cell execution risk no longer matches its frozen authority",
+          {
+            code: "PROOF_EXECUTION_AUTHORITY_MISMATCH",
+            expectedExecutionRiskDigest: input.proofExecutionAuthority.executionRiskDigest,
+            actualExecutionRiskDigest: actualRiskDigest,
+            recovery:
+              "Recompile the exact Test revision and review its execution authority before retrying the Proof.",
+          },
+        );
+      }
+      if (
+        preflight.executionRisk.level !== "safe" ||
+        preflight.executionRisk.confirmation !== "none"
+      ) {
+        throw new HttpError(
+          409,
+          "Proof execution currently admits only safe Tests without confirmation",
+          {
+            code: "PROOF_EXECUTION_AUTHORITY_REQUIRED",
+            level: preflight.executionRisk.level,
+            confirmation: preflight.executionRisk.confirmation,
+            recovery:
+              "Review the Test's external effects and provide an explicit confirmation flow before running this Proof.",
+          },
+        );
+      }
+    }
+
     // Freeze and validate every executable byte before Relay asks the target
     // controller for a lease. A malformed graph or intent is an offline
     // review problem, never a reason to touch the selected target first.
@@ -549,21 +594,42 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
       }
     }
     let buildProvenance: Awaited<ReturnType<typeof prepareRegisteredBuildForProof>> | undefined;
+    let webBuildBinding:
+      | {
+          id: string;
+          platform: "web";
+          artifactDigest: `sha256:${string}`;
+          sourceSha: string;
+          configuration: string;
+          environmentRevision: string;
+        }
+      | undefined;
     const sourceRevision = body.sourceRevision;
     const buildId = sourceRevision?.buildId;
-    if (buildId) {
-      if (body.target.kind !== "device") {
+    if (input.proofExecutionAuthority && body.target.kind === "browser") {
+      const authority = input.proofExecutionAuthority;
+      if (
+        !sourceRevision ||
+        !sourceRevision.buildId ||
+        !authority.buildId ||
+        sourceRevision.buildId !== authority.buildId ||
+        (authority.sourceSha !== undefined && sourceRevision.sha !== authority.sourceSha) ||
+        (authority.artifactDigest !== undefined &&
+          sourceRevision.artifactDigest !== authority.artifactDigest)
+      ) {
         throw new HttpError(
           409,
-          "Browser Proof execution requires a provider-verified deployment identity",
+          "Browser Proof execution is missing its exact frozen deployment identity",
           {
             code: "PROOF_INSUFFICIENT_EVIDENCE",
             targetId,
             recovery:
-              "Bind a verified deployment digest to this browser target before starting the Proof.",
+              "Create a new Proof with a provider-verified web deployment bound to the exact tested revision.",
           },
         );
       }
+    }
+    if (buildId) {
       const build = await runtime.readBuild(input.scope.projectId, buildId);
       if (!build) {
         throw new HttpError(409, `Registered Proof build ${buildId} was not found`, {
@@ -571,27 +637,74 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
           buildId,
         });
       }
-      const targetKind = observedDevices?.find((device) => device.serial === targetId)?.kind;
-      try {
-        buildProvenance = await runtime.prepareBuildForProof({
-          build,
-          target: { kind: "device", platform: body.target.platform, serial: targetId },
-          targetKind,
-          sourceSha: sourceRevision!.sha,
-          artifactDigest: sourceRevision!.artifactDigest ?? "",
-        });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        throw new HttpError(409, message, {
-          code: message.startsWith("PROOF_INSUFFICIENT_EVIDENCE")
-            ? "PROOF_INSUFFICIENT_EVIDENCE"
-            : "PROOF_BUILD_INVALID",
-          buildId,
-          targetId,
-          recovery: "Install and verify the exact registered build before retrying this Proof.",
-        });
+      if (body.target.kind === "browser") {
+        try {
+          const bound = bindRegisteredWebDeploymentToProof({
+            build,
+            changeTestedSha: sourceRevision!.sha,
+          });
+          if (
+            sourceRevision!.buildId !== bound.id ||
+            sourceRevision!.artifactDigest !== bound.artifactDigest ||
+            (input.proofExecutionAuthority?.buildId !== undefined &&
+              input.proofExecutionAuthority.buildId !== bound.id) ||
+            (input.proofExecutionAuthority?.sourceSha !== undefined &&
+              input.proofExecutionAuthority.sourceSha !== bound.sourceSha) ||
+            (input.proofExecutionAuthority?.artifactDigest !== undefined &&
+              input.proofExecutionAuthority.artifactDigest !== bound.artifactDigest)
+          ) {
+            throw new Error("browser deployment does not match the frozen Proof build identity");
+          }
+          webBuildBinding = bound;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          throw new HttpError(409, message, {
+            code: "PROOF_BUILD_INVALID",
+            buildId,
+            targetId,
+            recovery:
+              "Bind a provider-verified deployment URL and digest to the exact Proof tested SHA before retrying.",
+          });
+        }
+      } else {
+        const targetKind = observedDevices?.find((device) => device.serial === targetId)?.kind;
+        try {
+          buildProvenance = await runtime.prepareBuildForProof({
+            build,
+            target: { kind: "device", platform: body.target.platform, serial: targetId },
+            targetKind,
+            sourceSha: sourceRevision!.sha,
+            artifactDigest: sourceRevision!.artifactDigest ?? "",
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          throw new HttpError(409, message, {
+            code: message.startsWith("PROOF_INSUFFICIENT_EVIDENCE")
+              ? "PROOF_INSUFFICIENT_EVIDENCE"
+              : "PROOF_BUILD_INVALID",
+            buildId,
+            targetId,
+            recovery: "Install and verify the exact registered build before retrying this Proof.",
+          });
+        }
       }
     }
+    if (input.proofExecutionAuthority && body.target.kind === "browser" && !webBuildBinding) {
+      throw new HttpError(409, "Browser Proof execution requires a verified deployment binding", {
+        code: "PROOF_INSUFFICIENT_EVIDENCE",
+        targetId,
+        recovery:
+          "Bind a provider-verified deployment URL and digest to the exact Proof tested SHA before retrying.",
+      });
+    }
+    const queuedSourceRevision = webBuildBinding
+      ? {
+          vcs: "git" as const,
+          sha: webBuildBinding.sourceSha,
+          artifactDigest: webBuildBinding.artifactDigest,
+          buildId: webBuildBinding.id,
+        }
+      : sourceRevision;
     await runtime.assertTargetControl(input.scope, targetId);
     const planIdentity = {
       appMapId: plan.appMapId,
@@ -609,7 +722,7 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
       targetKind: body.target.kind,
       browserTargetId: body.target.kind === "browser" ? targetId : undefined,
       ...(targetProfile ? { targetProfile } : {}),
-      ...(body.sourceRevision ? { sourceRevision: body.sourceRevision } : {}),
+      ...(queuedSourceRevision ? { sourceRevision: queuedSourceRevision } : {}),
       artifacts: [
         ...(buildProvenance
           ? [
@@ -617,6 +730,15 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
                 kind: "proof-build-provenance",
                 capturedAt: buildProvenance.observation.observedAt,
                 data: structuredClone(buildProvenance),
+              },
+            ]
+          : []),
+        ...(webBuildBinding
+          ? [
+              {
+                kind: "proof-web-deployment-binding",
+                capturedAt: queuedAt,
+                data: structuredClone(webBuildBinding),
               },
             ]
           : []),

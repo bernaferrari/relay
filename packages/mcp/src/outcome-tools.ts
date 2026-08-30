@@ -556,15 +556,48 @@ export const relayOutcomeTools = Object.freeze([
     name: "relay_prove_change",
     title: "Prove a change",
     description:
-      "Start or resume one approved server-owned Proof. Returns durable progress, exact Run references, uncertainty, and the next required action. Repeating the same call never selects another case or retries an uncertain outcome.",
+      "Prepare the current repository change when proofId is omitted, or run/resume one approved server-owned Proof when proofId is supplied. Returns durable progress or the exact next required action. Repeating the same call never selects another case or retries an uncertain outcome.",
     requiresConfirmation: false,
     inputSchema: z
       .object({
-        proofId: identifier,
+        proofId: identifier.optional(),
+        baseRef: z.string().trim().min(1).max(512).optional(),
+        pullRequest: z.number().int().positive().optional(),
+        agentClaim: z
+          .object({
+            summary: z.string().trim().min(1).max(4_096),
+            acceptanceCriteria: z.array(z.string().trim().min(1).max(4_096)).max(64),
+          })
+          .strict()
+          .optional(),
+        targetIds: z.array(identifier).min(1).max(250).optional(),
+        buildIds: z.array(identifier).min(1).max(32).optional(),
         expectedVersion: z.number().int().positive().optional(),
         wait: z.boolean().optional(),
       })
-      .strict(),
+      .strict()
+      .superRefine((value, context) => {
+        if (!value.proofId && (value.expectedVersion !== undefined || value.wait !== undefined)) {
+          context.addIssue({
+            code: "custom",
+            message:
+              "expectedVersion and wait require proofId; omit proofId to prepare the current change",
+          });
+        }
+        if (
+          value.proofId &&
+          (value.baseRef ||
+            value.pullRequest ||
+            value.agentClaim ||
+            value.targetIds ||
+            value.buildIds)
+        ) {
+          context.addIssue({
+            code: "custom",
+            message: "preparation fields are only valid when proofId is omitted",
+          });
+        }
+      }),
     annotations: {
       readOnlyHint: false,
       destructiveHint: false,
@@ -843,7 +876,12 @@ export async function invokeRelayOutcomeToolWithJobs(input: {
   if (input.name === "relay_prove_change") {
     return jobs.proveChange({
       kind: "prove-change",
-      proofId: parsed.proofId as string,
+      ...(typeof parsed.proofId === "string" ? { proofId: parsed.proofId } : {}),
+      ...(typeof parsed.baseRef === "string" ? { baseRef: parsed.baseRef } : {}),
+      ...(typeof parsed.pullRequest === "number" ? { pullRequest: parsed.pullRequest } : {}),
+      ...(parsed.agentClaim ? { agentClaim: parsed.agentClaim as never } : {}),
+      ...(Array.isArray(parsed.targetIds) ? { targetIds: parsed.targetIds as string[] } : {}),
+      ...(Array.isArray(parsed.buildIds) ? { buildIds: parsed.buildIds as string[] } : {}),
       ...(typeof parsed.expectedVersion === "number"
         ? { expectedVersion: parsed.expectedVersion }
         : {}),

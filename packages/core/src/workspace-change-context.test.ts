@@ -77,6 +77,31 @@ test("uncommitted workspace state remains visible and blocks a frozen Proof", as
   }
 });
 
+test("a workspace already at its comparison revision is inspectable but not provable", async () => {
+  const root = await mkdtemp(join(os.tmpdir(), "relay-workspace-no-change-"));
+  try {
+    await git(root, "init", "-b", "main");
+    await git(root, "config", "user.name", "Relay Test");
+    await git(root, "config", "user.email", "relay@example.test");
+    await writeFile(join(root, "README.md"), "current\n");
+    await git(root, "add", "README.md");
+    await git(root, "commit", "-m", "Current state");
+    const headSha = await git(root, "rev-parse", "HEAD");
+    await git(root, "remote", "add", "origin", "https://github.com/acme/settings.git");
+    await git(root, "update-ref", "refs/remotes/origin/main", headSha);
+    await git(root, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main");
+
+    const context = await inspectWorkspaceChange({ startPath: root });
+
+    assert.equal(context.status, "resolved");
+    assert.equal(context.changeRef, undefined);
+    assert.equal(context.readyForProof, false);
+    assert.match(context.blockers.join("\n"), /same as its comparison revision/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("comparison freezes the common ancestor instead of the moving branch tip", async () => {
   const root = await mkdtemp(join(os.tmpdir(), "relay-workspace-merge-base-"));
   try {

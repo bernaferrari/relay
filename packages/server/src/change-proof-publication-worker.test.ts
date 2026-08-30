@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import {
   advanceChangeVerification,
+  claimChangeProofPublicationOutbox,
   createChangeVerification,
   listChangeProofPublicationOutbox,
   providerCheckForStoredChangeProof,
@@ -14,7 +15,10 @@ import {
   type ChangeVerificationScope,
 } from "@relay/core";
 import type { ChangeProofPublicationOutboxRecord, ChangeVerification } from "@relay/protocol";
-import { processChangeProofPublicationRecord } from "./change-proof-publication-worker.js";
+import {
+  drainChangeProofPublicationOutbox,
+  processChangeProofPublicationRecord,
+} from "./change-proof-publication-worker.js";
 
 const scope: ChangeVerificationScope = { organizationId: "acme", projectId: "relay" };
 const headSha = "2".repeat(40);
@@ -153,5 +157,83 @@ test("provider success without a matching receipt becomes a reconciliation retry
     // At the attempt ceiling the row remains visible but cannot be claimed
     // again automatically, so a human/operator can reconcile it explicitly.
     assert.equal(retry.nextAttemptAt, undefined);
+  });
+});
+
+test("each drain pass reclaims an expired claim before selecting due work", async () => {
+  await withStateRoot(async () => {
+    const proof = await terminalProof();
+    const record = await publicationRecord();
+    const abandoned = await claimChangeProofPublicationOutbox({
+      ...scope,
+      id: record.id,
+      workerId: "worker-abandoned",
+      now: 1,
+      leaseMs: 1,
+    });
+    assert.equal(abandoned?.status, "claimed");
+
+    let publishCalls = 0;
+    const processed = await drainChangeProofPublicationOutbox({
+      workerId: "worker-recovery",
+      loadProof: async () => proof,
+      publish: async ({ intent }) => {
+        publishCalls += 1;
+        await recordChangeProofPublication({
+          ...scope,
+          proofId: intent.proofId,
+          proofVersion: intent.proofVersion,
+          repository: intent.repository,
+          check: intent.check,
+          provider: "github",
+          checkRunId: 43,
+          externalId: intent.externalId,
+          headSha: intent.headSha,
+          publishedAt: Date.now(),
+        });
+      },
+    });
+
+    assert.equal(processed, 1);
+    assert.equal(publishCalls, 1);
+    assert.equal((await publicationRecord()).status, "published");
+  });
+});
+
+test("long provider calls retain the exact publication claim lease", async () => {
+  await withStateRoot(async () => {
+    const proof = await terminalProof();
+    const record = await publicationRecord();
+    await processChangeProofPublicationRecord({
+      record,
+      proof,
+      workerId: "worker-heartbeat",
+      leaseMs: 20,
+      heartbeatMs: 5,
+      publish: async ({ intent }) => {
+        await new Promise((resolve) => setTimeout(resolve, 55));
+        const live = (await listChangeProofPublicationOutbox(scope))[0];
+        assert.ok(live);
+        assert.equal(live.status, "claimed");
+        assert.equal(live.lease?.workerId, "worker-heartbeat");
+        assert.ok(
+          live.lease && live.lease.expiresAt > live.lease.claimedAt + 20,
+          "heartbeat must extend the exact lease, not claim a replacement row",
+        );
+        await recordChangeProofPublication({
+          ...scope,
+          proofId: intent.proofId,
+          proofVersion: intent.proofVersion,
+          repository: intent.repository,
+          check: intent.check,
+          provider: "github",
+          checkRunId: 44,
+          externalId: intent.externalId,
+          headSha: intent.headSha,
+          publishedAt: Date.now(),
+        });
+      },
+    });
+    assert.equal((await publicationRecord()).status, "published");
   });
 });

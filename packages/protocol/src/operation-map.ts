@@ -70,7 +70,7 @@ export type RedactionPolicyDto = {
   updatedAt?: number;
 };
 
-export type SensitiveEvidenceChannelDto = "audio" | "crash" | "network-body";
+export type SensitiveEvidenceChannelDto = "audio" | "crash" | "network-body" | "browser-trace";
 
 export type EvidenceCollectionPolicyDto = {
   schemaVersion: 1;
@@ -238,13 +238,14 @@ export type BuildDto = {
   id: string;
   projectId: string;
   name: string;
-  platform: "android" | "ios";
+  platform: "android" | "ios" | "web";
   sourceUrl?: string;
   sourceSha256?: string;
   sourceSha?: string;
   configuration?: string;
   environmentRevision?: string;
   applicationId?: string;
+  deploymentDigest?: string;
   status: "uploaded" | "ready" | "failed" | "archived";
   createdAt: number;
   updatedAt: number;

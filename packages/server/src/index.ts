@@ -71,6 +71,7 @@ import {
   acquireRelayStateServerLease,
   beginDurableWorkerServerLifecycle,
   type AuthoringRuntime,
+  type ChangeProofCellExecutor,
   type RelayStateServerLease,
 } from "@relay/core";
 import { collectVisibleReports } from "./report-access.js";
@@ -126,6 +127,8 @@ import type { StartServerOptions, StartedServer } from "./server-types.js";
 import type { WorkflowRouteRuntime } from "./workflow-routes.js";
 import { handlePrimaryOperationRoutes } from "./primary-operation-routes.js";
 import type { ChangeVerificationRouteRuntime } from "./change-verification-routes.js";
+import { proofExecutionCoordinator } from "./change-proof-execution-runtime.js";
+import { createDefaultChangeProofCellExecutor } from "./change-proof-cell-executor.js";
 import { createProofPublicationWorker } from "./proof-publication-runtime.js";
 import { runServerCli } from "./server-cli.js";
 import { requestsBearerAuthentication, setCorsOrigin } from "./cors.js";
@@ -735,6 +738,7 @@ async function startServerWithStateLease(
   // so a queued job cannot later resolve a provider against ambient defaults.
   const targetDriverRegistry = opts.targetDriverRegistry ?? defaultTargetDriverRegistry;
   const proofPublicationWorker = createProofPublicationWorker(opts.proofRouteRuntime);
+  const proofCoordinator = proofExecutionCoordinator(opts.proofRouteRuntime);
   const redaction = await loadRedactionPolicy();
   await loadEvidenceCollectionPolicy();
   for (const recoveryScope of await authoringSessions.recoveryScopes()) {
@@ -846,6 +850,26 @@ async function startServerWithStateLease(
   const addr = server.address();
   const port = typeof addr === "object" && addr !== null ? addr.port : preferredPort;
   publish({ type: "server.ready", at: now(), host, port });
+  const recoverProofCell = opts.proofRouteRuntime?.executeCell
+    ? opts.proofRouteRuntime.executeCell
+    : ((async (input) => {
+        const execute = createDefaultChangeProofCellExecutor({
+          subject: input.execution.actorId,
+          organizationId: input.execution.organizationId,
+          projectId: input.execution.projectId,
+          allowedProjects: [input.execution.projectId],
+          tokenKind: "local",
+          localTrusted: true,
+          role: "runner",
+        });
+        return execute(input);
+      }) satisfies ChangeProofCellExecutor);
+  const proofRecovery = proofCoordinator.recover?.(recoverProofCell);
+  void proofRecovery?.catch((error: unknown) =>
+    console.warn(
+      `Proof execution recovery failed: ${error instanceof Error ? error.message : String(error)}`,
+    ),
+  );
 
   const close = createFailClosedServerShutdown({
     stopRequestAdmission: () => requestHandlers.stopAdmission(),

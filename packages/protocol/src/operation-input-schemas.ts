@@ -61,7 +61,7 @@ export const operationInputSchemas = {
   "workspace.privacy.update": z.object({ enabled: z.boolean() }).strict(),
   "workspace.evidence.update": z
     .object({
-      channel: z.enum(["audio", "crash", "network-body"]),
+      channel: z.enum(["audio", "crash", "network-body", "browser-trace"]),
       enabled: z.boolean(),
       reason: z.string().optional(),
     })
@@ -278,16 +278,63 @@ export const operationInputSchemas = {
     .object({
       id: identifier("Build identifier"),
       name: text("Build name"),
-      platform: z.enum(["android", "ios"]),
+      platform: z.enum(["android", "ios", "web"]),
       sourceUrl: z.string().optional(),
       sourceSha256: z.string().optional(),
       sourceSha: z.string().optional(),
       configuration: z.string().optional(),
       environmentRevision: z.string().optional(),
       applicationId: z.string().optional(),
+      deploymentDigest: z
+        .string()
+        .regex(/^sha256:[a-f0-9]{64}$/u)
+        .optional(),
       status: z.string().optional(),
     })
-    .strict(),
+    .strict()
+    .superRefine((input, context) => {
+      if (input.platform !== "web") {
+        if (input.deploymentDigest !== undefined) {
+          context.addIssue({
+            code: "custom",
+            path: ["deploymentDigest"],
+            message: "is only valid for web deployments",
+          });
+        }
+        return;
+      }
+      if (!input.sourceUrl) {
+        context.addIssue({ code: "custom", path: ["sourceUrl"], message: "is required for web" });
+      }
+      if (!input.deploymentDigest) {
+        context.addIssue({
+          code: "custom",
+          path: ["deploymentDigest"],
+          message: "is required for web",
+        });
+      }
+      if (!input.sourceSha || !/^[a-f0-9]{40}$/u.test(input.sourceSha)) {
+        context.addIssue({
+          code: "custom",
+          path: ["sourceSha"],
+          message: "must be an exact lowercase 40-character Git SHA for web",
+        });
+      }
+      if (!input.configuration?.trim()) {
+        context.addIssue({
+          code: "custom",
+          path: ["configuration"],
+          message: "is required for web",
+        });
+      }
+      if (!input.environmentRevision?.trim()) {
+        context.addIssue({
+          code: "custom",
+          path: ["environmentRevision"],
+          message: "is required for web",
+        });
+      }
+    }),
   "device-pool.save": z
     .object({
       id: identifier("Device-pool identifier"),

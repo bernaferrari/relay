@@ -11,7 +11,7 @@ import { runSupervisedBrowserMutation } from "./browser-mutation-supervision.js"
 import { runBrowserMutationAdmission } from "./browser-mutation-admission.js";
 import { browserProfileDir, readTarget } from "./targets.js";
 import { getEvidenceCollectionPolicy, hasSensitiveEvidenceConsent } from "./evidence-policy.js";
-import { redactValue, visualEvidenceAllowed } from "./redaction.js";
+import { redactSensitiveEvidenceValue, redactValue, visualEvidenceAllowed } from "./redaction.js";
 import {
   attachBrowserEvidence,
   snapshotBrowserPage,
@@ -639,19 +639,24 @@ export async function getBrowserDevice(
     observability: {
       perf: async () => {
         const page = await activePage(session);
-        return await page.evaluate(() => ({
-          url: location.href,
-          title: document.title,
-          navigation: performance.getEntriesByType("navigation")[0]?.toJSON?.() ?? null,
-          resources: performance.getEntriesByType("resource").length,
-        }));
+        return redactSensitiveEvidenceValue(
+          await page.evaluate(() => ({
+            url: location.href,
+            title: document.title,
+            navigation: performance.getEntriesByType("navigation")[0]?.toJSON?.() ?? null,
+            resources: performance.getEntriesByType("resource").length,
+          })),
+        );
       },
       logs: async (input?: Parameters<Device["observability"]["logs"]>[0]) => {
         if (input?.action === "start" || input?.action === "clear") {
           session.console = [];
           session.consoleDropped = 0;
         }
-        return { entries: [...session.console], dropped: session.consoleDropped };
+        return {
+          entries: session.console.map((entry) => redactValue(redactSensitiveEvidenceValue(entry))),
+          dropped: session.consoleDropped,
+        };
       },
       network: async (input?: Parameters<Device["observability"]["network"]>[0]) => {
         if (input?.action === "log") {
@@ -675,7 +680,7 @@ export async function getBrowserDevice(
         }
         await Promise.allSettled(session.networkPending);
         return {
-          entries: session.network.map((entry) => redactValue(entry)),
+          entries: session.network.map((entry) => redactValue(redactSensitiveEvidenceValue(entry))),
           dropped: session.networkDropped,
         };
       },

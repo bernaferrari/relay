@@ -7,6 +7,57 @@ import {
 /** The durable Proof lifecycle exposed to agents and human operators. */
 export const proofCommandDescriptors: readonly MappedOperationDescriptor[] = [
   mapped(
+    "proof.prepare",
+    path("proof prepare", [], undefined, {
+      summary: "Prepare a reviewable Proof from the current repository change",
+      inputHelp: [
+        {
+          name: "baseRef",
+          type: "git ref",
+          description: "Optional reviewed comparison ref when the workspace has no default",
+        },
+        {
+          name: "pullRequest",
+          type: "positive integer",
+          description: "Optional pull request number to bind to the exact tested revision",
+        },
+        {
+          name: "agentClaim",
+          type: "object",
+          description:
+            "Optional completion summary and acceptance criteria supplied by the requester",
+        },
+        {
+          name: "targetIds",
+          type: "array",
+          description: "Optional subset of repository-reviewed target identities",
+        },
+        {
+          name: "buildIds",
+          type: "array",
+          description: "Optional subset of repository-reviewed build identities",
+        },
+      ],
+      examples: [
+        "relay proof prepare --json",
+        'relay proof prepare --input \'{"baseRef":"origin/main","targetIds":["emulator-5554"]}\' --json',
+      ],
+      note: "The server resolves Git, reviewed journey mappings, registered builds, App Map revisions, and Verification Cells. Callers cannot supply a head SHA, cells, or a verdict.",
+    }),
+    path("prove", [], undefined, {
+      summary: "Prepare or resume the current repository change Proof",
+      inputHelp: [
+        {
+          name: "baseRef",
+          type: "git ref",
+          description: "Optional reviewed comparison ref when the workspace has no default",
+        },
+      ],
+      examples: ["relay prove --json", 'relay prove --input \'{"baseRef":"origin/main"}\' --json'],
+      note: "Returns the exact Proof and next required action. Use relay prove <proof-id> to run an approved Proof.",
+    }),
+  ),
+  mapped(
     "proof.start",
     path("proof start", [], undefined, {
       summary: "Start a durable Proof from an exact change and policy",

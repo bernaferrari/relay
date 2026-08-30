@@ -1,4 +1,4 @@
-import type { ChangeVerification } from "@relay/protocol";
+import type { ChangeProofExecutionSummary, ChangeVerification } from "@relay/protocol";
 
 export type ProofPrimaryAction = Readonly<{
   kind: "approve-plan" | "run" | "rerun-affected";
@@ -20,7 +20,10 @@ const terminalFailureStates = new Set<ChangeVerification["state"]>([
 
 /** Present one product action from durable Proof truth. Transport actions and
  * optimistic versions stay out of the UI vocabulary. */
-export function proofPrimaryAction(proof: ChangeVerification): ProofPrimaryAction | undefined {
+export function proofPrimaryAction(
+  proof: ChangeVerification,
+  execution?: ChangeProofExecutionSummary | null,
+): ProofPrimaryAction | undefined {
   if (
     proof.state === "planning" &&
     !proof.planApproval &&
@@ -39,7 +42,11 @@ export function proofPrimaryAction(proof: ChangeVerification): ProofPrimaryActio
   if (proof.state === "ready") {
     return { kind: "run", label: "Run pilot", pendingLabel: "Starting pilot…" };
   }
-  if (runningStates.has(proof.state)) {
+  if (
+    runningStates.has(proof.state) &&
+    execution?.status !== "queued" &&
+    execution?.status !== "running"
+  ) {
     return {
       kind: "run",
       label:

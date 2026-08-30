@@ -258,6 +258,22 @@ export async function preflightRegisteredBuild(
 ): Promise<RegisteredBuildPreflight> {
   const at = options.at ?? Date.now();
   const run = options.run ?? defaultCommandRunner;
+  if (build.platform === "web") {
+    return {
+      buildId: build.id,
+      ok: false,
+      checkedAt: at,
+      capabilities: { install: false, launch: false },
+      checks: [
+        {
+          id: "web-deployment-binding",
+          status: "fail",
+          message:
+            "Web deployments do not use mobile artifact preflight; bind the provider-reported deployment digest to the Proof.",
+        },
+      ],
+    };
+  }
   let path = localArtifactPath(build.sourceUrl);
   const expectedKind = build.platform === "android" ? "apk" : "app";
   const checks: RegisteredBuildPreflight["checks"] = [];

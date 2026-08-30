@@ -7,13 +7,17 @@ import { ApiError, RelayClient } from "@relay/client";
 import { startServer } from "./index.js";
 
 function clientFor(port: number): RelayClient {
+  return clientForActor(port, "human:test", "human");
+}
+
+function clientForActor(port: number, actorId: string, actorKind: "human" | "agent"): RelayClient {
   return new RelayClient({
     url: `http://127.0.0.1:${port}`,
     auth: { type: "none" },
     organizationId: "local",
     projectId: "default",
-    actorId: "human:test",
-    actorKind: "human",
+    actorId,
+    actorKind,
   });
 }
 
@@ -93,6 +97,32 @@ test("environment policy is locked and unredacted network bindings are refused",
     else process.env.RELAY_STATE_DIR = previousStateDir;
     if (previousMode === undefined) delete process.env.RELAY_REDACTION_MODE;
     else process.env.RELAY_REDACTION_MODE = previousMode;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("browser trace retention consent is human-reviewed", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-server-browser-trace-consent-"));
+  const previousRoot = process.env.RELAY_WORKSPACE_ROOT;
+  const previousStateDir = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_WORKSPACE_ROOT = root;
+  process.env.RELAY_STATE_DIR = join(root, ".relay");
+  const server = await startServer({ host: "127.0.0.1", port: 0 });
+  try {
+    await assert.rejects(
+      clientForActor(server.port, "agent:trace-policy", "agent").setSensitiveEvidenceConsent(
+        "browser-trace",
+        true,
+        "Agent requested trace collection",
+      ),
+      (error) => error instanceof ApiError && error.status === 403,
+    );
+  } finally {
+    await server.close();
+    if (previousRoot === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
+    else process.env.RELAY_WORKSPACE_ROOT = previousRoot;
+    if (previousStateDir === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previousStateDir;
     await rm(root, { recursive: true, force: true });
   }
 });

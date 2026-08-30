@@ -91,6 +91,14 @@ export type ChangeProofExecutionCoordinatorOptions = {
   /** Deterministic test/embedding seam after `dispatching` is durable and
    * before target control. Production leaves it undefined. */
   onDispatchFencePersisted?: (record: ChangeProofExecutionRecord) => Promise<void> | void;
+  /** Delay used by startup recovery when another worker still owns an
+   * unexpired execution lease. The retry is scheduled after the lease expiry
+   * (or this minimum delay), so recovery does not spin or abandon the Proof. */
+  recoveryRetryMs?: number;
+  /** Host/test seam for the bounded startup-recovery retry. The production
+   * default uses an unref'd timer so a stuck external worker cannot keep a
+   * process alive during shutdown. */
+  scheduleRecoveryRetry?: (callback: () => void, delayMs: number) => unknown;
   publication?: ChangeProofPublicationRequest;
 };
 

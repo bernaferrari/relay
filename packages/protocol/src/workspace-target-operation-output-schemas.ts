@@ -546,6 +546,10 @@ const evidencePolicy = z
           .object({ grantedAt: natural, grantedBy: text, reason: z.string() })
           .strict()
           .optional(),
+        "browser-trace": z
+          .object({ grantedAt: natural, grantedBy: text, reason: z.string() })
+          .strict()
+          .optional(),
       })
       .strict(),
     redaction: z

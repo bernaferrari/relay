@@ -15,6 +15,7 @@ import {
   isIosLivePreviewBackend,
   setRedactionEnabled,
   setSensitiveEvidenceConsent,
+  currentOperationContext,
 } from "@relay/core";
 import type { SensitiveEvidenceChannel } from "@relay/protocol";
 import { HttpError, json, parseJsonBody } from "./http.js";
@@ -149,8 +150,16 @@ export async function handleSettingsRoute(context: SettingsRouteContext): Promis
       enabled?: unknown;
       reason?: unknown;
     };
-    if (body.channel !== "audio" && body.channel !== "crash" && body.channel !== "network-body") {
-      throw new HttpError(400, "channel must be audio, crash, or network-body");
+    if (
+      body.channel !== "audio" &&
+      body.channel !== "crash" &&
+      body.channel !== "network-body" &&
+      body.channel !== "browser-trace"
+    ) {
+      throw new HttpError(400, "channel must be audio, crash, network-body, or browser-trace");
+    }
+    if (body.channel === "browser-trace" && currentOperationContext()?.actorKind !== "human") {
+      throw new HttpError(403, "Browser trace retention consent requires a human actor");
     }
     if (typeof body.enabled !== "boolean") throw new HttpError(400, "enabled must be a boolean");
     if (body.reason !== undefined && typeof body.reason !== "string") {

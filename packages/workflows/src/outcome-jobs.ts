@@ -539,6 +539,16 @@ class CanonicalRelayOutcomeJobs implements RelayOutcomeJobs {
   }
 
   proveChange(intent: ProveChangeOutcomeIntent) {
+    if (!intent.proofId) {
+      return this.operations.invoke("proof.prepare", {
+        ...(intent.baseRef ? { baseRef: intent.baseRef } : {}),
+        ...(intent.pullRequest ? { pullRequest: intent.pullRequest } : {}),
+        ...(intent.agentClaim ? { agentClaim: intent.agentClaim } : {}),
+        ...(intent.policy ? { policy: intent.policy } : {}),
+        ...(intent.targetIds ? { targetIds: intent.targetIds } : {}),
+        ...(intent.buildIds ? { buildIds: intent.buildIds } : {}),
+      });
+    }
     return this.operations.invoke("proof.run", {
       proofId: intent.proofId,
       ...(intent.expectedVersion === undefined ? {} : { expectedVersion: intent.expectedVersion }),

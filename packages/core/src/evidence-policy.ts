@@ -4,7 +4,12 @@ import { readWorkspaceSetting, writeWorkspaceSetting } from "./workspace-setting
 
 const EVIDENCE_POLICY_FILE = "evidence.json";
 const DEFAULT_POLICY: EvidenceCollectionPolicy = { schemaVersion: 1, sensitive: {} };
-const CHANNELS = new Set<SensitiveEvidenceChannel>(["audio", "crash", "network-body"]);
+const CHANNELS = new Set<SensitiveEvidenceChannel>([
+  "audio",
+  "crash",
+  "network-body",
+  "browser-trace",
+]);
 
 let activePolicy: EvidenceCollectionPolicy = DEFAULT_POLICY;
 

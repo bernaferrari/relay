@@ -128,6 +128,8 @@ const extraGuidance: Partial<Record<OperationId, string>> = {
     " Read active, expired, and revoked links for one run before minting a duplicate.",
   "run.share.revoke":
     " Immediately invalidate a signed link. Use when a PR closes or a link leaked.",
+  "proof.prepare":
+    " Prepare or resume one reviewable Proof from the server's current repository change and reviewed .relay/change-proof.json. Relay resolves the exact Git revision, App Map revisions, builds, targets, and cells; never supply a head SHA, cells, or verdict.",
   "proof.start":
     " Start one versioned Proof for an exact source change, builds, Verification Plan, and policy. Keep the returned proof id and version for every later lifecycle call.",
   "proof.list":
@@ -496,6 +498,7 @@ const adminOperations = [
  * explicit legacy/manual Run import recovery through record-runs.
  */
 const proofOperations = [
+  "proof.prepare",
   "proof.start",
   "proof.list",
   "proof.inspect",

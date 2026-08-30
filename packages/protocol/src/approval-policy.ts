@@ -1,3 +1,5 @@
+import * as z from "zod/v4";
+
 export const EXECUTION_RISK_LEVELS = ["safe", "guarded", "destructive", "prohibited"] as const;
 export type ExecutionRiskLevel = (typeof EXECUTION_RISK_LEVELS)[number];
 
@@ -38,6 +40,37 @@ export type ExecutionRisk = {
   maximumDurationMs?: number;
   cleanupRequired: boolean;
 };
+
+const identifier = z.string().trim().min(1).max(256);
+const boundedText = z.string().trim().min(1).max(4_096);
+
+/** Runtime membrane for the risk object that a durable Proof cell freezes.
+ * The type above remains the public vocabulary; this schema makes the same
+ * contract verifiable at persisted authority boundaries. */
+export const executionRiskSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    level: z.enum(EXECUTION_RISK_LEVELS),
+    reasons: z
+      .array(
+        z
+          .object({
+            stepId: identifier.optional(),
+            code: identifier,
+            explanation: boundedText,
+          })
+          .strict(),
+      )
+      .max(256)
+      .readonly(),
+    externalEffects: z.array(z.enum(EXECUTION_EXTERNAL_EFFECTS)).max(32).readonly(),
+    confirmation: z.enum(["none", "once-per-run", "per-step", "human-only"]),
+    expectedAppBoundaries: z.array(identifier).max(128).readonly(),
+    maximumActions: z.number().int().nonnegative().optional(),
+    maximumDurationMs: z.number().int().nonnegative().optional(),
+    cleanupRequired: z.boolean(),
+  })
+  .strict();
 
 export const APPROVAL_FINDING_CATEGORIES = [
   "crash",

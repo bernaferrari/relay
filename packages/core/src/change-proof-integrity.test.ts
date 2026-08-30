@@ -25,7 +25,7 @@ function draft(overrides: Partial<ChangeVerification> = {}): ChangeVerification 
     change: { repository: "acme/settings", baseSha: "1".repeat(40), headSha: "2".repeat(40) },
     builds: [],
     selection: { affectedJourneys: [], targetCases: [] },
-    policy: { id: "relay.verify-change", version: 1 },
+    policy: { id: "relay.verify-change", version: 2 },
     runIds: [],
     evidenceDigests: [],
     coverageGaps: [],
@@ -53,6 +53,10 @@ test("the live policy definition is deeply frozen and version dispatched", () =>
   assert.equal(Object.isFrozen(VERIFY_CHANGE_POLICY_DEFINITION), true);
   assert.equal(Object.isFrozen(VERIFY_CHANGE_POLICY_DEFINITION.ruleIds), true);
   assert.equal(
+    resolveVerifyChangePolicy({ id: "relay.verify-change", version: 2 }),
+    VERIFY_CHANGE_POLICY_DEFINITION,
+  );
+  assert.notEqual(
     resolveVerifyChangePolicy({ id: "relay.verify-change", version: 1 }),
     VERIFY_CHANGE_POLICY_DEFINITION,
   );
@@ -77,8 +81,12 @@ test("policy and plan digests are locale-independent and insertion-order indepen
   });
   assert.equal(verifyChangePlanDigest(left), verifyChangePlanDigest(right));
   assert.equal(
+    verifyChangePolicyDigest({ id: "relay.verify-change", version: 2 }),
+    verifyChangePolicyDigest({ version: 2, id: "relay.verify-change" }),
+  );
+  assert.notEqual(
     verifyChangePolicyDigest({ id: "relay.verify-change", version: 1 }),
-    verifyChangePolicyDigest({ version: 1, id: "relay.verify-change" }),
+    verifyChangePolicyDigest({ id: "relay.verify-change", version: 2 }),
   );
 });
 

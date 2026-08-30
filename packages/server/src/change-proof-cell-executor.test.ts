@@ -2,6 +2,24 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { ChangeProofExecutionRecord } from "@relay/core";
 import { changeProofCellRunInput } from "./change-proof-cell-executor.js";
+import { canonicalSha256 } from "@relay/core";
+
+const safeExecutionRisk = {
+  schemaVersion: 1 as const,
+  level: "safe" as const,
+  reasons: [],
+  externalEffects: [],
+  confirmation: "none" as const,
+  expectedAppBoundaries: [],
+  cleanupRequired: false,
+};
+const prohibitedExecutionRisk = {
+  ...safeExecutionRisk,
+  level: "prohibited" as const,
+  confirmation: "human-only" as const,
+  reasons: [{ code: "reviewed-effect.purchase", explanation: "Purchase effect." }],
+  externalEffects: ["purchase" as const],
+};
 
 const execution = (
   platform: "browser" | "ios",
@@ -45,6 +63,8 @@ const execution = (
             requirement: "required",
             selectionReason: "Reviewed exact execution cell.",
             dimensions: cellDimensions,
+            executionRisk: safeExecutionRisk,
+            executionRiskDigest: canonicalSha256(safeExecutionRisk),
             cleanupRequired: false,
           },
         ],
@@ -62,7 +82,7 @@ test("the default cell adapter binds a browser deployment without an invalid bui
     buildId: "build-1",
   });
   assert.deepEqual(input.target, { kind: "browser", platform: "browser", targetId: "web" });
-  assert.equal(input.sourceRevision?.buildId, undefined);
+  assert.equal(input.sourceRevision?.buildId, "build-1");
   assert.equal(input.sourceRevision?.artifactDigest, `sha256:${"a".repeat(64)}`);
 });
 
@@ -92,4 +112,49 @@ test("the default cell adapter executes reviewed non-target dimensions as one ex
   assert.deepEqual(input.in, { theme: ["dark"] });
   assert.deepEqual(input.pilotCase, { theme: "dark" });
   assert.equal(input.executionMode, "pilot");
+});
+
+test("the default cell adapter refuses a cell without frozen risk authority", () => {
+  const value = execution("browser");
+  const cell = value.frozenProof.selection.cells![0]!;
+  value.frozenProof.selection.cells = [
+    (({ executionRisk: _risk, executionRiskDigest: _digest, ...withoutAuthority }) =>
+      withoutAuthority)(cell),
+  ] as never;
+  assert.throws(
+    () =>
+      changeProofCellRunInput(value, {
+        cellId: "cell-1",
+        appMapId: "settings",
+        testId: "language",
+        appMapRevision: 4,
+        targetCaseId: "target-1",
+        buildId: "build-1",
+      }),
+    /no frozen execution-risk authority/u,
+  );
+});
+
+test("the default cell adapter refuses prohibited or confirmation-gated risk", () => {
+  const value = execution("browser");
+  const cell = value.frozenProof.selection.cells![0]!;
+  value.frozenProof.selection.cells = [
+    {
+      ...cell,
+      executionRisk: prohibitedExecutionRisk,
+      executionRiskDigest: canonicalSha256(prohibitedExecutionRisk),
+    },
+  ] as never;
+  assert.throws(
+    () =>
+      changeProofCellRunInput(value, {
+        cellId: "cell-1",
+        appMapId: "settings",
+        testId: "language",
+        appMapRevision: 4,
+        targetCaseId: "target-1",
+        buildId: "build-1",
+      }),
+    /only safe\/none Proof execution is currently supported/u,
+  );
 });

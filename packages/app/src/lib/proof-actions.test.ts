@@ -51,6 +51,28 @@ test("withholds approval until the frozen plan is complete", () => {
   assert.equal(proofPrimaryAction(proof("proved")), undefined);
 });
 
+test("does not offer Resume while the durable execution is already active", () => {
+  const activeExecution = {
+    id: "execution",
+    proofId: "proof",
+    status: "running",
+    cursor: 0,
+    total: 1,
+    runIds: [],
+    deadlineAt: Date.now() + 60_000,
+    nextAction: "inspect",
+  } as const;
+  assert.equal(proofPrimaryAction(proof("running-pilot"), activeExecution), undefined);
+  assert.equal(
+    proofPrimaryAction(proof("running-pilot"), { ...activeExecution, status: "queued" }),
+    undefined,
+  );
+  assert.equal(
+    proofPrimaryAction(proof("running-pilot"), { ...activeExecution, status: "uncertain" })?.label,
+    "Resume pilot",
+  );
+});
+
 test("only non-terminal Proofs can be cancelled", () => {
   assert.equal(proofCanCancel(proof("planning")), true);
   assert.equal(proofCanCancel(proof("running")), true);
