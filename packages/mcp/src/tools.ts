@@ -491,8 +491,9 @@ const adminOperations = [
  * Relay as the proof layer for AI-written code: verify one change by running
  * the affected flows on real devices, reading the proof report, and turning
  * a failure into a precise digest the coding agent can fix. Read-heavy by
- * design; execution reuses app-map.test.run and job tools, while the
- * versioned Proof lifecycle remains available for explicit human decisions.
+ * design; normal execution goes through the server-owned proof.run
+ * coordinator. Lower-level Test and job tools remain available only for
+ * explicit legacy/manual Run import recovery through record-runs.
  */
 const proofOperations = [
   "proof.start",

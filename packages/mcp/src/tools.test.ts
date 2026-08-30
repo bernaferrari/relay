@@ -616,7 +616,7 @@ test("defines deterministic advanced profiles behind the compact outcome default
   }
 });
 
-test("the proof profile composes the verify-change loop and CLI-parity share tools", () => {
+test("the proof profile composes the durable verify-change loop and recovery tools", () => {
   const proof = new Set(relayMcpToolsForProfile("proof").map(({ operationId }) => operationId));
   for (const operationId of [
     "proof.start",
@@ -647,9 +647,14 @@ test("the proof profile composes the verify-change loop and CLI-parity share too
   const routineImpactRegistered = operationDefinitions.some(({ id }) => id === routineImpactId);
   assert.equal((proof as ReadonlySet<string>).has(routineImpactId), routineImpactRegistered);
   // The Proof profile exposes the lifecycle's explicit plan authority while
-  // keeping unrelated App Map authoring out of the profile.
+  // retaining lower-level Test/job tools only for explicit record-runs
+  // recovery; normal execution is the durable proof.run coordinator.
   assert.equal(proof.has("app-map.test.save"), false);
   assert.equal(proof.has("app-map.proposal.approve"), false);
+  assert.match(
+    relayMcpTools.find(({ operationId }) => operationId === "proof.run")!.description,
+    /server-owned coordinator.*persists progress.*job choreography/u,
+  );
 });
 
 test("Proof lifecycle tools preserve canonical names and approval metadata", () => {

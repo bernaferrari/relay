@@ -180,8 +180,10 @@ Destination-mismatch repair proposals are also exposed as typed data: when a fai
 the protocol schema — review-only screen candidates with confidence, rationale, and method, or an
 explicit zero-proposal result with reason `grounding-unavailable`. The
 `relay_verify_this_change` prompt (available from the `proof` profile) walks an agent through the
-full loop: establish impact, select affected Tests, run them once, read the proof report and repair
-proposals on failure, and return a structured verdict with share links for reviewers.
+full loop: establish impact, select affected Tests, obtain human approval for the frozen plan, call
+the server-owned `relay_proof_run` once, inspect its durable Proof result and repair proposals on
+failure, and return a structured verdict with share links for reviewers. Lower-level Test/job tools
+remain an explicit legacy/manual `record-runs` recovery path, not the normal Proof execution loop.
 
 ## Surface and safety model
 

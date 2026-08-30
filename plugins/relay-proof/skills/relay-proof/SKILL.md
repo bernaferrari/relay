@@ -27,10 +27,18 @@ and report the block. Ask for a base only when Relay reports a real ambiguity.
 4. Start one Proof with `relay_proof_start`, then inspect it before decisions.
 5. Ask a human to approve the frozen plan. Agents must never self-approve;
    `relay_proof_plan_approve` is confirmation-protected.
-6. Run only the approved Test cases on explicit targets. Follow job IDs to
-   terminal Runs and inspect evidence; transport success is not a pass.
-7. Return the deterministic Proof decision, first causal failure, evidence
-   references, gaps, and residual risk.
+6. After human approval, call `relay_proof_run` exactly once with the Proof id,
+   exact version, and `wait: true`. The server-owned coordinator runs the
+   frozen Verification Cells, persists progress, and returns a durable
+   execution summary; do not orchestrate per-Test jobs or poll provider jobs.
+7. Call `relay_proof_inspect` for the same Proof and inspect its durable proof,
+   execution summary, Run IDs, evidence, and uncertainty. Return the
+   deterministic Proof decision, first causal failure, evidence references,
+   gaps, and residual risk.
+
+If explicitly recovering or importing already persisted legacy Runs, use the
+exact Proof version with `record-runs` through `relay_proof_continue`. This is a
+recovery path only and does not replace the normal server-owned execution.
 
 ## Repair safely
 

@@ -57,11 +57,14 @@ workspace is the authority for the current change. Restored tabs, browser
 history, and manually typed repository or SHA values do not select a Proof.
 Only an actual base ambiguity should require a choice.
 
-Agents may inspect impact, assemble a plan, run approved coverage, inspect
-evidence, and prepare a bounded repair packet. A human must approve the frozen
-Verification Plan. Never infer a green result from an accepted request,
-transport response, or a stale tab. Every Proof remains bound to its exact
-head, build digests, target profiles, evidence, and policy version.
+Agents may inspect impact, assemble a plan, call the server-owned
+`relay_proof_run` exactly once after approval, inspect its durable execution
+summary and evidence, and prepare a bounded repair packet. A human must
+approve the frozen Verification Plan. Never infer a green result from an
+accepted request, transport response, or a stale tab. Every Proof remains
+bound to its exact head, build digests, target profiles, evidence, and policy
+version. Legacy/manual Runs may be imported with `record-runs` only when
+explicitly needed for recovery; they are not a replacement for `proof.run`.
 
 After a repair, create a new Proof and rerun only affected journeys. The old
 Proof remains immutable history. `needs-review`, `insufficient-evidence`, and

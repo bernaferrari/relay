@@ -531,6 +531,8 @@ test("verify-change prompt renders the proof loop with commit and file scope", a
     assert.match(text, /relay_proof_list/);
     assert.match(text, /relay_proof_inspect/);
     assert.match(text, /relay_proof_plan_approve/);
+    assert.match(text, /relay_proof_run exactly once/);
+    assert.match(text, /wait: true/);
     assert.match(text, /relay_proof_continue/);
     assert.match(text, /relay_proof_cancel/);
     assert.match(text, /relay_proof_rerun_affected/);
@@ -542,9 +544,11 @@ test("verify-change prompt renders the proof loop with commit and file scope", a
     assert.match(text, /Establish impact/);
     assert.match(text, /restored tabs.*never choose the change/i);
     assert.match(text, /smallest set of saved graph Tests/);
-    assert.match(text, /relay_app_map_test_run/);
-    assert.match(text, /expectedRevision/);
-    assert.match(text, /relay_job_get/);
+    assert.match(text, /server-owned coordinator/);
+    assert.match(text, /durable proof and execution summary/);
+    assert.match(text, /record-runs/);
+    assert.doesNotMatch(text, /relay_app_map_test_run/);
+    assert.doesNotMatch(text, /relay_job_get/);
     assert.match(text, /relay_run_story_get/);
     assert.match(text, /repair-proposals/);
     assert.match(text, /relay_run_repair_list/);
