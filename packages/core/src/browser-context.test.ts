@@ -9,6 +9,10 @@ import { chromium } from "playwright-core";
 import { browserContextOptionsForProfile, createBrowserContextFactory } from "./browser-context.js";
 import { saveBrowserAuthenticationFixture } from "./browser-authentication-fixtures.js";
 import { closeBrowserHostPool } from "./browser-host-pool.js";
+import { browserProofSessionForTarget, closeBrowserTarget } from "./browser-target.js";
+import { acquirePreparedSessionDevice } from "./session-provider-execution.js";
+import { deleteTarget, saveBrowserTarget } from "./targets.js";
+import type { TestJob } from "./session.js";
 
 const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 let root = "";
@@ -75,6 +79,47 @@ test("Playwright contexts receive no implicit permissions", () => {
   assert.deepEqual(browserContextOptionsForProfile(reviewedProfile, {}).permissions, [
     "clipboard-read",
   ]);
+});
+
+test("redacted frozen proof runs disable Playwright context video recording", async (t) => {
+  await access(CHROME).catch(() => t.skip("Google Chrome is not installed"));
+  if (t.signal.aborted) return;
+
+  const target = await saveBrowserTarget({
+    id: "browser-redacted-proof",
+    name: "Redacted proof browser",
+    startUrl,
+    headless: true,
+    environment: { viewport: { width: 900, height: 600 } },
+  });
+  const profile = compileBrowserEnvironment(target.browser?.environment ?? {});
+  const job = {
+    id: "redacted-proof-run",
+    targetKind: "browser",
+    browserTargetId: target.id,
+    targetContext: { kind: "browser", platform: "browser", targetId: target.id },
+    browserCaseProfile: profile,
+    projectId: "default",
+    artifacts: [],
+    evidencePolicy: {
+      schemaVersion: 1,
+      sensitive: {},
+      redaction: { enabled: true, source: "workspace", locked: false },
+    },
+  } as unknown as TestJob;
+  try {
+    await acquirePreparedSessionDevice(
+      job,
+      { browserTarget: target, deviceAvailable: true },
+      () => undefined,
+    );
+    const session = await browserProofSessionForTarget(target.id);
+    assert.equal(session.recordVideo, false);
+    assert.equal(session.context.pages()[0]?.video(), null);
+  } finally {
+    await closeBrowserTarget(target.id, { mode: "proof" }).catch(() => undefined);
+    await deleteTarget(target.id).catch(() => undefined);
+  }
 });
 
 test("authoring context is separate while proof contexts are fresh and explicitly closable", async (t) => {

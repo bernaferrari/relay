@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -126,6 +126,62 @@ test("run evidence records video and performance without affecting the run", asy
   } finally {
     if (previous === undefined) delete process.env.RELAY_RUNS_DIR;
     else process.env.RELAY_RUNS_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("redacted frozen visual policy does not start or persist generic device video", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-redacted-video-"));
+  const calls: string[] = [];
+  const device = {
+    recording: {
+      record: async (options: { action: "start" | "stop" }) => {
+        calls.push(options.action);
+        return { started: true };
+      },
+    },
+  } as unknown as Device;
+  const job = {
+    id: "redacted-video-run",
+    action: "chat-smoke",
+    serial: testTarget.serial,
+    platform: "android",
+    targetContext: testTarget,
+    status: "running",
+    queuedAt: Date.now(),
+    attempts: 1,
+    logs: [],
+    steps: [],
+    frames: [],
+    glyphs: [],
+    kind: "Replay",
+    tone: "acc",
+    title: "Redacted video",
+    runDir: root,
+    artifacts: [],
+    resolvedInputs: {},
+    evidencePolicy: {
+      schemaVersion: 1,
+      sensitive: {},
+      redaction: { enabled: true, source: "workspace", locked: false },
+    },
+  } as unknown as TestJob;
+
+  try {
+    const handle = await startRunEvidence(job, device, () => undefined);
+    await stopRunEvidence(handle, job, device, () => undefined);
+
+    assert.deepEqual(calls, []);
+    assert.equal(handle.recordingStarted, false);
+    assert.equal(handle.manifest.channels.video.status, "redacted");
+    assert.equal(
+      job.artifacts.some(
+        (artifact) => artifact.kind === "video-start" || artifact.kind === "video",
+      ),
+      false,
+    );
+    await assert.rejects(access(join(root, "video")));
+  } finally {
     await rm(root, { recursive: true, force: true });
   }
 });

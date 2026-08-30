@@ -504,61 +504,65 @@ export async function startRunEvidence(
     });
   }
 
-  const videoUnsupported = visualEvidenceAllowed(
-    job.evidencePolicy.redaction ?? getRedactionPolicy(),
-  )
-    ? hasStepScopedCampaignEvidence(job)
+  const visualAllowed = visualEvidenceAllowed(job.evidencePolicy.redaction ?? getRedactionPolicy());
+  if (visualAllowed) {
+    const videoUnsupported = hasStepScopedCampaignEvidence(job)
       ? "step-scoped campaign frames already provide reviewable visual evidence"
       : options.physicalIos
         ? "full-flow video is unavailable; recorded transitions keep their own takes"
-        : undefined
-    : undefined;
-  await guardedCollector(
-    handle,
-    "video",
-    log,
-    async () => {
-      const runDir = await ensureRunDir(job);
-      const path = join(runDir, "video", "run.mp4");
-      const result = await withTimeout(
-        recordDeviceVideo(device, {
-          ...base(),
-          action: "start",
-          path,
-          fps: 30,
-          // Screenshots carry pixel-level evidence. Medium H.264 keeps the
-          // continuous run review sharp without producing huge device files.
-          quality: "medium",
-          hideTouches: true,
-        }),
-        10_000,
-        "video recorder start",
-        async () => {
-          await recordDeviceVideo(device, { ...base(), action: "stop" });
-        },
-      );
-      if (result && typeof result === "object" && "started" in result && result.started === false) {
-        const warning =
-          "warning" in result && typeof result.warning === "string"
-            ? result.warning
-            : "Video recording is unavailable";
-        const record = channel(handle, "video");
-        record.status = "unsupported";
-        record.message = warning;
-        log(`warn: ${warning}`);
-      } else {
-        markCollectorStarted(handle, "video");
-        addArtifact(job, {
-          kind: "video-start",
-          capturedAt: startedAt,
-          data: { path: "video/run.mp4", result: redactValue(result) },
-        });
-        event(handle, "video", "capture.started", { path: "video/run.mp4" });
-        log("evidence: video recording started");
-      }
-    },
-    videoUnsupported,
-  );
+        : undefined;
+    await guardedCollector(
+      handle,
+      "video",
+      log,
+      async () => {
+        const runDir = await ensureRunDir(job);
+        const path = join(runDir, "video", "run.mp4");
+        const result = await withTimeout(
+          recordDeviceVideo(device, {
+            ...base(),
+            action: "start",
+            path,
+            fps: 30,
+            // Screenshots carry pixel-level evidence. Medium H.264 keeps the
+            // continuous run review sharp without producing huge device files.
+            quality: "medium",
+            hideTouches: true,
+          }),
+          10_000,
+          "video recorder start",
+          async () => {
+            await recordDeviceVideo(device, { ...base(), action: "stop" });
+          },
+        );
+        if (
+          result &&
+          typeof result === "object" &&
+          "started" in result &&
+          result.started === false
+        ) {
+          const warning =
+            "warning" in result && typeof result.warning === "string"
+              ? result.warning
+              : "Video recording is unavailable";
+          const record = channel(handle, "video");
+          record.status = "unsupported";
+          record.message = warning;
+          log(`warn: ${warning}`);
+        } else {
+          markCollectorStarted(handle, "video");
+          addArtifact(job, {
+            kind: "video-start",
+            capturedAt: startedAt,
+            data: { path: "video/run.mp4", result: redactValue(result) },
+          });
+          event(handle, "video", "capture.started", { path: "video/run.mp4" });
+          log("evidence: video recording started");
+        }
+      },
+      videoUnsupported,
+    );
+  }
 
   return handle;
 }
