@@ -9,6 +9,7 @@ import {
   disarmCompensatingCleanup,
   ensureControl,
   getControl,
+  hardStopRequiresDeviceShutdown,
   raceCancel,
   requestCancel,
   requestPause,
@@ -22,6 +23,41 @@ import {
 } from "./control.js";
 
 describe("job control", () => {
+  it("only permits device-level hard-stop shutdown for physical iOS hardware", () => {
+    assert.equal(
+      hardStopRequiresDeviceShutdown({
+        kind: "device",
+        platform: "android",
+        serial: "emulator-5554",
+      }),
+      false,
+    );
+    assert.equal(
+      hardStopRequiresDeviceShutdown({
+        kind: "device",
+        platform: "ios",
+        serial: "8D4C476A-5854-4D7B-BD26-E4D7A1475E03",
+      }),
+      false,
+    );
+    assert.equal(
+      hardStopRequiresDeviceShutdown({
+        kind: "device",
+        platform: "ios",
+        serial: "db0c9b7c3aeb83dc2259d08e3b521a30f621d3f5",
+      }),
+      true,
+    );
+    assert.equal(
+      hardStopRequiresDeviceShutdown({
+        kind: "browser",
+        platform: "browser",
+        targetId: "chromium-local",
+      }),
+      false,
+    );
+  });
+
   it("throwIfCancelled after requestCancel", () => {
     ensureControl("j1");
     setExecutingJobId("j1");

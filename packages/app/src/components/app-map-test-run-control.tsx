@@ -118,20 +118,17 @@ export function AppMapTestRunControl(props: TestRunControlProps) {
   // not a second prerequisite checklist for a first run. The run action itself
   // still performs the same automatic offline preflight before device control.
   return (
-    <div
-      class="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 max-[900px]:flex max-[900px]:w-auto"
-      data-test-run-actions
-    >
+    <div class="flex min-w-0 items-center" data-test-run-actions>
       <span
         id="test-run-control-status"
         data-test-run-status
-        class="min-h-[2.6em] min-w-0 text-right text-caption/[1.3] text-text-weak [overflow-wrap:anywhere] max-[900px]:sr-only"
+        class="sr-only"
         role="status"
         aria-atomic="true"
       >
         {status()}
       </span>
-      <div class="flex shrink-0 items-center justify-self-end gap-1.5">
+      <div class="flex shrink-0 items-center gap-1.5">
         <details
           class="group relative shrink-0"
           data-test-run-options

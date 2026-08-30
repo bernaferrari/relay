@@ -44,7 +44,7 @@ test("renders checking, offline, busy retry, and recovered states without remoun
     assert.equal(offline.match(/role="alertdialog"/g)?.length, 1);
     assert.match(offline, /inert/);
     assert.match(offline, /aria-hidden="true"/);
-    assert.match(offline, /Waiting for the local service…/);
+    assert.match(offline, /Relay reconnects automatically when the service starts\./);
     assert.match(offline, /Check now/);
     assert.match(retrying, /Checking…/);
     assert.equal(recovered.match(/role="alertdialog"/g)?.length ?? 0, 0);

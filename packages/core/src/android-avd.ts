@@ -6,18 +6,37 @@
  * serial must never be guessed from a previous session.
  */
 import { execFile, spawn } from "node:child_process";
-import { access } from "node:fs/promises";
+import { access, mkdir, stat, truncate } from "node:fs/promises";
 import { constants } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { probeAdbDevices, type AdbDeviceObservation } from "./adb-devices.js";
+import { findWorkspaceRoot } from "./workspace-root.js";
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_BOOT_TIMEOUT_MS = 120_000;
 const MAX_BOOT_TIMEOUT_MS = 300_000;
 const COMMAND_TIMEOUT_MS = 5_000;
 const POLL_INTERVAL_MS = 500;
+const REQUIRED_STABLE_BOOT_SAMPLES = 3;
+const DETACHED_LAUNCH_HELPER = String.raw`
+const { spawn } = require("node:child_process");
+const { closeSync, openSync } = require("node:fs");
+const [command, logPath, ...args] = process.argv.slice(1);
+if (!command || !logPath) process.exit(2);
+const log = openSync(logPath, "a", 0o600);
+const child = spawn(command, args, { detached: true, stdio: ["ignore", log, log] });
+child.once("spawn", () => {
+  closeSync(log);
+  child.unref();
+  process.exit(0);
+});
+child.once("error", () => {
+  closeSync(log);
+  process.exit(1);
+});
+`;
 
 export type AndroidAvdStatus = "stopped" | "booting" | "booted";
 
@@ -171,9 +190,11 @@ async function defaultReadAvdName(serial: string): Promise<string | undefined> {
       { timeout: COMMAND_TIMEOUT_MS, maxBuffer: 4096 },
     );
     const value = result.stdout.trim();
-    return value || androidAvdNameForSerial(serial);
+    return value || undefined;
   } catch {
-    return androidAvdNameForSerial(serial);
+    // A cached display label cannot prove the identity of a newly reused ADB
+    // serial. Fail closed until the connected emulator answers for itself.
+    return undefined;
   }
 }
 
@@ -201,17 +222,52 @@ async function defaultReadBootCompleted(serial: string): Promise<boolean> {
 
 async function defaultLaunch(avdName: string, headless: boolean): Promise<void> {
   const emulator = await resolveAndroidTool("emulator");
+  const logDirectory = join(
+    process.env.RELAY_STATE_DIR?.trim() || join(findWorkspaceRoot(), ".relay"),
+    "android-avd",
+  );
+  await mkdir(logDirectory, { recursive: true, mode: 0o700 });
+  const logPath = join(logDirectory, `${encodeURIComponent(avdName)}.log`);
+  const existingLog = await stat(logPath).catch(() => undefined);
+  if ((existingLog?.size ?? 0) > 1_000_000) await truncate(logPath, 0);
   await new Promise<void>((resolve, reject) => {
     const args = ["-avd", avdName];
-    if (headless) args.push("-no-window", "-no-audio");
-    const child = spawn(emulator, args, { detached: true, stdio: "ignore" });
+    // Headless AVDs are proof targets, not suspended desktop windows. Loading
+    // Quick Boot RAM state can revive a half-frozen System UI and report
+    // sys.boot_completed=1 while an ANR dialog owns the screen. Cold-boot from
+    // the durable data image and never save another RAM snapshot on exit.
+    if (headless) args.push("-no-window", "-no-audio", "-no-snapshot");
+    // tsx watch terminates the watched server's process tree on a reload. A
+    // directly spawned qemu process therefore vanished whenever Relay's dev
+    // server restarted. Hand the emulator through one short-lived detached
+    // Node process so qemu is re-parented before this operation returns.
+    const child = spawn(
+      process.execPath,
+      ["--input-type=commonjs", "--eval", DETACHED_LAUNCH_HELPER, emulator, logPath, ...args],
+      { detached: true, stdio: "ignore" },
+    );
     let settled = false;
-    child.once("spawn", () => {
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(new AndroidAvdError("avd-boot-failed", "Android emulator launch handoff timed out"));
+    }, COMMAND_TIMEOUT_MS);
+    timer.unref();
+    child.once("exit", (code) => {
+      clearTimeout(timer);
+      if (settled) return;
       settled = true;
       child.unref();
-      resolve();
+      if (code === 0) resolve();
+      else
+        reject(
+          new AndroidAvdError("avd-boot-failed", "Android emulator process failed to start", {
+            exitCode: code,
+          }),
+        );
     });
     child.once("error", (error) => {
+      clearTimeout(timer);
       if (settled) return;
       settled = true;
       reject(
@@ -249,7 +305,19 @@ async function runningAvdSerials(
       return [normalizeAvdName(avdName), device.serial] as const;
     }),
   );
-  return new Map(pairs.filter((pair): pair is readonly [string, string] => pair !== undefined));
+  const result = new Map<string, string>();
+  const ambiguous = new Set<string>();
+  for (const pair of pairs) {
+    if (!pair) continue;
+    const [name, serial] = pair;
+    if (result.has(name)) {
+      result.delete(name);
+      ambiguous.add(name);
+    } else if (!ambiguous.has(name)) {
+      result.set(name, serial);
+    }
+  }
+  return result;
 }
 
 export async function listAndroidAvds(
@@ -297,14 +365,30 @@ async function waitForAvdBoot(
   timeoutMs: number,
 ): Promise<string> {
   const startedAt = runtime.now();
+  let stableSerial: string | undefined;
+  let stableSamples = 0;
   while (runtime.now() - startedAt < timeoutMs) {
     const connected = await runtime.listConnected().catch(() => []);
+    let readySerial: string | undefined;
     for (const device of connected) {
       const observedName = await runtime.readAvdName(device.serial).catch(() => undefined);
       if (!observedName || normalizeAvdName(observedName) !== normalizeAvdName(avdName)) continue;
-      rememberAndroidAvd(device.serial, observedName);
-      if (await runtime.readBootCompleted(device.serial)) return device.serial;
+      if (await runtime.readBootCompleted(device.serial).catch(() => false)) {
+        readySerial = device.serial;
+        rememberAndroidAvd(device.serial, observedName);
+        break;
+      }
     }
+    if (readySerial && readySerial === stableSerial) {
+      stableSamples += 1;
+    } else if (readySerial) {
+      stableSerial = readySerial;
+      stableSamples = 1;
+    } else {
+      stableSerial = undefined;
+      stableSamples = 0;
+    }
+    if (stableSerial && stableSamples >= REQUIRED_STABLE_BOOT_SAMPLES) return stableSerial;
     await runtime.sleep(
       Math.min(POLL_INTERVAL_MS, Math.max(50, timeoutMs - (runtime.now() - startedAt))),
     );
@@ -371,9 +455,14 @@ export async function bootAndroidAvd(
       if (!observedName || normalizeAvdName(observedName) !== lockKey) continue;
       rememberAndroidAvd(device.serial, observedName);
       if (await readBootCompleted(device.serial).catch(() => false)) {
+        const serial = await waitForAvdBoot(
+          requested,
+          { listConnected, readAvdName, readBootCompleted, sleep, now: currentTime },
+          timeoutMs,
+        );
         return {
           avdName: requested,
-          serial: device.serial,
+          serial,
           platform: "android",
           kind: "emulator",
           booted: true,

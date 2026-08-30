@@ -120,6 +120,7 @@ const tracePackArtifactReferenceSchema = z
         "not-a-file",
         "outside-run-directory",
         "byte-count-mismatch",
+        "digest-mismatch",
         "object-too-large",
         "pack-too-large",
         "changed-during-export",

@@ -110,12 +110,12 @@ export function OfflineGateSurface(props: {
               <Show
                 when={props.retryError}
                 fallback={
-                  <p class="m-0 flex items-center gap-1.5 text-caption text-text-weak">
+                  <p class="m-0 flex max-w-[30ch] items-center gap-1.5 text-caption/[1.35] text-text-weak">
                     <span
                       class="size-1.5 shrink-0 rounded-full bg-text-weaker motion-safe:animate-pulse"
                       aria-hidden="true"
                     />
-                    Waiting for the local service…
+                    Relay reconnects automatically when the service starts.
                   </p>
                 }
               >

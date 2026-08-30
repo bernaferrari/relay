@@ -1,7 +1,11 @@
 import { Show, createSignal } from "solid-js";
 import { Button } from "@relay/ui/button";
 import { cn } from "../lib/cn";
-import type { FirstTestChecklistState, FirstTestTargetStatus } from "../lib/onboarding";
+import type {
+  FirstTestChecklistState,
+  FirstTestStage,
+  FirstTestTargetStatus,
+} from "../lib/onboarding";
 import { Icon } from "./icon";
 
 type TargetCheck = {
@@ -48,6 +52,17 @@ function targetActionLabel(target: FirstTestTargetStatus): string {
   return target.kind === "ready" ? "Check Device" : target.actionLabel;
 }
 
+const STAGE_NUMBER: Record<Exclude<FirstTestStage, "complete">, number> = {
+  target: 1,
+  capture: 2,
+  author: 3,
+  run: 4,
+};
+
+function progressLabel(stage: FirstTestStage): string {
+  return stage === "complete" ? "Complete" : `Step ${STAGE_NUMBER[stage]} of 4`;
+}
+
 /**
  * A compact, resumable path into the existing App Map/Test workflow. It owns
  * no progress state: callers advance it only when Relay's server-backed data
@@ -87,9 +102,17 @@ export function FirstTestChecklist(props: FirstTestChecklistProps) {
     >
       <header class="flex min-w-0 items-start justify-between gap-3">
         <div class="min-w-0">
-          <p class="m-0 text-micro font-semibold tracking-[0.08em] text-[var(--text-weaker)] uppercase">
-            First useful test
-          </p>
+          <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+            <p class="m-0 text-micro font-semibold tracking-[0.08em] text-[var(--text-weaker)] uppercase">
+              First useful Test
+            </p>
+            <span
+              class="rounded-full bg-[var(--surface-base)] px-2 py-0.5 text-micro font-medium tabular-nums text-[var(--text-weak)] shadow-[var(--map-elevation-chip)]"
+              aria-label={`First useful Test progress: ${progressLabel(props.state.stage)}`}
+            >
+              {progressLabel(props.state.stage)}
+            </span>
+          </div>
           <h2
             id="first-test-checklist-title"
             class="mt-1 mb-0 text-body/[1.25] font-semibold text-[var(--text-strong)]"
@@ -99,7 +122,7 @@ export function FirstTestChecklist(props: FirstTestChecklistProps) {
         </div>
         <button
           type="button"
-          class="grid size-9 shrink-0 place-items-center rounded-lg text-[var(--text-weak)] transition-colors hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)]"
+          class="grid size-11 shrink-0 place-items-center rounded-xl text-[var(--text-weak)] transition-colors hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)]"
           aria-label="Hide first useful test guide"
           data-tip="Hide guide"
           onClick={dismiss}

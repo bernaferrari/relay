@@ -1644,6 +1644,9 @@ test("the primary Test action compiles, runs, cancels, and opens its exact resul
 
   expect(primary().textContent).toContain("Preparing run");
   expect(primary().getAttribute("aria-busy")).toBe("true");
+  expect(
+    root.querySelector<HTMLElement>("[data-test-workspace-bar] [aria-live='polite']")?.textContent,
+  ).toContain("Preparing run");
   finishRun();
   await settle();
 
@@ -1669,6 +1672,9 @@ test("the primary Test action compiles, runs, cancels, and opens its exact resul
   });
   expect(primary().textContent).toContain("Cancel queued run");
   expect(root.textContent).toContain("Queued on the selected target");
+  expect(
+    root.querySelector<HTMLElement>("[data-test-workspace-bar] [aria-live='polite']")?.textContent,
+  ).toContain("Run queued");
   primary().click();
   await settle();
 

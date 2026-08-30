@@ -409,7 +409,12 @@ export class TargetSupervisor {
         effects.push(...this.completeRecoveryStep(event));
         break;
       case "operator.human-cleared":
+        if (this.state.input.pending?.uncertainAt !== undefined) {
+          throw new Error("Uncertain input requires reconciliation evidence before recovery");
+        }
+        this.state.quarantined = false;
         this.state.needsHuman = false;
+        this.state.counters.recoveryFailures = 0;
         this.state.input.blockedReason = this.state.input.pending
           ? this.state.input.blockedReason
           : undefined;

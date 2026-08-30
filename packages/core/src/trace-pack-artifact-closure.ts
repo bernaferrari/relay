@@ -6,6 +6,7 @@ import type {
   TracePackArtifactReference,
   TracePackObject,
 } from "@relay/protocol";
+import { readAuthoringEvidence } from "./authoring-evidence.js";
 import type { PersistedRun } from "./runs.js";
 
 export type TracePackExportLimits = {
@@ -28,6 +29,7 @@ type RequestedArtifact = {
   sources: Set<string>;
   channels: Set<string>;
   expectedBytes: Set<number>;
+  mediaTypes: Set<string>;
   frame: boolean;
 };
 
@@ -187,7 +189,7 @@ function collectNestedPaths(
 function collectEvidenceUris(
   value: unknown,
   source: string,
-  emit: (uri: string, source: string) => void,
+  emit: (uri: string, source: string, expectedBytes?: number, mediaType?: string) => void,
   depth = 0,
 ): void {
   if (depth > 64) return;
@@ -202,7 +204,21 @@ function collectEvidenceUris(
     );
     return;
   }
-  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+  const record = value as Record<string, unknown>;
+  if (typeof record.uri === "string" && record.uri.startsWith("relay-evidence://")) {
+    emit(
+      record.uri,
+      `${source}.uri`,
+      typeof record.bytes === "number" && Number.isSafeInteger(record.bytes) && record.bytes >= 0
+        ? record.bytes
+        : undefined,
+      typeof record.mime === "string" && record.mime.trim() ? record.mime : undefined,
+    );
+  }
+  for (const [key, child] of Object.entries(record)) {
+    if (key === "uri" && typeof child === "string" && child.startsWith("relay-evidence://")) {
+      continue;
+    }
     collectEvidenceUris(child, `${source}.${key}`, emit, depth + 1);
   }
 }
@@ -216,6 +232,7 @@ function requestedArtifacts(run: PersistedRun, maxArtifacts: number): RequestedA
     expectedBytes?: number,
     frame = false,
     external = false,
+    mediaType?: string,
   ): void => {
     const logicalPath = external ? undefined : portablePath(run, path);
     const key = external
@@ -235,6 +252,7 @@ function requestedArtifacts(run: PersistedRun, maxArtifacts: number): RequestedA
         sources: new Set(),
         channels: new Set(),
         expectedBytes: new Set(),
+        mediaTypes: new Set(),
         frame,
       };
       byPath.set(key, request);
@@ -245,6 +263,7 @@ function requestedArtifacts(run: PersistedRun, maxArtifacts: number): RequestedA
     request.sources.add(source);
     if (channel) request.channels.add(channel);
     if (expectedBytes !== undefined) request.expectedBytes.add(expectedBytes);
+    if (mediaType) request.mediaTypes.add(mediaType);
     request.frame ||= frame;
     request.external ||= external;
   };
@@ -302,8 +321,8 @@ function requestedArtifacts(run: PersistedRun, maxArtifacts: number): RequestedA
     }
   });
   const { dir: _localPath, ...portableRun } = structuredClone(run);
-  collectEvidenceUris(portableRun, "run", (uri, source) =>
-    emit(uri, source, undefined, undefined, false, true),
+  collectEvidenceUris(portableRun, "run", (uri, source, expectedBytes, mediaType) =>
+    emit(uri, source, undefined, expectedBytes, false, true, mediaType),
   );
   return [...byPath.values()].sort((left, right) =>
     left.path < right.path ? -1 : left.path > right.path ? 1 : 0,
@@ -361,6 +380,52 @@ async function closeArtifact(
     };
   }
   if (request.external) {
+    const digest = request.path.match(/^relay-evidence:\/\/([a-f0-9]{64})$/u)?.[1];
+    const bytes = digest ? await readAuthoringEvidence(digest) : null;
+    if (bytes) {
+      const actualDigest = sha256(bytes);
+      if (actualDigest !== `sha256:${digest}`) {
+        return missingClosure(request, "digest-mismatch");
+      }
+      if (
+        request.expectedBytes.size > 1 ||
+        (expectedBytes !== undefined && expectedBytes !== bytes.byteLength)
+      ) {
+        return missingClosure(request, "byte-count-mismatch");
+      }
+      if (bytes.byteLength > limits.maxArtifactBytes) {
+        return missingClosure(request, "object-too-large");
+      }
+      if (embeddedBytes + bytes.byteLength > limits.maxTotalArtifactBytes) {
+        return missingClosure(request, "pack-too-large");
+      }
+      const mediaType =
+        request.mediaTypes.size === 1 ? [...request.mediaTypes][0]! : "application/octet-stream";
+      const logicalPath = `evidence/${digest}`;
+      const object: TracePackObject = {
+        path: `files/${logicalPath}`,
+        kind: "artifact",
+        mediaType,
+        encoding: "base64",
+        digest: actualDigest,
+        bytes: bytes.byteLength,
+        content: bytes.toString("base64"),
+      };
+      return {
+        object,
+        reference: {
+          path: logicalPath,
+          status: "embedded",
+          sources,
+          channels,
+          ...(expectedBytes === undefined ? {} : { expectedBytes }),
+          objectPath: object.path,
+          digest: object.digest,
+          bytes: object.bytes,
+          mediaType: object.mediaType,
+        },
+      };
+    }
     return {
       reference: {
         path: request.path,

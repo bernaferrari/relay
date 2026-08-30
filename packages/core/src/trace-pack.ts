@@ -157,7 +157,14 @@ export async function exportTracePack(
           `artifact:${reference.path}:${reference.status}:${reference.reason ?? "unknown"}`,
       ),
     ...Object.entries(run.evidence?.channels ?? {})
-      .filter(([, record]) => record.status !== "captured")
+      // Unsupported collectors and consent-denied sensitive collectors are
+      // complete statements about what this Run was allowed and able to
+      // collect. Preserve them in the channel manifest, but do not conflate
+      // them with evidence that was requested and then lost, failed, or
+      // redacted. A Change Proof may still require a specific channel through
+      // its versioned policy; TracePack completeness only closes the evidence
+      // contract the Run actually attempted.
+      .filter(([, record]) => ["partial", "failed", "redacted"].includes(record.status))
       .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
       .map(([channel, record]) => `channel:${channel}:${record.status}`),
     ...browserEvidence.missing,

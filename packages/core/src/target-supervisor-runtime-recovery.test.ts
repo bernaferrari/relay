@@ -198,6 +198,47 @@ test("exhausted recovery stops after the bounded stage plan and asks for a human
   assert.equal(store.health(target).counters.recoveryAttempts, 3);
 });
 
+test("an explicit forced recovery clears quarantine before collecting fresh proof", async (t) => {
+  const store = await fixture(t);
+  store.transition(target, {
+    kind: "operator.quarantined",
+    reason: "An interrupted worker left target state uncertain.",
+  });
+  const mechanisms: LocalTargetSupervisorRecoveryMechanisms = {
+    async refreshPixels() {
+      throw new Error("unexpected pixel recovery");
+    },
+    async refreshSemantics() {
+      return {
+        readiness: readiness({ pixels: true, semantics: true }),
+        reason: "fresh controls",
+      };
+    },
+    async restartSemanticRunner() {
+      throw new Error("unexpected escalation");
+    },
+    async preparePlatformServices() {
+      throw new Error("unexpected escalation");
+    },
+  };
+
+  await assert.rejects(
+    recoverSupervisedTargetRuntime({ store, target, channel: "semantics", mechanisms }),
+    /Quarantined target/u,
+  );
+  const recovery = await recoverSupervisedTargetRuntime({
+    store,
+    target,
+    channel: "semantics",
+    force: true,
+    mechanisms,
+  });
+
+  assert.equal(recovery.ready, true);
+  assert.notEqual(store.health(target).overall, "quarantined");
+  assert.equal(store.health(target).counters.recoveryFailures, 0);
+});
+
 test("capability recovery never clears or retries an uncertain input mutation", async (t) => {
   const store = await fixture(t);
   store.transition(target, {

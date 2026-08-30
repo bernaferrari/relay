@@ -94,6 +94,31 @@ test("reports a connected but not-ready emulator as booting", async () => {
   assert.equal(inventory.avds[0]?.serial, "emulator-5554");
 });
 
+test("does not bind an AVD when two connected serials claim the same configured identity", async () => {
+  const inventory = await listAndroidAvds({
+    listAvdNames: async () => ["Pixel_9_API_36"],
+    listConnected: async () => [
+      {
+        serial: "emulator-5554",
+        name: "Pixel 9 A",
+        kind: "Emulator",
+        connectionState: "connected",
+      },
+      {
+        serial: "emulator-5556",
+        name: "Pixel 9 B",
+        kind: "Emulator",
+        connectionState: "connected",
+      },
+    ],
+    readAvdName: async () => "Pixel_9_API_36",
+    readBootCompleted: async () => true,
+  });
+
+  assert.equal(inventory.avds[0]?.status, "stopped");
+  assert.equal(inventory.avds[0]?.serial, undefined);
+});
+
 test("boots one exact AVD and returns its observed runtime serial after readiness", async () => {
   let launched = false;
   let polls = 0;
@@ -135,6 +160,39 @@ test("boots one exact AVD and returns its observed runtime serial after readines
     reused: false,
     observedAt: 123,
   });
+});
+
+test("requires consecutive coherent readiness observations before returning an AVD serial", async () => {
+  let launched = false;
+  let poll = 0;
+  const observations = [true, false, true, true, true];
+  const result = await bootAndroidAvd(
+    "Pixel_9_API_36",
+    { timeoutMs: 5_000 },
+    {
+      listAvdNames: async () => ["Pixel_9_API_36"],
+      listConnected: async () =>
+        launched
+          ? [
+              {
+                serial: "emulator-5554",
+                name: "Pixel 9",
+                kind: "Emulator",
+                connectionState: "connected",
+              },
+            ]
+          : [],
+      readAvdName: async () => "Pixel_9_API_36",
+      readBootCompleted: async () => observations[Math.min(poll++, observations.length - 1)]!,
+      launch: async () => {
+        launched = true;
+      },
+      sleep: async () => undefined,
+    },
+  );
+
+  assert.equal(result.serial, "emulator-5554");
+  assert.equal(poll, 5);
 });
 
 test("reuses an already booted exact AVD and rejects a concurrent duplicate boot", async () => {

@@ -289,6 +289,13 @@ test("recovery budget exhaustion stops for a human or quarantines at policy thre
     () => supervisor.transition({ kind: "recovery.requested", channel: "semantics" }),
     /Quarantined target/u,
   );
+  const cleared = supervisor.transition({ kind: "operator.human-cleared" });
+  assert.notEqual(cleared.health.overall, "quarantined");
+  assert.equal(cleared.health.counters.recoveryFailures, 0);
+  assert.equal(
+    supervisor.transition({ kind: "recovery.requested", channel: "semantics" }).effects[0]?.kind,
+    "recover",
+  );
 });
 
 test("ordinary recovery exhaustion stops at needs-human before quarantine threshold", () => {

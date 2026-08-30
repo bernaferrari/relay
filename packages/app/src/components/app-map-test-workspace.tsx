@@ -202,6 +202,42 @@ export function AppMapTestWorkspace(props: {
   });
   const testRun = run;
 
+  /** The workspace bar owns the one visible status line. Run-control details
+   * remain available to assistive technology and as the primary action title,
+   * but never compete for a second row of chrome. */
+  const workspaceStatus = createMemo(() => {
+    if (saveState() === "saving") return { label: "Saving changes…", tone: "saving" as const };
+    if (saveState() === "error") return { label: "Changes not saved", tone: "attention" as const };
+    if (testRun.launchState() === "preparing") {
+      return { label: "Preparing run…", tone: "saving" as const };
+    }
+    if (testRun.launchState() === "canceling") {
+      return { label: "Canceling run…", tone: "saving" as const };
+    }
+    if (testRun.launchState() === "error" || testRun.error()) {
+      return { label: "Run needs attention", tone: "attention" as const };
+    }
+    const job = testRun.job();
+    if (job?.status === "queued") return { label: "Run queued", tone: "saving" as const };
+    if (job?.status === "running") return { label: "Test running", tone: "saving" as const };
+    if (job?.status === "paused") {
+      return { label: "Waiting for review", tone: "attention" as const };
+    }
+    if (job?.status === "ok" || job?.status === "healed") {
+      return { label: "Run passed", tone: "ready" as const };
+    }
+    if (job?.status === "error") return { label: "Run failed", tone: "attention" as const };
+    if (job?.status === "cancelled") return { label: "Run cancelled", tone: "neutral" as const };
+    if (draft() && blockers().length) {
+      return {
+        label: `${blockers().length} ${blockers().length === 1 ? "issue" : "issues"} to fix`,
+        tone: "attention" as const,
+      };
+    }
+    if (draft()) return { label: "Ready to run", tone: "ready" as const };
+    return { label: "Choose or create a Test", tone: "neutral" as const };
+  });
+
   // A different Test, or a different map, is a different run history.
   createEffect(
     on(
@@ -421,26 +457,8 @@ export function AppMapTestWorkspace(props: {
       }}
     >
       <TestWorkspaceBar
-        status={
-          saveState() === "saving"
-            ? "Saving changes…"
-            : saveState() === "error"
-              ? "Changes not saved"
-              : draft()
-                ? blockers().length
-                  ? `${blockers().length} ${blockers().length === 1 ? "issue" : "issues"} to fix`
-                  : "Ready to run"
-                : "Choose or create a Test"
-        }
-        statusTone={
-          saveState() === "saving"
-            ? "saving"
-            : saveState() === "error" || blockers().length
-              ? "attention"
-              : draft()
-                ? "ready"
-                : "neutral"
-        }
+        status={workspaceStatus().label}
+        statusTone={workspaceStatus().tone}
         stepCount={draft() ? scenarioStepCount(draft()!.steps) : undefined}
         switcher={
           <TestSwitcher

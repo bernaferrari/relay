@@ -907,6 +907,7 @@ test("target recovery releases a local durable fence only after a fresh immutabl
   seedRecoveryFence(store, serial);
   let captures = 0;
   let recoveryCalls = 0;
+  let recoveryForced = false;
   const server = await startServer({
     host: "127.0.0.1",
     port: 0,
@@ -933,8 +934,9 @@ test("target recovery releases a local durable fence only after a fresh immutabl
         leasedAt: 1,
         expiresAt: Date.now() + 60_000,
       }),
-      recoverTarget: async (targetSerial) => {
+      recoverTarget: async (targetSerial, _reason, force) => {
         recoveryCalls += 1;
+        recoveryForced = Boolean(force);
         return {
           serial: targetSerial,
           recovered: true,
@@ -965,6 +967,7 @@ test("target recovery releases a local durable fence only after a fresh immutabl
       };
     };
     assert.equal(recoveryCalls, 1);
+    assert.equal(recoveryForced, true);
     assert.equal(captures, 2);
     assert.equal(body.recoveryFenceRelease.assignmentId, "interrupted-recovery-job");
     assert.match(

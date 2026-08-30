@@ -182,6 +182,10 @@ export async function recoverSupervisedTargetRuntime(input: {
   force?: boolean;
   mechanisms?: LocalTargetSupervisorRecoveryMechanisms;
 }): Promise<TargetRuntimeRecovery> {
+  const before = input.store.health(input.target);
+  if (input.force && before.overall === "quarantined") {
+    input.store.transition(input.target, { kind: "operator.human-cleared" });
+  }
   const adapter = createLocalTargetSupervisorRecoveryAdapter(
     input.mechanisms ?? runtimeMechanisms({ cause: input.cause, force: input.force }),
   );

@@ -262,11 +262,14 @@ export async function hardStopDeviceSession(
     for (const session of names) {
       try {
         const client = createAgentDeviceClient({ session });
-        // shutdown:true tears down the on-device XCTest process. Without that, a
-        // watchdog-wedged runner keeps failing every command until the iPad reboots.
-        await client.sessions.close({ shutdown: true }).catch(async () => {
-          await client.sessions.close({ shutdown: false });
-        });
+        // Device-level shutdown is an iOS-hardware recovery primitive. On an
+        // Android emulator the same flag powers off the whole AVD, so routine
+        // job isolation must only close the AgentDevice session there.
+        await client.sessions
+          .close({ shutdown: hardStopRequiresDeviceShutdown(target) })
+          .catch(async () => {
+            await client.sessions.close({ shutdown: false });
+          });
       } catch {
         /* session may already be gone */
       }
@@ -274,4 +277,11 @@ export async function hardStopDeviceSession(
   } catch {
     /* session may already be gone */
   }
+}
+
+/** Keep the destructive SDK shutdown flag scoped to physical iOS hardware.
+ * Android serials are intentionally never inferred from their shape here. */
+export function hardStopRequiresDeviceShutdown(target: TargetContext): boolean {
+  if (target.kind !== "device" || target.platform !== "ios") return false;
+  return target.serial.startsWith("0000") || /^[0-9a-f]{40}$/iu.test(target.serial);
 }

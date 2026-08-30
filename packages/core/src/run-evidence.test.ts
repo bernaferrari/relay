@@ -10,6 +10,7 @@ import {
   startRunEvidence as startRunEvidenceWithoutContext,
   stopRunEvidence as stopRunEvidenceWithoutContext,
   withTimeout,
+  withTimeoutAndDrain,
 } from "./run-evidence.js";
 import type { TestJob } from "./session.js";
 import { runWithTargetContext } from "./target-context.js";
@@ -28,12 +29,38 @@ const startRunEvidence: typeof startRunEvidenceWithoutContext = (...args) =>
 const stopRunEvidence: typeof stopRunEvidenceWithoutContext = (...args) =>
   runWithTargetContext(testTarget, () => stopRunEvidenceWithoutContext(...args));
 
+test("timed-out Android automation is drained before control returns", async () => {
+  const events: string[] = [];
+  const late = new Promise<string>((resolve) => {
+    setTimeout(() => {
+      events.push("settled");
+      resolve("late");
+    }, 15);
+  });
+
+  await assert.rejects(
+    withTimeoutAndDrain(late, 1, "Android snapshot", () => {
+      events.push("aborted");
+    }),
+    /Android snapshot timed out/u,
+  );
+  events.push("returned");
+
+  assert.deepEqual(events, ["aborted", "settled", "returned"]);
+});
+
 test("run evidence records video and performance without affecting the run", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-evidence-"));
   const previous = process.env.RELAY_RUNS_DIR;
   process.env.RELAY_RUNS_DIR = root;
   const calls: string[] = [];
   const device = {
+    apps: {
+      open: async () => {
+        calls.push("bind");
+        return { appId: "com.example.app" };
+      },
+    },
     capture: {
       snapshot: async () => {
         calls.push("prime");
@@ -83,13 +110,13 @@ test("run evidence records video and performance without affecting the run", asy
 
   try {
     const handle = await startRunEvidence(job, device, () => undefined, undefined, {
-      foregroundAppResolver: async () => undefined,
+      foregroundAppResolver: async () => "com.example.app",
     });
     await stopRunEvidence(handle, job, device, () => undefined);
 
     // Release the encoder before collecting the final performance sample so
     // slow recorder shutdown cannot consume the evidence-stop deadline.
-    assert.deepEqual(calls, ["prime", "perf", "start", "stop", "perf"]);
+    assert.deepEqual(calls, ["bind", "prime", "perf", "start", "stop", "perf"]);
     assert.ok(job.artifacts.some((item) => item.kind === "performance-start"));
     const video = job.artifacts.find((item) => item.kind === "video");
     assert.ok(video);
@@ -105,6 +132,7 @@ test("run evidence records video and performance without affecting the run", asy
 
 test("campaign runs keep step frames without paying for duplicate full-run video", async () => {
   let videoCalls = 0;
+  let performanceCalls = 0;
   const job = {
     id: "campaign-evidence-run",
     action: "app-map:test",
@@ -133,7 +161,12 @@ test("campaign runs keep step frames without paying for duplicate full-run video
   } as unknown as TestJob;
   const device = {
     capture: { snapshot: async () => ({ nodes: [] }) },
-    observability: { perf: async () => ({}) },
+    observability: {
+      perf: async () => {
+        performanceCalls += 1;
+        return {};
+      },
+    },
     recording: {
       record: async () => {
         videoCalls += 1;
@@ -148,6 +181,11 @@ test("campaign runs keep step frames without paying for duplicate full-run video
   await stopRunEvidence(handle, job, device, () => undefined);
 
   assert.equal(videoCalls, 0);
+  assert.equal(performanceCalls, 0);
+  assert.equal(handle.manifest.channels.performance.status, "unsupported");
+  assert.match(handle.manifest.channels.performance.message ?? "", /Android app session/);
+  assert.equal(handle.manifest.channels.logs.status, "unsupported");
+  assert.equal(handle.manifest.channels.network.status, "unsupported");
   assert.equal(handle.manifest.channels.video.status, "unsupported");
   assert.match(handle.manifest.channels.video.message ?? "", /step-scoped campaign frames/);
 });

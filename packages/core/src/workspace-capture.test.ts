@@ -12,6 +12,7 @@ import {
 import {
   captureScreenshot,
   captureSnapshot,
+  isAndroidSnapshotOwnershipUnreleased,
   iosLogicalBoundsForSerial,
 } from "./workspace-capture.js";
 
@@ -24,6 +25,28 @@ function iosSnapshotDevice(nodes: SnapshotNode[]): Device {
 }
 
 test.afterEach(() => resetTargetRuntimeReadiness());
+
+test("classifies unreleased Android automation ownership as a hard semantic boundary", () => {
+  assert.equal(
+    isAndroidSnapshotOwnershipUnreleased(
+      Object.assign(new Error("Android snapshot helper failed"), {
+        details: {
+          cause: {
+            code: "android_snapshot_helper_retirement_unconfirmed",
+          },
+        },
+      }),
+    ),
+    true,
+  );
+  assert.equal(
+    isAndroidSnapshotOwnershipUnreleased(
+      new Error("Android snapshot helper could not confirm release of device automation ownership"),
+    ),
+    true,
+  );
+  assert.equal(isAndroidSnapshotOwnershipUnreleased(new Error("helper APK missing")), false);
+});
 
 test("a root-only iOS XCTest response is pixels-only rather than inspectable", async () => {
   const result = await runWithTargetContext(

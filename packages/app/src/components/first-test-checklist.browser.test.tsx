@@ -104,6 +104,10 @@ test("target step exposes real preflight action without advancing local progress
   expect(view.calls.onSaveStartScreen).not.toHaveBeenCalled();
   expect(view.calls.onOpenTest).not.toHaveBeenCalled();
   expect(view.root.querySelector(".first-test-checklist")?.className).toContain("min-w-0");
+  expect(view.root.textContent).toContain("Step 1 of 4");
+  expect(
+    view.root.querySelector("[aria-label='First useful Test progress: Step 1 of 4']"),
+  ).not.toBeNull();
   view.dispose();
 });
 
@@ -125,6 +129,7 @@ test("authoring choices are explicit and a starter never triggers a run", () => 
   expect(view.calls.onRecord).toHaveBeenCalledTimes(1);
   expect(view.calls.onOpenTest).not.toHaveBeenCalled();
   expect(view.calls.onOpenReport).not.toHaveBeenCalled();
+  expect(view.root.textContent).toContain("Step 3 of 4");
   expect(view.root.querySelector<HTMLInputElement>("input[type='file']")?.accept).toContain(
     ".yaml",
   );
@@ -151,5 +156,6 @@ test("persisted completion hands off to its report and records only an explicit 
   expect(view.calls.onOpenReport).toHaveBeenCalledWith("report-1");
   expect(view.calls.onExportYaml).toHaveBeenCalledTimes(1);
   expect(view.calls.onDismiss).toHaveBeenCalledWith("completed");
+  expect(view.root.textContent).toContain("Complete");
   view.dispose();
 });

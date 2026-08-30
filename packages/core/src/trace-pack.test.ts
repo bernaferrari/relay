@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { persistAuthoringEvidence } from "./authoring-evidence.js";
 import { analyzeTracePack, exportTracePack, verifyTracePack } from "./trace-pack.js";
 import type { PersistedRun } from "./runs.js";
 import { writeAuthoringSession } from "./authoring-session-storage.js";
@@ -102,6 +103,58 @@ test("TracePack export is deterministic, portable, and verifies every content ad
   const run = tampered.objects.find((object) => object.kind === "frozen-run")!;
   (run.content as { status: string }).status = "error";
   assert.throws(() => verifyTracePack(tampered), /object integrity/u);
+});
+
+test("unsupported and consent-denied collectors remain explicit without making the pack partial", async () => {
+  const run = persistedRun();
+  run.evidence!.channels = {
+    input: {
+      channel: "input",
+      status: "captured",
+      entries: 1,
+      bytes: 0,
+      dropped: 0,
+      redactions: 0,
+    },
+    video: {
+      channel: "video",
+      status: "unsupported",
+      entries: 0,
+      bytes: 0,
+      dropped: 0,
+      redactions: 0,
+      message: "the target does not expose video",
+    },
+    crash: {
+      channel: "crash",
+      status: "denied",
+      entries: 0,
+      bytes: 0,
+      dropped: 0,
+      redactions: 0,
+      message: "requires explicit consent",
+    },
+    audio: {
+      channel: "audio",
+      status: "denied",
+      entries: 0,
+      bytes: 0,
+      dropped: 0,
+      redactions: 0,
+      message: "requires explicit consent",
+    },
+  } as NonNullable<PersistedRun["evidence"]>["channels"];
+
+  const pack = await exportTracePack(run);
+
+  assert.equal(pack.completeness.status, "complete");
+  assert.deepEqual(pack.completeness.missing, []);
+  assert.deepEqual(pack.completeness.channels, {
+    audio: "denied",
+    crash: "denied",
+    input: "captured",
+    video: "unsupported",
+  });
 });
 
 test("TracePack retains recording capture provenance when the run links an Authoring Session", async () => {
@@ -404,6 +457,49 @@ test("external evidence references remain explicit when bytes cannot be resolved
     },
   ]);
   assert.deepEqual(verifyTracePack(pack), pack);
+});
+
+test("content-addressed Relay evidence is embedded into the portable TracePack", async () => {
+  const stateDirectory = await mkdtemp(join(tmpdir(), "relay-trace-pack-evidence-"));
+  const previousStateDirectory = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = stateDirectory;
+  try {
+    const tree = await persistAuthoringEvidence({
+      kind: "snapshot",
+      capturedAt: 4,
+      data: JSON.stringify({ role: "application", name: "Settings" }),
+      mime: "application/json",
+    });
+    const run = persistedRun();
+    run.artifacts.push({
+      kind: "selector-evidence",
+      capturedAt: 4,
+      data: { observation: tree },
+    });
+
+    const pack = await exportTracePack(run);
+
+    assert.equal(pack.completeness.status, "complete");
+    assert.deepEqual(pack.completeness.missing, []);
+    assert.deepEqual(pack.completeness.artifacts, [
+      {
+        path: `evidence/${tree.sha256}`,
+        status: "embedded",
+        sources: ["run.artifacts[4].data.observation.uri"],
+        channels: [],
+        expectedBytes: tree.bytes,
+        objectPath: `files/evidence/${tree.sha256}`,
+        digest: `sha256:${tree.sha256}`,
+        bytes: tree.bytes,
+        mediaType: "application/json",
+      },
+    ]);
+    assert.deepEqual(verifyTracePack(pack), pack);
+  } finally {
+    if (previousStateDirectory === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previousStateDirectory;
+    await rm(stateDirectory, { recursive: true, force: true });
+  }
 });
 
 test("offline analysis names historical proof but keeps future behavior unknown", async () => {

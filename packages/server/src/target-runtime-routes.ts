@@ -567,7 +567,12 @@ export async function handleTargetRuntimeRoute(context: {
       }
     }
     await runtime.assertTargetControl(scope, serial);
-    const recovery = await runtime.recoverTarget(serial, reason, force, device.platform);
+    const recovery = await runtime.recoverTarget(
+      serial,
+      reason,
+      force || Boolean(recoveryFenceAssignmentId),
+      device.platform,
+    );
     runtime.recordTargetRecovery(serial, device.platform, recovery);
     await appendActivity({
       eventType: recovery.ready ? "target.recovery.completed" : "target.recovery.failed",

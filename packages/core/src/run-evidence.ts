@@ -9,6 +9,7 @@ import { ensureRunDir, type RunArtifact } from "./runs.js";
 import type { TestJob } from "./session.js";
 import { captureAndroidForegroundApp } from "./android-ui-snapshot.js";
 import { captureBrowserProofEvidence } from "./browser-proof-evidence-runtime.js";
+import { hardStopDeviceSession } from "./control.js";
 
 const CHANNELS: EvidenceChannel[] = [
   "input",
@@ -338,9 +339,12 @@ async function primeAndroidEvidenceSession(
   foregroundAppResolver: (
     serial: string,
   ) => Promise<string | undefined> = captureAndroidForegroundApp,
-): Promise<void> {
-  if (job.targetKind === "browser" || job.platform !== "android" || !job.serial) return;
+): Promise<"not-required" | "app-bound" | "surface-only"> {
+  if (job.targetKind === "browser" || job.platform !== "android" || !job.serial) {
+    return "not-required";
+  }
 
+  let appSessionBound = false;
   try {
     let appPackage: string | undefined;
     if (device.command?.appState) {
@@ -383,11 +387,20 @@ async function primeAndroidEvidenceSession(
       );
       event(handle, "input", "app.session.bound", { platform: "android", app: appPackage });
       log(`evidence: Android app session bound to ${appPackage}`);
+      appSessionBound = true;
     }
-    const result = await withTimeout(
-      device.capture.snapshot({ ...base(), interactiveOnly: false }),
+    const snapshotRequest = device.capture.snapshot({
+      ...base(),
+      interactiveOnly: false,
+    });
+    const result = await withTimeoutAndDrain(
+      snapshotRequest,
       5_000,
       "Android evidence session",
+      // The SDK does not expose AbortSignal on snapshot. Closing this target's
+      // AgentDevice session is its supported cancellation boundary; Android
+      // session close deliberately uses shutdown:false so the AVD stays alive.
+      () => hardStopDeviceSession(job.targetContext),
     );
     const nodes = Array.isArray(result?.nodes) ? result.nodes.length : 0;
     event(handle, "input", "session.primed", { platform: "android", nodes });
@@ -405,6 +418,7 @@ async function primeAndroidEvidenceSession(
       }`,
     );
   }
+  return appSessionBound ? "app-bound" : "surface-only";
 }
 
 /** Start bounded automatic collectors. Their failures are recorded, not promoted to test failures. */
@@ -418,7 +432,17 @@ export async function startRunEvidence(
   const handle = existing ?? initializeRunEvidence(job);
   const startedAt = handle.startedAt;
 
-  await primeAndroidEvidenceSession(job, device, handle, log, options.foregroundAppResolver);
+  const androidEvidenceSession = await primeAndroidEvidenceSession(
+    job,
+    device,
+    handle,
+    log,
+    options.foregroundAppResolver,
+  );
+  const missingAndroidAppSession =
+    androidEvidenceSession === "surface-only"
+      ? "requires an Android app session; the current surface is launcher or system UI"
+      : undefined;
 
   await guardedCollector(
     handle,
@@ -438,7 +462,7 @@ export async function startRunEvidence(
       });
       event(handle, "performance", "sample", performanceResult);
     },
-    options.physicalIos ? "not available from the physical iOS runner" : undefined,
+    options.physicalIos ? "not available from the physical iOS runner" : missingAndroidAppSession,
   );
 
   await guardedCollector(
@@ -457,7 +481,7 @@ export async function startRunEvidence(
       markCollectorStarted(handle, "logs");
       event(handle, "logs", "capture.started");
     },
-    options.physicalIos ? "not available from the physical iOS runner" : undefined,
+    options.physicalIos ? "not available from the physical iOS runner" : missingAndroidAppSession,
   );
 
   await guardedCollector(
@@ -478,7 +502,9 @@ export async function startRunEvidence(
       });
       event(handle, "network", "capture.started", { include });
     },
-    options.physicalIos ? "requires an instrumented app or proxy on physical iOS" : undefined,
+    options.physicalIos
+      ? "requires an instrumented app or proxy on physical iOS"
+      : missingAndroidAppSession,
   );
 
   if (hasSensitiveEvidenceConsent(job.evidencePolicy, "crash")) {
@@ -862,5 +888,26 @@ export async function withTimeout<T>(
     ]);
   } finally {
     if (timer) clearTimeout(timer);
+  }
+}
+
+/** Time out the caller, abort when supported, and still wait for the original
+ * operation to settle before another target operation may begin. Android has
+ * one UiAutomation slot; racing onward while a late snapshot still owns it is
+ * less safe than spending the backend's bounded cleanup budget. */
+export async function withTimeoutAndDrain<T>(
+  promise: Promise<T>,
+  ms: number,
+  label: string,
+  onTimeout?: () => void | Promise<void>,
+): Promise<T> {
+  try {
+    return await withTimeout(promise, ms, label);
+  } catch (error) {
+    if (error instanceof Error && error.message === `${label} timed out`) {
+      await onTimeout?.();
+      await promise.catch(() => undefined);
+    }
+    throw error;
   }
 }
