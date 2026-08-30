@@ -86,7 +86,7 @@ test("runtime capture receipts update the server-owned durable actor", async () 
   }
 });
 
-test("a fresh Android traversal replaces stale foreground context even when nodes omit package ids", async () => {
+test("an authoritative Android foreground replaces the first tree package in supervisor context", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-target-supervisor-android-context-"));
   const store = new TargetSupervisorStore(join(root, "supervisors.sqlite"));
   const androidTarget = { id: "emulator-context", kind: "android" } as const;
@@ -104,6 +104,7 @@ test("a fresh Android traversal replaces stale foreground context even when node
           nodes: [
             {
               label: "Relay",
+              bundleId: "com.android.systemui",
               enabled: true,
               visibleToUser: true,
               rect: { x: 1, y: 1, width: 20, height: 20 },
