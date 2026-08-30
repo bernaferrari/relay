@@ -10,6 +10,7 @@ import type { TestJob } from "./session.js";
 import { captureAndroidForegroundApp } from "./android-ui-snapshot.js";
 import { hardStopDeviceSession } from "./control.js";
 import { stopBrowserProofEvidence } from "./run-evidence-browser.js";
+import { materializeCaptureArtifact } from "./run-evidence-artifacts.js";
 
 const CHANNELS: EvidenceChannel[] = [
   "input",
@@ -261,7 +262,7 @@ async function persistCaptureArtifact(
   result: unknown,
   dropped = 0,
 ): Promise<void> {
-  const data = redactValue(result);
+  const data = await materializeCaptureArtifact(job, kind, result);
   addArtifact(job, { kind, capturedAt: now(), data });
   record.entries = entryCount(result);
   record.bytes = byteCount(data);
