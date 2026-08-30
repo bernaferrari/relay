@@ -372,6 +372,10 @@ test("a canonical passing Run completes the Proof and duplicate requests cannot 
     const storedProof = await readChangeVerification(scope, proof.id);
     assert.equal(storedProof?.state, "proved");
     assert.equal(storedProof?.decision, "proved");
+    assert.deepEqual(storedProof?.smallestNextVerification, {
+      kind: "none",
+      reason: "Every policy-required case has complete proof.",
+    });
     const publications = await listChangeProofPublicationOutbox(scope);
     assert.equal(publications.length, 1);
     assert.equal(publications[0]?.proofVersion, storedProof?.version);

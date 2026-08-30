@@ -816,6 +816,7 @@ test("proof.run is a durable server operation and proof.inspect recovers its exe
       { requestId: "route-run" },
     );
     assert.equal(ran.proof.state, "proved");
+    assert.equal(ran.proof.smallestNextVerification?.kind, "none");
     assert.equal(ran.execution.status, "completed");
     assert.equal(ran.execution.cursor, ran.execution.total);
     assert.equal(dispatches, 1);
