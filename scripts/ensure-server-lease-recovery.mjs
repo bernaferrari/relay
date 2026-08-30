@@ -70,6 +70,15 @@ function validOwner(value) {
   );
 }
 
+/** `ensure:serve` currently owns the repository-local `.relay` bootstrap
+ * paths. A custom state root must not be inspected or signalled as though it
+ * shared that ownership contract. */
+export function prepareDefaultRelayStateDirectory({ configuredStateDirectory } = {}) {
+  return typeof configuredStateDirectory === "string" && configuredStateDirectory.trim()
+    ? { allowed: false, reason: "custom-relay-state-directory-unsupported" }
+    : { allowed: true };
+}
+
 export function parseLeaseRecoveryResult(stdout) {
   const lines = stdout
     .split("\n")

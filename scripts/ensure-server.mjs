@@ -19,7 +19,10 @@ import {
   relayWatcherArguments,
   withEnsureServerBootstrapLock,
 } from "./ensure-server-bootstrap.mjs";
-import { prepareLeaseForFreshServer } from "./ensure-server-lease-recovery.mjs";
+import {
+  prepareDefaultRelayStateDirectory,
+  prepareLeaseForFreshServer,
+} from "./ensure-server-lease-recovery.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const port = Number(process.env.RELAY_PORT || 8787);
@@ -101,6 +104,20 @@ function healthMatchesListener(health, probe) {
 
 async function bootstrap() {
   const tsx = resolveTsx();
+  const stateDirectoryPreparation = prepareDefaultRelayStateDirectory({
+    configuredStateDirectory: process.env.RELAY_STATE_DIR,
+  });
+  if (!stateDirectoryPreparation.allowed) {
+    const refusal = {
+      status: "refused",
+      stage: "relay-state-directory",
+      reason: stateDirectoryPreparation.reason,
+      port,
+      message:
+        "ensure:serve only manages the repository-local Relay state directory; refusing process control for a custom RELAY_STATE_DIR.",
+    };
+    throw Object.assign(new Error(refusal.message), { detail: refusal });
+  }
   if (reuse) {
     const current = await readHealth();
     const probe = portListeners();

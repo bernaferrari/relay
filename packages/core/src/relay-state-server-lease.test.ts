@@ -156,6 +156,25 @@ test("local lease recovery refuses live, young, listening, unrelated, and shared
     assert.equal(recoverAbandonedLocalRelayStateServerLease(common).reason, "lease-not-old-enough");
     young.release();
 
+    for (const acquiredAt of [common.now - 1_000, 1]) {
+      const sameHostOnSharedStorage = acquireRelayStateServerLease({
+        path,
+        pid: 999_999_999,
+        host: common.currentHost,
+        acquiredAt,
+      });
+      for (const workspaceFilesystem of ["shared", "unknown"] as const) {
+        assert.equal(
+          recoverAbandonedLocalRelayStateServerLease({
+            ...common,
+            workspaceFilesystem,
+          }).reason,
+          "workspace-filesystem-not-local",
+        );
+      }
+      sameHostOnSharedStorage.release();
+    }
+
     const listening = acquireRelayStateServerLease({
       path,
       pid: 999_999_999,

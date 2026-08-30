@@ -373,14 +373,14 @@ export function recoverAbandonedLocalRelayStateServerLease(
       return { status: "refused", reason, owner };
     };
     if (isProcessAlive(owner.pid)) return refuse("owner-process-alive");
-    if (now - owner.acquiredAt < minimumAgeMs) return refuse("lease-not-old-enough");
     if (input.localPortHasListener === true) return refuse("local-port-listener-present");
     if (input.localPortHasListener !== false) return refuse("local-port-listener-unknown");
-    if (!isLocalHostnameRenamed(owner.host, currentHost)) {
-      return refuse("foreign-host-not-local-rename");
-    }
     if (input.workspaceFilesystem !== "local") {
       return refuse("workspace-filesystem-not-local");
+    }
+    if (now - owner.acquiredAt < minimumAgeMs) return refuse("lease-not-old-enough");
+    if (!isLocalHostnameRenamed(owner.host, currentHost)) {
+      return refuse("foreign-host-not-local-rename");
     }
     const audit: PersistedRelayServerLeaseRecoveryAudit = {
       schemaVersion: RECOVERY_AUDIT_SCHEMA_VERSION,

@@ -2,10 +2,24 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   parseLeaseRecoveryResult,
+  prepareDefaultRelayStateDirectory,
   prepareLeaseForFreshServer,
   recoverWorkspaceLeaseBeforeServerStart,
   workspaceFilesystemObservation,
 } from "./ensure-server-lease-recovery.mjs";
+
+test("ensure:serve refuses custom Relay state roots before process control", () => {
+  assert.deepEqual(prepareDefaultRelayStateDirectory({ configuredStateDirectory: undefined }), {
+    allowed: true,
+  });
+  assert.deepEqual(prepareDefaultRelayStateDirectory({ configuredStateDirectory: "  " }), {
+    allowed: true,
+  });
+  assert.deepEqual(
+    prepareDefaultRelayStateDirectory({ configuredStateDirectory: "/shared/relay-state" }),
+    { allowed: false, reason: "custom-relay-state-directory-unsupported" },
+  );
+});
 
 test("ensure:serve refuses a live or plausibly shared lease before freePort", () => {
   let recoveryCalls = 0;
