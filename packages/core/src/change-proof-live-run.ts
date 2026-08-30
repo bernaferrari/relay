@@ -50,6 +50,9 @@ export function frozenCellExecutionRisk(cell: FrozenVerificationCell): Execution
 /** The first safe execution slice deliberately admits only Tests whose
  * frozen risk needs no confirmation and has no external mutation effect. */
 export function assertSafeCellExecutionAuthority(cell: FrozenVerificationCell): ExecutionRisk {
+  if (!cell.evidencePolicyDigest) {
+    throw new Error(`Verification Cell ${cell.id} has no frozen evidence-policy authority`);
+  }
   const risk = frozenCellExecutionRisk(cell);
   if (risk.level !== "safe" || risk.confirmation !== "none") {
     throw new Error(

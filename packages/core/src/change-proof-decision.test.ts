@@ -125,6 +125,7 @@ function proof(): ChangeVerification {
           dimensions: { locale: "ar", engine: "chromium" },
           executionRisk: safeExecutionRisk,
           executionRiskDigest: safeExecutionRiskDigest,
+          evidencePolicyDigest: `sha256:${"e".repeat(64)}`,
           cleanupRequired: false,
         },
         {
@@ -137,6 +138,7 @@ function proof(): ChangeVerification {
           dimensions: { locale: "ar", engine: "webkit" },
           executionRisk: safeExecutionRisk,
           executionRiskDigest: safeExecutionRiskDigest,
+          evidencePolicyDigest: `sha256:${"e".repeat(64)}`,
           cleanupRequired: false,
         },
       ],
@@ -384,6 +386,28 @@ test("durable decisions fail closed when a required cell has no risk authority",
         index === 0
           ? (({ executionRisk: _risk, executionRiskDigest: _digest, ...withoutAuthority }) =>
               withoutAuthority)(cell)
+          : cell,
+      ),
+    },
+  };
+  const decision = decideChangeVerification({
+    proof: value,
+    caseResults: [result("chromium-compact-ar"), result("webkit-compact-ar")],
+  });
+  assert.equal(decision.decision, "needs-review");
+  assert.deepEqual(decision.ruleIds, ["execution.authority-missing"]);
+  assert.match(decision.coverageGaps[0]!, /missing or mismatched execution authority/u);
+});
+
+test("durable decisions fail closed when a required cell has no evidence-policy authority", () => {
+  const base = proof();
+  const value: ChangeVerification = {
+    ...base,
+    selection: {
+      ...base.selection,
+      cells: base.selection.cells!.map((cell, index) =>
+        index === 0
+          ? (({ evidencePolicyDigest: _digest, ...withoutAuthority }) => withoutAuthority)(cell)
           : cell,
       ),
     },

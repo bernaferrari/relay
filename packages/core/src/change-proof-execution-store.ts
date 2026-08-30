@@ -1,10 +1,12 @@
 import {
+  ACTOR_KINDS,
   changeProofExecutionCancellationSchema,
   changeProofExecutionCellStatusSchema,
   changeProofExecutionStatusSchema,
   changeProofExecutionUncertaintySchema,
   changeProofCaseResultSchema,
   parseChangeVerification,
+  projectRoles,
 } from "@relay/protocol";
 import type {
   ChangeProofPublicationRequest,
@@ -63,6 +65,98 @@ export function normalizeRecord(value: unknown): ChangeProofExecutionRecord {
     throw new Error("Unsupported Change Proof execution schema version");
   }
   const frozenProof = parseChangeVerification(input.frozenProof);
+  const authorityValue = input.requestAuthority;
+  const requestAuthority =
+    authorityValue === undefined
+      ? undefined
+      : (() => {
+          if (
+            !authorityValue ||
+            typeof authorityValue !== "object" ||
+            Array.isArray(authorityValue)
+          ) {
+            throw new Error("Execution request authority is invalid");
+          }
+          const candidate = authorityValue as Record<string, unknown>;
+          if (
+            candidate.tokenKind !== "local" &&
+            candidate.tokenKind !== "service" &&
+            candidate.tokenKind !== "external"
+          ) {
+            throw new Error("Execution request authority token kind is invalid");
+          }
+          if (typeof candidate.localTrusted !== "boolean") {
+            throw new Error("Execution request authority trust mode is invalid");
+          }
+          if (!projectRoles.includes(candidate.role as (typeof projectRoles)[number])) {
+            throw new Error("Execution request authority role is invalid");
+          }
+          if (candidate.role !== "runner" && candidate.role !== "admin") {
+            throw new Error("Execution request authority cannot run Proof cells");
+          }
+          if (!ACTOR_KINDS.includes(candidate.actorKind as (typeof ACTOR_KINDS)[number])) {
+            throw new Error("Execution request authority actor kind is invalid");
+          }
+          if (
+            !Array.isArray(candidate.allowedProjects) ||
+            candidate.allowedProjects.length > 256 ||
+            candidate.allowedProjects.some(
+              (project) => typeof project !== "string" || !project.trim(),
+            )
+          ) {
+            throw new Error("Execution request authority project scope is invalid");
+          }
+          if (
+            (candidate.localTrusted && candidate.tokenKind !== "local") ||
+            (!candidate.localTrusted && candidate.tokenKind === "local")
+          ) {
+            throw new Error("Execution request authority trust mode disagrees with its token kind");
+          }
+          if (
+            !candidate.allowedProjects.includes(frozenProof.projectId) ||
+            new Set(candidate.allowedProjects).size !== candidate.allowedProjects.length
+          ) {
+            throw new Error("Execution request authority does not include the frozen project");
+          }
+          if (
+            candidate.externalActorKind !== undefined &&
+            candidate.externalActorKind !== "human" &&
+            candidate.externalActorKind !== "agent"
+          ) {
+            throw new Error("Execution request authority external actor kind is invalid");
+          }
+          if (
+            (candidate.tokenKind === "external") !==
+            (candidate.externalActorKind !== undefined)
+          ) {
+            throw new Error("Execution request authority external identity is inconsistent");
+          }
+          const subject = nonEmpty(candidate.subject, "requestAuthority.subject");
+          if (!candidate.localTrusted && subject !== nonEmpty(input.actorId, "actorId")) {
+            throw new Error("Remote execution actor must match its authenticated subject");
+          }
+          return {
+            subject,
+            allowedProjects: [...candidate.allowedProjects] as string[],
+            tokenKind: candidate.tokenKind as "local" | "service" | "external",
+            localTrusted: candidate.localTrusted,
+            role: candidate.role as (typeof projectRoles)[number],
+            actorKind: candidate.actorKind as (typeof ACTOR_KINDS)[number],
+            ...(candidate.externalActorKind === undefined
+              ? {}
+              : {
+                  externalActorKind: candidate.externalActorKind as "human" | "agent",
+                }),
+            ...(candidate.leaseId === undefined
+              ? {}
+              : { leaseId: nonEmpty(candidate.leaseId, "requestAuthority.leaseId") }),
+            ...(candidate.leaseOwnerId === undefined
+              ? {}
+              : {
+                  leaseOwnerId: nonEmpty(candidate.leaseOwnerId, "requestAuthority.leaseOwnerId"),
+                }),
+          };
+        })();
   const publicationValue = input.publication;
   const publication =
     publicationValue === undefined
@@ -196,6 +290,7 @@ export function normalizeRecord(value: unknown): ChangeProofExecutionRecord {
         : (() => {
             throw new Error("Execution authority must be confirmed");
           })(),
+    ...(requestAuthority ? { requestAuthority } : {}),
     ...(publication ? { publication } : {}),
     frozenProof,
     cells: normalizedCells,

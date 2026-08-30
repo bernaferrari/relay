@@ -95,6 +95,8 @@ export type {
   FailureRepairProposal,
   FailureRunSummary,
   InspectFailureIntent,
+  InspectProofOutcome,
+  InspectProofOutcomeIntent,
   InspectWorkflowOutcomeIntent,
   ObserveTargetIntent,
   ProposeRepairIntent,

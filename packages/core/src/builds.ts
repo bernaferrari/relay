@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
+import { lookup } from "node:dns/promises";
 import { access, mkdir, readdir, rename, rm, stat } from "node:fs/promises";
 import { constants, createWriteStream } from "node:fs";
 import { homedir } from "node:os";
@@ -128,7 +129,63 @@ function localArtifactPath(sourceUrl: string | undefined): string | undefined {
 
 /** Remote build sources larger than this are rejected before the disk fills. */
 const MAX_REMOTE_BUILD_BYTES = 4 * 1024 * 1024 * 1024;
+const MAX_REMOTE_BUILD_REDIRECTS = 5;
 const HEX_SHA256 = /^[a-f0-9]{64}$/i;
+
+function privateIpv4(address: string): boolean {
+  const octets = address.split(".").map(Number);
+  if (octets.length !== 4 || octets.some((octet) => !Number.isInteger(octet))) return true;
+  const [a, b, c] = octets as [number, number, number, number];
+  return (
+    a === 0 ||
+    a === 10 ||
+    (a === 100 && b >= 64 && b <= 127) ||
+    a === 127 ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 0) ||
+    (a === 192 && b === 168) ||
+    (a === 198 && (b === 18 || b === 19)) ||
+    (a === 198 && b === 51 && c === 100) ||
+    (a === 203 && b === 0 && c === 113) ||
+    a >= 224
+  );
+}
+
+function privateNetworkAddress(address: string): boolean {
+  const normalized = address.toLowerCase();
+  if (normalized.includes(".")) {
+    const mapped = normalized.match(/(?:^|:)ffff:(\d+\.\d+\.\d+\.\d+)$/u)?.[1];
+    return privateIpv4(mapped ?? normalized);
+  }
+  // Public IPv6 unicast is currently allocated from 2000::/3. Keeping this
+  // allow rule narrow also excludes unspecified, loopback, discard-only,
+  // documentation, unique-local, link-local, and multicast ranges.
+  return !/^[23][0-9a-f]{0,3}:/u.test(normalized);
+}
+
+async function assertPublicRemoteBuildUrl(
+  url: URL,
+  resolveHost: (hostname: string) => Promise<string[]>,
+): Promise<void> {
+  if (url.protocol !== "https:") return;
+  if (url.username || url.password) {
+    throw new Error("Remote build source URLs cannot contain credentials");
+  }
+  const explicitlyAllowed = new Set(
+    (process.env.RELAY_REMOTE_BUILD_ALLOWED_HOSTS ?? "")
+      .split(",")
+      .map((host) => host.trim().toLowerCase())
+      .filter(Boolean),
+  );
+  if (explicitlyAllowed.has(url.hostname.toLowerCase())) return;
+  const addresses = await resolveHost(url.hostname);
+  if (!addresses.length || addresses.some(privateNetworkAddress)) {
+    throw new Error(
+      "Remote build source must resolve only to public addresses; configure RELAY_REMOTE_BUILD_ALLOWED_HOSTS for a reviewed private artifact host",
+    );
+  }
+}
 
 /** Preserves a trailing `.apk`/`.app` from the source URL so cached files
  * keep satisfying the existing artifact-format checks downstream. */
@@ -149,7 +206,11 @@ function cacheFileExtension(pathname: string): string {
  */
 export async function resolveRegisteredBuildArtifact(
   sourceUrl: string,
-  options: { sourceSha256?: string; fetchImpl?: typeof fetch } = {},
+  options: {
+    sourceSha256?: string;
+    fetchImpl?: typeof fetch;
+    resolveHost?: (hostname: string) => Promise<string[]>;
+  } = {},
 ): Promise<string> {
   const url = new URL(sourceUrl.trim());
   if (url.protocol !== "http:" && url.protocol !== "https:") {
@@ -173,7 +234,30 @@ export async function resolveRegisteredBuildArtifact(
   const partial = `${destination}.partial`;
   try {
     await rm(partial, { force: true });
-    const response = await (options.fetchImpl ?? fetch)(url, { redirect: "follow" });
+    const resolveHost =
+      options.resolveHost ??
+      (async (hostname: string) =>
+        (await lookup(hostname, { all: true, verbatim: true })).map((entry) => entry.address));
+    const fetchArtifact = options.fetchImpl ?? fetch;
+    const registeredOrigin = url.origin;
+    let currentUrl = url;
+    let response: Response | undefined;
+    for (let redirects = 0; redirects <= MAX_REMOTE_BUILD_REDIRECTS; redirects += 1) {
+      await assertPublicRemoteBuildUrl(currentUrl, resolveHost);
+      response = await fetchArtifact(currentUrl, { redirect: "manual" });
+      if (![301, 302, 303, 307, 308].includes(response.status)) break;
+      const location = response.headers.get("location");
+      if (!location) throw new Error("Build source redirect is missing a Location header");
+      if (redirects === MAX_REMOTE_BUILD_REDIRECTS) {
+        throw new Error(`Build source exceeded ${MAX_REMOTE_BUILD_REDIRECTS} redirects`);
+      }
+      const redirected = new URL(location, currentUrl);
+      if (redirected.protocol !== url.protocol || redirected.origin !== registeredOrigin) {
+        throw new Error("Build source redirects must remain on the registered protocol and origin");
+      }
+      currentUrl = redirected;
+    }
+    if (!response) throw new Error("Build source download did not return a response");
     if (!response.ok) {
       throw new Error(`Build source download failed with HTTP ${response.status}`);
     }

@@ -55,6 +55,7 @@ export type {
   ChangeProofExecutionCoordinatorOptions,
   ChangeProofExecutionLease,
   ChangeProofExecutionRecord,
+  ChangeProofExecutionRequestAuthority,
   ChangeProofExecutionSubmitInput,
 } from "./change-proof-execution-types.js";
 
@@ -201,6 +202,7 @@ async function ensureStarted(
     requestDigest: input.requestDigest,
     actorId: input.actorId,
     authority: "confirmed",
+    ...(input.requestAuthority ? { requestAuthority: clone(input.requestAuthority) } : {}),
     ...((input.publication ?? options.publication)
       ? { publication: input.publication ?? options.publication }
       : {}),
@@ -412,6 +414,7 @@ export function createChangeProofExecutionCoordinator(
             requestDigest: live.requestDigest,
             actorId: live.actorId,
             authority: live.authority,
+            ...(live.requestAuthority ? { requestAuthority: live.requestAuthority } : {}),
             ...(live.publication ? { publication: live.publication } : {}),
           },
           executor,

@@ -71,7 +71,6 @@ import {
   acquireRelayStateServerLease,
   beginDurableWorkerServerLifecycle,
   type AuthoringRuntime,
-  type ChangeProofCellExecutor,
   type RelayStateServerLease,
 } from "@relay/core";
 import { collectVisibleReports } from "./report-access.js";
@@ -128,7 +127,7 @@ import type { WorkflowRouteRuntime } from "./workflow-routes.js";
 import { handlePrimaryOperationRoutes } from "./primary-operation-routes.js";
 import type { ChangeVerificationRouteRuntime } from "./change-verification-routes.js";
 import { proofExecutionCoordinator } from "./change-proof-execution-runtime.js";
-import { createDefaultChangeProofCellExecutor } from "./change-proof-cell-executor.js";
+import { executeRecoveredChangeProofCell } from "./change-proof-cell-executor.js";
 import { createProofPublicationWorker } from "./proof-publication-runtime.js";
 import { runServerCli } from "./server-cli.js";
 import { requestsBearerAuthentication, setCorsOrigin } from "./cors.js";
@@ -852,18 +851,8 @@ async function startServerWithStateLease(
   publish({ type: "server.ready", at: now(), host, port });
   const recoverProofCell = opts.proofRouteRuntime?.executeCell
     ? opts.proofRouteRuntime.executeCell
-    : ((async (input) => {
-        const execute = createDefaultChangeProofCellExecutor({
-          subject: input.execution.actorId,
-          organizationId: input.execution.organizationId,
-          projectId: input.execution.projectId,
-          allowedProjects: [input.execution.projectId],
-          tokenKind: "local",
-          localTrusted: true,
-          role: "runner",
-        });
-        return execute(input);
-      }) satisfies ChangeProofCellExecutor);
+    : (input: Parameters<typeof executeRecoveredChangeProofCell>[0]) =>
+        executeRecoveredChangeProofCell(input, now());
   const proofRecovery = proofCoordinator.recover?.(recoverProofCell);
   void proofRecovery?.catch((error: unknown) =>
     console.warn(

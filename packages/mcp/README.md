@@ -26,7 +26,11 @@ The plugin descriptor invokes the installed `relay-mcp` binary. A clean host doe
 the Relay workspace after the package is installed.
 
 The local defaults use the loopback Relay service, the local project, a process-scoped agent
-identity, and the compact outcome tool set. The Proof plugin selects `RELAY_MCP_PROFILE=proof`:
+identity, and the compact outcome tool set. That default can prepare, inspect, run, and resume a
+Proof through `relay_prove_change` and `relay_inspect_proof`; it deliberately cannot self-approve a
+Verification Plan. A human approves in the app or CLI. The advanced Proof profile exposes the raw
+lifecycle operations for hosts that also provide a distinct human reviewer identity. The Proof
+plugin selects `RELAY_MCP_PROFILE=proof`:
 
 ```json
 {

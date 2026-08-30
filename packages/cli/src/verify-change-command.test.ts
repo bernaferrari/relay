@@ -150,6 +150,7 @@ function preparedPlan(
     journey: { ...cell.journey, appMapRevision: 7 },
     executionRisk: safeExecutionRisk,
     executionRiskDigest: canonicalSha256(safeExecutionRisk),
+    evidencePolicyDigest: `sha256:${"e".repeat(64)}`,
     cleanupRequired: false,
   }));
   const idMap = new Map(

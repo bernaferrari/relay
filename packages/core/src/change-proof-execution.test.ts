@@ -18,6 +18,7 @@ import { resetControlDatabaseCache } from "./collaboration-db.js";
 import { withControlStore } from "./collaboration-store.js";
 import { listChangeProofPublicationOutbox } from "./change-proof-publication-outbox.js";
 import { canonicalSha256 } from "./canonical-json.js";
+import { normalizeRecord } from "./change-proof-execution-store.js";
 
 const scope = { organizationId: "acme", projectId: "relay" } as const;
 const baseSha = "1".repeat(40);
@@ -114,6 +115,7 @@ function selection(cellCount = 1): ChangeVerification["selection"] {
       dimensions: { locale: "ar" },
       executionRisk: safeExecutionRisk,
       executionRiskDigest: canonicalSha256(safeExecutionRisk),
+      evidencePolicyDigest: `sha256:${"e".repeat(64)}`,
       cleanupRequired: false,
     },
     {
@@ -126,6 +128,7 @@ function selection(cellCount = 1): ChangeVerification["selection"] {
       dimensions: { locale: "en" },
       executionRisk: safeExecutionRisk,
       executionRiskDigest: canonicalSha256(safeExecutionRisk),
+      evidencePolicyDigest: `sha256:${"e".repeat(64)}`,
       cleanupRequired: false,
     },
   ];
@@ -196,6 +199,16 @@ function submit(proof: ChangeVerification): ChangeProofExecutionSubmitInput {
     requestDigest,
     actorId: "runner:proof-test",
     authority: "confirmed",
+    requestAuthority: {
+      subject: "runner:proof-test",
+      allowedProjects: [scope.projectId],
+      tokenKind: "service",
+      localTrusted: false,
+      role: "runner",
+      actorKind: "agent",
+      leaseId: "lease:proof-test",
+      leaseOwnerId: "runner:proof-test",
+    },
   };
 }
 
@@ -366,7 +379,8 @@ test("startup recovery autonomously continues a queued Proof from frozen authori
       projectRun: async ({ run }) => projectedPass((run as { id: string }).id),
     });
     let dispatches = 0;
-    const recovered = await afterRestart.recover!(async () => {
+    const recovered = await afterRestart.recover!(async ({ execution }) => {
+      assert.deepEqual(execution.requestAuthority, input.requestAuthority);
       dispatches += 1;
       return { runId: "run-recovered", wait: async () => fakeRun("run-recovered") };
     });
@@ -374,6 +388,26 @@ test("startup recovery autonomously continues a queued Proof from frozen authori
     assert.equal(recovered.length, 1);
     assert.equal(recovered[0]?.status, "completed");
     assert.equal((await readChangeVerification(scope, proof.id))?.state, "proved");
+  });
+});
+
+test("persisted Proof authority rejects remote-to-local trust escalation", async () => {
+  await withStateRoot(async () => {
+    const proof = await readyProof();
+    const coordinator = createChangeProofExecutionCoordinator({ now: () => 300 });
+    const queued = await coordinator.submit(submit(proof));
+    assert.throws(
+      () =>
+        normalizeRecord({
+          ...queued,
+          requestAuthority: {
+            ...queued.requestAuthority,
+            tokenKind: "service",
+            localTrusted: true,
+          },
+        }),
+      /trust mode disagrees with its token kind/u,
+    );
   });
 });
 

@@ -8,6 +8,7 @@ import {
   compileExecutionRisk,
   compileVerificationPlan,
   findWorkspaceRoot,
+  getEvidenceCollectionPolicy,
   inspectWorkspaceChange,
   listBuilds,
   preflightRegisteredBuild,
@@ -270,6 +271,7 @@ async function freezeAppMapRevisions(
   const revisions = new Map<string, number>();
   const appMaps = new Map<string, NonNullable<Awaited<ReturnType<typeof readAppMap>>>>();
   const blockers: string[] = [];
+  const evidencePolicyDigest = canonicalSha256(getEvidenceCollectionPolicy());
   for (const journey of plan.selection.affectedJourneys) {
     const appMap = await readAppMap(projectId, journey.appMapId);
     if (!appMap || !appMap.tests[journey.testId]) {
@@ -316,6 +318,7 @@ async function freezeAppMapRevisions(
       journey: { ...cell.journey, appMapRevision },
       executionRisk,
       executionRiskDigest: canonicalSha256(executionRisk),
+      evidencePolicyDigest,
       cleanupRequired: executionRisk.cleanupRequired,
     });
   }

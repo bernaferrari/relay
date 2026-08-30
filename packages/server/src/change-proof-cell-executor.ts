@@ -147,6 +147,7 @@ export function createDefaultChangeProofCellExecutor(
         scope,
         proofExecutionAuthority: {
           executionRiskDigest: verificationCell.executionRiskDigest!,
+          evidencePolicyDigest: verificationCell.evidencePolicyDigest!,
           buildId: build.id,
           sourceSha: build.sourceSha,
           artifactDigest: build.artifactDigest,
@@ -180,4 +181,57 @@ export function createDefaultChangeProofCellExecutor(
       },
     };
   };
+}
+
+/** Reconstruct only the authority admitted with the durable Proof. Legacy
+ * records intentionally fail closed instead of being upgraded to the local
+ * server's trust mode after restart. */
+export function recoveredChangeProofExecutionAuthority(
+  execution: ChangeProofExecutionRecord,
+  issuedAt: number,
+): { scope: RequestContext; operation: NonNullable<ReturnType<typeof currentOperationContext>> } {
+  const authority = execution.requestAuthority;
+  if (!authority) {
+    throw new Error(
+      "Proof execution predates durable request authority; explicit proof.run re-admission is required",
+    );
+  }
+  return {
+    scope: {
+      subject: authority.subject,
+      organizationId: execution.organizationId,
+      projectId: execution.projectId,
+      allowedProjects: [...authority.allowedProjects],
+      tokenKind: authority.tokenKind,
+      localTrusted: authority.localTrusted,
+      role: authority.role,
+      ...(authority.externalActorKind ? { externalActorKind: authority.externalActorKind } : {}),
+    },
+    operation: {
+      schemaVersion: 1,
+      actorId: execution.actorId,
+      actorKind: authority.actorKind,
+      organizationId: execution.organizationId,
+      projectId: execution.projectId,
+      operationId: "proof.run.recover",
+      requestId: `${execution.requestId}:recover`,
+      idempotencyKey: execution.requestId,
+      issuedAt,
+      ...(authority.leaseId
+        ? {
+            leaseId: authority.leaseId,
+            ...(authority.leaseOwnerId ? { leaseOwnerId: authority.leaseOwnerId } : {}),
+          }
+        : {}),
+    },
+  };
+}
+
+export async function executeRecoveredChangeProofCell(
+  input: Parameters<ChangeProofCellExecutor>[0],
+  issuedAt: number,
+) {
+  const recovered = recoveredChangeProofExecutionAuthority(input.execution, issuedAt);
+  const execute = createDefaultChangeProofCellExecutor(recovered.scope);
+  return runWithOperationContext(recovered.operation, () => execute(input));
 }

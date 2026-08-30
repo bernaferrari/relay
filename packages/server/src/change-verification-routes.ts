@@ -53,6 +53,7 @@ import {
   prepareCurrentChangeVerification,
   proofPreparationStartInput,
 } from "./change-proof-preparation.js";
+import { changeProofExecutionRequestAuthority } from "./change-proof-request-authority.js";
 
 export type ChangeVerificationRouteRuntime = {
   now: typeof now;
@@ -562,6 +563,8 @@ export async function handleChangeVerificationRoute(input: {
     const body = (await parseJsonBody(input.request)) as OperationInput<"proof.run">;
     const current = await currentProof(runtime, scope, runMatch.proofId!);
     const digest = proofRunRequestDigest(current.id, body);
+    const operationContext = currentOperationContext();
+    const requestAuthority = changeProofExecutionRequestAuthority(input.scope, operationContext);
     let execution;
     try {
       execution = await runtime.executionCoordinator.submit({
@@ -571,6 +574,7 @@ export async function handleChangeVerificationRoute(input: {
         requestDigest: digest,
         actorId,
         authority: "confirmed",
+        requestAuthority,
         ...(body.expectedVersion === undefined ? {} : { expectedVersion: body.expectedVersion }),
       });
     } catch (error) {
@@ -589,6 +593,7 @@ export async function handleChangeVerificationRoute(input: {
         requestDigest: digest,
         actorId,
         authority: "confirmed" as const,
+        requestAuthority,
       };
       if (body.wait) {
         execution = await runtime.executionCoordinator.run(runInput, execute);

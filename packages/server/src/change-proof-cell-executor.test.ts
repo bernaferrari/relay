@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { ChangeProofExecutionRecord } from "@relay/core";
-import { changeProofCellRunInput } from "./change-proof-cell-executor.js";
+import {
+  changeProofCellRunInput,
+  recoveredChangeProofExecutionAuthority,
+} from "./change-proof-cell-executor.js";
 import { canonicalSha256 } from "@relay/core";
 
 const safeExecutionRisk = {
@@ -65,6 +68,7 @@ const execution = (
             dimensions: cellDimensions,
             executionRisk: safeExecutionRisk,
             executionRiskDigest: canonicalSha256(safeExecutionRisk),
+            evidencePolicyDigest: `sha256:${"e".repeat(64)}`,
             cleanupRequired: false,
           },
         ],
@@ -156,5 +160,50 @@ test("the default cell adapter refuses prohibited or confirmation-gated risk", (
         buildId: "build-1",
       }),
     /only safe\/none Proof execution is currently supported/u,
+  );
+});
+
+test("restart recovery preserves remote authority and never synthesizes local trust", () => {
+  const record = {
+    ...execution("browser"),
+    organizationId: "org-remote",
+    projectId: "project-remote",
+    actorId: "agent:remote",
+    requestId: "proof-run-remote",
+    requestAuthority: {
+      subject: "agent:remote",
+      allowedProjects: ["project-remote"],
+      tokenKind: "service",
+      localTrusted: false,
+      role: "runner",
+      actorKind: "agent",
+      leaseId: "lease:remote",
+      leaseOwnerId: "agent:remote",
+    },
+  } as unknown as ChangeProofExecutionRecord;
+
+  const recovered = recoveredChangeProofExecutionAuthority(record, 123);
+  assert.equal(recovered.scope.localTrusted, false);
+  assert.equal(recovered.scope.tokenKind, "service");
+  assert.deepEqual(recovered.scope.allowedProjects, ["project-remote"]);
+  assert.equal(recovered.operation.leaseId, "lease:remote");
+  assert.equal(recovered.operation.leaseOwnerId, "agent:remote");
+  assert.equal(recovered.operation.actorId, "agent:remote");
+});
+
+test("restart recovery rejects legacy executions without durable request authority", () => {
+  assert.throws(
+    () =>
+      recoveredChangeProofExecutionAuthority(
+        {
+          ...execution("browser"),
+          organizationId: "org",
+          projectId: "project",
+          actorId: "agent:legacy",
+          requestId: "legacy-run",
+        } as unknown as ChangeProofExecutionRecord,
+        123,
+      ),
+    /explicit proof\.run re-admission is required/u,
   );
 });

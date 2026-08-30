@@ -49,6 +49,7 @@ import {
 } from "./app-map-test-target-profile.js";
 import type { RequestContext } from "./security.js";
 import { assertRepeatWorkflowMutation } from "./repeat-workflow-receipt.js";
+import { frozenProofEvidencePolicy } from "./proof-evidence-policy-authority.js";
 
 export {
   frozenTestRunTargetProfile,
@@ -197,6 +198,7 @@ export type AppMapRunRouteContext = {
    * target lease or job enqueue is attempted. */
   proofExecutionAuthority?: {
     executionRiskDigest: string;
+    evidencePolicyDigest: string;
     /** Proof execution also freezes the exact build/deployment identity. */
     buildId?: string;
     sourceSha?: string;
@@ -439,6 +441,9 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
       );
     }
 
+    const proofEvidencePolicy = input.proofExecutionAuthority
+      ? frozenProofEvidencePolicy(input.proofExecutionAuthority.evidencePolicyDigest)
+      : undefined;
     if (input.proofExecutionAuthority) {
       const actualRiskDigest = canonicalSha256(preflight.executionRisk);
       if (actualRiskDigest !== input.proofExecutionAuthority.executionRiskDigest) {
@@ -723,6 +728,7 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
       browserTargetId: body.target.kind === "browser" ? targetId : undefined,
       ...(targetProfile ? { targetProfile } : {}),
       ...(queuedSourceRevision ? { sourceRevision: queuedSourceRevision } : {}),
+      ...(proofEvidencePolicy ? { evidencePolicy: proofEvidencePolicy } : {}),
       artifacts: [
         ...(buildProvenance
           ? [

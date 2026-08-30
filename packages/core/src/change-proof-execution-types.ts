@@ -1,9 +1,11 @@
 import type {
+  ActorKind,
   ChangeProofCaseResult,
   ChangeProofExecutionCancellation,
   ChangeProofExecutionCellStatus,
   ChangeProofExecutionUncertainty,
   ChangeVerification,
+  ProjectRole,
 } from "@relay/protocol";
 import type {
   ChangeProofPublicationRequest,
@@ -31,6 +33,21 @@ export type ChangeProofExecutionLease = {
   expiresAt: number;
 };
 
+/** Exact request trust boundary captured when proof.run is admitted. Recovery
+ * must reuse this scope; synthesizing a local-trusted scope after restart
+ * would grant a remote execution authority it never held. */
+export type ChangeProofExecutionRequestAuthority = {
+  subject: string;
+  allowedProjects: string[];
+  tokenKind: "local" | "service" | "external";
+  localTrusted: boolean;
+  role: ProjectRole;
+  actorKind: ActorKind;
+  externalActorKind?: "human" | "agent";
+  leaseId?: string;
+  leaseOwnerId?: string;
+};
+
 /** Durable implementation document. It intentionally contains the frozen
  * Proof plan and exact per-cell cursor. It is never returned by proof.run;
  * callers receive only the summary projection. */
@@ -45,6 +62,10 @@ export type ChangeProofExecutionRecord = {
   requestDigest: `sha256:${string}`;
   actorId: string;
   authority: "confirmed";
+  /** Optional only for parsing records written before authority persistence.
+   * Those records are deliberately not recoverable without explicit
+   * re-admission. Every newly submitted execution stores this field. */
+  requestAuthority?: ChangeProofExecutionRequestAuthority;
   /** Provider publication is captured at admission so a restart cannot lose
    * the terminal outbox intent or consult a later ambient configuration. */
   publication?: ChangeProofPublicationRequest;
@@ -108,6 +129,7 @@ export type ChangeProofExecutionSubmitInput = ChangeVerificationScope & {
   requestDigest: `sha256:${string}`;
   actorId: string;
   authority: "confirmed";
+  requestAuthority?: ChangeProofExecutionRequestAuthority;
   expectedVersion?: number;
   publication?: ChangeProofPublicationRequest;
 };

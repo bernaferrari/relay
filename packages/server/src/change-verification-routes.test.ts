@@ -113,6 +113,7 @@ function selection(): ChangeVerification["selection"] {
         dimensions: { locale: "ar", viewport: "compact" },
         executionRisk: safeExecutionRisk,
         executionRiskDigest: canonicalSha256(safeExecutionRisk),
+        evidencePolicyDigest: `sha256:${"e".repeat(64)}`,
         cleanupRequired: false,
       },
     ],

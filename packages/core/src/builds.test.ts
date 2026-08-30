@@ -288,6 +288,67 @@ test("rejects non-https remote sources before any download", async () => {
   await assert.rejects(resolveRegisteredBuildArtifact("file:///tmp/app.apk"), /absolute http\(s\)/);
 });
 
+test("rejects remote build redirects that cross the registered trust boundary", async () => {
+  let calls = 0;
+  await assert.rejects(
+    resolveRegisteredBuildArtifact("https://artifacts.example/app.apk", {
+      resolveHost: async () => ["8.8.8.8"],
+      fetchImpl: (async () => {
+        calls += 1;
+        return new Response(null, {
+          status: 302,
+          headers: { location: "http://127.0.0.1/internal.apk" },
+        });
+      }) as typeof fetch,
+    }),
+    /registered protocol and origin/,
+  );
+  assert.equal(calls, 1, "the unsafe redirect destination is never fetched");
+});
+
+test("rejects https build hosts that resolve to private network addresses", async () => {
+  let fetched = false;
+  await assert.rejects(
+    resolveRegisteredBuildArtifact("https://artifacts.example/app.apk", {
+      resolveHost: async () => ["127.0.0.1"],
+      fetchImpl: (async () => {
+        fetched = true;
+        return new Response("apk");
+      }) as typeof fetch,
+    }),
+    /resolve only to public addresses/,
+  );
+  assert.equal(fetched, false);
+});
+
+test("follows bounded same-origin remote build redirects", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-build-redirect-"));
+  const previousState = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = join(root, "state");
+  const visited: string[] = [];
+  try {
+    const cached = await resolveRegisteredBuildArtifact("https://artifacts.example/app.apk", {
+      resolveHost: async () => ["8.8.8.8"],
+      fetchImpl: (async (input: string | URL | Request) => {
+        const requested = String(input);
+        visited.push(requested);
+        return new URL(requested).pathname === "/app.apk"
+          ? new Response(null, { status: 302, headers: { location: "/v2/app.apk" } })
+          : new Response("verified-apk", { status: 200 });
+      }) as typeof fetch,
+    });
+    assert.deepEqual(visited, [
+      "https://artifacts.example/app.apk",
+      "https://artifacts.example/v2/app.apk",
+    ]);
+    assert.equal(await readFile(cached, "utf8"), "verified-apk");
+  } finally {
+    if (previousState === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previousState;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("downloads a remote source into the state builds cache and preflights it", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-build-remote-"));
   const previousState = process.env.RELAY_STATE_DIR;

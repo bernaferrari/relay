@@ -111,6 +111,7 @@ export async function reconcileClaimedRecord(
       requestDigest: record.requestDigest,
       actorId: record.actorId,
       authority: "confirmed",
+      ...(record.requestAuthority ? { requestAuthority: record.requestAuthority } : {}),
     },
     current.runId,
   );

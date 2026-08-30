@@ -281,6 +281,7 @@ export function goldenDemoReadyProof(
     },
     executionRisk: GOLDEN_EXECUTION_RISK,
     executionRiskDigest: GOLDEN_EXECUTION_RISK_DIGEST,
+    evidencePolicyDigest: `sha256:${"e".repeat(64)}`,
   }));
   const pilotCellId = cells?.find(
     (_, index) => plan.selection.cells?.[index]?.id === plan.selection.pilotCellId,

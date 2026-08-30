@@ -102,7 +102,7 @@ function aggregateCellExecutionRisk(cells: readonly FrozenVerificationCell[]): {
   const invalidCellIds: string[] = [];
   const values: ExecutionRisk[] = [];
   for (const cell of cells) {
-    if (!cell.executionRisk || !cell.executionRiskDigest) {
+    if (!cell.executionRisk || !cell.executionRiskDigest || !cell.evidencePolicyDigest) {
       invalidCellIds.push(cell.id);
       continue;
     }

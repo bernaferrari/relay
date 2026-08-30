@@ -516,6 +516,14 @@ export type ProveChangeOutcomeIntent = {
 
 export type ProveChangeOutcome = ChangeProofRunOutput | OperationOutput<"proof.prepare">;
 
+export type InspectProofOutcomeIntent = {
+  kind: "inspect-proof";
+  proofId: string;
+  includeHistory?: boolean;
+};
+
+export type InspectProofOutcome = OperationOutput<"proof.inspect">;
+
 /** Small jobs-to-be-done interface for ordinary humans and agents. The
  * canonical operation registry remains the authority behind every method. */
 export interface RelayOutcomeJobs {
@@ -529,6 +537,7 @@ export interface RelayOutcomeJobs {
   exportEvidence(intent: ExportEvidenceIntent): Promise<EvidenceExportResult>;
   replayLab(intent: ReplayLabOutcomeIntent): Promise<ReplayLabReport>;
   verifyChange(intent: VerifyChangeOutcomeIntent): Promise<VerifyChangeResult>;
+  inspectProof(intent: InspectProofOutcomeIntent): Promise<InspectProofOutcome>;
   proveChange(intent: ProveChangeOutcomeIntent): Promise<ProveChangeOutcome>;
   inspect(input: WorkflowLookup): Promise<WorkflowSnapshot>;
   watchWorkflow(input: {

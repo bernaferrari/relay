@@ -107,6 +107,7 @@ function proof(): ChangeVerification {
           dimensions: { locale: "ar" },
           executionRisk: safeExecutionRisk,
           executionRiskDigest: safeExecutionRiskDigest,
+          evidencePolicyDigest: `sha256:${"e".repeat(64)}`,
           cleanupRequired: false,
         },
         {
@@ -119,6 +120,7 @@ function proof(): ChangeVerification {
           dimensions: { locale: "ar" },
           executionRisk: safeExecutionRisk,
           executionRiskDigest: safeExecutionRiskDigest,
+          evidencePolicyDigest: `sha256:${"e".repeat(64)}`,
           cleanupRequired: false,
         },
       ],

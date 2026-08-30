@@ -25,6 +25,7 @@ import type {
   FailureRepairProposal,
   FailureRunSummary,
   InspectFailureIntent,
+  InspectProofOutcomeIntent,
   ObserveTargetIntent,
   ProposeRepairIntent,
   ProveChangeOutcomeIntent,
@@ -553,6 +554,13 @@ class CanonicalRelayOutcomeJobs implements RelayOutcomeJobs {
       proofId: intent.proofId,
       ...(intent.expectedVersion === undefined ? {} : { expectedVersion: intent.expectedVersion }),
       ...(intent.wait === undefined ? {} : { wait: intent.wait }),
+    });
+  }
+
+  inspectProof(intent: InspectProofOutcomeIntent) {
+    return this.operations.invoke("proof.inspect", {
+      proofId: intent.proofId,
+      ...(intent.includeHistory === undefined ? {} : { includeHistory: intent.includeHistory }),
     });
   }
 
