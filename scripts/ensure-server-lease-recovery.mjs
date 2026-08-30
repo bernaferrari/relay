@@ -240,7 +240,8 @@ export function prepareLeaseForFreshServer({
   // hot restart unavailable. It is still gated on a proven empty port.
   const sameHostDeadLeaseCanBeReacquired =
     recovery.status === "refused" &&
-    recovery.reason === "lease-not-old-enough" &&
+    (recovery.reason === "lease-not-old-enough" ||
+      recovery.reason === "foreign-host-not-local-rename") &&
     recovery.owner?.host === currentHost &&
     portProbe.known &&
     portProbe.pids.length === 0;

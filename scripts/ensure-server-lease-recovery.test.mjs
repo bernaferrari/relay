@@ -154,6 +154,23 @@ test("ensure:serve only permits a recovered lease or a verified empty state", ()
   });
   assert.equal(deadLocal.allowed, true);
   assert.equal(deadLocal.mode, "reacquire-dead-local-lease");
+
+  const oldDeadLocal = prepareLeaseForFreshServer({
+    root: "/workspace/relay",
+    tsx: "/workspace/relay/node_modules/tsx/dist/cli.mjs",
+    portProbe: { known: true, pids: [] },
+    currentHost: "relay-workstation-5.local",
+    relayHealth: null,
+    recover() {
+      return {
+        status: "refused",
+        reason: "foreign-host-not-local-rename",
+        owner: { pid: 999_999, host: "relay-workstation-5.local" },
+      };
+    },
+  });
+  assert.equal(oldDeadLocal.allowed, true);
+  assert.equal(oldDeadLocal.mode, "reacquire-dead-local-lease");
 });
 
 test("the adapter invokes the core bootstrap helper and preserves its JSON result", () => {
