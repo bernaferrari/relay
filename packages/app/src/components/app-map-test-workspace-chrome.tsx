@@ -52,7 +52,10 @@ export function TestWorkspaceBar(props: {
           </span>
         </Show>
       </div>
-      <div class="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2" aria-live="polite">
+      <div
+        class="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2 max-[900px]:basis-full"
+        aria-live="polite"
+      >
         <span class="flex min-w-0 items-center gap-1.5 max-[720px]:hidden">
           <span
             class={cn("size-1.5 shrink-0 rounded-full", TONE_DOT[props.statusTone])}

@@ -265,11 +265,10 @@ test("verify-change safely passes an untrusted base ref to execFile and starts o
   assert.deepEqual(baseCall?.slice(0, 3), ["rev-parse", "--verify", "--end-of-options"]);
 });
 
-test("verify-change records a persisted error job so the server decides rejection", async () => {
+test("verify-change delegates the complete Proof decision to one server-owned proof.run", async () => {
   const calls: Array<{ id: OperationId; input: unknown }> = [];
   const config = executableConfig();
   let startInput: Record<string, unknown> | undefined;
-  let jobPolls = 0;
   const client = {
     async invoke(id: OperationId, input: unknown) {
       calls.push({ id, input });
@@ -280,25 +279,21 @@ test("verify-change records a persisted error job so the server decides rejectio
       if (id === "proof.plan.approve") {
         return { proof: proofFixture("ready", 2, startInput!) };
       }
-      if (id === "proof.continue") {
-        const action = (input as { action: string }).action;
-        if (action === "start-pilot") {
-          return { proof: proofFixture("running-pilot", 3, startInput!) };
-        }
-        if (action === "record-runs") {
-          return { proof: proofFixture("rejected", 4, startInput!, ["job-failed"]) };
-        }
-      }
       if (id === "app-map.get") return { appMap: { id: "settings", revision: 7 } };
-      if (id === "app-map.test.run") {
+      if (id === "proof.run") {
         return {
-          planIdentity: { appMapId: "settings", testId: "language", appMapRevision: 7 },
-          job: { id: "job-failed", status: "queued" },
+          proof: proofFixture("rejected", 3, startInput!, ["run-failed"]),
+          execution: {
+            id: "proof-execution-1",
+            proofId: "proof-live-cli",
+            status: "completed",
+            cursor: 1,
+            total: 1,
+            runIds: ["run-failed"],
+            deadlineAt: 100,
+            nextAction: "complete",
+          },
         };
-      }
-      if (id === "job.get") {
-        jobPolls += 1;
-        return { job: { id: "job-failed", status: "error", persisted: jobPolls > 1 } };
       }
       throw new Error(`unexpected operation ${id}`);
     },
@@ -330,22 +325,17 @@ test("verify-change records a persisted error job so the server decides rejectio
       appMapId: "settings",
       testId: "language",
       targetCaseId: "local-browser-ar",
-      jobId: "job-failed",
-      runId: "job-failed",
+      jobId: "run-failed",
+      runId: "run-failed",
     },
   ]);
   assert.equal(result.execution.nextAction.kind, "complete");
-  const recordCall = calls.find(
-    ({ id, input }) =>
-      id === "proof.continue" && (input as { action: string }).action === "record-runs",
+  assert.deepEqual(
+    calls.map(({ id }) => id),
+    ["app-map.get", "proof.start", "proof.plan.approve", "proof.run"],
+    "the CLI must not dispatch App Map runs, poll jobs, or mutate Proof state client-side",
   );
-  assert.deepEqual(recordCall?.input, {
-    proofId: "proof-live-cli",
-    expectedVersion: 3,
-    action: "record-runs",
-    runIds: ["job-failed"],
-  });
-  assert.equal(calls.filter(({ id }) => id === "app-map.test.run").length, 1);
+  assert.deepEqual(calls.at(-1)?.input, { proofId: "proof-live-cli", wait: true });
   assert.ok(startInput);
   assert.equal(
     (
@@ -355,7 +345,6 @@ test("verify-change records a persisted error job so the server decides rejectio
     ).appMapRevision,
     7,
   );
-  assert.equal(jobPolls, 2);
 });
 
 test("verify-change does not self-approve a complete plan for an agent actor", async () => {
@@ -384,10 +373,9 @@ test("verify-change does not self-approve a complete plan for an agent actor", a
   assert.deepEqual(calls, ["app-map.get", "proof.start"]);
 });
 
-test("verify-change resumes a dispatched pilot with stable transport identity", async () => {
+test("verify-change resumes server-owned Proof execution with one stable proof.run identity", async () => {
   const config = executableConfig();
   let startInput: Record<string, unknown> | undefined;
-  let crashOnce = true;
   const identities: Array<{
     id: OperationId;
     requestId?: string;
@@ -403,24 +391,44 @@ test("verify-change resumes a dispatched pilot with stable transport identity", 
       if (id === "app-map.get") return { appMap: { id: "settings", revision: 7 } };
       if (id === "proof.start") {
         startInput = input as Record<string, unknown>;
-        return { proof: proofFixture("running-pilot", 3, startInput) };
-      }
-      if (id === "app-map.test.run") {
         return {
-          planIdentity: { appMapId: "settings", testId: "language", appMapRevision: 7 },
-          job: { id: "job-adopted", status: "queued" },
+          proof: proofFixture(
+            identities.filter(({ id: candidate }) => candidate === "proof.start").length === 1
+              ? "planning"
+              : "running",
+            identities.filter(({ id: candidate }) => candidate === "proof.start").length === 1
+              ? 1
+              : 3,
+            startInput,
+            identities.filter(({ id: candidate }) => candidate === "proof.start").length === 1
+              ? []
+              : ["job-adopted"],
+          ),
         };
       }
-      if (id === "job.get") {
-        if (crashOnce) {
-          crashOnce = false;
-          throw new Error("simulated CLI interruption after dispatch");
-        }
-        return { job: { id: "job-adopted", status: "error", persisted: true } };
+      if (id === "proof.plan.approve") {
+        return { proof: proofFixture("ready", 2, startInput!) };
       }
-      if (id === "proof.continue") {
-        assert.equal((input as { action: string }).action, "record-runs");
-        return { proof: proofFixture("rejected", 4, startInput!, ["job-adopted"]) };
+      if (id === "proof.run") {
+        const runCount = identities.filter(({ id: candidate }) => candidate === "proof.run").length;
+        return {
+          proof: proofFixture(
+            runCount === 1 ? "running" : "rejected",
+            runCount === 1 ? 3 : 4,
+            startInput!,
+            runCount === 1 ? [] : ["job-adopted"],
+          ),
+          execution: {
+            id: "proof-execution-1",
+            proofId: "proof-live-cli",
+            status: runCount === 1 ? "running" : "completed",
+            cursor: runCount === 1 ? 0 : 1,
+            total: 1,
+            runIds: runCount === 1 ? [] : ["job-adopted"],
+            deadlineAt: 100,
+            nextAction: runCount === 1 ? "run-pilot" : "complete",
+          },
+        };
       }
       throw new Error(`unexpected operation ${id}`);
     },
@@ -441,7 +449,8 @@ test("verify-change resumes a dispatched pilot with stable transport identity", 
       sleep: async () => {},
     });
 
-  await assert.rejects(run(), /simulated CLI interruption/u);
+  const first = await run();
+  assert.equal(first.execution.nextAction.kind, "run-pilot");
   const resumed = await run();
   assert.equal(
     resumed.proof && typeof resumed.proof === "object"
@@ -449,18 +458,25 @@ test("verify-change resumes a dispatched pilot with stable transport identity", 
       : undefined,
     "rejected",
   );
-  assert.equal(
-    identities.filter(({ id }) => id === "proof.plan.approve" || id === "proof.continue").length,
-    1,
-    "resume records the adopted Run without approving or restarting the pilot",
-  );
   const starts = identities.filter(({ id }) => id === "proof.start");
-  const runs = identities.filter(({ id }) => id === "app-map.test.run");
+  const runs = identities.filter(({ id }) => id === "proof.run");
   assert.equal(starts.length, 2);
   assert.equal(runs.length, 2);
   assert.equal(starts[0]?.requestId, starts[1]?.requestId);
   assert.equal(starts[0]?.idempotencyKey, starts[1]?.idempotencyKey);
   assert.equal(runs[0]?.requestId, runs[1]?.requestId);
   assert.equal(runs[0]?.idempotencyKey, runs[1]?.idempotencyKey);
-  assert.match(runs[0]?.requestId ?? "", /^verify-change-run-case-/u);
+  assert.match(runs[0]?.requestId ?? "", /^verify-change-proof-run-/u);
+  assert.deepEqual(
+    identities.map(({ id }) => id),
+    [
+      "app-map.get",
+      "proof.start",
+      "proof.plan.approve",
+      "proof.run",
+      "app-map.get",
+      "proof.start",
+      "proof.run",
+    ],
+  );
 });

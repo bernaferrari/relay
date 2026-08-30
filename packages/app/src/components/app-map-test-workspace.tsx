@@ -303,8 +303,7 @@ export function AppMapTestWorkspace(props: {
   const runBlockerActionLabel = createMemo(() => {
     if (server.isOffline() || saveState() === "saving") return undefined;
     if (saveState() === "error") return retryAvailable() ? "Retry save" : "Review save error";
-    if (blockers().length)
-      return `Fix ${blockers().length} ${blockers().length === 1 ? "issue" : "issues"}`;
+    if (blockers().length) return "Review Test";
     if (testRun.requiresTargetProfileSelection() || !testRun.targetProfileMatchesSelectedDevice()) {
       return "Choose target variant";
     }

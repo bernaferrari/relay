@@ -11,6 +11,11 @@ import {
 } from "./change-verification.js";
 import { changeProofPublicationReceiptSchema } from "./change-proof-decision.js";
 import { changeProofPublicationOutboxRecordSchema } from "./change-proof-publication-outbox.js";
+import {
+  changeProofRunInputSchema,
+  changeProofRunOutputSchema,
+  changeProofExecutionSummarySchema,
+} from "./change-proof-execution.js";
 
 const identifier = z.string().trim().min(1).max(256);
 const reason = z.string().trim().min(1).max(4_096);
@@ -155,6 +160,7 @@ export const changeVerificationOperationInputSchemas = {
       smallestNextVerification: changeVerificationNextSchema.optional(),
     })
     .strict(),
+  "proof.run": changeProofRunInputSchema,
 } as const;
 
 const mutationOutputSchema = z
@@ -172,6 +178,7 @@ export const changeVerificationOperationOutputSchemas = {
       history: z.array(changeVerificationSchema).max(100).readonly().optional(),
       publications: z.array(changeProofPublicationReceiptSchema).max(100).readonly(),
       publicationOutbox: z.array(changeProofPublicationOutboxRecordSchema).max(100).readonly(),
+      execution: changeProofExecutionSummarySchema.optional(),
     })
     .strict(),
   "proof.plan.approve": mutationOutputSchema,
@@ -184,4 +191,5 @@ export const changeVerificationOperationOutputSchemas = {
       receipt: changeVerificationMutationReceiptSchema,
     })
     .strict(),
+  "proof.run": changeProofRunOutputSchema,
 } as const;

@@ -179,6 +179,7 @@ export async function profileForCapture(
   target: OperationInput<"app-map.screen.capture">["target"],
   observedAt: number,
   bounds?: { width: number; height: number },
+  dependencies: { listDevices?: typeof listDevices } = {},
 ): Promise<TargetProfile> {
   const viewport =
     bounds &&
@@ -190,7 +191,9 @@ export async function profileForCapture(
       : undefined;
   const viewportKey = viewport ? `-${viewport.width}x${viewport.height}` : "";
   if (target.kind === "device") {
-    const device = (await listDevices()).find((item) => item.serial === target.targetId);
+    const device = (await (dependencies.listDevices ?? listDevices)()).find(
+      (item) => item.serial === target.targetId,
+    );
     return {
       id: `device:${target.targetId}${viewportKey}`,
       targetId: target.targetId,
@@ -198,6 +201,7 @@ export async function profileForCapture(
       platform: target.platform,
       name: device?.name?.trim() || target.targetId,
       ...(device?.kind ? { model: device.kind } : {}),
+      ...(device?.avdName ? { androidAvdName: device.avdName } : {}),
       ...(device?.osVersion ? { osVersion: device.osVersion } : {}),
       capabilities: ["snapshot", "screenshot"],
       observedAt,

@@ -1,21 +1,29 @@
 # Relay MCP
 
 `@relay/mcp` gives MCP clients a project-scoped view of Relay through the same server operations used
-by the app and CLI. It uses the MCP v2 stdio transport only; stdout is reserved for MCP protocol
-messages and diagnostics go to stderr.
+by the app and CLI. The published package contains a bundled host-neutral executable, so an agent
+host can install it with npm without pnpm or a Relay workspace. Its default MCP v2 transport is
+stdio; the reviewed `relay-mcp-bridge` command adapts that same process to Streamable HTTP for
+hosts that accept only a remote MCP URL. Stdout is reserved for MCP protocol messages and
+diagnostics go to stderr.
 
 ## Install and configure a client
 
 For a released host installation, use the host-neutral executable. Codex, Claude Code, and
-ChatGPT-compatible MCP bridges all launch this same package; no host has a second Relay schema:
+ChatGPT-compatible MCP bridges all launch this same package; no host has a second Relay schema.
+The npm command applies after `@relay/mcp` is published; until then, install the local release
+artifact from this checkout:
 
 ```bash
-npm install --global @relay/mcp@0.1.0
+npm install --global @relay/mcp@0.1.0 # after the public release
+# From this repository before publication:
+npm pack --silent ./packages/mcp
+npm install --global ./relay-mcp-0.1.0.tgz
 relay-mcp doctor --profile proof
 ```
 
-For development inside this repository, `pnpm --filter @relay/mcp start` remains available. A
-clean host does not need pnpm or the Relay workspace.
+The plugin descriptor invokes the installed `relay-mcp` binary. A clean host does not need pnpm or
+the Relay workspace after the package is installed.
 
 The local defaults use the loopback Relay service, the local project, a process-scoped agent
 identity, and the compact outcome tool set. The Proof plugin selects `RELAY_MCP_PROFILE=proof`:
@@ -24,14 +32,17 @@ identity, and the compact outcome tool set. The Proof plugin selects `RELAY_MCP_
 {
   "mcpServers": {
     "relay": {
-      "command": "pnpm",
-      "args": ["--filter", "@relay/mcp", "start"]
+      "command": "relay-mcp",
+      "args": ["--profile", "proof"],
+      "env": { "RELAY_MCP_PROFILE": "proof" }
     }
   }
 }
 ```
 
-The executable also exposes a fail-closed setup check:
+The executable also exposes a fail-closed setup check. It intentionally reports `NOT READY` when
+the Relay service is unavailable, the scope or role is wrong, or the server manifest is missing a
+Proof operation:
 
 ```bash
 relay-mcp doctor --profile proof --json
@@ -48,6 +59,48 @@ arguments, logs, or prompts. For an explicitly unauthenticated local Relay serve
 `RELAY_PROJECT_ID`, `RELAY_ACTOR_ID`, `RELAY_CREDENTIAL_SOURCE`, and `RELAY_TIMEOUT_MS` environment
 variables are also supported, but organization, project, and actor identity should always be chosen
 deliberately.
+
+## ChatGPT-compatible remote bridge
+
+`relay-mcp-bridge` is a thin, reviewed transport adapter. It starts one `relay-mcp` child per MCP
+session and carries newline-framed JSON-RPC messages over an authenticated HTTP endpoint. It does
+not define tools, schemas, or Proof behavior; those remain in the child package and the canonical
+operation registry.
+
+Run it behind HTTPS when a remote ChatGPT-compatible host needs a URL:
+
+```bash
+export RELAY_MCP_BRIDGE_AUTH_TOKEN=…   # bridge credential, supplied by the host
+export RELAY_AUTH_TOKEN=…              # Relay credential, kept only in this process environment
+export RELAY_URL=https://relay.example
+export RELAY_ORGANIZATION_ID=acme
+export RELAY_PROJECT_ID=checkout
+export RELAY_ACTOR_ID=agent:chatgpt
+export RELAY_MCP_PROFILE=proof
+relay-mcp-bridge --host 127.0.0.1 --port 8788 --auth-env RELAY_MCP_BRIDGE_AUTH_TOKEN
+```
+
+The bridge binds to loopback by default and refuses a public unauthenticated bind. Put a TLS
+reverse proxy and its access policy in front of a publicly reachable endpoint; pass the resulting
+`https://…/mcp` URL to the host as its remote MCP `server_url`. Configure the host's authorization
+secret through its secret/reference mechanism, never by committing it to JSON or a prompt. A
+stdio-only host can use the same package directly:
+
+```json
+{
+  "mcpServers": {
+    "relay": {
+      "command": "relay-mcp",
+      "args": ["--profile", "proof"],
+      "env": { "RELAY_MCP_PROFILE": "proof" }
+    }
+  }
+}
+```
+
+For a ChatGPT-compatible remote MCP client, select the bridge URL and require approval for
+side-effecting tools in the host. Do not recreate the Relay tool list in the host configuration;
+the bridge exposes exactly the profile selected by `RELAY_MCP_PROFILE`.
 
 ## Tool profiles
 
@@ -152,5 +205,6 @@ proposals on failure, and return a structured verdict with share links for revie
   a bounded recovery action, and the current revision when Relay supplies one. Arbitrary response
   bodies, credentials, and host paths are never forwarded.
 
-There is intentionally no MCP HTTP transport in this package. Run the Relay HTTP server separately;
-the MCP process is a scoped stdio adapter, not the source of truth.
+The bridge is intentionally only a transport adapter. Run the Relay HTTP server separately; the
+MCP process remains a scoped adapter, not the source of truth. The package build and clean-host
+installation check can be run from this workspace with `pnpm build` and `pnpm test:clean-host`.

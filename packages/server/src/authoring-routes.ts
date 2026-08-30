@@ -45,6 +45,11 @@ import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
 import { iosMutationOutcomeUnknownHttpError } from "./interaction-routes.js";
 import { isFinalizedMp4, startIosVideoTake, stopIosVideoTake } from "./ios-video-capture.js";
 import type { RequestContext } from "./security.js";
+import {
+  pixelBracketStatus,
+  semanticProofStatus,
+  type SemanticProofStatus,
+} from "./authoring-observation-proof.js";
 
 // XCTest video recording owns the command channel on attached Apple hardware:
 // any tap, snapshot, or text command restarts the runner and destroys the
@@ -79,12 +84,16 @@ async function deviceFor(session: AuthoringSession) {
 type AuthoringObservationDependencies = {
   resolveDevice(session: AuthoringSession): Promise<Device>;
   captureSnapshot(device: Device): Promise<SnapshotPayload>;
+  /** Retry Android semantics through the explicit serial when the shared
+   * authoring observation starts with an empty UiAutomation tree. */
+  captureSnapshotBySerial?(serial: string): Promise<SnapshotPayload>;
   captureScreenshot(device: Device): Promise<ScreenshotPayload>;
 };
 
 const authoringObservationDependencies: AuthoringObservationDependencies = {
   resolveDevice: deviceFor,
   captureSnapshot: (device) => captureSnapshot({ device }),
+  captureSnapshotBySerial: (serial) => captureSnapshot({ serial }),
   captureScreenshot: (device) =>
     captureScreenshot({
       device,
@@ -113,40 +122,12 @@ async function disposeAuthoringScreenshots(
   );
 }
 
-type SemanticProofStatus = AuthoringObservationProof["semantics"]["status"];
-type PixelBracketStatus = NonNullable<AuthoringObservationProof["pixels"]["bracket"]>["status"];
-
-function semanticProofStatus(snapshot: SnapshotPayload): SemanticProofStatus {
-  const semanticReadiness = snapshot.readiness?.semanticControl;
-  if (snapshot.inspectable === false || snapshot.nodes.length === 0) return "unavailable";
-  if (semanticReadiness?.freshness === "stale") return "stale";
-  return semanticReadiness && semanticReadiness.state !== "proven" ? "unavailable" : "current";
-}
-
 /** A PNG-derived screen fingerprint is stable across benign encoder variance;
  * raw bytes are a conservative fallback for failed/fixture decoders. It is
  * deliberately separate from the AX identity so a late tree cannot certify
  * its own visual bracket. */
 function pixelFingerprint(bytes: Uint8Array): string {
   return observeVisualScreenFingerprint(bytes) ?? createHash("sha256").update(bytes).digest("hex");
-}
-
-function pixelBracketStatus(input: {
-  before: ScreenshotPayload;
-  beforeFingerprint: string;
-  after: ScreenshotPayload;
-  afterBytes: Uint8Array;
-  afterFingerprint: string;
-}): PixelBracketStatus {
-  if (isBlankScreenshot(input.afterBytes)) return "unavailable";
-  const dimensionsChanged =
-    input.before.width !== undefined &&
-    input.before.height !== undefined &&
-    input.after.width !== undefined &&
-    input.after.height !== undefined &&
-    (input.before.width !== input.after.width || input.before.height !== input.after.height);
-  if (dimensionsChanged) return "changed";
-  return input.beforeFingerprint === input.afterFingerprint ? "coherent" : "changed";
 }
 
 export async function captureAuthoringObservation(
@@ -203,6 +184,20 @@ export async function captureAuthoringObservation(
         if (snapshotResult.status === "rejected") throw snapshotResult.reason;
         if (screenshotResult.status === "rejected") throw screenshotResult.reason;
         snapshot = snapshotResult.value;
+        if (
+          session.target.kind === "device" &&
+          session.target.platform === "android" &&
+          snapshot.nodes.length === 0 &&
+          dependencies.captureSnapshotBySerial
+        ) {
+          try {
+            const retry = await dependencies.captureSnapshotBySerial(session.target.targetId);
+            if (retry.nodes.length > snapshot.nodes.length) snapshot = retry;
+          } catch {
+            // Keep the original pixel-backed observation and its honest empty
+            // semantics when the bounded retry cannot acquire UiAutomation.
+          }
+        }
       }
       if (!screenshot) throw new Error("Authoring screenshot capture did not return evidence.");
       // captureScreenshot already bakes iOS orientation; do not normalize again
@@ -247,7 +242,7 @@ export async function captureAuthoringObservation(
         ? primaryPixelFingerprint
         : (observeVisualScreenFingerprint(screenshotBytes) ?? snapshot.screenIdentity.fingerprint);
       const semanticStatus: SemanticProofStatus =
-        semanticProofStatus(snapshot) === "current" && bracket?.status !== "coherent"
+        ios && semanticProofStatus(snapshot) === "current" && bracket?.status !== "coherent"
           ? "stale"
           : semanticProofStatus(snapshot);
       const proof: AuthoringObservationProof = {

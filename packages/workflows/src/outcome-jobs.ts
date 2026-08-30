@@ -27,6 +27,7 @@ import type {
   InspectFailureIntent,
   ObserveTargetIntent,
   ProposeRepairIntent,
+  ProveChangeOutcomeIntent,
   RepairProposalResult,
   RecordTestOutcomeIntent,
   RelayOutcomeJobs,
@@ -534,6 +535,14 @@ class CanonicalRelayOutcomeJobs implements RelayOutcomeJobs {
       ...(selection.kind === "source-revision" ? { sourceRevision: selection.sourceRevision } : {}),
       confirmationSatisfied: intent.confirmationSatisfied,
       selectionUncertainty,
+    });
+  }
+
+  proveChange(intent: ProveChangeOutcomeIntent) {
+    return this.operations.invoke("proof.run", {
+      proofId: intent.proofId,
+      ...(intent.expectedVersion === undefined ? {} : { expectedVersion: intent.expectedVersion }),
+      ...(intent.wait === undefined ? {} : { wait: intent.wait }),
     });
   }
 

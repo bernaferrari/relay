@@ -119,13 +119,13 @@ export function AppMapTestRunControl(props: TestRunControlProps) {
   // still performs the same automatic offline preflight before device control.
   return (
     <div
-      class="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 max-[560px]:w-full"
+      class="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 max-[900px]:flex max-[900px]:w-auto"
       data-test-run-actions
     >
       <span
         id="test-run-control-status"
         data-test-run-status
-        class="min-h-[2.6em] min-w-0 text-right text-caption/[1.3] text-text-weak [overflow-wrap:anywhere] max-[560px]:col-span-2 max-[560px]:text-left"
+        class="min-h-[2.6em] min-w-0 text-right text-caption/[1.3] text-text-weak [overflow-wrap:anywhere] max-[900px]:sr-only"
         role="status"
         aria-atomic="true"
       >
@@ -273,6 +273,7 @@ export function AppMapTestRunControl(props: TestRunControlProps) {
           </div>
         </details>
         <Button
+          data-test-run-primary
           size="md"
           class="min-w-[11.5rem] shrink-0 justify-center"
           variant={active() ? "danger" : "primary"}

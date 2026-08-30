@@ -2,51 +2,64 @@
   "name": "@relay/mcp",
   "version": "0.1.0",
   "bin": {
-    "relay-mcp": "./src/index.ts",
-    "relay-proof-doctor": "./src/doctor-cli.ts"
+    "relay-mcp": "./dist/relay-mcp.js",
+    "relay-mcp-bridge": "./dist/relay-mcp-bridge.js",
+    "relay-proof-doctor": "./dist/relay-proof-doctor.js"
   },
   "files": [
     "README.md",
-    "src/config.ts",
-    "src/diff-impact-resource.ts",
-    "src/doctor-cli.ts",
-    "src/doctor.ts",
-    "src/errors.ts",
-    "src/index.ts",
-    "src/offline-replay-result.ts",
-    "src/outcome-tools.ts",
-    "src/prompts.ts",
-    "src/repair-proposals-resource.ts",
-    "src/resources.ts",
-    "src/server.ts",
-    "src/tools.ts"
+    "dist"
   ],
   "type": "module",
   "exports": {
-    ".": "./src/server.ts",
-    "./config": "./src/config.ts",
-    "./prompts": "./src/prompts.ts",
-    "./doctor": "./src/doctor.ts"
+    ".": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js",
+      "default": "./dist/server.js"
+    },
+    "./config": {
+      "types": "./dist/config.d.ts",
+      "import": "./dist/config.js",
+      "default": "./dist/config.js"
+    },
+    "./prompts": {
+      "types": "./dist/prompts.d.ts",
+      "import": "./dist/prompts.js",
+      "default": "./dist/prompts.js"
+    },
+    "./doctor": {
+      "types": "./dist/doctor.d.ts",
+      "import": "./dist/doctor-lib.js",
+      "default": "./dist/doctor-lib.js"
+    }
   },
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
-    "start": "tsx src/index.ts",
+    "build": "node scripts/build.mjs",
+    "start": "node dist/relay-mcp.js",
+    "prepack": "npm run build",
+    "pack:check": "npm pack --dry-run",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "tsx --test src/*.test.ts",
-    "test:coverage": "tsx --test --experimental-test-coverage src/*.test.ts"
+    "test:coverage": "tsx --test --experimental-test-coverage src/*.test.ts",
+    "test:clean-host": "node scripts/test-clean-host.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "2.0.0",
-    "@relay/client": "workspace:*",
-    "@relay/protocol": "workspace:*",
-    "@relay/workflows": "workspace:*",
-    "tsx": "^4.23.6",
+    "playwright-core": "^1.62.1",
+    "pngjs": "^7.0.0",
+    "yaml": "^2.9.0",
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@relay/client": "workspace:*",
+    "@relay/protocol": "workspace:*",
+    "@relay/workflows": "workspace:*",
     "@types/node": "^26.1.2",
+    "esbuild": "0.28.2",
+    "tsx": "^4.23.6",
     "typescript": "catalog:"
   },
   "engines": {

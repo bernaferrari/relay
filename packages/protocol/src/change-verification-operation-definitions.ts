@@ -7,6 +7,7 @@ type ChangeVerificationOperationId =
   | "proof.inspect"
   | "proof.plan.approve"
   | "proof.continue"
+  | "proof.run"
   | "proof.cancel"
   | "proof.rerun-affected";
 
@@ -35,6 +36,13 @@ export const changeVerificationOperationDefinitions = [
   ),
   command("proof.continue", "Continue Proof", "POST", "/proofs/:proofId/continue", {
     category: "authoring",
+    idempotency: "inherent",
+  }),
+  command("proof.run", "Run Proof", "POST", "/proofs/:proofId/run", {
+    category: "execution",
+    minimumRole: "runner",
+    progress: true,
+    cancellable: true,
     idempotency: "inherent",
   }),
   command("proof.cancel", "Cancel Proof", "POST", "/proofs/:proofId/cancel", {

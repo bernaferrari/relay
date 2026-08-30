@@ -215,6 +215,7 @@ test("default outcome profile registers only the small jobs-to-be-done surface",
       "relay_run_test",
       "relay_repeat_test",
       "relay_continue_repeat",
+      "relay_prove_change",
       "relay_verify_change",
       "relay_export_evidence",
     ]) {

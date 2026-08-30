@@ -200,6 +200,75 @@ test("presents one Change-first Proof without internal orchestration vocabulary"
   root.remove();
 });
 
+test("runs an approved Proof through one server-owned outcome", async () => {
+  const readyProof = {
+    ...proof,
+    version: 2,
+    state: "ready",
+    decision: undefined,
+    runIds: [],
+    evidenceDigests: [],
+    firstCausalFailure: undefined,
+    residualRisk: [],
+    smallestNextVerification: {
+      kind: "run-pilot",
+      reason: "Run the deterministic pilot.",
+    },
+    lastMutation: { ...proof.lastMutation, previousVersion: 1, version: 2 },
+  } as unknown as ChangeVerification;
+  const runningProof = {
+    ...readyProof,
+    version: 3,
+    state: "running-pilot",
+    lastMutation: { ...readyProof.lastMutation, previousVersion: 2, version: 3 },
+  } as unknown as ChangeVerification;
+  mocks.runAction.mockImplementation(async (operationId: string) => {
+    if (operationId === "proof.list") return { proofs: [readyProof] };
+    if (operationId === "proof.inspect") {
+      return { proof: readyProof, history: [readyProof], publications: [], publicationOutbox: [] };
+    }
+    if (operationId === "proof.run") {
+      return {
+        proof: runningProof,
+        execution: {
+          id: "proof-execution",
+          proofId: proof.id,
+          status: "running",
+          cursor: 0,
+          total: 1,
+          runIds: [],
+          deadlineAt: Date.now() + 60_000,
+          nextAction: "inspect",
+        },
+      };
+    }
+    throw new Error(`unexpected ${operationId}`);
+  });
+
+  const root = document.createElement("div");
+  document.body.append(root);
+  const dispose = render(() => <ChangesWorkspace onOpenRun={vi.fn()} onOpenMap={vi.fn()} />, root);
+
+  await vi.waitFor(() => expect(root.textContent).toContain("Run pilot"));
+  [...root.querySelectorAll<HTMLButtonElement>("button")]
+    .find((button) => button.textContent?.trim() === "Run pilot")
+    ?.click();
+
+  await vi.waitFor(() =>
+    expect(mocks.runAction).toHaveBeenCalledWith("proof.run", {
+      proofId: readyProof.id,
+      expectedVersion: readyProof.version,
+      wait: false,
+    }),
+  );
+  await vi.waitFor(() => expect(root.textContent).toContain("Resume pilot"));
+  expect(root.textContent).toContain("Running required verification");
+  expect(root.textContent).toContain("0 of 1 required case complete");
+
+  dispose();
+  root.remove();
+});
+
 test("starts from the active workspace and never asks humans to type revision plumbing", async () => {
   const createdProof = {
     ...proof,

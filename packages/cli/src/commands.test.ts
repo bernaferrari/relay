@@ -58,6 +58,16 @@ test("Proof lifecycle commands resolve to canonical operations", () => {
     commandPath: "proof approve-plan",
     input: { proofId: "proof-1", expectedVersion: 3 },
   });
+  assert.deepEqual(resolveCommand(["prove", "proof-1"], { wait: true }), {
+    operationId: "proof.run",
+    commandPath: "prove",
+    input: { proofId: "proof-1", wait: true },
+  });
+  assert.deepEqual(resolveCommand(["proof", "run", "proof-1"], { expectedVersion: 3 }), {
+    operationId: "proof.run",
+    commandPath: "proof run",
+    input: { proofId: "proof-1", expectedVersion: 3 },
+  });
   assert.deepEqual(resolveCommand(["proof", "continue", "proof-1"], { expectedVersion: 3 }), {
     operationId: "proof.continue",
     commandPath: "proof continue",

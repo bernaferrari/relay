@@ -8,13 +8,21 @@ by Claude Code and any ChatGPT-compatible MCP host.
 ## Install
 
 The plugin is intentionally independent of the Relay monorepo. Install the
-published MCP package (or the exact release approved by your organization):
+published MCP package (or the exact release approved by your organization)
+after it is available on npm:
 
 ```bash
 npm install --global @relay/mcp@0.1.0
 ```
 
-The bundled Codex descriptor uses `npx --yes @relay/mcp@0.1.0`, so a clean host
+Before publication, install the same clean-host artifact directly from a checkout:
+
+```bash
+npm pack --silent ./packages/mcp
+npm install --global ./relay-mcp-0.1.0.tgz
+```
+
+The bundled Codex and Claude descriptors invoke the installed `relay-mcp` binary, so a clean host
 does not need pnpm, a workspace checkout, or a second agent protocol.
 
 Before opening an agent session, configure the host environment. Keep the
@@ -70,4 +78,7 @@ Proof remains immutable history. `needs-review`, `insufficient-evidence`, and
   fork or reinterpret Relay operations.
 
 The source of truth remains Relay's canonical protocol registry. Host files
-only configure transport, identity references, and guidance.
+only configure transport, identity references, and guidance. A remote-only
+ChatGPT-compatible host should use the package's reviewed
+`relay-mcp-bridge` over HTTPS; it forwards the same authenticated stdio
+session and never stores or redefines credentials, tools, or Proof schemas.

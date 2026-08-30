@@ -46,7 +46,7 @@ test("keeps one primary Run action visible and places expert controls in one dis
   expect(summary.textContent).toContain("Run options");
   expect(summary.tabIndex).toBe(0);
   expect(summary.className).toContain("min-h-11");
-  expect(actions.className).toContain("max-[560px]:w-full");
+  expect(actions.className).toContain("max-[900px]:flex");
   expect(actions.className).toContain("grid-cols-[minmax(0,1fr)_auto]");
   expect(run.getAttribute("data-variant")).toBe("primary");
   expect(run.className).toContain("min-w-[11.5rem]");
@@ -114,6 +114,7 @@ test("reserves the primary action footprint and announces complete recovery copy
   expect(blockedPrimary.className).toBe(idlePrimary.className);
   expect(status.textContent).toBe(recovery);
   expect(status.className).not.toContain("truncate");
+  expect(status.className).toContain("max-[900px]:sr-only");
   expect(status.getAttribute("aria-atomic")).toBe("true");
   expect(status.className).toContain("min-h-[2.6em]");
 

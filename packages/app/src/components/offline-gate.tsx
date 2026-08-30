@@ -69,7 +69,7 @@ export function OfflineGate(props: {
           <Show when={busy()}>
             <Icon name="refresh" size={13} class="ui-refresh-spin motion-reduce:opacity-70" />
           </Show>
-          {busy() ? "Checking…" : "Retry connection"}
+          {busy() ? "Checking…" : "Check now"}
         </Button>
       }
     >

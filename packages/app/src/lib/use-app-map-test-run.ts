@@ -400,7 +400,7 @@ export function createAppMapTestRun(options: {
     if (options.saveState() === "error") return "Retry the local changes before running.";
     const count = options.blockerCount();
     if (count) {
-      return `Resolve ${count} authoring ${count === 1 ? "issue" : "issues"} before running.`;
+      return `This Test needs ${count} ${count === 1 ? "fix" : "fixes"} before it can run.`;
     }
     const offlineBlockers = preflight()?.summary.blockers ?? 0;
     if (offlineBlockers) {

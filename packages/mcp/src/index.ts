@@ -1,6 +1,7 @@
 #!/usr/bin/env tsx
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
-import { pathToFileURL } from "node:url";
+import { realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { parseMcpConfig } from "./config.js";
 import { runRelayMcpDoctorCommand } from "./doctor.js";
 import { createMcpServer, createRelayOperationInvoker } from "./server.js";
@@ -33,7 +34,8 @@ export function runMcp(
   );
 }
 
-const isEntryPoint = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+const isEntryPoint =
+  process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
 if (isEntryPoint) {
   Promise.resolve()
     .then(async () => {

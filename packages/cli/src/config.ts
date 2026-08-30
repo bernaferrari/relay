@@ -426,6 +426,9 @@ function applyProofFlags(
     ...input,
     ...(history ? { includeHistory: true } : {}),
     ...(requiresConfirmation ? { confirm: true } : {}),
+    ...(operationId === "proof.run"
+      ? { wait: tokens.switches.has("--no-wait") ? false : true }
+      : {}),
   };
 }
 

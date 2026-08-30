@@ -18,7 +18,7 @@ function renderGate(Surface: OfflineGateSurface, offline: boolean, busy = false)
       Surface({
         offline,
         serverUrl: "http://127.0.0.1:8787",
-        retryControl: busy ? "Checking…" : "Retry connection",
+        retryControl: busy ? "Checking…" : "Check now",
         children: "workspace identity",
       }) as never,
   );
@@ -44,7 +44,8 @@ test("renders checking, offline, busy retry, and recovered states without remoun
     assert.equal(offline.match(/role="alertdialog"/g)?.length, 1);
     assert.match(offline, /inert/);
     assert.match(offline, /aria-hidden="true"/);
-    assert.match(offline, /Retry connection/);
+    assert.match(offline, /Waiting for the local service…/);
+    assert.match(offline, /Check now/);
     assert.match(retrying, /Checking…/);
     assert.equal(recovered.match(/role="alertdialog"/g)?.length ?? 0, 0);
     assert.match(recovered, /workspace identity/);

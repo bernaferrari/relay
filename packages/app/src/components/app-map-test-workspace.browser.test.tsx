@@ -1062,9 +1062,9 @@ test("scenario editor creates and edits stable intent without inventing a runnab
       .flat()
       .some((edit) => edit.kind === "step.patch" && edit.patch.intent === "Open the reviewed cart"),
   ).toBe(true);
-  const blockerAction = root.querySelector<HTMLButtonElement>("button[title*='Resolve']")!;
+  const blockerAction = root.querySelector<HTMLButtonElement>("button[data-test-run-primary]")!;
   expect(blockerAction.disabled).toBe(false);
-  expect(blockerAction.textContent).toContain("Fix 1 issue");
+  expect(blockerAction.textContent).toContain("Review Test");
 
   addStep(root, "decision");
   await settle();

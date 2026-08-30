@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "relay": {
-      "command": "npx",
-      "args": ["--yes", "@relay/mcp@0.1.0"],
+      "command": "relay-mcp",
+      "args": ["--profile", "proof"],
       "env": {
         "RELAY_MCP_PROFILE": "proof"
       }

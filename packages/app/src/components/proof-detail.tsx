@@ -2,12 +2,14 @@ import { For, Show, type JSX } from "solid-js";
 import type {
   ChangeProofPublicationOutboxRecord,
   ChangeProofPublicationReceipt,
+  ChangeProofExecutionSummary,
   ChangeVerification,
 } from "@relay/protocol";
 import { cn } from "../lib/cn";
 import { mono, eyebrow } from "../lib/ui";
 import { Button } from "@relay/ui/button";
 import { StatusChip, type StatusChipTone } from "./status-chip";
+import type { ProofPrimaryAction } from "../lib/proof-actions";
 
 type ProofStatus = { label: string; tone: StatusChipTone };
 
@@ -17,6 +19,13 @@ export function ProofDetail(props: {
   history: readonly ChangeVerification[];
   publications: readonly ChangeProofPublicationReceipt[];
   publicationOutbox: readonly ChangeProofPublicationOutboxRecord[];
+  execution: ChangeProofExecutionSummary | null;
+  primaryAction?: ProofPrimaryAction;
+  actionBusy: string | null;
+  actionError: string | null;
+  canCancel: boolean;
+  onPrimaryAction: () => void;
+  onCancel: () => void;
   onOpenRun: (runId: string) => void;
   onOpenMap: (appMapId: string) => void;
 }) {
@@ -58,6 +67,52 @@ export function ProofDetail(props: {
                 {(criterion) => <li>{criterion}</li>}
               </For>
             </ul>
+          </Show>
+          <Show when={props.primaryAction || props.canCancel || props.actionError}>
+            <div class="mt-1 grid gap-2 border-t border-border-weak-base pt-4">
+              <div class="flex flex-wrap items-center gap-2">
+                <Show when={props.primaryAction}>
+                  {(action) => (
+                    <Button
+                      variant="primary"
+                      disabled={Boolean(props.actionBusy)}
+                      onClick={props.onPrimaryAction}
+                    >
+                      {props.actionBusy === action().kind ? action().pendingLabel : action().label}
+                    </Button>
+                  )}
+                </Show>
+                <Show when={props.canCancel}>
+                  <Button
+                    variant="secondary"
+                    disabled={Boolean(props.actionBusy)}
+                    onClick={props.onCancel}
+                  >
+                    {props.actionBusy === "cancel" ? "Cancelling…" : "Cancel Proof"}
+                  </Button>
+                </Show>
+              </div>
+              <Show when={props.actionError}>
+                {(message) => (
+                  <p class="m-0 text-caption/[1.45] text-text-critical-base" role="alert">
+                    {message()}
+                  </p>
+                )}
+              </Show>
+            </div>
+          </Show>
+          <Show when={props.execution}>
+            {(execution) => (
+              <div
+                class="grid gap-1 rounded-xl bg-surface-base px-3 py-2.5 ring-1 ring-inset ring-border-weak-base"
+                aria-live="polite"
+              >
+                <strong class="text-body font-semibold text-text-strong">
+                  {executionHeadline(execution())}
+                </strong>
+                <span class="text-caption text-text-weak">{executionProgress(execution())}</span>
+              </div>
+            )}
           </Show>
         </header>
 
@@ -215,6 +270,22 @@ export function ProofDetail(props: {
       </div>
     </article>
   );
+}
+
+function executionHeadline(execution: ChangeProofExecutionSummary): string {
+  if (execution.status === "completed") return "Required verification complete";
+  if (execution.status === "cancelled") return "Verification cancelled";
+  if (execution.status === "uncertain") return "Verification needs review";
+  if (execution.status === "queued") return "Preparing required verification";
+  return "Running required verification";
+}
+
+function executionProgress(execution: ChangeProofExecutionSummary): string {
+  if (execution.status === "uncertain") {
+    return execution.terminalUncertainty?.reason ?? "Relay cannot safely infer the target outcome.";
+  }
+  const completed = execution.status === "completed" ? execution.total : execution.cursor;
+  return `${completed} of ${execution.total} required ${execution.total === 1 ? "case" : "cases"} complete`;
 }
 
 function shortSha(value: string): string {

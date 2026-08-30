@@ -276,6 +276,17 @@ test("every default MCP outcome tool validates and invokes exactly one façade m
       },
     },
     {
+      name: "relay_prove_change",
+      argumentsValue: { proofId: "proof-184", expectedVersion: 3, wait: true },
+      method: "proveChange",
+      expected: {
+        kind: "prove-change",
+        proofId: "proof-184",
+        expectedVersion: 3,
+        wait: true,
+      },
+    },
+    {
       name: "relay_verify_change",
       argumentsValue: {
         selection: { kind: "source-revision", sourceRevision: { vcs: "git", sha: "abcdef0" } },

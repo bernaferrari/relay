@@ -323,6 +323,22 @@ test("Proof CLI flags preserve exact lifecycle inputs and explicit safety contro
   assert.throws(() => parseCli(["proof", "list", "--history"], {}), /only valid on proof inspect/u);
 });
 
+test("prove waits for one server-owned outcome unless explicitly detached", () => {
+  const waiting = parseCli(["prove", "proof-1", "--json"], {});
+  assert.equal(waiting.command, "invoke");
+  if (waiting.command === "invoke") {
+    assert.equal(waiting.operationId, "proof.run");
+    assert.deepEqual(waiting.input, { proofId: "proof-1", wait: true });
+  }
+
+  const detached = parseCli(["proof", "run", "proof-1", "--no-wait", "--json"], {});
+  assert.equal(detached.command, "invoke");
+  if (detached.command === "invoke") {
+    assert.equal(detached.operationId, "proof.run");
+    assert.deepEqual(detached.input, { proofId: "proof-1", wait: false });
+  }
+});
+
 test("event follow retains its command path and rejects single-object JSON output", () => {
   const parsed = parseCli(["system", "events", "follow", "--ndjson"], {});
   assert.equal(parsed.command, "invoke");

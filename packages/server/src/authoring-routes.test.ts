@@ -108,6 +108,69 @@ test("browser authoring observation stays on the explicit browser adapter path",
   );
 });
 
+test("Android authoring retries an empty semantic capture on the explicit serial", async () => {
+  const session = {
+    target: { kind: "device", platform: "android", targetId: "emulator-5554" },
+  } as AuthoringSession;
+  let snapshots = 0;
+  const serials: string[] = [];
+
+  const observation = await captureAuthoringObservation(session, {
+    async resolveDevice() {
+      return {} as Device;
+    },
+    async captureSnapshot() {
+      snapshots += 1;
+      return {
+        serial: "emulator-5554",
+        capturedAt: snapshots,
+        nodes: snapshots === 1 ? [] : [{ role: "button", label: "Chrome", visibleToUser: true }],
+        interactive: [],
+        inspectable: snapshots > 1,
+        source: snapshots > 1 ? "sdk" : "android-system",
+        screenIdentity: {
+          schemaVersion: 1,
+          fingerprint: snapshots > 1 ? "launcher-tree" : "empty-tree",
+          nodes: [],
+          volatileSignals: [],
+        },
+      };
+    },
+    async captureSnapshotBySerial(serial) {
+      serials.push(serial);
+      return {
+        serial,
+        capturedAt: 2,
+        nodes: [{ role: "button", label: "Chrome", visibleToUser: true }],
+        interactive: [],
+        inspectable: true,
+        source: "sdk",
+        screenIdentity: {
+          schemaVersion: 1,
+          fingerprint: "launcher-tree",
+          nodes: [],
+          volatileSignals: [],
+        },
+      };
+    },
+    async captureScreenshot() {
+      return {
+        serial: "emulator-5554",
+        capturedAt: 3,
+        mime: "image/png",
+        base64: Buffer.from("launcher-png").toString("base64"),
+        path: "/android/launcher.png",
+        bytes: 12,
+      };
+    },
+  });
+
+  assert.equal(snapshots, 1);
+  assert.deepEqual(serials, ["emulator-5554"]);
+  assert.deepEqual(observation.nodes, [{ role: "button", label: "Chrome", visibleToUser: true }]);
+  assert.equal(observation.proof?.semantics.status, "current");
+});
+
 test("physical Apple authoring freezes visible evidence before inspecting the runner", async () => {
   const order: string[] = [];
   const session = {

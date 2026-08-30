@@ -420,6 +420,19 @@ importers:
       '@modelcontextprotocol/server':
         specifier: 2.0.0
         version: 2.0.0
+      playwright-core:
+        specifier: ^1.62.1
+        version: 1.62.1
+      pngjs:
+        specifier: ^7.0.0
+        version: 7.0.0
+      yaml:
+        specifier: ^2.9.0
+        version: 2.9.0
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
+    devDependencies:
       '@relay/client':
         specifier: workspace:*
         version: link:../client
@@ -429,16 +442,15 @@ importers:
       '@relay/workflows':
         specifier: workspace:*
         version: link:../workflows
-      tsx:
-        specifier: ^4.23.6
-        version: 4.23.6
-      zod:
-        specifier: 4.4.3
-        version: 4.4.3
-    devDependencies:
       '@types/node':
         specifier: ^26.1.2
         version: 26.1.2
+      esbuild:
+        specifier: 0.28.2
+        version: 0.28.2
+      tsx:
+        specifier: ^4.23.6
+        version: 4.23.6
       typescript:
         specifier: 'catalog:'
         version: 7.0.2

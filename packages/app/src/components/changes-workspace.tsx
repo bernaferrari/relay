@@ -1,4 +1,4 @@
-import { For, Show, type JSX, createEffect, createMemo, createSignal, onMount } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal, onMount } from "solid-js";
 import { Button } from "@relay/ui/button";
 import {
   VERIFY_CHANGE_POLICY,
@@ -6,12 +6,24 @@ import {
   type ChangeProofPublicationOutboxRecord,
   type ChangeVerification,
   type ChangeVerificationState,
+  type ChangeProofExecutionSummary,
   type WorkspaceChangeContext,
 } from "@relay/protocol";
 import { useServer } from "../context/server";
 import { cn } from "../lib/cn";
 import { humanError } from "../lib/human-error";
-import { eyebrow, mono, productIconButton, productPage } from "../lib/ui";
+import { proofCanCancel, proofPrimaryAction } from "../lib/proof-actions";
+import { eyebrow, productIconButton, productPage } from "../lib/ui";
+import { ChangesProofCreateForm } from "./changes-proof-create-form";
+import {
+  emptyProofDraft,
+  normalizedProofDraft,
+  validateProofDraft,
+  type ProofDraft,
+  type ProofDraftErrors,
+  type ProofDraftField,
+} from "./changes-proof-draft";
+import { confirmAction } from "./confirm-dialog";
 import { Icon } from "./icon";
 import type { StatusChipTone } from "./status-chip";
 import { ProofDetail } from "./proof-detail";
@@ -31,56 +43,6 @@ const statePresentation: Record<ChangeVerificationState, { label: string; tone: 
     cancelled: { label: "Cancelled", tone: "idle" },
     superseded: { label: "Superseded", tone: "idle" },
   };
-
-type ProofDraft = {
-  pullRequest: string;
-  summary: string;
-  acceptanceCriteria: string;
-};
-
-type ProofDraftField = keyof ProofDraft;
-type ProofDraftErrors = Partial<Record<ProofDraftField, string>>;
-
-const emptyProofDraft: ProofDraft = {
-  pullRequest: "",
-  summary: "",
-  acceptanceCriteria: "",
-};
-
-const proofInput =
-  "min-h-11 w-full rounded-lg border border-border-weak-base bg-surface-base px-3 py-2 text-title/[1.4] text-text-strong outline-none transition-[border-color,box-shadow] placeholder:text-text-weaker focus-visible:border-border-focus focus-visible:ring-2 focus-visible:ring-border-strong-focus disabled:cursor-not-allowed disabled:text-text-weaker aria-[invalid=true]:border-border-critical-base";
-
-function normalizedDraft(draft: ProofDraft): ProofDraft {
-  return {
-    pullRequest: draft.pullRequest.trim(),
-    summary: draft.summary.trim(),
-    acceptanceCriteria: draft.acceptanceCriteria.trim(),
-  };
-}
-
-function validateProofDraft(draftInput: ProofDraft): ProofDraftErrors {
-  const draft = normalizedDraft(draftInput);
-  const errors: ProofDraftErrors = {};
-  if (draft.pullRequest) {
-    const value = Number(draft.pullRequest);
-    if (!Number.isSafeInteger(value) || value <= 0) {
-      errors.pullRequest = "Pull request must be a positive whole number.";
-    }
-  }
-  if (draft.acceptanceCriteria && !draft.summary) {
-    errors.summary = "Summarize the change before adding acceptance criteria.";
-  }
-  const criteria = draft.acceptanceCriteria
-    .split("\n")
-    .map((criterion) => criterion.trim())
-    .filter(Boolean);
-  if (criteria.length > 64) {
-    errors.acceptanceCriteria = "Keep the claim to 64 acceptance criteria or fewer.";
-  } else if (criteria.some((criterion) => criterion.length > 4096)) {
-    errors.acceptanceCriteria = "Each acceptance criterion must be 4,096 characters or fewer.";
-  }
-  return errors;
-}
 
 function shortSha(value: string): string {
   return value.slice(0, 12);
@@ -121,6 +83,144 @@ export function ChangesWorkspace(props: {
   const [createError, setCreateError] = createSignal<string | null>(null);
   const [workspaceChange, setWorkspaceChange] = createSignal<WorkspaceChangeContext | null>(null);
   const [resolvingWorkspace, setResolvingWorkspace] = createSignal(false);
+  const [proofActionBusy, setProofActionBusy] = createSignal<string | null>(null);
+  const [proofActionError, setProofActionError] = createSignal<string | null>(null);
+  const [execution, setExecution] = createSignal<ChangeProofExecutionSummary | null>(null);
+
+  function adoptProof(proof: ChangeVerification): void {
+    setProofs((current) => {
+      const found = current.some(({ id }) => id === proof.id);
+      return found
+        ? current.map((candidate) => (candidate.id === proof.id ? proof : candidate))
+        : [proof, ...current];
+    });
+    setSelected(proof);
+  }
+
+  async function runProof(proof: ChangeVerification): Promise<void> {
+    setProofActionBusy("run");
+    setProofActionError(null);
+    try {
+      const result = await server.runAction("proof.run", {
+        proofId: proof.id,
+        expectedVersion: proof.version,
+        wait: false,
+      });
+      adoptProof(result.proof);
+      setExecution(result.execution);
+    } catch (cause) {
+      setProofActionError(humanError(cause, "Could not run this Proof"));
+    } finally {
+      setProofActionBusy(null);
+    }
+  }
+
+  function approvePlan(proof: ChangeVerification): void {
+    confirmAction({
+      title: "Approve this Verification Plan?",
+      body: "Relay will freeze this exact build, journey, target, and policy plan before any target is controlled.",
+      confirmLabel: "Approve plan",
+      tone: "default",
+      onConfirm: async () => {
+        setProofActionBusy("approve-plan");
+        setProofActionError(null);
+        try {
+          const result = await server.runAction("proof.plan.approve", {
+            proofId: proof.id,
+            expectedVersion: proof.version,
+            decisionId: `ui-${proof.id}-${proof.planDigest ?? proof.version}`.slice(0, 256),
+            reason: "Reviewed and approved in the Relay Proof workspace.",
+            confirm: true,
+          });
+          adoptProof(result.proof);
+        } catch (cause) {
+          setProofActionError(humanError(cause, "Could not approve this Verification Plan"));
+        } finally {
+          setProofActionBusy(null);
+        }
+      },
+    });
+  }
+
+  async function rerunAffected(proof: ChangeVerification): Promise<void> {
+    setProofActionBusy("rerun-affected");
+    setProofActionError(null);
+    try {
+      const { change } = await server.runAction("workspace.change.inspect", {});
+      if (!change.readyForProof || !change.repository || !change.base || !change.head) {
+        throw new Error(
+          change.blockers[0] ?? "The active workspace is not ready for an exact replacement Proof.",
+        );
+      }
+      if (
+        change.repository !== proof.change.repository ||
+        change.base.sha !== proof.change.headSha ||
+        change.head.sha === proof.change.headSha
+      ) {
+        throw new Error(
+          "The active workspace must continue this project from the exact revision this Proof tested.",
+        );
+      }
+      const result = await server.runAction("proof.rerun-affected", {
+        proofId: proof.id,
+        expectedVersion: proof.version,
+        change: {
+          repository: change.repository,
+          baseSha: change.base.sha,
+          headSha: change.head.sha,
+          ...(proof.change.pullRequest ? { pullRequest: proof.change.pullRequest } : {}),
+          ...(proof.change.agentClaim ? { agentClaim: proof.change.agentClaim } : {}),
+        },
+        policy: proof.policy,
+        coverageGaps: ["Exact replacement builds and affected journeys must be frozen."],
+        residualRisk: proof.residualRisk,
+        smallestNextVerification: {
+          kind: "provide-build",
+          reason: "Bind exact replacement builds before rerunning affected cases.",
+        },
+      });
+      adoptProof(result.replacement);
+      setSelectedId(result.replacement.id);
+    } catch (cause) {
+      setProofActionError(humanError(cause, "Could not prepare the affected rerun"));
+    } finally {
+      setProofActionBusy(null);
+    }
+  }
+
+  function cancelProof(proof: ChangeVerification): void {
+    confirmAction({
+      title: "Cancel this Proof?",
+      body: "Relay will stop unfinished verification work. Existing Runs and evidence remain available for audit.",
+      confirmLabel: "Cancel Proof",
+      tone: "destructive",
+      onConfirm: async () => {
+        setProofActionBusy("cancel");
+        setProofActionError(null);
+        try {
+          const result = await server.runAction("proof.cancel", {
+            proofId: proof.id,
+            expectedVersion: proof.version,
+            reason: "Cancelled by the operator from the Relay Proof workspace.",
+            confirm: true,
+          });
+          adoptProof(result.proof);
+        } catch (cause) {
+          setProofActionError(humanError(cause, "Could not cancel this Proof"));
+        } finally {
+          setProofActionBusy(null);
+        }
+      },
+    });
+  }
+
+  function invokePrimaryProofAction(proof: ChangeVerification): void {
+    const action = proofPrimaryAction(proof);
+    if (!action || proofActionBusy()) return;
+    if (action.kind === "approve-plan") approvePlan(proof);
+    else if (action.kind === "run") void runProof(proof);
+    else void rerunAffected(proof);
+  }
 
   function setDraftField(field: ProofDraftField, value: string): void {
     const nextDraft = { ...draft(), [field]: value };
@@ -170,7 +270,7 @@ export function ChangesWorkspace(props: {
   async function submitProof(event: SubmitEvent): Promise<void> {
     event.preventDefault();
     if (submitting()) return;
-    const normalized = normalizedDraft(draft());
+    const normalized = normalizedProofDraft(draft());
     const change = workspaceChange();
     if (!change?.readyForProof || !change.repository || !change.base || !change.head) {
       setCreateError("Relay could not bind this Proof to one exact workspace change.");
@@ -246,10 +346,12 @@ export function ChangesWorkspace(props: {
       setHistory([]);
       setPublications([]);
       setPublicationOutbox([]);
+      setExecution(null);
       return;
     }
     const immediate = proofs().find(({ id }) => id === proofId) ?? null;
     setSelected(immediate);
+    setExecution(null);
     if (inspectedId === proofId) return;
     inspectedId = proofId;
     void server
@@ -260,6 +362,8 @@ export function ChangesWorkspace(props: {
         setHistory(result.history ?? []);
         setPublications(result.publications);
         setPublicationOutbox(result.publicationOutbox);
+        setExecution(result.execution ?? null);
+        setProofActionError(null);
       })
       .catch((cause) => {
         if (selectedId() === proofId) setError(humanError(cause, "Could not inspect this Proof"));
@@ -304,216 +408,19 @@ export function ChangesWorkspace(props: {
       </header>
 
       <Show when={creating()}>
-        <form
-          class="mx-auto grid w-full max-w-[760px] gap-5 rounded-2xl bg-surface-raised-stronger-non-alpha p-[clamp(1rem,3vw,1.75rem)] ring-1 ring-inset ring-border-weak-base"
-          aria-label="Start a Proof"
+        <ChangesProofCreateForm
+          workspaceChange={workspaceChange()}
+          resolvingWorkspace={resolvingWorkspace()}
+          submitting={submitting()}
+          draft={draft()}
+          draftErrors={draftErrors()}
+          createError={createError()}
+          onResolveWorkspace={(baseRef) => void resolveWorkspaceChange(baseRef)}
+          onDraftInput={setDraftField}
+          onDraftBlur={validateDraftField}
+          onClose={closeCreation}
           onSubmit={(event) => void submitProof(event)}
-        >
-          <div class="grid gap-1">
-            <h2 class="m-0 text-title font-semibold text-text-strong">Review the current change</h2>
-            <p class="m-0 text-body/[1.5] text-text-base">
-              This starts an awaiting-build Proof. It cannot clear a merge until exact builds,
-              affected journeys, required targets, and complete evidence are attached.
-            </p>
-          </div>
-
-          <div class="grid gap-4 rounded-xl bg-surface-base p-4 ring-1 ring-inset ring-border-weak-base">
-            <div class="flex min-w-0 items-start justify-between gap-4 max-[620px]:flex-col">
-              <div class="grid min-w-0 gap-1">
-                <span class={eyebrow}>Active workspace</span>
-                <Show
-                  when={!resolvingWorkspace() && workspaceChange()}
-                  fallback={
-                    <strong class="text-body font-semibold text-text-strong" aria-live="polite">
-                      Inspecting the current change…
-                    </strong>
-                  }
-                >
-                  {(change) => (
-                    <>
-                      <strong class="truncate text-title font-semibold text-text-strong">
-                        {change().workspace.name}
-                      </strong>
-                      <span class="text-body text-text-base">
-                        {change().head?.label ?? "Current revision unavailable"}
-                      </span>
-                      <span class="text-caption text-text-weak">
-                        {change().branch ? `${change().branch} · ` : ""}
-                        {change().changedFileCount} changed{" "}
-                        {change().changedFileCount === 1 ? "file" : "files"}
-                      </span>
-                    </>
-                  )}
-                </Show>
-              </div>
-              <button
-                type="button"
-                class={cn(productIconButton, "shrink-0")}
-                aria-label="Inspect the active workspace again"
-                disabled={resolvingWorkspace() || submitting()}
-                onClick={() => void resolveWorkspaceChange()}
-              >
-                <Icon name="refresh" size={16} />
-              </button>
-            </div>
-
-            <Show when={workspaceChange()?.status === "needs-selection"}>
-              <label
-                class="grid gap-1.5 text-caption font-medium text-text-strong"
-                for="proof-base"
-              >
-                <span>Compare this change with</span>
-                <select
-                  id="proof-base"
-                  class={proofInput}
-                  disabled={resolvingWorkspace() || submitting()}
-                  value=""
-                  onChange={(event) => {
-                    const value = event.currentTarget.value;
-                    if (value) void resolveWorkspaceChange(value);
-                  }}
-                >
-                  <option value="">Choose a reviewed branch…</option>
-                  <For each={workspaceChange()?.baseCandidates ?? []}>
-                    {(candidate) => <option value={candidate.ref}>{candidate.label}</option>}
-                  </For>
-                </select>
-              </label>
-            </Show>
-
-            <Show when={workspaceChange()?.blockers.length}>
-              <ul
-                class="m-0 grid gap-1 pl-5 text-caption/[1.45] text-text-critical-base"
-                role="alert"
-              >
-                <For each={workspaceChange()?.blockers ?? []}>
-                  {(blocker) => <li>{blocker}</li>}
-                </For>
-              </ul>
-            </Show>
-
-            <p class="m-0 text-caption/[1.45] text-text-weak">
-              Relay reads this from the active workspace. Restored tabs and previous-session views
-              never choose the change.
-            </p>
-          </div>
-
-          <div class="grid grid-cols-2 gap-4 max-[620px]:grid-cols-1">
-            <ProofField
-              label="Pull request (optional)"
-              field="pullRequest"
-              error={draftErrors().pullRequest}
-            >
-              <input
-                id="proof-pullRequest"
-                class={proofInput}
-                type="number"
-                inputmode="numeric"
-                value={draft().pullRequest}
-                min="1"
-                step="1"
-                disabled={submitting()}
-                autocomplete="off"
-                data-1p-ignore
-                aria-invalid={Boolean(draftErrors().pullRequest)}
-                aria-describedby={draftErrors().pullRequest ? "proof-pullRequest-error" : undefined}
-                placeholder="184"
-                onInput={(event) => setDraftField("pullRequest", event.currentTarget.value)}
-                onBlur={() => validateDraftField("pullRequest")}
-              />
-            </ProofField>
-          </div>
-
-          <ProofField
-            label="Agent completion claim (optional)"
-            field="summary"
-            error={draftErrors().summary}
-          >
-            <textarea
-              id="proof-summary"
-              class={cn(proofInput, "min-h-24 resize-y")}
-              value={draft().summary}
-              maxLength={4096}
-              rows={3}
-              disabled={submitting()}
-              spellcheck
-              autocomplete="off"
-              aria-invalid={Boolean(draftErrors().summary)}
-              aria-describedby={draftErrors().summary ? "proof-summary-error" : undefined}
-              placeholder="What did the coding agent say it finished?"
-              onInput={(event) => setDraftField("summary", event.currentTarget.value)}
-              onBlur={() => validateDraftField("summary")}
-              onKeyDown={(event) => {
-                if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-                  event.currentTarget.form?.requestSubmit();
-                }
-              }}
-            />
-          </ProofField>
-
-          <ProofField
-            label="Acceptance criteria (optional, one per line)"
-            field="acceptanceCriteria"
-            error={draftErrors().acceptanceCriteria}
-          >
-            <textarea
-              id="proof-acceptanceCriteria"
-              class={cn(proofInput, "min-h-24 resize-y")}
-              value={draft().acceptanceCriteria}
-              maxLength={16384}
-              rows={3}
-              disabled={submitting()}
-              spellcheck
-              autocomplete="off"
-              aria-invalid={Boolean(draftErrors().acceptanceCriteria)}
-              aria-describedby={
-                draftErrors().acceptanceCriteria ? "proof-acceptanceCriteria-error" : undefined
-              }
-              placeholder={"Settings render in Arabic\nCompact layouts have no overlap"}
-              onInput={(event) => setDraftField("acceptanceCriteria", event.currentTarget.value)}
-              onBlur={() => validateDraftField("acceptanceCriteria")}
-              onKeyDown={(event) => {
-                if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-                  event.currentTarget.form?.requestSubmit();
-                }
-              }}
-            />
-          </ProofField>
-
-          <div class="flex flex-wrap items-center justify-between gap-3 border-t border-border-weak-base pt-4">
-            <span class="text-caption text-text-weak">
-              Policy:{" "}
-              <span class={mono}>
-                {VERIFY_CHANGE_POLICY.id}@{VERIFY_CHANGE_POLICY.version}
-              </span>
-            </span>
-            <div class="flex gap-2">
-              <Button
-                variant="secondary"
-                type="button"
-                disabled={submitting()}
-                onClick={closeCreation}
-              >
-                Cancel
-              </Button>
-              <Button
-                class="min-w-28"
-                variant="primary"
-                type="submit"
-                disabled={submitting() || resolvingWorkspace() || !workspaceChange()?.readyForProof}
-              >
-                {submitting() ? "Starting…" : "Start Proof"}
-              </Button>
-            </div>
-          </div>
-          <Show when={createError()}>
-            {(message) => (
-              <p class="m-0 text-body text-text-critical-base" role="alert">
-                {message()}
-              </p>
-            )}
-          </Show>
-        </form>
+        />
       </Show>
 
       <Show when={error()}>
@@ -610,6 +517,13 @@ export function ChangesWorkspace(props: {
                 history={history()}
                 publications={publications()}
                 publicationOutbox={publicationOutbox()}
+                execution={execution()}
+                primaryAction={proofPrimaryAction(proof())}
+                actionBusy={proofActionBusy()}
+                actionError={proofActionError()}
+                canCancel={proofCanCancel(proof())}
+                onPrimaryAction={() => invokePrimaryProofAction(proof())}
+                onCancel={() => cancelProof(proof())}
                 onOpenRun={props.onOpenRun}
                 onOpenMap={props.onOpenMap}
               />
@@ -618,33 +532,5 @@ export function ChangesWorkspace(props: {
         </div>
       </Show>
     </section>
-  );
-}
-
-function ProofField(props: {
-  label: string;
-  field: ProofDraftField;
-  error?: string;
-  children: JSX.Element;
-}) {
-  return (
-    <label
-      for={`proof-${props.field}`}
-      class="grid content-start gap-1.5 text-caption font-medium text-text-strong"
-    >
-      <span>{props.label}</span>
-      {props.children}
-      <Show when={props.error}>
-        {(message) => (
-          <span
-            id={`proof-${props.field}-error`}
-            class="text-caption/[1.4] text-text-critical-base"
-            role="alert"
-          >
-            {message()}
-          </span>
-        )}
-      </Show>
-    </label>
   );
 }

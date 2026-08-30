@@ -17,6 +17,7 @@ import type {
   TargetObservation,
   TracePack,
   TracePackExportResponse,
+  ChangeProofRunOutput,
   VerifyChangeIntent,
   VerifyChangeResult,
 } from "@relay/protocol";
@@ -502,6 +503,15 @@ export type RepairProposalResult = {
 
 export type EvidenceExportResult = TracePackExportResponse;
 
+export type ProveChangeOutcomeIntent = {
+  kind: "prove-change";
+  proofId: string;
+  expectedVersion?: number;
+  wait?: boolean;
+};
+
+export type ProveChangeOutcome = ChangeProofRunOutput;
+
 /** Small jobs-to-be-done interface for ordinary humans and agents. The
  * canonical operation registry remains the authority behind every method. */
 export interface RelayOutcomeJobs {
@@ -515,6 +525,7 @@ export interface RelayOutcomeJobs {
   exportEvidence(intent: ExportEvidenceIntent): Promise<EvidenceExportResult>;
   replayLab(intent: ReplayLabOutcomeIntent): Promise<ReplayLabReport>;
   verifyChange(intent: VerifyChangeOutcomeIntent): Promise<VerifyChangeResult>;
+  proveChange(intent: ProveChangeOutcomeIntent): Promise<ProveChangeOutcome>;
   inspect(input: WorkflowLookup): Promise<WorkflowSnapshot>;
   watchWorkflow(input: {
     workflowId: string;

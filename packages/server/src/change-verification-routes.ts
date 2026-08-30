@@ -19,10 +19,14 @@ import {
   supersedeChangeVerification,
   ChangeProofIntegrityError,
   canonicalSha256,
+  summarizeChangeProofExecution,
+  ChangeProofExecutionError,
   verifyDurableChangeVerification,
   type AdvanceChangeVerificationInput,
   type ChangeVerificationScope,
   type PersistedRun,
+  type ChangeProofCellExecutor,
+  type ChangeProofExecutionCoordinator,
 } from "@relay/core";
 import {
   CHANGE_VERIFICATION_STATES,
@@ -36,6 +40,11 @@ import {
   processTerminalChangeProofPublication,
   type ChangeProofTerminalPublisher,
 } from "./change-proof-publication-worker.js";
+import { createDefaultChangeProofCellExecutor } from "./change-proof-cell-executor.js";
+import {
+  defaultProofExecutionCoordinator,
+  proofExecutionCoordinator,
+} from "./change-proof-execution-runtime.js";
 
 export type ChangeVerificationRouteRuntime = {
   now: typeof now;
@@ -53,6 +62,11 @@ export type ChangeVerificationRouteRuntime = {
    * the embedding server supplies this integration explicitly. */
   publishTerminal?: ChangeProofTerminalPublisher;
   publicationDetailsUrl?: string;
+  /** Durable server-owned cell lifecycle. The executor is the adapter to the
+   * existing App Map Test/session enqueue path; this route never reimplements
+   * target control. */
+  executionCoordinator: ChangeProofExecutionCoordinator;
+  executeCell?: ChangeProofCellExecutor;
 };
 
 const defaultRuntime: ChangeVerificationRouteRuntime = {
@@ -67,6 +81,7 @@ const defaultRuntime: ChangeVerificationRouteRuntime = {
   supersede: supersedeChangeVerification,
   readRun: readPersistedRun,
   caseResultFromRun: changeProofCaseResultFromPersistedRun,
+  executionCoordinator: defaultProofExecutionCoordinator,
 };
 
 function scopeOf(scope: RequestContext): ChangeVerificationScope {
@@ -90,6 +105,16 @@ function sameValue(left: unknown, right: unknown): boolean {
 
 function requestDigest(proofId: string | undefined, body: unknown): `sha256:${string}` {
   return canonicalSha256(proofId ? { proofId, body } : body);
+}
+
+/** `wait` only controls how long this HTTP request stays attached. It is not
+ * part of the durable Proof execution intent, so a caller may detach and
+ * later resume the same request identity without creating a digest conflict. */
+function proofRunRequestDigest(
+  proofId: string,
+  body: Pick<OperationInput<"proof.run">, "expectedVersion">,
+): `sha256:${string}` {
+  return canonicalSha256({ proofId, expectedVersion: body.expectedVersion ?? null });
 }
 
 function sameStartIntent(
@@ -250,6 +275,10 @@ async function replayedReceipt(
 }
 
 function routeError(error: unknown): never {
+  if (error instanceof ChangeProofExecutionError) {
+    const status = error.code === "PROOF_EXECUTION_NOT_FOUND" ? 404 : 409;
+    throw new HttpError(status, error.message, { code: error.code });
+  }
   if (error instanceof ChangeProofIntegrityError) {
     throw new HttpError(error.code === "POLICY_UNSUPPORTED" ? 400 : 409, error.message, {
       code: error.code,
@@ -313,7 +342,11 @@ export async function handleChangeVerificationRoute(input: {
   scope: RequestContext;
   runtime?: Partial<ChangeVerificationRouteRuntime>;
 }): Promise<boolean> {
-  const runtime = { ...defaultRuntime, ...input.runtime };
+  const runtime = {
+    ...defaultRuntime,
+    ...input.runtime,
+    executionCoordinator: proofExecutionCoordinator(input.runtime),
+  };
   const operation = currentOperationContext();
   const actorId = operation?.actorId ?? input.scope.subject;
   const requestId = operation?.requestId;
@@ -405,10 +438,12 @@ export async function handleChangeVerificationRoute(input: {
     const publicationOutbox = (await runtime.publicationOutbox(scope)).filter(
       (record) => record.proofId === proof.id,
     );
+    const execution = await runtime.executionCoordinator.read(scope, proof.id);
     json(input.response, 200, {
       proof,
       publications,
       publicationOutbox,
+      ...(execution ? { execution: summarizeChangeProofExecution(execution) } : {}),
       ...(includeHistory === "true"
         ? {
             history: (await runtime.history(scope, proof.id))
@@ -416,6 +451,55 @@ export async function handleChangeVerificationRoute(input: {
               .slice(-100),
           }
         : {}),
+    });
+    return true;
+  }
+
+  const runMatch = matchPath(input.pathname, "/proofs/:proofId/run");
+  if (input.method === "POST" && runMatch) {
+    if (!requestId) throw new HttpError(400, "Actor-aware operation context is required");
+    const body = (await parseJsonBody(input.request)) as OperationInput<"proof.run">;
+    const current = await currentProof(runtime, scope, runMatch.proofId!);
+    const digest = proofRunRequestDigest(current.id, body);
+    let execution;
+    try {
+      execution = await runtime.executionCoordinator.submit({
+        ...scope,
+        proof: current,
+        requestId,
+        requestDigest: digest,
+        actorId,
+        authority: "confirmed",
+        ...(body.expectedVersion === undefined ? {} : { expectedVersion: body.expectedVersion }),
+      });
+    } catch (error) {
+      routeError(error);
+    }
+    const execute = runtime.executeCell ?? createDefaultChangeProofCellExecutor(input.scope);
+    if (execute) {
+      // Admission transitions a ready Proof to running-pilot. Run against the
+      // newly persisted version; reusing the pre-admission snapshot would
+      // make the coordinator reject its own idempotent request as stale.
+      const admittedProof = await currentProof(runtime, scope, current.id);
+      const runInput = {
+        ...scope,
+        proof: admittedProof,
+        requestId,
+        requestDigest: digest,
+        actorId,
+        authority: "confirmed" as const,
+      };
+      if (body.wait) {
+        execution = await runtime.executionCoordinator.run(runInput, execute);
+      } else {
+        void runtime.executionCoordinator.run(runInput, execute).catch(() => undefined);
+      }
+    }
+    const proof = await currentProof(runtime, scope, current.id);
+    recordAudit(input.scope, { action: "proof.run", resource: proof.id, result: "allow" });
+    json(input.response, body.wait ? 200 : 202, {
+      proof,
+      execution: summarizeChangeProofExecution(execution),
     });
     return true;
   }
@@ -711,6 +795,16 @@ export async function handleChangeVerificationRoute(input: {
         kind: "none",
         reason: "This Proof was explicitly cancelled and cannot authorize merge.",
       },
+    });
+    // Keep coordinator cancellation durable even when the execution worker is
+    // between cells. The Proof mutation above remains the authoritative
+    // lifecycle transition; the coordinator records the cancellation fence.
+    await runtime.executionCoordinator.cancel({
+      ...scope,
+      proofId: proof.id,
+      actorId,
+      reason: body.reason,
+      at,
     });
     recordAudit(input.scope, { action: "proof.cancel", resource: proof.id, result: "allow" });
     json(input.response, 200, mutationOutput(proof));

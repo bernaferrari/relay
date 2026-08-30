@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { ApiError, RelayClient } from "@relay/client";
-import { resetControlDatabaseCache } from "@relay/core";
+import { createChangeProofExecutionCoordinator, resetControlDatabaseCache } from "@relay/core";
 import type { ChangeProofCaseResult, ChangeVerification, OperationInput } from "@relay/protocol";
 import type { PersistedRun } from "@relay/core";
 import { startServer } from "./index.js";
@@ -695,6 +695,78 @@ test("Proof execution records only server-derived Run facts and advances pilot t
       ),
       (error) => error instanceof ApiError && error.status === 409,
     );
+  } finally {
+    await server.close();
+    resetControlDatabaseCache();
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("proof.run is a durable server operation and proof.inspect recovers its execution summary", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-proof-run-route-"));
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = root;
+  resetControlDatabaseCache();
+  let dispatches = 0;
+  const coordinator = createChangeProofExecutionCoordinator({
+    workerId: "worker:route-test",
+    projectRun: async ({ run }) => ({
+      appMapId: "settings",
+      testId: "settings-language",
+      targetCaseId: "chromium-compact-ar",
+      runId: (run as { id: string }).id,
+      sourceSha: headSha,
+      buildId: "web",
+      artifactDigest: digest,
+      outcome: "passed",
+      evidenceDigests: [`sha256:${"b".repeat(64)}`],
+      evidenceComplete: true,
+      selectorResolution: "deterministic",
+      inputOutcome: "reconciled",
+      cleanup: "not-required",
+    }),
+  });
+  const server = await startServer({
+    host: "127.0.0.1",
+    port: 0,
+    proofRouteRuntime: {
+      executionCoordinator: coordinator,
+      executeCell: async () => {
+        dispatches += 1;
+        return { runId: "proof-route-run", wait: async () => ({ id: "proof-route-run" }) as never };
+      },
+    },
+  });
+  const relay = client(server.port);
+  const reviewer = client(server.port, projectId, "human");
+  try {
+    const created = await relay.invoke("proof.start", startInput(), {
+      requestId: "route-run-start",
+    });
+    const approved = await reviewer.invoke(
+      "proof.plan.approve",
+      {
+        proofId: created.proof.id,
+        expectedVersion: created.proof.version,
+        decisionId: "route-run-approval",
+        reason: "The exact target and build are approved.",
+        confirm: true,
+      },
+      { requestId: "route-run-approval" },
+    );
+    const ran = await relay.invoke(
+      "proof.run",
+      { proofId: approved.proof.id, expectedVersion: approved.proof.version, wait: true },
+      { requestId: "route-run" },
+    );
+    assert.equal(ran.proof.state, "proved");
+    assert.equal(ran.execution.status, "completed");
+    assert.equal(ran.execution.cursor, ran.execution.total);
+    assert.equal(dispatches, 1);
+    const inspected = await relay.invoke("proof.inspect", { proofId: ran.proof.id });
+    assert.deepEqual(inspected.execution, ran.execution);
   } finally {
     await server.close();
     resetControlDatabaseCache();

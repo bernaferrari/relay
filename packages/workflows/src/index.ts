@@ -97,6 +97,8 @@ export type {
   InspectWorkflowOutcomeIntent,
   ObserveTargetIntent,
   ProposeRepairIntent,
+  ProveChangeOutcome,
+  ProveChangeOutcomeIntent,
   RepairProposalResult,
   RecordTestOutcomeIntent,
   RelayOutcomeJobs,

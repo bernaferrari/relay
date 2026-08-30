@@ -472,11 +472,6 @@ export async function runVerifyChangeCommand(
         proof,
         actorKind: input.actorKind,
         signal,
-        poll: input.poll,
-        sleep: input.sleep,
-        now: input.now,
-        pollIntervalMs: input.pollIntervalMs,
-        pollTimeoutMs: input.pollTimeoutMs,
       });
       proof = live.proof;
       proofApprovalResponse = live.proofApprovalResponse;

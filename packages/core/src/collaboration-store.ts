@@ -58,6 +58,15 @@ import {
   withControlDatabaseRead,
   type ControlEventRow,
 } from "./collaboration-db.js";
+import {
+  changeProofExecution,
+  changeProofExecutionByProof,
+  changeProofExecutions,
+  insertChangeProofExecution,
+  updateChangeProofExecution,
+  type ChangeProofExecutionUpdateGuard,
+} from "./change-proof-execution-db.js";
+import type { ChangeProofExecutionRecord } from "./change-proof-execution.js";
 
 export type DegradedAppMap = {
   key: string;
@@ -182,6 +191,22 @@ export type ControlStore = {
   ): ChangeProofPublicationOutboxRecord | undefined;
   insertChangeProofPublicationOutbox(record: ChangeProofPublicationOutboxRecord): boolean;
   updateChangeProofPublicationOutbox(record: ChangeProofPublicationOutboxRecord): boolean;
+  changeProofExecution(
+    organizationId: string,
+    projectId: string,
+    id: string,
+  ): ChangeProofExecutionRecord | undefined;
+  changeProofExecutionByProof(
+    organizationId: string,
+    projectId: string,
+    proofId: string,
+  ): ChangeProofExecutionRecord | undefined;
+  changeProofExecutions(organizationId?: string, projectId?: string): ChangeProofExecutionRecord[];
+  insertChangeProofExecution(record: ChangeProofExecutionRecord): boolean;
+  updateChangeProofExecution(
+    record: ChangeProofExecutionRecord,
+    guard?: ChangeProofExecutionUpdateGuard,
+  ): boolean;
   appMap(key: string): AppMap | undefined;
   appMapRecoveryDocument(key: string): AppMapRecoveryDocument | undefined;
   hasAppMap(key: string): boolean;
@@ -542,6 +567,21 @@ function createStore(db: DatabaseSync): ControlStore {
     },
     updateChangeProofPublicationOutbox(record) {
       return updateChangeProofPublicationOutbox(db, record);
+    },
+    changeProofExecution(organizationId, projectId, id) {
+      return changeProofExecution(db, organizationId, projectId, id);
+    },
+    changeProofExecutionByProof(organizationId, projectId, proofId) {
+      return changeProofExecutionByProof(db, organizationId, projectId, proofId);
+    },
+    changeProofExecutions(organizationId, projectId) {
+      return changeProofExecutions(db, organizationId, projectId);
+    },
+    insertChangeProofExecution(record) {
+      return insertChangeProofExecution(db, record);
+    },
+    updateChangeProofExecution(record, guard) {
+      return updateChangeProofExecution(db, record, guard);
     },
     appMap(key) {
       const row = db.prepare("SELECT document, status FROM app_maps WHERE map_key = ?").get(key) as

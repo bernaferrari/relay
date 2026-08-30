@@ -553,6 +553,26 @@ export const relayOutcomeTools = Object.freeze([
     },
   },
   {
+    name: "relay_prove_change",
+    title: "Prove a change",
+    description:
+      "Start or resume one approved server-owned Proof. Returns durable progress, exact Run references, uncertainty, and the next required action. Repeating the same call never selects another case or retries an uncertain outcome.",
+    requiresConfirmation: false,
+    inputSchema: z
+      .object({
+        proofId: identifier,
+        expectedVersion: z.number().int().positive().optional(),
+        wait: z.boolean().optional(),
+      })
+      .strict(),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  },
+  {
     name: "relay_verify_change",
     title: "Verify a change",
     description:
@@ -818,6 +838,16 @@ export async function invokeRelayOutcomeToolWithJobs(input: {
       kind: "verify-change",
       selection,
       ...(parsed.confirmationSatisfied === true ? { confirmationSatisfied: true } : {}),
+    });
+  }
+  if (input.name === "relay_prove_change") {
+    return jobs.proveChange({
+      kind: "prove-change",
+      proofId: parsed.proofId as string,
+      ...(typeof parsed.expectedVersion === "number"
+        ? { expectedVersion: parsed.expectedVersion }
+        : {}),
+      ...(typeof parsed.wait === "boolean" ? { wait: parsed.wait } : {}),
     });
   }
   if (input.name === "relay_propose_repair") {

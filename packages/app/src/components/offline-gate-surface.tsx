@@ -115,7 +115,7 @@ export function OfflineGateSurface(props: {
                       class="size-1.5 shrink-0 rounded-full bg-text-weaker motion-safe:animate-pulse"
                       aria-hidden="true"
                     />
-                    Rechecking every few seconds
+                    Waiting for the local service…
                   </p>
                 }
               >

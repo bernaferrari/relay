@@ -1,17 +1,11 @@
-import { changeProofRequiredRunCases, type ChangeProofRunCase } from "@relay/core";
-import type { OperationInput, VerificationPlan } from "@relay/protocol";
+import { changeProofRequiredRunCases } from "@relay/core";
+import type { VerificationPlan } from "@relay/protocol";
 import { invokeOperation, type OperationInvoker } from "./invoke.js";
 import { CliError, ExitCode, UsageError } from "./errors.js";
 import {
-  VERIFY_CHANGE_DEFAULT_POLL_INTERVAL_MS,
-  VERIFY_CHANGE_DEFAULT_POLL_TIMEOUT_MS,
-  VERIFY_CHANGE_MAX_POLL_ATTEMPTS,
-  VERIFY_CHANGE_MAX_POLL_TIMEOUT_MS,
   type VerifyChangeActorKind,
-  type VerifyChangeJobPoller,
   type VerifyChangeNextAction,
   type VerifyChangePlanResult,
-  type VerifyChangeSleep,
 } from "./verify-change-types.js";
 import { boundedText, record, verifyChangeRequestIdentity } from "./verify-change-utils.js";
 
@@ -23,17 +17,6 @@ const terminalProofStates = new Set([
   "cancelled",
   "superseded",
 ]);
-const knownJobStatuses = new Set([
-  "queued",
-  "running",
-  "paused",
-  "ok",
-  "error",
-  "healed",
-  "cancelled",
-]);
-const terminalJobStatuses = new Set(["ok", "error", "healed", "cancelled"]);
-
 export function proofRecord(value: unknown): Record<string, unknown> | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const proof = (value as Record<string, unknown>).proof;
@@ -57,111 +40,6 @@ function proofVersion(proof: Record<string, unknown>): number {
   return proof.version;
 }
 
-function jobRecord(value: unknown, label: string): Record<string, unknown> {
-  const response = record(value, label);
-  return record(response.job, `${label} job`);
-}
-
-function jobStatus(value: unknown, label: string): string {
-  const job = jobRecord(value, label);
-  if (typeof job.status !== "string" || !knownJobStatuses.has(job.status)) {
-    throw new UsageError(`${label} returned an unknown job status`);
-  }
-  return job.status;
-}
-
-function jobId(value: unknown, label: string): string {
-  const job = jobRecord(value, label);
-  if (typeof job.id !== "string" || !job.id.trim()) {
-    throw new UsageError(`${label} returned a job without an id`);
-  }
-  return job.id;
-}
-
-function completedRunId(value: unknown, label: string): string {
-  const job = jobRecord(value, label);
-  if (job.persisted !== true) {
-    throw new UsageError(
-      `${label} is terminal but not persisted; refusing to record a non-durable Run`,
-    );
-  }
-  if (typeof job.id !== "string" || !job.id.trim()) {
-    throw new UsageError(`${label} persisted a Run without its durable job id`);
-  }
-  if (job.runId !== undefined && job.runId !== job.id) {
-    throw new UsageError(`${label} returned a runId different from its durable job id`);
-  }
-  return job.id;
-}
-
-function defaultSleep(milliseconds: number, signal: AbortSignal): Promise<void> {
-  if (signal.aborted) {
-    return Promise.reject(new DOMException("cancelled", "AbortError"));
-  }
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(finish, milliseconds);
-    signal.addEventListener("abort", cancel, { once: true });
-    function finish(): void {
-      signal.removeEventListener("abort", cancel);
-      resolve();
-    }
-    function cancel(): void {
-      clearTimeout(timer);
-      reject(new DOMException("cancelled", "AbortError"));
-    }
-  });
-}
-
-async function pollVerificationJob(
-  client: OperationInvoker,
-  id: string,
-  options: {
-    signal: AbortSignal;
-    timeoutMs: number;
-    intervalMs: number;
-    sleep: VerifyChangeSleep;
-    now: () => number;
-  },
-): Promise<unknown> {
-  const deadline = options.now() + options.timeoutMs;
-  for (let attempt = 0; attempt < VERIFY_CHANGE_MAX_POLL_ATTEMPTS; attempt += 1) {
-    const response = await invokeOperation(client, "job.get", { jobId: id }, options.signal);
-    const status = jobStatus(response, "job.get");
-    if (terminalJobStatuses.has(status) && jobRecord(response, "job.get").persisted === true) {
-      // A terminal error can still have trusted failure evidence. Return it
-      // once persisted so the server, not this client, derives the Proof state.
-      return response;
-    }
-    const remaining = deadline - options.now();
-    if (remaining <= 0) {
-      throw new CliError(
-        `Timed out waiting for pilot job ${id} after ${options.timeoutMs}ms`,
-        ExitCode.connection,
-        response,
-      );
-    }
-    await options.sleep(Math.min(options.intervalMs, remaining), options.signal);
-  }
-  throw new CliError(
-    `Exceeded ${VERIFY_CHANGE_MAX_POLL_ATTEMPTS} polls waiting for job ${id} to persist`,
-    ExitCode.connection,
-  );
-}
-
-function executionTargetForCase(
-  targetCase: VerificationPlan["selection"]["targetCases"][number],
-): OperationInput<"app-map.test.run">["target"] {
-  const target = targetCase.executionTarget;
-  if (target.kind === "provider-session") {
-    throw new UsageError(
-      `Target case ${targetCase.id} uses provider-session ${target.provider.key}; verify-change only executes local-device and local-browser targets`,
-    );
-  }
-  return target.kind === "local-device"
-    ? { kind: "device", platform: target.platform, targetId: target.targetId }
-    : { kind: "browser", platform: "browser", targetId: target.targetId };
-}
-
 export function isExecutableVerificationPlan(plan: VerificationPlan): boolean {
   return (
     plan.status === "ready-for-approval" &&
@@ -176,7 +54,11 @@ export function isExecutableVerificationPlan(plan: VerificationPlan): boolean {
 
 export function assertExecutablePlanTargets(plan: VerificationPlan): void {
   for (const targetCase of plan.selection.targetCases) {
-    if (targetCase.required) executionTargetForCase(targetCase);
+    if (targetCase.required && targetCase.executionTarget.kind === "provider-session") {
+      throw new UsageError(
+        `Target case ${targetCase.id} uses provider-session ${targetCase.executionTarget.provider.key}; verify-change only executes local-device and local-browser targets`,
+      );
+    }
   }
   for (const targetCase of plan.selection.targetCases.filter(({ required }) => required)) {
     const platform =
@@ -192,50 +74,6 @@ export function assertExecutablePlanTargets(plan: VerificationPlan): void {
       );
     }
   }
-}
-
-function planTargetCase(
-  plan: VerificationPlan,
-  targetCaseId: string,
-): VerificationPlan["selection"]["targetCases"][number] {
-  const targetCase = plan.selection.targetCases.find(({ id }) => id === targetCaseId);
-  if (!targetCase) {
-    throw new UsageError(`Proof required case ${targetCaseId} is not in the reviewed plan`);
-  }
-  return targetCase;
-}
-
-function planBuild(plan: VerificationPlan, buildId: string): VerificationPlan["builds"][number] {
-  const build = plan.builds.find(({ id }) => id === buildId);
-  if (!build) throw new UsageError(`Proof required case references unknown build ${buildId}`);
-  return build;
-}
-
-async function invokeProofContinue(
-  client: OperationInvoker,
-  proof: Record<string, unknown>,
-  action: "start-pilot" | "start-required-coverage" | "record-runs",
-  signal: AbortSignal,
-  reason?: string,
-  runIds?: readonly string[],
-): Promise<{ response: unknown; proof: Record<string, unknown> }> {
-  const input = {
-    proofId: boundedText(proof.id, "Proof id", 256),
-    expectedVersion: proofVersion(proof),
-    action,
-    ...(reason ? { reason } : {}),
-    ...(runIds ? { runIds: [...runIds] } : {}),
-  };
-  const response = await invokeOperation(
-    client,
-    "proof.continue",
-    input,
-    signal,
-    verifyChangeRequestIdentity(`proof-${action}`, String(proof.id), ...(runIds ?? [])),
-  );
-  const next = proofRecord(response);
-  if (!next) throw new UsageError(`proof.continue ${action} returned no durable Proof`);
-  return { response, proof: next };
 }
 
 async function invokePlanApproval(
@@ -261,109 +99,6 @@ async function invokePlanApproval(
   const next = proofRecord(response);
   if (!next) throw new UsageError("proof.plan.approve returned no durable Proof");
   return { response, proof: next };
-}
-
-async function runRequiredCase(input: {
-  client: OperationInvoker;
-  plan: VerificationPlan;
-  proof: Record<string, unknown>;
-  runCase: ChangeProofRunCase;
-  signal: AbortSignal;
-  poll?: VerifyChangeJobPoller;
-  sleep: VerifyChangeSleep;
-  now: () => number;
-  pollIntervalMs: number;
-  pollTimeoutMs: number;
-}): Promise<{
-  appMapId: string;
-  testId: string;
-  targetCaseId: string;
-  jobId: string;
-  runId: string;
-}> {
-  const targetCase = planTargetCase(input.plan, input.runCase.targetCaseId);
-  const build = planBuild(input.plan, input.runCase.buildId);
-  const selection = record(input.proof.selection, "Proof selection");
-  const journeys = Array.isArray(selection.affectedJourneys) ? selection.affectedJourneys : [];
-  const persistedJourneyValue = journeys.find((value) => {
-    if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-    const journey = value as Record<string, unknown>;
-    return journey.appMapId === input.runCase.appMapId && journey.testId === input.runCase.testId;
-  });
-  if (!persistedJourneyValue || typeof persistedJourneyValue !== "object") {
-    throw new UsageError("Proof required case is not present in its persisted affected journeys");
-  }
-  const persistedJourney = persistedJourneyValue as Record<string, unknown>;
-  if (
-    persistedJourney.appMapRevision !== input.runCase.appMapRevision ||
-    !Number.isSafeInteger(persistedJourney.appMapRevision)
-  ) {
-    throw new UsageError("Proof affected journey has no matching frozen App Map revision");
-  }
-  const runInput: OperationInput<"app-map.test.run"> = {
-    appMapId: input.runCase.appMapId,
-    testId: input.runCase.testId,
-    expectedRevision: input.runCase.appMapRevision,
-    target: executionTargetForCase(targetCase),
-    targetProfileId: targetCase.targetProfile.id,
-    sourceRevision: {
-      vcs: "git",
-      sha: build.sourceSha,
-      artifactDigest: build.artifactDigest,
-      ...(targetCase.executionTarget.platform === "browser" ? {} : { buildId: build.id }),
-    },
-  };
-  const response = await invokeOperation(
-    input.client,
-    "app-map.test.run",
-    runInput,
-    input.signal,
-    verifyChangeRequestIdentity(
-      "run-case",
-      String(input.proof.id),
-      input.runCase.appMapId,
-      input.runCase.testId,
-      input.runCase.appMapRevision,
-      input.runCase.targetCaseId,
-      input.runCase.buildId,
-    ),
-  );
-  const responseRecord = record(response, "app-map.test.run");
-  const identity = record(responseRecord.planIdentity, "app-map.test.run plan identity");
-  if (
-    identity.appMapId !== input.runCase.appMapId ||
-    identity.testId !== input.runCase.testId ||
-    identity.appMapRevision !== input.runCase.appMapRevision
-  ) {
-    throw new UsageError(
-      "app-map.test.run returned a plan identity different from the exact request",
-    );
-  }
-  const startedJobId = jobId(response, "app-map.test.run");
-  const final = await (input.poll ?? pollVerificationJob)(input.client, startedJobId, {
-    signal: input.signal,
-    timeoutMs: input.pollTimeoutMs,
-    intervalMs: input.pollIntervalMs,
-    sleep: input.sleep,
-    now: input.now,
-  });
-  const finalStatus = jobStatus(final, "job.get");
-  if (!terminalJobStatuses.has(finalStatus)) {
-    throw new UsageError(`job.get did not return a terminal job for ${startedJobId}`);
-  }
-  const finalJob = jobRecord(final, "job.get");
-  if (finalJob.id !== startedJobId) {
-    throw new UsageError(
-      `job.get returned job ${String(finalJob.id)} while polling ${startedJobId}`,
-    );
-  }
-  return {
-    appMapId: input.runCase.appMapId,
-    testId: input.runCase.testId,
-    targetCaseId: input.runCase.targetCaseId,
-    jobId: startedJobId,
-    runId: completedRunId(final, "job.get"),
-  };
 }
 
 export function nextVerifyChangeAction(
@@ -438,52 +173,42 @@ export type VerifyChangeLiveExecution = {
   terminalState?: string;
 };
 
-function recordedRunCount(proof: Record<string, unknown>): number {
+function proofRunIds(proof: Record<string, unknown>): string[] {
   if (!Array.isArray(proof.runIds) || proof.runIds.some((id) => typeof id !== "string")) {
     throw new UsageError("Relay returned a Proof without its durable Run identities");
   }
-  return proof.runIds.length;
+  return proof.runIds.map((id) => String(id));
 }
 
-function nextRequiredCaseIndex(
-  proof: Record<string, unknown>,
-  requiredCases: readonly ChangeProofRunCase[],
-): number {
-  const recorded = recordedRunCount(proof);
-  if (recorded > requiredCases.length) {
-    throw new UsageError("Proof records more Runs than its frozen required case matrix");
+function serverExecution(value: unknown): Record<string, unknown> {
+  const response = record(value, "proof.run");
+  const execution = record(response.execution, "proof.run execution");
+  if (typeof execution.status !== "string") {
+    throw new UsageError("proof.run returned an execution without a status");
   }
-  if (proofState(proof) !== "running" || recorded === requiredCases.length) return recorded;
-  const next =
-    proof.smallestNextVerification && typeof proof.smallestNextVerification === "object"
-      ? (proof.smallestNextVerification as Record<string, unknown>)
-      : undefined;
-  const declared = requiredCases.findIndex(
-    (item) =>
-      (!next?.appMapId || next.appMapId === item.appMapId) &&
-      (!next?.testId || next.testId === item.testId) &&
-      (!next?.targetCaseId || next.targetCaseId === item.targetCaseId),
-  );
-  if (declared < 0 || declared !== recorded) {
-    throw new UsageError(
-      "Running Proof does not expose one deterministic next required case; refusing duplicate target control",
-    );
-  }
-  return declared;
+  return execution;
 }
 
-/** Execute one approved plan through pilot and required expansion. */
+function serverExecutionReason(execution: Record<string, unknown>): string {
+  const uncertainty = execution.terminalUncertainty;
+  if (uncertainty && typeof uncertainty === "object" && !Array.isArray(uncertainty)) {
+    const reason = (uncertainty as Record<string, unknown>).reason;
+    if (typeof reason === "string" && reason.trim()) return reason;
+  }
+  const status = typeof execution.status === "string" ? execution.status : "unknown";
+  return `The server-owned Proof coordinator returned execution status ${status}.`;
+}
+
+/** Execute an approved plan through the durable server-owned Proof coordinator.
+ * The CLI only performs human approval when needed, then submits one `proof.run`
+ * request and projects its authoritative response. It never controls a target,
+ * polls jobs, or records a client-side verdict. */
 export async function executeVerifyChangeLive(input: {
   client: OperationInvoker;
   plan: VerificationPlan;
   proof: Record<string, unknown>;
   actorKind?: VerifyChangeActorKind;
   signal: AbortSignal;
-  poll?: VerifyChangeJobPoller;
-  sleep?: VerifyChangeSleep;
-  now?: () => number;
-  pollIntervalMs?: number;
-  pollTimeoutMs?: number;
 }): Promise<VerifyChangeLiveExecution> {
   let currentProof = input.proof;
   if (terminalProofStates.has(proofState(currentProof) ?? "")) {
@@ -542,117 +267,57 @@ export async function executeVerifyChangeLive(input: {
       `The approved Proof materializes ${requiredCases.length} Verification Cells, exceeding the plan limit of ${input.plan.expansion.maxCases}; no target was controlled`,
     );
   }
-  const pollIntervalMs = input.pollIntervalMs ?? VERIFY_CHANGE_DEFAULT_POLL_INTERVAL_MS;
-  const pollTimeoutMs = input.pollTimeoutMs ?? VERIFY_CHANGE_DEFAULT_POLL_TIMEOUT_MS;
-  if (
-    !Number.isSafeInteger(pollIntervalMs) ||
-    pollIntervalMs < 0 ||
-    !Number.isSafeInteger(pollTimeoutMs) ||
-    pollTimeoutMs < 1 ||
-    pollTimeoutMs > VERIFY_CHANGE_MAX_POLL_TIMEOUT_MS
-  ) {
+  const proofId = boundedText(currentProof.id, "Proof id", 256);
+  const response = await invokeOperation(
+    input.client,
+    "proof.run",
+    { proofId, wait: true },
+    input.signal,
+    verifyChangeRequestIdentity("proof-run", proofId),
+  );
+  const nextProof = proofRecord(response);
+  if (!nextProof) throw new UsageError("proof.run returned no durable Proof");
+  currentProof = nextProof;
+  const execution = serverExecution(response);
+  const runIds = proofRunIds(currentProof);
+  if (runIds.length > requiredCases.length) {
     throw new UsageError(
-      `verify-change poll interval must be non-negative and timeout must be 1-${VERIFY_CHANGE_MAX_POLL_TIMEOUT_MS}ms`,
+      "proof.run returned more durable Runs than its frozen required case matrix",
     );
   }
-  if (proofState(currentProof) === "ready") {
-    const startedPilot = await invokeProofContinue(
-      input.client,
-      currentProof,
-      "start-pilot",
-      input.signal,
-      "Start the first deterministic policy-required Proof pilot case.",
-    );
-    currentProof = startedPilot.proof;
-  }
-  if (proofState(currentProof) === "running-pilot" && recordedRunCount(currentProof) !== 0) {
-    throw new UsageError("Running pilot already records a Run but has no terminal transition");
-  }
-  const sleep = input.sleep ?? defaultSleep;
-  const now = input.now ?? Date.now;
-  const startedAt = now();
-  const assertDurationBudget = (): void => {
-    if (now() - startedAt >= input.plan.expansion.maxDurationMs) {
-      throw new UsageError(
-        `The Verification Plan duration budget of ${input.plan.expansion.maxDurationMs}ms expired before target control`,
-      );
-    }
-  };
-  const runSummaries: Array<VerifyChangePlanResult["execution"]["runs"][number]> = [];
-  let pilot: VerifyChangePlanResult["execution"]["pilot"] = {
-    available: false,
-    attempted: false,
-    reason: "The deterministic pilot was not completed.",
-  };
-  const startIndex = nextRequiredCaseIndex(currentProof, requiredCases);
-  for (let index = startIndex; index < requiredCases.length; index += 1) {
-    const runCase = requiredCases[index]!;
-    if (index > 0) {
-      const state = proofState(currentProof);
-      if (terminalProofStates.has(state ?? "")) break;
-      if (state === "awaiting-expansion") {
-        const startedExpansion = await invokeProofContinue(
-          input.client,
-          currentProof,
-          "start-required-coverage",
-          input.signal,
-          "Start the smallest remaining policy-required Proof coverage.",
-        );
-        currentProof = startedExpansion.proof;
-      }
-      if (proofState(currentProof) !== "running") {
-        throw new UsageError(
-          `Proof did not enter running state before required case ${runCase.targetCaseId}`,
-        );
-      }
-    }
-    assertDurationBudget();
-    const run = await runRequiredCase({
-      client: input.client,
-      plan: input.plan,
-      proof: currentProof,
-      runCase,
-      signal: input.signal,
-      poll: input.poll,
-      sleep,
-      now,
-      pollIntervalMs,
-      pollTimeoutMs,
-    });
-    runSummaries.push(run);
-    currentProof = (
-      await invokeProofContinue(
-        input.client,
-        currentProof,
-        "record-runs",
-        input.signal,
-        undefined,
-        [run.runId],
-      )
-    ).proof;
-    if (index === 0) {
-      pilot = {
+  const runSummaries = runIds.map((runId, index) => {
+    const runCase = requiredCases[index];
+    if (!runCase) throw new UsageError("proof.run returned an unknown required Run position");
+    return {
+      appMapId: runCase.appMapId,
+      testId: runCase.testId,
+      targetCaseId: runCase.targetCaseId,
+      jobId: runId,
+      runId,
+    };
+  });
+  const pilotRun = runSummaries[0];
+  const pilot: VerifyChangePlanResult["execution"]["pilot"] = pilotRun
+    ? {
         available: true,
         attempted: true,
-        reason: "The deterministic pilot was executed and recorded server-side.",
-        targetCaseId: run.targetCaseId,
-        runId: run.runId,
+        reason:
+          "The deterministic pilot was executed and recorded by the server-owned Proof coordinator.",
+        targetCaseId: pilotRun.targetCaseId,
+        runId: pilotRun.runId,
+      }
+    : {
+        available: false,
+        attempted: false,
+        reason: serverExecutionReason(execution),
       };
-    }
-    if (terminalProofStates.has(proofState(currentProof) ?? "")) break;
-  }
   const terminalState = proofState(currentProof);
-  if (!terminalState || !terminalProofStates.has(terminalState)) {
-    throw new UsageError(
-      "Required Proof cases were exhausted without a terminal server decision; no client verdict was accepted",
-    );
-  }
   return {
     proof: currentProof,
     ...(proofApprovalResponse === undefined ? {} : { proofApprovalResponse }),
-    planApproved: true,
+    planApproved: currentProof.planApproval !== undefined,
     pilot,
     runs: runSummaries,
-    terminalState,
+    ...(terminalState && terminalProofStates.has(terminalState) ? { terminalState } : {}),
   };
 }

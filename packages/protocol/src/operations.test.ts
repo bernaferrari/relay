@@ -96,7 +96,7 @@ test("campaign capacity preflight remains composed into the central operation re
   assert.equal(definition.output.description, "campaign capacity preflight response");
 });
 
-test("Proof exposes six canonical lifecycle operations plus its additive list query", () => {
+test("Proof exposes its canonical lifecycle operations plus execution and list queries", () => {
   const proofIds = operationDefinitions
     .filter(({ id }) => id.startsWith("proof."))
     .map(({ id }) => id);
@@ -106,6 +106,7 @@ test("Proof exposes six canonical lifecycle operations plus its additive list qu
     "proof.inspect",
     "proof.plan.approve",
     "proof.continue",
+    "proof.run",
     "proof.cancel",
     "proof.rerun-affected",
   ]);
@@ -116,6 +117,7 @@ test("Proof exposes six canonical lifecycle operations plus its additive list qu
       "proof.inspect",
       "proof.plan.approve",
       "proof.continue",
+      "proof.run",
       "proof.cancel",
       "proof.rerun-affected",
     ],
@@ -177,6 +179,14 @@ test("Proof exposes six canonical lifecycle operations plus its additive list qu
       progress: false,
       cancellable: false,
       transport: { method: "POST", path: "/proofs/:proofId/continue" },
+    },
+    "proof.run": {
+      role: "runner",
+      confirmation: "none",
+      lease: "none",
+      progress: true,
+      cancellable: true,
+      transport: { method: "POST", path: "/proofs/:proofId/run" },
     },
     "proof.cancel": {
       role: "author",
@@ -269,6 +279,15 @@ test("Proof exposes six canonical lifecycle operations plus its additive list qu
       }),
     /only runIds/u,
   );
+
+  const proofRun = operationDefinition("proof.run").input;
+  assert.deepEqual(proofRun.parse({ proofId: "proof-1" }), { proofId: "proof-1" });
+  assert.deepEqual(proofRun.parse({ proofId: "proof-1", expectedVersion: 2, wait: true }), {
+    proofId: "proof-1",
+    expectedVersion: 2,
+    wait: true,
+  });
+  assert.throws(() => proofRun.parse({ proofId: "proof-1", cursor: 0 }), /Unrecognized key/u);
 });
 
 test("run review can request another human decision without resolving the Run", () => {

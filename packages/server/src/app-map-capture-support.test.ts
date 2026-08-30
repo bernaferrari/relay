@@ -65,3 +65,30 @@ test("browser capture saves the complete active case profile", async () => {
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("Android capture freezes the observed configured AVD identity", async () => {
+  const profile = await profileForCapture(
+    { kind: "device", targetId: "emulator-5554", platform: "android" },
+    123,
+    { width: 1080, height: 2400 },
+    {
+      listDevices: async () =>
+        [
+          {
+            id: "emulator-5554",
+            serial: "emulator-5554",
+            name: "medium phone",
+            kind: "emulator",
+            booted: true,
+            platform: "android",
+            avdName: "medium_phone",
+            connectionState: "connected",
+            osVersion: "16",
+          },
+        ] as never,
+    },
+  );
+
+  assert.equal(profile.id, "device:emulator-5554-1080x2400");
+  assert.equal(profile.androidAvdName, "medium_phone");
+});

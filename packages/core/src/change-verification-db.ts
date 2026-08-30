@@ -69,6 +69,35 @@ export function ensureChangeVerificationSchema(db: DatabaseSync): void {
       ON change_proof_publication_outbox(status, next_attempt_at, updated_at);
     CREATE INDEX IF NOT EXISTS change_proof_publication_outbox_scope
       ON change_proof_publication_outbox(organization_id, project_id, updated_at DESC);
+    /* One durable coordinator per Proof. The document carries the frozen
+     * matrix and per-cell state; indexed columns make restart inventory and
+     * scoped claims cheap without exposing those internals at the HTTP seam. */
+    CREATE TABLE IF NOT EXISTS change_proof_executions (
+      id TEXT NOT NULL,
+      organization_id TEXT NOT NULL,
+      project_id TEXT NOT NULL,
+      proof_id TEXT NOT NULL,
+      proof_version INTEGER NOT NULL CHECK (proof_version >= 1),
+      request_id TEXT NOT NULL,
+      request_digest TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'completed', 'cancelled', 'uncertain')),
+      cursor INTEGER NOT NULL CHECK (cursor >= 0),
+      total INTEGER NOT NULL CHECK (total >= 1),
+      deadline_at INTEGER NOT NULL CHECK (deadline_at >= 0),
+      worker_id TEXT,
+      lease_token TEXT,
+      lease_claimed_at INTEGER,
+      lease_expires_at INTEGER,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      document TEXT NOT NULL,
+      PRIMARY KEY (organization_id, project_id, id),
+      UNIQUE (organization_id, project_id, proof_id)
+    );
+    CREATE INDEX IF NOT EXISTS change_proof_executions_due
+      ON change_proof_executions(status, lease_expires_at, updated_at);
+    CREATE INDEX IF NOT EXISTS change_proof_executions_scope
+      ON change_proof_executions(organization_id, project_id, updated_at DESC);
   `);
 
   const outboxColumns = db

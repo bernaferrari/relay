@@ -49,6 +49,7 @@ export const relayMcpInstructions = [
   "Replay Lab accepts only explicit bounded TracePack payloads and always keeps future target behavior unknown.",
   "Repair tools create reviewable proposals; they never silently rewrite an approved Test.",
   "For change verification, use the proof.* lifecycle with the returned Proof id and exact version; only a human may approve a Verification Plan.",
+  "Use relay_prove_change to start or resume an approved Proof; inspect terminal uncertainty instead of retrying it.",
   "For advanced Device control, capture a screenshot before interacting and prefer identifier, then label, text, and point.",
   "A missing accessibility tree is not a failed session; pixels and point control remain usable.",
   "Never displace another actor's Device control implicitly, and wait or cancel an active reserved Run before sending input.",
