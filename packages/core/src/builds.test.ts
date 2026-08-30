@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import type { Server } from "node:http";
 import { tmpdir } from "node:os";
@@ -48,6 +48,48 @@ test("preflights, installs, and launches a registered Android artifact", async (
     assert.ok(calls.some(([command, args]) => command === "adb" && args.includes("install")));
     assert.ok(calls.some(([command, args]) => command === "adb" && args.includes("monkey")));
   } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Android build identity resolves aapt from the configured SDK without PATH", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-sdk-build-tools-"));
+  const artifact = join(root, "app.apk");
+  const aapt = join(root, "build-tools", "36.1.0", "aapt");
+  const previousSdkRoot = process.env.ANDROID_SDK_ROOT;
+  const previousAndroidHome = process.env.ANDROID_HOME;
+  const previousPath = process.env.PATH;
+  try {
+    await mkdir(join(root, "build-tools", "36.1.0"), { recursive: true });
+    await writeFile(artifact, "apk");
+    await writeFile(aapt, "#!/bin/sh\nprintf \"package: name='com.example.sdkresolved'\\n\"\n");
+    await chmod(aapt, 0o755);
+    process.env.ANDROID_SDK_ROOT = root;
+    delete process.env.ANDROID_HOME;
+    process.env.PATH = "/usr/bin:/bin";
+
+    const preflight = await preflightRegisteredBuild(
+      {
+        id: "android-sdk-resolved",
+        projectId: "project",
+        name: "Android SDK resolved",
+        platform: "android",
+        sourceUrl: artifact,
+        status: "ready",
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      { at: 10 },
+    );
+    assert.equal(preflight.applicationId, "com.example.sdkresolved");
+    assert.deepEqual(preflight.capabilities, { install: true, launch: true });
+  } finally {
+    if (previousSdkRoot === undefined) delete process.env.ANDROID_SDK_ROOT;
+    else process.env.ANDROID_SDK_ROOT = previousSdkRoot;
+    if (previousAndroidHome === undefined) delete process.env.ANDROID_HOME;
+    else process.env.ANDROID_HOME = previousAndroidHome;
+    if (previousPath === undefined) delete process.env.PATH;
+    else process.env.PATH = previousPath;
     await rm(root, { recursive: true, force: true });
   }
 });

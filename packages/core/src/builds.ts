@@ -1,7 +1,8 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { access, mkdir, rename, rm, stat } from "node:fs/promises";
-import { createWriteStream } from "node:fs";
+import { access, mkdir, readdir, rename, rm, stat } from "node:fs/promises";
+import { constants, createWriteStream } from "node:fs";
+import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -14,13 +15,68 @@ import { artifactDigestForProof, artifactSourceSha256 } from "./artifact-digest.
 
 const execFileAsync = promisify(execFile);
 
+function androidSdkRoots(): string[] {
+  return [
+    process.env.ANDROID_SDK_ROOT,
+    process.env.ANDROID_HOME,
+    join(homedir(), "Library", "Android", "sdk"),
+    join(homedir(), "Android", "Sdk"),
+  ].filter(
+    (value, index, values): value is string =>
+      Boolean(value?.trim()) && values.indexOf(value) === index,
+  );
+}
+
+async function executable(path: string): Promise<boolean> {
+  try {
+    await access(path, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function versionDirectories(path: string): Promise<string[]> {
+  try {
+    return (await readdir(path)).sort((left, right) =>
+      right.localeCompare(left, undefined, { numeric: true }),
+    );
+  } catch {
+    return [];
+  }
+}
+
+async function resolveAndroidBuildCommand(command: string): Promise<string> {
+  if (!new Set(["adb", "aapt", "aapt2", "apkanalyzer"]).has(command)) return command;
+  const executableName = process.platform === "win32" ? `${command}.exe` : command;
+  for (const root of androidSdkRoots()) {
+    const candidates =
+      command === "adb"
+        ? [join(root, "platform-tools", executableName)]
+        : command === "apkanalyzer"
+          ? [
+              ...(await versionDirectories(join(root, "cmdline-tools"))).map((version) =>
+                join(root, "cmdline-tools", version, "bin", executableName),
+              ),
+              join(root, "tools", "bin", executableName),
+            ]
+          : (await versionDirectories(join(root, "build-tools"))).map((version) =>
+              join(root, "build-tools", version, executableName),
+            );
+    for (const candidate of candidates) {
+      if (await executable(candidate)) return candidate;
+    }
+  }
+  return command;
+}
+
 export type BuildCommandRunner = (
   executable: string,
   args: string[],
 ) => Promise<{ stdout?: string; stderr?: string }>;
 
 const defaultCommandRunner: BuildCommandRunner = async (executable, args) => {
-  const result = await execFileAsync(executable, args);
+  const result = await execFileAsync(await resolveAndroidBuildCommand(executable), args);
   return { stdout: String(result.stdout), stderr: String(result.stderr) };
 };
 
