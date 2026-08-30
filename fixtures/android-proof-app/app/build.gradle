@@ -1,0 +1,39 @@
+plugins {
+  id "com.android.application"
+}
+
+android {
+  namespace "dev.relay.prooffixture"
+  compileSdk 36
+
+  defaultConfig {
+    applicationId "dev.relay.prooffixture"
+    minSdk 28
+    targetSdk 36
+    versionCode 1
+    versionName "1.0"
+  }
+
+  signingConfigs {
+    fixture {
+      storeFile file("../relay-proof-fixture.keystore")
+      storePassword "relayfixture"
+      keyAlias "relay-proof-fixture"
+      keyPassword "relayfixture"
+    }
+  }
+
+  buildTypes {
+    release {
+      if (!project.hasProperty("relayUnsigned")) {
+        signingConfig signingConfigs.fixture
+      }
+      minifyEnabled false
+      shrinkResources false
+    }
+  }
+
+  buildFeatures {
+    buildConfig false
+  }
+}
