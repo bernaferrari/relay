@@ -1,9 +1,6 @@
 import { chmod, mkdir, open, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import {
-  redactSensitiveEvidenceValue,
-  redactValue,
-} from "./redaction.js";
+import { redactSensitiveEvidenceValue, redactValue } from "./redaction.js";
 import { ensureRunDir } from "./runs.js";
 import type { TestJob } from "./session.js";
 

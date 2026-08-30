@@ -548,22 +548,22 @@ async function recordRunResult(
       ? { smallestNextVerification: decision.smallestNextVerification }
       : state === "rejected" || state === "needs-review" || state === "insufficient-evidence"
         ? {
-          firstCausalFailure: decision.firstCausalFailure ?? null,
-          coverageGaps: decision.coverageGaps,
-          residualRisk: decision.residualRisk,
-          smallestNextVerification: decision.smallestNextVerification,
+            firstCausalFailure: decision.firstCausalFailure ?? null,
+            coverageGaps: decision.coverageGaps,
+            residualRisk: decision.residualRisk,
+            smallestNextVerification: decision.smallestNextVerification,
           }
         : {
-          smallestNextVerification:
-            state === "awaiting-expansion"
-              ? {
-                  kind: "expand" as const,
-                  reason: "The Proof pilot passed; run the smallest remaining required coverage.",
-                }
-              : {
-                  kind: "expand" as const,
-                  reason: "Run the next policy-required Verification Cell.",
-                },
+            smallestNextVerification:
+              state === "awaiting-expansion"
+                ? {
+                    kind: "expand" as const,
+                    reason: "The Proof pilot passed; run the smallest remaining required coverage.",
+                  }
+                : {
+                    kind: "expand" as const,
+                    reason: "Run the next policy-required Verification Cell.",
+                  },
           }),
     ...(options.publication ? { publication: options.publication } : {}),
   });

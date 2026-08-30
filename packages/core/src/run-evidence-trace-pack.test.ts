@@ -95,13 +95,9 @@ test("Android logs and network evidence are owned by the Run before TracePack ex
   });
 
   try {
-    const handle = await startRunEvidence(
-      job,
-      device,
-      () => undefined,
-      undefined,
-      { foregroundAppResolver: async () => "com.example.app" },
-    );
+    const handle = await startRunEvidence(job, device, () => undefined, undefined, {
+      foregroundAppResolver: async () => "com.example.app",
+    });
     await stopRunEvidence(handle, job, device, () => undefined);
 
     job.status = "ok";
@@ -111,7 +107,10 @@ test("Android logs and network evidence are owned by the Run before TracePack ex
 
     assert.equal(pack.completeness.status, "complete", JSON.stringify(pack.completeness));
     assert.equal(pack.completeness.missing.length, 0);
-    assert.equal(pack.completeness.artifacts?.every((item) => item.status === "embedded"), true);
+    assert.equal(
+      pack.completeness.artifacts?.every((item) => item.status === "embedded"),
+      true,
+    );
     assert.equal(JSON.stringify(pack).includes(providerRoot), false);
     assert.equal(JSON.stringify(pack).includes("network-secret"), false);
     assert.deepEqual(

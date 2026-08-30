@@ -215,7 +215,10 @@ function buttonTree(input: { identifier?: string; label: string }) {
 test("keeps the exact Android AVD identity on loaded raw selector evidence", async () => {
   const tree = rawTree(
     "medium-phone-prove",
-    buttonTree({ identifier: "dev.relay.prooffixture:id/prove_button", label: "Prove interaction" }),
+    buttonTree({
+      identifier: "dev.relay.prooffixture:id/prove_button",
+      label: "Prove interaction",
+    }),
   );
   const variant = {
     id: "medium-phone-ready",

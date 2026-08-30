@@ -334,7 +334,10 @@ export async function runCampaignCheck(
       // because it happens to name the configured terminal screen.
       if (ctx.runtime) {
         ctx.runtime.observation = undefined;
-        markNavigationUnknown(ctx, `Cleanup ${cleanup.recipeId} requires a fresh terminal observation.`);
+        markNavigationUnknown(
+          ctx,
+          `Cleanup ${cleanup.recipeId} requires a fresh terminal observation.`,
+        );
       }
       if (primaryError && isCancel(primaryError) && cleanup.onCancel === "skip") {
         cleanupOutcome = "skipped";

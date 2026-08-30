@@ -1477,15 +1477,19 @@ describe("runRecipeStep campaign check policy", () => {
     );
 
     assert.equal(
-      (job.artifacts.find((artifact) => artifact.kind === "campaign-check-cleanup")?.data as {
-        status?: string;
-      })?.status,
+      (
+        job.artifacts.find((artifact) => artifact.kind === "campaign-check-cleanup")?.data as {
+          status?: string;
+        }
+      )?.status,
       "passed",
     );
     assert.equal(
-      (job.artifacts.find((artifact) => artifact.kind === "campaign-check-result")?.data as {
-        status?: string;
-      })?.status,
+      (
+        job.artifacts.find((artifact) => artifact.kind === "campaign-check-result")?.data as {
+          status?: string;
+        }
+      )?.status,
       "passed",
     );
     assert.equal(currentVerifiedScreen(runtime)?.screenId, terminal);

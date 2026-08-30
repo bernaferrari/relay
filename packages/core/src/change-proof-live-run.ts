@@ -120,9 +120,7 @@ function expectedCleanupChecks(run: PersistedRun): ExpectedCleanupCheck[] | unde
         ]
       : [],
   );
-  return new Set(checks.map(({ checkId }) => checkId)).size === checks.length
-    ? checks
-    : undefined;
+  return new Set(checks.map(({ checkId }) => checkId)).size === checks.length ? checks : undefined;
 }
 
 function targetCaseForRun(

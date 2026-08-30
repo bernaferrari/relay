@@ -164,7 +164,7 @@ function resolveSnapshotTarget(
    * hittability leaves such a row with no semantic path at all and forces the
    * caller back to a recorded coordinate. The title's own bounds still win
    * whenever they are worth pressing.
-  */
+   */
   const activationAncestor = (node: SnapshotNode): SnapshotNode | undefined => {
     // A uniquely matched native control already owns its activation bounds.
     // Walking past a hittable Android Button to its hittable ScrollView turns

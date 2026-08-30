@@ -447,7 +447,7 @@ function registerVerifyChangePrompt(server: McpServer, scope: RelayPromptScope):
           `3. Assemble one exact Verification Plan from the changed source, matching builds, affected Test journeys, target cases, evidence policy, coverage gaps, and residual risk. ${
             commitSha
               ? `Bind it to sourceRevision {vcs: "git", sha: "${commitSha}"}.`
-              : "When verifying committed work, bind it to the authoritative sourceRevision {vcs: \"git\", sha} rather than a manually supplied SHA."
+              : 'When verifying committed work, bind it to the authoritative sourceRevision {vcs: "git", sha} rather than a manually supplied SHA.'
           } Start it with relay_proof_start, then retain its proof id and version. Use relay_proof_list to find existing project Proofs before starting a duplicate.`,
           "4. Inspect the server-owned record with relay_proof_inspect before every decision. A human reviewer must approve the frozen plan with relay_proof_plan_approve and confirm: true; agents must not approve their own plan. Use relay_proof_continue with the exact version for a bounded plan revision, review request, or return to planning.",
           "",
