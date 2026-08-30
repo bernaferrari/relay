@@ -26,6 +26,13 @@ test("automatic evidence preserves causal frames without duplicating passive ste
     }),
     [],
   );
+  assert.deepEqual(
+    automaticEvidencePhases({
+      kind: "module",
+      recipeId: "settings-language-checkpoint",
+    }),
+    ["after"],
+  );
   assert.deepEqual(automaticEvidencePhases({ kind: "sleep", ms: 500 }), []);
   assert.deepEqual(automaticEvidencePhases({ kind: "screenshot" }), []);
   assert.deepEqual(

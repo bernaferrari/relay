@@ -13,10 +13,17 @@ export function automaticEvidencePhases(step: RecipeStep): readonly ("before" | 
     case "network":
     case "script":
     case "flow":
-    case "module":
     case "repeat":
     case "branch":
       return [];
+    case "module":
+      // A module executes nested recipe steps inside one outer TraceStep. The
+      // nested runner updates the verified runtime observation, but it does
+      // not append that observation to the outer Run's evidence channels.
+      // Close the reusable Test boundary with one resulting state so a
+      // checkpoint-only module can satisfy mandatory screenshot/UI-tree
+      // evidence without duplicating every nested action.
+      return ["after"];
     case "app":
       // A matrix's locale/open wrapper is followed by an explicit mapped
       // screen assertion and screenshot. Capturing both sides here duplicates
