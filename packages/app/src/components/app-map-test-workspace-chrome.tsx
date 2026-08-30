@@ -33,29 +33,23 @@ export function TestWorkspaceBar(props: {
   status: string;
   statusTone: TestWorkspaceStatusTone;
   stepCount?: number;
-  railOpen: Record<TestRailKind, boolean>;
-  onToggleRail: (rail: TestRailKind) => void;
   switcher: JSX.Element;
   children: JSX.Element;
 }) {
   return (
     <header
-      class="flex min-h-11 flex-wrap items-center gap-2 border-b border-border-weak-base bg-surface-raised-stronger-non-alpha px-2"
+      class="flex min-h-14 items-center gap-2 border-b border-border-weak-base bg-surface-raised-stronger-non-alpha px-3"
       data-test-workspace-bar
     >
-      <RailToggle rail="steps" open={props.railOpen.steps} onToggle={props.onToggleRail} />
       <div class="flex min-w-0 flex-1 items-center gap-2">
         {props.switcher}
         <Show when={props.stepCount !== undefined}>
-          <span class="shrink-0 text-caption tabular-nums text-text-weak max-[560px]:hidden">
+          <span class="shrink-0 text-caption tabular-nums text-text-weak max-[900px]:hidden">
             {props.stepCount} {props.stepCount === 1 ? "step" : "steps"}
           </span>
         </Show>
       </div>
-      <div
-        class="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2 max-[900px]:basis-full"
-        aria-live="polite"
-      >
+      <div class="flex min-w-0 shrink-0 items-center justify-end gap-2" aria-live="polite">
         <span class="flex min-w-0 items-center gap-1.5 max-[720px]:hidden">
           <span
             class={cn("size-1.5 shrink-0 rounded-full", TONE_DOT[props.statusTone])}
@@ -64,33 +58,8 @@ export function TestWorkspaceBar(props: {
           <span class="truncate text-caption text-text-base">{props.status}</span>
         </span>
         {props.children}
-        <RailToggle rail="device" open={props.railOpen.device} onToggle={props.onToggleRail} />
       </div>
     </header>
-  );
-}
-
-function RailToggle(props: {
-  rail: TestRailKind;
-  open: boolean;
-  onToggle: (rail: TestRailKind) => void;
-}) {
-  const label = () =>
-    props.rail === "steps"
-      ? `${props.open ? "Hide" : "Show"} coverage`
-      : `${props.open ? "Hide" : "Show"} device`;
-  return (
-    <button
-      type="button"
-      data-test-rail-toggle={props.rail}
-      class={cn(productIconButton, props.open && "bg-surface-base-active text-text-strong")}
-      aria-label={label()}
-      aria-pressed={props.open}
-      data-tip={`${label()} · ${props.rail === "steps" ? "[" : "]"}`}
-      onClick={() => props.onToggle(props.rail)}
-    >
-      <Icon name={props.rail === "steps" ? "panel-left" : "smartphone"} size={16} />
-    </button>
   );
 }
 
@@ -146,6 +115,7 @@ export function TestSwitcher(props: {
   creating: boolean;
   onSelect: (id: string) => void;
   onRename: (name: string) => void;
+  onSource: () => void;
   onCreate: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
@@ -232,6 +202,7 @@ export function TestSwitcher(props: {
 
       <TestOverflow
         disabled={props.busy || !props.selectedTestId}
+        onSource={props.onSource}
         onRename={() => setRenaming(true)}
         onDuplicate={props.onDuplicate}
         onDelete={props.onDelete}
@@ -325,6 +296,7 @@ export function TestSwitcher(props: {
 
 function TestOverflow(props: {
   disabled: boolean;
+  onSource: () => void;
   onRename: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
@@ -346,6 +318,17 @@ function TestOverflow(props: {
         <Icon name="more" size={15} />
       </summary>
       <div class={cn(popover, "absolute top-[calc(100%+4px)] left-0 grid w-44")}>
+        <button
+          type="button"
+          class={menuItem}
+          disabled={props.disabled}
+          onClick={(event) => {
+            event.currentTarget.closest("details")?.removeAttribute("open");
+            props.onSource();
+          }}
+        >
+          <Icon name="edit" size={13} /> Edit Source
+        </button>
         <button
           type="button"
           class={menuItem}

@@ -1,11 +1,7 @@
-import { For, Show, createSignal } from "solid-js";
+import { Show, createSignal } from "solid-js";
 import { Button } from "@relay/ui/button";
 import { cn } from "../lib/cn";
-import type {
-  FirstTestChecklistState,
-  FirstTestStage,
-  FirstTestTargetStatus,
-} from "../lib/onboarding";
+import type { FirstTestChecklistState, FirstTestTargetStatus } from "../lib/onboarding";
 import { Icon } from "./icon";
 
 type TargetCheck = {
@@ -34,28 +30,6 @@ export type FirstTestChecklistProps = {
   onExportYaml: () => void;
   onDismiss: (reason: "dismissed" | "completed") => void;
 };
-
-const STEPS: Array<{ id: FirstTestStage; label: string }> = [
-  { id: "target", label: "Connect Device" },
-  { id: "capture", label: "Capture start" },
-  { id: "author", label: "Create a Test" },
-  { id: "run", label: "Run and review" },
-];
-
-function stepIsDone(state: FirstTestChecklistState, step: FirstTestStage): boolean {
-  if (step === "target") return state.targetReady;
-  if (step === "capture") return state.screenSaved;
-  if (step === "author") return state.testCreated && state.testReady;
-  return Boolean(state.completedRun);
-}
-
-function stepStatus(
-  state: FirstTestChecklistState,
-  step: FirstTestStage,
-): "done" | "current" | "upcoming" {
-  if (stepIsDone(state, step)) return "done";
-  return state.stage === step ? "current" : "upcoming";
-}
 
 function targetCheckTone(check: TargetCheck): string {
   if (check.state === "passed") return "text-[var(--text-success-base)]";
@@ -133,57 +107,6 @@ export function FirstTestChecklist(props: FirstTestChecklistProps) {
           <Icon name="x" size={15} />
         </button>
       </header>
-
-      <ol
-        class={cn(
-          "mt-4 mb-0 grid list-none gap-1 p-0",
-          props.rail ? "grid-cols-1 gap-1.5" : "grid-cols-4",
-        )}
-        aria-label="First useful test progress"
-      >
-        <For each={STEPS}>
-          {(step) => {
-            const status = () => stepStatus(props.state, step.id);
-            return (
-              <li class="min-w-0" classList={{ "flex items-center gap-2": props.rail }}>
-                <div class="flex items-center gap-1">
-                  <span
-                    class="grid size-5 shrink-0 place-items-center rounded-full border text-micro"
-                    classList={{
-                      "border-[var(--icon-success-base)] bg-[var(--surface-success-weak)] text-[var(--icon-success-base)]":
-                        status() === "done",
-                      "border-[var(--border-focus)] bg-[var(--surface-base-hover)] text-[var(--text-strong)]":
-                        status() === "current",
-                      "border-[var(--map-divider)] text-[var(--text-weaker)]":
-                        status() === "upcoming",
-                    }}
-                    aria-hidden="true"
-                  >
-                    <Show when={status() === "done"} fallback={STEPS.indexOf(step) + 1}>
-                      <Icon name="check" size={12} />
-                    </Show>
-                  </span>
-                  <Show when={STEPS.indexOf(step) < STEPS.length - 1}>
-                    <span
-                      class="h-px min-w-0 flex-1 bg-[var(--map-divider)]"
-                      classList={{ "bg-[var(--icon-success-base)]": status() === "done" }}
-                    />
-                  </Show>
-                </div>
-                <span
-                  class={cn("truncate text-micro font-medium", props.rail ? "" : "mt-1.5 block")}
-                  classList={{
-                    "text-[var(--text-strong)]": status() !== "upcoming",
-                    "text-[var(--text-weaker)]": status() === "upcoming",
-                  }}
-                >
-                  {step.label}
-                </span>
-              </li>
-            );
-          }}
-        </For>
-      </ol>
 
       <div class="mt-4 border-t border-[var(--map-divider)] pt-4">
         <Show when={props.state.stage === "target"}>

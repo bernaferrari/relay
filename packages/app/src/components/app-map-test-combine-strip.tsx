@@ -23,6 +23,7 @@ import {
   repeatCaseLabel as presentRepeatCaseLabel,
   repeatStatusLabel,
 } from "../lib/app-map-test-repeat-presentation";
+import { AppMapTestVariableEmptyState } from "./app-map-test-variable-empty-state";
 import {
   applyableVariables,
   projectTestCombineStrip,
@@ -367,17 +368,7 @@ export function AppMapTestCombineStrip(props: AppMapTestCombineStripProps) {
   return (
     <Show
       when={candidates().length}
-      fallback={
-        <section
-          class="grid gap-1 rounded-xl border border-border-weak-base bg-background-base px-3 py-3"
-          data-app-map-test-combine-strip
-        >
-          <p class={cn(testEditorSection, "m-0")}>Repeat this Test</p>
-          <p class={cn(testEditorHint, "m-0")}>
-            Add a repeat dimension such as Language, Theme, or Account, then choose its values here.
-          </p>
-        </section>
-      }
+      fallback={<AppMapTestVariableEmptyState onCreate={props.onCreateVariable} />}
     >
       <section
         class="grid gap-3 rounded-xl border border-border-weak-base bg-background-base p-3"

@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import type http from "node:http";
 import {
   advanceChangeVerification,
@@ -36,6 +35,10 @@ import {
 } from "@relay/protocol";
 import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
 import { recordAudit, type RequestContext } from "./security.js";
+import {
+  changeVerificationScope as scopeOf,
+  scopedChangeProofId as scopedProofId,
+} from "./change-verification-route-identity.js";
 import {
   processTerminalChangeProofPublication,
   type ChangeProofTerminalPublisher,
@@ -83,21 +86,6 @@ const defaultRuntime: ChangeVerificationRouteRuntime = {
   caseResultFromRun: changeProofCaseResultFromPersistedRun,
   executionCoordinator: defaultProofExecutionCoordinator,
 };
-
-function scopeOf(scope: RequestContext): ChangeVerificationScope {
-  return { organizationId: scope.organizationId, projectId: scope.projectId };
-}
-
-function scopedProofId(scope: RequestContext, requestId: string): string {
-  const digest = createHash("sha256")
-    .update(scope.organizationId, "utf8")
-    .update("\0")
-    .update(scope.projectId, "utf8")
-    .update("\0")
-    .update(requestId, "utf8")
-    .digest("hex");
-  return `proof_${digest}`;
-}
 
 function sameValue(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
@@ -732,6 +720,11 @@ export async function handleChangeVerificationRoute(input: {
         });
       }
     } else {
+      if (["running-pilot", "awaiting-expansion", "running"].includes(current.state)) {
+        throw new HttpError(409, "Cancel the active Proof execution before changing its plan", {
+          code: "PROOF_EXECUTION_ACTIVE",
+        });
+      }
       proof =
         body.action === "revise-plan"
           ? await advanceProof(runtime, current, {
@@ -782,6 +775,22 @@ export async function handleChangeVerificationRoute(input: {
       json(input.response, 200, { proof: current, receipt: replay });
       return true;
     }
+    if (current.version !== body.expectedVersion) {
+      routeError(
+        new ChangeVerificationConflictError("PROOF_STALE", "Change Verification version is stale"),
+      );
+    }
+    // Fence the durable execution before publishing cancellation. The runner
+    // rechecks this record immediately before target dispatch, so a cancelled
+    // Proof cannot admit a new mutation in the route/coordinator gap.
+    await runtime.executionCoordinator.cancel({
+      ...scope,
+      proofId: current.id,
+      actorId,
+      reason: body.reason,
+      at,
+      transitionProof: false,
+    });
     const proof = await advanceProof(runtime, current, {
       expectedVersion: body.expectedVersion,
       state: "cancelled",
@@ -795,16 +804,6 @@ export async function handleChangeVerificationRoute(input: {
         kind: "none",
         reason: "This Proof was explicitly cancelled and cannot authorize merge.",
       },
-    });
-    // Keep coordinator cancellation durable even when the execution worker is
-    // between cells. The Proof mutation above remains the authoritative
-    // lifecycle transition; the coordinator records the cancellation fence.
-    await runtime.executionCoordinator.cancel({
-      ...scope,
-      proofId: proof.id,
-      actorId,
-      reason: body.reason,
-      at,
     });
     recordAudit(input.scope, { action: "proof.cancel", resource: proof.id, result: "allow" });
     json(input.response, 200, mutationOutput(proof));
@@ -836,6 +835,12 @@ export async function handleChangeVerificationRoute(input: {
         receipt: replay,
       });
       return true;
+    }
+    const execution = await runtime.executionCoordinator.read(scope, current.id);
+    if (execution && !["completed", "cancelled", "uncertain"].includes(execution.status)) {
+      throw new HttpError(409, "Cancel the active Proof execution before rerunning its cases", {
+        code: "PROOF_EXECUTION_ACTIVE",
+      });
     }
     try {
       const result = await runtime.supersede({

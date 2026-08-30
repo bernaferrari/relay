@@ -82,6 +82,7 @@ export function StudioAuthoringWorkspace(props: {
             onOpenRun={props.onOpenRun}
             onChooseTarget={props.onOpenTargets}
             onOpenTarget={showLiveDevice}
+            onOpenVariables={props.onOpenVariables}
             onRecord={onboarding.checklistProps().onRecord}
           />
         </Suspense>

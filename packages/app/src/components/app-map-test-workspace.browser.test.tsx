@@ -668,13 +668,22 @@ test("without an applyable Variable the strip tells the operator to create one",
     preflightLocalCampaignAdmission: async () => ({}),
   };
 
-  const dispose = render(() => <AppMapTestWorkspace testId={scenario.id} />, root);
+  const openVariables = vi.fn();
+  const dispose = render(
+    () => <AppMapTestWorkspace testId={scenario.id} onOpenVariables={openVariables} />,
+    root,
+  );
   try {
     await settle();
     expect(root.textContent).not.toContain("Run this Test across languages");
     expect(root.textContent).not.toMatch(/run across languages/i);
     expect(root.querySelector("[data-app-map-test-combine-strip]")).not.toBeNull();
-    expect(root.textContent).toContain("Add a repeat dimension");
+    const addVariable = [...root.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+      button.textContent?.includes("Add a Variable"),
+    )!;
+    expect(addVariable.disabled).toBe(false);
+    addVariable.click();
+    expect(openVariables).toHaveBeenCalledOnce();
   } finally {
     dispose();
     root.remove();
@@ -886,11 +895,11 @@ test("Source edits the open canonical Test and invalid YAML cannot queue a save"
 
   const dispose = render(() => <AppMapTestWorkspace testId={scenario.id} />, root);
   await settle();
-  const sourceButton = [...root.querySelectorAll<HTMLButtonElement>("button")].find(
-    (button) => button.textContent?.trim() === "Source",
-  )!;
-  sourceButton.focus();
+  const sourceButton = root.querySelector<HTMLElement>("summary[aria-label='Test options']")!;
   sourceButton.click();
+  [...root.querySelectorAll<HTMLButtonElement>("button")]
+    .find((button) => button.textContent?.trim() === "Edit Source")!
+    .click();
   await settle();
   const editor = root.querySelector<HTMLTextAreaElement>("#test-source-editor")!;
   expect(editor.value).toContain("kind: authoring-intent");
@@ -975,8 +984,9 @@ test("Source keeps advanced steps intact and directs authors back to the advance
 
   const dispose = render(() => <AppMapTestWorkspace testId={advanced.id} />, root);
   await settle();
+  root.querySelector<HTMLElement>("summary[aria-label='Test options']")!.click();
   [...root.querySelectorAll<HTMLButtonElement>("button")]
-    .find((button) => button.textContent?.trim() === "Source")!
+    .find((button) => button.textContent?.trim() === "Edit Source")!
     .click();
   await settle();
   expect(root.textContent).toContain("Use the advanced Test editor");
@@ -1576,7 +1586,7 @@ test("the primary Test action compiles, runs, cancels, and opens its exact resul
   await settle();
   expect(root.textContent).toContain("Ready to run");
   const runtimeProfile = root.querySelector<HTMLSelectElement>("[data-test-runtime-profile]")!;
-  expect(root.querySelector<HTMLElement>("[data-test-workspace-bar]")?.className).toContain(
+  expect(root.querySelector<HTMLElement>("[data-test-workspace-bar]")?.className).not.toContain(
     "flex-wrap",
   );
   expect(runtimeProfile.closest("label")?.className).toContain("min-h-11");
@@ -1755,7 +1765,7 @@ test("keeps a sole foreign evidence profile visible at compact width", async () 
     "Evidence only: Design iPad · English · ipad-en-US",
   );
   expect(root.textContent).toContain("No saved evidence profile matches this target");
-  expect(root.querySelector<HTMLElement>("[data-test-workspace-bar]")?.className).toContain(
+  expect(root.querySelector<HTMLElement>("[data-test-workspace-bar]")?.className).not.toContain(
     "flex-wrap",
   );
 
@@ -2194,16 +2204,16 @@ test("a narrow workspace keeps the device on the right edge and never below the 
   expect(root.querySelector("[data-test-rail-strip='device']")).toBeNull();
 
   // Collapsing the device leaves its edge strip behind rather than moving it.
-  root.querySelector<HTMLButtonElement>("[data-test-rail-toggle='device']")!.click();
+  root.querySelector<HTMLButtonElement>("button[aria-label='Hide device']")!.click();
   await settle();
   expect(root.querySelector("[data-test-rail-strip='device']")).not.toBeNull();
   expect(tracks()).toHaveLength(3);
-  root.querySelector<HTMLButtonElement>("[data-test-rail-toggle='device']")!.click();
+  root.querySelector<HTMLButtonElement>("[data-test-rail-strip='device'] button")!.click();
   await settle();
 
   // Opening Steps here overlays the editor on the left edge; it does not push the
   // device anywhere, so the grid still has exactly three columns.
-  root.querySelector<HTMLButtonElement>("[data-test-rail-toggle='steps']")!.click();
+  root.querySelector<HTMLButtonElement>("[data-test-rail-strip='steps'] button")!.click();
   await settle();
   expect(tracks()).toHaveLength(3);
   expect(root.querySelector("#test-steps-tab")?.getAttribute("aria-selected")).toBe("true");
@@ -2216,7 +2226,9 @@ test("a narrow workspace keeps the device on the right edge and never below the 
   stepSearch.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
   await settle();
   expect(root.querySelector("[data-test-rail-strip='steps']")).not.toBeNull();
-  expect(document.activeElement?.getAttribute("data-test-rail-toggle")).toBe("steps");
+  expect(
+    document.activeElement?.closest("[data-test-rail-strip]")?.getAttribute("data-test-rail-strip"),
+  ).toBe("steps");
   layout.dispatchEvent(new KeyboardEvent("keydown", { key: "/", bubbles: true }));
   await settle();
   expect(document.activeElement?.id).toBe("test-step-search");

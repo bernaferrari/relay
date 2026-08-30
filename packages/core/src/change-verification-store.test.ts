@@ -428,6 +428,46 @@ test("stale supersession rolls back the replacement Proof atomically", async () 
   });
 });
 
+test("active Proofs cannot be superseded into a competing affected-case rerun", async () => {
+  await withStateRoot(async () => {
+    const created = await createChangeVerification(
+      createInput({ builds: buildsFor(), selection: selection() }),
+    );
+    const ready = await advanceChangeVerification({
+      ...scope,
+      proofId: created.id,
+      expectedVersion: created.version,
+      state: "ready",
+      actorId: "human:reviewer",
+      requestId: "request-active-approve",
+      requestDigest: digest,
+      action: "approve-plan",
+      at: 200,
+      planApproval: planApproval(),
+    });
+    await assert.rejects(
+      supersedeChangeVerification({
+        ...scope,
+        proofId: ready.id,
+        expectedVersion: ready.version,
+        actorId: "agent:coder",
+        requestId: "request-active-rerun",
+        requestDigest: digest,
+        at: 300,
+        replacement: createInput({
+          id: "competing-proof",
+          change: { ...createInput().change, baseSha: headSha, headSha: repairedHeadSha },
+          at: 300,
+        }),
+      }),
+      (error) =>
+        error instanceof ChangeVerificationConflictError && error.code === "PROOF_IMMUTABLE",
+    );
+    assert.equal(await readChangeVerification(scope, "competing-proof"), undefined);
+    assert.equal((await readChangeVerification(scope, ready.id))?.state, "ready");
+  });
+});
+
 test("recorded runs, evidence, and the first causal failure cannot be rewritten", async () => {
   await withStateRoot(async () => {
     const created = await createChangeVerification(

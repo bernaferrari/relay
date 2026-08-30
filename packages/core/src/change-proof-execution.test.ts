@@ -471,3 +471,34 @@ test("cancellation is a durable fence before the coordinator dispatches the next
     assert.equal((await readChangeVerification(scope, approved.id))?.state, "cancelled");
   });
 });
+
+test("cancellation racing the dispatch fence wins before target control", async () => {
+  await withStateRoot(async () => {
+    const approved = await readyProof();
+    const input = submit(approved);
+    let coordinator!: ReturnType<typeof createChangeProofExecutionCoordinator>;
+    coordinator = createChangeProofExecutionCoordinator({
+      now: () => 300,
+      workerId: "worker:dispatch-race",
+      readRun: async (id) => fakeRun(id),
+      projectRun: async ({ run }) => projectedPass((run as { id: string }).id),
+      onDispatchFencePersisted: async () => {
+        await coordinator.cancel({
+          ...scope,
+          proofId: approved.id,
+          actorId: "runner:proof-test",
+          reason: "Cancel at the final pre-dispatch fence.",
+          at: 303,
+        });
+      },
+    });
+    let dispatches = 0;
+    const result = await coordinator.run(input, async () => {
+      dispatches += 1;
+      return { runId: "must-not-dispatch", wait: async () => fakeRun("must-not-dispatch") };
+    });
+    assert.equal(result.status, "cancelled");
+    assert.equal(dispatches, 0);
+    assert.equal((await readChangeVerification(scope, approved.id))?.state, "cancelled");
+  });
+});

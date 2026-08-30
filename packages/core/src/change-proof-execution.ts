@@ -272,7 +272,10 @@ export function createChangeProofExecutionCoordinator(
       });
       const dispatch = activeDispatches.get(existing.id);
       if (dispatch?.cancel) await Promise.resolve(dispatch.cancel()).catch(() => undefined);
-      const current = await readChangeVerification(input, input.proofId);
+      const current =
+        input.transitionProof !== false
+          ? await readChangeVerification(input, input.proofId)
+          : undefined;
       if (
         current &&
         ![
@@ -353,6 +356,7 @@ export function createChangeProofExecutionCoordinator(
           readRun,
           projectRun,
           publication: configured.publication,
+          onDispatchFencePersisted: configured.onDispatchFencePersisted,
           activeDispatches,
         };
         return await runOne(admitted, input, options, executor);
@@ -375,6 +379,10 @@ export type ChangeProofExecutionCoordinator = {
       actorId: string;
       reason: string;
       at?: number;
+      /** Route-owned lifecycle mutations fence execution first, then persist
+       * their caller-bound receipt. Direct coordinator callers keep the
+       * default lifecycle transition. */
+      transitionProof?: boolean;
     },
   ): Promise<ChangeProofExecutionRecord | undefined>;
   reconcile(scope?: ChangeVerificationScope, at?: number): Promise<ChangeProofExecutionRecord[]>;

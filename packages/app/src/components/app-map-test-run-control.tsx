@@ -131,7 +131,7 @@ export function AppMapTestRunControl(props: TestRunControlProps) {
       >
         {status()}
       </span>
-      <div class="flex shrink-0 items-center justify-self-end gap-2">
+      <div class="flex shrink-0 items-center justify-self-end gap-1.5">
         <details
           class="group relative shrink-0"
           data-test-run-options
@@ -275,7 +275,7 @@ export function AppMapTestRunControl(props: TestRunControlProps) {
         <Button
           data-test-run-primary
           size="md"
-          class="min-w-[11.5rem] shrink-0 justify-center"
+          class="min-w-[11.5rem] shrink-0 justify-center max-[760px]:min-w-36"
           variant={active() ? "danger" : "primary"}
           disabled={busy() || (Boolean(props.blockedReason) && !props.onResolveBlocked)}
           aria-busy={busy()}

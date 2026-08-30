@@ -88,6 +88,9 @@ export type ChangeProofExecutionCoordinatorOptions = {
    * defaults to changeProofCaseResultFromPersistedRun; no caller-supplied
    * verdict is accepted by the public operation. */
   projectRun?: (input: { proof: unknown; run: PersistedRun }) => Promise<ChangeProofCaseResult>;
+  /** Deterministic test/embedding seam after `dispatching` is durable and
+   * before target control. Production leaves it undefined. */
+  onDispatchFencePersisted?: (record: ChangeProofExecutionRecord) => Promise<void> | void;
   publication?: ChangeProofPublicationRequest;
 };
 

@@ -9,6 +9,7 @@ export type AppMapTestCombineStripProps = {
   onChooseTarget?: () => void;
   onOpenTarget?: () => void;
   onOpenRun?: (runId: string) => void;
+  onCreateVariable?: () => void;
 };
 
 export function repeatStatusLabel(status: RepeatTestSnapshot["results"][number]["status"]): string {

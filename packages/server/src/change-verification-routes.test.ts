@@ -4,7 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { ApiError, RelayClient } from "@relay/client";
-import { createChangeProofExecutionCoordinator, resetControlDatabaseCache } from "@relay/core";
+import {
+  advanceChangeVerification,
+  createChangeProofExecutionCoordinator,
+  resetControlDatabaseCache,
+} from "@relay/core";
 import type { ChangeProofCaseResult, ChangeVerification, OperationInput } from "@relay/protocol";
 import type { PersistedRun } from "@relay/core";
 import { startServer } from "./index.js";
@@ -261,17 +265,61 @@ test("Proof routes share one scoped, idempotent, versioned lifecycle", async () 
       (error) => error instanceof ApiError && error.status === 409,
     );
 
+    await assert.rejects(
+      relay.invoke(
+        "proof.rerun-affected",
+        {
+          proofId: approved.proof.id,
+          expectedVersion: approved.proof.version,
+          change: {
+            ...approved.proof.change,
+            baseSha: headSha,
+            headSha: repairedHeadSha,
+          },
+        },
+        { requestId: "active-rerun-request" },
+      ),
+      (error) =>
+        error instanceof ApiError && error.status === 409 && error.body.code === "PROOF_IMMUTABLE",
+    );
+    const running = await advanceChangeVerification({
+      organizationId,
+      projectId,
+      proofId: approved.proof.id,
+      expectedVersion: approved.proof.version,
+      state: "running-pilot",
+      actorId: "agent:relay",
+      requestId: "lifecycle-start-pilot",
+      requestDigest: digest,
+      action: "start-pilot",
+      at: Date.now(),
+      runIds: ["run-lifecycle"],
+      evidenceDigests: [digest],
+    });
+    const completed = await advanceChangeVerification({
+      organizationId,
+      projectId,
+      proofId: running.id,
+      expectedVersion: running.version,
+      state: "rejected",
+      actorId: "agent:relay",
+      requestId: "lifecycle-reject",
+      requestDigest: digest,
+      action: "record-decision",
+      at: Date.now() + 1,
+    });
+
     const rerun = await relay.invoke(
       "proof.rerun-affected",
       {
-        proofId: approved.proof.id,
-        expectedVersion: approved.proof.version,
+        proofId: completed.id,
+        expectedVersion: completed.version,
         change: {
-          ...approved.proof.change,
+          ...completed.change,
           baseSha: headSha,
           headSha: repairedHeadSha,
         },
-        policy: approved.proof.policy,
+        policy: completed.policy,
       },
       { requestId: "rerun-request" },
     );
@@ -283,10 +331,10 @@ test("Proof routes share one scoped, idempotent, versioned lifecycle", async () 
       relay.invoke(
         "proof.rerun-affected",
         {
-          proofId: approved.proof.id,
-          expectedVersion: approved.proof.version,
+          proofId: completed.id,
+          expectedVersion: completed.version,
           change: {
-            ...approved.proof.change,
+            ...completed.change,
             baseSha: headSha,
             headSha: "4".repeat(40),
           },
@@ -768,6 +816,119 @@ test("proof.run is a durable server operation and proof.inspect recovers its exe
     const inspected = await relay.invoke("proof.inspect", { proofId: ran.proof.id });
     assert.deepEqual(inspected.execution, ran.execution);
   } finally {
+    await server.close();
+    resetControlDatabaseCache();
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("proof.cancel fences an active route execution before target dispatch", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-proof-cancel-route-"));
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = root;
+  resetControlDatabaseCache();
+  let dispatches = 0;
+  let signalFence!: () => void;
+  const fence = new Promise<void>((resolve) => (signalFence = resolve));
+  let releaseFence!: () => void;
+  const release = new Promise<void>((resolve) => (releaseFence = resolve));
+  const coordinator = createChangeProofExecutionCoordinator({
+    workerId: "worker:cancel-route-test",
+    onDispatchFencePersisted: async () => {
+      signalFence();
+      await release;
+    },
+  });
+  const server = await startServer({
+    host: "127.0.0.1",
+    port: 0,
+    proofRouteRuntime: {
+      executionCoordinator: coordinator,
+      executeCell: async () => {
+        dispatches += 1;
+        return { runId: "must-not-run", wait: async () => ({ id: "must-not-run" }) as never };
+      },
+    },
+  });
+  const relay = client(server.port);
+  const reviewer = client(server.port, projectId, "human");
+  try {
+    const created = await relay.invoke("proof.start", startInput(), {
+      requestId: "cancel-route-start",
+    });
+    const approved = await reviewer.invoke(
+      "proof.plan.approve",
+      {
+        proofId: created.proof.id,
+        expectedVersion: created.proof.version,
+        decisionId: "cancel-route-approval",
+        reason: "The exact target and build are approved.",
+        confirm: true,
+      },
+      { requestId: "cancel-route-approval" },
+    );
+    await relay.invoke(
+      "proof.run",
+      { proofId: approved.proof.id, expectedVersion: approved.proof.version, wait: false },
+      { requestId: "cancel-route-run" },
+    );
+    await fence;
+    const current = await relay.invoke("proof.inspect", { proofId: approved.proof.id });
+    await assert.rejects(
+      relay.invoke(
+        "proof.continue",
+        {
+          proofId: current.proof.id,
+          expectedVersion: current.proof.version,
+          action: "request-plan-review",
+          reason: "Review should not race the active target execution.",
+        },
+        { requestId: "cancel-route-review" },
+      ),
+      (error) =>
+        error instanceof ApiError &&
+        error.status === 409 &&
+        error.body.code === "PROOF_EXECUTION_ACTIVE",
+    );
+    await assert.rejects(
+      relay.invoke(
+        "proof.rerun-affected",
+        {
+          proofId: current.proof.id,
+          expectedVersion: current.proof.version,
+          change: {
+            ...current.proof.change,
+            baseSha: headSha,
+            headSha: repairedHeadSha,
+          },
+        },
+        { requestId: "cancel-route-rerun" },
+      ),
+      (error) =>
+        error instanceof ApiError &&
+        error.status === 409 &&
+        error.body.code === "PROOF_EXECUTION_ACTIVE",
+    );
+    const cancelled = await relay.invoke(
+      "proof.cancel",
+      {
+        proofId: current.proof.id,
+        expectedVersion: current.proof.version,
+        reason: "Stop before target dispatch.",
+        confirm: true,
+      },
+      { requestId: "cancel-route-cancel" },
+    );
+    assert.equal(cancelled.proof.state, "cancelled");
+    releaseFence();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const inspected = await relay.invoke("proof.inspect", { proofId: approved.proof.id });
+    assert.equal(inspected.execution?.status, "cancelled");
+    assert.equal(dispatches, 0);
+  } finally {
+    releaseFence();
     await server.close();
     resetControlDatabaseCache();
     if (previous === undefined) delete process.env.RELAY_STATE_DIR;

@@ -34,6 +34,7 @@ export type ChangeProofExecutionRunOptions = {
   readRun: (id: string) => Promise<PersistedRun | null>;
   projectRun: (input: { proof: unknown; run: PersistedRun }) => Promise<ChangeProofCaseResult>;
   publication?: ChangeProofPublicationRequest;
+  onDispatchFencePersisted?: (record: ChangeProofExecutionRecord) => Promise<void> | void;
   activeDispatches: Map<string, ActiveDispatch>;
 };
 
@@ -290,6 +291,28 @@ export async function runOne(
           updateGuard(record),
         ),
       );
+      await options.onDispatchFencePersisted?.(record);
+      // Re-read after the durable `dispatching` fence. Cancellation can land
+      // while that write is waiting for the control-store transaction; it
+      // must win before the executor crosses target control.
+      const admittedDispatch = await readExecution(submitInput, record.proofId);
+      if (!admittedDispatch) {
+        record = await markUncertain(
+          record,
+          "The execution record disappeared before cell dispatch.",
+          options.now(),
+          options,
+          submitInput,
+        );
+        break;
+      }
+      if (["completed", "cancelled", "uncertain"].includes(admittedDispatch.status)) {
+        return admittedDispatch;
+      }
+      if (!admittedDispatch.lease || admittedDispatch.lease.token !== record.lease?.token) {
+        return admittedDispatch;
+      }
+      record = admittedDispatch;
       let dispatched: ChangeProofCellDispatch;
       try {
         dispatched = await executor({ execution: record, cell: currentCell.cell });

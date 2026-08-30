@@ -489,10 +489,10 @@ export async function supersedeChangeVerification(
         "Change Verification version is stale",
       );
     }
-    if (current.state === "superseded") {
+    if (!["proved", "rejected", "needs-review", "insufficient-evidence"].includes(current.state)) {
       throw new ChangeVerificationConflictError(
         "PROOF_IMMUTABLE",
-        "Change Verification is already superseded",
+        "Only a completed Proof can be superseded for an affected-case rerun",
       );
     }
     if (

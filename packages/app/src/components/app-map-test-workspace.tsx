@@ -49,6 +49,7 @@ export function AppMapTestWorkspace(props: {
   onOpenRun?: (runId: string) => void;
   onChooseTarget?: () => void;
   onOpenTarget?: () => void;
+  onOpenVariables?: () => void;
   onRecord?: () => void;
   workspaceController?: WorkspaceController;
 }) {
@@ -243,19 +244,20 @@ export function AppMapTestWorkspace(props: {
     await server.refreshAppMaps();
   }
 
+  function closeSource(): void {
+    setSourceOpen(false);
+    queueMicrotask(() =>
+      document.querySelector<HTMLElement>("summary[aria-label='Test options']")?.focus(),
+    );
+  }
+
   /** Escape closes a floating rail and hands focus back to the toggle that opened it. */
   function dismissOverlayRail(): void {
     const rail = (["steps", "device"] as const).find((kind) => railView()[kind] === "overlay");
     if (!rail) return;
-    const trigger = document.querySelector<HTMLElement>(`[data-test-rail-toggle="${rail}"]`);
-    trigger?.focus();
     setRailOverride((current) => ({ ...current, [rail]: false }));
     queueMicrotask(() =>
-      document.querySelector<HTMLElement>(`[data-test-rail-toggle="${rail}"]`)?.focus(),
-    );
-    setTimeout(
-      () => document.querySelector<HTMLElement>(`[data-test-rail-toggle="${rail}"]`)?.focus(),
-      0,
+      document.querySelector<HTMLElement>(`[data-test-rail-strip="${rail}"] button`)?.focus(),
     );
   }
 
@@ -440,8 +442,6 @@ export function AppMapTestWorkspace(props: {
                 : "neutral"
         }
         stepCount={draft() ? scenarioStepCount(draft()!.steps) : undefined}
-        railOpen={railOpen()}
-        onToggleRail={toggleRail}
         switcher={
           <TestSwitcher
             tests={tests()}
@@ -459,6 +459,7 @@ export function AppMapTestWorkspace(props: {
               if (!test || name === test.name) return;
               queueSave({ ...test, name, updatedAt: Date.now() });
             }}
+            onSource={() => setSourceOpen(true)}
             onCreate={() => void createTest()}
             onDuplicate={() => void duplicateTest()}
             onDelete={deleteTest}
@@ -466,16 +467,6 @@ export function AppMapTestWorkspace(props: {
         }
       >
         <Show when={draft()}>
-          <Button
-            variant="secondary"
-            size="sm"
-            class="shrink-0"
-            aria-haspopup="dialog"
-            disabled={saveState() !== "saved"}
-            onClick={() => setSourceOpen(true)}
-          >
-            <Icon name="edit" size={13} /> Source
-          </Button>
           <Show when={reviewableTestProposals().length > 0}>
             <Button
               variant="secondary"
@@ -623,6 +614,7 @@ export function AppMapTestWorkspace(props: {
                           onChooseTarget={chooseTarget}
                           onOpenTarget={showDevice}
                           onOpenRun={openRun}
+                          onCreateVariable={props.onOpenVariables}
                         />
                       )}
                     </Show>
@@ -689,7 +681,7 @@ export function AppMapTestWorkspace(props: {
           map={appMap()!}
           test={draft()!}
           onApply={applySource}
-          onClose={() => setSourceOpen(false)}
+          onClose={closeSource}
         />
       </Show>
     </section>
