@@ -234,6 +234,65 @@ function passedPersistedRun(): PersistedRun {
   return run;
 }
 
+function proofWithRequiredCleanup(): ChangeVerification {
+  const base = proof();
+  return {
+    ...base,
+    selection: {
+      ...base.selection,
+      targetCases: base.selection.targetCases.map((targetCase) => ({
+        ...targetCase,
+        cleanupRequired: true,
+      })),
+      cells: base.selection.cells!.map((cell) => ({ ...cell, cleanupRequired: true })),
+    },
+  };
+}
+
+function persistedRunWithCleanupArtifact(
+  cleanup: Partial<{
+    checkId: string;
+    recipeId: string;
+    terminalScreenId: string;
+    status: string;
+  }> = {},
+): PersistedRun {
+  const run = passedPersistedRun();
+  const planArtifact = run.artifacts.find((artifact) => artifact.kind === "app-map-test-plan");
+  assert.ok(planArtifact);
+  const plan = planArtifact.data as {
+    rootRecipeId: string;
+    recipes: Record<string, { steps: unknown[] }>;
+  };
+  plan.recipes[plan.rootRecipeId]!.steps = [
+    {
+      kind: "module",
+      recipeId: "cleanup-routine",
+      check: {
+        id: "localized",
+        title: "Settings are displayed in Arabic",
+        cleanup: {
+          recipeId: "cleanup-routine",
+          terminalScreenId: "settings",
+          onCancel: "skip",
+        },
+      },
+    },
+  ];
+  run.artifacts.push({
+    kind: "campaign-check-cleanup",
+    capturedAt: 321,
+    data: {
+      checkId: "localized",
+      recipeId: "cleanup-routine",
+      terminalScreenId: "settings",
+      status: "passed",
+      ...cleanup,
+    },
+  });
+  return run;
+}
+
 function persistedRunFor(
   item: ReturnType<typeof changeProofRequiredRunCases>[number],
   outcome: "passed" | "rejected",
@@ -359,21 +418,41 @@ test("persisted Run projection accepts complete recorded selector proof", async 
 });
 
 test("required cleanup without a recorded restoration cannot prove a case", async () => {
-  const base = proof();
-  const value: ChangeVerification = {
-    ...base,
-    selection: {
-      ...base.selection,
-      targetCases: base.selection.targetCases.map((targetCase) => ({
-        ...targetCase,
-        cleanupRequired: true,
-      })),
-      cells: base.selection.cells!.map((cell) => ({ ...cell, cleanupRequired: true })),
-    },
-  };
+  const value = proofWithRequiredCleanup();
   const projected = await changeProofCaseResultFromPersistedRun({
     proof: value,
     run: passedPersistedRun(),
+  });
+  assert.equal(projected.cleanup, "unproved");
+  assert.equal(projected.outcome, "insufficient-evidence");
+});
+
+test("persisted Proof accepts exactly one cleanup artifact for the frozen check", async () => {
+  const projected = await changeProofCaseResultFromPersistedRun({
+    proof: proofWithRequiredCleanup(),
+    run: persistedRunWithCleanupArtifact(),
+  });
+  assert.equal(projected.cleanup, "restored");
+  assert.equal(projected.outcome, "passed");
+});
+
+test("persisted Proof does not use an unrelated cleanup artifact", async () => {
+  const projected = await changeProofCaseResultFromPersistedRun({
+    proof: proofWithRequiredCleanup(),
+    run: persistedRunWithCleanupArtifact({ checkId: "unrelated-check" }),
+  });
+  assert.equal(projected.cleanup, "unproved");
+  assert.equal(projected.outcome, "insufficient-evidence");
+});
+
+test("persisted Proof does not use duplicate cleanup artifacts", async () => {
+  const run = persistedRunWithCleanupArtifact();
+  const cleanup = run.artifacts.find((artifact) => artifact.kind === "campaign-check-cleanup");
+  assert.ok(cleanup);
+  run.artifacts.push(structuredClone(cleanup));
+  const projected = await changeProofCaseResultFromPersistedRun({
+    proof: proofWithRequiredCleanup(),
+    run,
   });
   assert.equal(projected.cleanup, "unproved");
   assert.equal(projected.outcome, "insufficient-evidence");

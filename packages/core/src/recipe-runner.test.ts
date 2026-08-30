@@ -1141,6 +1141,7 @@ describe("runRecipeStep campaign check policy", () => {
   it("always runs cleanup after a primary action failure and retains the product failure", async () => {
     const presses: string[] = [];
     const job = { id: "campaign-job", artifacts: [] } as unknown as TestJob;
+    const runtime: NonNullable<RecipeStepContext["runtime"]> = {};
     const recipeGraph = {
       primary: {
         id: "primary",
@@ -1181,7 +1182,7 @@ describe("runRecipeStep campaign check policy", () => {
           cleanup: { recipeId: "cleanup", terminalScreenId: "kids-off", onCancel: "skip" },
         },
       },
-      { ...noLog, job, runtime: {}, recipeGraph },
+      { ...noLog, job, runtime, recipeGraph },
     );
 
     assert.deepEqual(presses, ['id="primary"', 'id="cleanup"']);
@@ -1189,7 +1190,7 @@ describe("runRecipeStep campaign check policy", () => {
       job.artifacts.some(
         (artifact) =>
           artifact.kind === "campaign-check-cleanup" &&
-          (artifact.data as { status?: string }).status === "passed",
+          (artifact.data as { status?: string }).status === "failed",
       ),
       true,
     );
@@ -1198,6 +1199,7 @@ describe("runRecipeStep campaign check policy", () => {
     const resultData = result.data as { status?: string; primaryError?: string };
     assert.equal(resultData.status, "failed");
     assert.match(resultData.primaryError ?? "", /identifier primary/u);
+    assert.equal(runtime.navigationCursor?.status, "unknown");
   });
 
   it("never runs campaign cleanup after an unknown iOS primary mutation", async () => {
@@ -1430,13 +1432,100 @@ describe("runRecipeStep campaign check policy", () => {
     assert.deepEqual(order, ['id="primary"', 'id="cleanup"']);
     const result = job.artifacts.find((artifact) => artifact.kind === "campaign-check-result");
     assert.ok(result);
-    assert.equal((result.data as { status?: string }).status, "passed");
-    assert.equal(runtime.navigationCursor?.status, "proven");
-    assert.equal(
-      runtime.navigationCursor?.status === "proven" ? runtime.navigationCursor.screenId : undefined,
-      "kids-off",
-      "cleanup owns the terminal cursor; the primary path must not overwrite it",
+    assert.equal((result.data as { status?: string }).status, "failed");
+    const cleanup = job.artifacts.find((artifact) => artifact.kind === "campaign-check-cleanup");
+    assert.equal((cleanup?.data as { status?: string } | undefined)?.status, "failed");
+    assert.equal(runtime.navigationCursor?.status, "unknown");
+  });
+
+  it("passes cleanup only after a fresh terminal screen observation", async () => {
+    const job = { id: "campaign-cleanup-proof", artifacts: [] } as unknown as TestJob;
+    const runtime: NonNullable<RecipeStepContext["runtime"]> = {};
+    const terminal = "kids-off";
+    runtime.navigationCursor = provenNavigation({
+      screenId: terminal,
+      screenTitle: terminal,
+      nodes: [],
+      observedAt: 1,
+      verifiedAt: 1,
+    });
+
+    await runCampaignCheck(
+      stubDevice({}),
+      {
+        kind: "sleep",
+        ms: 1,
+        check: {
+          id: "kids",
+          title: "Kids Mode",
+          cleanup: { recipeId: "cleanup", terminalScreenId: terminal, onCancel: "skip" },
+        },
+      },
+      { ...noLog, job, runtime, recipeGraph: {} },
+      async (recipeId) => {
+        if (recipeId !== "cleanup") return;
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        const at = Date.now();
+        runtime.navigationCursor = provenNavigation({
+          screenId: terminal,
+          screenTitle: terminal,
+          nodes: [],
+          observedAt: at,
+          verifiedAt: at,
+        });
+      },
     );
+
+    assert.equal(
+      (job.artifacts.find((artifact) => artifact.kind === "campaign-check-cleanup")?.data as {
+        status?: string;
+      })?.status,
+      "passed",
+    );
+    assert.equal(
+      (job.artifacts.find((artifact) => artifact.kind === "campaign-check-result")?.data as {
+        status?: string;
+      })?.status,
+      "passed",
+    );
+    assert.equal(currentVerifiedScreen(runtime)?.screenId, terminal);
+  });
+
+  it("fails cleanup when a fresh observation reaches the wrong screen", async () => {
+    const job = { id: "campaign-cleanup-mismatch", artifacts: [] } as unknown as TestJob;
+    const runtime: NonNullable<RecipeStepContext["runtime"]> = {};
+    await runCampaignCheck(
+      stubDevice({}),
+      {
+        kind: "sleep",
+        ms: 1,
+        check: {
+          id: "kids",
+          title: "Kids Mode",
+          cleanup: { recipeId: "cleanup", terminalScreenId: "kids-off", onCancel: "skip" },
+        },
+      },
+      { ...noLog, job, runtime, recipeGraph: {} },
+      async (recipeId) => {
+        if (recipeId !== "cleanup") return;
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        const at = Date.now();
+        runtime.navigationCursor = provenNavigation({
+          screenId: "kids-on",
+          screenTitle: "kids-on",
+          nodes: [],
+          observedAt: at,
+          verifiedAt: at,
+        });
+      },
+    );
+
+    const cleanup = job.artifacts.find((artifact) => artifact.kind === "campaign-check-cleanup");
+    assert.equal((cleanup?.data as { status?: string } | undefined)?.status, "failed");
+    const result = job.artifacts.find((artifact) => artifact.kind === "campaign-check-result");
+    assert.equal((result?.data as { status?: string } | undefined)?.status, "failed");
+    assert.equal(runtime.navigationCursor?.status, "unknown");
+    assert.equal(currentVerifiedScreen(runtime), undefined);
   });
 
   it("reports primary and cleanup failures separately without hiding either", async () => {
@@ -1590,6 +1679,14 @@ describe("runRecipeStep campaign check policy", () => {
                 throw new JobCancelledError("cancelled after Kids Mode was enabled");
               }
               executions.push(recipeId);
+              const at = Date.now();
+              runtime.navigationCursor = provenNavigation({
+                screenId: "kids-off",
+                screenTitle: "Kids Off",
+                nodes: [],
+                observedAt: at,
+                verifiedAt: at,
+              });
               await cooperativeCheckpoint(job.id);
             },
           ),

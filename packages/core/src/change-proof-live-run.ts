@@ -81,21 +81,48 @@ export function changeProofRequiredRunCases(value: unknown): ChangeProofRunCase[
   });
 }
 
-function planIdentity(
-  run: PersistedRun,
-): { appMapId: string; testId: string; appMapRevision: number } | undefined {
+function planForRun(run: PersistedRun): ReturnType<typeof parseCanonicalAppMapTestPlan> {
   for (const artifact of run.artifacts) {
     if (artifact.kind !== "app-map-test-plan") continue;
     const plan = parseCanonicalAppMapTestPlan(artifact.data);
-    if (plan) {
-      return {
-        appMapId: plan.appMapId,
-        testId: plan.test.id,
-        appMapRevision: plan.appMapRevision,
-      };
-    }
+    if (plan) return plan;
   }
   return undefined;
+}
+
+function planIdentity(
+  run: PersistedRun,
+): { appMapId: string; testId: string; appMapRevision: number } | undefined {
+  const plan = planForRun(run);
+  return plan
+    ? { appMapId: plan.appMapId, testId: plan.test.id, appMapRevision: plan.appMapRevision }
+    : undefined;
+}
+
+type ExpectedCleanupCheck = {
+  checkId: string;
+  recipeId: string;
+  terminalScreenId: string;
+};
+
+function expectedCleanupChecks(run: PersistedRun): ExpectedCleanupCheck[] | undefined {
+  const plan = planForRun(run);
+  const root = plan?.recipes[plan.rootRecipeId] ?? run.recipeSnapshot;
+  if (!root) return undefined;
+  const checks = root.steps.flatMap((step) =>
+    step.check?.cleanup
+      ? [
+          {
+            checkId: step.check.id,
+            recipeId: step.check.cleanup.recipeId,
+            terminalScreenId: step.check.cleanup.terminalScreenId,
+          },
+        ]
+      : [],
+  );
+  return new Set(checks.map(({ checkId }) => checkId)).size === checks.length
+    ? checks
+    : undefined;
 }
 
 function targetCaseForRun(
@@ -204,17 +231,35 @@ function cleanupOutcome(
   if (!cleanupRequired) return "not-required";
   const cleanup = run.artifacts.filter((artifact) => artifact.kind === "campaign-check-cleanup");
   if (!cleanup.length) return "unproved";
-  return cleanup.every((artifact) => {
-    const data = artifact.data;
-    return (
-      data &&
-      typeof data === "object" &&
-      !Array.isArray(data) &&
-      (data as { status?: unknown }).status === "passed"
-    );
-  })
-    ? "restored"
-    : "failed";
+  const expected = expectedCleanupChecks(run);
+  if (!expected || cleanup.length !== expected.length) return "unproved";
+  for (const check of expected) {
+    const matches = cleanup.filter((artifact) => {
+      const data = artifact.data;
+      if (!data || typeof data !== "object" || Array.isArray(data)) return false;
+      const value = data as {
+        checkId?: unknown;
+        recipeId?: unknown;
+        terminalScreenId?: unknown;
+      };
+      return (
+        value.checkId === check.checkId &&
+        value.recipeId === check.recipeId &&
+        value.terminalScreenId === check.terminalScreenId
+      );
+    });
+    if (matches.length !== 1) return "unproved";
+    const data = matches[0]!.data;
+    if (
+      !data ||
+      typeof data !== "object" ||
+      Array.isArray(data) ||
+      (data as { status?: unknown }).status !== "passed"
+    ) {
+      return "failed";
+    }
+  }
+  return "restored";
 }
 
 /** Derive one case fact only from the immutable Run and its verified

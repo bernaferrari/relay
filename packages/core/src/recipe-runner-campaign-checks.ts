@@ -9,7 +9,11 @@ import { now } from "./events.js";
 import { IosMutationOutcomeUnknownError } from "./ios-mutation-policy.js";
 import type { RecipeStep } from "./recipes.js";
 import type { RecipeStepContext } from "./recipe-runner-context.js";
-import { markNavigationUnknown, proveNavigationDestination } from "./recipe-runner-context.js";
+import {
+  currentVerifiedScreen,
+  markNavigationUnknown,
+  proveNavigationDestination,
+} from "./recipe-runner-context.js";
 import {
   blockUnprovenCampaignMutation,
   captureCampaignFailureEvidence,
@@ -18,6 +22,20 @@ import {
 } from "./recipe-runner-campaign-support.js";
 import { isCancel } from "./recipe-runner-support.js";
 import { isTargetUnavailableError } from "./target-unavailable.js";
+
+function freshCleanupTerminalObservation(
+  ctx: RecipeStepContext,
+  terminalScreenId: string,
+  cleanupStartedAt: number,
+) {
+  const observation = currentVerifiedScreen(ctx.runtime);
+  return observation &&
+    observation.screenId === terminalScreenId &&
+    observation.observedAt >= cleanupStartedAt &&
+    observation.verifiedAt >= cleanupStartedAt
+    ? observation
+    : undefined;
+}
 
 export async function runCampaignCheck(
   device: Device,
@@ -311,6 +329,13 @@ export async function runCampaignCheck(
       ctx.log(`check cleanup skipped: ${step.check.title} — target unavailable`);
     } else if (cleanup) {
       const cleanupStartedAt = now();
+      // A cleanup recipe must establish its own terminal observation. Do not
+      // let a checkpoint from the primary path satisfy the cleanup merely
+      // because it happens to name the configured terminal screen.
+      if (ctx.runtime) {
+        ctx.runtime.observation = undefined;
+        markNavigationUnknown(ctx, `Cleanup ${cleanup.recipeId} requires a fresh terminal observation.`);
+      }
       if (primaryError && isCancel(primaryError) && cleanup.onCancel === "skip") {
         cleanupOutcome = "skipped";
         ctx.job?.artifacts.push({
@@ -333,22 +358,54 @@ export async function runCampaignCheck(
           await (primaryError && isCancel(primaryError)
             ? runWithCancellationShield(cancellationCleanupJobId, runCleanup)
             : runCleanup());
-          cleanupPassed = true;
-          cleanupOutcome = "passed";
+          const terminalObservation = freshCleanupTerminalObservation(
+            ctx,
+            cleanup.terminalScreenId,
+            cleanupStartedAt,
+          );
           const finishedAt = now();
-          ctx.job?.artifacts.push({
-            kind: "campaign-check-cleanup",
-            capturedAt: finishedAt,
-            data: {
-              checkId: step.check.id,
-              recipeId: cleanup.recipeId,
-              terminalScreenId: cleanup.terminalScreenId,
-              status: "passed",
-              startedAt: cleanupStartedAt,
-              finishedAt,
-            },
-          });
-          ctx.log(`check cleanup passed: ${step.check.title}`);
+          if (!terminalObservation) {
+            const observed = currentVerifiedScreen(ctx.runtime);
+            const reason = observed
+              ? `Cleanup did not prove terminal screen ${cleanup.terminalScreenId}; fresh observation was ${observed.screenId}.`
+              : `Cleanup did not produce a fresh post-cleanup observation for terminal screen ${cleanup.terminalScreenId}.`;
+            cleanupError = new Error(reason);
+            cleanupOutcome = "failed";
+            ctx.job?.artifacts.push({
+              kind: "campaign-check-cleanup",
+              capturedAt: finishedAt,
+              data: {
+                checkId: step.check.id,
+                recipeId: cleanup.recipeId,
+                terminalScreenId: cleanup.terminalScreenId,
+                status: "failed",
+                error: reason,
+                ...(observed ? { observedScreenId: observed.screenId } : {}),
+                startedAt: cleanupStartedAt,
+                finishedAt,
+              },
+            });
+            ctx.log(`check cleanup failed: ${step.check.title} — ${reason}`);
+          } else {
+            cleanupPassed = true;
+            cleanupOutcome = "passed";
+            ctx.job?.artifacts.push({
+              kind: "campaign-check-cleanup",
+              capturedAt: finishedAt,
+              data: {
+                checkId: step.check.id,
+                recipeId: cleanup.recipeId,
+                terminalScreenId: cleanup.terminalScreenId,
+                status: "passed",
+                observedScreenId: terminalObservation.screenId,
+                observedAt: terminalObservation.observedAt,
+                verifiedAt: terminalObservation.verifiedAt,
+                startedAt: cleanupStartedAt,
+                finishedAt,
+              },
+            });
+            ctx.log(`check cleanup passed: ${step.check.title}`);
+          }
         } catch (error) {
           cleanupError = error;
           const finishedAt = now();
@@ -429,11 +486,9 @@ export async function runCampaignCheck(
   if (primaryError && isCancel(primaryError)) {
     const finishedAt = now();
     if (cleanupPassed && step.check.cleanup) {
-      proveNavigationDestination(ctx, {
-        screenId: step.check.cleanup.terminalScreenId,
-        source: "cleanup",
-        at: finishedAt,
-      });
+      // The fresh checkpoint established by cleanup is the navigation proof;
+      // retain it so later consumers cannot mistake a projected destination
+      // for an observed screen.
     } else {
       markNavigationUnknown(
         ctx,
@@ -521,7 +576,10 @@ export async function runCampaignCheck(
         : terminalDestination?.kind === "screen"
           ? terminalDestination.screenId
           : undefined;
-    if (terminalScreenId) {
+    if (cleanupPassed && step.check.cleanup) {
+      // The fresh checkpoint established by cleanup is already the proof;
+      // retain its observation for subsequent warm-path decisions.
+    } else if (terminalScreenId) {
       proveNavigationDestination(ctx, {
         screenId: terminalScreenId,
         source: cleanupPassed ? "cleanup" : "transition",
@@ -563,11 +621,7 @@ export async function runCampaignCheck(
   // A successful cleanup proves its explicit terminal screen. Otherwise the
   // current device state stays unknown and no later warm path may trust it.
   if (cleanupPassed && step.check.cleanup) {
-    proveNavigationDestination(ctx, {
-      screenId: step.check.cleanup.terminalScreenId,
-      source: "cleanup",
-      at: finishedAt,
-    });
+    // The fresh checkpoint established by cleanup is already the proof.
   } else {
     markNavigationUnknown(ctx, message);
   }
