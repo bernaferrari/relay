@@ -235,6 +235,11 @@ export type AppleRunnerHost = {
   visitXmlPlistEntries(nodes: XmlNode[], visitor: (key: string, valueNode: XmlNode) => void): void;
   // Daemon-owned lease owner state directory (packages/platform-apple/src/core/runner-owner-state.ts)
   leaseOwnerStateDir(): string | undefined;
+  // Daemon-owned device-claim arbitration probe (packages/platform-apple/src/core/runner-owner-state.ts):
+  // true only while the embedding process holds the host-global local device
+  // claim for exactly this device (matched by canonical family/OS/id, never a
+  // bare id). Embedders without a claim store answer false.
+  hasDeviceClaimAuthority(device: DeviceInfo): boolean;
 };
 
 let boundHost: AppleRunnerHost | undefined;
@@ -350,6 +355,8 @@ export const visitXmlPlistEntries: AppleRunnerHost['visitXmlPlistEntries'] = (no
   requireHost().visitXmlPlistEntries(nodes, visitor);
 export const leaseOwnerStateDir: AppleRunnerHost['leaseOwnerStateDir'] = () =>
   requireHost().leaseOwnerStateDir();
+export const hasDeviceClaimAuthority: AppleRunnerHost['hasDeviceClaimAuthority'] = (device) =>
+  requireHost().hasDeviceClaimAuthority(device);
 
 /**
  * Deadline keeps its root call-site shape (`Deadline.fromTimeoutMs(...)`);
