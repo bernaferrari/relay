@@ -8,6 +8,7 @@ import {
   getSessionCommandKind,
   isHumanControlMutation,
   isLeaseAdmissionExempt,
+  resolveSessionlessLeaseAdmissionExemption,
   shouldBlockForInvalidRecording,
   shouldGuardAndroidBlockingDialog,
   shouldLockSessionExecution,
@@ -82,6 +83,20 @@ test('daemon command registry preserves request admission traits', () => {
   assert.equal(shouldValidateSessionSelector(INTERNAL_COMMANDS.leaseAllocate), true);
   assert.equal(isLeaseAdmissionExempt(PUBLIC_COMMANDS.open), false);
   assert.equal(shouldLockSessionExecution(PUBLIC_COMMANDS.open), true);
+  assert.deepEqual(
+    resolveSessionlessLeaseAdmissionExemption({
+      ...makeRequest(PUBLIC_COMMANDS.apps),
+      flags: { platform: 'android', leaseProvider: 'limrun' },
+    }),
+    { kind: 'provider-app-catalog', provider: 'limrun' },
+  );
+  assert.equal(
+    resolveSessionlessLeaseAdmissionExemption({
+      ...makeRequest(PUBLIC_COMMANDS.apps),
+      flags: { platform: 'android', leaseProvider: 'limrun', leaseId: 'lease-a' },
+    }),
+    undefined,
+  );
 });
 
 test('daemon command registry preserves replay and recording traits', () => {

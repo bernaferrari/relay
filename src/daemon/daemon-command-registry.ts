@@ -1,6 +1,7 @@
 import {
   type DaemonCommandDescriptor,
   type DaemonCommandRoute,
+  type SessionlessLeaseAdmissionExemption,
   type SessionCommandKind,
 } from '../core/command-descriptor/daemon-command-descriptor.ts';
 import { deriveDaemonCommandDescriptors } from '../core/command-descriptor/derive.ts';
@@ -95,10 +96,10 @@ export function usesSessionlessDefaultProviderDevice(req: DaemonRequest): boolea
   return typeof allow === 'function' ? allow(req) : false;
 }
 
-/** #2016: whether this request qualifies for the sessionless plain-close lease-admission bypass. */
-export function isSessionlessPlainCloseAdmissionExempt(req: DaemonRequest): boolean {
-  const exempt = getDaemonCommandDescriptor(req.command)?.sessionlessPlainCloseAdmissionExempt;
-  return typeof exempt === 'function' ? exempt(req) : false;
+export function resolveSessionlessLeaseAdmissionExemption(
+  req: DaemonRequest,
+): SessionlessLeaseAdmissionExemption | undefined {
+  return getDaemonCommandDescriptor(req.command)?.sessionlessLeaseAdmissionExemption?.(req);
 }
 
 /**
