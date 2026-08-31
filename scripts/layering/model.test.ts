@@ -52,6 +52,56 @@ test('parseImports distinguishes value, type-only, dynamic, and value re-export 
   );
 });
 
+test('parseImports retains named source symbols without changing edge-kind detection', () => {
+  const edges = parseImports(
+    [
+      "import { value as localValue, type TypeA } from './named.ts';",
+      "import type { TypeB as RenamedType } from './types.ts';",
+      "export { reExport as publicName } from './re-export.ts';",
+      "export type { ExportedType } from './exported-types.ts';",
+      "import * as namespace from './namespace.ts';",
+      "void import('./dynamic.ts');",
+    ].join('\n'),
+  );
+
+  assert.deepEqual(
+    edges.map(({ spec, dynamic, typeOnly, symbols }) => ({ spec, dynamic, typeOnly, symbols })),
+    [
+      {
+        spec: './named.ts',
+        dynamic: false,
+        typeOnly: false,
+        symbols: ['value', 'TypeA'],
+      },
+      { spec: './types.ts', dynamic: false, typeOnly: true, symbols: ['TypeB'] },
+      { spec: './re-export.ts', dynamic: false, typeOnly: false, symbols: ['reExport'] },
+      { spec: './exported-types.ts', dynamic: false, typeOnly: true, symbols: ['ExportedType'] },
+      { spec: './namespace.ts', dynamic: false, typeOnly: false, symbols: [] },
+      { spec: './dynamic.ts', dynamic: true, typeOnly: false, symbols: [] },
+    ],
+  );
+});
+
+test('parseImports ignores comments inside named bindings', () => {
+  const edges = parseImports(
+    [
+      "import { /* exact, declared */ SessionStore /* authority */ } from './store.ts';",
+      'import /* shape */ {',
+      '  // exact declaration',
+      '  type SessionState as State,',
+      "} from './types.ts';",
+    ].join('\n'),
+  );
+
+  assert.deepEqual(
+    edges.map(({ spec, typeOnly, symbols }) => ({ spec, typeOnly, symbols })),
+    [
+      { spec: './store.ts', typeOnly: false, symbols: ['SessionStore'] },
+      { spec: './types.ts', typeOnly: true, symbols: ['SessionState'] },
+    ],
+  );
+});
+
 test('value cycles fail while type-only and dynamic cycles stay outside the graph', () => {
   const valueCycle = resolveImportEdges(
     new Map([
