@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
-  android:id="@+id/settings_scroll"
+  android:id="@+id/language_scroll"
   android:layout_width="match_parent"
   android:layout_height="match_parent"
   android:background="@color/relay_background"
@@ -8,7 +8,7 @@
   android:fillViewport="true">
 
   <LinearLayout
-    android:id="@+id/proof_root"
+    android:id="@+id/language_root"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:gravity="center_vertical"
@@ -19,22 +19,12 @@
     android:paddingBottom="32dp">
 
     <TextView
-      android:layout_width="wrap_content"
-      android:layout_height="wrap_content"
-      android:fontFamily="sans-serif-medium"
-      android:letterSpacing="0.12"
-      android:text="@string/eyebrow"
-      android:textColor="@color/relay_blue"
-      android:textSize="12sp" />
-
-    <TextView
-      android:id="@+id/settings_heading"
+      android:id="@+id/language_heading"
       android:layout_width="match_parent"
       android:layout_height="wrap_content"
-      android:layout_marginTop="10dp"
-      android:contentDescription="Settings screen"
+      android:contentDescription="Language screen"
       android:fontFamily="sans-serif-medium"
-      android:text="@string/settings_title"
+      android:text="@string/language"
       android:textColor="@color/relay_text"
       android:textSize="30sp" />
 
@@ -43,31 +33,21 @@
       android:layout_height="wrap_content"
       android:layout_marginTop="10dp"
       android:lineSpacingExtra="3dp"
-      android:text="@string/settings_description"
+      android:text="@string/language_description"
       android:textColor="@color/relay_muted"
       android:textSize="16sp" />
 
     <Button
-      android:id="@+id/language_button"
+      android:id="@+id/arabic_button"
       android:layout_width="match_parent"
       android:layout_height="56dp"
       android:layout_marginTop="32dp"
       android:background="@drawable/proof_button"
-      android:contentDescription="Open Language settings"
+      android:contentDescription="Choose Arabic language"
       android:fontFamily="sans-serif-medium"
-      android:text="@string/language"
+      android:text="@string/arabic"
       android:textAllCaps="false"
       android:textColor="#FFFFFF"
       android:textSize="16sp" />
-
-    <TextView
-      android:id="@+id/build_identity"
-      android:layout_width="match_parent"
-      android:layout_height="wrap_content"
-      android:layout_marginTop="20dp"
-      android:gravity="center"
-      android:text="@string/build_identity"
-      android:textColor="@color/relay_muted"
-      android:textSize="13sp" />
   </LinearLayout>
 </ScrollView>

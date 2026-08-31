@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+  android:id="@+id/arabic_scroll"
+  android:layout_width="match_parent"
+  android:layout_height="match_parent"
+  android:background="@color/relay_background"
+  android:clipToPadding="false"
+  android:fillViewport="true">
+
+  <LinearLayout
+    android:id="@+id/arabic_root"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center_vertical"
+    android:layoutDirection="rtl"
+    android:orientation="vertical"
+    android:paddingLeft="24dp"
+    android:paddingTop="48dp"
+    android:paddingRight="24dp"
+    android:paddingBottom="32dp"
+    android:textDirection="locale">
+
+    <TextView
+      android:id="@+id/arabic_heading"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:contentDescription="Arabic settings checkpoint"
+      android:fontFamily="sans-serif-medium"
+      android:gravity="start"
+      android:text="@string/arabic_title"
+      android:textColor="@color/relay_text"
+      android:textSize="30sp" />
+
+    <TextView
+      android:id="@+id/arabic_description"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="16dp"
+      android:contentDescription="Arabic settings description"
+      android:gravity="start"
+      android:lineSpacingExtra="3dp"
+      android:text="@string/arabic_description"
+      android:textColor="@color/relay_muted"
+      android:textSize="18sp" />
+
+    <Button
+      android:id="@+id/primary_action"
+      android:layout_width="match_parent"
+      android:layout_height="56dp"
+      android:layout_marginTop="-22dp"
+      android:background="@drawable/proof_button"
+      android:contentDescription="Arabic primary action Continue"
+      android:fontFamily="sans-serif-medium"
+      android:text="@string/continue_arabic"
+      android:textAllCaps="false"
+      android:textColor="#FFFFFF"
+      android:textSize="16sp" />
+
+    <TextView
+      android:id="@+id/regression_marker"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="12dp"
+      android:contentDescription="Seeded layout regression: primary action overlaps description by 22 dp"
+      android:gravity="start"
+      android:text="@string/regression_marker"
+      android:textColor="@color/relay_danger"
+      android:textSize="13sp" />
+
+    <TextView
+      android:id="@+id/build_identity"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="24dp"
+      android:gravity="start"
+      android:text="@string/build_identity"
+      android:textColor="@color/relay_muted"
+      android:textSize="13sp" />
+
+    <Button
+      android:id="@+id/reset_button"
+      android:layout_width="match_parent"
+      android:layout_height="52dp"
+      android:layout_marginTop="24dp"
+      android:background="@drawable/reset_button"
+      android:contentDescription="Reset to Settings"
+      android:fontFamily="sans-serif-medium"
+      android:text="@string/reset"
+      android:textAllCaps="false"
+      android:textColor="@color/relay_text"
+      android:textSize="15sp" />
+  </LinearLayout>
+</ScrollView>

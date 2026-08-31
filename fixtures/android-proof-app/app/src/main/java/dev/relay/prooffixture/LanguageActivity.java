@@ -8,15 +8,26 @@ import android.view.View;
 import android.view.WindowInsets;
 import android.widget.Button;
 
-public final class MainActivity extends Activity {
+public final class LanguageActivity extends Activity {
   private static final String LOG_TAG = "RelayProofFixture";
 
   @Override
   protected void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
-    setContentView(R.layout.activity_main);
+    setContentView(R.layout.activity_language);
+    applySystemInsets(findViewById(R.id.language_root));
 
-    View root = findViewById(R.id.proof_root);
+    Button arabic = findViewById(R.id.arabic_button);
+    arabic.setOnClickListener(view -> {
+      Log.i(LOG_TAG, "transition=language-arabic");
+      startActivity(new Intent(this, ArabicActivity.class));
+    });
+
+    applySystemBars();
+    Log.i(LOG_TAG, "screen=language");
+  }
+
+  private void applySystemInsets(View root) {
     int horizontal = dp(24);
     int top = dp(48);
     int bottom = dp(32);
@@ -26,17 +37,12 @@ public final class MainActivity extends Activity {
       view.setPadding(horizontal, top + status, horizontal, bottom + navigation);
       return insets;
     });
+  }
 
-    Button language = findViewById(R.id.language_button);
-    language.setOnClickListener(view -> {
-      Log.i(LOG_TAG, "transition=settings-language");
-      startActivity(new Intent(this, LanguageActivity.class));
-    });
-
+  private void applySystemBars() {
     getWindow().setStatusBarColor(getColor(R.color.relay_background));
     getWindow().setNavigationBarColor(getColor(R.color.relay_background));
     getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
-    Log.i(LOG_TAG, "screen=settings fixture=ready version=1");
   }
 
   private int dp(int value) {

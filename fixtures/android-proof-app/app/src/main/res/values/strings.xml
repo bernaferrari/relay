@@ -2,12 +2,15 @@
 <resources>
   <string name="app_name">Relay Proof Fixture</string>
   <string name="eyebrow">RELAY PROOF FIXTURE</string>
-  <string name="title">Android runtime proof</string>
-  <string name="description">A deterministic app for proving exact-build launch, interaction, and evidence on Android.</string>
-  <string name="ready">Ready for Relay</string>
-  <string name="passed">Checkpoint passed</string>
-  <string name="passed_description">Relay reached a distinct, inspectable destination after one semantic interaction.</string>
-  <string name="prove">Prove interaction</string>
-  <string name="reset">Reset fixture</string>
-  <string name="build_identity">Fixture build 1 · no account or network state</string>
+  <string name="settings_title">Settings</string>
+  <string name="settings_description">Choose a language to prove the same reviewed business journey on Android and web.</string>
+  <string name="language">Language</string>
+  <string name="language_description">Choose the language Relay must verify.</string>
+  <string name="arabic">Arabic</string>
+  <string name="arabic_title">الإعدادات</string>
+  <string name="arabic_description">تم عرض الإعدادات باللغة العربية.</string>
+  <string name="continue_arabic">متابعة</string>
+  <string name="regression_marker">Seeded regression · overlap 22 dp</string>
+  <string name="reset">Reset to Settings</string>
+  <string name="build_identity">Relay Android Proof fixture · exact source-bound build</string>
 </resources>

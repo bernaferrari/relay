@@ -6,7 +6,11 @@
     android:supportsRtl="true"
     android:theme="@style/AppTheme">
     <activity
-      android:name=".PassedActivity"
+      android:name=".ArabicActivity"
+      android:exported="false"
+      android:screenOrientation="portrait" />
+    <activity
+      android:name=".LanguageActivity"
       android:exported="false"
       android:screenOrientation="portrait" />
     <activity

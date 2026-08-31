@@ -7,4 +7,5 @@
   <color name="relay_text">#15171A</color>
   <color name="relay_muted">#5D6470</color>
   <color name="relay_success">#067647</color>
+  <color name="relay_danger">#B42318</color>
 </resources>
