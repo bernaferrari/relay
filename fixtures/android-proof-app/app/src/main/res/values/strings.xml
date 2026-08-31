@@ -10,7 +10,6 @@
   <string name="arabic_title">الإعدادات</string>
   <string name="arabic_description">تم عرض الإعدادات باللغة العربية.</string>
   <string name="continue_arabic">متابعة</string>
-  <string name="regression_marker">Seeded regression · overlap 22 dp</string>
   <string name="reset">Reset to Settings</string>
   <string name="build_identity">Relay Android Proof fixture · exact source-bound build</string>
 </resources>

@@ -47,7 +47,7 @@
       android:id="@+id/primary_action"
       android:layout_width="match_parent"
       android:layout_height="56dp"
-      android:layout_marginTop="-22dp"
+      android:layout_marginTop="24dp"
       android:background="@drawable/proof_button"
       android:contentDescription="Arabic primary action Continue"
       android:fontFamily="sans-serif-medium"
@@ -55,17 +55,6 @@
       android:textAllCaps="false"
       android:textColor="#FFFFFF"
       android:textSize="16sp" />
-
-    <TextView
-      android:id="@+id/regression_marker"
-      android:layout_width="match_parent"
-      android:layout_height="wrap_content"
-      android:layout_marginTop="12dp"
-      android:contentDescription="Seeded layout regression: primary action overlaps description by 22 dp"
-      android:gravity="start"
-      android:text="@string/regression_marker"
-      android:textColor="@color/relay_danger"
-      android:textSize="13sp" />
 
     <TextView
       android:id="@+id/build_identity"

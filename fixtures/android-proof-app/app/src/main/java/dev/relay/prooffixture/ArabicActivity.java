@@ -27,7 +27,7 @@ public final class ArabicActivity extends Activity {
     });
 
     applySystemBars();
-    Log.i(LOG_TAG, "checkpoint=arabic-layout regression=overlap-22dp");
+    Log.i(LOG_TAG, "checkpoint=arabic-layout regression=fixed");
   }
 
   private void applySystemInsets(View root) {

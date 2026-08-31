@@ -23,8 +23,8 @@
     "app/src/main/res/values/strings.xml",
     "app/src/main/res/values/styles.xml"
   ],
-  "sourceDigest": "sha256:a97261fb8d89f0fc8f9c8ab18c7c30f9c6ee9793417902e9a8fd11e133955cfb",
-  "sourceSha256": "f426d07df5d5cbfff37c0a632b318aa6b01686b147519c58605ac471e0999f49",
-  "artifactDigest": "sha256:3d2a9162b005b23ce17af67012f7297bd56ab7289f314caeca9e8a89c383d014",
+  "sourceDigest": "sha256:58c521dff57e56f18278ed156c5b5938f0480cbdba43d9deab4d8b11127dd433",
+  "sourceSha256": "35eeb3b27d1ba1490024d3d2ee23b068d114d3795c619fab5b0a320211e211a1",
+  "artifactDigest": "sha256:c4157e58f88a236b7bfe1aaf25138739c2519221b463e1b36410a48f0d4fe9b2",
   "reproducible": true
 }
