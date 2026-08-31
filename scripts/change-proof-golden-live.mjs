@@ -17,12 +17,14 @@ import {
   inspectAndroidPrerequisites,
   inspectExactProofInputs,
   inspectManagedBrowserTargets,
+  inspectTracePack,
 } from "./change-proof-golden-live-prerequisites.mjs";
 export {
   defaultCommand,
   inspectAndroidPrerequisites,
   inspectExactProofInputs,
   inspectManagedBrowserTargets,
+  inspectTracePack,
 } from "./change-proof-golden-live-prerequisites.mjs";
 import { cliResultEnvelope, defaultCliRunner, unwrapCliResult } from "./dogfood-proof-loop.mjs";
 

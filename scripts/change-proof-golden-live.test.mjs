@@ -1,16 +1,81 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { promisify } from "node:util";
 import {
   CHANGE_PROOF_GOLDEN_LIVE,
   inspectAndroidPrerequisites,
   inspectManagedBrowserTargets,
+  inspectTracePack,
   parseGoldenLiveArgs,
   runChangeProofGoldenLive,
   startGoldenFixtureServer,
 } from "./change-proof-golden-live.mjs";
+
+const execFileAsync = promisify(execFile);
+
+async function writeCanonicalTracePack(path, overrides = {}) {
+  const sourceSha = overrides.sourceSha ?? "b".repeat(40);
+  const artifactDigest = overrides.artifactDigest ?? `sha256:${"c".repeat(64)}`;
+  const runId = overrides.runId ?? "run-golden-old";
+  const targetProfile =
+    overrides.targetProfile ??
+    {
+      id: "android-medium-phone",
+      targetId: "emulator-5554",
+      source: "device",
+      platform: "android",
+      name: "medium_phone",
+      viewport: { width: 1080, height: 2400 },
+      capabilities: ["screenshot", "snapshot"],
+      observedAt: 1,
+    };
+  const run = {
+    schemaVersion: 5,
+    id: runId,
+    projectId: "default",
+    action: "app-map:settings:settings-language-arabic",
+    status: "ok",
+    attempts: 1,
+    queuedAt: 1,
+    startedAt: 2,
+    finishedAt: 3,
+    logs: [],
+    steps: [],
+    frames: [],
+    dir: "",
+    writtenAt: 4,
+    targetProfile,
+    sourceRevision: { vcs: "git", sha: sourceSha, artifactDigest, buildId: "android-old" },
+    artifacts: [{
+      kind: "app-map-test-plan",
+      capturedAt: 2,
+      data: {
+        schemaVersion: 1,
+        appMapId: "settings",
+        appMapRevision: 1,
+        test: { id: "settings-language-arabic", name: "Settings → Language → Arabic", kind: "scenario", intentSchemaVersion: 1 },
+        rootRecipeId: "settings:settings-language-arabic:root",
+        recipes: { "settings:settings-language-arabic:root": { id: "settings:settings-language-arabic:root", title: "Settings → Language → Arabic", parameters: [], steps: [] } },
+        stepProvenance: [],
+        performance: { executableOperations: 0, moduleCalls: 0, operationCounts: {}, screenshotCount: 0, destinationProofCount: 0 },
+        startup: { mode: "cold" }
+      }
+    }],
+    inputDigest: "d".repeat(64),
+    resolvedInputs: {},
+    evidence: { schemaVersion: 1, runId, target: { kind: "device", platform: "android" }, startedAt: 2, finishedAt: 3, channels: {}, events: [] }
+  };
+  const script = `import { writeFile } from "node:fs/promises"; import { exportTracePack } from "./packages/core/src/trace-pack.ts"; (async()=>{const run=JSON.parse(process.env.RUN); await writeFile(process.env.OUT, JSON.stringify(await exportTracePack(run)));})().catch(error=>{console.error(error);process.exitCode=1});`;
+  await execFileAsync(process.execPath, ["node_modules/tsx/dist/cli.mjs", "--eval", script], {
+    cwd: new URL("..", import.meta.url),
+    env: { ...process.env, RUN: JSON.stringify(run), OUT: path },
+  });
+  return { sourceSha, artifactDigest, runId, targetProfile };
+}
 
 test("golden live arguments require explicit web execution", () => {
   assert.deepEqual(parseGoldenLiveArgs([]).runWeb, false);
@@ -57,6 +122,67 @@ test("managed browser preflight reports an empty local target registry", async (
     assert.equal(result.status, "missing");
     assert.deepEqual(result.browserTargetIds, []);
     assert.equal(result.blockers[0]?.id, "browser.targets.registry.missing");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("canonical TracePack verification binds every declared frozen identity", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-change-proof-tracepack-"));
+  try {
+    const path = join(root, "old.json");
+    const identity = await writeCanonicalTracePack(path);
+    const expected = {
+      ...identity,
+      appMapId: "settings",
+      testId: "settings-language-arabic",
+    };
+    const verified = await inspectTracePack(path, root, "old", expected);
+    assert.equal(verified.status, "verified", JSON.stringify(verified));
+    assert.equal(verified.projection.run.id, identity.runId);
+
+    const wrongSource = await inspectTracePack(path, root, "old", {
+      ...expected,
+      sourceSha: "e".repeat(40),
+    });
+    assert.equal(wrongSource.status, "identity-mismatch");
+    assert.match(wrongSource.error, /source SHA/u);
+
+    for (const [field, value, message] of [
+      ["appMapId", "other-map", /App Map\/Test identity/u],
+      ["testId", "other-test", /App Map\/Test identity/u],
+      ["artifactDigest", `sha256:${"f".repeat(64)}`, /build artifact digest/u],
+      ["runId", "other-run", /run identity/u],
+      ["targetProfile", { ...identity.targetProfile, observedAt: 2 }, /target profile/u],
+    ]) {
+      const mismatch = await inspectTracePack(path, root, "old", {
+        ...expected,
+        [field]: value,
+      });
+      assert.equal(mismatch.status, "identity-mismatch");
+      assert.match(mismatch.error, message);
+    }
+
+    const parsed = JSON.parse(await readFile(path, "utf8"));
+    parsed.objects.push({ ...parsed.objects[0], path: parsed.objects[0].path });
+    await writeFile(path, JSON.stringify(parsed));
+    const duplicate = await inspectTracePack(path, root, "old", expected);
+    assert.equal(duplicate.status, "invalid");
+    assert.match(duplicate.error, /Canonical TracePack verification failed/u);
+
+    await writeCanonicalTracePack(path);
+    const tamperedPack = JSON.parse(await readFile(path, "utf8"));
+    tamperedPack.objects[0].content.status = "error";
+    await writeFile(path, JSON.stringify(tamperedPack));
+    const tampered = await inspectTracePack(path, root, "old", expected);
+    assert.equal(tampered.status, "invalid");
+    assert.match(tampered.error, /Canonical TracePack verification failed/u);
+
+    const oversizedPath = join(root, "oversized.json");
+    await writeFile(oversizedPath, Buffer.alloc(16 * 1024 * 1024 + 1, 0x20));
+    const oversized = await inspectTracePack(oversizedPath, root, "old", expected);
+    assert.equal(oversized.status, "missing");
+    assert.match(oversized.error, /exceeds/u);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -283,8 +409,8 @@ test("apparently ready Android and exact-head inputs still cannot produce a fals
       invoke: async () => ({}),
     });
     assert.equal(report.android.status, "ready");
-    assert.equal(report.exactProofInputs.oldTracePack.status, "unverified");
-    assert.equal(report.exactProofInputs.repairedTracePack.status, "unverified");
+    assert.equal(report.exactProofInputs.oldTracePack.status, "invalid");
+    assert.equal(report.exactProofInputs.repairedTracePack.status, "invalid");
     assert.equal(report.status, "insufficient-evidence");
     assert.equal(report.finalProof.status, "not-claimed");
     assert.ok(report.unsupported.some(({ id }) => id === "android.execution.not-run"));

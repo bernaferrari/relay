@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { copyFile, lstat, mkdir, readFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
+import { isDeepStrictEqual } from "node:util";
 import { fileURLToPath } from "node:url";
 
 const execFileAsync = promisify(execFile);
@@ -10,6 +11,8 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const MAX_COMMAND_OUTPUT_BYTES = 64 * 1024;
 const MAX_TRACE_PACK_BYTES = 16 * 1024 * 1024;
 const SHA = /^[0-9a-f]{40}$/u;
+const PROOF_DIGEST = /^sha256:[0-9a-f]{64}$/u;
+const TSX_CLI = join(ROOT, "node_modules/tsx/dist/cli.mjs");
 
 function bounded(value, max = 480) {
   return String(value ?? "").slice(0, max);
@@ -234,7 +237,56 @@ export async function inspectManagedBrowserTargets({ env = process.env, targetFi
   };
 }
 
-async function inspectTracePack(path, artifactDir, phase) {
+async function canonicalTracePackProjection(path) {
+  const verifier = String.raw`
+    import { readFile } from "node:fs/promises";
+    import { analyzeTracePack, frozenRunFromTracePack, verifyTracePack } from "./packages/core/src/trace-pack.ts";
+    (async () => {
+    const value = JSON.parse(await readFile(process.env.RELAY_TRACE_PACK_FILE, "utf8"));
+    const pack = verifyTracePack(value);
+    const run = frozenRunFromTracePack(pack);
+    const planArtifact = run.artifacts.filter((item) => item.kind === "app-map-test-plan");
+    if (planArtifact.length !== 1) throw new Error("TracePack must contain exactly one App Map Test plan");
+    const plan = planArtifact[0].data;
+    if (!plan || typeof plan !== "object" || Array.isArray(plan) ||
+        plan.schemaVersion !== 1 || typeof plan.appMapId !== "string" ||
+        !Number.isInteger(plan.appMapRevision) || plan.appMapRevision < 1 ||
+        !plan.test || typeof plan.test !== "object" || typeof plan.test.id !== "string") {
+      throw new Error("TracePack App Map Test identity is invalid");
+    }
+    const analysis = analyzeTracePack(pack);
+    process.stdout.write(JSON.stringify({
+      digest: pack.digest,
+      completeness: pack.completeness.status,
+      historicalVerdict: analysis.historicalVerdict,
+      run: {
+        id: run.id,
+        projectId: run.projectId ?? null,
+        sourceRevision: run.sourceRevision ?? null,
+        targetProfile: run.targetProfile ?? null,
+        executionTarget: run.executionTarget ?? null,
+        operationId: run.executionProvenance?.operationId ?? null,
+        requestId: run.executionProvenance?.requestId ?? null
+      },
+      plan: { appMapId: plan.appMapId, testId: plan.test.id, appMapRevision: plan.appMapRevision }
+    }));
+  })().catch((error) => { console.error(error); process.exitCode = 1; });
+  `;
+  const result = await execFileAsync(process.execPath, [TSX_CLI, "--eval", verifier], {
+    cwd: ROOT,
+    env: { ...process.env, RELAY_TRACE_PACK_FILE: path },
+    encoding: "utf8",
+    timeout: 20_000,
+    maxBuffer: MAX_COMMAND_OUTPUT_BYTES,
+  });
+  return JSON.parse(result.stdout);
+}
+
+function sameValue(left, right) {
+  return isDeepStrictEqual(left, right);
+}
+
+export async function inspectTracePack(path, artifactDir, phase, expected) {
   const file = await regularFile(
     path,
     `RELAY_GOLDEN_${phase.toUpperCase()}_TRACEPACK`,
@@ -248,28 +300,57 @@ async function inspectTracePack(path, artifactDir, phase) {
     return { status: "missing", error: bounded(error?.message ?? error) };
   }
   const digest = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
-  let parsed;
+  let projection;
   try {
-    parsed = JSON.parse(bytes.toString("utf8"));
+    projection = await canonicalTracePackProjection(file.path);
   } catch (error) {
     return {
       status: "invalid",
-      error: `TracePack is not JSON: ${bounded(error?.message ?? error)}`,
+      digest,
+      error: `Canonical TracePack verification failed: ${bounded(error?.stderr || error?.message || error)}`,
     };
   }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
-    return { status: "invalid", digest, error: "TracePack root must be a JSON object" };
+  const mismatches = [];
+  if (projection.run.id !== expected?.runId) mismatches.push("run identity");
+  if (projection.run.sourceRevision?.sha !== expected?.sourceSha) mismatches.push("source SHA");
+  if (projection.run.sourceRevision?.artifactDigest !== expected?.artifactDigest)
+    mismatches.push("build artifact digest");
+  if (projection.plan.appMapId !== expected?.appMapId || projection.plan.testId !== expected?.testId)
+    mismatches.push("App Map/Test identity");
+  if (!sameValue(projection.run.targetProfile, expected?.targetProfile))
+    mismatches.push("target profile");
+  if (expected?.executionTarget && !sameValue(projection.run.executionTarget, expected.executionTarget))
+    mismatches.push("execution target");
+  if (mismatches.length) {
+    return {
+      status: "identity-mismatch",
+      digest,
+      error: `TracePack does not match declared ${phase} ${mismatches.join(", ")}`,
+      projection,
+    };
+  }
   await mkdir(join(artifactDir, "tracepacks"), { recursive: true });
   const target = join(artifactDir, "tracepacks", `${phase}-${basename(file.path)}`);
   await copyFile(file.path, target);
   return {
-    status: "unverified",
+    status: "verified",
     path: target,
     sourcePath: file.path,
     bytes: bytes.length,
     digest,
-    warning: "TracePack bytes preserved; canonical Relay verification was not run",
+    canonicalDigest: projection.digest,
+    projection,
   };
+}
+
+function parseJsonEnvironment(env, name) {
+  const raw = env[name]?.trim();
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
 }
 
 export async function inspectExactProofInputs({ env = process.env, artifactDir }) {
@@ -293,32 +374,54 @@ export async function inspectExactProofInputs({ env = process.env, artifactDir }
       );
     }
   }
+  const appMapId = env.RELAY_GOLDEN_ANDROID_APP_MAP_ID?.trim() || null;
+  const testId = env.RELAY_GOLDEN_ANDROID_TEST_ID?.trim() || null;
+  const expectedFor = (phase, sourceSha) => ({
+    sourceSha,
+    appMapId,
+    testId,
+    runId: env[`RELAY_GOLDEN_${phase.toUpperCase()}_RUN_ID`]?.trim() || null,
+    artifactDigest:
+      env[`RELAY_GOLDEN_${phase.toUpperCase()}_BUILD_DIGEST`]?.trim() || null,
+    targetProfile: parseJsonEnvironment(
+      env,
+      `RELAY_GOLDEN_${phase.toUpperCase()}_TARGET_PROFILE`,
+    ),
+    executionTarget: parseJsonEnvironment(
+      env,
+      `RELAY_GOLDEN_${phase.toUpperCase()}_EXECUTION_TARGET`,
+    ),
+  });
+  for (const phase of ["old", "repaired"]) {
+    const upper = phase.toUpperCase();
+    if (!env[`RELAY_GOLDEN_${upper}_RUN_ID`]?.trim())
+      blockers.push(blocker(`proof.${phase}-run.missing`, `RELAY_GOLDEN_${upper}_RUN_ID is required`));
+    if (!PROOF_DIGEST.test(env[`RELAY_GOLDEN_${upper}_BUILD_DIGEST`]?.trim() || ""))
+      blockers.push(blocker(`proof.${phase}-build-digest.missing`, `RELAY_GOLDEN_${upper}_BUILD_DIGEST must be sha256:<64 lowercase hex>`));
+    if (!parseJsonEnvironment(env, `RELAY_GOLDEN_${upper}_TARGET_PROFILE`))
+      blockers.push(blocker(`proof.${phase}-target-profile.missing`, `RELAY_GOLDEN_${upper}_TARGET_PROFILE must be valid JSON`));
+  }
   const oldTracePack = await inspectTracePack(
     env.RELAY_GOLDEN_OLD_TRACEPACK?.trim(),
     artifactDir,
     "old",
+    expectedFor("old", oldSha),
   );
   const repairedTracePack = await inspectTracePack(
     env.RELAY_GOLDEN_REPAIRED_TRACEPACK?.trim(),
     artifactDir,
     "repaired",
+    expectedFor("repaired", repairedSha),
   );
   for (const [phase, tracePack] of [
     ["old", oldTracePack],
     ["repaired", repairedTracePack],
   ]) {
-    if (tracePack.status !== "unverified")
+    if (tracePack.status !== "verified")
       blockers.push(
         blocker(
           `proof.${phase}-tracepack.invalid`,
           tracePack.error || `Exact ${phase} TracePack is unavailable`,
-        ),
-      );
-    else
-      blockers.push(
-        blocker(
-          `proof.${phase}-tracepack.unverified`,
-          `Exact ${phase} TracePack was preserved but canonical Relay verification was not run`,
         ),
       );
   }
