@@ -1,5 +1,4 @@
-import type { DaemonInvokeFn, DaemonRequest, DaemonResponse } from '../types.ts';
-import { SessionStore } from '../session-store.ts';
+import type { DaemonResponse } from '../types.ts';
 import { handleReleaseMaterializedPathsCommand } from './session-app-source-deployment.ts';
 import { handleRuntimeCommand } from './session-runtime-command.ts';
 import { requireRuntimeBinding, requireRuntimeFacts } from './session-runtime-admission.ts';
@@ -12,64 +11,14 @@ import { runBatchCommands } from './session-batch.ts';
 import { handleSessionInventoryCommands } from './session-inventory.ts';
 import { handleSessionStateCommands } from './session-state.ts';
 import { handleSessionObservabilityCommands } from './session-observability.ts';
-import { handleSessionReplayCommands } from './session-replay.ts';
+import { handleReplayCommand, handleReplayTestCommand } from './session-replay-command.ts';
 import { handleSessionScriptPublication } from './session-script-publication.ts';
 import { handleSessionClipboardCommand } from './session-clipboard.ts';
 import { handleDoctorCommand } from './session-doctor.ts';
 import { handlePrepareCommand } from './session-prepare.ts';
+import type { SessionCommandHandler, SessionCommandInput } from './session-command-input.ts';
 import type { DescriptorSessionRouteCommandName } from '../../core/command-descriptor/registry.ts';
 import { LeaseRegistry } from '../lease-registry.ts';
-import type { LeaseLifecycleProvider, ProviderAppCatalog } from '@agent-device/contracts/device';
-import type {
-  BindDeviceRuntime,
-  BindExactDeviceRuntime,
-  InspectDeviceRuntimeFacts,
-} from '../request-runtime-binding.ts';
-import type { DeviceClaimReconciler } from '../device-claims.ts';
-import type { AppLogAdmissionLedger } from '../app-log-admission-ledger.ts';
-import type { AudioProbeAdmissionLedger } from '../audio-probe-admission-ledger.ts';
-import type { PerfCaptureAdmissionLedger } from '../perf-capture-admission-ledger.ts';
-import type { ScreenRecordingAdmissionLedger } from '../screen-recording-admission-ledger.ts';
-import type { PlatformRequestScope } from '@agent-device/contracts/platform-runtime-host';
-import type { HostDiagnostics } from '@agent-device/contracts/host-diagnostics';
-import type { PlatformResourceCleanup } from '@agent-device/contracts/platform-resource-cleanup';
-
-export type SessionCommandInput = {
-  req: DaemonRequest;
-  sessionName: string;
-  logPath: string;
-  sessionStore: SessionStore;
-  leaseRegistry?: LeaseRegistry;
-  leaseLifecycleProvider?: LeaseLifecycleProvider;
-  providerAppCatalog?: ProviderAppCatalog;
-  invoke: DaemonInvokeFn;
-  invokeReplayAction?: DaemonInvokeFn;
-  /**
-   * Request-scoped Android adb transport override, opaque to the daemon (the
-   * `transportOverrides` pattern from `@agent-device/contracts/host-diagnostics`); the
-   * platform owner narrows it at its own boundary.
-   */
-  androidAdbExecutor?: unknown;
-  bindDevice?: BindDeviceRuntime;
-  inspectFacts?: InspectDeviceRuntimeFacts;
-  bindExactDevice?: BindExactDeviceRuntime;
-  appLogAdmissionLedger?: AppLogAdmissionLedger;
-  audioProbeAdmissionLedger?: AudioProbeAdmissionLedger;
-  perfCaptureAdmissionLedger?: PerfCaptureAdmissionLedger;
-  screenRecordingAdmissionLedger?: ScreenRecordingAdmissionLedger;
-  hostDiagnostics?: HostDiagnostics;
-  requestScope?: PlatformRequestScope;
-  retainDeviceExecutionLock?: (deviceId: string) => Promise<void>;
-  throwIfCanceled?: () => void;
-  reconcileOrphanedDeviceClaim: DeviceClaimReconciler;
-  platformResourceCleanup?: PlatformResourceCleanup;
-};
-
-type SessionCommandParams = Omit<SessionCommandInput, 'leaseRegistry'> & {
-  leaseRegistry: LeaseRegistry;
-};
-
-type SessionCommandHandler = (params: SessionCommandParams) => Promise<DaemonResponse | null>;
 
 const handleSessionInventoryCommandGroup: SessionCommandHandler = async ({
   req,
@@ -124,40 +73,6 @@ const handleSessionObservabilityCommandGroup: SessionCommandHandler = async ({
     audioProbeAdmissionLedger,
     perfCaptureAdmissionLedger,
     throwIfCanceled,
-  });
-
-const handleSessionReplayCommandGroup: SessionCommandHandler = async ({
-  req,
-  sessionName,
-  logPath,
-  sessionStore,
-  leaseRegistry,
-  invoke,
-  invokeReplayAction,
-  bindDevice,
-  inspectFacts,
-  bindExactDevice,
-  screenRecordingAdmissionLedger,
-  requestScope,
-  retainDeviceExecutionLock,
-  throwIfCanceled,
-  platformResourceCleanup,
-}) =>
-  await handleSessionReplayCommands({
-    req,
-    sessionName,
-    logPath,
-    sessionStore,
-    leaseRegistry,
-    invoke: invokeReplayAction ?? invoke,
-    bindDevice,
-    inspectFacts,
-    bindExactDevice,
-    screenRecordingAdmissionLedger,
-    requestScope,
-    retainDeviceExecutionLock,
-    throwIfCanceled,
-    platformResourceCleanup,
   });
 
 /**
@@ -267,8 +182,8 @@ const SESSION_COMMAND_HANDLER_IMPLS = {
       openResponse,
     });
   },
-  replay: handleSessionReplayCommandGroup,
-  test: handleSessionReplayCommandGroup,
+  replay: handleReplayCommand,
+  test: handleReplayTestCommand,
   batch: async ({ req, sessionName, invoke }) => await runBatchCommands(req, sessionName, invoke),
   close: async ({
     req,
