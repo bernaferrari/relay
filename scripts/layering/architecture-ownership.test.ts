@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { ARCHITECTURE_OWNERSHIP, matchesDeclaredRoot } from './architecture-ownership.ts';
-import { readDirectNamedExports } from './facade-exports.ts';
+import { readNamedExports } from './facade-exports.ts';
 import { resolveImportEdges } from './model.ts';
 import { workspaceSpecifierTargets } from './package-boundaries.ts';
 import { listTrackedTypeScriptFiles } from './tracked-sources.ts';
@@ -36,6 +36,9 @@ test('architecture ownership roots resolve to tracked owners', () => {
   for (const declaration of ARCHITECTURE_OWNERSHIP.capabilities) {
     assert.ok(tracked.has(declaration.root), `${declaration.name} root is not tracked`);
   }
+  for (const declaration of ARCHITECTURE_OWNERSHIP.liveState) {
+    assert.ok(tracked.has(declaration.root), `${declaration.name} root is not tracked`);
+  }
 });
 
 test('vocabulary roots are exported contract facades', () => {
@@ -64,7 +67,7 @@ test('capability roots enumerate current exports and have production consumers',
 
   for (const declaration of ARCHITECTURE_OWNERSHIP.capabilities) {
     assert.deepEqual(
-      readDirectNamedExports(sources.get(declaration.root)!),
+      readNamedExports(sources.get(declaration.root)!),
       declaration.exports,
       `${declaration.name} capability exports drifted`,
     );
@@ -72,6 +75,20 @@ test('capability roots enumerate current exports and have production consumers',
       edges.some((edge) => edge.target === declaration.root && productionFile(edge.file)),
       `${declaration.name} has no production consumer`,
     );
+  }
+});
+
+test('live-state roots enumerate their declared exports', () => {
+  const files = listTrackedTypeScriptFiles(repoRoot);
+  const sources = new Map(
+    files.map((file) => [file, fs.readFileSync(path.join(repoRoot, file), 'utf8')]),
+  );
+
+  for (const declaration of ARCHITECTURE_OWNERSHIP.liveState) {
+    const actual = new Set(readNamedExports(sources.get(declaration.root)!));
+    for (const name of declaration.exports) {
+      assert.equal(actual.has(name), true, `${declaration.name} export drifted: ${name}`);
+    }
   }
 });
 
