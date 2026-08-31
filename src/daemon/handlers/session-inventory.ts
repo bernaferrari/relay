@@ -19,6 +19,9 @@ import {
   resolveAndroidSerialAllowlist,
   resolveIosSimulatorDeviceSetPath,
 } from '@agent-device/kernel/device-isolation';
+import { deviceClaimOwnerCannotRelease, inspectDeviceClaims } from '../device-claim-inspection.ts';
+import { canonicalLocalDeviceKey } from '../device-claim-paths.ts';
+import { deviceClaimIdentity } from '../device-claims.ts';
 import type { DaemonRequest, DaemonResponse, SessionRef } from '../types.ts';
 import { resolveSessionRunnerLogPath, SessionStore } from '../session-store.ts';
 import {
@@ -130,14 +133,50 @@ function publicSessionInfo({ address, session }: SessionRef, sessionStore: Sessi
 
 async function devicesInventoryResponse(req: DaemonRequest): Promise<DaemonResponse> {
   try {
+    const blockingClaims = blockingClaimOwnersByDevice();
     return {
       ok: true,
-      data: { devices: (await resolveInventoryDevices(req)).map(publicDeviceInfo) },
+      data: {
+        devices: (await resolveInventoryDevices(req)).map((device) => ({
+          ...publicDeviceInfo(device),
+          ...claimedByProjection(device, blockingClaims),
+        })),
+      },
     };
   } catch (error) {
     const appErr = asAppError(error);
     return errorResponse(appErr.code, appErr.message, appErr.details);
   }
+}
+
+/**
+ * #1320 ownership projection (`observe` policy): device rows name the claim
+ * owner that would block a foreign `open` right now, so an agent told a device
+ * is busy can pick a free one from the same listing. Provably dead owners are
+ * excluded — the next open reconciles and replaces them automatically. Both
+ * sides key by the canonical local device key (family, Apple OS, id): distinct
+ * platform devices may share a bare id, and a claim must never project onto
+ * another family's row.
+ */
+function blockingClaimOwnersByDevice(): Map<string, { session: string; workspace: string }> {
+  const owners = new Map<string, { session: string; workspace: string }>();
+  for (const entry of inspectDeviceClaims({})) {
+    const claim = entry.claim;
+    if (!claim || deviceClaimOwnerCannotRelease(entry.classification)) continue;
+    owners.set(claim.deviceKey, {
+      session: claim.session,
+      workspace: claim.workspace,
+    });
+  }
+  return owners;
+}
+
+function claimedByProjection(
+  device: DeviceInfo,
+  owners: Map<string, { session: string; workspace: string }>,
+): { claimedBy?: { session: string; workspace: string } } {
+  const owner = owners.get(canonicalLocalDeviceKey(deviceClaimIdentity(device)));
+  return owner ? { claimedBy: owner } : {};
 }
 
 async function resolveInventoryDevices(req: DaemonRequest): Promise<DeviceInfo[]> {
