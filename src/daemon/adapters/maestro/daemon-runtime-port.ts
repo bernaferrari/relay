@@ -16,6 +16,7 @@ import {
   observeTypedMaestroCondition,
   scrollUntilTypedMaestroTarget,
   waitForTypedSnapshotStability,
+  type StableMaestroSnapshot,
   type MaestroSnapshotSource,
 } from './daemon-runtime-port-observation.ts';
 import { createDaemonMaestroSnapshotSource } from './daemon-runtime-port-snapshot-source.ts';
@@ -41,9 +42,19 @@ function createDaemonMaestroRuntimeParts(options: CreateDaemonMaestroRuntimeOper
   operations: MaestroRuntimeOperations;
   snapshots: MaestroSnapshotSource;
   readMetrics: () => MaestroRuntimeMetrics;
+  recordSettle: (stable: StableMaestroSnapshot) => void;
 } {
   const snapshots = createDaemonMaestroSnapshotSource(options);
-  const metrics = { screenshotCaptures: 0, tapRetries: 0 };
+  const metrics: Omit<MaestroRuntimeMetrics, 'hierarchyCaptures'> = {
+    screenshotCaptures: 0,
+    tapRetries: 0,
+    settleLatches: 0,
+    settleTimeouts: 0,
+  };
+  const recordSettle = (stable: StableMaestroSnapshot) => {
+    if (stable.settled) metrics.settleLatches += 1;
+    else metrics.settleTimeouts += 1;
+  };
   const platform = options.platform;
   const invoke = <Operation extends MaestroPublicOperation>(operation: Operation) => {
     if (operation.kind === 'screenshot') metrics.screenshotCaptures += 1;
@@ -78,6 +89,7 @@ function createDaemonMaestroRuntimeParts(options: CreateDaemonMaestroRuntimeOper
       snapshot: snapshots.capture,
       dependencies: options.dependencies,
     });
+    recordSettle(stable);
     snapshots.prime(context.generation, stable.snapshot);
   };
 
@@ -216,14 +228,13 @@ function createDaemonMaestroRuntimeParts(options: CreateDaemonMaestroRuntimeOper
                 },
             context,
           );
-          return (
-            await waitForTypedSnapshotStability({
-              timeoutMs: Math.min(MAESTRO_RUNTIME_ADAPTER_POLICY.settleTimeoutMs, remainingMs),
-              context,
-              snapshot: snapshots.capture,
-              dependencies: options.dependencies,
-            })
-          ).snapshot;
+          const stable = await waitForTypedSnapshotStability({
+            timeoutMs: Math.min(MAESTRO_RUNTIME_ADAPTER_POLICY.settleTimeoutMs, remainingMs),
+            context,
+            snapshot: snapshots.capture,
+            dependencies: options.dependencies,
+          });
+          return stable.snapshot;
         },
       });
       if (match.visiblePercentage !== MAESTRO_RUNTIME_ADAPTER_POLICY.scrollUntilVisiblePercentage) {
@@ -279,17 +290,20 @@ function createDaemonMaestroRuntimeParts(options: CreateDaemonMaestroRuntimeOper
     operations,
     snapshots,
     readMetrics: () => ({ ...snapshots.readMetrics(), ...metrics }),
+    recordSettle,
   };
 }
 
 export function createDaemonMaestroRuntimePort(
   options: CreateDaemonMaestroRuntimeOperationsOptions,
 ): MaestroRuntimePort {
-  const { operations, snapshots, readMetrics } = createDaemonMaestroRuntimeParts(options);
+  const { operations, snapshots, readMetrics, recordSettle } =
+    createDaemonMaestroRuntimeParts(options);
   return createMaestroRuntimePort(operations, {
     beforeExecute: async ({ context, requiresSettledPredecessor }) => {
       if (requiresSettledPredecessor) {
-        await snapshots.settlePending(context);
+        const stable = await snapshots.settlePending(context);
+        if (stable) recordSettle(stable);
       }
     },
     afterExecute: ({ context, visualStabilityReached }) => {

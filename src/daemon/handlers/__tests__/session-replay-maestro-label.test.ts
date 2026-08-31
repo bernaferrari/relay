@@ -24,7 +24,13 @@ test('forwards command labels to progress and replay trace projection', () => {
   observer.actionCompleted?.({
     ...event,
     durationMs: 5,
-    runtimeMetrics: { hierarchyCaptures: 1, screenshotCaptures: 0, tapRetries: 0 },
+    runtimeMetrics: {
+      hierarchyCaptures: 1,
+      screenshotCaptures: 0,
+      tapRetries: 0,
+      settleLatches: 0,
+      settleTimeouts: 0,
+    },
   });
 
   expect(onStep).toHaveBeenCalledWith({
