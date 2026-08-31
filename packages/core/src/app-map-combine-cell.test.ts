@@ -544,7 +544,12 @@ function childFixture() {
       kind: "scenario" as const,
       intentSchemaVersion: 1 as const,
     },
-    runtimeTargetProfile: { id: "ipad-en", targetId: "ipad-1", platform: "ios" as const },
+    runtimeTargetProfile: {
+      id: "ipad-en",
+      targetId: "ipad-1",
+      platform: "ios" as const,
+      capabilities: ["snapshot" as const],
+    },
     rootRecipeId: root.id,
     recipes: { [root.id]: { id: root.id, title: root.title, parameters: [], steps: [] } },
     stepProvenance: [],

@@ -518,6 +518,7 @@ test("compiled graph Tests retain a conservative logical-surface capture policy"
           targetProfileId: "iphone-en",
           targetId: "iphone-1",
           platform: "ios",
+          capabilities: ["screenshot"],
         },
         origin: {
           kind: "screen-variant",
@@ -533,6 +534,7 @@ test("compiled graph Tests retain a conservative logical-surface capture policy"
           targetProfileId: "iphone-pt",
           targetId: "iphone-1",
           platform: "ios",
+          capabilities: ["screenshot"],
         },
         origin: {
           kind: "screen-variant",
@@ -551,19 +553,31 @@ test("compiled graph Tests retain a conservative logical-surface capture policy"
         targetProfileId: "iphone-en",
         targetId: "iphone-1",
         platform: "ios",
+        capabilities: ["screenshot"],
       },
       {
         id: "cart-pt",
         targetProfileId: "iphone-pt",
         targetId: "iphone-1",
         platform: "ios",
+        capabilities: ["screenshot"],
       },
     ],
     home: [],
   });
   assert.deepEqual(compiled.plan.rawAccessibilityTargetProfiles, [
-    { id: "iphone-en", targetId: "iphone-1", platform: "ios" },
-    { id: "iphone-pt", targetId: "iphone-1", platform: "ios" },
+    {
+      id: "iphone-en",
+      targetId: "iphone-1",
+      platform: "ios",
+      capabilities: ["screenshot"],
+    },
+    {
+      id: "iphone-pt",
+      targetId: "iphone-1",
+      platform: "ios",
+      capabilities: ["screenshot"],
+    },
   ]);
   current.screenVariants["cart-en"]!.rawAccessibilityTree!.bytes = 999;
   const frozenCartSource = compiled.plan.rawAccessibilitySourcesByScreenId?.cart?.[0];

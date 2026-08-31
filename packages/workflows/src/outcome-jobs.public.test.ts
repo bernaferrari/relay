@@ -118,6 +118,73 @@ test("connect leaves multiple devices explicit instead of guessing", async () =>
   assert.equal(result.targets.length, 2);
 });
 
+test("connect excludes Android targets that are listed but offline or unauthorized", async () => {
+  const scripted = createScriptedRelayClient([
+    {
+      id: "target.devices.list",
+      output: {
+        devices: [
+          pixel,
+          { ...pixel, id: "offline", serial: "offline", connectionState: "offline" },
+          { ...pixel, id: "unauthorized", serial: "unauthorized", connectionState: "unauthorized" },
+        ],
+      },
+    },
+  ]);
+  const jobs = createRelayOutcomeJobs(scripted.client, { actorId: "agent:test" });
+
+  const result = await jobs.connect();
+  assert.deepEqual(result.targets, [{ kind: "device", platform: "android", targetId: "pixel-9" }]);
+  assert.deepEqual(result.current, {
+    kind: "device",
+    platform: "android",
+    targetId: "pixel-9",
+  });
+});
+
+test("explicit workflow target reports the precise iOS runtime recovery", async () => {
+  const unavailable = {
+    mode: "accessibility" as const,
+    state: "unavailable" as const,
+    freshness: "unproven" as const,
+    reason: "probe-failed" as const,
+  };
+  const provenPixels = {
+    mode: "pixels" as const,
+    state: "proven" as const,
+    freshness: "current" as const,
+    proof: { at: 1 },
+  };
+  const provenEvidence = {
+    mode: "evidence" as const,
+    state: "proven" as const,
+    freshness: "current" as const,
+    proof: { at: 1 },
+  };
+  const ipad = {
+    id: "ipad",
+    serial: "ipad",
+    name: "iPad",
+    kind: "Physical device",
+    booted: true,
+    platform: "ios" as const,
+    readiness: {
+      previewPixels: provenPixels,
+      semanticControl: unavailable,
+      evidenceCapture: provenEvidence,
+    },
+  };
+  const scripted = createScriptedRelayClient([
+    { id: "target.devices.list", output: { devices: [ipad] } },
+  ]);
+  const jobs = createRelayOutcomeJobs(scripted.client, { actorId: "agent:test" });
+
+  await assert.rejects(
+    () => jobs.observe({ kind: "observe-target", targetId: "ipad" }),
+    /Reconnect the iOS target and capture a fresh observation/,
+  );
+});
+
 test("inspect-failure returns bounded public projections from canonical repair summaries", async () => {
   const repair = {
     schemaVersion: 1 as const,

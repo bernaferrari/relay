@@ -18,6 +18,9 @@ export const relayMcpServerInfo: {
   readonly description: string;
 };
 export const relayMcpInstructions: string;
+export declare function relayMcpInstructionsForProfile(
+  profile: NonNullable<McpServerDependencies["profile"]>,
+): string;
 export const relayMcpTextLimit: 8192;
 export const relayMcpErrorLimit: 1024;
 

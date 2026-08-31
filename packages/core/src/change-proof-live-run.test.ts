@@ -24,6 +24,8 @@ const safeExecutionRisk = {
   cleanupRequired: false,
 };
 const safeExecutionRiskDigest = canonicalSha256(safeExecutionRisk);
+const evidencePolicy = { schemaVersion: 1 as const, sensitive: {} };
+const evidencePolicyDigest = canonicalSha256(evidencePolicy);
 
 function targetCase(id: string): ChangeVerification["selection"]["targetCases"][number] {
   return {
@@ -107,7 +109,7 @@ function proof(): ChangeVerification {
           dimensions: { locale: "ar" },
           executionRisk: safeExecutionRisk,
           executionRiskDigest: safeExecutionRiskDigest,
-          evidencePolicyDigest: `sha256:${"e".repeat(64)}`,
+          evidencePolicyDigest,
           cleanupRequired: false,
         },
         {
@@ -120,7 +122,7 @@ function proof(): ChangeVerification {
           dimensions: { locale: "ar" },
           executionRisk: safeExecutionRisk,
           executionRiskDigest: safeExecutionRiskDigest,
-          evidencePolicyDigest: `sha256:${"e".repeat(64)}`,
+          evidencePolicyDigest,
           cleanupRequired: false,
         },
       ],
@@ -174,6 +176,16 @@ function failedPersistedRun(): PersistedRun {
     frames: [],
     dir: ".",
     writtenAt: 320,
+    evidence: {
+      schemaVersion: 1,
+      runId: "persisted-failure",
+      target: { kind: "browser", platform: "browser" },
+      startedAt: 310,
+      finishedAt: 320,
+      collectionPolicy: evidencePolicy,
+      channels: {},
+      events: [],
+    } as never,
     artifacts: [
       {
         kind: "app-map-test-plan",
@@ -248,6 +260,7 @@ function passedPersistedRun(withCleanup = false): PersistedRun {
     target: { kind: "browser", platform: "browser" },
     startedAt: 310,
     finishedAt: 320,
+    collectionPolicy: evidencePolicy,
     channels: {},
     events: [],
   } as never;
@@ -472,6 +485,27 @@ test("persisted Run projection accepts complete recorded selector proof", async 
   assert.equal(projected.selectorResolution, "deterministic");
   assert.equal(projected.inputOutcome, "reconciled");
   assert.equal(projected.cleanup, "not-required");
+});
+
+test("persisted Run projection requires the exact frozen evidence policy", async () => {
+  const missing = passedPersistedRun();
+  delete missing.evidence!.collectionPolicy;
+  await assert.rejects(
+    changeProofCaseResultFromPersistedRun({ proof: proof(), run: missing }),
+    /no frozen evidence policy/u,
+  );
+
+  const changed = passedPersistedRun();
+  changed.evidence!.collectionPolicy = {
+    schemaVersion: 1,
+    sensitive: {
+      crash: { grantedAt: 1, grantedBy: "human:reviewer", reason: "Different policy" },
+    },
+  };
+  await assert.rejects(
+    changeProofCaseResultFromPersistedRun({ proof: proof(), run: changed }),
+    /evidence policy does not match/u,
+  );
 });
 
 test("required cleanup without a recorded restoration cannot prove a case", async () => {

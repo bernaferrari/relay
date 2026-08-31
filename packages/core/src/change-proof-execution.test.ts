@@ -148,7 +148,7 @@ function selection(cellCount = 1): ChangeVerification["selection"] {
   };
 }
 
-async function readyProof(): Promise<ChangeVerification> {
+async function readyProof(cellCount = 1): Promise<ChangeVerification> {
   const created = await createChangeVerification({
     ...scope,
     id: "proof-execution-test",
@@ -163,7 +163,7 @@ async function readyProof(): Promise<ChangeVerification> {
         environmentRevision: "fixture-v1",
       },
     ],
-    selection: selection(),
+    selection: selection(cellCount),
     policy: { id: "relay.default", version: 3 },
     requestedBy: "agent:proof-test",
     actorId: "agent:proof-test",
@@ -387,6 +387,151 @@ test("startup recovery autonomously continues a queued Proof from frozen authori
     assert.equal(dispatches, 1);
     assert.equal(recovered.length, 1);
     assert.equal(recovered[0]?.status, "completed");
+    assert.equal((await readChangeVerification(scope, proof.id))?.state, "proved");
+  });
+});
+
+test("restart finalizes an execution whose Run already advanced the Proof before process death", async () => {
+  await withStateRoot(async () => {
+    const proof = await readyProof();
+    const input = submit(proof);
+    const beforeRestart = createChangeProofExecutionCoordinator({
+      now: () => 300,
+      workerId: "worker:before-result-persist",
+    });
+    const queued = await beforeRestart.submit(input);
+    const runningProof = await readChangeVerification(scope, proof.id);
+    assert.equal(runningProof?.state, "running-pilot");
+    await advanceChangeVerification({
+      ...scope,
+      proofId: proof.id,
+      expectedVersion: runningProof!.version,
+      state: "proved",
+      actorId: input.actorId,
+      requestId: `${queued.id}:record-runs:1`,
+      requestDigest,
+      action: "record-runs",
+      at: 350,
+      runIds: ["run-result-persist-crash"],
+      evidenceDigests: [requestDigest],
+      smallestNextVerification: {
+        kind: "none",
+        reason: "All required verification passed.",
+      },
+    });
+    await withControlStore((store) => {
+      store.updateChangeProofExecution({
+        ...queued,
+        status: "running",
+        lease: {
+          workerId: "worker:before-result-persist",
+          token: "expired-result-token",
+          claimedAt: 300,
+          expiresAt: 400,
+        },
+        cells: [
+          {
+            ...queued.cells[0]!,
+            status: "running",
+            runId: "run-result-persist-crash",
+            updatedAt: 340,
+          },
+        ],
+        runIds: ["run-result-persist-crash"],
+        updatedAt: 340,
+      });
+    });
+
+    let dispatches = 0;
+    const afterRestart = createChangeProofExecutionCoordinator({
+      now: () => 500,
+      workerId: "worker:after-result-persist",
+      readRun: async (id) => fakeRun(id),
+      projectRun: async ({ run }) => projectedPass((run as { id: string }).id),
+    });
+    const recovered = await afterRestart.run(input, async () => {
+      dispatches += 1;
+      throw new Error("must not redispatch a recovered Run");
+    });
+    assert.equal(dispatches, 0);
+    assert.equal(recovered.status, "completed");
+    assert.equal(recovered.cursor, 1);
+    assert.equal(recovered.cells[0]?.result?.runId, "run-result-persist-crash");
+    assert.equal((await readChangeVerification(scope, proof.id))?.state, "proved");
+  });
+});
+
+test("restart resumes required coverage when the pilot transition was already applied", async () => {
+  await withStateRoot(async () => {
+    const proof = await readyProof(2);
+    const input = submit(proof);
+    const beforeRestart = createChangeProofExecutionCoordinator({
+      now: () => 300,
+      workerId: "worker:before-pilot-result-persist",
+    });
+    const queued = await beforeRestart.submit(input);
+    const runningProof = await readChangeVerification(scope, proof.id);
+    await advanceChangeVerification({
+      ...scope,
+      proofId: proof.id,
+      expectedVersion: runningProof!.version,
+      state: "awaiting-expansion",
+      actorId: input.actorId,
+      requestId: `${queued.id}:await-expansion:1`,
+      requestDigest,
+      action: "await-expansion",
+      at: 350,
+      runIds: ["run-pilot-result-persist-crash"],
+      evidenceDigests: [requestDigest],
+      smallestNextVerification: {
+        kind: "expand",
+        reason: "The pilot passed; continue required coverage.",
+      },
+    });
+    await withControlStore((store) => {
+      store.updateChangeProofExecution({
+        ...queued,
+        status: "running",
+        lease: {
+          workerId: "worker:before-pilot-result-persist",
+          token: "expired-pilot-token",
+          claimedAt: 300,
+          expiresAt: 400,
+        },
+        cells: [
+          {
+            ...queued.cells[0]!,
+            status: "running",
+            runId: "run-pilot-result-persist-crash",
+            updatedAt: 340,
+          },
+          queued.cells[1]!,
+        ],
+        runIds: ["run-pilot-result-persist-crash"],
+        updatedAt: 340,
+      });
+    });
+
+    let dispatches = 0;
+    const afterRestart = createChangeProofExecutionCoordinator({
+      now: () => 500,
+      workerId: "worker:after-pilot-result-persist",
+      readRun: async (id) => fakeRun(id),
+      projectRun: async ({ run }) => {
+        const runId = (run as { id: string }).id;
+        return runId === "run-required"
+          ? { ...projectedPass(runId), targetCaseId: "browser-en" }
+          : projectedPass(runId);
+      },
+    });
+    const recovered = await afterRestart.run(input, async ({ cell }) => {
+      dispatches += 1;
+      assert.equal(cell.cellId, "language__browser-en");
+      return { runId: "run-required", wait: async () => fakeRun("run-required") };
+    });
+    assert.equal(dispatches, 1);
+    assert.equal(recovered.status, "completed");
+    assert.equal(recovered.cursor, 2);
     assert.equal((await readChangeVerification(scope, proof.id))?.state, "proved");
   });
 });

@@ -21,18 +21,16 @@ async function writeCanonicalTracePack(path, overrides = {}) {
   const sourceSha = overrides.sourceSha ?? "b".repeat(40);
   const artifactDigest = overrides.artifactDigest ?? `sha256:${"c".repeat(64)}`;
   const runId = overrides.runId ?? "run-golden-old";
-  const targetProfile =
-    overrides.targetProfile ??
-    {
-      id: "android-medium-phone",
-      targetId: "emulator-5554",
-      source: "device",
-      platform: "android",
-      name: "medium_phone",
-      viewport: { width: 1080, height: 2400 },
-      capabilities: ["screenshot", "snapshot"],
-      observedAt: 1,
-    };
+  const targetProfile = overrides.targetProfile ?? {
+    id: "android-medium-phone",
+    targetId: "emulator-5554",
+    source: "device",
+    platform: "android",
+    name: "medium_phone",
+    viewport: { width: 1080, height: 2400 },
+    capabilities: ["screenshot", "snapshot"],
+    observedAt: 1,
+  };
   const run = {
     schemaVersion: 5,
     id: runId,
@@ -50,24 +48,52 @@ async function writeCanonicalTracePack(path, overrides = {}) {
     writtenAt: 4,
     targetProfile,
     sourceRevision: { vcs: "git", sha: sourceSha, artifactDigest, buildId: "android-old" },
-    artifacts: [{
-      kind: "app-map-test-plan",
-      capturedAt: 2,
-      data: {
-        schemaVersion: 1,
-        appMapId: "settings",
-        appMapRevision: 1,
-        test: { id: "settings-language-arabic", name: "Settings → Language → Arabic", kind: "scenario", intentSchemaVersion: 1 },
-        rootRecipeId: "settings:settings-language-arabic:root",
-        recipes: { "settings:settings-language-arabic:root": { id: "settings:settings-language-arabic:root", title: "Settings → Language → Arabic", parameters: [], steps: [] } },
-        stepProvenance: [],
-        performance: { executableOperations: 0, moduleCalls: 0, operationCounts: {}, screenshotCount: 0, destinationProofCount: 0 },
-        startup: { mode: "cold" }
-      }
-    }],
+    artifacts: [
+      {
+        kind: "app-map-test-plan",
+        capturedAt: 2,
+        data: {
+          schemaVersion: 1,
+          appMapId: "settings",
+          appMapRevision: 1,
+          test: {
+            id: "settings-language-arabic",
+            name: "Settings → Language → Arabic",
+            kind: "scenario",
+            intentSchemaVersion: 1,
+          },
+          rootRecipeId: "settings:settings-language-arabic:root",
+          recipes: {
+            "settings:settings-language-arabic:root": {
+              id: "settings:settings-language-arabic:root",
+              title: "Settings → Language → Arabic",
+              parameters: [],
+              steps: [],
+            },
+          },
+          stepProvenance: [],
+          performance: {
+            executableOperations: 0,
+            moduleCalls: 0,
+            operationCounts: {},
+            screenshotCount: 0,
+            destinationProofCount: 0,
+          },
+          startup: { mode: "cold" },
+        },
+      },
+    ],
     inputDigest: "d".repeat(64),
     resolvedInputs: {},
-    evidence: { schemaVersion: 1, runId, target: { kind: "device", platform: "android" }, startedAt: 2, finishedAt: 3, channels: {}, events: [] }
+    evidence: {
+      schemaVersion: 1,
+      runId,
+      target: { kind: "device", platform: "android" },
+      startedAt: 2,
+      finishedAt: 3,
+      channels: {},
+      events: [],
+    },
   };
   const script = `import { writeFile } from "node:fs/promises"; import { exportTracePack } from "./packages/core/src/trace-pack.ts"; (async()=>{const run=JSON.parse(process.env.RUN); await writeFile(process.env.OUT, JSON.stringify(await exportTracePack(run)));})().catch(error=>{console.error(error);process.exitCode=1});`;
   await execFileAsync(process.execPath, ["node_modules/tsx/dist/cli.mjs", "--eval", script], {

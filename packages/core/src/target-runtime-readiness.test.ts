@@ -11,6 +11,7 @@ import {
   recordTargetSemanticProbeInFlight,
   recordTargetSemanticSnapshot,
   resetTargetRuntimeReadiness,
+  targetExecutionReadiness,
   targetRuntimeReadiness,
 } from "./target-runtime-readiness.js";
 
@@ -24,6 +25,64 @@ const ipad = {
 };
 
 test.afterEach(() => resetTargetRuntimeReadiness());
+
+test("execution readiness excludes unauthorized and offline Android rows", () => {
+  const unauthorized = targetExecutionReadiness({
+    platform: "android",
+    connectionState: "unauthorized",
+    booted: true,
+  });
+  assert.equal(unauthorized.runnable, false);
+  if (!unauthorized.runnable) assert.equal(unauthorized.reason, "unauthorized");
+
+  const offline = targetExecutionReadiness({
+    platform: "android",
+    connectionState: "offline",
+    booted: true,
+  });
+  assert.equal(offline.runnable, false);
+  if (!offline.runnable) assert.equal(offline.reason, "offline");
+  assert.equal(
+    targetExecutionReadiness({
+      platform: "android",
+      connectionState: "connected",
+      booted: true,
+    }).runnable,
+    true,
+  );
+});
+
+test("execution readiness preserves known iOS runtime blockers", () => {
+  assert.deepEqual(
+    targetExecutionReadiness({
+      platform: "ios",
+      booted: true,
+      developerMode: "disabled",
+    }),
+    {
+      runnable: false,
+      reason: "developer-mode-disabled",
+      recovery:
+        "Enable Developer Mode on the iOS target, then refresh the target list before retrying.",
+    },
+  );
+  assert.deepEqual(
+    targetExecutionReadiness({
+      platform: "ios",
+      booted: true,
+      readiness: {
+        previewPixels: { mode: "pixels", state: "unavailable", freshness: "unproven" },
+        semanticControl: { mode: "accessibility", state: "unproven", freshness: "unproven" },
+        evidenceCapture: { mode: "evidence", state: "unproven", freshness: "unproven" },
+      },
+    }),
+    {
+      runnable: false,
+      reason: "runtime-unavailable",
+      recovery: "Reconnect the iOS target and capture a fresh observation before retrying.",
+    },
+  );
+});
 
 test("an attached iPad begins unproven instead of claiming XCTest control", () => {
   assert.deepEqual(targetRuntimeReadiness(ipad, 1), {

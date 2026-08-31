@@ -379,9 +379,12 @@ export type AppMapCompiledRawAccessibilityVariant = {
   targetProfileId: string;
   targetId: string;
   platform: TargetProfile["platform"];
+  model?: TargetProfile["model"];
   androidAvdName?: TargetProfile["androidAvdName"];
+  osVersion?: TargetProfile["osVersion"];
   viewport?: { width: number; height: number };
   browserCaseProfile?: TargetProfile["browserCaseProfile"];
+  capabilities?: TargetProfile["capabilities"];
 };
 
 /** The immutable runtime identity ledger for a compiled Test. This is global
@@ -392,7 +395,10 @@ export type AppMapCompiledRawAccessibilityVariant = {
 export type AppMapCompiledRawAccessibilityTargetProfile = Pick<
   TargetProfile,
   "id" | "targetId" | "platform" | "androidAvdName" | "viewport" | "browserCaseProfile"
->;
+> &
+  Partial<Pick<TargetProfile, "model" | "osVersion">> & {
+    capabilities?: readonly TargetCapability[];
+  };
 
 /** The saved target/profile binding selected for one queued Test. It is
  * frozen into run-only artifacts after server-side target validation; it
@@ -400,7 +406,10 @@ export type AppMapCompiledRawAccessibilityTargetProfile = Pick<
 export type AppMapCompiledRuntimeTargetProfile = Pick<
   TargetProfile,
   "id" | "targetId" | "platform" | "androidAvdName" | "viewport" | "browserCaseProfile"
->;
+> &
+  Partial<Pick<TargetProfile, "model" | "osVersion">> & {
+    capabilities?: readonly TargetCapability[];
+  };
 
 /** One immutable raw AX blob with the exact App Map Variant that supplied it.
  *

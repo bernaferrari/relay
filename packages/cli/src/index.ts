@@ -1,5 +1,6 @@
 #!/usr/bin/env tsx
 import { pathToFileURL } from "node:url";
+import { targetExecutionReadiness } from "@relay/core";
 import { type RelayOutcomeJobs, type WorkflowSnapshot } from "@relay/workflows";
 import { createRelayOutcomeJobs } from "@relay/workflows/outcomes";
 import {
@@ -431,14 +432,31 @@ async function resolveCurrentTestRunInput(
     const devices = Array.isArray(response.devices)
       ? response.devices.filter((value) => value && typeof value === "object")
       : [];
-    if (devices.length !== 1) {
+    const runnableDevices = devices.filter((device) => {
+      if (typeof device.platform !== "string") return false;
+      return targetExecutionReadiness(device as Parameters<typeof targetExecutionReadiness>[0])
+        .runnable;
+    });
+    if (runnableDevices.length !== 1) {
       throw new UsageError(
-        devices.length
-          ? `--target current is ambiguous: ${devices.length} targets are connected`
-          : "--target current found no connected target",
+        runnableDevices.length > 1
+          ? `--target current is ambiguous: ${runnableDevices.length} runnable targets are connected`
+          : devices.length
+            ? `--target current found no runnable target: ${devices
+                .map((device) => {
+                  if (typeof device.platform !== "string") return "unsupported target";
+                  const readiness = targetExecutionReadiness(
+                    device as Parameters<typeof targetExecutionReadiness>[0],
+                  );
+                  return readiness.runnable
+                    ? "target is available"
+                    : `${readiness.reason}: ${readiness.recovery}`;
+                })
+                .join("; ")}`
+            : "--target current found no connected target",
       );
     }
-    const device = object(devices[0], "connected target");
+    const device = object(runnableDevices[0], "connected target");
     const targetId =
       typeof device.serial === "string"
         ? device.serial

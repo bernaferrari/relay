@@ -15,12 +15,14 @@ export function useStudioWorkspaceController(input: {
   recordTest: () => void;
   deviceStateChanged: (open: boolean) => void;
   openRun: (runId?: string) => void;
+  openChanges: () => void;
   runReadinessChanged: (readiness: AppMapRunReadiness) => void;
   mapTargetSetChanged: (targetSetId?: string) => void;
 }): void {
   const disconnectNotifications = input.controller.connect({
     deviceStateChanged: input.deviceStateChanged,
     openRun: input.openRun,
+    openChanges: input.openChanges,
     runReadinessChanged: input.runReadinessChanged,
     mapTargetSetChanged: input.mapTargetSetChanged,
   });

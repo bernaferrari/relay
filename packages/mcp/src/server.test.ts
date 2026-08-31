@@ -7,6 +7,7 @@ import {
   createMcpServer,
   relayMcpErrorLimit,
   relayMcpInstructions,
+  relayMcpInstructionsForProfile,
   relayMcpServerInfo,
   relayMcpTextLimit,
   type OperationInvoker,
@@ -162,6 +163,42 @@ test("full-profile SDK initialization lists every generated Relay tool exactly o
     assert.match(snapshot.description ?? "", /full/);
   } finally {
     await session.close();
+  }
+});
+
+test("server instructions only name Proof surfaces registered by the selected profile", async () => {
+  const outcome = await connectMcp({ async invoke() {} }, "outcome");
+  try {
+    assert.equal(
+      outcome.initialized.result?.instructions,
+      relayMcpInstructionsForProfile("outcome"),
+    );
+    assert.match(String(outcome.initialized.result?.instructions), /relay_prove_change/);
+    assert.match(String(outcome.initialized.result?.instructions), /relay_inspect_proof/);
+    assert.doesNotMatch(String(outcome.initialized.result?.instructions), /proof\./);
+  } finally {
+    await outcome.close();
+  }
+
+  const observe = await connectMcp({ async invoke() {} }, "observe");
+  try {
+    assert.equal(
+      observe.initialized.result?.instructions,
+      relayMcpInstructionsForProfile("observe"),
+    );
+    assert.doesNotMatch(String(observe.initialized.result?.instructions), /relay_prove_change/);
+    assert.doesNotMatch(String(observe.initialized.result?.instructions), /proof\./);
+    assert.doesNotMatch(String(observe.initialized.result?.instructions), /Prefer outcome tools/);
+  } finally {
+    await observe.close();
+  }
+
+  const proof = await connectMcp({ async invoke() {} }, "proof");
+  try {
+    assert.equal(proof.initialized.result?.instructions, relayMcpInstructionsForProfile("proof"));
+    assert.match(String(proof.initialized.result?.instructions), /proof\.prepare/);
+  } finally {
+    await proof.close();
   }
 });
 
@@ -1115,6 +1152,121 @@ test("large Authoring Sessions point MCP callers at their full offline resource"
     });
     assert.ok(String(result.content[0]?.text).length <= relayMcpTextLimit);
     assert.doesNotMatch(String(result.content[0]?.text), /immutableCapture/);
+  } finally {
+    await session.close();
+  }
+});
+
+test("large evidence exports return a stable TracePack resource and bounded manifest", async () => {
+  const digest = `sha256:${"e".repeat(64)}`;
+  const tracePack = {
+    schemaVersion: 1,
+    kind: "relay-trace-pack",
+    digest,
+    createdAt: 123,
+    source: {
+      runId: "run-large",
+      runSchemaVersion: 5,
+      status: "passed",
+      action: "test",
+      inputDigest: "f".repeat(64),
+      writtenAt: 123,
+    },
+    redaction: { status: "applied-at-persistence", redactedChannels: [] },
+    completeness: { status: "complete", channels: {}, missing: [] },
+    objects: Array.from({ length: 24 }, (_, index) => ({
+      path: `frames/${index}.json`,
+      kind: "frame",
+      mediaType: "application/json",
+      encoding: "json",
+      digest: `sha256:${String(index % 10).repeat(64)}`,
+      bytes: 2_048,
+      content: { payload: "x".repeat(600) },
+    })),
+  };
+  const analysis = {
+    schemaVersion: 1,
+    mode: "trace-pack-offline-analysis",
+    tracePackDigest: digest,
+    sourceRunId: "run-large",
+    historicalVerdict: "proved",
+    futureTransitionVerdict: "unknown",
+    proved: [],
+    unknown: [{ code: "future", statement: "future is unknown", resolution: "live run" }],
+    smallestLiveVerification: { kind: "replay-check", reason: "live", requiresTarget: true },
+  };
+  const session = await connectMcp(
+    {
+      async invoke(operationId) {
+        assert.equal(operationId, "run.trace-pack.get");
+        return { tracePack, analysis };
+      },
+    },
+    "outcome",
+  );
+  try {
+    const result = callResult(
+      await session.request("tools/call", {
+        name: "relay_export_evidence",
+        arguments: { runId: "run-large" },
+      }),
+    );
+    assert.equal(result.isError, undefined);
+    assert.ok(String(result.content[0]?.text).length <= relayMcpTextLimit);
+    const compact = result.structuredContent?.result as {
+      truncated: boolean;
+      resourceUri: string;
+      message: string;
+      tracePack: {
+        digest: string;
+        createdAt: number;
+        serializedBytes: number;
+        objectCount: number;
+        objectBytes: number;
+        objects: Array<{ relativeName: string; bytes: number; content?: unknown }>;
+        source: { runId: string; status: string; action: string };
+        completeness: { status: string; channelCount: number; missing: string[] };
+        analysis: {
+          historicalVerdict: string;
+          futureTransitionVerdict: string;
+          provedCount: number;
+          unknownCount: number;
+          tracePackDigest: string;
+          sourceRunId: string;
+        };
+      };
+    };
+    assert.equal(compact.truncated, true);
+    assert.equal(compact.resourceUri, "relay://runs/run-large/trace-pack");
+    assert.match(compact.message, /scoped artifact response/u);
+    assert.match(compact.message, /complete sanitized pack when bounded/u);
+    assert.equal(compact.tracePack.digest, digest);
+    assert.equal(compact.tracePack.createdAt, 123);
+    assert.ok(compact.tracePack.serializedBytes > relayMcpTextLimit);
+    assert.equal(compact.tracePack.objectCount, 24);
+    assert.equal(compact.tracePack.objectBytes, 49_152);
+    assert.equal(compact.tracePack.objects.length, 24);
+    assert.equal(compact.tracePack.objects[0]?.relativeName, "frames/0.json");
+    assert.equal(compact.tracePack.objects[0]?.bytes, 2_048);
+    assert.equal("content" in (compact.tracePack.objects[0] ?? {}), false);
+    assert.deepEqual(compact.tracePack.source, {
+      runId: "run-large",
+      status: "passed",
+      action: "test",
+    });
+    assert.deepEqual(compact.tracePack.completeness, {
+      status: "complete",
+      channelCount: 0,
+      missing: [],
+    });
+    assert.deepEqual(compact.tracePack.analysis, {
+      historicalVerdict: "proved",
+      futureTransitionVerdict: "unknown",
+      provedCount: 0,
+      unknownCount: 1,
+      tracePackDigest: digest,
+      sourceRunId: "run-large",
+    });
   } finally {
     await session.close();
   }

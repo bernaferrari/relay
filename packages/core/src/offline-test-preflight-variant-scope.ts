@@ -19,7 +19,14 @@ type StableSelector =
 
 type RuntimeShape = Pick<
   AppMapCompiledRawAccessibilityTargetProfile,
-  "targetId" | "platform" | "androidAvdName" | "viewport" | "browserCaseProfile"
+  | "targetId"
+  | "platform"
+  | "model"
+  | "androidAvdName"
+  | "osVersion"
+  | "viewport"
+  | "browserCaseProfile"
+  | "capabilities"
 >;
 
 export type RawVariantScopeDecision = {
@@ -88,7 +95,10 @@ function sameRuntimeShape(left: RuntimeShape, right: RuntimeShape): boolean {
   return (
     left.targetId === right.targetId &&
     left.platform === right.platform &&
+    left.model === right.model &&
     left.androidAvdName === right.androidAvdName &&
+    left.osVersion === right.osVersion &&
+    JSON.stringify(left.capabilities ?? []) === JSON.stringify(right.capabilities ?? []) &&
     sameViewport(left, right) &&
     sameBrowserSelectorShape(left, right)
   );
@@ -109,11 +119,14 @@ function targetProfileFromVariant(
     id: variant.targetProfileId,
     targetId: variant.targetId,
     platform: variant.platform,
+    ...(variant.model ? { model: variant.model } : {}),
     ...(variant.androidAvdName ? { androidAvdName: variant.androidAvdName } : {}),
+    ...(variant.osVersion ? { osVersion: variant.osVersion } : {}),
     ...(variant.viewport ? { viewport: { ...variant.viewport } } : {}),
     ...(variant.browserCaseProfile
       ? { browserCaseProfile: structuredClone(variant.browserCaseProfile) }
       : {}),
+    ...(variant.capabilities ? { capabilities: [...variant.capabilities] } : {}),
   };
 }
 

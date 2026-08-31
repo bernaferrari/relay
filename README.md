@@ -97,7 +97,7 @@ route. See [Product flows](./docs/PRODUCT_FLOWS.md) for the complete authoring p
 | **Tests and Checkpoints** | Express intent, checks, extraction, human pauses, decisions, loops, reusable modules, and constrained scripts without hand-authoring topology.              |
 | **Repeat**                | Apply one Test across selected languages, themes, accounts, builds, Devices, or models. Run one representative case, then resume only the cases you choose. |
 | **Runs and Reports**      | Review immutable proof per Run or across a Checkpoint-first Repeat matrix, with baselines, completeness, and first-failure provenance.                      |
-| **People and agents**     | Desktop, CLI, TUI, and MCP use the same policy-controlled workflows and canonical operation registry.                                                       |
+| **People and agents**     | Desktop, CLI, and MCP use the same policy-controlled workflows; the TUI is a focused execution and observation surface.                                     |
 
 The ordinary product vocabulary is **Change**, **Proof**, **App**, **Target**, **Test**,
 **Checkpoint**, **Run**, and **Report**. **Record**, **Repeat**, **Explore**, and **Verify** are actions. Map is a generated
@@ -122,7 +122,7 @@ pnpm relay record "Settings localization" --confirm
 pnpm relay run settings-localization
 pnpm relay repeat settings-localization --each language=en,ja,pt-BR
 pnpm relay export-evidence <run-id>
-pnpm relay verify-change revision <git-sha>
+pnpm relay verify-change --base main --confirm
 ```
 
 These commands resolve the sole connected Device and current Test workspace. The first Record
@@ -133,6 +133,10 @@ remaining values with
 `pnpm relay continue-repeat <workflow-id> <expected-version> --confirm`. The identifier is not an
 authorization credential: project role, Device control, and version checks remain authoritative.
 Raw operation invocation and the older command families remain available as an advanced surface.
+The live Change Proof command reads the reviewed `.relay/change-proof.json`, binds the exact base,
+HEAD, builds, journeys, and targets, and runs only after confirmation. Historical
+`verify-change revision <git-sha>` is read-only offline analysis; it never creates a live Proof or
+clears a merge.
 
 For an outcome command using the implicit local URL, the CLI safely starts or reuses the local Relay
 service and verifies its identity. Explicit `--server` or `RELAY_URL` endpoints and every advanced
@@ -204,16 +208,15 @@ input so two people or agents cannot silently drive the same target.
 
 ## Develop and verify
 
-For browser-only UI development, run the service and product app separately:
+For browser-only UI development, use one command:
 
 ```bash
-# Terminal 1: explicitly trust the Relay-owned Vite renderer, not every local site.
-export RELAY_ALLOWED_BROWSER_ORIGINS="http://127.0.0.1:5173"
-pnpm ensure:serve
-
-# Terminal 2
 pnpm dev:app
 ```
+
+Relay chooses an available loopback port, starts a fresh watched service that trusts exactly that
+renderer origin, and prints the URL. Set `RELAY_APP_PORT` only when you need a fixed port. It never
+falls back to a different origin without restarting the service with the matching trust boundary.
 
 Run the normal quality gates with:
 

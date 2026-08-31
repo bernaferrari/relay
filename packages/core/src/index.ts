@@ -83,6 +83,7 @@ export * from "./target-supervisor.js";
 export * from "./target-supervisor-store.js";
 export * from "./target-supervisor-recovery-coordinator.js";
 export * from "./target-supervisor-runtime-recovery.js";
+export * from "./target-runtime-readiness.js";
 export * from "./workflow-records.js";
 export * from "./deterministic-provider-test-driver.js";
 export * from "./target-worker.js";

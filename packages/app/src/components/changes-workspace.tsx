@@ -93,6 +93,7 @@ export function ChangesWorkspace(props: {
   const [inspecting, setInspecting] = createSignal(false);
   let page: HTMLElement | undefined;
   let inspectionRequest = 0;
+  let previousHealth = server.health();
 
   function resetMobileScroll(): void {
     queueMicrotask(() => {
@@ -410,6 +411,12 @@ export function ChangesWorkspace(props: {
   }
 
   createEffect(() => {
+    const health = server.health();
+    if (health === "online" && previousHealth !== "online") void refresh();
+    previousHealth = health;
+  });
+
+  createEffect(() => {
     const proofId = selectedId();
     const executionStatus = execution()?.status;
     if (!proofId || (executionStatus !== "queued" && executionStatus !== "running")) return;
@@ -448,7 +455,7 @@ export function ChangesWorkspace(props: {
           </p>
         </div>
         <div class="flex shrink-0 items-center gap-2 max-[620px]:self-stretch">
-          <Show when={!creating()}>
+          <Show when={!creating() && proofs().length > 0}>
             <Button variant="primary" onClick={openCreation}>
               Prepare a Proof
             </Button>

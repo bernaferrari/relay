@@ -6,10 +6,11 @@ Execute in order unless the dependency table says otherwise.
 
 ## Execution order and status
 
-| Plan | Title                                                      | Priority | Effort | Depends on | Status  |
-| ---- | ---------------------------------------------------------- | -------- | ------ | ---------- | ------- |
-| 001  | Coalesce destination accessibility and screenshot evidence | P1       | M      | —          | BLOCKED |
-| 002  | Make failed-check repair evidence exact and readable       | P1       | M      | —          | DONE    |
+| Plan | Title                                                      | Priority | Effort | Depends on | Status                                   |
+| ---- | ---------------------------------------------------------- | -------- | ------ | ---------- | ---------------------------------------- |
+| 001  | Coalesce destination accessibility and screenshot evidence | P1       | M      | —          | BLOCKED                                  |
+| 002  | Make failed-check repair evidence exact and readable       | P1       | M      | —          | DONE                                     |
+| 003  | Close the live Android and browser Change Proof loop       | P1       | L      | —          | BLOCKED — no reviewed shared Test exists |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED | REJECTED.
 
@@ -24,6 +25,14 @@ the repository Vite+ test gate passed.
 - The plans are independent and may execute in either order. Plan 001 is first because it directly
   advances the sub-two-minute campaign objective; Plan 002 improves failure repair without changing
   successful-run latency.
+- Plan 003 is independent of the older Relay 40 plans. It is the current product priority because
+  the device-free Change Proof fixture is already complete while the live harness cannot currently
+  produce a canonical cross-platform Proof even when its prerequisites are supplied. Main contains
+  three reviewed commits: a truthful seeded Android source head, a distinct repaired head, and
+  canonical TracePack identity verification. Focused tests pass 10/10. Execution stopped correctly because the live
+  Relay store has no human-reviewed Settings → Language → Arabic Test with Android and browser
+  routes; creating that durable authoring input is the next prerequisite, not something a benchmark
+  may fabricate.
 
 ## Vetted audit findings
 
@@ -55,6 +64,23 @@ the repository Vite+ test gate passed.
   duplicate titles can show the wrong failure frame. This falls short of an intuitive repair loop.
 - **Effort**: M. **Risk**: LOW — the underlying immutable artifacts stay unchanged. **Confidence**:
   HIGH.
+
+### [CORRECTNESS-02] Make the live Change Proof harness execute and verify its declared scope
+
+- **Evidence**: `scripts/change-proof-golden-live.mjs:347-393` explicitly states that Android is not
+  executed and unconditionally adds `android.execution.not-run` to every report.
+- **Evidence**: `scripts/change-proof-golden-live-prerequisites.mjs:237-272` parses supplied
+  TracePack JSON but always returns `status: "unverified"`; `:296-323` then turns every supplied pack
+  into a blocker. There is no input combination that can make exact Proof evidence ready.
+- **Evidence**: `fixtures/android-proof-app/app/src/main/res/layout/activity_main.xml` and
+  `MainActivity.java` implement Ready → Prove interaction → Checkpoint passed, while the declared
+  golden journey in `scripts/change-proof-golden-live.mjs:36-44` is Settings → Language → Arabic.
+- **Impact**: the strongest public demonstration can prove managed Chromium interaction but can
+  never prove the same journey on Android, validate canonical TracePacks, or close an immutable old
+  head → repair → new-head Proof lifecycle. Relay therefore has a trustworthy kernel without the
+  retained live evidence needed to substantiate its product claim.
+- **Effort**: L. **Risk**: HIGH — a shortcut could create a false-green benchmark or bind evidence to
+  the wrong source/build/target identity. **Confidence**: HIGH.
 
 ## Findings considered and rejected
 

@@ -8,6 +8,7 @@ import { displayTitle } from "../lib/job";
 export function ShellTopbarTitle(props: {
   area: "changes" | "maps" | "runs";
   name: string;
+  editable: boolean;
   disabled: boolean;
   onNameInput: (value: string) => void;
   onCommit: (name: string) => void;
@@ -31,30 +32,39 @@ export function ShellTopbarTitle(props: {
           ) : null
         }
       >
-        <input
-          type="text"
-          size={Math.max(12, Math.min(34, shown().length + 1))}
-          class="h-8 max-w-full min-w-[120px] cursor-text bg-transparent px-2 font-medium text-[var(--text-base)] outline-none transition-[box-shadow,color] duration-hover placeholder:text-[var(--text-weak)] hover:text-[var(--text-strong)] focus:text-[var(--text-strong)] focus:shadow-[inset_0_-1px_0_var(--border-strong-base)] max-[680px]:min-w-0"
-          aria-label="Map name"
-          data-focus-contained
-          data-tip="Rename map"
-          value={shown()}
-          placeholder="My map"
-          spellcheck={false}
-          disabled={props.disabled}
-          onFocus={() => {
-            titleBeforeEdit = props.name;
-          }}
-          onInput={(event) => props.onNameInput(event.currentTarget.value)}
-          onBlur={() => props.onCommit(props.name.trim() || "My map")}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") event.currentTarget.blur();
-            if (event.key === "Escape") {
-              props.onNameInput(titleBeforeEdit);
-              event.currentTarget.blur();
-            }
-          }}
-        />
+        <Show
+          when={props.editable}
+          fallback={
+            <strong class="max-w-full truncate px-2 text-body font-medium text-[var(--text-base)]">
+              New map
+            </strong>
+          }
+        >
+          <input
+            type="text"
+            size={Math.max(12, Math.min(34, shown().length + 1))}
+            class="h-8 max-w-full min-w-[120px] cursor-text bg-transparent px-2 font-medium text-[var(--text-base)] outline-none transition-[box-shadow,color] duration-hover placeholder:text-[var(--text-weak)] hover:text-[var(--text-strong)] focus:text-[var(--text-strong)] focus:shadow-[inset_0_-1px_0_var(--border-strong-base)] max-[680px]:min-w-0"
+            aria-label="Map name"
+            data-focus-contained
+            data-tip="Rename map"
+            value={shown()}
+            placeholder="My map"
+            spellcheck={false}
+            disabled={props.disabled}
+            onFocus={() => {
+              titleBeforeEdit = props.name;
+            }}
+            onInput={(event) => props.onNameInput(event.currentTarget.value)}
+            onBlur={() => props.onCommit(props.name.trim() || "My map")}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") event.currentTarget.blur();
+              if (event.key === "Escape") {
+                props.onNameInput(titleBeforeEdit);
+                event.currentTarget.blur();
+              }
+            }}
+          />
+        </Show>
       </Show>
     </div>
   );

@@ -19,19 +19,13 @@ test("tracked Android Proof fixture is source-bound and reproducible", async () 
   assert.match(manifest.artifactDigest, /^sha256:[a-f0-9]{64}$/u);
   assert.match(androidProofFixtureArtifact, /relay-android-proof-fixture-1\.0\.apk$/u);
   assert.ok(
-    manifest.sourceFiles.includes(
-      "app/src/main/java/dev/relay/prooffixture/MainActivity.java",
-    ),
+    manifest.sourceFiles.includes("app/src/main/java/dev/relay/prooffixture/MainActivity.java"),
   );
   assert.ok(
-    manifest.sourceFiles.includes(
-      "app/src/main/java/dev/relay/prooffixture/LanguageActivity.java",
-    ),
+    manifest.sourceFiles.includes("app/src/main/java/dev/relay/prooffixture/LanguageActivity.java"),
   );
   assert.ok(
-    manifest.sourceFiles.includes(
-      "app/src/main/java/dev/relay/prooffixture/ArabicActivity.java",
-    ),
+    manifest.sourceFiles.includes("app/src/main/java/dev/relay/prooffixture/ArabicActivity.java"),
   );
 });
 
@@ -74,5 +68,8 @@ test("repaired fixture preserves the distinct seeded-regression source parent", 
     { cwd: root },
   );
   assert.match(seededXml, /android:layout_marginTop="-22dp"/u);
-  assert.match(seededXml, /Seeded layout regression: primary action overlaps description by 22 dp/u);
+  assert.match(
+    seededXml,
+    /Seeded layout regression: primary action overlaps description by 22 dp/u,
+  );
 });

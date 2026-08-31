@@ -590,42 +590,60 @@ async function recordRunResult(
   // numeric increment would either replay a completed cell or skip one.
   const nextCursor = cells.findIndex((cell) => cell.status === "pending");
   const normalizedNextCursor = nextCursor < 0 ? cells.length : nextCursor;
-  await advanceChangeVerification({
-    organizationId: current.organizationId,
-    projectId: current.projectId,
-    proofId: current.id,
-    expectedVersion: current.version,
-    state,
-    actorId: submitInput.actorId,
-    requestId: `${record.id}:${action}:${normalizedNextCursor}`,
-    requestDigest: mutationDigest(record, action, at),
-    action,
-    at,
-    runIds,
-    evidenceDigests: [...new Set([...current.evidenceDigests, ...result.evidenceDigests])],
-    ...(state === "proved"
-      ? { smallestNextVerification: decision.smallestNextVerification }
-      : state === "rejected" || state === "needs-review" || state === "insufficient-evidence"
-        ? {
-            firstCausalFailure: decision.firstCausalFailure ?? null,
-            coverageGaps: decision.coverageGaps,
-            residualRisk: decision.residualRisk,
-            smallestNextVerification: decision.smallestNextVerification,
-          }
-        : {
-            smallestNextVerification:
-              state === "awaiting-expansion"
-                ? {
-                    kind: "expand" as const,
-                    reason: "The Proof pilot passed; run the smallest remaining required coverage.",
-                  }
-                : {
-                    kind: "expand" as const,
-                    reason: "Run the next policy-required Verification Cell.",
-                  },
-          }),
-    ...(options.publication ? { publication: options.publication } : {}),
-  });
+  const resultAlreadyApplied = current.runIds.includes(result.runId);
+  if (resultAlreadyApplied) {
+    const evidenceAlreadyApplied = result.evidenceDigests.every((digest) =>
+      current.evidenceDigests.includes(digest),
+    );
+    if (current.state !== state || !evidenceAlreadyApplied) {
+      return markUncertain(
+        record,
+        "The Proof contains the recovered Run but not its exact expected state and evidence.",
+        at,
+        options,
+        submitInput,
+        result.runId,
+      );
+    }
+  } else {
+    await advanceChangeVerification({
+      organizationId: current.organizationId,
+      projectId: current.projectId,
+      proofId: current.id,
+      expectedVersion: current.version,
+      state,
+      actorId: submitInput.actorId,
+      requestId: `${record.id}:${action}:${normalizedNextCursor}`,
+      requestDigest: mutationDigest(record, action, at),
+      action,
+      at,
+      runIds,
+      evidenceDigests: [...new Set([...current.evidenceDigests, ...result.evidenceDigests])],
+      ...(state === "proved"
+        ? { smallestNextVerification: decision.smallestNextVerification }
+        : state === "rejected" || state === "needs-review" || state === "insufficient-evidence"
+          ? {
+              firstCausalFailure: decision.firstCausalFailure ?? null,
+              coverageGaps: decision.coverageGaps,
+              residualRisk: decision.residualRisk,
+              smallestNextVerification: decision.smallestNextVerification,
+            }
+          : {
+              smallestNextVerification:
+                state === "awaiting-expansion"
+                  ? {
+                      kind: "expand" as const,
+                      reason:
+                        "The Proof pilot passed; run the smallest remaining required coverage.",
+                    }
+                  : {
+                      kind: "expand" as const,
+                      reason: "Run the next policy-required Verification Cell.",
+                    },
+            }),
+      ...(options.publication ? { publication: options.publication } : {}),
+    });
+  }
   const completed =
     state === "proved" ||
     state === "rejected" ||

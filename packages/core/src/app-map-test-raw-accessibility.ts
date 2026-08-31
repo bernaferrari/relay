@@ -44,11 +44,14 @@ function sourceVariant(
     targetProfileId: profile.id,
     targetId: profile.targetId,
     platform: profile.platform,
+    ...(profile.model ? { model: profile.model } : {}),
     ...(profile.androidAvdName ? { androidAvdName: profile.androidAvdName } : {}),
+    ...(profile.osVersion ? { osVersion: profile.osVersion } : {}),
     ...(profile.viewport ? { viewport: structuredClone(profile.viewport) } : {}),
     ...(profile.browserCaseProfile
       ? { browserCaseProfile: structuredClone(profile.browserCaseProfile) }
       : {}),
+    ...(profile.capabilities ? { capabilities: [...profile.capabilities] } : {}),
   };
 }
 

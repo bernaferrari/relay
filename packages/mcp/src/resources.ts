@@ -4,7 +4,6 @@ import {
   ProtocolErrorCode,
   ResourceNotFoundError,
   ResourceTemplate,
-  type ReadResourceResult,
   type Variables,
 } from "@modelcontextprotocol/server";
 import type { OperationId } from "@relay/protocol";
@@ -12,6 +11,17 @@ import type { OperationInvoker } from "./server.js";
 import { compactOfflineReplayResource } from "./offline-replay-result.js";
 import { registerDiffImpactResource } from "./diff-impact-resource.js";
 import { registerRepairProposalsResource } from "./repair-proposals-resource.js";
+import {
+  readResult,
+  relayMcpResourceMimeType,
+  tracePackResourceManifest,
+} from "./resource-encoding.js";
+export {
+  readResult,
+  relayMcpResourceByteLimit,
+  relayMcpResourceMimeType,
+  tracePackResourceManifest,
+} from "./resource-encoding.js";
 import {
   relayMcpExclusions,
   relayMcpOperationCatalog,
@@ -21,9 +31,6 @@ import {
   type RelayMcpToolDescriptor,
 } from "./tools.js";
 import { relayMcpPrompts, relayMcpPromptsForTools } from "./prompts.js";
-
-export const relayMcpResourceByteLimit = 32_768;
-export const relayMcpResourceMimeType = "application/json";
 
 export const relayMcpResourceUris = {
   project: "relay://project/current",
@@ -39,6 +46,7 @@ export const relayMcpResourceUris = {
   repairs: "relay://repairs",
   run: "relay://runs/{runId}",
   runEvidence: "relay://runs/{runId}/evidence",
+  runTracePack: "relay://runs/{runId}/trace-pack",
   runOfflineReplay: "relay://runs/{runId}/offline-replay",
   runRepairProposals: "relay://runs/{runId}/repair-proposals",
   repair: "relay://runs/{runId}/checks/{checkId}/repair",
@@ -60,116 +68,8 @@ type RegisterRelayResourcesOptions = {
   tools: readonly RelayMcpToolDescriptor[];
 };
 
-type ResourceEnvelope = {
-  schemaVersion: 1;
-  projectId: string;
-  resource: string;
-  truncated: boolean;
-  data: unknown;
-  byteLimit?: number;
-  originalBytes?: number;
-};
-
 const safeIdentifier = /^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$/;
 const localPath = /^(?:file:|\/(?:Users|private|var|tmp|home)\/|[A-Za-z]:[\\/])/i;
-const sensitiveKey =
-  /(?:^|_)(?:authorization|base64|cookie|credential|password|secret|token)(?:$|_)/i;
-const pathKey = /(?:^|_)(?:file_?)?path$/i;
-
-function stableJson(value: unknown): string {
-  if (value === null) return "null";
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
-  if (typeof value === "object") {
-    return `{${Object.entries(value as Record<string, unknown>)
-      .filter(([, item]) => item !== undefined)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, item]) => `${JSON.stringify(key)}:${stableJson(item)}`)
-      .join(",")}}`;
-  }
-  const serialized = JSON.stringify(value);
-  return serialized === undefined ? "null" : serialized;
-}
-
-function sanitize(value: unknown, key = "", seen = new WeakSet<object>()): unknown {
-  if (sensitiveKey.test(key) || pathKey.test(key) || key.toLowerCase().endsWith("path")) {
-    return undefined;
-  }
-  if (typeof value === "string") {
-    if (localPath.test(value) || value.startsWith("iVBORw0KGgo")) return "[redacted]";
-    return value;
-  }
-  if (value === null || typeof value !== "object") return value;
-  if (seen.has(value)) return "[circular]";
-  seen.add(value);
-  if (Array.isArray(value)) {
-    const result = value.map((item) => sanitize(item, "", seen));
-    seen.delete(value);
-    return result;
-  }
-  const result: Record<string, unknown> = {};
-  for (const [childKey, item] of Object.entries(value as Record<string, unknown>)) {
-    const sanitized = sanitize(item, childKey, seen);
-    if (sanitized !== undefined) result[childKey] = sanitized;
-  }
-  seen.delete(value);
-  return result;
-}
-
-function resourceText(
-  projectId: string,
-  resource: string,
-  value: unknown,
-  byteLimit = relayMcpResourceByteLimit,
-  fallbackValue?: unknown,
-): string {
-  const envelope: ResourceEnvelope = {
-    schemaVersion: 1,
-    projectId,
-    resource,
-    truncated: false,
-    data: sanitize(value),
-  };
-  const complete = stableJson(envelope);
-  const originalBytes = Buffer.byteLength(complete, "utf8");
-  if (originalBytes <= byteLimit) return complete;
-
-  const truncated: ResourceEnvelope = {
-    schemaVersion: 1,
-    projectId,
-    resource,
-    truncated: true,
-    data: fallbackValue === undefined ? null : sanitize(fallbackValue),
-    byteLimit,
-    originalBytes,
-  };
-  const bounded = stableJson(truncated);
-  if (Buffer.byteLength(bounded, "utf8") <= byteLimit) return bounded;
-  const metadataOnly = stableJson({ ...truncated, data: null });
-  if (Buffer.byteLength(metadataOnly, "utf8") <= byteLimit) return metadataOnly;
-  throw new ProtocolError(
-    ProtocolErrorCode.InternalError,
-    "Relay resource byte limit is too small",
-  );
-}
-
-export function readResult(
-  uri: URL,
-  projectId: string,
-  resource: string,
-  value: unknown,
-  fallbackValue?: unknown,
-): ReadResourceResult {
-  return {
-    contents: [
-      {
-        uri: uri.href,
-        mimeType: relayMcpResourceMimeType,
-        text: resourceText(projectId, resource, value, relayMcpResourceByteLimit, fallbackValue),
-      },
-    ],
-  };
-}
-
 export function variable(variables: Variables, name: string, uri: URL): string {
   const value = variables[name];
   if (typeof value !== "string" || !safeIdentifier.test(value)) {
@@ -532,6 +432,32 @@ export function registerRelayResources(
           { signal: context.mcpReq.signal },
         );
         return readResult(uri, scope.projectId, "run-evidence", result);
+      } catch {
+        throw new ResourceNotFoundError(uri.href);
+      }
+    },
+  );
+  server.registerResource(
+    "run-trace-pack",
+    new ResourceTemplate(relayMcpResourceUris.runTracePack, { list: undefined }),
+    {
+      title: "Relay TracePack",
+      description:
+        "A scoped TracePack artifact handle for one Run: complete when bounded, otherwise a digest and safe manifest.",
+      mimeType: relayMcpResourceMimeType,
+    },
+    async (uri, variables, context) => {
+      const runId = variable(variables, "runId", uri);
+      try {
+        const result = await invoker.invoke(
+          "run.trace-pack.get",
+          { runId },
+          { signal: context.mcpReq.signal },
+        );
+        return readResult(uri, scope.projectId, "run-trace-pack", result, {
+          resourceUri: uri.href,
+          tracePack: tracePackResourceManifest(result),
+        });
       } catch {
         throw new ResourceNotFoundError(uri.href);
       }

@@ -4,7 +4,6 @@ import {
   AppMapCompileError,
   AppMapTestCompileError,
   activeReviewedDocumentOriginsForAppMap,
-  appMapRuntimeTargetProfileKey,
   bindRegisteredWebDeploymentToProof,
   CasePlanError,
   buildTargetProfiles,
@@ -37,7 +36,7 @@ import {
   upsertAppMapCombineFromTest,
   type Recipe,
 } from "@relay/core";
-import type { AppMapCompiledRuntimeTargetProfile, OperationInput } from "@relay/protocol";
+import type { OperationInput } from "@relay/protocol";
 import { assertTargetControl, targetLeaseBelongsToCaller } from "./access-control.js";
 import { executeCombineStart } from "./combine-start-route.js";
 import { applyAppMapMutation } from "./app-map-route-mutations.js";
@@ -50,19 +49,16 @@ import {
 import type { RequestContext } from "./security.js";
 import { assertRepeatWorkflowMutation } from "./repeat-workflow-receipt.js";
 import { frozenProofEvidencePolicy } from "./proof-evidence-policy-authority.js";
+import {
+  explicitTargetAvailability,
+  frozenEvidenceTargetProfileForTarget,
+  offlinePreflightProfileRecovery,
+} from "./app-map-run-target-admission.js";
 
 export {
   frozenTestRunTargetProfile,
   queuedAppMapTestTargetProfile,
 } from "./app-map-test-target-profile.js";
-
-type ObservedTarget = {
-  serial: string;
-  connectionState?: string;
-  booted?: boolean | null;
-  developerMode?: "enabled" | "disabled";
-  developerServicesAvailable?: boolean;
-};
 
 /** Small host seam for proving that a blocked Test run is entirely offline.
  * Normal callers use the production runtime; tests can make any device or
@@ -85,108 +81,11 @@ const defaultTestRunRuntime: AppMapTestRunRouteRuntime = {
   prepareBuildForProof: prepareRegisteredBuildForProof,
 };
 
-export function frozenEvidenceTargetProfileForTarget(input: {
-  target: Pick<OperationInput<"app-map.test.run">["target"], "targetId" | "platform">;
-  profiles: AppMapCompiledRuntimeTargetProfile[] | undefined;
-}): AppMapCompiledRuntimeTargetProfile | undefined {
-  const profiles = [
-    ...new Map(
-      (input.profiles ?? []).map((profile) => [appMapRuntimeTargetProfileKey(profile), profile]),
-    ).values(),
-  ];
-  if (!profiles.length) return undefined;
-  const matching = profiles.filter(
-    (profile) =>
-      profile.targetId === input.target.targetId && profile.platform === input.target.platform,
-  );
-  if (matching.length === 1) {
-    const selected = matching[0]!;
-    if (selected.platform === "browser" && !selected.browserCaseProfile) {
-      throw new HttpError(
-        409,
-        `Saved runtime profile ${selected.id} has no frozen browser environment`,
-        {
-          code: "FROZEN_BROWSER_PROFILE_REQUIRED",
-          targetProfileId: selected.id,
-          recovery:
-            "Recapture this browser target profile and compile the Test again before controlling the browser.",
-        },
-      );
-    }
-    return structuredClone(selected);
-  }
-  const savedTargets = [
-    ...new Set(profiles.map((profile) => `${profile.platform}:${profile.targetId}`)),
-  ]
-    .sort()
-    .join(", ");
-  if (matching.length > 1) {
-    throw new HttpError(
-      409,
-      `Choose one frozen evidence profile for ${input.target.platform}:${input.target.targetId}`,
-      {
-        code: "TARGET_PROFILE_SELECTION_REQUIRED",
-        target: input.target,
-        targetProfileCandidates: matching.map((profile) => structuredClone(profile)),
-        recovery: `Bind an explicit saved targetProfileId for ${input.target.platform}:${input.target.targetId}: ${[...new Set(matching.map((profile) => profile.id))].join(", ")}.`,
-      },
-    );
-  }
-  throw new HttpError(
-    409,
-    `No frozen evidence profile binds to ${input.target.platform}:${input.target.targetId}`,
-    {
-      code: "TARGET_PROFILE_TARGET_MISMATCH",
-      target: input.target,
-      savedTargets,
-      recovery: `No saved runtime profile for target ${input.target.platform}:${input.target.targetId} — capture a screen on this target first.`,
-    },
-  );
-}
-
-/**
- * Return the actionable state for an explicit device serial. This helper is
- * called only after discovery has completed successfully. An empty inventory
- * therefore means that there is no local device to run against; remote/test
- * targets remain supported through an explicit active lease, which is checked
- * by the route before this helper is used.
- */
-export function explicitTargetAvailability(
-  serial: string,
-  devices: ObservedTarget[],
-): "connected" | "not-ready" | "missing" {
-  if (devices.length === 0) return "missing";
-  const device = devices.find((candidate) => candidate.serial === serial);
-  if (!device) return "missing";
-  if (device.connectionState === "offline" || device.connectionState === "unauthorized") {
-    return "not-ready";
-  }
-  if (device.booted === false) return "not-ready";
-  if (device.developerMode === "disabled" || device.developerServicesAvailable === false) {
-    return "not-ready";
-  }
-  return "connected";
-}
-
-/** An offline-preflight failure must say which saved profile was bound or
- * inherited, or name the exact ids that could be bound, or the capture step
- * when this target has no saved profile at all. */
-export function offlinePreflightProfileRecovery(input: {
-  runtimeTargetProfile: AppMapCompiledRuntimeTargetProfile | undefined;
-  explicit: boolean;
-  candidates: string[];
-  target: { targetId: string; platform: string };
-}): string {
-  const label = `${input.target.platform}:${input.target.targetId}`;
-  if (input.runtimeTargetProfile) {
-    return input.explicit
-      ? "Review the frozen evidence findings, select or recapture the required profile, then retry this exact Test revision."
-      : `Relay inherited the only saved runtime profile for ${label}: ${input.runtimeTargetProfile.id}. Review its frozen evidence findings, then retry this exact Test revision.`;
-  }
-  return input.candidates.length
-    ? `Bind an explicit saved targetProfileId for ${label}: ${input.candidates.join(", ")}, then retry this exact Test revision.`
-    : `No saved runtime profile for target ${label} — capture a screen on this target first.`;
-}
+export {
+  explicitTargetAvailability,
+  frozenEvidenceTargetProfileForTarget,
+  offlinePreflightProfileRecovery,
+} from "./app-map-run-target-admission.js";
 export type AppMapRunRouteContext = {
   method: string;
   pathname: string;
@@ -515,7 +414,10 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
               lease.expiresAt > Date.now(),
           )
         : false;
-      if (!activeLease) {
+      // A durable Proof must bind to a fresh target observation on every
+      // admission. An actor-owned lease proves control authority, not that the
+      // device still has the reviewed OS/runtime identity.
+      if (!activeLease || input.proofExecutionAuthority) {
         try {
           observedDevices = await runtime.listDevices();
         } catch (error) {
@@ -744,7 +646,17 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
               {
                 kind: "proof-web-deployment-binding",
                 capturedAt: queuedAt,
-                data: structuredClone(webBuildBinding),
+                data: {
+                  ...structuredClone(webBuildBinding),
+                  schemaVersion: 1,
+                  buildId: webBuildBinding.id,
+                  target: { kind: "browser", id: targetId, platform: "browser" },
+                  observation: {
+                    status: "verified",
+                    observedAt: queuedAt,
+                    artifactDigest: webBuildBinding.artifactDigest,
+                  },
+                },
               },
             ]
           : []),

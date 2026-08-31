@@ -126,6 +126,24 @@ export function queuedAppMapTestTargetProfile(input: {
       },
     );
   }
+  if (
+    saved.platform !== "browser" &&
+    ((saved.model !== undefined && observed?.model !== saved.model) ||
+      (saved.osVersion !== undefined && observed?.osVersion !== saved.osVersion) ||
+      (saved.capabilities !== undefined &&
+        saved.capabilities.some((capability) => !observed?.capabilities.includes(capability))))
+  ) {
+    throw new HttpError(
+      409,
+      `Managed device ${saved.targetId} no longer matches frozen profile ${saved.id}`,
+      {
+        code: "TARGET_PROFILE_TARGET_MISMATCH",
+        targetProfileId: saved.id,
+        recovery:
+          "Restore the saved device runtime, or capture and review a profile for the current OS and capabilities.",
+      },
+    );
+  }
   const savedBrowser = saved.browserCaseProfile;
   if (saved.platform === "browser" && !savedBrowser) {
     throw new HttpError(
@@ -189,14 +207,18 @@ export function queuedAppMapTestTargetProfile(input: {
     platform: saved.platform,
     source: input.target.kind,
     name: observed?.name ?? saved.targetId,
-    ...(observed?.model ? { model: observed.model } : {}),
+    ...(saved.model ? { model: saved.model } : {}),
     ...(saved.androidAvdName ? { androidAvdName: saved.androidAvdName } : {}),
-    ...(observed?.osVersion ? { osVersion: observed.osVersion } : {}),
+    ...(saved.osVersion ? { osVersion: saved.osVersion } : {}),
     ...(saved.viewport ? { viewport: structuredClone(saved.viewport) } : {}),
     ...(saved.browserCaseProfile
       ? { browserCaseProfile: structuredClone(saved.browserCaseProfile) }
       : {}),
-    capabilities: observed ? [...observed.capabilities] : [],
+    capabilities: saved.capabilities
+      ? [...saved.capabilities]
+      : observed
+        ? [...observed.capabilities]
+        : [],
     observedAt: observed?.observedAt ?? Date.now(),
   };
 }

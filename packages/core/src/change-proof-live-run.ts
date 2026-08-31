@@ -260,12 +260,47 @@ function assertBuildProvenanceReceipt(
   build: ChangeVerification["builds"][number],
 ): void {
   if (!run.sourceRevision?.buildId) return;
-  const artifact = run.artifacts.find((item) => item.kind === "proof-build-provenance");
+  const browser = targetCase.executionTarget.platform === "browser";
+  const artifact = run.artifacts.find((item) =>
+    browser ? item.kind === "proof-web-deployment-binding" : item.kind === "proof-build-provenance",
+  );
   const receipt = artifact?.data;
   if (!receipt || typeof receipt !== "object" || Array.isArray(receipt)) {
     throw new Error(`Run ${run.id} has no target-specific Proof build provenance receipt.`);
   }
   const value = receipt as Record<string, unknown>;
+  if (browser) {
+    const target = value.target;
+    const observation = value.observation;
+    const targetRecord: Record<string, unknown> =
+      target && typeof target === "object" && !Array.isArray(target)
+        ? (target as Record<string, unknown>)
+        : {};
+    const observationRecord =
+      observation && typeof observation === "object" && !Array.isArray(observation)
+        ? (observation as Record<string, unknown>)
+        : ({} as Record<string, unknown>);
+    if (
+      value.schemaVersion !== 1 ||
+      value.buildId !== build.id ||
+      value.id !== build.id ||
+      value.platform !== "web" ||
+      value.artifactDigest !== build.artifactDigest ||
+      value.sourceSha !== build.sourceSha ||
+      value.configuration !== build.configuration ||
+      value.environmentRevision !== build.environmentRevision ||
+      targetRecord.kind !== "browser" ||
+      targetRecord.id !== targetCase.executionTarget.targetId ||
+      targetRecord.platform !== "browser" ||
+      observationRecord.status !== "verified" ||
+      observationRecord.artifactDigest !== build.artifactDigest
+    ) {
+      throw new Error(
+        `Run ${run.id} has target-specific Proof web deployment binding that does not match.`,
+      );
+    }
+    return;
+  }
   const target = value.target;
   const observation = value.observation;
   const targetRecord: Record<string, unknown> =
@@ -370,6 +405,15 @@ export async function changeProofCaseResultFromPersistedRun(input: {
   }
   const cell = proof.selection.cells!.find(({ id }) => id === cellId)!;
   frozenCellExecutionRisk(cell);
+  const runEvidencePolicy = run.evidence?.collectionPolicy;
+  if (!runEvidencePolicy) {
+    throw new Error(`Run ${run.id} has no frozen evidence policy for Verification Cell ${cell.id}`);
+  }
+  if (canonicalSha256(runEvidencePolicy) !== cell.evidencePolicyDigest) {
+    throw new Error(
+      `Run ${run.id} evidence policy does not match the frozen authority for Verification Cell ${cell.id}`,
+    );
+  }
   const runRisk = compileExecutionRisk({ kind: "compiled-test", test: runPlan });
   if (canonicalSha256(runRisk) !== cell.executionRiskDigest) {
     throw new Error(

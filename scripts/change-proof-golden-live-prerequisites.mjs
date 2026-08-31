@@ -315,11 +315,17 @@ export async function inspectTracePack(path, artifactDir, phase, expected) {
   if (projection.run.sourceRevision?.sha !== expected?.sourceSha) mismatches.push("source SHA");
   if (projection.run.sourceRevision?.artifactDigest !== expected?.artifactDigest)
     mismatches.push("build artifact digest");
-  if (projection.plan.appMapId !== expected?.appMapId || projection.plan.testId !== expected?.testId)
+  if (
+    projection.plan.appMapId !== expected?.appMapId ||
+    projection.plan.testId !== expected?.testId
+  )
     mismatches.push("App Map/Test identity");
   if (!sameValue(projection.run.targetProfile, expected?.targetProfile))
     mismatches.push("target profile");
-  if (expected?.executionTarget && !sameValue(projection.run.executionTarget, expected.executionTarget))
+  if (
+    expected?.executionTarget &&
+    !sameValue(projection.run.executionTarget, expected.executionTarget)
+  )
     mismatches.push("execution target");
   if (mismatches.length) {
     return {
@@ -381,12 +387,8 @@ export async function inspectExactProofInputs({ env = process.env, artifactDir }
     appMapId,
     testId,
     runId: env[`RELAY_GOLDEN_${phase.toUpperCase()}_RUN_ID`]?.trim() || null,
-    artifactDigest:
-      env[`RELAY_GOLDEN_${phase.toUpperCase()}_BUILD_DIGEST`]?.trim() || null,
-    targetProfile: parseJsonEnvironment(
-      env,
-      `RELAY_GOLDEN_${phase.toUpperCase()}_TARGET_PROFILE`,
-    ),
+    artifactDigest: env[`RELAY_GOLDEN_${phase.toUpperCase()}_BUILD_DIGEST`]?.trim() || null,
+    targetProfile: parseJsonEnvironment(env, `RELAY_GOLDEN_${phase.toUpperCase()}_TARGET_PROFILE`),
     executionTarget: parseJsonEnvironment(
       env,
       `RELAY_GOLDEN_${phase.toUpperCase()}_EXECUTION_TARGET`,
@@ -395,11 +397,23 @@ export async function inspectExactProofInputs({ env = process.env, artifactDir }
   for (const phase of ["old", "repaired"]) {
     const upper = phase.toUpperCase();
     if (!env[`RELAY_GOLDEN_${upper}_RUN_ID`]?.trim())
-      blockers.push(blocker(`proof.${phase}-run.missing`, `RELAY_GOLDEN_${upper}_RUN_ID is required`));
+      blockers.push(
+        blocker(`proof.${phase}-run.missing`, `RELAY_GOLDEN_${upper}_RUN_ID is required`),
+      );
     if (!PROOF_DIGEST.test(env[`RELAY_GOLDEN_${upper}_BUILD_DIGEST`]?.trim() || ""))
-      blockers.push(blocker(`proof.${phase}-build-digest.missing`, `RELAY_GOLDEN_${upper}_BUILD_DIGEST must be sha256:<64 lowercase hex>`));
+      blockers.push(
+        blocker(
+          `proof.${phase}-build-digest.missing`,
+          `RELAY_GOLDEN_${upper}_BUILD_DIGEST must be sha256:<64 lowercase hex>`,
+        ),
+      );
     if (!parseJsonEnvironment(env, `RELAY_GOLDEN_${upper}_TARGET_PROFILE`))
-      blockers.push(blocker(`proof.${phase}-target-profile.missing`, `RELAY_GOLDEN_${upper}_TARGET_PROFILE must be valid JSON`));
+      blockers.push(
+        blocker(
+          `proof.${phase}-target-profile.missing`,
+          `RELAY_GOLDEN_${upper}_TARGET_PROFILE must be valid JSON`,
+        ),
+      );
   }
   const oldTracePack = await inspectTracePack(
     env.RELAY_GOLDEN_OLD_TRACEPACK?.trim(),

@@ -16,6 +16,7 @@ export type WorkspaceRequest =
   | { kind: "device.show" }
   | { kind: "device.hide" }
   | { kind: "run.open"; runId?: string }
+  | { kind: "changes.open" }
   | { kind: "settings.open"; section?: SettingsSection }
   | { kind: "test.run" }
   | { kind: "test.record" }
@@ -42,6 +43,7 @@ export type WorkspaceCommandAdapter = {
   hideDevice?: () => void;
   deviceStateChanged?: (open: boolean) => void;
   openRun?: (runId?: string) => void;
+  openChanges?: () => void;
   openSettings?: (section?: SettingsSection) => void;
   runTest?: () => void;
   runReadinessChanged?: (readiness: AppMapRunReadiness) => void;
@@ -86,6 +88,8 @@ function handlerFor(
         : undefined;
     case "run.open":
       return adapter.openRun ? () => adapter.openRun!(command.runId) : undefined;
+    case "changes.open":
+      return adapter.openChanges;
     case "settings.open":
       return adapter.openSettings ? () => adapter.openSettings!(command.section) : undefined;
     case "test.run":

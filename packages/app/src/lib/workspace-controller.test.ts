@@ -9,6 +9,7 @@ test("workspace controller routes typed commands to their surface owners", () =>
     chooseTarget: () => calls.push("target"),
     targetSelected: (targetId) => calls.push(`selected:${targetId}`),
     openRun: (runId) => calls.push(`run:${runId ?? "latest"}`),
+    openChanges: () => calls.push("changes"),
     openSettings: (section) => calls.push(`settings:${section ?? "appearance"}`),
     runTest: () => calls.push("run-test"),
     recordTest: () => calls.push("record"),
@@ -34,6 +35,7 @@ test("workspace controller routes typed commands to their surface owners", () =>
   assert.equal(controller.request({ kind: "device.show" }), true);
   assert.equal(controller.publish({ kind: "device.state", open: true }), true);
   assert.equal(controller.request({ kind: "run.open", runId: "run-7" }), true);
+  assert.equal(controller.request({ kind: "changes.open" }), true);
   assert.equal(controller.request({ kind: "settings.open", section: "devices" }), true);
   assert.equal(controller.request({ kind: "test.run" }), true);
   assert.equal(
@@ -69,6 +71,7 @@ test("workspace controller routes typed commands to their surface owners", () =>
     "device",
     "device-state:true",
     "run:run-7",
+    "changes",
     "settings:devices",
     "run-test",
     "ready:true",

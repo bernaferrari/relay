@@ -56,6 +56,17 @@ const GOLDEN_EXECUTION_RISK = compileExecutionRisk({
   recipes: { "golden-proof-root": { id: "golden-proof-root", steps: [] } },
 });
 const GOLDEN_EXECUTION_RISK_DIGEST = canonicalSha256(GOLDEN_EXECUTION_RISK);
+const GOLDEN_EVIDENCE_POLICY = {
+  schemaVersion: 1 as const,
+  sensitive: {
+    "browser-trace": {
+      grantedAt: 900,
+      grantedBy: "human:golden-demo-reviewer",
+      reason: "Reviewed browser trace retained for the public golden Proof fixture",
+    },
+  },
+};
+const GOLDEN_EVIDENCE_POLICY_DIGEST = canonicalSha256(GOLDEN_EVIDENCE_POLICY);
 
 let goldenBrowserEvidenceDir: string | undefined;
 
@@ -281,7 +292,7 @@ export function goldenDemoReadyProof(
     },
     executionRisk: GOLDEN_EXECUTION_RISK,
     executionRiskDigest: GOLDEN_EXECUTION_RISK_DIGEST,
-    evidencePolicyDigest: `sha256:${"e".repeat(64)}`,
+    evidencePolicyDigest: GOLDEN_EVIDENCE_POLICY_DIGEST,
   }));
   const pilotCellId = cells?.find(
     (_, index) => plan.selection.cells?.[index]?.id === plan.selection.pilotCellId,
@@ -545,20 +556,7 @@ export function goldenDemoPersistedRun(input: {
       },
       startedAt: 1_001,
       finishedAt: capturedAt + 2,
-      ...(browser
-        ? {
-            collectionPolicy: {
-              schemaVersion: 1 as const,
-              sensitive: {
-                "browser-trace": {
-                  grantedAt: 900,
-                  grantedBy: "human:golden-demo-reviewer",
-                  reason: "Reviewed browser trace retained for the public golden Proof fixture",
-                },
-              },
-            },
-          }
-        : {}),
+      collectionPolicy: structuredClone(GOLDEN_EVIDENCE_POLICY),
       channels: {},
       events: [],
     } as never,

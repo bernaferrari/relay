@@ -2,8 +2,10 @@ import { render } from "solid-js/web";
 import { beforeEach, expect, test, vi } from "vitest";
 import type { ChangeVerification } from "@relay/protocol";
 
-const mocks = vi.hoisted(() => ({ runAction: vi.fn() }));
-vi.mock("../context/server", () => ({ useServer: () => ({ runAction: mocks.runAction }) }));
+const mocks = vi.hoisted(() => ({ runAction: vi.fn(), health: vi.fn(() => "online") }));
+vi.mock("../context/server", () => ({
+  useServer: () => ({ runAction: mocks.runAction, health: mocks.health }),
+}));
 
 import { ChangesWorkspace } from "./changes-workspace";
 
@@ -181,6 +183,7 @@ const publication = {
 
 beforeEach(() => {
   mocks.runAction.mockReset();
+  mocks.health.mockReturnValue("online");
 });
 
 test("keeps loading distinct from an empty Proof library", async () => {
@@ -202,6 +205,11 @@ test("keeps loading distinct from an empty Proof library", async () => {
 
   finish({ proofs: [] });
   await vi.waitFor(() => expect(root.textContent).toContain("No Proofs yet"));
+  expect(
+    [...root.querySelectorAll<HTMLButtonElement>("button")].filter(
+      (button) => button.textContent?.trim() === "Prepare a Proof",
+    ),
+  ).toHaveLength(1);
 
   dispose();
   root.remove();

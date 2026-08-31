@@ -23,7 +23,7 @@ import type { CanvasCombineSection } from "../lib/app-map-combine-canvas";
 import { toast } from "../context/toast";
 import { confirmAction } from "./confirm-dialog";
 import { trapFocus } from "../lib/modal";
-import { chromeMenuItem, chromeMenuItemDanger, productIconButton } from "../lib/ui";
+import { productIconButton } from "../lib/ui";
 import { WorkspaceSkeleton } from "./workspace-skeleton";
 import {
   shellRoot,
@@ -52,8 +52,8 @@ import { StudioShellShortcutsSheet } from "./studio-shell-shortcuts-sheet";
 import { StudioShellCombineRail } from "./studio-shell-combine-rail";
 import { StudioShellVariablesDialog } from "./studio-shell-variables-dialog";
 import { readRememberedDevicePanelPreference } from "../lib/studio-shell-preferences";
-import { createStudioActionMenuBehavior } from "../lib/studio-action-menu-behavior";
 import { createStudioBlankMapActions } from "../lib/studio-blank-map-actions";
+import { StudioShellMapActions, type StudioShellMapAction } from "./studio-shell-map-actions";
 import {
   ChangesWorkspace,
   EmptyAppMap,
@@ -84,7 +84,6 @@ export function StudioShell(props: {
   const [combineFocusSection, setCombineFocusSection] = createSignal<CanvasCombineSection>();
   const [query, setQuery] = createSignal("");
   const [navOpen, setNavOpen] = createSignal(false);
-  const [studioActionsOpen, setStudioActionsOpen] = createSignal(false);
   const [helpOpen, setHelpOpen] = createSignal(false);
   const [devicePanelOpen, setDevicePanelOpen] = createSignal(readRememberedDevicePanelPreference());
   const [creatingBlankMap, setCreatingBlankMap] = createSignal(false);
@@ -136,14 +135,6 @@ export function StudioShell(props: {
   let variablesDialog: HTMLElement | undefined;
   let importReviewDialog: HTMLElement | undefined;
   let libraryTrigger: HTMLButtonElement | undefined;
-  let studioActionsTrigger: HTMLButtonElement | undefined;
-  let studioActionsMenu: HTMLDivElement | undefined;
-  const studioActionMenu = createStudioActionMenuBehavior({
-    open: studioActionsOpen,
-    setOpen: setStudioActionsOpen,
-    trigger: () => studioActionsTrigger,
-    menu: () => studioActionsMenu,
-  });
   const closeLibrary = (restoreFocus = true) => {
     setNavOpen(false);
     if (restoreFocus) queueMicrotask(() => libraryTrigger?.focus());
@@ -308,6 +299,11 @@ export function StudioShell(props: {
     openRun: (runId) => {
       if (runId) server.setSelectedJobId(runId);
       setArea("runs");
+    },
+    openChanges: () => {
+      setSettingsOpen(false);
+      setNavOpen(false);
+      setArea("changes");
     },
     runReadinessChanged: setGraphRunReadiness,
     mapTargetSetChanged: setActiveTargetSetId,
@@ -534,6 +530,28 @@ export function StudioShell(props: {
     setNavOpen(false);
   }
 
+  function handleMapAction(action: StudioShellMapAction): void {
+    if (action === "toggle-properties") {
+      const opening = !settingsOpen();
+      if (opening) workspaceController.request({ kind: "device.hide" });
+      setSettingsOpen(opening);
+      return;
+    }
+    if (action === "open-properties") {
+      workspaceController.request({ kind: "device.hide" });
+      setSettingsOpen(true);
+      return;
+    }
+    if (action === "undo") workspaceController.request({ kind: "map.undo" });
+    if (action === "redo") workspaceController.request({ kind: "map.redo" });
+    if (action === "tidy") workspaceController.request({ kind: "map.tidy" });
+    if (action === "history") workspaceController.request({ kind: "map.history.toggle" });
+    if (action === "duplicate") void duplicateSelected();
+    if (action === "export") void exportSelected();
+    if (action === "help") setHelpOpen(true);
+    if (action === "delete") void deleteSelected();
+  }
+
   return (
     <div
       class={shellRoot}
@@ -589,6 +607,7 @@ export function StudioShell(props: {
             <ShellTopbarTitle
               area={area()}
               name={mapNameDraft()}
+              editable={Boolean(server.selectedAppMapId())}
               disabled={server.isOffline()}
               onNameInput={setMapNameDraft}
               onCommit={(name) => {
@@ -629,177 +648,7 @@ export function StudioShell(props: {
               />
             </Show>
             <Show when={area() === "maps" && selectedMap()}>
-              <div class="relative flex items-center gap-1.5">
-                <button
-                  type="button"
-                  aria-pressed={settingsOpen()}
-                  class={cn(
-                    productIconButton,
-                    "max-[760px]:hidden",
-                    settingsOpen() && "bg-surface-base-active",
-                  )}
-                  aria-label="Map properties"
-                  data-tip="Map properties"
-                  onClick={() => {
-                    const opening = !settingsOpen();
-                    if (opening) workspaceController.request({ kind: "device.hide" });
-                    setSettingsOpen(opening);
-                  }}
-                >
-                  <Icon name="sliders" size={16} />
-                </button>
-                <button
-                  ref={(element) => (studioActionsTrigger = element)}
-                  class={productIconButton}
-                  type="button"
-                  aria-label="More map options"
-                  aria-haspopup="menu"
-                  aria-expanded={studioActionsOpen()}
-                  aria-controls="app-map-options-menu"
-                  data-tip="More map options"
-                  onClick={() => setStudioActionsOpen((open) => !open)}
-                >
-                  <Icon name="more" size={16} />
-                </button>
-                <Show when={studioActionsOpen()}>
-                  <div
-                    ref={(element) => (studioActionsMenu = element)}
-                    id="app-map-options-menu"
-                    class="ui-pop absolute top-[calc(100%+6px)] right-0 z-40 grid w-[200px] gap-0.5 rounded-xl border border-[var(--border-strong-base)] bg-surface-raised-stronger-non-alpha p-1 shadow-[var(--shadow-lg)]"
-                    role="menu"
-                    aria-label="Map options"
-                    onFocusOut={(event) => {
-                      const next = event.relatedTarget as Node | null;
-                      if (next && event.currentTarget.contains(next)) return;
-                      setStudioActionsOpen(false);
-                    }}
-                    onKeyDown={(event) => {
-                      if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
-                      const items = studioActionMenu.visibleItems();
-                      if (!items.length) return;
-                      event.preventDefault();
-                      const current = items.indexOf(document.activeElement as HTMLButtonElement);
-                      const next =
-                        event.key === "Home"
-                          ? 0
-                          : event.key === "End"
-                            ? items.length - 1
-                            : event.key === "ArrowDown"
-                              ? (current + 1 + items.length) % items.length
-                              : (current - 1 + items.length) % items.length;
-                      items[next]?.focus();
-                    }}
-                  >
-                    <button
-                      type="button"
-                      role="menuitem"
-                      class={cn("hidden max-[760px]:flex", chromeMenuItem)}
-                      onClick={() => {
-                        setStudioActionsOpen(false);
-                        workspaceController.request({ kind: "device.hide" });
-                        setSettingsOpen(true);
-                      }}
-                    >
-                      <Icon name="sliders" size={14} /> Map properties
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      class={cn("flex", chromeMenuItem)}
-                      onClick={() => {
-                        setStudioActionsOpen(false);
-                        workspaceController.request({ kind: "map.undo" });
-                      }}
-                    >
-                      <Icon name="undo" size={14} />
-                      <span class="flex-1">Undo</span>
-                      <kbd class="text-micro font-normal text-[var(--text-weaker)]">⌘Z</kbd>
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      class={cn("flex", chromeMenuItem)}
-                      onClick={() => {
-                        setStudioActionsOpen(false);
-                        workspaceController.request({ kind: "map.redo" });
-                      }}
-                    >
-                      <Icon name="redo" size={14} />
-                      <span class="flex-1">Redo</span>
-                      <kbd class="text-micro font-normal text-[var(--text-weaker)]">⇧⌘Z</kbd>
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      class={cn("flex", chromeMenuItem)}
-                      aria-label="Tidy map"
-                      data-tip="Arrange every screen into a compact path"
-                      onClick={() => {
-                        setStudioActionsOpen(false);
-                        workspaceController.request({ kind: "map.tidy" });
-                        queueMicrotask(() => studioActionsTrigger?.focus());
-                      }}
-                    >
-                      <Icon name="grid" size={14} /> Tidy map
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      class={cn("flex", chromeMenuItem)}
-                      onClick={() => {
-                        setStudioActionsOpen(false);
-                        workspaceController.request({ kind: "map.history.toggle" });
-                      }}
-                    >
-                      <Icon name="clock" size={14} /> Version history
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      class={cn("flex", chromeMenuItem)}
-                      onClick={() => {
-                        setStudioActionsOpen(false);
-                        void duplicateSelected();
-                      }}
-                    >
-                      <Icon name="copy" size={14} /> Duplicate map
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      class={cn("flex", chromeMenuItem)}
-                      onClick={() => {
-                        setStudioActionsOpen(false);
-                        void exportSelected();
-                      }}
-                    >
-                      <Icon name="download" size={14} /> Export map
-                    </button>
-                    <button
-                      type="button"
-                      class={cn("flex", chromeMenuItem)}
-                      onClick={() => {
-                        setStudioActionsOpen(false);
-                        studioActionsTrigger?.focus({ preventScroll: true });
-                        setHelpOpen(true);
-                      }}
-                    >
-                      <Icon name="info" size={14} /> Help
-                      <kbd class="ml-auto text-micro font-normal text-[var(--text-weaker)]">⌘K</kbd>
-                    </button>
-                    <button
-                      type="button"
-                      class={cn("flex", chromeMenuItemDanger)}
-                      onClick={() => {
-                        setStudioActionsOpen(false);
-                        void deleteSelected();
-                      }}
-                    >
-                      <Icon name="trash" size={14} /> Delete map
-                    </button>
-                  </div>
-                </Show>
-              </div>
+              <StudioShellMapActions propertiesOpen={settingsOpen()} onAction={handleMapAction} />
               <Show when={authoringMap() && graphRunReadiness().visible}>
                 <AppMapPrimaryActionButton
                   action={graphPrimaryAction()}

@@ -1,4 +1,4 @@
-import { verifyChangeOffline } from "@relay/core/verify-change";
+import { targetExecutionReadiness, verifyChangeOffline } from "@relay/core";
 import {
   measureTracePackJson,
   TRACE_PACK_OFFLINE_TRANSPORT_LIMITS,
@@ -104,7 +104,8 @@ function uniqueBoundedIds(values: readonly string[], label: string): string[] {
 
 function runnableTarget(device: DeviceSummary): AuthoringTarget | undefined {
   if (device.platform !== "android" && device.platform !== "ios") return undefined;
-  if (device.booted === false || device.connectionState === "disconnected") return undefined;
+  const readiness = targetExecutionReadiness(device);
+  if (!readiness.runnable) return undefined;
   return { kind: "device", platform: device.platform, targetId: device.serial || device.id };
 }
 
@@ -116,14 +117,29 @@ async function targets(operations: RelayOperationPort): Promise<AuthoringTarget[
   });
 }
 
+async function targetCatalog(
+  operations: RelayOperationPort,
+): Promise<Array<{ device: DeviceSummary; target?: AuthoringTarget }>> {
+  const output = await operations.invoke("target.devices.list", {});
+  return output.devices.map((device) => ({ device, target: runnableTarget(device) }));
+}
+
 async function selectTarget(
   operations: RelayOperationPort,
   targetId?: string,
 ): Promise<AuthoringTarget> {
-  const available = await targets(operations);
+  const catalog = await targetCatalog(operations);
+  const available = catalog.flatMap(({ target }) => (target ? [target] : []));
   if (targetId) {
     const selected = available.find((target) => target.targetId === targetId);
     if (selected) return selected;
+    const blocked = catalog.find(({ device }) => (device.serial || device.id) === targetId);
+    if (blocked) {
+      const readiness = targetExecutionReadiness(blocked.device);
+      if (!readiness.runnable) {
+        throw new TypeError(`Target ${targetId} is not ready: ${readiness.recovery}`);
+      }
+    }
     throw new TypeError(`Target ${targetId} is not a connected Android or iOS device.`);
   }
   if (available.length === 1) return available[0]!;

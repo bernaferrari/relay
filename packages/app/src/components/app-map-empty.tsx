@@ -144,6 +144,56 @@ export function EmptyAppMap(props: {
         </Show>
       </Show>
 
+      <Show when={!onboarding.visible() && !props.deviceOpen}>
+        <div class="pointer-events-none absolute inset-0 grid place-items-center px-8 text-center">
+          <div class="grid max-w-[420px] justify-items-center gap-3">
+            <span class="grid size-11 place-items-center rounded-2xl bg-[var(--map-control-surface)] text-[var(--text-interactive-base)] shadow-[var(--map-elevation-control)]">
+              <Icon name="smartphone" size={19} />
+            </span>
+            <div class="grid gap-1.5">
+              <h1 class="m-0 text-title font-semibold tracking-[-0.02em] text-[var(--text-strong)] text-balance">
+                Start from the live app
+              </h1>
+              <p class="m-0 max-w-[38ch] text-body/[1.55] text-[var(--text-weak)]">
+                Open a device and capture the first trusted screen. Relay creates the map only when
+                there is real evidence to save.
+              </p>
+            </div>
+            <Show
+              when={device()}
+              fallback={
+                <button
+                  type="button"
+                  class="pointer-events-auto inline-flex min-h-11 items-center gap-2 rounded-xl bg-[var(--text-interactive-base)] px-3.5 text-caption font-semibold text-[var(--text-on-brand-base,white)] shadow-[var(--map-elevation-control)] transition-[background-color,transform] duration-hover hover:brightness-110 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)] motion-reduce:active:scale-100"
+                  onClick={props.onOpenTargets}
+                >
+                  <Icon name="smartphone" size={14} />
+                  Choose device
+                </button>
+              }
+            >
+              <button
+                type="button"
+                class="pointer-events-auto inline-flex min-h-11 items-center gap-2 rounded-xl bg-[var(--text-interactive-base)] px-3.5 text-caption font-semibold text-[var(--text-on-brand-base,white)] shadow-[var(--map-elevation-control)] transition-[background-color,transform] duration-hover hover:brightness-110 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)] motion-reduce:active:scale-100"
+                onClick={props.onToggleDevice}
+              >
+                <Icon name="smartphone" size={14} />
+                Open live device
+              </button>
+            </Show>
+            <Show when={onboarding.canReopen()}>
+              <button
+                type="button"
+                class="pointer-events-auto min-h-11 text-caption font-medium text-[var(--text-interactive-base)] underline decoration-transparent underline-offset-4 transition-colors hover:decoration-current focus-visible:rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)]"
+                onClick={onboarding.reopen}
+              >
+                Open first useful test guide
+              </button>
+            </Show>
+          </div>
+        </div>
+      </Show>
+
       <Show when={props.deviceOpen}>
         <aside
           class={cn(

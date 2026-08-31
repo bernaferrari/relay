@@ -335,6 +335,17 @@ function admissionLease(targetId: string): DeviceLease {
   };
 }
 
+function listedMobileTarget(targetId: string, platform: "android" | "ios") {
+  return {
+    id: targetId,
+    serial: targetId,
+    name: targetId,
+    kind: "Physical device",
+    booted: true,
+    platform,
+  };
+}
+
 test("Combine admission binds cells across local Android and iOS before one job queues", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-combine-multi-target-"));
   const previous = process.env.RELAY_STATE_DIR;
@@ -891,7 +902,15 @@ test("campaign resume queues one pending selected cell and leaves a passed pilot
   const root = await mkdtemp(join(tmpdir(), "relay-combine-resume-scope-"));
   const previous = process.env.RELAY_STATE_DIR;
   process.env.RELAY_STATE_DIR = root;
-  const server = await startServer({ host: "127.0.0.1", port: 0 });
+  const server = await startServer({
+    host: "127.0.0.1",
+    port: 0,
+    jobRouteRuntime: {
+      async listDevices() {
+        return [listedMobileTarget("resume-pixel-1", "android")];
+      },
+    },
+  });
   try {
     const client = new RelayClient({
       url: `http://127.0.0.1:${server.port}`,
@@ -1011,6 +1030,9 @@ test("concurrent campaign resumes queue each untouched case once with one lineag
     host: "127.0.0.1",
     port: 0,
     jobRouteRuntime: {
+      async listDevices() {
+        return [listedMobileTarget("resume-pixel-1", "android")];
+      },
       async assertTargetControl(_scope, targetId) {
         if (!targetId) throw new Error("target id is required");
         controlCalls += 1;
@@ -1157,6 +1179,9 @@ test("campaign cancel serializes with an in-flight resume before any later dispa
     host: "127.0.0.1",
     port: 0,
     jobRouteRuntime: {
+      async listDevices() {
+        return [listedMobileTarget("resume-cancel-pixel", "android")];
+      },
       async assertTargetControl(_scope, targetId) {
         if (!targetId) throw new Error("target id is required");
         controlCalls += 1;

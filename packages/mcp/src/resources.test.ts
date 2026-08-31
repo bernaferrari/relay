@@ -99,6 +99,46 @@ function fixtureResult(operationId: string): unknown {
       },
     },
     "run.evidence.get": { evidence: { runId: "run-1", logs: [], network: [] } },
+    "run.trace-pack.get": {
+      tracePack: {
+        schemaVersion: 1,
+        kind: "relay-trace-pack",
+        digest: `sha256:${"a".repeat(64)}`,
+        createdAt: 123,
+        source: {
+          runId: "run-1",
+          runSchemaVersion: 5,
+          status: "passed",
+          action: "test",
+          inputDigest: "b".repeat(64),
+          writtenAt: 123,
+        },
+        redaction: { status: "applied-at-persistence", redactedChannels: [] },
+        completeness: { status: "complete", channels: {}, missing: [], artifacts: [] },
+        objects: [
+          {
+            path: "run.json",
+            kind: "frozen-run",
+            mediaType: "application/json",
+            encoding: "json",
+            digest: `sha256:${"a".repeat(64)}`,
+            bytes: 2,
+            content: {},
+          },
+        ],
+      },
+      analysis: {
+        schemaVersion: 1,
+        mode: "trace-pack-offline-analysis",
+        tracePackDigest: `sha256:${"a".repeat(64)}`,
+        sourceRunId: "run-1",
+        historicalVerdict: "proved",
+        futureTransitionVerdict: "unknown",
+        proved: [],
+        unknown: [{ code: "future", statement: "future is unknown", resolution: "live run" }],
+        smallestLiveVerification: { kind: "replay-check", reason: "live", requiresTarget: true },
+      },
+    },
     "run.repair.list": {
       repairs: [{ id: "run-1:usage", source: { runId: "run-1", checkId: "usage" } }],
     },
@@ -245,6 +285,7 @@ test("lists stable scoped Relay resources and templates with JSON MIME types", a
       [
         relayMcpResourceUris.run,
         relayMcpResourceUris.runEvidence,
+        relayMcpResourceUris.runTracePack,
         relayMcpResourceUris.runRepairProposals,
         "relay://app-maps/{appMapId}/impact",
         relayMcpResourceUris.runOfflineReplay,
@@ -424,6 +465,16 @@ test("reads the configured project and detail resources through Relay queries", 
         },
       },
     );
+    const tracePack = resourceContent(
+      await session.request("resources/read", { uri: "relay://runs/run-1/trace-pack" }),
+    );
+    const tracePackEnvelope = JSON.parse(tracePack.text) as {
+      truncated: boolean;
+      data: { tracePack: { digest: string; source: { runId: string } } };
+    };
+    assert.equal(tracePackEnvelope.truncated, false);
+    assert.equal(tracePackEnvelope.data.tracePack.digest, `sha256:${"a".repeat(64)}`);
+    assert.equal(tracePackEnvelope.data.tracePack.source.runId, "run-1");
     assert.deepEqual(calls, [
       { operationId: "project.list", input: {} },
       { operationId: "app-map.get", input: { appMapId: "map-1" } },
@@ -431,6 +482,7 @@ test("reads the configured project and detail resources through Relay queries", 
       { operationId: "run.repair.list", input: {} },
       { operationId: "run.repair.get", input: { runId: "run-1", checkId: "usage" } },
       { operationId: "run.replay.offline", input: { runId: "run-1" } },
+      { operationId: "run.trace-pack.get", input: { runId: "run-1" } },
     ]);
   } finally {
     await session.close();
@@ -803,6 +855,96 @@ test("reads current target observation metadata without capture side effects", a
       targetId: "device-1",
     });
     assert.deepEqual(calls, ["target.devices.list", "target.list", "authoring.session.list"]);
+  } finally {
+    await session.close();
+  }
+});
+
+test("keeps oversized TracePacks addressable with a bounded digest manifest", async () => {
+  const digest = `sha256:${"c".repeat(64)}`;
+  const tracePack = {
+    schemaVersion: 1,
+    kind: "relay-trace-pack",
+    digest,
+    createdAt: 123,
+    source: {
+      runId: "run-large",
+      runSchemaVersion: 5,
+      status: "passed",
+      action: "test",
+      inputDigest: "d".repeat(64),
+      writtenAt: 123,
+    },
+    redaction: { status: "applied-at-persistence", redactedChannels: [] },
+    completeness: {
+      status: "partial",
+      channels: { screenshot: "captured", tree: "missing" },
+      missing: ["tree"],
+    },
+    objects: Array.from({ length: 160 }, (_, index) => ({
+      path: `frames/${index}.json`,
+      kind: "frame",
+      mediaType: "application/json",
+      encoding: "json",
+      digest: `sha256:${String(index % 10).repeat(64)}`,
+      bytes: 2_048,
+      content: { payload: "x".repeat(512) },
+    })),
+  };
+  const analysis = {
+    schemaVersion: 1,
+    mode: "trace-pack-offline-analysis",
+    tracePackDigest: digest,
+    sourceRunId: "run-large",
+    historicalVerdict: "proved",
+    futureTransitionVerdict: "unknown",
+    proved: [{ code: "pass", statement: "passed", evidence: [digest] }],
+    unknown: [{ code: "future", statement: "future is unknown", resolution: "live run" }],
+    smallestLiveVerification: { kind: "replay-check", reason: "live", requiresTarget: true },
+  };
+  const session = await connectMcp(
+    fixtureInvoker({ "run.trace-pack.get": { tracePack, analysis } }),
+  );
+  try {
+    const content = resourceContent(
+      await session.request("resources/read", { uri: "relay://runs/run-large/trace-pack" }),
+    );
+    assert.ok(Buffer.byteLength(content.text, "utf8") <= relayMcpResourceByteLimit);
+    const envelope = JSON.parse(content.text) as {
+      truncated: boolean;
+      data: {
+        resourceUri: string;
+        tracePack: {
+          digest: string;
+          objectCount: number;
+          remainingObjectCount: number;
+          objects: Array<{ relativeName: string; bytes: number }>;
+          completeness: { status: string; missing: string[] };
+          analysis: { historicalVerdict: string; futureTransitionVerdict: string };
+        };
+      };
+    };
+    assert.equal(envelope.truncated, true);
+    assert.equal(envelope.data.resourceUri, "relay://runs/run-large/trace-pack");
+    assert.equal(envelope.data.tracePack.digest, digest);
+    assert.equal(envelope.data.tracePack.objectCount, 160);
+    assert.equal(envelope.data.tracePack.remainingObjectCount, 60);
+    assert.equal(envelope.data.tracePack.objects[0]?.relativeName, "frames/0.json");
+    assert.equal(envelope.data.tracePack.objects[0]?.bytes, 2_048);
+    assert.deepEqual(envelope.data.tracePack.completeness, {
+      status: "partial",
+      channelCount: 2,
+      missing: ["tree"],
+    });
+    assert.deepEqual(envelope.data.tracePack.analysis, {
+      historicalVerdict: "proved",
+      futureTransitionVerdict: "unknown",
+      provedCount: 1,
+      unknownCount: 1,
+      tracePackDigest: digest,
+      sourceRunId: "run-large",
+    });
+    assert.doesNotMatch(content.text, /payload/);
   } finally {
     await session.close();
   }

@@ -158,6 +158,7 @@ test("resolveSavedAppMapRuntimeTargetProfile inherits the only saved profile for
     targetId: "RQ8",
     platform: "android",
     viewport: { width: 1080, height: 2340 },
+    capabilities: ["snapshot"],
   });
 });
 

@@ -17,7 +17,6 @@ import {
   inspectAndroidPrerequisites,
   inspectExactProofInputs,
   inspectManagedBrowserTargets,
-  inspectTracePack,
 } from "./change-proof-golden-live-prerequisites.mjs";
 export {
   defaultCommand,

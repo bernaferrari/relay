@@ -8,7 +8,10 @@ const frozen: AppMapCompiledRuntimeTargetProfile = {
   id: "android:pixel",
   targetId: "emulator-5554",
   platform: "android",
+  model: "Emulator",
   androidAvdName: "Pixel_9_API_36",
+  osVersion: "16",
+  capabilities: ["snapshot", "screenshot", "tap"],
 };
 
 function observed(androidAvdName: string): TargetProfile {
@@ -20,6 +23,7 @@ function observed(androidAvdName: string): TargetProfile {
     name: "Pixel 9",
     model: "Emulator",
     androidAvdName,
+    osVersion: "16",
     capabilities: ["snapshot", "screenshot", "tap"],
     observedAt: 1,
   };
@@ -45,4 +49,14 @@ test("queued Android emulator Tests require the exact frozen AVD behind a reusab
     target: { kind: "device", targetId: "emulator-5554", platform: "android" },
   });
   assert.equal(accepted?.androidAvdName, "Pixel_9_API_36");
+  assert.throws(
+    () =>
+      queuedAppMapTestTargetProfile({
+        runtimeTargetProfile: frozen,
+        observedTargetProfile: { ...observed("Pixel_9_API_36"), osVersion: "17" },
+        target: { kind: "device", targetId: "emulator-5554", platform: "android" },
+      }),
+    (error: unknown) =>
+      error instanceof HttpError && error.body?.code === "TARGET_PROFILE_TARGET_MISMATCH",
+  );
 });

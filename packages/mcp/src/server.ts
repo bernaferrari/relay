@@ -17,7 +17,11 @@ import * as z from "zod/v4";
 import type { McpConfig } from "./config.js";
 import { invalidRelayMcpInput, relayMcpError, type RelayMcpStructuredError } from "./errors.js";
 import { registerRelayPrompts } from "./prompts.js";
-import { registerRelayResources, type RelayResourceScope } from "./resources.js";
+import {
+  registerRelayResources,
+  tracePackResourceManifest,
+  type RelayResourceScope,
+} from "./resources.js";
 import { compactOfflineReplayToolResult } from "./offline-replay-result.js";
 import {
   compactReplayLabOutcome,
@@ -39,22 +43,65 @@ export const relayMcpServerInfo = {
   description: "Scoped access to Relay operations for MCP agents.",
 } as const;
 
-export const relayMcpInstructions = [
-  "Use Relay tools only within the configured organization and project scope.",
-  "Treat tool results as server-authoritative and preserve Relay actor identity.",
-  "Prefer outcome tools: connect, observe, record, run, repeat, inspect, repair, and export evidence.",
-  "Omit the advanced appMapId and targetId fields when exactly one Test workspace and one ready Device exist.",
-  "Never retry an outcome whose snapshot says the mutation outcome is unknown; inspect its continuation reference.",
-  "Repeat runs one representative pilot first and requires explicit confirmation before remaining values.",
-  "Replay Lab accepts only explicit bounded TracePack payloads and always keeps future target behavior unknown.",
-  "Repair tools create reviewable proposals; they never silently rewrite an approved Test.",
-  "For change verification, use the proof.* lifecycle with the returned Proof id and exact version; only a human may approve a Verification Plan.",
-  "Use relay_prove_change to start or resume an approved Proof; inspect terminal uncertainty instead of retrying it.",
-  "For advanced Device control, capture a screenshot before interacting and prefer identifier, then label, text, and point.",
-  "A missing accessibility tree is not a failed session; pixels and point control remain usable.",
-  "Never displace another actor's Device control implicitly, and wait or cancel an active reserved Run before sending input.",
-  "Read relay://control/gotchas before advanced interact, recover, snapshot, or launch operations.",
-].join(" ");
+const proofLifecycleOperationIds = [
+  "proof.prepare",
+  "proof.start",
+  "proof.list",
+  "proof.inspect",
+  "proof.plan.approve",
+  "proof.run",
+  "proof.continue",
+  "proof.cancel",
+  "proof.rerun-affected",
+] as const satisfies readonly OperationId[];
+
+/**
+ * Keep the server's system guidance aligned with the tools actually
+ * registered for the selected least-privilege profile. In particular, the
+ * compact outcome profile exposes the friendly outcome façade and must not
+ * tell an agent to call raw proof.* operations it cannot see.
+ */
+export function relayMcpInstructionsForProfile(profile: RelayMcpProfile): string {
+  const registered = new Set<OperationId>(
+    profile === "outcome"
+      ? relayOutcomeTools.map(({ name }) => name as OperationId)
+      : relayMcpToolsForProfile(profile).map(({ operationId }) => operationId),
+  );
+  const instructions = [
+    "Use Relay tools only within the configured organization and project scope.",
+    "Treat tool results as server-authoritative and preserve Relay actor identity.",
+    profile === "outcome"
+      ? "Prefer outcome tools: connect, observe, record, run, repeat, inspect, repair, and export evidence."
+      : "Use only tools registered in the selected profile; start with read-only inspection and choose the narrowest tool that can complete the requested task.",
+    "Omit the advanced appMapId and targetId fields when exactly one Test workspace and one ready Device exist.",
+    "Never retry an outcome whose snapshot says the mutation outcome is unknown; inspect its continuation reference.",
+    "Repeat runs one representative pilot first and requires explicit confirmation before remaining values.",
+    "Replay Lab accepts only explicit bounded TracePack payloads and always keeps future target behavior unknown.",
+    "Repair tools create reviewable proposals; they never silently rewrite an approved Test.",
+    "For advanced Device control, capture a screenshot before interacting and prefer identifier, then label, text, and point.",
+    "A missing accessibility tree is not a failed session; pixels and point control remain usable.",
+    "Never displace another actor's Device control implicitly, and wait or cancel an active reserved Run before sending input.",
+    "Read relay://control/gotchas before advanced interact, recover, snapshot, or launch operations.",
+  ];
+  if (profile === "outcome") {
+    instructions.push(
+      "For change verification, use relay_prove_change to start or resume an approved Proof and relay_inspect_proof to inspect it; only a human may approve a Verification Plan.",
+    );
+  } else {
+    const registeredProofOperations = proofLifecycleOperationIds.filter((operationId) =>
+      registered.has(operationId),
+    );
+    if (registeredProofOperations.length > 0) {
+      instructions.push(
+        `For change verification, use the registered ${registeredProofOperations.join(", ")} lifecycle operations with the returned Proof id and exact version; only a human may approve a Verification Plan.`,
+      );
+    }
+  }
+  return instructions.join(" ");
+}
+
+/** Full-profile compatibility export for clients that used the old constant. */
+export const relayMcpInstructions = relayMcpInstructionsForProfile("full");
 
 export const relayMcpTextLimit = 8_192;
 export const relayMcpErrorLimit = 1_024;
@@ -207,6 +254,16 @@ function normalResult(result: unknown, fallback?: unknown): CallToolResult {
     content: [{ type: "text", text: bounded.text }],
     structuredContent: bounded.structuredContent,
   } as CallToolResult;
+}
+
+function compactTracePackToolResult(result: unknown, runId: string): unknown {
+  return {
+    truncated: true,
+    resourceUri: `relay://runs/${encodeURIComponent(runId)}/trace-pack`,
+    message:
+      "The TracePack is larger than the tool response limit. Read resourceUri for its scoped artifact response; Relay returns the complete sanitized pack when bounded and otherwise preserves this digest and manifest.",
+    tracePack: tracePackResourceManifest(result),
+  };
 }
 
 /** A complete Authoring Session can contain many immutable screenshots and
@@ -519,6 +576,12 @@ function registerRelayOutcomeTool(
         if (descriptor.name === "relay_replay_lab") {
           return normalResult(result, compactReplayLabOutcome(result));
         }
+        if (descriptor.name === "relay_export_evidence") {
+          const runId = argumentsWithoutConfirmation.runId;
+          if (typeof runId === "string") {
+            return normalResult(result, compactTracePackToolResult(result, runId));
+          }
+        }
         return normalResult(result);
       } catch (error) {
         return errorResult(relayMcpError(descriptor.name, error));
@@ -534,7 +597,7 @@ export function createMcpServer({
   actorId = "agent:mcp",
 }: McpServerDependencies): McpServer {
   const server = new McpServer(relayMcpServerInfo, {
-    instructions: relayMcpInstructions,
+    instructions: relayMcpInstructionsForProfile(profile),
   });
 
   const tools = relayMcpToolsForProfile(profile);

@@ -21,9 +21,9 @@ import {
 import {
   type AppMapTestCombineStripProps,
   repeatCaseLabel as presentRepeatCaseLabel,
-  repeatStatusLabel,
 } from "../lib/app-map-test-repeat-presentation";
 import { AppMapTestVariableEmptyState } from "./app-map-test-variable-empty-state";
+import { AppMapTestRepeatStatus } from "./app-map-test-repeat-status";
 import {
   applyableVariables,
   projectTestCombineStrip,
@@ -499,190 +499,97 @@ export function AppMapTestCombineStrip(props: AppMapTestCombineStripProps) {
           }
         >
           <Show
-            when={repeat()}
+            when={!restoring()}
             fallback={
-              <div class="grid gap-2 rounded-lg bg-surface-base p-2.5" data-test-repeat-pilot>
-                <div class="flex flex-wrap items-center justify-between gap-2">
-                  <span class="text-caption text-text-base">
-                    Pilot:{" "}
-                    <strong class="font-medium text-text-strong">
-                      {projection().worlds[0]?.label}
-                    </strong>
-                  </span>
-                  <span class="text-caption tabular-nums text-text-weak">
-                    {projection().cells.length} {projection().cells.length === 1 ? "case" : "cases"}
-                  </span>
-                </div>
-                <Show
-                  when={selectedDevice()}
-                  fallback={
-                    <div class="flex items-center justify-between gap-2">
-                      <span class={testEditorHint}>Device: choose one</span>
-                      <Button variant="secondary" size="sm" onClick={props.onChooseTarget}>
-                        Choose device
-                      </Button>
-                    </div>
-                  }
-                >
-                  {(device) => (
-                    <span class={testEditorHint}>
-                      Device: {device().name || device().serial} ·{" "}
-                      {device().platform === "ios" ? "iOS" : "Android"}
-                    </span>
-                  )}
-                </Show>
-                <p class={cn(testEditorHint, "m-0")}>
-                  Relay runs one representative value first and waits for review before the
-                  remaining values.
-                </p>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  disabled={
-                    busy() || restoring() || !selectedDevice() || !projection().cells.length
-                  }
-                  aria-busy={busy()}
-                  onClick={() => void runPilot()}
-                >
-                  {busy() ? "Starting pilot…" : "Run pilot"}
-                </Button>
+              <div
+                class="grid min-h-[138px] content-center gap-2 rounded-lg bg-surface-base p-2.5"
+                role="status"
+                aria-live="polite"
+                aria-busy="true"
+                data-test-repeat-restoring
+              >
+                <strong class="text-caption font-medium text-text-strong">
+                  Restoring active Repeat…
+                </strong>
+                <span class={testEditorHint}>
+                  Relay is recovering the saved pilot and its completed cases.
+                </span>
               </div>
             }
           >
-            {(current) => (
-              <div class="grid gap-2 rounded-lg bg-surface-base p-2.5" data-test-repeat-status>
-                <div class="flex flex-wrap items-start justify-between gap-2">
-                  <div class="grid gap-px">
-                    <strong class="text-caption font-medium text-text-strong">
-                      {current().progress.label}
-                    </strong>
+            <Show
+              when={repeat()}
+              fallback={
+                <div class="grid gap-2 rounded-lg bg-surface-base p-2.5" data-test-repeat-pilot>
+                  <div class="flex flex-wrap items-center justify-between gap-2">
+                    <span class="text-caption text-text-base">
+                      Pilot:{" "}
+                      <strong class="font-medium text-text-strong">
+                        {projection().worlds[0]?.label}
+                      </strong>
+                    </span>
                     <span class="text-caption tabular-nums text-text-weak">
-                      {current().outcomes.passed} passed · {current().outcomes.untouched} untouched
-                      · {current().outcomes.failed + current().outcomes.needsReview} problems
+                      {projection().cells.length}{" "}
+                      {projection().cells.length === 1 ? "case" : "cases"}
                     </span>
                   </div>
-                  <div class="flex flex-wrap gap-1">
-                    <Show when={current().evidenceRefs[0]}>
-                      {(evidence) => (
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => props.onOpenRun?.(evidence().id)}
-                        >
-                          View pilot evidence
+                  <Show
+                    when={selectedDevice()}
+                    fallback={
+                      <div class="flex items-center justify-between gap-2">
+                        <span class={testEditorHint}>Device: choose one</span>
+                        <Button variant="secondary" size="sm" onClick={props.onChooseTarget}>
+                          Choose device
                         </Button>
-                      )}
-                    </Show>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      disabled={busy()}
-                      onClick={() => void inspectRepeat()}
-                    >
-                      Refresh
-                    </Button>
-                  </div>
-                </div>
-                <Show when={current().problems[0]}>
-                  {(problem) => (
-                    <p class={cn(testEditorHint, "m-0")} role="status">
-                      {problem().recovery}
-                    </p>
-                  )}
-                </Show>
-                <Show when={current().results.length > 0}>
-                  <ul
-                    class="m-0 grid list-none gap-1 p-0"
-                    aria-label="Repeat results"
-                    data-test-repeat-results
+                      </div>
+                    }
                   >
-                    <For each={current().results}>
-                      {(result) => (
-                        <li class="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 rounded-md border border-border-weak-base bg-background-base px-2.5 py-2 text-caption">
-                          <span class="min-w-0 truncate font-medium text-text-strong">
-                            {repeatCaseLabel(result.values)}
-                          </span>
-                          <span class="text-text-weak">
-                            {result.phase === "pilot" ? "Pilot · " : ""}
-                            {repeatStatusLabel(result.status)}
-                          </span>
-                          <Show when={result.runId} fallback={<span aria-hidden="true" />}>
-                            {(runId) => (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                aria-label={`Open ${repeatCaseLabel(result.values)} result`}
-                                onClick={() => props.onOpenRun?.(runId())}
-                              >
-                                View
-                              </Button>
-                            )}
-                          </Show>
-                        </li>
-                      )}
-                    </For>
-                  </ul>
-                </Show>
-                <Show when={current().allowedNextActions.includes("confirm-and-continue")}>
-                  <label class="flex min-h-11 items-center gap-2 rounded-md border border-border-weak-base px-2.5 text-caption text-text-base">
-                    <input
-                      type="checkbox"
-                      checked={reviewed()}
-                      onChange={(event) => setReviewed(event.currentTarget.checked)}
-                    />
-                    I reviewed the representative result
-                  </label>
-                </Show>
-                <div class="flex flex-wrap gap-2">
-                  <Show when={current().allowedNextActions.includes("continue")}>
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      disabled={busy()}
-                      onClick={() => void advanceRepeat("continue")}
-                    >
-                      Continue remaining {current().outcomes.untouched}
-                    </Button>
+                    {(device) => (
+                      <span class={testEditorHint}>
+                        Device: {device().name || device().serial} ·{" "}
+                        {device().platform === "ios" ? "iOS" : "Android"}
+                      </span>
+                    )}
                   </Show>
-                  <Show when={current().allowedNextActions.includes("confirm-and-continue")}>
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      disabled={busy() || !reviewed()}
-                      onClick={() => void advanceRepeat("confirm-and-continue")}
-                    >
-                      Continue remaining {current().outcomes.untouched}
-                    </Button>
-                  </Show>
-                  <Show when={current().allowedNextActions.includes("cancel")}>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      disabled={busy()}
-                      onClick={() => void advanceRepeat("cancel")}
-                    >
-                      Stop Repeat
-                    </Button>
-                  </Show>
-                  <Show when={current().stage === "complete"}>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => {
-                        try {
-                          removeStoredRepeat(window.localStorage, storageKeys());
-                        } catch {
-                          // The completed Repeat is safe to leave as durable history.
-                        }
-                        setRepeat();
-                      }}
-                    >
-                      Repeat again
-                    </Button>
-                  </Show>
+                  <p class={cn(testEditorHint, "m-0")}>
+                    Relay runs one representative value first and waits for review before the
+                    remaining values.
+                  </p>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={
+                      busy() || restoring() || !selectedDevice() || !projection().cells.length
+                    }
+                    aria-busy={busy()}
+                    onClick={() => void runPilot()}
+                  >
+                    {busy() ? "Starting pilot…" : "Run pilot"}
+                  </Button>
                 </div>
-              </div>
-            )}
+              }
+            >
+              {(current) => (
+                <AppMapTestRepeatStatus
+                  snapshot={current()}
+                  busy={busy()}
+                  reviewed={reviewed()}
+                  caseLabel={repeatCaseLabel}
+                  onReviewedChange={setReviewed}
+                  onOpenRun={props.onOpenRun}
+                  onRefresh={() => void inspectRepeat()}
+                  onAdvance={(action) => void advanceRepeat(action)}
+                  onRepeatAgain={() => {
+                    try {
+                      removeStoredRepeat(window.localStorage, storageKeys());
+                    } catch {
+                      // The completed Repeat is safe to leave as durable history.
+                    }
+                    setRepeat();
+                  }}
+                />
+              )}
+            </Show>
           </Show>
         </Show>
       </section>

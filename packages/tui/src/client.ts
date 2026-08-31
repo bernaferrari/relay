@@ -1,4 +1,4 @@
-import { RelayClient } from "@relay/client";
+import { ApiError, RelayClient } from "@relay/client";
 
 export type AppMapSummary = {
   id: string;
@@ -74,35 +74,103 @@ export type DeviceClient = {
   getActiveJobId: () => Promise<string | null>;
 };
 
-async function probe(url: string): Promise<boolean> {
-  try {
-    const res = await fetch(`${url.replace(/\/+$/, "")}/health`, {
-      headers: {
-        "X-Relay-Actor-Id": "human:local-tui",
-        "X-Relay-Actor-Kind": "human",
-        "X-Relay-Operation-Id": "system.health.get",
-        "X-Relay-Request-Id": crypto.randomUUID(),
-        "X-Relay-Command-At": String(Date.now()),
-        "Idempotency-Key": crypto.randomUUID(),
-      },
-      signal: AbortSignal.timeout(800),
-    });
-    return res.ok;
-  } catch {
-    return false;
+export type RelayConnectionFailureKind = "network" | "authentication" | "scope" | "server";
+
+export class RelayConnectionError extends Error {
+  constructor(
+    readonly kind: RelayConnectionFailureKind,
+    message: string,
+    readonly status?: number,
+  ) {
+    super(message);
+    this.name = "RelayConnectionError";
   }
 }
 
-function httpClient(baseUrl: string): DeviceClient {
-  const base = baseUrl.replace(/\/+$/, "");
-  const token = process.env.RELAY_AUTH_TOKEN;
-  const relay = new RelayClient({
-    url: base,
-    auth: token ? { type: "bearer", token } : { type: "none" },
+export type TuiClientOptions = {
+  fetch?: typeof fetch;
+  timeoutMs?: number;
+  probeTimeoutMs?: number;
+};
+
+function relayConnection(url: string) {
+  return {
+    url,
+    auth: process.env.RELAY_AUTH_TOKEN
+      ? ({ type: "bearer", token: process.env.RELAY_AUTH_TOKEN } as const)
+      : ({ type: "none" } as const),
     organizationId: process.env.RELAY_ORGANIZATION_ID ?? "local",
     projectId: process.env.RELAY_PROJECT_ID ?? "default",
     actorId: process.env.RELAY_ACTOR_ID ?? "human:local-tui",
-    actorKind: "human",
+    actorKind: "human" as const,
+  };
+}
+
+function apiErrorText(error: ApiError): string {
+  if (!error.body || typeof error.body !== "object") return error.message;
+  const body = error.body as { error?: unknown; message?: unknown };
+  if (typeof body.error === "string" && body.error.trim()) return body.error;
+  if (typeof body.message === "string" && body.message.trim()) return body.message;
+  return error.message;
+}
+
+export type RelayProbeResult =
+  | { ok: true }
+  | { ok: false; kind: RelayConnectionFailureKind; message: string; status?: number };
+
+/** Probe using the exact same auth, actor, and project scope as the client. */
+export async function probeRelay(
+  url: string,
+  options: Pick<TuiClientOptions, "fetch" | "probeTimeoutMs"> = {},
+): Promise<RelayProbeResult> {
+  const relay = new RelayClient(relayConnection(url), {
+    ...(options.fetch ? { fetch: options.fetch } : {}),
+    timeoutMs: options.probeTimeoutMs ?? 800,
+  });
+  try {
+    await relay.health();
+    return { ok: true };
+  } catch (error) {
+    if (error instanceof ApiError) {
+      const detail = apiErrorText(error);
+      if (error.status === 401) {
+        return {
+          ok: false,
+          kind: "authentication",
+          status: error.status,
+          message: `Relay rejected the configured authentication: ${detail}`,
+        };
+      }
+      if (error.status === 403) {
+        return {
+          ok: false,
+          kind: "scope",
+          status: error.status,
+          message: `Relay rejected the configured organization/project scope: ${detail}`,
+        };
+      }
+      return {
+        ok: false,
+        kind: "server",
+        status: error.status,
+        message: `Relay responded with ${error.status}: ${detail}`,
+      };
+    }
+    return {
+      ok: false,
+      kind: "network",
+      message: `Relay server is not reachable at ${url}: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    };
+  }
+}
+
+function httpClient(baseUrl: string, options: TuiClientOptions = {}): DeviceClient {
+  const base = baseUrl.replace(/\/+$/, "");
+  const relay = new RelayClient(relayConnection(base), {
+    ...(options.fetch ? { fetch: options.fetch } : {}),
+    ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
   });
   return {
     mode: "http",
@@ -215,11 +283,21 @@ export async function pollJobUntilTerminal(input: {
   }
 }
 
-export async function createClient(serverUrl?: string): Promise<DeviceClient> {
+export async function createClient(
+  serverUrl?: string,
+  options: TuiClientOptions = {},
+): Promise<DeviceClient> {
   const envUrl = process.env.RELAY_URL?.trim();
   const candidate = (serverUrl ?? envUrl ?? "http://127.0.0.1:8787").replace(/\/+$/, "");
-  if (await probe(candidate)) return httpClient(candidate);
-  throw new Error(
-    `Relay server is not reachable at ${candidate}. Start it with \`pnpm dev:serve\`, then retry.`,
-  );
+  const probe = await probeRelay(candidate, options);
+  if (probe.ok) return httpClient(candidate, options);
+  const hint =
+    probe.kind === "network"
+      ? "Start it with `pnpm dev:serve`, then retry."
+      : probe.kind === "authentication"
+        ? "Check RELAY_AUTH_TOKEN, then retry."
+        : probe.kind === "scope"
+          ? "Check RELAY_ORGANIZATION_ID and RELAY_PROJECT_ID, then retry."
+          : "Inspect the Relay server log, then retry.";
+  throw new RelayConnectionError(probe.kind, `${probe.message} ${hint}`, probe.status);
 }

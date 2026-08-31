@@ -7,7 +7,30 @@ import {
 type SavedTargetProfile = Pick<
   TargetProfile,
   "id" | "targetId" | "platform" | "androidAvdName" | "viewport" | "browserCaseProfile"
->;
+> &
+  Partial<Pick<TargetProfile, "model" | "osVersion">> & {
+    capabilities?: readonly TargetProfile["capabilities"][number][];
+  };
+
+const targetCapabilities = new Set<TargetProfile["capabilities"][number]>([
+  "snapshot",
+  "screenshot",
+  "stream",
+  "recording",
+  "tap",
+  "type",
+  "scroll",
+  "clipboard",
+  "network",
+  "logs",
+  "permissions",
+  "location",
+  "rotation",
+  "lock-screen",
+  "app-switcher",
+  "install",
+  "launch",
+]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
@@ -66,9 +89,16 @@ export function appMapRuntimeTargetProfileFromSaved(
     id: profile.id,
     targetId: profile.targetId,
     platform: profile.platform,
+    ...(profile.platform !== "browser" && profile.model ? { model: profile.model } : {}),
     ...(profile.androidAvdName ? { androidAvdName: profile.androidAvdName } : {}),
+    ...(profile.platform !== "browser" && profile.osVersion
+      ? { osVersion: profile.osVersion }
+      : {}),
     ...(viewport ? { viewport: structuredClone(viewport) } : {}),
     ...(browserCaseProfile ? { browserCaseProfile } : {}),
+    ...(profile.platform !== "browser" && profile.capabilities
+      ? { capabilities: [...new Set(profile.capabilities)].sort() }
+      : {}),
   };
 }
 
@@ -81,9 +111,17 @@ export function parseAppMapRuntimeTargetProfile(
   if (
     !isRecord(value) ||
     !Object.keys(value).every((key) =>
-      ["id", "targetId", "platform", "androidAvdName", "viewport", "browserCaseProfile"].includes(
-        key,
-      ),
+      [
+        "id",
+        "targetId",
+        "platform",
+        "model",
+        "androidAvdName",
+        "osVersion",
+        "viewport",
+        "browserCaseProfile",
+        "capabilities",
+      ].includes(key),
     ) ||
     typeof value.id !== "string" ||
     !value.id.trim() ||
@@ -92,6 +130,16 @@ export function parseAppMapRuntimeTargetProfile(
     (value.platform !== "android" && value.platform !== "ios" && value.platform !== "browser") ||
     (value.androidAvdName !== undefined &&
       (typeof value.androidAvdName !== "string" || !value.androidAvdName.trim())) ||
+    (value.model !== undefined && (typeof value.model !== "string" || !value.model.trim())) ||
+    (value.osVersion !== undefined &&
+      (typeof value.osVersion !== "string" || !value.osVersion.trim())) ||
+    (value.capabilities !== undefined &&
+      (!Array.isArray(value.capabilities) ||
+        value.capabilities.some(
+          (capability) =>
+            typeof capability !== "string" ||
+            !targetCapabilities.has(capability as TargetProfile["capabilities"][number]),
+        ))) ||
     (value.viewport !== undefined && !validViewport(value.viewport))
   ) {
     return undefined;
@@ -118,9 +166,14 @@ export function parseAppMapRuntimeTargetProfile(
     id: value.id,
     targetId: value.targetId,
     platform: value.platform,
+    ...(value.model === undefined ? {} : { model: value.model }),
     ...(value.androidAvdName === undefined ? {} : { androidAvdName: value.androidAvdName }),
+    ...(value.osVersion === undefined ? {} : { osVersion: value.osVersion }),
     ...(value.viewport === undefined ? {} : { viewport: value.viewport }),
     ...(browserCaseProfile ? { browserCaseProfile } : {}),
+    ...(value.capabilities === undefined
+      ? {}
+      : { capabilities: value.capabilities as TargetProfile["capabilities"] }),
   });
 }
 

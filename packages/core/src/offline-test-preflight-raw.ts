@@ -56,10 +56,13 @@ function evidenceSourceKey(source: OfflineTestPreflightEvidenceSource): string {
     source.variant?.targetProfileId ?? "",
     source.variant?.targetId ?? "",
     source.variant?.platform ?? "",
+    source.variant?.model ?? "",
     source.variant?.androidAvdName ?? "",
+    source.variant?.osVersion ?? "",
     source.variant?.viewport?.width ?? "",
     source.variant?.viewport?.height ?? "",
     source.variant?.browserCaseProfile ? JSON.stringify(source.variant.browserCaseProfile) : "",
+    source.variant?.capabilities ? JSON.stringify(source.variant.capabilities) : "",
     sourceOriginKey(source),
   ].join("\u0000");
 }

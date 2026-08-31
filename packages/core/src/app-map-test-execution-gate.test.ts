@@ -227,6 +227,7 @@ test("rejects a queued Test whose target profile loses the selected viewport ide
       targetId: "android-1",
       platform: "android" as const,
       viewport: { width: 1080, height: 2400 },
+      capabilities: [],
     },
   };
   const preflight: OfflineTestPreflightReport = {

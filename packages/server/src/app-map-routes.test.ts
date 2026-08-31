@@ -11,7 +11,6 @@ import {
   createDiscoverySession,
   enqueueJob,
   leaseDevice,
-  listDevices,
   materializeLogicalScrollSurfaceImport,
   parseAppMapTestExecutionIntentArtifact,
   mutateStoredAppMap,
@@ -218,6 +217,47 @@ test("queued Tests preserve the exact viewport-suffixed saved runtime profile", 
   );
 });
 
+test("queued mobile Tests require every frozen capability while allowing compatible additions", () => {
+  const runtimeTargetProfile = {
+    id: "device:pixel-9",
+    targetId: "pixel-9",
+    platform: "android" as const,
+    model: "Physical device",
+    osVersion: "16",
+    capabilities: ["snapshot", "screenshot"] as const,
+  };
+  const observedTargetProfile = {
+    id: "device:pixel-9",
+    targetId: "pixel-9",
+    source: "device" as const,
+    platform: "android" as const,
+    name: "Pixel 9",
+    model: "Physical device",
+    osVersion: "16",
+    capabilities: ["snapshot", "screenshot", "scroll"] as const,
+    observedAt: 100,
+  };
+  assert.doesNotThrow(() =>
+    queuedAppMapTestTargetProfile({
+      runtimeTargetProfile,
+      observedTargetProfile: {
+        ...observedTargetProfile,
+        capabilities: [...observedTargetProfile.capabilities],
+      },
+      target: { kind: "device", targetId: "pixel-9", platform: "android" },
+    }),
+  );
+  assert.throws(
+    () =>
+      queuedAppMapTestTargetProfile({
+        runtimeTargetProfile,
+        observedTargetProfile: { ...observedTargetProfile, capabilities: ["snapshot"] },
+        target: { kind: "device", targetId: "pixel-9", platform: "android" },
+      }),
+    /no longer matches frozen profile/u,
+  );
+});
+
 test("queued browser Tests require the complete saved profile to match the observed target", () => {
   const saved = compileBrowserEnvironment({
     engine: "webkit",
@@ -382,7 +422,16 @@ test("offline Test compilation previews a verified checkpoint without a device o
       async listDevices() {
         offlineOnlyCalls.listDevices += 1;
         if (preflightOnly) throw new Error("blocked Test run tried to discover a device");
-        return listDevices();
+        return [
+          {
+            id: "ipad-1",
+            serial: "ipad-1",
+            name: "iPad",
+            kind: "Physical device",
+            booted: true,
+            platform: "ios" as const,
+          },
+        ];
       },
       async assertTargetControl(scope, targetId) {
         offlineOnlyCalls.assertTargetControl += 1;
@@ -590,6 +639,7 @@ test("offline Test compilation previews a verified checkpoint without a device o
       targetProfileId: "ipad-en",
       targetId: "ipad-1",
       platform: "ios",
+      capabilities: ["screenshot", "snapshot"],
     });
     assert.deepEqual(frozenHome?.origin, {
       kind: "screen-variant",
@@ -611,16 +661,28 @@ test("offline Test compilation previews a verified checkpoint without a device o
         id: "ipad-en",
         targetId: "ipad-1",
         platform: "ios",
+        capabilities: ["screenshot", "snapshot"],
       },
       targetProfileCandidates: [
-        { id: "ipad-en", targetId: "ipad-1", platform: "ios" },
-        { id: "ipad-pt", targetId: "ipad-1", platform: "ios" },
+        {
+          id: "ipad-en",
+          targetId: "ipad-1",
+          platform: "ios",
+          capabilities: ["screenshot", "snapshot"],
+        },
+        {
+          id: "ipad-pt",
+          targetId: "ipad-1",
+          platform: "ios",
+          capabilities: ["screenshot", "snapshot"],
+        },
       ],
       selectedVariant: {
         id: "home-ios-en",
         targetProfileId: "ipad-en",
         targetId: "ipad-1",
         platform: "ios",
+        capabilities: ["screenshot", "snapshot"],
       },
       candidates: [
         {
@@ -629,6 +691,7 @@ test("offline Test compilation previews a verified checkpoint without a device o
             targetProfileId: "ipad-en",
             targetId: "ipad-1",
             platform: "ios",
+            capabilities: ["screenshot", "snapshot"],
           },
           sourceCount: 1,
           compatibility: "selected-variant",
@@ -640,6 +703,7 @@ test("offline Test compilation previews a verified checkpoint without a device o
             targetProfileId: "ipad-pt",
             targetId: "ipad-1",
             platform: "ios",
+            capabilities: ["screenshot", "snapshot"],
           },
           sourceCount: 0,
           compatibility: "incompatible",
@@ -770,6 +834,7 @@ test("offline Test compilation previews a verified checkpoint without a device o
       id: "ipad-en",
       targetId: "ipad-1",
       platform: "ios",
+      capabilities: ["screenshot", "snapshot"],
     });
     const queuedJob = await client.invoke("job.get", { jobId: queued.job.id });
     const queuedTargetProfile = queuedJob.job.targetProfile as

@@ -167,6 +167,28 @@ test("prepares an Android Proof only when the installed APK bytes are exact", as
       }),
       /stale or unverified/,
     );
+    await assert.rejects(
+      prepareRegisteredBuildForProof({
+        build,
+        target,
+        sourceSha: build.sourceSha,
+        artifactDigest,
+        run: async (command, args) => {
+          if (command === "apkanalyzer") return { stdout: "com.example.app\n" };
+          if (command === "adb" && args.includes("pm")) {
+            return {
+              stdout:
+                "package:/data/app/com.example.app/base.apk\npackage:/data/app/com.example.app/split_config.en.apk\n",
+            };
+          }
+          if (command === "adb" && args.includes("sha256sum")) {
+            return { stdout: `${sourceSha256}  /data/app/com.example.app/base.apk\n` };
+          }
+          return { stdout: "" };
+        },
+      }),
+      /split or non-base Android installation requires complete split-artifact verification/,
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }

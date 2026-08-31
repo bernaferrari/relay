@@ -517,11 +517,11 @@ export async function installRegisteredBuild(input: {
   };
 }
 
-function installedPackagePath(stdout: string): string | undefined {
+function installedPackagePaths(stdout: string): string[] {
   return stdout
     .split(/\r?\n/u)
     .map((line) => line.trim().match(/^package:(\S+)$/u)?.[1])
-    .find((path): path is string => Boolean(path));
+    .filter((path): path is string => Boolean(path));
 }
 
 function installedPackageDigest(stdout: string): `sha256:${string}` | undefined {
@@ -615,12 +615,18 @@ export async function prepareRegisteredBuildForProof(input: {
     "path",
     applicationId,
   ]);
-  const packagePath = installedPackagePath(String(pathResult.stdout ?? ""));
-  if (!packagePath) {
+  const packagePaths = installedPackagePaths(String(pathResult.stdout ?? ""));
+  if (!packagePaths.length) {
     throw new Error(
       "PROOF_INSUFFICIENT_EVIDENCE: exact application is not installed on the target",
     );
   }
+  if (packagePaths.length !== 1 || !packagePaths[0]!.endsWith("/base.apk")) {
+    throw new Error(
+      "PROOF_INSUFFICIENT_EVIDENCE: split or non-base Android installation requires complete split-artifact verification",
+    );
+  }
+  const packagePath = packagePaths[0]!;
   const digestResult = await run("adb", [
     "-s",
     input.target.serial,

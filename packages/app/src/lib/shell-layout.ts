@@ -61,7 +61,7 @@ export const shellTopbarContext = "flex min-w-0 items-center gap-1.5";
  * a document title belongs, rather than floating in the gap left over between
  * the two clusters either side of it. */
 export const shellTopbarTitle =
-  "pointer-events-auto flex min-w-0 items-center overflow-hidden max-[720px]:hidden";
+  "pointer-events-auto flex min-w-0 max-w-[min(36vw,360px)] items-center overflow-hidden max-[720px]:max-w-[min(34vw,220px)] max-[560px]:max-w-[min(42vw,180px)]";
 export const shellTopbarModes =
   "shell-topbar-modes flex items-center justify-center max-[560px]:col-span-2 max-[560px]:row-start-2 max-[560px]:w-full";
 export const shellTopbarActions =

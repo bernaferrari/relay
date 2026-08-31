@@ -85,12 +85,24 @@ test("Android emulator identity survives compilation and prevents serial-only eq
     id: "android:pixel",
     targetId: "emulator-5554",
     platform: "android",
+    model: "Pixel 9",
     androidAvdName: "Pixel_9_API_36",
+    osVersion: "16",
+    capabilities: ["tap", "snapshot"],
   });
   assert.deepEqual(parseAppMapRuntimeTargetProfile(structuredClone(pixel)), pixel);
   assert.equal(
     sameAppMapRuntimeTargetProfile(pixel, { ...pixel, androidAvdName: "Tablet_API_36" }),
     false,
+  );
+  assert.equal(sameAppMapRuntimeTargetProfile(pixel, { ...pixel, osVersion: "17" }), false);
+  assert.equal(
+    sameAppMapRuntimeTargetProfile(pixel, { ...pixel, capabilities: ["snapshot"] }),
+    false,
+  );
+  assert.equal(
+    parseAppMapRuntimeTargetProfile({ ...pixel, capabilities: ["root-shell"] }),
+    undefined,
   );
   assert.throws(
     () =>

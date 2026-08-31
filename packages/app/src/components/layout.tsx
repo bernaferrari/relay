@@ -11,6 +11,7 @@ import type { SettingsSection } from "../pages/settings";
 import { nextAccessibilityOverlayMode } from "../lib/accessibility-overlay-mode";
 import { plural } from "../lib/plural";
 import type { WorkspaceController } from "../lib/workspace-controller";
+import { confirmAction } from "./confirm-dialog";
 
 export type AppView = "workspace" | "settings";
 
@@ -137,6 +138,13 @@ export function Layout(props: {
         run: () => props.onOpenSettings(),
       },
       {
+        id: "nav.changes",
+        title: "Open Changes",
+        subtitle: "Prepare, run, and inspect Change Proofs",
+        group: "Navigation",
+        run: () => void props.workspaceController.request({ kind: "changes.open" }),
+      },
+      {
         id: "appearance.scheme.light",
         title: "Color scheme: Light",
         group: "Appearance",
@@ -181,7 +189,15 @@ export function Layout(props: {
         group: "Jobs",
         keybind: "mod+enter",
         disabled: () => !server.selectedAppMapId() || server.health() !== "online",
-        run: () => props.workspaceController.request({ kind: "test.run" }),
+        run: () => void props.workspaceController.request({ kind: "test.run" }),
+      },
+      {
+        id: "test.record",
+        title: "Record a Test",
+        subtitle: "Capture one trusted user journey",
+        group: "Tests",
+        disabled: () => server.health() !== "online",
+        run: () => void props.workspaceController.request({ kind: "test.record" }),
       },
       {
         id: "queue.clear",
@@ -189,7 +205,17 @@ export function Layout(props: {
         group: "Jobs",
         disabled: () => server.queuedJobs().length === 0,
         run: () => {
-          for (const q of server.queuedJobs()) void server.cancelJob(q.id);
+          const jobs = server.queuedJobs();
+          if (jobs.length === 0) return;
+          confirmAction({
+            title: `Cancel ${plural(jobs.length, "queued job")}?`,
+            body: "Running work is not affected. Cancelled jobs remain visible in history.",
+            confirmLabel: jobs.length === 1 ? "Cancel queued job" : "Cancel queued jobs",
+            tone: "destructive",
+            onConfirm: async () => {
+              await Promise.all(jobs.map((job) => server.cancelJob(job.id)));
+            },
+          });
         },
       },
       {

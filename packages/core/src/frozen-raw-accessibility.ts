@@ -68,14 +68,19 @@ function source(
             targetProfileId: provenance.variant.targetProfileId,
             targetId: provenance.variant.targetId,
             platform: provenance.variant.platform,
+            ...(provenance.variant.model ? { model: provenance.variant.model } : {}),
             ...(provenance.variant.androidAvdName
               ? { androidAvdName: provenance.variant.androidAvdName }
               : {}),
+            ...(provenance.variant.osVersion ? { osVersion: provenance.variant.osVersion } : {}),
             ...(provenance.variant.viewport
               ? { viewport: { ...provenance.variant.viewport } }
               : {}),
             ...(provenance.variant.browserCaseProfile
               ? { browserCaseProfile: structuredClone(provenance.variant.browserCaseProfile) }
+              : {}),
+            ...(provenance.variant.capabilities
+              ? { capabilities: [...provenance.variant.capabilities] }
               : {}),
           },
           origin: structuredClone(provenance.origin),
