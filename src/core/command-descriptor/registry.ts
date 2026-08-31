@@ -12,6 +12,7 @@ import {
 } from './timeout-policy.ts';
 import { resolvePostActionObservationSupport } from './post-action-observation.ts';
 import type { PostActionObservationSupport } from './post-action-observation.ts';
+import type { DaemonCommandDescriptor } from './daemon-command-descriptor.ts';
 import {
   deployAppUse,
   readyMaterializeAndDeployAppUse,
@@ -176,8 +177,21 @@ const isShardedTestRequest = (req: DispatchedCommand): boolean =>
 // no-lease-anywhere admission bypass in request-admission.ts. `close <app>`
 // resolves its device straight from flags when there's no session and must
 // stay behind full lease/tenant admission.
-const isPlainCloseRequest = (req: DispatchedCommand): boolean =>
-  (req.positionals?.length ?? 0) === 0;
+const resolvePlainCloseLeaseAdmissionExemption = (
+  req: DispatchedCommand,
+): { kind: 'unconditional' } | undefined =>
+  (req.positionals?.length ?? 0) === 0 ? { kind: 'unconditional' } : undefined;
+
+const resolveDeferredProviderAppCatalogLeaseAdmissionExemption: NonNullable<
+  DaemonCommandDescriptor['sessionlessLeaseAdmissionExemption']
+> = (req) => {
+  const provider = req.flags?.leaseProvider;
+  return req.flags?.leaseId === undefined &&
+    typeof provider === 'string' &&
+    (req.flags?.platform === 'android' || req.flags?.platform === 'ios')
+    ? { kind: 'provider-app-catalog', provider }
+    : undefined;
+};
 
 // ADR 0014 request-sensitive ref-frame resolvers. The action is the leading
 // positional (see keyboard/alert daemon writers in src/commands/system/index.ts
@@ -607,6 +621,7 @@ export const RAW_COMMAND_DESCRIPTORS = [
       sessionKind: 'inventory',
       lockPolicySelectorOverride: true,
       preferExplicitDeviceOverExistingSession: true,
+      sessionlessLeaseAdmissionExemption: resolveDeferredProviderAppCatalogLeaseAdmissionExemption,
     },
     platformExecution: { kind: 'device-runtime', uses: [appsRuntimeUse] as const },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
@@ -980,7 +995,7 @@ export const RAW_COMMAND_DESCRIPTORS = [
       refFrameEffect: 'may-invalidate',
       allowInvalidRecording: true,
       saveScriptFlagOwner: true,
-      sessionlessPlainCloseAdmissionExempt: isPlainCloseRequest,
+      sessionlessLeaseAdmissionExemption: resolvePlainCloseLeaseAdmissionExemption,
     },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,

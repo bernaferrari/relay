@@ -22,6 +22,10 @@ export type DaemonRefFrameEffect<TRequest = DispatchedCommand> =
   | RefFrameEffect
   | ((req: TRequest) => RefFrameEffect);
 
+export type SessionlessLeaseAdmissionExemption =
+  | Readonly<{ kind: 'unconditional' }>
+  | Readonly<{ kind: 'provider-app-catalog'; provider: string }>;
+
 /**
  * Daemon route + request-policy traits for one command. Generic over the request
  * the closure traits read so core can declare the shape in terms of
@@ -51,15 +55,7 @@ export type DaemonCommandDescriptor<TRequest = DispatchedCommand> = {
   preferExplicitDeviceOverExistingSession?: boolean;
   allowSessionlessDefaultDevice?: (req: TRequest) => boolean;
   skipSessionlessProviderDevice?: (req: TRequest) => boolean;
-  /**
-   * #2016: this request shape is eligible for the sessionless,
-   * no-lease-anywhere lease-admission bypass — a session that was never
-   * created (deferred `connect`, `open` never ran) has no lease to admit or
-   * release. Only `close` declares it, and only for the plain-close shape
-   * (no app-target positional): `close <app>` resolves its device straight
-   * from flags when there's no session, so it must stay behind full
-   * lease/tenant admission. Declared here so `request-admission.ts` asks the
-   * registry instead of reclassifying `req.command`/`req.positionals` itself.
-   */
-  sessionlessPlainCloseAdmissionExempt?: (req: TRequest) => boolean;
+  sessionlessLeaseAdmissionExemption?: (
+    req: TRequest,
+  ) => SessionlessLeaseAdmissionExemption | undefined;
 };
