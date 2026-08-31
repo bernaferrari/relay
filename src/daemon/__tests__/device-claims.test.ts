@@ -7,6 +7,7 @@ import {
   abandonDeviceClaim,
   acquireDeviceClaim as acquireProductionDeviceClaim,
   clearDeviceClaim,
+  processOwnsActiveDeviceClaim,
 } from '../device-claims.ts';
 import { canonicalLocalDeviceKey } from '../device-claim-paths.ts';
 import { inspectDeviceClaims } from '../device-claim-inspection.ts';
@@ -633,4 +634,73 @@ test('reports the exact outcome of abandoning an owned, missing, and unowned cla
   fs.rmSync(claimPath(root));
   assert.equal(await abandonDeviceClaim(acquired.ownership), 'absent');
   assert.equal(await abandonDeviceClaim(undefined), 'absent');
+});
+
+test('answers the runner authority probe only for a claim this process actively holds', async () => {
+  const root = useClaimsRoot();
+  assert.equal(processOwnsActiveDeviceClaim(device), false);
+
+  const acquired = await acquireDeviceClaim({
+    device,
+    session: 'probe-owner',
+    workspace: '/worktrees/probe',
+    stateDir: root,
+  });
+  assert.equal(acquired.status, 'acquired');
+  if (acquired.status !== 'acquired') return;
+  assert.equal(processOwnsActiveDeviceClaim(device), true);
+  assert.equal(processOwnsActiveDeviceClaim({ ...device, id: 'some-other-device' }), false);
+
+  assert.equal(await abandonDeviceClaim(acquired.ownership), 'abandoned');
+  assert.equal(processOwnsActiveDeviceClaim(device), false);
+});
+
+test('a same-id claim from another platform family grants no runner authority', async () => {
+  const root = useClaimsRoot();
+  // An Android claim whose serial happens to equal an Apple runner's device id
+  // must not authorize destructive takeover of that runner: authority matches
+  // the canonical family/OS/id key, never the bare id.
+  const acquired = await acquireDeviceClaim({
+    device,
+    session: 'android-owner',
+    workspace: '/worktrees/android',
+    stateDir: root,
+  });
+  assert.equal(acquired.status, 'acquired');
+  const sameIdAppleSimulator: DeviceInfo = {
+    platform: 'apple',
+    appleOs: 'ios',
+    id: device.id,
+    name: 'Colliding iPhone',
+    kind: 'simulator',
+    booted: true,
+  };
+  assert.equal(processOwnsActiveDeviceClaim(sameIdAppleSimulator), false);
+  assert.equal(processOwnsActiveDeviceClaim(device), true);
+
+  const appleAcquired = await acquireDeviceClaim({
+    device: sameIdAppleSimulator,
+    session: 'apple-owner',
+    workspace: '/worktrees/apple',
+    stateDir: root,
+  });
+  assert.equal(appleAcquired.status, 'acquired');
+  assert.equal(processOwnsActiveDeviceClaim(sameIdAppleSimulator), true);
+});
+
+test('denies the runner authority probe for a claim held by another process', async () => {
+  const root = useClaimsRoot();
+  const acquired = await acquireDeviceClaim({
+    device,
+    session: 'foreign-owner',
+    workspace: '/worktrees/foreign',
+    stateDir: root,
+  });
+  assert.equal(acquired.status, 'acquired');
+  const stored = JSON.parse(fs.readFileSync(claimPath(root), 'utf8')) as Record<string, unknown>;
+  fs.writeFileSync(
+    claimPath(root),
+    JSON.stringify({ ...stored, ownerPid: 999_999, ownerStartTime: 'other-start' }),
+  );
+  assert.equal(processOwnsActiveDeviceClaim(device), false);
 });
