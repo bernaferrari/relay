@@ -3,17 +3,18 @@ import { test, expect, vi, beforeEach } from 'vitest';
 // The `devices` handler resolves its inventory through listDeviceInventory; mocking it
 // lets us drive the additive `appleOs` projection off the shared device fixtures without
 // touching real local discovery.
-vi.mock('../../../request/device-inventory-context.ts', async (importOriginal) => {
+vi.mock('../../../../request/device-inventory-context.ts', async (importOriginal) => {
   const actual =
-    await importOriginal<typeof import('../../../request/device-inventory-context.ts')>();
+    await importOriginal<typeof import('../../../../request/device-inventory-context.ts')>();
   return { ...actual, listDeviceInventory: vi.fn(async () => []) };
 });
 
-import { handleSessionInventoryCommands } from '../session-inventory.ts';
-import { listDeviceInventory } from '../../../request/device-inventory-context.ts';
-import { makeSessionStore } from '../../../__tests__/test-utils/store-factory.ts';
-import type { DaemonRequest, DaemonResponse } from '../../types.ts';
+import { handleSessionInventoryCommands } from '../inventory.ts';
+import { listDeviceInventory } from '../../../../request/device-inventory-context.ts';
+import { makeSessionStore } from '../../../../__tests__/test-utils/store-factory.ts';
+import type { DaemonRequest, DaemonResponse } from '../../../types.ts';
 import type { AppleOS, DeviceInfo } from '@agent-device/kernel/device';
+import { AppError } from '@agent-device/kernel/errors';
 import {
   ANDROID_EMULATOR,
   IOS_SIMULATOR,
@@ -21,7 +22,7 @@ import {
   MACOS_DEVICE,
   TVOS_SIMULATOR,
   VISIONOS_SIMULATOR,
-} from '../../../__tests__/test-utils/device-fixtures.ts';
+} from '../../../../__tests__/test-utils/device-fixtures.ts';
 
 const mockListDeviceInventory = vi.mocked(listDeviceInventory);
 
@@ -111,4 +112,21 @@ test('devices drops a stray appleOs on a non-Apple device (gated to Apple platfo
   const android = devices.find((device) => device.id === ANDROID_EMULATOR.id);
   expect(android?.platform).toBe('android');
   expect(android && 'appleOs' in android).toBe(false);
+});
+
+test('devices preserves the typed inventory failure response', async () => {
+  mockListDeviceInventory.mockRejectedValue(
+    new AppError('COMMAND_FAILED', 'device inventory unavailable', {
+      reason: 'inventory-failed',
+    }),
+  );
+
+  await expect(runDevices()).resolves.toEqual({
+    ok: false,
+    error: {
+      code: 'COMMAND_FAILED',
+      message: 'device inventory unavailable',
+      details: { reason: 'inventory-failed' },
+    },
+  });
 });
