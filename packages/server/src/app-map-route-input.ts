@@ -1,4 +1,5 @@
 import type http from "node:http";
+import type { AuthoringRuntime } from "@relay/core";
 import type { RequestContext } from "./security.js";
 
 export type AppMapRouteInput = {
@@ -7,4 +8,5 @@ export type AppMapRouteInput = {
   request: http.IncomingMessage;
   response: http.ServerResponse;
   scope: RequestContext;
+  authoringRuntime?: AuthoringRuntime;
 };

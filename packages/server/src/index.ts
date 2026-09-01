@@ -239,6 +239,7 @@ async function handleRequest(
         response: res,
         scope,
         runtimes: {
+          authoring: authoringRuntime,
           appMapTestRun: appMapTestRunRuntime,
           jobs: jobRouteRuntime,
           workflow: {

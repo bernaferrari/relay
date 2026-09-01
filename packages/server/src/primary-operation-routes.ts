@@ -1,4 +1,5 @@
 import type http from "node:http";
+import type { AuthoringRuntime } from "@relay/core";
 import type { AppMapTestRunRouteRuntime } from "./app-map-run-routes.js";
 import { handleAppMapRunRoute } from "./app-map-run-routes.js";
 import { handleAppMapRoute } from "./app-map-routes.js";
@@ -13,6 +14,7 @@ import type { ChangeVerificationRouteRuntime } from "./change-verification-route
 import { handleChangeVerificationRoute } from "./change-verification-routes.js";
 
 export type PrimaryOperationRouteRuntimes = {
+  authoring?: AuthoringRuntime;
   appMapTestRun?: Partial<AppMapTestRunRouteRuntime>;
   jobs?: Partial<JobRouteRuntime>;
   workflow?: Partial<WorkflowRouteRuntime>;
@@ -43,7 +45,7 @@ export async function handlePrimaryOperationRoutes(input: {
       runtime: input.runtimes.appMapTestRun,
       combineRuntime: input.runtimes.jobs,
     })) ||
-    (await handleAppMapRoute(shared)) ||
+    (await handleAppMapRoute({ ...shared, authoringRuntime: input.runtimes.authoring })) ||
     (await handleChangeVerificationRoute({ ...shared, runtime: input.runtimes.proof })) ||
     (await handleWorkflowRoute({ ...shared, runtime: input.runtimes.workflow })) ||
     (await handleTargetRuntimeRoute({

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -10,8 +10,7 @@ import {
   observeScreenIdentity,
   releaseDeviceLease,
   resetControlDatabaseCache,
-  resetDeviceClients,
-  setLocalDeviceProvider,
+  type AuthoringRuntime,
 } from "@relay/core";
 import { startServer } from "./index.js";
 import type { StartedServer } from "./server-types.js";
@@ -57,23 +56,24 @@ test(
     // The stub device shows whichever tree the test last installed, standing in
     // for one physical screen observed under two locales.
     let liveNodes = englishNodes;
-    setLocalDeviceProvider({
-      kind: "device",
-      create: () =>
-        ({
-          capture: {
-            snapshot: async () => ({ nodes: liveNodes }),
-            screenshot: async ({ path }: { path: string }) => {
-              await writeFile(path, raster);
-              return { path };
-            },
-          },
-        }) as never,
-    });
+    const authoringRuntime: AuthoringRuntime = {
+      async observe() {
+        return {
+          capturedAt: Date.now(),
+          targetId,
+          fingerprint: observeScreenIdentity(liveNodes).fingerprint,
+          bounds: { width: 300, height: 600 },
+          nodes: liveNodes,
+          screenshot: { data: raster, mime: "image/png" },
+        };
+      },
+      async execute() {},
+      async replay() {},
+    };
     let server: StartedServer | undefined;
     let leaseId: string | undefined;
     try {
-      server = await startServer({ host: "127.0.0.1", port: 0 });
+      server = await startServer({ host: "127.0.0.1", port: 0, authoringRuntime });
       const client = new RelayClient({
         url: `http://127.0.0.1:${server.port}`,
         auth: { type: "none" },
@@ -145,8 +145,6 @@ test(
     } finally {
       if (leaseId) await releaseDeviceLease(leaseId).catch(() => undefined);
       if (server) await server.close();
-      setLocalDeviceProvider(undefined);
-      resetDeviceClients();
       resetControlDatabaseCache();
       if (previousState === undefined) delete process.env.RELAY_STATE_DIR;
       else process.env.RELAY_STATE_DIR = previousState;

@@ -39,6 +39,7 @@ import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
  */
 export async function handleAppMapCaptureRoute(input: AppMapRouteInput): Promise<boolean> {
   const { method, pathname, request, response, scope } = input;
+  const authoringRuntime = input.authoringRuntime ?? createAuthoringRuntime();
 
   const variableInfer = matchPath(pathname, "/app-maps/:appMapId/variables/:variableId/infer");
   if (method === "POST" && variableInfer) {
@@ -67,7 +68,7 @@ export async function handleAppMapCaptureRoute(input: AppMapRouteInput): Promise
         leaseId: body.leaseId,
         expectedAppMapRevision: appMap.revision,
       });
-      session = await authoringSessions.capture(session.id, createAuthoringRuntime());
+      session = await authoringSessions.capture(session.id, authoringRuntime);
       const observation = currentTakeRevision(session)?.before;
       if (!observation) throw new HttpError(502, "The target returned no screen observation");
       const inferred = inferVariableOptionsFromTeach({
@@ -121,9 +122,7 @@ export async function handleAppMapCaptureRoute(input: AppMapRouteInput): Promise
     } finally {
       if (session) {
         if (!["committed", "cancelled", "failed"].includes(session.state)) {
-          await authoringSessions
-            .cancel(session.id, createAuthoringRuntime())
-            .catch(() => undefined);
+          await authoringSessions.cancel(session.id, authoringRuntime).catch(() => undefined);
         }
         await authoringSessions.cleanup(session.id).catch(() => undefined);
       }
@@ -151,7 +150,7 @@ export async function handleAppMapCaptureRoute(input: AppMapRouteInput): Promise
         leaseId: body.leaseId,
         expectedAppMapRevision: expectedRevision,
       });
-      session = await authoringSessions.capture(session.id, createAuthoringRuntime());
+      session = await authoringSessions.capture(session.id, authoringRuntime);
       const take = currentTakeRevision(session);
       if (!take?.before) throw new HttpError(502, "The target returned no screen observation");
       const profile = await profileForCapture(
@@ -239,9 +238,7 @@ export async function handleAppMapCaptureRoute(input: AppMapRouteInput): Promise
         // Screenshot-only capture borrows the Authoring Session observation boundary, but it is
         // not a path proposal. Finish its temporary review before cleanup to avoid phantom reviews.
         if (!["committed", "cancelled", "failed"].includes(session.state)) {
-          await authoringSessions
-            .cancel(session.id, createAuthoringRuntime())
-            .catch(() => undefined);
+          await authoringSessions.cancel(session.id, authoringRuntime).catch(() => undefined);
         }
         await authoringSessions.cleanup(session.id).catch(() => undefined);
       }
@@ -275,7 +272,7 @@ export async function handleAppMapCaptureRoute(input: AppMapRouteInput): Promise
         leaseId: body.leaseId,
         expectedAppMapRevision: expectedRevision,
       });
-      session = await authoringSessions.capture(session.id, createAuthoringRuntime());
+      session = await authoringSessions.capture(session.id, authoringRuntime);
       const take = currentTakeRevision(session);
       if (!take?.before) throw new HttpError(502, "The target returned no screen observation");
       const observation = take.before;
@@ -311,9 +308,7 @@ export async function handleAppMapCaptureRoute(input: AppMapRouteInput): Promise
     } finally {
       if (session) {
         if (!["committed", "cancelled", "failed"].includes(session.state)) {
-          await authoringSessions
-            .cancel(session.id, createAuthoringRuntime())
-            .catch(() => undefined);
+          await authoringSessions.cancel(session.id, authoringRuntime).catch(() => undefined);
         }
         await authoringSessions.cleanup(session.id).catch(() => undefined);
       }
@@ -352,7 +347,7 @@ export async function handleAppMapCaptureRoute(input: AppMapRouteInput): Promise
           expectedAppMapRevision: current.revision,
           sourceScreenId: body.fromScreenId,
         });
-        const runtime = createAuthoringRuntime();
+        const runtime = authoringRuntime;
         session = await authoringSessions.observe(session.id, runtime);
         session = await authoringSessions.start(session.id, runtime);
         if (session.state === "failed") {
@@ -384,7 +379,7 @@ export async function handleAppMapCaptureRoute(input: AppMapRouteInput): Promise
           leaseId: body.leaseId,
           expectedAppMapRevision: expectedRevision,
         });
-        session = await authoringSessions.capture(session.id, createAuthoringRuntime());
+        session = await authoringSessions.capture(session.id, authoringRuntime);
       }
       const take = currentTakeRevision(session);
       const destinationObservation = body.interaction ? take?.after : take?.before;
