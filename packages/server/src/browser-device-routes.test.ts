@@ -15,13 +15,20 @@ import {
 } from "@relay/core";
 import { startServer } from "./index.js";
 
-const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const CHROME =
+  process.env.RELAY_TEST_CHROME_PATH ??
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
 test(
   "Browser Device routes bind input to the painted page sequence",
   { timeout: 60_000 },
   async (t) => {
-    await access(CHROME).catch(() => t.skip("Google Chrome is not installed"));
+    try {
+      await access(CHROME);
+    } catch {
+      t.skip("Google Chrome is not installed");
+      return;
+    }
     if (t.signal.aborted) return;
     const root = await mkdtemp(join(tmpdir(), "relay-browser-device-route-"));
     const previousState = process.env.RELAY_STATE_DIR;
