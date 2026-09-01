@@ -107,6 +107,7 @@ const CONTRACT_EXPORTS = [
   '@agent-device/contracts/interaction-guarantees',
   '@agent-device/contracts/interactor-operation-catalog',
   '@agent-device/contracts/interactor-types',
+  '@agent-device/contracts/ios-snapshot',
   '@agent-device/contracts/keyboard',
   '@agent-device/contracts/keyboard-runtime',
   '@agent-device/contracts/local-interactor-operation-set',
@@ -457,6 +458,7 @@ test('the real tree parses, declares, and passes R11', () => {
   );
   assert.deepEqual([...captureKitPackage.exportTargets.keys()].sort(), [
     '@agent-device/capture-kit',
+    '@agent-device/capture-kit/ios-snapshot-planning',
     '@agent-device/capture-kit/mobile-snapshot-semantics',
     '@agent-device/capture-kit/png',
     '@agent-device/capture-kit/png-resize',
