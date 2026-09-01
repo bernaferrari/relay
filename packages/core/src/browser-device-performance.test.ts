@@ -14,13 +14,20 @@ import {
 import { runWithTargetSupervisorStore, TargetSupervisorStore } from "./target-supervisor-store.js";
 import { deleteTarget, saveBrowserTarget } from "./targets.js";
 
-const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const CHROME =
+  process.env.RELAY_TEST_CHROME_PATH ??
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
 test(
   "local Browser Device input-to-visible-frame p95 stays below 250ms",
   { skip: process.env.RELAY_BROWSER_STREAM_PERF !== "1" },
   async (context) => {
-    await access(CHROME).catch(() => context.skip("Google Chrome is not installed"));
+    try {
+      await access(CHROME);
+    } catch {
+      context.skip("Google Chrome is not installed");
+      return;
+    }
     if (context.signal.aborted) return;
     const root = await mkdtemp(join(tmpdir(), "relay-browser-stream-perf-"));
     process.env.RELAY_WORKSPACE_ROOT = root;

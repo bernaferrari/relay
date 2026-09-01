@@ -14,7 +14,9 @@ import { acquirePreparedSessionDevice } from "./session-provider-execution.js";
 import { deleteTarget, saveBrowserTarget } from "./targets.js";
 import type { TestJob } from "./session.js";
 
-const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const CHROME =
+  process.env.RELAY_TEST_CHROME_PATH ??
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 let root = "";
 let server: http.Server;
 let startUrl = "";
@@ -82,7 +84,12 @@ test("Playwright contexts receive no implicit permissions", () => {
 });
 
 test("redacted frozen proof runs disable Playwright context video recording", async (t) => {
-  await access(CHROME).catch(() => t.skip("Google Chrome is not installed"));
+  try {
+    await access(CHROME);
+  } catch {
+    t.skip("Google Chrome is not installed");
+    return;
+  }
   if (t.signal.aborted) return;
 
   const target = await saveBrowserTarget({
@@ -123,7 +130,12 @@ test("redacted frozen proof runs disable Playwright context video recording", as
 });
 
 test("authoring context is separate while proof contexts are fresh and explicitly closable", async (t) => {
-  await access(CHROME).catch(() => t.skip("Google Chrome is not installed"));
+  try {
+    await access(CHROME);
+  } catch {
+    t.skip("Google Chrome is not installed");
+    return;
+  }
   if (t.signal.aborted) return;
 
   const factory = createBrowserContextFactory(target());
@@ -181,7 +193,12 @@ test("authoring context is separate while proof contexts are fresh and explicitl
 });
 
 test("proof contexts import only the exact encrypted authentication fixture revision", async (t) => {
-  await access(CHROME).catch(() => t.skip("Google Chrome is not installed"));
+  try {
+    await access(CHROME);
+  } catch {
+    t.skip("Google Chrome is not installed");
+    return;
+  }
   if (t.signal.aborted) return;
 
   const fixture = await saveBrowserAuthenticationFixture({
@@ -218,7 +235,12 @@ test("proof contexts import only the exact encrypted authentication fixture revi
 });
 
 test("100 sequential proof Run contexts leak no browser state", async (t) => {
-  await access(CHROME).catch(() => t.skip("Google Chrome is not installed"));
+  try {
+    await access(CHROME);
+  } catch {
+    t.skip("Google Chrome is not installed");
+    return;
+  }
   if (t.signal.aborted) return;
 
   const profile = compileBrowserEnvironment({

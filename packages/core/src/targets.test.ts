@@ -34,7 +34,9 @@ import {
   saveBrowserTarget,
 } from "./targets.js";
 
-const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const CHROME =
+  process.env.RELAY_TEST_CHROME_PATH ??
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 let root = "";
 let server: http.Server;
 let startUrl = "";
@@ -67,7 +69,12 @@ after(async () => {
 });
 
 test("in-app Browser Device sequences frames and rejects stale page input", async (t) => {
-  await access(CHROME).catch(() => t.skip("Google Chrome is not installed"));
+  try {
+    await access(CHROME);
+  } catch {
+    t.skip("Google Chrome is not installed");
+    return;
+  }
   if (t.signal.aborted) return;
   const supervisor = new TargetSupervisorStore(":memory:");
   try {
@@ -198,7 +205,12 @@ test("in-app Browser Device sequences frames and rejects stale page input", asyn
 });
 
 test("in-app Browser Device resolves one exact-frame semantic click and requires reviewed fallback", async (t) => {
-  await access(CHROME).catch(() => t.skip("Google Chrome is not installed"));
+  try {
+    await access(CHROME);
+  } catch {
+    t.skip("Google Chrome is not installed");
+    return;
+  }
   if (t.signal.aborted) return;
   const supervisor = new TargetSupervisorStore(":memory:");
   const target = await saveBrowserTarget({
@@ -274,7 +286,12 @@ test("in-app Browser Device resolves one exact-frame semantic click and requires
 });
 
 test("in-app Browser Device bounds popup admission and retained page tombstones", async (t) => {
-  await access(CHROME).catch(() => t.skip("Google Chrome is not installed"));
+  try {
+    await access(CHROME);
+  } catch {
+    t.skip("Google Chrome is not installed");
+    return;
+  }
   if (t.signal.aborted) return;
   const supervisor = new TargetSupervisorStore(":memory:");
   try {
@@ -516,7 +533,12 @@ test("listTargets skips invalid entries but keeps valid ones", async () => {
 });
 
 test("managed browser adapter supports canonical snapshots, clicks, video, and screenshots", async (t) => {
-  await access(CHROME).catch(() => t.skip("Google Chrome is not installed"));
+  try {
+    await access(CHROME);
+  } catch {
+    t.skip("Google Chrome is not installed");
+    return;
+  }
   if (t.signal.aborted) return;
   const supervisor = new TargetSupervisorStore(":memory:");
   try {

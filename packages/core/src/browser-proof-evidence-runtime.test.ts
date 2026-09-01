@@ -21,7 +21,9 @@ import type { PersistedRun } from "./runs.js";
 import type { TestJob } from "./session.js";
 import { deleteTarget, saveBrowserTarget } from "./targets.js";
 
-const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const CHROME =
+  process.env.RELAY_TEST_CHROME_PATH ??
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
 function listen(server: http.Server): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -221,7 +223,12 @@ test("browser proof popup topology masks credentials even when broad redaction i
 });
 
 test("production browser proof captures one complete artifact across multiple steps", async (t) => {
-  await access(CHROME).catch(() => t.skip("Google Chrome is not installed"));
+  try {
+    await access(CHROME);
+  } catch {
+    t.skip("Google Chrome is not installed");
+    return;
+  }
   if (t.signal.aborted) return;
 
   const root = await mkdtemp(join(tmpdir(), "relay-browser-proof-runtime-"));
