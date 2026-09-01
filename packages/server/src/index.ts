@@ -699,8 +699,7 @@ async function handleRequest(
 }
 
 export async function startServer(opts: StartServerOptions = {}): Promise<StartedServer> {
-  // Acquire this before device setup/recovery. A concurrent process must not
-  // be allowed to touch a daemon or reinterpret a live worker's journal rows.
+  // Acquire before recovery so a concurrent process cannot touch this daemon or journal.
   const stateLease = acquireRelayStateServerLease();
   beginDurableWorkerServerLifecycle();
   try {
@@ -715,9 +714,7 @@ async function startServerWithStateLease(
   opts: StartServerOptions,
   stateLease: RelayStateServerLease,
 ): Promise<StartedServer> {
-  // Apply saved signing settings, then replace only a verified helper from a
-  // different installed build. A matching daemon may own the only controllable
-  // session on an unattended iPad and is deliberately preserved.
+  // Preserve a matching daemon; it may own the only controllable unattended iPad session.
   await loadDeviceSetup();
   await restartAgentDeviceDaemonForBuildDrift();
   // Signing env is frozen at daemon spawn. Reconcile shell/stale identity drift
