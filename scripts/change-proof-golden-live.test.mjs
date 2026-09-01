@@ -556,3 +556,74 @@ test("live harness consumes retained Android Run inputs and can prove the cross-
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("live report retains large Run payloads as bounded identity summaries", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-change-proof-golden-bounded-report-"));
+  const apk = join(root, "settings-fixture.apk");
+  const oldRunPath = join(root, "android-old-run.json");
+  const repairedRunPath = join(root, "android-repaired-run.json");
+  const oldTracePackPath = join(root, "old-tracepack.json");
+  const repairedTracePackPath = join(root, "repaired-tracepack.json");
+  await writeFile(apk, "fixture-apk");
+  const old = await writeCanonicalTracePack(oldTracePackPath, {
+    sourceSha: "a".repeat(40),
+    artifactDigest: `sha256:${"c".repeat(64)}`,
+    runId: "android-old-run",
+    runPath: oldRunPath,
+  });
+  const repaired = await writeCanonicalTracePack(repairedTracePackPath, {
+    sourceSha: "b".repeat(40),
+    artifactDigest: `sha256:${"d".repeat(64)}`,
+    runId: "android-repaired-run",
+    runPath: repairedRunPath,
+  });
+  const oldRun = JSON.parse(await readFile(oldRunPath, "utf8"));
+  oldRun.logs = Array.from({ length: 1_000 }, () => "retained-log-" + "x".repeat(1_000));
+  await writeFile(oldRunPath, JSON.stringify(oldRun));
+  const env = {
+    RELAY_GOLDEN_ANDROID_SERIAL: "emulator-5554",
+    RELAY_GOLDEN_ANDROID_APP_PATH: apk,
+    RELAY_GOLDEN_ANDROID_APP_ID: "com.example.settings",
+    RELAY_GOLDEN_ANDROID_APP_MAP_ID: "settings",
+    RELAY_GOLDEN_ANDROID_TEST_ID: "settings-language-arabic",
+    RELAY_GOLDEN_BASE_HEAD: "0".repeat(40),
+    RELAY_GOLDEN_OLD_HEAD: old.sourceSha,
+    RELAY_GOLDEN_REPAIRED_HEAD: repaired.sourceSha,
+    RELAY_GOLDEN_OLD_RUN_ID: old.runId,
+    RELAY_GOLDEN_REPAIRED_RUN_ID: repaired.runId,
+    RELAY_GOLDEN_OLD_BUILD_DIGEST: old.artifactDigest,
+    RELAY_GOLDEN_REPAIRED_BUILD_DIGEST: repaired.artifactDigest,
+    RELAY_GOLDEN_OLD_TARGET_PROFILE: JSON.stringify(old.targetProfile),
+    RELAY_GOLDEN_REPAIRED_TARGET_PROFILE: JSON.stringify(repaired.targetProfile),
+    RELAY_GOLDEN_OLD_RUN_PATH: oldRunPath,
+    RELAY_GOLDEN_REPAIRED_RUN_PATH: repairedRunPath,
+    RELAY_GOLDEN_OLD_TRACEPACK: oldTracePackPath,
+    RELAY_GOLDEN_REPAIRED_TRACEPACK: repairedTracePackPath,
+  };
+  try {
+    const report = await runChangeProofGoldenLive({
+      artifactDir: root,
+      env,
+      fetchImpl: async () =>
+        new Response(JSON.stringify({ ok: true, product: "relay" }), { status: 200 }),
+      command: async (name, args) => {
+        if (name === "adb" && args?.[0] === "devices")
+          return {
+            code: 0,
+            stdout: "List of devices attached\nemulator-5554 device\n",
+            stderr: "",
+          };
+        if (name === "adb")
+          return { code: 0, stdout: "package:/data/app/settings.apk\n", stderr: "" };
+        return { code: 0, stdout: "golden-avd\n", stderr: "" };
+      },
+    });
+    const serialized = await readFile(join(root, "report.json"), "utf8");
+    assert.ok(Buffer.byteLength(serialized) < 524_288);
+    assert.equal(report.exactProofInputs.oldRun.runId, old.runId);
+    assert.equal(report.exactProofInputs.oldRun.artifacts, undefined);
+    assert.equal(report.exactProofInputs.oldTracePack.runId, old.runId);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

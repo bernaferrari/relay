@@ -392,6 +392,7 @@ export async function previewProofSetup(input: {
     repository: change.repository!,
     changed: {},
     associations: intent.associations,
+    buildDefinitions: [intent.build],
     builds: [
       {
         id: intent.build.id,

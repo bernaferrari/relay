@@ -12,6 +12,7 @@ import { Button } from "@relay/ui/button";
 import { StatusChip, type StatusChipTone } from "./status-chip";
 import type { ProofPrimaryAction } from "../lib/proof-actions";
 import { ProofPlanReview, proofPlanSummary } from "./proof-plan-review";
+import { ProofIdentityLedger } from "./proof-identity-ledger";
 
 type ProofStatus = { label: string; tone: StatusChipTone };
 
@@ -220,6 +221,8 @@ export function ProofDetail(props: {
             </div>
           </Show>
         </ProofSection>
+
+        <ProofIdentityLedger proof={props.proof} publication={acknowledgedPublication()} />
 
         <ProofSection title="Merge check">
           <Show

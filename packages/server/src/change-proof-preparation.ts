@@ -24,11 +24,14 @@ import {
   changeVerificationPolicySchema,
   frozenVerificationTargetCaseSchema,
   journeyAssociationSchema,
+  proofBuildDefinitionSchema,
   verificationCellSchema,
   verificationPlanSchema,
   type OperationInput,
+  type ProofBuildDefinition,
   type VerificationPlan,
 } from "@relay/protocol";
+import { ingestReviewedProofBuild } from "./proof-build-ingestion.js";
 
 const MAX_CONFIG_BYTES = 4 * 1024 * 1024;
 const CONFIG_FIELDS = new Set([
@@ -38,6 +41,7 @@ const CONFIG_FIELDS = new Set([
   "agentClaim",
   "changed",
   "associations",
+  "buildDefinitions",
   "builds",
   "targetCases",
   "cells",
@@ -53,6 +57,7 @@ type ReviewedPreparationConfig = {
   agentClaim?: unknown;
   changed: Partial<Record<(typeof CHANGE_SIGNAL_KINDS)[number], readonly string[]>>;
   associations: readonly unknown[];
+  buildDefinitions: readonly ProofBuildDefinition[];
   builds: readonly unknown[];
   targetCases: readonly unknown[];
   cells?: readonly unknown[];
@@ -150,6 +155,9 @@ async function readReviewedConfiguration(root: string): Promise<{
         associations: boundedList(input.associations, "associations", 2_048).map((value) =>
           journeyAssociationSchema.parse(value),
         ),
+        buildDefinitions: boundedList(input.buildDefinitions, "buildDefinitions", 32).map((value) =>
+          proofBuildDefinitionSchema.parse(value),
+        ),
         builds: boundedList(input.builds, "builds", 32).map((value) =>
           changeVerificationBuildSchema.parse(value),
         ),
@@ -180,6 +188,7 @@ async function readReviewedConfiguration(root: string): Promise<{
       config: {
         changed: {},
         associations: [],
+        buildDefinitions: [],
         builds: [],
         targetCases: [],
         policy: VERIFY_CHANGE_POLICY,
@@ -358,9 +367,12 @@ async function freezeAppMapRevisions(
 export async function prepareCurrentChangeVerification(input: {
   projectId: string;
   request: OperationInput<"proof.prepare">;
+  root?: string;
+  inspect?: typeof inspectWorkspaceChange;
+  ingestBuild?: typeof ingestReviewedProofBuild;
 }): Promise<{ plan: VerificationPlan; blockers: string[] }> {
-  const root = findWorkspaceRoot();
-  const change = await inspectWorkspaceChange({
+  const root = input.root ?? findWorkspaceRoot();
+  const change = await (input.inspect ?? inspectWorkspaceChange)({
     startPath: root,
     ...(input.request.baseRef ? { baseRef: input.request.baseRef } : {}),
   });
@@ -390,10 +402,30 @@ export async function prepareCurrentChangeVerification(input: {
       ? { agentClaim: input.request.agentClaim ?? reviewed.config.agentClaim }
       : {}),
   });
+  const ingestionBlockers: string[] = [];
+  const ingestedBuilds: VerificationPlan["builds"][number][] = [];
+  const selectedDefinitions = reviewed.config.buildDefinitions.filter(
+    ({ id }) => !input.request.buildIds || input.request.buildIds.includes(id),
+  );
+  for (const definition of selectedDefinitions) {
+    try {
+      const ingested = await (input.ingestBuild ?? ingestReviewedProofBuild)({
+        projectId: input.projectId,
+        repositoryRoot: root,
+        testedSha,
+        definitionId: definition.id,
+      });
+      ingestedBuilds.push(ingested.verificationBuild);
+    } catch (error) {
+      ingestionBlockers.push(
+        `Build ${definition.id} could not be ingested for ${testedSha}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
   const buildResult = await verifiedBuilds({
     projectId: input.projectId,
     testedSha,
-    configured: reviewed.config.builds,
+    configured: reviewed.config.buildDefinitions.length ? ingestedBuilds : reviewed.config.builds,
     ...(input.request.buildIds ? { buildIds: input.request.buildIds } : {}),
   });
   const targetCases = reviewed.config.targetCases
@@ -423,7 +455,12 @@ export async function prepareCurrentChangeVerification(input: {
     ...(reviewed.config.maxDurationMs ? { maxDurationMs: reviewed.config.maxDurationMs } : {}),
   });
   const frozen = await freezeAppMapRevisions(input.projectId, compiled);
-  const blockers = [...reviewed.blockers, ...buildResult.blockers, ...frozen.blockers];
+  const blockers = [
+    ...reviewed.blockers,
+    ...ingestionBlockers,
+    ...buildResult.blockers,
+    ...frozen.blockers,
+  ];
   const plan = blockers.length
     ? verificationPlanSchema.parse({
         ...frozen.plan,

@@ -64,6 +64,9 @@ export const proofSetupBuildInputSchema = proofSetupBuildBaseSchema.superRefine(
   },
 );
 
+/** Reviewed, source-controlled instructions for producing one exact-head Build. */
+export const proofBuildDefinitionSchema = proofSetupBuildInputSchema;
+
 const proofSetupPreviewBuildSchema = proofSetupBuildBaseSchema
   .omit({ command: true, artifactPath: true })
   .superRefine((build, context) => {
@@ -99,6 +102,7 @@ const proofSetupPolicyDocumentSchema = z
     repository: z.string().trim().min(1).max(1_024),
     changed: z.object({}).strict(),
     associations: z.array(journeyAssociationSchema).min(1).max(2_048).readonly(),
+    buildDefinitions: z.array(proofBuildDefinitionSchema).length(1).readonly(),
     builds: z
       .array(
         z
@@ -227,3 +231,4 @@ export const proofSetupOperationOutputSchemas = {
 
 export type ProofSetupIntent = z.output<typeof proofSetupIntentSchema>;
 export type ProofSetupPreview = z.output<typeof proofSetupPreviewSchema>;
+export type ProofBuildDefinition = z.output<typeof proofBuildDefinitionSchema>;

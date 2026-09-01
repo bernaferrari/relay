@@ -328,6 +328,17 @@ test("presents one Change-first Proof without internal orchestration vocabulary"
   expect(root.textContent).toContain(
     "Repair the first causal regression, then create a new Proof for the new head.",
   );
+  expect(root.textContent).toContain("Exact identities");
+  expect(root.textContent).toContain(headSha);
+  expect(root.textContent).toContain(
+    `web-production · web · source ${headSha} · artifact ${digest}`,
+  );
+  expect(root.textContent).toContain(
+    "cell-ar-pilot · settings/settings-language@3 · target chromium-compact-ar · build web-production",
+  );
+  expect(root.textContent).toContain(digest);
+  expect(root.textContent).toContain(`github · ${proof.id} · Check #42 · completed · failure`);
+  expect(root.textContent).toContain(`head ${headSha} · digest ${digest}`);
   expect(root.textContent).not.toMatch(/campaign|lease|raw operation/i);
   const planCells = root.querySelector<HTMLOListElement>("[data-proof-plan-cells]");
   expect(planCells?.tagName).toBe("OL");
