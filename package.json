@@ -26,7 +26,7 @@
     "check": "vp check",
     "fmt": "vp fmt",
     "lint": "vp lint",
-    "typecheck": "pnpm -r --if-present run typecheck",
+    "typecheck": "pnpm --filter @relay/mcp build && pnpm -r --if-present run typecheck",
     "pack": "vp pack",
     "prepare": "vp config",
     "doctor": "node scripts/workspace-doctor.mjs",
