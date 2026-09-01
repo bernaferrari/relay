@@ -128,6 +128,7 @@ export default defineConfig({
             // by a classifier that has to recognise it — see KERNEL_TEST_FILE_RE in
             // scripts/mutation/modules.ts.
             'scripts/__tests__/test-file-size-ratchet.test.ts',
+            'scripts/__tests__/eager-closure-budgets.test.ts',
             'scripts/__tests__/agent-setup-startup-contract.test.ts',
             'scripts/__tests__/npm-skills-exclusion.test.ts',
             'scripts/__tests__/simulator-skills-contract.test.ts',
@@ -147,9 +148,13 @@ export default defineConfig({
             // The Bundle Size lane's PR-comment path: spawns the real script against a
             // stubbed fetch, so it needs no network; pins retry/reconcile/fatal outcomes.
             'scripts/__tests__/size-report-post-comment.test.ts',
-            // Package attribution is a pure npm-pack manifest model. Keep it in the fast lane so
-            // every new package path remains accounted for without building an archive.
+            // Package attribution models npm-pack output. Keep it in the fast lane so every new
+            // package path remains accounted for.
             'scripts/__tests__/size-report-package.test.ts',
+            // Publish preparation spawns only fixture-owned scripts and proves both Android
+            // helper families are rebuilt through the shared release/size-report owner.
+            'scripts/__tests__/prepare-publish-assets.test.ts',
+            'scripts/ios-snapshot-benchmark/*.test.ts',
             // Parses CI configuration only, so this action guard needs no device or subprocess lane.
             'test/ci/upload-agent-device-artifacts.test.ts',
             'test/ci/upload-artifact-hidden-paths.test.ts',
