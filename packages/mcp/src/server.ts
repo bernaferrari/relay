@@ -52,6 +52,7 @@ const proofLifecycleOperationIds = [
   "proof.run",
   "proof.continue",
   "proof.cancel",
+  "proof.publication.retry",
   "proof.rerun-affected",
 ] as const satisfies readonly OperationId[];
 
@@ -113,8 +114,11 @@ const reviewedOriginConfirmationOperationIds = new Set<OperationId>([
 
 const canonicalConfirmOperationIds = new Set<OperationId>([
   "lease.takeover",
+  "target.browser-auth.save",
+  "target.browser-auth.revoke",
   "proof.plan.approve",
   "proof.cancel",
+  "proof.publication.retry",
 ]);
 
 /** `confirm: true` is the MCP-facing consent affordance. After the generic

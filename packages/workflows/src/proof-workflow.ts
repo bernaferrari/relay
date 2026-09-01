@@ -25,6 +25,9 @@ export interface ProofWorkflow {
   cancelChangeVerification(
     input: OperationInput<"proof.cancel">,
   ): Promise<OperationOutput<"proof.cancel">>;
+  retryProofPublication(
+    input: OperationInput<"proof.publication.retry">,
+  ): Promise<OperationOutput<"proof.publication.retry">>;
   rerunAffectedVerification(
     input: OperationInput<"proof.rerun-affected">,
   ): Promise<OperationOutput<"proof.rerun-affected">>;
@@ -41,6 +44,7 @@ export type InspectChangeVerificationInput = OperationInput<"proof.inspect">;
 export type ApproveVerificationPlanInput = OperationInput<"proof.plan.approve">;
 export type ContinueChangeVerificationInput = OperationInput<"proof.continue">;
 export type CancelChangeVerificationInput = OperationInput<"proof.cancel">;
+export type RetryProofPublicationInput = OperationInput<"proof.publication.retry">;
 export type RerunAffectedVerificationInput = OperationInput<"proof.rerun-affected">;
 export type ListChangeVerificationsInput = OperationInput<"proof.list">;
 
@@ -63,6 +67,8 @@ export function createProofWorkflow(operations: RelayOperationPort): ProofWorkfl
       operations.invoke("proof.continue", input),
     cancelChangeVerification: (input: OperationInput<"proof.cancel">) =>
       operations.invoke("proof.cancel", input),
+    retryProofPublication: (input: OperationInput<"proof.publication.retry">) =>
+      operations.invoke("proof.publication.retry", input),
     rerunAffectedVerification: (input: OperationInput<"proof.rerun-affected">) =>
       operations.invoke("proof.rerun-affected", input),
     listChangeVerifications: (input: OperationInput<"proof.list"> = {}) =>

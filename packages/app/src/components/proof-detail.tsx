@@ -28,11 +28,38 @@ export function ProofDetail(props: {
   canCancel: boolean;
   onPrimaryAction: () => void;
   onCancel: () => void;
+  onRetryPublication: (publication: ChangeProofPublicationOutboxRecord) => void;
   onOpenRun: (runId: string) => void;
   onOpenMap: (appMapId: string) => void;
 }) {
-  const latestPublication = () => props.publications.at(-1);
-  const latestPublicationAttempt = () => props.publicationOutbox.at(-1);
+  const latestPublication = () =>
+    props.publications.reduce<ChangeProofPublicationReceipt | undefined>((latest, candidate) => {
+      if (!latest) return candidate;
+      const latestVersion = latest.proofVersion ?? 0;
+      const candidateVersion = candidate.proofVersion ?? 0;
+      return candidateVersion > latestVersion ||
+        (candidateVersion === latestVersion && candidate.publishedAt > latest.publishedAt)
+        ? candidate
+        : latest;
+    }, undefined);
+  const latestPublicationAttempt = () =>
+    props.publicationOutbox.reduce<ChangeProofPublicationOutboxRecord | undefined>(
+      (latest, candidate) =>
+        !latest ||
+        candidate.proofVersion > latest.proofVersion ||
+        (candidate.proofVersion === latest.proofVersion && candidate.updatedAt > latest.updatedAt)
+          ? candidate
+          : latest,
+      undefined,
+    );
+  const acknowledgedPublication = () => {
+    const receipt = latestPublication();
+    const attempt = latestPublicationAttempt();
+    if (attempt?.status === "published" && attempt.receipt) return attempt.receipt;
+    if (!receipt || (attempt && (receipt.proofVersion ?? 0) < attempt.proofVersion))
+      return undefined;
+    return receipt;
+  };
 
   return (
     <article class="min-h-0 min-w-0 flex-1 overflow-y-auto p-[clamp(1.25rem,3vw,2.5rem)]">
@@ -153,7 +180,7 @@ export function ProofDetail(props: {
 
         <ProofSection title="Merge check">
           <Show
-            when={latestPublication()}
+            when={acknowledgedPublication()}
             fallback={
               <Show
                 when={latestPublicationAttempt()}
@@ -173,6 +200,24 @@ export function ProofDetail(props: {
                     <span class="text-caption text-text-weak">
                       {attempt().attempts} of {attempt().maxAttempts} publication attempts
                     </span>
+                    <Show
+                      when={
+                        attempt().status === "retry" && attempt().attempts >= attempt().maxAttempts
+                      }
+                    >
+                      <div class="mt-1">
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          disabled={Boolean(props.actionBusy)}
+                          onClick={() => props.onRetryPublication(attempt())}
+                        >
+                          {props.actionBusy === "retry-publication"
+                            ? "Retrying merge check…"
+                            : "Retry merge check"}
+                        </Button>
+                      </div>
+                    </Show>
                   </div>
                 )}
               </Show>

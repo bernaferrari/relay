@@ -94,6 +94,20 @@ test("Proof lifecycle commands resolve to canonical operations", () => {
     commandPath: "proof cancel",
     input: { proofId: "proof-1", expectedVersion: 3 },
   });
+  assert.deepEqual(
+    resolveCommand(["proof", "retry-merge-check", "proof-1", "publication-1"], {
+      expectedProofVersion: 3,
+    }),
+    {
+      operationId: "proof.publication.retry",
+      commandPath: "proof retry-merge-check",
+      input: {
+        proofId: "proof-1",
+        publicationId: "publication-1",
+        expectedProofVersion: 3,
+      },
+    },
+  );
   assert.deepEqual(resolveCommand(["proof", "rerun-affected", "proof-1"], { expectedVersion: 3 }), {
     operationId: "proof.rerun-affected",
     commandPath: "proof rerun-affected",

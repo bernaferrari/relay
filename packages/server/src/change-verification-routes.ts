@@ -10,6 +10,8 @@ import {
   currentOperationContext,
   listChangeVerifications,
   listChangeProofPublicationOutbox,
+  reconcileChangeProofPublicationOutbox,
+  requestChangeProofPublicationRecovery,
   now,
   readChangeProofPublications,
   readChangeVerification,
@@ -20,6 +22,7 @@ import {
   canonicalSha256,
   summarizeChangeProofExecution,
   ChangeProofExecutionError,
+  ChangeProofPublicationOutboxError,
   verifyDurableChangeVerification,
   type AdvanceChangeVerificationInput,
   type ChangeVerificationScope,
@@ -29,7 +32,6 @@ import {
 } from "@relay/core";
 import {
   CHANGE_VERIFICATION_STATES,
-  materializeChangeRef,
   changeProofCaseResultSchema,
   type ChangeVerification,
   type OperationInput,
@@ -54,6 +56,12 @@ import {
   proofPreparationStartInput,
 } from "./change-proof-preparation.js";
 import { changeProofExecutionRequestAuthority } from "./change-proof-request-authority.js";
+import { handleChangeProofPublicationRecoveryRoute } from "./change-proof-publication-recovery-route.js";
+import {
+  proofRequestDigest as requestDigest,
+  proofRunRequestDigest,
+  sameProofStartIntent as sameStartIntent,
+} from "./change-verification-route-intent.js";
 
 export type ChangeVerificationRouteRuntime = {
   now: typeof now;
@@ -63,12 +71,13 @@ export type ChangeVerificationRouteRuntime = {
   list: typeof listChangeVerifications;
   publications: typeof readChangeProofPublications;
   publicationOutbox: typeof listChangeProofPublicationOutbox;
+  reconcilePublication: typeof reconcileChangeProofPublicationOutbox;
+  recoverPublication: typeof requestChangeProofPublicationRecovery;
   advance: typeof advanceChangeVerification;
   supersede: typeof supersedeChangeVerification;
   readRun: typeof readPersistedRun;
   caseResultFromRun: typeof changeProofCaseResultFromPersistedRun;
-  /** Optional host-configured provider boundary. Relay never publishes unless
-   * the embedding server supplies this integration explicitly. */
+  /** Optional host-configured provider boundary supplied by the embedding server. */
   publishTerminal?: ChangeProofTerminalPublisher;
   publicationDetailsUrl?: string;
   /** Durable server-owned cell lifecycle. The executor is the adapter to the
@@ -87,6 +96,8 @@ const defaultRuntime: ChangeVerificationRouteRuntime = {
   list: listChangeVerifications,
   publications: readChangeProofPublications,
   publicationOutbox: listChangeProofPublicationOutbox,
+  reconcilePublication: reconcileChangeProofPublicationOutbox,
+  recoverPublication: requestChangeProofPublicationRecovery,
   advance: advanceChangeVerification,
   supersede: supersedeChangeVerification,
   readRun: readPersistedRun,
@@ -94,42 +105,6 @@ const defaultRuntime: ChangeVerificationRouteRuntime = {
   executionCoordinator: defaultProofExecutionCoordinator,
   prepare: prepareCurrentChangeVerification,
 };
-
-function sameValue(left: unknown, right: unknown): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
-}
-
-function requestDigest(proofId: string | undefined, body: unknown): `sha256:${string}` {
-  return canonicalSha256(proofId ? { proofId, body } : body);
-}
-
-/** `wait` only controls how long this HTTP request stays attached. It is not
- * part of the durable Proof execution intent, so a caller may detach and
- * later resume the same request identity without creating a digest conflict. */
-function proofRunRequestDigest(
-  proofId: string,
-  body: Pick<OperationInput<"proof.run">, "expectedVersion">,
-): `sha256:${string}` {
-  return canonicalSha256({ proofId, expectedVersion: body.expectedVersion ?? null });
-}
-
-function sameStartIntent(
-  proof: ChangeVerification,
-  actorId: string,
-  body: OperationInput<"proof.start">,
-): boolean {
-  return (
-    proof.requestedBy === actorId &&
-    canonicalSha256(materializeChangeRef(proof.change)) ===
-      canonicalSha256(materializeChangeRef(body.change)) &&
-    sameValue(proof.builds, body.builds ?? []) &&
-    sameValue(proof.selection, body.selection ?? { affectedJourneys: [], targetCases: [] }) &&
-    sameValue(proof.policy, body.policy) &&
-    sameValue(proof.coverageGaps, body.coverageGaps ?? []) &&
-    sameValue(proof.residualRisk, body.residualRisk ?? []) &&
-    sameValue(proof.smallestNextVerification, body.smallestNextVerification)
-  );
-}
 
 function idempotentMutation(
   proof: ChangeVerification,
@@ -272,6 +247,11 @@ async function replayedReceipt(
 }
 
 function routeError(error: unknown): never {
+  if (error instanceof ChangeProofPublicationOutboxError) {
+    throw new HttpError(error.code === "OUTBOX_NOT_FOUND" ? 404 : 409, error.message, {
+      code: error.code,
+    });
+  }
   if (error instanceof ChangeProofExecutionError) {
     const status = error.code === "PROOF_EXECUTION_NOT_FOUND" ? 404 : 409;
     throw new HttpError(status, error.message, { code: error.code });
@@ -607,6 +587,26 @@ export async function handleChangeVerificationRoute(input: {
       proof,
       execution: summarizeChangeProofExecution(execution),
     });
+    return true;
+  }
+
+  if (
+    await handleChangeProofPublicationRecoveryRoute({
+      method: input.method,
+      pathname: input.pathname,
+      request: input.request,
+      response: input.response,
+      requestContext: input.scope,
+      scope,
+      actorId,
+      ...(requestId ? { requestId } : {}),
+      at,
+      runtime,
+      currentProof: (proofId) => currentProof(runtime, scope, proofId),
+      publishTerminalProof: (proof) => publishTerminalProof(runtime, scope, proof),
+      routeError,
+    })
+  ) {
     return true;
   }
 

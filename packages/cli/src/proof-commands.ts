@@ -315,6 +315,44 @@ export const proofCommandDescriptors: readonly MappedOperationDescriptor[] = [
     }),
   ),
   mapped(
+    "proof.publication.retry",
+    path("proof retry-merge-check", ["proofId", "publicationId"], undefined, {
+      summary: "Retry one exhausted merge check for an exact Proof revision",
+      argumentHelp: [
+        { name: "proofId", type: "string", description: "Proof identifier" },
+        {
+          name: "publicationId",
+          type: "string",
+          description: "Exact publication intent shown by proof inspect",
+        },
+      ],
+      inputHelp: [
+        {
+          name: "expectedProofVersion",
+          type: "positive integer",
+          required: true,
+          description: "Immutable Proof version bound to the merge check",
+        },
+        {
+          name: "reason",
+          type: "string",
+          required: true,
+          description: "Auditable reason for retrying provider delivery",
+        },
+        {
+          name: "confirm",
+          type: "true",
+          required: true,
+          description: "Explicit operator confirmation; set by --confirm",
+        },
+      ],
+      examples: [
+        'relay proof retry-merge-check <proof-id> <publication-id> --confirm --input \'{"expectedProofVersion":5,"reason":"GitHub connectivity is restored."}\'',
+      ],
+      note: "Relay preserves the original head, check identity, Proof version, receipts, and prior attempt history. It grants exactly one additional delivery attempt.",
+    }),
+  ),
+  mapped(
     "proof.rerun-affected",
     path("proof rerun-affected", ["proofId"], undefined, {
       summary: "Create a replacement Proof for affected coverage",

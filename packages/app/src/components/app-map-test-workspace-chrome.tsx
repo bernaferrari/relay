@@ -137,6 +137,23 @@ export function TestSwitcher(props: {
     setQuery("");
     if (restoreFocus) queueMicrotask(() => trigger?.focus());
   };
+  const optionButtons = () => [
+    ...(container?.querySelectorAll<HTMLButtonElement>("[data-test-switcher-option]") ?? []),
+  ];
+  const focusOption = (position: "first" | "last" | "next" | "previous") => {
+    const options = optionButtons();
+    if (!options.length) return;
+    const current = options.indexOf(document.activeElement as HTMLButtonElement);
+    const index =
+      position === "first"
+        ? 0
+        : position === "last"
+          ? options.length - 1
+          : position === "next"
+            ? Math.min(options.length - 1, current < 0 ? 0 : current + 1)
+            : Math.max(0, current < 0 ? options.length - 1 : current - 1);
+    options[index]?.focus();
+  };
 
   createEffect(() => {
     if (!open()) return;
@@ -185,12 +202,20 @@ export function TestSwitcher(props: {
             "hover:bg-surface-base-hover focus-visible:outline-2 focus-visible:outline-border-strong-focus",
             open() && "bg-surface-base-active",
           )}
-          aria-haspopup="listbox"
+          aria-haspopup="dialog"
           aria-expanded={open()}
           aria-controls="app-map-test-switcher-menu"
           disabled={props.busy}
           onClick={() => {
             if (!props.busy) setOpen((value) => !value);
+          }}
+          onKeyDown={(event) => {
+            if (event.key !== "ArrowDown" || props.busy) return;
+            event.preventDefault();
+            setOpen(true);
+            queueMicrotask(() =>
+              container?.querySelector<HTMLInputElement>("#app-map-test-switcher-search")?.focus(),
+            );
           }}
         >
           <span class="truncate text-caption font-medium text-text-strong">
@@ -200,20 +225,22 @@ export function TestSwitcher(props: {
         </button>
       </Show>
 
-      <TestOverflow
-        disabled={props.busy || !props.selectedTestId}
-        onSource={props.onSource}
-        onRename={() => setRenaming(true)}
-        onDuplicate={props.onDuplicate}
-        onDelete={props.onDelete}
-      />
+      <Show when={!props.busy && props.selectedTestId}>
+        <TestOverflow
+          disabled={false}
+          onSource={props.onSource}
+          onRename={() => setRenaming(true)}
+          onDuplicate={props.onDuplicate}
+          onDelete={props.onDelete}
+        />
+      </Show>
 
       <Show when={open()}>
         <div
           id="app-map-test-switcher-menu"
           class={cn(popover, "absolute top-[calc(100%+6px)] left-0 w-[min(320px,80vw)] p-0")}
-          role="listbox"
-          aria-label="Tests on this map"
+          role="dialog"
+          aria-label="Choose a Test"
           onKeyDown={(event) => {
             if (event.key === "Escape") {
               event.stopPropagation();
@@ -237,10 +264,39 @@ export function TestSwitcher(props: {
                 autofocus
                 value={query()}
                 onInput={(event) => setQuery(event.currentTarget.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "ArrowDown") {
+                    event.preventDefault();
+                    focusOption("first");
+                  } else if (event.key === "ArrowUp") {
+                    event.preventDefault();
+                    focusOption("last");
+                  }
+                }}
               />
             </label>
           </div>
-          <div class="max-h-[min(320px,50vh)] overflow-y-auto p-1">
+          <div
+            id="app-map-test-switcher-options"
+            class="max-h-[min(320px,50vh)] overflow-y-auto p-1"
+            role="listbox"
+            aria-label="Tests on this map"
+            onKeyDown={(event) => {
+              if (event.key === "ArrowDown") {
+                event.preventDefault();
+                focusOption("next");
+              } else if (event.key === "ArrowUp") {
+                event.preventDefault();
+                focusOption("previous");
+              } else if (event.key === "Home") {
+                event.preventDefault();
+                focusOption("first");
+              } else if (event.key === "End") {
+                event.preventDefault();
+                focusOption("last");
+              }
+            }}
+          >
             <For
               each={matches()}
               fallback={

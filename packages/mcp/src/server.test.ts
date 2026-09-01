@@ -891,8 +891,21 @@ test("preserves confirmed Proof lifecycle consent for canonical protocol operati
         },
       }),
     );
+    const retryPublication = callResult(
+      await session.request("tools/call", {
+        name: "relay_proof_publication_retry",
+        arguments: {
+          proofId: "proof-1",
+          publicationId: "publication-1",
+          expectedProofVersion: 1,
+          reason: "Provider connectivity is restored.",
+          confirm: true,
+        },
+      }),
+    );
     assert.notEqual(approve.isError, true, JSON.stringify(approve.content));
     assert.notEqual(cancel.isError, true, JSON.stringify(cancel.content));
+    assert.notEqual(retryPublication.isError, true, JSON.stringify(retryPublication.content));
     assert.deepEqual(calls, [
       {
         operationId: "proof.plan.approve",
@@ -912,6 +925,58 @@ test("preserves confirmed Proof lifecycle consent for canonical protocol operati
           reason: "Human reviewer requested cancellation.",
           confirm: true,
         },
+      },
+      {
+        operationId: "proof.publication.retry",
+        input: {
+          proofId: "proof-1",
+          publicationId: "publication-1",
+          expectedProofVersion: 1,
+          reason: "Provider connectivity is restored.",
+          confirm: true,
+        },
+      },
+    ]);
+  } finally {
+    await session.close();
+  }
+});
+
+test("preserves confirmed browser authentication consent for canonical operations", async () => {
+  const calls: Array<{ operationId: string; input: Record<string, unknown> }> = [];
+  const session = await connectMcp(
+    {
+      async invoke(operationId, input) {
+        calls.push({ operationId, input });
+        return {};
+      },
+    },
+    "full",
+  );
+  try {
+    const save = callResult(
+      await session.request("tools/call", {
+        name: "relay_target_browser_auth_save",
+        arguments: { targetId: "web", name: "Signed-in account", confirm: true },
+      }),
+    );
+    const reference = "authfx:123e4567-e89b-42d3-a456-426614174000:2";
+    const revoke = callResult(
+      await session.request("tools/call", {
+        name: "relay_target_browser_auth_revoke",
+        arguments: { targetId: "web", reference, confirm: true },
+      }),
+    );
+    assert.notEqual(save.isError, true, JSON.stringify(save.content));
+    assert.notEqual(revoke.isError, true, JSON.stringify(revoke.content));
+    assert.deepEqual(calls, [
+      {
+        operationId: "target.browser-auth.save",
+        input: { targetId: "web", name: "Signed-in account", confirm: true },
+      },
+      {
+        operationId: "target.browser-auth.revoke",
+        input: { targetId: "web", reference, confirm: true },
       },
     ]);
   } finally {

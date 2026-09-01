@@ -54,6 +54,13 @@ test("Proof facade maps friendly lifecycle names to canonical operations", async
     expectedVersion: 1,
     change,
   } satisfies OperationInput<"proof.rerun-affected">;
+  const retryPublicationInput = {
+    proofId: "proof-1",
+    publicationId: "publication-1",
+    expectedProofVersion: 1,
+    reason: "Provider connectivity is restored.",
+    confirm: true,
+  } satisfies OperationInput<"proof.publication.retry">;
 
   await proof.prepareChangeVerification();
   await proof.startChangeVerification(startInput);
@@ -62,6 +69,7 @@ test("Proof facade maps friendly lifecycle names to canonical operations", async
   await proof.approveVerificationPlan(approveInput);
   await proof.continueChangeVerification(continueInput);
   await proof.cancelChangeVerification(cancelInput);
+  await proof.retryProofPublication(retryPublicationInput);
   await proof.rerunAffectedVerification(rerunInput);
 
   assert.deepEqual(calls, [
@@ -72,6 +80,7 @@ test("Proof facade maps friendly lifecycle names to canonical operations", async
     { id: "proof.plan.approve", input: approveInput },
     { id: "proof.continue", input: continueInput },
     { id: "proof.cancel", input: cancelInput },
+    { id: "proof.publication.retry", input: retryPublicationInput },
     { id: "proof.rerun-affected", input: rerunInput },
   ]);
 });

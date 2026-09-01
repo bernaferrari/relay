@@ -132,6 +132,7 @@ test("Proof exposes its canonical lifecycle operations plus execution and list q
     "proof.continue",
     "proof.run",
     "proof.cancel",
+    "proof.publication.retry",
     "proof.rerun-affected",
   ]);
   assert.deepEqual(
@@ -144,6 +145,7 @@ test("Proof exposes its canonical lifecycle operations plus execution and list q
       "proof.continue",
       "proof.run",
       "proof.cancel",
+      "proof.publication.retry",
       "proof.rerun-affected",
     ],
   );
@@ -229,6 +231,17 @@ test("Proof exposes its canonical lifecycle operations plus execution and list q
       cancellable: false,
       transport: { method: "POST", path: "/proofs/:proofId/cancel" },
     },
+    "proof.publication.retry": {
+      role: "author",
+      confirmation: "confirm",
+      lease: "none",
+      progress: false,
+      cancellable: false,
+      transport: {
+        method: "POST",
+        path: "/proofs/:proofId/publications/:publicationId/retry",
+      },
+    },
     "proof.rerun-affected": {
       role: "author",
       confirmation: "none",
@@ -244,6 +257,22 @@ test("Proof exposes its canonical lifecycle operations plus execution and list q
       baseRef: "main",
       headSha: "2".repeat(40),
     }),
+  );
+  assert.deepEqual(
+    operationDefinition("proof.publication.retry").input.parse({
+      proofId: "proof-1",
+      publicationId: "publication-1",
+      expectedProofVersion: 4,
+      reason: "GitHub is reachable again.",
+      confirm: true,
+    }),
+    {
+      proofId: "proof-1",
+      publicationId: "publication-1",
+      expectedProofVersion: 4,
+      reason: "GitHub is reachable again.",
+      confirm: true,
+    },
   );
   assert.throws(() =>
     operationDefinition("proof.start").input.parse({

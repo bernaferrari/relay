@@ -536,6 +536,8 @@ test("verify-change prompt renders the proof loop with commit and file scope", a
     assert.match(text, /relay_proof_continue/);
     assert.match(text, /relay_proof_cancel/);
     assert.match(text, /relay_proof_rerun_affected/);
+    assert.match(text, /relay_proof_publication_retry/);
+    assert.match(text, /exact publication id.*immutable Proof version/i);
     assert.match(text, /relay_workspace_change_inspect/);
     assert.match(
       text,

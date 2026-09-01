@@ -10,6 +10,7 @@ type ChangeVerificationOperationId =
   | "proof.continue"
   | "proof.run"
   | "proof.cancel"
+  | "proof.publication.retry"
   | "proof.rerun-affected";
 
 const { command, query } =
@@ -55,6 +56,13 @@ export const changeVerificationOperationDefinitions = [
     confirmation: "confirm",
     idempotency: "inherent",
   }),
+  command(
+    "proof.publication.retry",
+    "Retry Proof merge check",
+    "POST",
+    "/proofs/:proofId/publications/:publicationId/retry",
+    { category: "authoring", confirmation: "confirm", idempotency: "inherent" },
+  ),
   command(
     "proof.rerun-affected",
     "Rerun affected Proof cases",

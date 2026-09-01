@@ -144,6 +144,8 @@ const extraGuidance: Partial<Record<OperationId, string>> = {
     " Continue one Proof with an exact version and one bounded plan action: revise the plan, request review, or return to planning.",
   "proof.cancel":
     " Cancel one Proof with an exact version and reason. This is durable and requires explicit confirm: true.",
+  "proof.publication.retry":
+    " Reconcile or grant one additional delivery attempt for an exhausted merge check. Inspect the Proof first, pass the exact publication id and immutable Proof version, and explicitly confirm. Relay preserves the provider check identity and prior receipts.",
   "proof.rerun-affected":
     " Create a replacement Proof for the affected verification scope after a change. Preserve the prior Proof and pass its exact version.",
 };
@@ -506,6 +508,7 @@ const proofOperations = [
   "proof.run",
   "proof.continue",
   "proof.cancel",
+  "proof.publication.retry",
   "proof.rerun-affected",
   "system.health.get",
   "system.doctor.get",

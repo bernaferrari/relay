@@ -279,6 +279,36 @@ export function ChangesWorkspace(props: {
     });
   }
 
+  function retryPublication(
+    proof: ChangeVerification,
+    publication: ChangeProofPublicationOutboxRecord,
+  ): void {
+    confirmAction({
+      title: "Retry this merge check?",
+      body: "Relay will preserve the exact commit, Proof revision, and GitHub check identity, then reconcile an existing receipt or grant one additional delivery attempt.",
+      confirmLabel: "Retry merge check",
+      tone: "default",
+      onConfirm: async () => {
+        setProofActionBusy("retry-publication");
+        setProofActionError(null);
+        try {
+          await server.runAction("proof.publication.retry", {
+            proofId: proof.id,
+            publicationId: publication.id,
+            expectedProofVersion: publication.proofVersion,
+            reason: "The operator explicitly retried the exhausted merge check from Relay.",
+            confirm: true,
+          });
+          await inspectProof(proof.id);
+        } catch (cause) {
+          setProofActionError(humanError(cause, "Could not retry this merge check"));
+        } finally {
+          setProofActionBusy(null);
+        }
+      },
+    });
+  }
+
   function invokePrimaryProofAction(proof: ChangeVerification): void {
     const action = proofPrimaryAction(proof, execution());
     if (!action || proofActionBusy()) return;
@@ -637,6 +667,7 @@ export function ChangesWorkspace(props: {
                   canCancel={proofCanCancel(proof())}
                   onPrimaryAction={() => invokePrimaryProofAction(proof())}
                   onCancel={() => cancelProof(proof())}
+                  onRetryPublication={(publication) => retryPublication(proof(), publication)}
                   onOpenRun={props.onOpenRun}
                   onOpenMap={props.onOpenMap}
                 />

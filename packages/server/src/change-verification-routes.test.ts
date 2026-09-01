@@ -6,9 +6,11 @@ import test from "node:test";
 import { ApiError, RelayClient } from "@relay/client";
 import {
   advanceChangeVerification,
+  claimChangeProofPublicationOutbox,
   canonicalSha256,
   compileVerificationPlan,
   createChangeProofExecutionCoordinator,
+  markChangeProofPublicationRetry,
   resetControlDatabaseCache,
 } from "@relay/core";
 import {
@@ -807,6 +809,72 @@ test("Proof execution records only server-derived Run facts and advances pilot t
     assert.equal(
       pendingPublication.publicationOutbox[0]?.lastFailure?.kind,
       "reconciliation-error",
+    );
+
+    let exhausted = pendingPublication.publicationOutbox[0]!;
+    while (exhausted.attempts < exhausted.maxAttempts) {
+      const claimed = await claimChangeProofPublicationOutbox({
+        organizationId,
+        projectId,
+        id: exhausted.id,
+        workerId: "route-recovery-fixture",
+        now: Date.now() + 1_000_000,
+      });
+      assert.ok(claimed?.lease);
+      exhausted = await markChangeProofPublicationRetry({
+        organizationId,
+        projectId,
+        id: exhausted.id,
+        workerId: claimed.lease.workerId,
+        leaseToken: claimed.lease.token,
+        backoffMs: 0,
+        at: Date.now() - 1,
+        kind: "provider-error",
+      });
+    }
+    const recoveredPublication = await relay.invoke(
+      "proof.publication.retry",
+      {
+        proofId: proved.proof.id,
+        publicationId: exhausted.id,
+        expectedProofVersion: exhausted.proofVersion,
+        reason: "GitHub connectivity has been restored.",
+        confirm: true,
+      },
+      { requestId: "retry-exhausted-publication" },
+    );
+    assert.equal(recoveredPublication.disposition, "accepted");
+    assert.equal(recoveredPublication.publication.id, exhausted.id);
+    assert.equal(recoveredPublication.publication.proofVersion, exhausted.proofVersion);
+    assert.deepEqual(recoveredPublication.publication.check, exhausted.check);
+    assert.equal(recoveredPublication.publication.maxAttempts, exhausted.maxAttempts + 1);
+    assert.equal(recoveredPublication.publication.attempts, exhausted.attempts + 1);
+    assert.equal(recoveredPublication.publication.recovery?.requestedBy, "agent:coder");
+    const repeatedRecovery = await relay.invoke(
+      "proof.publication.retry",
+      {
+        proofId: proved.proof.id,
+        publicationId: exhausted.id,
+        expectedProofVersion: exhausted.proofVersion,
+        reason: "GitHub connectivity has been restored.",
+        confirm: true,
+      },
+      { requestId: "retry-exhausted-publication" },
+    );
+    assert.deepEqual(repeatedRecovery, recoveredPublication);
+    await assert.rejects(
+      relay.invoke(
+        "proof.publication.retry",
+        {
+          proofId: proved.proof.id,
+          publicationId: exhausted.id,
+          expectedProofVersion: exhausted.proofVersion,
+          reason: "A changed intent cannot reuse the request id.",
+          confirm: true,
+        },
+        { requestId: "retry-exhausted-publication" },
+      ),
+      (error) => error instanceof ApiError && error.status === 409,
     );
 
     const repeatedProved = await relay.invoke(

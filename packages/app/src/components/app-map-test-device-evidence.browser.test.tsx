@@ -80,8 +80,14 @@ function pointer(type: string, x: number, y: number) {
 
 function testServer(inputState: "ready" | "uncertain" = "ready") {
   const interactStep = vi.fn(async () => true);
+  const recoverSelectedTarget = vi.fn(async () => true);
+  const takeControlOfSelectedDevice = vi.fn(async () => true);
+  const retryConnection = vi.fn(async () => undefined);
   return {
     interactStep,
+    recoverSelectedTarget,
+    takeControlOfSelectedDevice,
+    retryConnection,
     server: {
       devices: () => [
         {
@@ -124,6 +130,9 @@ function testServer(inputState: "ready" | "uncertain" = "ready") {
       pollLiveSnapshot: async () => undefined,
       loadRunDetail: async () => undefined,
       frameUrlForPersisted: () => "",
+      recoverSelectedTarget,
+      takeControlOfSelectedDevice,
+      retryConnection,
       interactStep,
     },
   };
@@ -181,6 +190,43 @@ test("uncertain supervisor input remains visible and cannot send another tap", a
     "InputNeeds review",
   );
   expect(root.textContent).toContain("Review the last device action before sending another one.");
+  const reconnect = [...root.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent?.trim() === "Reconnect",
+  );
+  expect(reconnect).toBeTruthy();
+  reconnect!.click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(fixture.recoverSelectedTarget).toHaveBeenCalledWith("observe");
+
+  dispose();
+  document.body.replaceChildren();
+});
+
+test("a Test with no selected device offers the recovery action where the blocker appears", () => {
+  document.body.replaceChildren();
+  const root = document.createElement("div");
+  document.body.append(root);
+  const fixture = testServer();
+  serverMock.current = {
+    ...fixture.server,
+    devices: () => [],
+    selectedDevice: () => "",
+    liveFrame: () => null,
+    snapshot: () => null,
+  };
+  const onChooseTarget = vi.fn();
+
+  const dispose = render(
+    () => <AppMapTestDeviceEvidence test={scenario} onChooseTarget={onChooseTarget} />,
+    root,
+  );
+  expect(root.textContent).toContain("Choose a device before interacting with its screen.");
+  const choose = [...root.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent?.trim() === "Choose device",
+  );
+  expect(choose).toBeTruthy();
+  choose!.click();
+  expect(onChooseTarget).toHaveBeenCalledTimes(1);
 
   dispose();
   document.body.replaceChildren();

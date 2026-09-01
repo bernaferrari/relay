@@ -626,6 +626,7 @@ test("the proof profile composes the durable verify-change loop and recovery too
     "proof.run",
     "proof.continue",
     "proof.cancel",
+    "proof.publication.retry",
     "proof.rerun-affected",
     "workspace.change.inspect",
     "app-map.test.run",
@@ -666,6 +667,7 @@ test("Proof lifecycle tools preserve canonical names and approval metadata", () 
     ["proof.run", false],
     ["proof.continue", false],
     ["proof.cancel", true],
+    ["proof.publication.retry", true],
     ["proof.rerun-affected", false],
   ] as const) {
     const descriptor = relayMcpTools.find((tool) => tool.operationId === operationId);

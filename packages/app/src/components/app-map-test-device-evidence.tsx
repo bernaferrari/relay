@@ -40,6 +40,7 @@ export function AppMapTestDeviceEvidence(props: {
   onTabChange?: (tab: InspectorTab) => void;
   hideTabs?: boolean;
   onClose?: () => void;
+  onChooseTarget?: () => void;
 }) {
   const server = useServer();
   const [tab, setTab] = createSignal<InspectorTab>("device");
@@ -47,6 +48,7 @@ export function AppMapTestDeviceEvidence(props: {
   const [interacting, setInteracting] = createSignal(false);
   const [refreshError, setRefreshError] = createSignal("");
   const [detailError, setDetailError] = createSignal("");
+  const [recovering, setRecovering] = createSignal(false);
   const requestedRunDetails = new Set<string>();
   let deviceTab: HTMLButtonElement | undefined;
   let evidenceTab: HTMLButtonElement | undefined;
@@ -179,6 +181,37 @@ export function AppMapTestDeviceEvidence(props: {
     return undefined;
   });
 
+  const recoveryLabel = createMemo(() => {
+    if (!selectedDevice()) return "Choose device";
+    if (server.health() !== "online") return "Retry connection";
+    if (server.controlIssue?.() || !server.selectedLeaseId?.()) return "Take control";
+    return "Reconnect";
+  });
+
+  async function recoverDevice(): Promise<void> {
+    if (recovering()) return;
+    if (!selectedDevice()) {
+      props.onChooseTarget?.();
+      return;
+    }
+    setRecovering(true);
+    setRefreshError("");
+    try {
+      if (server.health() !== "online") {
+        await server.retryConnection();
+      } else if (server.controlIssue?.() || !server.selectedLeaseId?.()) {
+        await server.takeControlOfSelectedDevice();
+      } else {
+        await server.recoverSelectedTarget("observe");
+      }
+      await refreshDevicePixels();
+    } catch (error) {
+      setRefreshError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setRecovering(false);
+    }
+  }
+
   async function interactWithDevice(
     step: Parameters<typeof server.interactStep>[0],
   ): Promise<boolean> {
@@ -281,6 +314,15 @@ export function AppMapTestDeviceEvidence(props: {
             hasSurface: Boolean(scrollSurface.surface()),
             onCapture: scrollSurface.captureProps().onCapture,
           }}
+          recoveryAction={
+            interactionBlocker()
+              ? {
+                  label: recoveryLabel(),
+                  busy: recovering(),
+                  onAction: () => void recoverDevice(),
+                }
+              : undefined
+          }
           error={refreshError()}
           onRefresh={() => void refreshDevicePixels()}
           onInteract={interactWithDevice}

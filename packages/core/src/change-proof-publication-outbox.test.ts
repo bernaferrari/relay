@@ -12,6 +12,7 @@ import {
   markChangeProofPublicationRetry,
   readChangeProofPublicationOutbox,
   recoverChangeProofPublicationOutbox,
+  requestChangeProofPublicationRecovery,
   runNextChangeProofPublicationOutbox,
 } from "./change-proof-publication-outbox.js";
 import { canonicalSha256 } from "./canonical-json.js";
@@ -223,6 +224,56 @@ test("worker catches provider failures without persisting provider error text", 
     assert.equal(
       JSON.stringify(await listChangeProofPublicationOutbox(scope)).includes("ghp_secret_token"),
       false,
+    );
+  });
+});
+
+test("explicit recovery grants one idempotent attempt without changing publication identity", async () => {
+  await withState(async () => {
+    const original = await enqueueChangeProofPublicationOutbox(enqueueInput({ maxAttempts: 1 }));
+    await runNextChangeProofPublicationOutbox({
+      ...scope,
+      workerId: "worker-a",
+      now: 10_000,
+      publish: async () => {
+        throw new Error("provider unavailable");
+      },
+    });
+    const request = {
+      ...scope,
+      id: original.id,
+      proofId: original.proofId,
+      proofVersion: original.proofVersion,
+      actorId: "human:reviewer",
+      requestId: "recover-1",
+      requestDigest: canonicalSha256({ intent: "retry exact publication" }),
+      at: 20_000,
+    } as const;
+    const recovered = await requestChangeProofPublicationRecovery(request);
+    assert.equal(recovered.disposition, "retry-scheduled");
+    assert.equal(recovered.record.attempts, 1);
+    assert.equal(recovered.record.maxAttempts, 2);
+    assert.equal(recovered.record.nextAttemptAt, 20_000);
+    assert.equal(recovered.record.id, original.id);
+    assert.equal(recovered.record.externalId, original.externalId);
+    assert.deepEqual(recovered.record.check, original.check);
+    assert.deepEqual(recovered.record.recovery, {
+      requestId: "recover-1",
+      requestDigest: request.requestDigest,
+      requestedBy: "human:reviewer",
+      requestedAt: 20_000,
+    });
+
+    const repeated = await requestChangeProofPublicationRecovery(request);
+    assert.equal(repeated.disposition, "existing");
+    assert.deepEqual(repeated.record, recovered.record);
+    await assert.rejects(
+      requestChangeProofPublicationRecovery({
+        ...request,
+        requestDigest: canonicalSha256({ intent: "different" }),
+      }),
+      (error: unknown) =>
+        error instanceof Error && "code" in error && error.code === "OUTBOX_INTENT_CONFLICT",
     );
   });
 });

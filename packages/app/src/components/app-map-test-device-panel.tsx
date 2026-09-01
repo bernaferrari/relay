@@ -1,5 +1,6 @@
 import { createMemo, createSignal, Show } from "solid-js";
 import type { TargetSupervisorHealth } from "@relay/protocol";
+import { Button } from "@relay/ui/button";
 import { cn } from "../lib/cn";
 import { productIconButton } from "../lib/ui";
 import type { SnapshotNode, SnapshotState } from "../context/server";
@@ -51,6 +52,11 @@ export function AppMapTestDevicePanel(props: {
     policy?: import("@relay/protocol").ScrollSurfaceCapturePolicy;
     hasSurface: boolean;
     onCapture: () => void;
+  };
+  recoveryAction?: {
+    label: string;
+    busy: boolean;
+    onAction: () => void;
   };
   error: string;
   onRefresh: () => void;
@@ -342,7 +348,30 @@ export function AppMapTestDevicePanel(props: {
         )}
       </Show>
       <Show when={props.interactionBlocker}>
-        {(blocker) => <p class="m-0 text-caption/[1.4] text-text-weak">View only · {blocker()}</p>}
+        {(blocker) => (
+          <div class="flex items-center justify-between gap-2 rounded-lg border border-border-weak-base bg-surface-base px-2.5 py-2">
+            <p class="m-0 min-w-0 text-caption/[1.4] text-text-weak">
+              <span class="font-medium text-text-base">View only.</span> {blocker()}
+            </p>
+            <Show when={props.recoveryAction}>
+              {(action) => (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  class="shrink-0"
+                  disabled={action().busy}
+                  aria-busy={action().busy}
+                  onClick={action().onAction}
+                >
+                  <Show when={action().busy}>
+                    <Icon name="refresh" size={12} class="ui-refresh-spin" />
+                  </Show>
+                  {action().busy ? "Working…" : action().label}
+                </Button>
+              )}
+            </Show>
+          </div>
+        )}
       </Show>
       <Show when={interactionError()}>
         <p

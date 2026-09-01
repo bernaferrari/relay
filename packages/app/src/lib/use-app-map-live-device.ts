@@ -50,7 +50,10 @@ export function useAppMapLiveDevice(activeAppMap: Accessor<AppMap | undefined>) 
   });
   const recordState = () => recordStateFromReadiness(readiness());
   const canRecord = () =>
-    recordState() === "ready" && Boolean(server.selectedLeaseId()) && !server.controlIssue();
+    recordState() === "ready" &&
+    Boolean(server.selectedLeaseId()) &&
+    !server.controlIssue() &&
+    !outsideMapApp();
   const panelStatus = () => {
     const device = selectedDevice();
     return appMapDeviceStatus({

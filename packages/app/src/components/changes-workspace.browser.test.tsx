@@ -8,6 +8,7 @@ vi.mock("../context/server", () => ({
 }));
 
 import { ChangesWorkspace } from "./changes-workspace";
+import { ConfirmDialogHost } from "./confirm-dialog";
 
 const digest = `sha256:${"a".repeat(64)}` as const;
 const headSha = "2".repeat(40);
@@ -181,6 +182,37 @@ const publication = {
   publishedAt: 500,
 } as const;
 
+const exhaustedPublication = {
+  schemaVersion: 1,
+  id: "publication-proof-184-v4",
+  organizationId: "acme",
+  projectId: "relay",
+  proofId: proof.id,
+  proofVersion: proof.version,
+  provider: "github",
+  repository: proof.change.repository,
+  headSha,
+  externalId: proof.id,
+  check: {
+    schemaVersion: 1,
+    name: "Relay Proof",
+    externalId: proof.id,
+    headSha,
+    status: "completed",
+    conclusion: "failure",
+    classification: "rejected",
+    title: "Relay Proof — REJECTED",
+    summary: "A required verification case failed.",
+    text: "Inspect Relay for exact evidence.",
+  },
+  createdAt: 450,
+  status: "retry",
+  attempts: 5,
+  maxAttempts: 5,
+  lastFailure: { kind: "provider-error", at: 500 },
+  updatedAt: 500,
+} as const;
+
 beforeEach(() => {
   mocks.runAction.mockReset();
   mocks.health.mockReturnValue("online");
@@ -280,6 +312,86 @@ test("presents one Change-first Proof without internal orchestration vocabulary"
     .find((button) => button.textContent?.includes("settings-language"))
     ?.click();
   expect(onOpenMap).toHaveBeenCalledWith("settings");
+  dispose();
+  root.remove();
+});
+
+test("turns an exhausted merge check into one explicit recovery action", async () => {
+  let inspectionCount = 0;
+  mocks.runAction.mockImplementation(async (operationId: string, input: unknown) => {
+    if (operationId === "proof.list") return { proofs: [proof] };
+    if (operationId === "proof.inspect") {
+      inspectionCount += 1;
+      return {
+        proof,
+        history: [proof],
+        publications: [],
+        publicationOutbox: [exhaustedPublication],
+      };
+    }
+    if (operationId === "proof.publication.retry") {
+      return { proof, publication: exhaustedPublication, disposition: "accepted" };
+    }
+    throw new Error(`unexpected ${operationId}: ${JSON.stringify(input)}`);
+  });
+  const root = document.createElement("div");
+  document.body.append(root);
+  const dispose = render(
+    () => (
+      <>
+        <ChangesWorkspace onOpenRun={vi.fn()} onOpenMap={vi.fn()} />
+        <ConfirmDialogHost />
+      </>
+    ),
+    root,
+  );
+
+  await vi.waitFor(() => expect(root.textContent).toContain("Merge check needs attention"));
+  [...root.querySelectorAll<HTMLButtonElement>("button")]
+    .find((button) => button.textContent?.trim() === "Retry merge check")
+    ?.click();
+  await vi.waitFor(() => expect(root.textContent).toContain("Retry this merge check?"));
+  const confirmButtons = [...root.querySelectorAll<HTMLButtonElement>("button")].filter(
+    (button) => button.textContent?.trim() === "Retry merge check",
+  );
+  confirmButtons.at(-1)?.click();
+
+  await vi.waitFor(() =>
+    expect(mocks.runAction).toHaveBeenCalledWith("proof.publication.retry", {
+      proofId: proof.id,
+      publicationId: exhaustedPublication.id,
+      expectedProofVersion: proof.version,
+      reason: "The operator explicitly retried the exhausted merge check from Relay.",
+      confirm: true,
+    }),
+  );
+  await vi.waitFor(() => expect(inspectionCount).toBeGreaterThan(1));
+
+  dispose();
+  root.remove();
+});
+
+test("a newer exhausted Proof revision is not hidden by an older merge receipt", async () => {
+  mocks.runAction.mockImplementation(async (operationId: string) => {
+    if (operationId === "proof.list") return { proofs: [proof] };
+    if (operationId === "proof.inspect") {
+      return {
+        proof,
+        history: [proof],
+        publications: [{ ...publication, proofVersion: proof.version - 1 }],
+        publicationOutbox: [exhaustedPublication],
+      };
+    }
+    throw new Error(`unexpected ${operationId}`);
+  });
+  const root = document.createElement("div");
+  document.body.append(root);
+  const dispose = render(() => <ChangesWorkspace onOpenRun={vi.fn()} onOpenMap={vi.fn()} />, root);
+
+  await vi.waitFor(() => expect(root.textContent).toContain("Merge check needs attention"));
+  expect(root.textContent).not.toContain("Check #42");
+  expect(root.textContent).toContain("Retry merge check");
+
   dispose();
   root.remove();
 });

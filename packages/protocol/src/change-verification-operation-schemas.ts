@@ -164,6 +164,15 @@ export const changeVerificationOperationInputSchemas = {
       confirm: z.literal(true),
     })
     .strict(),
+  "proof.publication.retry": z
+    .object({
+      proofId: identifier,
+      publicationId: identifier,
+      expectedProofVersion: expectedVersion,
+      reason,
+      confirm: z.literal(true),
+    })
+    .strict(),
   "proof.rerun-affected": z
     .object({
       proofId: identifier,
@@ -210,6 +219,13 @@ export const changeVerificationOperationOutputSchemas = {
   "proof.plan.approve": mutationOutputSchema,
   "proof.continue": mutationOutputSchema,
   "proof.cancel": mutationOutputSchema,
+  "proof.publication.retry": z
+    .object({
+      proof: changeVerificationSchema,
+      publication: changeProofPublicationOutboxRecordSchema,
+      disposition: z.enum(["accepted", "reconciled", "already-published"]),
+    })
+    .strict(),
   "proof.rerun-affected": z
     .object({
       previous: changeVerificationSchema,

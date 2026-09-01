@@ -64,6 +64,21 @@ export type MarkChangeProofPublicationPublishedInput = ChangeProofPublicationSco
   at?: number;
 };
 
+export type RequestChangeProofPublicationRecoveryInput = ChangeProofPublicationScope & {
+  id: string;
+  proofId: string;
+  proofVersion: number;
+  actorId: string;
+  requestId: string;
+  requestDigest: `sha256:${string}`;
+  at?: number;
+};
+
+export type ChangeProofPublicationRecoveryResult = {
+  record: ChangeProofPublicationOutboxRecord;
+  disposition: "retry-scheduled" | "already-published" | "existing";
+};
+
 export type ChangeProofPublicationOutboxWorkerResult =
   | { status: "idle"; record?: undefined }
   | { status: "published"; record: ChangeProofPublicationOutboxRecord }
@@ -590,6 +605,80 @@ export async function markChangeProofPublicationRetry(
   input: ChangeProofPublicationOutboxFailureInput,
 ): Promise<ChangeProofPublicationOutboxRecord> {
   return withControlStore((store) => markChangeProofPublicationRetryInStore(store, input));
+}
+
+/** Grant one explicitly confirmed retry without changing the immutable
+ * provider/check identity or discarding prior attempt history. The request
+ * receipt makes network retries idempotent and rejects request-id reuse with
+ * a different operator intent. */
+export function requestChangeProofPublicationRecoveryInStore(
+  store: ControlStore,
+  input: RequestChangeProofPublicationRecoveryInput,
+): ChangeProofPublicationRecoveryResult {
+  const scope = scopeOf(input);
+  const at = timestamp(input.at ?? Date.now(), "at");
+  const record = requiredInScope(store, scope, nonEmpty(input.id, "id"));
+  const proofId = nonEmpty(input.proofId, "proofId");
+  const proofVersion = positiveInteger(input.proofVersion, "proofVersion", Number.MAX_SAFE_INTEGER);
+  const actorId = nonEmpty(input.actorId, "actorId");
+  const requestId = nonEmpty(input.requestId, "requestId");
+  const requestDigest = input.requestDigest;
+  if (!/^sha256:[a-f0-9]{64}$/u.test(requestDigest)) {
+    throw new Error("requestDigest must be a canonical sha256 digest");
+  }
+  if (record.proofId !== proofId || record.proofVersion !== proofVersion) {
+    throw new ChangeProofPublicationOutboxError(
+      "OUTBOX_INTENT_CONFLICT",
+      "Proof publication recovery does not identify this exact Proof revision",
+    );
+  }
+  if (record.recovery?.requestId === requestId) {
+    if (record.recovery.requestDigest !== requestDigest) {
+      throw new ChangeProofPublicationOutboxError(
+        "OUTBOX_INTENT_CONFLICT",
+        "Proof publication recovery request id is already bound to another intent",
+      );
+    }
+    return {
+      record: clone(record),
+      disposition: record.status === "published" ? "already-published" : "existing",
+    };
+  }
+  if (record.status === "published") {
+    return { record: clone(record), disposition: "already-published" };
+  }
+  if (record.status === "claimed") {
+    throw new ChangeProofPublicationOutboxError(
+      "OUTBOX_INVALID_TRANSITION",
+      "Proof publication is currently being delivered",
+    );
+  }
+  if (record.status !== "retry" || record.attempts < record.maxAttempts) {
+    throw new ChangeProofPublicationOutboxError(
+      "OUTBOX_INVALID_TRANSITION",
+      "Proof publication retries are not exhausted",
+    );
+  }
+  if (record.maxAttempts >= 32) {
+    throw new ChangeProofPublicationOutboxError(
+      "OUTBOX_ATTEMPTS_EXHAUSTED",
+      "Proof publication reached the maximum recoverable attempt count",
+    );
+  }
+  const next = write(store, {
+    ...record,
+    maxAttempts: record.maxAttempts + 1,
+    nextAttemptAt: at,
+    recovery: { requestId, requestDigest, requestedBy: actorId, requestedAt: at },
+    updatedAt: at,
+  });
+  return { record: next, disposition: "retry-scheduled" };
+}
+
+export async function requestChangeProofPublicationRecovery(
+  input: RequestChangeProofPublicationRecoveryInput,
+): Promise<ChangeProofPublicationRecoveryResult> {
+  return withControlStore((store) => requestChangeProofPublicationRecoveryInStore(store, input));
 }
 
 function receiptMatchesIntent(

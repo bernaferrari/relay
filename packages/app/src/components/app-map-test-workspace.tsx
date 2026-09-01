@@ -398,6 +398,7 @@ export function AppMapTestWorkspace(props: AppMapTestWorkspaceProps) {
                 compiledPlan={testRun.plan()}
                 onOpenRun={openRun}
                 onSelectStep={setSelectedStepId}
+                onChooseTarget={chooseTarget}
                 onClose={() => toggleRail("device")}
               />
             )}

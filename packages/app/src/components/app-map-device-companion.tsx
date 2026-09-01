@@ -74,8 +74,12 @@ export function AppMapDeviceCompanion(props: {
               type="button"
               class="app-map-icon-button"
               aria-label="Capture full scrollable page"
-              data-tip="Capture full page · preserves every viewport and stops if a seam is uncertain"
-              disabled={props.captureBusy}
+              data-tip={
+                props.outsideMapApp
+                  ? "Open the mapped app before capturing evidence"
+                  : "Capture full page · preserves every viewport and stops if a seam is uncertain"
+              }
+              disabled={props.captureBusy || props.outsideMapApp}
               onClick={props.onSurveyPage}
             >
               <Icon name="scan" size={13} />
@@ -186,7 +190,7 @@ export function AppMapDeviceCompanion(props: {
                 class="flex min-w-0 flex-1 items-center gap-1.5 text-caption text-[var(--text-weak)]"
                 data-tip={
                   props.outsideMapApp
-                    ? `Return to ${props.mapName?.trim() || "the mapped app"} before capturing.`
+                    ? `Open ${props.mapName?.trim() || "the mapped app"} on this target before capturing or recording.`
                     : props.unmapped
                       ? `Add this screen to ${props.mapName?.trim() || "the map"}.`
                       : `Continue from ${props.mappedScreenName}.`
@@ -200,62 +204,66 @@ export function AppMapDeviceCompanion(props: {
                 />
                 <span class="truncate">
                   {props.outsideMapApp
-                    ? "Return to map"
+                    ? "Another app is open"
                     : props.unmapped
                       ? "New screen"
                       : `From ${props.mappedScreenName}`}
                 </span>
               </span>
-              <Show
-                when={props.unmapped && !props.outsideMapApp}
-                fallback={
-                  <div class="flex shrink-0 items-center gap-2">
-                    <Button
-                      variant="secondary"
-                      size="lg"
-                      disabled={props.captureBusy}
-                      aria-busy={props.captureBusy}
-                      data-tip="Refresh this screen's saved screenshot"
-                      onClick={props.onSaveScreen}
-                    >
-                      <Icon
-                        name={props.captureBusy ? "refresh" : "camera"}
-                        size={13}
-                        class={
-                          props.captureBusy ? "ui-refresh-spin motion-reduce:opacity-70" : undefined
-                        }
-                      />
-                      Screenshot
-                    </Button>
-                    <Button
-                      variant="primary"
-                      size="lg"
-                      class="shrink-0"
-                      disabled={!props.canRecord}
-                      onClick={props.onRecord}
-                    >
-                      Start recording
-                    </Button>
-                  </div>
-                }
-              >
-                <Button
-                  variant="primary"
-                  size="lg"
-                  class="shrink-0"
-                  disabled={props.captureBusy}
-                  aria-busy={props.captureBusy}
-                  onClick={props.onSaveScreen}
+              <Show when={!props.outsideMapApp}>
+                <Show
+                  when={props.unmapped}
+                  fallback={
+                    <div class="flex shrink-0 items-center gap-2">
+                      <Button
+                        variant="secondary"
+                        size="lg"
+                        disabled={props.captureBusy}
+                        aria-busy={props.captureBusy}
+                        data-tip="Refresh this screen's saved screenshot"
+                        onClick={props.onSaveScreen}
+                      >
+                        <Icon
+                          name={props.captureBusy ? "refresh" : "camera"}
+                          size={13}
+                          class={
+                            props.captureBusy
+                              ? "ui-refresh-spin motion-reduce:opacity-70"
+                              : undefined
+                          }
+                        />
+                        Screenshot
+                      </Button>
+                      <Button
+                        variant="primary"
+                        size="lg"
+                        class="shrink-0"
+                        disabled={!props.canRecord}
+                        onClick={props.onRecord}
+                      >
+                        Start recording
+                      </Button>
+                    </div>
+                  }
                 >
-                  <Icon
-                    name={props.captureBusy ? "refresh" : "camera"}
-                    size={13}
-                    class={
-                      props.captureBusy ? "ui-refresh-spin motion-reduce:opacity-70" : undefined
-                    }
-                  />
-                  {props.captureBusy ? "Saving…" : "Save first screen"}
-                </Button>
+                  <Button
+                    variant="primary"
+                    size="lg"
+                    class="shrink-0"
+                    disabled={props.captureBusy}
+                    aria-busy={props.captureBusy}
+                    onClick={props.onSaveScreen}
+                  >
+                    <Icon
+                      name={props.captureBusy ? "refresh" : "camera"}
+                      size={13}
+                      class={
+                        props.captureBusy ? "ui-refresh-spin motion-reduce:opacity-70" : undefined
+                      }
+                    />
+                    {props.captureBusy ? "Saving…" : "Save first screen"}
+                  </Button>
+                </Show>
               </Show>
             </footer>
           </Show>

@@ -83,6 +83,18 @@ export const changeProofPublicationOutboxFailureSchema = z
   })
   .strict();
 
+/** Durable acknowledgement of one explicitly confirmed operator recovery.
+ * It does not alter the frozen provider request; it only grants one more
+ * bounded delivery attempt for that exact intent. */
+export const changeProofPublicationRecoverySchema = z
+  .object({
+    requestId: identifier,
+    requestDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/u),
+    requestedBy: identifier,
+    requestedAt: timestamp,
+  })
+  .strict();
+
 export const changeProofPublicationOutboxRecordSchema = changeProofPublicationIntentSchema
   .extend({
     status: changeProofPublicationOutboxStatusSchema,
@@ -91,6 +103,7 @@ export const changeProofPublicationOutboxRecordSchema = changeProofPublicationIn
     nextAttemptAt: timestamp.optional(),
     lease: changeProofPublicationOutboxLeaseSchema.optional(),
     lastFailure: changeProofPublicationOutboxFailureSchema.optional(),
+    recovery: changeProofPublicationRecoverySchema.optional(),
     receipt: changeProofPublicationReceiptSchema.optional(),
     publishedAt: timestamp.optional(),
     updatedAt: timestamp,
@@ -179,6 +192,7 @@ export type ChangeProofPublicationIntent = z.output<typeof changeProofPublicatio
 export type ChangeProofPublicationOutboxFailure = z.output<
   typeof changeProofPublicationOutboxFailureSchema
 >;
+export type ChangeProofPublicationRecovery = z.output<typeof changeProofPublicationRecoverySchema>;
 export type ChangeProofPublicationOutboxRecord = z.output<
   typeof changeProofPublicationOutboxRecordSchema
 >;
