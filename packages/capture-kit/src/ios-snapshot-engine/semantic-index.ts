@@ -4,10 +4,7 @@ import { collectIosPresentationNoiseSuppression } from './noise.ts';
 import { collectIosRowPresentation } from './rows.ts';
 import { collectIosTransitionPresentation } from './transitions.ts';
 import { collectIosWebSemanticPresentation } from './web.ts';
-import {
-  reindexSnapshotNodesWithSuppressedParents,
-  type SnapshotTreeRuleContext,
-} from '../tree.ts';
+import { reindexSnapshotNodesWithSuppressedParents, type SnapshotTreeRuleContext } from './tree.ts';
 
 const IOS_PRESENTATION_RULES: Array<
   (nodes: RawSnapshotNode[], context: SnapshotTreeRuleContext) => void
