@@ -166,7 +166,9 @@ function planApproval(): NonNullable<ChangeVerification["planApproval"]> {
 
 test("Change Verification persistence is append-only and compare-and-set", async () => {
   await withStateRoot(async () => {
-    const created = await createChangeVerification(createInput());
+    const created = await createChangeVerification(
+      createInput({ publication: { provider: "github" } }),
+    );
     assert.equal(created.state, "awaiting-build");
     assert.equal(created.version, 1);
 
@@ -183,6 +185,7 @@ test("Change Verification persistence is append-only and compare-and-set", async
       builds: buildsFor(),
       selection: selection(),
       planApproval: planApproval(),
+      publication: { provider: "github" },
     });
     assert.equal(ready.version, 2);
 
@@ -198,6 +201,7 @@ test("Change Verification persistence is append-only and compare-and-set", async
       at: 300,
       runIds: ["run-1"],
       evidenceDigests: [digest],
+      publication: { provider: "github" },
     });
     const rejected = await advanceChangeVerification({
       ...scope,
@@ -220,10 +224,20 @@ test("Change Verification persistence is append-only and compare-and-set", async
     });
     assert.equal(rejected.decision, "rejected");
     const publicationOutbox = await listChangeProofPublicationOutbox(scope);
-    assert.equal(publicationOutbox.length, 1);
-    assert.equal(publicationOutbox[0]?.proofId, rejected.id);
-    assert.equal(publicationOutbox[0]?.proofVersion, rejected.version);
-    assert.equal(publicationOutbox[0]?.status, "pending");
+    assert.deepEqual(
+      publicationOutbox.map(({ proofId, proofVersion, check, status }) => ({
+        proofId,
+        proofVersion,
+        checkStatus: check.status,
+        status,
+      })),
+      [
+        { proofId: rejected.id, proofVersion: 1, checkStatus: "queued", status: "pending" },
+        { proofId: rejected.id, proofVersion: 2, checkStatus: "queued", status: "pending" },
+        { proofId: rejected.id, proofVersion: 3, checkStatus: "in_progress", status: "pending" },
+        { proofId: rejected.id, proofVersion: 4, checkStatus: "completed", status: "pending" },
+      ],
+    );
 
     const history = await readChangeVerificationHistory(scope, created.id);
     assert.deepEqual(
@@ -268,6 +282,43 @@ test("Proof reads and lists are isolated by organization and project", async () 
     assert.deepEqual(
       await listChangeVerifications({ organizationId: scope.organizationId, projectId: "other" }),
       [],
+    );
+  });
+});
+
+test("cancellation completes an exact-head progress Check without merge authority", async () => {
+  await withStateRoot(async () => {
+    const created = await createChangeVerification(
+      createInput({ publication: { provider: "github" } }),
+    );
+    await advanceChangeVerification({
+      ...scope,
+      proofId: created.id,
+      expectedVersion: created.version,
+      state: "cancelled",
+      actorId: "system:github",
+      requestId: "request-cancel",
+      requestDigest: repairedDigest,
+      action: "cancel",
+      at: 200,
+      cancellation: {
+        reason: "The pull request head changed.",
+        cancelledBy: "system:github",
+        cancelledAt: 200,
+      },
+      publication: { provider: "github" },
+    });
+    const publications = await listChangeProofPublicationOutbox(scope);
+    assert.deepEqual(
+      publications.map(({ check }) => ({
+        status: check.status,
+        classification: check.classification,
+        conclusion: check.conclusion,
+      })),
+      [
+        { status: "queued", classification: "queued", conclusion: undefined },
+        { status: "completed", classification: "cancelled", conclusion: "action-required" },
+      ],
     );
   });
 });

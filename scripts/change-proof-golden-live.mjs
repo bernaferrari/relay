@@ -20,9 +20,11 @@ import {
 } from "./change-proof-golden-live-prerequisites.mjs";
 export {
   defaultCommand,
+  exportTracePackFromRun,
   inspectAndroidPrerequisites,
   inspectExactProofInputs,
   inspectManagedBrowserTargets,
+  inspectPersistedRun,
   inspectTracePack,
 } from "./change-proof-golden-live-prerequisites.mjs";
 import { cliResultEnvelope, defaultCliRunner, unwrapCliResult } from "./dogfood-proof-loop.mjs";
@@ -78,7 +80,8 @@ function usage() {
     `Usage: node scripts/change-proof-golden-live.mjs [--run-web] [--artifact-dir <dir>]\n\n` +
     `Android proof requires RELAY_GOLDEN_ANDROID_SERIAL, RELAY_GOLDEN_ANDROID_APP_PATH, ` +
     `RELAY_GOLDEN_ANDROID_APP_ID, RELAY_GOLDEN_ANDROID_APP_MAP_ID, ` +
-    `RELAY_GOLDEN_ANDROID_TEST_ID, and old/new exact heads plus TracePacks.`
+    `RELAY_GOLDEN_ANDROID_TEST_ID, old/new exact heads, and old/new TracePacks ` +
+    `(or persisted Run paths to export).`
   );
 }
 
@@ -345,10 +348,85 @@ async function relayHealth(relayUrl, fetchImpl) {
   }
 }
 
+function androidEvidencePhase(exact, phase) {
+  const tracePack = exact[`${phase}TracePack`];
+  const run = exact[`${phase}Run`];
+  if (tracePack?.status === "verified") {
+    const projection = tracePack.projection?.run;
+    if (projection?.platform !== "android") {
+      return {
+        status: "invalid",
+        error: `Retained ${phase} TracePack is not bound to an Android Run`,
+      };
+    }
+    if (projection.status !== "ok" || (projection.outcome && projection.outcome !== "passed")) {
+      return {
+        status: "invalid",
+        error: `Retained ${phase} Android Run did not finish successfully`,
+      };
+    }
+    return {
+      status: "verified",
+      source: run?.status === "verified" ? "run-and-tracepack" : "tracepack",
+      runId: projection.id,
+      tracePackDigest: tracePack.digest,
+      canonicalDigest: tracePack.canonicalDigest,
+      sourceSha: projection.sourceRevision?.sha ?? null,
+      targetProfile: projection.targetProfile,
+    };
+  }
+  if (tracePack?.status === "missing" && !run) {
+    return { status: "not-run", error: "No retained Android Run or TracePack was supplied" };
+  }
+  return {
+    status: "invalid",
+    error:
+      tracePack?.error || run?.error || `Retained ${phase} Android evidence could not be verified`,
+  };
+}
+
+function androidEvidence(exact) {
+  const old = androidEvidencePhase(exact, "old");
+  const repaired = androidEvidencePhase(exact, "repaired");
+  const phases = [old, repaired];
+  const blockers = [];
+  for (const [index, [phase, evidence]] of [
+    ["old", old],
+    ["repaired", repaired],
+  ].entries()) {
+    if (evidence.status === "not-run") {
+      if (phases.every(({ status }) => status === "not-run") && index > 0) continue;
+      blockers.push(
+        blocker(
+          phases.every(({ status }) => status === "not-run")
+            ? "android.execution.not-run"
+            : `android.execution.${phase}.not-run`,
+          evidence.error,
+        ),
+      );
+    } else if (evidence.status === "invalid") {
+      blockers.push(blocker(`android.execution.${phase}.invalid`, evidence.error));
+    }
+  }
+  return {
+    status: phases.every(({ status }) => status === "verified")
+      ? "verified"
+      : phases.some(({ status }) => status === "verified")
+        ? "partial"
+        : phases.some(({ status }) => status === "invalid")
+          ? "invalid"
+          : "not-run",
+    old,
+    repaired,
+    blockers,
+  };
+}
+
 /**
  * Run live web evidence when requested, then gate the result on explicit
- * Android and exact-head/TracePack prerequisites. No Android execution is
- * performed here, so this harness can never claim a cross-platform Proof.
+ * Android Run/TracePack evidence and exact-head prerequisites. Android is
+ * intentionally imported from supplied persisted evidence; this harness does
+ * not silently choose a device or rerun a Test under an unbound build.
  */
 export async function runChangeProofGoldenLive({
   env = process.env,
@@ -387,11 +465,8 @@ export async function runChangeProofGoldenLive({
     blockers: [],
   };
   const ephemeralTargets = [];
-  const androidExecution = blocker(
-    "android.execution.not-run",
-    "Android App Map/Test execution was not run by this harness; no physical result is claimed",
-  );
-  blockers.push(androidExecution);
+  const androidExecution = androidEvidence(exact);
+  blockers.push(...androidExecution.blockers);
   let fixture;
   if (runWeb && health.status === "ready") {
     let journeyCompleted = false;
@@ -490,14 +565,18 @@ export async function runChangeProofGoldenLive({
         maxBytes: MAX_FRAME_BYTES,
       }
     : null;
-  const status =
+  const finalProofReady =
+    exact.status === "ready" &&
+    androidExecution.status === "verified" &&
     seededRegression.detected &&
     web.status === "passed" &&
-    web.repaired?.final?.regressionDetected === false
-      ? "insufficient-evidence"
-      : blockers.some(({ id }) => id.includes("regression"))
-        ? "rejected"
-        : "insufficient-evidence";
+    web.repaired?.final?.regressionDetected === false;
+  const proofBlockers = [...exact.blockers, ...androidExecution.blockers, ...web.blockers];
+  const status = finalProofReady
+    ? "proved"
+    : blockers.some(({ id }) => id.includes("regression"))
+      ? "rejected"
+      : "insufficient-evidence";
   const report = {
     schemaVersion: CHANGE_PROOF_GOLDEN_LIVE.schemaVersion,
     kind: "change-proof-golden-live",
@@ -511,13 +590,15 @@ export async function runChangeProofGoldenLive({
     seededRegression,
     repairPacket,
     finalProof: {
-      status: "not-claimed",
-      reason: "Cross-platform exact-head evidence is incomplete",
-      blockers,
+      status: finalProofReady ? "proved" : "not-claimed",
+      reason: finalProofReady
+        ? "Supplied Android Runs/TracePacks and both managed Chromium phases satisfy the exact journey binding."
+        : "Cross-platform exact-head evidence is incomplete",
+      blockers: finalProofReady ? [] : proofBlockers,
     },
     unsupported: blockers,
     limitations: [
-      "No physical Android result is claimed unless an explicit authorized serial, fixture APK, package, App Map/Test, and exact TracePacks are supplied.",
+      "Android evidence is imported from explicit persisted Run/TracePack paths; this harness never reruns a Test or chooses a device implicitly.",
       "The live web fixture proves browser interaction and seeded regression detection only; it does not create a persisted Proof or TracePack by itself.",
       "No latency, comprehension, or GitHub publication measurement is inferred from this harness.",
     ],
@@ -532,9 +613,11 @@ export async function main(argv = process.argv.slice(2)) {
   try {
     const report = await runChangeProofGoldenLive(parseGoldenLiveArgs(argv));
     process.stdout.write(`${JSON.stringify(report)}\n`);
-    return report.status === "rejected"
-      ? CHANGE_PROOF_GOLDEN_LIVE_EXIT_CODES.regression
-      : CHANGE_PROOF_GOLDEN_LIVE_EXIT_CODES.insufficientEvidence;
+    return report.status === "proved"
+      ? CHANGE_PROOF_GOLDEN_LIVE_EXIT_CODES.proved
+      : report.status === "rejected"
+        ? CHANGE_PROOF_GOLDEN_LIVE_EXIT_CODES.regression
+        : CHANGE_PROOF_GOLDEN_LIVE_EXIT_CODES.insufficientEvidence;
   } catch (error) {
     process.stderr.write(`change-proof-golden-live: ${error?.message ?? String(error)}\n`);
     return error instanceof GoldenLiveError && error.code === "GOLDEN_LIVE_INVALID"

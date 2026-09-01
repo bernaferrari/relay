@@ -44,7 +44,7 @@ Use the same package directly when the host launches local MCP commands:
   "mcpServers": {
     "relay": {
       "command": "npx",
-      "args": ["--yes", "@relay/mcp@0.1.0"],
+      "args": ["--yes", "--package", "@relay/mcp@0.1.0", "relay-mcp", "--profile", "proof"],
       "env": {
         "RELAY_MCP_PROFILE": "proof"
       }

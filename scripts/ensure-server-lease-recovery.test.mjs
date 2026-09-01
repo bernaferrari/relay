@@ -187,6 +187,55 @@ test("ensure:serve only permits a recovered lease or a verified empty state", ()
   assert.equal(oldDeadLocal.mode, "reacquire-dead-local-lease");
 });
 
+test("a rapid watcher restart may replace a dead same-host lease only with a verified Relay listener", () => {
+  const common = {
+    root: "/workspace/relay",
+    tsx: "/workspace/relay/node_modules/tsx/dist/cli.mjs",
+    portProbe: { known: true, pids: ["4242"] },
+    currentHost: "relay-workstation-5.local",
+  };
+  const verified = prepareLeaseForFreshServer({
+    ...common,
+    relayHealth: { ok: true, product: "relay", pid: 4242 },
+    recover() {
+      return {
+        status: "refused",
+        reason: "local-port-listener-present",
+        owner: { pid: 999_999_999, host: "relay-workstation-5.local" },
+      };
+    },
+  });
+  assert.equal(verified.allowed, true);
+  assert.equal(verified.mode, "replace-known-local-relay");
+
+  const unknownListener = prepareLeaseForFreshServer({
+    ...common,
+    relayHealth: null,
+    recover() {
+      return {
+        status: "refused",
+        reason: "local-port-listener-present",
+        owner: { pid: 999_999_999, host: "relay-workstation-5.local" },
+      };
+    },
+  });
+  assert.equal(unknownListener.allowed, false);
+  assert.equal(unknownListener.mode, "refused");
+
+  const foreignOwner = prepareLeaseForFreshServer({
+    ...common,
+    relayHealth: { ok: true, product: "relay", pid: 4242 },
+    recover() {
+      return {
+        status: "refused",
+        reason: "local-port-listener-present",
+        owner: { pid: 999_999_999, host: "another-relay-host" },
+      };
+    },
+  });
+  assert.equal(foreignOwner.allowed, false);
+});
+
 test("the adapter invokes the core bootstrap helper and preserves its JSON result", () => {
   const calls = [];
   const result = recoverWorkspaceLeaseBeforeServerStart({

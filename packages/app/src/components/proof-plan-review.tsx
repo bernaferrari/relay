@@ -2,6 +2,7 @@ import { For, Show, createMemo, createUniqueId, type JSX } from "solid-js";
 import type { ChangeVerification, VerificationCell } from "@relay/protocol";
 import { cn } from "../lib/cn";
 import { eyebrow, mono } from "../lib/ui";
+import { humanizeIdentifier } from "../lib/humanize-identifier";
 
 export type ProofPlanSummary = Readonly<{
   total: number;
@@ -70,10 +71,13 @@ export function ProofPlanReview(props: {
               const target = () => targetCases().get(cell.targetCaseId);
               const build = () => builds().get(cell.buildId);
               const isPilot = () => props.proof.selection.pilotCellId === cell.id;
+              const journeyName = () => journeyLabel(cell);
+              const targetName = () => target()?.targetProfile.name ?? "Unassigned target";
               return (
                 <li
                   class="grid gap-3 rounded-xl bg-surface-base p-3 ring-1 ring-inset ring-border-weak-base"
-                  aria-label={`${isPilot() ? "Pilot " : ""}${cell.requirement} cell ${index() + 1}: ${cell.journey.testId}`}
+                  aria-label={`${isPilot() ? "Pilot " : ""}${cell.requirement} verification cell ${index() + 1}: ${journeyName()} on ${targetName()}`}
+                  data-proof-plan-cell
                 >
                   <div class="flex flex-wrap items-center justify-between gap-2">
                     <div class="flex flex-wrap items-center gap-1.5">
@@ -87,16 +91,19 @@ export function ProofPlanReview(props: {
                     </span>
                   </div>
 
-                  <dl class="m-0 grid grid-cols-3 gap-3 max-[700px]:grid-cols-1">
+                  <dl class="m-0 grid grid-cols-2 gap-x-4 gap-y-3 max-[700px]:grid-cols-1">
                     <PlanBinding label="Journey">
                       <button
                         type="button"
-                        class="-mx-2 -my-1 grid min-h-11 w-[calc(100%+1rem)] content-center rounded-lg px-2 py-1 text-left text-body font-semibold text-text-interactive-base transition-colors hover:bg-surface-raised-base-hover hover:underline"
+                        class="-mx-2 -my-1 grid min-h-11 w-[calc(100%+1rem)] content-center rounded-lg px-2 py-1 text-left text-body font-semibold text-text-interactive-base transition-colors hover:bg-surface-raised-base-hover hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-focus"
                         onClick={() => props.onOpenMap(cell.journey.appMapId)}
                       >
-                        <span class="break-words">{cell.journey.testId}</span>
+                        <span class="break-words">{journeyName()}</span>
+                        {/* Keep the handle available to existing keyboard/test tooling without
+                         * making an internal identifier the primary product label. */}
+                        <span class="sr-only">{cell.journey.testId}</span>
                         <small class="break-words text-micro font-normal text-text-weak">
-                          {cell.journey.appMapId}
+                          App Map journey
                           {cell.journey.appMapRevision
                             ? ` · revision ${cell.journey.appMapRevision}`
                             : ""}
@@ -105,30 +112,70 @@ export function ProofPlanReview(props: {
                     </PlanBinding>
                     <PlanBinding label="Build">
                       <strong class="break-words text-body font-semibold text-text-strong">
-                        {cell.buildId}
+                        {buildLabel(build())}
                       </strong>
                       <small class="break-words text-micro text-text-weak">
-                        {build()
-                          ? `${build()!.platform} · ${build()!.configuration}`
-                          : "Unavailable"}
+                        {build() ? "Frozen artifact for this journey" : "Build is not available"}
                       </small>
                     </PlanBinding>
                     <PlanBinding label="Target">
                       <strong class="break-words text-body font-semibold text-text-strong">
-                        {cell.targetCaseId}
+                        {targetName()}
                       </strong>
                       <small class="break-words text-micro text-text-weak">
                         {target() ? targetLabel(target()!) : "Unavailable"}
                       </small>
                     </PlanBinding>
+                    <PlanBinding label="Dimensions">
+                      <strong class="break-words text-body font-semibold text-text-strong">
+                        {dimensionsLabel(cell.dimensions)}
+                      </strong>
+                      <small class="break-words text-micro text-text-weak">
+                        Exact values frozen for this cell
+                      </small>
+                    </PlanBinding>
+                    <PlanBinding label="Risk">
+                      <strong class="break-words text-body font-semibold text-text-strong">
+                        {riskLabel(cell)}
+                      </strong>
+                      <small class="break-words text-micro text-text-weak">
+                        {riskReason(cell)}
+                      </small>
+                    </PlanBinding>
+                    <PlanBinding label="Required evidence">
+                      <strong class="break-words text-body font-semibold text-text-strong">
+                        {evidenceLabel(cell, target())}
+                      </strong>
+                      <small class="break-words text-micro text-text-weak">
+                        {cell.estimatedDurationMs
+                          ? `${durationLabel(cell.estimatedDurationMs)} for this evidence`
+                          : "Collection policy is checked before run"}
+                      </small>
+                    </PlanBinding>
+                    <PlanBinding label="Visual context">
+                      <strong class="break-words text-body font-semibold text-text-strong">
+                        {visualContext(target())}
+                      </strong>
+                      <small class="break-words text-micro text-text-weak">
+                        Destination checkpoint from {journeyName()}
+                      </small>
+                    </PlanBinding>
                   </dl>
 
-                  <p class="m-0 max-w-[65ch] text-caption/[1.45] text-text-base">
-                    {cell.selectionReason}
-                  </p>
-                  <span class="text-micro font-medium text-text-weak">
-                    Cleanup {cell.cleanupRequired ? "must be proved" : "is not required"}
-                  </span>
+                  <div class="grid gap-1 border-t border-border-weak-base pt-3">
+                    <strong class="text-caption font-semibold text-text-strong">
+                      Why this cell
+                    </strong>
+                    <p class="m-0 max-w-[65ch] text-caption/[1.45] text-text-base">
+                      {cell.selectionReason}
+                    </p>
+                  </div>
+                  <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-micro font-medium text-text-weak">
+                    <span>{isPilot() ? "Required pilot" : requirementLabel(cell.requirement)}</span>
+                    <span>
+                      Cleanup {cell.cleanupRequired ? "must be proved" : "is not required"}
+                    </span>
+                  </div>
                 </li>
               );
             }}
@@ -150,6 +197,11 @@ export function ProofPlanReview(props: {
                 <dt class="break-all text-caption font-semibold text-text-base">{cell.id}</dt>
                 <dd class="m-0">
                   <dl class="m-0 grid gap-1">
+                    <DigestFact label="App Map" value={cell.journey.appMapId} />
+                    <DigestFact label="Journey" value={cell.journey.testId} />
+                    <DigestFact label="Target case" value={cell.targetCaseId} />
+                    <DigestFact label="Build" value={cell.buildId} />
+                    <DigestFact label="Dimensions" value={JSON.stringify(cell.dimensions)} />
                     <DigestFact label="Route variant" value={cell.routeVariantDigest} />
                     <DigestFact label="Evidence policy" value={cell.evidencePolicyDigest} />
                     <DigestFact label="Execution risk" value={cell.executionRiskDigest} />
@@ -219,6 +271,106 @@ function durationLabel(milliseconds: number | undefined): string {
 
 function capitalize(value: string): string {
   return `${value.slice(0, 1).toUpperCase()}${value.slice(1)}`;
+}
+
+function journeyLabel(cell: VerificationCell): string {
+  return humanizeIdentifier(cell.journey.testId) ?? "Unnamed journey";
+}
+
+function buildLabel(build: ChangeVerification["builds"][number] | undefined): string {
+  if (!build) return "Build unavailable";
+  const platform = build.platform === "web" ? "Web" : capitalize(build.platform);
+  return `${platform} ${build.configuration} build`;
+}
+
+function requirementLabel(requirement: VerificationCell["requirement"]): string {
+  return requirement === "required" ? "Required coverage" : "Advisory coverage";
+}
+
+function dimensionLabel(key: string): string {
+  return humanizeIdentifier(key) ?? "Dimension";
+}
+
+const languageLabels: Record<string, string> = {
+  ar: "Arabic",
+  de: "German",
+  en: "English",
+  es: "Spanish",
+  fr: "French",
+  he: "Hebrew",
+  it: "Italian",
+  ja: "Japanese",
+  ko: "Korean",
+  nl: "Dutch",
+  pt: "Portuguese",
+  "pt-BR": "Portuguese (Brazil)",
+  ro: "Romanian",
+  ru: "Russian",
+  tr: "Turkish",
+  zh: "Chinese",
+};
+
+function dimensionValueLabel(key: string, value: string): string {
+  if (/language|locale/i.test(key)) {
+    const language = languageLabels[value] ?? languageLabels[value.split(/[-_]/u)[0]!];
+    if (language) return language;
+  }
+  return humanizeIdentifier(value) ?? value;
+}
+
+function dimensionsLabel(dimensions: Readonly<Record<string, string>>): string {
+  const entries = Object.entries(dimensions);
+  if (!entries.length) return "Default route";
+  return entries
+    .map(([key, value]) => `${dimensionLabel(key)}: ${dimensionValueLabel(key, value)}`)
+    .join(" · ");
+}
+
+function riskLabel(cell: VerificationCell): string {
+  return cell.executionRisk ? capitalize(cell.executionRisk.level) : "Risk checked before run";
+}
+
+function riskReason(cell: VerificationCell): string {
+  const reason = cell.executionRisk?.reasons[0]?.explanation;
+  if (reason) return reason;
+  if (cell.executionRisk?.cleanupRequired || cell.cleanupRequired) {
+    return "Cleanup is part of the reviewed run contract";
+  }
+  return "No additional execution effects recorded";
+}
+
+function evidenceLabel(
+  cell: VerificationCell,
+  target: ChangeVerification["selection"]["targetCases"][number] | undefined,
+): string {
+  const dimensionValues = Object.entries(cell.dimensions).map(([key, value]) => `${key}:${value}`);
+  const visual = dimensionValues.some((entry) => /visual|screenshot|every-screen/u.test(entry));
+  const capabilities = target?.targetProfile.capabilities ?? [];
+  if (visual && capabilities.includes("screenshot")) return "Visual screenshots + checks";
+  if (capabilities.includes("screenshot") && capabilities.includes("snapshot")) {
+    return "Screenshots + semantic checks";
+  }
+  if (capabilities.includes("screenshot")) return "Screenshot evidence";
+  if (capabilities.includes("snapshot")) return "Semantic checks";
+  return "Run evidence required";
+}
+
+function visualContext(
+  target: ChangeVerification["selection"]["targetCases"][number] | undefined,
+): string {
+  if (!target) return "Target context unavailable";
+  const profile = target.targetProfile;
+  const browser = profile.browserCaseProfile;
+  if (browser) {
+    const viewport = `${browser.viewport.width} × ${browser.viewport.height}`;
+    const color = browser.colorScheme === "dark" ? "dark theme" : "light theme";
+    const input = browser.touch || browser.mobile ? "touch layout" : "pointer layout";
+    return `${viewport} · ${color} · ${input}`;
+  }
+  return (
+    [profile.platform, profile.model, profile.osVersion].filter(Boolean).join(" · ") ||
+    "Device profile"
+  );
 }
 
 function targetLabel(targetCase: ChangeVerification["selection"]["targetCases"][number]): string {

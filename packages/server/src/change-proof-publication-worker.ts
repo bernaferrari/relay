@@ -6,6 +6,7 @@ import {
   markChangeProofPublicationRetry,
   recoverChangeProofPublicationOutbox,
   reconcileChangeProofPublicationOutbox,
+  readChangeVerificationHistory,
   withChangeProofPublicationLeaseHeartbeat,
   type ChangeVerificationScope,
 } from "@relay/core";
@@ -100,17 +101,32 @@ export async function processTerminalChangeProofPublication(input: {
   workerId?: string;
 }): Promise<void> {
   if (!input.publish) return;
-  const record = (await listChangeProofPublicationOutbox(input.scope)).find(
-    (candidate) =>
-      candidate.proofId === input.proof.id && candidate.proofVersion === input.proof.version,
-  );
-  if (!record || record.status === "published") return;
-  await processChangeProofPublicationRecord({
-    record,
-    proof: input.proof,
-    publish: input.publish,
-    workerId: input.workerId ?? `relay-proof-route:${process.pid}`,
-  });
+  const history = await readChangeVerificationHistory(input.scope, input.proof.id);
+  const proofByVersion = new Map(history.map((proof) => [proof.version, proof]));
+  const records = (await listChangeProofPublicationOutbox(input.scope))
+    .filter(
+      (candidate) =>
+        candidate.proofId === input.proof.id &&
+        candidate.proofVersion <= input.proof.version &&
+        candidate.status !== "published",
+    )
+    .sort((left, right) => left.proofVersion - right.proofVersion);
+  for (const record of records) {
+    const proof = proofByVersion.get(record.proofVersion);
+    if (!proof) return;
+    await processChangeProofPublicationRecord({
+      record,
+      proof,
+      publish: input.publish,
+      workerId: input.workerId ?? `relay-proof-route:${process.pid}`,
+    });
+    const updated = (await listChangeProofPublicationOutbox(input.scope)).find(
+      (candidate) => candidate.id === record.id,
+    );
+    // Preserve ordering if a provider or reconciliation failure leaves an
+    // earlier version unresolved. The durable worker will retry it later.
+    if (!updated || updated.status !== "published") return;
+  }
 }
 
 /** Bounded restart-safe worker pass. Historical terminal versions are loaded

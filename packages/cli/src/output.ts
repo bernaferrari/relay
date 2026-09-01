@@ -105,6 +105,12 @@ export class CliOutput {
     this.streams.stderr.write(`${message}\n`);
   }
 
+  /** Compatibility notices stay on stderr so machine-readable result
+   * envelopes on stdout remain parseable. */
+  deprecation(message: string): void {
+    if (!this.quiet) this.streams.stderr.write(`relay: deprecation: ${message}\n`);
+  }
+
   /** One-time notice that a watched job is paused and who can unblock it.
    * JSON/ndjson get it as a stderr progress event; humans get plain text. */
   pausedHint(jobId: string): void {

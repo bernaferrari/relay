@@ -11,7 +11,10 @@ import {
   materializeChangeVerificationIntegrity,
   verifyDurableChangeVerification,
 } from "./change-proof-integrity.js";
-import { providerCheckForStoredChangeProof } from "./change-proof-decision.js";
+import {
+  providerCheckForStoredChangeProof,
+  providerProgressCheckForStoredChangeProof,
+} from "./change-proof-decision.js";
 import { enqueueChangeProofPublicationOutboxInStore } from "./change-proof-publication-outbox.js";
 
 export type ChangeProofPublicationRequest = {
@@ -37,6 +40,7 @@ export type CreateChangeVerificationInput = ChangeVerificationScope &
     requestId: string;
     requestDigest: ChangeVerification["lastMutation"]["requestDigest"];
     action?: Extract<ChangeVerificationMutation, "start" | "rerun-affected">;
+    publication?: ChangeProofPublicationRequest;
     at: number;
   };
 
@@ -152,20 +156,32 @@ function decisionForState(state: ChangeVerificationState): ChangeVerificationDec
   }
 }
 
-function enqueueTerminalPublication(
+function enqueueProofPublication(
   store: Parameters<typeof enqueueChangeProofPublicationOutboxInStore>[0],
   proof: ChangeVerification,
   publication: ChangeProofPublicationRequest | undefined,
 ): void {
-  if (
-    !publication ||
-    !["proved", "rejected", "needs-review", "insufficient-evidence", "superseded"].includes(
-      proof.state,
-    )
-  ) {
-    return;
-  }
-  const check = providerCheckForStoredChangeProof({
+  if (!publication) return;
+  const terminal = [
+    "proved",
+    "rejected",
+    "needs-review",
+    "insufficient-evidence",
+    "cancelled",
+    "superseded",
+  ].includes(proof.state);
+  const active = [
+    "planning",
+    "awaiting-build",
+    "ready",
+    "running-pilot",
+    "awaiting-expansion",
+    "running",
+  ].includes(proof.state);
+  if (!terminal && !active) return;
+  const check = (
+    terminal ? providerCheckForStoredChangeProof : providerProgressCheckForStoredChangeProof
+  )({
     proof,
     ...(publication.detailsUrl ? { detailsUrl: publication.detailsUrl } : {}),
   });
@@ -413,6 +429,7 @@ export async function createChangeVerification(
         "Change Verification already exists",
       );
     }
+    enqueueProofPublication(store, proof, input.publication);
     return proof;
   });
 }
@@ -473,7 +490,7 @@ export async function advanceChangeVerification(
         "Change Verification version is stale",
       );
     }
-    enqueueTerminalPublication(store, next, input.publication);
+    enqueueProofPublication(store, next, input.publication);
     return next;
   });
 }
@@ -554,7 +571,8 @@ export async function supersedeChangeVerification(
         "Change Verification version is stale",
       );
     }
-    enqueueTerminalPublication(store, previous, input.publication);
+    enqueueProofPublication(store, previous, input.publication);
+    enqueueProofPublication(store, replacement, input.publication);
     return { previous, replacement };
   });
 }

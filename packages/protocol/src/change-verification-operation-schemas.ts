@@ -16,6 +16,10 @@ import {
   changeProofRunInputSchema,
   changeProofRunOutputSchema,
   changeProofExecutionSummarySchema,
+  changeProofExecutionPreviewSchema,
+  changeProofExecutionConfirmationReceiptSchema,
+  changeProofExecutionHumanInterventionEvidenceSchema,
+  changeProofRunHumanEvidenceInputSchema,
 } from "./change-proof-execution.js";
 
 const identifier = z.string().trim().min(1).max(256);
@@ -187,6 +191,25 @@ export const changeVerificationOperationInputSchemas = {
     })
     .strict(),
   "proof.run": changeProofRunInputSchema,
+  "proof.run.human-evidence": changeProofRunHumanEvidenceInputSchema,
+  "proof.run.confirm": z
+    .object({
+      proofId: identifier,
+      expectedVersion,
+      cellId: identifier,
+      previewDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/u),
+      fixtureScope: z
+        .object({
+          targetCaseId: identifier,
+          targetProfileId: identifier,
+          cleanupCheckIds: z.array(identifier).min(1).max(256).readonly(),
+        })
+        .strict()
+        .optional(),
+      ttlMs: z.number().int().positive().max(3_600_000).optional(),
+      confirm: z.literal(true),
+    })
+    .strict(),
 } as const;
 
 const mutationOutputSchema = z
@@ -213,6 +236,7 @@ export const changeVerificationOperationOutputSchemas = {
       history: z.array(changeVerificationSchema).max(100).readonly().optional(),
       publications: z.array(changeProofPublicationReceiptSchema).max(100).readonly(),
       publicationOutbox: z.array(changeProofPublicationOutboxRecordSchema).max(100).readonly(),
+      executionPreview: changeProofExecutionPreviewSchema.optional(),
       execution: changeProofExecutionSummarySchema.optional(),
     })
     .strict(),
@@ -234,4 +258,18 @@ export const changeVerificationOperationOutputSchemas = {
     })
     .strict(),
   "proof.run": changeProofRunOutputSchema,
+  "proof.run.human-evidence": z
+    .object({
+      proof: changeVerificationSchema,
+      execution: changeProofExecutionSummarySchema,
+      evidence: changeProofExecutionHumanInterventionEvidenceSchema,
+    })
+    .strict(),
+  "proof.run.confirm": z
+    .object({
+      proofId: identifier,
+      preview: changeProofExecutionPreviewSchema,
+      receipt: changeProofExecutionConfirmationReceiptSchema,
+    })
+    .strict(),
 } as const;

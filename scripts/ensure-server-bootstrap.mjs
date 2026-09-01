@@ -158,6 +158,20 @@ export function isExactRelayWatcher(
   );
 }
 
+/**
+ * The health endpoint proves which process owns the port, but its JSON is not
+ * process identity. Verify the observed command/cwd too so a reused PID (or a
+ * local service that happens to return Relay-shaped JSON) is never signalled.
+ */
+export function isRelayServerProcess(identity, { root, port }) {
+  if (!identity || resolve(identity.cwd) !== resolve(join(root, "packages/server"))) return false;
+  const actual = identity.command.trim().split(/\s+/u);
+  const portIndex = actual.indexOf("--port");
+  return (
+    actual.includes("src/index.ts") && portIndex >= 0 && actual[portIndex + 1] === String(port)
+  );
+}
+
 export function isProcessAncestor(ancestorPid, childPid, rows) {
   const parents = new Map(rows.map((row) => [row.pid, row.ppid]));
   const visited = new Set();
@@ -199,8 +213,9 @@ export function authorizeRelayShutdown({
 
   if (hasVerifiedLiveRelay) {
     const relayIdentity = observe(healthPid);
-    if (!relayIdentity)
+    if (!isRelayServerProcess(relayIdentity, { root, port })) {
       throw new Error("The health-verified Relay process changed during preflight");
+    }
     authorized.push(frozenAuthorization("relay-listener", relayIdentity));
   }
 

@@ -8,6 +8,7 @@ import { humanError } from "../lib/human-error";
 import { DeviceCompanionStage } from "./device-companion-stage";
 import { Icon } from "./icon";
 import { isRecordingCheckpoint } from "./recording-review-evidence";
+import { projectRecordingCompile } from "../lib/recording-compile-projection";
 
 function destinationFor(map: AppMap, fingerprint: string | undefined) {
   if (!fingerprint) return { kind: "new-screen" as const };
@@ -38,6 +39,7 @@ export function AppMapTestRecordingPanel(props: {
   const [retiring, setRetiring] = createSignal(false);
   const [semanticName, setSemanticName] = createSignal("");
   const [tapLabel, setTapLabel] = createSignal("");
+  const compileProjection = () => projectRecordingCompile(recorder.take()?.actions ?? []);
 
   const captureCopy = () => {
     const mode = recorder.take()?.captureProvenance.mode ?? "control-and-record";
@@ -150,6 +152,44 @@ export function AppMapTestRecordingPanel(props: {
         when={recorder.recording() || recorder.authoringNeedsAttention()}
         fallback={
           <div class="min-h-0 flex-1 overflow-y-auto p-3">
+            <section
+              class="mb-3 grid gap-2 rounded-lg border border-border-weak-base bg-surface-raised-base p-3"
+              data-recording-compile
+              aria-label="Compiled Test preview"
+            >
+              <div class="flex items-baseline justify-between gap-2">
+                <strong class="text-caption font-medium text-text-strong">Compiled Test</strong>
+                <span class="text-micro text-text-weak">
+                  {compileProjection().actionCount} actions →{" "}
+                  {compileProjection().proposedStepCount} steps · {compileProjection().status}
+                </span>
+              </div>
+              <details>
+                <summary class="cursor-pointer text-micro text-text-weak">
+                  Review grouped steps and confidence
+                </summary>
+                <ol class="mt-2 grid gap-1.5 pl-4 text-micro text-text-base">
+                  <For each={compileProjection().groups}>
+                    {(group) => (
+                      <li data-recording-compile-group={group.id}>
+                        <span class="font-medium">{group.title}</span>{" "}
+                        <span class="text-text-weak">({group.confidence} confidence)</span>
+                        <span class="block text-text-weak">
+                          {group.steps.map((step) => step.sentence).join(" · ")}
+                        </span>
+                      </li>
+                    )}
+                  </For>
+                </ol>
+              </details>
+              <Show when={compileProjection().feedback.length > 0}>
+                <ul class="m-0 grid gap-1 border-t border-border-weak-base pt-2 text-micro text-text-warning-base">
+                  <For each={compileProjection().feedback.slice(0, 3)}>
+                    {(item) => <li>{item.message}</li>}
+                  </For>
+                </ul>
+              </Show>
+            </section>
             <ol class="m-0 grid list-decimal gap-2 pl-5 text-caption text-text-base">
               <For each={recorder.take()?.actions ?? []}>
                 {(action, index) => {

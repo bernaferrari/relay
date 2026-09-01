@@ -88,6 +88,41 @@ test("the strip projects selected worlds as rows of this Test", () => {
   );
 });
 
+test("the strip previews multiple dimensions with canonical expansion strategies", () => {
+  const languageVariable = language({ kind: "appLocale", app: "com.example" }, ["en", "ja"]);
+  const regionVariable = language({ kind: "appLocale", app: "com.example" }, ["us", "eu", "apac"]);
+  regionVariable.id = "region";
+  regionVariable.name = "Region";
+
+  const cartesian = projectTestCombineStrip({
+    test: { id: "settings-tour", name: "Settings tour" },
+    variables: [languageVariable, regionVariable],
+    selected: { language: ["en", "ja"], region: ["us", "eu"] },
+    strategy: "cartesian",
+  });
+  assert.equal(cartesian.totalWorlds, 4);
+  assert.equal(cartesian.cells.length, 4);
+  assert.equal(cartesian.worlds[0]?.label, "Language: EN · Region: US");
+
+  const zipped = projectTestCombineStrip({
+    test: { id: "settings-tour", name: "Settings tour" },
+    variables: [languageVariable, regionVariable],
+    selected: { language: ["en", "ja"], region: ["us"] },
+    strategy: "zip",
+  });
+  assert.equal(zipped.totalWorlds, 2);
+  assert.equal(zipped.worlds[1]?.label, "Language: JA · Region: US");
+
+  const invalidZip = projectTestCombineStrip({
+    test: { id: "settings-tour", name: "Settings tour" },
+    variables: [languageVariable, regionVariable],
+    selected: { language: ["en", "ja"], region: ["us", "eu", "apac"] },
+    strategy: "zip",
+  });
+  assert.match(invalidZip.issue ?? "", /equally sized sets/u);
+  assert.equal(invalidZip.totalWorlds, 0);
+});
+
 test("Whole page binds the last destination as a full-surface recapture", () => {
   const map = {
     connections: {

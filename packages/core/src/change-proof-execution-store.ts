@@ -1,9 +1,12 @@
 import {
   ACTOR_KINDS,
   changeProofExecutionCancellationSchema,
+  changeProofExecutionConsumedReceiptSchema,
   changeProofExecutionCellStatusSchema,
   changeProofExecutionStatusSchema,
   changeProofExecutionUncertaintySchema,
+  changeProofExecutionHumanInterventionSchema,
+  changeProofExecutionHumanInterventionEvidenceSchema,
   changeProofCaseResultSchema,
   parseChangeVerification,
   projectRoles,
@@ -20,6 +23,7 @@ import {
   ChangeProofExecutionError,
   type ChangeProofExecutionRecord,
 } from "./change-proof-execution-types.js";
+import { publish } from "./events.js";
 import type { ChangeProofRunCase } from "./change-proof-live-run.js";
 
 export function nonEmpty(value: unknown, field: string): string {
@@ -189,6 +193,39 @@ export function normalizeRecord(value: unknown): ChangeProofExecutionRecord {
             ...(candidate.maxAttempts === undefined ? {} : { maxAttempts: candidate.maxAttempts }),
           } satisfies ChangeProofPublicationRequest;
         })();
+  const confirmationReceiptsValue = input.confirmationReceipts;
+  const confirmationReceipts =
+    confirmationReceiptsValue === undefined
+      ? undefined
+      : (() => {
+          if (
+            !Array.isArray(confirmationReceiptsValue) ||
+            confirmationReceiptsValue.length > 1_000
+          ) {
+            throw new Error("Execution confirmation receipts are invalid");
+          }
+          const receipts = confirmationReceiptsValue.map((value, index) => {
+            try {
+              return changeProofExecutionConsumedReceiptSchema.parse(value);
+            } catch {
+              throw new Error(`Execution confirmation receipt ${index} is invalid`);
+            }
+          });
+          if (new Set(receipts.map((receipt) => receipt.receiptId)).size !== receipts.length) {
+            throw new Error("Execution confirmation receipts repeat");
+          }
+          for (const receipt of receipts) {
+            if (
+              receipt.scope.organizationId !== nonEmpty(input.organizationId, "organizationId") ||
+              receipt.scope.projectId !== nonEmpty(input.projectId, "projectId") ||
+              receipt.scope.proofId !== nonEmpty(input.proofId, "proofId") ||
+              receipt.scope.proofVersion !== positiveInteger(input.proofVersion, "proofVersion")
+            ) {
+              throw new Error("Execution confirmation receipt scope does not match execution");
+            }
+          }
+          return receipts;
+        })();
   const cells = input.cells;
   if (!Array.isArray(cells) || cells.length < 1 || cells.length > 1_000) {
     throw new Error("Change Proof execution cells are invalid");
@@ -257,6 +294,43 @@ export function normalizeRecord(value: unknown): ChangeProofExecutionRecord {
   if (status !== "cancelled" && cancellation) {
     throw new Error("Cancellation provenance is only valid on a cancelled execution");
   }
+  const humanIntervention =
+    input.humanIntervention === undefined
+      ? undefined
+      : changeProofExecutionHumanInterventionSchema.parse(input.humanIntervention);
+  if (status === "paused-human" && !humanIntervention) {
+    throw new Error("A human-paused Change Proof execution needs intervention provenance");
+  }
+  if (status !== "paused-human" && humanIntervention) {
+    throw new Error("Human intervention provenance is only valid on a paused execution");
+  }
+  const humanInterventionEvidenceValue = input.humanInterventionEvidence;
+  const humanInterventionEvidence =
+    humanInterventionEvidenceValue === undefined
+      ? undefined
+      : (() => {
+          if (
+            !Array.isArray(humanInterventionEvidenceValue) ||
+            humanInterventionEvidenceValue.length > 1_000
+          ) {
+            throw new Error("Human intervention evidence is invalid");
+          }
+          const evidence = humanInterventionEvidenceValue.map((value, index) => {
+            try {
+              return changeProofExecutionHumanInterventionEvidenceSchema.parse(value);
+            } catch {
+              throw new Error(`Human intervention evidence ${index} is invalid`);
+            }
+          });
+          if (
+            new Set(evidence.map((item) => item.requestId)).size !== evidence.length ||
+            new Set(evidence.map((item) => `${item.cellId}\0${item.stepId}`)).size !==
+              evidence.length
+          ) {
+            throw new Error("Human intervention evidence repeats");
+          }
+          return evidence;
+        })();
   const leaseValue = input.lease;
   const lease =
     leaseValue === undefined
@@ -292,6 +366,7 @@ export function normalizeRecord(value: unknown): ChangeProofExecutionRecord {
           })(),
     ...(requestAuthority ? { requestAuthority } : {}),
     ...(publication ? { publication } : {}),
+    ...(confirmationReceipts?.length ? { confirmationReceipts } : {}),
     frozenProof,
     cells: normalizedCells,
     cursor,
@@ -300,6 +375,8 @@ export function normalizeRecord(value: unknown): ChangeProofExecutionRecord {
     status,
     runIds: [...runIds] as string[],
     ...(cancellation ? { cancellation } : {}),
+    ...(humanIntervention ? { humanIntervention } : {}),
+    ...(humanInterventionEvidence?.length ? { humanInterventionEvidence } : {}),
     ...(terminalUncertainty ? { terminalUncertainty } : {}),
     ...(lease ? { lease } : {}),
     createdAt: timestamp(input.createdAt, "createdAt"),
@@ -343,6 +420,17 @@ export function write(
       "Change Proof execution disappeared during update",
     );
   }
+  publish(
+    {
+      type: "proof.execution.changed",
+      at: normalized.updatedAt,
+      proofId: normalized.proofId,
+      executionId: normalized.id,
+      cursor: normalized.cursor,
+      status: normalized.status,
+    },
+    normalized,
+  );
   return clone(normalized);
 }
 

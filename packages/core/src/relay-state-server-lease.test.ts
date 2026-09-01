@@ -190,6 +190,22 @@ test("local lease recovery refuses live, young, listening, unrelated, and shared
     );
     listening.release();
 
+    const listeningOnSharedStorage = acquireRelayStateServerLease({
+      path,
+      pid: 999_999_999,
+      host: "relay-workstation-4.local",
+      acquiredAt: 1,
+    });
+    assert.equal(
+      recoverAbandonedLocalRelayStateServerLease({
+        ...common,
+        localPortHasListener: true,
+        workspaceFilesystem: "shared",
+      }).reason,
+      "workspace-filesystem-not-local",
+    );
+    listeningOnSharedStorage.release();
+
     const unrelated = acquireRelayStateServerLease({
       path,
       pid: 999_999_999,

@@ -7,7 +7,10 @@ import {
 } from "@relay/protocol";
 import { canonicalSha256 } from "./canonical-json.js";
 import { readControlStore, withControlStore } from "./collaboration-store.js";
-import { providerCheckForStoredChangeProof } from "./change-proof-decision.js";
+import {
+  providerCheckForStoredChangeProof,
+  providerProgressCheckForStoredChangeProof,
+} from "./change-proof-decision.js";
 import { verifyDurableChangeVerification } from "./change-proof-integrity.js";
 import type { ChangeVerificationScope } from "./change-verification-store.js";
 
@@ -36,6 +39,7 @@ function samePublication(
   return (
     left.proofVersion === right.proofVersion &&
     left.checkDigest === right.checkDigest &&
+    (left.status ?? "completed") === (right.status ?? "completed") &&
     left.conclusion === right.conclusion &&
     left.htmlUrl === right.htmlUrl
   );
@@ -167,7 +171,7 @@ export async function recordChangeProofPublication(
       );
     }
     const expectedConclusion =
-      proof.state === "superseded"
+      proof.state === "superseded" || proof.state === "cancelled"
         ? "action-required"
         : proof.decision === "proved"
           ? "success"
@@ -176,13 +180,23 @@ export async function recordChangeProofPublication(
             : proof.decision === "needs-review" || proof.decision === "insufficient-evidence"
               ? "action-required"
               : undefined;
-    if (!expectedConclusion || check.conclusion !== expectedConclusion) {
+    if (
+      (check.status === "completed" &&
+        (!expectedConclusion || check.conclusion !== expectedConclusion)) ||
+      (check.status !== "completed" && expectedConclusion !== undefined)
+    ) {
       throw new ChangeProofPublicationConflictError(
         "PROOF_DECISION_REQUIRED",
-        "a completed provider check must match the Proof's deterministic terminal decision",
+        check.status === "completed"
+          ? "a completed provider check must match the Proof's deterministic terminal decision"
+          : "a progress provider check cannot acknowledge a terminal Proof",
       );
     }
-    const canonicalCheck = providerCheckForStoredChangeProof({
+    const canonicalCheck = (
+      check.status === "completed"
+        ? providerCheckForStoredChangeProof
+        : providerProgressCheckForStoredChangeProof
+    )({
       proof,
       ...(check.detailsUrl ? { detailsUrl: check.detailsUrl } : {}),
     });
@@ -238,7 +252,8 @@ export async function recordChangeProofPublication(
       ...identity,
       sequence: (latest?.sequence ?? 0) + 1,
       checkDigest: checkDigest(canonicalCheck),
-      conclusion: check.conclusion,
+      status: check.status,
+      ...(check.status === "completed" ? { conclusion: check.conclusion } : {}),
       policyDigest: proof.policyDigest,
       planDigest: proof.planDigest,
       ...(proof.decisionDigest ? { decisionDigest: proof.decisionDigest } : {}),

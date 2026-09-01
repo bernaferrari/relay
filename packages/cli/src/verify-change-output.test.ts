@@ -68,7 +68,7 @@ const result: VerifyChangeResult = {
 test("verify-change human output renders the bounded typed policy projection", () => {
   const output = formatVerifyChangeResult(result);
 
-  assert.match(output ?? "", /^Verify change: review/mu);
+  assert.match(output ?? "", /^Proof analysis: review/mu);
   assert.match(output ?? "", /Affected Tests: 1 \(0 passed, 0 regressions, 1 review/u);
   assert.match(output ?? "", /Policy: relay\.verify-change@1 · ask-human/u);
   assert.match(output ?? "", /map-1\/test-1: review \(1 run\)/u);

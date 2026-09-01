@@ -23,6 +23,7 @@ const presenceViewport = z
 
 /** System, collaboration, project, build, and scheduling descriptors. */
 export const workspaceOperationSchemas = {
+  "system.audit.list": z.object({ limit: z.number().int().positive().optional() }).strict(),
   "system.health.get": empty,
   "event.stream": empty,
   "activity.list": z
@@ -33,7 +34,15 @@ export const workspaceOperationSchemas = {
     .strict(),
   "activity.export": empty,
   "workspace.privacy.get": empty,
+  "workspace.privacy.update": z.object({ enabled: z.boolean() }).strict(),
   "workspace.evidence.get": empty,
+  "workspace.evidence.update": z
+    .object({
+      channel: z.enum(["audio", "crash", "network-body", "browser-trace"]),
+      enabled: z.boolean(),
+      reason: z.string().optional(),
+    })
+    .strict(),
   "workspace.change.inspect": z
     .object({ baseRef: z.string().trim().min(1).max(512).optional() })
     .strict(),

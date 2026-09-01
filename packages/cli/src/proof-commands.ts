@@ -7,6 +7,74 @@ import {
 /** The durable Proof lifecycle exposed to agents and human operators. */
 export const proofCommandDescriptors: readonly MappedOperationDescriptor[] = [
   mapped(
+    "proof.setup.inspect",
+    path("proof setup inspect", [], undefined, {
+      summary: "Discover Proof build, artifact, Test, and target candidates",
+      inputHelp: [
+        {
+          name: "baseRef",
+          type: "git ref",
+          description: "Optional explicit comparison ref when the repository has no default",
+        },
+      ],
+      examples: ["relay proof setup inspect --json"],
+      note: "Discovery is advisory. Relay never turns a candidate command, artifact, Test, or target into reviewed policy.",
+    }),
+  ),
+  mapped(
+    "proof.setup.preview",
+    path("proof setup preview", [], undefined, {
+      summary: "Run an explicit local build and preview exact Proof policy",
+      inputHelp: [
+        {
+          name: "build",
+          type: "object",
+          required: true,
+          description:
+            "Explicit build id/name/platform, executable+args, repository-relative artifact, configuration, environment revision, and immutable deployment identity for web",
+        },
+        {
+          name: "associations",
+          type: "array",
+          required: true,
+          description: "Explicit reviewed Test-to-change signal associations",
+        },
+        {
+          name: "targetCases",
+          type: "array",
+          required: true,
+          description: "Explicit frozen required/advisory execution targets",
+        },
+      ],
+      examples: ["relay proof setup preview --input-file ./proof-setup.json --json"],
+      note: "Runs only the supplied executable and arguments. It hashes the resulting artifact and returns the complete .relay/change-proof.json preview without registering or writing anything.",
+    }),
+  ),
+  mapped(
+    "proof.setup.apply",
+    path("proof setup apply", [], undefined, {
+      summary: "Register and write a reviewed exact Proof setup preview",
+      inputHelp: [
+        {
+          name: "preview fields",
+          type: "object",
+          required: true,
+          description: "The unchanged top-level output from proof setup preview",
+        },
+        {
+          name: "confirm",
+          type: "true",
+          required: true,
+          description: "Explicit review confirmation; set by --confirm",
+        },
+      ],
+      examples: [
+        "relay proof setup apply --confirm --input-file ./reviewed-proof-setup-preview.json --json",
+      ],
+      note: "Fails if Git, artifact bytes, or existing policy changed after preview. On success it registers the exact ready build, atomically writes policy, and compiles the canonical Verification Plan.",
+    }),
+  ),
+  mapped(
     "proof.prepare",
     path("proof prepare", [], undefined, {
       summary: "Prepare a reviewable Proof from the current repository change",
@@ -222,6 +290,85 @@ export const proofCommandDescriptors: readonly MappedOperationDescriptor[] = [
     }),
   ),
   mapped(
+    "proof.run.confirm",
+    path("proof confirm-cell", ["proofId"], undefined, {
+      summary: "Issue a durable receipt for one Proof Cell",
+      argumentHelp: [{ name: "proofId", type: "string", description: "Proof identifier" }],
+      inputHelp: [
+        {
+          name: "expectedVersion",
+          type: "positive integer",
+          required: true,
+          description: "Current approved Proof version",
+        },
+        {
+          name: "cellId",
+          type: "string",
+          required: true,
+          description: "Exact guarded or destructive Verification Cell",
+        },
+        {
+          name: "previewDigest",
+          type: "sha256 digest",
+          required: true,
+          description: "Digest returned by proof.inspect executionPreview",
+        },
+        {
+          name: "fixtureScope",
+          type: "object",
+          description:
+            "Required for destructive cells: targetCaseId, targetProfileId, cleanupCheckIds",
+        },
+      ],
+      examples: [
+        'relay proof confirm-cell <proof-id> --confirm --input \'{"expectedVersion":2,"cellId":"…","previewDigest":"sha256:…"}\'',
+      ],
+      note: "Requires --confirm and a human actor. The server persists the exact preview, actor, scope, action, and expiry before returning the receipt.",
+    }),
+  ),
+  mapped(
+    "proof.run.human-evidence",
+    path("proof resume-human", ["proofId"], undefined, {
+      summary: "Record exact human-step evidence and resume a Proof",
+      argumentHelp: [{ name: "proofId", type: "string", description: "Proof identifier" }],
+      inputHelp: [
+        {
+          name: "executionId",
+          type: "string",
+          required: true,
+          description: "Exact paused execution identity from proof.inspect",
+        },
+        {
+          name: "cellId",
+          type: "string",
+          required: true,
+          description: "Exact paused Verification Cell identity",
+        },
+        {
+          name: "stepId",
+          type: "string",
+          required: true,
+          description: "Exact human-only step identity",
+        },
+        {
+          name: "evidenceDigest",
+          type: "sha256 digest",
+          required: true,
+          description: "Digest of the reviewed human-step evidence",
+        },
+        {
+          name: "wait",
+          type: "boolean",
+          description: "Wait for resumed execution to reach a terminal outcome",
+        },
+      ],
+      examples: [
+        'relay proof resume-human <proof-id> --confirm --input \'{"executionId":"proof-execution:…","cellId":"…","stepId":"…","evidenceDigest":"sha256:…"}\'',
+      ],
+      note: "Requires --confirm and a human actor. Every identity is checked against the durable paused execution before target control resumes.",
+    }),
+  ),
+  mapped(
     "proof.continue",
     path("proof continue", ["proofId"], undefined, {
       summary: "Continue a Proof with the next plan action",
@@ -280,7 +427,7 @@ export const proofCommandDescriptors: readonly MappedOperationDescriptor[] = [
       examples: [
         'relay proof continue <proof-id> --input \'{"expectedVersion":2,"action":"request-plan-review","reason":"A new affected journey needs review."}\'',
       ],
-      note: "Continue is CAS-bound to expectedVersion. revise-plan requires exact replacement builds and selection. Live execution normally uses relay verify-change --base; record-runs accepts only durable Run IDs and never a client verdict.",
+      note: "Continue is CAS-bound to expectedVersion. revise-plan requires exact replacement builds and selection. Live execution normally uses relay prove --base; record-runs accepts only durable Run IDs and never a client verdict.",
     }),
   ),
   mapped(

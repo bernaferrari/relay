@@ -101,7 +101,7 @@ export function formatVerifyChangeResult(value: unknown): string | undefined {
     const cells = plan.selection.cells ?? [];
     const gaps = plan.coverageGaps.map((gap) => `  - ${gap.code}: ${gap.reason}`);
     return [
-      `Verify change plan: ${plan.status}`,
+      `Change Proof plan: ${plan.status}`,
       `Change: ${git.baseRef} (${shortRevision(git.baseSha)}) → tested revision (${shortRevision(git.headSha)})`,
       `Changed files: ${git.changedFiles.length}`,
       ...(git.changedFiles.length ? git.changedFiles.map((path) => `  - ${path}`) : []),
@@ -144,7 +144,7 @@ export function formatVerifyChangeResult(value: unknown): string | undefined {
       ]
     : [];
   return [
-    `Verify change: ${summary.verdict}`,
+    `Proof analysis: ${summary.verdict}`,
     `Affected Tests: ${summary.affectedTests} (${summary.passed} passed, ${summary.regressions} regressions, ${summary.review} review, ${summary.insufficient} insufficient)`,
     `Evidence: ${evidenceCompleteness.status} (${evidenceCompleteness.complete} complete, ${evidenceCompleteness.partial} partial)`,
     `Policy: ${value.policy.id}@${value.policy.version} · ${value.decision} · ${value.execution}`,

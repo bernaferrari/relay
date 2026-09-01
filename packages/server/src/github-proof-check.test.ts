@@ -67,6 +67,62 @@ test("posts one exact-head GitHub check with action_required uncertainty", async
   });
 });
 
+test("publishes queued and in-progress updates without a premature conclusion", async () => {
+  const requests: Array<{ method: string; body: Record<string, unknown> }> = [];
+  const fetchImpl = async (_url: URL | RequestInfo, init?: RequestInit) => {
+    requests.push({
+      method: String(init?.method),
+      body: JSON.parse(String(init?.body)) as Record<string, unknown>,
+    });
+    return new Response(
+      JSON.stringify({ id: 42, head_sha: headSha, external_id: check.externalId }),
+      { status: init?.method === "POST" ? 201 : 200 },
+    );
+  };
+  const queued = {
+    ...check,
+    status: "queued",
+    conclusion: undefined,
+    classification: "queued",
+  } as const;
+  const published = await publishGitHubProofCheck({
+    check: queued,
+    config: { owner: "acme", repository: "settings", token: "token" },
+    fetchImpl,
+  });
+  await publishGitHubProofCheck({
+    check: { ...queued, status: "in_progress", classification: "in-progress" },
+    existing: published,
+    config: { owner: "acme", repository: "settings", token: "token" },
+    fetchImpl,
+  });
+
+  assert.deepEqual(
+    requests.map(({ method }) => method),
+    ["POST", "PATCH"],
+  );
+  assert.equal(requests[0]!.body.status, "queued");
+  assert.equal(requests[1]!.body.status, "in_progress");
+  assert.equal("conclusion" in requests[0]!.body, false);
+  assert.equal("conclusion" in requests[1]!.body, false);
+  assert.equal("head_sha" in requests[1]!.body, false);
+});
+
+test("rejects a conclusion on progress before provider network access", async () => {
+  let calls = 0;
+  await assert.rejects(
+    publishGitHubProofCheck({
+      check: { ...check, status: "queued", classification: "queued" },
+      config: { owner: "acme", repository: "settings", token: "token" },
+      fetchImpl: async () => {
+        calls += 1;
+        return new Response();
+      },
+    }),
+  );
+  assert.equal(calls, 0);
+});
+
 test("maps proved and rejected conclusions without changing the frozen head", async () => {
   const conclusions: string[] = [];
   for (const conclusion of ["success", "failure"] as const) {

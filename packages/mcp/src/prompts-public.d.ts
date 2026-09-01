@@ -6,7 +6,7 @@ export declare const relayMcpPromptNames: {
   readonly reviewTake: "relay_review_this_take";
   readonly planCombine: "relay_plan_this_combine";
   readonly authorGraphTest: "relay_author_this_graph_test";
-  readonly verifyChange: "relay_verify_this_change";
+  readonly verifyChange: "relay_prove_this_change";
 };
 
 export type RelayMcpPromptDescriptor = {

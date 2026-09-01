@@ -13,6 +13,7 @@ import {
   changeProofCaseResultFromPersistedRun,
   changeProofCellIdFromPersistedRun,
   changeProofRequiredRunCases,
+  frozenCellExecutionRisk,
 } from "./change-proof-live-run.js";
 import { readPersistedRun, type PersistedRun } from "./runs.js";
 import { readControlStore, withControlStore } from "./collaboration-store.js";
@@ -25,6 +26,7 @@ import {
   type ChangeProofCellExecutor,
   type ChangeProofExecutionCoordinatorOptions,
   type ChangeProofExecutionRecord,
+  type ChangeProofExecutionHumanEvidenceInput,
   type ChangeProofExecutionSubmitInput,
 } from "./change-proof-execution-types.js";
 import {
@@ -35,12 +37,22 @@ import {
   normalizeRecord,
   readExecution,
   requestDigest,
+  updateGuard,
+  write,
 } from "./change-proof-execution-store.js";
+import {
+  ChangeProofConfirmationError,
+  validateChangeProofExecutionConfirmations,
+  validateIssuedChangeProofExecutionConfirmations,
+  consumeIssuedChangeProofExecutionConfirmations,
+  humanOnlyInterventionForCell,
+} from "./change-proof-confirmation.js";
 import {
   reconcileClaimedRecord,
   runOne,
   type ChangeProofExecutionRunOptions,
 } from "./change-proof-execution-runner.js";
+import { publish } from "./events.js";
 
 export {
   CHANGE_PROOF_EXECUTION_SCHEMA_VERSION,
@@ -56,6 +68,9 @@ export type {
   ChangeProofExecutionLease,
   ChangeProofExecutionRecord,
   ChangeProofExecutionRequestAuthority,
+  ChangeProofExecutionHumanIntervention,
+  ChangeProofExecutionHumanInterventionEvidence,
+  ChangeProofExecutionHumanEvidenceInput,
   ChangeProofExecutionSubmitInput,
 } from "./change-proof-execution-types.js";
 
@@ -63,6 +78,7 @@ function nextAction(record: ChangeProofExecutionRecord): ChangeProofExecutionSum
   if (record.status === "completed") return "complete";
   if (record.status === "cancelled") return "cancelled";
   if (record.status === "uncertain") return "reconcile";
+  if (record.status === "paused-human") return "human-intervention";
   const current = record.cells[record.cursor];
   if (current?.status === "dispatching" || current?.status === "running") return "reconcile";
   return record.cursor === 0 ? "run-pilot" : "run-required-coverage";
@@ -85,8 +101,104 @@ export function summarizeChangeProofExecution(
     deadlineAt: record.deadlineAt,
     nextAction: nextAction(record),
     ...(record.cancellation ? { cancellation: record.cancellation } : {}),
+    ...(record.humanIntervention ? { humanIntervention: record.humanIntervention } : {}),
+    ...(record.humanInterventionEvidence?.length
+      ? { humanInterventionEvidence: record.humanInterventionEvidence }
+      : {}),
     ...(record.terminalUncertainty ? { terminalUncertainty: record.terminalUncertainty } : {}),
   });
+}
+
+async function recordHumanInterventionEvidence(
+  input: ChangeProofExecutionHumanEvidenceInput,
+): Promise<ChangeProofExecutionRecord> {
+  nonEmpty(input.requestId, "requestId");
+  nonEmpty(input.executionId, "executionId");
+  nonEmpty(input.proofId, "proofId");
+  nonEmpty(input.cellId, "cellId");
+  nonEmpty(input.stepId, "stepId");
+  nonEmpty(input.actorId, "actorId");
+  if (!/^sha256:[0-9a-f]{64}$/u.test(input.evidenceDigest)) {
+    throw new ChangeProofExecutionError(
+      "PROOF_EXECUTION_HUMAN_INTERVENTION",
+      "Human intervention evidence must be a canonical sha256 digest",
+    );
+  }
+  const existing = await readExecution(input, input.proofId);
+  if (!existing) {
+    throw new ChangeProofExecutionError(
+      "PROOF_EXECUTION_HUMAN_INTERVENTION",
+      "The Proof has no durable execution to resume",
+    );
+  }
+  if (existing.id !== input.executionId || existing.proofId !== input.proofId) {
+    throw new ChangeProofExecutionError(
+      "PROOF_EXECUTION_HUMAN_INTERVENTION",
+      "Human intervention evidence does not match the exact durable execution",
+    );
+  }
+  if (existing.status !== "paused-human" || !existing.humanIntervention) {
+    throw new ChangeProofExecutionError(
+      "PROOF_EXECUTION_HUMAN_INTERVENTION",
+      "The Proof is not paused at a resumable human-only step",
+    );
+  }
+  if (
+    existing.humanIntervention.cellId !== input.cellId ||
+    existing.humanIntervention.stepId !== input.stepId
+  ) {
+    throw new ChangeProofExecutionError(
+      "PROOF_EXECUTION_HUMAN_INTERVENTION",
+      "Human intervention evidence does not match the exact paused cell and step",
+    );
+  }
+  const at = input.at ?? Date.now();
+  if (!Number.isSafeInteger(at) || at < existing.createdAt) {
+    throw new ChangeProofExecutionError(
+      "PROOF_EXECUTION_HUMAN_INTERVENTION",
+      "Human intervention evidence timestamp is invalid",
+    );
+  }
+  const evidence = {
+    schemaVersion: 1 as const,
+    executionId: existing.id,
+    proofId: existing.proofId,
+    cellId: input.cellId,
+    stepId: input.stepId,
+    evidenceDigest: input.evidenceDigest,
+    recordedBy: input.actorId,
+    recordedAt: at,
+    requestId: input.requestId,
+  };
+  const prior = existing.humanInterventionEvidence?.find(
+    (item) => item.requestId === input.requestId,
+  );
+  if (prior) {
+    if (canonicalSha256(prior) !== canonicalSha256(evidence)) {
+      throw new ChangeProofExecutionError(
+        "PROOF_EXECUTION_HUMAN_INTERVENTION",
+        "Human intervention request id is already bound to another evidence intent",
+      );
+    }
+    throw new ChangeProofExecutionError(
+      "PROOF_EXECUTION_HUMAN_INTERVENTION",
+      "Human intervention evidence was already recorded",
+    );
+  }
+  return withControlStore((store) =>
+    write(
+      store,
+      normalizeRecord({
+        ...existing,
+        status: "queued",
+        humanIntervention: undefined,
+        humanInterventionEvidence: [...(existing.humanInterventionEvidence ?? []), evidence],
+        lease: undefined,
+        updatedAt: at,
+      }),
+      updateGuard(existing),
+    ),
+  );
 }
 
 async function ensureStarted(
@@ -110,19 +222,70 @@ async function ensureStarted(
       "PROOF_EXECUTION_NOT_READY",
       "Proof execution requires confirmed authority",
     );
+  const existing = await readExecution(input, proof.id);
+  let confirmationReceipts;
+  try {
+    // A resumed coordinator already owns the frozen preview. Reattaching
+    // without a second receipt is safe because no new target admission occurs;
+    // supplied receipts must still validate against that exact frozen proof.
+    confirmationReceipts =
+      existing && !input.confirmationReceipts?.length
+        ? []
+        : validateChangeProofExecutionConfirmations({
+            proof: existing?.frozenProof ?? proof,
+            receipts: input.confirmationReceipts,
+            actorId: input.actorId,
+            now: options.now(),
+          });
+  } catch (error) {
+    if (error instanceof ChangeProofConfirmationError) throw error;
+    throw new ChangeProofExecutionError(
+      "PROOF_EXECUTION_NOT_READY",
+      error instanceof Error ? error.message : "Proof confirmation could not be validated",
+    );
+  }
+  if (confirmationReceipts.length) {
+    // Schema and frozen-preview validation are not issuance provenance. Check
+    // the durable human-issued record even when this request merely reattaches
+    // an existing execution; otherwise a forged receipt could be accepted as
+    // an inert retry identity.
+    await validateIssuedChangeProofExecutionConfirmations(confirmationReceipts);
+  }
   const current = await readChangeVerification(
     { organizationId: input.organizationId, projectId: input.projectId },
     proof.id,
   );
   if (!current)
     throw new ChangeProofExecutionError("PROOF_EXECUTION_NOT_FOUND", "Proof was not found");
-  const existing = await readExecution(input, proof.id);
   if (existing) {
     if (existing.requestId === input.requestId && existing.requestDigest !== input.requestDigest) {
       throw new ChangeProofExecutionError(
         "PROOF_EXECUTION_CONFLICT",
         "Proof request id is already bound to another execution intent",
       );
+    }
+    const consumed = existing.confirmationReceipts ?? [];
+    if (confirmationReceipts.length) {
+      const consumedIds = new Set(consumed.map((receipt) => receipt.receiptId));
+      const mismatch = confirmationReceipts.find((receipt) => consumedIds.has(receipt.receiptId));
+      if (
+        mismatch &&
+        !(
+          existing.requestId === input.requestId &&
+          existing.requestDigest === input.requestDigest &&
+          consumed.some(
+            (receipt) =>
+              receipt.receiptId === mismatch.receiptId &&
+              receipt.previewDigest === mismatch.previewDigest &&
+              receipt.actorId === mismatch.actorId,
+          )
+        )
+      ) {
+        throw new ChangeProofConfirmationError(
+          "PROOF_CONFIRMATION_REPLAYED",
+          `Confirmation receipt ${mismatch.receiptId} was already consumed`,
+        );
+      }
     }
     return existing;
   }
@@ -190,6 +353,17 @@ async function ensureStarted(
       : { cell, status: "pending" as const, updatedAt: at };
   });
   const nextPending = cells.findIndex((cell) => cell.status === "pending");
+  const humanCell =
+    nextPending < 0
+      ? undefined
+      : (() => {
+          const candidate = cases[nextPending];
+          const frozen = current.selection.cells?.find((cell) => cell.id === candidate?.cellId);
+          if (!frozen || frozenCellExecutionRisk(frozen).confirmation !== "human-only") {
+            return undefined;
+          }
+          return candidate;
+        })();
   const id = executionId(input, current.id);
   const base: ChangeProofExecutionRecord = {
     schemaVersion: CHANGE_PROOF_EXECUTION_SCHEMA_VERSION,
@@ -203,6 +377,14 @@ async function ensureStarted(
     actorId: input.actorId,
     authority: "confirmed",
     ...(input.requestAuthority ? { requestAuthority: clone(input.requestAuthority) } : {}),
+    ...(confirmationReceipts.length
+      ? {
+          confirmationReceipts: confirmationReceipts.map((receipt) => ({
+            ...clone(receipt),
+            consumedAt: at,
+          })),
+        }
+      : {}),
     ...((input.publication ?? options.publication)
       ? { publication: input.publication ?? options.publication }
       : {}),
@@ -211,7 +393,16 @@ async function ensureStarted(
     cursor: nextPending < 0 ? cases.length : nextPending,
     total: cases.length,
     deadlineAt: at + options.maxDurationMs,
-    status: "queued",
+    status: humanCell ? "paused-human" : "queued",
+    ...(humanCell
+      ? {
+          humanIntervention: humanOnlyInterventionForCell({
+            proof: current,
+            cellId: humanCell.cellId,
+            at,
+          }),
+        }
+      : {}),
     runIds: [...current.runIds],
     createdAt: at,
     updatedAt: at,
@@ -257,12 +448,26 @@ async function ensureStarted(
       current.id,
     );
     if (existingRecord) return normalizeRecord(existingRecord);
+    if (confirmationReceipts.length) {
+      consumeIssuedChangeProofExecutionConfirmations(store, confirmationReceipts, base.createdAt);
+    }
     if (!store.insertChangeProofExecution(base)) {
       throw new ChangeProofExecutionError(
         "PROOF_EXECUTION_CONFLICT",
         "Execution admission raced another coordinator",
       );
     }
+    publish(
+      {
+        type: "proof.execution.changed",
+        at: base.updatedAt,
+        proofId: base.proofId,
+        executionId: base.id,
+        cursor: base.cursor,
+        status: base.status,
+      },
+      base,
+    );
     return clone(base);
   });
 }
@@ -301,6 +506,9 @@ export function createChangeProofExecutionCoordinator(
     async read(scope, proofId) {
       return readExecution(scope, proofId);
     },
+    async recordHumanInterventionEvidence(input) {
+      return recordHumanInterventionEvidence(input);
+    },
     async cancel(input) {
       const existing = await readExecution(input, input.proofId);
       if (!existing) return undefined;
@@ -331,6 +539,17 @@ export function createChangeProofExecutionCoordinator(
             "Change Proof execution disappeared during update",
           );
         }
+        publish(
+          {
+            type: "proof.execution.changed",
+            at: normalized.updatedAt,
+            proofId: normalized.proofId,
+            executionId: normalized.id,
+            cursor: normalized.cursor,
+            status: normalized.status,
+          },
+          normalized,
+        );
         return clone(normalized);
       });
       const dispatch = activeDispatches.get(existing.id);
@@ -467,7 +686,9 @@ export function createChangeProofExecutionCoordinator(
           admitted.publication ?? configured.publication,
         );
       }
-      if (["completed", "cancelled", "uncertain"].includes(admitted.status)) return admitted;
+      if (["completed", "cancelled", "uncertain", "paused-human"].includes(admitted.status)) {
+        return admitted;
+      }
       if (active.has(admitted.id)) return admitted;
       active.add(admitted.id);
       try {
@@ -496,6 +717,9 @@ export type ChangeProofExecutionCoordinator = {
     scope: ChangeVerificationScope,
     proofId: string,
   ): Promise<ChangeProofExecutionRecord | undefined>;
+  recordHumanInterventionEvidence(
+    input: ChangeProofExecutionHumanEvidenceInput,
+  ): Promise<ChangeProofExecutionRecord>;
   cancel(
     input: ChangeVerificationScope & {
       proofId: string;

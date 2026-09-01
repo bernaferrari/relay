@@ -257,7 +257,7 @@ function firstPositional(argv: readonly string[]): string | undefined {
 }
 
 function outcomeOperationId(kind: string): string {
-  return `outcome.${kind}`;
+  return kind === "proof-analyze" ? "outcome.proof-analyze" : `outcome.${kind}`;
 }
 
 function assertOutcomeSucceeded(snapshot: WorkflowSnapshot): void {
@@ -373,7 +373,9 @@ async function runOutcomeCommand(input: {
       tracePacks: await readReplayLabTracePacks(intent.paths),
     });
   }
-  if (intent.kind === "verify-change") return jobs.verifyChange(intent);
+  if (intent.kind === "verify-change" || intent.kind === "proof-analyze") {
+    return jobs.verifyChange({ ...intent, kind: "verify-change" });
+  }
   const started =
     intent.kind === "record-test"
       ? await jobs.record(intent)
@@ -499,7 +501,7 @@ export async function runCli(
         ? parsed.operationId
         : parsed.command === "resource"
           ? parsed.resourceId
-          : parsed.command === "verify-change"
+          : parsed.command === "verify-change" || parsed.command === "prove"
             ? "proof.start"
             : outcomeOperationId(parsed.intent.kind);
     const commandPath = "commandPath" in parsed ? parsed.commandPath : undefined;
@@ -513,7 +515,7 @@ export async function runCli(
       if (parsed.command === "invoke") validateOperationId(operationId);
       if (
         ((parsed.command === "outcome" && parsed.intent.kind !== "replay-lab") ||
-          (parsed.command === "verify-change" && parsed.confirm)) &&
+          ((parsed.command === "verify-change" || parsed.command === "prove") && parsed.confirm)) &&
         parsed.config.ensureLocalServer
       ) {
         output.heartbeat("Ensuring the local Relay server is ready");
@@ -522,7 +524,12 @@ export async function runCli(
         );
       }
       const client = (dependencies.createClient ?? createClient)(parsed.config);
-      if (parsed.command === "verify-change") {
+      if (parsed.command === "verify-change" || parsed.command === "prove") {
+        if (parsed.command === "verify-change" && !parsed.config.quiet) {
+          output.deprecation(
+            "relay verify-change --base is deprecated; use relay prove --base instead.",
+          );
+        }
         const result = await runVerifyChangeCommand({
           base: parsed.base,
           configFile: parsed.configFile,
@@ -540,6 +547,11 @@ export async function runCli(
         });
         output.result(operationId, result);
       } else if (parsed.command === "outcome") {
+        if (firstPositional(argv) === "verify-change") {
+          output.deprecation(
+            "relay verify-change is deprecated; use relay proof analyze for offline analysis or relay prove for live Change Proofs.",
+          );
+        }
         output.progress(operationId, "invoking");
         const result = await runOutcomeCommand({
           parsed,

@@ -1,15 +1,17 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { copyFile, lstat, mkdir, readFile } from "node:fs/promises";
+import { copyFile, lstat, mkdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { isDeepStrictEqual } from "node:util";
 import { fileURLToPath } from "node:url";
+import { attachedAndroidSerials } from "./change-proof-golden-live-device-list.mjs";
 
 const execFileAsync = promisify(execFile);
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const MAX_COMMAND_OUTPUT_BYTES = 64 * 1024;
 const MAX_TRACE_PACK_BYTES = 16 * 1024 * 1024;
+const MAX_RUN_BYTES = 16 * 1024 * 1024;
 const SHA = /^[0-9a-f]{40}$/u;
 const PROOF_DIGEST = /^sha256:[0-9a-f]{64}$/u;
 const TSX_CLI = join(ROOT, "node_modules/tsx/dist/cli.mjs");
@@ -61,15 +63,19 @@ async function regularFile(path, label, maxBytes) {
   }
 }
 
-function attachedAndroidSerials(output) {
-  return String(output)
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line && !line.startsWith("List of devices attached"))
-    .map((line) => line.split(/\s+/u))
-    .filter((fields) => fields.length >= 2)
-    .map(([serial, status]) => ({ serial, status }))
-    .filter(({ serial }) => Boolean(serial));
+async function jsonFile(path, label, maxBytes) {
+  const file = await regularFile(path, label, maxBytes);
+  if (!file.ok) return file;
+  try {
+    return { ...file, value: JSON.parse(await readFile(file.path, "utf8")) };
+  } catch (error) {
+    return {
+      ok: false,
+      path: file.path,
+      size: file.size,
+      error: `${label} is not valid JSON: ${bounded(error?.message ?? error)}`,
+    };
+  }
 }
 
 export async function inspectAndroidPrerequisites({
@@ -262,6 +268,10 @@ async function canonicalTracePackProjection(path) {
       run: {
         id: run.id,
         projectId: run.projectId ?? null,
+        inputDigest: run.inputDigest ?? null,
+        platform: run.platform ?? run.targetProfile?.platform ?? null,
+        outcome: run.outcome ?? null,
+        status: run.status ?? null,
         sourceRevision: run.sourceRevision ?? null,
         targetProfile: run.targetProfile ?? null,
         executionTarget: run.executionTarget ?? null,
@@ -284,6 +294,119 @@ async function canonicalTracePackProjection(path) {
 
 function sameValue(left, right) {
   return isDeepStrictEqual(left, right);
+}
+
+function appMapTestIdentity(run) {
+  const plans = Array.isArray(run?.artifacts)
+    ? run.artifacts.filter(
+        (artifact) =>
+          (artifact?.kind === "app-map-test-plan" || artifact?.kind === "app-map-flow-plan") &&
+          artifact.data &&
+          typeof artifact.data === "object" &&
+          !Array.isArray(artifact.data),
+      )
+    : [];
+  const plan = plans[0]?.data;
+  return {
+    appMapId: typeof plan?.appMapId === "string" ? plan.appMapId : null,
+    testId:
+      plan?.test && typeof plan.test === "object" && typeof plan.test.id === "string"
+        ? plan.test.id
+        : null,
+  };
+}
+
+/** Validate and retain a supplied persisted Android Run before it is exported.
+ * The run remains evidence input; it is never treated as a newly executed Run. */
+export async function inspectPersistedRun(path, artifactDir, phase, expected = {}) {
+  const file = await jsonFile(path, `RELAY_GOLDEN_${phase.toUpperCase()}_RUN`, MAX_RUN_BYTES);
+  if (!file.ok) return { status: "missing", error: file.error };
+  const run = file.value;
+  if (!run || typeof run !== "object" || Array.isArray(run)) {
+    return { status: "invalid", error: "Persisted Android Run must be a JSON object" };
+  }
+  const identity = appMapTestIdentity(run);
+  const mismatches = [];
+  if (expected.runId && run.id !== expected.runId) mismatches.push("run identity");
+  if (expected.sourceSha && run.sourceRevision?.sha !== expected.sourceSha)
+    mismatches.push("source SHA");
+  if (expected.artifactDigest && run.sourceRevision?.artifactDigest !== expected.artifactDigest)
+    mismatches.push("build artifact digest");
+  if (run.platform !== undefined && run.platform !== "android") mismatches.push("platform");
+  if (run.targetProfile?.platform !== "android") mismatches.push("Android target profile");
+  if (expected.appMapId && identity.appMapId !== expected.appMapId)
+    mismatches.push("App Map identity");
+  if (expected.testId && identity.testId !== expected.testId) mismatches.push("Test identity");
+  if (expected.targetProfile && !sameValue(run.targetProfile, expected.targetProfile))
+    mismatches.push("target profile");
+  if (expected.executionTarget && !sameValue(run.executionTarget, expected.executionTarget))
+    mismatches.push("execution target");
+  if (mismatches.length) {
+    return {
+      status: "identity-mismatch",
+      error: `Persisted Run does not match declared ${phase} ${mismatches.join(", ")}`,
+      run,
+    };
+  }
+  await mkdir(join(artifactDir, "runs"), { recursive: true });
+  const retainedPath = join(artifactDir, "runs", `${phase}-${basename(file.path)}`);
+  await copyFile(file.path, retainedPath);
+  const bytes = await readFile(file.path);
+  return {
+    status: "verified",
+    path: retainedPath,
+    sourcePath: file.path,
+    bytes: bytes.length,
+    digest: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
+    run,
+  };
+}
+
+async function exportRunToTracePack(runPath, outputPath) {
+  const exporter = String.raw`
+    import { readFile, writeFile } from "node:fs/promises";
+    import { exportTracePack } from "./packages/core/src/trace-pack.ts";
+    (async () => {
+      const run = JSON.parse(await readFile(process.env.RELAY_GOLDEN_RUN_FILE, "utf8"));
+      const pack = await exportTracePack(run);
+      await writeFile(process.env.RELAY_GOLDEN_TRACE_PACK_FILE, JSON.stringify(pack));
+    })().catch((error) => { console.error(error); process.exitCode = 1; });
+  `;
+  await execFileAsync(process.execPath, [TSX_CLI, "--eval", exporter], {
+    cwd: ROOT,
+    env: {
+      ...process.env,
+      RELAY_GOLDEN_RUN_FILE: runPath,
+      RELAY_GOLDEN_TRACE_PACK_FILE: outputPath,
+    },
+    encoding: "utf8",
+    timeout: 30_000,
+    maxBuffer: MAX_COMMAND_OUTPUT_BYTES,
+  });
+}
+
+/** Export a supplied persisted Run through Relay's canonical TracePack writer.
+ * This is the import path for retained evidence when no pack was saved yet. */
+export async function exportTracePackFromRun(path, artifactDir, phase, expected = {}) {
+  const run = await inspectPersistedRun(path, artifactDir, phase, expected);
+  if (run.status !== "verified") return { ...run, tracePack: null };
+  await mkdir(join(artifactDir, "tracepacks"), { recursive: true });
+  const generatedPath = join(
+    artifactDir,
+    "tracepacks",
+    `${phase}-${basename(run.sourcePath, ".json")}.export.json`,
+  );
+  try {
+    await exportRunToTracePack(run.sourcePath, generatedPath);
+  } catch (error) {
+    return {
+      status: "invalid",
+      sourceRun: run,
+      error: `Run TracePack export failed: ${bounded(error?.stderr || error?.message || error)}`,
+    };
+  }
+  const tracePack = await inspectTracePack(generatedPath, artifactDir, phase, expected);
+  return { ...tracePack, sourceRun: run };
 }
 
 export async function inspectTracePack(path, artifactDir, phase, expected) {
@@ -394,6 +517,14 @@ export async function inspectExactProofInputs({ env = process.env, artifactDir }
       `RELAY_GOLDEN_${phase.toUpperCase()}_EXECUTION_TARGET`,
     ),
   });
+  const runPathFor = (phase) => {
+    const upper = phase.toUpperCase();
+    return (
+      env[`RELAY_GOLDEN_${upper}_RUN_PATH`]?.trim() ||
+      env[`RELAY_GOLDEN_${upper}_RUN_FILE`]?.trim() ||
+      null
+    );
+  };
   for (const phase of ["old", "repaired"]) {
     const upper = phase.toUpperCase();
     if (!env[`RELAY_GOLDEN_${upper}_RUN_ID`]?.trim())
@@ -415,18 +546,42 @@ export async function inspectExactProofInputs({ env = process.env, artifactDir }
         ),
       );
   }
-  const oldTracePack = await inspectTracePack(
-    env.RELAY_GOLDEN_OLD_TRACEPACK?.trim(),
-    artifactDir,
-    "old",
-    expectedFor("old", oldSha),
-  );
-  const repairedTracePack = await inspectTracePack(
-    env.RELAY_GOLDEN_REPAIRED_TRACEPACK?.trim(),
-    artifactDir,
-    "repaired",
-    expectedFor("repaired", repairedSha),
-  );
+  const phaseInputs = {};
+  for (const [phase, sourceSha] of [
+    ["old", oldSha],
+    ["repaired", repairedSha],
+  ]) {
+    const upper = phase.toUpperCase();
+    const expected = expectedFor(phase, sourceSha);
+    const runPath = runPathFor(phase);
+    const suppliedRun = runPath
+      ? await inspectPersistedRun(runPath, artifactDir, phase, expected)
+      : null;
+    const tracePackPath = env[`RELAY_GOLDEN_${upper}_TRACEPACK`]?.trim();
+    let tracePack;
+    if (tracePackPath) {
+      tracePack = await inspectTracePack(tracePackPath, artifactDir, phase, expected);
+    } else if (runPath) {
+      tracePack = await exportTracePackFromRun(runPath, artifactDir, phase, expected);
+    } else {
+      tracePack = await inspectTracePack(undefined, artifactDir, phase, expected);
+    }
+    if (
+      suppliedRun?.status === "verified" &&
+      tracePack.status === "verified" &&
+      (suppliedRun.run.id !== tracePack.projection.run.id ||
+        suppliedRun.run.inputDigest !== tracePack.projection.run.inputDigest)
+    ) {
+      tracePack = {
+        ...tracePack,
+        status: "identity-mismatch",
+        error: `Persisted ${phase} Run does not match its TracePack frozen run identity`,
+      };
+    }
+    phaseInputs[phase] = { run: suppliedRun, tracePack };
+  }
+  const oldTracePack = phaseInputs.old.tracePack;
+  const repairedTracePack = phaseInputs.repaired.tracePack;
   for (const [phase, tracePack] of [
     ["old", oldTracePack],
     ["repaired", repairedTracePack],
@@ -439,13 +594,55 @@ export async function inspectExactProofInputs({ env = process.env, artifactDir }
         ),
       );
   }
+  const retained = {
+    schemaVersion: 1,
+    kind: "change-proof-golden-inputs",
+    exactHeads: { base: baseSha, old: oldSha, repaired: repairedSha },
+    journey: { appMapId, testId },
+    phases: Object.fromEntries(
+      ["old", "repaired"].map((phase) => {
+        const input = phaseInputs[phase];
+        const run = input.run;
+        const tracePack = input.tracePack;
+        return [
+          phase,
+          {
+            run:
+              run?.status === "verified"
+                ? {
+                    path: run.path ? `runs/${basename(run.path)}` : null,
+                    digest: run.digest,
+                    runId: run.run.id,
+                  }
+                : { status: run?.status ?? "not-supplied", error: run?.error ?? null },
+            tracePack:
+              tracePack?.status === "verified"
+                ? {
+                    path: tracePack.path ? `tracepacks/${basename(tracePack.path)}` : null,
+                    digest: tracePack.digest,
+                    canonicalDigest: tracePack.canonicalDigest,
+                    runId: tracePack.projection.run.id,
+                  }
+                : { status: tracePack?.status ?? "not-supplied", error: tracePack?.error ?? null },
+          },
+        ];
+      }),
+    ),
+  };
+  await writeFile(
+    join(artifactDir, "golden-inputs.json"),
+    `${JSON.stringify(retained, null, 2)}\n`,
+  );
   return {
     status: blockers.length === 0 ? "ready" : "unsupported",
     baseSha,
     oldSha,
     repairedSha,
+    oldRun: phaseInputs.old.run,
+    repairedRun: phaseInputs.repaired.run,
     oldTracePack,
     repairedTracePack,
+    retained,
     blockers,
   };
 }

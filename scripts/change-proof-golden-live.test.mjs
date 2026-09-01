@@ -7,8 +7,10 @@ import test from "node:test";
 import { promisify } from "node:util";
 import {
   CHANGE_PROOF_GOLDEN_LIVE,
+  exportTracePackFromRun,
   inspectAndroidPrerequisites,
   inspectManagedBrowserTargets,
+  inspectPersistedRun,
   inspectTracePack,
   parseGoldenLiveArgs,
   runChangeProofGoldenLive,
@@ -95,12 +97,17 @@ async function writeCanonicalTracePack(path, overrides = {}) {
       events: [],
     },
   };
-  const script = `import { writeFile } from "node:fs/promises"; import { exportTracePack } from "./packages/core/src/trace-pack.ts"; (async()=>{const run=JSON.parse(process.env.RUN); await writeFile(process.env.OUT, JSON.stringify(await exportTracePack(run)));})().catch(error=>{console.error(error);process.exitCode=1});`;
+  const script = `import { writeFile } from "node:fs/promises"; import { exportTracePack } from "./packages/core/src/trace-pack.ts"; (async()=>{const run=JSON.parse(process.env.RUN); const pack=await exportTracePack(run); await writeFile(process.env.OUT, JSON.stringify(pack)); if (process.env.RUN_OUT) await writeFile(process.env.RUN_OUT, JSON.stringify(pack.objects.find((object)=>object.kind === "frozen-run").content));})().catch(error=>{console.error(error);process.exitCode=1});`;
   await execFileAsync(process.execPath, ["node_modules/tsx/dist/cli.mjs", "--eval", script], {
     cwd: new URL("..", import.meta.url),
-    env: { ...process.env, RUN: JSON.stringify(run), OUT: path },
+    env: {
+      ...process.env,
+      RUN: JSON.stringify(run),
+      OUT: path,
+      ...(overrides.runPath ? { RUN_OUT: overrides.runPath } : {}),
+    },
   });
-  return { sourceSha, artifactDigest, runId, targetProfile };
+  return { sourceSha, artifactDigest, runId, targetProfile, runPath: overrides.runPath ?? null };
 }
 
 test("golden live arguments require explicit web execution", () => {
@@ -209,6 +216,33 @@ test("canonical TracePack verification binds every declared frozen identity", as
     const oversized = await inspectTracePack(oversizedPath, root, "old", expected);
     assert.equal(oversized.status, "missing");
     assert.match(oversized.error, /exceeds/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("persisted Android Runs import through the canonical TracePack exporter", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-change-proof-run-import-"));
+  try {
+    const tracePackPath = join(root, "source-pack.json");
+    const runPath = join(root, "android-run.json");
+    const identity = await writeCanonicalTracePack(tracePackPath, { runPath });
+    const expected = {
+      ...identity,
+      appMapId: "settings",
+      testId: "settings-language-arabic",
+    };
+    const inspected = await inspectPersistedRun(runPath, root, "repaired", expected);
+    assert.equal(inspected.status, "verified", JSON.stringify(inspected));
+    assert.equal(inspected.run.id, identity.runId);
+
+    const imported = await exportTracePackFromRun(runPath, root, "repaired", expected);
+    assert.equal(imported.status, "verified", JSON.stringify(imported));
+    assert.equal(imported.sourceRun.status, "verified");
+    assert.equal(imported.projection.run.id, identity.runId);
+    assert.equal(imported.projection.run.sourceRevision.sha, identity.sourceSha);
+    assert.ok(imported.path);
+    assert.ok(imported.sourceRun.path);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -439,7 +473,85 @@ test("apparently ready Android and exact-head inputs still cannot produce a fals
     assert.equal(report.exactProofInputs.repairedTracePack.status, "invalid");
     assert.equal(report.status, "insufficient-evidence");
     assert.equal(report.finalProof.status, "not-claimed");
-    assert.ok(report.unsupported.some(({ id }) => id === "android.execution.not-run"));
+    assert.ok(report.unsupported.some(({ id }) => id === "android.execution.old.invalid"));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("live harness consumes retained Android Run inputs and can prove the cross-platform journey", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-change-proof-golden-consume-run-"));
+  const apk = join(root, "settings-fixture.apk");
+  const oldRunPath = join(root, "android-old-run.json");
+  const repairedRunPath = join(root, "android-repaired-run.json");
+  await writeFile(apk, "fixture-apk");
+  const oldSha = "a".repeat(40);
+  const repairedSha = "b".repeat(40);
+  const oldDigest = `sha256:${"c".repeat(64)}`;
+  const repairedDigest = `sha256:${"d".repeat(64)}`;
+  const old = await writeCanonicalTracePack(join(root, "old-source-pack.json"), {
+    sourceSha: oldSha,
+    artifactDigest: oldDigest,
+    runId: "android-old-run",
+    runPath: oldRunPath,
+  });
+  const repaired = await writeCanonicalTracePack(join(root, "repaired-source-pack.json"), {
+    sourceSha: repairedSha,
+    artifactDigest: repairedDigest,
+    runId: "android-repaired-run",
+    runPath: repairedRunPath,
+  });
+  const env = {
+    RELAY_GOLDEN_ANDROID_SERIAL: "emulator-5554",
+    RELAY_GOLDEN_ANDROID_APP_PATH: apk,
+    RELAY_GOLDEN_ANDROID_APP_ID: "com.example.settings",
+    RELAY_GOLDEN_ANDROID_APP_MAP_ID: "settings",
+    RELAY_GOLDEN_ANDROID_TEST_ID: "settings-language-arabic",
+    RELAY_GOLDEN_BASE_HEAD: "0".repeat(40),
+    RELAY_GOLDEN_OLD_HEAD: oldSha,
+    RELAY_GOLDEN_REPAIRED_HEAD: repairedSha,
+    RELAY_GOLDEN_OLD_RUN_ID: old.runId,
+    RELAY_GOLDEN_REPAIRED_RUN_ID: repaired.runId,
+    RELAY_GOLDEN_OLD_BUILD_DIGEST: oldDigest,
+    RELAY_GOLDEN_REPAIRED_BUILD_DIGEST: repairedDigest,
+    RELAY_GOLDEN_OLD_TARGET_PROFILE: JSON.stringify(old.targetProfile),
+    RELAY_GOLDEN_REPAIRED_TARGET_PROFILE: JSON.stringify(repaired.targetProfile),
+    RELAY_GOLDEN_OLD_RUN_PATH: oldRunPath,
+    RELAY_GOLDEN_REPAIRED_RUN_PATH: repairedRunPath,
+  };
+  try {
+    const report = await runChangeProofGoldenLive({
+      runWeb: true,
+      artifactDir: root,
+      env,
+      fetchImpl: async () =>
+        new Response(JSON.stringify({ ok: true, product: "relay", version: "test" }), {
+          status: 200,
+        }),
+      invoke: fakeBrowserInvoker(),
+      command: async (name, args) => {
+        if (name === "adb" && args?.[0] === "devices")
+          return {
+            code: 0,
+            stdout: "List of devices attached\nemulator-5554 device\n",
+            stderr: "",
+          };
+        if (name === "adb")
+          return { code: 0, stdout: "package:/data/app/settings.apk\n", stderr: "" };
+        return { code: 0, stdout: "golden-avd\n", stderr: "" };
+      },
+    });
+    assert.equal(report.status, "proved");
+    assert.equal(report.androidExecution.status, "verified");
+    assert.equal(report.androidExecution.old.status, "verified");
+    assert.equal(report.androidExecution.repaired.status, "verified");
+    assert.equal(report.exactProofInputs.oldTracePack.status, "verified");
+    assert.equal(report.exactProofInputs.repairedTracePack.status, "verified");
+    assert.equal(report.finalProof.status, "proved");
+    const retained = JSON.parse(await readFile(join(root, "golden-inputs.json"), "utf8"));
+    assert.equal(retained.kind, "change-proof-golden-inputs");
+    assert.equal(retained.phases.old.run.runId, old.runId);
+    assert.equal(retained.phases.repaired.tracePack.runId, repaired.runId);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

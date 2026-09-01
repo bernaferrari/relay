@@ -245,10 +245,25 @@ async function main() {
     );
     assert.doesNotMatch(doctor.stdout, /RELAY_AUTH_TOKEN|bridge-secret|Bearer\s+[^\s}]+/giu);
 
+    const npxDoctor = await runAsync(
+      "npx",
+      ["--no-install", "--package", "@relay/mcp", "relay-proof-doctor", "--json"],
+      { cwd: installRoot, env },
+    );
+    assert.equal(JSON.parse(npxDoctor.stdout).ok, true);
+
     const responses = await readMcpResponses(join(bin, "relay-mcp"), ["--profile", "proof"], env);
     const tools = responses.find((response) => response.id === 2)?.result?.tools;
     assert.ok(Array.isArray(tools));
     assert.ok(tools.some((tool) => tool.name === "relay_proof_start"));
+    const outcomeResponses = await readMcpResponses(join(bin, "relay-mcp"), [], {
+      ...env,
+      RELAY_MCP_PROFILE: "outcome",
+    });
+    const outcomeTools = outcomeResponses.find((response) => response.id === 2)?.result?.tools;
+    assert.ok(Array.isArray(outcomeTools));
+    assert.ok(outcomeTools.some((tool) => tool.name === "relay_prove_change"));
+    assert.ok(outcomeTools.some((tool) => tool.name === "relay_proof_analyze"));
 
     const bridgePort = await freePort();
     const bridge = spawn(join(bin, "relay-mcp-bridge"), [], {

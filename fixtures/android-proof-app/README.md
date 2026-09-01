@@ -24,9 +24,10 @@ fixture-only test key. It must never be reused for a production application.
 The deterministic journey is:
 
 1. Launch the app with a clean activity.
-2. Select **Reset fixture**.
-3. Select **Prove interaction**.
-4. Verify that **Checkpoint passed** is visible and capture evidence.
+2. Select **Language** from **Settings**.
+3. Select **Arabic** from the language list.
+4. Verify that the Arabic **Settings** heading and primary action are visible,
+   then capture the RTL checkpoint evidence.
 
 The artifact manifest records both the raw APK SHA-256 and Relay's canonical
 Proof artifact digest (`sha256(file\0 + bytes)`).

@@ -31,6 +31,8 @@ export {
   type PublishedProofCheck,
 } from "./github-proof-check.js";
 export { publishChangeProofToGitHub } from "./change-proof-github-publisher.js";
+export * from "./github-proof-intake.js";
+import { githubProofWebhookConfigurationFromEnvironment as githubWebhookFromEnv } from "./github-proof-intake.js";
 import {
   captureScreenshot,
   currentOperationContext,
@@ -81,7 +83,7 @@ import { createFailClosedServerShutdown } from "./server-shutdown.js";
 import { createTargetRuntimeScope } from "./target-runtime-scope.js";
 import { shutdownServerSessions } from "./server-session-shutdown.js";
 import { handleRunRoute, type RunRouteRuntime } from "./run-routes.js";
-import { handlePublicRunShareRoute } from "./run-share-routes.js";
+import { createPreAuthenticatedRoute } from "./pre-authenticated-routes.js";
 import { handleJobRoute, type JobRouteRuntime } from "./job-routes.js";
 import { assertTargetControl } from "./access-control.js";
 import {
@@ -156,6 +158,7 @@ async function handleRequest(
   stepRunRuntime?: Partial<StepRunRouteRuntime>,
   campaignDurationRuntime?: CampaignDurationRouteRuntime,
   proofRouteRuntime?: Partial<ChangeVerificationRouteRuntime>,
+  preAuthenticatedRoute = createPreAuthenticatedRoute(),
 ): Promise<void> {
   const method = req.method ?? "GET";
   const host = req.headers.host ?? "localhost";
@@ -180,10 +183,7 @@ async function handleRequest(
     return;
   }
 
-  // Signed report URLs are bearer capabilities with their own expiry and
-  // revocation checks. They deliberately bypass the workspace bearer token,
-  // but expose only the redacted public projection handled by this route.
-  if (await handlePublicRunShareRoute({ method, pathname, response: res })) return;
+  if (await preAuthenticatedRoute({ method, pathname, request: req, response: res })) return;
 
   const authentication = await authenticateRequest(req.headers.authorization, {
     token,
@@ -736,6 +736,8 @@ async function startServerWithStateLease(
   // request runs under this explicit registry; core captures it at admission
   // so a queued job cannot later resolve a provider against ambient defaults.
   const targetDriverRegistry = opts.targetDriverRegistry ?? defaultTargetDriverRegistry;
+  const githubProofWebhook = opts.githubProofWebhook ?? githubWebhookFromEnv();
+  const preAuthenticatedRoute = createPreAuthenticatedRoute(githubProofWebhook);
   const proofPublicationWorker = createProofPublicationWorker(opts.proofRouteRuntime);
   const proofCoordinator = proofExecutionCoordinator(opts.proofRouteRuntime);
   const redaction = await loadRedactionPolicy();
@@ -819,6 +821,7 @@ async function startServerWithStateLease(
             opts.stepRunRuntime,
             opts.campaignDurationRuntime,
             opts.proofRouteRuntime,
+            preAuthenticatedRoute,
           ),
         ),
       )

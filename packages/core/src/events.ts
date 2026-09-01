@@ -5,6 +5,7 @@ import type {
   RelayEventPayload,
   ResourceEvent,
   StreamGapPayload,
+  ProofExecutionChangedPayload,
   WorkflowChangedPayload,
 } from "@relay/protocol";
 import { currentOperationContext, type OperationContext } from "./operation-context.js";
@@ -17,6 +18,7 @@ import { currentOperationContext, type OperationContext } from "./operation-cont
 export type DeviceEventPayload =
   | ResourceEvent
   | StreamGapPayload
+  | ProofExecutionChangedPayload
   | WorkflowChangedPayload
   | { type: "server.ready"; at: number; host: string; port: number }
   | { type: "device.list"; at: number; count: number }

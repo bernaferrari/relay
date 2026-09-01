@@ -1,6 +1,5 @@
 import {
   providerCheckForStoredChangeProof,
-  canonicalSha256,
   readChangeProofPublications,
   readChangeVerification,
   readChangeVerificationHistory,
@@ -23,7 +22,7 @@ function exactRepository(config: GitHubProofCheckConfig): string {
   return `${config.owner.trim()}/${config.repository.trim()}`;
 }
 
-/** Publish the stored terminal Proof through the configured GitHub boundary,
+/** Publish the stored Proof state through the configured GitHub boundary,
  * update an already acknowledged check in place, then append its token-free
  * provider receipt to Relay's control store. */
 export async function publishChangeProofToGitHub(
@@ -86,11 +85,9 @@ export async function publishChangeProofToGitHub(
     ? previousReceipts
         .filter(
           (receipt) =>
-            receipt.proofVersion === intent.proofVersion &&
             receipt.repository === intent.repository &&
             receipt.headSha === intent.headSha &&
-            receipt.externalId === intent.externalId &&
-            receipt.checkDigest === canonicalSha256(intent.check),
+            receipt.externalId === intent.externalId,
         )
         .at(-1)
     : previousReceipts.at(-1);

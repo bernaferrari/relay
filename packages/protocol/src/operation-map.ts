@@ -60,6 +60,7 @@ import type { TargetObservation } from "./target-observation.js";
 import type { TargetSupervisorHealth } from "./target-supervisor.js";
 import type { WorkflowOperationMap } from "./workflow-record.js";
 import type { WorkspaceChangeContext } from "./workspace-change-context.js";
+import type { ProofOperationMap } from "./proof-operation-map.js";
 import type { AndroidAvdBootResult, AndroidAvdInventory } from "./target-contract.js";
 export type { AndroidAvdBootResult, AndroidAvdInventory } from "./target-contract.js";
 
@@ -841,7 +842,8 @@ type SpecificOperationMap = {
 } & AppMapOperationMap &
   CampaignRepairOperationMap &
   RunShareOperationMap &
-  WorkflowOperationMap;
+  WorkflowOperationMap &
+  ProofOperationMap;
 
 export type RelayOperationMap = SpecificOperationMap & OperationFamilyMap;
 export type OperationId = keyof RelayOperationMap;

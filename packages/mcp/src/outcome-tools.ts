@@ -200,7 +200,7 @@ function assertRawOutcomeInputBounds(name: string, value: Record<string, unknown
     assertRawTracePackPayloads(value.tracePacks, 64);
     return;
   }
-  if (name !== "relay_verify_change") return;
+  if (name !== "relay_proof_analyze" && name !== "relay_verify_change") return;
   const selection = value.selection;
   if (!selection || typeof selection !== "object" || Array.isArray(selection)) return;
   const record = selection as Record<string, unknown>;
@@ -555,10 +555,29 @@ export const relayOutcomeTools = Object.freeze([
   },
   ...proofOutcomeTools,
   {
-    name: "relay_verify_change",
-    title: "Verify a change",
+    name: "relay_proof_analyze",
+    title: "Analyze a Proof",
     description:
-      "Evaluate explicit frozen Tests, Runs, evidence packs, or source revision metadata offline. Returns one bounded pass, regression, review, or insufficient summary with exact policy rules, evidence completeness, first causal failure, unresolved uncertainty, and the smallest required live verification. Never changes Tests or posts a check.",
+      "Analyze explicit frozen Tests, Runs, evidence packs, or source revision metadata offline. Returns one bounded pass, regression, review, or insufficient summary with exact policy rules, evidence completeness, first causal failure, unresolved uncertainty, and the smallest required live verification. Never changes Tests, controls a Device, creates a live Proof, or posts a check.",
+    requiresConfirmation: false,
+    inputSchema: z
+      .object({
+        selection: verifyChangeSelectionTransport,
+        confirmationSatisfied: z.boolean().optional(),
+      })
+      .strict(),
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  },
+  {
+    name: "relay_verify_change",
+    title: "Verify a change (deprecated)",
+    description:
+      "Deprecated compatibility alias for relay_proof_analyze. Analyze explicit frozen Tests, Runs, evidence packs, or source revision metadata offline; never controls a Device, creates a live Proof, or posts a check. Use relay_proof_analyze instead.",
     requiresConfirmation: false,
     inputSchema: z
       .object({
@@ -688,7 +707,7 @@ export async function invokeRelayOutcomeToolWithJobs(input: {
   let parsed = descriptor.inputSchema.parse(input.argumentsValue) as Record<string, unknown>;
   if (input.name === "relay_replay_lab") {
     parsed = { ...parsed, tracePacks: replayLabTracePacks.parse(parsed.tracePacks) };
-  } else if (input.name === "relay_verify_change") {
+  } else if (input.name === "relay_proof_analyze" || input.name === "relay_verify_change") {
     parsed = { ...parsed, selection: verifyChangeSelection.parse(parsed.selection) };
   }
   const { jobs } = input;
@@ -810,7 +829,7 @@ export async function invokeRelayOutcomeToolWithJobs(input: {
       tracePacks: parsed.tracePacks as Parameters<RelayOutcomeJobs["replayLab"]>[0]["tracePacks"],
     });
   }
-  if (input.name === "relay_verify_change") {
+  if (input.name === "relay_proof_analyze" || input.name === "relay_verify_change") {
     const selection = parsed.selection as
       | { kind: "runs"; runIds: string[] }
       | { kind: "tests"; appMapId: string; testIds: string[] }

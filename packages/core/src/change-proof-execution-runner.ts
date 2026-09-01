@@ -11,6 +11,7 @@ import {
 } from "./change-verification-store.js";
 import { decideChangeVerification } from "./change-proof-decision.js";
 import { verifyChangePlanDigest, verifyChangePolicyDigest } from "./change-proof-integrity.js";
+import { humanOnlyInterventionForCell } from "./change-proof-confirmation.js";
 import { withControlStore, type ControlStore } from "./collaboration-store.js";
 import type { PersistedRun } from "./runs.js";
 import {
@@ -138,7 +139,8 @@ function claimRecordInStore(
   if (
     parsed.status === "completed" ||
     parsed.status === "cancelled" ||
-    parsed.status === "uncertain"
+    parsed.status === "uncertain" ||
+    parsed.status === "paused-human"
   )
     return parsed;
   if (parsed.lease && parsed.lease.expiresAt > at && parsed.lease.workerId !== workerId)
@@ -179,7 +181,8 @@ export async function runOne(
   // frozen intent over a process-local option so restart reconciliation and a
   // later worker cannot silently drop or change its outbox destination.
   if (record.publication && !options.publication) options.publication = record.publication;
-  if (["completed", "cancelled", "uncertain"].includes(record.status)) return record;
+  if (["completed", "cancelled", "uncertain", "paused-human"].includes(record.status))
+    return record;
   const heartbeat = setInterval(
     () => {
       void withControlStore((store) => {
@@ -275,6 +278,39 @@ export async function runOne(
         continue;
       }
       const at = options.now();
+      const frozenCell = record.frozenProof.selection.cells?.find(
+        (cell) => cell.id === currentCell.cell.cellId,
+      );
+      // Human-only authority is a durable evidence boundary, not an executor
+      // hint. Stop before persisting a dispatching fence so no target control
+      // or guessed automation can cross the exact reviewed step.
+      const humanEvidence = record.humanInterventionEvidence?.find(
+        (item) =>
+          item.cellId === currentCell.cell.cellId &&
+          item.stepId ===
+            frozenCell?.executionRisk?.reasons.find((reason) => reason.stepId)?.stepId,
+      );
+      if (frozenCell?.executionRisk?.confirmation === "human-only" && !humanEvidence) {
+        const humanIntervention = humanOnlyInterventionForCell({
+          proof: record.frozenProof,
+          cellId: currentCell.cell.cellId,
+          at,
+        });
+        record = await withControlStore((store) =>
+          write(
+            store,
+            {
+              ...record,
+              status: "paused-human",
+              humanIntervention,
+              lease: undefined,
+              updatedAt: at,
+            },
+            updateGuard(record),
+          ),
+        );
+        break;
+      }
       if (at >= record.deadlineAt) {
         record = await markUncertain(
           record,

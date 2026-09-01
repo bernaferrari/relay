@@ -139,6 +139,104 @@ test("a later terminal Proof version receives its own durable publication intent
   });
 });
 
+test("a progress intent rejects a forged terminal receipt even when its digest matches", async () => {
+  await withState(async () => {
+    const progressCheck = {
+      ...check(),
+      status: "queued" as const,
+      conclusion: undefined,
+      classification: "queued" as const,
+    };
+    const pending = await enqueueChangeProofPublicationOutbox(
+      enqueueInput({ check: progressCheck }),
+    );
+    await assert.rejects(
+      markChangeProofPublicationPublished({
+        ...scope,
+        id: pending.id,
+        receipt: {
+          ...receipt("success"),
+          checkDigest: canonicalSha256(progressCheck),
+          status: "completed",
+        },
+        at: 300,
+      }),
+      (error: unknown) =>
+        error instanceof Error && "code" in error && error.code === "OUTBOX_RECEIPT_MISMATCH",
+    );
+  });
+});
+
+test("a later terminal version cannot overtake unresolved progress after restart", async () => {
+  await withState(async () => {
+    const progressCheck = {
+      ...check(),
+      status: "queued" as const,
+      conclusion: undefined,
+      classification: "queued" as const,
+    };
+    const progress = await enqueueChangeProofPublicationOutbox(
+      enqueueInput({ check: progressCheck, maxAttempts: 3 }),
+    );
+    const terminal = await enqueueChangeProofPublicationOutbox(
+      enqueueInput({ proofVersion: 5, createdAt: 200 }),
+    );
+    const firstClaim = await claimChangeProofPublicationOutbox({
+      ...scope,
+      workerId: "worker-a",
+      now: 1_000,
+    });
+    assert.equal(firstClaim?.id, progress.id);
+    await markChangeProofPublicationRetry({
+      ...scope,
+      id: progress.id,
+      workerId: "worker-a",
+      leaseToken: firstClaim!.lease!.token,
+      at: 1_001,
+      backoffMs: 1_000,
+    });
+    resetControlDatabaseCache();
+    assert.equal(
+      await claimChangeProofPublicationOutbox({ ...scope, workerId: "worker-b", now: 1_500 }),
+      undefined,
+    );
+    assert.equal(
+      await claimChangeProofPublicationOutbox({
+        ...scope,
+        id: terminal.id,
+        workerId: "worker-b",
+        now: 1_500,
+      }),
+      undefined,
+    );
+    const resumed = await claimChangeProofPublicationOutbox({
+      ...scope,
+      workerId: "worker-b",
+      now: 2_001,
+    });
+    assert.equal(resumed?.id, progress.id);
+    await markChangeProofPublicationPublished({
+      ...scope,
+      id: progress.id,
+      workerId: "worker-b",
+      leaseToken: resumed!.lease!.token,
+      receipt: {
+        ...receipt("success", 2_002),
+        checkDigest: canonicalSha256(progressCheck),
+        status: "queued",
+        conclusion: undefined,
+      },
+      at: 2_002,
+    });
+    const terminalClaim = await claimChangeProofPublicationOutbox({
+      ...scope,
+      workerId: "worker-b",
+      now: 2_003,
+    });
+    assert.equal(terminalClaim?.id, terminal.id);
+  });
+});
+
 test("claims, recovers an expired lease, retries with bounded backoff, and reconciles a receipt", async () => {
   await withState(async () => {
     const pending = await enqueueChangeProofPublicationOutbox(enqueueInput({ maxAttempts: 3 }));

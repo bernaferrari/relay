@@ -3,12 +3,20 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import type { ChangeVerification } from "@relay/protocol";
+import type { ChangeVerification, ExecutionRisk } from "@relay/protocol";
 import {
   advanceChangeVerification,
   createChangeVerification,
   readChangeVerification,
 } from "./change-verification-store.js";
+import {
+  ChangeProofConfirmationError,
+  changeProofExecutionPreview,
+  consumeIssuedChangeProofExecutionConfirmations,
+  issueDurableChangeProofExecutionConfirmation,
+  validateIssuedChangeProofExecutionConfirmations,
+  validateChangeProofExecutionConfirmations,
+} from "./change-proof-confirmation.js";
 import {
   createChangeProofExecutionCoordinator,
   summarizeChangeProofExecution,
@@ -19,6 +27,7 @@ import { withControlStore } from "./collaboration-store.js";
 import { listChangeProofPublicationOutbox } from "./change-proof-publication-outbox.js";
 import { canonicalSha256 } from "./canonical-json.js";
 import { normalizeRecord } from "./change-proof-execution-store.js";
+import { subscribe } from "./events.js";
 
 const scope = { organizationId: "acme", projectId: "relay" } as const;
 const baseSha = "1".repeat(40);
@@ -33,6 +42,33 @@ const safeExecutionRisk = {
   confirmation: "none" as const,
   expectedAppBoundaries: [],
   cleanupRequired: false,
+};
+const guardedExecutionRisk: ExecutionRisk = {
+  ...safeExecutionRisk,
+  level: "guarded",
+  reasons: [
+    {
+      stepId: "review-external-app",
+      code: "reviewed-external-app",
+      explanation: "The reviewed Test communicates with an external app.",
+    },
+  ],
+  externalEffects: ["external-app"],
+  confirmation: "once-per-run",
+};
+const humanOnlyExecutionRisk: ExecutionRisk = {
+  ...safeExecutionRisk,
+  level: "destructive",
+  reasons: [
+    {
+      stepId: "delete-fixture",
+      code: "reviewed-account-mutation",
+      explanation: "A person must verify the fixture before deleting it.",
+    },
+  ],
+  externalEffects: ["data-deletion"],
+  confirmation: "human-only",
+  cleanupRequired: true,
 };
 
 async function withStateRoot(operation: () => Promise<void>): Promise<void> {
@@ -50,7 +86,10 @@ async function withStateRoot(operation: () => Promise<void>): Promise<void> {
   }
 }
 
-function selection(cellCount = 1): ChangeVerification["selection"] {
+function selection(
+  cellCount = 1,
+  executionRisk: ExecutionRisk = safeExecutionRisk,
+): ChangeVerification["selection"] {
   const browserAr: ChangeVerification["selection"]["targetCases"][number] = {
     id: "browser-ar",
     executionTarget: {
@@ -113,10 +152,10 @@ function selection(cellCount = 1): ChangeVerification["selection"] {
       requirement: "required" as const,
       selectionReason: "Arabic is the reviewed pilot coverage.",
       dimensions: { locale: "ar" },
-      executionRisk: safeExecutionRisk,
-      executionRiskDigest: canonicalSha256(safeExecutionRisk),
+      executionRisk,
+      executionRiskDigest: canonicalSha256(executionRisk),
       evidencePolicyDigest: `sha256:${"e".repeat(64)}`,
-      cleanupRequired: false,
+      cleanupRequired: executionRisk.cleanupRequired,
     },
     {
       id: "language__browser-en",
@@ -126,10 +165,10 @@ function selection(cellCount = 1): ChangeVerification["selection"] {
       requirement: "required" as const,
       selectionReason: "English is required expansion coverage.",
       dimensions: { locale: "en" },
-      executionRisk: safeExecutionRisk,
-      executionRiskDigest: canonicalSha256(safeExecutionRisk),
+      executionRisk,
+      executionRiskDigest: canonicalSha256(executionRisk),
       evidencePolicyDigest: `sha256:${"e".repeat(64)}`,
-      cleanupRequired: false,
+      cleanupRequired: executionRisk.cleanupRequired,
     },
   ];
   return {
@@ -148,7 +187,10 @@ function selection(cellCount = 1): ChangeVerification["selection"] {
   };
 }
 
-async function readyProof(cellCount = 1): Promise<ChangeVerification> {
+async function readyProof(
+  cellCount = 1,
+  executionRisk: ExecutionRisk = safeExecutionRisk,
+): Promise<ChangeVerification> {
   const created = await createChangeVerification({
     ...scope,
     id: "proof-execution-test",
@@ -163,7 +205,7 @@ async function readyProof(cellCount = 1): Promise<ChangeVerification> {
         environmentRevision: "fixture-v1",
       },
     ],
-    selection: selection(cellCount),
+    selection: selection(cellCount, executionRisk),
     policy: { id: "relay.default", version: 3 },
     requestedBy: "agent:proof-test",
     actorId: "agent:proof-test",
@@ -237,6 +279,10 @@ function fakeRun(id: string) {
 test("proof execution admission freezes the plan and exposes only a bounded summary", async () => {
   await withStateRoot(async () => {
     const proof = await readyProof();
+    const events: unknown[] = [];
+    const unsubscribe = subscribe((event) => {
+      if (event.payload.type === "proof.execution.changed") events.push(event.payload);
+    });
     const coordinator = createChangeProofExecutionCoordinator({
       now: () => 300,
       maxDurationMs: 1_000,
@@ -265,6 +311,17 @@ test("proof execution admission freezes the plan and exposes only a bounded summ
     const persisted = await coordinator.read(scope, proof.id);
     assert.deepEqual(persisted, admitted);
     assert.equal((await readChangeVerification(scope, proof.id))?.state, "running-pilot");
+    assert.deepEqual(events, [
+      {
+        type: "proof.execution.changed",
+        at: 300,
+        proofId: proof.id,
+        executionId: admitted.id,
+        cursor: 0,
+        status: "queued",
+      },
+    ]);
+    unsubscribe();
   });
 });
 
@@ -820,5 +877,178 @@ test("cancellation racing the dispatch fence wins before target control", async 
     assert.equal(result.status, "cancelled");
     assert.equal(dispatches, 0);
     assert.equal((await readChangeVerification(scope, approved.id))?.state, "cancelled");
+  });
+});
+
+test("confirmation issuance survives a ControlStore restart and rejects forged or replayed receipts", async () => {
+  await withStateRoot(async () => {
+    const proof = await readyProof(1, guardedExecutionRisk);
+    const preview = changeProofExecutionPreview(proof);
+    const receipt = await issueDurableChangeProofExecutionConfirmation({
+      proof,
+      cellId: "language__browser-ar",
+      actorId: "human:reviewer",
+      actorKind: "human",
+      now: 300,
+    });
+    assert.equal(receipt.previewDigest, preview.previewDigest);
+    assert.deepEqual(
+      validateChangeProofExecutionConfirmations({
+        proof,
+        receipts: [receipt],
+        actorId: "human:reviewer",
+        now: 300,
+      }),
+      [receipt],
+    );
+
+    // Reopening the database is the same durability boundary used by server
+    // restart recovery. Issuance provenance must not live only in process
+    // memory.
+    resetControlDatabaseCache();
+    await validateIssuedChangeProofExecutionConfirmations([receipt]);
+
+    const forged = {
+      ...receipt,
+      previewDigest: `sha256:${"f".repeat(64)}` as `sha256:${string}`,
+    };
+    await assert.rejects(
+      validateIssuedChangeProofExecutionConfirmations([forged]),
+      (error) =>
+        error instanceof ChangeProofConfirmationError &&
+        error.code === "PROOF_CONFIRMATION_INVALID",
+    );
+
+    const shortLived = await issueDurableChangeProofExecutionConfirmation({
+      proof,
+      cellId: "language__browser-ar",
+      actorId: "human:reviewer",
+      actorKind: "human",
+      now: 500,
+      ttlMs: 1,
+    });
+    const renewed = await issueDurableChangeProofExecutionConfirmation({
+      proof,
+      cellId: "language__browser-ar",
+      actorId: "human:reviewer",
+      actorKind: "human",
+      now: 502,
+    });
+    assert.notEqual(renewed.receiptId, shortLived.receiptId);
+    await validateIssuedChangeProofExecutionConfirmations([renewed]);
+
+    const humanInput = {
+      ...submit(proof),
+      actorId: "human:reviewer",
+      requestAuthority: {
+        ...submit(proof).requestAuthority!,
+        subject: "human:reviewer",
+        actorKind: "human" as const,
+      },
+      confirmationReceipts: [receipt],
+    };
+    const coordinator = createChangeProofExecutionCoordinator({
+      now: () => 300,
+      workerId: "worker:confirmation-restart",
+    });
+    const admitted = await coordinator.submit(humanInput);
+    assert.equal(admitted.confirmationReceipts?.[0]?.receiptId, receipt.receiptId);
+    await withControlStore((store) => {
+      const stored = store.changeProofConfirmation(receipt.receiptId);
+      assert.equal(stored?.consumedAt, 300);
+      assert.throws(
+        () => consumeIssuedChangeProofExecutionConfirmations(store, [receipt], 301),
+        (error) =>
+          error instanceof ChangeProofConfirmationError &&
+          error.code === "PROOF_CONFIRMATION_REPLAYED",
+      );
+    });
+  });
+});
+
+test("human-only execution pauses at an exact step and resumes only through recorded evidence", async () => {
+  await withStateRoot(async () => {
+    const proof = await readyProof(1, humanOnlyExecutionRisk);
+    const input = submit(proof);
+    let dispatches = 0;
+    const coordinator = createChangeProofExecutionCoordinator({
+      now: () => 300,
+      workerId: "worker:human-boundary",
+      projectRun: async ({ run }) => ({
+        ...projectedPass((run as { id: string }).id),
+        cleanup: "restored" as const,
+      }),
+    });
+    const paused = await coordinator.run(input, async () => {
+      dispatches += 1;
+      return { runId: "must-not-run", wait: async () => fakeRun("must-not-run") };
+    });
+    assert.equal(paused.status, "paused-human");
+    assert.deepEqual(paused.humanIntervention, {
+      cellId: "language__browser-ar",
+      stepId: "delete-fixture",
+      effects: ["data-deletion"],
+      reason: "A person must verify the fixture before deleting it.",
+      at: 300,
+    });
+    assert.equal(dispatches, 0);
+
+    const evidenceInput = {
+      ...scope,
+      proofId: proof.id,
+      executionId: paused.id,
+      cellId: "language__browser-ar",
+      stepId: "delete-fixture",
+      evidenceDigest: `sha256:${"e".repeat(64)}` as `sha256:${string}`,
+      actorId: "human:reviewer",
+      requestId: "human-evidence-1",
+      at: 400,
+    };
+    await assert.rejects(
+      coordinator.recordHumanInterventionEvidence({
+        ...evidenceInput,
+        stepId: "different-step",
+      }),
+      (error) =>
+        error instanceof Error &&
+        "code" in error &&
+        error.code === "PROOF_EXECUTION_HUMAN_INTERVENTION",
+    );
+    const queued = await coordinator.recordHumanInterventionEvidence(evidenceInput);
+    assert.equal(queued.status, "queued");
+    assert.equal(queued.humanIntervention, undefined);
+    assert.deepEqual(queued.humanInterventionEvidence?.[0], {
+      schemaVersion: 1,
+      executionId: paused.id,
+      proofId: proof.id,
+      cellId: "language__browser-ar",
+      stepId: "delete-fixture",
+      evidenceDigest: `sha256:${"e".repeat(64)}`,
+      recordedBy: "human:reviewer",
+      recordedAt: 400,
+      requestId: "human-evidence-1",
+    });
+    await assert.rejects(
+      coordinator.recordHumanInterventionEvidence(evidenceInput),
+      (error) =>
+        error instanceof Error &&
+        "code" in error &&
+        error.code === "PROOF_EXECUTION_HUMAN_INTERVENTION",
+    );
+
+    // This executor represents a host that explicitly implements exact
+    // checkpoint resume. The default App Map/Test adapter is tested
+    // separately and remains fail-closed for this cell.
+    const completed = await coordinator.run(input, async ({ cell }) => {
+      dispatches += 1;
+      assert.equal(cell.cellId, "language__browser-ar");
+      return { runId: "human-resumed-run", wait: async () => fakeRun("human-resumed-run") };
+    });
+    assert.equal(completed.status, "completed");
+    assert.equal(dispatches, 1);
+    assert.deepEqual(
+      completed.humanInterventionEvidence?.map((item) => item.stepId),
+      ["delete-fixture"],
+    );
   });
 });

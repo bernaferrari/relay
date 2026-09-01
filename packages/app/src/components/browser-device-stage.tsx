@@ -221,7 +221,10 @@ export function BrowserDeviceStage() {
               Go
             </Button>
           </form>
-          <BrowserDeviceEnvironmentSummary profile={() => session()?.profile} />
+          <BrowserDeviceEnvironmentSummary
+            profile={() => session()?.profile}
+            telemetry={() => session()?.telemetry}
+          />
           <Button
             type="button"
             variant="ghost"

@@ -56,7 +56,14 @@ export type VerifyChangeCommandInput = {
 };
 
 export type VerifyChangeNextAction = {
-  kind: "confirm" | "provide-build" | "review" | "approve-plan" | "run-pilot" | "complete";
+  kind:
+    | "confirm"
+    | "provide-build"
+    | "review"
+    | "approve-plan"
+    | "run-pilot"
+    | "human-intervention"
+    | "complete";
   reason: string;
   command?: string;
 };

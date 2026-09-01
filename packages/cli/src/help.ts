@@ -12,8 +12,8 @@ const familyGroups = [
   ["Topology", ["map", "screen", "connect", "flow"]],
   ["Authoring", ["variable", "test", "combine", "proposal", "session", "routine", "case-stack"]],
   ["Explore", ["discovery"]],
-  ["Proof", ["proof"]],
-  ["Operate", ["device", "run", "report", "activity", "verify-change"]],
+  ["Proof", ["proof", "prove"]],
+  ["Operate", ["device", "run", "report", "activity"]],
   ["Automation", ["schedule", "matrix"]],
   ["Workspace", ["policy", "data", "workspace", "project", "build", "device-pool", "lease"]],
 ] as const;
@@ -80,6 +80,9 @@ function familyNames(): Set<string> {
     ...friendlyPaths().map(({ descriptor }) => descriptor.command.split(" ")[0]!),
     "db",
     "report",
+    "prove",
+    // Kept so `relay verify-change --help` remains a useful migration aid;
+    // it is intentionally absent from the ordinary command groups below.
     "verify-change",
   ]);
 }
@@ -138,10 +141,11 @@ Usage:
   relay propose-repair <runId> <checkId> <accept-current|disable> <reason>
   relay export-evidence <runId>
   relay replay-lab <compare|visual-localization|all> <oldest.tracepack.json> <newest.tracepack.json> [...]
-  relay verify-change run <runId...>
-  relay verify-change test <appMapId> <testId...>
-  relay verify-change revision <gitSha>
-  relay verify-change --base <ref> [--config-file <path>] [--confirm]
+  relay prove --base <ref> [--config-file <path>] [--confirm]
+  relay prove <proof-id> [--wait | --no-wait]
+  relay proof analyze run <runId...>
+  relay proof analyze test <appMapId> <testId...>
+  relay proof analyze revision <gitSha>
   relay proof start --input-file ./proof.json
   relay proof list
   relay proof inspect <proof-id> [--history]
@@ -156,7 +160,7 @@ Usage:
 Outcome commands:
   connect, observe, record, edit-recording, run, repeat, continue-repeat, inspect-workflow, cancel-run,
   inspect-failure, propose-repair,
-  export-evidence, replay-lab, verify-change
+  export-evidence, replay-lab
 
 These resolve the sole connected Device and current Test workspace automatically. Use --device, or
 the advanced --map option, only when selection is ambiguous. The first Record creates its backing
@@ -164,14 +168,21 @@ topology automatically. Record acquires control only after --confirm and never d
 person or agent. The current command is Control and record: interactions pass through Relay.
 
 Proof commands:
-  proof start, proof list, proof inspect, proof approve-plan, proof continue,
-  proof cancel, proof rerun-affected
+  prove, proof analyze, proof start, proof list, proof inspect, proof approve-plan,
+  proof continue, proof cancel, proof rerun-affected
 
 Replay Lab reads only the explicitly named local TracePack JSON files. It does not start the Relay
 daemon, read a Device or workspace, contact a network service, or mutate Tests and evidence.
 
 Advanced command families:
 ${groups}
+
+Compatibility:
+  relay verify-change --base <ref> [--config-file <path>] [--confirm]
+  relay verify-change run|test|revision ...
+  verify-change is deprecated. Use prove for live Change Proofs and
+  proof analyze for offline analysis; compatibility aliases use the same
+  fail-closed implementation and emit a deprecation notice.
 
 Advanced examples:
 ${usages(workflowCommands).join("\n")}
@@ -243,8 +254,56 @@ Unlike friendly commands, operation invoke always requires --input or --input-fi
 ${globalOptions}
 `;
   }
+  if (family === "prove") {
+    return `Relay prove commands
+
+Usage:
+  relay prove --base <ref> [--config-file <path>] [--confirm]
+  relay prove <proof-id> [--wait | --no-wait]
+
+The --base form is the ordinary live Change Proof entry point. It reads the
+reviewed .relay/change-proof.json (or --config-file), resolves exact local
+Git base/HEAD SHAs and changed files, compiles an explained Verification Plan,
+and creates one durable Proof only with --confirm. A proof id runs or resumes
+the already approved server-owned Proof. Human approval remains required at
+the frozen plan boundary.
+
+Options:
+  --base <ref>                     Exact local Git base ref
+  --config-file <path>             Reviewed JSON config (default .relay/change-proof.json)
+  --config <path>                  Alias for --config-file
+  --confirm                        Authorize Proof creation and its live local lifecycle
+
+${globalOptions}
+`;
+  }
+  if (family === "proof") {
+    return `Relay proof commands
+
+Usage:
+  relay prove --base <ref> [--config-file <path>] [--confirm]
+  relay proof prepare [--input <json>]
+  relay proof analyze run <runId...>
+  relay proof analyze test <appMapId> <testId...>
+  relay proof analyze revision <gitSha>
+  relay proof start --input-file ./proof.json
+  relay proof list
+  relay proof inspect <proof-id> [--history]
+  relay proof approve-plan <proof-id> --confirm --input <json>
+  relay proof continue <proof-id> --input <json>
+  relay proof cancel <proof-id> --confirm --input <json>
+  relay proof rerun-affected <proof-id> --input-file ./replacement-proof.json
+
+proof analyze is read-only offline analysis of explicitly selected frozen
+Runs, Tests, or source metadata. It never controls a Device or creates a live
+Proof. Low-level lifecycle operations stay under proof; ordinary live work
+uses prove.
+
+${globalOptions}
+`;
+  }
   if (family === "verify-change") {
-    return `Relay verify-change commands
+    return `Relay verify-change compatibility commands (deprecated)
 
 Usage:
   relay verify-change --base <ref> [--config-file <path>] [--confirm]
@@ -265,6 +324,9 @@ Options for the --base form:
   --config-file <path>             Reviewed JSON config (default .relay/change-proof.json)
   --config <path>                  Alias for --config-file
   --confirm                        Authorize Proof creation and its live local lifecycle
+
+Use relay prove for live Change Proofs, or relay proof analyze for offline
+analysis. This compatibility spelling emits a deprecation notice.
 
 ${globalOptions}
 `;

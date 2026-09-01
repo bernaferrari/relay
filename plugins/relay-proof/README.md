@@ -51,7 +51,7 @@ token.
 
 ## Agent contract
 
-Use the `relay_verify_this_change` prompt or the `relay_proof_*` tools for the
+Use the `relay_prove_this_change` prompt or the `relay_proof_*` tools for the
 merge loop. Start with `relay_workspace_change_inspect`: the active Relay
 workspace is the authority for the current change. Restored tabs, browser
 history, and manually typed repository or SHA values do not select a Proof.
@@ -65,6 +65,8 @@ accepted request, transport response, or a stale tab. Every Proof remains
 bound to its exact head, build digests, target profiles, evidence, and policy
 version. Legacy/manual Runs may be imported with `record-runs` only when
 explicitly needed for recovery; they are not a replacement for `proof.run`.
+The deprecated `relay_verify_change` outcome tool remains a compatibility
+alias for offline analysis only; use `relay_proof_analyze` instead.
 
 After a repair, create a new Proof and rerun only affected journeys. The old
 Proof remains immutable history. `needs-review`, `insufficient-evidence`, and

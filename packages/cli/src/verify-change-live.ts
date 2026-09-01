@@ -1,4 +1,4 @@
-import { changeProofRequiredRunCases } from "@relay/core";
+import { changeProofExecutionPreview, changeProofRequiredRunCases } from "@relay/core";
 import type { VerificationPlan } from "@relay/protocol";
 import { invokeOperation, type OperationInvoker } from "./invoke.js";
 import { CliError, ExitCode, UsageError } from "./errors.js";
@@ -55,7 +55,7 @@ export function assertExecutablePlanTargets(plan: VerificationPlan): void {
   for (const targetCase of plan.selection.targetCases) {
     if (targetCase.required && targetCase.executionTarget.kind === "provider-session") {
       throw new UsageError(
-        `Target case ${targetCase.id} uses provider-session ${targetCase.executionTarget.provider.key}; verify-change only executes local-device and local-browser targets`,
+        `Target case ${targetCase.id} uses provider-session ${targetCase.executionTarget.provider.key}; prove only executes local-device and local-browser targets`,
       );
     }
   }
@@ -111,7 +111,7 @@ export function nextVerifyChangeAction(
       kind: "confirm",
       reason:
         "Review the exact Git change and Verification Plan, then explicitly authorize Proof creation.",
-      command: `relay verify-change --base ${shellArgument(base)} --config-file ${shellArgument(configFile)} --confirm`,
+      command: `relay prove --base ${shellArgument(base)} --config-file ${shellArgument(configFile)} --confirm`,
     };
   }
   const state = proofState(proof);
@@ -170,6 +170,7 @@ export type VerifyChangeLiveExecution = {
   pilot: VerifyChangePlanResult["execution"]["pilot"];
   runs: VerifyChangePlanResult["execution"]["runs"];
   terminalState?: string;
+  nextAction?: VerifyChangeNextAction;
 };
 
 function proofRunIds(proof: Record<string, unknown>): string[] {
@@ -198,8 +199,87 @@ function serverExecutionReason(execution: Record<string, unknown>): string {
   return `The server-owned Proof coordinator returned execution status ${status}.`;
 }
 
+async function issueProofRunConfirmations(input: {
+  client: OperationInvoker;
+  proof: Record<string, unknown>;
+  signal: AbortSignal;
+  actorKind: VerifyChangeActorKind;
+}): Promise<unknown[]> {
+  const preview = changeProofExecutionPreview(input.proof);
+  const gated = preview.cells.filter(
+    ({ executionRisk }) =>
+      executionRisk.level !== "safe" && executionRisk.confirmation !== "human-only",
+  );
+  if (!gated.length) return [];
+  if (input.actorKind !== "human") {
+    throw new CliError(
+      "Guarded Proof Cells require an authenticated human actor to issue confirmation receipts; no target was controlled",
+      ExitCode.auth,
+      { proof: input.proof, preview, nextAction: "human-run-confirmation" },
+    );
+  }
+  const selection = (input.proof as Record<string, unknown>).selection;
+  const targetCases =
+    selection && typeof selection === "object" && !Array.isArray(selection)
+      ? (selection as Record<string, unknown>).targetCases
+      : undefined;
+  const receipts: unknown[] = [];
+  for (const cell of gated) {
+    const targetCase = Array.isArray(targetCases)
+      ? targetCases.find(
+          (candidate) =>
+            candidate &&
+            typeof candidate === "object" &&
+            (candidate as Record<string, unknown>).id === cell.targetCaseId,
+        )
+      : undefined;
+    const targetProfileId =
+      targetCase && typeof targetCase === "object" && !Array.isArray(targetCase)
+        ? (
+            (targetCase as Record<string, unknown>).targetProfile as
+              | Record<string, unknown>
+              | undefined
+          )?.id
+        : undefined;
+    const fixtureScope =
+      cell.executionRisk.level === "destructive"
+        ? {
+            targetCaseId: cell.targetCaseId,
+            targetProfileId:
+              typeof targetProfileId === "string" && targetProfileId.trim()
+                ? targetProfileId
+                : cell.targetCaseId,
+            cleanupCheckIds: cell.executionRisk.reasons.length
+              ? cell.executionRisk.reasons.map(({ code }) => code)
+              : [cell.cellId],
+          }
+        : undefined;
+    const response = await invokeOperation(
+      input.client,
+      "proof.run.confirm",
+      {
+        proofId: String(input.proof.id),
+        expectedVersion: Number(input.proof.version),
+        cellId: cell.cellId,
+        previewDigest: preview.previewDigest,
+        ...(fixtureScope ? { fixtureScope } : {}),
+        confirm: true,
+      },
+      input.signal,
+      verifyChangeRequestIdentity(`proof-confirm-${cell.cellId}`, String(input.proof.id)),
+    );
+    const receipt = record(response, "proof.run.confirm").receipt;
+    if (!receipt || typeof receipt !== "object") {
+      throw new UsageError("proof.run.confirm returned no durable confirmation receipt");
+    }
+    receipts.push(receipt);
+  }
+  return receipts;
+}
+
 /** Execute an approved plan through the durable server-owned Proof coordinator.
- * The CLI only performs human approval when needed, then submits one `proof.run`
+ * The CLI performs human approval and exact per-cell receipt issuance when needed,
+ * then submits one `proof.run`
  * request and projects its authoritative response. It never controls a target,
  * polls jobs, or records a client-side verdict. */
 export async function executeVerifyChangeLive(input: {
@@ -228,7 +308,7 @@ export async function executeVerifyChangeLive(input: {
   if (initialState === "planning" || initialState === "awaiting-build") {
     if ((input.actorKind ?? "human") !== "human") {
       throw new CliError(
-        "Live verify-change execution requires a human actor to approve the Verification Plan; no pilot was started",
+        "Live Proof execution requires a human actor to approve the Verification Plan; no pilot was started",
         ExitCode.auth,
         { proof: currentProof, nextAction: "human-plan-approval" },
       );
@@ -266,11 +346,21 @@ export async function executeVerifyChangeLive(input: {
       `The approved Proof materializes ${requiredCases.length} Verification Cells, exceeding the plan limit of ${input.plan.expansion.maxCases}; no target was controlled`,
     );
   }
+  const confirmationReceipts = await issueProofRunConfirmations({
+    client: input.client,
+    proof: currentProof,
+    signal: input.signal,
+    actorKind: input.actorKind ?? "human",
+  });
   const proofId = boundedText(currentProof.id, "Proof id", 256);
   const response = await invokeOperation(
     input.client,
     "proof.run",
-    { proofId, wait: true },
+    {
+      proofId,
+      wait: true,
+      ...(confirmationReceipts.length ? { confirmationReceipts } : {}),
+    },
     input.signal,
     verifyChangeRequestIdentity("proof-run", proofId),
   );
@@ -311,6 +401,13 @@ export async function executeVerifyChangeLive(input: {
         reason: serverExecutionReason(execution),
       };
   const terminalState = proofState(currentProof);
+  const pausedHuman =
+    execution.status === "paused-human" &&
+    execution.humanIntervention &&
+    typeof execution.humanIntervention === "object" &&
+    !Array.isArray(execution.humanIntervention)
+      ? (execution.humanIntervention as Record<string, unknown>)
+      : undefined;
   return {
     proof: currentProof,
     ...(proofApprovalResponse === undefined ? {} : { proofApprovalResponse }),
@@ -318,5 +415,17 @@ export async function executeVerifyChangeLive(input: {
     pilot,
     runs: runSummaries,
     ...(terminalState && terminalProofStates.has(terminalState) ? { terminalState } : {}),
+    ...(pausedHuman
+      ? {
+          nextAction: {
+            kind: "human-intervention" as const,
+            reason:
+              typeof pausedHuman.reason === "string"
+                ? pausedHuman.reason
+                : "Complete the exact human-only step and record its evidence before resuming.",
+            command: `relay proof inspect ${shellArgument(proofId)}`,
+          },
+        }
+      : {}),
   };
 }

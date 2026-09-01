@@ -43,7 +43,9 @@ jobs:
       # boundary separately. A setup/install failure therefore cannot look
       # like a repository typecheck or test failure in the Check UI.
       - name: Format, lint, and static checks
-        run: vp check
+        # Vite+ is a workspace dependency; package-manager installs do not
+        # expose project bins as global commands on clean hosted runners.
+        run: pnpm run check
 
       - name: Validate GitHub workflows
         run: pnpm run check:workflows
@@ -67,7 +69,7 @@ jobs:
         run: pnpm run test:packages
 
       - name: Test Vite+ workspace
-        run: vp test
+        run: pnpm exec vp test
 
       - name: Validate UI boundaries
         run: pnpm --filter @relay/app check:ui

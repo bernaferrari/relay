@@ -151,6 +151,7 @@ function providerClassification(
   decision?: ChangeProofDecision,
 ): ChangeProofProviderCheck["classification"] {
   if (proof.state === "superseded") return "superseded";
+  if (proof.state === "cancelled") return "cancelled";
   const durableDecision = decision?.decision ?? proof.decision;
   const gaps = decision?.coverageGaps ?? proof.coverageGaps;
   if (
@@ -577,6 +578,7 @@ export function providerCheckForStoredChangeProof(input: {
     rawProof.state === "rejected" ||
     rawProof.state === "needs-review" ||
     rawProof.state === "insufficient-evidence" ||
+    rawProof.state === "cancelled" ||
     rawProof.state === "superseded";
   if (!rawProof.policyDigest || !rawProof.planDigest || (rawTerminal && !rawProof.decisionDigest)) {
     if (
@@ -584,6 +586,7 @@ export function providerCheckForStoredChangeProof(input: {
       rawProof.state !== "rejected" &&
       rawProof.state !== "needs-review" &&
       rawProof.state !== "insufficient-evidence" &&
+      rawProof.state !== "cancelled" &&
       rawProof.state !== "superseded"
     ) {
       throw new Error("A provider check requires a terminal Proof");
@@ -617,6 +620,9 @@ export function providerCheckForStoredChangeProof(input: {
     ...(proof.state === "superseded" && proof.supersededByProofId
       ? [`Superseded by Proof: ${proof.supersededByProofId}`]
       : []),
+    ...(proof.state === "cancelled" && proof.cancellation
+      ? [`Cancelled: ${proof.cancellation.reason}`]
+      : []),
     ...(proof.firstCausalFailure
       ? [`First causal failure: ${proof.firstCausalFailure.summary}`]
       : []),
@@ -639,14 +645,58 @@ export function providerCheckForStoredChangeProof(input: {
     summary:
       classification === "superseded"
         ? `This Proof was superseded by ${proof.supersededByProofId}. Merge authority belongs to the replacement head.`
-        : (proof.smallestNextVerification?.reason ??
-          (classification === "proved"
-            ? "Every policy-required case has complete proof."
-            : "Review the durable Proof before merge.")),
+        : classification === "cancelled"
+          ? "This Proof was cancelled and cannot authorize the tested head."
+          : (proof.smallestNextVerification?.reason ??
+            (classification === "proved"
+              ? "Every policy-required case has complete proof."
+              : "Review the durable Proof before merge.")),
     text: lines.join("\n"),
     policyDigest: proof.policyDigest,
     planDigest: proof.planDigest,
     ...(proof.decisionDigest ? { decisionDigest: proof.decisionDigest } : {}),
+    ...(input.detailsUrl ? { detailsUrl: input.detailsUrl } : {}),
+  });
+}
+
+/** Project non-authorizing queued/running status from one durable active Proof.
+ * Progress never carries a conclusion; only the terminal projector above can
+ * authorize success, failure, or action-required. */
+export function providerProgressCheckForStoredChangeProof(input: {
+  proof: unknown;
+  detailsUrl?: string;
+}): ChangeProofProviderCheck {
+  const proof = verifyDurableChangeVerification(parseChangeVerification(input.proof));
+  const inProgress = ["running-pilot", "awaiting-expansion", "running"].includes(proof.state);
+  if (!inProgress && !["planning", "awaiting-build", "ready"].includes(proof.state)) {
+    throw new Error("A progress provider check requires an active nonterminal Proof");
+  }
+  if (!proof.policyDigest || !proof.planDigest) {
+    throw new Error("A progress provider check requires verified policy and plan digests");
+  }
+  const status = inProgress ? "in_progress" : "queued";
+  return changeProofProviderCheckSchema.parse({
+    schemaVersion: 1,
+    name: "Relay Proof",
+    externalId: proof.id,
+    headSha: changeTestedSha(proof.change),
+    status,
+    classification: inProgress ? "in-progress" : "queued",
+    title: `Relay Proof — ${inProgress ? "IN PROGRESS" : "QUEUED"}`,
+    summary:
+      proof.smallestNextVerification?.reason ??
+      (inProgress
+        ? "Relay is executing the frozen Verification Plan."
+        : "Relay queued the frozen Verification Plan."),
+    text: [
+      `Head: ${changeTestedSha(proof.change)}`,
+      `Proof state: ${proof.state}`,
+      `Recorded Runs: ${proof.runIds.length}`,
+      `Evidence objects: ${proof.evidenceDigests.length}`,
+      `Policy: ${proof.policy.id}.v${proof.policy.version}`,
+    ].join("\n"),
+    policyDigest: proof.policyDigest,
+    planDigest: proof.planDigest,
     ...(input.detailsUrl ? { detailsUrl: input.detailsUrl } : {}),
   });
 }

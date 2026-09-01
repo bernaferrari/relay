@@ -1,4 +1,4 @@
-import { For, Show, type JSX } from "solid-js";
+import { For, Show, createSignal, type JSX } from "solid-js";
 import {
   type ChangeProofPublicationOutboxRecord,
   type ChangeProofPublicationReceipt,
@@ -28,10 +28,12 @@ export function ProofDetail(props: {
   canCancel: boolean;
   onPrimaryAction: () => void;
   onCancel: () => void;
+  onResumeHumanEvidence: (execution: ChangeProofExecutionSummary, evidenceDigest: string) => void;
   onRetryPublication: (publication: ChangeProofPublicationOutboxRecord) => void;
   onOpenRun: (runId: string) => void;
   onOpenMap: (appMapId: string) => void;
 }) {
+  const [humanEvidenceDigest, setHumanEvidenceDigest] = createSignal("");
   const latestPublication = () =>
     props.publications.reduce<ChangeProofPublicationReceipt | undefined>((latest, candidate) => {
       if (!latest) return candidate;
@@ -152,6 +154,47 @@ export function ProofDetail(props: {
                 <span class="text-caption tabular-nums text-text-weak">
                   {executionProgress(execution(), props.proof)}
                 </span>
+                <Show when={execution().status === "paused-human" && execution().humanIntervention}>
+                  {(intervention) => (
+                    <div class="mt-2 grid gap-2 border-t border-border-weak-base pt-2">
+                      <strong class="text-caption font-semibold text-text-strong">
+                        Human step required: {intervention().stepId}
+                      </strong>
+                      <span class="text-caption/[1.45] text-text-weak">
+                        {intervention().reason} Record the evidence digest after completing this
+                        exact step to resume the Proof.
+                      </span>
+                      <label class="grid gap-1 text-caption font-medium text-text-base">
+                        Evidence digest
+                        <input
+                          class="min-h-10 rounded-lg border border-border-base bg-surface-raised px-2.5 text-body text-text-strong outline-none focus:border-border-interactive-base focus:ring-2 focus:ring-border-interactive-base/30"
+                          inputMode="text"
+                          placeholder="sha256:…"
+                          value={humanEvidenceDigest()}
+                          aria-describedby="proof-human-evidence-help"
+                          onInput={(event) => setHumanEvidenceDigest(event.currentTarget.value)}
+                        />
+                      </label>
+                      <span id="proof-human-evidence-help" class="text-micro text-text-weak">
+                        Use the SHA-256 digest of the reviewed human-step evidence.
+                      </span>
+                      <div>
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          disabled={Boolean(props.actionBusy) || !humanEvidenceDigest().trim()}
+                          onClick={() =>
+                            props.onResumeHumanEvidence(execution(), humanEvidenceDigest())
+                          }
+                        >
+                          {props.actionBusy === "human-evidence"
+                            ? "Recording evidence…"
+                            : "Record evidence and resume"}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </Show>
               </div>
             )}
           </Show>

@@ -3,12 +3,17 @@ import type { RelayOperationMap } from "./operation-map.js";
 
 type ChangeVerificationOperationId =
   | "proof.prepare"
+  | "proof.setup.inspect"
+  | "proof.setup.preview"
+  | "proof.setup.apply"
   | "proof.start"
   | "proof.list"
   | "proof.inspect"
   | "proof.plan.approve"
   | "proof.continue"
   | "proof.run"
+  | "proof.run.confirm"
+  | "proof.run.human-evidence"
   | "proof.cancel"
   | "proof.publication.retry"
   | "proof.rerun-affected";
@@ -17,6 +22,17 @@ const { command, query } =
   createOperationBuilders<Pick<RelayOperationMap, ChangeVerificationOperationId>>();
 
 export const changeVerificationOperationDefinitions = [
+  query("proof.setup.inspect", "Inspect Proof setup", "/proofs/setup", {
+    category: "authoring",
+  }),
+  command("proof.setup.preview", "Preview Proof setup", "POST", "/proofs/setup/preview", {
+    category: "authoring",
+  }),
+  command("proof.setup.apply", "Apply reviewed Proof setup", "POST", "/proofs/setup/apply", {
+    category: "authoring",
+    confirmation: "confirm",
+    idempotency: "inherent",
+  }),
   command("proof.prepare", "Prepare current change Proof", "POST", "/proofs/prepare", {
     category: "authoring",
     idempotency: "inherent",
@@ -51,6 +67,24 @@ export const changeVerificationOperationDefinitions = [
     cancellable: true,
     idempotency: "inherent",
   }),
+  command("proof.run.confirm", "Confirm Proof cell", "POST", "/proofs/:proofId/run/confirm", {
+    category: "execution",
+    minimumRole: "author",
+    confirmation: "confirm",
+    idempotency: "inherent",
+  }),
+  command(
+    "proof.run.human-evidence",
+    "Resume Proof after human step",
+    "POST",
+    "/proofs/:proofId/run/human-evidence",
+    {
+      category: "execution",
+      minimumRole: "author",
+      confirmation: "confirm",
+      idempotency: "inherent",
+    },
+  ),
   command("proof.cancel", "Cancel Proof", "POST", "/proofs/:proofId/cancel", {
     category: "authoring",
     confirmation: "confirm",

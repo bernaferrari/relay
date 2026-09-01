@@ -122,7 +122,7 @@ pnpm relay record "Settings localization" --confirm
 pnpm relay run settings-localization
 pnpm relay repeat settings-localization --each language=en,ja,pt-BR
 pnpm relay export-evidence <run-id>
-pnpm relay verify-change --base main --confirm
+pnpm relay prove --base main --confirm
 ```
 
 These commands resolve the sole connected Device and current Test workspace. The first Record
@@ -134,9 +134,30 @@ remaining values with
 authorization credential: project role, Device control, and version checks remain authoritative.
 Raw operation invocation and the older command families remain available as an advanced surface.
 The live Change Proof command reads the reviewed `.relay/change-proof.json`, binds the exact base,
-HEAD, builds, journeys, and targets, and runs only after confirmation. Historical
-`verify-change revision <git-sha>` is read-only offline analysis; it never creates a live Proof or
-clears a merge.
+HEAD, builds, journeys, and targets, and runs only after confirmation. Use
+`pnpm relay proof analyze revision <git-sha>` for read-only offline analysis; it never creates a
+live Proof or clears a merge. The historical `verify-change` spelling remains a deprecated,
+fail-closed compatibility alias and prints a migration notice.
+
+A repository without that policy can use the guided setup path:
+
+```bash
+pnpm relay proof setup inspect --json
+pnpm relay proof setup preview --input-file ./proof-setup.json > reviewed-preview.json
+pnpm relay proof setup apply --confirm --input-file ./reviewed-preview.json --json
+pnpm relay proof prepare --json
+```
+
+`inspect` reports package-script and local artifact candidates plus the saved Tests and currently
+observed targets. Candidates are never selected automatically. `preview` requires an explicit
+executable/argument vector, repository-relative mobile or web output, reviewed Test associations,
+and frozen target cases. Web setup additionally requires an immutable deployment URL and
+provider-reported deployment digest; Relay hashes local web output for drift, but never pretends a
+directory hash proves the deployed runtime. `preview` runs the command, hashes the exact output, and
+returns the complete policy without changing Relay state. `apply` accepts only that confirmed
+preview and fails if the Git head, artifact bytes, or prior policy changed; it then registers the
+revision-bound build, atomically writes `.relay/change-proof.json`, and compiles the canonical
+Verification Plan. A plan with an unmapped change or other coverage gap remains blocked for review.
 
 For an outcome command using the implicit local URL, the CLI safely starts or reuses the local Relay
 service and verifies its identity. Explicit `--server` or `RELAY_URL` endpoints and every advanced
@@ -144,6 +165,24 @@ command remain caller-managed. Use `pnpm relay --help` to discover the outcome c
 help such as `pnpm relay test --help` for advanced operations. JSON results are written to stdout;
 waits and diagnostics are written to stderr. The
 [MCP adapter](./packages/mcp/README.md) exposes the same outcome workflows to agents by default.
+
+An external MCP host can use the published host-neutral package without a Relay checkout or global
+install:
+
+```json
+{
+  "mcpServers": {
+    "relay": {
+      "command": "npx",
+      "args": ["--yes", "--package", "@relay/mcp@0.1.0", "relay-mcp", "--profile", "proof"]
+    }
+  }
+}
+```
+
+The `proof` profile provides the ordinary `relay_prove_change` outcome plus explicit `proof.*`
+lifecycle controls. Keep Relay URL, project, actor, and credentials in the host process
+environment; never put secrets in this configuration.
 
 ### What failures look like
 

@@ -64,6 +64,17 @@ export type ParsedCli =
       base: string;
       configFile: string;
       confirm: boolean;
+      /** The old spelling remains parseable for scripts, but is never the
+       * documented/ordinary command. Callers should surface its deprecation
+       * before executing it. */
+      legacy: true;
+    }
+  | {
+      config: GlobalConfig;
+      command: "prove";
+      base: string;
+      configFile: string;
+      confirm: boolean;
     };
 
 type Environment = Record<string, string | undefined>;
@@ -638,18 +649,19 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
     };
   }
 
-  // `verify-change --base` is the local source-to-Proof workflow. Keep it as
-  // a CLI-native command: unlike the historical `verify-change run|test|revision`
-  // outcome, it must inspect local Git and a reviewed config before it can
-  // optionally call proof.start. This branch intentionally comes before the
-  // generic input reader so --input cannot smuggle an unreviewed config in.
-  if (group === "verify-change" && tokens.values.has("--base")) {
+  // `prove --base` is the local source-to-Proof workflow. It must inspect
+  // local Git and a reviewed config before it can optionally call proof.start.
+  // This branch intentionally comes before the generic input reader so
+  // --input cannot smuggle an unreviewed config in. The old
+  // `verify-change --base` spelling follows the exact same parser and
+  // execution path below, but is marked as a compatibility alias.
+  if ((group === "prove" || group === "verify-change") && tokens.values.has("--base")) {
     if (action !== undefined || operationId !== undefined || extra.length > 0) {
-      throw new UsageError("Expected: relay verify-change --base <ref> [--config-file <path>]");
+      throw new UsageError("Expected: relay prove --base <ref> [--config-file <path>]");
     }
     if (rawInput !== undefined || inputFile !== undefined) {
       throw new UsageError(
-        "verify-change --base reads a reviewed config file; use --config-file instead of --input",
+        "prove --base reads a reviewed config file; use --config-file instead of --input",
       );
     }
     const base = tokens.values.get("--base")!.trim();
@@ -661,7 +673,7 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
     if (config && configFile) {
       throw new UsageError("Use only one of --config or --config-file");
     }
-    return {
+    const shared = {
       config: {
         connection,
         credentialSource,
@@ -671,16 +683,18 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
         wait,
         ensureLocalServer,
       },
-      command: "verify-change",
       base,
       configFile: config ?? configFile ?? ".relay/change-proof.json",
       confirm: tokens.switches.has("--confirm"),
-    };
+    } as const;
+    return group === "prove"
+      ? { ...shared, command: "prove" as const }
+      : { ...shared, command: "verify-change" as const, legacy: true as const };
   }
 
   for (const verifyChangeOnly of ["--base", "--config", "--config-file"] as const) {
     if (tokens.values.has(verifyChangeOnly)) {
-      throw new UsageError(`${verifyChangeOnly} is only valid on verify-change --base`);
+      throw new UsageError(`${verifyChangeOnly} is only valid on prove --base`);
     }
   }
 

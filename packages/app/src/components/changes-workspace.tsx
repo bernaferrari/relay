@@ -1,21 +1,21 @@
-import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
-import { Button } from "@relay/ui/button";
+import { Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import {
   VERIFY_CHANGE_POLICY,
   changeTestedSha,
   type ChangeProofPublicationReceipt,
   type ChangeProofPublicationOutboxRecord,
   type ChangeVerification,
-  type ChangeVerificationState,
   type ChangeProofExecutionSummary,
+  type ChangeProofExecutionPreview,
   type WorkspaceChangeContext,
 } from "@relay/protocol";
 import { useServer } from "../context/server";
 import { cn } from "../lib/cn";
 import { humanError } from "../lib/human-error";
 import { proofCanCancel, proofPrimaryAction } from "../lib/proof-actions";
-import { eyebrow, productIconButton, productPage } from "../lib/ui";
+import { productPage } from "../lib/ui";
 import { ChangesProofCreateForm } from "./changes-proof-create-form";
+import { ChangesProofSetup } from "./changes-proof-setup";
 import {
   emptyProofDraft,
   normalizedProofDraft,
@@ -26,38 +26,12 @@ import {
 } from "./changes-proof-draft";
 import { confirmAction } from "./confirm-dialog";
 import { Icon } from "./icon";
-import type { StatusChipTone } from "./status-chip";
 import { ProofDetail } from "./proof-detail";
 import { proofPlanSummary } from "./proof-plan-review";
-
-const statePresentation: Record<ChangeVerificationState, { label: string; tone: StatusChipTone }> =
-  {
-    planning: { label: "Planning", tone: "idle" },
-    "awaiting-build": { label: "Awaiting build", tone: "attention" },
-    ready: { label: "Ready", tone: "idle" },
-    "running-pilot": { label: "Running pilot", tone: "run" },
-    "awaiting-expansion": { label: "Pilot passed", tone: "run" },
-    running: { label: "Running coverage", tone: "run" },
-    proved: { label: "Proved", tone: "pass" },
-    rejected: { label: "Rejected", tone: "fail" },
-    "needs-review": { label: "Needs review", tone: "attention" },
-    "insufficient-evidence": { label: "Insufficient evidence", tone: "attention" },
-    cancelled: { label: "Cancelled", tone: "idle" },
-    superseded: { label: "Superseded", tone: "idle" },
-  };
-
-function shortSha(value: string): string {
-  return value.slice(0, 12);
-}
-
-function changeTitle(proof: ChangeVerification): string {
-  return (
-    proof.change.agentClaim?.summary ||
-    (proof.change.pullRequest
-      ? `Pull request #${proof.change.pullRequest}`
-      : shortSha(changeTestedSha(proof.change)))
-  );
-}
+import { ChangesWorkspaceHeader } from "./changes-workspace-header";
+import { ChangesWorkspaceListFallback } from "./changes-workspace-list-fallback";
+import { ChangesWorkspaceProofList, proofStatePresentation } from "./changes-workspace-proof-list";
+import { watchActiveProofExecution } from "../lib/proof-execution-watch";
 
 export function ChangesWorkspace(props: {
   onOpenRun: (runId: string) => void;
@@ -80,6 +54,7 @@ export function ChangesWorkspace(props: {
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   const [creating, setCreating] = createSignal(false);
+  const [settingUp, setSettingUp] = createSignal(false);
   const [submitting, setSubmitting] = createSignal(false);
   const [draft, setDraft] = createSignal<ProofDraft>({ ...emptyProofDraft });
   const [draftErrors, setDraftErrors] = createSignal<ProofDraftErrors>({});
@@ -157,18 +132,117 @@ export function ChangesWorkspace(props: {
   }
 
   async function runProof(proof: ChangeVerification): Promise<void> {
+    let reviewed = proof;
+    let preview: ChangeProofExecutionPreview | undefined;
+    try {
+      const inspected = await server.runAction("proof.inspect", {
+        proofId: proof.id,
+        includeHistory: false,
+      });
+      reviewed = inspected.proof;
+      preview = inspected.executionPreview;
+      adoptProof(reviewed);
+      setExecution(inspected.execution ?? null);
+    } catch (cause) {
+      setProofActionError(humanError(cause, "Could not load the exact Proof preview"));
+      return;
+    }
+    const gated = preview?.cells.filter(
+      ({ executionRisk }) =>
+        executionRisk.level !== "safe" && executionRisk.confirmation !== "human-only",
+    );
+    if (gated?.length) {
+      confirmAction({
+        title: "Confirm guarded Proof cells?",
+        body: gated
+          .map(
+            ({ cellId, executionRisk }) =>
+              `${cellId}: ${executionRisk.level} (${executionRisk.externalEffects.join(", ") || "reviewed effect"})`,
+          )
+          .join("; "),
+        confirmLabel: "Issue receipts and run",
+        tone: "default",
+        onConfirm: () => void runReviewedProof(reviewed, preview!),
+      });
+      return;
+    }
+    await runReviewedProof(reviewed, preview);
+  }
+
+  async function runReviewedProof(
+    proof: ChangeVerification,
+    preview: ChangeProofExecutionPreview | undefined,
+  ): Promise<void> {
     setProofActionBusy("run");
     setProofActionError(null);
     try {
+      const gated =
+        preview?.cells.filter(
+          ({ executionRisk }) =>
+            executionRisk.level !== "safe" && executionRisk.confirmation !== "human-only",
+        ) ?? [];
+      const confirmationReceipts = [];
+      for (const cell of gated) {
+        const targetCase = proof.selection.targetCases.find(
+          (candidate) => candidate.id === cell.targetCaseId,
+        );
+        const fixtureScope =
+          cell.executionRisk.level === "destructive"
+            ? {
+                targetCaseId: cell.targetCaseId,
+                targetProfileId: targetCase?.targetProfile.id ?? cell.targetCaseId,
+                cleanupCheckIds: cell.executionRisk.reasons.length
+                  ? cell.executionRisk.reasons.map(({ code }) => code)
+                  : [cell.cellId],
+              }
+            : undefined;
+        const confirmation = await server.runAction("proof.run.confirm", {
+          proofId: proof.id,
+          expectedVersion: proof.version,
+          cellId: cell.cellId,
+          previewDigest: preview!.previewDigest,
+          ...(fixtureScope ? { fixtureScope } : {}),
+          confirm: true,
+        });
+        confirmationReceipts.push(confirmation.receipt);
+      }
       const result = await server.runAction("proof.run", {
         proofId: proof.id,
         expectedVersion: proof.version,
         wait: false,
+        ...(confirmationReceipts.length ? { confirmationReceipts } : {}),
       });
       adoptProof(result.proof);
       setExecution(result.execution);
     } catch (cause) {
       setProofActionError(humanError(cause, "Could not run this Proof"));
+    } finally {
+      setProofActionBusy(null);
+    }
+  }
+
+  async function resumeHumanEvidence(
+    proof: ChangeVerification,
+    paused: ChangeProofExecutionSummary,
+    evidenceDigest: string,
+  ): Promise<void> {
+    if (!paused.humanIntervention || !evidenceDigest.trim()) return;
+    setProofActionBusy("human-evidence");
+    setProofActionError(null);
+    try {
+      const result = await server.runAction("proof.run.human-evidence", {
+        proofId: proof.id,
+        executionId: paused.id,
+        cellId: paused.humanIntervention.cellId,
+        stepId: paused.humanIntervention.stepId,
+        evidenceDigest: evidenceDigest.trim() as `sha256:${string}`,
+        wait: false,
+        confirm: true,
+      });
+      adoptProof(result.proof);
+      setExecution(result.execution);
+    } catch (cause) {
+      setProofActionError(humanError(cause, "Could not record human-step evidence"));
     } finally {
       setProofActionBusy(null);
     }
@@ -362,10 +436,17 @@ export function ChangesWorkspace(props: {
   }
 
   function openCreation(): void {
+    setSettingUp(false);
     setCreating(true);
     setCreateError(null);
     setProofBaseRef(null);
     void resolveWorkspaceChange();
+  }
+
+  function openSetup(): void {
+    setCreating(false);
+    setSettingUp(true);
+    setCreateError(null);
   }
 
   async function submitProof(event: SubmitEvent): Promise<void> {
@@ -450,17 +531,23 @@ export function ChangesWorkspace(props: {
     const proofId = selectedId();
     const executionStatus = execution()?.status;
     if (!proofId || (executionStatus !== "queued" && executionStatus !== "running")) return;
-    const timer = window.setInterval(() => {
-      if (!inspecting()) void inspectProof(proofId);
-    }, props.liveRefreshMs ?? 2_000);
-    onCleanup(() => window.clearInterval(timer));
+    const dispose = watchActiveProofExecution({
+      proofId,
+      sseConnected: server.sseConnected,
+      subscribe: server.watchProofExecution,
+      refresh: () => {
+        if (!inspecting()) void inspectProof(proofId);
+      },
+      fallbackMs: props.liveRefreshMs ?? 15_000,
+    });
+    onCleanup(dispose);
   });
 
   onMount(() => void refresh());
 
   const selectedStatus = createMemo(() => {
     const proof = selected();
-    return proof ? statePresentation[proof.state] : statePresentation.planning;
+    return proof ? proofStatePresentation[proof.state] : proofStatePresentation.planning;
   });
   return (
     <section
@@ -468,39 +555,14 @@ export function ChangesWorkspace(props: {
       class={cn(productPage, "flex flex-col gap-6")}
       aria-label="Changes and Proofs"
     >
-      <header
-        class={cn(
-          "mx-auto flex w-full max-w-[1180px] items-start justify-between gap-6 max-[620px]:flex-col",
-          mobileDetailOpen() && "max-[820px]:hidden",
-        )}
-      >
-        <div class="grid max-w-[760px] gap-2">
-          <span class={eyebrow}>Merge trust</span>
-          <h1 class="m-0 text-display font-semibold tracking-[-0.035em] text-text-strong">
-            Prove a change
-          </h1>
-          <p class="m-0 text-body/[1.5] text-text-base">
-            Inspect why Relay selected each journey, which exact builds and targets ran, what
-            evidence is complete, and whether this change earned permission to merge.
-          </p>
-        </div>
-        <div class="flex shrink-0 items-center gap-2 max-[620px]:self-stretch">
-          <Show when={!creating() && proofs().length > 0}>
-            <Button variant="primary" onClick={openCreation}>
-              Prepare a Proof
-            </Button>
-          </Show>
-          <button
-            type="button"
-            class={productIconButton}
-            aria-label="Refresh Proofs"
-            disabled={loading() || inspecting()}
-            onClick={() => void refresh()}
-          >
-            <Icon name="refresh" size={16} />
-          </button>
-        </div>
-      </header>
+      <ChangesWorkspaceHeader
+        mobileDetailOpen={mobileDetailOpen}
+        canCreate={() => !creating() && !settingUp() && proofs().length > 0}
+        loading={loading}
+        inspecting={inspecting}
+        onCreate={openCreation}
+        onRefresh={() => void refresh()}
+      />
 
       <Show when={creating()}>
         <ChangesProofCreateForm
@@ -514,7 +576,25 @@ export function ChangesWorkspace(props: {
           onDraftInput={setDraftField}
           onDraftBlur={validateDraftField}
           onClose={closeCreation}
+          onSetup={openSetup}
           onSubmit={(event) => void submitProof(event)}
+        />
+      </Show>
+
+      <Show when={settingUp()}>
+        <ChangesProofSetup
+          baseRef={proofBaseRef() ?? undefined}
+          onCancel={() => {
+            setSettingUp(false);
+            setCreating(true);
+          }}
+          onPrepared={(proof) => {
+            setSettingUp(false);
+            void refresh(proof.id).then(() => {
+              setMobileDetailOpen(true);
+              resetMobileScroll();
+            });
+          }}
         />
       </Show>
 
@@ -532,102 +612,26 @@ export function ChangesWorkspace(props: {
       <Show
         when={proofs().length > 0}
         fallback={
-          <Show
-            when={!loading()}
-            fallback={
-              <div
-                class="mx-auto grid min-h-[280px] w-full max-w-[1180px] grid-cols-[280px_minmax(0,1fr)] overflow-hidden rounded-2xl bg-surface-raised-stronger-non-alpha ring-1 ring-inset ring-border-weak-base max-[820px]:grid-cols-1"
-                role="status"
-                aria-label="Loading Proofs"
-              >
-                <div class="grid content-start gap-3 border-r border-border-weak-base p-4 max-[820px]:hidden">
-                  <span class="h-16 animate-pulse rounded-xl bg-surface-base motion-reduce:animate-none" />
-                  <span class="h-16 animate-pulse rounded-xl bg-surface-base motion-reduce:animate-none" />
-                  <span class="h-16 animate-pulse rounded-xl bg-surface-base motion-reduce:animate-none" />
-                </div>
-                <div class="grid content-start gap-4 p-8">
-                  <span class="h-6 w-24 animate-pulse rounded-md bg-surface-base motion-reduce:animate-none" />
-                  <span class="h-8 w-3/4 animate-pulse rounded-md bg-surface-base motion-reduce:animate-none" />
-                  <span class="h-24 animate-pulse rounded-xl bg-surface-base motion-reduce:animate-none" />
-                </div>
-              </div>
-            }
-          >
-            <Show when={!creating()}>
-              <div class="mx-auto grid w-full max-w-[760px] justify-items-center gap-3 rounded-2xl bg-surface-raised-stronger-non-alpha px-8 py-14 text-center ring-1 ring-inset ring-border-weak-base">
-                <span class="grid size-12 place-items-center rounded-2xl bg-[var(--product-accent-soft)] text-text-interactive-base">
-                  <Icon name="check" size={21} />
-                </span>
-                <h2 class="m-0 text-title font-semibold text-text-strong">No Proofs yet</h2>
-                <p class="m-0 max-w-[50ch] text-body/[1.5] text-text-base">
-                  Relay binds the active workspace to one exact change. Unknown impact, missing
-                  builds, and incomplete evidence stay visible instead of becoming an invented pass.
-                </p>
-                <Button variant="primary" onClick={openCreation}>
-                  Prepare a Proof
-                </Button>
-              </div>
-            </Show>
-          </Show>
+          <ChangesWorkspaceListFallback
+            loading={loading}
+            creating={creating}
+            settingUp={settingUp}
+            onCreate={openCreation}
+          />
         }
       >
         <div class="mx-auto grid min-h-[520px] w-full max-w-[1180px] grid-cols-[minmax(240px,320px)_minmax(0,1fr)] overflow-hidden rounded-2xl bg-surface-raised-stronger-non-alpha ring-1 ring-inset ring-border-weak-base max-[820px]:grid-cols-1">
-          <nav
-            class={cn(
-              "min-h-0 border-r border-border-weak-base p-2",
-              mobileDetailOpen()
-                ? "max-[820px]:hidden"
-                : "max-[820px]:max-h-none max-[820px]:overflow-visible max-[820px]:border-r-0",
-            )}
-            aria-label="Proofs"
-          >
-            <For each={proofs()}>
-              {(proof) => {
-                const status = statePresentation[proof.state];
-                const active = () => selectedId() === proof.id;
-                return (
-                  <button
-                    type="button"
-                    class={cn(
-                      "grid min-h-[68px] w-full gap-1 rounded-xl px-3 py-2.5 text-left transition-colors",
-                      active() ? "bg-surface-base-active" : "hover:bg-surface-raised-base-hover",
-                    )}
-                    aria-current={active() ? "page" : undefined}
-                    onClick={() => {
-                      primeSelectedProof(proof.id);
-                      void inspectProof(proof.id);
-                      setMobileDetailOpen(true);
-                      resetMobileScroll();
-                    }}
-                  >
-                    <span class="flex min-w-0 items-center justify-between gap-2">
-                      <strong class="truncate text-body font-semibold text-text-strong">
-                        {changeTitle(proof)}
-                      </strong>
-                      <span
-                        class={cn(
-                          "size-2 shrink-0 rounded-full",
-                          status.tone === "pass"
-                            ? "bg-icon-success-base"
-                            : status.tone === "fail"
-                              ? "bg-icon-critical-base"
-                              : status.tone === "run"
-                                ? "bg-text-interactive-base"
-                                : "bg-icon-warning-base",
-                        )}
-                        aria-hidden="true"
-                      />
-                    </span>
-                    <small class="truncate text-caption text-text-weak">
-                      {proof.change.repository.split("/").at(-1) ?? proof.change.repository}
-                      {proof.change.pullRequest ? ` · #${proof.change.pullRequest}` : ""}
-                    </small>
-                    <small class="text-micro font-medium text-text-weaker">{status.label}</small>
-                  </button>
-                );
-              }}
-            </For>
-          </nav>
+          <ChangesWorkspaceProofList
+            proofs={proofs}
+            selectedId={selectedId}
+            mobileDetailOpen={mobileDetailOpen}
+            onSelect={(proofId) => {
+              primeSelectedProof(proofId);
+              void inspectProof(proofId);
+              setMobileDetailOpen(true);
+              resetMobileScroll();
+            }}
+          />
 
           <Show
             when={selected()}
@@ -667,6 +671,9 @@ export function ChangesWorkspace(props: {
                   canCancel={proofCanCancel(proof())}
                   onPrimaryAction={() => invokePrimaryProofAction(proof())}
                   onCancel={() => cancelProof(proof())}
+                  onResumeHumanEvidence={(paused, evidenceDigest) =>
+                    void resumeHumanEvidence(proof(), paused, evidenceDigest)
+                  }
                   onRetryPublication={(publication) => retryPublication(proof(), publication)}
                   onOpenRun={props.onOpenRun}
                   onOpenMap={props.onOpenMap}

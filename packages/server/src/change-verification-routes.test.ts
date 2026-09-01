@@ -11,6 +11,7 @@ import {
   compileVerificationPlan,
   createChangeProofExecutionCoordinator,
   markChangeProofPublicationRetry,
+  recordChangeProofPublication,
   resetControlDatabaseCache,
 } from "@relay/core";
 import {
@@ -36,6 +37,33 @@ const safeExecutionRisk = {
   confirmation: "none" as const,
   expectedAppBoundaries: [],
   cleanupRequired: false,
+};
+const guardedExecutionRisk = {
+  ...safeExecutionRisk,
+  level: "guarded" as const,
+  reasons: [
+    {
+      stepId: "review-external-app",
+      code: "reviewed-external-app",
+      explanation: "The reviewed Test communicates with an external app.",
+    },
+  ],
+  externalEffects: ["external-app" as const],
+  confirmation: "once-per-run" as const,
+};
+const humanOnlyExecutionRisk = {
+  ...safeExecutionRisk,
+  level: "destructive" as const,
+  reasons: [
+    {
+      stepId: "delete-fixture",
+      code: "reviewed-account-mutation",
+      explanation: "A person must verify the fixture before deleting it.",
+    },
+  ],
+  externalEffects: ["data-deletion" as const],
+  confirmation: "human-only" as const,
+  cleanupRequired: true,
 };
 
 function client(
@@ -147,6 +175,25 @@ function startInput(): OperationInput<"proof.start"> {
     ],
     selection: selection(),
     policy: { id: "relay.default", version: 3 },
+  };
+}
+
+function startInputWithRisk(
+  executionRisk: typeof guardedExecutionRisk | typeof humanOnlyExecutionRisk,
+): OperationInput<"proof.start"> {
+  const input = startInput();
+  const selection = input.selection!;
+  return {
+    ...input,
+    selection: {
+      ...selection,
+      cells: selection.cells?.map((cell) => ({
+        ...cell,
+        executionRisk,
+        executionRiskDigest: canonicalSha256(executionRisk),
+        cleanupRequired: executionRisk.cleanupRequired,
+      })),
+    },
   };
 }
 
@@ -633,8 +680,25 @@ test("Proof execution records only server-derived Run facts and advances pilot t
     proofRouteRuntime: {
       readRun: async (id) => runs.get(id) ?? null,
       caseResultFromRun: caseResultFromRun as never,
-      publishTerminal: async ({ proof }) => {
+      publishTerminal: async ({ proof, intent, scope }) => {
         published.push({ state: proof.state, headSha: proof.change.headSha });
+        // Acknowledge progress updates so the ordered outbox can reach the
+        // terminal version. Deliberately omit the terminal receipt to retain
+        // this test's reconciliation/recovery exercise.
+        if (intent.check.status !== "completed") {
+          await recordChangeProofPublication({
+            ...scope,
+            proofId: intent.proofId,
+            proofVersion: intent.proofVersion,
+            repository: intent.repository,
+            check: intent.check,
+            provider: "github",
+            checkRunId: 42,
+            externalId: intent.externalId,
+            headSha: intent.headSha,
+            publishedAt: Date.now(),
+          });
+        }
       },
     },
   });
@@ -794,24 +858,26 @@ test("Proof execution records only server-derived Run facts and advances pilot t
     assert.deepEqual(proved.proof.runIds, ["pilot-run", "expansion-run"]);
     assert.ok(published.length >= 1);
     assert.ok(
-      published.every(
-        (publication) => publication.state === "proved" && publication.headSha === headSha,
-      ),
-      "at-least-once publisher retries retain the exact terminal Proof identity",
+      published.every((publication) => publication.headSha === headSha),
+      "at-least-once progress and terminal retries retain the exact Proof head",
     );
     const pendingPublication = await relay.invoke("proof.inspect", {
       proofId: proved.proof.id,
       includeHistory: false,
     });
-    assert.equal(pendingPublication.publications.length, 0);
-    assert.equal(pendingPublication.publicationOutbox.length, 1);
-    assert.equal(pendingPublication.publicationOutbox[0]?.status, "retry");
-    assert.equal(
-      pendingPublication.publicationOutbox[0]?.lastFailure?.kind,
-      "reconciliation-error",
+    assert.ok(pendingPublication.publications.length >= 1);
+    assert.ok(
+      pendingPublication.publications.every((receipt) => receipt.status !== "completed"),
+      "the deliberately unacknowledged terminal update has no forged receipt",
     );
+    const terminalPublication = pendingPublication.publicationOutbox.find(
+      (record) => record.proofVersion === proved.proof.version,
+    );
+    assert.ok(terminalPublication);
+    assert.equal(terminalPublication.status, "retry");
+    assert.equal(terminalPublication.lastFailure?.kind, "reconciliation-error");
 
-    let exhausted = pendingPublication.publicationOutbox[0]!;
+    let exhausted = terminalPublication;
     while (exhausted.attempts < exhausted.maxAttempts) {
       const claimed = await claimChangeProofPublicationOutbox({
         organizationId,
@@ -888,11 +954,7 @@ test("Proof execution records only server-derived Run facts and advances pilot t
       { requestId: "execution-record-expansion" },
     );
     assert.equal(repeatedProved.proof.state, "proved");
-    assert.ok(
-      published.every(
-        (publication) => publication.state === "proved" && publication.headSha === headSha,
-      ),
-    );
+    assert.ok(published.every((publication) => publication.headSha === headSha));
 
     const soloCreated = await relay.invoke(
       "proof.start",
@@ -1133,6 +1195,275 @@ test("proof.cancel fences an active route execution before target dispatch", asy
     assert.equal(dispatches, 0);
   } finally {
     releaseFence();
+    await server.close();
+    resetControlDatabaseCache();
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("proof.run confirmation admits guarded cells only with a durable human receipt", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-proof-confirmation-route-"));
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = root;
+  resetControlDatabaseCache();
+  let dispatches = 0;
+  const coordinator = createChangeProofExecutionCoordinator({
+    workerId: "worker:confirmation-route",
+    projectRun: async ({ run }) => ({
+      appMapId: "settings",
+      testId: "settings-language",
+      targetCaseId: "chromium-compact-ar",
+      runId: (run as { id: string }).id,
+      sourceSha: headSha,
+      buildId: "web",
+      artifactDigest: digest,
+      outcome: "passed",
+      evidenceDigests: [`sha256:${"b".repeat(64)}`],
+      evidenceComplete: true,
+      selectorResolution: "deterministic",
+      inputOutcome: "reconciled",
+      cleanup: "not-required",
+    }),
+  });
+  const server = await startServer({
+    host: "127.0.0.1",
+    port: 0,
+    proofRouteRuntime: {
+      executionCoordinator: coordinator,
+      executeCell: async () => {
+        dispatches += 1;
+        return {
+          runId: "guarded-route-run",
+          wait: async () => ({ id: "guarded-route-run" }) as never,
+        };
+      },
+    },
+  });
+  const relay = client(server.port);
+  const reviewer = client(server.port, projectId, "human");
+  try {
+    const created = await relay.invoke("proof.start", startInputWithRisk(guardedExecutionRisk), {
+      requestId: "guarded-confirm-start",
+    });
+    const approved = await reviewer.invoke(
+      "proof.plan.approve",
+      {
+        proofId: created.proof.id,
+        expectedVersion: created.proof.version,
+        decisionId: "guarded-confirm-approval",
+        reason: "The guarded external-app effect is explicitly reviewed.",
+        confirm: true,
+      },
+      { requestId: "guarded-confirm-approval" },
+    );
+    const inspected = await relay.invoke("proof.inspect", { proofId: approved.proof.id });
+    const preview = inspected.executionPreview!;
+    const cell = preview.cells[0]!;
+    const issued = await reviewer.invoke(
+      "proof.run.confirm",
+      {
+        proofId: approved.proof.id,
+        expectedVersion: approved.proof.version,
+        cellId: cell.cellId,
+        previewDigest: preview.previewDigest,
+        confirm: true,
+      },
+      { requestId: "guarded-confirm-issue" },
+    );
+    assert.equal(issued.receipt.actorId, "human:reviewer");
+    assert.equal(issued.receipt.scope.cellId, cell.cellId);
+
+    const ran = await reviewer.invoke(
+      "proof.run",
+      {
+        proofId: approved.proof.id,
+        expectedVersion: approved.proof.version,
+        wait: true,
+        confirmationReceipts: [issued.receipt],
+      },
+      { requestId: "guarded-confirm-run" },
+    );
+    assert.equal(ran.execution.status, "completed");
+    // Execution authority is satisfied, but the aggregate Proof still
+    // requires its separate policy review before merge for a guarded effect.
+    assert.equal(ran.proof.state, "needs-review");
+    assert.equal(dispatches, 1);
+
+    // A receipt-shaped object with an unissued identity must not become
+    // authority merely because its preview and scope are otherwise exact.
+    await assert.rejects(
+      reviewer.invoke(
+        "proof.run",
+        {
+          proofId: approved.proof.id,
+          expectedVersion: approved.proof.version,
+          confirmationReceipts: [{ ...issued.receipt, receiptId: "proof-confirmation:forged" }],
+        },
+        { requestId: "guarded-confirm-forged" },
+      ),
+      (error) =>
+        error instanceof ApiError &&
+        error.status === 409 &&
+        error.body.code === "PROOF_CONFIRMATION_INVALID",
+    );
+
+    // Consumed receipts are single-use, including retries with a new request
+    // identity after the first execution has completed.
+    await assert.rejects(
+      reviewer.invoke(
+        "proof.run",
+        {
+          proofId: approved.proof.id,
+          expectedVersion: approved.proof.version,
+          confirmationReceipts: [issued.receipt],
+        },
+        { requestId: "guarded-confirm-replay" },
+      ),
+      (error) =>
+        error instanceof ApiError &&
+        error.status === 409 &&
+        error.body.code === "PROOF_CONFIRMATION_REPLAYED",
+    );
+    assert.equal(dispatches, 1);
+  } finally {
+    await server.close();
+    resetControlDatabaseCache();
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("destructive Proof cells stay paused and human evidence resumes only with an exact host seam", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-proof-human-route-"));
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = root;
+  resetControlDatabaseCache();
+  let dispatches = 0;
+  const coordinator = createChangeProofExecutionCoordinator({
+    workerId: "worker:human-route",
+    projectRun: async ({ run }) => ({
+      appMapId: "settings",
+      testId: "settings-language",
+      targetCaseId: "chromium-compact-ar",
+      runId: (run as { id: string }).id,
+      sourceSha: headSha,
+      buildId: "web",
+      artifactDigest: digest,
+      outcome: "passed",
+      evidenceDigests: [`sha256:${"c".repeat(64)}`],
+      evidenceComplete: true,
+      selectorResolution: "deterministic",
+      inputOutcome: "reconciled",
+      cleanup: "restored",
+    }),
+  });
+  const server = await startServer({
+    host: "127.0.0.1",
+    port: 0,
+    proofRouteRuntime: {
+      executionCoordinator: coordinator,
+      executeCell: async ({ cell }) => {
+        dispatches += 1;
+        assert.equal(cell.cellId, "cell-settings-chromium");
+        return { runId: "human-route-run", wait: async () => ({ id: "human-route-run" }) as never };
+      },
+      supportsHumanInterventionResume: true,
+    },
+  });
+  const relay = client(server.port);
+  const reviewer = client(server.port, projectId, "human");
+  try {
+    const created = await relay.invoke("proof.start", startInputWithRisk(humanOnlyExecutionRisk), {
+      requestId: "human-route-start",
+    });
+    const approved = await reviewer.invoke(
+      "proof.plan.approve",
+      {
+        proofId: created.proof.id,
+        expectedVersion: created.proof.version,
+        decisionId: "human-route-approval",
+        reason: "The destructive fixture step must remain human-only.",
+        confirm: true,
+      },
+      { requestId: "human-route-approval" },
+    );
+    const paused = await relay.invoke(
+      "proof.run",
+      { proofId: approved.proof.id, expectedVersion: approved.proof.version, wait: true },
+      { requestId: "human-route-run" },
+    );
+    assert.equal(paused.execution.status, "paused-human");
+    assert.deepEqual(paused.execution.humanIntervention, {
+      cellId: "cell-settings-chromium",
+      stepId: "delete-fixture",
+      effects: ["data-deletion"],
+      reason: "A person must verify the fixture before deleting it.",
+      at: paused.execution.humanIntervention!.at,
+    });
+    assert.equal(dispatches, 0);
+
+    await assert.rejects(
+      reviewer.invoke(
+        "proof.run.confirm",
+        {
+          proofId: approved.proof.id,
+          expectedVersion: approved.proof.version,
+          cellId: "cell-settings-chromium",
+          previewDigest: (await relay.invoke("proof.inspect", { proofId: approved.proof.id }))
+            .executionPreview!.previewDigest,
+          fixtureScope: {
+            targetCaseId: "chromium-compact-ar",
+            targetProfileId: "web:compact:ar",
+            cleanupCheckIds: ["fixture-cleanup"],
+          },
+          confirm: true,
+        },
+        { requestId: "human-route-confirm" },
+      ),
+      (error) => error instanceof ApiError && error.status === 409,
+    );
+
+    const evidence = await reviewer.invoke(
+      "proof.run.human-evidence",
+      {
+        proofId: approved.proof.id,
+        executionId: paused.execution.id,
+        cellId: "cell-settings-chromium",
+        stepId: "delete-fixture",
+        evidenceDigest: `sha256:${"e".repeat(64)}`,
+        wait: true,
+        confirm: true,
+      },
+      { requestId: "human-route-evidence" },
+    );
+    assert.equal(evidence.execution.status, "completed");
+    assert.equal(evidence.evidence.recordedBy, "human:reviewer");
+    assert.equal(dispatches, 1);
+
+    await assert.rejects(
+      reviewer.invoke(
+        "proof.run.human-evidence",
+        {
+          proofId: approved.proof.id,
+          executionId: paused.execution.id,
+          cellId: "cell-settings-chromium",
+          stepId: "delete-fixture",
+          evidenceDigest: `sha256:${"e".repeat(64)}`,
+          wait: true,
+          confirm: true,
+        },
+        { requestId: "human-route-evidence-replay" },
+      ),
+      (error) =>
+        error instanceof ApiError &&
+        error.status === 409 &&
+        error.body.code === "PROOF_EXECUTION_HUMAN_INTERVENTION",
+    );
+    assert.equal(dispatches, 1);
+  } finally {
     await server.close();
     resetControlDatabaseCache();
     if (previous === undefined) delete process.env.RELAY_STATE_DIR;

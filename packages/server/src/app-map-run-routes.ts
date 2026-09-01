@@ -13,7 +13,6 @@ import {
   findActiveCombineCampaignForCombine,
   frozenRawAccessibilityTargetProfiles,
   createAppMapTestExecutionIntent,
-  canonicalSha256,
   currentOperationContext,
   enqueueJob,
   listDevices,
@@ -48,12 +47,15 @@ import {
 } from "./app-map-test-target-profile.js";
 import type { RequestContext } from "./security.js";
 import { assertRepeatWorkflowMutation } from "./repeat-workflow-receipt.js";
-import { frozenProofEvidencePolicy } from "./proof-evidence-policy-authority.js";
 import {
   explicitTargetAvailability,
   frozenEvidenceTargetProfileForTarget,
   offlinePreflightProfileRecovery,
 } from "./app-map-run-target-admission.js";
+import {
+  appMapProofExecutionAdmission,
+  type AppMapProofExecutionAuthority,
+} from "./app-map-proof-execution-admission.js";
 
 export {
   frozenTestRunTargetProfile,
@@ -95,9 +97,7 @@ export type AppMapRunRouteContext = {
   /** Proof-only admission membrane. The canonical Test preflight must match
    * the risk authority frozen by the calling Verification Cell before any
    * target lease or job enqueue is attempted. */
-  proofExecutionAuthority?: {
-    executionRiskDigest: string;
-    evidencePolicyDigest: string;
+  proofExecutionAuthority?: AppMapProofExecutionAuthority & {
     /** Proof execution also freezes the exact build/deployment identity. */
     buildId?: string;
     sourceSha?: string;
@@ -340,41 +340,10 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
       );
     }
 
-    const proofEvidencePolicy = input.proofExecutionAuthority
-      ? frozenProofEvidencePolicy(input.proofExecutionAuthority.evidencePolicyDigest)
-      : undefined;
-    if (input.proofExecutionAuthority) {
-      const actualRiskDigest = canonicalSha256(preflight.executionRisk);
-      if (actualRiskDigest !== input.proofExecutionAuthority.executionRiskDigest) {
-        throw new HttpError(
-          409,
-          "Proof cell execution risk no longer matches its frozen authority",
-          {
-            code: "PROOF_EXECUTION_AUTHORITY_MISMATCH",
-            expectedExecutionRiskDigest: input.proofExecutionAuthority.executionRiskDigest,
-            actualExecutionRiskDigest: actualRiskDigest,
-            recovery:
-              "Recompile the exact Test revision and review its execution authority before retrying the Proof.",
-          },
-        );
-      }
-      if (
-        preflight.executionRisk.level !== "safe" ||
-        preflight.executionRisk.confirmation !== "none"
-      ) {
-        throw new HttpError(
-          409,
-          "Proof execution currently admits only safe Tests without confirmation",
-          {
-            code: "PROOF_EXECUTION_AUTHORITY_REQUIRED",
-            level: preflight.executionRisk.level,
-            confirmation: preflight.executionRisk.confirmation,
-            recovery:
-              "Review the Test's external effects and provide an explicit confirmation flow before running this Proof.",
-          },
-        );
-      }
-    }
+    const proofEvidencePolicy = appMapProofExecutionAdmission({
+      authority: input.proofExecutionAuthority,
+      preflight,
+    });
 
     // Freeze and validate every executable byte before Relay asks the target
     // controller for a lease. A malformed graph or intent is an offline
@@ -632,6 +601,15 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
       ...(queuedSourceRevision ? { sourceRevision: queuedSourceRevision } : {}),
       ...(proofEvidencePolicy ? { evidencePolicy: proofEvidencePolicy } : {}),
       artifacts: [
+        ...(input.proofExecutionAuthority?.humanInterventionEvidence
+          ? [
+              {
+                kind: "proof-human-intervention-evidence",
+                capturedAt: input.proofExecutionAuthority.humanInterventionEvidence.recordedAt,
+                data: structuredClone(input.proofExecutionAuthority.humanInterventionEvidence),
+              },
+            ]
+          : []),
         ...(buildProvenance
           ? [
               {

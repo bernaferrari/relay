@@ -520,6 +520,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       sseConnected,
       eventActivity,
       watchWorkflow,
+      watchProofExecution,
       connect: connectSse,
       dispose: disposeSse,
     } = createServerEventController({
@@ -715,6 +716,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       sseConnected,
       eventActivity,
       watchWorkflow,
+      watchProofExecution,
       devices,
       targets,
       targetProfiles,

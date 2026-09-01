@@ -1,4 +1,5 @@
 import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
+import type { AppMapVariable, CaseExpansionStrategy } from "@relay/protocol";
 import {
   createRelayWorkflows,
   type DurableRepeatTestDecision,
@@ -6,7 +7,6 @@ import {
   type RepeatTestSnapshot,
 } from "@relay/workflows";
 import { Button } from "@relay/ui/button";
-import { Switch } from "@relay/ui/switch";
 import { useServer } from "../context/server";
 import { toast } from "../context/toast";
 import { cn } from "../lib/cn";
@@ -18,12 +18,10 @@ import {
   repeatStorageKeys,
   writeStoredRepeat,
 } from "../lib/app-map-test-repeat-storage";
-import {
-  type AppMapTestCombineStripProps,
-  repeatCaseLabel as presentRepeatCaseLabel,
-} from "../lib/app-map-test-repeat-presentation";
+import { type AppMapTestCombineStripProps } from "../lib/app-map-test-repeat-presentation";
 import { AppMapTestVariableEmptyState } from "./app-map-test-variable-empty-state";
 import { AppMapTestRepeatStatus } from "./app-map-test-repeat-status";
+import { AppMapTestCombineControls, repeatDurationLabel } from "./app-map-test-combine-controls";
 import {
   applyableVariables,
   projectTestCombineStrip,
@@ -39,12 +37,13 @@ import {
   testQuietRow,
   testSelectedRow,
 } from "../lib/app-map-test-editor-styles";
-
 export function AppMapTestCombineStrip(props: AppMapTestCombineStripProps) {
   const server = useServer();
   const candidates = createMemo(() => applyableVariables(Object.values(props.map.variables ?? {})));
-  const [variableId, setVariableId] = createSignal("");
-  const [selectedIds, setSelectedIds] = createSignal<string[]>([]);
+  const [selectedVariableIds, setSelectedVariableIds] = createSignal<string[]>([]);
+  const [selectedValues, setSelectedValues] = createSignal<Record<string, string[]>>({});
+  const [strategy, setStrategy] = createSignal<CaseExpansionStrategy>("zip");
+  const [pilotMode, setPilotMode] = createSignal<"representative" | "first">("representative");
   const [lens, setLens] = createSignal<TestCombineLens>("visual");
   const [wholePage, setWholePage] = createSignal(false);
   const [busy, setBusy] = createSignal(false);
@@ -59,13 +58,21 @@ export function AppMapTestCombineStrip(props: AppMapTestCombineStripProps) {
   let restoreVersion = 0;
   function rememberRepeat(snapshot: RepeatTestSnapshot): void {
     if (!snapshot.workflow) return;
-    const dimension = snapshot.frozen!.resolved.dimensions[0];
-    if (dimension) {
-      setVariableId(dimension.id);
-      setSelectedIds([...dimension.valueIds]);
+    const resolved = snapshot.frozen?.resolved;
+    if (resolved) {
+      setSelectedVariableIds(resolved.dimensions.map((dimension) => dimension.id));
+      setSelectedValues(
+        Object.fromEntries(
+          resolved.dimensions.map((dimension) => [dimension.id, [...dimension.valueIds]]),
+        ),
+      );
+      setStrategy(resolved.strategy);
+      if (resolved.pilot.mode === "first" || resolved.pilot.mode === "representative") {
+        setPilotMode(resolved.pilot.mode);
+      }
     }
-    setLens(snapshot.frozen!.evidence);
-    setWholePage(Boolean(snapshot.frozen!.capture?.fullSurfaceScreenIds.length));
+    if (snapshot.frozen) setLens(snapshot.frozen.evidence);
+    setWholePage(Boolean(snapshot.frozen?.capture?.fullSurfaceScreenIds.length));
     setRepeat(snapshot);
     try {
       writeStoredRepeat(window.localStorage, storageKeys(), snapshot.workflow);
@@ -78,7 +85,6 @@ export function AppMapTestCombineStrip(props: AppMapTestCombineStripProps) {
     if (snapshot.workflow && snapshot.frozen) rememberRepeat(snapshot);
     else setRepeat(snapshot.phase === "needs-attention" ? snapshot : undefined);
   }
-
   async function recoverRepeat(version?: number): Promise<RepeatTestSnapshot | undefined> {
     const snapshot = await workflows.recover({
       kind: "repeat-test",
@@ -89,7 +95,6 @@ export function AppMapTestCombineStrip(props: AppMapTestCombineStripProps) {
     applyRecoverySnapshot(snapshot);
     return snapshot;
   }
-
   createEffect(() => {
     const keys = storageKeys();
     const version = ++restoreVersion;
@@ -144,35 +149,49 @@ export function AppMapTestCombineStrip(props: AppMapTestCombineStripProps) {
   });
   createEffect(() => {
     const available = candidates();
-    if (available.some((item) => item.id === variableId())) return;
+    const selected = selectedVariableIds();
+    const stillAvailable = selected.filter((id) => available.some((item) => item.id === id));
+    if (stillAvailable.length) {
+      if (stillAvailable.length !== selected.length) setSelectedVariableIds(stillAvailable);
+      return;
+    }
     const first = available[0];
-    setVariableId(first?.id ?? "");
-    setSelectedIds(first ? [first.options[0]?.id].filter((id): id is string => Boolean(id)) : []);
+    if (!first) return;
+    setSelectedVariableIds(first ? [first.id] : []);
+    setSelectedValues(
+      first ? { [first.id]: [first.options[0]?.id].filter((id): id is string => Boolean(id)) } : {},
+    );
   });
-  const selectedVariable = createMemo(() =>
-    candidates().find((candidate) => candidate.id === variableId()),
-  );
-  const repeatValueLabel = (valueId: string) => {
-    const option = selectedVariable()?.options.find((candidate) => candidate.id === valueId);
+  const selectedVariables = createMemo(() => {
+    const chosen = new Set(selectedVariableIds());
+    return candidates().filter((candidate) => chosen.has(candidate.id));
+  });
+  const valuesFor = (variable: AppMapVariable) => {
+    const selected = selectedValues()[variable.id];
+    return selected !== undefined ? selected : variable.options.map((option) => option.id);
+  };
+  const valueLabel = (dimensionId: string, valueId: string) => {
+    const variable = candidates().find((candidate) => candidate.id === dimensionId);
+    const option = variable?.options.find((candidate) => candidate.id === valueId);
     return option ? combineValueLabel(option) : valueId;
   };
-  const selected = createMemo(() => {
-    const variable = selectedVariable();
-    if (!variable) return {};
-    const ids = selectedIds().filter((id) => variable.options.some((option) => option.id === id));
-    return { [variable.id]: ids };
-  });
+  const variableLabel = (dimensionId: string) =>
+    candidates().find((candidate) => candidate.id === dimensionId)?.name ?? dimensionId;
+  const selected = createMemo(() =>
+    Object.fromEntries(selectedVariables().map((variable) => [variable.id, valuesFor(variable)])),
+  );
   const projection = createMemo(() =>
     projectTestCombineStrip({
       test: props.test,
-      variables: selectedVariable() ? [selectedVariable()!] : [],
+      variables: selectedVariables(),
       selected: selected(),
+      strategy: strategy(),
     }),
   );
   const sentence = createMemo(() =>
     testCombineSentence({
       testName: props.test.name,
-      variableNames: selectedVariable() ? [selectedVariable()!.name] : [],
+      variableNames: selectedVariables().map((variable) => variable.name),
       worlds: projection().worlds,
       lens: lens(),
     }),
@@ -217,15 +236,36 @@ export function AppMapTestCombineStrip(props: AppMapTestCombineStripProps) {
     });
   }
 
-  function toggleValue(id: string): void {
-    setSelectedIds((current) =>
+  function toggleVariable(id: string): void {
+    const variable = candidates().find((item) => item.id === id);
+    if (!variable) return;
+    setSelectedVariableIds((current) =>
       current.includes(id) ? current.filter((item) => item !== id) : [...current, id],
     );
+    setSelectedValues((current) => ({
+      ...current,
+      [id]:
+        current[id] ?? [variable.options[0]?.id].filter((value): value is string => Boolean(value)),
+    }));
   }
 
-  function selectAll(): void {
-    const variable = selectedVariable();
-    setSelectedIds(variable ? variable.options.map((option) => option.id) : []);
+  function toggleValue(variableId: string, id: string): void {
+    setSelectedValues((current) => {
+      const values = current[variableId] ?? [];
+      return {
+        ...current,
+        [variableId]: values.includes(id) ? values.filter((item) => item !== id) : [...values, id],
+      };
+    });
+  }
+
+  function selectAll(variableId: string): void {
+    const variable = candidates().find((item) => item.id === variableId);
+    if (!variable) return;
+    setSelectedValues((current) => ({
+      ...current,
+      [variableId]: variable.options.map((option) => option.id),
+    }));
   }
 
   async function runPilot(): Promise<void> {
@@ -241,13 +281,16 @@ export function AppMapTestCombineStrip(props: AppMapTestCombineStripProps) {
       toast("Choose a device before repeating this Test.", "warning");
       return;
     }
-    if (!projection().cells.length) {
+    if (projection().issue) {
+      toast(projection().issue!, "warning");
+      return;
+    }
+    if (!projection().totalWorlds) {
       toast("Choose at least one value.", "warning");
       return;
     }
     const repeatInput = combineRunInput({ executionMode: "pilot" });
-    const dimension = selectedVariable();
-    if (!repeatInput || !dimension) return;
+    if (!repeatInput || !selectedVariables().length) return;
     setBusy(true);
     try {
       const snapshot = await workflows.start({
@@ -257,9 +300,12 @@ export function AppMapTestCombineStrip(props: AppMapTestCombineStripProps) {
         revision: { exact: props.map.revision },
         target: { kind: "device", platform, targetId: device.serial },
         repeat: {
-          dimensions: [{ id: dimension.id, values: [...selectedIds()] }],
-          strategy: "zip",
-          pilot: { mode: "representative" },
+          dimensions: selectedVariables().map((variable) => ({
+            id: variable.id,
+            values: [...valuesFor(variable)],
+          })),
+          strategy: strategy(),
+          pilot: { mode: pilotMode() },
           resume: "untouched",
         },
         evidence: lens(),
@@ -338,7 +384,12 @@ export function AppMapTestCombineStrip(props: AppMapTestCombineStripProps) {
   }
 
   const repeatCaseLabel = (values: Readonly<Record<string, string>>) =>
-    presentRepeatCaseLabel(values, variableId(), repeatValueLabel);
+    Object.entries(values)
+      .map(
+        ([dimensionId, valueId]) =>
+          `${variableLabel(dimensionId)}: ${valueLabel(dimensionId, valueId)}`,
+      )
+      .join(" · ");
 
   async function advanceRepeat(action: DurableRepeatTestDecision["action"]): Promise<void> {
     const current = repeat();
@@ -383,115 +434,91 @@ export function AppMapTestCombineStrip(props: AppMapTestCombineStripProps) {
             {sentence()}
           </h2>
         </header>
-        <Show when={candidates().length > 1}>
-          <label class="grid gap-1">
-            <span class={testEditorSection}>Dimension</span>
-            <select
-              class="min-h-11 rounded-md border border-border-weak-base bg-background-base px-2.5 text-caption text-text-strong focus-visible:border-border-focus focus-visible:outline-none"
-              data-test-combine-variable
-              value={variableId()}
-              disabled={repeatLocked()}
-              onChange={(event) => {
-                const id = event.currentTarget.value;
-                setVariableId(id);
-                const next = candidates().find((item) => item.id === id);
-                setSelectedIds(
-                  next
-                    ? [next.options[0]?.id].filter((value): value is string => Boolean(value))
-                    : [],
-                );
-              }}
-            >
-              <For each={candidates()}>
-                {(candidate) => (
-                  <option value={candidate.id}>
-                    {candidate.name} · {candidate.options.length} values
-                  </option>
-                )}
-              </For>
-            </select>
-          </label>
-        </Show>
-        <div class="grid gap-1.5">
-          <div class="flex items-center justify-between gap-2">
-            <span class={testEditorSection}>Values</span>
-            <button
-              type="button"
-              class="text-caption text-text-base hover:underline"
-              disabled={repeatLocked()}
-              onClick={selectAll}
-            >
-              All
-            </button>
-          </div>
-          <div class="flex flex-wrap gap-1.5">
-            <For each={selectedVariable()?.options ?? []}>
-              {(option) => {
-                const on = () => selectedIds().includes(option.id);
+        <fieldset class="grid gap-1.5 border-0 p-0">
+          <legend class={testEditorSection}>Dimensions</legend>
+          <p class={cn(testEditorHint, "m-0")}>Choose one or more Variables to vary together.</p>
+          <div class="grid gap-1" role="group" aria-label="Repeat dimensions">
+            <For each={candidates()}>
+              {(candidate) => {
+                const selected = () => selectedVariableIds().includes(candidate.id);
                 return (
                   <button
                     type="button"
                     class={cn(
-                      "min-h-11 rounded-md px-2.5 text-caption",
-                      on() ? testSelectedRow : testQuietRow,
-                      "border border-transparent",
+                      "flex min-h-11 items-center justify-between gap-2 rounded-lg border px-2.5 text-left text-caption transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-focus",
+                      selected()
+                        ? "border-border-interactive-base bg-surface-interactive-weak text-text-strong"
+                        : "border-border-weak-base text-text-weak hover:bg-surface-raised-base-hover hover:text-text-strong",
                     )}
-                    data-test-combine-value={option.id}
-                    aria-pressed={on()}
+                    data-test-combine-variable={candidate.id}
+                    aria-pressed={selected()}
                     disabled={repeatLocked()}
-                    onClick={() => toggleValue(option.id)}
+                    onClick={() => toggleVariable(candidate.id)}
                   >
-                    {combineValueLabel(option)}
+                    <span class="grid min-w-0 gap-px">
+                      <strong class="truncate font-medium">{candidate.name}</strong>
+                      <span class="text-micro text-text-weak">
+                        {valuesFor(candidate).length} of {candidate.options.length} values
+                      </span>
+                    </span>
+                    <span aria-hidden="true">{selected() ? "Selected" : "Add"}</span>
                   </button>
                 );
               }}
             </For>
           </div>
-        </div>
-        <div class="grid gap-1.5">
-          <span class={testEditorSection}>Evidence</span>
-          <div class="flex gap-1.5">
-            <For each={["visual", "smoke"] as const}>
-              {(choice) => (
+        </fieldset>
+        <For each={selectedVariables()}>
+          {(variable) => (
+            <fieldset class="grid gap-1.5 border-0 p-0" data-test-combine-values={variable.id}>
+              <div class="flex items-center justify-between gap-2">
+                <span class={testEditorSection}>{variable.name} values</span>
                 <button
                   type="button"
-                  class={cn(
-                    "min-h-11 rounded-md px-3 text-caption",
-                    lens() === choice ? testSelectedRow : testQuietRow,
-                  )}
-                  data-test-combine-lens={choice}
-                  aria-pressed={lens() === choice}
+                  class="min-h-11 rounded-md px-2 text-caption text-text-base hover:bg-surface-raised-base-hover hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-focus"
                   disabled={repeatLocked()}
-                  onClick={() => setLens(choice)}
+                  onClick={() => selectAll(variable.id)}
                 >
-                  {choice === "visual" ? "Visual" : "Smoke"}
+                  All
                 </button>
-              )}
-            </For>
-          </div>
-        </div>
-        <div class="flex items-start justify-between gap-4">
-          <div class="grid min-w-0 gap-px">
-            <span id="app-map-test-combine-whole-page" class={testEditorSection}>
-              Whole page
-            </span>
-            <span class={testEditorHint}>
-              {wholePageAvailability().ready
-                ? "Capture the full scrolling screen."
-                : destinationScreenId()
-                  ? "This destination has no frozen full-page capture."
-                  : "This Test has no destination screen to capture as a whole page."}
-            </span>
-          </div>
-          <Switch
-            class="mt-0.5 shrink-0"
-            checked={wholePage()}
-            disabled={repeatLocked() || !wholePageAvailability().ready}
-            aria-labelledby="app-map-test-combine-whole-page"
-            data-test-combine-whole-page
-            onCheckedChange={setWholePage}
-          />
-        </div>
+              </div>
+              <div class="flex flex-wrap gap-1.5">
+                <For each={variable.options}>
+                  {(option) => {
+                    const on = () => valuesFor(variable).includes(option.id);
+                    return (
+                      <button
+                        type="button"
+                        class={cn(
+                          "min-h-11 rounded-md border border-transparent px-2.5 text-caption focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-focus",
+                          on() ? testSelectedRow : testQuietRow,
+                        )}
+                        data-test-combine-value={option.id}
+                        aria-pressed={on()}
+                        disabled={repeatLocked()}
+                        onClick={() => toggleValue(variable.id, option.id)}
+                      >
+                        {combineValueLabel(option)}
+                      </button>
+                    );
+                  }}
+                </For>
+              </div>
+            </fieldset>
+          )}
+        </For>
+        <AppMapTestCombineControls
+          showStrategy={selectedVariables().length > 1}
+          strategy={strategy}
+          setStrategy={setStrategy}
+          lens={lens}
+          setLens={setLens}
+          wholePage={wholePage}
+          setWholePage={setWholePage}
+          wholePageAvailability={wholePageAvailability}
+          destinationScreenId={destinationScreenId}
+          repeatLocked={repeatLocked}
+        />
         <Show
           when={props.ready}
           fallback={
@@ -525,13 +552,80 @@ export function AppMapTestCombineStrip(props: AppMapTestCombineStripProps) {
                     <span class="text-caption text-text-base">
                       Pilot:{" "}
                       <strong class="font-medium text-text-strong">
-                        {projection().worlds[0]?.label}
+                        {projection().worlds[0]?.label ?? "Choose compatible values"}
                       </strong>
                     </span>
                     <span class="text-caption tabular-nums text-text-weak">
-                      {projection().cells.length}{" "}
-                      {projection().cells.length === 1 ? "case" : "cases"}
+                      {projection().totalWorlds} bounded{" "}
+                      {projection().totalWorlds === 1 ? "case" : "cases"}
                     </span>
+                  </div>
+                  <div
+                    class="grid gap-2 rounded-md border border-border-weak-base bg-background-base px-2.5 py-2"
+                    data-test-repeat-preview
+                    aria-label="Repeat plan preview"
+                  >
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                      <strong class="text-caption font-medium text-text-strong">
+                        Plan preview
+                      </strong>
+                      <span class="text-micro tabular-nums text-text-weak">
+                        Estimated duration:{" "}
+                        {repeatDurationLabel(projection().totalWorlds, props.test.steps.length)}
+                      </span>
+                    </div>
+                    <div class="grid gap-1 text-micro text-text-weak">
+                      <span>
+                        <strong class="font-medium text-text-base">Required:</strong> one
+                        deterministic pilot
+                      </span>
+                      <span>
+                        <strong class="font-medium text-text-base">Advisory:</strong>{" "}
+                        {Math.max(0, projection().totalWorlds - 1)} remaining{" "}
+                        {projection().totalWorlds - 1 === 1 ? "case" : "cases"} after review
+                      </span>
+                    </div>
+                    <label class="grid gap-1 text-micro font-medium text-text-weak">
+                      <span>Pilot selection</span>
+                      <select
+                        class="min-h-11 rounded-md border border-border-weak-base bg-background-base px-2.5 text-caption text-text-strong focus-visible:border-border-focus focus-visible:outline-2 focus-visible:outline-border-focus"
+                        value={pilotMode()}
+                        disabled={repeatLocked()}
+                        onChange={(event) =>
+                          setPilotMode(event.currentTarget.value as "representative" | "first")
+                        }
+                      >
+                        <option value="representative">Representative · deterministic</option>
+                        <option value="first">First generated case</option>
+                      </select>
+                    </label>
+                    <Show when={projection().worlds.length > 1}>
+                      <details class="grid gap-1 text-micro text-text-weak">
+                        <summary class="min-h-11 cursor-pointer py-2 font-medium text-text-base focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-focus">
+                          Review case matrix ({projection().totalWorlds} cases)
+                        </summary>
+                        <ol
+                          class="m-0 grid list-none gap-1 border-t border-border-weak-base pt-2"
+                          aria-label="Repeat case matrix"
+                        >
+                          <For each={projection().worlds.slice(0, 6)}>
+                            {(world, index) => (
+                              <li class="flex min-h-11 flex-wrap items-center justify-between gap-2 rounded-md px-1">
+                                <span class="min-w-0 truncate text-text-base">{world.label}</span>
+                                <span class="shrink-0 text-text-weak">
+                                  {index() === 0 ? "Required pilot" : "Advisory"}
+                                </span>
+                              </li>
+                            )}
+                          </For>
+                        </ol>
+                        <Show when={projection().totalWorlds > 6}>
+                          <span class="text-text-weak">
+                            Showing the first 6 cases; execution remains bounded at 250.
+                          </span>
+                        </Show>
+                      </details>
+                    </Show>
                   </div>
                   <Show
                     when={selectedDevice()}
@@ -552,14 +646,21 @@ export function AppMapTestCombineStrip(props: AppMapTestCombineStripProps) {
                     )}
                   </Show>
                   <p class={cn(testEditorHint, "m-0")}>
-                    Relay runs one representative value first and waits for review before the
-                    remaining values.
+                    Relay runs the{" "}
+                    {pilotMode() === "first"
+                      ? "first generated case"
+                      : "deterministic representative case"}{" "}
+                    first and waits for review before the remaining values (advisory cases).
                   </p>
                   <Button
                     variant="secondary"
                     size="sm"
                     disabled={
-                      busy() || restoring() || !selectedDevice() || !projection().cells.length
+                      busy() ||
+                      restoring() ||
+                      !selectedDevice() ||
+                      Boolean(projection().issue) ||
+                      !projection().totalWorlds
                     }
                     aria-busy={busy()}
                     onClick={() => void runPilot()}

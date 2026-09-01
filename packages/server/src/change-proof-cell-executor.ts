@@ -3,10 +3,11 @@ import type http from "node:http";
 import {
   cancelJob,
   currentOperationContext,
-  assertSafeCellExecutionAuthority,
+  confirmationReceiptForCell,
   readPersistedRun,
   runWithOperationContext,
   waitForJobCompletion,
+  frozenCellExecutionRisk,
   type ChangeProofCellExecutor,
   type ChangeProofExecutionRecord,
 } from "@relay/core";
@@ -19,7 +20,10 @@ import { handleAppMapRunRoute } from "./app-map-run-routes.js";
  * identity. Browser entries are provider-verified deployments and are admitted
  * through their exact digest without entering mobile APK/IPA preflight. */
 export function changeProofCellRunInput(
-  execution: Pick<ChangeProofExecutionRecord, "frozenProof">,
+  execution: Pick<
+    ChangeProofExecutionRecord,
+    "frozenProof" | "confirmationReceipts" | "humanInterventionEvidence"
+  >,
   cell: {
     cellId: string;
     appMapId: string;
@@ -44,7 +48,21 @@ export function changeProofCellRunInput(
   if (!verificationCell) {
     throw new Error(`Proof cell ${cell.cellId} is absent from the frozen Verification Plan`);
   }
-  assertSafeCellExecutionAuthority(verificationCell);
+  const executionRisk = frozenCellExecutionRisk(verificationCell);
+  if (executionRisk.level === "prohibited") {
+    throw new Error(`Verification Cell ${cell.cellId} is prohibited and cannot be executed`);
+  }
+  if (executionRisk.confirmation === "human-only") {
+    throw new Error(
+      `Verification Cell ${cell.cellId} requires an exact human-only evidence boundary; the canonical App Map Test executor cannot resume at that step`,
+    );
+  }
+  if (
+    (executionRisk.level !== "safe" || executionRisk.confirmation !== "none") &&
+    !execution.confirmationReceipts?.some((receipt) => receipt.scope.cellId === cell.cellId)
+  ) {
+    throw new Error(`Verification Cell ${cell.cellId} requires an exact confirmation receipt`);
+  }
   const repeatDimensions = Object.fromEntries(
     Object.entries(verificationCell.dimensions).filter(
       ([dimension, value]) => targetCase.dimensions[dimension] !== value,
@@ -99,6 +117,16 @@ export function createDefaultChangeProofCellExecutor(
     if (!verificationCell) {
       throw new Error(`Proof cell ${cell.cellId} is absent from the frozen Verification Plan`);
     }
+    const confirmationReceipt = confirmationReceiptForCell(
+      execution.confirmationReceipts,
+      cell.cellId,
+    );
+    const humanInterventionEvidence = execution.humanInterventionEvidence?.find(
+      (item) =>
+        item.cellId === cell.cellId &&
+        item.stepId ===
+          verificationCell.executionRisk?.reasons.find((reason) => reason.stepId)?.stepId,
+    );
     const build = execution.frozenProof.builds.find((candidate) => candidate.id === cell.buildId);
     if (!build) {
       throw new Error(`Proof cell ${cell.cellId} is absent from the frozen build matrix`);
@@ -108,7 +136,7 @@ export function createDefaultChangeProofCellExecutor(
     const operation = {
       schemaVersion: 1 as const,
       actorId: execution.actorId,
-      actorKind: outer?.actorKind ?? ("agent" as const),
+      actorKind: execution.requestAuthority?.actorKind ?? outer?.actorKind ?? ("agent" as const),
       organizationId: execution.organizationId,
       projectId: execution.projectId,
       operationId: "app-map.test.run",
@@ -151,6 +179,10 @@ export function createDefaultChangeProofCellExecutor(
           buildId: build.id,
           sourceSha: build.sourceSha,
           artifactDigest: build.artifactDigest,
+          ...(confirmationReceipt ? { confirmationReceipt } : {}),
+          ...(humanInterventionEvidence
+            ? { humanInterventionEvidence: structuredClone(humanInterventionEvidence) }
+            : {}),
         },
       });
       if (!handled || !responsePayload) {

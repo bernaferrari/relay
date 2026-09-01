@@ -7,6 +7,7 @@ import {
   type AppMapCombine,
   type AppMapScenarioTest,
   type AppMapVariable,
+  type CaseExpansionStrategy,
   type CombineLensInput,
   type CombineLensName,
 } from "@relay/protocol";
@@ -44,19 +45,24 @@ export function projectTestCombineStrip(input: {
   test: Pick<AppMapScenarioTest, "id" | "name">;
   variables: readonly AppMapVariable[];
   selected: Record<string, string[]>;
+  strategy?: CaseExpansionStrategy;
 }): {
   variables: CombineVariable[];
   worlds: CombineWorld[];
   cells: CombineCell[];
   column: CombineTestColumn;
   combineId: string;
+  totalWorlds: number;
+  truncated: boolean;
+  issue?: string;
 } {
   const column: CombineTestColumn = { id: input.test.id, name: input.test.name, kind: "scenario" };
   const projectedVariables: CombineVariable[] = input.variables.map((variable) => {
     const selected = input.selected[variable.id];
-    const options = selected?.length
-      ? variable.options.filter((option) => selected.includes(option.id))
-      : variable.options;
+    const options =
+      selected === undefined
+        ? variable.options
+        : variable.options.filter((option) => selected.includes(option.id));
     return {
       id: variable.id,
       name: variable.name,
@@ -66,12 +72,15 @@ export function projectTestCombineStrip(input: {
       })),
     };
   });
-  const projection = projectCombine(projectedVariables, [column], "cartesian");
+  const projection = projectCombine(projectedVariables, [column], input.strategy ?? "cartesian");
   return {
     variables: projectedVariables,
     worlds: projection.worlds,
     cells: combineCells(projection.worlds, [column]),
     column,
+    totalWorlds: projection.totalWorlds,
+    truncated: projection.truncated,
+    ...(projection.issue ? { issue: projection.issue } : {}),
     combineId: combineIdFor(
       input.variables.map((variable) => variable.id),
       [input.test.id],

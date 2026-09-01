@@ -124,6 +124,9 @@ test("Proof exposes its canonical lifecycle operations plus execution and list q
     .filter(({ id }) => id.startsWith("proof."))
     .map(({ id }) => id);
   assert.deepEqual(proofIds, [
+    "proof.setup.inspect",
+    "proof.setup.preview",
+    "proof.setup.apply",
     "proof.prepare",
     "proof.start",
     "proof.list",
@@ -131,19 +134,25 @@ test("Proof exposes its canonical lifecycle operations plus execution and list q
     "proof.plan.approve",
     "proof.continue",
     "proof.run",
+    "proof.run.confirm",
+    "proof.run.human-evidence",
     "proof.cancel",
     "proof.publication.retry",
     "proof.rerun-affected",
   ]);
   assert.deepEqual(
-    proofIds.filter((id) => id !== "proof.list"),
+    proofIds.filter((id) => id !== "proof.list" && id !== "proof.setup.inspect"),
     [
+      "proof.setup.preview",
+      "proof.setup.apply",
       "proof.prepare",
       "proof.start",
       "proof.inspect",
       "proof.plan.approve",
       "proof.continue",
       "proof.run",
+      "proof.run.confirm",
+      "proof.run.human-evidence",
       "proof.cancel",
       "proof.publication.retry",
       "proof.rerun-affected",
@@ -167,6 +176,30 @@ test("Proof exposes its canonical lifecycle operations plus execution and list q
     }),
   );
   assert.deepEqual(metadata, {
+    "proof.setup.inspect": {
+      role: "viewer",
+      confirmation: "none",
+      lease: "none",
+      progress: false,
+      cancellable: false,
+      transport: { method: "GET", path: "/proofs/setup" },
+    },
+    "proof.setup.preview": {
+      role: "author",
+      confirmation: "none",
+      lease: "none",
+      progress: false,
+      cancellable: false,
+      transport: { method: "POST", path: "/proofs/setup/preview" },
+    },
+    "proof.setup.apply": {
+      role: "author",
+      confirmation: "confirm",
+      lease: "none",
+      progress: false,
+      cancellable: false,
+      transport: { method: "POST", path: "/proofs/setup/apply" },
+    },
     "proof.prepare": {
       role: "author",
       confirmation: "none",
@@ -222,6 +255,22 @@ test("Proof exposes its canonical lifecycle operations plus execution and list q
       progress: true,
       cancellable: true,
       transport: { method: "POST", path: "/proofs/:proofId/run" },
+    },
+    "proof.run.confirm": {
+      role: "author",
+      confirmation: "confirm",
+      lease: "none",
+      progress: false,
+      cancellable: false,
+      transport: { method: "POST", path: "/proofs/:proofId/run/confirm" },
+    },
+    "proof.run.human-evidence": {
+      role: "author",
+      confirmation: "confirm",
+      lease: "none",
+      progress: false,
+      cancellable: false,
+      transport: { method: "POST", path: "/proofs/:proofId/run/human-evidence" },
     },
     "proof.cancel": {
       role: "author",

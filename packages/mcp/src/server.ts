@@ -29,6 +29,7 @@ import {
   relayOutcomeTools,
   type RelayOutcomeToolDescriptor,
 } from "./outcome-tools.js";
+import { proofOutcomeTools } from "./proof-outcome-tools.js";
 import {
   defaultRelayMcpProfile,
   relayMcpToolsForProfile,
@@ -49,7 +50,9 @@ const proofLifecycleOperationIds = [
   "proof.list",
   "proof.inspect",
   "proof.plan.approve",
+  "proof.run.confirm",
   "proof.run",
+  "proof.run.human-evidence",
   "proof.continue",
   "proof.cancel",
   "proof.publication.retry",
@@ -86,7 +89,7 @@ export function relayMcpInstructionsForProfile(profile: RelayMcpProfile): string
   ];
   if (profile === "outcome") {
     instructions.push(
-      "For change verification, use relay_prove_change to start or resume an approved Proof and relay_inspect_proof to inspect it; only a human may approve a Verification Plan.",
+      "For live Change Proofs, use relay_prove_change to prepare or run one server-owned Proof and relay_inspect_proof to inspect it; use relay_proof_analyze only for bounded offline evidence analysis. Only a human may approve a Verification Plan.",
     );
   } else {
     const registeredProofOperations = proofLifecycleOperationIds.filter((operationId) =>
@@ -95,6 +98,11 @@ export function relayMcpInstructionsForProfile(profile: RelayMcpProfile): string
     if (registeredProofOperations.length > 0) {
       instructions.push(
         `For change verification, use the registered ${registeredProofOperations.join(", ")} lifecycle operations with the returned Proof id and exact version; only a human may approve a Verification Plan.`,
+      );
+    }
+    if (profile === "proof") {
+      instructions.push(
+        "For ordinary live Change Proofs, prefer relay_prove_change to prepare or run one server-owned Proof and relay_inspect_proof to inspect it. Use the proof.* lifecycle tools only for explicit plan review, recovery, cancellation, publication, or selective rerun.",
       );
     }
   }
@@ -610,6 +618,11 @@ export function createMcpServer({
       registerRelayOutcomeTool(server, descriptor, invoker, actorId);
     }
   } else {
+    if (profile === "proof") {
+      for (const descriptor of proofOutcomeTools) {
+        registerRelayOutcomeTool(server, descriptor, invoker, actorId);
+      }
+    }
     for (const descriptor of tools) {
       registerRelayTool(server, descriptor, invoker);
     }

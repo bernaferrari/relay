@@ -2,9 +2,28 @@ import { render } from "solid-js/web";
 import { beforeEach, expect, test, vi } from "vitest";
 import type { ChangeVerification } from "@relay/protocol";
 
-const mocks = vi.hoisted(() => ({ runAction: vi.fn(), health: vi.fn(() => "online") }));
+const mocks = vi.hoisted(() => ({
+  runAction: vi.fn(),
+  health: vi.fn(() => "online"),
+  sseConnected: vi.fn(() => true),
+  proofListeners: new Map<string, Set<(notice: unknown) => void>>(),
+  watchProofExecution: vi.fn((proofId: string, listener: (notice: unknown) => void) => {
+    let listeners = mocks.proofListeners.get(proofId);
+    if (!listeners) {
+      listeners = new Set();
+      mocks.proofListeners.set(proofId, listeners);
+    }
+    listeners.add(listener);
+    return () => listeners?.delete(listener);
+  }),
+}));
 vi.mock("../context/server", () => ({
-  useServer: () => ({ runAction: mocks.runAction, health: mocks.health }),
+  useServer: () => ({
+    runAction: mocks.runAction,
+    health: mocks.health,
+    sseConnected: mocks.sseConnected,
+    watchProofExecution: mocks.watchProofExecution,
+  }),
 }));
 
 import { ChangesWorkspace } from "./changes-workspace";
@@ -216,6 +235,9 @@ const exhaustedPublication = {
 beforeEach(() => {
   mocks.runAction.mockReset();
   mocks.health.mockReturnValue("online");
+  mocks.sseConnected.mockReturnValue(true);
+  mocks.proofListeners.clear();
+  mocks.watchProofExecution.mockClear();
 });
 
 test("keeps loading distinct from an empty Proof library", async () => {
@@ -280,6 +302,14 @@ test("presents one Change-first Proof without internal orchestration vocabulary"
   expect(root.textContent).toContain("Pilot");
   expect(root.textContent).toContain("Required");
   expect(root.textContent).toContain("Advisory");
+  expect(root.textContent).toContain("Settings language");
+  expect(root.textContent).toContain("Web production build");
+  expect(root.textContent).toContain("Dimensions");
+  expect(root.textContent).toContain("Risk");
+  expect(root.textContent).toContain("Required evidence");
+  expect(root.textContent).toContain("Visual context");
+  expect(root.textContent).toContain("Destination checkpoint from Settings language");
+  expect(root.textContent).toContain("Why this cell");
   expect(root.textContent).toContain("cell-ar-pilot");
   expect(root.textContent).toContain("cell-ar-advisory");
   expect(root.textContent).toContain("The changed localization resource is bound to this Test.");
@@ -484,6 +514,10 @@ test("runs an approved Proof through one server-owned outcome", async () => {
     "0 of 2 verification cells complete · 1 required · 1 advisory",
   );
 
+  await vi.waitFor(() => expect(mocks.proofListeners.get(proof.id)?.size).toBe(1));
+  for (const listener of mocks.proofListeners.get(proof.id) ?? []) {
+    listener({ kind: "changed", cursor: 1, status: "running" });
+  }
   await vi.waitFor(() => expect(liveInspections).toHaveLength(1));
   liveInspections.shift()!({
     proof: runningProof,
@@ -504,6 +538,9 @@ test("runs an approved Proof through one server-owned outcome", async () => {
   await vi.waitFor(() => expect(root.textContent).toContain("1 of 2 verification cells complete"));
   expect(root.textContent).not.toContain("Resume pilot");
 
+  for (const listener of mocks.proofListeners.get(proof.id) ?? []) {
+    listener({ kind: "changed", cursor: 2, status: "completed" });
+  }
   await vi.waitFor(() => expect(liveInspections).toHaveLength(1));
   liveInspections.shift()!({
     proof: provedProof,

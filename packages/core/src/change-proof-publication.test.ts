@@ -11,6 +11,10 @@ import {
   recordChangeProofPublication,
 } from "./change-proof-publication.js";
 import {
+  providerCheckForStoredChangeProof,
+  providerProgressCheckForStoredChangeProof,
+} from "./change-proof-decision.js";
+import {
   advanceChangeVerification,
   createChangeVerification,
 } from "./change-verification-store.js";
@@ -138,6 +142,61 @@ test("persists one check identity and appends only materially changed publicatio
     assert.deepEqual(
       (await readChangeProofPublications(scope, "proof-1")).map(({ sequence }) => sequence),
       [1, 2],
+    );
+  });
+});
+
+test("retains one frozen check identity from queued progress through terminal decision", async () => {
+  await withStateRoot(async () => {
+    const created = await createChangeVerification({
+      ...scope,
+      id: "proof-1",
+      change: { repository: "acme/settings", baseSha: "1".repeat(40), headSha },
+      policy: { id: "relay.verify-change", version: 1 },
+      requestedBy: "agent:coder",
+      actorId: "agent:coder",
+      requestId: "start",
+      requestDigest: digest,
+      at: 100,
+    });
+    const queuedCheck = providerProgressCheckForStoredChangeProof({ proof: created });
+    const queued = await recordChangeProofPublication({
+      ...publication(queuedCheck, 110),
+      proofVersion: created.version,
+    });
+    assert.equal(queued.status, "queued");
+    assert.equal(queued.conclusion, undefined);
+
+    const terminal = await advanceChangeVerification({
+      ...scope,
+      proofId: created.id,
+      expectedVersion: created.version,
+      state: "insufficient-evidence",
+      actorId: "system:relay",
+      requestId: "decision",
+      requestDigest: `sha256:${"b".repeat(64)}`,
+      action: "record-decision",
+      at: 200,
+      coverageGaps: ["Exact build evidence is missing."],
+      smallestNextVerification: { kind: "provide-build", reason: "Bind the exact head build." },
+    });
+    const completedCheck = providerCheckForStoredChangeProof({ proof: terminal });
+    const completed = await recordChangeProofPublication({
+      ...publication(completedCheck, 210),
+      proofVersion: terminal.version,
+    });
+    assert.equal(completed.status, "completed");
+    assert.equal(completed.conclusion, "action-required");
+    assert.equal(completed.checkRunId, queued.checkRunId);
+
+    await assert.rejects(
+      recordChangeProofPublication({
+        ...publication(queuedCheck, 220),
+        proofVersion: terminal.version,
+      }),
+      (error) =>
+        error instanceof ChangeProofPublicationConflictError &&
+        error.code === "PROOF_DECISION_REQUIRED",
     );
   });
 });

@@ -36,7 +36,15 @@ export type OutcomeCliIntent =
   | ExportEvidenceIntent
   | EditRecordingOutcomeIntent
   | ReplayLabFileIntent
-  | VerifyChangeOutcomeIntent;
+  | VerifyChangeOutcomeIntent
+  | ProofAnalyzeCliIntent;
+
+/** CLI-only name for the read-only analysis seam. The workflow façade still
+ * owns the historical protocol projection (`kind: verify-change`) so this
+ * migration does not fork domain behavior or result schemas. */
+export type ProofAnalyzeCliIntent = Omit<VerifyChangeOutcomeIntent, "kind"> & {
+  kind: "proof-analyze";
+};
 
 type OutcomeCommandTokens = {
   positionals: readonly string[];
@@ -359,32 +367,36 @@ export function parseOutcomeCliIntent(tokens: OutcomeCommandTokens): OutcomeCliI
     }
     return { kind: "replay-lab", analysis, paths };
   }
-  if (verb === "verify-change") {
-    const [scope, ...subjects] = args;
+  // Offline analysis belongs under the proof namespace. Keep the historic
+  // `verify-change` spelling as a deliberately narrow compatibility alias;
+  // both paths still use the same bounded VerifyChange facade below.
+  if (verb === "verify-change" || (verb === "proof" && args[0] === "analyze")) {
+    const analysisArgs = verb === "proof" ? args.slice(1) : args;
+    const [scope, ...subjects] = analysisArgs;
     const confirmationSatisfied = tokens.switches.has("--confirm") || undefined;
     if (scope === "run" && subjects.length > 0) {
       return {
-        kind: "verify-change",
+        kind: verb === "proof" ? "proof-analyze" : "verify-change",
         selection: { kind: "runs", runIds: subjects },
         ...(confirmationSatisfied ? { confirmationSatisfied } : {}),
       };
     }
     if (scope === "test" && subjects.length > 1) {
       return {
-        kind: "verify-change",
+        kind: verb === "proof" ? "proof-analyze" : "verify-change",
         selection: { kind: "tests", appMapId: subjects[0]!, testIds: subjects.slice(1) },
         ...(confirmationSatisfied ? { confirmationSatisfied } : {}),
       };
     }
     if (scope === "revision" && subjects.length === 1 && /^[0-9a-f]{7,40}$/u.test(subjects[0]!)) {
       return {
-        kind: "verify-change",
+        kind: verb === "proof" ? "proof-analyze" : "verify-change",
         selection: { kind: "source-revision", sourceRevision: { vcs: "git", sha: subjects[0]! } },
         ...(confirmationSatisfied ? { confirmationSatisfied } : {}),
       };
     }
     throw new UsageError(
-      "verify-change requires run <runId...>, test <appMapId> <testId...>, or revision <gitSha>",
+      `${verb === "proof" ? "proof analyze" : "verify-change"} requires run <runId...>, test <appMapId> <testId...>, or revision <gitSha>`,
     );
   }
   return undefined;

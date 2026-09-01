@@ -1,12 +1,19 @@
 import type {
+  ChangeProofExecutionConfirmationReceipt,
+  ChangeProofExecutionConsumedReceipt,
   ActorKind,
   ChangeProofCaseResult,
   ChangeProofExecutionCancellation,
   ChangeProofExecutionCellStatus,
+  ChangeProofExecutionHumanIntervention,
+  ChangeProofExecutionHumanInterventionEvidence,
   ChangeProofExecutionUncertainty,
   ChangeVerification,
   ProjectRole,
 } from "@relay/protocol";
+
+export type { ChangeProofExecutionHumanIntervention } from "@relay/protocol";
+export type { ChangeProofExecutionHumanInterventionEvidence } from "@relay/protocol";
 import type {
   ChangeProofPublicationRequest,
   ChangeVerificationScope,
@@ -69,14 +76,21 @@ export type ChangeProofExecutionRecord = {
   /** Provider publication is captured at admission so a restart cannot lose
    * the terminal outbox intent or consult a later ambient configuration. */
   publication?: ChangeProofPublicationRequest;
+  /** Human confirmations consumed at admission. Each entry is scoped to one
+   * frozen cell and retained as durable audit provenance. */
+  confirmationReceipts?: ChangeProofExecutionConsumedReceipt[];
   frozenProof: ChangeVerification;
   cells: ChangeProofExecutionCell[];
   cursor: number;
   total: number;
   deadlineAt: number;
-  status: "queued" | "running" | "completed" | "cancelled" | "uncertain";
+  status: "queued" | "running" | "paused-human" | "completed" | "cancelled" | "uncertain";
   runIds: string[];
   cancellation?: ChangeProofExecutionCancellation;
+  humanIntervention?: ChangeProofExecutionHumanIntervention;
+  /** Immutable audit trail of human-only step evidence which allowed the
+   * coordinator to resume an exact paused cell. */
+  humanInterventionEvidence?: ChangeProofExecutionHumanInterventionEvidence[];
   terminalUncertainty?: ChangeProofExecutionUncertainty;
   lease?: ChangeProofExecutionLease;
   createdAt: number;
@@ -130,8 +144,20 @@ export type ChangeProofExecutionSubmitInput = ChangeVerificationScope & {
   actorId: string;
   authority: "confirmed";
   requestAuthority?: ChangeProofExecutionRequestAuthority;
+  confirmationReceipts?: ChangeProofExecutionConfirmationReceipt[];
   expectedVersion?: number;
   publication?: ChangeProofPublicationRequest;
+};
+
+export type ChangeProofExecutionHumanEvidenceInput = ChangeVerificationScope & {
+  proofId: string;
+  executionId: string;
+  cellId: string;
+  stepId: string;
+  evidenceDigest: `sha256:${string}`;
+  actorId: string;
+  requestId: string;
+  at?: number;
 };
 
 export class ChangeProofExecutionError extends Error {
@@ -140,7 +166,8 @@ export class ChangeProofExecutionError extends Error {
     | "PROOF_EXECUTION_CONFLICT"
     | "PROOF_EXECUTION_NOT_READY"
     | "PROOF_EXECUTION_NOT_FOUND"
-    | "PROOF_EXECUTION_LEASE_LOST";
+    | "PROOF_EXECUTION_LEASE_LOST"
+    | "PROOF_EXECUTION_HUMAN_INTERVENTION";
 
   constructor(code: ChangeProofExecutionError["code"], message: string) {
     super(message);

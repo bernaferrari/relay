@@ -425,27 +425,31 @@ function claimInStore(
   );
   const scope = scopeOf(input);
   recoverExpiredInStore(store, scope, now);
-  const candidates = input.id
-    ? [
-        store.changeProofPublicationOutbox(
-          scope.organizationId,
-          scope.projectId,
-          nonEmpty(input.id, "id"),
-        ),
-      ]
-    : store.changeProofPublicationOutboxes(scope.organizationId, scope.projectId);
-  const current = candidates
-    .map((value) => (value ? changeProofPublicationOutboxRecordSchema.parse(value) : undefined))
-    .find((record) => {
-      if (!record || record.status === "published" || record.attempts >= record.maxAttempts)
-        return false;
-      if (record.status === "pending") return true;
-      return (
-        record.status === "retry" &&
-        record.nextAttemptAt !== undefined &&
-        record.nextAttemptAt <= now
-      );
-    });
+  const parsedRecords = store
+    .changeProofPublicationOutboxes(scope.organizationId, scope.projectId)
+    .map((value) => changeProofPublicationOutboxRecordSchema.parse(value));
+  const requestedId = input.id ? nonEmpty(input.id, "id") : undefined;
+  const current = parsedRecords.find((record) => {
+    if (requestedId && record.id !== requestedId) return false;
+    if (!record || record.status === "published" || record.attempts >= record.maxAttempts)
+      return false;
+    const earlierUnresolvedVersion = parsedRecords.some(
+      (candidate) =>
+        candidate.proofId === record.proofId &&
+        candidate.provider === record.provider &&
+        candidate.repository === record.repository &&
+        candidate.headSha === record.headSha &&
+        candidate.externalId === record.externalId &&
+        candidate.proofVersion < record.proofVersion &&
+        candidate.status !== "published" &&
+        candidate.attempts < candidate.maxAttempts,
+    );
+    if (earlierUnresolvedVersion) return false;
+    if (record.status === "pending") return true;
+    return (
+      record.status === "retry" && record.nextAttemptAt !== undefined && record.nextAttemptAt <= now
+    );
+  });
   if (!current) return undefined;
   const next = changeProofPublicationOutboxRecordSchema.parse({
     ...current,
@@ -694,7 +698,9 @@ function receiptMatchesIntent(
     receipt.repository === record.repository &&
     receipt.headSha === record.headSha &&
     receipt.externalId === record.externalId &&
-    receipt.checkDigest === canonicalSha256(record.check)
+    receipt.checkDigest === canonicalSha256(record.check) &&
+    (receipt.status ?? "completed") === record.check.status &&
+    receipt.conclusion === record.check.conclusion
   );
 }
 

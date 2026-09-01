@@ -1,5 +1,5 @@
 import { For, Show, type Accessor } from "solid-js";
-import type { BrowserCaseProfile } from "@relay/protocol";
+import type { BrowserCaseProfile, BrowserDeviceTelemetry } from "@relay/protocol";
 
 type EnvironmentEntry = readonly [label: string, value: string];
 
@@ -39,11 +39,20 @@ function summary(profile: BrowserCaseProfile): string {
   return `${profile.engine} · ${profile.viewport.width}×${profile.viewport.height} · ${profile.locale} · ${profile.timezoneId}`;
 }
 
+function metric(value: number | undefined): string {
+  return value === undefined ? "unmeasured" : `${value}ms`;
+}
+
+function budget(value: "within" | "exceeded" | "unmeasured"): string {
+  return value === "within" ? "within budget" : value === "exceeded" ? "over budget" : "unmeasured";
+}
+
 /** A compact, accessible disclosure for the immutable profile used by the
  * current Browser Device session. The summary is useful at a glance; the
  * details keep every saved field inspectable without exposing browser DOM. */
 export function BrowserDeviceEnvironmentSummary(props: {
   profile: Accessor<BrowserCaseProfile | undefined>;
+  telemetry?: Accessor<BrowserDeviceTelemetry | undefined>;
 }) {
   return (
     <Show when={props.profile()}>
@@ -66,6 +75,27 @@ export function BrowserDeviceEnvironmentSummary(props: {
                   </>
                 )}
               </For>
+              <Show when={props.telemetry?.()}>
+                {(telemetry) => (
+                  <>
+                    <dt class="truncate text-text-weak">Frame capture p95</dt>
+                    <dd class="text-right">
+                      {metric(telemetry().frameCapture.p95Ms)} ·{" "}
+                      {budget(telemetry().budgets.frameCapture)}
+                    </dd>
+                    <dt class="truncate text-text-weak">Interaction p95</dt>
+                    <dd class="text-right">
+                      {metric(telemetry().interaction.p95Ms)} ·{" "}
+                      {budget(telemetry().budgets.interaction)}
+                    </dd>
+                    <dt class="truncate text-text-weak">Observed frames</dt>
+                    <dd class="text-right">
+                      {telemetry().frameCount} · {telemetry().observedFps ?? "unmeasured"} FPS ·{" "}
+                      {budget(telemetry().budgets.observedFps)}
+                    </dd>
+                  </>
+                )}
+              </Show>
             </dl>
           </div>
         </details>

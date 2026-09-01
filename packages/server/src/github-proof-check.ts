@@ -63,7 +63,7 @@ function configuredBaseUrl(value: string | undefined): string {
 }
 
 function githubConclusion(
-  value: ChangeProofProviderCheck["conclusion"],
+  value: NonNullable<ChangeProofProviderCheck["conclusion"]>,
 ): "success" | "failure" | "action_required" {
   return value === "action-required" ? "action_required" : value;
 }
@@ -219,8 +219,8 @@ export async function publishGitHubProofCheck(input: {
     body: JSON.stringify({
       name: check.name,
       ...(existingId === undefined ? { head_sha: check.headSha } : {}),
-      status: "completed",
-      conclusion: githubConclusion(check.conclusion),
+      status: check.status,
+      ...(check.status === "completed" ? { conclusion: githubConclusion(check.conclusion) } : {}),
       external_id: check.externalId,
       ...(check.detailsUrl ? { details_url: check.detailsUrl } : {}),
       output: { title: check.title, summary: check.summary, text: check.text },

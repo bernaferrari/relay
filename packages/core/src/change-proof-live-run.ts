@@ -62,6 +62,20 @@ export function assertSafeCellExecutionAuthority(cell: FrozenVerificationCell): 
   return risk;
 }
 
+/** Validate that a cell is not prohibited. Guarded and fixture-scoped
+ * destructive cells are admitted only after the confirmation membrane runs;
+ * human-only cells are represented as a durable exact-step pause. */
+export function assertCellExecutionAuthority(cell: FrozenVerificationCell): ExecutionRisk {
+  if (!cell.evidencePolicyDigest) {
+    throw new Error(`Verification Cell ${cell.id} has no frozen evidence-policy authority`);
+  }
+  const risk = frozenCellExecutionRisk(cell);
+  if (risk.level === "prohibited") {
+    throw new Error(`Verification Cell ${cell.id} is prohibited and cannot be executed`);
+  }
+  return risk;
+}
+
 function platformForTargetCase(
   item: ChangeVerification["selection"]["targetCases"][number],
 ): ChangeVerification["builds"][number]["platform"] {
@@ -109,7 +123,7 @@ export function changeProofRequiredRunCases(value: unknown): ChangeProofRunCase[
     if (build.platform !== expectedPlatform || build.sourceSha !== changeTestedSha(proof.change)) {
       throw new Error(`Verification Cell ${cell.id} does not bind a compatible exact build.`);
     }
-    assertSafeCellExecutionAuthority(cell);
+    assertCellExecutionAuthority(cell);
     return {
       cellId: cell.id,
       appMapId: journey.appMapId,
@@ -420,10 +434,38 @@ export async function changeProofCaseResultFromPersistedRun(input: {
       `Run ${run.id} execution risk does not match the frozen authority for Verification Cell ${cell.id}`,
     );
   }
-  if (runRisk.level !== "safe" || runRisk.confirmation !== "none") {
-    throw new Error(
-      `Run ${run.id} requires ${runRisk.level}/${runRisk.confirmation} authority; only safe/none Proof execution is currently supported`,
+  if (runRisk.level === "prohibited") {
+    throw new Error(`Run ${run.id} is prohibited by its frozen Proof authority`);
+  }
+  if (runRisk.confirmation === "human-only") {
+    const evidenceArtifact = run.artifacts.find(
+      (artifact) => artifact.kind === "proof-human-intervention-evidence",
     );
+    const evidence = evidenceArtifact?.data;
+    const expectedExecutionId = `proof-execution:${canonicalSha256({
+      organizationId: proof.organizationId,
+      projectId: proof.projectId,
+      proofId: proof.id,
+    }).slice("sha256:".length)}`;
+    const expectedStepId = runRisk.reasons.find((reason) => reason.stepId)?.stepId;
+    const validEvidence =
+      evidence &&
+      typeof evidence === "object" &&
+      !Array.isArray(evidence) &&
+      (evidence as Record<string, unknown>).schemaVersion === 1 &&
+      (evidence as Record<string, unknown>).executionId === expectedExecutionId &&
+      (evidence as Record<string, unknown>).proofId === proof.id &&
+      (evidence as Record<string, unknown>).cellId === cell.id &&
+      (evidence as Record<string, unknown>).stepId === expectedStepId &&
+      typeof (evidence as Record<string, unknown>).recordedBy === "string" &&
+      typeof (evidence as Record<string, unknown>).requestId === "string" &&
+      typeof (evidence as Record<string, unknown>).recordedAt === "number" &&
+      /^sha256:[0-9a-f]{64}$/u.test(String((evidence as Record<string, unknown>).evidenceDigest));
+    if (!validEvidence) {
+      throw new Error(
+        `Run ${run.id} requires an exact durable human-only evidence boundary and cannot be automated`,
+      );
+    }
   }
   const pack = await exportTracePack(run);
   const analysis = analyzeTracePack(pack);

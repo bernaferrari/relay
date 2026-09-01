@@ -124,33 +124,46 @@ export const agentRepairPacketSchema = z
   })
   .strict();
 
-export const changeProofProviderCheckSchema = z
+const changeProofProviderCheckBaseSchema = z
   .object({
     schemaVersion: z.literal(1),
     name: z.literal("Relay Proof"),
     externalId: identifier,
     headSha: exactGitSha,
-    status: z.literal("completed"),
-    conclusion: z.enum(["success", "failure", "action-required"]),
-    classification: z.enum([
-      "proved",
-      "rejected",
-      "needs-review",
-      "insufficient-evidence",
-      "infrastructure-failure",
-      "superseded",
-    ]),
     title: boundedText,
     summary: boundedText,
     text: z.string().max(65_535),
-    /** Server-verified Proof identities. Optional only for parsing provider
-     * acknowledgements written before digest identities were introduced. */
     policyDigest: sha256.optional(),
     planDigest: sha256.optional(),
     decisionDigest: sha256.optional(),
     detailsUrl: z.string().url().optional(),
   })
   .strict();
+
+export const changeProofProviderCheckSchema = z.union([
+  changeProofProviderCheckBaseSchema
+    .extend({
+      status: z.enum(["queued", "in_progress"]),
+      conclusion: z.never().optional(),
+      classification: z.enum(["queued", "in-progress"]),
+    })
+    .strict(),
+  changeProofProviderCheckBaseSchema
+    .extend({
+      status: z.literal("completed"),
+      conclusion: z.enum(["success", "failure", "action-required"]),
+      classification: z.enum([
+        "proved",
+        "rejected",
+        "needs-review",
+        "insufficient-evidence",
+        "infrastructure-failure",
+        "superseded",
+        "cancelled",
+      ]),
+    })
+    .strict(),
+]);
 
 /** Token-free provider acknowledgement retained beside the immutable Proof.
  * Repeated publications append receipts while preserving one provider check
@@ -171,15 +184,34 @@ export const changeProofPublicationReceiptSchema = z
     externalId: identifier,
     checkRunId: z.number().int().positive(),
     checkDigest: sha256,
-    conclusion: z.enum(["success", "failure", "action-required"]),
-    /** Copied from the verified terminal Proof at publication time. */
+    /** Historical terminal receipts omit status; absence means completed. */
+    status: z.enum(["queued", "in_progress", "completed"]).optional(),
+    conclusion: z.enum(["success", "failure", "action-required"]).optional(),
+    /** Copied from the verified Proof version at publication time. */
     policyDigest: sha256.optional(),
     planDigest: sha256.optional(),
     decisionDigest: sha256.optional(),
     htmlUrl: z.string().url().optional(),
     publishedAt: z.number().int().nonnegative(),
   })
-  .strict();
+  .strict()
+  .superRefine((receipt, context) => {
+    const status = receipt.status ?? "completed";
+    if (status === "completed" && receipt.conclusion === undefined) {
+      context.addIssue({
+        code: "custom",
+        path: ["conclusion"],
+        message: "is required when completed",
+      });
+    }
+    if (status !== "completed" && receipt.conclusion !== undefined) {
+      context.addIssue({
+        code: "custom",
+        path: ["conclusion"],
+        message: "is forbidden before completion",
+      });
+    }
+  });
 
 export type ChangeProofCaseResult = z.output<typeof changeProofCaseResultSchema>;
 export type ChangeProofDecision = z.output<typeof changeProofDecisionSchema>;

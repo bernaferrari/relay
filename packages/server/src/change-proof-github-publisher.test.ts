@@ -8,6 +8,7 @@ import {
   changeProofPublicationIntentFromOutboxRecord,
   createChangeVerification,
   enqueueChangeProofPublicationOutbox,
+  listChangeProofPublicationOutbox,
   providerCheckForStoredChangeProof,
   readChangeProofPublications,
   resetControlDatabaseCache,
@@ -106,6 +107,86 @@ test("publishes once, updates the acknowledged check, and reuses an identical re
       [[1, 42]],
     );
     assert.equal(repeated.receipt.sequence, 1);
+  });
+});
+
+test("restart publication updates queued progress to terminal on one exact check run", async () => {
+  await withStateRoot(async () => {
+    const created = await createChangeVerification({
+      ...scope,
+      id: "proof-1",
+      change: { repository: "acme/settings", baseSha: "1".repeat(40), headSha },
+      policy: { id: "relay.verify-change", version: 1 },
+      requestedBy: "agent:coder",
+      actorId: "agent:coder",
+      requestId: "start",
+      requestDigest: digest,
+      at: 100,
+      publication: { provider: "github" },
+    });
+    await advanceChangeVerification({
+      ...scope,
+      proofId: created.id,
+      expectedVersion: created.version,
+      state: "insufficient-evidence",
+      actorId: "system:relay",
+      requestId: "decision",
+      requestDigest: `sha256:${"b".repeat(64)}`,
+      action: "record-decision",
+      at: 200,
+      coverageGaps: ["Exact build evidence is missing."],
+      smallestNextVerification: { kind: "provide-build", reason: "Bind the exact head build." },
+      publication: { provider: "github" },
+    });
+    const records = await listChangeProofPublicationOutbox(scope);
+    assert.deepEqual(
+      records.map(({ check }) => check.status),
+      ["queued", "completed"],
+    );
+    const methods: string[] = [];
+    const bodies: Array<Record<string, unknown>> = [];
+    const fetchImpl = async (_url: URL | RequestInfo, init?: RequestInit) => {
+      methods.push(String(init?.method));
+      if (init?.method === "GET") {
+        return new Response(JSON.stringify({ total_count: 0, check_runs: [] }), { status: 200 });
+      }
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return new Response(JSON.stringify({ id: 42, head_sha: headSha, external_id: created.id }), {
+        status: init?.method === "POST" ? 201 : 200,
+      });
+    };
+    for (const record of records) {
+      await publishChangeProofToGitHub({
+        ...scope,
+        proofId: record.proofId,
+        proofVersion: record.proofVersion,
+        intent: changeProofPublicationIntentFromOutboxRecord(record),
+        config: { owner: "acme", repository: "settings", token: "installation-token" },
+        fetchImpl,
+        now: () => 300 + record.proofVersion,
+      });
+      resetControlDatabaseCache();
+    }
+
+    assert.deepEqual(methods, ["GET", "POST", "PATCH"]);
+    assert.equal(bodies[0]!.status, "queued");
+    assert.equal("conclusion" in bodies[0]!, false);
+    assert.equal(bodies[1]!.status, "completed");
+    assert.equal(bodies[1]!.conclusion, "action_required");
+    assert.equal("head_sha" in bodies[1]!, false);
+    const receipts = await readChangeProofPublications(scope, created.id);
+    assert.deepEqual(
+      receipts.map(({ sequence, proofVersion, status, checkRunId }) => ({
+        sequence,
+        proofVersion,
+        status,
+        checkRunId,
+      })),
+      [
+        { sequence: 1, proofVersion: 1, status: "queued", checkRunId: 42 },
+        { sequence: 2, proofVersion: 2, status: "completed", checkRunId: 42 },
+      ],
+    );
   });
 });
 

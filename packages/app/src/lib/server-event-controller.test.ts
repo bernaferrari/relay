@@ -144,3 +144,66 @@ test("workflow watchers receive only their bounded change and all watchers refre
   assert.deepEqual(second, [{ kind: "gap" }]);
   controller.dispose();
 });
+
+test("Proof execution watchers receive bounded invalidations and refresh on gaps", async () => {
+  let emit: ((event: EventEnvelope) => void) | undefined;
+  const client = {
+    events: async (onEvent: (event: EventEnvelope) => void) => {
+      emit = onEvent;
+    },
+  } as unknown as RelayClient;
+  const [, setRunning] = createSignal(false);
+  const [, setSelectedJobId] = createSignal<string | null>(null);
+  const ignore = async () => undefined;
+  const controller = createServerEventController({
+    client: () => client,
+    refreshers: {
+      devices: ignore,
+      appMaps: ignore,
+      jobs: ignore,
+      runs: ignore,
+      variables: ignore,
+      matrices: ignore,
+      discoveries: ignore,
+      authoring: ignore,
+    },
+    appendLog: () => undefined,
+    pushFrame: () => ({}) as never,
+    setRunning,
+    selectedJobId: () => null,
+    setSelectedJobId,
+    loadRunDetail: ignore,
+    captureUiScreenshot: async () => ({}) as never,
+  });
+  const first: unknown[] = [];
+  const second: unknown[] = [];
+  controller.watchProofExecution("proof-1", (notice) => first.push(notice));
+  controller.watchProofExecution("proof-2", (notice) => second.push(notice));
+  controller.connect();
+  assert.ok(emit);
+  emit!({
+    ...jobStep(1),
+    payload: {
+      type: "proof.execution.changed",
+      at: 1,
+      proofId: "proof-1",
+      executionId: "execution-1",
+      cursor: 2,
+      status: "running",
+    },
+  });
+  emit!({
+    ...jobStep(2),
+    payload: {
+      type: "stream.gap",
+      at: 2,
+      requestedAfter: 1,
+      oldestAvailable: 9,
+      latestAvailable: 10,
+      requiresRefresh: true,
+    },
+  });
+  assert.deepEqual(first, [{ kind: "changed", cursor: 2, status: "running" }, { kind: "gap" }]);
+  assert.deepEqual(second, [{ kind: "gap" }]);
+  controller.dispose();
+});

@@ -1,5 +1,6 @@
 import * as z from "zod/v4";
 import { browserCaseProfileSchema, browserEnvironmentInputSchema } from "./browser-case-profile.js";
+import { browserDeviceTelemetrySchema } from "./browser-device-telemetry.js";
 
 const id = z.string().trim().min(1).max(256);
 const natural = z.number().int().nonnegative();
@@ -36,6 +37,7 @@ export const browserDeviceSessionSchema = z
     startedAt: natural,
     frameCapturedAt: natural.optional(),
     issue: z.string().trim().min(1).max(480).optional(),
+    telemetry: browserDeviceTelemetrySchema.optional(),
   })
   .strict();
 

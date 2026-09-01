@@ -10,7 +10,7 @@ export const relayMcpPromptNames = {
   reviewTake: "relay_review_this_take",
   planCombine: "relay_plan_this_combine",
   authorGraphTest: "relay_author_this_graph_test",
-  verifyChange: "relay_verify_this_change",
+  verifyChange: "relay_prove_this_change",
 } as const;
 
 export type RelayMcpPromptDescriptor = {
@@ -112,7 +112,7 @@ export const relayMcpPrompts = [
   },
   {
     name: relayMcpPromptNames.verifyChange,
-    title: "Verify this change",
+    title: "Prove this change",
     description:
       "Prove one code change on real devices: pick the affected flows, run one approved server-owned Proof, inspect its durable report, and return a structured verdict.",
     requiredOperationIds: [

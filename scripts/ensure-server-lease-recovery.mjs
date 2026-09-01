@@ -254,6 +254,18 @@ export function prepareLeaseForFreshServer({
     recovery.owner?.host === currentHost &&
     portProbe.known &&
     portProbe.pids.length === 0;
+  // A tsx watch restart can replace the server child while its watcher keeps
+  // the port open. The old same-host lease PID is dead, but a healthy Relay
+  // response on that observed listener is positive local ownership evidence.
+  // Keep foreign/unverified-listener cases refused so the caller cannot signal
+  // an unrelated process just because a stale lease exists. Core rejects
+  // shared/unknown filesystems before reporting a listener, so this remains
+  // workspace-local.
+  const staleLeaseWithVerifiedRelay =
+    recovery.status === "refused" &&
+    recovery.reason === "local-port-listener-present" &&
+    recovery.owner?.host === currentHost &&
+    healthIdentifiesObservedRelay;
   return {
     recovery,
     // Default ensure:serve deliberately replaces a known, local Relay. It
@@ -263,11 +275,12 @@ export function prepareLeaseForFreshServer({
       ownsObservedRelay ||
       emptyAndVerified ||
       sameHostDeadLeaseCanBeReacquired ||
+      staleLeaseWithVerifiedRelay ||
       healthyRelayOnObservedPort,
     mode:
       recovery.status === "recovered"
         ? "recovered-abandoned-lease"
-        : ownsObservedRelay || healthyRelayOnObservedPort
+        : ownsObservedRelay || healthyRelayOnObservedPort || staleLeaseWithVerifiedRelay
           ? "replace-known-local-relay"
           : sameHostDeadLeaseCanBeReacquired
             ? "reacquire-dead-local-lease"

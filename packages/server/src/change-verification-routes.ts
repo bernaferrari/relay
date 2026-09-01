@@ -5,8 +5,6 @@ import {
   ChangeVerificationNotFoundError,
   createChangeVerification,
   changeProofCaseResultFromPersistedRun,
-  changeProofRequiredRunCases,
-  decideChangeVerification,
   currentOperationContext,
   listChangeVerifications,
   listChangeProofPublicationOutbox,
@@ -22,17 +20,17 @@ import {
   canonicalSha256,
   summarizeChangeProofExecution,
   ChangeProofExecutionError,
+  ChangeProofConfirmationError,
   ChangeProofPublicationOutboxError,
   verifyDurableChangeVerification,
   type AdvanceChangeVerificationInput,
   type ChangeVerificationScope,
-  type PersistedRun,
   type ChangeProofCellExecutor,
   type ChangeProofExecutionCoordinator,
+  changeProofExecutionPreview,
 } from "@relay/core";
 import {
   CHANGE_VERIFICATION_STATES,
-  changeProofCaseResultSchema,
   type ChangeVerification,
   type OperationInput,
 } from "@relay/protocol";
@@ -46,7 +44,6 @@ import {
   processTerminalChangeProofPublication,
   type ChangeProofTerminalPublisher,
 } from "./change-proof-publication-worker.js";
-import { createDefaultChangeProofCellExecutor } from "./change-proof-cell-executor.js";
 import {
   defaultProofExecutionCoordinator,
   proofExecutionCoordinator,
@@ -55,11 +52,11 @@ import {
   prepareCurrentChangeVerification,
   proofPreparationStartInput,
 } from "./change-proof-preparation.js";
-import { changeProofExecutionRequestAuthority } from "./change-proof-request-authority.js";
 import { handleChangeProofPublicationRecoveryRoute } from "./change-proof-publication-recovery-route.js";
+import { handleChangeProofExecutionRoutes } from "./change-proof-execution-routes.js";
+import { applyProofSetup, inspectProofSetup, previewProofSetup } from "./proof-guided-setup.js";
 import {
   proofRequestDigest as requestDigest,
-  proofRunRequestDigest,
   sameProofStartIntent as sameStartIntent,
 } from "./change-verification-route-intent.js";
 
@@ -85,6 +82,10 @@ export type ChangeVerificationRouteRuntime = {
    * target control. */
   executionCoordinator: ChangeProofExecutionCoordinator;
   executeCell?: ChangeProofCellExecutor;
+  /** The canonical App Map Test executor starts a Test from its first step and
+   * therefore cannot safely resume an exact human-only boundary. Hosts may
+   * opt in only when their executor has a true step/checkpoint resume seam. */
+  supportsHumanInterventionResume?: boolean;
   prepare: typeof prepareCurrentChangeVerification;
 };
 
@@ -142,88 +143,6 @@ async function publishTerminalProof(
   }
 }
 
-function proofRunConflict(message: string, details?: Record<string, unknown>): never {
-  throw new HttpError(409, message, { code: "PROOF_RUN_INVALID", ...details });
-}
-
-function runIdentity(value: { appMapId: string; testId: string; targetCaseId: string }): string {
-  return `${value.appMapId}\0${value.testId}\0${value.targetCaseId}`;
-}
-
-async function projectProofRunResults(
-  runtime: ChangeVerificationRouteRuntime,
-  scope: ChangeVerificationScope,
-  proof: ChangeVerification,
-  requestedRunIds: readonly string[],
-): Promise<Awaited<ReturnType<ChangeVerificationRouteRuntime["caseResultFromRun"]>>[]> {
-  const runs: PersistedRun[] = [];
-  for (const runId of requestedRunIds) {
-    const run = await runtime.readRun(runId);
-    if (!run) proofRunConflict(`Persisted Run ${runId} was not found`, { runId });
-    if (run.id !== runId)
-      proofRunConflict(`Persisted Run identity does not match ${runId}`, { runId });
-    if (run.projectId !== scope.projectId) {
-      proofRunConflict(`Persisted Run ${runId} belongs to another project`, { runId });
-    }
-    if (
-      run.executionProvenance?.organizationId !== scope.organizationId ||
-      run.executionProvenance.projectId !== scope.projectId
-    ) {
-      proofRunConflict(`Persisted Run ${runId} has no matching scoped execution provenance`, {
-        runId,
-      });
-    }
-    runs.push(run);
-  }
-  try {
-    return await Promise.all(
-      runs.map(async (run) =>
-        changeProofCaseResultSchema.parse(await runtime.caseResultFromRun({ proof, run })),
-      ),
-    );
-  } catch (error) {
-    proofRunConflict(
-      error instanceof Error ? error.message : "Persisted Run could not be bound to this Proof",
-    );
-  }
-}
-
-async function trustedProofRunResults(
-  runtime: ChangeVerificationRouteRuntime,
-  scope: ChangeVerificationScope,
-  proof: ChangeVerification,
-  requestedRunIds: readonly string[],
-): Promise<Awaited<ReturnType<ChangeVerificationRouteRuntime["caseResultFromRun"]>>[]> {
-  if (new Set(requestedRunIds).size !== requestedRunIds.length) {
-    proofRunConflict("record-runs cannot contain duplicate Run ids");
-  }
-  const alreadyRecorded = new Set(proof.runIds);
-  const duplicate = requestedRunIds.find((runId) => alreadyRecorded.has(runId));
-  if (duplicate) {
-    proofRunConflict(`Run ${duplicate} is already recorded on this Proof`, { runId: duplicate });
-  }
-  return projectProofRunResults(runtime, scope, proof, requestedRunIds);
-}
-
-function appendUnique<T>(before: readonly T[], additions: readonly T[]): T[] {
-  return [...new Set([...before, ...additions])];
-}
-
-function decideTrustedProof(input: {
-  proof: ChangeVerification;
-  caseResults: readonly unknown[];
-}): ReturnType<typeof decideChangeVerification> {
-  try {
-    return decideChangeVerification(input);
-  } catch (error) {
-    proofRunConflict(
-      error instanceof Error
-        ? error.message
-        : "Persisted Run facts could not form a Proof decision",
-    );
-  }
-}
-
 async function replayedReceipt(
   runtime: ChangeVerificationRouteRuntime,
   scope: ChangeVerificationScope,
@@ -255,6 +174,9 @@ function routeError(error: unknown): never {
   if (error instanceof ChangeProofExecutionError) {
     const status = error.code === "PROOF_EXECUTION_NOT_FOUND" ? 404 : 409;
     throw new HttpError(status, error.message, { code: error.code });
+  }
+  if (error instanceof ChangeProofConfirmationError) {
+    throw new HttpError(409, error.message, { code: error.code });
   }
   if (error instanceof ChangeProofIntegrityError) {
     throw new HttpError(error.code === "POLICY_UNSUPPORTED" ? 400 : 409, error.message, {
@@ -329,6 +251,76 @@ export async function handleChangeVerificationRoute(input: {
   const requestId = operation?.requestId;
   const at = runtime.now();
   const scope = scopeOf(input.scope);
+
+  if (input.method === "GET" && input.pathname === "/proofs/setup") {
+    const baseRef = new URL(
+      input.request.url ?? "/proofs/setup",
+      "http://relay.local",
+    ).searchParams.get("baseRef");
+    try {
+      json(
+        input.response,
+        200,
+        await inspectProofSetup({
+          projectId: scope.projectId,
+          ...(baseRef ? { baseRef } : {}),
+        }),
+      );
+    } catch (error) {
+      throw new HttpError(
+        409,
+        error instanceof Error ? error.message : "Proof setup inspection failed",
+        {
+          code: "PROOF_SETUP_BLOCKED",
+        },
+      );
+    }
+    return true;
+  }
+
+  if (input.method === "POST" && input.pathname === "/proofs/setup/preview") {
+    const body = (await parseJsonBody(input.request)) as OperationInput<"proof.setup.preview">;
+    try {
+      json(
+        input.response,
+        200,
+        await previewProofSetup({ projectId: scope.projectId, intent: body }),
+      );
+    } catch (error) {
+      throw new HttpError(
+        409,
+        error instanceof Error ? error.message : "Proof setup preview failed",
+        {
+          code: "PROOF_SETUP_PREVIEW_BLOCKED",
+        },
+      );
+    }
+    return true;
+  }
+
+  if (input.method === "POST" && input.pathname === "/proofs/setup/apply") {
+    if (!requestId) throw new HttpError(400, "Actor-aware operation context is required");
+    const body = (await parseJsonBody(input.request)) as OperationInput<"proof.setup.apply">;
+    if (body.confirm !== true) throw new HttpError(400, "confirm must be true");
+    try {
+      const result = await applyProofSetup({ projectId: scope.projectId, request: body });
+      recordAudit(input.scope, {
+        action: "proof.setup.apply",
+        resource: result.registeredBuild.id,
+        result: "allow",
+      });
+      json(input.response, 200, result);
+    } catch (error) {
+      throw new HttpError(
+        409,
+        error instanceof Error ? error.message : "Proof setup apply failed",
+        {
+          code: "PROOF_SETUP_APPLY_BLOCKED",
+        },
+      );
+    }
+    return true;
+  }
 
   if (input.method === "GET" && input.pathname === "/proofs") {
     const state = new URL(input.request.url ?? "/proofs", "http://relay.local").searchParams.get(
@@ -421,6 +413,16 @@ export async function handleChangeVerificationRoute(input: {
         requestId,
         requestDigest: digest,
         at,
+        ...(runtime.publishTerminal
+          ? {
+              publication: {
+                provider: "github" as const,
+                ...(runtime.publicationDetailsUrl
+                  ? { detailsUrl: runtime.publicationDetailsUrl }
+                  : {}),
+              },
+            }
+          : {}),
       });
       recordAudit(input.scope, { action: "proof.prepare", resource: proof.id, result: "allow" });
       json(input.response, 201, {
@@ -484,6 +486,16 @@ export async function handleChangeVerificationRoute(input: {
         requestId,
         requestDigest: digest,
         at,
+        ...(runtime.publishTerminal
+          ? {
+              publication: {
+                provider: "github" as const,
+                ...(runtime.publicationDetailsUrl
+                  ? { detailsUrl: runtime.publicationDetailsUrl }
+                  : {}),
+              },
+            }
+          : {}),
       });
       recordAudit(input.scope, { action: "proof.start", resource: proof.id, result: "allow" });
       json(input.response, 201, { ...mutationOutput(proof), disposition: "created" });
@@ -521,10 +533,18 @@ export async function handleChangeVerificationRoute(input: {
       (record) => record.proofId === proof.id,
     );
     const execution = await runtime.executionCoordinator.read(scope, proof.id);
+    let executionPreview;
+    try {
+      executionPreview = changeProofExecutionPreview(proof);
+    } catch {
+      // Legacy/incomplete planning documents remain inspectable. They simply
+      // cannot be confirmed or executed until a new complete preview exists.
+    }
     json(input.response, 200, {
       proof,
       publications,
       publicationOutbox,
+      ...(executionPreview ? { executionPreview } : {}),
       ...(execution ? { execution: summarizeChangeProofExecution(execution) } : {}),
       ...(includeHistory === "true"
         ? {
@@ -537,56 +557,27 @@ export async function handleChangeVerificationRoute(input: {
     return true;
   }
 
-  const runMatch = matchPath(input.pathname, "/proofs/:proofId/run");
-  if (input.method === "POST" && runMatch) {
-    if (!requestId) throw new HttpError(400, "Actor-aware operation context is required");
-    const body = (await parseJsonBody(input.request)) as OperationInput<"proof.run">;
-    const current = await currentProof(runtime, scope, runMatch.proofId!);
-    const digest = proofRunRequestDigest(current.id, body);
-    const operationContext = currentOperationContext();
-    const requestAuthority = changeProofExecutionRequestAuthority(input.scope, operationContext);
-    let execution;
-    try {
-      execution = await runtime.executionCoordinator.submit({
-        ...scope,
-        proof: current,
-        requestId,
-        requestDigest: digest,
-        actorId,
-        authority: "confirmed",
-        requestAuthority,
-        ...(body.expectedVersion === undefined ? {} : { expectedVersion: body.expectedVersion }),
-      });
-    } catch (error) {
-      routeError(error);
-    }
-    const execute = runtime.executeCell ?? createDefaultChangeProofCellExecutor(input.scope);
-    if (execute) {
-      // Admission transitions a ready Proof to running-pilot. Run against the
-      // newly persisted version; reusing the pre-admission snapshot would
-      // make the coordinator reject its own idempotent request as stale.
-      const admittedProof = await currentProof(runtime, scope, current.id);
-      const runInput = {
-        ...scope,
-        proof: admittedProof,
-        requestId,
-        requestDigest: digest,
-        actorId,
-        authority: "confirmed" as const,
-        requestAuthority,
-      };
-      if (body.wait) {
-        execution = await runtime.executionCoordinator.run(runInput, execute);
-      } else {
-        void runtime.executionCoordinator.run(runInput, execute).catch(() => undefined);
-      }
-    }
-    const proof = await currentProof(runtime, scope, current.id);
-    recordAudit(input.scope, { action: "proof.run", resource: proof.id, result: "allow" });
-    json(input.response, body.wait ? 200 : 202, {
-      proof,
-      execution: summarizeChangeProofExecution(execution),
-    });
+  if (
+    await handleChangeProofExecutionRoutes({
+      method: input.method,
+      pathname: input.pathname,
+      request: input.request,
+      response: input.response,
+      requestContext: input.scope,
+      scope,
+      runtime,
+      ...(operation ? { operation } : {}),
+      actorId,
+      ...(requestId ? { requestId } : {}),
+      at,
+      currentProof: (proofId) => currentProof(runtime, scope, proofId),
+      advanceProof: (proof, advanceInput) => advanceProof(runtime, proof, advanceInput),
+      replayedReceipt: (proof, mutationRequestId, action, digest) =>
+        replayedReceipt(runtime, scope, proof, mutationRequestId, action, digest),
+      publishTerminalProof: (proof) => publishTerminalProof(runtime, scope, proof),
+      routeError,
+    })
+  ) {
     return true;
   }
 
@@ -657,227 +648,6 @@ export async function handleChangeVerificationRoute(input: {
       },
     });
     recordAudit(input.scope, { action: "proof.plan.approve", resource: proof.id, result: "allow" });
-    json(input.response, 200, mutationOutput(proof));
-    return true;
-  }
-
-  const continueMatch = matchPath(input.pathname, "/proofs/:proofId/continue");
-  if (input.method === "POST" && continueMatch) {
-    if (!requestId) throw new HttpError(400, "Actor-aware operation context is required");
-    const body = (await parseJsonBody(input.request)) as OperationInput<"proof.continue">;
-    const current = await currentProof(runtime, scope, continueMatch.proofId!);
-    const digest = requestDigest(current.id, body);
-    const replay = await replayedReceipt(runtime, scope, current, requestId, body.action, digest);
-    if (replay) {
-      await publishTerminalProof(runtime, scope, current);
-      json(input.response, 200, { proof: current, receipt: replay });
-      return true;
-    }
-    const common = {
-      expectedVersion: body.expectedVersion,
-      actorId,
-      requestId,
-      requestDigest: digest,
-      action: body.action,
-      at,
-    } as const;
-    let proof: ChangeVerification;
-    if (body.action === "start-pilot") {
-      if (current.state !== "ready" || !current.planApproval) {
-        throw new HttpError(409, "Only an approved ready Proof can start its pilot", {
-          code: "PROOF_EXECUTION_NOT_READY",
-        });
-      }
-      try {
-        changeProofRequiredRunCases(current);
-      } catch (error) {
-        throw new HttpError(
-          409,
-          error instanceof Error ? error.message : "Proof has no executable required cases",
-          { code: "PROOF_EXECUTION_NOT_READY" },
-        );
-      }
-      proof = await advanceProof(runtime, current, {
-        ...common,
-        state: "running-pilot",
-        smallestNextVerification: {
-          kind: "run-pilot",
-          reason: body.reason ?? "Run the first deterministic Verification Plan pilot case.",
-        },
-      });
-    } else if (body.action === "start-required-coverage") {
-      if (current.state !== "awaiting-expansion") {
-        throw new HttpError(409, "Required coverage can start only after a passing pilot", {
-          code: "PROOF_EXPANSION_NOT_READY",
-        });
-      }
-      let requiredCases: ReturnType<typeof changeProofRequiredRunCases>;
-      try {
-        requiredCases = changeProofRequiredRunCases(current);
-      } catch (error) {
-        throw new HttpError(
-          409,
-          error instanceof Error ? error.message : "Proof has no executable required cases",
-          { code: "PROOF_EXPANSION_NOT_READY" },
-        );
-      }
-      if (current.runIds.length >= requiredCases.length) {
-        throw new HttpError(409, "Proof has no remaining required coverage to start", {
-          code: "PROOF_EXPANSION_COMPLETE",
-        });
-      }
-      proof = await advanceProof(runtime, current, {
-        ...common,
-        state: "running",
-        smallestNextVerification: {
-          kind: "expand",
-          reason: body.reason ?? "Run the remaining policy-required Verification Plan cases.",
-        },
-      });
-    } else if (body.action === "record-runs") {
-      if (current.state !== "running-pilot" && current.state !== "running") {
-        throw new HttpError(409, "Runs can be recorded only while a Proof is executing", {
-          code: "PROOF_EXECUTION_NOT_RUNNING",
-        });
-      }
-      const runIds = body.runIds!;
-      if (current.state === "running-pilot" && runIds.length !== 1) {
-        throw new HttpError(409, "The pilot must record exactly one completed Run", {
-          code: "PROOF_PILOT_RUN_REQUIRED",
-        });
-      }
-      const newResults = await trustedProofRunResults(runtime, scope, current, runIds);
-      const allResults =
-        current.state === "running"
-          ? [
-              ...(current.runIds.length
-                ? await projectProofRunResults(runtime, scope, current, current.runIds)
-                : []),
-              ...newResults,
-            ]
-          : newResults;
-      const appendedRunIds = appendUnique(current.runIds, runIds);
-      const appendedEvidence = appendUnique(
-        current.evidenceDigests,
-        newResults.flatMap(({ evidenceDigests }) => evidenceDigests),
-      );
-
-      if (current.state === "running-pilot") {
-        const pilot = newResults[0]!;
-        const pilotCase = changeProofRequiredRunCases(current)[0];
-        if (
-          !pilotCase ||
-          runIdentity(pilot) !==
-            runIdentity({
-              appMapId: pilotCase.appMapId,
-              testId: pilotCase.testId,
-              targetCaseId: pilotCase.targetCaseId,
-            })
-        ) {
-          throw new HttpError(409, "Recorded Run is not the deterministic Proof pilot", {
-            code: "PROOF_PILOT_RUN_MISMATCH",
-          });
-        }
-        const requiredCases = changeProofRequiredRunCases(current);
-        if (pilot.outcome === "passed" && requiredCases.length > 1) {
-          proof = await advanceProof(runtime, current, {
-            ...common,
-            state: "awaiting-expansion",
-            action: "record-runs",
-            runIds: appendedRunIds,
-            evidenceDigests: appendedEvidence,
-            smallestNextVerification: {
-              kind: "expand",
-              reason: "The pilot passed; run the smallest remaining required coverage.",
-            },
-          });
-        } else {
-          const decision = decideTrustedProof({ proof: current, caseResults: allResults });
-          proof = await advanceProof(runtime, current, {
-            ...common,
-            state: decision.state,
-            action: "record-runs",
-            runIds: appendedRunIds,
-            evidenceDigests: appendedEvidence,
-            firstCausalFailure: decision.firstCausalFailure ?? null,
-            coverageGaps: decision.coverageGaps,
-            residualRisk: decision.residualRisk,
-            smallestNextVerification: decision.smallestNextVerification,
-          });
-        }
-      } else {
-        const decision = decideTrustedProof({ proof: current, caseResults: allResults });
-        const partial =
-          decision.decision === "insufficient-evidence" &&
-          decision.summary.insufficient === 0 &&
-          decision.summary.missing > 0;
-        proof = await advanceProof(runtime, current, {
-          ...common,
-          state: partial ? "running" : decision.state,
-          action: "record-runs",
-          runIds: appendedRunIds,
-          evidenceDigests: appendedEvidence,
-          firstCausalFailure: decision.firstCausalFailure ?? null,
-          coverageGaps: partial ? current.coverageGaps : decision.coverageGaps,
-          residualRisk: decision.residualRisk,
-          smallestNextVerification: partial
-            ? {
-                kind: "expand",
-                reason: "Continue with the smallest missing required Verification case.",
-                ...(decision.smallestNextVerification.appMapId
-                  ? { appMapId: decision.smallestNextVerification.appMapId }
-                  : {}),
-                ...(decision.smallestNextVerification.testId
-                  ? { testId: decision.smallestNextVerification.testId }
-                  : {}),
-                ...(decision.smallestNextVerification.targetCaseId
-                  ? { targetCaseId: decision.smallestNextVerification.targetCaseId }
-                  : {}),
-              }
-            : decision.smallestNextVerification,
-        });
-      }
-    } else {
-      if (["running-pilot", "awaiting-expansion", "running"].includes(current.state)) {
-        throw new HttpError(409, "Cancel the active Proof execution before changing its plan", {
-          code: "PROOF_EXECUTION_ACTIVE",
-        });
-      }
-      proof =
-        body.action === "revise-plan"
-          ? await advanceProof(runtime, current, {
-              ...common,
-              state: body.builds!.length ? "planning" : "awaiting-build",
-              builds: body.builds!,
-              selection: body.selection!,
-              planApproval: null,
-              coverageGaps: body.coverageGaps,
-              residualRisk: body.residualRisk,
-              smallestNextVerification: body.smallestNextVerification ?? {
-                kind: body.builds!.length ? "approve-plan" : "provide-build",
-                reason: body.builds!.length
-                  ? "Review and approve the revised Verification Plan."
-                  : "Provide an exact build for the current head.",
-              },
-            })
-          : body.action === "request-plan-review"
-            ? await advanceProof(runtime, current, {
-                ...common,
-                state: "needs-review",
-                smallestNextVerification: { kind: "review", reason: body.reason! },
-              })
-            : await advanceProof(runtime, current, {
-                ...common,
-                state: current.builds.length ? "planning" : "awaiting-build",
-                planApproval: null,
-                smallestNextVerification: {
-                  kind: current.builds.length ? "approve-plan" : "provide-build",
-                  reason: body.reason!,
-                },
-              });
-    }
-    await publishTerminalProof(runtime, scope, proof);
-    recordAudit(input.scope, { action: "proof.continue", resource: proof.id, result: "allow" });
     json(input.response, 200, mutationOutput(proof));
     return true;
   }

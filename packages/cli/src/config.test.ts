@@ -82,11 +82,41 @@ test("verify-change --base selects the reviewed local plan path", () => {
   if (confirmed.command === "verify-change") {
     assert.equal(confirmed.confirm, true);
     assert.equal(confirmed.configFile, "proof.json");
+    assert.equal(confirmed.legacy, true);
   }
   assert.throws(
     () => parseCli(["verify-change", "--base", "main", "--config", "a", "--config-file", "b"], {}),
     /only one/u,
   );
+});
+
+test("prove --base is the canonical local live Proof entry point", () => {
+  const parsed = parseCli(
+    ["prove", "--base", "main", "--config-file", "./reviewed.json", "--json"],
+    {},
+  );
+  assert.equal(parsed.command, "prove");
+  if (parsed.command === "prove") {
+    assert.deepEqual(
+      { base: parsed.base, configFile: parsed.configFile, confirm: parsed.confirm },
+      { base: "main", configFile: "./reviewed.json", confirm: false },
+    );
+  }
+  assert.throws(
+    () => parseCli(["prove", "--base", "main", "--input", "{}"], {}),
+    /reviewed config file.*--config-file/u,
+  );
+});
+
+test("proof analyze routes offline selections through the compatibility verifier", () => {
+  const parsed = parseCli(["proof", "analyze", "revision", "abcdef0", "--json"], {});
+  assert.equal(parsed.command, "outcome");
+  if (parsed.command === "outcome") {
+    assert.deepEqual(parsed.intent, {
+      kind: "proof-analyze",
+      selection: { kind: "source-revision", sourceRevision: { vcs: "git", sha: "abcdef0" } },
+    });
+  }
 });
 
 test("credential source reads a named environment variable and redacts its value", () => {

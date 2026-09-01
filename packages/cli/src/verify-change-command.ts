@@ -36,6 +36,7 @@ import {
   VERIFY_CHANGE_MAX_GIT_OUTPUT_BYTES,
   type VerifyChangeCommandInput,
   type VerifyChangeGitRunner,
+  type VerifyChangeNextAction,
   type VerifyChangePlanResult,
 } from "./verify-change-types.js";
 
@@ -472,9 +473,10 @@ export async function runVerifyChangeCommand(
   };
   let planApproved = false;
   let terminalState: string | undefined;
+  let liveNextAction: VerifyChangeNextAction | undefined;
 
   if (input.confirm) {
-    if (!input.client) throw new UsageError("verify-change --confirm requires a Relay client");
+    if (!input.client) throw new UsageError("prove --confirm requires a Relay client");
     const signal = input.signal ?? new AbortController().signal;
     const prepareInput = {
       baseRef,
@@ -512,10 +514,11 @@ export async function runVerifyChangeCommand(
       livePilot = live.pilot;
       liveRuns = live.runs;
       terminalState = live.terminalState;
+      liveNextAction = live.nextAction;
     }
   }
 
-  const next = nextVerifyChangeAction(plan, baseRef, input.configFile, proof);
+  const next = liveNextAction ?? nextVerifyChangeAction(plan, baseRef, input.configFile, proof);
   if (proof && !livePilot.attempted && !isExecutableVerificationPlan(plan)) {
     livePilot = {
       available: false,

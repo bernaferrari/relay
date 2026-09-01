@@ -138,8 +138,12 @@ const extraGuidance: Partial<Record<OperationId, string>> = {
     " Inspect one Proof and optionally its bounded immutable lifecycle history before deciding the next action.",
   "proof.plan.approve":
     " Approve the Proof's frozen Verification Plan as a human reviewer. Approval is human-only and requires explicit confirm: true.",
+  "proof.run.confirm":
+    " Issue one short-lived, durable confirmation receipt for the exact reviewed guarded or destructive Proof Cell. This requires a human actor and the digest returned by proof.inspect.",
   "proof.run":
     " Run or resume an approved Proof through the server-owned coordinator. Relay persists progress, survives client disconnects, and returns one bounded execution summary instead of exposing campaign or job choreography.",
+  "proof.run.human-evidence":
+    " Record evidence for the exact paused human-only Proof step and resume its durable execution. This requires a human actor, exact execution/cell/step identities, and an evidence digest.",
   "proof.continue":
     " Continue one Proof with an exact version and one bounded plan action: revise the plan, request review, or return to planning.",
   "proof.cancel":
@@ -505,7 +509,9 @@ const proofOperations = [
   "proof.list",
   "proof.inspect",
   "proof.plan.approve",
+  "proof.run.confirm",
   "proof.run",
+  "proof.run.human-evidence",
   "proof.continue",
   "proof.cancel",
   "proof.publication.retry",

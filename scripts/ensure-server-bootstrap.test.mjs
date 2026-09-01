@@ -9,6 +9,7 @@ import {
   EnsureServerBootstrapLockedError,
   freeAuthorizedRelayProcesses,
   isExactRelayWatcher,
+  isRelayServerProcess,
   relayWatcherArguments,
   withEnsureServerBootstrapLock,
 } from "./ensure-server-bootstrap.mjs";
@@ -56,7 +57,7 @@ test("bootstrap lock serializes the entire async operation and has no stale owne
 });
 
 test("valid Relay authorization ignores stale pid-file values and loose unrelated watchers", async () => {
-  const relay = identity(200, 100, `${nodeExecutable} server-child`);
+  const relay = identity(200, 100, `${nodeExecutable} src/index.ts --port ${port}`);
   const watcher = identity(100, 1, watcherCommand);
   const looseUnrelatedWatcher = identity(
     300,
@@ -104,6 +105,30 @@ test("valid Relay authorization ignores stale pid-file values and loose unrelate
   ]);
   assert.equal(processes.has(300), true);
   assert.equal(processes.has(400), true);
+});
+
+test("a reused health PID is rejected unless its command and workspace identity are Relay", () => {
+  const reused = identity(
+    200,
+    1,
+    `${nodeExecutable} unrelated-service --port ${port}`,
+    "/workspace/other",
+  );
+  assert.equal(isRelayServerProcess(reused, { root, port }), false);
+  assert.throws(
+    () =>
+      authorizeRelayShutdown({
+        root,
+        tsx,
+        port,
+        portProbe: { known: true, pids: ["200"] },
+        relayHealth: { ok: true, product: "relay", pid: 200 },
+        leasePreparation: { allowed: true, mode: "replace-known-local-relay" },
+        observe: () => reused,
+        nodeExecutable,
+      }),
+    /changed during preflight/u,
+  );
 });
 
 test("genuine repo-local stray watchers require the exact command and cwd", () => {

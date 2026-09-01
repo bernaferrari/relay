@@ -20,6 +20,7 @@ export function ChangesProofCreateForm(props: {
   onDraftInput: (field: ProofDraftField, value: string) => void;
   onDraftBlur: (field: ProofDraftField) => void;
   onClose: () => void;
+  onSetup: () => void;
   onSubmit: (event: SubmitEvent) => void;
 }) {
   return (
@@ -201,6 +202,14 @@ export function ChangesProofCreateForm(props: {
           </span>
         </span>
         <div class="flex gap-2">
+          <Button
+            variant="secondary"
+            type="button"
+            disabled={props.submitting}
+            onClick={props.onSetup}
+          >
+            Set up policy
+          </Button>
           <Button
             variant="secondary"
             type="button"

@@ -23,6 +23,7 @@ import { coreTargetOperationInputSchemas } from "./core-target-operation-input-s
 import { combineStartOperationInputSchemas } from "./combine-start-operation-input-schema.js";
 import { workflowRecordOperationInputSchemas } from "./workflow-record-operation-schemas.js";
 import { changeVerificationOperationInputSchemas } from "./change-verification-operation-schemas.js";
+import { proofSetupOperationInputSchemas } from "./proof-setup.js";
 import { repeatFailureKindSchema } from "./repeat-failure.js";
 import {
   authoringInteraction,
@@ -56,16 +57,8 @@ export const operationInputSchemas = {
   ...combineStartOperationInputSchemas,
   ...workflowRecordOperationInputSchemas,
   ...changeVerificationOperationInputSchemas,
+  ...proofSetupOperationInputSchemas,
   ...browserAuthenticationFixtureOperationInputSchemas,
-  "system.audit.list": z.object({ limit: z.number().int().positive().optional() }).strict(),
-  "workspace.privacy.update": z.object({ enabled: z.boolean() }).strict(),
-  "workspace.evidence.update": z
-    .object({
-      channel: z.enum(["audio", "crash", "network-body", "browser-trace"]),
-      enabled: z.boolean(),
-      reason: z.string().optional(),
-    })
-    .strict(),
   "target.create": z
     .object({
       id: identifier("Optional stable target identifier").optional(),

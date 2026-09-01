@@ -4,6 +4,7 @@ import { executionOperationOutputSchemas } from "./execution-operation-output-sc
 import { observationOperationOutputSchemas } from "./observation-operation-output-schemas.js";
 import { workspaceTargetOperationOutputSchemas } from "./workspace-target-operation-output-schemas.js";
 import { changeVerificationOperationOutputSchemas } from "./change-verification-operation-schemas.js";
+import { proofSetupOperationOutputSchemas } from "./proof-setup.js";
 
 /** Schema-first outputs for operation families that previously used OperationRecord. */
 export const operationFamilyOutputSchemas = {
@@ -11,6 +12,7 @@ export const operationFamilyOutputSchemas = {
   ...observationOperationOutputSchemas,
   ...executionOperationOutputSchemas,
   ...changeVerificationOperationOutputSchemas,
+  ...proofSetupOperationOutputSchemas,
 } as const satisfies Readonly<Record<string, z.ZodType>>;
 
 /** Exact runtime schemas for every descriptor that does not own a specialized parser. */

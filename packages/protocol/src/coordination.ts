@@ -77,10 +77,23 @@ export type WorkflowChangedPayload = {
   status: "active" | "needs-attention" | "terminal" | "expired";
 };
 
+/** Bounded invalidation for the durable server-owned Proof coordinator. The
+ * canonical execution remains available only through proof.inspect; clients
+ * must never derive progress or a decision from this event body. */
+export type ProofExecutionChangedPayload = {
+  type: "proof.execution.changed";
+  at: number;
+  proofId: string;
+  executionId: string;
+  cursor: number;
+  status: "queued" | "running" | "paused-human" | "completed" | "cancelled" | "uncertain";
+};
+
 export type RelayEventPayload =
   | ResourceEventPayload
   | StreamGapPayload
   | WorkflowChangedPayload
+  | ProofExecutionChangedPayload
   | ({ type: string; at: number } & Record<string, unknown>);
 
 function object(value: unknown, label: string): Record<string, unknown> {

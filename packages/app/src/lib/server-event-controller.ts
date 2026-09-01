@@ -8,6 +8,10 @@ export type WorkflowWatchNotice =
   | { kind: "changed"; version: number; status: string }
   | { kind: "gap" };
 
+export type ProofExecutionWatchNotice =
+  | { kind: "changed"; cursor: number; status: string }
+  | { kind: "gap" };
+
 export function createServerEventController(input: {
   client: Accessor<RelayClient | null>;
   refreshers: Record<EventRefresh, () => Promise<unknown>>;
@@ -30,6 +34,10 @@ export function createServerEventController(input: {
   let abort: AbortController | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   const workflowListeners = new Map<string, Set<(notice: WorkflowWatchNotice) => void>>();
+  const proofExecutionListeners = new Map<
+    string,
+    Set<(notice: ProofExecutionWatchNotice) => void>
+  >();
 
   function notifyWorkflow(workflowId: string | undefined, notice: WorkflowWatchNotice): void {
     const listeners = workflowId
@@ -60,6 +68,38 @@ export function createServerEventController(input: {
     };
   }
 
+  function watchProofExecution(
+    proofId: string,
+    listener: (notice: ProofExecutionWatchNotice) => void,
+  ): () => void {
+    let listeners = proofExecutionListeners.get(proofId);
+    if (!listeners) {
+      listeners = new Set();
+      proofExecutionListeners.set(proofId, listeners);
+    }
+    listeners.add(listener);
+    return () => {
+      listeners?.delete(listener);
+      if (!listeners?.size) proofExecutionListeners.delete(proofId);
+    };
+  }
+
+  function notifyProofExecution(
+    proofId: string | undefined,
+    notice: ProofExecutionWatchNotice,
+  ): void {
+    const listeners = proofId
+      ? proofExecutionListeners.get(proofId)
+      : [...proofExecutionListeners.values()].flatMap((set) => [...set]);
+    for (const listener of listeners ?? []) {
+      try {
+        listener(notice);
+      } catch {
+        // A broken Proof panel must not interrupt the shared stream.
+      }
+    }
+  }
+
   function refreshFromEvent(kind: EventRefresh): void {
     void input.refreshers[kind]();
   }
@@ -78,7 +118,10 @@ export function createServerEventController(input: {
     for (const refresh of projection.refresh) refreshOnce(refresh);
     const event = envelope.payload as Record<string, unknown>;
     const type = String(event.type ?? "");
-    if (type === "stream.gap") notifyWorkflow(undefined, { kind: "gap" });
+    if (type === "stream.gap") {
+      notifyWorkflow(undefined, { kind: "gap" });
+      notifyProofExecution(undefined, { kind: "gap" });
+    }
     if (
       type === "workflow.changed" &&
       typeof event.workflowId === "string" &&
@@ -88,6 +131,18 @@ export function createServerEventController(input: {
       notifyWorkflow(event.workflowId, {
         kind: "changed",
         version: event.version,
+        status: event.status,
+      });
+    }
+    if (
+      type === "proof.execution.changed" &&
+      typeof event.proofId === "string" &&
+      typeof event.cursor === "number" &&
+      typeof event.status === "string"
+    ) {
+      notifyProofExecution(event.proofId, {
+        kind: "changed",
+        cursor: event.cursor,
         status: event.status,
       });
     }
@@ -230,5 +285,5 @@ export function createServerEventController(input: {
     if (reconnectTimer) clearTimeout(reconnectTimer);
   }
 
-  return { sseConnected, eventActivity, watchWorkflow, connect, dispose };
+  return { sseConnected, eventActivity, watchWorkflow, watchProofExecution, connect, dispose };
 }

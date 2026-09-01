@@ -66,6 +66,13 @@ import {
   updateChangeProofExecution,
   type ChangeProofExecutionUpdateGuard,
 } from "./change-proof-execution-db.js";
+import {
+  changeProofConfirmation,
+  changeProofConfirmations,
+  consumeChangeProofConfirmation,
+  insertChangeProofConfirmation,
+  type ChangeProofConfirmationRecord,
+} from "./change-proof-confirmation-db.js";
 import type { ChangeProofExecutionRecord } from "./change-proof-execution.js";
 
 export type DegradedAppMap = {
@@ -206,6 +213,17 @@ export type ControlStore = {
   updateChangeProofExecution(
     record: ChangeProofExecutionRecord,
     guard?: ChangeProofExecutionUpdateGuard,
+  ): boolean;
+  changeProofConfirmation(receiptId: string): ChangeProofConfirmationRecord | undefined;
+  changeProofConfirmations(
+    organizationId: string,
+    projectId: string,
+    proofId: string,
+  ): ChangeProofConfirmationRecord[];
+  insertChangeProofConfirmation(record: ChangeProofConfirmationRecord): boolean;
+  consumeChangeProofConfirmation(
+    receipt: ChangeProofConfirmationRecord["receipt"],
+    consumedAt: number,
   ): boolean;
   appMap(key: string): AppMap | undefined;
   appMapRecoveryDocument(key: string): AppMapRecoveryDocument | undefined;
@@ -582,6 +600,18 @@ function createStore(db: DatabaseSync): ControlStore {
     },
     updateChangeProofExecution(record, guard) {
       return updateChangeProofExecution(db, record, guard);
+    },
+    changeProofConfirmation(receiptId) {
+      return changeProofConfirmation(db, receiptId);
+    },
+    changeProofConfirmations(organizationId, projectId, proofId) {
+      return changeProofConfirmations(db, organizationId, projectId, proofId);
+    },
+    insertChangeProofConfirmation(record) {
+      return insertChangeProofConfirmation(db, record);
+    },
+    consumeChangeProofConfirmation(receipt, consumedAt) {
+      return consumeChangeProofConfirmation(db, receipt, consumedAt);
     },
     appMap(key) {
       const row = db.prepare("SELECT document, status FROM app_maps WHERE map_key = ?").get(key) as

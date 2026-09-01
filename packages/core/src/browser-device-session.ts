@@ -9,7 +9,9 @@ import type {
   BrowserDeviceSemanticCandidate,
   BrowserDeviceSemanticOverlay,
   BrowserDeviceSession,
+  BrowserDeviceTelemetry,
 } from "@relay/protocol";
+import { summarizeBrowserDeviceTelemetry } from "@relay/protocol";
 import {
   closeBrowserTarget,
   browserPageVisualFingerprint,
@@ -64,11 +66,29 @@ type SessionState = {
   observedMutationVersion: number;
   needsFreshFrame: boolean;
   capture?: Promise<BrowserDeviceFrame>;
+  frameCaptureMs: number[];
+  interactionMs: number[];
+  frameTimesMs: number[];
 };
 
 const states = new Map<string, SessionState>();
 const FRAME_DEGRADED_MS = 1_000;
 export const MAX_BROWSER_DEVICE_SEMANTIC_CANDIDATES = 128;
+const MAX_BROWSER_DEVICE_TELEMETRY_SAMPLES = 128;
+
+function retainSample(samples: number[], value: number): void {
+  samples.push(Math.max(0, Math.round(value)));
+  if (samples.length > MAX_BROWSER_DEVICE_TELEMETRY_SAMPLES) samples.shift();
+}
+
+function telemetry(state: SessionState): BrowserDeviceTelemetry {
+  return summarizeBrowserDeviceTelemetry({
+    frameCaptureMs: state.frameCaptureMs,
+    interactionMs: state.interactionMs,
+    frameTimesMs: state.frameTimesMs,
+    frameCount: state.sequence,
+  });
+}
 
 function message(error: unknown): string {
   return (error instanceof Error ? error.message : String(error)).slice(0, 480);
@@ -181,6 +201,7 @@ async function projection(state: SessionState): Promise<BrowserDeviceRuntimeSess
     startedAt: state.startedAt,
     ...(state.frame ? { frameCapturedAt: state.frame.capturedAt } : {}),
     ...(state.issue ? { issue: state.issue } : {}),
+    telemetry: telemetry(state),
   };
 }
 
@@ -213,6 +234,9 @@ export async function openBrowserDeviceSession(
     attached: new WeakSet(),
     needsFreshFrame: true,
     observedMutationVersion: runtime.mutationVersion(),
+    frameCaptureMs: [],
+    interactionMs: [],
+    frameTimesMs: [],
   };
   state.activePageId = attachPage(state, page, "page");
   for (const existing of runtime.context.pages()) {
@@ -259,7 +283,7 @@ async function capture(state: SessionState): Promise<BrowserDeviceFrame> {
       state.sequence,
     );
   }
-  const started = Date.now();
+  const started = performance.now();
   let page = state.pages.get(state.activePageId);
   if (!page || page.isClosed()) {
     // Canonical recording deliberately replaces its page at start/stop to
@@ -272,6 +296,11 @@ async function capture(state: SessionState): Promise<BrowserDeviceFrame> {
   try {
     const buffer = await page.screenshot({ type: "jpeg", quality: 76, animations: "disabled" });
     const capturedAt = Date.now();
+    retainSample(state.frameCaptureMs, performance.now() - started);
+    state.frameTimesMs.push(performance.now());
+    if (state.frameTimesMs.length > MAX_BROWSER_DEVICE_TELEMETRY_SAMPLES) {
+      state.frameTimesMs.shift();
+    }
     const digest = createHash("sha256").update(buffer).digest("base64url");
     // Sequence identifies an observation, not visual novelty. Two URLs or DOM
     // states may paint identical pixels, so every successful capture retires
@@ -760,6 +789,7 @@ export async function controlBrowserDevice(
 }> {
   const state = stateForTarget(targetId);
   let resolvedClick: ResolvedBrowserClick | undefined;
+  const startedAt = performance.now();
   const operation = runBrowserMutationAdmission(targetId, async () => {
     if (state.capture) await state.capture;
     await runSupervisedBrowserMutation({
@@ -773,7 +803,11 @@ export async function controlBrowserDevice(
       dispatch: () => applyInput(state, input, resolvedClick),
     });
   });
-  await operation;
+  try {
+    await operation;
+  } finally {
+    retainSample(state.interactionMs, performance.now() - startedAt);
+  }
   return {
     ok: true,
     session: await projection(state),

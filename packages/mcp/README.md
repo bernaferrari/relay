@@ -27,10 +27,13 @@ the Relay workspace after the package is installed.
 
 The local defaults use the loopback Relay service, the local project, a process-scoped agent
 identity, and the compact outcome tool set. That default can prepare, inspect, run, and resume a
-Proof through `relay_prove_change` and `relay_inspect_proof`; it deliberately cannot self-approve a
-Verification Plan. A human approves in the app or CLI. The advanced Proof profile exposes the raw
-lifecycle operations for hosts that also provide a distinct human reviewer identity. The Proof
-plugin selects `RELAY_MCP_PROFILE=proof`:
+Proof through `relay_prove_change` and `relay_inspect_proof`; use `relay_proof_analyze` only for
+bounded offline evidence analysis. It deliberately cannot self-approve a Verification Plan. A
+human approves in the app or CLI. The advanced Proof profile exposes the raw lifecycle operations
+for hosts that also provide a distinct human reviewer identity. The `proof` profile retains the
+ordinary `relay_prove_change` outcome and adds the raw `proof.*` lifecycle tools for explicit plan
+review, recovery, publication, and selective reruns. The Proof plugin selects
+`RELAY_MCP_PROFILE=proof`:
 
 ```json
 {
@@ -94,13 +97,17 @@ stdio-only host can use the same package directly:
 {
   "mcpServers": {
     "relay": {
-      "command": "relay-mcp",
-      "args": ["--profile", "proof"],
+      "command": "npx",
+      "args": ["--yes", "--package", "@relay/mcp@0.1.0", "relay-mcp", "--profile", "proof"],
       "env": { "RELAY_MCP_PROFILE": "proof" }
     }
   }
 }
 ```
+
+The `npx --package` form is a one-command clean-host setup; it does not require a Relay checkout
+or a globally installed binary. Hosts that manage npm packages centrally may install
+`@relay/mcp@0.1.0` once and invoke `relay-mcp` directly instead.
 
 For a ChatGPT-compatible remote MCP client, select the bridge URL and require approval for
 side-effecting tools in the host. Do not recreate the Relay tool list in the host configuration;
@@ -108,26 +115,26 @@ the bridge exposes exactly the profile selected by `RELAY_MCP_PROFILE`.
 
 ## Tool profiles
 
-Relay defaults to sixteen outcome tools that cover Connect, Observe, Record, Checkpoint, Review,
+Relay defaults to a curated outcome tool set that covers Connect, Observe, Record, Checkpoint, Review,
 Replay, Approve, Run, Repeat, failure inspection, repair proposals, and TracePack export. Agents do
 not need to select a profile for the normal workflow. Trusted orchestrators can opt into a
 lower-level profile with `--profile <name>` or `RELAY_MCP_PROFILE`.
 
-| Profile   | Intended use                                                                              |
-| --------- | ----------------------------------------------------------------------------------------- |
-| `outcome` | Default Test workflow: connect, observe, record, replay, run, repeat, inspect, export     |
-| `control` | Advanced direct target observation, input, recovery, and lease management                 |
-| `map`     | Discovery and observation proposals without full authoring edits                          |
-| `observe` | Read-only project, device, App Map, proposal, run, and evidence inspection                |
-| `author`  | Default App Map editing, device recording, and proposal creation                          |
-| `test`    | Graph Test creation, review, compilation, one-pass runs, and evidence                     |
-| `run`     | Test/Combine execution, jobs, and run evidence                                            |
-| `execute` | Alias of `run` for execution-focused agents                                               |
-| `locale`  | Language Variables, profiles, Combine campaigns, and analysis                             |
-| `review`  | Proposal/take repair, replay, approval, and run-baseline review                           |
-| `admin`   | Workspace policy, projects, targets, schedules, matrices, and retention                   |
-| `proof`   | Verify one change: affected flows, runs, proof reports, repair proposals, and share links |
-| `full`    | Every canonical Relay operation; intended for trusted orchestration only                  |
+| Profile   | Intended use                                                                             |
+| --------- | ---------------------------------------------------------------------------------------- |
+| `outcome` | Default Test workflow: connect, observe, record, replay, run, repeat, inspect, export    |
+| `control` | Advanced direct target observation, input, recovery, and lease management                |
+| `map`     | Discovery and observation proposals without full authoring edits                         |
+| `observe` | Read-only project, device, App Map, proposal, run, and evidence inspection               |
+| `author`  | Default App Map editing, device recording, and proposal creation                         |
+| `test`    | Graph Test creation, review, compilation, one-pass runs, and evidence                    |
+| `run`     | Test/Combine execution, jobs, and run evidence                                           |
+| `execute` | Alias of `run` for execution-focused agents                                              |
+| `locale`  | Language Variables, profiles, Combine campaigns, and analysis                            |
+| `review`  | Proposal/take repair, replay, approval, and run-baseline review                          |
+| `admin`   | Workspace policy, projects, targets, schedules, matrices, and retention                  |
+| `proof`   | Prove one change with the outcome tool plus explicit proof.* lifecycle/recovery controls |
+| `full`    | Every canonical Relay operation; intended for trusted orchestration only                 |
 
 Outcome tools accept job-level intent and resolve the sole Test workspace, Device, current revision,
 and available control internally. Advanced profile tools advertise and take canonical operation
@@ -183,7 +190,7 @@ Destination-mismatch repair proposals are also exposed as typed data: when a fai
 `destination-repair-proposals` artifact, `relay://runs/{runId}/repair-proposals` reads it through
 the protocol schema — review-only screen candidates with confidence, rationale, and method, or an
 explicit zero-proposal result with reason `grounding-unavailable`. The
-`relay_verify_this_change` prompt (available from the `proof` profile) walks an agent through the
+`relay_prove_this_change` prompt (available from the `proof` profile) walks an agent through the
 full loop: establish impact, select affected Tests, obtain human approval for the frozen plan, call
 the server-owned `relay_proof_run` once, inspect its durable Proof result and repair proposals on
 failure, and return a structured verdict with share links for reviewers. Lower-level Test/job tools

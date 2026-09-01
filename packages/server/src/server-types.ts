@@ -9,6 +9,7 @@ import type { StepRunRouteRuntime } from "./step-run-route.js";
 import type { TargetRuntimeRouteRuntime } from "./target-runtime-routes.js";
 import type { WorkflowRouteRuntime } from "./workflow-routes.js";
 import type { ChangeVerificationRouteRuntime } from "./change-verification-routes.js";
+import type { GitHubProofWebhookConfiguration } from "./github-proof-intake.js";
 
 /** Host-owned server seams, kept separate from the HTTP router implementation. */
 export type StartServerOptions = {
@@ -40,6 +41,9 @@ export type StartServerOptions = {
   runRouteRuntime?: Partial<RunRouteRuntime>;
   /** Test seam for server-owned Proof Run projection and lifecycle transitions. */
   proofRouteRuntime?: Partial<ChangeVerificationRouteRuntime>;
+  /** Explicit signed GitHub pull-request intake boundary. Environment-backed
+   * configuration is used when this host seam is omitted. */
+  githubProofWebhook?: GitHubProofWebhookConfiguration;
   /** Test seam for standalone-step execution without a physical target. */
   stepRunRuntime?: Partial<StepRunRouteRuntime>;
 };

@@ -166,13 +166,22 @@ test("in-app Browser Device sequences frames and rejects stale page input", asyn
           }),
       );
       const recordingFrame = await captureBrowserDeviceFrame(target.id);
-      assert.equal(recordingFrame.session.status, "streaming");
+      assert.ok(
+        recordingFrame.session.status === "streaming" ||
+          recordingFrame.session.status === "degraded",
+      );
+      if (recordingFrame.session.status === "degraded") {
+        assert.match(recordingFrame.session.issue ?? "", /frames are delayed/u);
+      }
       if (recording.started) {
         await runWithTargetContext(
           { kind: "browser", platform: "browser", targetId: target.id },
           () => recordDeviceVideo(device, { action: "stop" }),
         );
-        assert.equal((await captureBrowserDeviceFrame(target.id)).session.status, "streaming");
+        const stoppedFrame = await captureBrowserDeviceFrame(target.id);
+        assert.ok(
+          stoppedFrame.session.status === "streaming" || stoppedFrame.session.status === "degraded",
+        );
       }
       await closeBrowserTarget(target.id, { mode: "authoring" });
       await deleteTarget(target.id);
@@ -386,11 +395,19 @@ test("managed browser targets have full CRUD and reject unsafe URLs", async () =
     executablePath: CHROME,
     headless: true,
   });
-  assert.equal((await listTargets())[0]?.name, "Chat product");
-  await saveBrowserTarget({ ...target.browser!, id: target.id, name: "Assistant web" });
-  assert.equal((await listTargets())[0]?.name, "Assistant web");
-  await deleteTarget(target.id);
-  assert.deepEqual(await listTargets(), []);
+  try {
+    assert.equal(
+      (await listTargets()).find((candidate) => candidate.id === target.id)?.name,
+      "Chat product",
+    );
+    await saveBrowserTarget({ ...target.browser!, id: target.id, name: "Assistant web" });
+    assert.equal(
+      (await listTargets()).find((candidate) => candidate.id === target.id)?.name,
+      "Assistant web",
+    );
+  } finally {
+    await deleteTarget(target.id);
+  }
 });
 
 test("ephemeral browser deletion purges its profile while retained authoring data survives", async () => {

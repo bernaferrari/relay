@@ -186,7 +186,64 @@ test("the default cell adapter refuses prohibited or confirmation-gated risk", (
         targetCaseId: "target-1",
         buildId: "build-1",
       }),
-    /only safe\/none Proof execution is currently supported/u,
+    /prohibited and cannot be executed/u,
+  );
+});
+
+test("the canonical App Map Test adapter fails closed instead of replaying a human-only step", () => {
+  const value = execution("browser");
+  const cell = value.frozenProof.selection.cells![0]!;
+  const humanOnlyRisk = {
+    ...safeExecutionRisk,
+    level: "destructive" as const,
+    confirmation: "human-only" as const,
+    reasons: [
+      {
+        stepId: "delete-fixture",
+        code: "reviewed-account-mutation",
+        explanation: "A person must verify the fixture before deleting it.",
+      },
+    ],
+    externalEffects: ["data-deletion" as const],
+    cleanupRequired: true,
+  };
+  value.frozenProof.selection.cells = [
+    {
+      ...cell,
+      executionRisk: humanOnlyRisk,
+      executionRiskDigest: canonicalSha256(humanOnlyRisk),
+      cleanupRequired: true,
+    },
+  ] as never;
+  assert.throws(
+    () =>
+      changeProofCellRunInput(
+        {
+          ...value,
+          humanInterventionEvidence: [
+            {
+              schemaVersion: 1,
+              executionId: "proof-execution:exact",
+              proofId: "proof-execution",
+              cellId: "cell-1",
+              stepId: "delete-fixture",
+              evidenceDigest: `sha256:${"e".repeat(64)}`,
+              recordedBy: "human:reviewer",
+              recordedAt: 1,
+              requestId: "human-evidence",
+            },
+          ],
+        } as never,
+        {
+          cellId: "cell-1",
+          appMapId: "settings",
+          testId: "language",
+          appMapRevision: 4,
+          targetCaseId: "target-1",
+          buildId: "build-1",
+        },
+      ),
+    /canonical App Map Test executor cannot resume at that step/u,
   );
 });
 

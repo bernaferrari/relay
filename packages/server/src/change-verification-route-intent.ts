@@ -14,9 +14,13 @@ export function proofRequestDigest(proofId: string | undefined, body: unknown): 
  * Proof execution identity. */
 export function proofRunRequestDigest(
   proofId: string,
-  body: Pick<OperationInput<"proof.run">, "expectedVersion">,
+  body: Pick<OperationInput<"proof.run">, "expectedVersion" | "confirmationReceipts">,
 ): `sha256:${string}` {
-  return canonicalSha256({ proofId, expectedVersion: body.expectedVersion ?? null });
+  return canonicalSha256({
+    proofId,
+    expectedVersion: body.expectedVersion ?? null,
+    confirmationReceipts: body.confirmationReceipts ?? [],
+  });
 }
 
 export function sameProofStartIntent(
