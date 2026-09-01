@@ -490,6 +490,11 @@ extension RunnerTests {
     do {
       presented = try timer.measure(.presentation) {
         guard let result = try SnapshotPresentation.present(acquisition, options: options) else {
+          NSLog(
+            "AGENT_DEVICE_RUNNER_SNAPSHOT_PROJECTION_MISMATCH requested=%@ acquired=%@",
+            hint.projection.rawValue,
+            acquisition.hint.projection.rawValue
+          )
           throw Self.snapshotProjectionMismatchFailure(
             kind,
             requested: hint.projection,
@@ -641,6 +646,10 @@ extension RunnerTests {
       message: Self.legacyQualityMessage(quality) ?? payload.message,
       nodes: payload.nodes,
       truncated: payload.truncated == true || state != "healthy" || capture.effectiveDepth != nil,
+      qualityPayload: capture.qualityPayload.flatMap { quality in
+        guard let nodes = quality.nodes else { return nil }
+        return SnapshotQualityPayload(nodes: nodes, truncated: quality.truncated == true)
+      },
       snapshotQuality: quality,
       runnerFatal: payload.runnerFatal,
       runnerFatalReason: payload.runnerFatalReason
@@ -875,6 +884,29 @@ extension RunnerTests {
 
     XCTAssertEqual(payload.snapshotQuality?.timing, timing)
     XCTAssertEqual(payload.nodes?.count, 1)
+  }
+
+  func testSnapshotQualityCarriesUnscopedQualityPayload() {
+    let quality = DataPayload(
+      nodes: [planTestNode(index: 0, type: "Application", label: "App")],
+      truncated: false
+    )
+    let capture = SnapshotBackendCapture(
+      payload: quality,
+      effectiveDepth: nil,
+      qualityPayload: quality
+    )
+
+    let payload = stampedSnapshotPayload(
+      capture,
+      backend: .recursiveTree,
+      state: "healthy",
+      reason: nil
+    )
+
+    XCTAssertEqual(payload.qualityPayload?.nodes.count, 1)
+    XCTAssertEqual(payload.qualityPayload?.truncated, false)
+    XCTAssertNil(payload.qualityPayload?.scope)
   }
 
   func testDirectPresentationDoesNotClaimPlanTiming() {
