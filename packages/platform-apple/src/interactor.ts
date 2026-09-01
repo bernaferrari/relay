@@ -21,7 +21,7 @@ import { withDiagnosticTimer } from '@agent-device/host-kit/diagnostics';
 import { isMacOs, isTvOsDevice, type DeviceInfo } from '@agent-device/kernel/device';
 import { AppError } from '@agent-device/kernel/errors';
 import { withMethodScope } from '@agent-device/kernel/scoped-provider';
-import type { Point, RawSnapshotNode, SnapshotQualityVerdict } from '@agent-device/kernel/snapshot';
+import type { Point, SnapshotQualityVerdict } from '@agent-device/kernel/snapshot';
 import type {
   Interactor,
   RunnerCallOptions,
@@ -29,8 +29,12 @@ import type {
   ScreenshotOptions,
   SnapshotOptions,
 } from '@agent-device/contracts/interactor-types';
-import { readSnapshotQualityVerdict } from '@agent-device/capture-kit/snapshot-quality-verdict';
 import { captureMacOsSurfaceSnapshot } from './os/macos/surface-snapshot.ts';
+import {
+  presentAppleRunnerSnapshot,
+  readAppleSnapshotResult,
+} from './runner/snapshot-presentation.ts';
+import type { AppleRunnerSnapshotResult } from './runner/snapshot-presentation.ts';
 
 export function createAppleInteractor(
   device: DeviceInfo,
@@ -242,7 +246,7 @@ async function captureAppleRunnerSnapshot(
     throw new AppError('COMMAND_FAILED', 'XCTest snapshot returned 0 nodes on iOS simulator.');
   }
   return {
-    nodes,
+    nodes: presentRunnerSnapshotForDevice(device, options, result),
     truncated: result.truncated ?? false,
     backend: 'xctest' as const,
     producer: 'apple-runner' as const,
@@ -250,6 +254,15 @@ async function captureAppleRunnerSnapshot(
     // Legacy runners without a quality verdict still surface their message text.
     ...(!result.quality && result.message ? { warnings: [result.message] } : {}),
   };
+}
+
+function presentRunnerSnapshotForDevice(
+  device: DeviceInfo,
+  options: SnapshotOptions | undefined,
+  result: AppleRunnerSnapshotResult,
+) {
+  if (isMacOs(device)) return result.nodes ?? [];
+  return presentAppleRunnerSnapshot(device.id, options, result);
 }
 
 function acceptsEmptyScopedSnapshot(
@@ -375,24 +388,6 @@ function usesMacOsSurfaceScreenshot(
   surface: ScreenshotOptions['surface'],
 ): surface is Exclude<ScreenshotOptions['surface'], undefined | 'app'> {
   return isMacOs(device) && surface !== undefined && surface !== 'app';
-}
-
-function readAppleSnapshotResult(result: Record<string, unknown>): {
-  nodes?: RawSnapshotNode[];
-  truncated?: boolean;
-  message?: string;
-  quality?: SnapshotQualityVerdict;
-} {
-  return {
-    nodes: Array.isArray(result.nodes) ? (result.nodes as RawSnapshotNode[]) : undefined,
-    truncated: typeof result.truncated === 'boolean' ? result.truncated : undefined,
-    quality: readSnapshotQualityVerdict(result.snapshotQuality),
-    // Legacy runner context for builds that predate the structured verdict.
-    message:
-      typeof result.message === 'string' && result.message.trim().length > 0
-        ? result.message
-        : undefined,
-  };
 }
 
 /** Only non-app macOS surfaces are helper-read; an app session is runner-read like any leaf. */

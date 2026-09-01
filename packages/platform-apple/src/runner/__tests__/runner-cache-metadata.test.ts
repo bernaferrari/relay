@@ -1,4 +1,6 @@
-import { test } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
+import { onTestFinished, test } from 'vitest';
 import assert from 'node:assert/strict';
 import { IOS_DEVICE, IOS_SIMULATOR, MACOS_DEVICE } from './device-fixtures.ts';
 import {
@@ -7,7 +9,9 @@ import {
   resolveRunnerSigningBuildSettings,
   resolveRunnerPerformanceBuildSettings,
   resolveRunnerSandboxBuildArgs,
+  resolveExpectedRunnerCacheMetadata,
 } from '../runner-cache-metadata.ts';
+import { mkdtempForTestSync } from './tmp-dir.ts';
 
 test('resolveRunnerMaxConcurrentDestinationsFlag uses simulator flag for simulators', () => {
   assert.equal(
@@ -147,4 +151,85 @@ test('resolveRunnerBundleBuildSettings uses AGENT_DEVICE_IOS_BUNDLE_ID when prov
       'AGENT_DEVICE_IOS_RUNNER_TEST_BUNDLE_ID=com.example.agent-device.runner.uitests',
     ],
   );
+});
+
+test('runner cache metadata fingerprints shared snapshot presentation sources', () => {
+  const root = mkdtempForTestSync('agent-device-runner-cache-fingerprint-');
+  onTestFinished(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ version: '0.0.0' }));
+  fs.mkdirSync(path.join(root, 'apple', 'runner', 'AgentDeviceRunner'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'apple', 'snapshot-presentation', 'Sources'), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, 'apple', 'runner', 'AgentDeviceRunner', 'Runner.swift'),
+    'runner\n',
+  );
+  const sharedSource = path.join(
+    root,
+    'apple',
+    'snapshot-presentation',
+    'Sources',
+    'Presentation.swift',
+  );
+  fs.writeFileSync(sharedSource, 'shared-one\n');
+
+  const before = resolveExpectedRunnerCacheMetadata(IOS_SIMULATOR, root).runnerSourceFingerprint;
+  fs.writeFileSync(sharedSource, 'shared-two\n');
+  const after = resolveExpectedRunnerCacheMetadata(IOS_SIMULATOR, root).runnerSourceFingerprint;
+
+  assert.notEqual(after, before);
+});
+
+test('runner cache metadata ignores development-only SwiftPM trees but keeps runner unit tests', () => {
+  const root = mkdtempForTestSync('agent-device-runner-cache-source-roots-');
+  onTestFinished(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ version: '0.0.0' }));
+
+  const runnerRoot = path.join(root, 'apple', 'runner', 'AgentDeviceRunner');
+  const runnerUnitTest = path.join(
+    runnerRoot,
+    'AgentDeviceRunnerUITests',
+    'UnitTests',
+    'Invariant.swift',
+  );
+  const sharedRoot = path.join(root, 'apple', 'snapshot-presentation');
+  fs.mkdirSync(path.dirname(runnerUnitTest), { recursive: true });
+  fs.mkdirSync(path.join(sharedRoot, 'Sources'), { recursive: true });
+  fs.writeFileSync(path.join(runnerRoot, 'Runner.swift'), 'runner\n');
+  fs.writeFileSync(runnerUnitTest, 'unit-one\n');
+  fs.writeFileSync(path.join(sharedRoot, 'Sources', 'Presentation.swift'), 'shared\n');
+
+  for (const directory of [
+    'Tests',
+    'SnapshotPresentationConformance',
+    '.build',
+    '.swiftpm',
+    'xcuserdata',
+  ]) {
+    const file = path.join(sharedRoot, directory, 'Ignored.swift');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, 'ignored-one\n');
+  }
+
+  const before = resolveExpectedRunnerCacheMetadata(IOS_SIMULATOR, root).runnerSourceFingerprint;
+  for (const directory of [
+    'Tests',
+    'SnapshotPresentationConformance',
+    '.build',
+    '.swiftpm',
+    'xcuserdata',
+  ]) {
+    fs.writeFileSync(path.join(sharedRoot, directory, 'Ignored.swift'), 'ignored-two\n');
+  }
+  const afterIgnoredChanges = resolveExpectedRunnerCacheMetadata(
+    IOS_SIMULATOR,
+    root,
+  ).runnerSourceFingerprint;
+  assert.equal(afterIgnoredChanges, before);
+
+  fs.writeFileSync(runnerUnitTest, 'unit-two\n');
+  const afterRunnerTestChange = resolveExpectedRunnerCacheMetadata(
+    IOS_SIMULATOR,
+    root,
+  ).runnerSourceFingerprint;
+  assert.notEqual(afterRunnerTestChange, afterIgnoredChanges);
 });
