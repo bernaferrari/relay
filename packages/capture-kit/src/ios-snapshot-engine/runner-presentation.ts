@@ -82,13 +82,21 @@ function validateRunnerPayloads(
     hittabilityAvailable,
   );
   if (input.presentation.qualityPayload) {
-    validateIosPayload(
-      input.presentation.qualityPayload.nodes,
-      projection,
-      viewport,
-      foldPolicy,
-      hittabilityAvailable,
-    );
+    try {
+      validateIosPayload(
+        input.presentation.qualityPayload.nodes,
+        projection,
+        viewport,
+        foldPolicy,
+        hittabilityAvailable,
+      );
+    } catch (error) {
+      if (error instanceof IosSnapshotEngineError) {
+        throw new IosSnapshotEngineError('invalid-quality-payload', error.message, error.details);
+      }
+      /* c8 ignore next */
+      throw error;
+    }
   }
   return payloadValidation;
 }
