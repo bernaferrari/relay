@@ -16,6 +16,8 @@ import {
   formatPackageComponents,
   formatPackedFiles,
 } from './size-report-package.mjs';
+import { measureCleanInstalledPackage } from './size-report-install.mjs';
+import { preparePublishAssets } from './prepare-publish-assets.mjs';
 
 const COMMENT_MARKER = '<!-- agent-device-size-report -->';
 const GITHUB_REQUEST_ATTEMPTS = 4;
@@ -131,7 +133,7 @@ function collectReport(root, options) {
   if (jsFiles.length === 0) {
     throw new Error('No dist/src JavaScript files found. Run `pnpm build` before measuring size.');
   }
-  prepareGeneratedPackageAssets(root);
+  preparePublishAssets({ root });
 
   const chunks = jsFiles
     .map((file) => {
@@ -153,28 +155,23 @@ function collectReport(root, options) {
     { files: 0, rawBytes: 0, gzipBytes: 0 },
   );
 
+  const npmPackWithArchive = collectNpmPack(root);
+  const { tarballPath, ...npmPack } = npmPackWithArchive;
+  const cleanInstalled = measureCleanInstalledPackage(tarballPath, packageJson.name);
+
   return {
     packageName: packageJson.name,
     version: packageJson.version,
     generatedAt: new Date().toISOString(),
     js,
-    npmPack: collectNpmPack(root),
+    bundled: js,
+    npmPack,
+    cleanInstalled,
     ...(options.startupRuns > 0
       ? { startup: collectStartupBenchmarks(root, options.startupRuns) }
       : {}),
     chunks: chunks.slice(0, 20),
   };
-}
-
-function prepareGeneratedPackageAssets(root) {
-  const packageAppleRunnerScript = path.join(root, 'scripts', 'package-apple-runner-source.mjs');
-  if (!fs.existsSync(packageAppleRunnerScript)) {
-    return;
-  }
-  execFileSync(process.execPath, [packageAppleRunnerScript, '--quiet'], {
-    cwd: root,
-    stdio: ['ignore', 'ignore', 'inherit'],
-  });
 }
 
 function collectStartupBenchmarks(root, runs) {
@@ -236,6 +233,23 @@ function formatMarkdown(report, baseReport) {
     metricRow('npm tarball', baseReport?.npmPack.tarballBytes, report.npmPack.tarballBytes),
     metricRow('npm unpacked', baseReport?.npmPack.unpackedBytes, report.npmPack.unpackedBytes),
   ];
+  if (report.bundled) {
+    rows.splice(
+      2,
+      0,
+      metricRow('npm bundled raw', baseReport?.bundled?.rawBytes, report.bundled.rawBytes),
+      metricRow('npm bundled gzip', baseReport?.bundled?.gzipBytes, report.bundled.gzipBytes),
+    );
+  }
+  if (report.cleanInstalled) {
+    rows.push(
+      metricRow(
+        'npm clean-installed',
+        baseReport?.cleanInstalled?.packageBytes,
+        report.cleanInstalled.packageBytes,
+      ),
+    );
+  }
 
   const changedChunks = baseReport
     ? formatChangedChunks(report.chunks, baseReport.chunks ?? [])

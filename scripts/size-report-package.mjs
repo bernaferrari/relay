@@ -47,19 +47,50 @@ export function collectNpmPack(root) {
   fs.mkdirSync(cachePath, { recursive: true });
   const stdout = execFileSync(
     'npm',
-    ['pack', '--dry-run', '--ignore-scripts', '--json', '--cache', cachePath],
+    ['pack', '--ignore-scripts', '--json', '--pack-destination', cachePath, '--cache', cachePath],
     { cwd: root, encoding: 'utf8' },
   );
   const pack = parseNpmPackOutput(stdout);
   const entries = normalizeNpmPackEntries(pack);
+  assertPublishPackageContents(entries);
   return {
     filename: pack.filename,
+    tarballPath: path.join(cachePath, pack.filename),
     tarballBytes: pack.size,
     unpackedBytes: pack.unpackedSize,
     files: entries.length,
     entries,
     components: summarizeEntries(pack.unpackedSize, entries),
   };
+}
+
+export function assertPublishPackageContents(entries) {
+  const paths = entries.map((entry) => entry.path);
+  const requiredAssets = [
+    { directory: 'android/snapshot-helper/dist/', suffix: '.apk' },
+    { directory: 'android/snapshot-helper/dist/', suffix: '.manifest.json' },
+    { directory: 'android/ime-helper/dist/', suffix: '.apk' },
+    { directory: 'android/ime-helper/dist/', suffix: '.manifest.json' },
+  ];
+  const missingAssets = requiredAssets.filter(
+    (asset) =>
+      !paths.some(
+        (entryPath) => entryPath.startsWith(asset.directory) && entryPath.endsWith(asset.suffix),
+      ),
+  );
+  if (missingAssets.length > 0) {
+    throw new Error(
+      `npm pack is missing publish assets: ${missingAssets
+        .map((asset) => `${asset.directory}*${asset.suffix}`)
+        .join(', ')}`,
+    );
+  }
+  const forbiddenPaths = paths.filter(
+    (entryPath) => entryPath === 'scripts' || entryPath.startsWith('scripts/'),
+  );
+  if (forbiddenPaths.length > 0) {
+    throw new Error(`npm pack includes benchmark or build scripts: ${forbiddenPaths.join(', ')}`);
+  }
 }
 
 function parseNpmPackOutput(stdout) {
