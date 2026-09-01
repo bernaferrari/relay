@@ -43,9 +43,11 @@ jobs:
       # the workflow and every later step receives the same isolated roots.
       - name: Configure isolated acceptance paths
         run: |
-          echo "RELAY_STATE_DIR=$RUNNER_TEMP/relay-golden-state" >> "$GITHUB_ENV"
-          echo "GOLDEN_ARTIFACT_DIR=$RUNNER_TEMP/relay-golden-artifacts" >> "$GITHUB_ENV"
-          echo "RELAY_RUNS_DIR=$RUNNER_TEMP/relay-golden-artifacts/runs" >> "$GITHUB_ENV"
+          {
+            echo "RELAY_STATE_DIR=$RUNNER_TEMP/relay-golden-state"
+            echo "GOLDEN_ARTIFACT_DIR=$RUNNER_TEMP/relay-golden-artifacts"
+            echo "RELAY_RUNS_DIR=$RUNNER_TEMP/relay-golden-artifacts/runs"
+          } >> "$GITHUB_ENV"
 
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
         with:
