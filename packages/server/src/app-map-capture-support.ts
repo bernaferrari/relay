@@ -191,9 +191,10 @@ export async function profileForCapture(
       : undefined;
   const viewportKey = viewport ? `-${viewport.width}x${viewport.height}` : "";
   if (target.kind === "device") {
-    const device = (await (dependencies.listDevices ?? listDevices)()).find(
-      (item) => item.serial === target.targetId,
-    );
+    // Inventory enriches an already captured target profile; it is not capture
+    // authority. Preserve the exact target identity when host discovery is down.
+    const devices = await (dependencies.listDevices ?? listDevices)().catch(() => []);
+    const device = devices.find((item) => item.serial === target.targetId);
     return {
       id: `device:${target.targetId}${viewportKey}`,
       targetId: target.targetId,

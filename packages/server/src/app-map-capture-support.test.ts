@@ -92,3 +92,17 @@ test("Android capture freezes the observed configured AVD identity", async () =>
   assert.equal(profile.id, "device:emulator-5554-1080x2400");
   assert.equal(profile.androidAvdName, "medium_phone");
 });
+
+test("device capture retains exact identity when inventory is unavailable", async () => {
+  const profile = await profileForCapture(
+    { kind: "device", targetId: "ios-offline", platform: "ios" },
+    123,
+    { width: 300, height: 600 },
+    { listDevices: async () => Promise.reject(new Error("daemon unavailable")) },
+  );
+
+  assert.equal(profile.id, "device:ios-offline-300x600");
+  assert.equal(profile.targetId, "ios-offline");
+  assert.equal(profile.name, "ios-offline");
+  assert.equal(profile.platform, "ios");
+});
