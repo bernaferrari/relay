@@ -18,6 +18,7 @@ import {
   inspectExactProofInputs,
   inspectManagedBrowserTargets,
 } from "./change-proof-golden-live-prerequisites.mjs";
+import { fixtureMarkup, measuredLayout } from "./change-proof-golden-browser-fixture.mjs";
 import { summarizeExactProofInputs } from "./change-proof-golden-report.mjs";
 export {
   defaultCommand,
@@ -39,7 +40,7 @@ const MAX_REPORT_BYTES = 512 * 1024;
 export const CHANGE_PROOF_GOLDEN_LIVE = Object.freeze({
   schemaVersion: 1,
   journey: Object.freeze({
-    appMapId: "settings",
+    appMapId: "settings-language-proof",
     testId: "settings-language-arabic",
     label: "Settings → Language → Arabic",
   }),
@@ -126,21 +127,6 @@ function browserEnvironment() {
   };
 }
 
-function fixtureMarkup(head) {
-  const repaired = head === "repaired";
-  const title = repaired ? "Arabic — RTL fixed" : "Arabic — RTL regression";
-  const overlap = repaired
-    ? ""
-    : `<p id="regression" role="alert">${CHANGE_PROOF_GOLDEN_LIVE.seededFailure}</p>`;
-  return `<!doctype html><html lang="ar"><head><meta charset="utf-8"><title>Settings</title><style>
-body{font:20px system-ui;margin:0;padding:32px;background:#fff;color:#111}button{display:block;font:inherit;margin:24px 0;padding:12px 18px}main{max-width:340px}#regression{color:#a00} .done{direction:rtl}
-</style></head><body><main id="app"><h1 id="heading">Settings</h1><button id="language" data-testid="settings-language">Language</button></main><script>
-const app=document.querySelector('#app');
-document.querySelector('#language').addEventListener('click',()=>{app.innerHTML='<h1 id="heading">Language</h1><button id="arabic" data-testid="language-arabic">Arabic</button>';document.title='Language'});
-document.addEventListener('click',event=>{if(event.target.id!=='arabic')return;app.className='done';app.innerHTML='<h1 id="heading">${title}</h1><p id="description">Arabic description</p><button id="primary" data-testid="primary-action">Continue</button>${overlap}';document.title='${title}'});
-</script></body></html>`;
-}
-
 export async function startGoldenFixtureServer() {
   const server = http.createServer((request, response) => {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
@@ -150,7 +136,7 @@ export async function startGoldenFixtureServer() {
       response.end("not found");
       return;
     }
-    const body = fixtureMarkup(head);
+    const body = fixtureMarkup(head, CHANGE_PROOF_GOLDEN_LIVE.seededFailure);
     response.writeHead(200, {
       "content-type": "text/html; charset=utf-8",
       "cache-control": "no-store",
@@ -317,17 +303,25 @@ export async function runManagedBrowserJourney({
   await click("Arabic", evidence.frames.length + 1);
   const page = current?.session?.pages?.find((item) => item.id === frame.pageId);
   const title = typeof page?.title === "string" ? page.title : "";
-  const regressionDetected = title === "Arabic — RTL regression";
   const expectedTitle = head === "old" ? "Arabic — RTL regression" : "Arabic — RTL fixed";
   if (title !== expectedTitle)
     throw new GoldenLiveError(
       `Browser fixture ended at unexpected title ${JSON.stringify(title)}; expected ${JSON.stringify(expectedTitle)}`,
     );
+  const inspected = await invoke("target.browser-device.inspect", {
+    targetId,
+    sessionId: frame.sessionId,
+    pageId: frame.pageId,
+    expectedSequence: frame.sequence,
+  });
+  const layout = measuredLayout(inspected?.overlay);
+  const regressionDetected = layout.overlap !== null;
   evidence.final = {
     pageUrl: frame.pageUrl,
     sequence: frame.sequence,
     visualFingerprint: frame.visualFingerprint,
     title,
+    layout,
     regressionDetected,
     blocked: regressionDetected,
   };

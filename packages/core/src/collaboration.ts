@@ -113,6 +113,30 @@ export async function saveBuild(input: Omit<Build, "createdAt" | "updatedAt">): 
   });
 }
 
+/** Persist one reviewed Build set in a single ControlStore transaction. */
+export async function saveBuilds(
+  inputs: readonly Omit<Build, "createdAt" | "updatedAt">[],
+): Promise<Build[]> {
+  return withControlStore((store) => {
+    const at = now();
+    return inputs.map((input) => {
+      const existing = store
+        .builds(input.projectId)
+        .find((item) => item.projectId === input.projectId && item.id === input.id);
+      const build = { ...input, createdAt: existing?.createdAt ?? at, updatedAt: at };
+      store.upsertBuild(build);
+      emit({
+        type: existing ? "resource.updated" : "resource.created",
+        at,
+        projectId: input.projectId,
+        resource: "build",
+        resourceId: input.id,
+      });
+      return build;
+    });
+  });
+}
+
 export async function listDevicePools(projectId: string): Promise<DevicePool[]> {
   return readControlStore((store) => store.pools(projectId));
 }

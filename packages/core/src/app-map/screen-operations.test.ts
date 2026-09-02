@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { AppMap, AppMapMutationContext, AuthoringObservation } from "@relay/protocol";
+import type {
+  AppMap,
+  AppMapMutationContext,
+  AuthoringEvidence,
+  AuthoringObservation,
+  TargetProfile,
+} from "@relay/protocol";
 import { observeScreenIdentity } from "../screen-identity.js";
 import { observeAppMapScreenAlias } from "./screen-operations.js";
 
@@ -100,6 +106,83 @@ test("alias-observe appends the observed fingerprint without touching the primar
   assert.equal(result.appMap.revision, 1);
 });
 
+test("alias-observe persists a target-specific variant and immutable evidence", () => {
+  const screenshotSha = "c".repeat(64);
+  const snapshotSha = "d".repeat(64);
+  const screenshot: AuthoringEvidence = {
+    id: "locale-screenshot",
+    kind: "screenshot",
+    capturedAt: 2,
+    uri: `relay-evidence://${screenshotSha}`,
+    mime: "image/png",
+    bytes: 128,
+    sha256: screenshotSha,
+  };
+  const snapshot: AuthoringEvidence = {
+    id: "locale-snapshot",
+    kind: "snapshot",
+    capturedAt: 2,
+    uri: `relay-evidence://${snapshotSha}`,
+    mime: "application/json",
+    bytes: 256,
+    sha256: snapshotSha,
+  };
+  const profile: TargetProfile = {
+    id: "browser:settings:390x844",
+    targetId: "managed-settings",
+    source: "browser",
+    platform: "browser",
+    name: "Managed Chromium settings",
+    viewport: { width: 390, height: 844 },
+    capabilities: ["snapshot", "screenshot"],
+    observedAt: 2,
+  };
+  const observed = observation(localeNodes);
+  observed.id = "locale-observation";
+  observed.screen.fingerprint = localeFingerprint;
+  observed.evidenceIds = [screenshot.id, snapshot.id];
+  observed.bounds = { width: 390, height: 844 };
+  const result = observeAppMapScreenAlias(
+    mapFixture(),
+    "settings",
+    observed,
+    context("alias-browser", 0, 2),
+    {
+      target: { kind: "browser", platform: "browser", targetId: profile.targetId },
+      targetProfile: profile,
+      evidenceUrisById: {
+        [screenshot.id]: screenshot.uri,
+        [snapshot.id]: snapshot.uri,
+      },
+      evidenceKindsById: {
+        [screenshot.id]: screenshot.kind,
+        [snapshot.id]: snapshot.kind,
+      },
+      evidenceById: { [screenshot.id]: screenshot, [snapshot.id]: snapshot },
+    },
+  );
+
+  assert.ok(result.variant, "alias approval returns the persisted variant");
+  const variant = result.appMap.screenVariants[result.variant!.id]!;
+  assert.equal(variant.screenId, "settings");
+  assert.equal(variant.targetProfile.id, profile.id);
+  assert.deepEqual(variant.targetProfile.viewport, profile.viewport);
+  assert.deepEqual(variant.evidenceIds, [screenshot.id, snapshot.id]);
+  assert.equal(variant.screenshotUri, screenshot.uri);
+  assert.deepEqual(variant.rawAccessibilityTree, {
+    id: snapshot.id,
+    uri: snapshot.uri,
+    sha256: snapshotSha,
+    mime: "application/json",
+    bytes: snapshot.bytes,
+    observationId: observed.id,
+    capturedAt: snapshot.capturedAt,
+  });
+  assert.deepEqual(result.appMap.screens.settings?.variantIds, [variant.id]);
+  assert.equal(result.appMap.screens.settings?.identity?.fingerprint, primaryFingerprint);
+  assert.deepEqual(result.appMap.screens.settings?.identity?.aliases, [localeFingerprint]);
+});
+
 test("alias-observe deduplicates repeated and pre-existing aliases", () => {
   const first = observeAppMapScreenAlias(
     mapFixture(),
@@ -162,6 +245,31 @@ test("alias-observe fails closed on an empty observation", () => {
   assert.throws(
     () => observeAppMapScreenAlias(mapFixture(), "settings", missingTree, context("alias-x")),
     /alias observation is empty/u,
+  );
+});
+
+test("alias-observe rejects a capture profile outside the approved target", () => {
+  assert.throws(
+    () =>
+      observeAppMapScreenAlias(
+        mapFixture(),
+        "settings",
+        observation(localeNodes),
+        context("alias-scope-mismatch"),
+        {
+          target: { kind: "browser", platform: "browser", targetId: "managed-settings" },
+          targetProfile: {
+            id: "browser:other-settings",
+            targetId: "other-settings",
+            source: "browser",
+            platform: "browser",
+            name: "Other settings",
+            capabilities: ["snapshot"],
+            observedAt: 2,
+          },
+        },
+      ),
+    /does not belong to managed-settings/u,
   );
 });
 

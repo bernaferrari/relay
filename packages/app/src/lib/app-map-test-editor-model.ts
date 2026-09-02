@@ -5,6 +5,7 @@ import type {
   AppMapTest,
 } from "@relay/protocol";
 import { APP_MAP_TEST_INTENT_SCHEMA_VERSION } from "@relay/protocol";
+import { layoutAssertionSentence } from "./step-sentence";
 
 export const SCENARIO_STEP_KINDS = [
   "instruction",
@@ -207,7 +208,10 @@ export function scenarioStepSummary(map: AppMap, step: AppMapScenarioTestStep): 
         return `Screen is ${map.screens[assertion.screenId]?.title ?? assertion.screenId}`;
       if (assertion.kind === "target")
         return `${assertion.target.identifier ?? assertion.target.label ?? "Target"} is ${assertion.condition}`;
-      return `${assertion.input} ${assertion.match} ${assertion.expected}`;
+      if (assertion.kind === "layout") return layoutAssertionSentence(assertion);
+      if (assertion.kind === "content")
+        return `${assertion.input} ${assertion.match} ${assertion.expected}`;
+      return "Structured validation";
     }
     return "Structured validation";
   }

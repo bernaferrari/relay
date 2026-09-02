@@ -84,6 +84,16 @@ export function assertTarget(value: StepTarget, label: string): void {
   }
 }
 
+function assertLayoutTarget(value: StepTarget, label: string): void {
+  assertTarget(value, label);
+  if (value.relation) {
+    appMapFail("invalid-map", `${label} cannot use an activation-only semantic relation`);
+  }
+  if (!value.identifier && !value.ref && !value.label && !value.text) {
+    appMapFail("invalid-map", `${label} requires identifier/ref/label/text to resolve bounds`);
+  }
+}
+
 export function assertActions(actions: ActionSpec[], label: string): void {
   if (!Array.isArray(actions)) appMapFail("invalid-map", `${label} must be an array`);
   const seen = new Set<string>();
@@ -246,6 +256,14 @@ export function assertActions(actions: ActionSpec[], label: string): void {
           assertTarget(assertion.target, `${item}.assertion.target`);
           if (!(assertion.condition === "visible" || assertion.condition === "gone"))
             appMapFail("invalid-map", `${item}.assertion.condition is unsupported`);
+          if (assertion.timeoutMs !== undefined)
+            safeInteger(assertion.timeoutMs, `${item}.assertion.timeoutMs`);
+        } else if (assertion.kind === "layout") {
+          if (assertion.relation !== "non-overlap") {
+            appMapFail("invalid-map", `${item}.assertion.relation is unsupported`);
+          }
+          assertLayoutTarget(assertion.first, `${item}.assertion.first`);
+          assertLayoutTarget(assertion.second, `${item}.assertion.second`);
           if (assertion.timeoutMs !== undefined)
             safeInteger(assertion.timeoutMs, `${item}.assertion.timeoutMs`);
         } else if (assertion.kind === "content") {

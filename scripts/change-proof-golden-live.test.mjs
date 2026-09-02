@@ -16,6 +16,7 @@ import {
   runChangeProofGoldenLive,
   startGoldenFixtureServer,
 } from "./change-proof-golden-live.mjs";
+import { measuredLayout } from "./change-proof-golden-browser-fixture.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -131,6 +132,32 @@ test("fixture server exposes the same journey with a seeded old-head regression"
   } finally {
     await fixture.close();
   }
+});
+
+test("browser layout oracle measures the seeded 22px overlap and fails closed", () => {
+  const overlay = (primaryIdentifier, primaryY) => ({
+    candidates: [
+      { identifier: "description", rect: { x: 0, y: 32, width: 240, height: 80 } },
+      { identifier: primaryIdentifier, rect: { x: 0, y: primaryY, width: 240, height: 40 } },
+    ],
+  });
+  assert.equal(measuredLayout(overlay("primary", 90)).overlap?.height, 22);
+  assert.equal(measuredLayout(overlay("primary-action", 128)).overlap, null);
+  assert.throws(
+    () => measuredLayout({ candidates: [{ identifier: "description" }] }),
+    /no usable bounds/u,
+  );
+  assert.throws(
+    () =>
+      measuredLayout({
+        candidates: [
+          { identifier: "description", rect: { x: 0, y: 0, width: 20, height: 20 } },
+          { identifier: "description", rect: { x: 30, y: 0, width: 20, height: 20 } },
+          { identifier: "primary", rect: { x: 0, y: 40, width: 20, height: 20 } },
+        ],
+      }),
+    /exactly one description/u,
+  );
 });
 
 test("Android preflight reports exact missing target and fixture prerequisites", async () => {
@@ -331,6 +358,44 @@ function fakeBrowserInvoker() {
     if (operationId === "target.browser-device.inspect") {
       const step = state.get(targetId) ?? 0;
       const label = step === 0 ? "Language" : "Arabic";
+      if (step >= 2) {
+        const old = phase === "old";
+        return {
+          overlay: {
+            schemaVersion: 1,
+            sessionId: `session-${targetId}`,
+            pageId: "page-1",
+            sequence: step + 1,
+            visualFingerprint: `fingerprint-${step + 1}`,
+            capturedAt: step + 1,
+            candidates: [
+              {
+                id: "description",
+                role: "text",
+                label: "Arabic description",
+                identifier: "description",
+                rect: { x: 0, y: 32, width: 240, height: 80 },
+                enabled: true,
+                selected: false,
+                focused: false,
+                reasoning: "fixture",
+              },
+              {
+                id: "primary-action",
+                role: "button",
+                label: "Continue",
+                identifier: "primary-action",
+                rect: { x: 0, y: old ? 90 : 128, width: 240, height: 40 },
+                enabled: true,
+                selected: false,
+                focused: false,
+                reasoning: "fixture",
+              },
+            ],
+            truncated: false,
+          },
+        };
+      }
       return {
         overlay: {
           schemaVersion: 1,
@@ -548,6 +613,8 @@ test("live harness consumes retained Android Run inputs and can prove the cross-
     assert.equal(report.exactProofInputs.oldTracePack.status, "verified");
     assert.equal(report.exactProofInputs.repairedTracePack.status, "verified");
     assert.equal(report.finalProof.status, "proved");
+    assert.equal(report.web.old.final.layout.overlap.height, 22);
+    assert.equal(report.web.repaired.final.layout.overlap, null);
     const retained = JSON.parse(await readFile(join(root, "golden-inputs.json"), "utf8"));
     assert.equal(retained.kind, "change-proof-golden-inputs");
     assert.equal(retained.phases.old.run.runId, old.runId);

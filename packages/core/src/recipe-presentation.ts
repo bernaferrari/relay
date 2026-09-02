@@ -69,6 +69,8 @@ export function describeRecipeStep(step: RecipeStep): string {
       return `Extract ${describeTarget(step.target)} as ${step.as}`;
     case "assert-content":
       return `Check ${step.input} ${step.match} ${JSON.stringify(step.expected)}`;
+    case "assert-layout":
+      return `Check layout: ${describeTarget(step.first)} does not overlap ${describeTarget(step.second)}`;
     case "evaluate-semantic":
       return `Evaluate ${step.input} against ${step.criteria.length} criterion${step.criteria.length === 1 ? "" : "s"}`;
     case "pause":
@@ -172,6 +174,7 @@ export function glyphsForStep(step: RecipeStep): Glyph[] {
     case "extract":
       return ["store"];
     case "assert-content":
+    case "assert-layout":
     case "evaluate-semantic":
       return ["ai", "ok"];
     case "pause":

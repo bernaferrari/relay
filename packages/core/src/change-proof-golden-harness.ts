@@ -1,9 +1,11 @@
 import {
   changeMergeBaseSha,
   changeTestedSha,
+  type ChangeProofProviderCheck,
   type ChangeProofDecision,
   type ChangeVerification,
 } from "@relay/protocol";
+import { providerCheckForChangeProof } from "./change-proof-decision.js";
 import {
   CHANGE_PROOF_GOLDEN_DEMO,
   runChangeProofGoldenDemo,
@@ -71,6 +73,13 @@ export type ChangeProofGoldenHarnessReport = Readonly<{
     repairedHeadSha: string;
     journey: Readonly<{ appMapId: string; testId: string }>;
     targetCaseIds: readonly string[];
+  }>;
+  /** Exact terminal Check projections for the retained old/repaired Proofs.
+   * These are local, deterministic projections; a provider acknowledgement
+   * receipt (including checkRunId) is only produced by the server publisher. */
+  providerChecks: Readonly<{
+    old: ChangeProofProviderCheck;
+    repaired: ChangeProofProviderCheck;
   }>;
   steps: readonly ChangeProofGoldenHarnessStep[];
   checks: readonly ChangeProofGoldenHarnessCheck[];
@@ -239,6 +248,18 @@ function comprehensionChecks(): ChangeProofGoldenHarnessCheck[] {
   ];
 }
 
+function providerChecksFor(
+  demo: ChangeProofGoldenDemoResult,
+): Readonly<{ old: ChangeProofProviderCheck; repaired: ChangeProofProviderCheck }> {
+  return {
+    old: providerCheckForChangeProof({ proof: demo.oldProof, decision: demo.oldDecision }),
+    repaired: providerCheckForChangeProof({
+      proof: demo.repairedProof,
+      decision: demo.repairedDecision,
+    }),
+  };
+}
+
 const UNSUPPORTED = [
   {
     field: "physical-target-health",
@@ -322,6 +343,7 @@ export async function runChangeProofGoldenHarness(input: {
       },
       targetCaseIds: demo.repairedProof.selection.targetCases.map(({ id }) => id),
     },
+    providerChecks: providerChecksFor(demo),
     steps: stepsFor(demo),
     checks: comprehensionChecks(),
     limitations: { unsupported: UNSUPPORTED, unmeasured: UNMEASURED },

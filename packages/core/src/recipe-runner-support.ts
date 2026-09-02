@@ -744,7 +744,17 @@ async function targetPresent(device: Device, target: StepTarget): Promise<boolea
     return true;
   } catch (err) {
     if (isCancel(err)) throw err;
-    if (isNotFoundOrTimeout(err)) return false;
+    if (isNotFoundOrTimeout(err)) {
+      // SDK presence probes are interaction-oriented and can legitimately omit
+      // visible, non-hittable content such as browser headings and paragraphs.
+      // The canonical snapshot is the read-only authority for assertions, so a
+      // genuine interaction miss gets one semantic-tree lookup before Relay
+      // declares the target absent. Snapshot/infrastructure errors still
+      // propagate instead of turning a disconnected target into a passing
+      // `gone` assertion.
+      const nodes = await snapshot(device);
+      return nodes.some((node) => nodeMatchesTarget(node, target));
+    }
     throw err;
   }
 }

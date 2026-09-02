@@ -1,7 +1,7 @@
 import type { ActionSpec, AppMap } from "@relay/protocol";
 import { softTruncate } from "./human-error";
 import { identifierControlPhrase } from "./humanize-identifier";
-import { sentenceForStep } from "./step-sentence";
+import { layoutAssertionSentence, sentenceForStep } from "./step-sentence";
 
 export type ConnectionActionSummary = {
   id: string;
@@ -86,7 +86,11 @@ export function connectionActionSummaries(
                         ? `Check ${appMap?.screens[action.assertion.screenId]?.title ?? "destination screen"}`
                         : action.assertion.kind === "target"
                           ? `Check ${targetName(action.assertion.target)} is ${action.assertion.condition === "visible" ? "visible" : "absent"}`
-                          : `Check ${humanInput(action.assertion.input)}`
+                          : action.assertion.kind === "layout"
+                            ? layoutAssertionSentence(action.assertion)
+                            : action.assertion.kind === "content"
+                              ? `Check ${humanInput(action.assertion.input)}`
+                              : "Check assertion"
                       : action.kind === "routine"
                         ? `Run ${appMap?.routines[action.routineId]?.name ?? "routine"}`
                         : "Observe automatic transition");

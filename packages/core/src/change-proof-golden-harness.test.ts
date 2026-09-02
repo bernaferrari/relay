@@ -33,6 +33,15 @@ test("golden harness reports the real Proof loop with injected timing", async ()
     },
     targetCaseIds: ["android-pixel-9-ar", "web-chromium-compact-ar", "web-chromium-desktop-ar"],
   });
+  assert.equal(report.providerChecks.old.externalId, "proof-settings-failed");
+  assert.equal(report.providerChecks.old.headSha, CHANGE_PROOF_GOLDEN_DEMO.failedHeadSha);
+  assert.equal(report.providerChecks.old.conclusion, "failure");
+  assert.equal(report.providerChecks.repaired.externalId, "proof-settings-repaired");
+  assert.equal(report.providerChecks.repaired.headSha, CHANGE_PROOF_GOLDEN_DEMO.repairedHeadSha);
+  assert.equal(report.providerChecks.repaired.conclusion, "success");
+  assert.ok(report.providerChecks.repaired.policyDigest);
+  assert.ok(report.providerChecks.repaired.planDigest);
+  assert.ok(report.providerChecks.repaired.decisionDigest);
   assert.deepEqual(
     report.steps.map(({ id, outcome }) => ({ id, outcome })),
     [

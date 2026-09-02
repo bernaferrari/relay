@@ -89,12 +89,27 @@ const proofSetupPreviewBuildSchema = proofSetupBuildBaseSchema
 export const proofSetupIntentSchema = z
   .object({
     baseRef: z.string().trim().min(1).max(512).optional(),
-    build: proofSetupBuildInputSchema,
+    /** Backward-compatible single-build setup input. */
+    build: proofSetupBuildInputSchema.optional(),
+    builds: z.array(proofSetupBuildInputSchema).min(1).max(32).readonly().optional(),
     associations: z.array(journeyAssociationSchema).min(1).max(2_048).readonly(),
     targetCases: z.array(frozenVerificationTargetCaseSchema).min(1).max(250).readonly(),
     policy: changeVerificationPolicySchema.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((intent, context) => {
+    if (Boolean(intent.build) === Boolean(intent.builds)) {
+      context.addIssue({
+        code: "custom",
+        path: ["builds"],
+        message: "provide exactly one of build or builds",
+      });
+    }
+    const builds = intent.builds ?? (intent.build ? [intent.build] : []);
+    if (new Set(builds.map(({ id }) => id)).size !== builds.length) {
+      context.addIssue({ code: "custom", path: ["builds"], message: "build ids must be unique" });
+    }
+  });
 
 const proofSetupPolicyDocumentSchema = z
   .object({
@@ -102,7 +117,7 @@ const proofSetupPolicyDocumentSchema = z
     repository: z.string().trim().min(1).max(1_024),
     changed: z.object({}).strict(),
     associations: z.array(journeyAssociationSchema).min(1).max(2_048).readonly(),
-    buildDefinitions: z.array(proofBuildDefinitionSchema).length(1).readonly(),
+    buildDefinitions: z.array(proofBuildDefinitionSchema).min(1).max(32).readonly(),
     builds: z
       .array(
         z
@@ -116,10 +131,29 @@ const proofSetupPolicyDocumentSchema = z
           })
           .strict(),
       )
-      .length(1)
+      .min(1)
+      .max(32)
       .readonly(),
     targetCases: z.array(frozenVerificationTargetCaseSchema).min(1).max(250).readonly(),
     policy: changeVerificationPolicySchema,
+  })
+  .strict()
+  .superRefine((document, context) => {
+    for (const [path, values] of [
+      ["buildDefinitions", document.buildDefinitions],
+      ["builds", document.builds],
+    ] as const) {
+      if (new Set(values.map(({ id }) => id)).size !== values.length) {
+        context.addIssue({ code: "custom", path: [path], message: "build ids must be unique" });
+      }
+    }
+  });
+
+const proofSetupArtifactSchema = z
+  .object({
+    path: repositoryRelativePath,
+    digest: sha256,
+    sourceSha256: z.string().regex(/^[a-f0-9]{64}$/u),
   })
   .strict();
 
@@ -129,14 +163,12 @@ export const proofSetupPreviewSchema = z
     baseRef: z.string().trim().min(1).max(512).optional(),
     testedSha: exactGitSha,
     command: proofSetupCommandSchema,
-    artifact: z
-      .object({
-        path: repositoryRelativePath,
-        digest: sha256,
-        sourceSha256: z.string().regex(/^[a-f0-9]{64}$/u),
-      })
-      .strict(),
+    artifact: proofSetupArtifactSchema,
     build: proofSetupPreviewBuildSchema,
+    /** Added in schemaVersion 1 as an additive multi-build extension. */
+    commands: z.array(proofSetupCommandSchema).min(1).max(32).readonly().optional(),
+    artifacts: z.array(proofSetupArtifactSchema).min(1).max(32).readonly().optional(),
+    builds: z.array(proofSetupPreviewBuildSchema).min(1).max(32).readonly().optional(),
     policy: z
       .object({
         path: z.literal(".relay/change-proof.json"),
@@ -223,6 +255,21 @@ export const proofSetupOperationOutputSchemas = {
           status: z.literal("ready"),
         })
         .strict(),
+      registeredBuilds: z
+        .array(
+          z
+            .object({
+              id: identifier,
+              sourceSha: exactGitSha,
+              sourceSha256: z.string().regex(/^[a-f0-9]{64}$/u),
+              status: z.literal("ready"),
+            })
+            .strict(),
+        )
+        .min(1)
+        .max(32)
+        .readonly()
+        .optional(),
       plan: verificationPlanSchema,
       blockers: z.array(z.string()).readonly(),
     })

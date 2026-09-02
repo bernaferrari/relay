@@ -14,6 +14,9 @@ export {
   removeAppMapScreen,
   updateAppMapScreen,
   observeAppMapScreenAlias,
+  type AppMapScreenAliasCapture,
+  type AppMapScreenAliasObservationResult,
+  type AppMapScreenVariantCaptureInput,
 } from "./app-map/screen-operations.js";
 export {
   consolidateAppMapScreens,

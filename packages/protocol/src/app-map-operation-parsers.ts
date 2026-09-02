@@ -338,6 +338,8 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
     AppMapOperationOutput<"app-map.screen.alias-observe">
   >("App Map screen alias observation response", (output) => {
     record(output.appMap, "App Map screen alias observation response appMap");
+    record(output.screen, "App Map screen alias observation response screen");
+    record(output.variant, "App Map screen alias observation response variant");
     const alias = record(output.alias, "App Map screen alias observation response alias");
     string(alias.fingerprint, "App Map screen alias observation response alias fingerprint");
     if (!Array.isArray(alias.aliasesNow)) {

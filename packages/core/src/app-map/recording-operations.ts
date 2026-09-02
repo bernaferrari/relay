@@ -27,6 +27,7 @@ import type {
   Screen,
   ScreenVariant,
 } from "./model.js";
+import type { AppMapScreenVariantCaptureInput } from "./screen-operations.js";
 import { appMapFail } from "./errors.js";
 import { mutateAppMap } from "./mutation.js";
 import { attachRecordedTest } from "./recorded-test.js";
@@ -225,17 +226,9 @@ function targetProfile(
   };
 }
 
-function capturedVariant(input: {
-  map: AppMap;
-  screen: Screen;
-  observation?: AuthoringObservation;
-  target: AuthoringTarget;
-  targetProfile?: TargetProfile;
-  evidenceUrisById?: Record<string, string>;
-  evidenceKindsById?: Record<string, "screenshot" | "snapshot" | "video">;
-  evidenceById?: Record<string, AuthoringEvidence>;
-  at: number;
-}): ScreenVariant | undefined {
+export function captureAppMapScreenVariant(
+  input: AppMapScreenVariantCaptureInput,
+): ScreenVariant | undefined {
   const { map, screen, observation, at } = input;
   if (!observation) return undefined;
   const fingerprint = observation.screen.fingerprint;
@@ -341,7 +334,7 @@ function observeScreen(input: {
   at: number;
 }): void {
   const { map, screen } = input;
-  const variant = capturedVariant(input);
+  const variant = captureAppMapScreenVariant(input);
   if (!variant) return;
   map.screenVariants[variant.id] = variant;
   screen.variantIds = [...new Set([...screen.variantIds, variant.id])].sort();
@@ -365,7 +358,7 @@ export function reviewAppMapScreenCapture(
     .find((variant) => variant?.targetProfile.id === profile.id);
   if (!currentVariant) return undefined;
 
-  const proposedVariant = capturedVariant({
+  const proposedVariant = captureAppMapScreenVariant({
     map,
     screen: structuredClone(screen),
     observation: input.observation,

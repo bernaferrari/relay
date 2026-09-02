@@ -101,6 +101,24 @@ function cap(s: string): string {
   return s.length ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 }
 
+function layoutTargetValid(target: StepTarget): boolean {
+  return Boolean(
+    targetValid(target) &&
+    !target.relation &&
+    [target.identifier, target.ref, target.label, target.text].some((value) => value?.trim()),
+  );
+}
+
+/** Human-readable copy shared by action rows and scenario validation summaries. */
+export function layoutAssertionSentence(assertion: {
+  first: StepTarget;
+  second: StepTarget;
+  timeoutMs?: number;
+}): string {
+  const timeout = assertion.timeoutMs ? ` (${fmtSeconds(assertion.timeoutMs)})` : "";
+  return `Check ${targetPhrase(assertion.first)} and ${targetPhrase(assertion.second)} do not overlap${timeout}`;
+}
+
 /** Human, sentence-case one-liner for a step — the single formatter used
  *  across the step rows, recorder strip, and job/console captions. */
 export function sentenceForStep(step: RecipeStep, recipes?: Iterable<TitledId>): string {
@@ -140,6 +158,8 @@ export function sentenceForStep(step: RecipeStep, recipes?: Iterable<TitledId>):
       return `Extract ${targetPhrase(step.target)} as ${humanInput(step.as)}`;
     case "assert-content":
       return `Check ${humanInput(step.input)} ${step.match.replace("-", " ")} "${step.expected}"`;
+    case "assert-layout":
+      return layoutAssertionSentence(step);
     case "evaluate-semantic":
       return `Evaluate ${humanInput(step.input)} against ${step.criteria.length} criterion${step.criteria.length === 1 ? "" : "s"}`;
     case "sleep":
@@ -238,6 +258,8 @@ export function stepValid(step: RecipeStep): boolean {
       return targetValid(step.target) && step.as.trim().length > 0;
     case "assert-content":
       return step.input.trim().length > 0;
+    case "assert-layout":
+      return layoutTargetValid(step.first) && layoutTargetValid(step.second);
     case "evaluate-semantic":
       return step.input.trim().length > 0 && step.criteria.some((criterion) => criterion.trim());
     case "type":
@@ -308,6 +330,8 @@ export function stepIssue(step: RecipeStep): string | null {
       return "Needs a target and output variable name.";
     case "assert-content":
       return "Needs an extracted input variable.";
+    case "assert-layout":
+      return "Needs two named elements — each needs a label, text, identifier, or ref.";
     case "evaluate-semantic":
       return "Needs an extracted input and at least one criterion.";
     case "type":

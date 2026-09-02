@@ -320,6 +320,8 @@ export function kindPillTone(kind: string): string {
     case "expect":
     case "expect-set":
     case "expect-screen":
+    case "assert-content":
+    case "assert-layout":
     case "wait-for":
       return "bg-surface-success-weak text-text-success-base ring-border-success-base/40";
     case "sleep":

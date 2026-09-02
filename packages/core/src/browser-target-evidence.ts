@@ -40,6 +40,7 @@ export type BrowserEvidenceSession = {
 
 const INTERACTIVE =
   'button, a[href], input, textarea, select, [role], [contenteditable="true"], [tabindex]:not([tabindex="-1"])';
+const SEMANTIC_SNAPSHOT = `${INTERACTIVE}, [id], [data-testid], h1, h2, h3, p, label`;
 const MAX_EVIDENCE_ENTRIES = 1_000;
 const MAX_NETWORK_BODY_BYTES = 256 * 1024;
 
@@ -121,47 +122,52 @@ async function captureResponseBody(response: Response, entry: BrowserNetworkEntr
 }
 
 export async function snapshotBrowserPage(page: Page, maxNodes = 256): Promise<SnapshotNode[]> {
-  return await page.locator(INTERACTIVE).evaluateAll((elements, limit) => {
-    const identifierCounts = new Map<string, number>();
-    for (const element of elements) {
-      const identifier = element.id || element.getAttribute("data-testid");
-      if (identifier) identifierCounts.set(identifier, (identifierCounts.get(identifier) ?? 0) + 1);
-    }
-    const visible = elements.filter((element) => {
-      const rect = element.getBoundingClientRect();
-      const style = window.getComputedStyle(element);
-      return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden";
-    });
-    return visible.slice(0, limit).map((element, index) => {
-      const html = element as HTMLElement;
-      const input = element as HTMLInputElement;
-      const rect = element.getBoundingClientRect();
-      const role = element.getAttribute("role") || element.tagName.toLowerCase();
-      const identifier = element.id || element.getAttribute("data-testid") || undefined;
-      const label =
-        element.getAttribute("aria-label") ||
-        element.getAttribute("title") ||
-        (input.labels?.[0]?.textContent ?? "") ||
-        html.innerText?.trim() ||
-        input.placeholder ||
-        input.name ||
-        "";
-      return {
-        index,
-        role,
-        type: role,
-        label: label.slice(0, 500),
-        value: input.type === "password" ? "••••••••" : String(input.value ?? "").slice(0, 500),
-        identifier: identifier && identifierCounts.get(identifier) === 1 ? identifier : undefined,
-        enabled: !(input.disabled || element.getAttribute("aria-disabled") === "true"),
-        selected: element.getAttribute("aria-selected") === "true",
-        focused: document.activeElement === element,
-        visibleToUser: true,
-        hittable: true,
-        rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
-      };
-    });
-  }, maxNodes);
+  return await page.locator(SEMANTIC_SNAPSHOT).evaluateAll(
+    (elements, options) => {
+      const identifierCounts = new Map<string, number>();
+      for (const element of elements) {
+        const identifier = element.getAttribute("data-testid") || element.id;
+        if (identifier)
+          identifierCounts.set(identifier, (identifierCounts.get(identifier) ?? 0) + 1);
+      }
+      const visible = elements.filter((element) => {
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden";
+      });
+      return visible.slice(0, options.limit).map((element, index) => {
+        const html = element as HTMLElement;
+        const input = element as HTMLInputElement;
+        const rect = element.getBoundingClientRect();
+        const role = element.getAttribute("role") || element.tagName.toLowerCase();
+        const identifier = element.getAttribute("data-testid") || element.id || undefined;
+        const hittable = element.matches(options.interactive);
+        const label =
+          element.getAttribute("aria-label") ||
+          element.getAttribute("title") ||
+          (input.labels?.[0]?.textContent ?? "") ||
+          html.innerText?.trim() ||
+          input.placeholder ||
+          input.name ||
+          "";
+        return {
+          index,
+          role,
+          type: role,
+          label: label.slice(0, 500),
+          value: input.type === "password" ? "••••••••" : String(input.value ?? "").slice(0, 500),
+          identifier: identifier && identifierCounts.get(identifier) === 1 ? identifier : undefined,
+          enabled: !(input.disabled || element.getAttribute("aria-disabled") === "true"),
+          selected: element.getAttribute("aria-selected") === "true",
+          focused: document.activeElement === element,
+          visibleToUser: true,
+          hittable,
+          rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+        };
+      });
+    },
+    { limit: maxNodes, interactive: INTERACTIVE },
+  );
 }
 
 /** Fingerprint the same bounded JPEG surface that the Browser Device paints. */

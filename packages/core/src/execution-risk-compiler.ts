@@ -326,6 +326,11 @@ function leafBounds(step: RecipeStep): Bounds {
         maximumActions: 0,
         ...(step.timeoutMs === undefined ? {} : { maximumDurationMs: step.timeoutMs }),
       };
+    case "assert-layout":
+      return {
+        maximumActions: 0,
+        ...(step.timeoutMs === undefined ? {} : { maximumDurationMs: step.timeoutMs }),
+      };
     case "capture-surface":
     case "tour":
     case "flow":
@@ -538,6 +543,7 @@ function classifyLeaf(accumulator: RiskAccumulator, step: RecipeStep, stepId: st
     case "expect-screen":
     case "extract":
     case "assert-content":
+    case "assert-layout":
     case "review":
     case "screenshot":
     case "capture-surface":

@@ -111,6 +111,52 @@ test("compiled Recipe storage is absent from the public operation registry", () 
   );
 });
 
+test("graph Test transport accepts reviewed layout assertions for route variants", () => {
+  const layout = {
+    status: "resolved" as const,
+    kind: "assertion" as const,
+    assertion: {
+      kind: "layout" as const,
+      relation: "non-overlap" as const,
+      first: { identifier: "description" },
+      second: { identifier: "primary-action" },
+    },
+  };
+  const input = {
+    appMapId: "settings",
+    testId: "arabic-layout",
+    expectedRevision: 4,
+    test: {
+      name: "Arabic layout",
+      kind: "scenario" as const,
+      intentSchemaVersion: 1 as const,
+      steps: [
+        {
+          id: "verify-layout",
+          kind: "validation" as const,
+          intent: "Translated content does not overlap",
+          binding: layout,
+        },
+      ],
+      family: {
+        logicalIntentRevision: 1,
+        bindingRevision: 1,
+        routeVariants: [
+          {
+            id: "compact-browser",
+            revision: 1,
+            predicate: { platforms: ["browser" as const] },
+            bindings: { "verify-layout": layout },
+            reviewedAt: 1,
+            reviewedBy: "human:reviewer",
+          },
+        ],
+      },
+    },
+  };
+  assert.deepEqual(operationDefinition("app-map.test.save").input.parse(input), input);
+});
+
 test("campaign capacity preflight remains composed into the central operation registry", () => {
   const definition = operationDefinition("campaign.capacity.preflight");
   assert.equal(definition.transport.method, "POST");
@@ -480,6 +526,29 @@ test("App Map descriptors keep their canonical contiguous order", () => {
       "app-map.proposal.reject",
       "app-map.proposal.revert",
     ],
+  );
+});
+
+test("alias-observe output carries the approved logical screen variant", () => {
+  const output = operationDefinition("app-map.screen.alias-observe").output.parse({
+    appMap: {},
+    screen: { id: "settings", variantIds: ["variant-browser"] },
+    variant: {
+      id: "variant-browser",
+      screenId: "settings",
+      targetProfile: { id: "browser:settings", targetId: "settings-browser" },
+    },
+    alias: { fingerprint: "a".repeat(64), aliasesNow: ["a".repeat(64)] },
+  });
+  assert.equal(output.variant.screenId, "settings");
+  assert.equal(output.variant.id, "variant-browser");
+  assert.throws(
+    () =>
+      operationDefinition("app-map.screen.alias-observe").output.parse({
+        appMap: {},
+        alias: { fingerprint: "a".repeat(64), aliasesNow: [] },
+      }),
+    /screen/u,
   );
 });
 

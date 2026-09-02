@@ -67,6 +67,7 @@ import {
   labelsForIdentifierPrefix,
   labelsForScope,
 } from "./recipe-target-match.js";
+import { runLayoutAssertionStep } from "./recipe-runner-layout-assertion.js";
 import { runTourStep } from "./recipe-runner-tour.js";
 import { captureRecipeScreenshot, runExpectScreenStep } from "./recipe-runner-screen.js";
 import { runCampaignCheck } from "./recipe-runner-campaign-checks.js";
@@ -268,6 +269,13 @@ async function runRequiredRecipeStep(
             ")",
         );
       }
+      break;
+    }
+    case "assert-layout": {
+      await runLayoutAssertionStep(device, step, {
+        log,
+        artifacts: job?.artifacts ?? ctx.artifacts,
+      });
       break;
     }
     case "expect-screen": {

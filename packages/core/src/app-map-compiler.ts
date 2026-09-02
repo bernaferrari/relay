@@ -138,6 +138,16 @@ function assertionStep(map: AppMap, actionId: string, assertion: AssertionSpec):
       ...(assertion.timeoutMs === undefined ? {} : { timeoutMs: assertion.timeoutMs }),
     };
   }
+  if (assertion.kind === "layout") {
+    return {
+      id: `relay-action-${actionId}`,
+      kind: "assert-layout",
+      relation: assertion.relation,
+      first: structuredClone(assertion.first),
+      second: structuredClone(assertion.second),
+      ...(assertion.timeoutMs === undefined ? {} : { timeoutMs: assertion.timeoutMs }),
+    };
+  }
   return {
     id: `relay-action-${actionId}`,
     kind: "assert-content",

@@ -2158,6 +2158,38 @@ test("screen assertions compile from approved graph identity", () => {
   assert.deepEqual(compiled.plan.stepProvenance[0]?.referencedEntityIds, ["cart"]);
 });
 
+test("layout assertions compile into the canonical cross-platform recipe step", () => {
+  const work = scenario();
+  work.steps = [
+    {
+      id: "layout-check",
+      kind: "validation",
+      intent: "The Arabic description and primary action do not overlap",
+      binding: {
+        status: "resolved",
+        kind: "assertion",
+        assertion: {
+          kind: "layout",
+          relation: "non-overlap",
+          first: { identifier: "description" },
+          second: { identifier: "primary-action" },
+          timeoutMs: 0,
+        },
+      },
+    },
+  ];
+
+  const compiled = compileAppMapTest(fixture(), work);
+  assert.deepEqual(compiled.root.steps[0], {
+    id: "relay-test-layout-check-1",
+    kind: "assert-layout",
+    relation: "non-overlap",
+    first: { identifier: "description" },
+    second: { identifier: "primary-action" },
+    timeoutMs: 0,
+  });
+});
+
 test("scenario validation rejects unknown fields and duplicate nested identities", () => {
   const unknown = scenario() as AppMapScenarioTest & { surprise?: boolean };
   unknown.surprise = true;

@@ -88,6 +88,7 @@ test("ingests one reviewed build only from an isolated exact-SHA worktree", asyn
     assert.equal(await readFile(result.build.sourceUrl!, "utf8"), "exact-artifact");
     await assert.rejects(readFile(join(fixture.root, "dist/app-release.apk")), /ENOENT/u);
     assert.equal(result.receipt.source.treeSha.length, 40);
+    assert.match(result.receipt.policy.digest, /^sha256:[a-f0-9]{64}$/u);
     assert.equal(result.receipt.command.executable, process.execPath);
     assert.match(result.receipt.toolchain.identityDigest, /^sha256:[a-f0-9]{64}$/u);
   } finally {
@@ -118,16 +119,16 @@ test("fails closed on dirty or wrong-SHA source before running the reviewed comm
         definitionId: "android-release",
         stateRoot: fixture.stateRoot,
       }),
-      /tested SHA must equal the source workspace HEAD/u,
+      /tested SHA must resolve to the exact commit/u,
     );
   } finally {
     await fixture.cleanup();
   }
 });
 
-test("rejects stale filenames and symlinked artifacts without registering a build", async () => {
+test("forces a tracked reviewed artifact to be rebuilt instead of accepting stale bytes", async () => {
   const stale = await repository({
-    command: artifactCommand,
+    command: { executable: process.execPath, args: ["-e", "// intentionally does not rebuild"] },
     beforeCommit: async (root) => {
       await mkdir(join(root, "dist"));
       await writeFile(join(root, "dist", "app-release.apk"), "tracked-stale-output");
@@ -142,12 +143,14 @@ test("rejects stale filenames and symlinked artifacts without registering a buil
         definitionId: "android-release",
         stateRoot: stale.stateRoot,
       }),
-      /must not exist before the reviewed build command/u,
+      /reviewed build did not produce/u,
     );
   } finally {
     await stale.cleanup();
   }
+});
 
+test("rejects symlinked artifacts without registering a build", async () => {
   const symlinked = await repository({
     command: {
       executable: process.execPath,
@@ -170,5 +173,102 @@ test("rejects stale filenames and symlinked artifacts without registering a buil
     );
   } finally {
     await symlinked.cleanup();
+  }
+});
+
+test("materializes an older exact SHA using the current reviewed build policy", async () => {
+  const fixture = await repository({ command: artifactCommand });
+  try {
+    const historicalSha = fixture.sha;
+    await writeFile(join(fixture.root, "later.txt"), "current checkout is newer");
+    await writeFile(
+      join(fixture.root, ".relay", "change-proof.json"),
+      `${JSON.stringify(
+        {
+          schemaVersion: 1,
+          buildDefinitions: [
+            {
+              id: "android-release",
+              name: "Android release from current reviewed policy",
+              platform: "android",
+              command: artifactCommand,
+              artifactPath: "dist/app-release.apk",
+              configuration: "android.release",
+              environmentRevision: "fixture-v2",
+              applicationId: "com.acme.app",
+            },
+          ],
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    await git(fixture.root, "add", ".");
+    await git(fixture.root, "commit", "-qm", "new checkout and reviewed policy");
+
+    const result = await ingestReviewedProofBuild({
+      projectId: "project-1",
+      repositoryRoot: fixture.root,
+      testedSha: historicalSha,
+      definitionId: "android-release",
+      stateRoot: fixture.stateRoot,
+      save: async (build) => ({ ...build, createdAt: 1, updatedAt: 1 }),
+    });
+
+    assert.equal(result.build.sourceSha, historicalSha);
+    assert.equal(result.build.name, "Android release from current reviewed policy");
+    assert.equal(result.verificationBuild.sourceSha, historicalSha);
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
+test("ingests from a clean checkout when setup policy is locally ignored", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-proof-ingest-ignored-policy-"));
+  const stateRoot = await mkdtemp(join(tmpdir(), "relay-proof-ingest-state-"));
+  try {
+    await git(root, "init", "-q");
+    await git(root, "config", "user.email", "relay@example.test");
+    await git(root, "config", "user.name", "Relay Test");
+    await writeFile(join(root, ".gitignore"), ".relay/\n");
+    await git(root, "add", ".gitignore");
+    await git(root, "commit", "-qm", "fixture without tracked policy");
+    const sha = await git(root, "rev-parse", "HEAD");
+    await mkdir(join(root, ".relay"));
+    await writeFile(
+      join(root, ".relay", "change-proof.json"),
+      `${JSON.stringify({
+        schemaVersion: 1,
+        buildDefinitions: [
+          {
+            id: "android-release",
+            name: "Ignored local policy",
+            platform: "android",
+            command: artifactCommand,
+            artifactPath: "dist/app-release.apk",
+            configuration: "android.release",
+            environmentRevision: "fixture-v1",
+            applicationId: "com.acme.app",
+          },
+        ],
+      })}\n`,
+    );
+    assert.equal(await git(root, "status", "--porcelain=v1", "--untracked-files=all"), "");
+
+    const result = await ingestReviewedProofBuild({
+      projectId: "project-1",
+      repositoryRoot: root,
+      testedSha: sha,
+      definitionId: "android-release",
+      stateRoot,
+      save: async (build) => ({ ...build, createdAt: 1, updatedAt: 1 }),
+    });
+
+    assert.equal(result.build.name, "Ignored local policy");
+    assert.equal(result.build.sourceSha, sha);
+    assert.match(result.receipt.policy.digest, /^sha256:[a-f0-9]{64}$/u);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+    await rm(stateRoot, { recursive: true, force: true });
   }
 });

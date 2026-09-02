@@ -7,6 +7,7 @@ import type {
 } from "@relay/protocol";
 import { Button } from "@relay/ui/button";
 import { findScenarioStep } from "../lib/app-map-test-editor-tree";
+import { layoutAssertionSentence } from "../lib/step-sentence";
 import { trapFocus } from "../lib/modal";
 import { Icon } from "./icon";
 
@@ -14,7 +15,11 @@ function bindingSummary(step: AppMapScenarioTestStep, binding = step.binding): s
   if (binding.status === "unresolved") return `Unresolved — ${binding.reason}`;
   if (binding.kind === "connections")
     return `${binding.connectionIds.length} mapped path${binding.connectionIds.length === 1 ? "" : "s"}`;
-  if (binding.kind === "assertion") return `Validation · ${binding.assertion.kind}`;
+  if (binding.kind === "assertion") {
+    return binding.assertion.kind === "layout"
+      ? layoutAssertionSentence(binding.assertion)
+      : `Validation · ${binding.assertion.kind}`;
+  }
   if (binding.kind === "extract") return `Extract as {{${binding.as}}}`;
   if (binding.kind === "pause") return `Human checkpoint · ${binding.message}`;
   if (binding.kind === "routine") return `Module · ${binding.routineId}`;

@@ -3225,6 +3225,31 @@ describe("runRecipeStep expect — error classification", () => {
       },
     );
   });
+
+  it("visible accepts semantic snapshot content that is intentionally non-hittable", async () => {
+    const device = stubDevice({
+      find: () => Promise.reject(new Error('No match for query id="heading"')),
+      snapshot: () =>
+        Promise.resolve({
+          nodes: [
+            {
+              index: 1,
+              role: "h1",
+              identifier: "heading",
+              label: "Arabic — RTL fixed",
+              hittable: false,
+              rect: { x: 32, y: 32, width: 240, height: 48 },
+            },
+          ],
+        }),
+    });
+
+    await runRecipeStep(
+      device,
+      { kind: "expect", target: { identifier: "heading" }, condition: "visible" },
+      noLog,
+    );
+  });
 });
 
 describe("runRecipeStep expect-set", () => {

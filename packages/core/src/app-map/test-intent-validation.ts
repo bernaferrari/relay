@@ -127,9 +127,15 @@ function assertBinding(step: AppMapScenarioTestStep, label: string): void {
         allowedKeys(binding, ["status", "kind", "step"], `${label}.binding`);
         validateCanonicalStep(binding.step as RecipeStep, `${label}.binding.step`);
         if (
-          !(["expect", "expect-set", "assert-content", "evaluate-semantic"] as unknown[]).includes(
-            objectValue(binding.step, `${label}.binding.step`).kind,
-          )
+          !(
+            [
+              "expect",
+              "expect-set",
+              "assert-content",
+              "assert-layout",
+              "evaluate-semantic",
+            ] as unknown[]
+          ).includes(objectValue(binding.step, `${label}.binding.step`).kind)
         ) {
           appMapFail("invalid-map", `${label}.binding.step is not a validation`);
         }

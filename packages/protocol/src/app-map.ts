@@ -1,5 +1,6 @@
 import type { RecipeParameter, RecipeStep, StepPoint, StepTarget } from "./recipes.js";
 import type { AppMapScenarioTest, AppMapScenarioTestEdit } from "./test-intent.js";
+import type { AssertionSpec } from "./assertions.js";
 import type { ActorKind } from "./coordination.js";
 import type { ScreenIdentity } from "./discovery-contract.js";
 import type {
@@ -222,15 +223,7 @@ type ActionMetadata = {
   };
 };
 
-export type AssertionSpec =
-  | { kind: "screen"; screenId: string }
-  | { kind: "target"; target: StepTarget; condition: "visible" | "gone"; timeoutMs?: number }
-  | {
-      kind: "content";
-      input: string;
-      expected: string;
-      match: "exact" | "contains" | "not-contains";
-    };
+export type { AssertionSpec } from "./assertions.js";
 
 export type GestureSpec =
   | { kind: "swipe"; from: StepPoint; to: StepPoint; durationMs?: number }

@@ -16,6 +16,7 @@ import {
   listTargets,
   readBuild,
   saveBuild,
+  saveBuilds,
 } from "@relay/core";
 import {
   VERIFY_CHANGE_POLICY,
@@ -357,52 +358,68 @@ export async function previewProofSetup(input: {
   const policyPath = (await safePolicyPaths(root, policyFileOperations, false)).policy;
   const change = await (input.change ?? exactChange)(root, intent.baseRef);
   await (input.validateTests ?? validateReviewedAssociations)(input.projectId, intent.associations);
-  await (input.run ?? runCommand)(intent.build.command.executable, intent.build.command.args, root);
-  const artifactPath = absoluteRepositoryPath(root, intent.build.artifactPath);
-  const artifactInfo = await lstat(artifactPath).catch(() => null);
-  const expectedArtifact =
-    intent.build.platform === "android"
-      ? artifactInfo?.isFile() && artifactPath.toLowerCase().endsWith(".apk")
-      : intent.build.platform === "ios"
-        ? artifactInfo?.isDirectory() && artifactPath.toLowerCase().endsWith(".app")
-        : Boolean(artifactInfo?.isFile() || artifactInfo?.isDirectory());
-  if (!expectedArtifact) {
-    throw new Error(
-      `build.artifactPath must name the generated ${intent.build.platform === "android" ? ".apk file" : intent.build.platform === "ios" ? ".app directory" : "web output file or directory"}: ${intent.build.artifactPath}`,
-    );
+  const builds = intent.builds ?? [intent.build!];
+  const artifacts: Array<{
+    path: string;
+    digest: `sha256:${string}`;
+    sourceSha256: string;
+  }> = [];
+  const policyBuilds: Array<{
+    id: string;
+    platform: "android" | "ios" | "web";
+    artifactDigest: `sha256:${string}`;
+    sourceSha: string;
+    configuration: string;
+    environmentRevision: string;
+  }> = [];
+  for (const build of builds) {
+    await (input.run ?? runCommand)(build.command.executable, build.command.args, root);
+    const artifactPath = absoluteRepositoryPath(root, build.artifactPath);
+    const artifactInfo = await lstat(artifactPath).catch(() => null);
+    const expectedArtifact =
+      build.platform === "android"
+        ? artifactInfo?.isFile() && artifactPath.toLowerCase().endsWith(".apk")
+        : build.platform === "ios"
+          ? artifactInfo?.isDirectory() && artifactPath.toLowerCase().endsWith(".app")
+          : Boolean(artifactInfo?.isFile() || artifactInfo?.isDirectory());
+    if (!expectedArtifact) {
+      throw new Error(
+        `builds.${build.id}.artifactPath must name the generated ${build.platform === "android" ? ".apk file" : build.platform === "ios" ? ".app directory" : "web output file or directory"}: ${build.artifactPath}`,
+      );
+    }
+    const artifactDigest = await artifactDigestForProof(artifactPath);
+    const sourceSha256 = await artifactSourceSha256(artifactPath);
+    artifacts.push({ path: build.artifactPath, digest: artifactDigest, sourceSha256 });
+    const proofArtifactDigest =
+      build.platform === "web"
+        ? bindVerifiedWebDeploymentToProof({
+            deployment: {
+              id: build.id,
+              url: build.webDeployment!.url,
+              sourceSha: change.changeRef!.testedSha,
+              deploymentDigest: build.webDeployment!.deploymentDigest as `sha256:${string}`,
+              configuration: build.configuration,
+              environmentRevision: build.environmentRevision,
+            },
+            changeTestedSha: change.changeRef!.testedSha,
+          }).artifactDigest
+        : artifactDigest;
+    policyBuilds.push({
+      id: build.id,
+      platform: build.platform,
+      artifactDigest: proofArtifactDigest,
+      sourceSha: change.changeRef!.testedSha,
+      configuration: build.configuration,
+      environmentRevision: build.environmentRevision,
+    });
   }
-  const artifactDigest = await artifactDigestForProof(artifactPath);
-  const sourceSha256 = await artifactSourceSha256(artifactPath);
-  const proofArtifactDigest =
-    intent.build.platform === "web"
-      ? bindVerifiedWebDeploymentToProof({
-          deployment: {
-            id: intent.build.id,
-            url: intent.build.webDeployment!.url,
-            sourceSha: change.changeRef!.testedSha,
-            deploymentDigest: intent.build.webDeployment!.deploymentDigest as `sha256:${string}`,
-            configuration: intent.build.configuration,
-            environmentRevision: intent.build.environmentRevision,
-          },
-          changeTestedSha: change.changeRef!.testedSha,
-        }).artifactDigest
-      : artifactDigest;
   const document = {
     schemaVersion: 1 as const,
     repository: change.repository!,
     changed: {},
     associations: intent.associations,
-    buildDefinitions: [intent.build],
-    builds: [
-      {
-        id: intent.build.id,
-        platform: intent.build.platform,
-        artifactDigest: proofArtifactDigest,
-        sourceSha: change.changeRef!.testedSha,
-        configuration: intent.build.configuration,
-        environmentRevision: intent.build.environmentRevision,
-      },
-    ],
+    buildDefinitions: builds,
+    builds: policyBuilds,
     targetCases: intent.targetCases,
     policy: intent.policy ?? VERIFY_CHANGE_POLICY,
   };
@@ -410,17 +427,28 @@ export async function previewProofSetup(input: {
     schemaVersion: 1,
     ...(intent.baseRef ? { baseRef: intent.baseRef } : {}),
     testedSha: change.changeRef!.testedSha,
-    command: intent.build.command,
-    artifact: { path: intent.build.artifactPath, digest: artifactDigest, sourceSha256 },
+    command: builds[0]!.command,
+    artifact: artifacts[0]!,
     build: {
-      id: intent.build.id,
-      name: intent.build.name,
-      platform: intent.build.platform,
-      configuration: intent.build.configuration,
-      environmentRevision: intent.build.environmentRevision,
-      ...(intent.build.applicationId ? { applicationId: intent.build.applicationId } : {}),
-      ...(intent.build.webDeployment ? { webDeployment: intent.build.webDeployment } : {}),
+      id: builds[0]!.id,
+      name: builds[0]!.name,
+      platform: builds[0]!.platform,
+      configuration: builds[0]!.configuration,
+      environmentRevision: builds[0]!.environmentRevision,
+      ...(builds[0]!.applicationId ? { applicationId: builds[0]!.applicationId } : {}),
+      ...(builds[0]!.webDeployment ? { webDeployment: builds[0]!.webDeployment } : {}),
     },
+    commands: builds.map(({ command }) => command),
+    artifacts,
+    builds: builds.map((build) => ({
+      id: build.id,
+      name: build.name,
+      platform: build.platform,
+      configuration: build.configuration,
+      environmentRevision: build.environmentRevision,
+      ...(build.applicationId ? { applicationId: build.applicationId } : {}),
+      ...(build.webDeployment ? { webDeployment: build.webDeployment } : {}),
+    })),
     policy: {
       path: POLICY_PATH,
       document,
@@ -436,6 +464,7 @@ export async function applyProofSetup(input: {
   root?: string;
   change?: typeof exactChange;
   save?: typeof saveBuild;
+  saveMany?: typeof saveBuilds;
   read?: typeof readBuild;
   prepare?: typeof prepareCurrentChangeVerification;
   validateTests?: typeof validateReviewedAssociations;
@@ -481,70 +510,133 @@ export async function applyProofSetup(input: {
   if (serializedPolicyDigest(preview.policy.document) !== preview.policy.digest) {
     throw new Error("preview.policy.digest does not match preview.policy.document");
   }
-  const artifactPath = absoluteRepositoryPath(root, preview.artifact.path);
-  const artifactInfo = await lstat(artifactPath).catch(() => null);
-  const artifactMatchesPlatform =
-    preview.build.platform === "android"
-      ? artifactInfo?.isFile() && artifactPath.toLowerCase().endsWith(".apk")
-      : preview.build.platform === "ios"
-        ? artifactInfo?.isDirectory() && artifactPath.toLowerCase().endsWith(".app")
-        : Boolean(artifactInfo?.isFile() || artifactInfo?.isDirectory());
-  if (!artifactMatchesPlatform) {
-    throw new Error("preview.artifact.path no longer has the reviewed platform artifact format");
-  }
-  if ((await artifactDigestForProof(artifactPath)) !== preview.artifact.digest) {
-    throw new Error("build.artifactPath bytes changed after preview; run preview again");
-  }
-  if ((await artifactSourceSha256(artifactPath)) !== preview.artifact.sourceSha256) {
-    throw new Error("build.artifactPath sourceSha256 changed after preview; run preview again");
-  }
-  const reviewedBuild = preview.policy.document.builds[0]!;
-  const reviewedArtifactDigest =
-    preview.build.platform === "web"
-      ? preview.build.webDeployment!.deploymentDigest
-      : preview.artifact.digest;
+  const previewBuilds = preview.builds ?? [preview.build];
+  const previewArtifacts = preview.artifacts ?? [preview.artifact];
+  const previewCommands = preview.commands ?? [preview.command];
   if (
-    reviewedBuild.id !== preview.build.id ||
-    reviewedBuild.platform !== preview.build.platform ||
-    reviewedBuild.sourceSha !== preview.testedSha ||
-    reviewedBuild.artifactDigest !== reviewedArtifactDigest ||
-    reviewedBuild.configuration !== preview.build.configuration ||
-    reviewedBuild.environmentRevision !== preview.build.environmentRevision
+    canonicalSha256(preview.build) !== canonicalSha256(previewBuilds[0]) ||
+    canonicalSha256(preview.artifact) !== canonicalSha256(previewArtifacts[0]) ||
+    canonicalSha256(preview.command) !== canonicalSha256(previewCommands[0])
   ) {
-    throw new Error("preview build registration does not match the reviewed policy build");
+    throw new Error("legacy preview build fields must match the first reviewed build");
   }
-  const buildInput = {
-    id: preview.build.id,
-    projectId: input.projectId,
-    name: preview.build.name,
-    platform: preview.build.platform,
-    sourceUrl:
-      preview.build.platform === "web" ? preview.build.webDeployment!.url : preview.artifact.path,
-    sourceSha256: preview.artifact.sourceSha256,
-    sourceSha: preview.testedSha,
-    configuration: preview.build.configuration,
-    environmentRevision: preview.build.environmentRevision,
-    ...(preview.build.applicationId ? { applicationId: preview.build.applicationId } : {}),
-    ...(preview.build.platform === "web"
-      ? { deploymentDigest: preview.build.webDeployment!.deploymentDigest }
-      : {}),
-  } as const;
-  const save = input.save ?? saveBuild;
-  const previousBuild = input.read
-    ? await input.read(input.projectId, preview.build.id)
-    : input.save
-      ? null
-      : await readBuild(input.projectId, preview.build.id);
-  const stagedBuild = await save({ ...buildInput, status: "uploaded" });
-  const restoreBuild = async (): Promise<void> => {
-    if (previousBuild) {
-      const { createdAt: _createdAt, updatedAt: _updatedAt, ...prior } = previousBuild;
-      await save(prior);
-      return;
+  if (
+    previewBuilds.length !== previewArtifacts.length ||
+    previewBuilds.length !== previewCommands.length ||
+    previewBuilds.length !== preview.policy.document.buildDefinitions.length ||
+    previewBuilds.length !== preview.policy.document.builds.length
+  ) {
+    throw new Error("preview build, command, artifact, and policy collections must align");
+  }
+  const buildInputs = [];
+  for (const [index, build] of previewBuilds.entries()) {
+    const artifact = previewArtifacts[index]!;
+    const command = previewCommands[index]!;
+    const definition = preview.policy.document.buildDefinitions[index]!;
+    const reviewedBuild = preview.policy.document.builds[index]!;
+    const artifactPath = absoluteRepositoryPath(root, artifact.path);
+    const artifactInfo = await lstat(artifactPath).catch(() => null);
+    const artifactMatchesPlatform =
+      build.platform === "android"
+        ? artifactInfo?.isFile() && artifactPath.toLowerCase().endsWith(".apk")
+        : build.platform === "ios"
+          ? artifactInfo?.isDirectory() && artifactPath.toLowerCase().endsWith(".app")
+          : Boolean(artifactInfo?.isFile() || artifactInfo?.isDirectory());
+    if (!artifactMatchesPlatform) {
+      throw new Error(
+        `preview.artifacts.${build.id}.path no longer has the reviewed platform artifact format`,
+      );
     }
-    const { createdAt: _createdAt, updatedAt: _updatedAt, ...staged } = stagedBuild;
-    await save({ ...staged, status: "failed" });
+    if ((await artifactDigestForProof(artifactPath)) !== artifact.digest) {
+      throw new Error(`build ${build.id} artifact bytes changed after preview; run preview again`);
+    }
+    if ((await artifactSourceSha256(artifactPath)) !== artifact.sourceSha256) {
+      throw new Error(
+        `build ${build.id} artifact sourceSha256 changed after preview; run preview again`,
+      );
+    }
+    const reviewedArtifactDigest =
+      build.platform === "web" ? build.webDeployment!.deploymentDigest : artifact.digest;
+    if (
+      canonicalSha256(definition.command) !== canonicalSha256(command) ||
+      definition.artifactPath !== artifact.path ||
+      definition.id !== build.id ||
+      definition.name !== build.name ||
+      definition.platform !== build.platform ||
+      definition.configuration !== build.configuration ||
+      definition.environmentRevision !== build.environmentRevision ||
+      reviewedBuild.id !== build.id ||
+      reviewedBuild.platform !== build.platform ||
+      reviewedBuild.sourceSha !== preview.testedSha ||
+      reviewedBuild.artifactDigest !== reviewedArtifactDigest ||
+      reviewedBuild.configuration !== build.configuration ||
+      reviewedBuild.environmentRevision !== build.environmentRevision
+    ) {
+      throw new Error(`preview build ${build.id} does not match the reviewed policy build`);
+    }
+    buildInputs.push({
+      id: build.id,
+      projectId: input.projectId,
+      name: build.name,
+      platform: build.platform,
+      sourceUrl: build.platform === "web" ? build.webDeployment!.url : artifact.path,
+      sourceSha256: artifact.sourceSha256,
+      sourceSha: preview.testedSha,
+      configuration: build.configuration,
+      environmentRevision: build.environmentRevision,
+      ...(build.applicationId ? { applicationId: build.applicationId } : {}),
+      ...(build.platform === "web"
+        ? { deploymentDigest: build.webDeployment!.deploymentDigest }
+        : {}),
+    });
+  }
+  const save = input.save ?? saveBuild;
+  const saveMany =
+    input.saveMany ??
+    (input.save
+      ? async (builds: readonly Parameters<typeof saveBuild>[0][]) => {
+          const saved = [];
+          for (const build of builds) saved.push(await save(build));
+          return saved;
+        }
+      : saveBuilds);
+  const previousBuilds = await Promise.all(
+    buildInputs.map(({ id }) =>
+      input.read
+        ? input.read(input.projectId, id)
+        : input.save
+          ? Promise.resolve(null)
+          : readBuild(input.projectId, id),
+    ),
+  );
+  let stagedBuilds: Awaited<ReturnType<typeof saveBuild>>[] = [];
+  const restoreBuilds = async (): Promise<void> => {
+    const restorations = stagedBuilds.map((staged, index) => {
+      const previous = previousBuilds[index];
+      if (previous) {
+        const { createdAt: _createdAt, updatedAt: _updatedAt, ...prior } = previous;
+        return prior;
+      }
+      const { createdAt: _createdAt, updatedAt: _updatedAt, ...stagedInput } = staged;
+      return { ...stagedInput, status: "failed" as const };
+    });
+    await saveMany(restorations);
   };
+  try {
+    stagedBuilds = await saveMany(
+      buildInputs.map((buildInput) => ({ ...buildInput, status: "uploaded" as const })),
+    );
+  } catch (error) {
+    const rollbackErrors: unknown[] = [];
+    await restoreBuilds().catch((rollback) => rollbackErrors.push(rollback));
+    if (rollbackErrors.length) {
+      throw new AggregateError(
+        [error, ...rollbackErrors],
+        "Proof build staging failed and rollback was incomplete",
+      );
+    }
+    throw error;
+  }
   const policyChanged = currentPolicyDigest !== preview.policy.digest;
   try {
     if (policyChanged) {
@@ -555,7 +647,7 @@ export async function applyProofSetup(input: {
     await restorePolicy({ root, previous: previousPolicy, files }).catch((rollback) =>
       rollbackErrors.push(rollback),
     );
-    await restoreBuild().catch((rollback) => rollbackErrors.push(rollback));
+    await restoreBuilds().catch((rollback) => rollbackErrors.push(rollback));
     if (rollbackErrors.length) {
       throw new AggregateError(
         [error, ...rollbackErrors],
@@ -564,13 +656,15 @@ export async function applyProofSetup(input: {
     }
     throw error;
   }
-  let registeredBuild: Awaited<ReturnType<typeof saveBuild>>;
+  let registeredBuilds: Awaited<ReturnType<typeof saveBuild>>[] = [];
   let prepared: Awaited<ReturnType<typeof prepareCurrentChangeVerification>>;
   try {
-    registeredBuild = await save({ ...buildInput, status: "ready" });
+    registeredBuilds = await saveMany(
+      buildInputs.map((buildInput) => ({ ...buildInput, status: "ready" as const })),
+    );
     prepared = await (input.prepare ?? prepareCurrentChangeVerification)({
       projectId: input.projectId,
-      request: { buildIds: [registeredBuild.id] },
+      request: { buildIds: registeredBuilds.map(({ id }) => id) },
     });
   } catch (error) {
     const rollbackErrors: unknown[] = [];
@@ -579,7 +673,7 @@ export async function applyProofSetup(input: {
         rollbackErrors.push(rollback),
       );
     }
-    await restoreBuild().catch((rollback) => rollbackErrors.push(rollback));
+    await restoreBuilds().catch((rollback) => rollbackErrors.push(rollback));
     if (rollbackErrors.length) {
       throw new AggregateError(
         [error, ...rollbackErrors],
@@ -591,11 +685,17 @@ export async function applyProofSetup(input: {
   return {
     preview,
     registeredBuild: {
-      id: registeredBuild.id,
-      sourceSha: registeredBuild.sourceSha!,
-      sourceSha256: registeredBuild.sourceSha256!,
+      id: registeredBuilds[0]!.id,
+      sourceSha: registeredBuilds[0]!.sourceSha!,
+      sourceSha256: registeredBuilds[0]!.sourceSha256!,
       status: "ready" as const,
     },
+    registeredBuilds: registeredBuilds.map((build) => ({
+      id: build.id,
+      sourceSha: build.sourceSha!,
+      sourceSha256: build.sourceSha256!,
+      status: "ready" as const,
+    })),
     plan: prepared.plan,
     blockers: prepared.blockers,
   };

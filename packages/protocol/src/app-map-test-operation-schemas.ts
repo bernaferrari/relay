@@ -291,6 +291,15 @@ const assertionSpec = z.discriminatedUnion("kind", [
     .strict(),
   z
     .object({
+      kind: z.literal("layout"),
+      relation: z.literal("non-overlap"),
+      first: stepTarget,
+      second: stepTarget,
+      timeoutMs: natural("Optional assertion timeout in milliseconds").optional(),
+    })
+    .strict(),
+  z
+    .object({
       kind: z.literal("content"),
       input: text("Observed or extracted value"),
       expected: z.string(),
@@ -323,6 +332,15 @@ const validationRecipeStep = z.discriminatedUnion("kind", [
       input: text("Observed or extracted value"),
       expected: z.string(),
       match: z.enum(["exact", "contains", "not-contains"]),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("assert-layout"),
+      relation: z.literal("non-overlap"),
+      first: stepTarget,
+      second: stepTarget,
+      timeoutMs: natural("Optional assertion timeout in milliseconds").optional(),
     })
     .strict(),
   z

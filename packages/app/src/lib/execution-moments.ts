@@ -96,6 +96,7 @@ const ACTION_GLYPH: Partial<Record<RecipeStep["kind"], string>> = {
   expect: "ok",
   extract: "type",
   "assert-content": "ok",
+  "assert-layout": "ok",
   "evaluate-semantic": "ai",
   pause: "wait",
   screenshot: "shot",

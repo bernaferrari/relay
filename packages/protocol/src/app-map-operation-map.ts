@@ -145,6 +145,8 @@ export type AppMapOperationMap = {
     };
     output: {
       appMap: AppMap;
+      screen: Screen;
+      variant: ScreenVariant;
       alias: { fingerprint: string; aliasesNow: string[] };
     };
   };

@@ -43,6 +43,7 @@ export function automaticEvidencePhases(step: RecipeStep): readonly ("before" | 
       return step.id?.startsWith("relay-source-") || step.id?.endsWith(":warm") ? [] : ["after"];
     case "expect":
     case "assert-content":
+    case "assert-layout":
     case "extract":
     case "evaluate-semantic":
     case "wait-for":

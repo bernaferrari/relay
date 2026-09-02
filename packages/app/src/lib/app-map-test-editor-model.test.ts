@@ -8,6 +8,7 @@ import {
   duplicateScenarioStep,
   moveScenarioStep,
   scenarioDiagnostics,
+  scenarioStepSummary,
   scenarioStepCount,
 } from "./app-map-test-editor-model.js";
 import {
@@ -168,4 +169,20 @@ test("full-surface bindings expose unique screen ids for fresh-evidence runs", (
     },
   ];
   assert.deepEqual(fullSurfaceScreenIds(work), ["voice"]);
+});
+
+test("validation summaries describe layout assertions instead of treating them as content", () => {
+  const step = createScenarioStep("validation", "layout-validation");
+  if (step.kind !== "validation") throw new Error("expected validation step");
+  step.binding = {
+    status: "resolved",
+    kind: "assertion",
+    assertion: {
+      kind: "layout",
+      relation: "non-overlap",
+      first: { label: "Description" },
+      second: { label: "Continue" },
+    },
+  };
+  assert.equal(scenarioStepSummary(map, step), 'Check "Description" and "Continue" do not overlap');
 });

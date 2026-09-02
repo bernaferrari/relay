@@ -401,6 +401,14 @@ export type RecipeStep = RecipeStepMetadata &
         match: "exact" | "contains" | "not-contains";
       }
     | {
+        /** Require two uniquely resolved semantic elements not to overlap. */
+        kind: "assert-layout";
+        relation: "non-overlap";
+        first: StepTarget;
+        second: StepTarget;
+        timeoutMs?: number;
+      }
+    | {
         kind: "evaluate-semantic";
         input: string;
         criteria: string[];

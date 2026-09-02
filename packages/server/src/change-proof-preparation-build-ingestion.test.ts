@@ -3,31 +3,50 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { canonicalSha256, resetControlDatabaseCache, saveBuild } from "@relay/core";
+import {
+  artifactDigestForProof,
+  canonicalSha256,
+  resetControlDatabaseCache,
+  saveBuild,
+} from "@relay/core";
 import type { ProofBuildDefinition, WorkspaceChangeContext } from "@relay/protocol";
 import { prepareCurrentChangeVerification } from "./change-proof-preparation.js";
 
 const testedSha = "2".repeat(40);
 const deploymentDigest = `sha256:${"d".repeat(64)}` as const;
 
-test("Proof preparation ingests reviewed definitions and binds the resulting exact-head Build", async () => {
+test("Proof preparation ingests and binds reviewed Android and web Builds for the exact head", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-proof-prepare-ingest-"));
   const previousState = process.env.RELAY_STATE_DIR;
   process.env.RELAY_STATE_DIR = join(root, "state");
-  const definition: ProofBuildDefinition = {
-    id: "web-release",
-    name: "Web release",
-    platform: "web",
-    command: { executable: "pnpm", args: ["build"] },
-    artifactPath: "dist",
-    configuration: "web.production",
-    environmentRevision: "reviewed-v1",
-    webDeployment: {
-      url: "https://deployments.example.test/app/exact",
-      deploymentDigest,
+  const definitions: readonly ProofBuildDefinition[] = [
+    {
+      id: "android-release",
+      name: "Android release",
+      platform: "android",
+      command: { executable: "pnpm", args: ["build:android"] },
+      artifactPath: "dist/app.apk",
+      configuration: "android.release",
+      environmentRevision: "reviewed-v1",
+      applicationId: "com.acme.app",
     },
-  };
+    {
+      id: "web-release",
+      name: "Web release",
+      platform: "web",
+      command: { executable: "pnpm", args: ["build:web"] },
+      artifactPath: "dist/web",
+      configuration: "web.production",
+      environmentRevision: "reviewed-v1",
+      webDeployment: {
+        url: "https://deployments.example.test/app/exact",
+        deploymentDigest,
+      },
+    },
+  ];
   try {
+    await mkdir(join(root, "dist"), { recursive: true });
+    await writeFile(join(root, "dist/app.apk"), "android apk");
     await mkdir(join(root, ".relay"));
     await writeFile(
       join(root, ".relay", "change-proof.json"),
@@ -36,7 +55,7 @@ test("Proof preparation ingests reviewed definitions and binds the resulting exa
         repository: "acme/app",
         changed: {},
         associations: [],
-        buildDefinitions: [definition],
+        buildDefinitions: definitions,
         builds: [],
         targetCases: [],
         policy: { id: "relay.verify-change", version: 1 },
@@ -73,27 +92,35 @@ test("Proof preparation ingests reviewed definitions and binds the resulting exa
       ingestBuild: async (input) => {
         ingestions += 1;
         assert.equal(input.testedSha, testedSha);
-        assert.equal(input.definitionId, definition.id);
+        const definition = definitions.find(({ id }) => id === input.definitionId)!;
         const environmentRevision = "reviewed-v1@toolchain";
+        const artifactDigest =
+          definition.platform === "web"
+            ? deploymentDigest
+            : await artifactDigestForProof(join(root, definition.artifactPath));
         const build = await saveBuild({
           id: definition.id,
           projectId: input.projectId,
           name: definition.name,
-          platform: "web",
-          sourceUrl: definition.webDeployment!.url,
+          platform: definition.platform,
+          sourceUrl:
+            definition.platform === "web"
+              ? definition.webDeployment!.url
+              : join(root, definition.artifactPath),
           sourceSha256: "a".repeat(64),
           sourceSha: testedSha,
           configuration: definition.configuration,
           environmentRevision,
-          deploymentDigest,
+          ...(definition.platform === "web" ? { deploymentDigest } : {}),
+          ...(definition.applicationId ? { applicationId: definition.applicationId } : {}),
           status: "ready",
         });
         return {
           build,
           verificationBuild: {
             id: definition.id,
-            platform: "web",
-            artifactDigest: deploymentDigest,
+            platform: definition.platform,
+            artifactDigest,
             sourceSha: testedSha,
             configuration: definition.configuration,
             environmentRevision,
@@ -101,6 +128,10 @@ test("Proof preparation ingests reviewed definitions and binds the resulting exa
           receipt: {
             schemaVersion: 1,
             buildId: definition.id,
+            policy: {
+              path: ".relay/change-proof.json",
+              digest: canonicalSha256("reviewed policy"),
+            },
             source: { repositoryRoot: root, sha: testedSha, treeSha: "3".repeat(40) },
             command: {
               executable: definition.command.executable,
@@ -125,11 +156,12 @@ test("Proof preparation ingests reviewed definitions and binds the resulting exa
       },
     });
 
-    assert.equal(ingestions, 1);
-    assert.equal(result.plan.builds.length, 1);
-    assert.equal(result.plan.builds[0]?.id, definition.id);
-    assert.equal(result.plan.builds[0]?.sourceSha, testedSha);
-    assert.equal(result.plan.builds[0]?.artifactDigest, deploymentDigest);
+    assert.equal(ingestions, 2);
+    assert.deepEqual(
+      result.plan.builds.map(({ id, sourceSha }) => ({ id, sourceSha })),
+      definitions.map(({ id }) => ({ id, sourceSha: testedSha })),
+    );
+    assert.equal(result.plan.builds[1]?.artifactDigest, deploymentDigest);
     assert.equal(
       result.blockers.some((value) => value.includes("not a ready registered build")),
       false,

@@ -60,6 +60,7 @@ describe("convertStepAction", () => {
       "expect",
       "extract",
       "assert-content",
+      "assert-layout",
       "evaluate-semantic",
       "pause",
       "screenshot",
@@ -80,6 +81,16 @@ describe("convertStepAction", () => {
       "logs",
     ];
     for (const kind of kinds) assert.equal(convertStepAction(recordedTap, kind).kind, kind);
+  });
+
+  it("creates an explicit two-target layout assertion without inventing the second target", () => {
+    assert.deepEqual(convertStepAction(recordedTap, "assert-layout"), {
+      kind: "assert-layout",
+      relation: "non-overlap",
+      first: recordedTap.target,
+      second: {},
+      evidence: recordedTap.evidence,
+    });
   });
 
   it("keeps the existing step when its action is selected again", () => {

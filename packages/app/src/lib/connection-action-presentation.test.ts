@@ -49,3 +49,25 @@ test("direct waits clamp to a finite non-negative millisecond value", () => {
     { id: "wait", kind: "wait", ms: 0 },
   ]);
 });
+
+test("layout assertions get explicit non-overlap copy", () => {
+  const actions: ActionSpec[] = [
+    {
+      id: "layout-check",
+      kind: "assertion",
+      assertion: {
+        kind: "layout",
+        relation: "non-overlap",
+        first: { label: "Description" },
+        second: { label: "Continue" },
+      },
+    },
+  ];
+  assert.deepEqual(connectionActionSummaries(actions, null), [
+    {
+      id: "layout-check",
+      actionId: "layout-check",
+      label: 'Check "Description" and "Continue" do not overlap',
+    },
+  ]);
+});

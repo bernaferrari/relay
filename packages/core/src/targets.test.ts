@@ -49,7 +49,7 @@ before(async () => {
     response.end(
       _request.url === "/ambiguous"
         ? `<!doctype html><button style="position:absolute;left:10px;top:10px">Same</button><button style="position:absolute;left:10px;top:10px">Same</button>`
-        : `<!doctype html><button aria-label="Continue">Continue</button><button>Duplicate</button><button>Duplicate</button><input id="message" aria-label="Message" />`,
+        : `<!doctype html><button aria-label="Continue">Continue</button><button>Duplicate</button><button>Duplicate</button><input id="message" aria-label="Message" /><p id="description">Visible details</p>`,
     );
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -560,6 +560,10 @@ test("managed browser adapter supports canonical snapshots, clicks, video, and s
           assert(recording.started || recording.warning);
           const snapshot = await device.capture.snapshot({ platform: "android" });
           assert(snapshot.nodes?.some((node) => node.label === "Continue"));
+          const description = snapshot.nodes?.find((node) => node.identifier === "description");
+          assert.equal(description?.label, "Visible details");
+          assert.equal(description?.hittable, false);
+          assert.ok(description?.rect?.width && description.rect.height);
           const input = snapshot.nodes?.find((node) => node.label === "Message");
           assert.equal(input?.identifier, "message");
           assert.equal(input?.ref, undefined);

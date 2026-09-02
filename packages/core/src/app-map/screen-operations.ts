@@ -4,16 +4,36 @@ import type {
   AppMap,
   AppMapMutationContext,
   Proposal,
+  Screen,
+  ScreenVariant,
   UpdateScreenInput,
 } from "./model.js";
+import { captureAppMapScreenVariant } from "./recording-operations.js";
 import { mutateAppMap } from "./mutation.js";
 import { actionOwners } from "./validation.js";
 import { assertAddScreenInput, assertUpdateScreenInput, identifier } from "./validation-shapes.js";
 import { hasCurrentAuthoringSemantics } from "../authoring-observation-proof.js";
 import type { SnapshotNode } from "../device.js";
 import { observeScreenIdentity } from "../screen-identity.js";
-import type { AuthoringObservation } from "@relay/protocol";
+import type {
+  AuthoringEvidence,
+  AuthoringObservation,
+  AuthoringTarget,
+  TargetProfile,
+} from "@relay/protocol";
 import { recommendScrollSurfaceCapturePolicy } from "../scroll-surface-policy.js";
+
+export type AppMapScreenVariantCaptureInput = {
+  map: AppMap;
+  screen: Screen;
+  observation?: AuthoringObservation;
+  target: AuthoringTarget;
+  targetProfile?: TargetProfile;
+  evidenceUrisById?: Record<string, string>;
+  evidenceKindsById?: Record<string, "screenshot" | "snapshot" | "video">;
+  evidenceById?: Record<string, AuthoringEvidence>;
+  at: number;
+};
 
 function scopeFor(map: AppMap) {
   return { organizationId: map.organizationId, projectId: map.projectId, appMapId: map.id };
@@ -289,7 +309,13 @@ export function removeAppMapScreen(
 export type AppMapScreenAliasObservationResult = {
   appMap: AppMap;
   alias: { fingerprint: string; aliasesNow: string[] };
+  variant?: ScreenVariant;
 };
+
+export type AppMapScreenAliasCapture = Omit<
+  AppMapScreenVariantCaptureInput,
+  "map" | "screen" | "observation" | "at"
+>;
 
 /**
  * Approve the target's current screen as the same semantic screen. Observes
@@ -309,6 +335,7 @@ export function observeAppMapScreenAlias(
   screenId: string,
   observation: AuthoringObservation,
   context: AppMapMutationContext,
+  capture?: AppMapScreenAliasCapture,
 ): AppMapScreenAliasObservationResult {
   identifier(screenId, "screenId");
   const screen = map.screens[screenId];
@@ -328,6 +355,7 @@ export function observeAppMapScreenAlias(
   }
   const fingerprint = observeScreenIdentity(nodes.slice(0, 256) as SnapshotNode[]).fingerprint;
   let aliasesNow: string[] = [];
+  let variant: ScreenVariant | undefined;
   const appMap = mutateAppMap(
     map,
     context,
@@ -354,9 +382,36 @@ export function observeAppMapScreenAlias(
           ...new Set([...(target.identity.aliases ?? []), fingerprint]),
         ].sort();
       }
+      if (capture) {
+        if (
+          capture.targetProfile &&
+          (capture.targetProfile.targetId !== capture.target.targetId ||
+            capture.targetProfile.platform !== capture.target.platform)
+        ) {
+          appMapFail(
+            "scope-mismatch",
+            `Screen ${screenId} alias target profile does not belong to ${capture.target.targetId}`,
+          );
+        }
+        variant = captureAppMapScreenVariant({
+          map: draft,
+          screen: target,
+          observation,
+          at: context.at,
+          ...capture,
+        });
+        if (!variant) {
+          appMapFail(
+            "invalid-map",
+            `Screen ${screenId} alias observation could not produce a target variant`,
+          );
+        }
+        draft.screenVariants[variant.id] = variant;
+        target.variantIds = [...new Set([...target.variantIds, variant.id])].sort();
+      }
       target.updatedAt = context.at;
       aliasesNow = target.identity.aliases ?? [];
     },
   );
-  return { appMap, alias: { fingerprint, aliasesNow } };
+  return { appMap, alias: { fingerprint, aliasesNow }, ...(variant ? { variant } : {}) };
 }

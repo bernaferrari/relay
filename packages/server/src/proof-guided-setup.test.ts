@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { canonicalSha256 } from "@relay/core";
 import type { ProofSetupIntent } from "@relay/protocol";
 import { applyProofSetup, previewProofSetup } from "./proof-guided-setup.js";
 
@@ -263,6 +264,174 @@ test("web setup hashes local output but binds Proof policy to the reviewed deplo
   });
   assert.equal(saved?.sourceUrl, "https://preview.example.test");
   assert.equal(saved?.deploymentDigest, deploymentDigest);
+});
+
+test("setup previews, atomically registers, and prepares reviewed Android and web builds together", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "relay-proof-setup-multi-build-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const deploymentDigest = `sha256:${"b".repeat(64)}` as const;
+  const android = intent().build!;
+  const web = {
+    id: "web-preview",
+    name: "Web preview",
+    platform: "web" as const,
+    command: { executable: "pnpm", args: ["run", "build:web"] },
+    artifactPath: "dist/web",
+    configuration: "web.production",
+    environmentRevision: "hosting-v1",
+    webDeployment: { url: "https://preview.example.test", deploymentDigest },
+  };
+  const setupIntent: ProofSetupIntent = {
+    ...intent(),
+    build: undefined,
+    builds: [android, web],
+  };
+  const commands: string[] = [];
+  const preview = await previewProofSetup({
+    projectId: "relay",
+    root,
+    intent: setupIntent,
+    change: async () => exactChange(),
+    validateTests: async () => undefined,
+    run: async (_executable, args) => {
+      commands.push(args.join(" "));
+      if (args.includes("build:android")) {
+        await mkdir(join(root, "dist"), { recursive: true });
+        await writeFile(join(root, "dist/app-release.apk"), "exact apk bytes");
+      } else {
+        await mkdir(join(root, "dist/web"), { recursive: true });
+        await writeFile(join(root, "dist/web/index.html"), "<h1>Exact web output</h1>");
+      }
+    },
+  });
+
+  assert.deepEqual(commands, ["run build:android", "run build:web"]);
+  assert.deepEqual(
+    preview.builds!.map(({ id }) => id),
+    ["android-release", "web-preview"],
+  );
+  assert.equal(preview.artifacts!.length, 2);
+  assert.equal(preview.policy.document.buildDefinitions.length, 2);
+  assert.equal(preview.policy.document.builds[1]?.artifactDigest, deploymentDigest);
+
+  const batches: string[][] = [];
+  let preparedIds: readonly string[] | undefined;
+  const result = await applyProofSetup({
+    projectId: "relay",
+    root,
+    request: { ...preview, confirm: true },
+    change: async () => exactChange(),
+    validateTests: async () => undefined,
+    read: async () => null,
+    saveMany: async (builds) => {
+      batches.push(builds.map(({ id, status }) => `${id}:${status}`));
+      return builds.map((build) => ({ ...build, createdAt: 1, updatedAt: 1 }));
+    },
+    prepare: async ({ request }) => {
+      preparedIds = request.buildIds;
+      return { plan: { proof: digest } as never, blockers: [] };
+    },
+  });
+
+  assert.deepEqual(preparedIds, ["android-release", "web-preview"]);
+  assert.deepEqual(batches, [
+    ["android-release:uploaded", "web-preview:uploaded"],
+    ["android-release:ready", "web-preview:ready"],
+  ]);
+  assert.deepEqual(
+    result.registeredBuilds.map(({ id }) => id),
+    ["android-release", "web-preview"],
+  );
+});
+
+test("a later multi-build registration failure rolls every build back and leaves no policy", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "relay-proof-setup-multi-rollback-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const android = intent().build!;
+  const web = {
+    id: "web-preview",
+    name: "Web preview",
+    platform: "web" as const,
+    command: { executable: "pnpm", args: ["run", "build:web"] },
+    artifactPath: "dist/web",
+    configuration: "web.production",
+    environmentRevision: "hosting-v1",
+    webDeployment: {
+      url: "https://preview.example.test",
+      deploymentDigest: `sha256:${"b".repeat(64)}` as const,
+    },
+  };
+  const preview = await previewProofSetup({
+    projectId: "relay",
+    root,
+    intent: { ...intent(), build: undefined, builds: [android, web] },
+    change: async () => exactChange(),
+    validateTests: async () => undefined,
+    run: async (_executable, args) => {
+      if (args.includes("build:android")) {
+        await mkdir(join(root, "dist"), { recursive: true });
+        await writeFile(join(root, "dist/app-release.apk"), "exact apk bytes");
+      } else {
+        await mkdir(join(root, "dist/web"), { recursive: true });
+        await writeFile(join(root, "dist/web/index.html"), "exact web bytes");
+      }
+    },
+  });
+  const finalStatus = new Map<string, string>();
+  await assert.rejects(
+    applyProofSetup({
+      projectId: "relay",
+      root,
+      request: { ...preview, confirm: true },
+      change: async () => exactChange(),
+      validateTests: async () => undefined,
+      read: async () => null,
+      saveMany: async (builds) => {
+        if (builds.some(({ id, status }) => id === "web-preview" && status === "ready")) {
+          throw new Error("injected second ready failure");
+        }
+        for (const build of builds) finalStatus.set(build.id, build.status);
+        return builds.map((build) => ({ ...build, createdAt: 1, updatedAt: 1 }));
+      },
+      prepare: async () => ({ plan: {} as never, blockers: [] }),
+    }),
+    /injected second ready failure/u,
+  );
+
+  assert.deepEqual(Object.fromEntries(finalStatus), {
+    "android-release": "failed",
+    "web-preview": "failed",
+  });
+  await assert.rejects(readFile(join(root, ".relay/change-proof.json")), /ENOENT/u);
+});
+
+test("apply accepts a signed legacy singular preview after the multi-build upgrade", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "relay-proof-setup-legacy-preview-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const current = await reviewedPreview(root);
+  const {
+    commands: _commands,
+    artifacts: _artifacts,
+    builds: _builds,
+    previewDigest: _digest,
+    ...old
+  } = current;
+  const legacy = { ...old, previewDigest: canonicalSha256(old) };
+  const result = await applyProofSetup({
+    projectId: "relay",
+    root,
+    request: { ...legacy, confirm: true },
+    change: async () => exactChange(),
+    validateTests: async () => undefined,
+    save: async (build) => ({ ...build, createdAt: 1, updatedAt: 1 }),
+    prepare: async () => ({ plan: { proof: digest } as never, blockers: [] }),
+  });
+
+  assert.equal(result.registeredBuild.id, "android-release");
+  assert.deepEqual(
+    result.registeredBuilds!.map(({ id }) => id),
+    ["android-release"],
+  );
 });
 
 for (const failure of ["write", "rename"] as const) {

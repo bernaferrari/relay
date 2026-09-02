@@ -407,6 +407,10 @@ function semanticCandidates(nodes: SnapshotNode[]): {
 } {
   const candidates: BrowserDeviceSemanticCandidate[] = [];
   for (const [index, node] of nodes.entries()) {
+    // Canonical snapshots also retain visible read-only semantics for
+    // assertions. Browser Device overlays are an input surface, so those
+    // nodes must never be promoted into clickable candidates.
+    if (node.hittable === false) continue;
     const candidate = semanticCandidate(node, index);
     if (candidate) candidates.push(candidate);
   }

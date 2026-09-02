@@ -276,7 +276,20 @@ export async function handleAppMapCaptureRoute(input: AppMapRouteInput): Promise
       const take = currentTakeRevision(session);
       if (!take?.before) throw new HttpError(502, "The target returned no screen observation");
       const observation = take.before;
+      const profile = await profileForCapture(
+        body.target,
+        observation.capturedAt,
+        observation.bounds,
+      );
+      const capture = {
+        target: body.target,
+        targetProfile: profile,
+        evidenceUrisById: Object.fromEntries(take.evidence.map((item) => [item.id, item.uri])),
+        evidenceKindsById: Object.fromEntries(take.evidence.map((item) => [item.id, item.kind])),
+        evidenceById: Object.fromEntries(take.evidence.map((item) => [item.id, item])),
+      };
       let alias: { fingerprint: string; aliasesNow: string[] } | undefined;
+      let variant: ScreenVariant | undefined;
       const persistAlias = (mapRevision: number) =>
         applyMutation(scope, current.id, mapRevision, body.eventId, (map, context) => {
           const result = observeAppMapScreenAlias(
@@ -284,8 +297,10 @@ export async function handleAppMapCaptureRoute(input: AppMapRouteInput): Promise
             screenAliasObserve.screenId!,
             observation,
             context,
+            capture,
           );
           alias = result.alias;
+          variant = result.variant;
           return result.appMap;
         });
       let appMap: AppMap;
@@ -298,8 +313,19 @@ export async function handleAppMapCaptureRoute(input: AppMapRouteInput): Promise
         appMap = await persistAlias(latest.revision);
       }
       const identity = appMap.screens[screenAliasObserve.screenId!]?.identity;
+      const screen = appMap.screens[screenAliasObserve.screenId!];
+      const persistedVariant =
+        variant ??
+        screen?.variantIds
+          .map((variantId) => appMap.screenVariants[variantId])
+          .find((candidate) => candidate?.targetProfile.id === profile.id);
+      if (!screen || !persistedVariant) {
+        throw new HttpError(500, "The approved screen variant was not persisted");
+      }
       json(response, 200, {
         appMap,
+        screen,
+        variant: persistedVariant,
         alias: alias ?? {
           fingerprint: identity?.fingerprint ?? "",
           aliasesNow: identity?.aliases ?? [],

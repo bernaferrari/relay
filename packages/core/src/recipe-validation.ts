@@ -438,6 +438,41 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
         });
         break;
       }
+      case "assert-layout": {
+        if (raw.relation !== "non-overlap") {
+          throw stepErr(index, 'assert-layout.relation must be "non-overlap"');
+        }
+        const parseLayoutTarget = (value: unknown, field: string): StepTarget => {
+          const target = parseTarget(value, index, field);
+          if (target.relation) {
+            throw stepErr(index, `assert-layout.${field} cannot use an activation-only relation`);
+          }
+          if (!target.identifier && !target.ref && !target.label && !target.text) {
+            throw stepErr(index, `assert-layout.${field} requires identifier/ref/label/text`);
+          }
+          return target;
+        };
+        const first = parseLayoutTarget(raw.first, "first");
+        const second = parseLayoutTarget(raw.second, "second");
+        let timeoutMs: number | undefined;
+        if (raw.timeoutMs !== undefined) {
+          if (!isNumber(raw.timeoutMs))
+            throw stepErr(index, "assert-layout.timeoutMs must be a number");
+          if (raw.timeoutMs < 0) throw stepErr(index, "assert-layout.timeoutMs must be >= 0");
+          if (raw.timeoutMs > MAX_WAIT_MS)
+            throw stepErr(index, `assert-layout.timeoutMs must be <= ${MAX_WAIT_MS} (15 min)`);
+          timeoutMs = raw.timeoutMs;
+        }
+        out.push({
+          kind: "assert-layout",
+          relation: "non-overlap",
+          first,
+          second,
+          ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+          ...(note ? { note } : {}),
+        });
+        break;
+      }
       case "evaluate-semantic": {
         if (!isString(raw.input) || !raw.input.trim())
           throw stepErr(index, "evaluate-semantic.input is required");

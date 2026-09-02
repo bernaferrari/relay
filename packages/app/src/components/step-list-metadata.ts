@@ -15,6 +15,7 @@ export function kindLabel(kind: string): string {
     "expect-set": "Options",
     extract: "Extract",
     "assert-content": "Assert",
+    "assert-layout": "Layout check",
     "evaluate-semantic": "Evaluate",
     "wait-for": "Wait",
     "wait-response": "Response",
@@ -48,7 +49,9 @@ export function kindLabel(kind: string): string {
 export function kindIcon(kind: RecipeStep["kind"]): IconName {
   if (kind === "tap") return "pointer";
   if (["type", "key", "clipboard"].includes(kind)) return "keyboard";
-  if (["expect", "expect-set", "assert-content", "evaluate-semantic"].includes(kind))
+  if (
+    ["expect", "expect-set", "assert-content", "assert-layout", "evaluate-semantic"].includes(kind)
+  )
     return "check";
   if (["wait-for", "wait-response", "sleep", "pause", "review"].includes(kind)) return "clock";
   if (["screenshot", "extract", "tour"].includes(kind)) return "camera";
@@ -68,6 +71,7 @@ export function stepDetail(step: RecipeStep, recipes: Iterable<TitledId>): strin
     "expect-set": ["Check options are exactly "],
     extract: ["Extract "],
     "assert-content": ["Check "],
+    "assert-layout": ["Check "],
     "evaluate-semantic": ["Evaluate "],
     "wait-for": ["Wait until "],
     "wait-response": ["Wait for "],
@@ -163,6 +167,15 @@ export const ADD_GROUPS: AddGroup[] = [
           input: "response",
           expected: "",
           match: "contains",
+        }),
+      },
+      {
+        label: "Check elements do not overlap",
+        make: () => ({
+          kind: "assert-layout",
+          relation: "non-overlap",
+          first: {},
+          second: {},
         }),
       },
       {

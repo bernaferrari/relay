@@ -39,9 +39,9 @@ import {
 } from "./app-map-test-route-variants.js";
 import { compiledTestFamilyProvenance } from "./app-map-test-family-provenance.js";
 import { appMapTestReturnRepairEndpoints } from "./app-map-test-return-repair.js";
+import { layoutAssertionRecipeStep } from "./app-map-test-layout-assertion.js";
 
 export { appMapTestReturnRepairEndpoints } from "./app-map-test-return-repair.js";
-
 export { proposeAppMapTestExecutionSchedule } from "./app-map-test-schedule.js";
 
 export type AppMapTestCompileErrorCode =
@@ -70,8 +70,7 @@ export class AppMapTestCompileError extends Error {
 }
 
 const MAX_COMPILED_STEPS = 4_096;
-/** Bounded automatic survey of a scrollable destination — the same default
- * the `target.scroll-survey.capture` operation uses, so an every-screen Test
+/** Bounded automatic survey using the `target.scroll-survey.capture` default, so an every-screen Test
  * never costs more than one manual `device survey`. */
 const DESTINATION_SURVEY_MAX_SCROLLS = 4;
 
@@ -888,6 +887,9 @@ function assertionRecipeStep(
       condition: assertion.condition,
       ...(assertion.timeoutMs === undefined ? {} : { timeoutMs: assertion.timeoutMs }),
     };
+  }
+  if (assertion.kind === "layout") {
+    return layoutAssertionRecipeStep(assertion);
   }
   return {
     kind: "assert-content",

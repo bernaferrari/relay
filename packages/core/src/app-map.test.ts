@@ -207,6 +207,16 @@ function actions(): ActionSpec[] {
       kind: "assertion",
       assertion: { kind: "content", input: "status", expected: "ready", match: "exact" },
     },
+    {
+      id: "assert-layout",
+      kind: "assertion",
+      assertion: {
+        kind: "layout",
+        relation: "non-overlap",
+        first: { identifier: "description" },
+        second: { identifier: "primary-action" },
+      },
+    },
     { id: "routine", kind: "routine", routineId: "sign-in", bindings: { email: "{{email}}" } },
     { id: "passive", kind: "passive", reason: "automatic" },
   ];
@@ -794,6 +804,7 @@ test("validates a normalized project map containing every action kind and return
       "app",
       "app",
       "wait",
+      "assertion",
       "assertion",
       "assertion",
       "assertion",

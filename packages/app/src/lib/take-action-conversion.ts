@@ -43,6 +43,7 @@ function evidenceFrom(step: RecipeStep): RecordedStepEvidence | undefined {
 
 function targetFrom(step: RecipeStep): StepTarget {
   if ("target" in step && step.target) return step.target;
+  if (step.kind === "assert-layout") return step.first;
   const evidence = evidenceFrom(step);
   if (step.kind === "swipe") {
     return {
@@ -157,6 +158,14 @@ export function convertStepAction(step: RecipeStep, kind: EditableActionKind): R
       return { kind, as: "response", target, role: "assistant", ...withMetadata };
     case "assert-content":
       return { kind, input: "response", expected: "", match: "contains", ...withMetadata };
+    case "assert-layout":
+      return {
+        kind,
+        relation: "non-overlap",
+        first: target,
+        second: {},
+        ...withMetadata,
+      };
     case "evaluate-semantic":
       return {
         kind,

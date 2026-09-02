@@ -164,6 +164,18 @@ describe("sentenceForStep", () => {
       'Check last response status code exact "200"',
     );
   });
+  it("describes layout assertions as a readable non-overlap check", () => {
+    assert.equal(
+      sentenceForStep({
+        kind: "assert-layout",
+        relation: "non-overlap",
+        first: { label: "Description" },
+        second: { label: "Continue" },
+        timeoutMs: 5_000,
+      }),
+      'Check "Description" and "Continue" do not overlap (5s)',
+    );
+  });
 });
 
 describe("stepValid / stepIssue", () => {
@@ -181,5 +193,16 @@ describe("stepValid / stepIssue", () => {
   });
   it("screenshot always valid", () => {
     assert.equal(stepValid({ kind: "screenshot" }), true);
+  });
+  it("requires two semantic targets for a layout assertion", () => {
+    const valid = {
+      kind: "assert-layout" as const,
+      relation: "non-overlap" as const,
+      first: { identifier: "description" },
+      second: { label: "Continue" },
+    };
+    assert.equal(stepValid(valid), true);
+    assert.equal(stepValid({ ...valid, first: { point: { x: 10, y: 10 } } }), false);
+    assert.match(stepIssue({ ...valid, second: {} }) ?? "", /two named elements/i);
   });
 });

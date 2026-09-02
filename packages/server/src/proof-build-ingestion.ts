@@ -29,6 +29,7 @@ type BuildDefinition = ReturnType<typeof proofBuildDefinitionSchema.parse>;
 export type ProofBuildIngestionReceipt = {
   schemaVersion: 1;
   buildId: string;
+  policy: { path: ".relay/change-proof.json"; digest: `sha256:${string}` };
   source: { repositoryRoot: string; sha: string; treeSha: string };
   command: { executable: string; args: readonly string[]; digest: `sha256:${string}` };
   toolchain: {
@@ -66,8 +67,15 @@ async function assertExactCleanSource(root: string, testedSha: string): Promise<
   const realRoot = await realpath(root);
   const top = await realpath(await runGit(root, ["rev-parse", "--show-toplevel"]));
   if (top !== realRoot) throw new Error("source workspace must be the exact repository root");
-  const head = await runGit(root, ["rev-parse", "--verify", "HEAD^{commit}"]);
-  if (head !== testedSha) throw new Error("tested SHA must equal the source workspace HEAD");
+  const resolvedCommit = await runGit(root, [
+    "rev-parse",
+    "--verify",
+    "--end-of-options",
+    `${testedSha}^{commit}`,
+  ]).catch(() => undefined);
+  if (resolvedCommit !== testedSha) {
+    throw new Error("tested SHA must resolve to the exact commit in the source repository");
+  }
   const status = await runGit(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]);
   if (status) throw new Error("source workspace must be clean before automatic build ingestion");
   return realRoot;
@@ -81,8 +89,11 @@ function artifactPath(workspace: string, definition: BuildDefinition): string {
   return path;
 }
 
-async function readDefinition(workspace: string, definitionId: string): Promise<BuildDefinition> {
-  const directory = join(workspace, ".relay");
+async function readDefinition(
+  repositoryRoot: string,
+  definitionId: string,
+): Promise<{ definition: BuildDefinition; digest: `sha256:${string}` }> {
+  const directory = join(repositoryRoot, ".relay");
   const policyPath = join(directory, "change-proof.json");
   const [directoryInfo, policyInfo] = await Promise.all([lstat(directory), lstat(policyPath)]);
   if (!directoryInfo.isDirectory() || directoryInfo.isSymbolicLink()) {
@@ -104,7 +115,36 @@ async function readDefinition(workspace: string, definitionId: string): Promise<
   }
   const definition = definitions.find(({ id }) => id === definitionId);
   if (!definition) throw new Error(`reviewed build definition ${definitionId} was not found`);
-  return definition;
+  return { definition, digest: `sha256:${createHash("sha256").update(bytes).digest("hex")}` };
+}
+
+async function prepareArtifactOutput(
+  workspace: string,
+  definition: BuildDefinition,
+): Promise<void> {
+  const output = artifactPath(workspace, definition);
+  const info = await lstat(output).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return undefined;
+    throw error;
+  });
+  if (!info) return;
+  if (info.isSymbolicLink()) throw new Error("reviewed build artifact cannot be a symbolic link");
+
+  const tracked = await runGit(workspace, [
+    "ls-files",
+    "--error-unmatch",
+    "--",
+    definition.artifactPath,
+  ]).catch(() => undefined);
+  if (!tracked) {
+    throw new Error("reviewed artifact path contains stale untracked output before the build");
+  }
+
+  // Some reviewed reproducibility fixtures intentionally retain the expected
+  // output in Git. Remove it in the disposable worktree so a no-op command
+  // cannot pass by reusing those bytes; the reviewed command must recreate the
+  // exact filename, and the later tracked-diff check proves byte identity.
+  await rm(output, { recursive: info.isDirectory(), force: false });
 }
 
 async function toolchainIdentity(
@@ -243,6 +283,10 @@ export async function ingestReviewedProofBuild(input: {
   receipt: ProofBuildIngestionReceipt;
 }> {
   const repositoryRoot = await assertExactCleanSource(input.repositoryRoot, input.testedSha);
+  // The setup policy is intentionally local and ignored by Git. Read and hash
+  // those reviewed bytes once from the authority checkout; historical
+  // worktrees must not silently substitute a policy from the tested commit.
+  const reviewedPolicy = await readDefinition(repositoryRoot, input.definitionId);
   const temporaryRoot = await mkdtemp(join(tmpdir(), "relay-proof-build-"));
   const workspace = join(temporaryRoot, "workspace");
   let materialized = false;
@@ -264,17 +308,14 @@ export async function ingestReviewedProofBuild(input: {
     if (head !== input.testedSha || !EXACT_SHA.test(treeSha) || status) {
       throw new Error("isolated build workspace did not materialize the exact clean tested SHA");
     }
-    const definition = await readDefinition(workspace, input.definitionId);
-    const output = artifactPath(workspace, definition);
-    if (await lstat(output).catch(() => undefined)) {
-      throw new Error("reviewed artifact path must not exist before the reviewed build command");
-    }
+    const definition = reviewedPolicy.definition;
+    await prepareArtifactOutput(workspace, definition);
     const toolchain = await toolchainIdentity(definition, workspace);
     await runReviewedCommand(definition, workspace);
+    const artifact = await validateArtifact(workspace, definition);
     if (await runGit(workspace, ["diff", "--name-only", "-z", "HEAD", "--"])) {
       throw new Error("reviewed build command modified tracked source files");
     }
-    const artifact = await validateArtifact(workspace, definition);
     const storedPath = await retainArtifact({
       stateRoot:
         input.stateRoot ?? process.env.RELAY_STATE_DIR?.trim() ?? join(repositoryRoot, ".relay"),
@@ -313,6 +354,7 @@ export async function ingestReviewedProofBuild(input: {
     const receipt: ProofBuildIngestionReceipt = {
       schemaVersion: 1,
       buildId: definition.id,
+      policy: { path: ".relay/change-proof.json", digest: reviewedPolicy.digest },
       source: { repositoryRoot, sha: input.testedSha, treeSha },
       command: {
         executable: definition.command.executable,
