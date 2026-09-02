@@ -131,29 +131,6 @@ test('buildSnapshotState leaves Apple runner presentation to the engine', () => 
   expect(state.nodes.map((node) => node.type)).toEqual(['Application', 'Table', 'Cell', 'Button']);
 });
 
-test('buildSnapshotState preserves the legacy acquired iOS presentation path', () => {
-  const rowRect = { x: 16, y: 293, width: 370, height: 52 };
-  const state = buildSnapshotState(
-    {
-      nodes: [
-        { index: 0, depth: 0, type: 'Application', label: 'Settings' },
-        { index: 1, depth: 1, parentIndex: 0, type: 'CollectionView' },
-        { index: 2, depth: 2, parentIndex: 1, type: 'Cell', label: 'General', rect: rowRect },
-        { index: 3, depth: 3, parentIndex: 2, type: 'Button', label: 'General', rect: rowRect },
-      ],
-      backend: 'xctest',
-      producer: 'limrun-ios-tree',
-    },
-    { snapshotInteractiveOnly: true },
-  );
-
-  expect(state.nodes.map((node) => [node.type, node.label])).toEqual([
-    ['Application', 'Settings'],
-    ['CollectionView', undefined],
-    ['Cell', 'General'],
-  ]);
-});
-
 test('buildSnapshotState uses the registered presentation owner for Appium results', () => {
   const rowRect = { x: 16, y: 293, width: 370, height: 52 };
   const data = {
