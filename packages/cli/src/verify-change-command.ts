@@ -9,6 +9,7 @@ import {
   changeVerificationPolicySchema,
   changeRefSchema,
   journeyAssociationSchema,
+  proofBuildDefinitionSchema,
   verificationCellSchema,
   verificationPlanSchema,
 } from "@relay/protocol";
@@ -75,6 +76,7 @@ type ReviewedChangeProofConfig = {
   agentClaim?: unknown;
   changed: SignalPatch;
   associations: readonly unknown[];
+  buildDefinitions: readonly ReturnType<typeof proofBuildDefinitionSchema.parse>[];
   builds: readonly unknown[];
   targetCases: readonly unknown[];
   cells?: readonly ReturnType<typeof verificationCellSchema.parse>[];
@@ -119,6 +121,7 @@ function parseReviewedConfig(value: unknown): ReviewedChangeProofConfig {
     "agentClaim",
     "changed",
     "associations",
+    "buildDefinitions",
     "builds",
     "targetCases",
     "cells",
@@ -161,6 +164,20 @@ function parseReviewedConfig(value: unknown): ReviewedChangeProofConfig {
       return journeyAssociationSchema.parse(association);
     } catch (error) {
       throw configError(`change-proof.json associations[${index}]`, error);
+    }
+  });
+
+  const buildDefinitionsValue = input.buildDefinitions ?? [];
+  if (!Array.isArray(buildDefinitionsValue) || buildDefinitionsValue.length > 32) {
+    throw new UsageError(
+      "change-proof.json buildDefinitions must be an array of at most 32 entries",
+    );
+  }
+  const buildDefinitions = buildDefinitionsValue.map((definition, index) => {
+    try {
+      return proofBuildDefinitionSchema.parse(definition);
+    } catch (error) {
+      throw configError(`change-proof.json buildDefinitions[${index}]`, error);
     }
   });
 
@@ -210,6 +227,7 @@ function parseReviewedConfig(value: unknown): ReviewedChangeProofConfig {
     ...(input.agentClaim === undefined ? {} : { agentClaim: input.agentClaim }),
     changed: parseSignalPatch(input.changed),
     associations,
+    buildDefinitions,
     builds: list("builds", 32),
     targetCases: list("targetCases", 250),
     ...(cells ? { cells } : {}),
@@ -484,7 +502,11 @@ export async function runVerifyChangeCommand(
       ...(config.agentClaim === undefined ? {} : { agentClaim: config.agentClaim }),
       policy: config.policy,
       ...(plan.selection.targetCases.length
-        ? { targetIds: plan.selection.targetCases.map(({ id }) => id) }
+        ? {
+            targetIds: plan.selection.targetCases.map(
+              ({ executionTarget }) => executionTarget.targetId,
+            ),
+          }
         : {}),
       ...(plan.builds.length ? { buildIds: plan.builds.map(({ id }) => id) } : {}),
     };

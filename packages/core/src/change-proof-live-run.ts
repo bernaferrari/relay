@@ -17,6 +17,7 @@ import type { PersistedRun } from "./runs.js";
 import { analyzeTracePack, exportTracePack } from "./trace-pack.js";
 import { canonicalSha256 } from "./canonical-json.js";
 import { compileExecutionRisk } from "./execution-risk-compiler.js";
+import { classifyRunOutcome } from "./outcomes.js";
 
 export type ChangeProofRunCase = Readonly<{
   cellId: string;
@@ -487,17 +488,32 @@ export async function changeProofCaseResultFromPersistedRun(input: {
       : "reconciled";
   const evidenceComplete = pack.completeness.status === "complete";
   const cleanup = cleanupOutcome(run, cell.cleanupRequired);
+  const classifiedOutcome = classifyRunOutcome({
+    status: run.status,
+    ...(run.error ? { error: run.error } : {}),
+    ...(run.errorCode ? { errorCode: run.errorCode } : {}),
+    ...(run.review ? { review: run.review } : {}),
+  });
   const infrastructureFailure =
     run.outcome === "harness-failure" &&
     (run.failureCategory === "environment" || run.failureCategory === "target-state");
+  const successfulTerminalRun =
+    (run.status === "ok" || run.status === "healed") &&
+    !run.error &&
+    !run.errorCode &&
+    (run.outcome === undefined || run.outcome === "passed") &&
+    classifiedOutcome.outcome === "passed";
   const outcome: ChangeProofCaseResult["outcome"] =
-    analysis.historicalVerdict === "failed" || run.outcome === "product-failure"
+    analysis.historicalVerdict === "failed" ||
+    run.outcome === "product-failure" ||
+    classifiedOutcome.outcome === "product-failure"
       ? "rejected"
       : infrastructureFailure
         ? "infrastructure-failure"
         : run.review?.status === "pending"
           ? "needs-review"
           : analysis.historicalVerdict === "proved" &&
+              successfulTerminalRun &&
               evidenceComplete &&
               selectorResolution === "deterministic" &&
               inputOutcome === "reconciled" &&

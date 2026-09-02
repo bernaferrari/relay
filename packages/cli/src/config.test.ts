@@ -204,6 +204,7 @@ test("every friendly command path parses to its descriptor operation", () => {
       const confirmed = [
         "app-map.scroll-surface.origin.review",
         "app-map.scroll-surface.origin.revoke",
+        "proof.setup.apply",
         "proof.plan.approve",
         "proof.cancel",
       ].includes(descriptor.operationId);

@@ -123,6 +123,8 @@ test("preview runs only the explicit command and returns exact reviewable policy
 
   assert.deepEqual(calls, [{ executable: "pnpm", args: ["run", "build:android"] }]);
   assert.equal(preview.baseRef, "origin/main");
+  const { previewDigest, ...unsignedPreview } = preview;
+  assert.equal(previewDigest, canonicalSha256(unsignedPreview));
   assert.equal(preview.testedSha, testedSha);
   assert.equal(preview.policy.document.builds[0]?.artifactDigest, preview.artifact.digest);
   assert.equal(preview.policy.document.builds[0]?.sourceSha, testedSha);
@@ -316,6 +318,7 @@ test("setup previews, atomically registers, and prepares reviewed Android and we
 
   const batches: string[][] = [];
   let preparedIds: readonly string[] | undefined;
+  let preparedBaseRef: string | undefined;
   const result = await applyProofSetup({
     projectId: "relay",
     root,
@@ -329,11 +332,13 @@ test("setup previews, atomically registers, and prepares reviewed Android and we
     },
     prepare: async ({ request }) => {
       preparedIds = request.buildIds;
+      preparedBaseRef = request.baseRef;
       return { plan: { proof: digest } as never, blockers: [] };
     },
   });
 
   assert.deepEqual(preparedIds, ["android-release", "web-preview"]);
+  assert.equal(preparedBaseRef, "origin/main");
   assert.deepEqual(batches, [
     ["android-release:uploaded", "web-preview:uploaded"],
     ["android-release:ready", "web-preview:ready"],

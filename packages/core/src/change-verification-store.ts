@@ -1,6 +1,7 @@
 import {
   changeMergeBaseSha,
   changeTestedSha,
+  materializeChangeRef,
   type ChangeVerification,
   type ChangeVerificationDecision,
   type ChangeVerificationMutation,
@@ -16,6 +17,7 @@ import {
   providerProgressCheckForStoredChangeProof,
 } from "./change-proof-decision.js";
 import { enqueueChangeProofPublicationOutboxInStore } from "./change-proof-publication-outbox.js";
+import { canonicalSha256 } from "./canonical-json.js";
 
 export type ChangeProofPublicationRequest = {
   provider: "github";
@@ -520,14 +522,20 @@ export async function supersedeChangeVerification(
     // callers represented the same continuation as baseSha/mergeBaseSha.
     const replacementPreviousSha =
       input.replacement.change.previousHeadSha ?? changeMergeBaseSha(input.replacement.change);
+    const replacementTestedSha = changeTestedSha(input.replacement.change);
+    const repeatsUncertainRevision =
+      (current.state === "needs-review" || current.state === "insufficient-evidence") &&
+      replacementTestedSha === priorTestedSha &&
+      canonicalSha256(materializeChangeRef(input.replacement.change)) ===
+        canonicalSha256(current.change);
     if (
       input.replacement.change.repository !== current.change.repository ||
-      replacementPreviousSha !== priorTestedSha ||
-      changeTestedSha(input.replacement.change) === priorTestedSha
+      (replacementPreviousSha !== priorTestedSha && !repeatsUncertainRevision) ||
+      (replacementTestedSha === priorTestedSha && !repeatsUncertainRevision)
     ) {
       throw new ChangeVerificationConflictError(
         "PROOF_IMMUTABLE",
-        "a replacement must continue the same repository from the exact prior head",
+        "a replacement must continue the same repository from the exact prior head; only an uncertain or insufficient Proof may repeat that tested revision",
       );
     }
     const replacement = initialProof({

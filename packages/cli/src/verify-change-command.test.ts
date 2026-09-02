@@ -39,6 +39,21 @@ function reviewedConfig() {
         },
       },
     ],
+    buildDefinitions: [
+      {
+        id: "web-build",
+        name: "Web build",
+        platform: "web" as const,
+        command: { executable: "pnpm", args: ["run", "build:web"] },
+        artifactPath: "dist",
+        configuration: "production",
+        environmentRevision: "fixture-v1",
+        webDeployment: {
+          url: "https://preview.example.test",
+          deploymentDigest: `sha256:${"c".repeat(64)}`,
+        },
+      },
+    ],
     builds: [],
     targetCases: [],
   };
@@ -430,7 +445,7 @@ test("verify-change delegates the complete Proof decision to one server-owned pr
   assert.deepEqual(calls[0]?.input, {
     baseRef: "main",
     policy: VERIFY_CHANGE_POLICY,
-    targetIds: ["local-browser-ar"],
+    targetIds: ["browser-1"],
     buildIds: ["web-build"],
   });
   assert.deepEqual(calls.at(-1)?.input, { proofId: "proof-live-cli", wait: true });

@@ -428,7 +428,9 @@ function applyProofFlags(
   }
 
   const requiresConfirmation =
-    operationId === "proof.plan.approve" || operationId === "proof.cancel";
+    operationId === "proof.setup.apply" ||
+    operationId === "proof.plan.approve" ||
+    operationId === "proof.cancel";
   if (requiresConfirmation && !tokens.switches.has("--confirm")) {
     throw new UsageError(`${operationId} requires --confirm`);
   }

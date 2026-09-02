@@ -664,7 +664,10 @@ export async function applyProofSetup(input: {
     );
     prepared = await (input.prepare ?? prepareCurrentChangeVerification)({
       projectId: input.projectId,
-      request: { buildIds: registeredBuilds.map(({ id }) => id) },
+      request: {
+        baseRef: preview.baseRef,
+        buildIds: registeredBuilds.map(({ id }) => id),
+      },
     });
   } catch (error) {
     const rollbackErrors: unknown[] = [];

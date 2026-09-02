@@ -16,6 +16,14 @@ describe("classifyRunOutcome", () => {
       classifyRunOutcome({ status: "error", error: "expect-screen: reached a different screen" }),
       { outcome: "product-failure", failureCategory: "deterministic-assertion" },
     );
+    assert.deepEqual(
+      classifyRunOutcome({
+        status: "error",
+        error:
+          "layout assertion: identifier description overlaps identifier primary-action by 240×22 px",
+      }),
+      { outcome: "product-failure", failureCategory: "deterministic-assertion" },
+    );
   });
 
   it("keeps infrastructure causal when lower layers also report assertion text", () => {

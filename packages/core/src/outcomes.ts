@@ -44,7 +44,7 @@ export function classifyRunOutcome(input: {
   if (/visual assertion/.test(message)) {
     return { outcome: "product-failure", failureCategory: "visual-assertion" };
   }
-  if (/content assertion|expect(?:-screen)?:/.test(message)) {
+  if (/content assertion|expect(?:-screen)?:|layout assertion:.*\boverlaps\b/.test(message)) {
     return { outcome: "product-failure", failureCategory: "deterministic-assertion" };
   }
   return { outcome: "harness-failure", failureCategory: "action" };

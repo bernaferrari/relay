@@ -475,6 +475,43 @@ test("persisted Run projection derives rejection and evidence without client ver
   );
 });
 
+test("persisted Run projection rejects a deterministic layout failure even when legacy classification called it an action failure", async () => {
+  const run = passedPersistedRun();
+  run.status = "error";
+  run.outcome = "harness-failure";
+  run.failureCategory = "action";
+  run.error =
+    "layout assertion: identifier description overlaps identifier primary-action by 240×22 px";
+  const projected = await changeProofCaseResultFromPersistedRun({ proof: proof(), run });
+  assert.equal(projected.outcome, "rejected");
+  assert.match(projected.failure?.summary ?? "", /layout assertion/u);
+});
+
+test("persisted Run projection never upgrades an unsuccessful Run from historical evidence", async () => {
+  const genericError = passedPersistedRun();
+  genericError.status = "error";
+  genericError.outcome = "harness-failure";
+  genericError.failureCategory = "action";
+  genericError.error = "The action failed for an unclassified reason.";
+
+  const cancelled = passedPersistedRun();
+  cancelled.status = "cancelled";
+  cancelled.outcome = "cancelled";
+  cancelled.errorCode = "CANCELLED";
+
+  const contradictoryError = passedPersistedRun();
+  contradictoryError.error = "A persisted error contradicts the successful status.";
+
+  const contradictoryOutcome = passedPersistedRun();
+  contradictoryOutcome.outcome = "harness-failure";
+  contradictoryOutcome.failureCategory = "action";
+
+  for (const run of [genericError, cancelled, contradictoryError, contradictoryOutcome]) {
+    const projected = await changeProofCaseResultFromPersistedRun({ proof: proof(), run });
+    assert.notEqual(projected.outcome, "passed");
+  }
+});
+
 test("persisted Run projection accepts complete recorded selector proof", async () => {
   const projected = await changeProofCaseResultFromPersistedRun({
     proof: proof(),

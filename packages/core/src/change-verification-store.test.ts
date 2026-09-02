@@ -491,6 +491,122 @@ test("stale supersession rolls back the replacement Proof atomically", async () 
   });
 });
 
+test("uncertain Proofs can create a new attempt for the same exact tested revision", async () => {
+  await withStateRoot(async () => {
+    const created = await createChangeVerification(
+      createInput({ builds: buildsFor(), selection: selection() }),
+    );
+    const ready = await advanceChangeVerification({
+      ...scope,
+      proofId: created.id,
+      expectedVersion: created.version,
+      state: "ready",
+      actorId: "human:reviewer",
+      requestId: "request-retry-approve",
+      requestDigest: digest,
+      action: "approve-plan",
+      at: 200,
+      planApproval: planApproval(),
+    });
+    const uncertain = await advanceChangeVerification({
+      ...scope,
+      proofId: ready.id,
+      expectedVersion: ready.version,
+      state: "needs-review",
+      actorId: "agent:relay",
+      requestId: "request-retry-uncertain",
+      requestDigest: digest,
+      action: "record-decision",
+      at: 300,
+    });
+
+    const result = await supersedeChangeVerification({
+      ...scope,
+      proofId: uncertain.id,
+      expectedVersion: uncertain.version,
+      actorId: "human:reviewer",
+      requestId: "request-retry-same-head",
+      requestDigest: digest,
+      at: 400,
+      replacement: createInput({
+        id: "proof-same-head-retry",
+        change: createInput().change,
+        builds: buildsFor(),
+        selection: selection(),
+        actorId: "human:reviewer",
+        at: 400,
+      }),
+    });
+
+    assert.equal(result.previous.state, "superseded");
+    assert.equal(result.replacement.change.testedSha, headSha);
+    assert.deepEqual(result.replacement.change, uncertain.change);
+  });
+});
+
+test("a rejected Proof cannot retry without a new tested revision", async () => {
+  await withStateRoot(async () => {
+    const created = await createChangeVerification(
+      createInput({ builds: buildsFor(), selection: selection() }),
+    );
+    const ready = await advanceChangeVerification({
+      ...scope,
+      proofId: created.id,
+      expectedVersion: created.version,
+      state: "ready",
+      actorId: "human:reviewer",
+      requestId: "request-rejected-approve",
+      requestDigest: digest,
+      action: "approve-plan",
+      at: 150,
+      planApproval: planApproval(),
+    });
+    const running = await advanceChangeVerification({
+      ...scope,
+      proofId: ready.id,
+      expectedVersion: ready.version,
+      state: "running-pilot",
+      actorId: "agent:relay",
+      requestId: "request-rejected-pilot",
+      requestDigest: digest,
+      action: "start-pilot",
+      at: 175,
+    });
+    const rejected = await advanceChangeVerification({
+      ...scope,
+      proofId: running.id,
+      expectedVersion: running.version,
+      state: "rejected",
+      actorId: "agent:relay",
+      requestId: "request-rejected",
+      requestDigest: digest,
+      action: "record-decision",
+      at: 200,
+    });
+
+    await assert.rejects(
+      supersedeChangeVerification({
+        ...scope,
+        proofId: rejected.id,
+        expectedVersion: rejected.version,
+        actorId: "human:reviewer",
+        requestId: "request-rejected-same-head",
+        requestDigest: digest,
+        at: 300,
+        replacement: createInput({
+          id: "forbidden-same-head-retry",
+          change: createInput().change,
+          builds: buildsFor(),
+          actorId: "human:reviewer",
+          at: 300,
+        }),
+      }),
+      (error) =>
+        error instanceof ChangeVerificationConflictError && error.code === "PROOF_IMMUTABLE",
+    );
+  });
+});
+
 test("active Proofs cannot be superseded into a competing affected-case rerun", async () => {
   await withStateRoot(async () => {
     const created = await createChangeVerification(
