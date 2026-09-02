@@ -1,5 +1,8 @@
+import path from 'node:path';
 import { beforeEach, expect, test, vi } from 'vitest';
+import type { SnapshotRuntimeAcquiredResult } from '@agent-device/contracts/interactor-types';
 import type { DeviceInfo } from '@agent-device/kernel/device';
+import { eagerClosureOf } from '../__tests__/eager-import-closure.fixtures.ts';
 
 const { captureLinuxSurfaceSnapshot, captureMacOsSurfaceSnapshot } = vi.hoisted(() => ({
   captureLinuxSurfaceSnapshot: vi.fn(),
@@ -36,6 +39,11 @@ function createHost() {
     macos: captureMacOsSurfaceSnapshot,
   });
 }
+
+test('desktop snapshot host keeps iOS presentation outside its eager import closure', () => {
+  const closure = eagerClosureOf(path.join(import.meta.dirname, 'snapshot-desktop-surface.ts'));
+  expect(closure).not.toContain(path.join(import.meta.dirname, 'ios-snapshot-runtime.ts'));
+});
 
 test('Apple snapshot host preserves non-app macOS surface capture and menubar identity', async () => {
   captureMacOsSurfaceSnapshot.mockResolvedValue({
@@ -101,4 +109,51 @@ test('Linux snapshot host preserves interactive ancestor projection before depth
       },
     ],
   });
+});
+
+test('iOS snapshot host presents provider facts and keeps raw truncation evidence explicit', async () => {
+  const acquired: SnapshotRuntimeAcquiredResult = {
+    stage: 'acquired',
+    acquisition: {
+      producer: 'limrun-ios-tree',
+      intent: 'full',
+      nodes: [
+        {
+          index: 0,
+          depth: 0,
+          type: 'Application',
+          label: 'App',
+          rect: { x: 0, y: 0, width: 320, height: 240 },
+        },
+        {
+          index: 1,
+          depth: 1,
+          parentIndex: 0,
+          type: 'Button',
+          label: 'Continue',
+          rect: { x: 16, y: 16, width: 120, height: 40 },
+          hittable: true,
+        },
+      ],
+      viewport: { kind: 'derived', rect: { x: 0, y: 0, width: 320, height: 240 } },
+      lineage: { targetId: 'limrun-instance' },
+      residue: [
+        { kind: 'unavailable-fact', fact: 'hittability' },
+        { kind: 'unavailable-fact', fact: 'acquisition-depth' },
+        { kind: 'unavailable-fact', fact: 'truncation' },
+      ],
+    },
+  };
+
+  const host = createHost();
+  const regular = await host.presentIosAcquisition(acquired, {});
+  expect(regular).toMatchObject({ backend: 'xctest', producer: 'limrun-ios-tree' });
+  expect(regular.nodes?.map((node) => node.label)).toEqual(['App', 'Continue']);
+  expect(regular.nodes?.[1]).not.toHaveProperty('hittable');
+  expect(regular.warnings).toHaveLength(3);
+  expect(regular.truncated).toBeUndefined();
+
+  const raw = await host.presentIosAcquisition(acquired, { raw: true });
+  expect(raw.nodes?.[1]).toHaveProperty('hittable', true);
+  expect(raw.truncated).toBeUndefined();
 });

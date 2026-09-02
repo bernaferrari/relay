@@ -6,87 +6,10 @@ import type {
   IosSnapshotInput,
   IosSnapshotPlan,
   IosSnapshotPresentationKey,
-  IosSnapshotProducer,
   IosSnapshotProducerCapabilities,
   IosSnapshotRequest,
   IosSnapshotRequestInput,
 } from '@agent-device/contracts/ios-snapshot';
-
-const IOS_SNAPSHOT_PRODUCER_CAPABILITY_VALUES = {
-  'apple-runner': {
-    producer: 'apple-runner',
-    stage: 'presented',
-    acquisitionDepth: {
-      rawTraversal: { kind: 'not-applicable' },
-      regularPresented: { kind: 'not-applicable' },
-    },
-    scopeCompleteness: 'complete',
-    interactiveQueryCompleteness: 'complete',
-    viewportEvidence: 'available',
-    hittabilityEvidence: 'available',
-    presentationOwner: 'ios-snapshot-engine',
-  },
-  'simulator-ax-bridge': {
-    producer: 'simulator-ax-bridge',
-    stage: 'acquired',
-    acquisitionDepth: {
-      rawTraversal: { kind: 'complete' },
-      regularPresented: { kind: 'incomplete' },
-    },
-    scopeCompleteness: 'incomplete',
-    interactiveQueryCompleteness: 'incomplete',
-    viewportEvidence: 'available',
-    hittabilityEvidence: 'available',
-    presentationOwner: 'snapshot-state',
-  },
-  'appium-source': {
-    producer: 'appium-source',
-    stage: 'acquired',
-    acquisitionDepth: {
-      rawTraversal: { kind: 'incomplete' },
-      regularPresented: { kind: 'incomplete' },
-    },
-    scopeCompleteness: 'incomplete',
-    interactiveQueryCompleteness: 'incomplete',
-    viewportEvidence: 'available',
-    hittabilityEvidence: 'unavailable',
-    presentationOwner: 'ios-snapshot-engine',
-  },
-  'limrun-ios-tree': {
-    producer: 'limrun-ios-tree',
-    stage: 'acquired',
-    acquisitionDepth: {
-      rawTraversal: { kind: 'incomplete' },
-      regularPresented: { kind: 'incomplete' },
-    },
-    scopeCompleteness: 'incomplete',
-    interactiveQueryCompleteness: 'incomplete',
-    viewportEvidence: 'available',
-    hittabilityEvidence: 'unavailable',
-    presentationOwner: 'ios-snapshot-engine',
-  },
-} as const satisfies Record<IosSnapshotProducer, IosSnapshotProducerCapabilities>;
-
-export const IOS_SNAPSHOT_PRODUCER_CAPABILITIES: Readonly<
-  Record<IosSnapshotProducer, IosSnapshotProducerCapabilities>
-> = Object.freeze(IOS_SNAPSHOT_PRODUCER_CAPABILITY_VALUES);
-
-export function deriveIosSnapshotCapabilityResidue(
-  producer: IosSnapshotProducerCapabilities,
-): readonly IosAcquisitionResidue[] {
-  const residue: IosAcquisitionResidue[] = [];
-  if (producer.hittabilityEvidence === 'unavailable') {
-    residue.push({ kind: 'unavailable-fact', fact: 'hittability' });
-  }
-  if (
-    producer.stage === 'acquired' &&
-    (producer.acquisitionDepth.rawTraversal.kind === 'incomplete' ||
-      producer.acquisitionDepth.regularPresented.kind === 'incomplete')
-  ) {
-    residue.push({ kind: 'unavailable-fact', fact: 'acquisition-depth' });
-  }
-  return Object.freeze(residue);
-}
 
 export function createIosSnapshotRequest(input: IosSnapshotRequestInput = {}): IosSnapshotRequest {
   return Object.freeze({
@@ -149,6 +72,7 @@ export function planIosSnapshot(
       interactiveQuery: producer.interactiveQueryCompleteness,
       viewport: producer.viewportEvidence,
       hittability: producer.hittabilityEvidence,
+      truncation: producer.truncationEvidence,
     }),
   });
 }

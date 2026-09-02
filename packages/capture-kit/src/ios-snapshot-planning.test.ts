@@ -10,15 +10,17 @@ import type {
   IosSnapshotRequestInput,
 } from '@agent-device/contracts/ios-snapshot';
 import {
-  IOS_SNAPSHOT_PRODUCER_CAPABILITIES,
   areIosSnapshotComparisonIdentitiesEqual,
   buildIosSnapshotComparisonIdentity,
   buildIosSnapshotPresentationKey,
   createIosSnapshotRequest,
   deriveIosCaptureHint,
-  deriveIosSnapshotCapabilityResidue,
   planIosSnapshot,
 } from '@agent-device/capture-kit/ios-snapshot-planning';
+import {
+  createIosSnapshotAcquisition,
+  IOS_SNAPSHOT_PRODUCER_CAPABILITIES,
+} from '@agent-device/capture-kit/ios-snapshot-acquisition';
 
 type CaptureHintFixture = Readonly<{
   name: string;
@@ -145,6 +147,7 @@ test('presented producers cannot claim acquisition narrowing', () => {
     interactiveQuery: 'complete',
     viewport: 'available',
     hittability: 'available',
+    truncation: 'available',
   });
 });
 
@@ -156,12 +159,18 @@ test('Appium source plan carries its viewport evidence capability', () => {
   assert.equal(plan.evidence.viewport, 'available');
 });
 
-test('capability residue derives unavailable Appium facts from the registry', () => {
+test('acquisition derives unavailable Appium facts from the registry', () => {
   assert.deepEqual(
-    deriveIosSnapshotCapabilityResidue(IOS_SNAPSHOT_PRODUCER_CAPABILITIES['appium-source']),
+    createIosSnapshotAcquisition({
+      producer: 'appium-source',
+      nodes: [],
+      viewport: { kind: 'reported', rect: { x: 0, y: 0, width: 1, height: 1 } },
+      lineage: {},
+    }).acquisition.residue,
     [
       { kind: 'unavailable-fact', fact: 'hittability' },
       { kind: 'unavailable-fact', fact: 'acquisition-depth' },
+      { kind: 'unavailable-fact', fact: 'truncation' },
     ],
   );
 });
@@ -242,6 +251,7 @@ function acquiredProducer(
     interactiveQueryCompleteness: 'incomplete',
     viewportEvidence: 'available',
     hittabilityEvidence: 'available',
+    truncationEvidence: 'available',
     presentationOwner: 'snapshot-state',
     ...overrides,
   };
