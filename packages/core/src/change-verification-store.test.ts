@@ -463,6 +463,113 @@ test("a repaired head creates a new Proof and supersedes without rewriting histo
   });
 });
 
+test("changed-head supersession cannot switch the source-change association", async () => {
+  await withStateRoot(async () => {
+    const associatedChange: ChangeVerification["change"] = {
+      ...createInput().change,
+      repositoryId: "github-repository-42",
+      provider: "github",
+      targetBranch: "main",
+    };
+    const created = await createChangeVerification(
+      createInput({
+        change: associatedChange,
+        builds: buildsFor(),
+        selection: selection(),
+      }),
+    );
+    const ready = await advanceChangeVerification({
+      ...scope,
+      proofId: created.id,
+      expectedVersion: created.version,
+      state: "ready",
+      actorId: "human:reviewer",
+      requestId: "request-association-approve",
+      requestDigest: digest,
+      action: "approve-plan",
+      at: 200,
+      planApproval: planApproval(),
+    });
+    const running = await advanceChangeVerification({
+      ...scope,
+      proofId: ready.id,
+      expectedVersion: ready.version,
+      state: "running-pilot",
+      actorId: "agent:relay",
+      requestId: "request-association-pilot",
+      requestDigest: digest,
+      action: "start-pilot",
+      at: 300,
+    });
+    const rejected = await advanceChangeVerification({
+      ...scope,
+      proofId: running.id,
+      expectedVersion: running.version,
+      state: "rejected",
+      actorId: "agent:relay",
+      requestId: "request-association-reject",
+      requestDigest: digest,
+      action: "record-decision",
+      at: 400,
+    });
+    const continuedChange: ChangeVerification["change"] = {
+      ...rejected.change,
+      headSha: repairedHeadSha,
+      requestedHeadSha: repairedHeadSha,
+      testedSha: repairedHeadSha,
+      previousHeadSha: headSha,
+    };
+    const mismatches: ReadonlyArray<{
+      name: string;
+      change: ChangeVerification["change"];
+    }> = [
+      { name: "pull-request", change: { ...continuedChange, pullRequest: 185 } },
+      {
+        name: "repository-id",
+        change: { ...continuedChange, repositoryId: "github-repository-99" },
+      },
+      { name: "provider", change: { ...continuedChange, provider: "gitlab" } },
+      { name: "target-branch", change: { ...continuedChange, targetBranch: "release" } },
+      {
+        name: "agent-claim",
+        change: {
+          ...continuedChange,
+          agentClaim: {
+            ...continuedChange.agentClaim!,
+            summary: "A materially different change claim",
+          },
+        },
+      },
+    ];
+
+    for (const [index, mismatch] of mismatches.entries()) {
+      const replacementId = `forbidden-${mismatch.name}-replacement`;
+      await assert.rejects(
+        supersedeChangeVerification({
+          ...scope,
+          proofId: rejected.id,
+          expectedVersion: rejected.version,
+          actorId: "agent:relay",
+          requestId: `request-association-${index}`,
+          requestDigest: digest,
+          at: 500 + index,
+          replacement: createInput({
+            id: replacementId,
+            change: mismatch.change,
+            builds: buildsFor(repairedHeadSha, repairedDigest),
+            actorId: "agent:coder",
+            at: 500 + index,
+          }),
+        }),
+        (error) =>
+          error instanceof ChangeVerificationConflictError && error.code === "PROOF_IMMUTABLE",
+      );
+      assert.equal(await readChangeVerification(scope, replacementId), undefined);
+      assert.equal((await readChangeVerification(scope, rejected.id))?.state, "rejected");
+    }
+  });
+});
+
 test("stale supersession rolls back the replacement Proof atomically", async () => {
   await withStateRoot(async () => {
     const created = await createChangeVerification(createInput());

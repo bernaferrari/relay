@@ -100,6 +100,20 @@ export class ChangeVerificationNotFoundError extends Error {
   }
 }
 
+function changeAssociationDigest(change: ChangeVerification["change"]): string {
+  const canonical = materializeChangeRef(change);
+  return canonicalSha256({
+    repository: canonical.repository,
+    pullRequest: canonical.pullRequest ?? null,
+    repositoryId: canonical.repositoryId ?? null,
+    provider: canonical.provider ?? null,
+    targetBranch: canonical.targetBranch ?? null,
+    testedKind: canonical.testedKind,
+    mergeGroupId: canonical.mergeGroupId ?? null,
+    agentClaim: canonical.agentClaim ?? null,
+  });
+}
+
 const EMPTY_SELECTION: ChangeVerification["selection"] = {
   affectedJourneys: [],
   targetCases: [],
@@ -523,19 +537,21 @@ export async function supersedeChangeVerification(
     const replacementPreviousSha =
       input.replacement.change.previousHeadSha ?? changeMergeBaseSha(input.replacement.change);
     const replacementTestedSha = changeTestedSha(input.replacement.change);
+    const replacementChange = materializeChangeRef(input.replacement.change);
+    const continuesSameChange =
+      changeAssociationDigest(replacementChange) === changeAssociationDigest(current.change);
     const repeatsUncertainRevision =
       (current.state === "needs-review" || current.state === "insufficient-evidence") &&
       replacementTestedSha === priorTestedSha &&
-      canonicalSha256(materializeChangeRef(input.replacement.change)) ===
-        canonicalSha256(current.change);
+      canonicalSha256(replacementChange) === canonicalSha256(current.change);
     if (
-      input.replacement.change.repository !== current.change.repository ||
+      !continuesSameChange ||
       (replacementPreviousSha !== priorTestedSha && !repeatsUncertainRevision) ||
       (replacementTestedSha === priorTestedSha && !repeatsUncertainRevision)
     ) {
       throw new ChangeVerificationConflictError(
         "PROOF_IMMUTABLE",
-        "a replacement must continue the same repository from the exact prior head; only an uncertain or insufficient Proof may repeat that tested revision",
+        "a replacement must preserve the source-change association and continue from the exact prior head; only an uncertain or insufficient Proof may repeat that tested revision",
       );
     }
     const replacement = initialProof({
