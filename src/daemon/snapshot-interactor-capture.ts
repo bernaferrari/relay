@@ -21,5 +21,8 @@ export async function captureSnapshotWithInteractor(params: {
 }): Promise<SnapshotResult> {
   const { getInteractor } = await import('../core/interactors.ts');
   const interactor = await getInteractor(params.device, params.runnerContext);
-  return await interactor.snapshot(params.options);
+  const result = await interactor.snapshot(params.options);
+  if (!('stage' in result)) return result;
+  const { presentIosSnapshotAcquisition } = await import('../snapshot/ios-snapshot-runtime.ts');
+  return await presentIosSnapshotAcquisition(result, params.options);
 }

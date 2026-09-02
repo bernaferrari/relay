@@ -21,7 +21,14 @@ export function createSnapshotRuntimeHost(loaders: SnapshotSurfaceLoaders): Snap
     requireMacOsSurfaceDevice(device);
     return await loaders.macos(options, signal);
   };
-  return Object.freeze({ captureSurface });
+  const presentIosAcquisition: SnapshotRuntimeHost['presentIosAcquisition'] = async (
+    input,
+    options,
+  ) => {
+    const { presentIosSnapshotAcquisition } = await import('./ios-snapshot-runtime.ts');
+    return await presentIosSnapshotAcquisition(input, options);
+  };
+  return Object.freeze({ captureSurface, presentIosAcquisition });
 }
 
 function requireMacOsSurfaceDevice(device: DeviceInfo): void {
