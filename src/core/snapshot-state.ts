@@ -54,7 +54,7 @@ export function buildSnapshotState(
   const normalizedNodes = normalizeSnapshotTree(
     snapshotRaw ? backendAnnotatedNodes : pruneGroupNodes(backendAnnotatedNodes),
   );
-  const presentableNodes = shouldPresentIosInteractiveSnapshot(data, flags)
+  const presentableNodes = shouldPresentLegacyIosInteractiveSnapshot(data, flags)
     ? presentIosInteractiveSnapshot(normalizedNodes)
     : normalizedNodes;
   const scopedNodes =
@@ -120,8 +120,8 @@ function backendScopesAfterWire(backend: SnapshotBackend | undefined): boolean {
   return backend !== 'macos-helper' && backend !== 'android' && backend !== 'xctest';
 }
 
-function shouldPresentIosInteractiveSnapshot(
-  provenance: SnapshotStateProvenance,
+function shouldPresentLegacyIosInteractiveSnapshot(
+  provenance: object & SnapshotStateProvenance,
   flags:
     | (Pick<CommandFlags, 'snapshotDepth' | 'snapshotInteractiveOnly' | 'snapshotRaw'> &
         Partial<Pick<CommandFlags, 'snapshotScope'>>)
@@ -130,6 +130,7 @@ function shouldPresentIosInteractiveSnapshot(
   return (
     provenance.backend === 'xctest' &&
     iosSnapshotPresentationStage(provenance) === 'acquired' &&
+    iosSnapshotPresentationOwner(provenance) !== 'ios-snapshot-engine' &&
     flags?.snapshotInteractiveOnly === true &&
     flags.snapshotRaw !== true
   );
@@ -140,9 +141,20 @@ function iosSnapshotPresentationStage(
 ): 'acquired' | 'presented' | undefined {
   if (provenance.backend !== 'xctest') return undefined;
   if (provenance.producer === undefined) return 'acquired';
+  return iosSnapshotCapabilities(provenance)?.stage;
+}
+
+function iosSnapshotPresentationOwner(
+  provenance: SnapshotStateProvenance,
+): 'ios-snapshot-engine' | 'snapshot-state' | undefined {
+  return iosSnapshotCapabilities(provenance)?.presentationOwner;
+}
+
+function iosSnapshotCapabilities(provenance: SnapshotStateProvenance) {
+  if (provenance.backend !== 'xctest' || provenance.producer === undefined) return undefined;
   return IOS_SNAPSHOT_PRODUCER_CAPABILITIES[
     provenance.producer as 'apple-runner' | 'appium-source' | 'limrun-ios-tree'
-  ].stage;
+  ];
 }
 
 function isAndroidComparisonSafeSnapshot(
