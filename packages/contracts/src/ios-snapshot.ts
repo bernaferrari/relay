@@ -72,7 +72,8 @@ export type IosSnapshotFact =
   | 'interactive-query'
   | 'viewport'
   | 'hittability'
-  | 'generation';
+  | 'generation'
+  | 'truncation';
 
 type IosSnapshotProducerCapabilityFacts = Readonly<{
   acquisitionDepth: IosSnapshotAcquisitionDepthCapability;

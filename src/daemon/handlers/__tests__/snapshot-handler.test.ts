@@ -6,12 +6,10 @@ import {
   resetGetRuntimeFixture,
 } from '../../__tests__/interaction-get-runtime-fixture.ts';
 import fs from 'node:fs';
-import path from 'node:path';
 import { handleSnapshotCommands as handleProductionSnapshotCommands } from '../snapshot.ts';
 import { captureSnapshot } from '../snapshot-capture.ts';
 import { SessionStore } from '../../session-store.ts';
 import { setActiveProviderDeviceRuntimes } from '../../../provider-device-runtime.ts';
-import type { ProviderDeviceRuntime } from '@agent-device/contracts/device';
 import type { DaemonResponse, SessionState } from '../../types.ts';
 import { AppError } from '@agent-device/kernel/errors';
 import { platformResourceCleanup } from '../../../platform-runtime-resource-cleanup.ts';
@@ -20,7 +18,6 @@ import { buildInteractionSurfaceSignature } from '../../interaction-outcome-poli
 import { buildSnapshotPresentationKey } from '@agent-device/kernel/snapshot';
 import { snapshotCliOutput } from '../../../commands/capture/output.ts';
 import type { CaptureSnapshotResult } from '@agent-device/contracts/client';
-import { mkdtempForTestSync } from '../../../__tests__/test-utils/tmp-dir.ts';
 import {
   fixtureScreenshotCaptures,
   fixtureSettingsMutations,
@@ -28,6 +25,11 @@ import {
   snapshotRuntimeFixture,
 } from '../../__tests__/snapshot-runtime-fixture.ts';
 import type { BindDeviceRuntime } from '../../request-runtime-binding.ts';
+import {
+  makeProviderRuntimeOwning,
+  makeSession,
+  makeSessionStore,
+} from './snapshot-handler-fixture.ts';
 
 vi.mock('../snapshot-interactor-capture.ts', async () => {
   const fixture = await import('../../__tests__/legacy-snapshot-capture-fixture.ts');
@@ -74,15 +76,6 @@ function handleSnapshotCommands(
   });
 }
 
-function makeSessionStore(): SessionStore {
-  const root = mkdtempForTestSync('agent-device-snapshot-handler-');
-  return new SessionStore(path.join(root, 'sessions'));
-}
-
-type SessionExtra = Partial<SessionState>;
-function makeSession(name: string, d: SessionState['device'], extra?: SessionExtra): SessionState {
-  return { name, device: d, createdAt: Date.now(), actions: [], ...extra };
-}
 // An Apple wait runs inside an opened app: that bundle id is XCUITest's attach target, and
 // without one the plan asks for the without-active-app row local Apple refuses.
 const appAttach = (d: SessionState['device']): Partial<SessionState> =>
@@ -123,17 +116,6 @@ const providerIosDevice: SessionState['device'] = {
   target: 'mobile',
   booted: true,
 };
-
-function makeProviderRuntimeOwning(device: SessionState['device']): ProviderDeviceRuntime {
-  return {
-    provider: 'browserstack',
-    leaseLifecycle: {},
-    deviceInventoryProvider: async () => [device],
-    ownsDevice: (candidate) => candidate.id === device.id,
-    getInteractor: () => undefined,
-    shutdown: async () => undefined,
-  };
-}
 
 afterEach(() => {
   setActiveProviderDeviceRuntimes([]);

@@ -56,14 +56,14 @@ const IOS_SNAPSHOT_PRODUCER_CAPABILITY_VALUES = {
     producer: 'limrun-ios-tree',
     stage: 'acquired',
     acquisitionDepth: {
-      rawTraversal: { kind: 'complete' },
+      rawTraversal: { kind: 'incomplete' },
       regularPresented: { kind: 'incomplete' },
     },
     scopeCompleteness: 'incomplete',
     interactiveQueryCompleteness: 'incomplete',
     viewportEvidence: 'available',
     hittabilityEvidence: 'unavailable',
-    presentationOwner: 'snapshot-state',
+    presentationOwner: 'ios-snapshot-engine',
   },
 } as const satisfies Record<IosSnapshotProducer, IosSnapshotProducerCapabilities>;
 
