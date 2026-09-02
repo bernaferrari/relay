@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
-import type { Build } from "@relay/protocol";
+import type { Build, ProofBuildDefinition } from "@relay/protocol";
 import { ingestReviewedProofBuild } from "./proof-build-ingestion.js";
 
 const execFileAsync = promisify(execFile);
@@ -16,7 +16,8 @@ async function git(root: string, ...args: string[]): Promise<string> {
 }
 
 async function repository(input: {
-  command: { executable: string; args: string[] };
+  command?: { executable: string; args: string[] };
+  definition?: ProofBuildDefinition;
   artifactPath?: string;
   beforeCommit?: (root: string) => Promise<void>;
 }) {
@@ -27,11 +28,11 @@ async function repository(input: {
   await git(root, "config", "user.name", "Relay Test");
   await git(root, "remote", "add", "origin", "https://github.com/acme/app.git");
   await mkdir(join(root, ".relay"));
-  const definition = {
+  const definition: ProofBuildDefinition = input.definition ?? {
     id: "android-release",
     name: "Android release",
-    platform: "android" as const,
-    command: input.command,
+    platform: "android",
+    command: input.command!,
     artifactPath: input.artifactPath ?? "dist/app-release.apk",
     configuration: "android.release",
     environmentRevision: "fixture-v1",
@@ -96,6 +97,94 @@ test("ingests one reviewed build only from an isolated exact-SHA worktree", asyn
   }
 });
 
+test("ingests an exact iOS app bundle as retained directory evidence", async () => {
+  const fixture = await repository({
+    definition: {
+      id: "ios-release",
+      name: "iOS release",
+      platform: "ios",
+      command: {
+        executable: process.execPath,
+        args: [
+          "-e",
+          "require('fs').mkdirSync('dist/Relay.app',{recursive:true});require('fs').writeFileSync('dist/Relay.app/Info.plist','exact-ios-bundle')",
+        ],
+      },
+      artifactPath: "dist/Relay.app",
+      configuration: "ios.release",
+      environmentRevision: "xcode-fixture-v1",
+      applicationId: "com.acme.relay",
+    },
+  });
+  try {
+    const result = await ingestReviewedProofBuild({
+      projectId: "project-1",
+      repositoryRoot: fixture.root,
+      testedSha: fixture.sha,
+      definitionId: "ios-release",
+      stateRoot: fixture.stateRoot,
+      save: async (build) => ({ ...build, createdAt: 1, updatedAt: 1 }),
+    });
+
+    assert.equal(result.build.platform, "ios");
+    assert.equal(result.build.sourceSha, fixture.sha);
+    assert.equal(result.build.applicationId, "com.acme.relay");
+    assert.equal(
+      await readFile(join(result.build.sourceUrl!, "Info.plist"), "utf8"),
+      "exact-ios-bundle",
+    );
+    assert.equal(result.verificationBuild.artifactDigest, result.receipt.artifact.digest);
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
+test("binds a web Proof to provider deployment identity while retaining local output drift evidence", async () => {
+  const deploymentDigest = `sha256:${"d".repeat(64)}` as const;
+  const fixture = await repository({
+    definition: {
+      id: "web-release",
+      name: "Web release",
+      platform: "web",
+      command: {
+        executable: process.execPath,
+        args: [
+          "-e",
+          "require('fs').mkdirSync('dist/web',{recursive:true});require('fs').writeFileSync('dist/web/index.html','exact-web-output')",
+        ],
+      },
+      artifactPath: "dist/web",
+      configuration: "web.production",
+      environmentRevision: "browser-fixture-v1",
+      webDeployment: {
+        url: "https://deployments.example.test/relay/exact",
+        deploymentDigest,
+      },
+    },
+  });
+  try {
+    const result = await ingestReviewedProofBuild({
+      projectId: "project-1",
+      repositoryRoot: fixture.root,
+      testedSha: fixture.sha,
+      definitionId: "web-release",
+      stateRoot: fixture.stateRoot,
+      save: async (build) => ({ ...build, createdAt: 1, updatedAt: 1 }),
+    });
+
+    assert.equal(result.build.sourceUrl, "https://deployments.example.test/relay/exact");
+    assert.equal(result.build.deploymentDigest, deploymentDigest);
+    assert.equal(result.verificationBuild.artifactDigest, deploymentDigest);
+    assert.notEqual(result.receipt.artifact.digest, deploymentDigest);
+    assert.equal(
+      await readFile(join(result.receipt.artifact.storedPath, "index.html"), "utf8"),
+      "exact-web-output",
+    );
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
 test("fails closed on dirty or wrong-SHA source before running the reviewed command", async () => {
   const fixture = await repository({ command: artifactCommand });
   try {
@@ -121,6 +210,68 @@ test("fails closed on dirty or wrong-SHA source before running the reviewed comm
       }),
       /tested SHA must resolve to the exact commit/u,
     );
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
+test("a reviewed command failure never registers or retains a Build", async () => {
+  const fixture = await repository({
+    command: { executable: process.execPath, args: ["-e", "process.exit(17)"] },
+  });
+  try {
+    let saveCalls = 0;
+    await assert.rejects(
+      ingestReviewedProofBuild({
+        projectId: "project-1",
+        repositoryRoot: fixture.root,
+        testedSha: fixture.sha,
+        definitionId: "android-release",
+        stateRoot: fixture.stateRoot,
+        save: async (build) => {
+          saveCalls += 1;
+          return { ...build, createdAt: 1, updatedAt: 1 };
+        },
+      }),
+      /Command failed/u,
+    );
+    assert.equal(saveCalls, 0);
+    await assert.rejects(readFile(join(fixture.stateRoot, "builds")), /ENOENT|EISDIR/u);
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
+test("a build command that changes tracked source fails provenance before registration", async () => {
+  const fixture = await repository({
+    command: {
+      executable: process.execPath,
+      args: [
+        "-e",
+        "require('fs').writeFileSync('tracked-source.txt','drifted');require('fs').mkdirSync('dist',{recursive:true});require('fs').writeFileSync('dist/app-release.apk','artifact-from-drifted-source')",
+      ],
+    },
+    beforeCommit: async (root) => {
+      await writeFile(join(root, "tracked-source.txt"), "reviewed");
+    },
+  });
+  try {
+    let saveCalls = 0;
+    await assert.rejects(
+      ingestReviewedProofBuild({
+        projectId: "project-1",
+        repositoryRoot: fixture.root,
+        testedSha: fixture.sha,
+        definitionId: "android-release",
+        stateRoot: fixture.stateRoot,
+        save: async (build) => {
+          saveCalls += 1;
+          return { ...build, createdAt: 1, updatedAt: 1 };
+        },
+      }),
+      /modified tracked source files/u,
+    );
+    assert.equal(saveCalls, 0);
   } finally {
     await fixture.cleanup();
   }
