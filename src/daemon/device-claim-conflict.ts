@@ -4,7 +4,11 @@ import {
   type DeviceInfo,
 } from '@agent-device/kernel/device';
 import { AppError } from '@agent-device/kernel/errors';
+import { runtimeOwnerKey, type RuntimeOwnerRef } from '@agent-device/contracts/platform-runtime';
 import { shellQuoteIfNeeded } from '@agent-device/host-kit/command';
+import type { AllocatorHeldClaimAdmission } from './device-claim-allocator.ts';
+import { canonicalLocalDeviceKey } from './device-claim-paths.ts';
+import { deviceClaimIdentity } from './device-claims.ts';
 import {
   deviceClaimOwnerCannotRelease,
   deviceClaimRequiresStaleInspection,
@@ -28,6 +32,14 @@ const DEVICE_CLAIM_CONFLICT_REASONS = new Set<DeviceClaimConflictReason>([
 export function isDeviceClaimConflictReason(value: unknown): value is DeviceClaimConflictReason {
   return DEVICE_CLAIM_CONFLICT_REASONS.has(value as DeviceClaimConflictReason);
 }
+
+/**
+ * The reason of the allocator-held arm's refusal when no allocator-held claim
+ * exists. Deliberately not a {@link DeviceClaimConflictReason}: replay retries
+ * every conflict reason as infrastructure, and a managed identity that no
+ * allocator activated is a permanent condition, not a collision.
+ */
+export const ALLOCATOR_CLAIM_MISSING = 'allocator-claim-missing';
 
 export function buildDeviceClaimInspectionCommand(
   device: DeviceInfo,
@@ -102,7 +114,74 @@ export function buildDeviceClaimConflictError(
   device: DeviceInfo,
   conflict: InspectedDeviceClaim,
 ): DaemonResponse {
-  const error = deviceClaimConflictError(device, conflict);
+  return claimRefusalResponse(deviceClaimConflictError(device, conflict));
+}
+
+function allocatorClaimMissingError(device: DeviceInfo, owner: RuntimeOwnerRef): AppError {
+  return new AppError(
+    'COMMAND_FAILED',
+    `${publicPlatformString(device)} device ${device.id} is a managed identity with no allocator-held execution claim for this installation.`,
+    {
+      reason: ALLOCATOR_CLAIM_MISSING,
+      owner: runtimeOwnerKey(owner),
+      deviceKey: canonicalLocalDeviceKey(deviceClaimIdentity(device)),
+      retriable: false,
+      hint: 'A managed identity becomes executable only after its allocator activates it and this installation holds its allocator-held claim.',
+    },
+  );
+}
+
+function managedBindingRequiredError(device: DeviceInfo, owner: RuntimeOwnerRef): AppError {
+  return new AppError(
+    'COMMAND_FAILED',
+    'A managed local owner executes only under an exact-owner binding that carries a managed binding fence.',
+    {
+      reason: 'runtime-contract-invalid',
+      owner: runtimeOwnerKey(owner),
+      deviceKey: canonicalLocalDeviceKey(deviceClaimIdentity(device)),
+      retriable: false,
+    },
+  );
+}
+
+/** What a claim gate does about one verifier outcome. An admission carries no error to throw. */
+export type AllocatorHeldAdmissionDecision =
+  | Readonly<{ admitted: true }>
+  | Readonly<{ admitted: false; error: AppError }>;
+
+/**
+ * The single answer both claim gates read. The switch has no default and the return type
+ * excludes `undefined`, so an outcome the verifier learns to produce is a compile error here
+ * until this function answers it. That is why the decision is a value rather than an optional
+ * error: a gate asks whether the outcome was admitted, and an unanswered outcome cannot reach
+ * it as silence that reads like an admission.
+ */
+export function decideAllocatorHeldAdmission(
+  device: DeviceInfo,
+  owner: RuntimeOwnerRef,
+  outcome: AllocatorHeldClaimAdmission,
+): AllocatorHeldAdmissionDecision {
+  switch (outcome.status) {
+    case 'binding-invalid':
+      return { admitted: false, error: managedBindingRequiredError(device, owner) };
+    case 'missing':
+      return { admitted: false, error: allocatorClaimMissingError(device, owner) };
+    case 'conflict':
+      return { admitted: false, error: deviceClaimConflictError(device, outcome.conflict) };
+  }
+}
+
+/** `open` returns the allocator-held refusal as a response, exactly as it does the conflict. */
+export function buildAllocatorHeldRefusal(
+  device: DeviceInfo,
+  owner: RuntimeOwnerRef,
+  outcome: AllocatorHeldClaimAdmission,
+): DaemonResponse | undefined {
+  const decision = decideAllocatorHeldAdmission(device, owner, outcome);
+  return decision.admitted ? undefined : claimRefusalResponse(decision.error);
+}
+
+function claimRefusalResponse(error: AppError): DaemonResponse {
   const { hint, retriable, ...details } = error.details ?? {};
   return errorResponse(error.code, error.message, details, { hint, retriable });
 }
