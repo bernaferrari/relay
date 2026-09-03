@@ -151,13 +151,16 @@ pnpm relay proof prepare --json
 `inspect` reports package-script and local artifact candidates plus the saved Tests and currently
 observed targets. Candidates are never selected automatically. `preview` requires an explicit
 executable/argument vector, repository-relative mobile or web output, reviewed Test associations,
-and frozen target cases. Web setup additionally requires an immutable deployment URL and
-provider-reported deployment digest; Relay hashes local web output for drift, but never pretends a
-directory hash proves the deployed runtime. `preview` runs the command, hashes the exact output, and
-returns the complete policy without changing Relay state. `apply` accepts only that confirmed
-preview and fails if the Git head, artifact bytes, or prior policy changed; it then registers the
-revision-bound build, atomically writes `.relay/change-proof.json`, and compiles the canonical
-Verification Plan. A plan with an unmapped change or other coverage gap remains blocked for review.
+and frozen target cases. Web setup additionally requires an immutable deployment URL and an
+authoritative web provider; the Vercel adapter verifies the exact project, repository, and HEAD,
+then derives the provider deployment digest and environment revision. Relay hashes local web output
+for drift, but never pretends a directory hash proves the deployed runtime. See
+[authoritative web deployments](./docs/WEB_DEPLOYMENT_PROVIDERS.md) for provider setup. `preview`
+runs the command, hashes the exact output, and returns the complete policy without changing Relay
+state. `apply` accepts only that confirmed preview and fails if the Git head, artifact bytes,
+provider deployment, or prior policy changed; it then registers the revision-bound build,
+atomically writes `.relay/change-proof.json`, and compiles the canonical Verification Plan. A plan
+with an unmapped change or other coverage gap remains blocked for review.
 
 For an outcome command using the implicit local URL, the CLI safely starts or reuses the local Relay
 service and verifies its identity. Explicit `--server` or `RELAY_URL` endpoints and every advanced

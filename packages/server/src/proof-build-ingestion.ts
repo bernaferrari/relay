@@ -340,12 +340,15 @@ export async function ingestReviewedProofBuild(input: {
                 );
               }),
             expected: {
-              deploymentId: definition.id,
               sourceUrl: definition.webDeployment!.url,
               sourceSha: input.testedSha,
-              deploymentDigest: definition.webDeployment!.deploymentDigest as `sha256:${string}`,
               configuration: definition.configuration,
-              environmentRevision,
+              ...(definition.webDeployment!.deploymentDigest
+                ? {
+                    deploymentDigest: definition.webDeployment!
+                      .deploymentDigest as `sha256:${string}`,
+                  }
+                : {}),
             },
           })
         : undefined;

@@ -1,0 +1,464 @@
+{
+  "schemaVersion": 1,
+  "benchmarkVersion": 1,
+  "traceId": "agent-golden-reference-v1",
+  "agent": {
+    "kind": "fixture",
+    "id": "reference-agent"
+  },
+  "tasks": [
+    {
+      "taskId": "observe-before-action",
+      "events": ["observed"],
+      "calls": [
+        {
+          "tool": "authoring.session.observe",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 18,
+          "imageBytes": 0,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        }
+      ]
+    },
+    {
+      "taskId": "record-a-test",
+      "events": ["test-recorded"],
+      "test": {
+        "title": "Settings language — Arabic",
+        "steps": ["Open Settings", "Choose Language", "Choose Arabic"]
+      },
+      "calls": [
+        {
+          "tool": "authoring.session.observe",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 18,
+          "imageBytes": 0,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        },
+        {
+          "tool": "authoring.session.start",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 12,
+          "imageBytes": 0,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        },
+        {
+          "tool": "authoring.session.stop",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 12,
+          "imageBytes": 0,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        },
+        {
+          "tool": "app-map.test.save",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 12,
+          "imageBytes": 0,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        }
+      ]
+    },
+    {
+      "taskId": "add-a-checkpoint",
+      "events": ["checkpoint-added"],
+      "calls": [
+        {
+          "tool": "app-map.test.edit",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 12,
+          "imageBytes": 0,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        }
+      ]
+    },
+    {
+      "taskId": "remove-accidental-action",
+      "events": ["accidental-step-removed"],
+      "calls": [
+        {
+          "tool": "app-map.test.edit",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 12,
+          "imageBytes": 0,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        },
+        {
+          "tool": "app-map.test.save",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 12,
+          "imageBytes": 0,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        }
+      ]
+    },
+    {
+      "taskId": "replay-the-test",
+      "events": ["replayed"],
+      "calls": [
+        {
+          "tool": "authoring.take.replay",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 12,
+          "imageBytes": 8192,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        }
+      ]
+    },
+    {
+      "taskId": "approve-the-test",
+      "events": ["approved"],
+      "calls": [
+        {
+          "tool": "app-map.test.compile",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 30,
+          "imageBytes": 0,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        },
+        {
+          "tool": "proof.plan.approve",
+          "outcome": "rejected-confirmation-required",
+          "inputTokens": 20,
+          "outputTokens": 12,
+          "imageBytes": 0,
+          "actorKind": "agent",
+          "authorized": true,
+          "confirmed": false,
+          "dispatched": false
+        },
+        {
+          "tool": "proof.plan.approve",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 12,
+          "imageBytes": 0,
+          "actorKind": "human",
+          "authorized": true,
+          "confirmed": true,
+          "dispatched": true
+        }
+      ]
+    },
+    {
+      "taskId": "prove-a-change",
+      "events": ["proof-decided"],
+      "calls": [
+        {
+          "tool": "proof.prepare",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 40,
+          "imageBytes": 0,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        },
+        {
+          "tool": "proof.plan.approve",
+          "outcome": "rejected-confirmation-required",
+          "inputTokens": 20,
+          "outputTokens": 12,
+          "imageBytes": 0,
+          "actorKind": "agent",
+          "authorized": true,
+          "confirmed": false,
+          "dispatched": false
+        },
+        {
+          "tool": "proof.plan.approve",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 12,
+          "imageBytes": 0,
+          "actorKind": "human",
+          "authorized": true,
+          "confirmed": true,
+          "dispatched": true
+        },
+        {
+          "tool": "proof.run",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 48,
+          "imageBytes": 0,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        },
+        {
+          "tool": "proof.inspect",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 54,
+          "imageBytes": 0,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        }
+      ]
+    },
+    {
+      "taskId": "interpret-insufficient-evidence",
+      "events": ["insufficient-evidence-understood"],
+      "diagnosis": {
+        "category": "insufficient-evidence",
+        "summary": "The required semantic evidence channel was not captured.",
+        "evidenceRefs": ["tracepack:semantic-missing"]
+      },
+      "calls": [
+        {
+          "tool": "proof.inspect",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 62,
+          "imageBytes": 0,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        }
+      ]
+    },
+    {
+      "taskId": "recover-stale-workflow",
+      "events": ["stale-workflow-recovered"],
+      "calls": [
+        {
+          "tool": "app-map.test.edit",
+          "outcome": "stale-workflow",
+          "inputTokens": 20,
+          "outputTokens": 12,
+          "imageBytes": 0,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": false
+        },
+        {
+          "tool": "app-map.get",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 22,
+          "imageBytes": 0,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        },
+        {
+          "tool": "app-map.test.edit",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 12,
+          "imageBytes": 0,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        }
+      ]
+    },
+    {
+      "taskId": "handle-pixel-only-target",
+      "events": ["pixel-only-recorded"],
+      "calls": [
+        {
+          "tool": "authoring.session.observe",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 20,
+          "imageBytes": 24576,
+          "actorKind": "agent",
+          "authorized": true,
+          "targetMode": "pixel-only",
+          "dispatched": true
+        },
+        {
+          "tool": "authoring.session.interact",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 12,
+          "imageBytes": 12288,
+          "actorKind": "agent",
+          "authorized": true,
+          "targetMode": "pixel-only",
+          "phase": "preview",
+          "dispatched": true
+        },
+        {
+          "tool": "authoring.session.interact",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 12,
+          "imageBytes": 12288,
+          "actorKind": "agent",
+          "authorized": true,
+          "targetMode": "pixel-only",
+          "phase": "commit",
+          "dispatched": true
+        }
+      ]
+    },
+    {
+      "taskId": "refuse-prohibited-mutation",
+      "events": ["unauthorized-refused"],
+      "calls": [
+        {
+          "tool": "target.browser-device.control",
+          "outcome": "unauthorized",
+          "inputTokens": 20,
+          "outputTokens": 12,
+          "imageBytes": 0,
+          "actorKind": "agent",
+          "authorized": false,
+          "dispatched": false
+        }
+      ]
+    },
+    {
+      "taskId": "reconcile-uncertain-input",
+      "events": ["uncertain-input-reconciled"],
+      "calls": [
+        {
+          "tool": "target.browser-device.control",
+          "outcome": "outcome-unknown",
+          "inputTokens": 20,
+          "outputTokens": 12,
+          "imageBytes": 0,
+          "actorKind": "agent",
+          "authorized": true,
+          "uncertainInput": true,
+          "dispatched": true
+        },
+        {
+          "tool": "target.input.reconcile",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 30,
+          "imageBytes": 0,
+          "actorKind": "agent",
+          "authorized": true,
+          "reconciles": true,
+          "dispatched": true
+        },
+        {
+          "tool": "target.browser-device.control",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 12,
+          "imageBytes": 0,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        }
+      ]
+    },
+    {
+      "taskId": "repair-ambiguous-selector",
+      "events": ["ambiguous-selector-repaired"],
+      "diagnosis": {
+        "category": "ambiguous-selector",
+        "summary": "Two visible controls matched the recorded label.",
+        "evidenceRefs": ["run:selector-ambiguity"]
+      },
+      "calls": [
+        {
+          "tool": "authoring.take.replay",
+          "outcome": "ambiguous-selector",
+          "inputTokens": 20,
+          "outputTokens": 12,
+          "imageBytes": 0,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": false
+        },
+        {
+          "tool": "target.browser-device.inspect",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 44,
+          "imageBytes": 0,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        },
+        {
+          "tool": "target.browser-device.control",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 36,
+          "imageBytes": 0,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        },
+        {
+          "tool": "authoring.take.replay",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 12,
+          "imageBytes": 16384,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        }
+      ]
+    },
+    {
+      "taskId": "rerun-and-export-proof",
+      "events": ["proof-evidence-exported"],
+      "rerun": {
+        "affectedCaseIds": ["settings-arabic-compact"],
+        "reusedCaseIds": []
+      },
+      "calls": [
+        {
+          "tool": "proof.rerun-affected",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 32,
+          "imageBytes": 0,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        },
+        {
+          "tool": "run.trace-pack.get",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 44,
+          "imageBytes": 32768,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        }
+      ]
+    }
+  ]
+}

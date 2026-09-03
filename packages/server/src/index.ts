@@ -128,9 +128,7 @@ import type { StartServerOptions, StartedServer } from "./server-types.js";
 import type { WorkflowRouteRuntime } from "./workflow-routes.js";
 import { handlePrimaryOperationRoutes } from "./primary-operation-routes.js";
 import type { ChangeVerificationRouteRuntime } from "./change-verification-routes.js";
-import { proofExecutionCoordinator } from "./change-proof-execution-runtime.js";
-import { executeRecoveredChangeProofCell } from "./change-proof-cell-executor.js";
-import { createProofPublicationWorker } from "./proof-publication-runtime.js";
+import { createProofRuntimeBootstrap } from "./proof-runtime-bootstrap.js";
 import { runServerCli } from "./server-cli.js";
 import { requestsBearerAuthentication, setCorsOrigin } from "./cors.js";
 export type { StartServerOptions, StartedServer } from "./server-types.js";
@@ -736,8 +734,8 @@ async function startServerWithStateLease(
   const targetDriverRegistry = opts.targetDriverRegistry ?? defaultTargetDriverRegistry;
   const githubProofWebhook = opts.githubProofWebhook ?? githubWebhookFromEnv();
   const preAuthenticatedRoute = createPreAuthenticatedRoute(githubProofWebhook);
-  const proofPublicationWorker = createProofPublicationWorker(opts.proofRouteRuntime);
-  const proofCoordinator = proofExecutionCoordinator(opts.proofRouteRuntime);
+  const { proofRouteRuntime, proofPublicationWorker, proofCoordinator, recoverProofCell } =
+    createProofRuntimeBootstrap(opts.proofRouteRuntime, opts.webDeploymentLookup);
   const redaction = await loadRedactionPolicy();
   await loadEvidenceCollectionPolicy();
   for (const recoveryScope of await authoringSessions.recoveryScopes()) {
@@ -818,7 +816,7 @@ async function startServerWithStateLease(
             opts.runRouteRuntime,
             opts.stepRunRuntime,
             opts.campaignDurationRuntime,
-            opts.proofRouteRuntime,
+            proofRouteRuntime,
             preAuthenticatedRoute,
           ),
         ),
@@ -850,10 +848,6 @@ async function startServerWithStateLease(
   const addr = server.address();
   const port = typeof addr === "object" && addr !== null ? addr.port : preferredPort;
   publish({ type: "server.ready", at: now(), host, port });
-  const recoverProofCell = opts.proofRouteRuntime?.executeCell
-    ? opts.proofRouteRuntime.executeCell
-    : (input: Parameters<typeof executeRecoveredChangeProofCell>[0]) =>
-        executeRecoveredChangeProofCell(input, now());
   const proofRecovery = proofCoordinator.recover?.(recoverProofCell);
   void proofRecovery?.catch((error: unknown) =>
     console.warn(

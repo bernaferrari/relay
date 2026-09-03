@@ -112,7 +112,12 @@ test("Proof preparation ingests and binds reviewed Android and web Builds for th
                 },
                 lookup: async (expected) => ({
                   provider: "fixture-host",
-                  ...expected,
+                  deploymentId: expected.deploymentId ?? definition.id,
+                  sourceUrl: expected.sourceUrl,
+                  sourceSha: expected.sourceSha,
+                  deploymentDigest: expected.deploymentDigest ?? deploymentDigest,
+                  configuration: expected.configuration,
+                  environmentRevision: expected.environmentRevision ?? environmentRevision,
                 }),
               })
             : undefined;

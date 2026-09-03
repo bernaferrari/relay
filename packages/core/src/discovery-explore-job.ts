@@ -5,13 +5,15 @@
  * cursor is the only proof of where Explore is; mismatches stop for review.
  */
 import type {
-  DiscoveryControl,
+  DiscoveryExploreCursor,
+  DiscoveryExploreFixtureState,
   DiscoveryExploreRun,
   DiscoveryExploreProblem,
   DiscoveryExploreStopReason,
   DiscoveryExploreStrategy,
   DiscoverySession,
   NavigationProofCursorArtifact,
+  StateFixture,
 } from "@relay/protocol";
 import {
   patchDiscoveryScope,
@@ -26,19 +28,39 @@ import {
   type DiscoveryHereOption,
 } from "./discovery-turn.js";
 import { describeTargetUi } from "./explore.js";
-import { groundTarget, GroundingError } from "./grounding.js";
+import { groundTarget } from "./grounding.js";
+import { evaluateExplorationActionPolicy } from "./exploration-policy.js";
 import { currentOperationContext, runWithOperationContext } from "./operation-context.js";
 import type { InteractInput } from "./workspace.js";
+import {
+  cleanupExploreFixture,
+  cursorState,
+  delay,
+  externalHandoffCursor,
+  MAX_SAME_SCREEN_ACTIONS,
+  needsExploreGrounding,
+  policyActionForOption,
+  prepareExploreFixture,
+  provenCursor,
+  resolveExploreInteraction,
+  unknownCursor,
+  type ExploreFixtureAdapter,
+  type PlannedVisit,
+} from "./discovery-explore-support.js";
 
+export { needsExploreGrounding } from "./discovery-explore-support.js";
 export type StartDiscoveryExploreOptions = {
   strategy?: DiscoveryExploreStrategy;
   maxDepth?: number;
+  /** Reviewed, reversible state setup for an intentionally stateful crawl. */
+  fixture?: StateFixture;
 };
 
 type ActiveExploreJob = {
   cancel: boolean;
   promise?: Promise<void>;
   outcome: DiscoveryExploreRun;
+  fixture?: StateFixture;
 };
 
 const activeExploreJobs = new Map<string, ActiveExploreJob>();
@@ -61,62 +83,6 @@ const AMBIGUOUS_LABELS = new Set([
 const HARD_EDGE_RE =
   /(settings|permission|privacy|security|account|empty|no results|try again|offline|sign in|log in|notifications|accessibility|language|storage|battery)/i;
 
-type PlannedVisit = {
-  screenId: string;
-  /** Remaining unopened control ids for this visit (surface BFS / timeline DFS share the stack). */
-  pendingIds: string[];
-};
-
-function provenCursor(
-  here: DiscoveryHere,
-  source: "screen-observation" | "transition",
-): NavigationProofCursorArtifact {
-  return {
-    schemaVersion: 1,
-    status: "proven",
-    screenId: here.screen.id,
-    proofToken: `discovery:${here.screen.fingerprint}`,
-    source,
-    updatedAt: Date.now(),
-  };
-}
-
-function unknownCursor(
-  prior: NavigationProofCursorArtifact | undefined,
-  reason: string,
-): NavigationProofCursorArtifact {
-  return {
-    schemaVersion: 1,
-    status: "unknown",
-    reason,
-    updatedAt: Date.now(),
-    ...(prior?.status === "proven"
-      ? { previous: { screenId: prior.screenId, proofToken: prior.proofToken } }
-      : prior?.previous
-        ? { previous: prior.previous }
-        : {}),
-  };
-}
-
-function externalHandoffCursor(
-  prior: NavigationProofCursorArtifact | undefined,
-  foregroundApp: string,
-  reason: string,
-): NavigationProofCursorArtifact {
-  return {
-    schemaVersion: 1,
-    status: "external-handoff",
-    foregroundApp,
-    reason,
-    updatedAt: Date.now(),
-    ...(prior?.status === "proven"
-      ? { previous: { screenId: prior.screenId, proofToken: prior.proofToken } }
-      : prior?.previous
-        ? { previous: prior.previous }
-        : {}),
-  };
-}
-
 async function updateExploreCursor(
   sessionId: string,
   cursor: NavigationProofCursorArtifact,
@@ -127,14 +93,29 @@ async function updateExploreCursor(
   await rememberExploreRun(sessionId, job.outcome);
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
+/** Persist the planner frontier separately from the device-location proof. */
+async function persistExploreFrontier(
+  sessionId: string,
+  cursor: DiscoveryExploreCursor,
+): Promise<void> {
+  const job = activeExploreJobs.get(sessionId);
+  if (!job) return;
+  job.outcome = { ...job.outcome, cursor };
+  await rememberExploreRun(sessionId, job.outcome);
 }
 
 function cancelled(sessionId: string): boolean {
   return activeExploreJobs.get(sessionId)?.cancel === true;
+}
+
+async function persistFixtureState(
+  sessionId: string,
+  state: DiscoveryExploreFixtureState,
+): Promise<void> {
+  const job = activeExploreJobs.get(sessionId);
+  if (!job) return;
+  job.outcome = { ...job.outcome, fixture: state };
+  await rememberExploreRun(sessionId, job.outcome);
 }
 
 /** Default max depth for a -named strategy. */
@@ -172,20 +153,6 @@ export function isSemanticExploreLabel(label: string): boolean {
     return true;
   }
   return isHardEdgeLabel(label);
-}
-
-export function needsExploreGrounding(option: Pick<DiscoveryControl, "label" | "target">): boolean {
-  const label = option.label.trim();
-  if (AMBIGUOUS_LABELS.has(label.toLowerCase())) return true;
-  if (
-    !option.target.identifier &&
-    !option.target.label &&
-    !option.target.text &&
-    option.target.point
-  ) {
-    return Boolean(label);
-  }
-  return false;
 }
 
 /**
@@ -237,15 +204,11 @@ export async function loadDiscoveryExploreRun(
   return (await readDiscoverySession(sessionId))?.explore;
 }
 
-/** Cache the crawl record in memory and write it through to the session file. */
+/** Cache the crawl record and durably write it before any dependent action.
+ * Explore state is an execution fence, not optional bookkeeping. */
 async function rememberExploreRun(sessionId: string, run: DiscoveryExploreRun): Promise<void> {
   exploreOutcomes.set(sessionId, run);
-  try {
-    await writeDiscoveryExploreRun(sessionId, run);
-  } catch (error) {
-    // A crawl must not fail because its bookkeeping could not be persisted.
-    console.error(`discovery explore ${sessionId} outcome persist failed`, error);
-  }
+  await writeDiscoveryExploreRun(sessionId, run);
 }
 
 async function rememberExploreProblem(
@@ -270,10 +233,25 @@ async function finishExplore(
   reason: Omit<DiscoveryExploreStopReason, "at">,
 ): Promise<void> {
   const job = activeExploreJobs.get(sessionId);
+  const cleanupError = job
+    ? await cleanupExploreFixture({
+        state: job.outcome.fixture,
+        adapter: exploreRuntime.fixture,
+        persist: (state) => persistFixtureState(sessionId, state),
+      })
+    : undefined;
+  if (cleanupError) {
+    status = "stopped";
+    reason = {
+      code: "error",
+      message: `Explore fixture cleanup failed: ${cleanupError.message}`,
+    };
+  }
   const stopReason: DiscoveryExploreStopReason = { ...reason, at: Date.now() };
   if (job) {
-    // Cancel wins over a later device/error finish from the same crawl.
-    if (job.outcome.stopReason?.code !== "cancelled") {
+    // Cancel wins over a later device error, but never over an unproved
+    // fixture cleanup: retained state is a stronger trust boundary.
+    if (cleanupError || job.outcome.stopReason?.code !== "cancelled") {
       job.outcome = { ...job.outcome, stopReason };
     }
     await rememberExploreRun(sessionId, job.outcome);
@@ -290,48 +268,6 @@ async function finishExplore(
   }
 }
 
-async function resolveInteraction(input: {
-  serial: string;
-  option: DiscoveryHereOption;
-  ground?: typeof groundTarget;
-}): Promise<{ interaction: InteractInput; grounded: boolean }> {
-  if (!needsExploreGrounding(input.option)) {
-    const target = input.option.target;
-    if (target.identifier) {
-      return {
-        interaction: { kind: "identifier", identifier: target.identifier },
-        grounded: false,
-      };
-    }
-    if (target.label) {
-      return { interaction: { kind: "label", label: target.label }, grounded: false };
-    }
-    if (target.text) {
-      return { interaction: { kind: "text-match", match: target.text }, grounded: false };
-    }
-    if (target.point) {
-      return {
-        interaction: { kind: "point", x: target.point.x, y: target.point.y },
-        grounded: false,
-      };
-    }
-    return { interaction: { kind: "label", label: input.option.label }, grounded: false };
-  }
-
-  try {
-    const grounded = await (input.ground ?? groundTarget)({
-      serial: input.serial,
-      target: input.option.label,
-    });
-    return { interaction: grounded.interaction, grounded: true };
-  } catch (error) {
-    // Ambiguous controls require fresh grounding. A stale label or viewport
-    // coordinate is not an automatic substitute for failed identity proof.
-    if (error instanceof GroundingError) throw error;
-    throw error;
-  }
-}
-
 /**
  * Everything the crawl needs from a device, in one place.
  *
@@ -344,6 +280,8 @@ export type ExploreRuntime = {
   act: typeof runDiscoveryDo;
   foreground: (serial: string) => Promise<string | undefined>;
   ground: typeof groundTarget;
+  /** Device-owned fixture adapter. The crawl fails closed when a fixture is requested without it. */
+  fixture?: ExploreFixtureAdapter;
 };
 
 export const liveExploreRuntime: ExploreRuntime = {
@@ -365,6 +303,7 @@ async function exploreBack(sessionId: string, expectedScreenId: string): Promise
   const result = await exploreRuntime.act({
     sessionId,
     interaction: { kind: "key", key: "back" },
+    land: false,
     decision: {
       mode: "semantic",
       provider: "relay",
@@ -374,7 +313,7 @@ async function exploreBack(sessionId: string, expectedScreenId: string): Promise
   });
   if (result.here.screen.id === expectedScreenId) return result.here;
   await delay(550);
-  return exploreRuntime.here(sessionId);
+  return exploreRuntime.here(sessionId, { land: false });
 }
 
 async function runExploreJob(sessionId: string): Promise<void> {
@@ -397,19 +336,74 @@ async function runExploreJob(sessionId: string): Promise<void> {
     let session = await readDiscoverySession(sessionId);
     if (!session) return;
 
-    // Seed: here lands the live screen on the App Map.
-    let here = await runtime.here(sessionId);
+    if (job.fixture) {
+      await prepareExploreFixture({
+        fixture: job.fixture,
+        prior: job.outcome.fixture,
+        adapter: runtime.fixture,
+        persist: (state) => persistFixtureState(sessionId, state),
+      });
+    }
+
+    // Seed/restore: here is an observation only for Explore. Topology remains
+    // a reviewable proposal until a person presses Keep.
+    let here = await runtime.here(sessionId, { land: false });
     session = (await readDiscoverySession(sessionId))!;
     const originApp = here.foregroundApp ?? (await runtime.foreground(session.targetId));
     const deadline = session.createdAt + session.scope.maxDurationMs;
-    const explored = new Set<string>();
-    await updateExploreCursor(sessionId, provenCursor(here, "screen-observation"));
-    const stack: PlannedVisit[] = [
-      {
-        screenId: here.screen.id,
-        pendingIds: here.options.filter((option) => !option.opened).map((option) => option.id),
-      },
-    ];
+    const priorCursor = job.outcome.cursor;
+    if (priorCursor?.inFlight) {
+      await updateExploreCursor(
+        sessionId,
+        unknownCursor(
+          job.outcome.navigationCursor,
+          `Explore was interrupted while dispatching ${priorCursor.inFlight.controlId}; observe and review before resuming`,
+        ),
+      );
+      await finishExplore(sessionId, "stopped", {
+        code: "error",
+        message: "Explore stopped after an interrupted action with unknown outcome",
+      });
+      return;
+    }
+    const explored = new Set(priorCursor?.exploredEdgeKeys ?? []);
+    const sameScreenActions = new Map(
+      Object.entries(priorCursor?.sameScreenActions ?? {}).map(([screenId, count]) => [
+        screenId,
+        count,
+      ]),
+    );
+    const stack: PlannedVisit[] = priorCursor?.stack.length
+      ? priorCursor.stack.map((frame) => ({
+          screenId: frame.screenId,
+          pendingIds: [...frame.pendingControlIds],
+        }))
+      : [
+          {
+            screenId: here.screen.id,
+            pendingIds: here.options.filter((option) => !option.opened).map((option) => option.id),
+          },
+        ];
+    const plannedScreen = stack.at(-1)?.screenId;
+    if (plannedScreen && plannedScreen !== here.screen.id) {
+      await updateExploreCursor(
+        sessionId,
+        unknownCursor(
+          job.outcome.navigationCursor,
+          `Explore resumed on ${here.screen.id}, but its durable frontier expects ${plannedScreen}`,
+        ),
+      );
+      await finishExplore(sessionId, "stopped", {
+        code: "error",
+        message: `Explore cannot resume safely: target is on ${here.screen.id}, expected ${plannedScreen}`,
+      });
+      return;
+    }
+    await updateExploreCursor(
+      sessionId,
+      provenCursor(here, priorCursor ? "transition" : "screen-observation"),
+    );
+    await persistExploreFrontier(sessionId, cursorState({ stack, explored, sameScreenActions }));
 
     while (!cancelled(sessionId) && Date.now() < deadline && stack.length) {
       session = (await readDiscoverySession(sessionId))!;
@@ -420,10 +414,29 @@ async function runExploreJob(sessionId: string): Promise<void> {
       const depth = stack.length - 1;
       const frame = stack[stack.length - 1]!;
 
+      // Same-screen actions (for example an infinite feed) can reveal a new
+      // control after the previous action. Reconcile the fresh observation
+      // before deciding that an exhausted frame is ready to pop.
+      if (depth <= maxDepth && frame.pendingIds.length === 0 && here.screen.id === frame.screenId) {
+        frame.pendingIds = here.options
+          .filter((option) => !option.opened)
+          .map((option) => option.id)
+          .filter((id) => !explored.has(`${frame.screenId}:${id}`));
+      }
+
       if (depth > maxDepth || frame.pendingIds.length === 0) {
         stack.pop();
         if (stack.length) {
           const parent = stack[stack.length - 1]!;
+          await persistExploreFrontier(
+            sessionId,
+            cursorState({
+              stack,
+              explored,
+              sameScreenActions,
+              inFlight: { screenId: here.screen.id, controlId: "back" },
+            }),
+          );
           try {
             here = await exploreBack(sessionId, parent.screenId);
           } catch (error) {
@@ -447,13 +460,17 @@ async function runExploreJob(sessionId: string): Promise<void> {
             return;
           }
         }
+        await persistExploreFrontier(
+          sessionId,
+          cursorState({ stack, explored, sameScreenActions }),
+        );
         continue;
       }
 
       // Refresh options from the live here when the frame's screen matches.
       if (here.screen.id !== frame.screenId) {
         try {
-          here = await runtime.here(sessionId);
+          here = await runtime.here(sessionId, { land: false });
         } catch (error) {
           console.error(`discovery explore ${sessionId} here failed`, error);
           await finishExplore(sessionId, "stopped", {
@@ -476,6 +493,19 @@ async function runExploreJob(sessionId: string): Promise<void> {
           .map((option) => option.id);
       }
 
+      // A feed may reveal additional rows after each same-screen action. Add
+      // only candidates not already proven as edges; a moving list can never
+      // make Explore replay an earlier action.
+      frame.pendingIds = [
+        ...new Set([
+          ...frame.pendingIds,
+          ...here.options
+            .filter((option) => !option.opened)
+            .map((option) => option.id)
+            .filter((id) => !explored.has(`${frame.screenId}:${id}`)),
+        ]),
+      ];
+
       const next = pickNextExploreOption(
         here.options.filter((option) => frame.pendingIds.includes(option.id)),
         strategy,
@@ -490,9 +520,31 @@ async function runExploreJob(sessionId: string): Promise<void> {
       if (explored.has(edgeKey)) continue;
       explored.add(edgeKey);
 
+      const actionPolicy = evaluateExplorationActionPolicy({
+        schemaVersion: 1,
+        action: policyActionForOption(next),
+        ...(job.fixture ? { fixture: job.fixture } : {}),
+      });
+      if (actionPolicy.authorization !== "allowed") {
+        await rememberExploreProblem(sessionId, {
+          screenId: frame.screenId,
+          controlId: next.id,
+          label: next.label,
+          reason:
+            actionPolicy.reasons[0]?.explanation ??
+            "The deterministic exploration policy did not admit this action",
+          capturedAt: Date.now(),
+        });
+        await persistExploreFrontier(
+          sessionId,
+          cursorState({ stack, explored, sameScreenActions }),
+        );
+        continue;
+      }
+
       let interaction: InteractInput;
       try {
-        const resolved = await resolveInteraction({
+        const resolved = await resolveExploreInteraction({
           serial: session.targetId,
           option: next,
           ground: runtime.ground,
@@ -527,12 +579,26 @@ async function runExploreJob(sessionId: string): Promise<void> {
         });
         return;
       }
+
+      // Mark the command as in flight before dispatch. If the process dies
+      // after the native command, resume must stop for review, never tap twice.
+      await persistExploreFrontier(
+        sessionId,
+        cursorState({
+          stack,
+          explored,
+          sameScreenActions,
+          inFlight: { screenId: frame.screenId, controlId: next.id },
+        }),
+      );
       try {
-        // Always act via do (verify + fresh here + land). Prefer grounded interaction
-        // for ambiguous labels; otherwise controlId keeps provenance on the option.
+        // Always act via do (verify + fresh here, never topology promotion).
+        // Prefer grounded interaction for ambiguous labels; otherwise controlId
+        // keeps provenance on the option.
         result = await runtime.act({
           sessionId,
           ...(needsExploreGrounding(next) ? { interaction } : { controlId: next.id, interaction }),
+          land: false,
           decision: {
             mode: "semantic",
             provider: session.agent?.provider ?? "relay",
@@ -554,6 +620,7 @@ async function runExploreJob(sessionId: string): Promise<void> {
       }
 
       here = result.here;
+      await persistExploreFrontier(sessionId, cursorState({ stack, explored, sameScreenActions }));
       const foregroundApp = here.foregroundApp ?? (await runtime.foreground(session.targetId));
       if (originApp && foregroundApp && foregroundApp !== originApp) {
         await updateExploreCursor(
@@ -576,6 +643,19 @@ async function runExploreJob(sessionId: string): Promise<void> {
       const beforeId = frame.screenId;
       const afterId = here.screen.id;
       if (afterId === beforeId) {
+        const sameScreenCount = (sameScreenActions.get(beforeId) ?? 0) + 1;
+        sameScreenActions.set(beforeId, sameScreenCount);
+        await persistExploreFrontier(
+          sessionId,
+          cursorState({ stack, explored, sameScreenActions }),
+        );
+        if (sameScreenCount >= MAX_SAME_SCREEN_ACTIONS) {
+          await finishExplore(sessionId, "stopped", {
+            code: "budget",
+            message: `Explore stopped after ${MAX_SAME_SCREEN_ACTIONS} same-screen actions on ${beforeId}; possible infinite feed`,
+          });
+          return;
+        }
         await delay(80);
         continue;
       }
@@ -583,6 +663,15 @@ async function runExploreJob(sessionId: string): Promise<void> {
       // currentDepth = stack.length - 1 (0 at seed). Cap hops by strategy maxDepth.
       if (stack.length - 1 >= maxDepth) {
         const parent = stack[stack.length - 1]!;
+        await persistExploreFrontier(
+          sessionId,
+          cursorState({
+            stack,
+            explored,
+            sameScreenActions,
+            inFlight: { screenId: here.screen.id, controlId: "back" },
+          }),
+        );
         try {
           here = await exploreBack(sessionId, parent.screenId);
         } catch (error) {
@@ -605,6 +694,10 @@ async function runExploreJob(sessionId: string): Promise<void> {
           });
           return;
         }
+        await persistExploreFrontier(
+          sessionId,
+          cursorState({ stack, explored, sameScreenActions }),
+        );
         await delay(80);
         continue;
       }
@@ -613,6 +706,7 @@ async function runExploreJob(sessionId: string): Promise<void> {
         screenId: afterId,
         pendingIds: here.options.filter((option) => !option.opened).map((option) => option.id),
       });
+      await persistExploreFrontier(sessionId, cursorState({ stack, explored, sameScreenActions }));
       await delay(80);
     }
 
@@ -648,8 +742,11 @@ async function runExploreJob(sessionId: string): Promise<void> {
     });
   } finally {
     const jobStill = activeExploreJobs.get(sessionId);
-    if (jobStill) await rememberExploreRun(sessionId, jobStill.outcome);
-    activeExploreJobs.delete(sessionId);
+    try {
+      if (jobStill) await rememberExploreRun(sessionId, jobStill.outcome);
+    } finally {
+      activeExploreJobs.delete(sessionId);
+    }
   }
 }
 
@@ -665,6 +762,7 @@ export async function startDiscoveryExplore(
   }
   if (session.status === "running" && activeExploreJobs.has(id)) return session;
   const interrupted = session.status === "running" && !activeExploreJobs.has(id);
+  const resuming = interrupted || session.status === "paused";
   if (!interrupted && session.status !== "draft" && session.status !== "paused") {
     throw new Error(`cannot start discovery explore from ${session.status}`);
   }
@@ -672,6 +770,42 @@ export async function startDiscoveryExplore(
 
   const strategy = resolveExploreStrategy(session.scope, options);
   const maxDepth = resolveExploreMaxDepth(strategy, session.scope, options);
+
+  const prior = resuming ? await loadDiscoveryExploreRun(id) : undefined;
+  if (resuming && prior?.stopReason) {
+    throw new Error(
+      `discovery explore already stopped (${prior.stopReason.code}); create a new session to explore again`,
+    );
+  }
+  if (
+    resuming &&
+    (prior?.navigationCursor?.status === "unknown" ||
+      prior?.navigationCursor?.status === "external-handoff")
+  ) {
+    throw new Error(
+      "discovery explore cannot resume from an unknown or external target position; capture and review the current screen first",
+    );
+  }
+  if (resuming && prior?.cursor?.inFlight) {
+    throw new Error(
+      `discovery explore cannot resume after interrupted action ${prior.cursor.inFlight.controlId}; review the current target before starting a new session`,
+    );
+  }
+  if (
+    resuming &&
+    ((options?.strategy && options.strategy !== prior?.strategy) ||
+      (options?.maxDepth !== undefined && options.maxDepth !== prior?.maxDepth))
+  ) {
+    throw new Error("discovery explore resume options must match the persisted crawl");
+  }
+  if (
+    options?.fixture &&
+    prior?.fixture &&
+    (options.fixture.id !== prior.fixture.definition.id ||
+      options.fixture.review.revision !== prior.fixture.definition.review.revision)
+  ) {
+    throw new Error("discovery explore resume fixture must match the persisted reviewed fixture");
+  }
 
   if (
     options?.strategy ||
@@ -682,17 +816,30 @@ export async function startDiscoveryExplore(
     session = await patchDiscoveryScope(id, { strategy, maxDepth });
   }
 
-  const startedAt = Date.now();
-  const outcome: DiscoveryExploreRun = {
+  const startedAt = prior?.startedAt ?? Date.now();
+  const fixture = options?.fixture ?? prior?.fixture?.definition;
+  const outcome: DiscoveryExploreRun = prior ?? {
     strategy,
     maxDepth,
+    ...(fixture
+      ? {
+          fixture: {
+            definition: structuredClone(fixture),
+            phase: "cleaned" as const,
+          },
+        }
+      : {}),
     startedAt,
     updatedAt: startedAt,
   };
   await rememberExploreRun(id, outcome);
 
   const running = interrupted ? session : await setDiscoveryStatus(id, "running");
-  activeExploreJobs.set(id, { cancel: false, outcome });
+  activeExploreJobs.set(id, {
+    cancel: false,
+    outcome,
+    ...(fixture ? { fixture: structuredClone(fixture) } : {}),
+  });
   const operation = currentOperationContext();
   const handle = activeExploreJobs.get(id)!;
   const crawl = () => runExploreJob(id);

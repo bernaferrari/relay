@@ -1,5 +1,6 @@
 import type { TargetProfile } from "./target-contract.js";
 import type { NavigationProofCursorArtifact } from "./navigation-proof.js";
+import type { StateFixture } from "./exploration-policy.js";
 
 /** -shaped explore crawl strategies (local-first here/do/ground loop). */
 export type DiscoveryExploreStrategy = "surface" | "timeline" | "hard-edges";
@@ -22,6 +23,34 @@ export type DiscoveryExploreProblem = {
 };
 
 /**
+ * Durable work position for a server-owned Explore crawl.
+ *
+ * This is intentionally a small, reviewable frontier rather than a serialized
+ * device snapshot. The navigation proof below remains the authority for the
+ * target's actual location; this cursor only says which safe candidates are
+ * still pending after the last proven action.
+ */
+export type DiscoveryExploreCursor = {
+  schemaVersion: 1;
+  stack: Array<{
+    screenId: string;
+    pendingControlIds: string[];
+  }>;
+  exploredEdgeKeys: string[];
+  sameScreenActions: Record<string, number>;
+  /** Set before dispatch and cleared only after a fresh post-action observe. */
+  inFlight?: {
+    screenId: string;
+    controlId: string;
+  };
+};
+
+export type DiscoveryExploreFixtureState = {
+  definition: StateFixture;
+  phase: "preparing" | "prepared" | "verified" | "cleanup-pending" | "cleaned";
+};
+
+/**
  * What one server-owned explore crawl chose and how it ended.
  *
  * Persisted on the session so a `tsx watch` reload — or any other process
@@ -38,6 +67,10 @@ export type DiscoveryExploreRun = {
    * Planner visits and the session's last observed screen are not navigation proof.
    */
   navigationCursor?: NavigationProofCursorArtifact;
+  /** Persisted frontier used to resume without repeating a completed action. */
+  cursor?: DiscoveryExploreCursor;
+  /** Optional reviewed state fixture; secret material is never embedded. */
+  fixture?: DiscoveryExploreFixtureState;
   startedAt: number;
   updatedAt: number;
 };

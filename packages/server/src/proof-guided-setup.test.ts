@@ -4,22 +4,21 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { canonicalSha256 } from "@relay/core";
+import type { AuthoritativeWebDeploymentExpectation } from "@relay/core";
 import type { ProofSetupIntent } from "@relay/protocol";
 import { applyProofSetup, previewProofSetup } from "./proof-guided-setup.js";
 
 const testedSha = "2".repeat(40);
 const digest = `sha256:${"a".repeat(64)}` as const;
 
-const lookupWebDeployment = async (expected: {
-  deploymentId: string;
-  sourceUrl: string;
-  sourceSha: string;
-  deploymentDigest: `sha256:${string}`;
-  configuration: string;
-  environmentRevision: string;
-}) => ({
+const lookupWebDeployment = async (expected: AuthoritativeWebDeploymentExpectation) => ({
   provider: "fixture-host",
-  ...expected,
+  deploymentId: expected.deploymentId ?? "web-preview",
+  sourceUrl: expected.sourceUrl,
+  sourceSha: expected.sourceSha,
+  deploymentDigest: expected.deploymentDigest ?? digest,
+  configuration: expected.configuration,
+  environmentRevision: expected.environmentRevision ?? "fixture-environment",
 });
 
 function exactChange() {
@@ -280,6 +279,55 @@ test("web setup hashes local output but binds Proof policy to the reviewed deplo
   });
   assert.equal(saved?.sourceUrl, "https://preview.example.test");
   assert.equal(saved?.deploymentDigest, deploymentDigest);
+});
+
+test("web setup derives provider identity when the reviewed input omits a digest", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "relay-proof-setup-provider-derived-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const providerDigest = `sha256:${"c".repeat(64)}` as const;
+  let observedExpectation: AuthoritativeWebDeploymentExpectation | undefined;
+  const preview = await previewProofSetup({
+    projectId: "relay",
+    root,
+    intent: {
+      ...intent(),
+      build: {
+        id: "web-preview",
+        name: "Web preview",
+        platform: "web",
+        command: { executable: "pnpm", args: ["run", "build:web"] },
+        artifactPath: "dist/web",
+        configuration: "web.production",
+        environmentRevision: "caller-must-not-win",
+        webDeployment: { url: "https://preview.example.test" },
+      },
+    },
+    change: async () => exactChange(),
+    validateTests: async () => undefined,
+    lookupWebDeployment: async (expected) => {
+      observedExpectation = expected;
+      return {
+        provider: "vercel",
+        deploymentId: "dpl_provider_1",
+        sourceUrl: expected.sourceUrl,
+        sourceSha: expected.sourceSha,
+        deploymentDigest: providerDigest,
+        configuration: expected.configuration,
+        environmentRevision: "vercel:dpl_provider_1",
+      };
+    },
+    run: async () => {
+      await mkdir(join(root, "dist/web"), { recursive: true });
+      await writeFile(join(root, "dist/web/index.html"), "<h1>Exact web output</h1>");
+    },
+  });
+
+  assert.equal(observedExpectation?.deploymentDigest, undefined);
+  assert.equal(observedExpectation?.environmentRevision, undefined);
+  assert.equal(preview.build.id, "web-preview");
+  assert.equal(preview.build.environmentRevision, "vercel:dpl_provider_1");
+  assert.equal(preview.build.webDeployment?.deploymentDigest, providerDigest);
+  assert.equal(preview.policy.document.builds[0]?.artifactDigest, providerDigest);
 });
 
 test("setup previews, atomically registers, and prepares reviewed Android and web builds together", async (t) => {

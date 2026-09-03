@@ -97,7 +97,10 @@ function buildHere(
 }
 
 /** Refresh the live screen, land it on the App Map, return options. */
-export async function runDiscoveryHere(sessionId: string): Promise<DiscoveryHere> {
+export async function runDiscoveryHere(
+  sessionId: string,
+  options?: { land?: boolean },
+): Promise<DiscoveryHere> {
   const session = await readDiscoverySession(sessionId);
   if (!session) throw new Error("discovery session not found");
   if (session.status !== "running" && session.status !== "draft") {
@@ -108,10 +111,12 @@ export async function runDiscoveryHere(sessionId: string): Promise<DiscoveryHere
   const snap = captured.snapshot;
   const controls = discoveryControls(snap.nodes);
   await replaceDiscoveryScreenControls(sessionId, captured.screen.id, controls);
-  try {
-    await landDiscoveryOnAppMap(sessionId);
-  } catch {
-    /* landing is best-effort for the turn view */
+  if (options?.land !== false) {
+    try {
+      await landDiscoveryOnAppMap(sessionId);
+    } catch {
+      /* landing is best-effort for the turn view */
+    }
   }
 
   const latest = (await readDiscoverySession(sessionId))!;
@@ -127,6 +132,8 @@ export async function runDiscoveryDo(input: {
   controlId?: string;
   interaction?: InteractInput;
   decision?: DiscoveryDecisionProvenance;
+  /** Explore keeps topology in reviewable observations until Keep. */
+  land?: boolean;
 }): Promise<{
   transition: ObservedTransition;
   /** True when before/after recorded as different ObservedScreen ids. */
@@ -159,13 +166,14 @@ export async function runDiscoveryDo(input: {
     sessionId: input.sessionId,
     interaction,
     ...(input.decision ? { decision: input.decision } : {}),
+    ...(input.land === false ? { land: false } : {}),
   });
 
   // Always re-capture a settled here — do not trust interact's after.screen alone
   // (animations / title drift). Failures surface; never silent openApp/relaunch.
   let here: DiscoveryHere;
   try {
-    here = await runDiscoveryHere(input.sessionId);
+    here = await runDiscoveryHere(input.sessionId, { land: input.land });
   } catch (error) {
     if (error instanceof DiscoveryVerifyError) throw error;
     throw new DiscoveryVerifyError(
@@ -187,7 +195,9 @@ export async function runDiscoveryDo(input: {
   // Best-effort land for the edge when identity already changed inside interact.
   if (result.changedIdentity) {
     try {
-      await landDiscoveryOnAppMap(input.sessionId, result.transition.id);
+      if (input.land !== false) {
+        await landDiscoveryOnAppMap(input.sessionId, result.transition.id);
+      }
     } catch {
       /* already landed inside interact when identity changed */
     }

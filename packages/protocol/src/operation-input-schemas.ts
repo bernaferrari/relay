@@ -19,6 +19,7 @@ import { changeVerificationOperationInputSchemas } from "./change-verification-o
 import { proofSetupOperationInputSchemas } from "./proof-setup.js";
 import { repeatFailureKindSchema } from "./repeat-failure.js";
 import { targetOperationInputSchemas } from "./target-operation-input-schemas.js";
+import { stateFixtureSchema } from "./exploration-policy.js";
 import {
   authoringInteraction,
   authoringRecordingEdit,
@@ -623,7 +624,14 @@ export const operationInputSchemas = {
     })
     .strict(),
   "discovery.capture": z.object({ sessionId: identifier("Discovery session identifier") }).strict(),
-  "discovery.start": z.object({ sessionId: identifier("Discovery session identifier") }).strict(),
+  "discovery.start": z
+    .object({
+      sessionId: identifier("Discovery session identifier"),
+      strategy: z.enum(["surface", "timeline", "hard-edges"]).optional(),
+      maxDepth: z.number().int().min(1).max(12).optional(),
+      fixture: stateFixtureSchema.optional(),
+    })
+    .strict(),
   "discovery.cancel": z.object({ sessionId: identifier("Discovery session identifier") }).strict(),
   "discovery.here": z.object({ sessionId: identifier("Discovery session identifier") }).strict(),
   "discovery.coverage": z

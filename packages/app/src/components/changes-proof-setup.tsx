@@ -120,7 +120,11 @@ export function ChangesProofSetup(props: {
       setError("Web deployment URL is required to bind the built output to its runtime.");
       return;
     }
-    if (platform() === "web" && !/^sha256:[a-f0-9]{64}$/u.test(deploymentDigest().trim())) {
+    if (
+      platform() === "web" &&
+      deploymentDigest().trim() &&
+      !/^sha256:[a-f0-9]{64}$/u.test(deploymentDigest().trim())
+    ) {
       setError("Web deployment digest must be sha256: followed by 64 lowercase hex characters.");
       return;
     }
@@ -173,13 +177,16 @@ export function ChangesProofSetup(props: {
             },
             artifactPath: artifact,
             configuration: configuration().trim(),
-            environmentRevision: environmentRevision().trim(),
+            environmentRevision:
+              platform() === "web" ? "provider-derived" : environmentRevision().trim(),
             ...(applicationId().trim() ? { applicationId: applicationId().trim() } : {}),
             ...(platform() === "web"
               ? {
                   webDeployment: {
                     url: deploymentUrl().trim(),
-                    deploymentDigest: deploymentDigest().trim() as `sha256:${string}`,
+                    ...(deploymentDigest().trim()
+                      ? { deploymentDigest: deploymentDigest().trim() as `sha256:${string}` }
+                      : {}),
                   },
                 }
               : {}),
@@ -378,12 +385,21 @@ export function ChangesProofSetup(props: {
                     onInput={(event) => setConfiguration(event.currentTarget.value)}
                   />
                 </SetupField>
-                <SetupField label="Environment revision" id="proof-setup-environment">
+                <SetupField
+                  label={
+                    platform() === "web" ? "Provider environment revision" : "Environment revision"
+                  }
+                  id="proof-setup-environment"
+                >
                   <input
                     id="proof-setup-environment"
                     class={fieldClass}
-                    value={environmentRevision()}
-                    disabled={Boolean(busy())}
+                    value={
+                      platform() === "web"
+                        ? "Derived from the Vercel deployment"
+                        : environmentRevision()
+                    }
+                    disabled={Boolean(busy()) || platform() === "web"}
                     autocomplete="off"
                     spellcheck={false}
                     onInput={(event) => setEnvironmentRevision(event.currentTarget.value)}
@@ -417,7 +433,10 @@ export function ChangesProofSetup(props: {
                       onInput={(event) => setDeploymentUrl(event.currentTarget.value)}
                     />
                   </SetupField>
-                  <SetupField label="Provider deployment digest" id="proof-setup-deployment-digest">
+                  <SetupField
+                    label="Provider deployment digest (optional)"
+                    id="proof-setup-deployment-digest"
+                  >
                     <input
                       id="proof-setup-deployment-digest"
                       class={fieldClass}
@@ -425,15 +444,16 @@ export function ChangesProofSetup(props: {
                       disabled={Boolean(busy())}
                       autocomplete="off"
                       spellcheck={false}
-                      placeholder="sha256:…"
+                      placeholder="Derived by Vercel when configured"
                       onInput={(event) => setDeploymentDigest(event.currentTarget.value)}
                     />
                   </SetupField>
                 </div>
                 <p class="m-0 text-caption/[1.45] text-text-weak">
-                  Relay hashes the local web output for drift checks, but merge evidence binds the
-                  provider-reported immutable deployment digest. A directory hash alone cannot claim
-                  the deployed runtime.
+                  Relay hashes the local web output for drift checks. When the Vercel provider is
+                  configured, it verifies the immutable deployment and derives its digest from
+                  provider facts; you do not need to copy a digest from a dashboard. A directory
+                  hash alone cannot claim the deployed runtime.
                 </p>
               </Show>
             </fieldset>

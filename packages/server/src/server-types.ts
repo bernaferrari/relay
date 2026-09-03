@@ -1,5 +1,10 @@
 import type http from "node:http";
-import type { AuthoringRuntime, captureScreenshot, TargetDriverRegistry } from "@relay/core";
+import type {
+  AuthoritativeWebDeploymentLookup,
+  AuthoringRuntime,
+  captureScreenshot,
+  TargetDriverRegistry,
+} from "@relay/core";
 import type { ExternalIdentityVerifier } from "./external-identity.js";
 import type { AppMapTestRunRouteRuntime } from "./app-map-run-routes.js";
 import type { CampaignDurationRouteRuntime } from "./campaign-duration-routes.js";
@@ -41,6 +46,9 @@ export type StartServerOptions = {
   runRouteRuntime?: Partial<RunRouteRuntime>;
   /** Test seam for server-owned Proof Run projection and lifecycle transitions. */
   proofRouteRuntime?: Partial<ChangeVerificationRouteRuntime>;
+  /** Host-owned web deployment authority. When omitted, Relay uses the
+   * configured Vercel adapter from RELAY_VERCEL_* environment variables. */
+  webDeploymentLookup?: AuthoritativeWebDeploymentLookup;
   /** Explicit signed GitHub pull-request intake boundary. Environment-backed
    * configuration is used when this host seam is omitted. */
   githubProofWebhook?: GitHubProofWebhookConfiguration;

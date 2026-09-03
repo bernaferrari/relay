@@ -10,8 +10,13 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import type { ObservedScreen, ObservedTransition } from "@relay/protocol";
-import { createDiscoverySession, readDiscoverySession } from "./discovery.js";
+import type { ObservedScreen, ObservedTransition, StateFixture } from "@relay/protocol";
+import {
+  createDiscoverySession,
+  readDiscoverySession,
+  setDiscoveryStatus,
+  writeDiscoveryExploreRun,
+} from "./discovery.js";
 import {
   loadDiscoveryExploreRun,
   resetDiscoveryExploreJobsForTests,
@@ -180,6 +185,44 @@ function session(id: string) {
       source: "cli",
     },
   });
+}
+
+function reviewedAppFixture(): StateFixture {
+  return {
+    schemaVersion: 1,
+    id: "fixture.explore-app",
+    name: "Explore disposable app state",
+    review: {
+      revision: 1,
+      reviewedBy: "human:reviewer",
+      reviewedAt: 1,
+      reason: "The fixture restores the disposable app state after exploration.",
+    },
+    resetScope: ["app"],
+    secrets: [],
+    phases: {
+      prepare: {
+        maxDurationMs: 10_000,
+        steps: [{ id: "prepare-app", scope: "app", operation: "reset", timeoutMs: 1_000 }],
+      },
+      verify: {
+        maxDurationMs: 10_000,
+        steps: [{ id: "verify-app", scope: "app", operation: "verify", timeoutMs: 1_000 }],
+      },
+      cleanup: {
+        maxDurationMs: 10_000,
+        steps: [
+          { id: "restore-app", scope: "app", operation: "restore", timeoutMs: 1_000 },
+          { id: "prove-app", scope: "app", operation: "prove-cleanup", timeoutMs: 1_000 },
+        ],
+      },
+    },
+    reversibility: {
+      status: "reviewed-reversible",
+      restoresScopes: ["app"],
+      cleanupProofRequired: true,
+    },
+  };
 }
 
 test("explore stops descending at maxDepth and walks back out", async () => {
@@ -353,6 +396,256 @@ test("explore reports an ungrounded row as a durable Problem instead of complete
       [{ screenId: "screen-home", label: "Menu", reason: "Menu matched two controls" }],
     );
     assert.deepEqual(device.taps, ["home>Profile"]);
+    assert.equal((await readDiscoverySession(created.id))?.status, "stopped");
+  });
+});
+
+test("explore never dispatches a destructive control", async () => {
+  await withWorkspace("relay-explore-risk-", async () => {
+    const device = fakeDevice({
+      screens: [{ id: "home", edges: { "Delete-account": "deleted" } }],
+    });
+    setExploreRuntimeForTests(device.runtime);
+
+    const created = await session("explore-risk");
+    await startDiscoveryExplore(created.id, { strategy: "surface" });
+    await waitDiscoveryExploreForTests(created.id);
+
+    const run = await loadDiscoveryExploreRun(created.id);
+    assert.equal(run?.stopReason?.code, "error");
+    assert.match(run?.stopReason?.message ?? "", /1 unresolved problem/);
+    assert.deepEqual(device.taps, []);
+    assert.equal(run?.problems?.[0]?.controlId, "control-home-Delete-account");
+  });
+});
+
+test("explore bounds a same-screen feed instead of looping forever", async () => {
+  await withWorkspace("relay-explore-feed-", async () => {
+    let row = 0;
+    const here = async (): Promise<DiscoveryHere> => ({
+      screen: {
+        id: "screen-feed",
+        title: "Feed",
+        fingerprint: "fp-feed",
+        capturedAt: 1,
+        controlCount: 1,
+      },
+      options: [
+        {
+          id: `feed-row-${row}`,
+          label: `Row ${row}`,
+          target: { label: `Row ${row}` },
+          opened: false,
+        },
+      ],
+      suggestion: null,
+      foregroundApp: "com.example.app",
+      canBack: false,
+    });
+    const runtime: Partial<ExploreRuntime> = {
+      here,
+      foreground: async () => "com.example.app",
+      ground: async ({ target }) => ({
+        interaction: { kind: "label", label: String(target) },
+        method: "a11y",
+        confidence: 1,
+      }),
+      act: async () => {
+        row += 1;
+        return {
+          transition: { id: `feed-transition-${row}` } as unknown as ObservedTransition,
+          changedIdentity: false,
+          changed: false,
+          before: {
+            id: "screen-feed",
+            title: "Feed",
+            fingerprint: "fp-feed",
+            capturedAt: 1,
+          },
+          after: {
+            id: "screen-feed",
+            title: "Feed",
+            fingerprint: "fp-feed",
+            capturedAt: 1,
+          },
+          here: await here(),
+        };
+      },
+    };
+    setExploreRuntimeForTests(runtime);
+
+    const created = await session("explore-feed");
+    await startDiscoveryExplore(created.id, { strategy: "timeline" });
+    await waitDiscoveryExploreForTests(created.id);
+
+    const run = await loadDiscoveryExploreRun(created.id);
+    assert.equal(row, 40);
+    assert.equal(run?.stopReason?.code, "budget");
+    assert.match(run?.stopReason?.message ?? "", /possible infinite feed/);
+  });
+});
+
+test("explore persists an in-flight action and refuses to redispatch after restart", async () => {
+  await withWorkspace("relay-explore-in-flight-", async () => {
+    const device = fakeDevice({
+      screens: [
+        { id: "home", edges: { Settings: "settings" } },
+        { id: "settings", edges: {} },
+      ],
+    });
+    let dispatchStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      dispatchStarted = resolve;
+    });
+    setExploreRuntimeForTests({
+      ...device.runtime,
+      act: async () => {
+        dispatchStarted();
+        return new Promise(() => undefined);
+      },
+    });
+
+    const created = await session("explore-in-flight");
+    await startDiscoveryExplore(created.id, { strategy: "surface" });
+    await started;
+    const persisted = await loadDiscoveryExploreRun(created.id);
+    assert.deepEqual(persisted?.cursor?.inFlight, {
+      screenId: "screen-home",
+      controlId: "control-home-Settings",
+    });
+
+    // Simulate a process restart while the native command is unresolved. The
+    // persisted inFlight marker is a terminal review boundary, not a retry.
+    resetDiscoveryExploreJobsForTests();
+    await assert.rejects(
+      () => startDiscoveryExplore(created.id),
+      /interrupted action control-home-Settings/,
+    );
+  });
+});
+
+test("explore resumes a paused durable frontier without rebuilding it", async () => {
+  await withWorkspace("relay-explore-paused-resume-", async () => {
+    const device = fakeDevice({ screens: [{ id: "home", edges: {} }] });
+    setExploreRuntimeForTests(device.runtime);
+
+    const created = await session("explore-paused-resume");
+    const now = Date.now();
+    await writeDiscoveryExploreRun(created.id, {
+      strategy: "surface",
+      maxDepth: 2,
+      navigationCursor: {
+        schemaVersion: 1,
+        status: "proven",
+        screenId: "screen-home",
+        proofToken: "discovery:fp-home",
+        source: "screen-observation",
+        updatedAt: now,
+      },
+      cursor: {
+        schemaVersion: 1,
+        stack: [{ screenId: "screen-home", pendingControlIds: [] }],
+        exploredEdgeKeys: ["screen-home:already-proved"],
+        sameScreenActions: {},
+      },
+      startedAt: now,
+      updatedAt: now,
+    });
+    await setDiscoveryStatus(created.id, "running");
+    await setDiscoveryStatus(created.id, "paused");
+    resetDiscoveryExploreJobsForTests();
+    setExploreRuntimeForTests(device.runtime);
+
+    await startDiscoveryExplore(created.id);
+    await waitDiscoveryExploreForTests(created.id);
+
+    const run = await loadDiscoveryExploreRun(created.id);
+    assert.equal(run?.stopReason?.code, "complete");
+    assert.ok(run?.cursor?.exploredEdgeKeys.includes("screen-home:already-proved"));
+    assert.deepEqual(device.taps, []);
+  });
+});
+
+test("explore cleans a prepared fixture and resumes after a process restart", async () => {
+  await withWorkspace("relay-explore-fixture-resume-", async () => {
+    const device = fakeDevice({ screens: [{ id: "home", edges: {} }] });
+    const fixture = reviewedAppFixture();
+    const calls: string[] = [];
+    let firstPrepareStarted!: () => void;
+    const prepareStarted = new Promise<void>((resolve) => {
+      firstPrepareStarted = resolve;
+    });
+    let releaseFirstPrepare!: () => void;
+    const firstPrepareRelease = new Promise<void>((resolve) => {
+      releaseFirstPrepare = resolve;
+    });
+    let prepareCount = 0;
+    const adapter = {
+      prepare: async () => {
+        prepareCount += 1;
+        calls.push(`prepare-${prepareCount}`);
+        if (prepareCount === 1) {
+          firstPrepareStarted();
+          await firstPrepareRelease;
+        }
+      },
+      verify: async () => {
+        calls.push("verify");
+      },
+      cleanup: async () => {
+        calls.push("cleanup");
+      },
+    };
+    setExploreRuntimeForTests({ ...device.runtime, fixture: adapter });
+
+    const created = await session("explore-fixture-resume");
+    await startDiscoveryExplore(created.id, { fixture });
+    await prepareStarted;
+    assert.equal((await loadDiscoveryExploreRun(created.id))?.fixture?.phase, "preparing");
+
+    // The original process disappeared after dispatching prepare. A new
+    // process must restore first, then prepare and verify the exact fixture.
+    resetDiscoveryExploreJobsForTests();
+    setExploreRuntimeForTests({ ...device.runtime, fixture: adapter });
+    await startDiscoveryExplore(created.id, { fixture });
+    await waitDiscoveryExploreForTests(created.id);
+
+    const run = await loadDiscoveryExploreRun(created.id);
+    assert.deepEqual(calls, ["prepare-1", "cleanup", "prepare-2", "verify", "cleanup"]);
+    assert.equal(run?.fixture?.phase, "cleaned");
+    assert.equal(run?.stopReason?.code, "complete");
+    assert.equal((await readDiscoverySession(created.id))?.status, "complete");
+
+    // Leave the interrupted first adapter call unresolved: that is the test's
+    // simulated dead process, and releasing it would let it race the resumed
+    // crawl. It has no event-loop handle and is intentionally not reused.
+    void releaseFirstPrepare;
+  });
+});
+
+test("explore remains review-required when fixture cleanup cannot be proved", async () => {
+  await withWorkspace("relay-explore-fixture-cleanup-", async () => {
+    const device = fakeDevice({ screens: [{ id: "home", edges: {} }] });
+    const fixture = reviewedAppFixture();
+    setExploreRuntimeForTests({
+      ...device.runtime,
+      fixture: {
+        prepare: async () => undefined,
+        verify: async () => undefined,
+        cleanup: async () => {
+          throw new Error("target stopped responding during restore");
+        },
+      },
+    });
+
+    const created = await session("explore-fixture-cleanup");
+    await startDiscoveryExplore(created.id, { fixture });
+    await waitDiscoveryExploreForTests(created.id);
+
+    const run = await loadDiscoveryExploreRun(created.id);
+    assert.equal(run?.stopReason?.code, "error");
+    assert.match(run?.stopReason?.message ?? "", /cleanup failed/);
+    assert.equal(run?.fixture?.phase, "cleanup-pending");
     assert.equal((await readDiscoverySession(created.id))?.status, "stopped");
   });
 });

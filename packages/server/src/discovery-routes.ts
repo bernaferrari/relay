@@ -29,6 +29,7 @@ import type {
   DiscoveryScope,
   DiscoverySession,
   DiscoveryStatus,
+  StateFixture,
 } from "@relay/protocol";
 import { assertTargetControl } from "./access-control.js";
 import { CORS_HEADERS, HttpError, json, matchPath, parseJsonBody, text } from "./http.js";
@@ -196,7 +197,18 @@ export async function handleDiscoveryRoute(input: DiscoveryRouteInput): Promise<
   if (method === "POST" && discoveryStartMatch) {
     const session = await loadScopedSession(discoveryStartMatch.id!, scope);
     await assertTargetControl(scope, session.targetId);
-    json(response, 202, { session: await startDiscoveryExplore(session.id) });
+    const body = (await parseJsonBody(request)) as {
+      strategy?: "surface" | "timeline" | "hard-edges";
+      maxDepth?: number;
+      fixture?: StateFixture;
+    };
+    json(response, 202, {
+      session: await startDiscoveryExplore(session.id, {
+        ...(body.strategy ? { strategy: body.strategy } : {}),
+        ...(body.maxDepth !== undefined ? { maxDepth: body.maxDepth } : {}),
+        ...(body.fixture ? { fixture: body.fixture } : {}),
+      }),
+    });
     return true;
   }
 

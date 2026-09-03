@@ -169,10 +169,18 @@ test("binds a web Proof to provider deployment identity while retaining local ou
       testedSha: fixture.sha,
       definitionId: "web-release",
       stateRoot: fixture.stateRoot,
-      lookupWebDeployment: async (expected) => ({
-        provider: "fixture-host",
-        ...expected,
-      }),
+      lookupWebDeployment: async (expected) => {
+        assert.equal(expected.deploymentId, undefined);
+        return {
+          provider: "fixture-host",
+          deploymentId: "provider-deployment-123",
+          sourceUrl: expected.sourceUrl,
+          sourceSha: expected.sourceSha,
+          deploymentDigest: expected.deploymentDigest ?? deploymentDigest,
+          configuration: expected.configuration,
+          environmentRevision: expected.environmentRevision ?? "fixture-v1",
+        };
+      },
       save: async (build) => ({ ...build, createdAt: 1, updatedAt: 1 }),
     });
 

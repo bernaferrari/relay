@@ -1,5 +1,6 @@
 import * as z from "zod/v4";
 import { browserCaseProfileSchema } from "./browser-case-profile.js";
+import { stateFixtureSchema } from "./exploration-policy.js";
 
 const pointSchema = z.object({ x: z.number(), y: z.number() }).strict();
 const targetCapabilitySchema = z.enum([
@@ -145,6 +146,32 @@ const navigationProofSchema = z.discriminatedUnion("status", [
     .strict(),
 ]);
 
+const discoveryExploreCursorSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    stack: z
+      .array(
+        z
+          .object({
+            screenId: z.string(),
+            pendingControlIds: z.array(z.string()),
+          })
+          .strict(),
+      )
+      .max(500),
+    exploredEdgeKeys: z.array(z.string()).max(2_000),
+    sameScreenActions: z.record(z.string(), z.number().int().nonnegative()).default({}),
+    inFlight: z.object({ screenId: z.string(), controlId: z.string() }).strict().optional(),
+  })
+  .strict();
+
+const discoveryExploreFixtureSchema = z
+  .object({
+    definition: stateFixtureSchema,
+    phase: z.enum(["preparing", "prepared", "verified", "cleanup-pending", "cleaned"]),
+  })
+  .strict();
+
 const discoverySessionSchema = z
   .object({
     id: z.string(),
@@ -212,6 +239,8 @@ const discoverySessionSchema = z
           .strict()
           .optional(),
         navigationCursor: navigationProofSchema.optional(),
+        cursor: discoveryExploreCursorSchema.optional(),
+        fixture: discoveryExploreFixtureSchema.optional(),
         startedAt: z.number(),
         updatedAt: z.number(),
       })

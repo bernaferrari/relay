@@ -39,7 +39,7 @@ const proofSetupBuildBaseSchema = z
     environmentRevision: identifier,
     applicationId: identifier.optional(),
     webDeployment: z
-      .object({ url: z.url().max(2_048), deploymentDigest: sha256 })
+      .object({ url: z.url().max(2_048), deploymentDigest: sha256.optional() })
       .strict()
       .optional(),
   })

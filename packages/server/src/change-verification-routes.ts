@@ -27,6 +27,7 @@ import {
   type ChangeVerificationScope,
   type ChangeProofCellExecutor,
   type ChangeProofExecutionCoordinator,
+  type AuthoritativeWebDeploymentLookup,
   changeProofExecutionPreview,
 } from "@relay/core";
 import {
@@ -86,6 +87,9 @@ export type ChangeVerificationRouteRuntime = {
    * therefore cannot safely resume an exact human-only boundary. Hosts may
    * opt in only when their executor has a true step/checkpoint resume seam. */
   supportsHumanInterventionResume?: boolean;
+  /** Host-owned deployment provider used by guided setup and exact web Build
+   * ingestion. The route never accepts caller-supplied provider facts. */
+  lookupWebDeployment?: AuthoritativeWebDeploymentLookup;
   prepare: typeof prepareCurrentChangeVerification;
 };
 
@@ -284,7 +288,13 @@ export async function handleChangeVerificationRoute(input: {
       json(
         input.response,
         200,
-        await previewProofSetup({ projectId: scope.projectId, intent: body }),
+        await previewProofSetup({
+          projectId: scope.projectId,
+          intent: body,
+          ...(runtime.lookupWebDeployment
+            ? { lookupWebDeployment: runtime.lookupWebDeployment }
+            : {}),
+        }),
       );
     } catch (error) {
       throw new HttpError(
@@ -303,7 +313,13 @@ export async function handleChangeVerificationRoute(input: {
     const body = (await parseJsonBody(input.request)) as OperationInput<"proof.setup.apply">;
     if (body.confirm !== true) throw new HttpError(400, "confirm must be true");
     try {
-      const result = await applyProofSetup({ projectId: scope.projectId, request: body });
+      const result = await applyProofSetup({
+        projectId: scope.projectId,
+        request: body,
+        ...(runtime.lookupWebDeployment
+          ? { lookupWebDeployment: runtime.lookupWebDeployment }
+          : {}),
+      });
       recordAudit(input.scope, {
         action: "proof.setup.apply",
         resource: result.registeredBuild.id,
@@ -355,7 +371,13 @@ export async function handleChangeVerificationRoute(input: {
     const body = (await parseJsonBody(input.request)) as OperationInput<"proof.prepare">;
     let prepared: Awaited<ReturnType<ChangeVerificationRouteRuntime["prepare"]>>;
     try {
-      prepared = await runtime.prepare({ projectId: scope.projectId, request: body });
+      prepared = await runtime.prepare({
+        projectId: scope.projectId,
+        request: body,
+        ...(runtime.lookupWebDeployment
+          ? { lookupWebDeployment: runtime.lookupWebDeployment }
+          : {}),
+      });
     } catch (error) {
       throw new HttpError(
         409,

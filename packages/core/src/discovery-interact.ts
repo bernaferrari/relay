@@ -272,6 +272,8 @@ export async function runDiscoveryInteract(input: {
   sessionId: string;
   interaction: InteractInput;
   decision?: DiscoveryDecisionProvenance;
+  /** Automated Explore records observations only; Keep performs promotion. */
+  land?: boolean;
 }): Promise<{
   transition: ObservedTransition;
   before: ObservedScreen;
@@ -351,7 +353,7 @@ export async function runDiscoveryInteract(input: {
     ...(input.decision ? { decision: input.decision } : {}),
     changedScreen: changedIdentity,
   });
-  if (changedIdentity) {
+  if (changedIdentity && input.land !== false) {
     try {
       const foreground = (await describeTargetUi(session.targetId)).foregroundApp;
       const leftGrok =

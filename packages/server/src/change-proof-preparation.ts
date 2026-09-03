@@ -15,6 +15,7 @@ import {
   proofStartInputFromVerificationPlan,
   readAppMap,
   verificationCellId,
+  type AuthoritativeWebDeploymentLookup,
 } from "@relay/core";
 import {
   CHANGE_SIGNAL_KINDS,
@@ -370,6 +371,7 @@ export async function prepareCurrentChangeVerification(input: {
   root?: string;
   inspect?: typeof inspectWorkspaceChange;
   ingestBuild?: typeof ingestReviewedProofBuild;
+  lookupWebDeployment?: AuthoritativeWebDeploymentLookup;
 }): Promise<{ plan: VerificationPlan; blockers: string[] }> {
   const root = input.root ?? findWorkspaceRoot();
   const change = await (input.inspect ?? inspectWorkspaceChange)({
@@ -414,6 +416,7 @@ export async function prepareCurrentChangeVerification(input: {
         repositoryRoot: root,
         testedSha,
         definitionId: definition.id,
+        ...(input.lookupWebDeployment ? { lookupWebDeployment: input.lookupWebDeployment } : {}),
       });
       ingestedBuilds.push(ingested.verificationBuild);
     } catch (error) {

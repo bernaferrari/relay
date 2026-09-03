@@ -25,6 +25,7 @@ import {
   VERIFY_CHANGE_POLICY,
   proofSetupIntentSchema,
   proofSetupPreviewSchema,
+  proofBuildDefinitionSchema,
   type OperationInput,
   type ProofSetupIntent,
   type ProofSetupPreview,
@@ -376,6 +377,7 @@ export async function previewProofSetup(input: {
     configuration: string;
     environmentRevision: string;
   }> = [];
+  const resolvedBuilds: Array<ReturnType<typeof proofBuildDefinitionSchema.parse>> = [];
   for (const build of builds) {
     await (input.run ?? runCommand)(build.command.executable, build.command.args, root);
     const artifactPath = absoluteRepositoryPath(root, build.artifactPath);
@@ -397,12 +399,14 @@ export async function previewProofSetup(input: {
     const webExpected =
       build.platform === "web"
         ? {
-            deploymentId: build.id,
             sourceUrl: build.webDeployment!.url,
             sourceSha: change.changeRef!.testedSha,
-            deploymentDigest: build.webDeployment!.deploymentDigest as `sha256:${string}`,
             configuration: build.configuration,
-            environmentRevision: build.environmentRevision,
+            ...(build.webDeployment!.deploymentDigest
+              ? {
+                  deploymentDigest: build.webDeployment!.deploymentDigest as `sha256:${string}`,
+                }
+              : {}),
           }
         : undefined;
     const webDeployment = webExpected
@@ -415,6 +419,18 @@ export async function previewProofSetup(input: {
     if (webExpected && webDeployment) {
       assertAuthoritativeWebDeploymentMatches(webExpected, webDeployment);
     }
+    const resolvedBuild =
+      build.platform === "web"
+        ? {
+            ...build,
+            environmentRevision: webDeployment!.environmentRevision,
+            webDeployment: {
+              url: webDeployment!.sourceUrl,
+              deploymentDigest: webDeployment!.deploymentDigest,
+            },
+          }
+        : build;
+    resolvedBuilds.push(resolvedBuild);
     const proofArtifactDigest =
       build.platform === "web"
         ? bindVerifiedWebDeploymentToProof({
@@ -430,20 +446,23 @@ export async function previewProofSetup(input: {
           }).artifactDigest
         : artifactDigest;
     policyBuilds.push({
-      id: build.id,
+      id: resolvedBuild.id,
       platform: build.platform,
       artifactDigest: proofArtifactDigest,
       sourceSha: change.changeRef!.testedSha,
       configuration: build.configuration,
-      environmentRevision: build.environmentRevision,
+      environmentRevision: resolvedBuild.environmentRevision,
     });
+  }
+  if (new Set(resolvedBuilds.map(({ id }) => id)).size !== resolvedBuilds.length) {
+    throw new Error("Provider deployment ids must be unique across the reviewed Proof builds");
   }
   const document = {
     schemaVersion: 1 as const,
     repository: change.repository!,
     changed: {},
     associations: intent.associations,
-    buildDefinitions: builds,
+    buildDefinitions: resolvedBuilds,
     builds: policyBuilds,
     targetCases: intent.targetCases,
     policy: intent.policy ?? VERIFY_CHANGE_POLICY,
@@ -452,20 +471,24 @@ export async function previewProofSetup(input: {
     schemaVersion: 1,
     ...(intent.baseRef ? { baseRef: intent.baseRef } : {}),
     testedSha: change.changeRef!.testedSha,
-    command: builds[0]!.command,
+    command: resolvedBuilds[0]!.command,
     artifact: artifacts[0]!,
     build: {
-      id: builds[0]!.id,
-      name: builds[0]!.name,
-      platform: builds[0]!.platform,
-      configuration: builds[0]!.configuration,
-      environmentRevision: builds[0]!.environmentRevision,
-      ...(builds[0]!.applicationId ? { applicationId: builds[0]!.applicationId } : {}),
-      ...(builds[0]!.webDeployment ? { webDeployment: builds[0]!.webDeployment } : {}),
+      id: resolvedBuilds[0]!.id,
+      name: resolvedBuilds[0]!.name,
+      platform: resolvedBuilds[0]!.platform,
+      configuration: resolvedBuilds[0]!.configuration,
+      environmentRevision: resolvedBuilds[0]!.environmentRevision,
+      ...(resolvedBuilds[0]!.applicationId
+        ? { applicationId: resolvedBuilds[0]!.applicationId }
+        : {}),
+      ...(resolvedBuilds[0]!.webDeployment
+        ? { webDeployment: resolvedBuilds[0]!.webDeployment }
+        : {}),
     },
-    commands: builds.map(({ command }) => command),
+    commands: resolvedBuilds.map(({ command }) => command),
     artifacts,
-    builds: builds.map((build) => ({
+    builds: resolvedBuilds.map((build) => ({
       id: build.id,
       name: build.name,
       platform: build.platform,
@@ -586,7 +609,6 @@ export async function applyProofSetup(input: {
     const webExpected =
       build.platform === "web"
         ? {
-            deploymentId: build.id,
             sourceUrl: build.webDeployment!.url,
             sourceSha: preview.testedSha,
             deploymentDigest: build.webDeployment!.deploymentDigest as `sha256:${string}`,
