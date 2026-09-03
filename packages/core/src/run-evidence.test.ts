@@ -31,16 +31,18 @@ const stopRunEvidence: typeof stopRunEvidenceWithoutContext = (...args) =>
 
 test("timed-out Android automation is drained before control returns", async () => {
   const events: string[] = [];
+  let resolveLate: ((value: string) => void) | undefined;
   const late = new Promise<string>((resolve) => {
-    setTimeout(() => {
-      events.push("settled");
-      resolve("late");
-    }, 15);
+    resolveLate = resolve;
   });
 
   await assert.rejects(
     withTimeoutAndDrain(late, 1, "Android snapshot", () => {
       events.push("aborted");
+      setImmediate(() => {
+        events.push("settled");
+        resolveLate?.("late");
+      });
     }),
     /Android snapshot timed out/u,
   );

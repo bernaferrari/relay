@@ -75,6 +75,37 @@ function renderPanel(input: {
   return { root, surface, dispose };
 }
 
+test("screen preparation is explained once while pixels are still loading", () => {
+  const detail = "Relay is opening this browser target. You can keep working while it connects.";
+  document.body.replaceChildren();
+  const root = document.createElement("div");
+  document.body.append(root);
+  const dispose = render(
+    () => (
+      <AppMapTestDevicePanel
+        deviceSelected
+        deviceName="Phone"
+        readiness={{
+          kind: "screen-preparing",
+          title: "Connecting to Phone",
+          detail,
+        }}
+        offline={false}
+        refreshing={false}
+        interacting={false}
+        interactionBlocker={detail}
+        error=""
+        onRefresh={() => undefined}
+        onInteract={async () => true}
+      />
+    ),
+    root,
+  );
+
+  expect(root.textContent?.match(new RegExp(detail.replaceAll(".", "\\."), "gu"))).toHaveLength(1);
+  dispose();
+});
+
 test("device preview maps one pointer tap through the logical device bounds", async () => {
   const onInteract = vi.fn(async () => true);
   const view = renderPanel({

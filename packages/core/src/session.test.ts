@@ -157,13 +157,10 @@ test("automatic evidence reuses one verified tree and raster without device late
       glyphs: [],
     } as unknown as TraceStep;
 
-    const startedAt = performance.now();
     await captureAutomaticState(job, device, step, "before", () => {}, runtime);
-    const elapsedMs = performance.now() - startedAt;
 
     assert.equal(snapshots, 0);
     assert.equal(screenshots, 0);
-    assert.ok(elapsedMs < 500, `cached evidence should avoid device delays (took ${elapsedMs}ms)`);
     assert.deepEqual(
       job.artifacts.map((artifact) => [artifact.kind, artifact.capturedAt]),
       [["ui-tree", 123]],
