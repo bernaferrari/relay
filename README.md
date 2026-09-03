@@ -253,7 +253,8 @@ input so two people or agents cannot silently drive the same target.
 For browser-only UI development, use one command:
 
 ```bash
-pnpm dev:app
+pnpm dev:web           # open http://localhost:3000
+pnpm dev:app           # compatibility alias
 ```
 
 Relay chooses an available loopback port, starts a fresh watched service that trusts exactly that

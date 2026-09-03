@@ -411,11 +411,8 @@ export function CampaignCheckResults(props: {
                   id="campaign-checks-heading"
                   class="block text-body font-semibold text-text-strong"
                 >
-                  Campaign checks
+                  Checks
                 </strong>
-                <span class="mt-0.5 block text-caption/[1.4] text-text-weaker">
-                  Independent checks keep their own outcome and evidence.
-                </span>
               </div>
               <div
                 class="flex flex-wrap justify-end gap-x-2 gap-y-1 text-micro tabular-nums text-text-weaker"

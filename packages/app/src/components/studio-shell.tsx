@@ -53,6 +53,8 @@ import { StudioShellCombineRail } from "./studio-shell-combine-rail";
 import { StudioShellVariablesDialog } from "./studio-shell-variables-dialog";
 import { readRememberedDevicePanelPreference } from "../lib/studio-shell-preferences";
 import { createStudioBlankMapActions } from "../lib/studio-blank-map-actions";
+import { resolveStudioTestNavigation } from "../lib/studio-test-navigation";
+import { createStudioTestSelection } from "../lib/studio-test-selection";
 import { StudioShellMapActions, type StudioShellMapAction } from "./studio-shell-map-actions";
 import {
   ChangesWorkspace,
@@ -78,8 +80,7 @@ export function StudioShell(props: {
   const [settingsOpen, setSettingsOpen] = createSignal(false);
   const [variablesOpen, setVariablesOpen] = createSignal(false);
   const [combineOpen, setCombineOpen] = createSignal(false);
-  // Collapse rather than unmount so in-progress Combine drafts survive.
-  const [combineCollapsed, setCombineCollapsed] = createSignal(false);
+  const [combineCollapsed, setCombineCollapsed] = createSignal(false); // Keep drafts mounted.
   const [combineFocusId, setCombineFocusId] = createSignal<string>();
   const [combineFocusSection, setCombineFocusSection] = createSignal<CanvasCombineSection>();
   const [query, setQuery] = createSignal("");
@@ -98,6 +99,7 @@ export function StudioShell(props: {
   const [activeTargetSetId, setActiveTargetSetId] = createSignal<string>();
   const [importReview, setImportReview] = createSignal<ImportReview | null>(null);
   const selectedMap = createMemo(() => server.selectedAppMap());
+  const { selectedTestId, selectTest } = createStudioTestSelection(selectedMap);
   const [mapNameDraft, setMapNameDraft] = createSignal("");
   createEffect(() => setMapNameDraft(selectedMap()?.name ?? "My map"));
   createEffect(() => {
@@ -502,17 +504,10 @@ export function StudioShell(props: {
   }
 
   function openTest(id: string): void {
-    const map = server
-      .appMaps()
-      .find(
-        (candidate) =>
-          candidate.id === id ||
-          Boolean(candidate.tests[id]) ||
-          Boolean(candidate.flows[id]) ||
-          Boolean(candidate.routines[id]),
-      );
-    if (map) {
-      server.setSelectedAppMapId(map.id);
+    const navigation = resolveStudioTestNavigation(server.appMaps(), id);
+    if (navigation) {
+      if (navigation.testId) selectTest(navigation.appMap.id, navigation.testId);
+      server.setSelectedAppMapId(navigation.appMap.id);
       setArea("maps");
       setMapMode("test");
       setSettingsOpen(false);
@@ -579,7 +574,6 @@ export function StudioShell(props: {
           onSelect={openMap}
           onDelete={deleteMap}
           onCreate={startNewMap}
-          onOpenRun={(id) => server.setSelectedJobId(id)}
           onImport={importTestYaml}
           onOpenSettings={() => props.onOpenSettings()}
         />
@@ -723,6 +717,11 @@ export function StudioShell(props: {
                       onOpenRun={(id) => {
                         server.setSelectedJobId(id);
                         setArea("runs");
+                      }}
+                      testId={selectedTestId()}
+                      onTestChange={(testId) => {
+                        const mapId = selectedMap()?.id;
+                        if (mapId) selectTest(mapId, testId);
                       }}
                       onImportYaml={importTestYaml}
                       onExportYaml={() => void exportSelected()}

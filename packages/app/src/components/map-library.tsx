@@ -1,6 +1,6 @@
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { useRecorder } from "../context/recorder";
-import { useServer, type JobInfo } from "../context/server";
+import { useServer } from "../context/server";
 import {
   degradedLibraryItem,
   type DegradedLibraryItem,
@@ -9,25 +9,16 @@ import {
 import { type MapLibraryArea } from "../lib/map-library-area";
 export { normalizeMapLibraryArea } from "../lib/map-library-area";
 import { cn } from "../lib/cn";
-import { displayTitle, fmtAgo, fmtDur, titleize } from "../lib/job";
-import { persistedAsJob } from "../lib/persisted-run";
+import { displayTitle } from "../lib/job";
 import { shellNav, shellNavClosed } from "../lib/shell-layout";
 import { copyStack, mono } from "../lib/ui";
 import { RelayMark } from "./relay-mark";
 import { Icon, type IconName } from "./icon";
 
-type RunFilter = "all" | "attention" | "active";
-
 const AREA_TABS: { id: MapLibraryArea; label: string }[] = [
   { id: "changes", label: "Changes" },
   { id: "maps", label: "Maps" },
   { id: "runs", label: "Runs" },
-];
-
-const RUN_FILTERS: { id: RunFilter; label: string }[] = [
-  { id: "all", label: "All" },
-  { id: "attention", label: "Failed" },
-  { id: "active", label: "Running" },
 ];
 
 const segmentedControl = cn(
@@ -76,7 +67,6 @@ export function MapLibrary(props: {
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
   onCreate: () => void;
-  onOpenRun: (id: string) => void;
   onImport: (yaml: string) => Promise<void>;
   onOpenSettings: () => void;
 }) {
@@ -322,10 +312,6 @@ export function MapLibrary(props: {
         </div>
       </Show>
 
-      <Show when={props.area === "runs"}>
-        <RunList onOpenRun={props.onOpenRun} />
-      </Show>
-
       <footer class="shrink-0 border-t border-border-weak-base p-1.5">
         <Show when={props.area === "maps" && !recorder.recording()}>
           {/* Creating a board is instant; recording is a contextual action on
@@ -460,121 +446,6 @@ function MapLibraryRow(props: {
       </button>
     </div>
   );
-}
-
-/** Recent runs — filtered, since this list grows without bound. */
-function RunList(props: { onOpenRun: (id: string) => void }) {
-  const server = useServer();
-  const [filter, setFilter] = createSignal<RunFilter>("all");
-
-  const rows = createMemo(() => {
-    const live = server.jobs();
-    const liveIds = new Set(live.map((run) => run.id));
-    const disk = server
-      .persistedRuns()
-      .filter((run) => !liveIds.has(run.id))
-      .map(persistedAsJob);
-    const all = [...live, ...disk].sort(
-      (a, b) => (b.startedAt ?? b.queuedAt) - (a.startedAt ?? a.queuedAt),
-    );
-    const current = filter();
-    if (current === "attention")
-      return all.filter((row) => row.status === "error" || row.status === "cancelled");
-    if (current === "active")
-      return all.filter((row) => ["queued", "running", "paused"].includes(row.status));
-    return all;
-  });
-
-  return (
-    <>
-      <div class="mb-1.5 shrink-0 px-2.5">
-        <div class={segmentedControl} role="group" aria-label="Filter runs">
-          <For each={RUN_FILTERS}>
-            {(option) => {
-              const active = () => filter() === option.id;
-              return (
-                <button
-                  type="button"
-                  aria-pressed={active()}
-                  class={cn(segmentedTab, "text-caption", active() && segmentedTabActive)}
-                  onClick={() => setFilter(option.id)}
-                >
-                  {option.label}
-                </button>
-              );
-            }}
-          </For>
-        </div>
-      </div>
-      <nav class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-1.5 pb-2" aria-label="Runs">
-        <For
-          each={rows()}
-          fallback={
-            <p class="px-3 py-6 text-center text-caption/[1.5] text-text-weak">
-              {filter() === "all"
-                ? "No runs yet. Run a path from the map to see results here."
-                : "Nothing matches this filter."}
-            </p>
-          }
-        >
-          {(job) => <RunRow job={job} onOpen={props.onOpenRun} />}
-        </For>
-      </nav>
-    </>
-  );
-}
-
-function RunRow(props: { job: JobInfo; onOpen: (id: string) => void }) {
-  const server = useServer();
-  const selected = () => server.selectedJobId() === props.job.id;
-  const title = () =>
-    props.job.title ?? props.job.recipeSnapshot?.title ?? titleize(props.job.action);
-  return (
-    <button
-      type="button"
-      class={cn(
-        "grid min-h-[38px] w-full grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-1.5 rounded-lg px-2 text-left transition-colors duration-press",
-        selected() ? "bg-surface-base-active" : "hover:bg-surface-raised-base-hover",
-      )}
-      aria-current={selected() ? "page" : undefined}
-      title={title()}
-      onClick={() => props.onOpen(props.job.id)}
-    >
-      <i
-        class={cn("justify-self-center size-1.5 rounded-full", statusTint(props.job.status))}
-        aria-hidden="true"
-      />
-      <span class="min-w-0">
-        <span
-          class={cn(
-            "block truncate text-caption/[1.3] font-[550] text-text-weak",
-            selected() && "text-text-strong",
-          )}
-        >
-          {title()}
-        </span>
-        <small class="block truncate text-micro/[1.35] text-text-weaker">
-          {fmtAgo(
-            props.job.finishedAt ?? props.job.startedAt ?? props.job.queuedAt,
-            server.clock(),
-          )}
-        </small>
-      </span>
-      <small class={cn("shrink-0 text-micro text-text-weaker", mono)}>
-        {fmtDur(props.job, server.clock()) || "—"}
-      </small>
-    </button>
-  );
-}
-
-function statusTint(status: string): string {
-  if (status === "pass" || status === "ok" || status === "healed")
-    return "bg-[var(--icon-success-base)]";
-  if (status === "fail" || status === "error" || status === "cancelled")
-    return "bg-[var(--icon-critical-base)]";
-  if (status === "running" || status === "queued" || status === "paused")
-    return "bg-[var(--text-interactive-base)] shadow-[0_0_8px_var(--text-interactive-base)]";
-  return "bg-[var(--text-weak)]";
 }
 
 function appMapIcon(appMap: MapLibraryItem): IconName {

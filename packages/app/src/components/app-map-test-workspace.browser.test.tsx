@@ -716,6 +716,11 @@ test("an empty Test workspace leads with recording and keeps blank authoring sec
   expect(root.textContent).toContain("Record test");
   expect(root.textContent).toContain("add checkpoints, review the recording");
   expect(root.textContent).toContain("Start a blank Test");
+  expect(
+    [...root.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+      button.textContent?.includes("Start a blank Test"),
+    )?.dataset.component,
+  ).toBe("button");
   [...root.querySelectorAll<HTMLButtonElement>("button")]
     .find((button) => button.textContent?.includes("Record test"))
     ?.click();

@@ -94,6 +94,14 @@ test("presents Android packet facts without inventing decrypted HTTP evidence", 
   expect(details?.textContent).toContain("203.0.113.10:443");
   expect(details?.textContent).toContain("Netsim Wi-Fi traffic may be absent.");
 
+  const transportSummary = details?.querySelector("summary");
+  const filter = root.querySelector<HTMLInputElement>(
+    "input[aria-label='Filter HTTP network evidence']",
+  );
+  expect(transportSummary?.className).toContain("max-[760px]:min-h-11");
+  expect(filter?.className).toContain("max-[760px]:h-11");
+  expect(filter?.className).toContain("max-[760px]:text-body");
+
   dispose();
   root.remove();
 });

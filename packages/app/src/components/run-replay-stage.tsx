@@ -42,7 +42,6 @@ export function RunReplayStage(props: {
   selectedIndex: number;
   onSelect: (index: number) => void;
   onOpenEvidence: (event: RunEvidenceEvent) => void;
-  onBack: () => void;
 }) {
   const server = useServer();
   const [stageMode, setStageMode] = createSignal<"replay" | "map">("replay");
@@ -393,14 +392,7 @@ export function RunReplayStage(props: {
         class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_1px_1px,color-mix(in_srgb,var(--text-strong)_8%,transparent)_1px,transparent_0)] [background-size:20px_20px]"
         aria-hidden="true"
       />
-      <header class="relative z-[1] grid min-h-12 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-3 px-4">
-        <button
-          type="button"
-          class="inline-flex min-h-8 items-center gap-1.5 rounded-lg px-2 text-body font-medium text-[var(--text-base)] transition-colors hover:bg-surface-base-hover hover:text-[var(--text-strong)]"
-          onClick={props.onBack}
-        >
-          <Icon name="chevron-left" size={14} /> All runs
-        </button>
+      <header class="relative z-[1] grid min-h-12 shrink-0 grid-cols-[auto_1fr] items-center gap-3 px-4">
         <Show when={nodes().length > 0}>
           <div class={seg} role="group" aria-label="Run report view">
             <button

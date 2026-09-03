@@ -39,6 +39,7 @@ const job = (steps: TraceStep[]): JobInfo => ({
 
 test("run review opens at the failed step", () => {
   assert.equal(initialRunReviewStep(job([step(200), step(300, "error"), step(400)])), 1);
+  assert.equal(initialRunReviewStep(job([step(200), step(300)])), 0);
   assert.equal(initialRunReviewStep({ ...job([step(200), step(300)]), status: "ok" }), 1);
 });
 

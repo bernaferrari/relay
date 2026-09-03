@@ -42,25 +42,25 @@ export function NavigationTransitionHealth(props: {
   model: NavigationTransitionHealthModel;
   onReviewRepair?: (repair: NavigationTransitionRepairEntry) => void;
 }) {
+  const needsDetail = () =>
+    props.model.counts.ready + props.model.counts.drifted + props.model.counts.blocked > 0;
   return (
     <section class="grid gap-2.5" aria-labelledby="navigation-health-heading">
-      <header class="flex flex-wrap items-end justify-between gap-2">
-        <div>
-          <strong id="navigation-health-heading" class="block text-body font-semibold">
-            Navigation
-          </strong>
-          <span class="mt-0.5 block text-micro/[1.4] text-text-weaker">
-            Shared paths are proven once and reused by their dependent checks.
-          </span>
-        </div>
+      <header class="flex flex-wrap items-center justify-between gap-2">
+        <strong id="navigation-health-heading" class="block text-body font-semibold">
+          Navigation
+        </strong>
         <span class="text-micro tabular-nums text-text-weaker">
-          {props.model.counts.ready} ready · {props.model.counts.proven} proven ·{" "}
-          {props.model.counts.drifted} drifted · {props.model.counts.blocked} blocked
+          {needsDetail()
+            ? `${props.model.counts.drifted + props.model.counts.blocked} need attention`
+            : `${props.model.counts.proven} shared ${props.model.counts.proven === 1 ? "path" : "paths"} verified`}
         </span>
       </header>
-      <ol class="m-0 grid list-none gap-1.5 p-0" aria-label="Navigation transition health">
-        <For each={props.model.rows}>{(row) => <TransitionRow row={row} />}</For>
-      </ol>
+      <Show when={needsDetail()}>
+        <ol class="m-0 grid list-none gap-1.5 p-0" aria-label="Navigation transition health">
+          <For each={props.model.rows}>{(row) => <TransitionRow row={row} />}</For>
+        </ol>
+      </Show>
       <Show when={props.model.repair}>
         {(repair) => (
           <div class="flex items-center justify-between gap-3 rounded-lg border border-border-weak-base bg-surface-warning-weak px-3 py-2.5">

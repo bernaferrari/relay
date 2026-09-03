@@ -52,7 +52,6 @@ test("Repeat results lead with checkpoints and announce bounded paging", async (
         onOpen={() => undefined}
         onRetryProblems={() => undefined}
         onExport={() => undefined}
-        onClose={() => undefined}
       />
     ),
     root,

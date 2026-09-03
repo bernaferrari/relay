@@ -1,7 +1,9 @@
 import { For, type Accessor } from "solid-js";
-import { changeTestedSha, type ChangeVerification } from "@relay/protocol";
+import type { ChangeVerification } from "@relay/protocol";
 import { cn } from "../lib/cn";
+import { proofDisplayTitle } from "../lib/proof-presentation";
 import type { StatusChipTone } from "./status-chip";
+import { ScrollArea } from "./scroll-area";
 
 export const proofStatePresentation: Record<
   ChangeVerification["state"],
@@ -21,19 +23,6 @@ export const proofStatePresentation: Record<
   superseded: { label: "Superseded", tone: "idle" },
 };
 
-function shortSha(value: string): string {
-  return value.slice(0, 12);
-}
-
-export function changeTitle(proof: ChangeVerification): string {
-  return (
-    proof.change.agentClaim?.summary ||
-    (proof.change.pullRequest
-      ? `Pull request #${proof.change.pullRequest}`
-      : shortSha(changeTestedSha(proof.change)))
-  );
-}
-
 export function ChangesWorkspaceProofList(props: {
   proofs: Accessor<readonly ChangeVerification[]>;
   selectedId: Accessor<string | null>;
@@ -41,9 +30,10 @@ export function ChangesWorkspaceProofList(props: {
   onSelect: (proofId: string) => void;
 }) {
   return (
-    <nav
+    <ScrollArea
+      as="nav"
       class={cn(
-        "min-h-0 border-r border-border-weak-base p-2",
+        "border-r border-border-weak-base p-2",
         props.mobileDetailOpen()
           ? "max-[820px]:hidden"
           : "max-[820px]:max-h-none max-[820px]:overflow-visible max-[820px]:border-r-0",
@@ -58,16 +48,21 @@ export function ChangesWorkspaceProofList(props: {
             <button
               type="button"
               class={cn(
-                "grid min-h-[68px] w-full gap-1 rounded-xl px-3 py-2.5 text-left transition-colors",
+                "flex min-h-11 w-full items-center gap-3 rounded-lg px-3 py-1.5 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-border-focus",
                 active() ? "bg-surface-base-active" : "hover:bg-surface-raised-base-hover",
               )}
+              data-proof-list-row
+              data-proof-state={proof.state}
+              aria-label={`${proofDisplayTitle(proof)}, ${status.label}`}
               aria-current={active() ? "page" : undefined}
               onClick={() => props.onSelect(proof.id)}
             >
-              <span class="flex min-w-0 items-center justify-between gap-2">
-                <strong class="truncate text-body font-semibold text-text-strong">
-                  {changeTitle(proof)}
+              <span class="flex min-w-0 flex-1 items-baseline gap-1.5">
+                <strong class="min-w-0 truncate text-body font-semibold text-text-strong">
+                  {proofDisplayTitle(proof)}
                 </strong>
+              </span>
+              <span class="flex shrink-0 items-center gap-1.5 text-caption font-medium text-text-weak">
                 <span
                   class={cn(
                     "size-2 shrink-0 rounded-full",
@@ -77,20 +72,19 @@ export function ChangesWorkspaceProofList(props: {
                         ? "bg-icon-critical-base"
                         : status.tone === "run"
                           ? "bg-text-interactive-base"
-                          : "bg-icon-warning-base",
+                          : status.tone === "attention"
+                            ? "bg-icon-warning-base"
+                            : "bg-icon-base",
                   )}
+                  data-proof-status-tone={status.tone}
                   aria-hidden="true"
                 />
+                {status.label}
               </span>
-              <small class="truncate text-caption text-text-weak">
-                {proof.change.repository.split("/").at(-1) ?? proof.change.repository}
-                {proof.change.pullRequest ? ` · #${proof.change.pullRequest}` : ""}
-              </small>
-              <small class="text-micro font-medium text-text-weaker">{status.label}</small>
             </button>
           );
         }}
       </For>
-    </nav>
+    </ScrollArea>
   );
 }

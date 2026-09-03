@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { JobInfo } from "./api-types";
-import { appMapIdForJob, runStopHeadline, runTargetLabel, testIdForJob } from "./run-presentation";
+import {
+  appMapIdForJob,
+  runDisplayTitle,
+  runStopHeadline,
+  runTargetLabel,
+  testIdForJob,
+} from "./run-presentation";
 
 function job(action: string, data?: unknown): JobInfo {
   return {
@@ -70,4 +76,14 @@ test("run reports present a discovered device name instead of its serial", () =>
 
 test("run reports use a platform label when historical hardware is disconnected", () => {
   assert.equal(runTargetLabel({ platform: "ios", serial: "ipad-udid" }, []), "iOS");
+});
+
+test("a replay keeps the original Test title in human-facing UI", () => {
+  assert.equal(
+    runDisplayTitle({
+      action: "app-map.test.run",
+      title: "Settings → Language → Arabic · replay",
+    } as JobInfo),
+    "Settings → Language → Arabic",
+  );
 });

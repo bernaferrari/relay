@@ -128,13 +128,9 @@ export function EmptyState(props: EmptyStateProps) {
             </Button>
           </Show>
           <Show when={props.secondaryLabel && props.onSecondary}>
-            <button
-              type="button"
-              class="h-7 px-2 text-caption font-medium text-text-base transition-colors hover:text-text-strong"
-              onClick={() => props.onSecondary?.()}
-            >
+            <Button variant="ghost" size="normal" onClick={() => props.onSecondary?.()}>
               {props.secondaryLabel}
-            </button>
+            </Button>
           </Show>
           {props.children}
         </div>

@@ -12,6 +12,7 @@
     "ensure:serve": "node scripts/ensure-server.mjs",
     "dev:mcp": "pnpm --filter @relay/mcp start",
     "dev:app": "node scripts/dev-app.mjs",
+    "dev:web": "node scripts/dev-app.mjs",
     "dev:desktop": "pnpm --filter @relay/desktop dev",
     "relay": "node node_modules/tsx/dist/cli.mjs packages/cli/src/index.ts",
     "inspect:desktop": "pnpm --filter @relay/desktop inspect",

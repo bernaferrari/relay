@@ -297,28 +297,29 @@ test("presents one Change-first Proof without internal orchestration vocabulary"
   expect(root.textContent).toContain("Prove a change");
   expect(root.textContent).toContain("Rejected");
   expect(root.textContent).toContain("Verification plan");
-  expect(root.textContent).toContain("2 verification cells · About 2 minutes");
-  expect(root.textContent).toContain("1 required · 1 advisory");
+  expect(root.textContent).toContain("2 verification cells · 1 required · 1 advisory");
+  expect(root.textContent).toContain("About 2 minutes");
   expect(root.textContent).toContain("Pilot");
   expect(root.textContent).toContain("Required");
   expect(root.textContent).toContain("Advisory");
   expect(root.textContent).toContain("Settings language");
-  expect(root.textContent).toContain("Web production build");
-  expect(root.textContent).toContain("Dimensions");
-  expect(root.textContent).toContain("Risk");
-  expect(root.textContent).toContain("Required evidence");
-  expect(root.textContent).toContain("Visual context");
-  expect(root.textContent).toContain("Destination checkpoint from Settings language");
-  expect(root.textContent).toContain("Why this cell");
+  expect(root.textContent).toContain("Web · Production");
+  expect(root.textContent).toContain("Coverage");
+  expect(root.textContent).toContain("Risk and cleanup");
+  expect(root.textContent).toContain("Evidence");
+  expect(root.textContent).toContain("Why selected");
   expect(root.textContent).toContain("cell-ar-pilot");
   expect(root.textContent).toContain("cell-ar-advisory");
   expect(root.textContent).toContain("The changed localization resource is bound to this Test.");
   expect(root.textContent).toContain(
     "Visual evidence adds useful confidence without blocking merge.",
   );
-  expect(root.textContent).toContain("chromium · 390 × 844 · ar");
-  expect(root.textContent).toContain("Cleanup must be proved");
-  expect(root.textContent).toContain("Technical plan identity");
+  expect(root.textContent).toContain(
+    "On Compact Chromium Arabic · Chromium · 390 × 844 · Arabic · Dark",
+  );
+  expect(root.textContent).toContain("Cleanup required");
+  expect(root.textContent).toContain("Technical details");
+  expect(root.textContent).not.toContain("Technical plan identity");
   expect(root.textContent).toContain("Primary action overlaps the Arabic description by 22 px.");
   expect(root.textContent).toContain("Physical iOS is advisory for this repository.");
   await vi.waitFor(() => expect(root.textContent).toContain("GitHub · failure"));
@@ -328,13 +329,14 @@ test("presents one Change-first Proof without internal orchestration vocabulary"
   expect(root.textContent).toContain(
     "Repair the first causal regression, then create a new Proof for the new head.",
   );
-  expect(root.textContent).toContain("Exact identities");
+  expect(root.textContent).toContain("Technical details");
   expect(root.textContent).toContain(headSha);
   expect(root.textContent).toContain(
     `web-production · web · source ${headSha} · artifact ${digest}`,
   );
+  expect(root.textContent).toContain("cell-ar-pilot");
   expect(root.textContent).toContain(
-    "cell-ar-pilot · settings/settings-language@3 · target chromium-compact-ar · build web-production",
+    "settings/settings-language@3 · target chromium-compact-ar · build web-production",
   );
   expect(root.textContent).toContain(digest);
   expect(root.textContent).toContain(`github · ${proof.id} · Check #42 · completed · failure`);
@@ -344,6 +346,11 @@ test("presents one Change-first Proof without internal orchestration vocabulary"
   expect(planCells?.tagName).toBe("OL");
   expect(planCells?.children).toHaveLength(2);
   expect(planCells?.querySelector("dl")?.className).toContain("max-[700px]:grid-cols-1");
+  const proofRows = root.querySelectorAll<HTMLButtonElement>("[data-proof-list-row]");
+  expect(proofRows).toHaveLength(1);
+  expect(proofRows[0]?.className).toContain("min-h-11");
+  expect(proofRows[0]?.className).toContain("flex");
+  expect(root.querySelectorAll("[data-proof-identity-ledger]")).toHaveLength(1);
 
   [...root.querySelectorAll<HTMLButtonElement>("button")]
     .find((button) => button.textContent?.includes("Open run-rtl-failed"))
@@ -353,6 +360,36 @@ test("presents one Change-first Proof without internal orchestration vocabulary"
     .find((button) => button.textContent?.includes("settings-language"))
     ?.click();
   expect(onOpenMap).toHaveBeenCalledWith("settings");
+  dispose();
+  root.remove();
+});
+
+test("keeps Proof navigation dense and uses a neutral status for superseded work", async () => {
+  const superseded = {
+    ...proof,
+    id: "proof-superseded",
+    state: "superseded",
+    decision: undefined,
+  } as unknown as ChangeVerification;
+  mocks.runAction.mockImplementation(async (operationId: string) => {
+    if (operationId === "proof.list") return { proofs: [proof, superseded] };
+    if (operationId === "proof.inspect") {
+      return { proof, history: [proof], publications: [], publicationOutbox: [] };
+    }
+    throw new Error(`unexpected ${operationId}`);
+  });
+  const root = document.createElement("div");
+  document.body.append(root);
+  const dispose = render(() => <ChangesWorkspace onOpenRun={vi.fn()} onOpenMap={vi.fn()} />, root);
+
+  await vi.waitFor(() =>
+    expect(root.querySelectorAll<HTMLButtonElement>("[data-proof-list-row]")).toHaveLength(2),
+  );
+  const supersededRow = root.querySelector<HTMLButtonElement>('[data-proof-state="superseded"]');
+  expect(supersededRow?.className).toContain("min-h-11");
+  expect(supersededRow?.querySelector('[data-proof-status-tone="idle"]')).not.toBeNull();
+  expect(supersededRow?.getAttribute("aria-label")).toContain("Superseded");
+
   dispose();
   root.remove();
 });
@@ -521,9 +558,7 @@ test("runs an approved Proof through one server-owned outcome", async () => {
   );
   await vi.waitFor(() => expect(root.textContent).toContain("Running verification"));
   expect(root.textContent).not.toContain("Resume pilot");
-  expect(root.textContent).toContain(
-    "0 of 2 verification cells complete · 1 required · 1 advisory",
-  );
+  expect(root.textContent).toContain("0 of 2 verification cells complete");
 
   await vi.waitFor(() => expect(mocks.proofListeners.get(proof.id)?.size).toBe(1));
   for (const listener of mocks.proofListeners.get(proof.id) ?? []) {
@@ -569,8 +604,10 @@ test("runs an approved Proof through one server-owned outcome", async () => {
       nextAction: "complete",
     },
   });
-  await vi.waitFor(() => expect(root.textContent).toContain("Verification complete"));
-  expect(root.textContent).toContain("2 of 2 verification cells complete");
+  await vi.waitFor(() => expect(root.textContent).toContain("Open run-pilot"));
+  expect(root.textContent).not.toContain("Verification complete");
+  expect(root.textContent).not.toContain("2 of 2 verification cells complete");
+  expect(root.textContent).not.toContain("Next required action");
 
   dispose();
   root.remove();

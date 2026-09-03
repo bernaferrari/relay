@@ -620,7 +620,7 @@ export function ChangesWorkspace(props: {
           />
         }
       >
-        <div class="mx-auto grid min-h-[520px] w-full max-w-[1180px] grid-cols-[minmax(240px,320px)_minmax(0,1fr)] overflow-hidden rounded-2xl bg-surface-raised-stronger-non-alpha ring-1 ring-inset ring-border-weak-base max-[820px]:grid-cols-1">
+        <div class="mx-auto grid h-[clamp(32.5rem,calc(100dvh-18rem),47.5rem)] min-h-[520px] w-full max-w-[1180px] grid-cols-[minmax(240px,320px)_minmax(0,1fr)] overflow-hidden rounded-2xl bg-surface-raised-stronger-non-alpha ring-1 ring-inset ring-border-weak-base max-[820px]:h-auto max-[820px]:grid-cols-1">
           <ChangesWorkspaceProofList
             proofs={proofs}
             selectedId={selectedId}
@@ -644,7 +644,7 @@ export function ChangesWorkspace(props: {
             {(proof) => (
               <div
                 class={cn(
-                  "min-h-0 min-w-0 overflow-hidden max-[820px]:flex max-[820px]:flex-col",
+                  "flex min-h-0 min-w-0 flex-col overflow-hidden",
                   !mobileDetailOpen() && "max-[820px]:hidden",
                 )}
               >

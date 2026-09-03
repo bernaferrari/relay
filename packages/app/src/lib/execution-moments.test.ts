@@ -1,9 +1,19 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import type { JobInfo, RecipeInfo } from "../context/server";
-import { executionMoments } from "./execution-moments";
+import { executionMoments, executionMomentTitle } from "./execution-moments";
 
 describe("executionMoments", () => {
+  it("keeps compiler screenshot identities out of the human step title", () => {
+    assert.equal(
+      executionMomentTitle(
+        "Screenshot · step:open-language:Open Language from Settings",
+        "screenshot",
+      ),
+      "Open Language from Settings",
+    );
+  });
+
   it("replaces legacy reusable-test trace IDs with human action copy", () => {
     const recipe = {
       id: "proof-plan",

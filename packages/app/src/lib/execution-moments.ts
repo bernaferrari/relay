@@ -132,6 +132,14 @@ function stateForTrace(
   return "passed";
 }
 
+/** Compiler identities stay available in evidence, not in the step's reading order. */
+export function executionMomentTitle(title: string, kind?: RecipeStep["kind"]): string {
+  if (kind !== "screenshot") return title;
+  const withoutKind = title.replace(/^Screenshot\s*·\s*/iu, "");
+  const withoutIdentity = withoutKind.replace(/^step:[^:]+:/iu, "").trim();
+  return withoutIdentity || "Screenshot";
+}
+
 /**
  * The one UI model used before, during, and after execution. A moment is a
  * human-readable test step; `actions` preserves the smaller operations Relay
@@ -151,15 +159,16 @@ export function executionMoments(input: {
     const step = steps[index];
     const trace = traces[index];
     const fallbackAction = step ? ACTION_GLYPH[step.kind] : undefined;
+    const title =
+      step && ["module", "repeat", "branch"].includes(step.kind)
+        ? sentenceForStep(step, input.recipes)
+        : (trace?.title ??
+          (step
+            ? sentenceForStep(step, input.recipes)
+            : `Step ${String(index + 1).padStart(2, "0")}`));
     return {
       index,
-      title:
-        step && ["module", "repeat", "branch"].includes(step.kind)
-          ? sentenceForStep(step, input.recipes)
-          : (trace?.title ??
-            (step
-              ? sentenceForStep(step, input.recipes)
-              : `Step ${String(index + 1).padStart(2, "0")}`)),
+      title: executionMomentTitle(title, step?.kind),
       state: stateForTrace(input.job ?? undefined, trace),
       actions:
         trace?.actions !== undefined

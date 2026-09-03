@@ -14,6 +14,7 @@ export function initialRunReviewStep(job: JobInfo): number {
     (step) => step.status === "error" || step.tone === "danger" || step.status === "failed",
   );
   if (failed >= 0) return failed;
+  if (job.status === "error" || job.status === "cancelled") return 0;
   return steps.length - 1;
 }
 

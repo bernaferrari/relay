@@ -1,8 +1,8 @@
 import { For, Show, createMemo, createUniqueId, type JSX } from "solid-js";
 import type { ChangeVerification, VerificationCell } from "@relay/protocol";
 import { cn } from "../lib/cn";
-import { eyebrow, mono } from "../lib/ui";
-import { humanizeIdentifier } from "../lib/humanize-identifier";
+import { eyebrow } from "../lib/ui";
+import { humanizeIdentifier, humanizeTitle } from "../lib/humanize-identifier";
 
 export type ProofPlanSummary = Readonly<{
   total: number;
@@ -45,11 +45,12 @@ export function ProofPlanReview(props: {
             Verification plan
           </h3>
           <p class="m-0 text-body text-text-base">
-            {cellCountLabel(summary())} · {durationLabel(summary().estimatedDurationMs)}
+            {cellCountLabel(summary())} · {summary().required} required · {summary().advisory}{" "}
+            advisory
           </p>
         </div>
         <p class="m-0 text-caption text-text-weak">
-          {summary().required} required · {summary().advisory} advisory
+          {durationLabel(summary().estimatedDurationMs)}
         </p>
       </div>
 
@@ -72,109 +73,70 @@ export function ProofPlanReview(props: {
               const build = () => builds().get(cell.buildId);
               const isPilot = () => props.proof.selection.pilotCellId === cell.id;
               const journeyName = () => journeyLabel(cell);
-              const targetName = () => target()?.targetProfile.name ?? "Unassigned target";
+              const targetName = () =>
+                target()?.targetProfile.name
+                  ? capitalize(humanizeTitle(target()!.targetProfile.name))
+                  : "Unassigned target";
               return (
                 <li
-                  class="grid gap-3 rounded-xl bg-surface-base p-3 ring-1 ring-inset ring-border-weak-base"
+                  class="grid gap-4 rounded-xl bg-surface-base p-4 ring-1 ring-inset ring-border-weak-base"
                   aria-label={`${isPilot() ? "Pilot " : ""}${cell.requirement} verification cell ${index() + 1}: ${journeyName()} on ${targetName()}`}
                   data-proof-plan-cell
                 >
-                  <div class="flex flex-wrap items-center justify-between gap-2">
-                    <div class="flex flex-wrap items-center gap-1.5">
-                      <Show when={isPilot()}>
-                        <PlanTag tone="pilot">Pilot</PlanTag>
-                      </Show>
-                      <PlanTag tone={cell.requirement}>{capitalize(cell.requirement)}</PlanTag>
-                    </div>
-                    <span class={cn("text-caption tabular-nums text-text-weak", mono)}>
-                      {durationLabel(cell.estimatedDurationMs)}
-                    </span>
-                  </div>
-
-                  <dl class="m-0 grid grid-cols-2 gap-x-4 gap-y-3 max-[700px]:grid-cols-1">
-                    <PlanBinding label="Journey">
+                  <div class="flex min-w-0 items-start justify-between gap-4 max-[560px]:flex-col max-[560px]:gap-2">
+                    <div class="grid min-w-0 gap-2">
+                      <div class="flex flex-wrap items-center gap-1.5">
+                        <Show when={isPilot()}>
+                          <PlanTag tone="pilot">Pilot</PlanTag>
+                        </Show>
+                        <PlanTag tone={cell.requirement}>{capitalize(cell.requirement)}</PlanTag>
+                      </div>
                       <button
                         type="button"
-                        class="-mx-2 -my-1 grid min-h-11 w-[calc(100%+1rem)] content-center rounded-lg px-2 py-1 text-left text-body font-semibold text-text-interactive-base transition-colors hover:bg-surface-raised-base-hover hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-focus"
+                        class="-mx-2 grid min-h-11 w-[calc(100%+1rem)] content-center rounded-lg px-2 text-left text-title font-semibold tracking-[-0.01em] text-text-interactive-base transition-colors hover:bg-surface-raised-base-hover hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-focus"
                         onClick={() => props.onOpenMap(cell.journey.appMapId)}
                       >
                         <span class="break-words">{journeyName()}</span>
-                        {/* Keep the handle available to existing keyboard/test tooling without
-                         * making an internal identifier the primary product label. */}
                         <span class="sr-only">{cell.journey.testId}</span>
-                        <small class="break-words text-micro font-normal text-text-weak">
-                          App Map journey
-                          {cell.journey.appMapRevision
-                            ? ` · revision ${cell.journey.appMapRevision}`
-                            : ""}
-                        </small>
                       </button>
-                    </PlanBinding>
-                    <PlanBinding label="Build">
-                      <strong class="break-words text-body font-semibold text-text-strong">
-                        {buildLabel(build())}
-                      </strong>
-                      <small class="break-words text-micro text-text-weak">
-                        {build() ? "Frozen artifact for this journey" : "Build is not available"}
-                      </small>
-                    </PlanBinding>
-                    <PlanBinding label="Target">
-                      <strong class="break-words text-body font-semibold text-text-strong">
-                        {targetName()}
-                      </strong>
-                      <small class="break-words text-micro text-text-weak">
-                        {target() ? targetLabel(target()!) : "Unavailable"}
-                      </small>
-                    </PlanBinding>
-                    <PlanBinding label="Dimensions">
-                      <strong class="break-words text-body font-semibold text-text-strong">
-                        {dimensionsLabel(cell.dimensions)}
-                      </strong>
-                      <small class="break-words text-micro text-text-weak">
-                        Exact values frozen for this cell
-                      </small>
-                    </PlanBinding>
-                    <PlanBinding label="Risk">
-                      <strong class="break-words text-body font-semibold text-text-strong">
-                        {riskLabel(cell)}
-                      </strong>
-                      <small class="break-words text-micro text-text-weak">
-                        {riskReason(cell)}
-                      </small>
-                    </PlanBinding>
-                    <PlanBinding label="Required evidence">
-                      <strong class="break-words text-body font-semibold text-text-strong">
-                        {evidenceLabel(cell, target())}
-                      </strong>
-                      <small class="break-words text-micro text-text-weak">
-                        {cell.estimatedDurationMs
-                          ? `${durationLabel(cell.estimatedDurationMs)} for this evidence`
-                          : "Collection policy is checked before run"}
-                      </small>
-                    </PlanBinding>
-                    <PlanBinding label="Visual context">
-                      <strong class="break-words text-body font-semibold text-text-strong">
-                        {visualContext(target())}
-                      </strong>
-                      <small class="break-words text-micro text-text-weak">
-                        Destination checkpoint from {journeyName()}
-                      </small>
+                      <p class="m-0 break-words text-body text-text-base" data-proof-target-summary>
+                        On <strong class="font-semibold text-text-strong">{targetName()}</strong>
+                        {target() ? ` · ${targetLabel(target()!)}` : " · Target unavailable"}
+                      </p>
+                    </div>
+                    <Show when={knownDurationLabel(cell.estimatedDurationMs)}>
+                      {(duration) => (
+                        <span class="shrink-0 text-caption tabular-nums text-text-weak">
+                          {duration()}
+                        </span>
+                      )}
+                    </Show>
+                  </div>
+
+                  <dl class="m-0 grid grid-cols-2 gap-x-6 gap-y-3 max-[700px]:grid-cols-1">
+                    <PlanBinding label="Build">{buildLabel(build())}</PlanBinding>
+                    <PlanBinding label="Coverage">{dimensionsLabel(cell.dimensions)}</PlanBinding>
+                    <PlanBinding label="Evidence">{evidenceLabel(cell, target())}</PlanBinding>
+                    <PlanBinding label="Risk and cleanup">
+                      {riskLabel(cell)} · Cleanup{" "}
+                      {cell.cleanupRequired ? "required" : "not required"}
                     </PlanBinding>
                   </dl>
 
                   <div class="grid gap-1 border-t border-border-weak-base pt-3">
                     <strong class="text-caption font-semibold text-text-strong">
-                      Why this cell
+                      Why selected
                     </strong>
                     <p class="m-0 max-w-[65ch] text-caption/[1.45] text-text-base">
                       {cell.selectionReason}
                     </p>
-                  </div>
-                  <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-micro font-medium text-text-weak">
-                    <span>{isPilot() ? "Required pilot" : requirementLabel(cell.requirement)}</span>
-                    <span>
-                      Cleanup {cell.cleanupRequired ? "must be proved" : "is not required"}
-                    </span>
+                    <Show when={riskReason(cell)}>
+                      {(reason) => (
+                        <p class="m-0 max-w-[65ch] text-caption/[1.45] text-text-weak">
+                          {reason()}
+                        </p>
+                      )}
+                    </Show>
                   </div>
                 </li>
               );
@@ -182,49 +144,17 @@ export function ProofPlanReview(props: {
           </For>
         </ol>
       </Show>
-
-      <details class="rounded-xl bg-surface-base px-3 py-2.5 text-caption text-text-weak ring-1 ring-inset ring-border-weak-base">
-        <summary class="min-h-11 cursor-pointer select-none py-3 font-medium text-text-base">
-          Technical plan identity
-        </summary>
-        <dl class={cn("m-0 grid gap-2 pb-1 pt-2", mono)}>
-          <DigestFact label="Policy digest" value={props.proof.policyDigest} />
-          <DigestFact label="Plan digest" value={props.proof.planDigest} />
-          <DigestFact label="Decision digest" value={props.proof.decisionDigest} />
-          <For each={cells()}>
-            {(cell) => (
-              <div class="grid gap-1 border-t border-border-weak-base pt-2">
-                <dt class="break-all text-caption font-semibold text-text-base">{cell.id}</dt>
-                <dd class="m-0">
-                  <dl class="m-0 grid gap-1">
-                    <DigestFact label="App Map" value={cell.journey.appMapId} />
-                    <DigestFact label="Journey" value={cell.journey.testId} />
-                    <DigestFact label="Target case" value={cell.targetCaseId} />
-                    <DigestFact label="Build" value={cell.buildId} />
-                    <DigestFact label="Dimensions" value={JSON.stringify(cell.dimensions)} />
-                    <DigestFact label="Route variant" value={cell.routeVariantDigest} />
-                    <DigestFact label="Evidence policy" value={cell.evidencePolicyDigest} />
-                    <DigestFact label="Execution risk" value={cell.executionRiskDigest} />
-                    <DigestFact
-                      label="Build artifact"
-                      value={builds().get(cell.buildId)?.artifactDigest}
-                    />
-                  </dl>
-                </dd>
-              </div>
-            )}
-          </For>
-        </dl>
-      </details>
     </section>
   );
 }
 
 function PlanBinding(props: { label: string; children: JSX.Element }) {
   return (
-    <div class="grid min-w-0 content-start gap-0.5">
-      <dt class={cn(eyebrow, "text-text-weaker")}>{props.label}</dt>
-      <dd class="m-0 grid min-w-0">{props.children}</dd>
+    <div class="grid min-w-0 content-start gap-1">
+      <dt class="text-caption font-medium text-text-weak">{props.label}</dt>
+      <dd class="m-0 min-w-0 break-words text-body font-medium text-text-strong">
+        {props.children}
+      </dd>
     </div>
   );
 }
@@ -249,24 +179,19 @@ function PlanTag(props: {
   );
 }
 
-function DigestFact(props: { label: string; value: string | undefined }) {
-  return (
-    <div class="grid grid-cols-[minmax(7rem,auto)_minmax(0,1fr)] gap-2 max-[560px]:grid-cols-1 max-[560px]:gap-0.5">
-      <dt class="text-text-weaker">{props.label}</dt>
-      <dd class="m-0 break-all text-text-base">{props.value ?? "Not recorded"}</dd>
-    </div>
-  );
-}
-
 function cellCountLabel(summary: ProofPlanSummary): string {
   return `${summary.total} verification ${summary.total === 1 ? "cell" : "cells"}`;
 }
 
 function durationLabel(milliseconds: number | undefined): string {
-  if (milliseconds === undefined) return "Duration confirmed at run time";
+  if (milliseconds === undefined) return "Timing available after the first run";
   if (milliseconds < 60_000) return "Under 1 minute";
   const minutes = Math.max(1, Math.round(milliseconds / 60_000));
   return minutes === 1 ? "About 1 minute" : `About ${minutes} minutes`;
+}
+
+function knownDurationLabel(milliseconds: number | undefined): string | null {
+  return milliseconds === undefined ? null : durationLabel(milliseconds);
 }
 
 function capitalize(value: string): string {
@@ -280,11 +205,11 @@ function journeyLabel(cell: VerificationCell): string {
 function buildLabel(build: ChangeVerification["builds"][number] | undefined): string {
   if (!build) return "Build unavailable";
   const platform = build.platform === "web" ? "Web" : capitalize(build.platform);
-  return `${platform} ${build.configuration} build`;
-}
-
-function requirementLabel(requirement: VerificationCell["requirement"]): string {
-  return requirement === "required" ? "Required coverage" : "Advisory coverage";
+  const configuration = humanizeIdentifier(build.configuration) ?? build.configuration;
+  const compactConfiguration = configuration
+    .replace(new RegExp(`^${platform}\\s+`, "iu"), "")
+    .replace(/^Build\s+/iu, "");
+  return `${platform} · ${compactConfiguration}`;
 }
 
 function dimensionLabel(key: string): string {
@@ -355,29 +280,17 @@ function evidenceLabel(
   return "Run evidence required";
 }
 
-function visualContext(
-  target: ChangeVerification["selection"]["targetCases"][number] | undefined,
-): string {
-  if (!target) return "Target context unavailable";
-  const profile = target.targetProfile;
-  const browser = profile.browserCaseProfile;
-  if (browser) {
-    const viewport = `${browser.viewport.width} × ${browser.viewport.height}`;
-    const color = browser.colorScheme === "dark" ? "dark theme" : "light theme";
-    const input = browser.touch || browser.mobile ? "touch layout" : "pointer layout";
-    return `${viewport} · ${color} · ${input}`;
-  }
-  return (
-    [profile.platform, profile.model, profile.osVersion].filter(Boolean).join(" · ") ||
-    "Device profile"
-  );
-}
-
 function targetLabel(targetCase: ChangeVerification["selection"]["targetCases"][number]): string {
   const profile = targetCase.targetProfile;
   const browser = profile.browserCaseProfile;
   if (browser) {
-    return `${browser.engine} · ${browser.viewport.width} × ${browser.viewport.height} · ${browser.locale}`;
+    const engine = capitalize(browser.engine);
+    const locale = dimensionValueLabel("locale", browser.locale);
+    const appearance = browser.colorScheme === "dark" ? "Dark" : "Light";
+    return `${engine} · ${browser.viewport.width} × ${browser.viewport.height} · ${locale} · ${appearance}`;
   }
-  return [profile.platform, profile.model, profile.osVersion].filter(Boolean).join(" · ");
+  const platform = capitalize(profile.platform);
+  const version = profile.osVersion ? `${platform} ${profile.osVersion}` : platform;
+  const model = humanizeIdentifier(profile.model) ?? profile.model;
+  return [version, model].filter(Boolean).join(" · ");
 }

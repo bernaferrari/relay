@@ -4,15 +4,16 @@ import {
   type ChangeProofPublicationReceipt,
   type ChangeProofExecutionSummary,
   type ChangeVerification,
-  changeTestedSha,
 } from "@relay/protocol";
 import { cn } from "../lib/cn";
 import { mono, eyebrow } from "../lib/ui";
 import { Button } from "@relay/ui/button";
 import { StatusChip, type StatusChipTone } from "./status-chip";
 import type { ProofPrimaryAction } from "../lib/proof-actions";
-import { ProofPlanReview, proofPlanSummary } from "./proof-plan-review";
+import { ProofPlanReview } from "./proof-plan-review";
 import { ProofIdentityLedger } from "./proof-identity-ledger";
+import { proofDisplayTitle } from "../lib/proof-presentation";
+import { ScrollArea } from "./scroll-area";
 
 type ProofStatus = { label: string; tone: StatusChipTone };
 
@@ -65,44 +66,20 @@ export function ProofDetail(props: {
   };
 
   return (
-    <article class="min-h-0 min-w-0 flex-1 overflow-y-auto p-[clamp(1.25rem,3vw,2.5rem)]">
+    <ScrollArea as="article" class="flex-1 p-[clamp(1.25rem,3vw,2.5rem)]">
       <div class="grid gap-8">
         <header class="grid gap-3 border-b border-border-weak-base pb-6">
-          <div class="flex flex-wrap items-center gap-2">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="m-0 min-w-0 text-title font-semibold tracking-[-0.02em] text-text-strong">
+              {proofDisplayTitle(props.proof)}
+            </h2>
             <StatusChip tone={props.status.tone} label={props.status.label} />
           </div>
-          <h2 class="m-0 text-title font-semibold tracking-[-0.02em] text-text-strong">
-            {changeTitle(props.proof)}
-          </h2>
-          <p class="m-0 text-body text-text-base">
-            {projectName(props.proof)}
-            {props.proof.change.pullRequest
-              ? ` · Pull request #${props.proof.change.pullRequest}`
-              : ""}
-          </p>
-          <details class="w-fit text-caption text-text-weak">
-            <summary class="cursor-pointer select-none font-medium text-text-base">
-              Technical identity
-            </summary>
-            <div
-              class={cn(
-                "mt-2 grid max-w-[min(76ch,calc(100vw-3rem))] gap-1 rounded-lg bg-surface-base px-3 py-2",
-                mono,
-              )}
-            >
-              <span class="break-all">{props.proof.change.repository}</span>
-              <span class="break-all">
-                base tip {props.proof.change.baseTipSha ?? props.proof.change.baseSha}
-              </span>
-              <span class="break-all">
-                merge base {props.proof.change.mergeBaseSha ?? props.proof.change.baseSha}
-              </span>
-              <span class="break-all">
-                requested {props.proof.change.requestedHeadSha ?? props.proof.change.headSha}
-              </span>
-              <span class="break-all">tested {changeTestedSha(props.proof.change)}</span>
-            </div>
-          </details>
+          <Show when={props.proof.change.pullRequest && props.proof.change.agentClaim?.summary}>
+            <p class="m-0 text-body text-text-base">
+              Pull request #{props.proof.change.pullRequest}
+            </p>
+          </Show>
           <Show when={props.proof.change.agentClaim?.acceptanceCriteria.length}>
             <ul class="m-0 grid gap-1.5 pl-5 text-body/[1.45] text-text-base">
               <For each={props.proof.change.agentClaim!.acceptanceCriteria}>
@@ -143,17 +120,16 @@ export function ProofDetail(props: {
               </Show>
             </div>
           </Show>
-          <Show when={props.execution}>
+          <Show when={props.execution?.status !== "completed" ? props.execution : undefined}>
             {(execution) => (
-              <div
-                class="grid gap-1 rounded-xl bg-surface-base px-3 py-2.5 ring-1 ring-inset ring-border-weak-base"
-                aria-live="polite"
-              >
-                <strong class="text-body font-semibold text-text-strong">
-                  {executionHeadline(execution())}
-                </strong>
+              <div class="grid gap-1 border-t border-border-weak-base pt-3" aria-live="polite">
+                <Show when={execution().status !== "completed"}>
+                  <strong class="text-body font-semibold text-text-strong">
+                    {executionHeadline(execution())}
+                  </strong>
+                </Show>
                 <span class="text-caption tabular-nums text-text-weak">
-                  {executionProgress(execution(), props.proof)}
+                  {executionProgress(execution())}
                 </span>
                 <Show when={execution().status === "paused-human" && execution().humanIntervention}>
                   {(intervention) => (
@@ -327,21 +303,20 @@ export function ProofDetail(props: {
           </div>
         </Show>
 
-        <section class="grid gap-2 rounded-xl bg-surface-base p-4 ring-1 ring-inset ring-border-weak-base">
-          <span class={eyebrow}>Next required action</span>
-          <strong class="text-body font-semibold text-text-strong">
-            {nextRequiredAction(props.proof)}
-          </strong>
-        </section>
+        <Show when={props.proof.state !== "proved"}>
+          <section class="grid gap-2 rounded-xl bg-surface-base p-4 ring-1 ring-inset ring-border-weak-base">
+            <span class={eyebrow}>Next required action</span>
+            <strong class="text-body font-semibold text-text-strong">
+              {nextRequiredAction(props.proof)}
+            </strong>
+          </section>
+        </Show>
       </div>
-    </article>
+    </ScrollArea>
   );
 }
 
 function nextRequiredAction(proof: ChangeVerification): string {
-  if (proof.state === "proved") {
-    return "No further verification is required for this exact change.";
-  }
   if (proof.state === "superseded") {
     return "Open the newer Proof for the current change.";
   }
@@ -359,33 +334,16 @@ function executionHeadline(execution: ChangeProofExecutionSummary): string {
   return "Running verification";
 }
 
-function executionProgress(
-  execution: ChangeProofExecutionSummary,
-  proof: ChangeVerification,
-): string {
+function executionProgress(execution: ChangeProofExecutionSummary): string {
   if (execution.status === "uncertain") {
     return execution.terminalUncertainty?.reason ?? "Relay cannot safely infer the target outcome.";
   }
   const completed = execution.status === "completed" ? execution.total : execution.cursor;
-  const plan = proofPlanSummary(proof);
-  return `${completed} of ${execution.total} verification ${execution.total === 1 ? "cell" : "cells"} complete · ${plan.required} required · ${plan.advisory} advisory`;
+  return `${completed} of ${execution.total} verification ${execution.total === 1 ? "cell" : "cells"} complete`;
 }
 
 function shortSha(value: string): string {
   return value.slice(0, 12);
-}
-
-function changeTitle(proof: ChangeVerification): string {
-  return (
-    proof.change.agentClaim?.summary ||
-    (proof.change.pullRequest
-      ? `Pull request #${proof.change.pullRequest}`
-      : shortSha(changeTestedSha(proof.change)))
-  );
-}
-
-function projectName(proof: ChangeVerification): string {
-  return proof.change.repository.split("/").at(-1) ?? proof.change.repository;
 }
 
 function ProofSection(props: { title: string; children: JSX.Element }) {

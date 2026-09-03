@@ -1,7 +1,7 @@
 import { For, Show, createMemo } from "solid-js";
 import { useServer, type JobInfo, type PersistedRun } from "../context/server";
 import { cn } from "../lib/cn";
-import { executionMoments, stepGlyph, type ExecutionMoment } from "../lib/execution-moments";
+import { executionMoments, type ExecutionMoment } from "../lib/execution-moments";
 import { fmtAgo, fmtDur, titleize } from "../lib/job";
 import { presentTarget } from "../lib/target-presentation";
 import { formatStepDuration, runStateDot } from "../lib/run-review-presentation";
@@ -11,6 +11,7 @@ import { ActionIconTrail } from "./action-icon-trail";
 import { Icon } from "./icon";
 import { kindIcon, kindLabel } from "./step-list-metadata";
 import { runOutcomeChip } from "./status-chip";
+import { runDisplayTitle } from "../lib/run-presentation";
 
 /** Supporting action list for a run report. Playback remains the primary
  * review surface; this list explains and jumps to an exact moment. */
@@ -57,7 +58,6 @@ export function RunStepList(props: {
                   active()
                     ? "bg-[color-mix(in_srgb,var(--text-interactive-base)_11%,var(--background-base))]"
                     : "hover:bg-[var(--surface-base)]",
-                  node.state === "planned" && !active() && "opacity-55",
                 )}
                 aria-current={active() ? "step" : undefined}
                 onClick={() => props.onSelect(node.index)}
@@ -94,8 +94,8 @@ export function RunStepList(props: {
                       decoding="async"
                       class={cn(
                         "size-8 rounded-lg border border-border-weak-base object-cover",
-                        node.state === "failed" && "opacity-55",
-                        node.state === "planned" && !active() && "opacity-30",
+                        node.state === "failed" && "grayscale",
+                        node.state === "planned" && !active() && "grayscale",
                       )}
                     />
                   )}
@@ -151,12 +151,7 @@ export function RunRow(props: {
   };
   const outcome = () => runOutcomeChip(props.job);
   const status = () => props.batch?.status ?? outcome().label;
-  const title = () =>
-    props.batch?.title ??
-    props.job.title ??
-    props.job.recipeSnapshot?.title ??
-    titleize(props.job.action);
-  const glyphSteps = () => props.job.recipeSnapshot?.steps ?? [];
+  const title = () => props.batch?.title ?? runDisplayTitle(props.job);
   const passed = () => props.batch?.tone === "pass" || (!props.batch && outcome().tone === "pass");
   const active = () =>
     props.batch?.tone === "active" ||
@@ -167,27 +162,6 @@ export function RunRow(props: {
     props.batch
       ? fmtDur({ ...props.job, durationMs: props.batch.durationMs }, server.clock())
       : fmtDur(props.job, server.clock());
-  const frameThumbs = createMemo(() => {
-    const job = props.job;
-    const raw = [...(job.frames ?? []), ...(job.steps?.flatMap((step) => step.frames ?? []) ?? [])];
-    if (raw.length === 0) return [];
-    const seen = new Set<string>();
-    const persisted = Boolean(job.persisted || job.runDir);
-    const urls: string[] = [];
-    for (const frame of raw) {
-      const key = `${frame.path}|${frame.capturedAt}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      const src = frame.base64
-        ? `data:${frame.mime || "image/png"};base64,${frame.base64}`
-        : persisted
-          ? server.frameUrlForPersisted(job as unknown as PersistedRun, frame)
-          : null;
-      if (src) urls.push(src);
-      if (urls.length >= 3) break;
-    }
-    return urls;
-  });
   const rowLabel = () =>
     [
       title(),
@@ -201,23 +175,24 @@ export function RunRow(props: {
     <button
       type="button"
       class={cn(
-        "group mb-2 grid min-h-[76px] w-full grid-cols-[38px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border border-border-weak-base bg-background-stronger px-3.5 text-left text-caption/[1.35] text-text-weak shadow-[0_5px_16px_rgb(0_0_0/6%)] transition-[background-color,border-color] duration-hover last:mb-0 hover:border-[var(--border-strong-base)] hover:bg-[var(--surface-base)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus",
+        "group mb-2 grid min-h-[72px] w-full grid-cols-[38px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border border-border-base bg-surface-raised-stronger-non-alpha px-3.5 text-left text-caption/[1.35] text-text-base shadow-[0_4px_14px_rgb(0_0_0/6%)] transition-[background-color,border-color] duration-hover last:mb-0 hover:border-[var(--border-strong-base)] hover:bg-[var(--surface-base)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus",
         props.selected && "border-border-interactive-base bg-surface-base-active",
       )}
       aria-current={props.selected ? "true" : undefined}
       aria-label={rowLabel()}
+      data-run-id={props.job.id}
       onClick={props.onOpen}
     >
       <span
         class={cn(
           "grid size-9 place-items-center rounded-xl",
-          passed() && "bg-surface-success-weak text-icon-success-base",
-          attention() && "bg-surface-warning-weak text-icon-warning-base",
-          active() && "bg-surface-info-weak text-icon-info-base",
+          passed() && "bg-surface-success-weak text-icon-success-active",
+          attention() && "bg-surface-warning-weak text-icon-warning-active",
+          active() && "bg-surface-info-weak text-icon-info-active",
           !passed() &&
             !active() &&
             !attention() &&
-            "bg-surface-critical-weak text-icon-critical-base",
+            "bg-surface-critical-weak text-icon-critical-active",
         )}
         aria-hidden="true"
       >
@@ -238,8 +213,10 @@ export function RunRow(props: {
         </Show>
       </span>
       <span class="min-w-0">
-        <strong class="block truncate text-body/[1.3] font-[550] text-text-base">{title()}</strong>
-        <span class="mt-1.5 flex min-w-0 items-center gap-1.5 text-text-weaker">
+        <strong class="block truncate text-body/[1.3] font-[550] text-text-strong">
+          {title()}
+        </strong>
+        <span class="mt-1.5 flex min-w-0 items-center gap-1.5 text-text-base">
           <span
             class={cn(
               "font-medium",
@@ -250,14 +227,6 @@ export function RunRow(props: {
           >
             {status()}
           </span>
-          <Show when={glyphSteps().length > 0}>
-            <span class="opacity-50">·</span>
-            <span class="text-caption">
-              {glyphSteps().length} step{glyphSteps().length === 1 ? "" : "s"}
-            </span>
-            <span class="opacity-50">·</span>
-            <ActionIconTrail glyphs={glyphSteps().map((step) => stepGlyph(step.kind))} max={8} />
-          </Show>
           <Show when={targetName()}>
             <span class="opacity-50">·</span>
             <span class="max-w-[220px] truncate">{targetName()}</span>
@@ -271,23 +240,10 @@ export function RunRow(props: {
             </i>
           </Show>
         </span>
-        <Show when={frameThumbs().length > 0}>
-          <span class="mt-1.5 flex items-center gap-1" aria-hidden="true">
-            <For each={frameThumbs()}>
-              {(src) => (
-                <img
-                  src={src}
-                  alt=""
-                  class="h-8 w-[18px] shrink-0 rounded border border-border-weak-base object-cover opacity-90"
-                />
-              )}
-            </For>
-          </span>
-        </Show>
       </span>
       <span class="grid justify-items-end gap-1.5">
         <span class="font-mono text-caption tabular-nums text-text-base">{duration() || "—"}</span>
-        <span class="inline-flex items-center gap-1.5 text-micro text-text-weaker">
+        <span class="inline-flex items-center gap-1.5 text-micro text-text-weak">
           <span class={cn(mono, "text-micro")}>
             {fmtAgo(props.job.startedAt ?? props.job.queuedAt, server.clock()) || "now"}
           </span>

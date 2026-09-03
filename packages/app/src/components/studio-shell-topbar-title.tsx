@@ -27,7 +27,7 @@ export function ShellTopbarTitle(props: {
             </strong>
           ) : props.area === "runs" ? (
             <strong class="max-w-full truncate px-2 text-body font-medium text-[var(--text-base)]">
-              Run history
+              Runs
             </strong>
           ) : null
         }

@@ -28,7 +28,6 @@ export function CombineReview(props: {
   onOpen: (job: JobInfo, frameIndex: number) => void;
   onRetryProblems: () => void;
   onExport: () => void;
-  onClose: () => void;
   exporting?: boolean;
 }) {
   const server = useServer();
@@ -140,9 +139,6 @@ export function CombineReview(props: {
       <header class="grid shrink-0 gap-2.5 border-b border-[var(--border-weak-base)] px-5 py-3.5">
         <div class="flex items-center justify-between gap-4">
           <div class="flex min-w-0 items-center gap-2">
-            <Button variant="ghost" size="sm" aria-label="Back to runs" onClick={props.onClose}>
-              <Icon name="chevron-left" size={14} />
-            </Button>
             <h2 class="m-0 text-title font-semibold tracking-[-0.02em] text-[var(--text-strong)]">
               Repeat results
             </h2>

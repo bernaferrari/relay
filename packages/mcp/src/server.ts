@@ -133,6 +133,8 @@ const canonicalConfirmOperationIds = new Set<OperationId>([
   "proof.plan.approve",
   "proof.cancel",
   "proof.publication.retry",
+  "proof.run.confirm",
+  "proof.run.human-evidence",
 ]);
 
 function recoveryOptionsForProfile(

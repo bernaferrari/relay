@@ -142,7 +142,7 @@ export function findBaselineRun(rows: JobInfo[], current: JobInfo): JobInfo | nu
 }
 
 export const RUN_FILTER_TABS = [
-  ["all", "Latest"],
+  ["all", "Latest results"],
   ["review", "Review"],
   ["passed", "Passed"],
   ["attention", "Attention"],

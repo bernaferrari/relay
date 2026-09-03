@@ -15,6 +15,8 @@ const AppMapTestWorkspace = lazy(() =>
 
 export function StudioAuthoringWorkspace(props: {
   mode: MapMode;
+  testId?: string;
+  onTestChange?: (testId: string) => void;
   navigatorOpen: boolean;
   onMode: (mode: MapMode) => void;
   onOpenTargets: () => void;
@@ -78,6 +80,8 @@ export function StudioAuthoringWorkspace(props: {
       >
         <Suspense fallback={<WorkspaceSkeleton label="test editor" />}>
           <AppMapTestWorkspace
+            testId={props.testId}
+            onTestChange={props.onTestChange}
             workspaceController={props.workspaceController}
             onOpenRun={props.onOpenRun}
             onChooseTarget={props.onOpenTargets}
@@ -109,7 +113,7 @@ export function StudioAuthoringWorkspace(props: {
       <Show when={onboarding.canReopen() && !operatorRun.visible()}>
         <button
           type="button"
-          class="absolute bottom-4 left-4 z-30 min-h-10 rounded-xl border border-[var(--map-divider)] bg-[var(--map-control-surface)] px-3 text-caption font-medium text-[var(--text-strong)] shadow-[var(--map-elevation-control)] transition-colors hover:bg-[var(--surface-base-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)] max-[760px]:bottom-2 max-[760px]:left-2"
+          class="absolute bottom-4 left-4 z-30 min-h-11 rounded-xl border border-[var(--map-divider)] bg-[var(--map-control-surface)] px-3 text-caption font-medium text-[var(--text-strong)] shadow-[var(--map-elevation-control)] transition-colors hover:bg-[var(--surface-base-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)] max-[760px]:bottom-2 max-[760px]:left-2"
           onClick={onboarding.reopen}
         >
           First useful test

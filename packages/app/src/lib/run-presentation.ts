@@ -1,7 +1,14 @@
 import type { DeviceInfo, JobInfo } from "./api-types";
+import { titleize } from "./job";
 import { platformLabel, presentTarget } from "./target-presentation";
 
 type AppMapRunIdentity = Pick<JobInfo, "action" | "artifacts">;
+
+/** Replays remain the same human Test; replay provenance belongs in details. */
+export function runDisplayTitle(job: Pick<JobInfo, "action" | "recipeSnapshot" | "title">): string {
+  const title = job.title ?? job.recipeSnapshot?.title ?? titleize(job.action);
+  return title.replace(/\s*·\s*replay\s*$/iu, "").trim();
+}
 
 /** App Map execution compiles to a private recipe id. Reports must navigate
  * back to the durable map, never expose that generated recipe as a document. */

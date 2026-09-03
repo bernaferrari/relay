@@ -975,6 +975,74 @@ test("preserves confirmed Proof lifecycle consent for canonical protocol operati
   }
 });
 
+test("preserves confirmed guarded Proof execution consent for canonical operations", async () => {
+  const calls: Array<{ operationId: string; input: Record<string, unknown> }> = [];
+  const session = await connectMcp(
+    {
+      async invoke(operationId, input) {
+        calls.push({ operationId, input });
+        return {};
+      },
+    },
+    "proof",
+  );
+  const previewDigest = `sha256:${"a".repeat(64)}`;
+  const evidenceDigest = `sha256:${"b".repeat(64)}`;
+  const receiptInput = {
+    proofId: "proof-1",
+    expectedVersion: 2,
+    cellId: "cell-1",
+    previewDigest,
+  };
+  const evidenceInput = {
+    proofId: "proof-1",
+    executionId: "execution-1",
+    cellId: "cell-1",
+    stepId: "step-1",
+    evidenceDigest,
+  };
+  try {
+    for (const [name, input] of [
+      ["relay_proof_run_confirm", receiptInput],
+      ["relay_proof_run_human_evidence", evidenceInput],
+    ] as const) {
+      const unconfirmed = callResult(
+        await session.request("tools/call", { name, arguments: input }),
+      );
+      assert.equal(unconfirmed.isError, true);
+      assert.match(String(unconfirmed.content[0]?.text), /confirm/i);
+    }
+    assert.deepEqual(calls, []);
+
+    const confirmedReceipt = callResult(
+      await session.request("tools/call", {
+        name: "relay_proof_run_confirm",
+        arguments: { ...receiptInput, confirm: true },
+      }),
+    );
+    const confirmedEvidence = callResult(
+      await session.request("tools/call", {
+        name: "relay_proof_run_human_evidence",
+        arguments: { ...evidenceInput, confirm: true },
+      }),
+    );
+    assert.notEqual(confirmedReceipt.isError, true, JSON.stringify(confirmedReceipt.content));
+    assert.notEqual(confirmedEvidence.isError, true, JSON.stringify(confirmedEvidence.content));
+    assert.deepEqual(calls, [
+      {
+        operationId: "proof.run.confirm",
+        input: { ...receiptInput, confirm: true },
+      },
+      {
+        operationId: "proof.run.human-evidence",
+        input: { ...evidenceInput, confirm: true },
+      },
+    ]);
+  } finally {
+    await session.close();
+  }
+});
+
 test("preserves confirmed browser authentication consent for canonical operations", async () => {
   const calls: Array<{ operationId: string; input: Record<string, unknown> }> = [];
   const session = await connectMcp(

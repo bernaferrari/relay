@@ -13,6 +13,11 @@ export function relayBrowserOrigin(port) {
   return `http://127.0.0.1:${port}`;
 }
 
+export function relayBrowserOrigins(port) {
+  relayBrowserOrigin(port);
+  return [`http://localhost:${port}`, `http://127.0.0.1:${port}`];
+}
+
 export function allowedBrowserOriginsWith(origin, configured = "") {
   return [
     ...new Set([...configured.split(","), origin].map((value) => value.trim()).filter(Boolean)),
@@ -38,21 +43,22 @@ async function chooseAppPort(preferred) {
 }
 
 async function main() {
-  const configured = Number(process.env.RELAY_APP_PORT || 5173);
+  const configured = Number(process.env.RELAY_APP_PORT || 3000);
   if (!Number.isSafeInteger(configured) || configured < 1 || configured > 65_535) {
     throw new Error("RELAY_APP_PORT must be an integer between 1 and 65535");
   }
   const port = await chooseAppPort(configured);
-  const origin = relayBrowserOrigin(port);
+  const [browserUrl] = relayBrowserOrigins(port);
   const env = {
     ...process.env,
-    RELAY_ALLOWED_BROWSER_ORIGINS: allowedBrowserOriginsWith(
-      origin,
-      process.env.RELAY_ALLOWED_BROWSER_ORIGINS,
+    RELAY_ALLOWED_BROWSER_ORIGINS: relayBrowserOrigins(port).reduce(
+      (configuredOrigins, allowedOrigin) =>
+        allowedBrowserOriginsWith(allowedOrigin, configuredOrigins),
+      process.env.RELAY_ALLOWED_BROWSER_ORIGINS ?? "",
     ),
   };
 
-  process.stdout.write(`Starting Relay at ${origin}\n`);
+  process.stdout.write(`Starting Relay for the browser at ${browserUrl}\n`);
   const service = spawnSync(process.execPath, [join(root, "scripts/ensure-server.mjs")], {
     cwd: root,
     env,

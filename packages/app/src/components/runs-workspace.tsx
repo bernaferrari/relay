@@ -22,10 +22,14 @@ import type {
   VisualReviewDecision,
 } from "@relay/protocol";
 import { failedStepFromTrace } from "@relay/protocol";
-import { appMapIdForJob, runStopHeadline, runTargetLabel } from "../lib/run-presentation";
+import {
+  appMapIdForJob,
+  runDisplayTitle,
+  runStopHeadline,
+  runTargetLabel,
+} from "../lib/run-presentation";
 import { canApproveVisualBaseline, hasVisualRunFrames } from "../lib/visual-run-readiness";
 import { RunLogsEvidence, RunNetworkEvidence, RunPerformanceEvidence } from "./run-evidence-panels";
-import { RunBrowser } from "./run-browser";
 import { CompatibilityReportPanel } from "./compatibility-report-panel";
 import { RunStepList } from "./run-list-surfaces";
 import { RunReplayStage } from "./run-replay-stage";
@@ -51,6 +55,10 @@ import {
 } from "../lib/combine-review";
 import { useCombinePackActions } from "../lib/use-run-combine-pack-actions";
 import { RunsHistoryList } from "./runs-history-list";
+import {
+  runReportTabAvailable,
+  structuredNetworkEvidenceCount,
+} from "../lib/run-report-availability";
 
 export function RunsWorkspace(props: {
   onOpenMap: (id: string) => void;
@@ -92,6 +100,7 @@ export function RunsWorkspace(props: {
   >([]);
   const [runFilter, setRunFilter] = createSignal<RunFilterId>("all");
   const [historyExpanded, setHistoryExpanded] = createSignal(false);
+  let returnFocusRunId: string | null = linkedRun;
   const requestedDetails = new Set<string>();
 
   onMount(() => {
@@ -281,6 +290,7 @@ export function RunsWorkspace(props: {
     }
   }
   const openRun = (job: JobInfo) => {
+    returnFocusRunId = job.id;
     setSelectedId(job.id);
     server.setSelectedJobId(job.id);
     selectRunStep(initialRunReviewStep(job));
@@ -300,6 +310,23 @@ export function RunsWorkspace(props: {
         .loadRunDetail(job.id, Boolean(job.persisted))
         .finally(() => requestedDetails.delete(job.id));
     }
+  };
+  const closeRun = () => {
+    const runIdToFocus = returnFocusRunId ?? selectedId();
+    // Clear the shared selection first. Otherwise the synchronization effect
+    // can observe the old shared id between these writes and reopen the Run.
+    server.setSelectedJobId(null);
+    setSelectedId(null);
+    setTab("timeline");
+    const url = new URL(window.location.href);
+    url.searchParams.delete("run");
+    window.history.replaceState({}, "", url);
+    queueMicrotask(() => {
+      if (!runIdToFocus) return;
+      [...document.querySelectorAll<HTMLElement>("[data-run-id]")]
+        .find((element) => element.dataset.runId === runIdToFocus)
+        ?.focus();
+    });
   };
   const openCombineCapture = (job: JobInfo, frameIndex: number) => {
     setSelectedId(job.id);
@@ -322,6 +349,21 @@ export function RunsWorkspace(props: {
     cancelJob: (id) => server.cancelJob(id),
   });
   const reviewCounts = createMemo(() => (selected() ? runReviewCounts(selected()!) : null));
+  const networkEvidenceCount = createMemo(() => {
+    const job = selected();
+    const evidence = runEvidenceRunId() === job?.id ? runEvidence() : null;
+    return structuredNetworkEvidenceCount(evidence);
+  });
+  const reportTabAvailable = (id: (typeof RUN_REPORT_TABS)[number][0]): boolean => {
+    const job = selected();
+    const evidence = runEvidenceRunId() === job?.id ? runEvidence() : null;
+    return runReportTabAvailable({
+      id,
+      job,
+      evidence,
+      checkCount: reviewCounts()?.checks ?? 0,
+    });
+  };
   const visualPendingCount = createMemo(() => {
     const comparison = durableVisualComparison();
     if (!comparison?.baseline) return null;
@@ -415,12 +457,29 @@ export function RunsWorkspace(props: {
           />
         </div>
       </Show>
+      <Show when={selected()}>
+        {(job) => (
+          <header class="flex min-h-14 shrink-0 items-center gap-3 border-b border-border-weak-base bg-background-base px-4">
+            <button
+              type="button"
+              class="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-lg px-2.5 text-body font-semibold text-text-base transition-colors hover:bg-surface-base-hover hover:text-text-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus"
+              onClick={closeRun}
+            >
+              <Icon name="chevron-left" size={15} />
+              Back to runs
+            </button>
+            <span class="ml-auto shrink-0">
+              <StatusChip tone={runOutcomeChip(job()).tone} label={runOutcomeChip(job()).label} />
+            </span>
+          </header>
+        )}
+      </Show>
       <div
         class={cn(
           selected()
             ? tab() === "combine"
               ? "grid min-h-0 min-w-0 flex-1 grid-cols-1 overflow-hidden"
-              : "grid min-h-0 min-w-0 flex-1 grid-cols-[216px_minmax(420px,1.35fr)_minmax(390px,0.85fr)] overflow-hidden max-[1180px]:grid-cols-[minmax(360px,1.25fr)_minmax(390px,0.75fr)] max-[700px]:grid-cols-1 max-[700px]:overflow-y-auto"
+              : "grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(420px,1.35fr)_minmax(390px,0.85fr)] overflow-hidden max-[900px]:grid-cols-1 max-[900px]:overflow-y-auto"
             : "mx-auto grid w-full max-w-[1080px] min-w-0 grid-cols-[minmax(0,1fr)] gap-3.5",
           !selected() && rows().length === 0 && "place-items-center px-6 py-16",
         )}
@@ -438,9 +497,6 @@ export function RunsWorkspace(props: {
             onOpenTests={props.onOpenTests}
           />
         </Show>
-        <Show when={selected() && tab() !== "combine"}>
-          <RunBrowser rows={rows()} selectedId={selectedId()} onSelect={openRun} />
-        </Show>
         <Show when={selected()}>
           {(job) => (
             <Show
@@ -455,12 +511,6 @@ export function RunsWorkspace(props: {
                   onOpenEvidence={(event) => {
                     setTab(evidenceTabForChannel(event.channel));
                   }}
-                  onBack={() => {
-                    setSelectedId(null);
-                    const url = new URL(window.location.href);
-                    url.searchParams.delete("run");
-                    window.history.replaceState({}, "", url);
-                  }}
                 />
               }
             >
@@ -471,12 +521,6 @@ export function RunsWorkspace(props: {
                   onOpen={openCombineCapture}
                   onRetryProblems={() => void retryProblemCombineRuns()}
                   onExport={() => void exportSelectedCombine()}
-                  onClose={() => {
-                    setSelectedId(null);
-                    const url = new URL(window.location.href);
-                    url.searchParams.delete("run");
-                    window.history.replaceState({}, "", url);
-                  }}
                   exporting={combineExporting()}
                 />
               )}
@@ -491,24 +535,8 @@ export function RunsWorkspace(props: {
                   <div class="grid min-w-0 gap-1">
                     <span class={eyebrow}>Execution review</span>
                     <strong class="line-clamp-2 text-display/[1.15] font-semibold tracking-[-0.025em] text-text-strong">
-                      {job().title ?? job().recipeSnapshot?.title ?? job().action}
+                      {runDisplayTitle(job())}
                     </strong>
-                  </div>
-                  <div class="flex shrink-0 items-center gap-0.5">
-                    <button
-                      type="button"
-                      class="grid size-8 place-items-center rounded-lg text-text-weaker transition-[background-color,color,transform] duration-hover hover:bg-surface-base-hover hover:text-text-base active:scale-[0.97] focus-visible:outline-1 focus-visible:outline-border-strong-focus"
-                      aria-label="Close report"
-                      data-tip="Close report"
-                      onClick={() => {
-                        setSelectedId(null);
-                        const url = new URL(window.location.href);
-                        url.searchParams.delete("run");
-                        window.history.replaceState({}, "", url);
-                      }}
-                    >
-                      <Icon name="x" size={15} />
-                    </button>
                   </div>
                 </div>
                 <div class="flex flex-wrap items-center gap-2">
@@ -584,10 +612,6 @@ export function RunsWorkspace(props: {
                   </Show>
                 </div>
                 <div class="flex flex-wrap items-center gap-x-3 gap-y-2 text-caption text-text-weak">
-                  <StatusChip
-                    tone={runOutcomeChip(job()).tone}
-                    label={runOutcomeChip(job()).label}
-                  />
                   <span class={cn(mono, "text-text-weaker")} data-tip="When this run finished">
                     {fmtAgo(
                       job().finishedAt ?? job().startedAt ?? job().queuedAt,
@@ -706,10 +730,14 @@ export function RunsWorkspace(props: {
                     aria-selected={tab() === id}
                     tabindex={tab() === id ? 0 : -1}
                     class={cn(
-                      "inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-caption font-medium text-text-weaker transition-[background-color,color,box-shadow,transform] duration-hover hover:bg-surface-base-hover hover:text-text-base active:scale-[0.97] max-[900px]:min-h-11",
+                      "inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-caption font-medium transition-[background-color,color,box-shadow,transform] duration-hover hover:bg-surface-base-hover hover:text-text-base active:scale-[0.97] max-[900px]:min-h-11",
+                      reportTabAvailable(id) ? "text-text-base" : "text-text-weaker",
                       tab() === id &&
                         "bg-surface-raised-stronger-non-alpha text-text-strong shadow-xs-border-base",
                     )}
+                    data-tip={
+                      reportTabAvailable(id) ? undefined : `${label} was not captured for this run`
+                    }
                     onClick={() => setTab(id)}
                     onKeyDown={onReportTabKeyDown}
                   >
@@ -719,9 +747,9 @@ export function RunsWorkspace(props: {
                         {reviewCounts()!.checks}
                       </span>
                     ) : null}
-                    {id === "network" && (reviewCounts()?.network ?? 0) > 0 ? (
+                    {id === "network" && networkEvidenceCount() > 0 ? (
                       <span class="min-w-4 rounded-full bg-surface-interactive-weak px-1 text-center text-caption/4 text-text-interactive-base">
-                        {reviewCounts()!.network}
+                        {networkEvidenceCount()}
                       </span>
                     ) : null}
                     {id === "visual" && (visualPendingCount() ?? 0) > 0 ? (
@@ -795,22 +823,6 @@ export function RunsWorkspace(props: {
                     targetLabel={runTargetLabel(job(), server.devices())}
                     onOpenRecipe={(id) => props.onOpenTest(id)}
                   />
-                  <Show when={job().evidence}>
-                    {(manifest) => (
-                      <section class="mt-3 rounded-xl border border-border-weak-base p-3">
-                        <strong class="text-caption font-semibold tabular-nums text-text-strong">
-                          Evidence completeness
-                        </strong>
-                        <div class="mt-2 flex flex-wrap gap-1.5">
-                          {Object.values(manifest().channels).map((channel) => (
-                            <span class="rounded-full border border-border-weak-base px-2 py-1 text-micro text-text-weak">
-                              {channel.channel} · {channel.status}
-                            </span>
-                          ))}
-                        </div>
-                      </section>
-                    )}
-                  </Show>
                   <Show
                     when={regressionSignals().some(
                       (signal) => signal.material && signal.direction === "regression",

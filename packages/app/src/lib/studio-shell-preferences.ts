@@ -13,3 +13,22 @@ export function readRememberedDevicePanelPreference(): boolean {
     return true;
   }
 }
+
+const selectedTestKey = (appMapId: string) => `relay:selected-test:v1:${appMapId}`;
+
+/** Keep each map's last open Test stable across workspace changes and renderer reloads. */
+export function readRememberedTestSelection(appMapId: string): string | undefined {
+  try {
+    return localStorage.getItem(selectedTestKey(appMapId))?.trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function rememberTestSelection(appMapId: string, testId: string): void {
+  try {
+    localStorage.setItem(selectedTestKey(appMapId), testId);
+  } catch {
+    // Selection remains valid for this renderer session when storage is unavailable.
+  }
+}

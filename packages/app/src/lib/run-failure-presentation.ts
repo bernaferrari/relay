@@ -41,6 +41,9 @@ export function readableFailure(value: string, error?: string): string {
 
 export function friendlyError(value: string): string {
   const message = value.trim();
+  if (/page\.goto:[\s\S]*ERR_CONNECTION_REFUSED/i.test(message)) {
+    return "The app under test is not running at its saved address. Start it, then retry this Run.";
+  }
   if (/tour: mapped row\(s\) are absent from the complete live list/i.test(message)) {
     return "This locale exposes a different list structure. Review the named missing row, update its map binding once, then retry only problem locales.";
   }

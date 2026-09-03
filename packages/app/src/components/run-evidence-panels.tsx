@@ -75,10 +75,10 @@ function EvidenceChannelBanner(props: {
   const status = () => props.channel?.status ?? "unavailable";
   const tone = () =>
     status() === "captured"
-      ? "text-[var(--icon-success-base)]"
+      ? "text-[var(--icon-success-active)]"
       : status() === "partial"
-        ? "text-[var(--icon-warning-base)]"
-        : "text-[var(--icon-critical-base)]";
+        ? "text-[var(--icon-warning-active)]"
+        : "text-[var(--icon-critical-active)]";
   return (
     <header class="mb-3 flex flex-wrap items-start justify-between gap-2">
       <div class="min-w-0">
@@ -194,7 +194,7 @@ export function RunNetworkEvidence(props: { evidence: RunEvidenceQuery | null; l
               </div>
               <Show when={packet().flows.length > 0 || packet().limitations.length > 0}>
                 <details class="group border-t border-border-weak-base">
-                  <summary class="flex min-h-9 cursor-pointer list-none items-center gap-1.5 px-3 text-micro font-medium text-text-weak outline-none hover:bg-surface-raised-base-hover hover:text-text-base focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-strong-focus [&::-webkit-details-marker]:hidden">
+                  <summary class="flex min-h-9 cursor-pointer list-none items-center gap-1.5 px-3 text-micro font-medium text-text-weak outline-none hover:bg-surface-raised-base-hover hover:text-text-base focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-strong-focus max-[760px]:min-h-11 [&::-webkit-details-marker]:hidden">
                     Inspect transport flows and coverage limits
                     <Icon
                       name="chevron-down"
@@ -249,7 +249,7 @@ export function RunNetworkEvidence(props: { evidence: RunEvidenceQuery | null; l
               onInput={(event) => setFilter(event.currentTarget.value)}
               placeholder="Filter HTTP URL, method, or result"
               aria-label="Filter HTTP network evidence"
-              class="h-8 w-full rounded-lg border border-border-weak-base bg-surface-raised-stronger-non-alpha pl-8 pr-2.5 text-caption text-text-base outline-none placeholder:text-text-weaker focus:border-border-strong-focus"
+              class="h-8 w-full rounded-lg border border-border-weak-base bg-surface-raised-stronger-non-alpha pl-8 pr-2.5 text-caption text-text-base outline-none placeholder:text-text-weaker focus:border-border-strong-focus max-[760px]:h-11 max-[760px]:text-body"
             />
           </div>
           <span class="shrink-0 font-mono text-micro text-text-weaker">{rows().length} shown</span>
@@ -277,7 +277,7 @@ export function RunNetworkEvidence(props: { evidence: RunEvidenceQuery | null; l
             <For each={rows()}>
               {(entry) => (
                 <details class="group border-b border-border-weak-base last:border-0">
-                  <summary class="grid cursor-pointer list-none grid-cols-[62px_72px_minmax(0,1fr)_74px_62px] items-center gap-2 px-3 py-2.5 text-micro hover:bg-surface-raised-base-hover [&::-webkit-details-marker]:hidden">
+                  <summary class="grid min-h-8 cursor-pointer list-none grid-cols-[62px_72px_minmax(0,1fr)_74px_62px] items-center gap-2 px-3 py-2.5 text-micro outline-none hover:bg-surface-raised-base-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-strong-focus max-[760px]:min-h-11 [&::-webkit-details-marker]:hidden">
                     <span
                       class={cn(
                         "font-medium",

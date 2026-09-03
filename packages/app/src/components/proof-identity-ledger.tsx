@@ -5,7 +5,7 @@ import {
   type ChangeVerification,
 } from "@relay/protocol";
 import { cn } from "../lib/cn";
-import { eyebrow, mono } from "../lib/ui";
+import { mono } from "../lib/ui";
 
 /** A compact, read-only ledger for the identities that make a Proof auditable.
  * Long digests stay complete here; the surrounding Proof copy may use short
@@ -15,13 +15,29 @@ export function ProofIdentityLedger(props: {
   publication?: ChangeProofPublicationReceipt;
 }) {
   return (
-    <section
-      class="grid gap-3 rounded-xl bg-surface-base p-4 ring-1 ring-inset ring-border-weak-base"
+    <details
+      class="rounded-xl bg-surface-base px-4 ring-1 ring-inset ring-border-weak-base"
       data-proof-identity-ledger
-      aria-label="Exact Proof identities"
+      aria-label="Technical Proof details"
     >
-      <span class={eyebrow}>Exact identities</span>
-      <dl class="m-0 grid gap-3 text-caption">
+      <summary class="flex min-h-11 cursor-pointer select-none items-center py-3 text-body font-medium text-text-base">
+        Technical details
+      </summary>
+      <dl class="m-0 grid gap-3 border-t border-border-weak-base pb-4 pt-3 text-caption">
+        <IdentityFact label="Change">
+          <div class={cn("grid gap-1 text-text-strong", mono)}>
+            <code class="break-all">{props.proof.change.repository}</code>
+            <code class="break-all">
+              base tip {props.proof.change.baseTipSha ?? props.proof.change.baseSha}
+            </code>
+            <code class="break-all">
+              merge base {props.proof.change.mergeBaseSha ?? props.proof.change.baseSha}
+            </code>
+            <code class="break-all">
+              requested {props.proof.change.requestedHeadSha ?? props.proof.change.headSha}
+            </code>
+          </div>
+        </IdentityFact>
         <IdentityFact label="Tested head">
           <code class={cn("break-all text-text-strong", mono)}>
             {changeTestedSha(props.proof.change)}
@@ -43,12 +59,31 @@ export function ProofIdentityLedger(props: {
           <div class="grid gap-1.5">
             <For each={props.proof.selection.cells ?? []}>
               {(cell) => (
-                <code class={cn("break-all text-text-strong", mono)}>
-                  {cell.id} · {cell.journey.appMapId}/{cell.journey.testId}@
-                  {cell.journey.appMapRevision} · target {cell.targetCaseId} · build {cell.buildId}
-                </code>
+                <div
+                  class={cn(
+                    "grid gap-1 border-t border-border-weak-base pt-2 first:border-t-0 first:pt-0",
+                    mono,
+                  )}
+                >
+                  <code class="break-all font-semibold text-text-strong">{cell.id}</code>
+                  <code class="break-all text-text-base">
+                    {cell.journey.appMapId}/{cell.journey.testId}@{cell.journey.appMapRevision} ·
+                    target {cell.targetCaseId} · build {cell.buildId}
+                  </code>
+                  <code class="break-all text-text-weak">
+                    dimensions {JSON.stringify(cell.dimensions)} · route {cell.routeVariantDigest} ·
+                    evidence {cell.evidencePolicyDigest} · risk {cell.executionRiskDigest}
+                  </code>
+                </div>
               )}
             </For>
+          </div>
+        </IdentityFact>
+        <IdentityFact label="Policy and plan">
+          <div class={cn("grid gap-1 text-text-strong", mono)}>
+            <code class="break-all">policy {props.proof.policyDigest}</code>
+            <code class="break-all">plan {props.proof.planDigest}</code>
+            <code class="break-all">decision {props.proof.decisionDigest ?? "Not recorded"}</code>
           </div>
         </IdentityFact>
         <IdentityFact label="TracePacks">
@@ -83,7 +118,7 @@ export function ProofIdentityLedger(props: {
           </Show>
         </IdentityFact>
       </dl>
-    </section>
+    </details>
   );
 }
 

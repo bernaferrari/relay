@@ -45,7 +45,7 @@ export function RunsHistoryList(props: {
               </button>
             ))}
           </div>
-          <div class="flex min-h-8 items-center justify-end gap-2 max-[520px]:justify-between">
+          <div class="flex min-h-8 items-center justify-end max-[520px]:justify-between">
             <Show
               when={props.runFilter() === "all" && props.rows().length > props.visibleRows().length}
             >
@@ -54,17 +54,11 @@ export function RunsHistoryList(props: {
                 class="min-h-9 rounded-md px-2 py-1 text-micro font-medium text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base max-[900px]:min-h-11"
                 onClick={() => props.setHistoryExpanded((expanded) => !expanded)}
               >
-                {props.historyExpanded() ? "Latest only" : `All ${props.rows().length}`}
+                {props.historyExpanded()
+                  ? "Show latest results"
+                  : `Show all ${props.rows().length} runs`}
               </button>
             </Show>
-            <span class="font-mono text-micro tabular-nums text-text-weaker">
-              {props.visibleRows().length}{" "}
-              {props.historyExpanded()
-                ? "runs"
-                : props.visibleRows().length === 1
-                  ? "path run"
-                  : "path runs"}
-            </span>
           </div>
         </div>
       </Show>
