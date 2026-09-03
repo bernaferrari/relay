@@ -27,6 +27,7 @@ import {
   combinedNetworkResult,
   failedPacketProvenance,
   packetCollectionIsIncomplete,
+  packetRetentionOptions,
   proofApplicationId,
 } from "./run-evidence-network.js";
 import { withTimeout } from "./run-evidence-timeout.js";
@@ -601,22 +602,9 @@ export async function stopRunEvidence(
   let packetIssue = packetCapture?.status === "failed" ? packetCapture.message : undefined;
   if (handle.androidPacketCapture) {
     try {
-      const rawRequested = hasSensitiveEvidenceConsent(job.evidencePolicy, "network-raw");
-      const broadRedaction = job.evidencePolicy.redaction?.enabled === true;
-      const runDir = rawRequested && !broadRedaction ? await ensureRunDir(job) : undefined;
       packetResult = await stopAndroidEmulatorNetworkCapture(
         handle.androidPacketCapture,
-        rawRequested
-          ? broadRedaction
-            ? {
-                rawDeniedReason:
-                  "Raw packet bytes cannot be retained while broad evidence redaction is enabled",
-              }
-            : {
-                retainRawPath: join(runDir!, "network", "capture.pcap"),
-                rawArtifact: "network/capture.pcap",
-              }
-          : {},
+        await packetRetentionOptions(job),
         handle.androidPacketRuntime,
       );
       packetCapture = capturedPacketProvenance(packetResult);

@@ -1,9 +1,18 @@
 import type { AndroidPacketCaptureProvenance } from "@relay/protocol";
+import { join } from "node:path";
+import { hasSensitiveEvidenceConsent } from "./evidence-policy.js";
+import { ensureRunDir } from "./runs.js";
 import type { TestJob } from "./session.js";
 import type { AndroidEmulatorNetworkCaptureResult } from "./android-emulator-network-capture.js";
 
 type CapturedPacketProvenance = Extract<AndroidPacketCaptureProvenance, { status: "captured" }>;
 type FailedPacketProvenance = Extract<AndroidPacketCaptureProvenance, { status: "failed" }>;
+
+export type PacketRetentionOptions = {
+  retainRawPath?: string;
+  rawArtifact?: string;
+  rawDeniedReason?: string;
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -69,6 +78,24 @@ export function failedPacketProvenance(input: {
     finishedAt: Math.max(input.startedAt, input.finishedAt),
     stage: input.stage,
     message,
+  };
+}
+
+/** Keep raw packet retention policy separate from packet metadata collection.
+ * Relay always discards the transient emulator file; only an explicit grant
+ * and a compatible redaction policy may copy bytes into Run-owned storage. */
+export async function packetRetentionOptions(job: TestJob): Promise<PacketRetentionOptions> {
+  if (!hasSensitiveEvidenceConsent(job.evidencePolicy, "network-raw")) return {};
+  if (job.evidencePolicy.redaction?.enabled === true) {
+    return {
+      rawDeniedReason:
+        "Raw packet bytes cannot be retained while broad evidence redaction is enabled",
+    };
+  }
+  const runDir = await ensureRunDir(job);
+  return {
+    retainRawPath: join(runDir, "network", "capture.pcap"),
+    rawArtifact: "network/capture.pcap",
   };
 }
 

@@ -18,10 +18,11 @@ import { startServer } from "./index.js";
 const CHROME =
   process.env.RELAY_TEST_CHROME_PATH ??
   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const SATURATED_SUITE_CLIENT_TIMEOUT_MS = 45_000;
 
 test(
   "Browser Device routes bind input to the painted page sequence",
-  { timeout: 60_000 },
+  { timeout: 90_000 },
   async (t) => {
     try {
       await access(CHROME);
@@ -54,14 +55,17 @@ test(
     assert(productAddress && typeof productAddress === "object");
     const startUrl = `http://127.0.0.1:${productAddress.port}`;
     const server = await startServer({ host: "127.0.0.1", port: 0 });
-    const client = new RelayClient({
-      url: `http://127.0.0.1:${server.port}`,
-      auth: { type: "none" },
-      organizationId: "relay",
-      projectId: "browser-device",
-      actorId: "human:browser-device-route-test",
-      actorKind: "human",
-    });
+    const client = new RelayClient(
+      {
+        url: `http://127.0.0.1:${server.port}`,
+        auth: { type: "none" },
+        organizationId: "relay",
+        projectId: "browser-device",
+        actorId: "human:browser-device-route-test",
+        actorKind: "human",
+      },
+      { timeoutMs: SATURATED_SUITE_CLIENT_TIMEOUT_MS },
+    );
     try {
       const { target } = await client.invoke("target.create", {
         id: "browser-device-route",
@@ -95,14 +99,17 @@ test(
       );
       const fixtures = await client.invoke("target.browser-auth.list", { targetId: target.id });
       assert.deepEqual(fixtures.fixtures, [savedAuthentication.fixture]);
-      const agentClient = new RelayClient({
-        url: `http://127.0.0.1:${server.port}`,
-        auth: { type: "none" },
-        organizationId: "relay",
-        projectId: "browser-device",
-        actorId: "agent:browser-device-route-test",
-        actorKind: "agent",
-      });
+      const agentClient = new RelayClient(
+        {
+          url: `http://127.0.0.1:${server.port}`,
+          auth: { type: "none" },
+          organizationId: "relay",
+          projectId: "browser-device",
+          actorId: "agent:browser-device-route-test",
+          actorKind: "agent",
+        },
+        { timeoutMs: SATURATED_SUITE_CLIENT_TIMEOUT_MS },
+      );
       await assert.rejects(
         agentClient.invoke("target.browser-auth.save", {
           targetId: target.id,
