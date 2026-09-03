@@ -1,4 +1,5 @@
 import type {
+  AndroidPacketCaptureProvenance,
   EvidenceChannel,
   EvidenceChannelRecord,
   RunEvidenceArtifactSummary,
@@ -8,7 +9,10 @@ import type {
   RunEvidencePerformanceSample,
   RunEvidenceQuery,
 } from "@relay/protocol";
-import { parseAndroidNetworkEvidenceSummary } from "@relay/protocol";
+import {
+  parseAndroidNetworkEvidenceSummary,
+  parseAndroidPacketCaptureProvenance,
+} from "@relay/protocol";
 import type { PersistedRun } from "./runs.js";
 
 type UnknownRecord = Record<string, unknown>;
@@ -24,19 +28,52 @@ function record(value: unknown): UnknownRecord {
 
 function androidNetworkProjection(value: unknown): {
   summary?: ReturnType<typeof parseAndroidNetworkEvidenceSummary>;
+  packetCapture?: AndroidPacketCaptureProvenance;
   issue?: string;
 } {
   const input = record(value);
   const explicitIssue = text(input.androidNetworkIssue);
   const candidate = input.androidNetwork;
-  if (candidate === undefined) return explicitIssue ? { issue: explicitIssue } : {};
-  try {
+  let packetCapture: AndroidPacketCaptureProvenance | undefined;
+  let issue = explicitIssue;
+  if (input.androidPacketCapture !== undefined) {
+    try {
+      packetCapture = parseAndroidPacketCaptureProvenance(input.androidPacketCapture);
+      if (packetCapture.status === "failed") issue = packetCapture.message;
+    } catch {
+      issue = "Emulator packet capture provenance was malformed and could not be trusted.";
+    }
+  }
+  if (candidate === undefined) {
+    if (packetCapture?.status === "captured") {
+      issue = "Emulator packet capture provenance has no packet evidence summary.";
+    }
     return {
-      summary: parseAndroidNetworkEvidenceSummary(candidate),
-      ...(explicitIssue ? { issue: explicitIssue } : {}),
+      ...(packetCapture ? { packetCapture } : {}),
+      ...(issue ? { issue } : {}),
+    };
+  }
+  try {
+    const summary = parseAndroidNetworkEvidenceSummary(candidate);
+    if (!packetCapture && summary.source.kind === "emulator-packet") {
+      packetCapture = parseAndroidPacketCaptureProvenance({
+        schemaVersion: 1,
+        status: "captured",
+        source: summary.source,
+        scope: "entire-emulator",
+        startedAt: summary.startedAt,
+        finishedAt: summary.finishedAt ?? summary.startedAt,
+        coverage: summary.coverage,
+      });
+    }
+    return {
+      summary,
+      ...(packetCapture ? { packetCapture } : {}),
+      ...(issue ? { issue } : {}),
     };
   } catch {
     return {
+      ...(packetCapture ? { packetCapture } : {}),
       issue: "Emulator packet evidence was malformed and could not be trusted.",
     };
   }
@@ -361,6 +398,10 @@ export function buildRunEvidence(
     .map(({ summary }) => summary)
     .filter((value) => value !== undefined)
     .at(-1);
+  const androidPacketCapture = androidNetworkProjections
+    .map(({ packetCapture }) => packetCapture)
+    .filter((value) => value !== undefined)
+    .at(-1);
   const androidNetworkIssue = androidNetworkProjections
     .map(({ issue }) => issue)
     .filter((value) => value !== undefined)
@@ -440,6 +481,7 @@ export function buildRunEvidence(
     network,
     networkCapture,
     ...(androidNetwork ? { androidNetwork } : {}),
+    ...(androidPacketCapture ? { androidPacketCapture } : {}),
     performance,
     crashes,
     artifacts,

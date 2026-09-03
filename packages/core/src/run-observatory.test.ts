@@ -258,6 +258,61 @@ test("buildRunEvidence keeps emulator packet facts separate from HTTP events", (
   assert.match(evidence.networkCapture.detail, /does not parse HTTP methods/u);
 });
 
+test("buildRunEvidence preserves typed packet failure beside a successful session log", () => {
+  const evidence = buildRunEvidence(
+    run({
+      artifacts: [
+        {
+          kind: "network",
+          capturedAt: 2_000,
+          data: {
+            entries: [{ method: "GET", url: "https://example.test/health", status: 200 }],
+            androidPacketCapture: {
+              schemaVersion: 1,
+              status: "failed",
+              source: { kind: "emulator-packet", backend: "android-emulator-console" },
+              scope: "entire-emulator",
+              startedAt: 1_000,
+              finishedAt: 2_000,
+              stage: "start",
+              message: "Emulator packet capture could not be started",
+            },
+          },
+        },
+      ],
+      evidence: {
+        schemaVersion: 1,
+        runId: "run-1",
+        target: { kind: "device", platform: "android", id: "emulator-5554" },
+        startedAt: 1,
+        channels: {
+          network: {
+            channel: "network",
+            status: "captured",
+            entries: 1,
+            bytes: 10,
+            dropped: 0,
+            redactions: 0,
+          },
+        } as NonNullable<PersistedRun["evidence"]>["channels"],
+        events: [],
+      },
+    }),
+  );
+
+  assert.equal(evidence.network.length, 1);
+  assert.equal(evidence.androidPacketCapture?.status, "failed");
+  assert.equal(
+    evidence.androidPacketCapture?.status === "failed"
+      ? evidence.androidPacketCapture.stage
+      : undefined,
+    "start",
+  );
+  assert.equal(evidence.channels.network?.status, "partial");
+  assert.equal(evidence.networkCapture.mode, "session-log");
+  assert.match(evidence.networkCapture.label, /packet capture incomplete/u);
+});
+
 test("buildRunEvidence fails closed when packet evidence is malformed", () => {
   const evidence = buildRunEvidence(
     run({

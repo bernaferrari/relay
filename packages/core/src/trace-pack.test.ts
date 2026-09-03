@@ -158,6 +158,57 @@ test("unsupported and consent-denied collectors remain explicit without making t
   });
 });
 
+test("TracePack manifest retains typed managed-emulator packet collector failure", async () => {
+  const run = persistedRun();
+  run.artifacts.push({
+    kind: "network",
+    capturedAt: 3,
+    data: {
+      entries: [{ method: "GET", url: "https://example.test/health", status: 200 }],
+      androidPacketCapture: {
+        schemaVersion: 1,
+        status: "failed",
+        source: { kind: "emulator-packet", backend: "android-emulator-console" },
+        scope: "entire-emulator",
+        startedAt: 2,
+        finishedAt: 3,
+        stage: "finalize",
+        message: "Emulator packet capture could not be finalized",
+      },
+    },
+  });
+  run.evidence!.channels = {
+    network: {
+      channel: "network",
+      status: "partial",
+      entries: 1,
+      bytes: 10,
+      dropped: 0,
+      redactions: 0,
+      message: "Emulator packet capture could not be finalized",
+    },
+  } as NonNullable<PersistedRun["evidence"]>["channels"];
+
+  const pack = await exportTracePack(run);
+
+  assert.equal(pack.androidPacketCapture?.status, "failed");
+  assert.equal(
+    pack.androidPacketCapture?.status === "failed" ? pack.androidPacketCapture.stage : undefined,
+    "finalize",
+  );
+  assert.equal(pack.completeness.status, "partial");
+  assert.ok(pack.completeness.missing.includes("channel:network:partial"));
+  assert.deepEqual(verifyTracePack(pack), pack);
+
+  const contradicted = structuredClone(pack);
+  if (contradicted.androidPacketCapture?.status === "failed") {
+    contradicted.androidPacketCapture.stage = "start";
+  }
+  const { digest: _digest, ...body } = contradicted;
+  contradicted.digest = digestManifest(body);
+  assert.throws(() => verifyTracePack(contradicted), /does not match the frozen run/u);
+});
+
 test("TracePack retains recording capture provenance when the run links an Authoring Session", async () => {
   const directory = await mkdtemp(join(tmpdir(), "relay-trace-pack-authoring-"));
   const previousState = process.env.RELAY_STATE_DIR;

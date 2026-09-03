@@ -9,10 +9,11 @@ import {
   readdir,
   rm,
   stat,
+  lstat,
   writeFile,
 } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, isAbsolute, join } from "node:path";
+import { basename, dirname, isAbsolute, join } from "node:path";
 import { promisify } from "node:util";
 import type { AndroidNetworkEvidenceSummary } from "@relay/protocol";
 import { parseAndroidNetworkEvidenceSummary } from "@relay/protocol";
@@ -63,19 +64,69 @@ function safeCaptureName(runId: string): string {
   return `relay-${createHash("sha256").update(runId).digest("hex").slice(0, 24)}.pcap`;
 }
 
-async function removeStaleRelayCaptures(directory: string): Promise<void> {
+/**
+ * Reap only files created by Relay's managed packet collector. The emulator
+ * owns `console_out`, so this intentionally refuses arbitrary directories and
+ * symlinked output roots before it ever enumerates or removes a file.
+ */
+export async function reapStaleAndroidEmulatorNetworkCaptures(
+  directory: string,
+): Promise<readonly string[]> {
+  if (!isAbsolute(directory) || basename(directory) !== "console_out") {
+    throw new Error("Android emulator capture cleanup requires an absolute console_out directory");
+  }
+  const directoryInfo = await lstat(directory).catch(() => undefined);
+  if (directoryInfo && (!directoryInfo.isDirectory() || directoryInfo.isSymbolicLink())) {
+    throw new Error("Android emulator capture output directory must be a real directory");
+  }
   const protectedFiles = new Set(
     [...activeCaptures.values()].map(({ runId }) => safeCaptureName(runId)),
   );
   const entries = await readdir(directory, { withFileTypes: true }).catch(() => []);
-  await Promise.all(
-    entries
-      .filter(
-        (entry) =>
-          entry.isFile() && RELAY_CAPTURE_FILE.test(entry.name) && !protectedFiles.has(entry.name),
-      )
-      .map((entry) => rm(join(directory, entry.name), { force: true }).catch(() => undefined)),
+  const stale = entries.filter(
+    (entry) =>
+      entry.isFile() && RELAY_CAPTURE_FILE.test(entry.name) && !protectedFiles.has(entry.name),
   );
+  await Promise.all(stale.map((entry) => rm(join(directory, entry.name), { force: true })));
+  return stale.map((entry) => entry.name);
+}
+
+/**
+ * Sweep configured AVD output roots on Relay startup. A host process can die
+ * before the normal stop/finally path runs; the next server process has no
+ * in-memory ownership map, so only the Relay filename contract is used here.
+ * Missing or malformed AVD configuration is deliberately ignored: cleanup is
+ * best effort at startup and a later capture performs its own strict check.
+ */
+export async function reapStaleAndroidEmulatorNetworkCapturesAtStartup(
+  home = avdHome(),
+): Promise<number> {
+  if (!isAbsolute(home)) return 0;
+  const entries = await readdir(home, { withFileTypes: true }).catch(() => []);
+  const avdDirectories = new Set<string>();
+  for (const entry of entries) {
+    if (entry.isDirectory() && entry.name.endsWith(".avd")) {
+      avdDirectories.add(join(home, entry.name));
+      continue;
+    }
+    if (!entry.isFile() || !entry.name.endsWith(".ini")) continue;
+    const ini = await readFile(join(home, entry.name), "utf8").catch(() => "");
+    const configured = ini
+      .split(/\r?\n/gu)
+      .map((line) => line.match(/^path=(.+)$/u)?.[1]?.trim())
+      .find((value) => value && isAbsolute(value));
+    if (configured) avdDirectories.add(configured);
+  }
+  let removed = 0;
+  await Promise.all(
+    [...avdDirectories].map(async (directory) => {
+      const consoleDirectory = join(directory, "console_out");
+      const info = await lstat(consoleDirectory).catch(() => undefined);
+      if (!info?.isDirectory() || info.isSymbolicLink()) return;
+      removed += (await reapStaleAndroidEmulatorNetworkCaptures(consoleDirectory)).length;
+    }),
+  );
+  return removed;
 }
 
 function avdHome(): string {
@@ -185,10 +236,14 @@ export async function startAndroidEmulatorNetworkCapture(
     const consoleDirectory = join(directory, "console_out");
     const sourcePath = join(consoleDirectory, fileName);
     await mkdir(consoleDirectory, { recursive: true, mode: 0o700 });
+    const consoleDirectoryInfo = await lstat(consoleDirectory);
+    if (!consoleDirectoryInfo.isDirectory() || consoleDirectoryInfo.isSymbolicLink()) {
+      throw new Error("Android emulator capture output directory must be a real directory");
+    }
     // Relay console captures are transient by design. A process terminated
     // between start and stop cannot run its normal finally block, so the next
     // managed capture removes only Relay-owned stale files before dispatch.
-    await removeStaleRelayCaptures(consoleDirectory);
+    await reapStaleAndroidEmulatorNetworkCaptures(consoleDirectory);
     await rm(sourcePath, { force: true });
     const readUidCounters = runtime.readUidCounters ?? defaultReadUidCounters;
     const initialCounters = input.appPackage

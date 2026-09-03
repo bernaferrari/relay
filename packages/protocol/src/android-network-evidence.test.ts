@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseAndroidNetworkEvidenceSummary } from "./android-network-evidence.js";
+import {
+  parseAndroidNetworkEvidenceSummary,
+  parseAndroidPacketCaptureProvenance,
+} from "./android-network-evidence.js";
 
 function packetSummary() {
   return {
@@ -168,5 +171,46 @@ test("packet source, scope, attribution, and flow window stay mutually consisten
         flows: [{ ...packetSummary().flows[0], startedAtMs: 999, durationMs: 2 }],
       }),
     /exceeds the captured Run window/u,
+  );
+});
+
+test("packet collector provenance distinguishes capture from start and finalize failures", () => {
+  const failed = parseAndroidPacketCaptureProvenance({
+    schemaVersion: 1,
+    status: "failed",
+    source: { kind: "emulator-packet", backend: "android-emulator-console" },
+    scope: "entire-emulator",
+    startedAt: 1_000,
+    finishedAt: 1_001,
+    stage: "start",
+    message: "Managed emulator capture command was unavailable",
+  });
+  assert.equal(failed.status, "failed");
+  if (failed.status === "failed") assert.equal(failed.stage, "start");
+  assert.equal(
+    parseAndroidPacketCaptureProvenance({
+      schemaVersion: 1,
+      status: "captured",
+      source: { kind: "emulator-packet", backend: "android-emulator-tcpdump" },
+      scope: "entire-emulator",
+      startedAt: 1_000,
+      finishedAt: 2_000,
+      coverage: "packet-complete",
+    }).status,
+    "captured",
+  );
+  assert.throws(
+    () =>
+      parseAndroidPacketCaptureProvenance({
+        schemaVersion: 1,
+        status: "failed",
+        source: { kind: "app-session-log", backend: "agent-device-session-log" },
+        scope: "session-log",
+        startedAt: 1_000,
+        finishedAt: 2_000,
+        stage: "start",
+        message: "Wrong collector",
+      }),
+    /invalid_value|emulator-packet|entire-emulator/u,
   );
 });

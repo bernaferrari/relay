@@ -84,7 +84,10 @@ export * from "./app-map-canvas.js";
 export * from "./ios-mutation-terminality-contract.js";
 export * from "./browser-proof-evidence.js";
 export * from "./android-network-evidence.js";
-import type { AndroidNetworkEvidenceSummary } from "./android-network-evidence.js";
+import type {
+  AndroidNetworkEvidenceSummary,
+  AndroidPacketCaptureProvenance,
+} from "./android-network-evidence.js";
 import type { ResourceEventPayload } from "./coordination.js";
 import type { ServerConnection, TargetProfile, TargetSelector } from "./target-contract.js";
 import type { SourceRevision } from "./source-revision.js";
@@ -389,6 +392,9 @@ export type RunEvidenceQuery = {
   /** Packet-derived Android transport facts remain separate from HTTP events.
    * They never imply decrypted methods, statuses, headers, or bodies. */
   androidNetwork?: AndroidNetworkEvidenceSummary;
+  /** Outcome and backend of the managed-emulator packet collector attempt.
+   * A failed packet collector remains visible even when session logs exist. */
+  androidPacketCapture?: AndroidPacketCaptureProvenance;
   performance: RunEvidencePerformanceSample[];
   crashes: unknown[];
   artifacts: RunEvidenceArtifactSummary[];

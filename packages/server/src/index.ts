@@ -72,6 +72,7 @@ import {
   pruneExpiredShares,
   acquireRelayStateServerLease,
   beginDurableWorkerServerLifecycle,
+  reapStaleAndroidEmulatorNetworkCapturesAtStartup,
   type AuthoringRuntime,
   type RelayStateServerLease,
 } from "@relay/core";
@@ -738,6 +739,15 @@ async function startServerWithStateLease(
     createProofRuntimeBootstrap(opts.proofRouteRuntime, opts.webDeploymentLookup);
   const redaction = await loadRedactionPolicy();
   await loadEvidenceCollectionPolicy();
+  // A dead Relay process cannot run packet collector finally blocks. Reap only
+  // Relay-named PCAPs from configured AVD output roots before serving work;
+  // cleanup failures remain non-fatal and are retried on the next startup or
+  // capture admission.
+  await reapStaleAndroidEmulatorNetworkCapturesAtStartup().catch((error: unknown) => {
+    console.warn(
+      `Android emulator packet capture startup cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  });
   for (const recoveryScope of await authoringSessions.recoveryScopes()) {
     const recoveryRequestId = crypto.randomUUID();
     await runWithOperationContext(

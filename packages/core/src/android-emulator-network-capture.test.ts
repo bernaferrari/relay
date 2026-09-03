@@ -1,13 +1,21 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import test from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 import {
+  resolveAndroidAvdDirectory,
   startAndroidEmulatorNetworkCapture,
   stopAndroidEmulatorNetworkCapture,
+  reapStaleAndroidEmulatorNetworkCaptures,
+  reapStaleAndroidEmulatorNetworkCapturesAtStartup,
   type AndroidEmulatorNetworkCaptureRuntime,
 } from "./android-emulator-network-capture.js";
+
+const liveSerial = process.env.RELAY_ANDROID_EMULATOR_CAPTURE_LIVE_SERIAL?.trim();
+const liveAvdName = process.env.RELAY_ANDROID_EMULATOR_CAPTURE_LIVE_AVD?.trim();
 
 function tcpPcap(): Buffer {
   const frame = Buffer.alloc(14 + 20 + 20);
@@ -113,6 +121,78 @@ test("captures one bounded emulator Run window and deletes transient packet byte
     await assert.rejects(stat(handle.sourcePath));
   } finally {
     await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("reaps only stale Relay PCAP files and preserves foreign or non-file entries", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-emulator-network-reaper-"));
+  const directory = join(root, "console_out");
+  try {
+    await mkdir(directory, { recursive: true });
+    const stale = "relay-0123456789abcdef01234567.pcap";
+    const foreign = "capture.pcap";
+    const malformed = "relay-0123456789abcdef0123456.pcap";
+    const nested = "relay-fedcba9876543210fedcba98.pcap";
+    await writeFile(join(directory, stale), "stale");
+    await writeFile(join(directory, foreign), "foreign");
+    await writeFile(join(directory, malformed), "not Relay-owned");
+    await mkdir(join(directory, nested));
+    await writeFile(join(root, "symlink-target"), "do not follow");
+    await symlink(
+      join(root, "symlink-target"),
+      join(directory, "relay-aaaaaaaaaaaaaaaaaaaaaaaa.pcap"),
+    );
+
+    assert.deepEqual(await reapStaleAndroidEmulatorNetworkCaptures(directory), [stale]);
+    await assert.rejects(stat(join(directory, stale)));
+    assert.equal((await stat(join(directory, foreign))).isFile(), true);
+    assert.equal((await stat(join(directory, malformed))).isFile(), true);
+    assert.equal((await stat(join(directory, nested))).isDirectory(), true);
+    assert.equal(
+      (await stat(join(directory, "relay-aaaaaaaaaaaaaaaaaaaaaaaa.pcap"))).isFile(),
+      true,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("reaper protects the active capture while clearing a prior process's file", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-emulator-network-reaper-active-"));
+  const commands: string[][] = [];
+  try {
+    const captureRuntime = runtime(root, commands, 1_000);
+    const active = await startAndroidEmulatorNetworkCapture(
+      { runId: "reaper-active", serial: "emulator-5564", avdName: "medium_phone" },
+      captureRuntime,
+    );
+    const stalePath = join(root, "console_out", "relay-0123456789abcdef01234567.pcap");
+    await writeFile(active.sourcePath, tcpPcap());
+    await writeFile(stalePath, "stale");
+
+    assert.deepEqual(await reapStaleAndroidEmulatorNetworkCaptures(join(root, "console_out")), [
+      "relay-0123456789abcdef01234567.pcap",
+    ]);
+    assert.equal((await stat(active.sourcePath)).isFile(), true);
+    await stopAndroidEmulatorNetworkCapture(active, {}, runtime(root, commands, 2_000));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("startup sweep reaps stale captures across configured AVD directories", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-emulator-network-startup-reaper-"));
+  try {
+    const avd = join(root, "phone.avd", "console_out");
+    await mkdir(avd, { recursive: true });
+    await writeFile(join(avd, "relay-0123456789abcdef01234567.pcap"), "stale");
+    await writeFile(join(avd, "capture.pcap"), "foreign");
+
+    assert.equal(await reapStaleAndroidEmulatorNetworkCapturesAtStartup(root), 1);
+    await assert.rejects(stat(join(avd, "relay-0123456789abcdef01234567.pcap")));
+    assert.equal((await stat(join(avd, "capture.pcap"))).isFile(), true);
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 });
 
@@ -246,26 +326,24 @@ test("reserves one emulator atomically before asynchronous capture startup", asy
   const commands: string[][] = [];
   try {
     const captureRuntime = runtime(directory, commands, 1_000);
-    const results = await Promise.allSettled([
+    const [first, second] = await Promise.all([
       startAndroidEmulatorNetworkCapture(
         { runId: "race-1", serial: "emulator-5560", avdName: "medium_phone" },
         captureRuntime,
-      ),
+      )
+        .then((value) => ({ status: "fulfilled" as const, value }))
+        .catch((reason: unknown) => ({ status: "rejected" as const, reason })),
       startAndroidEmulatorNetworkCapture(
         { runId: "race-2", serial: "emulator-5560", avdName: "medium_phone" },
         captureRuntime,
-      ),
+      )
+        .then((value) => ({ status: "fulfilled" as const, value }))
+        .catch((reason: unknown) => ({ status: "rejected" as const, reason })),
     ]);
-    const winner = results.find(
-      (
-        result,
-      ): result is PromiseFulfilledResult<
-        Awaited<ReturnType<typeof startAndroidEmulatorNetworkCapture>>
-      > => result.status === "fulfilled",
-    );
-    const loser = results.find((result) => result.status === "rejected");
-    assert.ok(winner);
-    assert.ok(loser);
+    const winner = first.status === "fulfilled" ? first : second;
+    const loser = first.status === "rejected" ? first : second;
+    assert.equal(winner.status, "fulfilled");
+    assert.equal(loser.status, "rejected");
     assert.match(String(loser.reason), /already has a Relay packet capture/u);
     assert.equal(commands.filter((command) => command.includes("start")).length, 1);
 
@@ -275,3 +353,96 @@ test("reserves one emulator atomically before asynchronous capture startup", asy
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("keeps a serial reserved while its packet capture stop is in flight", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "relay-emulator-network-stop-race-"));
+  const commands: string[][] = [];
+  let releaseStop!: () => void;
+  let markStopStarted!: () => void;
+  const stopStarted = new Promise<void>((resolve) => {
+    releaseStop = resolve;
+  });
+  const stopEntered = new Promise<void>((resolve) => {
+    markStopStarted = resolve;
+  });
+  try {
+    const captureRuntime = runtime(directory, commands, 1_000);
+    const first = await startAndroidEmulatorNetworkCapture(
+      { runId: "stop-race-1", serial: "emulator-5561", avdName: "medium_phone" },
+      captureRuntime,
+    );
+    await writeFile(first.sourcePath, tcpPcap());
+
+    const stopping = stopAndroidEmulatorNetworkCapture(
+      first,
+      {},
+      {
+        ...captureRuntime,
+        execAdb: async (args) => {
+          commands.push(args);
+          if (args.at(-1) === "stop") {
+            markStopStarted();
+            await stopStarted;
+          }
+          return { stdout: "OK\n", stderr: "" };
+        },
+      },
+    );
+    const second = startAndroidEmulatorNetworkCapture(
+      { runId: "stop-race-2", serial: "emulator-5561", avdName: "medium_phone" },
+      captureRuntime,
+    ).then(
+      () => ({ status: "fulfilled" as const }),
+      (reason: unknown) => ({ status: "rejected" as const, reason }),
+    );
+    const [, startResult] = await Promise.all([stopEntered, second]);
+    assert.equal(startResult.status, "rejected");
+    assert.match(String(startResult.reason), /already has a Relay packet capture/u);
+    releaseStop();
+    await stopping;
+
+    const next = await startAndroidEmulatorNetworkCapture(
+      { runId: "stop-race-2", serial: "emulator-5561", avdName: "medium_phone" },
+      captureRuntime,
+    );
+    await writeFile(next.sourcePath, tcpPcap());
+    await stopAndroidEmulatorNetworkCapture(next, {}, runtime(directory, commands, 2_000));
+  } finally {
+    releaseStop();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test(
+  "writes a live emulator console capture to the resolved AVD output path",
+  {
+    skip:
+      liveSerial && liveAvdName
+        ? false
+        : "set RELAY_ANDROID_EMULATOR_CAPTURE_LIVE_SERIAL and RELAY_ANDROID_EMULATOR_CAPTURE_LIVE_AVD",
+  },
+  async () => {
+    if (!liveSerial || !liveAvdName) return;
+    const avdDirectory = await resolveAndroidAvdDirectory(liveAvdName);
+    const handle = await startAndroidEmulatorNetworkCapture({
+      runId: `live-path-${randomUUID()}`,
+      serial: liveSerial,
+      avdName: liveAvdName,
+    });
+    let stopped = false;
+    try {
+      await delay(250);
+      assert.equal(dirname(handle.sourcePath), join(avdDirectory, "console_out"));
+      assert.equal((await stat(handle.sourcePath)).isFile(), true);
+      const result = await stopAndroidEmulatorNetworkCapture(handle);
+      stopped = true;
+      assert.deepEqual(result.summary.source, {
+        kind: "emulator-packet",
+        backend: "android-emulator-console",
+      });
+      await assert.rejects(stat(handle.sourcePath), /ENOENT/u);
+    } finally {
+      if (!stopped) await stopAndroidEmulatorNetworkCapture(handle).catch(() => undefined);
+    }
+  },
+);

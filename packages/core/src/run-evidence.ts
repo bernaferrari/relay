@@ -1,6 +1,11 @@
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
-import type { EvidenceChannel, EvidenceChannelRecord, EvidenceManifest } from "@relay/protocol";
+import type {
+  AndroidPacketCaptureProvenance,
+  EvidenceChannel,
+  EvidenceChannelRecord,
+  EvidenceManifest,
+} from "@relay/protocol";
 import { base, recordDeviceVideo, type Device } from "./device.js";
 import { now } from "./events.js";
 import { getRedactionPolicy, redactValue, visualEvidenceAllowed } from "./redaction.js";
@@ -18,7 +23,9 @@ import {
 } from "./android-emulator-network-capture.js";
 import { primeAndroidEvidenceSession } from "./run-evidence-android-session.js";
 import {
+  capturedPacketProvenance,
   combinedNetworkResult,
+  failedPacketProvenance,
   packetCollectionIsIncomplete,
   proofApplicationId,
 } from "./run-evidence-network.js";
@@ -53,6 +60,7 @@ export type RunEvidenceHandle = {
   audioStarted: boolean;
   crashStarted: boolean;
   androidPacketCapture?: AndroidEmulatorNetworkCaptureHandle;
+  androidPacketCaptureFailure?: Extract<AndroidPacketCaptureProvenance, { status: "failed" }>;
   androidPacketRuntime?: AndroidEmulatorNetworkCaptureRuntime;
   stopped: boolean;
   manifest: EvidenceManifest;
@@ -346,7 +354,14 @@ export async function startRunEvidence(
       });
       log("evidence: Android emulator packet window started");
     } catch (error) {
-      event(handle, "network", "packet.capture.unavailable", { message: messageOf(error) });
+      const message = `Emulator packet capture could not be started: ${messageOf(error)}`;
+      handle.androidPacketCaptureFailure = failedPacketProvenance({
+        stage: "start",
+        startedAt: handle.startedAt,
+        finishedAt: now(),
+        message,
+      });
+      event(handle, "network", "packet.capture.unavailable", { message });
       log(`warn: Android emulator packet capture unavailable: ${messageOf(error)}`);
     }
   }
@@ -426,11 +441,12 @@ export async function startRunEvidence(
       : missingAndroidAppSession,
   );
 
-  if (handle.androidPacketCapture) {
+  if (handle.androidPacketCapture || handle.androidPacketCaptureFailure) {
     const record = channel(handle, "network");
     record.status = "partial";
-    record.message =
-      "Packet metadata covers the emulator Run window; app-session HTTP details are opportunistic.";
+    record.message = handle.androidPacketCaptureFailure
+      ? handle.androidPacketCaptureFailure.message
+      : "Packet metadata covers the emulator Run window; app-session HTTP details are opportunistic.";
   }
 
   if (hasSensitiveEvidenceConsent(job.evidencePolicy, "crash")) {
@@ -580,7 +596,9 @@ export async function stopRunEvidence(
   handle.stopped = true;
 
   let packetResult: AndroidEmulatorNetworkCaptureResult | undefined;
-  let packetIssue: string | undefined;
+  let packetCapture: AndroidPacketCaptureProvenance | undefined =
+    handle.androidPacketCaptureFailure;
+  let packetIssue = packetCapture?.status === "failed" ? packetCapture.message : undefined;
   if (handle.androidPacketCapture) {
     try {
       const rawRequested = hasSensitiveEvidenceConsent(job.evidencePolicy, "network-raw");
@@ -601,6 +619,7 @@ export async function stopRunEvidence(
           : {},
         handle.androidPacketRuntime,
       );
+      packetCapture = capturedPacketProvenance(packetResult);
       event(handle, "network", "packet.capture.stopped", {
         coverage: packetResult.summary.coverage,
         packets: packetResult.summary.packets,
@@ -612,6 +631,12 @@ export async function stopRunEvidence(
       );
     } catch (error) {
       packetIssue = `Emulator packet capture could not be finalized: ${messageOf(error)}`;
+      packetCapture = failedPacketProvenance({
+        stage: "finalize",
+        startedAt: handle.androidPacketCapture.startedAt,
+        finishedAt: now(),
+        message: packetIssue,
+      });
       const record = channel(handle, "network");
       record.status = "partial";
       record.message = packetIssue;
@@ -680,7 +705,7 @@ export async function stopRunEvidence(
           job,
           record,
           "network",
-          combinedNetworkResult(result, packetResult, packetIssue),
+          combinedNetworkResult(result, packetResult, packetCapture),
           droppedCount(result) + (packetResult?.summary.dropped ?? 0),
         );
         packetPersisted = Boolean(packetResult);
@@ -749,7 +774,7 @@ export async function stopRunEvidence(
       job,
       record,
       "network",
-      { androidNetwork: packetResult.summary },
+      { androidNetwork: packetResult.summary, androidPacketCapture: packetCapture },
       packetResult.summary.dropped,
     );
     record.entries = packetResult.summary.flows.length;
@@ -761,7 +786,7 @@ export async function stopRunEvidence(
     const record = channel(handle, "network");
     record.status = "partial";
     record.message = packetIssue;
-    await persistCaptureArtifact(job, record, "network", { androidNetworkIssue: packetIssue });
+    await persistCaptureArtifact(job, record, "network", { androidPacketCapture: packetCapture });
     record.status = "partial";
   }
 

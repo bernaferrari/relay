@@ -1,5 +1,9 @@
+import type { AndroidPacketCaptureProvenance } from "@relay/protocol";
 import type { TestJob } from "./session.js";
 import type { AndroidEmulatorNetworkCaptureResult } from "./android-emulator-network-capture.js";
+
+type CapturedPacketProvenance = Extract<AndroidPacketCaptureProvenance, { status: "captured" }>;
+type FailedPacketProvenance = Extract<AndroidPacketCaptureProvenance, { status: "failed" }>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -17,16 +21,55 @@ export function proofApplicationId(job: TestJob): string | undefined {
 export function combinedNetworkResult(
   sessionLog: unknown,
   packet: AndroidEmulatorNetworkCaptureResult | undefined,
-  packetIssue?: string,
+  packetCapture?: AndroidPacketCaptureProvenance,
 ): unknown {
-  if (!packet && !packetIssue) return sessionLog;
+  if (!packet && !packetCapture) return sessionLog;
   const packetFields = {
     ...(packet ? { androidNetwork: packet.summary } : {}),
-    ...(packetIssue ? { androidNetworkIssue: packetIssue } : {}),
+    ...(packetCapture ? { androidPacketCapture: packetCapture } : {}),
   };
   return isRecord(sessionLog)
     ? { ...sessionLog, ...packetFields }
     : { sessionLog, ...packetFields };
+}
+
+export function capturedPacketProvenance(
+  packet: AndroidEmulatorNetworkCaptureResult,
+): CapturedPacketProvenance {
+  if (
+    packet.summary.source.kind !== "emulator-packet" ||
+    packet.summary.source.backend === "agent-device-session-log"
+  ) {
+    throw new TypeError("managed-emulator packet result has non-packet provenance");
+  }
+  return {
+    schemaVersion: 1,
+    status: "captured",
+    source: { kind: "emulator-packet", backend: packet.summary.source.backend },
+    scope: "entire-emulator",
+    startedAt: packet.summary.startedAt,
+    finishedAt: packet.summary.finishedAt ?? packet.summary.startedAt,
+    coverage: packet.summary.coverage,
+  };
+}
+
+export function failedPacketProvenance(input: {
+  stage: "start" | "finalize";
+  startedAt: number;
+  finishedAt: number;
+  message: string;
+}): FailedPacketProvenance {
+  const message = input.message.trim().slice(0, 512) || "Unknown packet collector failure";
+  return {
+    schemaVersion: 1,
+    status: "failed",
+    source: { kind: "emulator-packet", backend: "android-emulator-console" },
+    scope: "entire-emulator",
+    startedAt: input.startedAt,
+    finishedAt: Math.max(input.startedAt, input.finishedAt),
+    stage: input.stage,
+    message,
+  };
 }
 
 /** Generic channel status describes whether Relay closed the evidence it

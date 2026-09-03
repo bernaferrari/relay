@@ -1,6 +1,7 @@
 import * as z from "zod/v4";
 import { measureBoundedJsonValue, type JsonValueBounds } from "./json-value-bounds.js";
 import { browserProofEvidenceSchema } from "./browser-proof-evidence.js";
+import { androidPacketCaptureProvenanceSchema } from "./android-network-evidence.js";
 
 export const TRACE_PACK_JSON_LIMITS = Object.freeze({
   maxDepth: 64,
@@ -235,6 +236,9 @@ export const tracePackSchema = z
     /** Additive browser Checkpoint evidence. It remains optional for legacy
      * device packs; browser proof decisions require it through completeness. */
     browserEvidence: browserProofEvidenceSchema.optional(),
+    /** Additive managed-emulator collector provenance. Legacy packs and runs
+     * that never attempted packet capture omit it. */
+    androidPacketCapture: androidPacketCaptureProvenanceSchema.optional(),
     objects: z.array(tracePackObjectSchema).min(1).max(10_001).readonly(),
   })
   .strict();

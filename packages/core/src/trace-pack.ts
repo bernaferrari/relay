@@ -2,9 +2,11 @@ import { createHash } from "node:crypto";
 import {
   authoringCaptureProvenance,
   captureProofForAuthoring,
+  parseAndroidPacketCaptureProvenance,
   parseTracePack,
   tracePackOfflineAnalysisSchema,
   type EvidenceChannelStatus,
+  type AndroidPacketCaptureProvenance,
   type TracePack,
   type TracePackObject,
   type TracePackOfflineAnalysis,
@@ -89,6 +91,31 @@ function frozenRunAppMapId(run: PersistedRun): string | undefined {
   return undefined;
 }
 
+function androidPacketCaptureProvenance(
+  run: PersistedRun,
+): AndroidPacketCaptureProvenance | undefined {
+  for (let index = run.artifacts.length - 1; index >= 0; index -= 1) {
+    const artifact = run.artifacts[index]!;
+    if (
+      artifact.kind !== "network" ||
+      !artifact.data ||
+      typeof artifact.data !== "object" ||
+      Array.isArray(artifact.data)
+    ) {
+      continue;
+    }
+    const candidate = (artifact.data as { androidPacketCapture?: unknown }).androidPacketCapture;
+    if (candidate === undefined) continue;
+    try {
+      return parseAndroidPacketCaptureProvenance(candidate);
+    } catch {
+      // The frozen artifact remains available for forensic inspection, but a
+      // malformed value cannot be promoted into the typed TracePack manifest.
+    }
+  }
+  return undefined;
+}
+
 /** Freeze one immutable run into a portable, artifact-closed JSON document. */
 export async function exportTracePack(
   run: PersistedRun,
@@ -112,6 +139,7 @@ export async function exportTracePack(
       ? referencedAuthoringSession
       : null;
   const closure = await closeTracePackArtifacts(run, requestedLimits);
+  const androidPacketCapture = androidPacketCaptureProvenance(run);
   const objects = [jsonObject("run.json", "frozen-run", frozenRun(run)), ...closure.objects].sort(
     (left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0),
   );
@@ -210,6 +238,7 @@ export async function exportTracePack(
       artifacts: artifactReferences,
     },
     ...(browserEvidenceForPack ? { browserEvidence: browserEvidenceForPack } : {}),
+    ...(androidPacketCapture ? { androidPacketCapture } : {}),
     objects,
   };
   return parseTracePack({ ...body, digest: packDigest(body) });
@@ -238,8 +267,19 @@ export function verifyTracePack(
       throw new Error(`TracePack object integrity failed: ${object.path}`);
     }
   }
+  const frozen = pack.objects.find((object) => object.kind === "frozen-run");
+  const frozenPacketCapture =
+    frozen?.content && typeof frozen.content === "object" && !Array.isArray(frozen.content)
+      ? androidPacketCaptureProvenance(frozen.content as PersistedRun)
+      : undefined;
+  if (
+    (pack.androidPacketCapture === undefined) !== (frozenPacketCapture === undefined) ||
+    (pack.androidPacketCapture &&
+      canonicalJson(pack.androidPacketCapture) !== canonicalJson(frozenPacketCapture))
+  ) {
+    throw new Error("TracePack packet capture provenance does not match the frozen run");
+  }
   if (pack.browserEvidence) {
-    const frozen = pack.objects.find((object) => object.kind === "frozen-run");
     if (
       !frozen ||
       !frozen.content ||

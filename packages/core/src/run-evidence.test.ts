@@ -179,6 +179,92 @@ test("managed-emulator packet evidence brackets the Run and survives cancelled a
   }
 });
 
+test("managed-emulator packet start failure remains partial when the session log succeeds", async () => {
+  const emulatorTarget = {
+    kind: "device",
+    platform: "android",
+    serial: "emulator-5562",
+  } as const;
+  const job = {
+    id: "emulator-packet-start-failure",
+    action: "proof",
+    serial: emulatorTarget.serial,
+    platform: "android",
+    targetKind: "device",
+    targetContext: emulatorTarget,
+    targetProfile: {
+      id: "device:emulator-5562",
+      targetId: emulatorTarget.serial,
+      source: "device",
+      platform: "android",
+      name: "Medium phone",
+      androidAvdName: "missing_phone",
+      viewport: { width: 1080, height: 2400 },
+      capabilities: ["screenshot", "snapshot"],
+      observedAt: 1,
+    },
+    status: "running",
+    queuedAt: 1,
+    attempts: 1,
+    logs: [],
+    steps: [],
+    frames: [],
+    glyphs: [],
+    kind: "Replay",
+    tone: "acc",
+    title: "Emulator packet start failure",
+    artifacts: [],
+    resolvedInputs: {},
+    evidencePolicy: {
+      schemaVersion: 1,
+      sensitive: {},
+      redaction: { enabled: false, source: "workspace", locked: false },
+    },
+  } as unknown as TestJob;
+  const device = {
+    apps: { open: async () => ({ appId: "com.example.app" }) },
+    capture: { snapshot: async () => ({ nodes: [] }) },
+    observability: {
+      perf: async () => ({}),
+      logs: async () => ({}),
+      network: async (input: { action?: string }) =>
+        input.action === "dump"
+          ? {
+              entries: [{ method: "GET", url: "https://example.test/health", status: 200 }],
+            }
+          : { started: true },
+    },
+    recording: { record: async () => ({ started: false, warning: "not needed" }) },
+  } as unknown as Device;
+
+  const handle = await runWithTargetContext(emulatorTarget, () =>
+    startRunEvidenceWithoutContext(job, device, () => undefined, undefined, {
+      foregroundAppResolver: async () => "com.example.app",
+      androidPacketRuntime: {
+        resolveAvdDirectory: async () => {
+          throw new Error("managed AVD directory disappeared");
+        },
+      },
+    }),
+  );
+  await runWithTargetContext(emulatorTarget, () =>
+    stopRunEvidenceWithoutContext(handle, job, device, () => undefined),
+  );
+
+  const artifact = job.artifacts.find((item) => item.kind === "network");
+  assert.ok(artifact);
+  const data = artifact.data as {
+    entries?: unknown[];
+    androidPacketCapture?: { status?: string; stage?: string; message?: string };
+  };
+  assert.equal(data.entries?.length, 1);
+  assert.equal(data.androidPacketCapture?.status, "failed");
+  assert.equal(data.androidPacketCapture?.stage, "start");
+  assert.match(data.androidPacketCapture?.message ?? "", /AVD directory disappeared/u);
+  assert.equal(handle.manifest.channels.network.status, "partial");
+  assert.match(handle.manifest.channels.network.message ?? "", /AVD directory disappeared/u);
+});
+
 test("run evidence records video and performance without affecting the run", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-evidence-"));
   const previous = process.env.RELAY_RUNS_DIR;

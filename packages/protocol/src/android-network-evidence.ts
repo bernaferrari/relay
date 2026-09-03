@@ -39,6 +39,52 @@ export const androidNetworkEvidenceSourceSchema = z
   })
   .strict();
 
+const androidPacketCaptureSourceSchema = z
+  .object({
+    kind: z.literal("emulator-packet"),
+    backend: z.enum([
+      "android-emulator-tcpdump",
+      "android-emulator-console",
+      "android-emulator-netsim",
+    ]),
+  })
+  .strict();
+
+/** Typed provenance for the managed-emulator packet collector attempt. A
+ * failed attempt remains distinct from any opportunistic app-session log that
+ * happened to succeed during the same Run. */
+export const androidPacketCaptureProvenanceSchema = z
+  .discriminatedUnion("status", [
+    z
+      .object({
+        schemaVersion: z.literal(1),
+        status: z.literal("captured"),
+        source: androidPacketCaptureSourceSchema,
+        scope: z.literal("entire-emulator"),
+        startedAt: finiteTimestamp,
+        finishedAt: finiteTimestamp,
+        coverage: androidNetworkEvidenceCoverageSchema,
+      })
+      .strict(),
+    z
+      .object({
+        schemaVersion: z.literal(1),
+        status: z.literal("failed"),
+        source: androidPacketCaptureSourceSchema,
+        scope: z.literal("entire-emulator"),
+        startedAt: finiteTimestamp,
+        finishedAt: finiteTimestamp,
+        stage: z.enum(["start", "finalize"]),
+        message: boundedText,
+      })
+      .strict(),
+  ])
+  .superRefine((value, context) => {
+    if (value.finishedAt < value.startedAt) {
+      context.addIssue({ code: "custom", message: "finishedAt cannot precede startedAt" });
+    }
+  });
+
 const androidNetworkFlowSchema = z
   .object({
     protocol: z.enum(["dns", "tcp", "udp", "tls", "quic", "other"]),
@@ -211,7 +257,14 @@ export const androidNetworkEvidenceSummarySchema = z
 
 export type AndroidNetworkEvidenceCoverage = z.output<typeof androidNetworkEvidenceCoverageSchema>;
 export type AndroidNetworkEvidenceSummary = z.output<typeof androidNetworkEvidenceSummarySchema>;
+export type AndroidPacketCaptureProvenance = z.output<typeof androidPacketCaptureProvenanceSchema>;
 
 export function parseAndroidNetworkEvidenceSummary(value: unknown): AndroidNetworkEvidenceSummary {
   return androidNetworkEvidenceSummarySchema.parse(value);
+}
+
+export function parseAndroidPacketCaptureProvenance(
+  value: unknown,
+): AndroidPacketCaptureProvenance {
+  return androidPacketCaptureProvenanceSchema.parse(value);
 }
