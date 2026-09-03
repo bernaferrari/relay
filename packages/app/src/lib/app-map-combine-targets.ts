@@ -18,6 +18,17 @@ export type LocalCombineTargetOption = LocalExecutionTargetOption;
 /** Backward-compatible Combine vocabulary for the generic local target list. */
 export const localCombineTargetOptions = localExecutionTargetOptions;
 
+/** Keep a cell's local target choices on the same Android/iOS lane as its
+ * selected saved runtime profile. Mixed-platform Combine grids stay valid;
+ * callers apply this per cell rather than filtering the whole grid. */
+export function localTargetsForRequiredPlatform(
+  targets: readonly LocalCombineTargetOption[],
+  requiredPlatform?: LocalAgentDeviceExecutionTargetRef["platform"],
+): LocalCombineTargetOption[] {
+  if (!requiredPlatform) return [...targets];
+  return targets.filter((item) => item.target.platform === requiredPlatform);
+}
+
 export function combineCellTargetBindingFor(
   bindings: readonly AppMapCombineCellTargetBinding[],
   identity: CombineCellTargetIdentity,

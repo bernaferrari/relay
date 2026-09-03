@@ -22,6 +22,24 @@ test("every protocol operation has exactly one authoritative server route", () =
   assert.equal(new Set(operationHandlers.map((item) => item.id)).size, operationDefinitions.length);
 });
 
+function filledTransportPath(path: string): string {
+  return path.replace(/:([A-Za-z][A-Za-z0-9_]*)/g, "x");
+}
+
+test("every public operation transport resolves back to its own handler", () => {
+  const mismatches = operationDefinitions
+    .filter((definition) => {
+      const handler = findOperationHandler(
+        definition.transport.method,
+        filledTransportPath(definition.transport.path),
+      );
+      return handler?.id !== definition.id;
+    })
+    .map((definition) => definition.id);
+
+  assert.deepEqual(mismatches, []);
+});
+
 test("dynamic canonical routes resolve to their registered operation", () => {
   assert.equal(findOperationHandler("GET", "/runs/repairs")?.id, "run.repair.list");
   assert.equal(findOperationHandler("POST", "/jobs/job-123/cancel")?.id, "job.cancel");

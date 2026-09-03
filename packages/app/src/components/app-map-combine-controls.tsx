@@ -11,12 +11,13 @@ import type { CombineRuntimeProfileOption } from "../lib/app-map-combine-profile
 import {
   combineCellTargetBindingFor,
   isBoundLocalCombineTargetReady as isTargetReady,
+  localTargetsForRequiredPlatform,
   type LocalCombineTargetOption,
 } from "../lib/app-map-combine-targets";
 import { clampRovingIndex, nextGridRovingIndex } from "../lib/roving-focus";
 import { Button } from "@relay/ui/button";
 import type { TestCandidate } from "../lib/app-map-combine-candidates";
-import type { CombineProjection } from "../lib/app-map-combine-presentation";
+import { variableMethodLabel, type CombineProjection } from "../lib/app-map-combine-presentation";
 import { cn } from "../lib/cn";
 import { copyDescription, copyStack, copyTitle } from "../lib/ui";
 import { AppMapCombineProfilePicker } from "./app-map-combine-profile-picker";
@@ -42,22 +43,6 @@ export function defaultCaptureMode(candidate: TestCandidate): SimpleCaptureMode 
 function candidateDescription(candidate: TestCandidate): string {
   const count = candidate.test.steps.length;
   return `${count} ${count === 1 ? "step" : "steps"} · graph Test`;
-}
-
-function variableMethodLabel(variable: AppMapVariable): string {
-  if (variable.apply.kind === "appLocale") return "Android app language";
-  if (variable.apply.kind === "toggle") return "toggle";
-  const opensWithPath = Boolean(
-    variable.apply.inConnectionId ||
-    variable.apply.entryPath?.length ||
-    variable.apply.pickerPath?.length,
-  );
-  const returnsWithPath = Boolean(
-    variable.apply.outConnectionId || variable.apply.exitPath?.length,
-  );
-  if (opensWithPath && returnsWithPath) return "mapped open + return";
-  if (opensWithPath) return "mapped list";
-  return "visible list labels";
 }
 
 export function AppMapCombineHeader(props: {
@@ -505,7 +490,18 @@ function CombinePlanGrid(props: {
                     const cellTarget = { testId: test.id, values };
                     const targetBinding = () =>
                       combineCellTargetBindingFor(props.cellTargetBindings, cellTarget);
-                    const targetReady = () => isTargetReady(targetBinding(), props.localTargets);
+                    const cellTargets = () => {
+                      const profile = props.runtimeProfiles.find(
+                        (item) => item.id === binding()?.targetProfileId,
+                      );
+                      return localTargetsForRequiredPlatform(
+                        props.localTargets,
+                        profile?.platform === "android" || profile?.platform === "ios"
+                          ? profile.platform
+                          : undefined,
+                      );
+                    };
+                    const targetReady = () => isTargetReady(targetBinding(), cellTargets());
                     const cellIndex = () => worldIndex() * columns() + testIndex();
                     const status = [
                       binding()
@@ -548,7 +544,7 @@ function CombinePlanGrid(props: {
                             <AppMapCombineTargetPicker
                               testName={test.name}
                               worldLabel={world.label}
-                              targets={props.localTargets}
+                              targets={cellTargets()}
                               binding={targetBinding()}
                               busy={props.busy}
                               onBind={(target) => props.onBindCellTarget(test.id, values, target)}

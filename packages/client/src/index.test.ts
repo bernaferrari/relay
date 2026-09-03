@@ -159,6 +159,30 @@ test("resource transport cannot bypass the registry for mutations", async () => 
   );
 });
 
+test("resource transport prefers a static operation over an overlapping parameter route", async () => {
+  let request: Request | undefined;
+  const client = new RelayClient(
+    {
+      url: "https://relay.test",
+      auth: { type: "none" },
+      organizationId: "local",
+      projectId: "default",
+      actorId: "human:test",
+      actorKind: "human",
+    },
+    {
+      fetch: async (input, init) => {
+        request = new Request(input, init);
+        return new Response(JSON.stringify({ repairs: [], nextCursor: null }), { status: 200 });
+      },
+    },
+  );
+
+  await client.resource("/runs/repairs");
+
+  assert.equal(request?.headers.get("x-relay-operation-id"), "run.repair.list");
+});
+
 test("binary resources retain operation identity while returning bounded bytes", async () => {
   let request: Request | undefined;
   const client = new RelayClient(

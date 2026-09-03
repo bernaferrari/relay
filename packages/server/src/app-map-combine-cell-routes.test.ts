@@ -215,6 +215,77 @@ test("Combine start prepares cells offline and refuses missing bindings without 
   }
 });
 
+test("Combine rejects a profile/target platform mismatch before discovery or lease admission", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-combine-platform-contract-"));
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = root;
+  const calls = { listDevices: 0, assertTargetControl: 0, admitTargetControl: 0 };
+  const server = await startServer({
+    host: "127.0.0.1",
+    port: 0,
+    jobRouteRuntime: {
+      verifyCampaignDurationCohortEvidence: verifySyntheticCohortEvidence,
+      async listDevices() {
+        calls.listDevices += 1;
+        return [];
+      },
+      async assertTargetControl() {
+        calls.assertTargetControl += 1;
+        throw new Error("profile mismatch must not claim control");
+      },
+      async admitTargetControl() {
+        calls.admitTargetControl += 1;
+        throw new Error("profile mismatch must not mint a lease");
+      },
+    },
+  });
+  try {
+    const client = new RelayClient({
+      url: `http://127.0.0.1:${server.port}`,
+      auth: { type: "none" },
+      organizationId: "acme",
+      projectId: "mobile",
+      actorId: "human:designer",
+      actorKind: "human",
+    });
+    await saveLocaleCombine(client, {
+      en: { targetId: "ipad-1", platform: "ios" },
+      it: { targetId: "ipad-1", platform: "ios" },
+      fr: { targetId: "ipad-1", platform: "ios" },
+    });
+    await assert.rejects(
+      client.invoke("job.combine.start", {
+        appMapId: "store",
+        combineId: "locales",
+        selected: { language: ["en"] },
+        executionMode: "all",
+        cellTargetBindings: [
+          {
+            testId: "script-only",
+            values: { language: "en" },
+            target: localExecutionTargetRef({ targetId: "pixel-a", platform: "android" }),
+          },
+        ],
+        localAdmission: localAdmission({
+          deadlineMs: 10_000,
+          targets: [{ targetId: "pixel-a", platform: "android" }],
+          observedAt: Date.now(),
+        }),
+      }),
+      (error: unknown) =>
+        error instanceof ApiError &&
+        error.status === 409 &&
+        (error.body as { code?: unknown }).code === "APP_MAP_COMBINE_CELL_CONTRACT",
+    );
+    assert.deepEqual(calls, { listDevices: 0, assertTargetControl: 0, admitTargetControl: 0 });
+  } finally {
+    await server.close();
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 type LocaleTarget = { targetId: string; platform: "android" | "ios" };
 
 async function saveLocaleCombine(

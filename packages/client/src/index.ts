@@ -144,6 +144,13 @@ function registeredTransport(
 ): { definition: OperationDefinition<OperationId>; input: Record<string, unknown> } | null {
   const url = new URL(path, "http://relay.local");
   const actual = url.pathname.split("/").filter(Boolean);
+  let best:
+    | {
+        definition: OperationDefinition<OperationId>;
+        input: Record<string, unknown>;
+        staticSegmentCount: number;
+      }
+    | undefined;
   for (const definition of operationDefinitions) {
     if (definition.transport.method !== method) continue;
     const expected = definition.transport.path.split("/").filter(Boolean);
@@ -164,9 +171,12 @@ function registeredTransport(
       const values = url.searchParams.getAll(key);
       input[key] = values.length === 1 ? values[0]! : values;
     }
-    return { definition, input };
+    const staticSegmentCount = expected.filter((segment) => !segment.startsWith(":")).length;
+    if (!best || staticSegmentCount > best.staticSegmentCount) {
+      best = { definition, input, staticSegmentCount };
+    }
   }
-  return null;
+  return best ? { definition: best.definition, input: best.input } : null;
 }
 
 export class RelayClient {

@@ -6,6 +6,7 @@ import {
   combineCellTargetBindingFor,
   isBoundLocalCombineTargetReady,
   localCombineTargetOptions,
+  localTargetsForRequiredPlatform,
   upsertCombineCellTargetBinding,
 } from "./app-map-combine-targets";
 
@@ -32,6 +33,19 @@ test("local Combine targets expose attached Android/iOS lanes but never a browse
     ],
   );
   assert.equal(options.find((option) => option.target.targetId === "offline-phone")?.ready, false);
+});
+
+test("per-cell Combine target choices stay on the bound profile platform", () => {
+  const options = localCombineTargetOptions(devices, true);
+  assert.deepEqual(
+    localTargetsForRequiredPlatform(options, "ios").map((option) => option.target.targetId),
+    ["ipad-b"],
+  );
+  assert.deepEqual(
+    localTargetsForRequiredPlatform(options, "android").map((option) => option.target.targetId),
+    ["pixel-a", "offline-phone"],
+  );
+  assert.deepEqual(localTargetsForRequiredPlatform(options), options);
 });
 
 test("per-cell local target selection remains explicit and trims out-of-scope bindings", () => {

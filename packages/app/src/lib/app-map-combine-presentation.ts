@@ -1,4 +1,9 @@
-import { CaseExpansionError, expandCaseIndexes, type CaseExpansionStrategy } from "@relay/protocol";
+import {
+  CaseExpansionError,
+  expandCaseIndexes,
+  type AppMapVariable,
+  type CaseExpansionStrategy,
+} from "@relay/protocol";
 
 /** User-facing projection for a combine: Variables × Tests. */
 export type CombineValue = {
@@ -39,6 +44,22 @@ export type CombineProjection = {
   truncated: boolean;
   issue?: string;
 };
+
+export function variableMethodLabel(variable: AppMapVariable): string {
+  if (variable.apply.kind === "appLocale") return "Android app language";
+  if (variable.apply.kind === "toggle") return "toggle";
+  const opensWithPath = Boolean(
+    variable.apply.inConnectionId ||
+    variable.apply.entryPath?.length ||
+    variable.apply.pickerPath?.length,
+  );
+  const returnsWithPath = Boolean(
+    variable.apply.outConnectionId || variable.apply.exitPath?.length,
+  );
+  if (opensWithPath && returnsWithPath) return "mapped open + return";
+  if (opensWithPath) return "mapped list";
+  return "visible list labels";
+}
 
 export function combineValueLabel(option: { id: string; label?: string; text?: string }): string {
   const label = option.label?.trim() || option.text?.trim() || option.id.trim();
