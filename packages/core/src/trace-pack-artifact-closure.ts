@@ -119,6 +119,9 @@ function mediaTypeFor(path: string): string {
       return "application/json";
     case ".jsonl":
       return "application/x-ndjson";
+    case ".pcap":
+    case ".pcapng":
+      return "application/vnd.tcpdump.pcap";
     case ".xml":
       return "application/xml";
     case ".log":
@@ -152,10 +155,14 @@ function browserTraceRetentionAllowed(run: PersistedRun): boolean {
   return Boolean(run.evidence?.collectionPolicy?.sensitive["browser-trace"]);
 }
 
+function rawNetworkRetentionAllowed(run: PersistedRun): boolean {
+  return Boolean(run.evidence?.collectionPolicy?.sensitive["network-raw"]);
+}
+
 function looksLikeRunArtifact(path: string, channel?: string): boolean {
   if (!path.includes("/")) return false;
   if (channel && ["video", "screenshot", "audio", "crash"].includes(channel)) return true;
-  return /\.(?:png|jpe?g|webp|mp4|webm|wav|m4a|aac|jsonl?|xml|log|txt|ips|crash|diag|har|trace)$/iu.test(
+  return /\.(?:png|jpe?g|webp|mp4|webm|wav|m4a|aac|jsonl?|xml|log|txt|ips|crash|diag|har|trace|pcap|pcapng)$/iu.test(
     path,
   );
 }
@@ -376,6 +383,18 @@ async function closeArtifact(
   // never copy the bytes into a portable TracePack without an explicit frozen
   // browser-trace grant. This also makes legacy policy records fail closed.
   if (channels.includes("trace") && !browserTraceRetentionAllowed(run)) {
+    return {
+      reference: {
+        path: request.path,
+        status: "redacted",
+        sources,
+        channels,
+        ...(expectedBytes === undefined ? {} : { expectedBytes }),
+        reason: "redacted-channel",
+      },
+    };
+  }
+  if (/\.pcap(?:ng)?$/iu.test(request.path) && !rawNetworkRetentionAllowed(run)) {
     return {
       reference: {
         path: request.path,

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { access, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, mkdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -47,6 +47,134 @@ test("timed-out Android automation is drained before control returns", async () 
   events.push("returned");
 
   assert.deepEqual(events, ["aborted", "settled", "returned"]);
+});
+
+test("managed-emulator packet evidence brackets the Run and survives cancelled adapter teardown", async () => {
+  const avdDirectory = await mkdtemp(join(tmpdir(), "relay-run-emulator-packets-"));
+  const events: string[] = [];
+  const emulatorTarget = {
+    kind: "device",
+    platform: "android",
+    serial: "emulator-5560",
+  } as const;
+  const emptyPcap = Buffer.alloc(24);
+  emptyPcap.writeUInt32LE(0xa1b2c3d4, 0);
+  emptyPcap.writeUInt16LE(2, 4);
+  emptyPcap.writeUInt16LE(4, 6);
+  emptyPcap.writeUInt32LE(65_535, 16);
+  emptyPcap.writeUInt32LE(1, 20);
+  const job = {
+    id: "emulator-packet-run",
+    action: "proof",
+    serial: emulatorTarget.serial,
+    platform: "android",
+    targetKind: "device",
+    targetContext: emulatorTarget,
+    targetProfile: {
+      id: "device:emulator-5560",
+      targetId: emulatorTarget.serial,
+      source: "device",
+      platform: "android",
+      name: "Medium phone",
+      androidAvdName: "medium_phone",
+      viewport: { width: 1080, height: 2400 },
+      capabilities: ["screenshot", "snapshot"],
+      observedAt: 1,
+    },
+    status: "running",
+    queuedAt: 1,
+    attempts: 1,
+    logs: [],
+    steps: [],
+    frames: [],
+    glyphs: [],
+    kind: "Replay",
+    tone: "acc",
+    title: "Emulator packet Run",
+    artifacts: [],
+    resolvedInputs: {},
+    evidencePolicy: {
+      schemaVersion: 1,
+      sensitive: {
+        "network-raw": {
+          grantedAt: 1,
+          grantedBy: "human:test",
+          reason: "Exercise consented cancellation finalization",
+        },
+      },
+      redaction: { enabled: false, source: "workspace", locked: false },
+    },
+  } as unknown as TestJob;
+  const device = {
+    capture: {
+      snapshot: async () => {
+        events.push("prime");
+        return { nodes: [] };
+      },
+    },
+    observability: {
+      perf: async () => ({}),
+      logs: async () => ({}),
+      network: async () => ({}),
+    },
+    recording: { record: async () => ({ started: false, warning: "not needed" }) },
+  } as unknown as Device;
+
+  try {
+    const handle = await runWithTargetContext(emulatorTarget, () =>
+      startRunEvidenceWithoutContext(job, device, () => undefined, undefined, {
+        foregroundAppResolver: async () => undefined,
+        androidPacketRuntime: {
+          resolveAvdDirectory: async () => avdDirectory,
+          readLocalAddresses: async () => ["10.0.2.15"],
+          execAdb: async (args) => {
+            if (args.includes("start")) {
+              events.push("packet-start");
+              await mkdir(join(avdDirectory, "console_out"), { recursive: true });
+              await writeFile(join(avdDirectory, "console_out", args.at(-1)!), emptyPcap);
+            } else {
+              events.push("packet-stop");
+            }
+            return { stdout: "OK", stderr: "" };
+          },
+        },
+      }),
+    );
+    await runWithTargetContext(emulatorTarget, () =>
+      stopRunEvidenceWithoutContext(handle, job, undefined, () => undefined),
+    );
+
+    assert.equal(events[0], "packet-start");
+    assert.ok(events.indexOf("packet-start") < events.indexOf("prime"));
+    assert.equal(events.at(-1), "packet-stop");
+    const artifact = job.artifacts.find((item) => item.kind === "network");
+    assert.ok(artifact);
+    assert.equal(
+      (artifact.data as { androidNetwork?: { source?: { kind?: string } } }).androidNetwork?.source
+        ?.kind,
+      "emulator-packet",
+    );
+    assert.equal(handle.manifest.channels.network.status, "captured");
+    assert.equal(
+      (
+        artifact.data as {
+          androidNetwork?: { rawCapture?: { status?: string; artifact?: { path?: string } } };
+        }
+      ).androidNetwork?.rawCapture?.status,
+      "captured",
+    );
+    assert.equal(
+      (
+        artifact.data as {
+          androidNetwork?: { rawCapture?: { artifact?: { path?: string } } };
+        }
+      ).androidNetwork?.rawCapture?.artifact?.path,
+      "network/capture.pcap",
+    );
+    assert.equal((await stat(join(job.runDir!, "network", "capture.pcap"))).mode & 0o777, 0o600);
+  } finally {
+    await rm(avdDirectory, { recursive: true, force: true });
+  }
 });
 
 test("run evidence records video and performance without affecting the run", async () => {

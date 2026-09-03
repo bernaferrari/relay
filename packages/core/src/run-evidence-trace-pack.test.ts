@@ -6,6 +6,7 @@ import test from "node:test";
 import type { Device } from "./device.js";
 import { exportTracePack } from "./trace-pack.js";
 import {
+  initializeRunEvidence,
   startRunEvidence as startRunEvidenceWithoutContext,
   stopRunEvidence as stopRunEvidenceWithoutContext,
 } from "./run-evidence.js";
@@ -134,6 +135,93 @@ test("Android logs and network evidence are owned by the Run before TracePack ex
 function providerLogContent(): string {
   return "GET https://example.test/settings?token=log-secret status=200 Authorization: Bearer log-secret\n";
 }
+
+test("TracePack embeds consented emulator PCAP bytes and redacts them without frozen consent", async () => {
+  for (const consented of [true, false]) {
+    const root = await mkdtemp(join(tmpdir(), `relay-trace-pack-pcap-${consented}-`));
+    const pcap = Buffer.from("bounded-pcap-fixture");
+    const networkData = {
+      path: "network/network.json",
+      androidNetwork: {
+        schemaVersion: 1,
+        source: { kind: "emulator-packet", backend: "android-emulator-console" },
+        coverage: "partial",
+        scope: "entire-emulator",
+        startedAt: 1,
+        finishedAt: 2,
+        packets: 0,
+        bytesSent: 0,
+        bytesReceived: 0,
+        domains: [],
+        flows: [],
+        attribution: { confidence: "unavailable", reason: "Fixture has no package binding" },
+        rawCapture: {
+          status: "captured",
+          artifact: { path: "network/capture.pcap", bytes: pcap.byteLength },
+          bytes: pcap.byteLength,
+        },
+        dropped: 0,
+        redactions: 0,
+        limitations: ["Fixture carries transport metadata only"],
+      },
+    } as const;
+    const job = {
+      id: `pcap-${consented}`,
+      action: "android-proof",
+      serial: target.serial,
+      platform: "android",
+      targetKind: "device",
+      targetContext: target,
+      runDir: root,
+      status: "ok",
+      queuedAt: 1,
+      startedAt: 1,
+      finishedAt: 2,
+      attempts: 1,
+      logs: [],
+      steps: [],
+      frames: [],
+      glyphs: [],
+      kind: "Replay",
+      tone: "acc",
+      title: "PCAP closure",
+      artifacts: [{ kind: "network", capturedAt: 2, data: networkData }],
+      resolvedInputs: {},
+      evidencePolicy: {
+        schemaVersion: 1,
+        sensitive: consented
+          ? {
+              "network-raw": {
+                grantedAt: 1,
+                grantedBy: "human:test",
+                reason: "TracePack fixture",
+              },
+            }
+          : {},
+        redaction: { enabled: false, source: "workspace", locked: false },
+      },
+    } as unknown as TestJob;
+    initializeRunEvidence(job);
+    job.evidence!.channels.network.status = "partial";
+    await mkdir(join(root, "network"), { recursive: true });
+    await writeFile(join(root, "network", "capture.pcap"), pcap);
+    await writeFile(join(root, "network", "network.json"), JSON.stringify(networkData));
+    try {
+      const run = await persistRun(job);
+      const pack = await exportTracePack(run);
+      const reference = pack.completeness.artifacts?.find(
+        (artifact) => artifact.path === "network/capture.pcap",
+      );
+      assert.equal(reference?.status, consented ? "embedded" : "redacted");
+      assert.equal(
+        pack.objects.some((object) => object.path === "files/network/capture.pcap"),
+        consented,
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }
+});
 
 function ownedLogContent(): string {
   return "GET https://example.test/settings?[REDACTED] status=200 Authorization: Bearer [REDACTED]\n";

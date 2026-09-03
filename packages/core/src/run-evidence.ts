@@ -1,16 +1,29 @@
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import type { EvidenceChannel, EvidenceChannelRecord, EvidenceManifest } from "@relay/protocol";
-import { base, bindAndroidAppSession, recordDeviceVideo, type Device } from "./device.js";
+import { base, recordDeviceVideo, type Device } from "./device.js";
 import { now } from "./events.js";
 import { getRedactionPolicy, redactValue, visualEvidenceAllowed } from "./redaction.js";
 import { hasSensitiveEvidenceConsent } from "./evidence-policy.js";
 import { ensureRunDir, type RunArtifact } from "./runs.js";
 import type { TestJob } from "./session.js";
-import { captureAndroidForegroundApp } from "./android-ui-snapshot.js";
-import { hardStopDeviceSession } from "./control.js";
 import { stopBrowserProofEvidence } from "./run-evidence-browser.js";
 import { materializeCaptureArtifact } from "./run-evidence-artifacts.js";
+import {
+  startAndroidEmulatorNetworkCapture,
+  stopAndroidEmulatorNetworkCapture,
+  type AndroidEmulatorNetworkCaptureHandle,
+  type AndroidEmulatorNetworkCaptureRuntime,
+  type AndroidEmulatorNetworkCaptureResult,
+} from "./android-emulator-network-capture.js";
+import { primeAndroidEvidenceSession } from "./run-evidence-android-session.js";
+import {
+  combinedNetworkResult,
+  packetCollectionIsIncomplete,
+  proofApplicationId,
+} from "./run-evidence-network.js";
+import { withTimeout } from "./run-evidence-timeout.js";
+export { withTimeout, withTimeoutAndDrain } from "./run-evidence-timeout.js";
 
 const CHANNELS: EvidenceChannel[] = [
   "input",
@@ -39,6 +52,8 @@ export type RunEvidenceHandle = {
   networkStarted: boolean;
   audioStarted: boolean;
   crashStarted: boolean;
+  androidPacketCapture?: AndroidEmulatorNetworkCaptureHandle;
+  androidPacketRuntime?: AndroidEmulatorNetworkCaptureRuntime;
   stopped: boolean;
   manifest: EvidenceManifest;
 };
@@ -95,7 +110,7 @@ export function initializeRunEvidence(job: TestJob): RunEvidenceHandle {
     // channel, so do not emit an invalid `browser-trace` manifest event.
     if (name === "browser-trace") continue;
     const channelName: EvidenceChannel =
-      name === "network-body" ? "network" : (name as EvidenceChannel);
+      name === "network-body" || name === "network-raw" ? "network" : (name as EvidenceChannel);
     event(handle, channelName, "consent.granted", {
       sensitiveChannel: name,
       grant,
@@ -282,109 +297,12 @@ export type RunEvidenceOptions = {
   physicalIos?: boolean;
   /** Override foreground-app discovery in tests or embedded hosts. */
   foregroundAppResolver?: (serial: string) => Promise<string | undefined>;
+  /** Injectable managed-emulator packet backend for deterministic hosts and tests. */
+  androidPacketRuntime?: AndroidEmulatorNetworkCaptureRuntime;
 };
 
 function hasStepScopedCampaignEvidence(job: TestJob): boolean {
   return job.recipeSnapshot?.steps.some((step) => Boolean(step.check)) === true;
-}
-
-/**
- * Android observability is session-scoped in agent-device. A screenshot can
- * still work through the raw/device path when no SDK session exists, which
- * made an otherwise healthy run look complete while logs, network, and
- * performance quietly failed with "no active session". Prime the same SDK
- * client before starting those collectors so all evidence shares one runtime
- * binding. The snapshot is deliberately not added to the run: it is a
- * transport warm-up, not user-visible evidence.
- */
-async function primeAndroidEvidenceSession(
-  job: TestJob,
-  device: Device,
-  handle: RunEvidenceHandle,
-  log: (line: string) => void,
-  foregroundAppResolver: (
-    serial: string,
-  ) => Promise<string | undefined> = captureAndroidForegroundApp,
-): Promise<"not-required" | "app-bound" | "surface-only"> {
-  if (job.targetKind === "browser" || job.platform !== "android" || !job.serial) {
-    return "not-required";
-  }
-
-  let appSessionBound = false;
-  try {
-    let appPackage: string | undefined;
-    if (device.command?.appState) {
-      try {
-        const state = await withTimeout(
-          device.command.appState({ ...base() }),
-          3_000,
-          "Android foreground app",
-        );
-        if ("package" in state && typeof state.package === "string") {
-          const candidate = state.package.trim();
-          // Do not accidentally bind evidence to the launcher or system UI
-          // when a person starts a run from the home screen.
-          if (candidate && !/(?:launcher|systemui)$/i.test(candidate)) appPackage = candidate;
-        }
-      } catch {
-        // Snapshot remains a useful session warm-up even when foreground-app
-        // inspection is unavailable on a particular Android build.
-      }
-    }
-    // `command.appState` is session-scoped. A freshly created client can
-    // legitimately return no app even while a physical phone is showing one.
-    // Ask Android which package owns the pixels before starting collectors so
-    // logs/perf/network attach to the same app as the run.
-    if (!appPackage) {
-      const foreground = await withTimeout(
-        foregroundAppResolver(job.serial),
-        2_500,
-        "Android foreground app discovery",
-      ).catch(() => undefined);
-      if (foreground && !/(?:launcher|systemui|inputmethod|keyboard)$/i.test(foreground)) {
-        appPackage = foreground;
-      }
-    }
-    if (appPackage) {
-      await withTimeout(
-        bindAndroidAppSession(device, appPackage, job.serial),
-        5_000,
-        "Android app session",
-      );
-      event(handle, "input", "app.session.bound", { platform: "android", app: appPackage });
-      log(`evidence: Android app session bound to ${appPackage}`);
-      appSessionBound = true;
-    }
-    const snapshotRequest = device.capture.snapshot({
-      ...base(),
-      interactiveOnly: false,
-    });
-    const result = await withTimeoutAndDrain(
-      snapshotRequest,
-      5_000,
-      "Android evidence session",
-      // The SDK does not expose AbortSignal on snapshot. Closing this target's
-      // AgentDevice session is its supported cancellation boundary; Android
-      // session close deliberately uses shutdown:false so the AVD stays alive.
-      () => hardStopDeviceSession(job.targetContext),
-    );
-    const nodes = Array.isArray(result?.nodes) ? result.nodes.length : 0;
-    event(handle, "input", "session.primed", { platform: "android", nodes });
-    log(
-      nodes > 0
-        ? `evidence: Android session ready (${nodes} UI nodes observed)`
-        : "evidence: Android session ready (UI tree unavailable)",
-    );
-  } catch (error) {
-    // Evidence is additive. Keep the run usable and make the limitation
-    // explicit instead of turning a collector problem into a test failure.
-    log(
-      `warn: Android evidence session could not be primed: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
-    );
-  }
-  return appSessionBound ? "app-bound" : "surface-only";
 }
 
 /** Start bounded automatic collectors. Their failures are recorded, not promoted to test failures. */
@@ -398,11 +316,46 @@ export async function startRunEvidence(
   const handle = existing ?? initializeRunEvidence(job);
   const startedAt = handle.startedAt;
 
+  const avdName = job.targetProfile?.androidAvdName;
+  if (
+    job.targetKind !== "browser" &&
+    job.platform === "android" &&
+    job.serial &&
+    /^emulator-\d+$/u.test(job.serial) &&
+    avdName
+  ) {
+    try {
+      handle.androidPacketRuntime = options.androidPacketRuntime;
+      handle.androidPacketCapture = await startAndroidEmulatorNetworkCapture(
+        {
+          runId: job.id,
+          serial: job.serial,
+          avdName,
+          ...(proofApplicationId(job) ? { appPackage: proofApplicationId(job) } : {}),
+        },
+        options.androidPacketRuntime,
+      );
+      const record = channel(handle, "network");
+      record.status = "partial";
+      record.startedAt = handle.androidPacketCapture.startedAt;
+      record.message =
+        "emulator packet window active; coverage and attribution are reported at stop";
+      event(handle, "network", "packet.capture.started", {
+        source: "android-emulator-console",
+        scope: "entire-emulator",
+      });
+      log("evidence: Android emulator packet window started");
+    } catch (error) {
+      event(handle, "network", "packet.capture.unavailable", { message: messageOf(error) });
+      log(`warn: Android emulator packet capture unavailable: ${messageOf(error)}`);
+    }
+  }
+
   const androidEvidenceSession = await primeAndroidEvidenceSession(
     job,
     device,
-    handle,
     log,
+    (kind, data) => event(handle, "input", kind, data),
     options.foregroundAppResolver,
   );
   const missingAndroidAppSession =
@@ -472,6 +425,13 @@ export async function startRunEvidence(
       ? "requires an instrumented app or proxy on physical iOS"
       : missingAndroidAppSession,
   );
+
+  if (handle.androidPacketCapture) {
+    const record = channel(handle, "network");
+    record.status = "partial";
+    record.message =
+      "Packet metadata covers the emulator Run window; app-session HTTP details are opportunistic.";
+  }
 
   if (hasSensitiveEvidenceConsent(job.evidencePolicy, "crash")) {
     await guardedCollector(handle, "crash", log, async () => {
@@ -619,6 +579,49 @@ export async function stopRunEvidence(
   if (!handle || handle.stopped) return;
   handle.stopped = true;
 
+  let packetResult: AndroidEmulatorNetworkCaptureResult | undefined;
+  let packetIssue: string | undefined;
+  if (handle.androidPacketCapture) {
+    try {
+      const rawRequested = hasSensitiveEvidenceConsent(job.evidencePolicy, "network-raw");
+      const broadRedaction = job.evidencePolicy.redaction?.enabled === true;
+      const runDir = rawRequested && !broadRedaction ? await ensureRunDir(job) : undefined;
+      packetResult = await stopAndroidEmulatorNetworkCapture(
+        handle.androidPacketCapture,
+        rawRequested
+          ? broadRedaction
+            ? {
+                rawDeniedReason:
+                  "Raw packet bytes cannot be retained while broad evidence redaction is enabled",
+              }
+            : {
+                retainRawPath: join(runDir!, "network", "capture.pcap"),
+                rawArtifact: "network/capture.pcap",
+              }
+          : {},
+        handle.androidPacketRuntime,
+      );
+      event(handle, "network", "packet.capture.stopped", {
+        coverage: packetResult.summary.coverage,
+        packets: packetResult.summary.packets,
+        dropped: packetResult.summary.dropped,
+        rawCapture: packetResult.summary.rawCapture.status,
+      });
+      log(
+        `evidence: Android emulator packet window saved (${packetResult.summary.packets} packets, ${packetResult.summary.coverage} coverage)`,
+      );
+    } catch (error) {
+      packetIssue = `Emulator packet capture could not be finalized: ${messageOf(error)}`;
+      const record = channel(handle, "network");
+      record.status = "partial";
+      record.message = packetIssue;
+      event(handle, "network", "packet.capture.failed", { message: messageOf(error) });
+      log(`warn: Android emulator packet capture could not be finalized: ${messageOf(error)}`);
+    }
+  }
+  let packetPersisted = false;
+  let packetIssuePersisted = false;
+
   if (device) {
     // End the visual proof at the test boundary. Logs and performance can
     // finalize afterwards without adding seconds of an idle screen to video.
@@ -673,7 +676,25 @@ export async function stopRunEvidence(
         const record = channel(handle, "network");
         record.status = "captured";
         record.startedAt = handle.startedAt;
-        await persistCaptureArtifact(job, record, "network", result, droppedCount(result));
+        await persistCaptureArtifact(
+          job,
+          record,
+          "network",
+          combinedNetworkResult(result, packetResult, packetIssue),
+          droppedCount(result) + (packetResult?.summary.dropped ?? 0),
+        );
+        packetPersisted = Boolean(packetResult);
+        packetIssuePersisted = Boolean(packetIssue);
+        if (packetResult) {
+          record.entries += packetResult.summary.flows.length;
+          record.bytes += packetResult.summary.rawCapture.bytes ?? 0;
+          record.message = packetResult.summary.limitations.join(" ");
+          if (packetCollectionIsIncomplete(packetResult)) record.status = "partial";
+        }
+        if (packetIssue) {
+          record.status = "partial";
+          record.message = packetIssue;
+        }
         event(handle, "network", "capture.stopped", { entries: record.entries });
       });
 
@@ -717,6 +738,31 @@ export async function stopRunEvidence(
         channel(handle, name).message = "target adapter became unavailable before finalization";
       }
     }
+  }
+
+  if (packetResult && !packetPersisted) {
+    const record = channel(handle, "network");
+    record.status = "captured";
+    record.startedAt = packetResult.summary.startedAt;
+    record.message = packetResult.summary.limitations.join(" ");
+    await persistCaptureArtifact(
+      job,
+      record,
+      "network",
+      { androidNetwork: packetResult.summary },
+      packetResult.summary.dropped,
+    );
+    record.entries = packetResult.summary.flows.length;
+    record.bytes += packetResult.summary.rawCapture.bytes ?? 0;
+    if (packetCollectionIsIncomplete(packetResult)) record.status = "partial";
+  }
+
+  if (packetIssue && !packetIssuePersisted) {
+    const record = channel(handle, "network");
+    record.status = "partial";
+    record.message = packetIssue;
+    await persistCaptureArtifact(job, record, "network", { androidNetworkIssue: packetIssue });
+    record.status = "partial";
   }
 
   for (const step of job.steps) {
@@ -832,52 +878,4 @@ function droppedCount(value: unknown): number {
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-export async function withTimeout<T>(
-  promise: Promise<T>,
-  ms: number,
-  label: string,
-  onLateResolve?: (value: T) => void | Promise<void>,
-): Promise<T> {
-  let timer: NodeJS.Timeout | undefined;
-  let timedOut = false;
-  const tracked = promise.then(async (value) => {
-    if (timedOut && onLateResolve) await onLateResolve(value);
-    return value;
-  });
-  try {
-    return await Promise.race([
-      tracked,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => {
-          timedOut = true;
-          reject(new Error(`${label} timed out`));
-        }, ms);
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
-
-/** Time out the caller, abort when supported, and still wait for the original
- * operation to settle before another target operation may begin. Android has
- * one UiAutomation slot; racing onward while a late snapshot still owns it is
- * less safe than spending the backend's bounded cleanup budget. */
-export async function withTimeoutAndDrain<T>(
-  promise: Promise<T>,
-  ms: number,
-  label: string,
-  onTimeout?: () => void | Promise<void>,
-): Promise<T> {
-  try {
-    return await withTimeout(promise, ms, label);
-  } catch (error) {
-    if (error instanceof Error && error.message === `${label} timed out`) {
-      await onTimeout?.();
-      await promise.catch(() => undefined);
-    }
-    throw error;
-  }
 }

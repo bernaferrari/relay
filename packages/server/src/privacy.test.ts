@@ -101,7 +101,7 @@ test("environment policy is locked and unredacted network bindings are refused",
   }
 });
 
-test("browser trace retention consent is human-reviewed", async () => {
+test("browser trace and raw network retention consent are human-reviewed", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-server-browser-trace-consent-"));
   const previousRoot = process.env.RELAY_WORKSPACE_ROOT;
   const previousStateDir = process.env.RELAY_STATE_DIR;
@@ -109,14 +109,20 @@ test("browser trace retention consent is human-reviewed", async () => {
   process.env.RELAY_STATE_DIR = join(root, ".relay");
   const server = await startServer({ host: "127.0.0.1", port: 0 });
   try {
-    await assert.rejects(
-      clientForActor(server.port, "agent:trace-policy", "agent").setSensitiveEvidenceConsent(
-        "browser-trace",
-        true,
-        "Agent requested trace collection",
-      ),
-      (error) => error instanceof ApiError && error.status === 403,
+    const agent = clientForActor(server.port, "agent:trace-policy", "agent");
+    for (const channel of ["browser-trace", "network-raw"] as const) {
+      await assert.rejects(
+        agent.setSensitiveEvidenceConsent(channel, true, `Agent requested ${channel}`),
+        (error) => error instanceof ApiError && error.status === 403,
+      );
+    }
+    const human = clientForActor(server.port, "human:trace-policy", "human");
+    const consented = await human.setSensitiveEvidenceConsent(
+      "network-raw",
+      true,
+      "Dedicated emulator capture",
     );
+    assert.equal(consented.policy.sensitive["network-raw"]?.grantedBy, "local-user");
   } finally {
     await server.close();
     if (previousRoot === undefined) delete process.env.RELAY_WORKSPACE_ROOT;

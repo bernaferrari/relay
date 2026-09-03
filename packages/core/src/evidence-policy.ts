@@ -8,6 +8,7 @@ const CHANNELS = new Set<SensitiveEvidenceChannel>([
   "audio",
   "crash",
   "network-body",
+  "network-raw",
   "browser-trace",
 ]);
 

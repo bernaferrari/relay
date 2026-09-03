@@ -8,6 +8,7 @@ import type {
   RunEvidencePerformanceSample,
   RunEvidenceQuery,
 } from "@relay/protocol";
+import { parseAndroidNetworkEvidenceSummary } from "@relay/protocol";
 import type { PersistedRun } from "./runs.js";
 
 type UnknownRecord = Record<string, unknown>;
@@ -19,6 +20,26 @@ function record(value: unknown): UnknownRecord {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as UnknownRecord)
     : {};
+}
+
+function androidNetworkProjection(value: unknown): {
+  summary?: ReturnType<typeof parseAndroidNetworkEvidenceSummary>;
+  issue?: string;
+} {
+  const input = record(value);
+  const explicitIssue = text(input.androidNetworkIssue);
+  const candidate = input.androidNetwork;
+  if (candidate === undefined) return explicitIssue ? { issue: explicitIssue } : {};
+  try {
+    return {
+      summary: parseAndroidNetworkEvidenceSummary(candidate),
+      ...(explicitIssue ? { issue: explicitIssue } : {}),
+    };
+  } catch {
+    return {
+      issue: "Emulator packet evidence was malformed and could not be trusted.",
+    };
+  }
 }
 
 function text(value: unknown): string | undefined {
@@ -333,11 +354,23 @@ export function buildRunEvidence(
       })),
     )
     .slice(-applied);
+  const androidNetworkProjections = networkArtifacts.map((artifact) =>
+    androidNetworkProjection(artifact.data),
+  );
+  const androidNetwork = androidNetworkProjections
+    .map(({ summary }) => summary)
+    .filter((value) => value !== undefined)
+    .at(-1);
+  const androidNetworkIssue = androidNetworkProjections
+    .map(({ issue }) => issue)
+    .filter((value) => value !== undefined)
+    .at(-1);
   const performance = performanceSamples(run.artifacts, applied);
   const crashArtifacts = run.artifacts.filter((artifact) => artifact.kind === "crash");
   const notes = [
     ...(run.evidence?.channels.network?.message ? [run.evidence.channels.network.message] : []),
     ...(run.evidence?.channels.logs?.message ? [run.evidence.channels.logs.message] : []),
+    ...(androidNetworkIssue ? [androidNetworkIssue] : []),
     ...(options.includeBodies && !consented
       ? ["Network bodies are omitted because this run has no network-body consent grant."]
       : []),
@@ -349,18 +382,47 @@ export function buildRunEvidence(
           label: "Browser request events",
           detail: "Requests and responses were collected from the browser runtime.",
         }
-      : networkArtifacts.length > 0
+      : androidNetwork
         ? {
-            mode: "session-log" as const,
-            label: "Session network log",
+            mode: "emulator-packet" as const,
+            label: network.length
+              ? "Emulator packets and session network log"
+              : "Emulator packet metadata",
             detail:
-              "Mobile traffic was parsed from the target session log. This is not transparent packet interception.",
+              "Transport metadata covers the bounded emulator Run window. Packet capture does not parse HTTP methods, statuses, headers, or bodies; encrypted payloads remain opaque.",
           }
-        : {
-            mode: "unavailable" as const,
-            label: "No network collector result",
-            detail: "The target did not produce a network collector artifact for this run.",
-          };
+        : androidNetworkIssue && network.length > 0
+          ? {
+              mode: "session-log" as const,
+              label: "Session network log · packet capture incomplete",
+              detail: `${androidNetworkIssue} App-session HTTP details remain opportunistic.`,
+            }
+          : androidNetworkIssue
+            ? {
+                mode: "unavailable" as const,
+                label: "Packet evidence unavailable",
+                detail: androidNetworkIssue,
+              }
+            : networkArtifacts.length > 0
+              ? {
+                  mode: "session-log" as const,
+                  label: "Session network log",
+                  detail:
+                    "Mobile traffic was parsed from the target session log. This is not transparent packet interception.",
+                }
+              : {
+                  mode: "unavailable" as const,
+                  label: "No network collector result",
+                  detail: "The target did not produce a network collector artifact for this run.",
+                };
+  const channels = channelMap(run);
+  if (androidNetworkIssue && channels.network?.status === "captured") {
+    channels.network = {
+      ...channels.network,
+      status: "partial",
+      message: androidNetworkIssue,
+    };
+  }
   const artifacts = run.artifacts.map(artifactSummary);
   const crashes = crashArtifacts.map((artifact) => artifact.data).slice(-applied);
   return {
@@ -373,10 +435,11 @@ export function buildRunEvidence(
       ...(run.deviceName ? { name: run.deviceName } : {}),
       ...(run.targetProfile?.id ? { profileId: run.targetProfile.id } : {}),
     },
-    channels: channelMap(run),
+    channels,
     logs,
     network,
     networkCapture,
+    ...(androidNetwork ? { androidNetwork } : {}),
     performance,
     crashes,
     artifacts,

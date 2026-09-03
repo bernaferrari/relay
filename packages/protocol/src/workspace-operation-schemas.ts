@@ -38,7 +38,7 @@ export const workspaceOperationSchemas = {
   "workspace.evidence.get": empty,
   "workspace.evidence.update": z
     .object({
-      channel: z.enum(["audio", "crash", "network-body", "browser-trace"]),
+      channel: z.enum(["audio", "crash", "network-body", "network-raw", "browser-trace"]),
       enabled: z.boolean(),
       reason: z.string().optional(),
     })

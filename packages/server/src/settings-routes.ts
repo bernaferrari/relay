@@ -154,12 +154,19 @@ export async function handleSettingsRoute(context: SettingsRouteContext): Promis
       body.channel !== "audio" &&
       body.channel !== "crash" &&
       body.channel !== "network-body" &&
+      body.channel !== "network-raw" &&
       body.channel !== "browser-trace"
     ) {
-      throw new HttpError(400, "channel must be audio, crash, network-body, or browser-trace");
+      throw new HttpError(
+        400,
+        "channel must be audio, crash, network-body, network-raw, or browser-trace",
+      );
     }
-    if (body.channel === "browser-trace" && currentOperationContext()?.actorKind !== "human") {
-      throw new HttpError(403, "Browser trace retention consent requires a human actor");
+    if (
+      (body.channel === "browser-trace" || body.channel === "network-raw") &&
+      currentOperationContext()?.actorKind !== "human"
+    ) {
+      throw new HttpError(403, `${body.channel} retention consent requires a human actor`);
     }
     if (typeof body.enabled !== "boolean") throw new HttpError(400, "enabled must be a boolean");
     if (body.reason !== undefined && typeof body.reason !== "string") {

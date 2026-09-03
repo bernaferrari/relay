@@ -116,7 +116,8 @@ export function RunNetworkEvidence(props: { evidence: RunEvidenceQuery | null; l
       : entries;
   });
   const channel = () => props.evidence?.channels.network;
-  const networkEntries = () => props.evidence?.network.length ?? 0;
+  const networkEntries = () =>
+    (props.evidence?.network.length ?? 0) + (props.evidence?.androidNetwork?.flows.length ?? 0);
   const inspectable = () =>
     evidenceChannelIsInspectable(channel(), networkEntries(), props.loading);
   return (
@@ -144,6 +145,98 @@ export function RunNetworkEvidence(props: { evidence: RunEvidenceQuery | null; l
           </Show>
         }
       >
+        <Show when={props.evidence?.androidNetwork}>
+          {(packet) => (
+            <section class="mb-3 overflow-hidden rounded-xl border border-border-weak-base bg-surface-raised-stronger-non-alpha">
+              <div class="grid gap-3 p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
+                <div class="min-w-0">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <strong class="text-caption font-semibold text-text-strong">
+                      Emulator packet summary
+                    </strong>
+                    <span class="rounded-full bg-surface-base-active px-2 py-0.5 text-micro font-medium text-text-weak">
+                      {titleize(packet().coverage)}
+                    </span>
+                  </div>
+                  <p class="mt-1 max-w-2xl text-micro leading-[1.45] text-text-weaker">
+                    Entire-emulator transport metadata for this Run window. Packet capture does not
+                    parse HTTP methods, statuses, headers, or bodies; encrypted payloads remain
+                    opaque.
+                  </p>
+                </div>
+                <div class="grid grid-cols-3 gap-3 text-right font-mono text-micro tabular-nums">
+                  <span>
+                    <b class="block text-caption text-text-strong">{packet().packets}</b>
+                    <span class="text-text-weaker">packets</span>
+                  </span>
+                  <span>
+                    <b class="block text-caption text-text-strong">
+                      {formatEvidenceBytes(packet().bytesSent)}
+                    </b>
+                    <span class="text-text-weaker">sent</span>
+                  </span>
+                  <span>
+                    <b class="block text-caption text-text-strong">
+                      {formatEvidenceBytes(packet().bytesReceived)}
+                    </b>
+                    <span class="text-text-weaker">received</span>
+                  </span>
+                </div>
+              </div>
+              <div class="grid gap-2 border-t border-border-weak-base px-3 py-2 text-micro text-text-weaker sm:grid-cols-2">
+                <span>
+                  Attribution: {titleize(packet().attribution.confidence)}
+                  {packet().attribution.package ? ` · ${packet().attribution.package}` : ""}
+                </span>
+                <span class="sm:text-right">
+                  Raw packets: {titleize(packet().rawCapture.status)}
+                </span>
+              </div>
+              <Show when={packet().flows.length > 0 || packet().limitations.length > 0}>
+                <details class="group border-t border-border-weak-base">
+                  <summary class="flex min-h-9 cursor-pointer list-none items-center gap-1.5 px-3 text-micro font-medium text-text-weak outline-none hover:bg-surface-raised-base-hover hover:text-text-base focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-strong-focus [&::-webkit-details-marker]:hidden">
+                    Inspect transport flows and coverage limits
+                    <Icon
+                      name="chevron-down"
+                      size={11}
+                      class="transition-transform duration-hover group-open:rotate-180"
+                    />
+                  </summary>
+                  <div class="grid gap-3 border-t border-border-weak-base p-3">
+                    <Show when={packet().flows.length > 0}>
+                      <div class="overflow-hidden rounded-lg border border-border-weak-base">
+                        <For each={packet().flows.slice(0, 20)}>
+                          {(flow) => (
+                            <div class="grid grid-cols-[54px_minmax(0,1fr)_70px] items-center gap-2 border-b border-border-weak-base px-2.5 py-2 text-micro last:border-0">
+                              <span class="font-mono text-text-weak uppercase">
+                                {flow.protocol}
+                              </span>
+                              <span class="min-w-0 truncate font-mono text-text-base">
+                                {flow.host ?? flow.remoteAddress ?? "Unknown peer"}
+                                {flow.port ? `:${flow.port}` : ""}
+                              </span>
+                              <span class="text-right font-mono tabular-nums text-text-weaker">
+                                {formatEvidenceBytes(flow.sentBytes + flow.receivedBytes)}
+                              </span>
+                            </div>
+                          )}
+                        </For>
+                      </div>
+                      <Show when={packet().flows.length > 20}>
+                        <p class="m-0 text-micro text-text-weaker">
+                          Showing 20 of {packet().flows.length} bounded flows.
+                        </p>
+                      </Show>
+                    </Show>
+                    <ul class="m-0 grid gap-1 pl-4 text-micro leading-[1.45] text-text-weaker">
+                      <For each={packet().limitations}>{(limit) => <li>{limit}</li>}</For>
+                    </ul>
+                  </div>
+                </details>
+              </Show>
+            </section>
+          )}
+        </Show>
         <div class="mb-2 flex items-center gap-2">
           <div class="relative min-w-0 flex-1">
             <Icon
@@ -154,8 +247,8 @@ export function RunNetworkEvidence(props: { evidence: RunEvidenceQuery | null; l
             <input
               value={filter()}
               onInput={(event) => setFilter(event.currentTarget.value)}
-              placeholder="Filter URL, method, or result"
-              aria-label="Filter network evidence"
+              placeholder="Filter HTTP URL, method, or result"
+              aria-label="Filter HTTP network evidence"
               class="h-8 w-full rounded-lg border border-border-weak-base bg-surface-raised-stronger-non-alpha pl-8 pr-2.5 text-caption text-text-base outline-none placeholder:text-text-weaker focus:border-border-strong-focus"
             />
           </div>
@@ -167,7 +260,9 @@ export function RunNetworkEvidence(props: { evidence: RunEvidenceQuery | null; l
             <div class="rounded-xl border border-dashed border-border-weak-base px-3 py-5 text-center text-caption text-text-weak">
               {filter()
                 ? "No requests match this filter."
-                : "No HTTP or WebSocket exchanges were observed."}
+                : props.evidence?.androidNetwork
+                  ? "No app-reported HTTP or WebSocket exchanges were observed. Packet metadata is shown above."
+                  : "No HTTP or WebSocket exchanges were observed."}
             </div>
           }
         >
@@ -232,6 +327,12 @@ export function RunNetworkEvidence(props: { evidence: RunEvidenceQuery | null; l
       </Show>
     </div>
   );
+}
+
+function formatEvidenceBytes(value: number): string {
+  if (value < 1_024) return `${value} B`;
+  if (value < 1_024 * 1_024) return `${(value / 1_024).toFixed(1)} KB`;
+  return `${(value / (1_024 * 1_024)).toFixed(1)} MB`;
 }
 
 export function RunLogsEvidence(props: {

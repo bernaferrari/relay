@@ -202,3 +202,95 @@ test("buildRunEvidence never exposes network bodies without consent", () => {
   assert.equal(evidence.network[0]?.requestBody, undefined);
   assert.match(evidence.notes.join(" "), /no network-body consent/i);
 });
+
+test("buildRunEvidence keeps emulator packet facts separate from HTTP events", () => {
+  const evidence = buildRunEvidence(
+    run({
+      artifacts: [
+        {
+          kind: "network",
+          capturedAt: 2_000,
+          data: {
+            path: "network/network.json",
+            entries: [],
+            androidNetwork: {
+              schemaVersion: 1,
+              source: { kind: "emulator-packet", backend: "android-emulator-console" },
+              coverage: "partial",
+              scope: "entire-emulator",
+              startedAt: 1_000,
+              finishedAt: 2_000,
+              packets: 1,
+              bytesSent: 54,
+              bytesReceived: 0,
+              domains: [],
+              flows: [
+                {
+                  protocol: "tls",
+                  remoteAddress: "93.184.216.34",
+                  port: 443,
+                  startedAtMs: 0,
+                  sentBytes: 54,
+                  receivedBytes: 0,
+                  outcome: "connected",
+                },
+              ],
+              attribution: {
+                confidence: "unavailable",
+                reason: "No application package was bound to this Run",
+              },
+              rawCapture: { status: "not-requested" },
+              dropped: 0,
+              redactions: 0,
+              limitations: ["Encrypted HTTP facts were not observed"],
+            },
+          },
+        },
+      ],
+    }),
+  );
+
+  assert.equal(evidence.network.length, 0);
+  assert.equal(evidence.androidNetwork?.source.backend, "android-emulator-console");
+  assert.equal(evidence.androidNetwork?.flows[0]?.protocol, "tls");
+  assert.equal(evidence.networkCapture.mode, "emulator-packet");
+  assert.match(evidence.networkCapture.label, /Emulator packet/u);
+  assert.match(evidence.networkCapture.detail, /does not parse HTTP methods/u);
+});
+
+test("buildRunEvidence fails closed when packet evidence is malformed", () => {
+  const evidence = buildRunEvidence(
+    run({
+      artifacts: [
+        {
+          kind: "network",
+          capturedAt: 22,
+          data: { androidNetwork: { schemaVersion: 1, coverage: "packet-complete" } },
+        },
+      ],
+      evidence: {
+        schemaVersion: 1,
+        runId: "run-1",
+        target: { kind: "device", platform: "android", id: "emulator-5554" },
+        startedAt: 1,
+        channels: {
+          network: {
+            channel: "network",
+            status: "captured",
+            entries: 1,
+            bytes: 10,
+            dropped: 0,
+            redactions: 0,
+          },
+        } as NonNullable<PersistedRun["evidence"]>["channels"],
+        events: [],
+      },
+    }),
+  );
+
+  assert.equal(evidence.androidNetwork, undefined);
+  assert.equal(evidence.channels.network?.status, "partial");
+  assert.equal(evidence.networkCapture.mode, "unavailable");
+  assert.match(evidence.networkCapture.detail, /malformed/u);
+  assert.ok(evidence.notes.some((note) => /malformed/u.test(note)));
+});

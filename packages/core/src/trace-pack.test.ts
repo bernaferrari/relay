@@ -485,6 +485,33 @@ test("TracePack export does not embed a legacy browser trace without frozen cons
   }
 });
 
+test("TracePack never embeds PCAP referenced outside the network channel without raw consent", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "relay-trace-pack-pcap-consent-"));
+  try {
+    await mkdir(join(directory, "network"));
+    const packetBytes = Buffer.from("private packet bytes");
+    await writeFile(join(directory, "network", "capture.pcap"), packetBytes);
+    const run = persistedRun();
+    run.dir = directory;
+    run.result = { diagnostic: { path: "network/capture.pcap", bytes: packetBytes.byteLength } };
+    run.evidence!.collectionPolicy = { schemaVersion: 1, sensitive: {} };
+
+    const pack = await exportTracePack(run);
+    const reference = pack.completeness.artifacts?.find(
+      ({ path }) => path === "network/capture.pcap",
+    );
+    assert.equal(reference?.status, "redacted");
+    assert.equal(reference?.reason, "redacted-channel");
+    assert.equal(
+      pack.objects.some(({ path }) => path === "files/network/capture.pcap"),
+      false,
+    );
+    assert.doesNotMatch(JSON.stringify(pack), /private packet bytes/u);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("artifact closure is bounded without silently dropping references", async () => {
   const directory = await mkdtemp(join(tmpdir(), "relay-trace-pack-limits-"));
   try {

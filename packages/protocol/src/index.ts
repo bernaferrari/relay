@@ -83,6 +83,8 @@ export * from "./combine-evidence-pack-contract.js";
 export * from "./app-map-canvas.js";
 export * from "./ios-mutation-terminality-contract.js";
 export * from "./browser-proof-evidence.js";
+export * from "./android-network-evidence.js";
+import type { AndroidNetworkEvidenceSummary } from "./android-network-evidence.js";
 import type { ResourceEventPayload } from "./coordination.js";
 import type { ServerConnection, TargetProfile, TargetSelector } from "./target-contract.js";
 import type { SourceRevision } from "./source-revision.js";
@@ -118,7 +120,12 @@ export type RedactionPolicy = {
   updatedAt?: number;
 };
 
-export type SensitiveEvidenceChannel = "audio" | "crash" | "network-body" | "browser-trace";
+export type SensitiveEvidenceChannel =
+  | "audio"
+  | "crash"
+  | "network-body"
+  | "network-raw"
+  | "browser-trace";
 
 export type EvidenceConsentGrant = {
   grantedAt: number;
@@ -370,10 +377,18 @@ export type RunEvidenceQuery = {
   logs: RunEvidenceLogEntry[];
   network: RunEvidenceNetworkEntry[];
   networkCapture: {
-    mode: "browser-events" | "session-log" | "transparent-proxy" | "unavailable";
+    mode:
+      | "browser-events"
+      | "emulator-packet"
+      | "session-log"
+      | "transparent-proxy"
+      | "unavailable";
     label: string;
     detail: string;
   };
+  /** Packet-derived Android transport facts remain separate from HTTP events.
+   * They never imply decrypted methods, statuses, headers, or bodies. */
+  androidNetwork?: AndroidNetworkEvidenceSummary;
   performance: RunEvidencePerformanceSample[];
   crashes: unknown[];
   artifacts: RunEvidenceArtifactSummary[];

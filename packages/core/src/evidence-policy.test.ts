@@ -32,12 +32,24 @@ test("sensitive evidence consent is explicit, persisted, and revocable", async (
       hasSensitiveEvidenceConsent(await loadEvidenceCollectionPolicy(), "network-body"),
       true,
     );
+    const rawEnabled = await setSensitiveEvidenceConsent({
+      channel: "network-raw",
+      enabled: true,
+      grantedBy: "qa-owner",
+      reason: "Dedicated emulator packet investigation",
+    });
+    assert.equal(hasSensitiveEvidenceConsent(rawEnabled, "network-raw"), true);
+    assert.equal(
+      rawEnabled.sensitive["network-raw"]?.reason,
+      "Dedicated emulator packet investigation",
+    );
     await setSensitiveEvidenceConsent({
       channel: "network-body",
       enabled: false,
       grantedBy: "qa-owner",
     });
     assert.equal(hasSensitiveEvidenceConsent(getEvidenceCollectionPolicy(), "network-body"), false);
+    assert.equal(hasSensitiveEvidenceConsent(getEvidenceCollectionPolicy(), "network-raw"), true);
   } finally {
     if (previous === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
     else process.env.RELAY_WORKSPACE_ROOT = previous;

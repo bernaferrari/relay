@@ -71,7 +71,12 @@ export type RedactionPolicyDto = {
   updatedAt?: number;
 };
 
-export type SensitiveEvidenceChannelDto = "audio" | "crash" | "network-body" | "browser-trace";
+export type SensitiveEvidenceChannelDto =
+  | "audio"
+  | "crash"
+  | "network-body"
+  | "network-raw"
+  | "browser-trace";
 
 export type EvidenceCollectionPolicyDto = {
   schemaVersion: 1;

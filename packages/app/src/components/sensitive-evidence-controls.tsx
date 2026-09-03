@@ -16,6 +16,12 @@ const CHANNELS: Array<{
     description: "Request and response payloads, capped at 256 KB per browser response.",
   },
   {
+    id: "network-raw",
+    label: "Android emulator packets",
+    description:
+      "Retain a bounded raw PCAP on supported Android emulators. It can include system and other-app traffic; physical devices and iOS are unsupported.",
+  },
+  {
     id: "browser-trace",
     label: "Browser traces",
     description:
@@ -62,8 +68,9 @@ export function SensitiveEvidenceControls() {
           Sensitive collectors
         </h3>
         <p class="mt-1 text-caption leading-snug text-text-weak">
-          These channels stay off until a local user grants consent. Every run freezes and records
-          the exact grant it used.
+          Sensitive payload retention stays off until a local user grants consent. Supported Android
+          emulators may still derive bounded packet metadata; raw packet bytes are deleted unless
+          explicitly enabled. Every run freezes and records the exact grant it used.
         </p>
       </div>
 

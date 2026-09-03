@@ -110,6 +110,7 @@ export * from "./evidence-metrics.js";
 export * from "./workspace-root.js";
 export * from "./workspace-change-context.js";
 export * from "./android-avd.js";
+export * from "./android-emulator-network-capture.js";
 export * from "./android-sdk-tools.js";
 export * from "./workspace-settings.js";
 export * from "./device-setup.js";
