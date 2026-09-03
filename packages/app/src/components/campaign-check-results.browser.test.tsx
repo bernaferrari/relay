@@ -144,17 +144,9 @@ test("renders partial campaign outcomes with exact evidence and no invented sele
   screenshot?.click();
   expect(openFrame).toHaveBeenCalledWith(0);
 
-  const evidence = [...root.querySelectorAll("summary")].find((summary) =>
-    summary.textContent?.includes("Raw evidence"),
-  );
-  const rawEvidence = evidence?.closest("details");
-  expect(rawEvidence?.open).toBe(false);
-  evidence?.focus();
-  expect(document.activeElement).toBe(evidence);
-  evidence?.click();
-  expect(rawEvidence?.open).toBe(true);
+  expect(root.textContent).toContain("Evidence details");
   expect(root.textContent).toContain('"checkId": "usage"');
-  expect(root.querySelectorAll("summary").length).toBe(5);
+  expect(root.querySelectorAll("summary").length).toBe(4);
 
   dispose();
   const retryCheck = vi.fn();

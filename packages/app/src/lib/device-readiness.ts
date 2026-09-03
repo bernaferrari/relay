@@ -171,7 +171,10 @@ export function deviceReadiness(
     return {
       kind: "screen-preparing",
       title: `Connecting to ${device.name ?? "the device"}`,
-      detail: "Keep the device unlocked while Relay waits for its first controllable screen.",
+      detail:
+        device.platform === "browser"
+          ? "Relay is opening this browser target. You can keep working while it connects."
+          : "Keep the device unlocked while Relay connects.",
     };
   }
 

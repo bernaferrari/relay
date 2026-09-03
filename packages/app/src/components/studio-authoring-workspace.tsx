@@ -26,6 +26,7 @@ export function StudioAuthoringWorkspace(props: {
   onImportYaml: (yaml: string) => Promise<void> | void;
   onExportYaml: () => void;
   workspaceController: WorkspaceController;
+  deviceOpen?: boolean;
 }) {
   function recordTest(): void {
     if (props.mode !== "test") props.onMode("test");
@@ -91,8 +92,8 @@ export function StudioAuthoringWorkspace(props: {
           />
         </Suspense>
       </Show>
-      <Show when={onboarding.visible()}>
-        <aside class="absolute bottom-4 left-4 z-30 max-h-[calc(100%-2rem)] max-w-[calc(100%-2rem)] overflow-y-auto max-[760px]:right-2 max-[760px]:bottom-2 max-[760px]:left-2 max-[760px]:max-w-none">
+      <Show when={onboarding.visible() && props.mode !== "test" && !props.deviceOpen}>
+        <aside class="absolute bottom-3 left-3 z-30 max-h-[calc(100%-1.5rem)] max-w-[calc(100%-1.5rem)] overflow-y-auto max-[760px]:right-2 max-[760px]:bottom-2 max-[760px]:left-2 max-[760px]:max-w-none">
           <FirstTestChecklist {...onboarding.checklistProps()} />
         </aside>
       </Show>

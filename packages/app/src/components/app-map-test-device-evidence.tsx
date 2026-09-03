@@ -170,13 +170,16 @@ export function AppMapTestDeviceEvidence(props: {
         ? "Relay is restoring device control."
         : "Review the device status before sending another action.";
     }
-    if (readiness().kind !== "ready") {
-      return "Keep the device connected and unlocked before interacting.";
+    const targetReadiness = readiness();
+    if (targetReadiness.kind !== "ready") {
+      return "detail" in targetReadiness
+        ? targetReadiness.detail
+        : "Relay is getting this target ready for input.";
     }
     const controlIssue = server.controlIssue?.();
     if (controlIssue) return controlIssue;
     if (!server.selectedLeaseId?.()) {
-      return "This preview is view-only until Relay has control of the selected device.";
+      return "Relay is getting this target ready for input.";
     }
     return undefined;
   });
@@ -185,7 +188,7 @@ export function AppMapTestDeviceEvidence(props: {
     if (!selectedDevice()) return "Choose device";
     if (server.health() !== "online") return "Retry connection";
     if (server.controlIssue?.() || !server.selectedLeaseId?.()) return "Take control";
-    return "Reconnect";
+    return "Try again";
   });
 
   async function recoverDevice(): Promise<void> {

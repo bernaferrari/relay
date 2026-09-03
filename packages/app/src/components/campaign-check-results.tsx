@@ -19,6 +19,7 @@ import { Icon, type IconName } from "./icon";
 import { NavigationTransitionHealth } from "./navigation-transition-health";
 import { CampaignRecoveryIntervention } from "./campaign-recovery-intervention";
 import { CampaignPerformanceReportView } from "./campaign-performance-report";
+import { JsonEvidence } from "./json-evidence";
 
 const STATUS_PRESENTATION: Record<
   CampaignCheckStatus,
@@ -328,19 +329,12 @@ function CheckDetail(props: {
         </div>
       </Show>
       <Show when={props.check.evidence.length > 0}>
-        <details class="group rounded-lg border border-border-weak-base bg-background-base">
-          <summary class="flex min-h-11 touch-manipulation cursor-pointer list-none items-center justify-between gap-2 px-3 text-caption font-medium text-text-base focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-border-strong-focus [&::-webkit-details-marker]:hidden">
-            Raw evidence
-            <Icon
-              name="chevron-down"
-              size={12}
-              class="transition-transform motion-reduce:transition-none group-open:rotate-180"
-            />
-          </summary>
-          <pre class="m-0 max-h-64 overflow-auto whitespace-pre-wrap break-words border-t border-border-weak-base p-3 font-mono text-micro/[1.5] text-text-weak">
-            {JSON.stringify(props.check.evidence, null, 2)}
-          </pre>
-        </details>
+        <section class="overflow-hidden rounded-lg border border-border-weak-base bg-background-base">
+          <header class="border-b border-border-weak-base px-3 py-2.5 text-caption font-medium text-text-base">
+            Evidence details
+          </header>
+          <JsonEvidence value={props.check.evidence} />
+        </section>
       </Show>
       {props.check.frames.length || props.check.evidence.length ? null : (
         <p class="m-0 text-caption/[1.45] text-text-weaker">

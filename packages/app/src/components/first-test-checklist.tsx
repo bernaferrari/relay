@@ -63,6 +63,14 @@ function progressLabel(stage: FirstTestStage): string {
   return stage === "complete" ? "Complete" : `Step ${STAGE_NUMBER[stage]} of 4`;
 }
 
+function stageTitle(state: FirstTestChecklistState): string {
+  if (state.stage === "target") return state.target.title;
+  if (state.stage === "capture") return "Capture the starting state";
+  if (state.stage === "author") return "Choose a first Test";
+  if (state.stage === "complete") return "First Test saved";
+  return state.latestRun ? "Review the last run" : "Review your Test";
+}
+
 /**
  * A compact, resumable path into the existing App Map/Test workflow. It owns
  * no progress state: callers advance it only when Relay's server-backed data
@@ -95,34 +103,29 @@ export function FirstTestChecklist(props: FirstTestChecklistProps) {
   return (
     <section
       class={cn(
-        "first-test-checklist rounded-2xl border border-[var(--map-divider)] bg-[var(--map-control-surface)] p-4 text-left shadow-[var(--map-elevation-panel)]",
-        props.rail ? "w-[min(100%,320px)]" : "min-w-0 w-[min(100%,390px)]",
+        "first-test-checklist rounded-xl border border-[var(--map-divider)] bg-[var(--map-control-surface)] p-3.5 text-left shadow-[var(--map-elevation-control)]",
+        props.rail ? "w-[min(100%,320px)]" : "min-w-0 w-[min(100%,340px)]",
       )}
       aria-labelledby="first-test-checklist-title"
     >
       <header class="flex min-w-0 items-start justify-between gap-3">
         <div class="min-w-0">
-          <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-            <p class="m-0 text-micro font-semibold tracking-[0.08em] text-[var(--text-weaker)] uppercase">
-              First useful Test
-            </p>
-            <span
-              class="rounded-full bg-[var(--surface-base)] px-2 py-0.5 text-micro font-medium tabular-nums text-[var(--text-weak)] shadow-[var(--map-elevation-chip)]"
-              aria-label={`First useful Test progress: ${progressLabel(props.state.stage)}`}
-            >
-              {progressLabel(props.state.stage)}
-            </span>
-          </div>
+          <p
+            class="m-0 text-micro font-medium text-[var(--text-weaker)]"
+            aria-label={`First useful Test progress: ${progressLabel(props.state.stage)}`}
+          >
+            First Test · {progressLabel(props.state.stage)}
+          </p>
           <h2
             id="first-test-checklist-title"
             class="mt-1 mb-0 text-body/[1.25] font-semibold text-[var(--text-strong)]"
           >
-            Record one trusted path
+            {stageTitle(props.state)}
           </h2>
         </div>
         <button
           type="button"
-          class="grid size-11 shrink-0 place-items-center rounded-xl text-[var(--text-weak)] transition-colors hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)]"
+          class="grid size-8 shrink-0 place-items-center rounded-lg text-[var(--text-weak)] transition-colors hover:bg-[var(--surface-base-hover)] hover:text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--border-focus)]"
           aria-label="Hide first useful test guide"
           data-tip="Hide guide"
           onClick={dismiss}
@@ -131,13 +134,10 @@ export function FirstTestChecklist(props: FirstTestChecklistProps) {
         </button>
       </header>
 
-      <div class="mt-4 border-t border-[var(--map-divider)] pt-4">
+      <div class="mt-3 border-t border-[var(--map-divider)] pt-3">
         <Show when={props.state.stage === "target"}>
           <div class="grid gap-3">
             <div class="grid gap-1">
-              <h3 class="m-0 text-caption font-semibold text-[var(--text-strong)]">
-                {props.state.target.title}
-              </h3>
               <p class="m-0 text-caption/[1.5] text-[var(--text-weak)]">
                 {props.state.target.detail}
               </p>
@@ -179,9 +179,6 @@ export function FirstTestChecklist(props: FirstTestChecklistProps) {
         <Show when={props.state.stage === "capture"}>
           <div class="grid gap-3">
             <div class="grid gap-1">
-              <h3 class="m-0 text-caption font-semibold text-[var(--text-strong)]">
-                Capture the starting state
-              </h3>
               <p class="m-0 text-caption/[1.5] text-[var(--text-weak)]">
                 Relay keeps this first frame as visible evidence and can use it as a Checkpoint.
                 Nothing is captured until you choose this action.
@@ -205,9 +202,6 @@ export function FirstTestChecklist(props: FirstTestChecklistProps) {
         <Show when={props.state.stage === "author"}>
           <div class="grid gap-3">
             <div class="grid gap-1">
-              <h3 class="m-0 text-caption font-semibold text-[var(--text-strong)]">
-                Choose a first Test
-              </h3>
               <p class="m-0 text-caption/[1.5] text-[var(--text-weak)]">
                 Start with a safe visible-screen check, or bring an existing path. Creating a Test
                 never runs it.
@@ -280,11 +274,6 @@ export function FirstTestChecklist(props: FirstTestChecklistProps) {
         <Show when={props.state.stage === "run"}>
           <div class="grid gap-3">
             <div class="grid gap-1">
-              <h3 class="m-0 text-caption font-semibold text-[var(--text-strong)]">
-                <Show when={props.state.latestRun} fallback="Review your Test">
-                  The last run needs attention
-                </Show>
-              </h3>
               <p class="m-0 text-caption/[1.5] text-[var(--text-weak)]">
                 <Show
                   when={props.state.latestRun}
@@ -321,9 +310,6 @@ export function FirstTestChecklist(props: FirstTestChecklistProps) {
         <Show when={props.state.stage === "complete"}>
           <div class="grid gap-3">
             <div class="grid gap-1">
-              <h3 class="m-0 text-caption font-semibold text-[var(--text-strong)]">
-                First Test report saved
-              </h3>
               <p class="m-0 text-caption/[1.5] text-[var(--text-weak)]">
                 This completion comes from the saved report, not from a local checklist. Keep the
                 Test, inspect its evidence, or export advanced YAML for review.
@@ -349,7 +335,7 @@ export function FirstTestChecklist(props: FirstTestChecklistProps) {
         </Show>
       </div>
 
-      <footer class="mt-4 flex justify-end border-t border-[var(--map-divider)] pt-3">
+      <footer class="mt-2 flex justify-end">
         <Button variant="ghost" size="sm" onClick={dismiss}>
           {props.state.stage === "complete" ? "Hide guide" : "Not now"}
         </Button>

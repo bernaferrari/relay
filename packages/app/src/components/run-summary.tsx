@@ -5,7 +5,7 @@ import { fmtAgo, fmtDur, titleize } from "../lib/job";
 import { cn } from "../lib/cn";
 import { Icon } from "./icon";
 import { platformLabel } from "../lib/target-presentation";
-import { mono, productStatus } from "../lib/ui";
+import { mono } from "../lib/ui";
 import {
   canFixFailureInTest,
   friendlyError,
@@ -44,17 +44,14 @@ export function RunSummary(props: RunSummaryProps): JSX.Element {
 
   return (
     <div class="grid min-w-0 overflow-hidden">
-      <div class="flex min-w-0 items-center justify-between gap-3 border-b border-border-weak-base py-px pb-3.5">
+      <div class="flex min-w-0 items-center border-b border-border-weak-base py-px pb-3.5">
         <div class="grid min-w-0 gap-1">
-          <span class="text-caption/[1.25] text-text-weaker">Run result</span>
+          <span class="text-caption/[1.25] text-text-weaker">Result</span>
           <div class="flex min-w-0 items-center gap-1.5 text-title/[1.25] font-semibold text-text-strong">
             <span class={cn("size-[7px] shrink-0 rounded-full", resultTone())} aria-hidden="true" />
             <strong class="font-semibold">{outcome()}</strong>
           </div>
         </div>
-        <Show when={readableStatus(job().status) !== outcome()}>
-          <span class={productStatus(String(job().status))}>{readableStatus(job().status)}</span>
-        </Show>
       </div>
       <Show when={job().error && job().status === "error"}>
         <p class="m-0 overflow-wrap-anywhere px-0.5 py-2.5 text-body/[1.5] text-text-weak">
@@ -154,25 +151,6 @@ function Fact(props: { label: string; value: string }): JSX.Element {
       </dd>
     </div>
   );
-}
-
-function readableStatus(value: JobInfo["status"]): string {
-  switch (value) {
-    case "ok":
-      return "Passed";
-    case "healed":
-      return "Passed with recovery";
-    case "error":
-      return "Error";
-    case "cancelled":
-      return "Stopped";
-    case "queued":
-      return "Queued";
-    case "running":
-      return "Running";
-    case "paused":
-      return "Paused";
-  }
 }
 
 function readableOutcome(value: string): string {

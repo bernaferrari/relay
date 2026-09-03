@@ -139,7 +139,7 @@ export function firstTestTargetStatus(input: {
       kind: "needs-attention",
       title: input.readiness.title,
       detail: input.readiness.detail,
-      actionLabel: input.readiness.kind === "screen-preparing" ? "Open Device" : "Check Device",
+      actionLabel: input.readiness.kind === "screen-preparing" ? "Show target" : "Check target",
     };
   }
   const targetName = presentTarget(input.target).displayName;

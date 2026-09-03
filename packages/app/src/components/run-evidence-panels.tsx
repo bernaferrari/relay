@@ -1,4 +1,4 @@
-import { For, Show, createMemo, createSignal } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal } from "solid-js";
 import type { EvidenceChannelRecord, RunEvidenceQuery } from "@relay/protocol";
 import { cn } from "../lib/cn";
 import { titleize } from "../lib/job";
@@ -342,15 +342,8 @@ export function RunLogsEvidence(props: {
 }) {
   const [filter, setFilter] = createSignal("");
   const [source, setSource] = createSignal<"device" | "relay">("device");
+  let sourceWasChosen = false;
   const deviceLogs = createMemo(() => props.evidence?.logs ?? []);
-  const relayChannel = (): EvidenceChannelRecord => ({
-    channel: "logs",
-    status: "captured",
-    entries: props.orchestrationLogs.length,
-    bytes: props.orchestrationLogs.reduce((total, message) => total + message.length, 0),
-    dropped: 0,
-    redactions: 0,
-  });
   const rows = createMemo(() => {
     const query = filter().trim().toLowerCase();
     const entries =
@@ -367,21 +360,36 @@ export function RunLogsEvidence(props: {
   const deviceInspectable = () =>
     evidenceChannelIsInspectable(props.evidence?.channels.logs, deviceLogs().length, props.loading);
   const activeSourceInspectable = () => source() === "relay" || deviceInspectable();
+  createEffect(() => {
+    if (
+      !sourceWasChosen &&
+      !props.loading &&
+      !deviceInspectable() &&
+      props.orchestrationLogs.length > 0
+    ) {
+      setSource("relay");
+    }
+  });
+  const chooseSource = (next: "device" | "relay") => {
+    sourceWasChosen = true;
+    setFilter("");
+    setSource(next);
+  };
   return (
-    <div>
-      <EvidenceChannelBanner
-        title={source() === "device" ? "Device logs" : "Relay execution log"}
-        channel={source() === "device" ? props.evidence?.channels.logs : relayChannel()}
-        loading={props.loading}
-        note={
-          source() === "device"
-            ? deviceInspectable()
-              ? "Captured from the target while the run was active."
-              : undefined
-            : "Orchestration messages from Relay; separate from device output."
-        }
-      />
-      <div class="mb-2 flex flex-wrap items-center gap-2">
+    <div class="grid min-h-[11rem] content-start gap-3">
+      <header class="grid min-h-[3.25rem] content-start gap-0.5">
+        <strong class="text-body font-semibold text-text-strong">Logs</strong>
+        <span class="text-micro/[1.4] text-text-weaker">
+          {props.loading
+            ? "Refreshing log evidence…"
+            : source() === "relay"
+              ? `${props.orchestrationLogs.length} Relay ${props.orchestrationLogs.length === 1 ? "message" : "messages"} recorded during execution.`
+              : deviceInspectable()
+                ? `${deviceLogs().length} device ${deviceLogs().length === 1 ? "message" : "messages"} captured from the target.`
+                : "No device logs were captured for this Run. Relay messages may still explain what happened."}
+        </span>
+      </header>
+      <div class="flex min-h-8 flex-wrap items-center gap-2">
         <div
           class="flex rounded-lg border border-border-weak-base bg-surface-raised-stronger-non-alpha p-0.5"
           role="tablist"
@@ -392,15 +400,23 @@ export function RunLogsEvidence(props: {
               type="button"
               role="tab"
               aria-selected={source() === kind}
+              aria-label={
+                kind === "device" && !deviceInspectable()
+                  ? "Device logs, not captured for this Run"
+                  : kind === "relay"
+                    ? `Relay logs, ${props.orchestrationLogs.length} messages`
+                    : `Device logs, ${deviceLogs().length} messages`
+              }
               class={cn(
-                "min-h-7 rounded-md px-2.5 text-micro font-medium text-text-weak hover:bg-surface-raised-base-hover hover:text-text-base",
+                "min-h-7 rounded-md px-2.5 text-micro font-medium hover:bg-surface-raised-base-hover hover:text-text-base",
+                kind === "device" && !deviceInspectable() ? "text-text-weaker" : "text-text-weak",
                 source() === kind && "bg-surface-base-active text-text-strong",
               )}
-              onClick={() => setSource(kind)}
+              onClick={() => chooseSource(kind)}
             >
               {kind === "device"
                 ? `Device${deviceLogs().length ? ` · ${deviceLogs().length}` : ""}`
-                : "Relay"}
+                : `Relay${props.orchestrationLogs.length ? ` · ${props.orchestrationLogs.length}` : ""}`}
             </button>
           ))}
         </div>
@@ -424,15 +440,13 @@ export function RunLogsEvidence(props: {
       <Show
         when={activeSourceInspectable() && rows().length > 0}
         fallback={
-          <Show when={activeSourceInspectable()}>
-            <div class="rounded-xl border border-dashed border-border-weak-base px-3 py-5 text-center text-caption text-text-weak">
-              {props.loading
-                ? "Preparing device logs…"
-                : source() === "device"
-                  ? "No device logs were observed during this run."
-                  : "No Relay messages were recorded."}
-            </div>
-          </Show>
+          <div class="rounded-xl border border-dashed border-border-weak-base px-3 py-5 text-center text-caption text-text-weak">
+            {props.loading
+              ? "Preparing logs…"
+              : source() === "device"
+                ? "Device logs were not captured for this Run. Choose Relay to inspect execution messages."
+                : "No Relay messages were recorded."}
+          </div>
         }
       >
         <div class="max-h-[480px] overflow-auto rounded-xl border border-border-weak-base bg-background-weak">

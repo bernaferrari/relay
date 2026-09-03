@@ -7,12 +7,11 @@ import { friendlyError, readableFailure } from "../lib/run-failure-presentation"
 import { Icon } from "./icon";
 import { StatusChip, runOutcomeChip } from "./status-chip";
 import { cn } from "../lib/cn";
-import { fmtAgo, fmtDur } from "../lib/job";
 import { persistedAsJob } from "../lib/persisted-run";
 import { toast } from "../context/toast";
 import { humanError } from "../lib/human-error";
 import { nextRovingIndex } from "../lib/roving-focus";
-import { eyebrow, mono, productPage } from "../lib/ui";
+import { productPage } from "../lib/ui";
 import { runFrameCanvasItems } from "../lib/frame-canvas-presentation";
 import { initialRunReviewStep, runCompletion, runReviewCounts } from "../lib/run-review-model";
 import type {
@@ -22,19 +21,14 @@ import type {
   VisualReviewDecision,
 } from "@relay/protocol";
 import { failedStepFromTrace } from "@relay/protocol";
-import {
-  appMapIdForJob,
-  runDisplayTitle,
-  runStopHeadline,
-  runTargetLabel,
-} from "../lib/run-presentation";
+import { appMapIdForJob, runStopHeadline, runTargetLabel } from "../lib/run-presentation";
 import { canApproveVisualBaseline, hasVisualRunFrames } from "../lib/visual-run-readiness";
 import { RunLogsEvidence, RunNetworkEvidence, RunPerformanceEvidence } from "./run-evidence-panels";
 import { CompatibilityReportPanel } from "./compatibility-report-panel";
 import { RunStepList } from "./run-list-surfaces";
 import { RunReplayStage } from "./run-replay-stage";
 import { CombineReview } from "./combine-review";
-import { RunShareMenu } from "./run-share-menu";
+import { RunReportHeader } from "./run-report-header";
 import { VisualDiffReview } from "./visual-diff-review";
 import { RunDetailsDisclosure } from "./run-details-disclosure";
 import { RunsRefreshControl } from "./runs-refresh-control";
@@ -530,110 +524,26 @@ export function RunsWorkspace(props: {
         <Show when={tab() !== "combine" ? selected() : null}>
           {(job) => (
             <aside class="flex min-h-0 min-w-0 flex-col overflow-hidden border-l border-[var(--border-weak-base)] bg-[var(--background-base)]">
-              <header class="grid shrink-0 gap-2.5 px-5 pt-4 pb-3.5">
-                <div class="flex items-start justify-between gap-2">
-                  <div class="grid min-w-0 gap-1">
-                    <span class={eyebrow}>Execution review</span>
-                    <strong class="line-clamp-2 text-display/[1.15] font-semibold tracking-[-0.025em] text-text-strong">
-                      {runDisplayTitle(job())}
-                    </strong>
-                  </div>
-                </div>
-                <div class="flex flex-wrap items-center gap-2">
-                  <RunShareMenu run={job()} batchRunCount={selectedBatchRunCount()} />
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    class="text-caption"
-                    disabled={Boolean(selectedAppMapId()) && !selectedAppMapAvailable()}
-                    onClick={() => {
-                      if (selectedAppMapId() && !selectedAppMapAvailable()) return;
-                      server.setSelectedJobId(job().id);
-                      const mapId = selectedAppMapId();
-                      if (mapId && selectedAppMapAvailable()) props.onOpenMap(mapId);
-                      else props.onOpenTest(job().action);
-                    }}
-                  >
-                    <Icon name={selectedAppMapAvailable() ? "edit" : "info"} size={12} />{" "}
-                    {selectedAppMapId()
-                      ? selectedAppMapAvailable()
-                        ? "Open map"
-                        : "Map deleted"
-                      : "Open test"}
-                  </Button>
-                  <Show when={job().status === "error" || job().status === "cancelled"}>
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      class="text-caption"
-                      onClick={() => void server.retrySelectedJob(job().id)}
-                    >
-                      <Icon name="refresh" size={12} /> Retry
-                    </Button>
-                  </Show>
-                  <Show
-                    when={
-                      job().persisted &&
-                      ["ok", "error", "healed", "cancelled"].includes(job().status)
-                    }
-                  >
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      class="text-caption"
-                      data-tip="Run the exact frozen plan and saved non-private inputs again"
-                      onClick={() => void server.replayRecordedRunFromHistory(job().id)}
-                    >
-                      <Icon name="refresh" size={12} /> Replay recorded plan
-                    </Button>
-                  </Show>
-                  <Show when={["running", "paused"].includes(job().status)}>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      class="text-caption"
-                      onClick={() =>
-                        void (job().status === "paused"
-                          ? server.resumeJob(job().id)
-                          : server.pauseJob(job().id))
-                      }
-                    >
-                      <Icon name={job().status === "paused" ? "play" : "pause"} size={12} />
-                      {job().status === "paused" ? "Resume" : "Pause"}
-                    </Button>
-                    <Button
-                      variant="danger"
-                      size="sm"
-                      class="text-caption"
-                      onClick={() => void server.cancelJob(job().id)}
-                    >
-                      <Icon name="square" size={11} /> Stop
-                    </Button>
-                  </Show>
-                </div>
-                <div class="flex flex-wrap items-center gap-x-3 gap-y-2 text-caption text-text-weak">
-                  <span class={cn(mono, "text-text-weaker")} data-tip="When this run finished">
-                    {fmtAgo(
-                      job().finishedAt ?? job().startedAt ?? job().queuedAt,
-                      server.clock(),
-                    ) || "just now"}
-                  </span>
-                  <Show when={fmtDur(job(), server.clock())}>
-                    <span class={cn(mono, "text-text-weaker")} data-tip="Run duration">
-                      · {fmtDur(job(), server.clock())}
-                    </span>
-                  </Show>
-                  <span class="inline-flex min-w-0 items-center gap-1.5 text-text-base">
-                    <Icon name="smartphone" size={11} class="shrink-0 text-text-weaker" />
-                    <span
-                      class="truncate"
-                      data-tip={job().serial ? `Target identifier: ${job().serial}` : undefined}
-                    >
-                      {runTargetLabel(job(), server.devices())}
-                    </span>
-                  </span>
-                </div>
-              </header>
+              <RunReportHeader
+                job={job()}
+                clock={server.clock()}
+                targetLabel={runTargetLabel(job(), server.devices())}
+                batchRunCount={selectedBatchRunCount()}
+                appMapId={selectedAppMapId()}
+                appMapAvailable={selectedAppMapAvailable()}
+                onOpenSource={() => {
+                  if (selectedAppMapId() && !selectedAppMapAvailable()) return;
+                  server.setSelectedJobId(job().id);
+                  const mapId = selectedAppMapId();
+                  if (mapId && selectedAppMapAvailable()) props.onOpenMap(mapId);
+                  else props.onOpenTest(job().action);
+                }}
+                onRetry={() => void server.retrySelectedJob(job().id)}
+                onReplay={() => void server.replayRecordedRunFromHistory(job().id)}
+                onPause={() => void server.pauseJob(job().id)}
+                onResume={() => void server.resumeJob(job().id)}
+                onStop={() => void server.cancelJob(job().id)}
+              />
               <Show when={job().review?.status === "pending"}>
                 <div class="mx-4 mb-3 grid gap-3 rounded-xl border border-[color-mix(in_srgb,var(--icon-warning-base)_32%,var(--border-weak-base))] bg-[color-mix(in_srgb,var(--icon-warning-base)_7%,transparent)] px-3 py-3">
                   <div class="flex items-start gap-2.5">

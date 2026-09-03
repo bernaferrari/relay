@@ -26,5 +26,8 @@ test("network availability counts inspectable evidence rather than a generic art
 test("empty evidence tabs remain available to inspect but are presented as unavailable", () => {
   assert.equal(runReportTabAvailable({ id: "summary", job, evidence: null, checkCount: 0 }), true);
   assert.equal(runReportTabAvailable({ id: "visual", job, evidence: null, checkCount: 0 }), false);
-  assert.equal(runReportTabAvailable({ id: "evaluation", job, evidence: null, checkCount: 0 }), false);
+  assert.equal(
+    runReportTabAvailable({ id: "evaluation", job, evidence: null, checkCount: 0 }),
+    false,
+  );
 });

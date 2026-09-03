@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 import { render } from "solid-js/web";
 import type { RunEvidenceQuery } from "@relay/protocol";
-import { RunNetworkEvidence } from "./run-evidence-panels";
+import { RunLogsEvidence, RunNetworkEvidence } from "./run-evidence-panels";
 
 function packetEvidence(): RunEvidenceQuery {
   return {
@@ -101,6 +101,43 @@ test("presents Android packet facts without inventing decrypted HTTP evidence", 
   expect(transportSummary?.className).toContain("max-[760px]:min-h-11");
   expect(filter?.className).toContain("max-[760px]:h-11");
   expect(filter?.className).toContain("max-[760px]:text-body");
+
+  dispose();
+  root.remove();
+});
+
+test("opens useful Relay logs when device logs were not captured", async () => {
+  const root = document.createElement("div");
+  document.body.append(root);
+  const evidence = packetEvidence();
+  evidence.channels = {
+    logs: {
+      channel: "logs",
+      status: "unsupported",
+      entries: 0,
+      bytes: 0,
+      dropped: 0,
+      redactions: 0,
+    },
+  };
+  const dispose = render(
+    () => (
+      <RunLogsEvidence
+        evidence={evidence}
+        loading={false}
+        orchestrationLogs={["Preparing target", "Run stopped during setup"]}
+      />
+    ),
+    root,
+  );
+
+  await Promise.resolve();
+  expect(root.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toContain("Relay");
+  expect(root.textContent).toContain("2 Relay messages recorded during execution.");
+  expect(root.textContent).toContain("Run stopped during setup");
+  expect(
+    root.querySelector('[aria-label="Device logs, not captured for this Run"]'),
+  ).not.toBeNull();
 
   dispose();
   root.remove();

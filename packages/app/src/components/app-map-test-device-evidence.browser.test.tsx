@@ -191,7 +191,7 @@ test("uncertain supervisor input remains visible and cannot send another tap", a
   );
   expect(root.textContent).toContain("Review the last device action before sending another one.");
   const reconnect = [...root.querySelectorAll<HTMLButtonElement>("button")].find(
-    (button) => button.textContent?.trim() === "Reconnect",
+    (button) => button.textContent?.trim() === "Try again",
   );
   expect(reconnect).toBeTruthy();
   reconnect!.click();

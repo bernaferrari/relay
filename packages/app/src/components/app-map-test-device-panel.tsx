@@ -350,9 +350,7 @@ export function AppMapTestDevicePanel(props: {
       <Show when={props.interactionBlocker}>
         {(blocker) => (
           <div class="flex items-center justify-between gap-2 rounded-lg border border-border-weak-base bg-surface-base px-2.5 py-2">
-            <p class="m-0 min-w-0 text-caption/[1.4] text-text-weak">
-              <span class="font-medium text-text-base">View only.</span> {blocker()}
-            </p>
+            <p class="m-0 min-w-0 text-caption/[1.4] text-text-weak">{blocker()}</p>
             <Show when={props.recoveryAction}>
               {(action) => (
                 <Button

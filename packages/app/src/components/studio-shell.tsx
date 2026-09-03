@@ -21,7 +21,6 @@ import { humanError } from "../lib/human-error";
 import { deviceReadiness } from "../lib/device-readiness";
 import type { CanvasCombineSection } from "../lib/app-map-combine-canvas";
 import { toast } from "../context/toast";
-import { confirmAction } from "./confirm-dialog";
 import { trapFocus } from "../lib/modal";
 import { productIconButton } from "../lib/ui";
 import { WorkspaceSkeleton } from "./workspace-skeleton";
@@ -55,13 +54,12 @@ import { readRememberedDevicePanelPreference } from "../lib/studio-shell-prefere
 import { createStudioBlankMapActions } from "../lib/studio-blank-map-actions";
 import { resolveStudioTestNavigation } from "../lib/studio-test-navigation";
 import { createStudioTestSelection } from "../lib/studio-test-selection";
+import { createStudioRunNavigation } from "../lib/studio-run-navigation";
+import { createStudioMapDeletion } from "./studio-map-deletion";
 import { StudioShellMapActions, type StudioShellMapAction } from "./studio-shell-map-actions";
-import {
-  ChangesWorkspace,
-  EmptyAppMap,
-  MapLibrary,
-  RunsWorkspace,
-} from "./studio-shell-workspaces";
+import { StudioReturnToRun } from "./studio-return-to-run";
+import { StudioMapLibraryDrawer } from "./studio-map-library-drawer";
+import { ChangesWorkspace, EmptyAppMap, RunsWorkspace } from "./studio-shell-workspaces";
 import type { WorkspaceController } from "../lib/workspace-controller";
 import { useStudioWorkspaceController } from "../lib/use-studio-workspace-controller";
 
@@ -101,12 +99,19 @@ export function StudioShell(props: {
   const selectedMap = createMemo(() => server.selectedAppMap());
   const { selectedTestId, selectTest } = createStudioTestSelection(selectedMap);
   const [mapNameDraft, setMapNameDraft] = createSignal("");
+  const runNavigation = createStudioRunNavigation({
+    currentRunId: server.selectedJobId,
+    selectRun: (runId) => server.setSelectedJobId(runId),
+    setArea,
+    openMap,
+    openTest,
+  });
+  const mapDeletion = createStudioMapDeletion(server);
   createEffect(() => setMapNameDraft(selectedMap()?.name ?? "My map"));
   createEffect(() => {
     server.selectedAppMapId();
     setActiveTargetSetId();
   });
-  // Restore persisted work before recipes paint; the selected id stays authoritative.
   let restoredInitialMap = false;
   createEffect(() => {
     if (restoredInitialMap) return;
@@ -300,11 +305,13 @@ export function StudioShell(props: {
     deviceStateChanged: setDevicePanelOpen,
     openRun: (runId) => {
       if (runId) server.setSelectedJobId(runId);
+      runNavigation.clearReturn();
       setArea("runs");
     },
     openChanges: () => {
       setSettingsOpen(false);
       setNavOpen(false);
+      runNavigation.clearReturn();
       setArea("changes");
     },
     runReadinessChanged: setGraphRunReadiness,
@@ -469,31 +476,8 @@ export function StudioShell(props: {
     }
   }
 
-  function confirmDeleteMap(appMapId: string): void {
-    const appMap = server.appMaps().find((candidate) => candidate.id === appMapId);
-    if (!appMap) return;
-    confirmAction({
-      title: "Delete map?",
-      body: `“${appMap.name}” and its version history will be removed. This cannot be undone.`,
-      confirmLabel: "Delete map",
-      onConfirm: async () => {
-        await server.runAction("app-map.remove", { appMapId });
-        await server.refreshAppMaps();
-        if (server.selectedAppMapId() === appMapId) server.setSelectedAppMapId(null);
-      },
-    });
-  }
-
-  function deleteSelected(): void {
-    const appMapId = server.selectedAppMapId();
-    if (appMapId) confirmDeleteMap(appMapId);
-  }
-
-  function deleteMap(id: string): void {
-    confirmDeleteMap(id);
-  }
-
   function openMap(id: string): void {
+    runNavigation.clearReturn();
     server.setSelectedAppMapId(id);
     setArea("maps");
     setMapMode(appMapOpeningMode(server.appMaps().find((candidate) => candidate.id === id)));
@@ -519,6 +503,7 @@ export function StudioShell(props: {
 
   /** A blank Map becomes durable only after its first capture or note. */
   function startNewMap(): void {
+    runNavigation.clearReturn();
     setArea("maps");
     server.setSelectedAppMapId(null);
     setSettingsOpen(false);
@@ -544,7 +529,7 @@ export function StudioShell(props: {
     if (action === "duplicate") void duplicateSelected();
     if (action === "export") void exportSelected();
     if (action === "help") setHelpOpen(true);
-    if (action === "delete") void deleteSelected();
+    if (action === "delete") void mapDeletion.deleteSelected();
   }
 
   return (
@@ -556,11 +541,11 @@ export function StudioShell(props: {
       <div class={shellDragStrip} aria-hidden="true" />
 
       <Show when={navOpen()}>
-        <MapLibrary
-          open
+        <StudioMapLibraryDrawer
           onClose={closeLibrary}
           area={libraryArea()}
           onArea={(nextArea) => {
+            runNavigation.clearReturn();
             setArea(nextArea);
             // Run history / tree crawl already own the main pane. Keeping the
             // navigator's second copy open makes the same work compete in two
@@ -572,16 +557,10 @@ export function StudioShell(props: {
           items={mapItems()}
           selectedId={server.selectedAppMapId()}
           onSelect={openMap}
-          onDelete={deleteMap}
+          onDelete={mapDeletion.deleteMap}
           onCreate={startNewMap}
           onImport={importTestYaml}
           onOpenSettings={() => props.onOpenSettings()}
-        />
-        <button
-          type="button"
-          class="fixed inset-0 z-[var(--z-shell-header)] cursor-default bg-black/10 backdrop-blur-[1px]"
-          aria-label="Close navigator"
-          onClick={() => closeLibrary()}
         />
       </Show>
 
@@ -681,6 +660,10 @@ export function StudioShell(props: {
         <OfflineGate overlay>
           <Show when={area() === "maps"}>
             <section class={shellStudio}>
+              <StudioReturnToRun
+                runId={runNavigation.returnToRunId()}
+                onBack={runNavigation.backToRun}
+              />
               <div
                 class={
                   selectedMap()
@@ -708,6 +691,7 @@ export function StudioShell(props: {
                   <div class={cn(shellMapWrap, "flex flex-1")}>
                     <StudioAuthoringWorkspace
                       workspaceController={workspaceController}
+                      deviceOpen={devicePanelOpen()}
                       mode={mapMode()}
                       navigatorOpen={navOpen()}
                       onMode={setMapMode}
@@ -716,6 +700,7 @@ export function StudioShell(props: {
                       onOpenCombine={toggleCombine}
                       onOpenRun={(id) => {
                         server.setSelectedJobId(id);
+                        runNavigation.clearReturn();
                         setArea("runs");
                       }}
                       testId={selectedTestId()}
@@ -760,9 +745,12 @@ export function StudioShell(props: {
           <Show when={area() === "runs"}>
             <Suspense fallback={<WorkspaceSkeleton label="runs" />}>
               <RunsWorkspace
-                onOpenMap={openMap}
-                onOpenTest={openTest}
-                onOpenTests={() => setArea("maps")}
+                onOpenMap={runNavigation.openMapFromRun}
+                onOpenTest={runNavigation.openTestFromRun}
+                onOpenTests={() => {
+                  runNavigation.clearReturn();
+                  setArea("maps");
+                }}
               />
             </Suspense>
           </Show>
@@ -772,6 +760,7 @@ export function StudioShell(props: {
               <ChangesWorkspace
                 onOpenRun={(runId) => {
                   server.setSelectedJobId(runId);
+                  runNavigation.clearReturn();
                   setArea("runs");
                 }}
                 onOpenMap={openMap}

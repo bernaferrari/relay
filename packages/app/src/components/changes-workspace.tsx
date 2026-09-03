@@ -609,79 +609,81 @@ export function ChangesWorkspace(props: {
         )}
       </Show>
 
-      <Show
-        when={proofs().length > 0}
-        fallback={
-          <ChangesWorkspaceListFallback
-            loading={loading}
-            creating={creating}
-            settingUp={settingUp}
-            onCreate={openCreation}
-          />
-        }
-      >
-        <div class="mx-auto grid h-[clamp(32.5rem,calc(100dvh-18rem),47.5rem)] min-h-[520px] w-full max-w-[1180px] grid-cols-[minmax(240px,320px)_minmax(0,1fr)] overflow-hidden rounded-2xl bg-surface-raised-stronger-non-alpha ring-1 ring-inset ring-border-weak-base max-[820px]:h-auto max-[820px]:grid-cols-1">
-          <ChangesWorkspaceProofList
-            proofs={proofs}
-            selectedId={selectedId}
-            mobileDetailOpen={mobileDetailOpen}
-            onSelect={(proofId) => {
-              primeSelectedProof(proofId);
-              void inspectProof(proofId);
-              setMobileDetailOpen(true);
-              resetMobileScroll();
-            }}
-          />
+      <Show when={!creating() && !settingUp()}>
+        <Show
+          when={proofs().length > 0}
+          fallback={
+            <ChangesWorkspaceListFallback
+              loading={loading}
+              creating={creating}
+              settingUp={settingUp}
+              onCreate={openCreation}
+            />
+          }
+        >
+          <div class="mx-auto grid h-[clamp(32.5rem,calc(100dvh-18rem),47.5rem)] min-h-[520px] w-full max-w-[1180px] grid-cols-[minmax(240px,320px)_minmax(0,1fr)] overflow-hidden rounded-2xl bg-surface-raised-stronger-non-alpha ring-1 ring-inset ring-border-weak-base max-[820px]:h-auto max-[820px]:grid-cols-1">
+            <ChangesWorkspaceProofList
+              proofs={proofs}
+              selectedId={selectedId}
+              mobileDetailOpen={mobileDetailOpen}
+              onSelect={(proofId) => {
+                primeSelectedProof(proofId);
+                void inspectProof(proofId);
+                setMobileDetailOpen(true);
+                resetMobileScroll();
+              }}
+            />
 
-          <Show
-            when={selected()}
-            fallback={
-              <div class="grid place-items-center p-8 text-body text-text-weak">
-                Select a Proof.
-              </div>
-            }
-          >
-            {(proof) => (
-              <div
-                class={cn(
-                  "flex min-h-0 min-w-0 flex-col overflow-hidden",
-                  !mobileDetailOpen() && "max-[820px]:hidden",
-                )}
-              >
-                <button
-                  type="button"
-                  class="hidden min-h-11 items-center gap-2 border-b border-border-weak-base px-4 text-left text-body font-medium text-text-base max-[820px]:flex"
-                  onClick={() => {
-                    setMobileDetailOpen(false);
-                    resetMobileScroll();
-                  }}
+            <Show
+              when={selected()}
+              fallback={
+                <div class="grid place-items-center p-8 text-body text-text-weak">
+                  Select a Proof.
+                </div>
+              }
+            >
+              {(proof) => (
+                <div
+                  class={cn(
+                    "flex min-h-0 min-w-0 flex-col overflow-hidden",
+                    !mobileDetailOpen() && "max-[820px]:hidden",
+                  )}
                 >
-                  <Icon name="chevron-left" size={14} /> Back to Proofs
-                </button>
-                <ProofDetail
-                  proof={proof()}
-                  status={selectedStatus()}
-                  history={history()}
-                  publications={publications()}
-                  publicationOutbox={publicationOutbox()}
-                  execution={execution()}
-                  primaryAction={proofPrimaryAction(proof(), execution())}
-                  actionBusy={proofActionBusy()}
-                  actionError={proofActionError()}
-                  canCancel={proofCanCancel(proof())}
-                  onPrimaryAction={() => invokePrimaryProofAction(proof())}
-                  onCancel={() => cancelProof(proof())}
-                  onResumeHumanEvidence={(paused, evidenceDigest) =>
-                    void resumeHumanEvidence(proof(), paused, evidenceDigest)
-                  }
-                  onRetryPublication={(publication) => retryPublication(proof(), publication)}
-                  onOpenRun={props.onOpenRun}
-                  onOpenMap={props.onOpenMap}
-                />
-              </div>
-            )}
-          </Show>
-        </div>
+                  <button
+                    type="button"
+                    class="hidden min-h-11 items-center gap-2 border-b border-border-weak-base px-4 text-left text-body font-medium text-text-base max-[820px]:flex"
+                    onClick={() => {
+                      setMobileDetailOpen(false);
+                      resetMobileScroll();
+                    }}
+                  >
+                    <Icon name="chevron-left" size={14} /> Back to Proofs
+                  </button>
+                  <ProofDetail
+                    proof={proof()}
+                    status={selectedStatus()}
+                    history={history()}
+                    publications={publications()}
+                    publicationOutbox={publicationOutbox()}
+                    execution={execution()}
+                    primaryAction={proofPrimaryAction(proof(), execution())}
+                    actionBusy={proofActionBusy()}
+                    actionError={proofActionError()}
+                    canCancel={proofCanCancel(proof())}
+                    onPrimaryAction={() => invokePrimaryProofAction(proof())}
+                    onCancel={() => cancelProof(proof())}
+                    onResumeHumanEvidence={(paused, evidenceDigest) =>
+                      void resumeHumanEvidence(proof(), paused, evidenceDigest)
+                    }
+                    onRetryPublication={(publication) => retryPublication(proof(), publication)}
+                    onOpenRun={props.onOpenRun}
+                    onOpenMap={props.onOpenMap}
+                  />
+                </div>
+              )}
+            </Show>
+          </div>
+        </Show>
       </Show>
     </section>
   );

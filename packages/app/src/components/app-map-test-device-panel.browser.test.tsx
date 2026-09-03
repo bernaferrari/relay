@@ -202,7 +202,8 @@ test("device preview blocks view-only taps and ignores drags and unmatched point
   expect(blocked.surface.getAttribute("aria-disabled")).toBe("true");
   expect(blocked.surface.getAttribute("title")).toBeNull();
   expect(blocked.surface.className).not.toContain("opacity-");
-  expect(blocked.root.textContent).toContain("View only. Another user has control.");
+  expect(blocked.root.textContent).toContain("Another user has control.");
+  expect(blocked.root.textContent).not.toContain("View only");
   blocked.dispose();
 
   const onInteract = vi.fn(async () => true);
