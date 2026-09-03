@@ -15,6 +15,7 @@ import { assertIosSessionOperationLifecycle } from "./ios-session-lifecycle.js";
 import { isExecutionTargetRef } from "./execution-target.js";
 import { createTargetRecoveryOperationParsers } from "./target-recovery-operation-parsers.js";
 import { createTargetCaptureOperationParsers } from "./target-capture-operation-parsers.js";
+import { runsParser, runListInputParser } from "./run-list-operation-parser.js";
 import { createTargetSupervisorOperationDefinitions } from "./target-supervisor-operation-definition.js";
 import * as authoringOperations from "./authoring-raw-optimization-operation.js";
 import { appleDeviceOperationDefinitions } from "./apple-device-operation-definitions.js";
@@ -314,30 +315,6 @@ const jobsParser = objectParser<OperationOutput<"job.list">>("jobs response", (i
     number(job.queuedAt, "job summary queuedAt");
     number(job.frameCount, "job summary frameCount");
   }
-});
-
-const runsParser = objectParser<OperationOutput<"run.list">>("runs response", (input) => {
-  if (!Array.isArray(input.runs)) fail("runs", "must be an array");
-  for (const item of input.runs) {
-    const run = record(item, "run summary");
-    string(run.id, "run summary id");
-    string(run.action, "run summary action");
-    number(run.writtenAt, "run summary writtenAt");
-    number(run.artifactCount, "run summary artifactCount");
-    number(run.artifactBytes, "run summary artifactBytes");
-    number(run.storageBytes, "run summary storageBytes");
-    boolean(run.pinned, "run summary pinned");
-  }
-});
-
-const runListInputParser = objectParser<OperationInput<"run.list">>("run list input", (input) => {
-  if (input.limit !== undefined) {
-    const raw = input.limit;
-    const value = typeof raw === "number" ? raw : typeof raw === "string" ? Number(raw) : NaN;
-    if (!Number.isFinite(value) || value < 1) fail("run list limit", "must be a positive number");
-    input.limit = value;
-  }
-  if (input.appMapId !== undefined) string(input.appMapId, "run list App Map id");
 });
 
 const leaseListInputParser = objectParser<OperationInput<"lease.list">>(

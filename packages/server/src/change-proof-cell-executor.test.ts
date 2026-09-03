@@ -13,6 +13,7 @@ import {
   createAppMap,
   enqueueJob as enqueueCoreJob,
   getEvidenceCollectionPolicy,
+  issueWebBuildProviderReceipt,
   mutateStoredAppMap,
   persistRun,
   resetControlDatabaseCache,
@@ -434,6 +435,15 @@ test("browser Proof route receipt projects and rejects mismatched deployment pro
       headless: true,
       environment: browserCaseProfile,
     });
+    const webProviderReceipt = await issueWebBuildProviderReceipt({
+      provider: "fixture-host",
+      deploymentId: "web-build",
+      sourceUrl: "https://preview.example.test",
+      sourceSha,
+      deploymentDigest: artifactDigest,
+      configuration: "production",
+      environmentRevision: "fixture-v1",
+    });
     await saveBuild({
       id: "web-build",
       projectId: scope.projectId,
@@ -444,6 +454,8 @@ test("browser Proof route receipt projects and rejects mismatched deployment pro
       deploymentDigest: artifactDigest,
       configuration: "production",
       environmentRevision: "fixture-v1",
+      webDeploymentMode: "provider-verified",
+      webProviderReceipt,
       status: "ready",
     });
 

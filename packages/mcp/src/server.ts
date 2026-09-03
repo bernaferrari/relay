@@ -15,7 +15,12 @@ import {
 } from "@relay/protocol";
 import * as z from "zod/v4";
 import type { McpConfig } from "./config.js";
-import { invalidRelayMcpInput, relayMcpError, type RelayMcpStructuredError } from "./errors.js";
+import {
+  invalidRelayMcpInput,
+  relayMcpError,
+  type RelayMcpErrorOptions,
+  type RelayMcpStructuredError,
+} from "./errors.js";
 import { registerRelayPrompts } from "./prompts.js";
 import {
   registerRelayResources,
@@ -32,6 +37,7 @@ import {
 import { proofOutcomeTools } from "./proof-outcome-tools.js";
 import {
   defaultRelayMcpProfile,
+  relayMcpProfiles,
   relayMcpToolsForProfile,
   type RelayMcpProfile,
   type RelayMcpToolDescriptor,
@@ -129,6 +135,29 @@ const canonicalConfirmOperationIds = new Set<OperationId>([
   "proof.publication.retry",
 ]);
 
+function recoveryOptionsForProfile(
+  profile: RelayMcpProfile,
+  tools: readonly RelayMcpToolDescriptor[],
+): RelayMcpErrorOptions {
+  const availableOperationIds = new Set(
+    profile === "outcome" ? [] : tools.map(({ operationId }) => operationId),
+  );
+  return {
+    availableOperationIds,
+    profile,
+    availableProfilesForOperation: (operationId) =>
+      relayMcpProfiles.filter(
+        (candidate) =>
+          candidate !== "outcome" &&
+          relayMcpToolsForProfile(candidate).some((tool) => tool.operationId === operationId),
+      ),
+    // The selected raw tool or outcome façade is always registered. This
+    // keeps the generic refresh-and-retry action valid while canonical
+    // recoveryAction operations are filtered against availableOperationIds.
+    currentOperationAvailable: true,
+  };
+}
+
 /** `confirm: true` is the MCP-facing consent affordance. After the generic
  * confirmation guard accepts it, preserve it for canonical operations whose
  * protocol input carries that field, and translate it into the signed field
@@ -187,6 +216,7 @@ const relayToolOutputSchema = z
           })
           .strict()
           .optional(),
+        recoveryGuidance: z.string().optional(),
         currentRevision: z.number().int().nonnegative().optional(),
         iosReview: z
           .object({
@@ -462,6 +492,7 @@ async function invokeRelayTool(
   confirmed: boolean,
   invoker: OperationInvoker,
   signal: AbortSignal,
+  recoveryOptions: RelayMcpErrorOptions,
 ): Promise<CallToolResult> {
   if (descriptor.requiresConfirmation && !confirmed) {
     return errorResult(
@@ -495,7 +526,7 @@ async function invokeRelayTool(
   try {
     result = await invoker.invoke(descriptor.operationId, operationInput, { signal });
   } catch (error) {
-    return errorResult(relayMcpError(descriptor.operationId, error));
+    return errorResult(relayMcpError(descriptor.operationId, error, recoveryOptions));
   }
 
   if (descriptor.operationId === "target.screenshot.capture") return screenshotResult(result);
@@ -535,6 +566,7 @@ function registerRelayTool(
   server: McpServer,
   descriptor: RelayMcpToolDescriptor,
   invoker: OperationInvoker,
+  recoveryOptions: RelayMcpErrorOptions,
 ): void {
   const config = {
     title: descriptor.title,
@@ -546,7 +578,14 @@ function registerRelayTool(
 
   server.registerTool(descriptor.name, config, (argumentsValue, context) => {
     const { confirm, ...input } = argumentsValue as Record<string, unknown>;
-    return invokeRelayTool(descriptor, input, confirm === true, invoker, context.mcpReq.signal);
+    return invokeRelayTool(
+      descriptor,
+      input,
+      confirm === true,
+      invoker,
+      context.mcpReq.signal,
+      recoveryOptions,
+    );
   });
 }
 
@@ -555,6 +594,7 @@ function registerRelayOutcomeTool(
   descriptor: RelayOutcomeToolDescriptor,
   invoker: OperationInvoker,
   actorId: string,
+  recoveryOptions: RelayMcpErrorOptions,
 ): void {
   const schema = descriptor.inputSchema as z.ZodObject;
   server.registerTool(
@@ -596,7 +636,7 @@ function registerRelayOutcomeTool(
         }
         return normalResult(result);
       } catch (error) {
-        return errorResult(relayMcpError(descriptor.name, error));
+        return errorResult(relayMcpError(descriptor.name, error, recoveryOptions));
       }
     },
   );
@@ -613,18 +653,19 @@ export function createMcpServer({
   });
 
   const tools = relayMcpToolsForProfile(profile);
+  const recoveryOptions = recoveryOptionsForProfile(profile, tools);
   if (profile === "outcome") {
     for (const descriptor of relayOutcomeTools) {
-      registerRelayOutcomeTool(server, descriptor, invoker, actorId);
+      registerRelayOutcomeTool(server, descriptor, invoker, actorId, recoveryOptions);
     }
   } else {
     if (profile === "proof") {
       for (const descriptor of proofOutcomeTools) {
-        registerRelayOutcomeTool(server, descriptor, invoker, actorId);
+        registerRelayOutcomeTool(server, descriptor, invoker, actorId, recoveryOptions);
       }
     }
     for (const descriptor of tools) {
-      registerRelayTool(server, descriptor, invoker);
+      registerRelayTool(server, descriptor, invoker, recoveryOptions);
     }
   }
   registerRelayResources(server, { invoker, scope, profile, tools });

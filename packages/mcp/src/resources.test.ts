@@ -285,15 +285,21 @@ test("lists stable scoped Relay resources and templates with JSON MIME types", a
       [
         relayMcpResourceUris.run,
         relayMcpResourceUris.runEvidence,
+        `${relayMcpResourceUris.runEvidence}{?cursor}`,
         relayMcpResourceUris.runTracePack,
         relayMcpResourceUris.runRepairProposals,
         "relay://app-maps/{appMapId}/impact",
         relayMcpResourceUris.runOfflineReplay,
         relayMcpResourceUris.repair,
+        `${relayMcpResourceUris.appMaps}{?cursor}`,
+        `${relayMcpResourceUris.runs}{?cursor}`,
+        `${relayMcpResourceUris.authoringSessions}{?cursor}`,
         relayMcpResourceUris.appMap,
         relayMcpResourceUris.tests,
         relayMcpResourceUris.test,
+        `${relayMcpResourceUris.testOutline}{?cursor}`,
         relayMcpResourceUris.testOutline,
+        `${relayMcpResourceUris.testOutlinePage}{?cursor}`,
         relayMcpResourceUris.testOutlinePage,
         relayMcpResourceUris.authoringSession,
         relayMcpResourceUris.targetObservation,
@@ -316,6 +322,20 @@ test("publishes device-control gotchas as a mandatory JSON resource", async () =
     assert.equal(envelope.data.mandatory, true);
     assert.ok(envelope.data.readBefore.includes("target.interact"));
     assert.ok(envelope.data.rules.some((rule) => rule.includes("identifier")));
+    assert.ok(
+      envelope.data.rules.some(
+        (rule) =>
+          rule.includes('lease.create is not exposed in selected MCP profile "outcome"') &&
+          rule.includes("operator"),
+      ),
+    );
+    assert.ok(
+      envelope.data.rules.some(
+        (rule) =>
+          rule.includes('target.recover is not exposed in selected MCP profile "outcome"') &&
+          rule.includes("operator"),
+      ),
+    );
   } finally {
     await session.close();
   }
@@ -522,7 +542,7 @@ test("rejects missing and unsafe template resources before leaking query details
   }
 });
 
-test("bounds deterministic JSON with explicit truncation metadata", async () => {
+test("bounds deterministic JSON with explicit pagination metadata", async () => {
   const huge = {
     appMaps: Array.from({ length: 200 }, (_, index) => ({
       id: `map-${index}`,
@@ -541,12 +561,312 @@ test("bounds deterministic JSON with explicit truncation metadata", async () => 
     assert.equal(first.text, second.text);
     assert.ok(Buffer.byteLength(first.text, "utf8") <= relayMcpResourceByteLimit);
     const envelope = JSON.parse(first.text) as Record<string, unknown>;
-    assert.equal(envelope.truncated, true);
-    assert.equal(envelope.data, null);
-    assert.equal(envelope.byteLimit, relayMcpResourceByteLimit);
-    assert.ok(Number(envelope.originalBytes) > relayMcpResourceByteLimit);
+    assert.equal(envelope.truncated, false);
+    const data = envelope.data as {
+      appMaps: Array<{ id: string }>;
+      pagination: { totalCount: number; returnedCount: number; nextResourceUri?: string };
+    };
+    assert.equal(data.appMaps.length, 100);
+    assert.deepEqual(data.appMaps[0], { id: "map-0", name: "Map 0" });
+    assert.equal(data.pagination.totalCount, 200);
+    assert.equal(data.pagination.returnedCount, 100);
+    assert.equal(typeof data.pagination.nextResourceUri, "string");
   } finally {
     await session.close();
+  }
+});
+
+test("paginates large map, run, and authoring-session resource collections", async () => {
+  const maps = Array.from({ length: 205 }, (_, index) => ({
+    id: `map-${index}`,
+    name: `Map ${index}`,
+    description: "x".repeat(2_000),
+  }));
+  const runs = Array.from({ length: 205 }, (_, index) => ({
+    id: `run-${index}`,
+    title: `Run ${index}`,
+    status: "passed",
+    privatePayload: "x".repeat(2_000),
+  }));
+  const sessions = Array.from({ length: 205 }, (_, index) => ({
+    id: `session-${index}`,
+    appMapId: "map-1",
+    state: "reviewing",
+    target: { targetId: `device-${index}` },
+    privatePayload: "x".repeat(2_000),
+  }));
+  const session = await connectMcp(
+    fixtureInvoker({
+      "app-map.list": { appMaps: maps },
+      "run.list": { runs },
+      "authoring.session.list": { sessions },
+    }),
+  );
+  try {
+    for (const [uri, field, expected] of [
+      [relayMcpResourceUris.appMaps, "appMaps", maps],
+      [relayMcpResourceUris.runs, "runs", runs],
+      [relayMcpResourceUris.authoringSessions, "sessions", sessions],
+    ] as const) {
+      const ids: string[] = [];
+      let nextUri: string | undefined = uri;
+      let pageCount = 0;
+      while (nextUri) {
+        const envelope = JSON.parse(
+          resourceContent(await session.request("resources/read", { uri: nextUri })).text,
+        ) as {
+          data: Record<string, unknown>;
+        };
+        const page = envelope.data[field] as Array<{ id: string }>;
+        const pagination = envelope.data.pagination as {
+          pageSize: number;
+          totalCount: number;
+          returnedCount: number;
+          nextResourceUri?: string;
+        };
+        assert.ok(page.length <= 100);
+        assert.equal(pagination.pageSize, 100);
+        assert.equal(pagination.totalCount, expected.length);
+        assert.equal(pagination.returnedCount, page.length);
+        ids.push(...page.map(({ id }) => id));
+        nextUri = pagination.nextResourceUri;
+        pageCount += 1;
+        assert.ok(pageCount <= 3);
+      }
+      assert.equal(pageCount, 3);
+      assert.deepEqual(
+        ids,
+        expected.map(({ id }) => id),
+      );
+    }
+
+    const listed = await session.request("resources/list", {});
+    const listedResources = listed.result?.resources;
+    assert.ok(Array.isArray(listedResources));
+    const listedUris = (listedResources as Array<{ uri: string }>).map(({ uri }) => uri);
+    assert.ok(listedUris.some((uri) => uri.startsWith(`${relayMcpResourceUris.appMaps}?cursor=`)));
+  } finally {
+    await session.close();
+  }
+});
+
+test("run resource follows the backend run.list continuation cursor", async () => {
+  const runs = Array.from({ length: 205 }, (_, index) => ({
+    id: `backend-run-${index}`,
+    title: `Run ${index}`,
+    status: "passed",
+  }));
+  const calls: Array<{ operationId: string; input: Record<string, unknown> }> = [];
+  const invoker: OperationInvoker = {
+    async invoke(operationId, input) {
+      calls.push({ operationId, input });
+      if (operationId !== "run.list") return fixtureResult(operationId);
+      const cursor =
+        typeof input.cursor === "string" ? Number(input.cursor.replace("page-", "")) : 0;
+      const page = runs.slice(cursor, cursor + 100);
+      return {
+        runs: page,
+        totalCount: runs.length,
+        ...(cursor + page.length < runs.length
+          ? { nextCursor: `page-${cursor + page.length}` }
+          : {}),
+      };
+    },
+  };
+  const session = await connectMcp(invoker);
+  try {
+    const ids: string[] = [];
+    let nextUri: string | undefined = relayMcpResourceUris.runs;
+    let secondPageCursor: string | undefined;
+    while (nextUri) {
+      const envelope = JSON.parse(
+        resourceContent(await session.request("resources/read", { uri: nextUri })).text,
+      ) as {
+        data: {
+          runs: Array<{ id: string }>;
+          pagination: { cursor?: string; nextResourceUri?: string };
+        };
+      };
+      ids.push(...envelope.data.runs.map(({ id }) => id));
+      if (ids.length === 200) secondPageCursor = envelope.data.pagination.cursor;
+      nextUri = envelope.data.pagination.nextResourceUri;
+    }
+    assert.deepEqual(
+      ids,
+      runs.map(({ id }) => id),
+    );
+    assert.deepEqual(
+      calls.filter(({ operationId }) => operationId === "run.list").map(({ input }) => input),
+      [{ limit: 100 }, { limit: 100, cursor: "page-100" }, { limit: 100, cursor: "page-200" }],
+    );
+    assert.ok(secondPageCursor);
+    const replayedSecondPage = JSON.parse(
+      resourceContent(
+        await session.request("resources/read", {
+          uri: `${relayMcpResourceUris.runs}?cursor=${secondPageCursor}`,
+        }),
+      ).text,
+    ) as { data: { runs: Array<{ id: string }> } };
+    assert.deepEqual(
+      replayedSecondPage.data.runs.map(({ id }) => id),
+      runs.slice(100, 200).map(({ id }) => id),
+    );
+  } finally {
+    await session.close();
+  }
+});
+
+test("paginates all evidence items and keeps evidence reads bounded", async () => {
+  const evidenceItems = Array.from({ length: 650 }, (_, index) => ({
+    id: `event-${index}`,
+    message: `event ${index}`,
+  }));
+  const calls: Array<{ operationId: string; input: Record<string, unknown> }> = [];
+  const session = await connectMcp({
+    async invoke(operationId, input) {
+      calls.push({ operationId, input });
+      if (operationId === "run.evidence.get") {
+        return { evidence: { runId: "run-1", logs: evidenceItems } };
+      }
+      return fixtureResult(operationId);
+    },
+  });
+  try {
+    const ids: string[] = [];
+    let nextUri: string | undefined = "relay://runs/run-1/evidence";
+    let pageCount = 0;
+    while (nextUri) {
+      const envelope = JSON.parse(
+        resourceContent(await session.request("resources/read", { uri: nextUri })).text,
+      ) as {
+        data: {
+          evidence: {
+            logs?: Array<{ id: string }>;
+            pagination: {
+              pageSize: number;
+              totalCount: number;
+              returnedCount: number;
+              nextResourceUri?: string;
+            };
+          };
+        };
+      };
+      const page = envelope.data.evidence.logs ?? [];
+      const pagination = envelope.data.evidence.pagination;
+      assert.ok(page.length <= 100);
+      assert.equal(pagination.pageSize, 100);
+      assert.equal(pagination.totalCount, evidenceItems.length);
+      assert.equal(pagination.returnedCount, page.length);
+      ids.push(...page.map(({ id }) => id));
+      nextUri = pagination.nextResourceUri;
+      pageCount += 1;
+      assert.ok(pageCount <= 7);
+    }
+    assert.equal(pageCount, 7);
+    assert.deepEqual(
+      ids,
+      evidenceItems.map(({ id }) => id),
+    );
+    assert.ok(
+      calls
+        .filter(({ operationId }) => operationId === "run.evidence.get")
+        .every(({ input }) => input.limit === 2_000),
+    );
+  } finally {
+    await session.close();
+  }
+});
+
+test("paginates a Test outline beyond 200 steps and follows its continuation URI", async () => {
+  const steps = Array.from({ length: 275 }, (_, index) => ({
+    id: `step-${index}`,
+    kind: "script",
+    intent: `Check ${index}`,
+    binding: { status: "resolved", kind: "script" },
+  }));
+  const session = await connectMcp(
+    fixtureInvoker({
+      "app-map.get": {
+        appMap: { id: "map-1", revision: 3, tests: { huge: { id: "huge", steps } } },
+      },
+    }),
+    "test",
+  );
+  try {
+    const ids: string[] = [];
+    let nextUri: string | undefined = "relay://app-maps/map-1/tests/huge/outline";
+    let pageCount = 0;
+    while (nextUri) {
+      const envelope = JSON.parse(
+        resourceContent(await session.request("resources/read", { uri: nextUri })).text,
+      ) as {
+        data: {
+          steps: Array<{ id: string }>;
+          stepCount: number;
+          page: number;
+          returnedStepCount: number;
+          remainingStepCount: number;
+          nextResourceUri?: string;
+        };
+      };
+      assert.ok(envelope.data.steps.length <= 50);
+      assert.equal(envelope.data.stepCount, steps.length);
+      assert.equal(envelope.data.returnedStepCount, envelope.data.steps.length);
+      ids.push(...envelope.data.steps.map(({ id }) => id));
+      nextUri = envelope.data.nextResourceUri;
+      pageCount += 1;
+      assert.ok(pageCount <= 6);
+    }
+    assert.equal(pageCount, 6);
+    assert.deepEqual(
+      ids,
+      steps.map(({ id }) => id),
+    );
+  } finally {
+    await session.close();
+  }
+});
+
+test("registers resources only when the selected profile exposes their reads", async () => {
+  const control = await connectMcp(fixtureInvoker(), "control");
+  try {
+    const listed = await control.request("resources/list", {});
+    const resources = listed.result?.resources;
+    assert.ok(Array.isArray(resources));
+    const uris = (resources as Array<{ uri: string }>).map(({ uri }) => uri);
+    assert.ok(uris.includes(relayMcpResourceUris.targets));
+    assert.ok(!uris.includes(relayMcpResourceUris.appMaps));
+    assert.ok(!uris.includes(relayMcpResourceUris.runs));
+    assert.ok(!uris.includes(relayMcpResourceUris.authoringSessions));
+    const templates = await control.request("resources/templates/list", {});
+    const resourceTemplates = templates.result?.resourceTemplates;
+    assert.ok(Array.isArray(resourceTemplates));
+    const templateUris = (resourceTemplates as Array<{ uriTemplate: string }>).map(
+      ({ uriTemplate }) => uriTemplate,
+    );
+    assert.equal(templateUris.length, 0);
+  } finally {
+    await control.close();
+  }
+
+  const map = await connectMcp(fixtureInvoker(), "map");
+  try {
+    const listed = await map.request("resources/list", {});
+    const resources = listed.result?.resources;
+    assert.ok(Array.isArray(resources));
+    const uris = (resources as Array<{ uri: string }>).map(({ uri }) => uri);
+    assert.ok(uris.includes(relayMcpResourceUris.appMaps));
+    assert.ok(!uris.includes(relayMcpResourceUris.runs));
+    const templates = await map.request("resources/templates/list", {});
+    const resourceTemplates = templates.result?.resourceTemplates;
+    assert.ok(Array.isArray(resourceTemplates));
+    const templateUris = (resourceTemplates as Array<{ uriTemplate: string }>).map(
+      ({ uriTemplate }) => uriTemplate,
+    );
+    assert.ok(templateUris.includes(relayMcpResourceUris.appMap));
+    assert.ok(!templateUris.includes(relayMcpResourceUris.run));
+  } finally {
+    await map.close();
   }
 });
 

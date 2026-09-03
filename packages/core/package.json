@@ -43,6 +43,7 @@
     "./targets": "./src/targets.ts",
     "./browser-target": "./src/browser-target.ts",
     "./device-setup": "./src/device-setup.ts",
+    "./android-sdk-tools": "./src/android-sdk-tools.ts",
     "./screen-identity": "./src/screen-identity.ts",
     "./authoring-evidence": "./src/authoring-evidence.ts",
     "./authoring-sessions": "./src/authoring-sessions.ts",

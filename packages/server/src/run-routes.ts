@@ -21,8 +21,9 @@ import {
   extractEvidenceMetrics,
   listJobs,
   listPersistedRuns,
+  listPersistedRunSummariesPage,
   listCampaignRepairTargets,
-  listRunSummaries,
+  listRunSummariesPage,
   listRunShares,
   loadFrozenRawAccessibilityEvidence,
   readFrameFile,
@@ -259,37 +260,39 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
   if (method === "GET" && pathname === "/runs") {
     const limit = parseLimit(url.searchParams.get("limit"), 40);
     const appMapId = url.searchParams.get("appMapId")?.trim() || undefined;
-    const actionPrefix = appMapId ? `app-map:${appMapId}:` : undefined;
-    const runs = scope.localTrusted
-      ? await listRunSummaries(limit, appMapId)
-      : (await listPersistedRuns(limit, actionPrefix))
-          .filter((run) => run.projectId === scope.projectId && run.ownerId === scope.subject)
-          .slice(0, limit)
-          .map((run) => ({
-            id: run.id,
-            action: run.action,
-            title: run.title,
-            status: run.status,
-            queuedAt: run.queuedAt,
-            startedAt: run.startedAt,
-            finishedAt: run.finishedAt,
-            durationMs: run.durationMs,
-            platform: run.platform,
-            serial: run.serial,
-            outcome: run.outcome,
-            sourceRevision: run.sourceRevision,
-            review: run.review,
-            batchId: run.batchId,
-            frameCount: run.frameCount ?? run.frames.length,
-            evidenceComplete: Boolean(run.evidence?.finishedAt),
-            writtenAt: run.writtenAt,
-            artifactCount: run.artifacts.length,
-            artifactBytes: run.frames.reduce((sum, frame) => sum + (frame.bytes ?? 0), 0),
-            storageBytes: 0,
-            pinned: false,
-            retentionClass: "standard" as const,
-          }));
-    json(response, 200, scope.localTrusted ? { runs, root: runsRoot() } : { runs });
+    const cursor = url.searchParams.get("cursor")?.trim() || undefined;
+    if (scope.localTrusted) {
+      try {
+        const page = await listRunSummariesPage({
+          limit,
+          appMapId,
+          cursor,
+          projectId: scope.projectId,
+        });
+        json(response, 200, { ...page, root: runsRoot() });
+      } catch (error) {
+        if (error instanceof Error && error.name === "RunListCursorError") {
+          throw new HttpError(400, error.message);
+        }
+        throw error;
+      }
+      return true;
+    }
+    try {
+      const page = await listPersistedRunSummariesPage({
+        limit,
+        appMapId,
+        cursor,
+        projectId: scope.projectId,
+        ownerId: scope.subject,
+      });
+      json(response, 200, page);
+    } catch (error) {
+      if (error instanceof Error && error.name === "RunListCursorError") {
+        throw new HttpError(400, error.message);
+      }
+      throw error;
+    }
     return true;
   }
 

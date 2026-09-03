@@ -9,8 +9,6 @@ import {
   writeAndroidClipboardWithAdb,
   type AndroidAdbExecutor,
 } from "agent-device/android-adb";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import {
   cooperativeCheckpoint,
   getExecutingJobId,
@@ -19,6 +17,7 @@ import {
 } from "./control.js";
 import { runTargetMutation } from "./target-control.js";
 import { bindNativeDeviceMutations } from "./device-mutation-adapter.js";
+import { execAndroidAdb } from "./android-adb-host.js";
 import { type Device, type SnapshotNode } from "./device-capabilities.js";
 import * as observationDevice from "./device-observation-membrane.js";
 export type { Device, SnapshotNode } from "./device-capabilities.js";
@@ -89,7 +88,6 @@ export const PLATFORM = "android" as const;
 export const GROK_PACKAGE = "ai.x.grok";
 export const PLAY_PACKAGE = "com.android.vending";
 export const WORK_ACCOUNT_MATCH = process.env.WORK_ACCOUNT_MATCH?.trim() || "teachx.ai";
-const execFileAsync = promisify(execFile);
 const devicesByTarget = new Map<string, Device>();
 const applicationsByTarget = new Map<string, string>();
 const TARGET_APPLICATIONS_FILE = "runtime/target-applications.json";
@@ -689,10 +687,10 @@ export async function setAndroidLockState(action: "lock" | "unlock"): Promise<vo
   const args = ["-s", serial, "shell", "input", "keyevent", action === "lock" ? "223" : "224"];
   await cooperativeCheckpoint();
   throwIfCancelled();
-  await mutateCurrentTarget(() => raceCancel(execFileAsync("adb", args)));
+  await mutateCurrentTarget(() => raceCancel(execAndroidAdb(args)));
   if (action === "unlock") {
     await mutateCurrentTarget(() =>
-      raceCancel(execFileAsync("adb", ["-s", serial, "shell", "input", "keyevent", "82"])),
+      raceCancel(execAndroidAdb(["-s", serial, "shell", "input", "keyevent", "82"])),
     );
   }
 }
@@ -763,7 +761,7 @@ export function isAndroidProviderTextInjectionUnavailable(message: string): bool
 function androidAdbExecutor(serial: string): AndroidAdbExecutor {
   return async (args, options = {}) => {
     try {
-      const result = await execFileAsync("adb", ["-s", serial, ...args], {
+      const result = await execAndroidAdb(["-s", serial, ...args], {
         timeout: options.timeoutMs,
         signal: options.signal,
         maxBuffer: 20 * 1024 * 1024,
@@ -798,7 +796,7 @@ async function pasteAndroidTextWithAdb(text: string, serial: string): Promise<vo
     writeClipboard: (value) => writeAndroidClipboardWithAdb(adb, value),
     paste: async () => {
       await raceCancel(
-        execFileAsync("adb", ["-s", serial, "shell", "input", "keyevent", "KEYCODE_PASTE"]),
+        execAndroidAdb(["-s", serial, "shell", "input", "keyevent", "KEYCODE_PASTE"]),
       );
     },
   });
@@ -873,14 +871,7 @@ async function typeAndroidShellTextExactly(
       if (shifted) {
         await mutateCurrentTarget(() =>
           raceCancel(
-            execFileAsync("adb", [
-              "-s",
-              serial,
-              "shell",
-              "input",
-              "keyevent",
-              "KEYCODE_SHIFT_LEFT",
-            ]),
+            execAndroidAdb(["-s", serial, "shell", "input", "keyevent", "KEYCODE_SHIFT_LEFT"]),
           ),
         );
       }
@@ -893,9 +884,7 @@ async function typeAndroidShellTextExactly(
     }
     if (index < lines.length - 1) {
       await mutateCurrentTarget(() =>
-        raceCancel(
-          execFileAsync("adb", ["-s", serial, "shell", "input", "keyevent", "KEYCODE_ENTER"]),
-        ),
+        raceCancel(execAndroidAdb(["-s", serial, "shell", "input", "keyevent", "KEYCODE_ENTER"])),
       );
     }
   }
@@ -943,7 +932,7 @@ export async function typeText(device: Device, text: string): Promise<void> {
           paste: async () => {
             await mutateCurrentTarget(() =>
               raceCancel(
-                execFileAsync("adb", ["-s", serial, "shell", "input", "keyevent", "KEYCODE_PASTE"]),
+                execAndroidAdb(["-s", serial, "shell", "input", "keyevent", "KEYCODE_PASTE"]),
               ),
             );
           },

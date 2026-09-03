@@ -54,3 +54,47 @@ test("ordinary conflicts retain their normal recovery behavior", () => {
     recoveryAction,
   });
 });
+
+test("suppresses a recovery operation hidden by the selected MCP profile", () => {
+  const result = relayMcpError(
+    "target.interact",
+    new ApiError(403, "This target is currently controlled by another actor", {
+      code: "TARGET_CONTROL_LEASE_CONFLICT",
+      recovery: { action: "request-access", retryable: false },
+      recoveryAction: {
+        operationId: "lease.takeover",
+        input: { leaseId: "lease-1" },
+      },
+    }),
+    {
+      profile: "control",
+      availableOperationIds: new Set(["target.interact"]),
+      availableProfilesForOperation: () => ["full"],
+      currentOperationAvailable: true,
+    },
+  );
+
+  assert.equal(result.recoveryAction, undefined);
+  assert.match(result.recoveryGuidance ?? "", /lease\.takeover/u);
+  assert.match(result.recoveryGuidance ?? "", /selected MCP profile "control"/u);
+  assert.match(result.recoveryGuidance ?? "", /canonical operation/u);
+});
+
+test("turns hidden lease acquisition into an operator handoff", () => {
+  const result = relayMcpError(
+    "target.interact",
+    new ApiError(403, "Take control of this target before sending device input", {
+      code: "TARGET_CONTROL_LEASE_REQUIRED",
+      recovery: { action: "acquire-lease", retryable: true },
+    }),
+    {
+      profile: "observe",
+      availableOperationIds: new Set(["target.snapshot.capture"]),
+      availableProfilesForOperation: () => ["control", "map", "author", "test", "run", "locale"],
+    },
+  );
+
+  assert.deepEqual(result.recovery, { action: "request-access", retryable: false });
+  assert.match(result.recoveryGuidance ?? "", /lease\.create/u);
+  assert.match(result.recoveryGuidance ?? "", /selected MCP profile "observe"/u);
+});

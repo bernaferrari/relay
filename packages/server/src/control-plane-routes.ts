@@ -25,6 +25,7 @@ import {
   saveDevicePool,
   saveProject,
   takeOverDeviceLease,
+  assertWebBuildProviderReceipt,
   writeProjectVariables,
 } from "@relay/core";
 import type {
@@ -82,15 +83,34 @@ export async function handleControlPlaneRoute(input: ControlPlaneRouteInput): Pr
     }
     let sourceUrl: string | undefined;
     let sourceSha256: string | undefined;
-    const sourceSha = body.sourceSha?.trim() || undefined;
+    const providerReceipt = body.webProviderReceipt;
+    const sourceSha = body.sourceSha?.trim() || providerReceipt?.sourceSha;
     if (sourceSha && !/^[a-f0-9]{40}$/u.test(sourceSha)) {
       throw new HttpError(400, "sourceSha must be an exact lowercase 40-character Git SHA");
     }
-    const configuration = body.configuration?.trim() || undefined;
-    const environmentRevision = body.environmentRevision?.trim() || undefined;
+    const configuration = body.configuration?.trim() || providerReceipt?.configuration;
+    const environmentRevision =
+      body.environmentRevision?.trim() || providerReceipt?.environmentRevision;
     const applicationId = body.applicationId?.trim() || undefined;
-    const deploymentDigest = body.deploymentDigest?.trim().toLowerCase() || undefined;
-    const rawSource = body.sourceUrl?.trim();
+    const deploymentDigest =
+      body.deploymentDigest?.trim().toLowerCase() || providerReceipt?.deploymentDigest;
+    const rawSource = body.sourceUrl?.trim() || providerReceipt?.sourceUrl;
+    if (body.platform === "web" && providerReceipt) {
+      try {
+        assertWebBuildProviderReceipt(providerReceipt, {
+          sourceUrl: rawSource,
+          sourceSha,
+          deploymentDigest,
+          configuration,
+          environmentRevision,
+        });
+      } catch (error) {
+        throw new HttpError(400, error instanceof Error ? error.message : String(error));
+      }
+      if (providerReceipt.deploymentId !== body.id) {
+        throw new HttpError(400, "Web build id does not match the signed provider deployment id");
+      }
+    }
     if (rawSource) {
       if (/^[a-z][a-z0-9+.-]*:\/\//i.test(rawSource)) {
         // Only absolute https is accepted for remote ingest; file:/http:
@@ -98,7 +118,14 @@ export async function handleControlPlaneRoute(input: ControlPlaneRouteInput): Pr
         // plaintext or unexpected local filesystem content through a URL.
         try {
           const parsed = new URL(rawSource);
-          if (parsed.protocol !== "https:") {
+          const localWebDevelopment =
+            body.platform === "web" &&
+            body.webDeploymentMode === "self-managed" &&
+            parsed.protocol === "http:" &&
+            (parsed.hostname === "localhost" ||
+              parsed.hostname === "127.0.0.1" ||
+              parsed.hostname === "[::1]");
+          if (parsed.protocol !== "https:" && !localWebDevelopment) {
             throw new HttpError(400, "Remote build sourceUrl must be an absolute https URL");
           }
           sourceUrl = rawSource;
@@ -117,9 +144,27 @@ export async function handleControlPlaneRoute(input: ControlPlaneRouteInput): Pr
       }
     }
     if (body.platform === "web") {
-      if (!sourceUrl) {
-        throw new HttpError(400, "Web deployments require an immutable https sourceUrl");
+      const mode = body.webDeploymentMode ?? (providerReceipt ? "provider-verified" : undefined);
+      if (mode === "self-managed") {
+        if (providerReceipt || sourceSha || deploymentDigest) {
+          throw new HttpError(
+            400,
+            "Self-managed web builds cannot claim provider sourceSha or deploymentDigest",
+          );
+        }
+        if (!rawSource) {
+          throw new HttpError(400, "Self-managed web builds require a loopback development URL");
+        }
+      } else if (!providerReceipt) {
+        throw new HttpError(
+          400,
+          "Provider-verified web builds require an exact signed provider receipt",
+        );
       }
+      if (!rawSource) {
+        throw new HttpError(400, "Web builds require a deployment URL");
+      }
+      sourceUrl = rawSource;
       let deploymentUrl: URL;
       try {
         deploymentUrl = new URL(sourceUrl);
@@ -134,16 +179,19 @@ export async function handleControlPlaneRoute(input: ControlPlaneRouteInput): Pr
       if (deploymentUrl.protocol !== "https:" && !loopback) {
         throw new HttpError(400, "Web deployment sourceUrl must use https or a loopback URL");
       }
-      if (!deploymentDigest || !/^sha256:[a-f0-9]{64}$/u.test(deploymentDigest)) {
+      if (
+        mode !== "self-managed" &&
+        (!deploymentDigest || !/^sha256:[a-f0-9]{64}$/u.test(deploymentDigest))
+      ) {
         throw new HttpError(400, "Web deployments require a sha256 deploymentDigest");
       }
-      if (!sourceSha || !/^[a-f0-9]{40}$/u.test(sourceSha)) {
+      if (mode !== "self-managed" && (!sourceSha || !/^[a-f0-9]{40}$/u.test(sourceSha))) {
         throw new HttpError(
           400,
           "Web deployments require an exact lowercase 40-character sourceSha",
         );
       }
-      if (!configuration || !environmentRevision) {
+      if (mode !== "self-managed" && (!configuration || !environmentRevision)) {
         throw new HttpError(
           400,
           "Web deployments require configuration and environmentRevision provenance",
@@ -168,6 +216,9 @@ export async function handleControlPlaneRoute(input: ControlPlaneRouteInput): Pr
       environmentRevision,
       applicationId,
       deploymentDigest,
+      webDeploymentMode:
+        body.webDeploymentMode ?? (providerReceipt ? "provider-verified" : undefined),
+      webProviderReceipt: providerReceipt,
       status: body.status ?? "uploaded",
     });
     json(response, 201, { build });

@@ -10,6 +10,18 @@ import { applyProofSetup, previewProofSetup } from "./proof-guided-setup.js";
 const testedSha = "2".repeat(40);
 const digest = `sha256:${"a".repeat(64)}` as const;
 
+const lookupWebDeployment = async (expected: {
+  deploymentId: string;
+  sourceUrl: string;
+  sourceSha: string;
+  deploymentDigest: `sha256:${string}`;
+  configuration: string;
+  environmentRevision: string;
+}) => ({
+  provider: "fixture-host",
+  ...expected,
+});
+
 function exactChange() {
   return {
     readyForProof: true,
@@ -241,6 +253,7 @@ test("web setup hashes local output but binds Proof policy to the reviewed deplo
     intent: webIntent,
     change: async () => exactChange(),
     validateTests: async () => undefined,
+    lookupWebDeployment,
     run: async () => {
       await mkdir(join(root, "dist/web"), { recursive: true });
       await writeFile(join(root, "dist/web/index.html"), "<h1>Exact web output</h1>");
@@ -258,6 +271,7 @@ test("web setup hashes local output but binds Proof policy to the reviewed deplo
     request: { ...preview, confirm: true },
     change: async () => exactChange(),
     validateTests: async () => undefined,
+    lookupWebDeployment,
     save: async (build) => {
       saved = build;
       return { ...build, createdAt: 1, updatedAt: 1 };
@@ -295,6 +309,7 @@ test("setup previews, atomically registers, and prepares reviewed Android and we
     intent: setupIntent,
     change: async () => exactChange(),
     validateTests: async () => undefined,
+    lookupWebDeployment,
     run: async (_executable, args) => {
       commands.push(args.join(" "));
       if (args.includes("build:android")) {
@@ -325,6 +340,7 @@ test("setup previews, atomically registers, and prepares reviewed Android and we
     request: { ...preview, confirm: true },
     change: async () => exactChange(),
     validateTests: async () => undefined,
+    lookupWebDeployment,
     read: async () => null,
     saveMany: async (builds) => {
       batches.push(builds.map(({ id, status }) => `${id}:${status}`));
@@ -372,6 +388,7 @@ test("a later multi-build registration failure rolls every build back and leaves
     intent: { ...intent(), build: undefined, builds: [android, web] },
     change: async () => exactChange(),
     validateTests: async () => undefined,
+    lookupWebDeployment,
     run: async (_executable, args) => {
       if (args.includes("build:android")) {
         await mkdir(join(root, "dist"), { recursive: true });
@@ -390,6 +407,7 @@ test("a later multi-build registration failure rolls every build back and leaves
       request: { ...preview, confirm: true },
       change: async () => exactChange(),
       validateTests: async () => undefined,
+      lookupWebDeployment,
       read: async () => null,
       saveMany: async (builds) => {
         if (builds.some(({ id, status }) => id === "web-preview" && status === "ready")) {

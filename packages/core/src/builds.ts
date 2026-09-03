@@ -1,9 +1,8 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { lookup } from "node:dns/promises";
-import { access, mkdir, readdir, rename, rm, stat } from "node:fs/promises";
-import { constants, createWriteStream } from "node:fs";
-import { homedir } from "node:os";
+import { access, mkdir, rename, rm, stat } from "node:fs/promises";
+import { createWriteStream } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -13,63 +12,9 @@ import type { Build } from "@relay/protocol";
 import { findWorkspaceRoot } from "./workspace-root.js";
 import type { TargetContext } from "./target-context.js";
 import { artifactDigestForProof, artifactSourceSha256 } from "./artifact-digest.js";
+import { AndroidSdkToolError, resolveAndroidSdkTool } from "./android-sdk-tools.js";
 
 const execFileAsync = promisify(execFile);
-
-function androidSdkRoots(): string[] {
-  return [
-    process.env.ANDROID_SDK_ROOT,
-    process.env.ANDROID_HOME,
-    join(homedir(), "Library", "Android", "sdk"),
-    join(homedir(), "Android", "Sdk"),
-  ].filter(
-    (value, index, values): value is string =>
-      Boolean(value?.trim()) && values.indexOf(value) === index,
-  );
-}
-
-async function executable(path: string): Promise<boolean> {
-  try {
-    await access(path, constants.X_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function versionDirectories(path: string): Promise<string[]> {
-  try {
-    return (await readdir(path)).sort((left, right) =>
-      right.localeCompare(left, undefined, { numeric: true }),
-    );
-  } catch {
-    return [];
-  }
-}
-
-async function resolveAndroidBuildCommand(command: string): Promise<string> {
-  if (!new Set(["adb", "aapt", "aapt2", "apkanalyzer"]).has(command)) return command;
-  const executableName = process.platform === "win32" ? `${command}.exe` : command;
-  for (const root of androidSdkRoots()) {
-    const candidates =
-      command === "adb"
-        ? [join(root, "platform-tools", executableName)]
-        : command === "apkanalyzer"
-          ? [
-              ...(await versionDirectories(join(root, "cmdline-tools"))).map((version) =>
-                join(root, "cmdline-tools", version, "bin", executableName),
-              ),
-              join(root, "tools", "bin", executableName),
-            ]
-          : (await versionDirectories(join(root, "build-tools"))).map((version) =>
-              join(root, "build-tools", version, executableName),
-            );
-    for (const candidate of candidates) {
-      if (await executable(candidate)) return candidate;
-    }
-  }
-  return command;
-}
 
 export type BuildCommandRunner = (
   executable: string,
@@ -77,9 +22,18 @@ export type BuildCommandRunner = (
 ) => Promise<{ stdout?: string; stderr?: string }>;
 
 const defaultCommandRunner: BuildCommandRunner = async (executable, args) => {
-  const result = await execFileAsync(await resolveAndroidBuildCommand(executable), args);
+  const command = isAndroidSdkTool(executable)
+    ? await resolveAndroidSdkTool(executable)
+    : executable;
+  const result = await execFileAsync(command, args);
   return { stdout: String(result.stdout), stderr: String(result.stderr) };
 };
+
+function isAndroidSdkTool(command: string): command is "adb" | "aapt" | "aapt2" | "apkanalyzer" {
+  return (
+    command === "adb" || command === "aapt" || command === "aapt2" || command === "apkanalyzer"
+  );
+}
 
 export type RegisteredBuildPreflight = {
   buildId: string;
@@ -302,7 +256,7 @@ async function inferApplicationId(
   build: Build,
   path: string,
   run: BuildCommandRunner,
-): Promise<string | undefined> {
+): Promise<{ applicationId?: string; diagnostic?: string }> {
   const attempts: Array<[string, string[], (output: string) => string | undefined]> =
     build.platform === "android"
       ? [
@@ -324,16 +278,20 @@ async function inferApplicationId(
             (output) => output.trim() || undefined,
           ],
         ];
+  let diagnostic: string | undefined;
   for (const [command, args, parse] of attempts) {
     try {
       const result = await run(command, args);
       const applicationId = parse(String(result.stdout ?? ""));
-      if (applicationId) return applicationId;
-    } catch {
+      if (applicationId) return { applicationId };
+    } catch (error) {
       // Tool availability is reflected as a launch warning in preflight.
+      if (error instanceof AndroidSdkToolError) {
+        diagnostic = error.message;
+      }
     }
   }
-  return undefined;
+  return diagnostic ? { diagnostic } : {};
 }
 
 export async function preflightRegisteredBuild(
@@ -457,13 +415,14 @@ export async function preflightRegisteredBuild(
       : `Selected target does not support this ${build.platform} build`,
   });
 
-  const applicationId = kindMatches ? await inferApplicationId(build, path, run) : undefined;
+  const identity = kindMatches ? await inferApplicationId(build, path, run) : {};
+  const applicationId = identity.applicationId;
   checks.push({
     id: "application-id",
     status: applicationId ? "pass" : "warning",
     message: applicationId
       ? `Application id: ${applicationId}`
-      : "Application id could not be inferred; install is available but launch needs an explicit app id",
+      : `${identity.diagnostic ? `${identity.diagnostic}. ` : ""}Application id could not be inferred; install is available but launch needs an explicit app id`,
   });
 
   const install = kindMatches && targetMatches;

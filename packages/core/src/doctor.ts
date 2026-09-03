@@ -4,6 +4,11 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { listAdbDevices } from "./adb-devices.js";
+import {
+  AndroidSdkRootConfigurationError,
+  AndroidSdkToolError,
+  resolveAndroidSdkTool,
+} from "./android-sdk-tools.js";
 import { listDevices } from "./workspace.js";
 
 const execFileAsync = promisify(execFile);
@@ -36,10 +41,14 @@ async function checkNode(): Promise<DoctorCheck> {
 
 async function checkAdb(): Promise<DoctorCheck> {
   try {
-    const { stdout, stderr } = await execFileAsync("adb", ["version"], {
-      timeout: 8_000,
-      maxBuffer: 64 * 1024,
-    });
+    const { stdout, stderr } = await execFileAsync(
+      await resolveAndroidSdkTool("adb"),
+      ["version"],
+      {
+        timeout: 8_000,
+        maxBuffer: 64 * 1024,
+      },
+    );
     const text = `${stdout}\n${stderr}`.trim().split("\n")[0] ?? "adb present";
     return {
       id: "adb",
@@ -49,12 +58,15 @@ async function checkAdb(): Promise<DoctorCheck> {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const missing =
-      (err as NodeJS.ErrnoException)?.code === "ENOENT" || /not found|ENOENT/i.test(message);
+      err instanceof AndroidSdkToolError ||
+      err instanceof AndroidSdkRootConfigurationError ||
+      (err as NodeJS.ErrnoException)?.code === "ENOENT" ||
+      /not found|ENOENT/i.test(message);
     return {
       id: "adb",
       ok: false,
       message: missing
-        ? "adb not found on PATH (install Android platform-tools)"
+        ? message || "Android SDK adb is unavailable (install Android platform-tools)"
         : `adb version failed: ${message}`,
     };
   }
@@ -168,7 +180,9 @@ function androidVisible(devices: readonly DoctorListedDevice[]): boolean {
 function adbBlocksDoctor(adb: DoctorCheck, listedAndroid: boolean): boolean {
   if (adb.ok) return false;
   if (listedAndroid) return true;
-  return !/adb not found on PATH/i.test(adb.message);
+  return !/(?:adb not found on PATH|Android SDK tool\s+"?adb"?\s+is unavailable|Android SDK configuration is ambiguous)/i.test(
+    adb.message,
+  );
 }
 
 export function doctorResultFromChecks(

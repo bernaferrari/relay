@@ -10,6 +10,7 @@ import {
 } from "./builds.js";
 import { artifactDigestForProof, artifactSourceSha256 } from "./artifact-digest.js";
 import type { TargetContext } from "./target-context.js";
+import { assertWebBuildProviderReceipt } from "./web-build-verification.js";
 
 const EXACT_GIT_SHA = /^[a-f0-9]{40}$/u;
 const HEX_SHA256 = /^[a-f0-9]{64}$/u;
@@ -122,6 +123,16 @@ export function bindRegisteredWebDeploymentToProof(input: {
 }): VerifiedWebBuild {
   if (input.build.platform !== "web") {
     throw new Error("Registered web Proof binding requires a web build");
+  }
+  if (input.build.webDeploymentMode === "self-managed") {
+    throw new Error(
+      "Self-managed web development cannot be used as provider-verified Proof evidence",
+    );
+  }
+  if (input.build.status !== "ready") throw new Error("Provider web Proof build must be ready");
+  assertWebBuildProviderReceipt(input.build.webProviderReceipt, input.build);
+  if (input.build.webProviderReceipt.deploymentId !== input.build.id) {
+    throw new Error("Web build id does not match the signed provider deployment id");
   }
   const url = requiredProvenance(input.build.sourceUrl, "web deployment URL");
   const deploymentDigest = requiredProvenance(input.build.deploymentDigest, "deploymentDigest");

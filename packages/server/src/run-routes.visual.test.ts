@@ -103,6 +103,7 @@ async function requestRoute(
   method: string,
   pathname: string,
   body: Record<string, unknown> = {},
+  requestScope: RequestContext = scope,
 ): Promise<{ status: number; value: Record<string, unknown> }> {
   const request = Readable.from([
     Buffer.from(JSON.stringify(body)),
@@ -113,13 +114,14 @@ async function requestRoute(
     "x-relay-actor-kind": "human",
   };
   const response = new CapturedResponse();
+  const url = new URL(`http://localhost${pathname}`);
   const handled = await handleRunRoute({
     method,
-    pathname,
-    url: new URL(`http://localhost${pathname}`),
+    pathname: url.pathname,
+    url,
     request,
     response: response as unknown as http.ServerResponse,
-    scope,
+    scope: requestScope,
   });
   assert.equal(handled, true);
   return { status: response.status, value: JSON.parse(response.body) as Record<string, unknown> };
@@ -270,6 +272,69 @@ test("run routes expose deferred checks and persist the human decision", async (
         return true;
       },
     );
+  } finally {
+    if (previous === undefined) delete process.env.RELAY_RUNS_DIR;
+    else process.env.RELAY_RUNS_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("run list exposes every persisted run through bounded keyset pages", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-run-route-pagination-"));
+  const previous = process.env.RELAY_RUNS_DIR;
+  process.env.RELAY_RUNS_DIR = root;
+  try {
+    for (let index = 0; index < 205; index += 1) {
+      await persistFixture(root, `page-run-${String(index).padStart(3, "0")}`, "changed-image");
+    }
+    const ids: string[] = [];
+    let path = "/runs?limit=100";
+    for (let page = 0; page < 3; page += 1) {
+      const response = await requestRoute("GET", path);
+      assert.equal(response.status, 200);
+      const runs = response.value.runs as Array<{ id: string }>;
+      ids.push(...runs.map(({ id }) => id));
+      const nextCursor = response.value.nextCursor;
+      if (typeof nextCursor !== "string") break;
+      path = `/runs?limit=100&cursor=${encodeURIComponent(nextCursor)}`;
+    }
+    assert.equal(ids.length, 205);
+    assert.equal(new Set(ids).size, 205);
+    assert.equal(ids[0], "page-run-204");
+    assert.equal(ids.at(-1), "page-run-000");
+  } finally {
+    if (previous === undefined) delete process.env.RELAY_RUNS_DIR;
+    else process.env.RELAY_RUNS_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("authenticated run list pages only the caller's persisted runs", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-run-route-auth-pagination-"));
+  const previous = process.env.RELAY_RUNS_DIR;
+  process.env.RELAY_RUNS_DIR = root;
+  const remoteScope: RequestContext = { ...scope, localTrusted: false };
+  try {
+    for (let index = 0; index < 205; index += 1) {
+      await persistFixture(
+        root,
+        `auth-page-run-${String(index).padStart(3, "0")}`,
+        "changed-image",
+      );
+    }
+    const ids: string[] = [];
+    let path = "/runs?limit=100";
+    for (let page = 0; page < 3; page += 1) {
+      const response = await requestRoute("GET", path, {}, remoteScope);
+      assert.equal(response.status, 200);
+      const runs = response.value.runs as Array<{ id: string }>;
+      ids.push(...runs.map(({ id }) => id));
+      const nextCursor = response.value.nextCursor;
+      if (typeof nextCursor !== "string") break;
+      path = `/runs?limit=100&cursor=${encodeURIComponent(nextCursor)}`;
+    }
+    assert.equal(ids.length, 205);
+    assert.equal(new Set(ids).size, 205);
   } finally {
     if (previous === undefined) delete process.env.RELAY_RUNS_DIR;
     else process.env.RELAY_RUNS_DIR = previous;

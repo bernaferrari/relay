@@ -169,6 +169,10 @@ test("binds a web Proof to provider deployment identity while retaining local ou
       testedSha: fixture.sha,
       definitionId: "web-release",
       stateRoot: fixture.stateRoot,
+      lookupWebDeployment: async (expected) => ({
+        provider: "fixture-host",
+        ...expected,
+      }),
       save: async (build) => ({ ...build, createdAt: 1, updatedAt: 1 }),
     });
 

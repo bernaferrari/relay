@@ -215,8 +215,10 @@ remain an explicit legacy/manual `record-runs` recovery path, not the normal Pro
 - MCP request cancellation is forwarded to the Relay client. A cancelled request does not grant
   permission to retry, take over a lease, or overwrite a newer revision.
 - Failed operations return a sanitized structured error with a stable code, HTTP status when known,
-  a bounded recovery action, and the current revision when Relay supplies one. Arbitrary response
-  bodies, credentials, and host paths are never forwarded.
+  a bounded recovery action, and the current revision when Relay supplies one. Recovery commands
+  are emitted only when their canonical operation is registered by the selected profile; otherwise
+  `recoveryGuidance` names the hidden operation and gives a profile/operator handoff. Arbitrary
+  response bodies, credentials, and host paths are never forwarded.
 
 The bridge is intentionally only a transport adapter. Run the Relay HTTP server separately; the
 MCP process remains a scoped adapter, not the source of truth. The package build and clean-host

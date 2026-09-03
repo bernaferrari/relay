@@ -10,6 +10,44 @@ type ObservedTarget = {
   developerServicesAvailable?: boolean;
 };
 
+export function assertReviewedBrowserTargetProfile(input: {
+  targetId: string;
+  targetSurface: {
+    platform: "android" | "browser" | "ios";
+    browserEngine?: string;
+    viewport?: { width: number; height: number };
+    targetProfileId: string;
+  };
+  observedBrowser:
+    | {
+        engine: string;
+        viewport: { width: number; height: number };
+      }
+    | undefined;
+  routeVariantId?: string;
+}): void {
+  const { targetId, targetSurface, observedBrowser } = input;
+  if (targetSurface.platform !== "browser") return;
+  if (
+    !observedBrowser ||
+    observedBrowser.engine !== targetSurface.browserEngine ||
+    (targetSurface.viewport !== undefined &&
+      (observedBrowser.viewport.width !== targetSurface.viewport.width ||
+        observedBrowser.viewport.height !== targetSurface.viewport.height))
+  ) {
+    throw new HttpError(
+      409,
+      `Managed browser target ${targetId} no longer matches reviewed route ${input.routeVariantId ?? "surface"}`,
+      {
+        code: "TARGET_PROFILE_TARGET_MISMATCH",
+        targetProfileId: targetSurface.targetProfileId,
+        recovery:
+          "Restore the reviewed browser engine and viewport, or review a new route variant before running this Test.",
+      },
+    );
+  }
+}
+
 export function frozenEvidenceTargetProfileForTarget(input: {
   target: Pick<OperationInput<"app-map.test.run">["target"], "targetId" | "platform">;
   profiles: AppMapCompiledRuntimeTargetProfile[] | undefined;

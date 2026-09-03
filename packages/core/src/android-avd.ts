@@ -6,12 +6,15 @@
  * serial must never be guessed from a previous session.
  */
 import { execFile, spawn } from "node:child_process";
-import { access, mkdir, stat, truncate } from "node:fs/promises";
-import { constants } from "node:fs";
-import { homedir } from "node:os";
+import { mkdir, stat, truncate } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { probeAdbDevices, type AdbDeviceObservation } from "./adb-devices.js";
+import {
+  AndroidSdkRootConfigurationError,
+  AndroidSdkToolError,
+  resolveAndroidSdkTool,
+} from "./android-sdk-tools.js";
 import { findWorkspaceRoot } from "./workspace-root.js";
 
 const execFileAsync = promisify(execFile);
@@ -104,28 +107,6 @@ type AndroidAvdRuntime = {
 const configuredAvdBySerial = new Map<string, string>();
 const activeBoots = new Set<string>();
 
-async function resolveAndroidTool(tool: "adb" | "emulator"): Promise<string> {
-  const fileName = process.platform === "win32" ? `${tool}.exe` : tool;
-  const roots = [
-    process.env.ANDROID_SDK_ROOT,
-    process.env.ANDROID_HOME,
-    join(homedir(), "Library", "Android", "sdk"),
-    join(homedir(), "Android", "Sdk"),
-  ].filter((value, index, values): value is string => {
-    return Boolean(value?.trim()) && values.indexOf(value) === index;
-  });
-  for (const root of roots) {
-    const candidate = join(root, tool === "emulator" ? "emulator" : "platform-tools", fileName);
-    try {
-      await access(candidate, constants.X_OK);
-      return candidate;
-    } catch {
-      // Continue to the next configured SDK root.
-    }
-  }
-  return fileName;
-}
-
 function normalizeAvdName(value: string): string {
   return value.trim().toLowerCase().replaceAll("_", " ").replace(/\s+/gu, " ");
 }
@@ -163,7 +144,7 @@ export function resetAndroidAvdIdentityCache(): void {
 
 async function defaultListAvdNames(): Promise<string[]> {
   try {
-    const result = await execFileAsync(await resolveAndroidTool("emulator"), ["-list-avds"], {
+    const result = await execFileAsync(await resolveAndroidSdkTool("emulator"), ["-list-avds"], {
       timeout: COMMAND_TIMEOUT_MS,
       maxBuffer: 64 * 1024,
     });
@@ -172,6 +153,10 @@ async function defaultListAvdNames(): Promise<string[]> {
     const message = error instanceof Error ? error.message : String(error);
     throw new AndroidAvdError("sdk-unavailable", "Android emulator inventory is unavailable", {
       message: message.slice(0, 240),
+      ...(error instanceof AndroidSdkToolError ? { diagnostics: error.diagnostics } : {}),
+      ...(error instanceof AndroidSdkRootConfigurationError
+        ? { configuration: { code: error.code, roots: error.roots } }
+        : {}),
     });
   }
 }
@@ -185,7 +170,7 @@ async function defaultListConnected(): Promise<AdbDeviceObservation[]> {
 async function defaultReadAvdName(serial: string): Promise<string | undefined> {
   try {
     const result = await execFileAsync(
-      await resolveAndroidTool("adb"),
+      await resolveAndroidSdkTool("adb"),
       ["-s", serial, "shell", "getprop", "ro.boot.qemu.avd_name"],
       { timeout: COMMAND_TIMEOUT_MS, maxBuffer: 4096 },
     );
@@ -210,7 +195,7 @@ export async function observeAndroidAvdName(serial: string): Promise<string | un
 async function defaultReadBootCompleted(serial: string): Promise<boolean> {
   try {
     const result = await execFileAsync(
-      await resolveAndroidTool("adb"),
+      await resolveAndroidSdkTool("adb"),
       ["-s", serial, "shell", "getprop", "sys.boot_completed"],
       { timeout: COMMAND_TIMEOUT_MS, maxBuffer: 4096 },
     );
@@ -221,7 +206,19 @@ async function defaultReadBootCompleted(serial: string): Promise<boolean> {
 }
 
 async function defaultLaunch(avdName: string, headless: boolean): Promise<void> {
-  const emulator = await resolveAndroidTool("emulator");
+  let emulator: string;
+  try {
+    emulator = await resolveAndroidSdkTool("emulator");
+  } catch (error) {
+    if (error instanceof AndroidSdkToolError || error instanceof AndroidSdkRootConfigurationError) {
+      const details =
+        error instanceof AndroidSdkToolError
+          ? { tool: error.tool, code: error.code, diagnostics: error.diagnostics }
+          : { code: error.code, roots: error.roots };
+      throw new AndroidAvdError("sdk-unavailable", error.message, details);
+    }
+    throw error;
+  }
   const logDirectory = join(
     process.env.RELAY_STATE_DIR?.trim() || join(findWorkspaceRoot(), ".relay"),
     "android-avd",

@@ -4,6 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { issueWebBuildProviderReceipt } from "@relay/core";
 import { startServer } from "./index.js";
 
 function headers(operationId: string): Record<string, string> {
@@ -79,6 +80,15 @@ test("POST /builds accepts local paths and https sources but rejects other schem
     assert.equal(httpsBody.build.sourceUrl, "https://artifacts.example.com/app.apk");
     assert.equal(httpsBody.build.sourceSha256, `a${"b".repeat(63)}`);
 
+    const webReceipt = await issueWebBuildProviderReceipt({
+      provider: "preview-host",
+      deploymentId: "web-preview",
+      sourceUrl: "https://preview.example.com/pr-184",
+      sourceSha: "2".repeat(40),
+      deploymentDigest: `sha256:${"c".repeat(64)}`,
+      configuration: "web.production",
+      environmentRevision: "preview-v12",
+    });
     const web = await fetch(`${base}/builds`, {
       method: "POST",
       headers: headers("build.save"),
@@ -86,11 +96,8 @@ test("POST /builds accepts local paths and https sources but rejects other schem
         id: "web-preview",
         name: "Web preview",
         platform: "web",
-        sourceUrl: "https://preview.example.com/pr-184",
-        sourceSha: "2".repeat(40),
-        deploymentDigest: `sha256:${"c".repeat(64)}`,
-        configuration: "web.production",
-        environmentRevision: "preview-v12",
+        webDeploymentMode: "provider-verified",
+        webProviderReceipt: webReceipt,
         status: "ready",
       }),
     });
@@ -107,6 +114,25 @@ test("POST /builds accepts local paths and https sources but rejects other schem
     assert.equal(webBody.build.sourceUrl, "https://preview.example.com/pr-184");
     assert.equal(webBody.build.sourceSha, "2".repeat(40));
     assert.equal(webBody.build.deploymentDigest, `sha256:${"c".repeat(64)}`);
+
+    const selfManaged = await fetch(`${base}/builds`, {
+      method: "POST",
+      headers: headers("build.save"),
+      body: JSON.stringify({
+        id: "web-local",
+        name: "Local web development",
+        platform: "web",
+        webDeploymentMode: "self-managed",
+        sourceUrl: "http://localhost:4173",
+        status: "ready",
+      }),
+    });
+    assert.equal(selfManaged.status, 201);
+    const selfManagedBody = (await selfManaged.json()) as {
+      build: { webDeploymentMode?: string; webProviderReceipt?: unknown };
+    };
+    assert.equal(selfManagedBody.build.webDeploymentMode, "self-managed");
+    assert.equal(selfManagedBody.build.webProviderReceipt, undefined);
 
     const incompleteWeb = await fetch(`${base}/builds`, {
       method: "POST",

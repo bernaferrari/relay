@@ -2,6 +2,7 @@ import type { createAgentDeviceClient } from "agent-device";
 import { getExecutingJobId, raceCancel } from "./control.js";
 import { runTargetMutation } from "./target-control.js";
 import { dispatchSupervisedIosMutation } from "./ios-mutation-policy.js";
+import { resolveAndroidSdkTool } from "./android-sdk-tools.js";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
@@ -75,8 +76,9 @@ export function bindNativeDeviceMutations(
 /** Clear an Android field atomically so another job cannot interleave key events. */
 export async function clearAndroidTextWithAdb(serial: string, jobId: string | null): Promise<void> {
   await runTargetMutation(serial, jobId, async () => {
+    const adb = await resolveAndroidSdkTool("adb");
     const keyevent = (keys: string[]) =>
-      raceCancel(execFileAsync("adb", ["-s", serial, "shell", "input", "keyevent", ...keys]));
+      raceCancel(execFileAsync(adb, ["-s", serial, "shell", "input", "keyevent", ...keys]));
     await keyevent(["KEYCODE_MOVE_HOME"]);
     await keyevent(Array.from({ length: 512 }, () => "KEYCODE_DPAD_UP"));
     await keyevent(["KEYCODE_MOVE_HOME"]);

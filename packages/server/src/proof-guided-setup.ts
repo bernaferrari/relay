@@ -6,10 +6,12 @@ import { promisify } from "node:util";
 import {
   artifactDigestForProof,
   artifactSourceSha256,
+  assertAuthoritativeWebDeploymentMatches,
   bindVerifiedWebDeploymentToProof,
   buildTargetProfiles,
   canonicalSha256,
   findWorkspaceRoot,
+  issueWebBuildProviderReceiptFromAuthority,
   inspectWorkspaceChange,
   listAppMaps,
   listDevices,
@@ -17,6 +19,7 @@ import {
   readBuild,
   saveBuild,
   saveBuilds,
+  type AuthoritativeWebDeploymentLookup,
 } from "@relay/core";
 import {
   VERIFY_CHANGE_POLICY,
@@ -352,6 +355,7 @@ export async function previewProofSetup(input: {
   run?: CommandRunner;
   change?: typeof exactChange;
   validateTests?: typeof validateReviewedAssociations;
+  lookupWebDeployment?: AuthoritativeWebDeploymentLookup;
 }): Promise<ProofSetupPreview> {
   const root = input.root ?? findWorkspaceRoot();
   const intent = proofSetupIntentSchema.parse(input.intent);
@@ -390,16 +394,37 @@ export async function previewProofSetup(input: {
     const artifactDigest = await artifactDigestForProof(artifactPath);
     const sourceSha256 = await artifactSourceSha256(artifactPath);
     artifacts.push({ path: build.artifactPath, digest: artifactDigest, sourceSha256 });
+    const webExpected =
+      build.platform === "web"
+        ? {
+            deploymentId: build.id,
+            sourceUrl: build.webDeployment!.url,
+            sourceSha: change.changeRef!.testedSha,
+            deploymentDigest: build.webDeployment!.deploymentDigest as `sha256:${string}`,
+            configuration: build.configuration,
+            environmentRevision: build.environmentRevision,
+          }
+        : undefined;
+    const webDeployment = webExpected
+      ? await (input.lookupWebDeployment
+          ? input.lookupWebDeployment(webExpected)
+          : Promise.reject(
+              new Error("Provider-verified web setup requires an authoritative deployment lookup"),
+            ))
+      : undefined;
+    if (webExpected && webDeployment) {
+      assertAuthoritativeWebDeploymentMatches(webExpected, webDeployment);
+    }
     const proofArtifactDigest =
       build.platform === "web"
         ? bindVerifiedWebDeploymentToProof({
             deployment: {
-              id: build.id,
-              url: build.webDeployment!.url,
-              sourceSha: change.changeRef!.testedSha,
-              deploymentDigest: build.webDeployment!.deploymentDigest as `sha256:${string}`,
-              configuration: build.configuration,
-              environmentRevision: build.environmentRevision,
+              id: webDeployment!.deploymentId,
+              url: webDeployment!.sourceUrl,
+              sourceSha: webDeployment!.sourceSha,
+              deploymentDigest: webDeployment!.deploymentDigest,
+              configuration: webDeployment!.configuration,
+              environmentRevision: webDeployment!.environmentRevision,
             },
             changeTestedSha: change.changeRef!.testedSha,
           }).artifactDigest
@@ -468,6 +493,9 @@ export async function applyProofSetup(input: {
   read?: typeof readBuild;
   prepare?: typeof prepareCurrentChangeVerification;
   validateTests?: typeof validateReviewedAssociations;
+  /** Trusted provider adapter used to revalidate web deployment facts at
+   * apply-time before Relay signs the persisted Build receipt. */
+  lookupWebDeployment?: AuthoritativeWebDeploymentLookup;
   files?: Partial<PolicyFileOperations>;
 }) {
   const root = input.root ?? findWorkspaceRoot();
@@ -555,8 +583,31 @@ export async function applyProofSetup(input: {
         `build ${build.id} artifact sourceSha256 changed after preview; run preview again`,
       );
     }
+    const webExpected =
+      build.platform === "web"
+        ? {
+            deploymentId: build.id,
+            sourceUrl: build.webDeployment!.url,
+            sourceSha: preview.testedSha,
+            deploymentDigest: build.webDeployment!.deploymentDigest as `sha256:${string}`,
+            configuration: build.configuration,
+            environmentRevision: build.environmentRevision,
+          }
+        : undefined;
+    const webIdentity = webExpected
+      ? await issueWebBuildProviderReceiptFromAuthority({
+          expected: webExpected,
+          lookup:
+            input.lookupWebDeployment ??
+            (() => {
+              throw new Error(
+                "Provider-verified web setup requires an authoritative deployment lookup",
+              );
+            }),
+        })
+      : undefined;
     const reviewedArtifactDigest =
-      build.platform === "web" ? build.webDeployment!.deploymentDigest : artifact.digest;
+      build.platform === "web" ? webIdentity!.deployment.deploymentDigest : artifact.digest;
     if (
       canonicalSha256(definition.command) !== canonicalSha256(command) ||
       definition.artifactPath !== artifact.path ||
@@ -579,14 +630,18 @@ export async function applyProofSetup(input: {
       projectId: input.projectId,
       name: build.name,
       platform: build.platform,
-      sourceUrl: build.platform === "web" ? build.webDeployment!.url : artifact.path,
+      sourceUrl: webIdentity?.deployment.sourceUrl ?? artifact.path,
       sourceSha256: artifact.sourceSha256,
-      sourceSha: preview.testedSha,
-      configuration: build.configuration,
-      environmentRevision: build.environmentRevision,
+      sourceSha: webIdentity?.deployment.sourceSha ?? preview.testedSha,
+      configuration: webIdentity?.deployment.configuration ?? build.configuration,
+      environmentRevision: webIdentity?.deployment.environmentRevision ?? build.environmentRevision,
       ...(build.applicationId ? { applicationId: build.applicationId } : {}),
       ...(build.platform === "web"
-        ? { deploymentDigest: build.webDeployment!.deploymentDigest }
+        ? {
+            deploymentDigest: webIdentity!.deployment.deploymentDigest,
+            webDeploymentMode: "provider-verified" as const,
+            webProviderReceipt: webIdentity!.receipt,
+          }
         : {}),
     });
   }

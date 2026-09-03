@@ -1,10 +1,10 @@
 import { execFile } from "node:child_process";
-import { access, mkdtemp, readdir, rm } from "node:fs/promises";
-import { constants } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { setAndroidAppLocale, type SetAndroidAppLocaleOptions } from "./android-app-build.js";
+import { resolveAndroidSdkTool } from "./android-sdk-tools.js";
 import { runWithTargetContext } from "./target-context.js";
 
 const execFileAsync = promisify(execFile);
@@ -12,48 +12,6 @@ const MAX_APK_TOOL_OUTPUT = 64 * 1024 * 1024;
 
 function validPackageName(value: string): boolean {
   return /^[A-Za-z0-9._-]+$/.test(value);
-}
-
-function sdkRoots(): string[] {
-  return [
-    process.env.ANDROID_SDK_ROOT,
-    process.env.ANDROID_HOME,
-    path.join(homedir(), "Library", "Android", "sdk"),
-    path.join(homedir(), "Android", "Sdk"),
-  ].filter(
-    (value, index, values): value is string => Boolean(value) && values.indexOf(value) === index,
-  );
-}
-
-async function executable(file: string): Promise<boolean> {
-  try {
-    await access(file, constants.X_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function resolveAapt2(): Promise<string | undefined> {
-  for (const root of sdkRoots()) {
-    const buildTools = path.join(root, "build-tools");
-    let versions: string[];
-    try {
-      versions = await readdir(buildTools);
-    } catch {
-      continue;
-    }
-    versions.sort((left, right) => right.localeCompare(left, undefined, { numeric: true }));
-    for (const version of versions) {
-      const candidate = path.join(
-        buildTools,
-        version,
-        process.platform === "win32" ? "aapt2.exe" : "aapt2",
-      );
-      if (await executable(candidate)) return candidate;
-    }
-  }
-  return undefined;
 }
 
 export function parseAndroidLocaleConfig(input: {
@@ -83,15 +41,13 @@ export async function listAndroidAppLocales(
   if (!serial.trim()) throw new Error("device serial is required");
   if (!validPackageName(packageName))
     throw new Error("app package name contains unsupported characters");
-  const aapt2 = await resolveAapt2();
-  if (!aapt2) {
-    throw new Error("Android build tools are unavailable; enter locale tags manually");
-  }
+  const aapt2 = await resolveAndroidSdkTool("aapt2");
+  const adb = await resolveAndroidSdkTool("adb");
   const workspace = await mkdtemp(path.join(tmpdir(), "relay-app-locales-"));
   const apk = path.join(workspace, "base.apk");
   try {
     const { stdout: packagePaths } = await execFileAsync(
-      "adb",
+      adb,
       ["-s", serial, "shell", "pm", "path", packageName],
       { maxBuffer: MAX_APK_TOOL_OUTPUT },
     );
@@ -101,7 +57,7 @@ export async function listAndroidAppLocales(
       .find((line) => line.startsWith("package:") && line.endsWith("/base.apk"))
       ?.slice("package:".length);
     if (!remoteApk) throw new Error(`${packageName} is not installed on ${serial}`);
-    await execFileAsync("adb", ["-s", serial, "pull", remoteApk, apk], {
+    await execFileAsync(adb, ["-s", serial, "pull", remoteApk, apk], {
       maxBuffer: MAX_APK_TOOL_OUTPUT,
     });
     const runAapt = async (args: string[]) =>

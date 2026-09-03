@@ -26,6 +26,23 @@ export type RelayMcpRecoveryCommand = {
 };
 
 /**
+ * The MCP server must not present an operation from an error response as an
+ * executable recovery command unless that operation is registered in the
+ * selected profile. The error adapter stays independent of the profile
+ * registry by accepting the already-resolved operation set from the server.
+ */
+export type RelayMcpErrorOptions = {
+  /** Canonical operation ids registered as MCP tools for this request. */
+  availableOperationIds?: ReadonlySet<string>;
+  /** Selected profile, included in guidance when a recovery command is hidden. */
+  profile?: string;
+  /** Profiles that register a hidden recovery operation, when known. */
+  availableProfilesForOperation?: (operationId: string) => readonly string[];
+  /** Outcome tools are public even though they invoke canonical operations internally. */
+  currentOperationAvailable?: boolean;
+};
+
+/**
  * The inspectable part of a terminal physical-iOS outcome. Keep it separate
  * from generic error text so an MCP agent can see why it must stop before
  * issuing another command.
@@ -47,6 +64,9 @@ export type RelayMcpStructuredError = {
     retryable: boolean;
   };
   recoveryAction?: RelayMcpRecoveryCommand;
+  /** Explain how to continue when Relay's canonical recovery operation is not
+   * registered by the selected least-privilege profile. */
+  recoveryGuidance?: string;
   currentRevision?: number;
   iosReview?: RelayMcpIosReview;
 };
@@ -144,6 +164,65 @@ function recoveryActionFrom(value: unknown): RelayMcpStructuredError["recoveryAc
   };
 }
 
+function hiddenRecoveryGuidance(
+  operationId: string,
+  options: RelayMcpErrorOptions,
+): string | undefined {
+  if (!options.availableOperationIds || options.availableOperationIds.has(operationId)) {
+    return undefined;
+  }
+  const profile = options.profile ? ` in selected MCP profile "${options.profile}"` : "";
+  const availableProfiles = options.availableProfilesForOperation?.(operationId) ?? [];
+  const profileHint = availableProfiles.length
+    ? ` Start MCP with a profile that exposes it (${availableProfiles.join(", ")})`
+    : " Use an authorized operator or profile that exposes it";
+  return `Relay suggested recovery operation "${operationId}", but it is not available${profile}.${profileHint}, or ask an operator to invoke the canonical operation.`;
+}
+
+function profileSafeRecovery(
+  recovery: RelayMcpStructuredError["recovery"],
+  recoveryAction: RelayMcpStructuredError["recoveryAction"],
+  options: RelayMcpErrorOptions | undefined,
+): {
+  recovery: RelayMcpStructuredError["recovery"];
+  recoveryAction?: RelayMcpStructuredError["recoveryAction"];
+  recoveryGuidance?: string;
+} {
+  if (!options?.availableOperationIds) {
+    return { recovery, ...(recoveryAction ? { recoveryAction } : {}) };
+  }
+
+  const hiddenAction = recoveryAction
+    ? hiddenRecoveryGuidance(recoveryAction.operationId, options)
+    : undefined;
+  const leaseUnavailable =
+    recovery.action === "acquire-lease" && !options.availableOperationIds.has("lease.create");
+  const retryUnavailable =
+    recovery.action === "refresh-and-retry" && options.currentOperationAvailable === false;
+  const guidance =
+    hiddenAction ??
+    (leaseUnavailable
+      ? hiddenRecoveryGuidance("lease.create", options)
+      : retryUnavailable
+        ? hiddenRecoveryGuidance("refresh-and-retry", options)
+        : undefined);
+
+  // `acquire-lease` names a concrete canonical operation. If that operation
+  // is outside the selected profile, do not leave an agent with a retryable
+  // instruction that it cannot perform. The operator/profile handoff in the
+  // guidance is the only safe continuation.
+  const safeRecovery = leaseUnavailable
+    ? { action: "request-access" as const, retryable: false }
+    : retryUnavailable
+      ? { action: "request-access" as const, retryable: false }
+      : recovery;
+  return {
+    recovery: safeRecovery,
+    ...(hiddenAction ? {} : recoveryAction ? { recoveryAction } : {}),
+    ...(guidance ? { recoveryGuidance: guidance } : {}),
+  };
+}
+
 function iosReviewFrom(body: Record<string, unknown> | undefined): RelayMcpIosReview | undefined {
   const iosMutation = object(body?.iosMutation);
   return iosMutation ? { iosMutation } : undefined;
@@ -152,6 +231,7 @@ function iosReviewFrom(body: Record<string, unknown> | undefined): RelayMcpIosRe
 export function relayMcpError(
   operationId: RelayMcpStructuredError["operationId"],
   error: unknown,
+  options?: RelayMcpErrorOptions,
 ): RelayMcpStructuredError {
   const fallback = `Relay operation ${operationId} failed.`;
   if (!(error instanceof ApiError)) {
@@ -190,6 +270,7 @@ export function relayMcpError(
   const recoveryAction = terminalIosMutationOutcomeUnknown
     ? undefined
     : recoveryActionFrom(body?.recoveryAction);
+  const profileSafe = profileSafeRecovery(recovery, recoveryAction, options);
 
   return {
     operationId,
@@ -197,8 +278,9 @@ export function relayMcpError(
     code,
     message,
     ...(terminalIosMutationOutcomeUnknown ? { terminal: "review-needed" as const } : {}),
-    recovery,
-    ...(recoveryAction ? { recoveryAction } : {}),
+    recovery: profileSafe.recovery,
+    ...(profileSafe.recoveryAction ? { recoveryAction: profileSafe.recoveryAction } : {}),
+    ...(profileSafe.recoveryGuidance ? { recoveryGuidance: profileSafe.recoveryGuidance } : {}),
     ...(revision === undefined ? {} : { currentRevision: revision }),
     ...(iosReview ? { iosReview } : {}),
   };

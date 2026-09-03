@@ -247,6 +247,8 @@ export type BuildDto = {
   environmentRevision?: string;
   applicationId?: string;
   deploymentDigest?: string;
+  webDeploymentMode?: "provider-verified" | "self-managed";
+  webProviderReceipt?: import("./index.js").WebBuildProviderReceipt;
   status: "uploaded" | "ready" | "failed" | "archived";
   createdAt: number;
   updatedAt: number;
@@ -635,7 +637,10 @@ type SpecificOperationMap = {
   "job.cancel": { input: { jobId: string }; output: { job: OperationRecord } };
   "job.pause": { input: { jobId: string }; output: { job: OperationRecord } };
   "job.resume": { input: { jobId: string }; output: { job: OperationRecord } };
-  "run.list": { input: { limit?: number; appMapId?: string }; output: { runs: RunSummaryDto[] } };
+  "run.list": {
+    input: { limit?: number; appMapId?: string; cursor?: string };
+    output: { runs: RunSummaryDto[]; totalCount?: number; nextCursor?: string };
+  };
   "run.get": { input: { runId: string }; output: { run: OperationRecord } };
   "run.replay.offline": {
     input: { runId: string };

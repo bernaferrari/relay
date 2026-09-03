@@ -1,11 +1,4 @@
 import * as z from "zod/v4";
-import { browserEnvironmentInputSchema, browserViewportSchema } from "./browser-case-profile.js";
-import {
-  browserDeviceControlInputSchema,
-  browserDeviceFrameInputSchema,
-  browserDeviceInspectInputSchema,
-  browserDeviceOpenInputSchema,
-} from "./browser-device.js";
 import { browserAuthenticationFixtureOperationInputSchemas } from "./browser-authentication-fixture.js";
 import {
   appMapTestCompileInputSchema,
@@ -25,21 +18,19 @@ import { workflowRecordOperationInputSchemas } from "./workflow-record-operation
 import { changeVerificationOperationInputSchemas } from "./change-verification-operation-schemas.js";
 import { proofSetupOperationInputSchemas } from "./proof-setup.js";
 import { repeatFailureKindSchema } from "./repeat-failure.js";
+import { targetOperationInputSchemas } from "./target-operation-input-schemas.js";
 import {
   authoringInteraction,
   authoringRecordingEdit,
   authoringTarget,
   connectionDestination,
   destination,
-  empty,
   identifier,
   natural,
   point,
   queryBoolean,
   sessionReference,
   stepTarget,
-  tapPoint,
-  targetReference,
   text,
   unknownRecord,
 } from "./operation-schema-primitives.js";
@@ -59,211 +50,7 @@ export const operationInputSchemas = {
   ...changeVerificationOperationInputSchemas,
   ...proofSetupOperationInputSchemas,
   ...browserAuthenticationFixtureOperationInputSchemas,
-  "target.create": z
-    .object({
-      id: identifier("Optional stable target identifier").optional(),
-      name: text("Human-readable target name"),
-      startUrl: z.url(),
-      headless: z.boolean().optional(),
-      viewport: browserViewportSchema.optional(),
-      environment: browserEnvironmentInputSchema.optional(),
-      profileRetention: z.enum(["retain", "ephemeral"]).optional(),
-    })
-    .strict(),
-  "target.delete": z.object({ targetId: identifier("Managed target identifier") }).strict(),
-  "target.preflight": z.object({ targetId: identifier("Managed target identifier") }).strict(),
-  "target.open": z.object({ targetId: identifier("Managed browser target identifier") }).strict(),
-  "target.browser-device.open": browserDeviceOpenInputSchema,
-  "target.browser-device.frame": browserDeviceFrameInputSchema,
-  "target.browser-device.frame-binary": browserDeviceFrameInputSchema,
-  "target.browser-device.inspect": browserDeviceInspectInputSchema,
-  "target.browser-device.control": browserDeviceControlInputSchema,
-  "system.doctor.get": empty,
-  "target.list": empty,
-  "target.devices.list": z.object({ phase: z.literal("android").optional() }).strict(),
-  "target.avds.list": empty,
-  "target.avd.boot": z
-    .object({
-      avdName: identifier("Exact configured Android AVD name"),
-      timeoutMs: z.number().int().min(1_000).max(300_000).optional(),
-      headless: z.boolean().optional(),
-    })
-    .strict(),
-  "target.boot": z.object(targetReference).strict(),
-  "target.authorize": z.object(targetReference).strict(),
-  "lease.list": z.object({ status: z.enum(["active", "all"]).optional() }).strict(),
-  "target.app.launch": z
-    .object({
-      ...targetReference,
-      app: text("App name, package, or bundle identifier"),
-      relaunch: z.boolean().optional(),
-    })
-    .strict(),
-  "target.interact": z
-    .object({
-      ...targetReference,
-      kind: z.enum([
-        "label",
-        "identifier",
-        "point",
-        "ref",
-        "find",
-        "text-match",
-        "swipe",
-        "type",
-        "key",
-        "replace",
-      ]),
-      preview: z.boolean().optional().describe("If true, resolve or annotate only — no commit tap"),
-      identifier: z
-        .string()
-        .min(1)
-        .optional()
-        .describe("Required when kind is 'identifier': accessibility identifier to tap"),
-      label: z
-        .string()
-        .min(1)
-        .optional()
-        .describe("Required when kind is 'label': accessibility label to tap"),
-      text: z
-        .string()
-        .optional()
-        .describe(
-          "Required when kind is 'type' or 'replace': text to type (type) or replace the target's content with (replace)",
-        ),
-      x: z
-        .number()
-        .optional()
-        .describe("Required when kind is 'point': x coordinate in captured viewport pixels"),
-      y: z
-        .number()
-        .optional()
-        .describe("Required when kind is 'point': y coordinate in captured viewport pixels"),
-      from: tapPoint
-        .optional()
-        .describe("Required when kind is 'swipe': swipe start point { x, y }"),
-      to: tapPoint.optional().describe("Required when kind is 'swipe': swipe end point { x, y }"),
-      durationMs: z.number().int().positive().optional(),
-      ref: z.string().min(1).optional(),
-      query: z.string().min(1).optional(),
-      match: z.string().min(1).optional(),
-      key: z
-        .enum(["enter", "backspace", "back", "home"])
-        .optional()
-        .describe("Required when kind is 'key': which system key to send"),
-      target: z
-        .object({
-          identifier: z.string().min(1).optional(),
-          ref: z.string().min(1).optional(),
-          label: z.string().min(1).optional(),
-          text: z.string().min(1).optional(),
-          point: tapPoint.optional(),
-        })
-        .strict()
-        .optional(),
-    })
-    .strict(),
-  "target.ground": z
-    .object({
-      ...targetReference,
-      target: z
-        .union([
-          text("Accessibility label, identifier, or natural-language control name"),
-          z
-            .object({
-              kind: z.enum([
-                "label",
-                "identifier",
-                "point",
-                "ref",
-                "find",
-                "text-match",
-                "swipe",
-                "type",
-                "key",
-                "replace",
-              ]),
-            })
-            .catchall(z.unknown()),
-        ])
-        .describe("Text to resolve, or a full InteractInput to passthrough"),
-      screenshot: z
-        .object({
-          base64: text("PNG/JPEG base64 screenshot for vision fallback"),
-          mime: z.string().optional(),
-        })
-        .strict()
-        .optional(),
-    })
-    .strict(),
-  "target.do": z
-    .object({
-      ...targetReference,
-      target: z
-        .union([
-          text("Accessibility label, identifier, or natural-language control name"),
-          z
-            .object({
-              kind: z.enum([
-                "label",
-                "identifier",
-                "point",
-                "ref",
-                "find",
-                "text-match",
-                "swipe",
-                "type",
-                "key",
-                "replace",
-              ]),
-            })
-            .catchall(z.unknown()),
-        ])
-        .describe("Text to ground then tap, or a full InteractInput"),
-    })
-    .strict(),
-  "target.ui.describe": z.object(targetReference).strict(),
-  "target.ui.back": z
-    .object({
-      ...targetReference,
-      parentTitles: z.array(z.string()).optional(),
-    })
-    .strict(),
-  "target.ui.scrollCollect": z
-    .object({
-      ...targetReference,
-      maxScrolls: z.number().int().min(0).max(8).optional(),
-      allowSensitive: z.boolean().optional(),
-    })
-    .strict(),
-  "target.touch": z
-    .object({
-      ...targetReference,
-      action: z.enum(["down", "move", "up", "cancel"]),
-      x: z.number(),
-      y: z.number(),
-    })
-    .strict(),
-  "target.key": z
-    .object({
-      ...targetReference,
-      kind: z.enum(["text", "key"]),
-      text: z.string().optional(),
-      key: z.enum(["enter", "backspace"]).optional(),
-    })
-    .strict(),
-  "target.scroll": z
-    .object({
-      ...targetReference,
-      x: z.number(),
-      y: z.number(),
-      scrollX: z.number(),
-      scrollY: z.number(),
-    })
-    .strict(),
-  "target.video.start": z
-    .object({ ...targetReference, action: z.enum(["start", "stop"]) })
-    .strict(),
+  ...targetOperationInputSchemas,
   "project.save": z
     .object({ id: identifier("Project identifier"), name: text("Project name") })
     .strict(),
@@ -282,6 +69,23 @@ export const operationInputSchemas = {
         .string()
         .regex(/^sha256:[a-f0-9]{64}$/u)
         .optional(),
+      webDeploymentMode: z.enum(["provider-verified", "self-managed"]).optional(),
+      webProviderReceipt: z
+        .object({
+          schemaVersion: z.literal(1),
+          issuer: z.literal("relay-web-deployment-provider"),
+          provider: identifier("Web deployment provider"),
+          deploymentId: identifier("Web deployment identifier"),
+          sourceUrl: z.string().trim().min(1).max(2_048),
+          sourceSha: z.string().regex(/^[a-f0-9]{40}$/u),
+          deploymentDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/u),
+          configuration: identifier("Web deployment configuration"),
+          environmentRevision: identifier("Web deployment environment revision"),
+          issuedAt: z.number().int().nonnegative(),
+          signature: z.string().regex(/^[A-Za-z0-9_-]{43}$/u),
+        })
+        .strict()
+        .optional(),
       status: z.string().optional(),
     })
     .strict()
@@ -294,38 +98,44 @@ export const operationInputSchemas = {
             message: "is only valid for web deployments",
           });
         }
+        if (input.webDeploymentMode !== undefined || input.webProviderReceipt !== undefined) {
+          context.addIssue({
+            code: "custom",
+            path: [
+              input.webDeploymentMode !== undefined ? "webDeploymentMode" : "webProviderReceipt",
+            ],
+            message: "is only valid for web deployments",
+          });
+        }
         return;
       }
-      if (!input.sourceUrl) {
-        context.addIssue({ code: "custom", path: ["sourceUrl"], message: "is required for web" });
+      if (input.webDeploymentMode === "self-managed") {
+        if (!input.sourceUrl) {
+          context.addIssue({
+            code: "custom",
+            path: ["sourceUrl"],
+            message: "is required for self-managed web development",
+          });
+        }
+        if (input.webProviderReceipt !== undefined) {
+          context.addIssue({
+            code: "custom",
+            path: ["webProviderReceipt"],
+            message: "is not valid for self-managed web development",
+          });
+        }
+        return;
       }
-      if (!input.deploymentDigest) {
+      if (!input.webProviderReceipt) {
         context.addIssue({
           code: "custom",
-          path: ["deploymentDigest"],
-          message: "is required for web",
+          path: ["webProviderReceipt"],
+          message: "a signed provider receipt is required for provider-verified web builds",
         });
-      }
-      if (!input.sourceSha || !/^[a-f0-9]{40}$/u.test(input.sourceSha)) {
-        context.addIssue({
-          code: "custom",
-          path: ["sourceSha"],
-          message: "must be an exact lowercase 40-character Git SHA for web",
-        });
-      }
-      if (!input.configuration?.trim()) {
-        context.addIssue({
-          code: "custom",
-          path: ["configuration"],
-          message: "is required for web",
-        });
-      }
-      if (!input.environmentRevision?.trim()) {
-        context.addIssue({
-          code: "custom",
-          path: ["environmentRevision"],
-          message: "is required for web",
-        });
+      } else if (!input.sourceUrl) {
+        // The receipt is authoritative for the deployment URL, so clients do
+        // not need to repeat a mutable copy in the ordinary build input.
+        return;
       }
     }),
   "device-pool.save": z

@@ -5,11 +5,14 @@
 import { execFileSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { adbSwipeInputArgs } from "./adb-input.js";
+import { resolveAndroidSdkToolSync } from "./android-sdk-tools.js";
 
 export function rawScreenshot(path: string, serial?: string): void {
   if (!serial) throw new Error("Explicit Android target serial is required");
   const args = ["-s", serial, "exec-out", "screencap", "-p"];
-  const buf = execFileSync("adb", args, { maxBuffer: 20 * 1024 * 1024 });
+  const buf = execFileSync(resolveAndroidSdkToolSync("adb"), args, {
+    maxBuffer: 20 * 1024 * 1024,
+  });
   writeFileSync(path, buf);
 }
 
@@ -17,7 +20,7 @@ export function rawScreenshot(path: string, serial?: string): void {
 export function rawTap(x: number, y: number, serial?: string): void {
   if (!serial) throw new Error("Explicit Android target serial is required");
   const args = ["-s", serial, "shell", "input", "tap", String(x), String(y)];
-  execFileSync("adb", args, { timeout: 5000 });
+  execFileSync(resolveAndroidSdkToolSync("adb"), args, { timeout: 5000 });
 }
 
 export function androidKeyCode(
@@ -33,9 +36,13 @@ export function androidKeyCode(
 export function rawKey(key: "enter" | "backspace" | "back" | "home", serial?: string): void {
   if (!serial) throw new Error("Explicit Android target serial is required");
   const keyCode = androidKeyCode(key);
-  execFileSync("adb", ["-s", serial, "shell", "input", "keyevent", keyCode], {
-    timeout: 5000,
-  });
+  execFileSync(
+    resolveAndroidSdkToolSync("adb"),
+    ["-s", serial, "shell", "input", "keyevent", keyCode],
+    {
+      timeout: 5000,
+    },
+  );
 }
 
 /** Raw adb input swipe — works without a session, on any app. */
@@ -48,5 +55,5 @@ export function rawSwipe(
   if (!serial) throw new Error("Explicit Android target serial is required");
   const inputArgs = adbSwipeInputArgs(from, to, durationMs);
   const args = ["-s", serial, "shell", ...inputArgs];
-  execFileSync("adb", args, { timeout: 8000 });
+  execFileSync(resolveAndroidSdkToolSync("adb"), args, { timeout: 8000 });
 }

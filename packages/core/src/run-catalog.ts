@@ -13,6 +13,17 @@ export type CatalogSurfaceComparison = {
   artifactCapturedAt: number;
 };
 
+export type CatalogSummaryCursor = {
+  writtenAt: number;
+  id: string;
+};
+
+export type CatalogSummaryPage = {
+  summaries: RunSummary[];
+  totalCount: number;
+  nextCursor?: CatalogSummaryCursor;
+};
+
 const SURFACE_COMPARISON_KEY = /^surface-comparison-v1-[a-f0-9]{64}$/;
 
 function database(root: string): DatabaseSync {
@@ -285,15 +296,62 @@ export async function catalogSummaries(
       actionPrefix
         ? db
             .prepare(
-              "SELECT * FROM runs WHERE substr(action, 1, ?) = ? ORDER BY written_at DESC LIMIT ?",
+              "SELECT * FROM runs WHERE substr(action, 1, ?) = ? ORDER BY written_at DESC, id DESC LIMIT ?",
             )
             .all(actionPrefix.length, actionPrefix, limit)
-        : db.prepare("SELECT * FROM runs ORDER BY written_at DESC LIMIT ?").all(limit)
+        : db.prepare("SELECT * FROM runs ORDER BY written_at DESC, id DESC LIMIT ?").all(limit)
     ) as Array<Record<string, unknown>>;
     return rows.map((row) => {
       const { dir: _dir, ...summary } = rowToRecord(row);
       return summary;
     });
+  } finally {
+    db.close();
+  }
+}
+
+/** Read one bounded, stable page from the rebuildable run-summary catalog. */
+export async function catalogSummaryPage(
+  root: string,
+  limit = 40,
+  actionPrefix?: string,
+  cursor?: CatalogSummaryCursor,
+): Promise<CatalogSummaryPage> {
+  await mkdir(root, { recursive: true });
+  const db = database(root);
+  try {
+    const filter = actionPrefix ? " WHERE substr(action, 1, ?) = ?" : "";
+    const cursorFilter = cursor
+      ? `${filter ? " AND" : " WHERE"} (written_at < ? OR (written_at = ? AND id < ?))`
+      : "";
+    const args: Array<string | number> = actionPrefix ? [actionPrefix.length, actionPrefix] : [];
+    if (cursor) args.push(cursor.writtenAt, cursor.writtenAt, cursor.id);
+    const totalRow = db
+      .prepare(`SELECT COUNT(*) AS count FROM runs${filter}`)
+      .get(...args.slice(0, actionPrefix ? 2 : 0)) as {
+      count?: number;
+    };
+    const rows = db
+      .prepare(
+        `SELECT * FROM runs${filter}${cursorFilter} ORDER BY written_at DESC, id DESC LIMIT ?`,
+      )
+      .all(...args, Math.max(1, Math.min(Math.floor(limit), 200)) + 1) as Array<
+      Record<string, unknown>
+    >;
+    const hasMore = rows.length > Math.max(1, Math.min(Math.floor(limit), 200));
+    const pageRows = hasMore ? rows.slice(0, -1) : rows;
+    const summaries = pageRows.map((row) => {
+      const { dir: _dir, ...summary } = rowToRecord(row);
+      return summary;
+    });
+    const last = pageRows.at(-1);
+    return {
+      summaries,
+      totalCount: Number(totalRow.count ?? 0),
+      ...(hasMore && last
+        ? { nextCursor: { writtenAt: Number(last.written_at), id: String(last.id) } }
+        : {}),
+    };
   } finally {
     db.close();
   }

@@ -3,6 +3,7 @@ import { mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import { resolveAndroidSdkTool } from "./android-sdk-tools.js";
 import { currentTargetContext } from "./target-context.js";
 
 const execFileAsync = promisify(execFile);
@@ -265,7 +266,7 @@ export async function captureNativeCrashEvidence(since: number): Promise<CrashEv
 
   if (target.platform === "android") {
     const { stdout } = await execFileAsync(
-      "adb",
+      await resolveAndroidSdkTool("adb"),
       androidArgs(target.serial, ["logcat", "-b", "crash", "-d", "-v", "epoch", "-t", "2000"]),
       { maxBuffer: MAX_CRASH_OUTPUT_BYTES * 2 },
     );

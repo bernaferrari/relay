@@ -5,6 +5,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { readWorkspaceSetting, writeWorkspaceSetting } from "./workspace-settings.js";
+import { resolveAndroidSdkTool } from "./android-sdk-tools.js";
 import {
   DEFAULT_IOS_LIVE_PREVIEW,
   parseIosLivePreviewSettings,
@@ -557,7 +558,12 @@ export function agentDeviceDaemonPidsForStateDir(output: string, stateDir: strin
 
 /** Read-only availability check for Android Platform Tools. */
 export async function inspectAndroidDeviceSetup(): Promise<AndroidSetupStatus> {
-  const adb = await commandAvailable("adb", ["version"]);
+  let adbDiagnostic: string | undefined;
+  const adbPath = await resolveAndroidSdkTool("adb").catch((error: unknown) => {
+    adbDiagnostic = error instanceof Error ? error.message : String(error);
+    return undefined;
+  });
+  const adb = adbPath ? await commandAvailable(adbPath, ["version"]) : null;
   return {
     checks: [
       {
@@ -566,7 +572,7 @@ export async function inspectAndroidDeviceSetup(): Promise<AndroidSetupStatus> {
         status: adb ? "ready" : "needs-attention",
         detail: adb
           ? adb.split("\n")[0]!
-          : "Install Platform Tools, then reopen Relay so it can find adb.",
+          : (adbDiagnostic ?? "Install Platform Tools, then reopen Relay so it can find adb."),
       },
     ],
   };

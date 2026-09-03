@@ -20,6 +20,7 @@ import {
 } from "./control.js";
 import { runTargetMutation } from "./target-control.js";
 import { selectedPlatform, targetIdentity } from "./target-context.js";
+import { resolveAndroidSdkTool } from "./android-sdk-tools.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -52,6 +53,10 @@ function requireAndroidBuildControl(packageName: string): void {
   }
 }
 
+async function execAndroidAdb(args: string[]) {
+  return execFileAsync(await resolveAndroidSdkTool("adb"), args);
+}
+
 /** Parse the stable fields from `adb shell dumpsys package`. Exported so the
  * evidence reader remains testable without a connected device. */
 export function parseAndroidAppBuild(packageName: string, output: string): AndroidAppBuild {
@@ -72,7 +77,7 @@ export async function inspectAndroidApp(packageName: string): Promise<AndroidApp
   throwIfCancelled();
   try {
     const { stdout } = await raceCancel(
-      execFileAsync("adb", androidAdbArgs(["shell", "dumpsys", "package", packageName])),
+      execAndroidAdb(androidAdbArgs(["shell", "dumpsys", "package", packageName])),
     );
     return parseAndroidAppBuild(packageName, String(stdout));
   } catch (error) {
@@ -94,7 +99,7 @@ export type SetAndroidAppLocaleOptions = {
 };
 
 function defaultAdbCommand(args: string[]): Promise<{ stdout?: string; stderr?: string }> {
-  return execFileAsync("adb", androidAdbArgs(args));
+  return execAndroidAdb(androidAdbArgs(args));
 }
 
 async function readAppLocale(
@@ -194,12 +199,12 @@ export async function changeAndroidAppBuild(input: {
   throwIfCancelled();
   if (action === "uninstall") {
     await mutateCurrentTarget(() =>
-      raceCancel(execFileAsync("adb", androidAdbArgs(["uninstall", packageName]))),
+      raceCancel(execAndroidAdb(androidAdbArgs(["uninstall", packageName]))),
     );
     return { packageName, installed: false };
   }
   const args =
     action === "update" ? ["install", "-r", trimmedArtifact!] : ["install", trimmedArtifact!];
-  await mutateCurrentTarget(() => raceCancel(execFileAsync("adb", androidAdbArgs(args))));
+  await mutateCurrentTarget(() => raceCancel(execAndroidAdb(androidAdbArgs(args))));
   return await inspectAndroidApp(packageName);
 }

@@ -257,6 +257,7 @@ const mapOperations = [
   "target.screenshot.capture",
   "lease.list",
   "lease.create",
+  "lease.release",
   "app-map.list",
   "app-map.get",
   "app-map.scroll-surface.origin.inspect",
@@ -306,6 +307,7 @@ const testOperations = [
   "target.screenshot.capture",
   "lease.list",
   "lease.create",
+  "lease.release",
   "app-map.list",
   "app-map.get",
   "app-map.test.save",
@@ -343,6 +345,7 @@ const runOperations = [
   "target.recover",
   "lease.list",
   "lease.create",
+  "lease.release",
   "app-map.list",
   "app-map.get",
   "app-map.test.run",
@@ -394,6 +397,7 @@ const localeOperations = [
   "target.recover",
   "lease.list",
   "lease.create",
+  "lease.release",
   "app-map.list",
   "app-map.get",
   "app-map.variable.save",
@@ -638,4 +642,20 @@ export function assertRelayMcpToolParity(
   }
 }
 
+function assertBalancedLeaseLifecycle(): void {
+  for (const profile of relayMcpProfiles) {
+    const operationIds = new Set(
+      relayMcpToolsForProfile(profile).map(({ operationId }) => operationId),
+    );
+    const creates = operationIds.has("lease.create");
+    const releases = operationIds.has("lease.release");
+    if (creates !== releases) {
+      throw new Error(
+        `MCP lease lifecycle mismatch for profile ${profile}: lease.create and lease.release must be exposed together`,
+      );
+    }
+  }
+}
+
+assertBalancedLeaseLifecycle();
 assertRelayMcpToolParity();

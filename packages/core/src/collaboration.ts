@@ -17,6 +17,7 @@ import { APP_MAP_SCHEMA_VERSION, validateAppMap } from "./app-map.js";
 import { rescopeAppMap } from "./app-map-yaml.js";
 import { validateDevicePool } from "./device-pool.js";
 import { currentOperationContext } from "./operation-context.js";
+import { assertWebBuildProviderReceipt } from "./web-build-verification.js";
 import {
   readControlStore,
   withControlStore,
@@ -61,6 +62,61 @@ function writeRevision<T>(current: Revisioned<T>, write: RevisionWrite<T>): Revi
   };
 }
 
+type BuildRegistrationInput = Omit<Build, "createdAt" | "updatedAt">;
+
+function isLoopbackDevelopmentUrl(value: string | undefined): boolean {
+  try {
+    const url = new URL(value?.trim() ?? "");
+    return (
+      url.protocol === "http:" &&
+      (url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "[::1]")
+    );
+  } catch {
+    return false;
+  }
+}
+
+function assertWebBuildRegistrationTrust(input: BuildRegistrationInput): BuildRegistrationInput {
+  if (input.platform !== "web") return input;
+
+  const mode =
+    input.webDeploymentMode ?? (input.webProviderReceipt ? "provider-verified" : undefined);
+  if (mode === "self-managed") {
+    if (!isLoopbackDevelopmentUrl(input.sourceUrl)) {
+      throw new Error("Self-managed web builds require a loopback development URL");
+    }
+    if (
+      input.sourceSha !== undefined ||
+      input.deploymentDigest !== undefined ||
+      input.webProviderReceipt !== undefined
+    ) {
+      throw new Error(
+        "Self-managed web builds cannot claim provider sourceSha or deploymentDigest",
+      );
+    }
+    return input;
+  }
+
+  if (mode !== "provider-verified" || !input.webProviderReceipt) {
+    throw new Error("Provider-verified web builds require an exact signed provider receipt");
+  }
+  assertWebBuildProviderReceipt(input.webProviderReceipt);
+  if (input.webProviderReceipt.deploymentId !== input.id) {
+    throw new Error("Web build id does not match the signed provider deployment id");
+  }
+  const trusted = {
+    ...input,
+    sourceUrl: input.sourceUrl ?? input.webProviderReceipt.sourceUrl,
+    sourceSha: input.sourceSha ?? input.webProviderReceipt.sourceSha,
+    deploymentDigest: input.deploymentDigest ?? input.webProviderReceipt.deploymentDigest,
+    configuration: input.configuration ?? input.webProviderReceipt.configuration,
+    environmentRevision: input.environmentRevision ?? input.webProviderReceipt.environmentRevision,
+    webDeploymentMode: "provider-verified" as const,
+  };
+  assertWebBuildProviderReceipt(input.webProviderReceipt, trusted);
+  return trusted;
+}
+
 export async function listProjects(organizationId = "local"): Promise<Project[]> {
   return (await readControlStore((store) => store.projects())).filter(
     (project) => project.organizationId === organizationId,
@@ -94,32 +150,32 @@ export async function readBuild(projectId: string, id: string): Promise<Build | 
   return (await listBuilds(projectId)).find((item) => item.id === id) ?? null;
 }
 
-export async function saveBuild(input: Omit<Build, "createdAt" | "updatedAt">): Promise<Build> {
+export async function saveBuild(input: BuildRegistrationInput): Promise<Build> {
+  const trustedInput = assertWebBuildRegistrationTrust(input);
   return withControlStore((store) => {
     const at = now();
     const existing = store
-      .builds(input.projectId)
-      .find((item) => item.projectId === input.projectId && item.id === input.id);
-    const build = { ...input, createdAt: existing?.createdAt ?? at, updatedAt: at };
+      .builds(trustedInput.projectId)
+      .find((item) => item.projectId === trustedInput.projectId && item.id === trustedInput.id);
+    const build = { ...trustedInput, createdAt: existing?.createdAt ?? at, updatedAt: at };
     store.upsertBuild(build);
     emit({
       type: existing ? "resource.updated" : "resource.created",
       at,
-      projectId: input.projectId,
+      projectId: trustedInput.projectId,
       resource: "build",
-      resourceId: input.id,
+      resourceId: trustedInput.id,
     });
     return build;
   });
 }
 
 /** Persist one reviewed Build set in a single ControlStore transaction. */
-export async function saveBuilds(
-  inputs: readonly Omit<Build, "createdAt" | "updatedAt">[],
-): Promise<Build[]> {
+export async function saveBuilds(inputs: readonly BuildRegistrationInput[]): Promise<Build[]> {
+  const trustedInputs = inputs.map(assertWebBuildRegistrationTrust);
   return withControlStore((store) => {
     const at = now();
-    return inputs.map((input) => {
+    return trustedInputs.map((input) => {
       const existing = store
         .builds(input.projectId)
         .find((item) => item.projectId === input.projectId && item.id === input.id);

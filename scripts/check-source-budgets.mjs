@@ -18,9 +18,8 @@ export const grandfatheredSourceLimits = Object.freeze({
   "packages/app/src/components/runs-workspace.tsx": 961,
   "packages/app/src/components/stage.tsx": 1384,
   "packages/app/src/components/studio-shell.tsx": 813,
-  "packages/core/src/device.ts": 1356,
-  "packages/protocol/src/operations.ts": 1735,
-  "packages/server/src/app-map-run-routes.ts": 913,
+  "packages/core/src/device.ts": 1345,
+  "packages/protocol/src/operations.ts": 1712,
 });
 
 export function defaultSourceLimit(path) {

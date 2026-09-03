@@ -87,6 +87,20 @@ test("build registration accepts a verified web deployment identity", () => {
     deploymentDigest: `sha256:${"b".repeat(64)}`,
     configuration: "web.production",
     environmentRevision: "preview-v12",
+    webDeploymentMode: "provider-verified",
+    webProviderReceipt: {
+      schemaVersion: 1,
+      issuer: "relay-web-deployment-provider",
+      provider: "vercel",
+      deploymentId: "web-preview",
+      sourceUrl: "https://preview.example.com/pr-184",
+      sourceSha: "a".repeat(40),
+      deploymentDigest: `sha256:${"b".repeat(64)}`,
+      configuration: "web.production",
+      environmentRevision: "preview-v12",
+      issuedAt: 1,
+      signature: "s".repeat(43),
+    },
     status: "ready",
   };
   assert.deepEqual(operationDefinition("build.save").input.parse(build), build);
@@ -97,6 +111,27 @@ test("build registration accepts a verified web deployment identity", () => {
         deploymentDigest: "not-a-digest",
       }),
     /deploymentDigest/u,
+  );
+  const receiptOnly = {
+    id: build.id,
+    name: build.name,
+    platform: build.platform,
+    webDeploymentMode: build.webDeploymentMode,
+    webProviderReceipt: build.webProviderReceipt,
+    status: build.status,
+  };
+  assert.deepEqual(operationDefinition("build.save").input.parse(receiptOnly), receiptOnly);
+  const localDevelopment = {
+    id: "web-local",
+    name: "Local web development",
+    platform: "web" as const,
+    webDeploymentMode: "self-managed" as const,
+    sourceUrl: "http://localhost:4173",
+    status: "ready" as const,
+  };
+  assert.deepEqual(
+    operationDefinition("build.save").input.parse(localDevelopment),
+    localDevelopment,
   );
 });
 
@@ -463,6 +498,23 @@ test("run review can request another human decision without resolving the Run", 
   assert.throws(
     () => review.input.parse({ runId: "run-1", action: "approve-baseline" }),
     /approve.*reject.*defer/u,
+  );
+});
+
+test("run list accepts bounded opaque continuation cursors", () => {
+  const definition = operationDefinition("run.list");
+  assert.deepEqual(definition.input.parse({ limit: "100", cursor: "opaque-page" }), {
+    limit: 100,
+    cursor: "opaque-page",
+  });
+  assert.throws(() => definition.input.parse({ cursor: "" }), /run list cursor/u);
+  assert.throws(() => definition.input.parse({ cursor: 12 }), /run list cursor/u);
+  assert.doesNotThrow(() =>
+    definition.output.parse({
+      runs: [],
+      totalCount: 205,
+      nextCursor: "opaque-page",
+    }),
   );
 });
 

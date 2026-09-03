@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { resolveAndroidSdkTool } from "./android-sdk-tools.js";
 import { parseAndroidLocaleOutput } from "./android-locale-tags.js";
 import { captureAndroidForegroundApp } from "./android-ui-snapshot.js";
 import { inspectAndroidApp, type AndroidAppBuild } from "./device.js";
@@ -16,9 +17,13 @@ type RuntimeFactDependencies = {
 };
 
 async function adb(serial: string, args: string[]): Promise<string> {
-  const { stdout } = await execFileAsync("adb", ["-s", serial, "shell", ...args], {
-    timeout: 3_000,
-  });
+  const { stdout } = await execFileAsync(
+    await resolveAndroidSdkTool("adb"),
+    ["-s", serial, "shell", ...args],
+    {
+      timeout: 3_000,
+    },
+  );
   return String(stdout);
 }
 

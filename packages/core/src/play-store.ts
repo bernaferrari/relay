@@ -16,8 +16,13 @@ import {
   snapshot,
   waitFor,
 } from "./device.js";
+import { resolveAndroidSdkTool } from "./android-sdk-tools.js";
 
 const execFileAsync = promisify(execFile);
+
+async function execAndroidAdb(args: string[]) {
+  return execFileAsync(await resolveAndroidSdkTool("adb"), args);
+}
 
 /** Personal/home Play account to restore after alpha work (substring). Default: gmail.com */
 export const HOME_ACCOUNT_MATCH =
@@ -172,7 +177,7 @@ export async function openGrokListing(device: Device): Promise<void> {
   try {
     await openUrl(device, `market://details?id=${GROK_PACKAGE}`);
   } catch {
-    await execFileAsync("adb", [
+    await execAndroidAdb([
       "shell",
       "am",
       "start",

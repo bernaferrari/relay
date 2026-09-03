@@ -612,8 +612,29 @@ test("defines deterministic advanced profiles behind the compact outcome default
   for (const profile of relayMcpProfiles) {
     const selected = relayMcpToolsForProfile(profile);
     assert.equal(new Set(selected.map(({ operationId }) => operationId)).size, selected.length);
-    if (profile !== "full") assert.ok(selected.length <= 42, `${profile}: ${selected.length}`);
+    if (profile !== "full") assert.ok(selected.length <= 43, `${profile}: ${selected.length}`);
   }
+});
+
+test("profiles expose a balanced lease lifecycle", () => {
+  for (const profile of relayMcpProfiles) {
+    const operations = new Set(
+      relayMcpToolsForProfile(profile).map(({ operationId }) => operationId),
+    );
+    assert.equal(
+      operations.has("lease.create"),
+      operations.has("lease.release"),
+      `${profile} must expose lease.create and lease.release together`,
+    );
+  }
+
+  // Taking over another actor's lease remains a dangerous full-profile
+  // operation. Profiles that can acquire/release their own lease retain the
+  // least-privilege boundary and receive operator guidance on conflicts.
+  assert.equal(
+    relayMcpToolsForProfile("control").some(({ operationId }) => operationId === "lease.takeover"),
+    false,
+  );
 });
 
 test("the proof profile composes the durable verify-change loop and recovery tools", () => {

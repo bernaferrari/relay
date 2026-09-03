@@ -90,6 +90,7 @@ export const executionOperationSchemas = {
     .object({
       limit: z.number().int().positive().optional(),
       appMapId: z.string().optional(),
+      cursor: z.string().min(1).max(512).optional(),
     })
     .strict(),
   "run.get": runRef,

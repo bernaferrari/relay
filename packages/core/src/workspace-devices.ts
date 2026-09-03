@@ -29,6 +29,7 @@ import {
 import { targetRuntimeReadiness } from "./target-runtime-readiness.js";
 import type { TargetRuntimeReadiness } from "@relay/protocol";
 import { androidAvdNameForSerial, observeAndroidAvdName } from "./android-avd.js";
+import { resolveAndroidSdkTool } from "./android-sdk-tools.js";
 
 export type ListedDevice = {
   id: string;
@@ -239,7 +240,7 @@ function explicitOsVersion(value: unknown): string | undefined {
 async function observedAndroidVersion(serial: string): Promise<string | undefined> {
   try {
     const result = await execFileAsync(
-      "adb",
+      await resolveAndroidSdkTool("adb"),
       ["-s", serial, "shell", "getprop", "ro.build.version.release"],
       {
         timeout: 1500,
@@ -508,7 +509,7 @@ export async function requestAndroidAuthorization(serial: string): Promise<void>
   if (attached.connectionState === "connected") return;
 
   await runTargetMutation(target, getExecutingJobId(), async () => {
-    await execFileAsync("adb", ["-s", target, "reconnect"], {
+    await execFileAsync(await resolveAndroidSdkTool("adb"), ["-s", target, "reconnect"], {
       timeout: 8_000,
       maxBuffer: 16 * 1024,
     });

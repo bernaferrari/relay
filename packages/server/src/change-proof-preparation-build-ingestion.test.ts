@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import {
   artifactDigestForProof,
+  issueWebBuildProviderReceiptFromAuthority,
   canonicalSha256,
   resetControlDatabaseCache,
   saveBuild,
@@ -98,20 +99,40 @@ test("Proof preparation ingests and binds reviewed Android and web Builds for th
           definition.platform === "web"
             ? deploymentDigest
             : await artifactDigestForProof(join(root, definition.artifactPath));
+        const webIdentity =
+          definition.platform === "web"
+            ? await issueWebBuildProviderReceiptFromAuthority({
+                expected: {
+                  deploymentId: definition.id,
+                  sourceUrl: definition.webDeployment!.url,
+                  sourceSha: testedSha,
+                  deploymentDigest,
+                  configuration: definition.configuration,
+                  environmentRevision,
+                },
+                lookup: async (expected) => ({
+                  provider: "fixture-host",
+                  ...expected,
+                }),
+              })
+            : undefined;
         const build = await saveBuild({
           id: definition.id,
           projectId: input.projectId,
           name: definition.name,
           platform: definition.platform,
-          sourceUrl:
-            definition.platform === "web"
-              ? definition.webDeployment!.url
-              : join(root, definition.artifactPath),
+          sourceUrl: webIdentity?.deployment.sourceUrl ?? join(root, definition.artifactPath),
           sourceSha256: "a".repeat(64),
           sourceSha: testedSha,
           configuration: definition.configuration,
           environmentRevision,
-          ...(definition.platform === "web" ? { deploymentDigest } : {}),
+          ...(webIdentity
+            ? {
+                deploymentDigest: webIdentity.deployment.deploymentDigest,
+                webDeploymentMode: "provider-verified" as const,
+                webProviderReceipt: webIdentity.receipt,
+              }
+            : {}),
           ...(definition.applicationId ? { applicationId: definition.applicationId } : {}),
           status: "ready",
         });

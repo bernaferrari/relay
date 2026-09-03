@@ -37,6 +37,20 @@ import {
   rebuildRunCatalog,
 } from "./run-catalog.js";
 import type { RunSummary } from "@relay/protocol";
+import {
+  listPersistedRunSummariesPageAtRoot,
+  listRunSummariesPageAtRoot,
+  type RunSummaryPage,
+  type RunSummaryPageInput as RunSummaryPageAtRootInput,
+  type PersistedRunSummaryPageInput as PersistedRunSummaryPageAtRootInput,
+} from "./run-summary-pagination.js";
+export { RunListCursorError } from "./run-summary-pagination.js";
+export type { RunSummaryPage } from "./run-summary-pagination.js";
+export type RunSummaryPageInput = Omit<RunSummaryPageAtRootInput, "rootDirectory">;
+export type PersistedRunSummaryPageInput = Omit<
+  PersistedRunSummaryPageAtRootInput,
+  "rootDirectory" | "loadRuns"
+>;
 import { findWorkspaceRoot } from "./workspace-root.js";
 import { redactPrivateInputs, redactPrivateValue } from "./private-inputs.js";
 import {
@@ -488,6 +502,20 @@ export async function listRunSummaries(limit = 40, appMapId?: string): Promise<R
     }
   }
   return summaries;
+}
+
+export function listRunSummariesPage(input: RunSummaryPageInput): Promise<RunSummaryPage> {
+  return listRunSummariesPageAtRoot({ ...input, rootDirectory: runsRoot() });
+}
+
+export function listPersistedRunSummariesPage(
+  input: PersistedRunSummaryPageInput,
+): Promise<RunSummaryPage> {
+  return listPersistedRunSummariesPageAtRoot({
+    ...input,
+    rootDirectory: runsRoot(),
+    loadRuns: listPersistedRuns,
+  });
 }
 
 export async function readPersistedRun(idOrDir: string): Promise<PersistedRun | null> {

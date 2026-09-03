@@ -48,6 +48,7 @@ import {
 import type { RequestContext } from "./security.js";
 import { assertRepeatWorkflowMutation } from "./repeat-workflow-receipt.js";
 import {
+  assertReviewedBrowserTargetProfile,
   explicitTargetAvailability,
   frozenEvidenceTargetProfileForTarget,
   offlinePreflightProfileRecovery,
@@ -445,29 +446,14 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
       target: body.target,
     });
     const selectedSurface = plan.testFamily?.targetSurface;
-    if (
-      plan.testFamily?.mode === "reviewed-route-variant" &&
-      selectedSurface?.platform === "browser"
-    ) {
-      const observedBrowser = targetProfile?.browserCaseProfile;
-      if (
-        !observedBrowser ||
-        observedBrowser.engine !== selectedSurface.browserEngine ||
-        (selectedSurface.viewport !== undefined &&
-          (observedBrowser.viewport.width !== selectedSurface.viewport.width ||
-            observedBrowser.viewport.height !== selectedSurface.viewport.height))
-      ) {
-        throw new HttpError(
-          409,
-          `Managed browser target ${targetId} no longer matches reviewed route ${plan.testFamily?.selectedRouteVariant?.id ?? "surface"}`,
-          {
-            code: "TARGET_PROFILE_TARGET_MISMATCH",
-            targetProfileId: selectedSurface.targetProfileId,
-            recovery:
-              "Restore the reviewed browser engine and viewport, or review a new route variant before running this Test.",
-          },
-        );
-      }
+    const isReviewedRoute = plan.testFamily?.mode === "reviewed-route-variant";
+    if (isReviewedRoute && selectedSurface?.platform === "browser") {
+      assertReviewedBrowserTargetProfile({
+        targetId,
+        targetSurface: selectedSurface,
+        observedBrowser: targetProfile?.browserCaseProfile,
+        routeVariantId: plan.testFamily?.selectedRouteVariant?.id,
+      });
     }
     let buildProvenance: Awaited<ReturnType<typeof prepareRegisteredBuildForProof>> | undefined;
     let webBuildBinding:

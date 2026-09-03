@@ -429,12 +429,22 @@ export class RelayClient {
       throw new ApiError(502, error instanceof Error ? error.message : String(error), body);
     }
   }
-  async runs(input: { limit?: number; appMapId?: string } = {}): Promise<{ runs: RunSummary[] }> {
+  async runs(
+    input: {
+      limit?: number;
+      appMapId?: string;
+      cursor?: string;
+    } = {},
+  ): Promise<{ runs: RunSummary[]; totalCount?: number; nextCursor?: string }> {
     const body = await this.invoke("run.list", input);
     if (!body || !Array.isArray(body.runs))
       throw new ApiError(502, "Malformed runs response", body);
     try {
-      return { runs: body.runs.map(parseRunSummary) };
+      return {
+        runs: body.runs.map(parseRunSummary),
+        ...(typeof body.totalCount === "number" ? { totalCount: body.totalCount } : {}),
+        ...(typeof body.nextCursor === "string" ? { nextCursor: body.nextCursor } : {}),
+      };
     } catch (error) {
       throw new ApiError(502, error instanceof Error ? error.message : String(error), body);
     }

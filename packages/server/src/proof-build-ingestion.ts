@@ -8,6 +8,8 @@ import {
   artifactDigestForProof,
   artifactSourceSha256,
   canonicalSha256,
+  issueWebBuildProviderReceiptFromAuthority,
+  type AuthoritativeWebDeploymentLookup,
   saveBuild,
 } from "@relay/core";
 import {
@@ -277,6 +279,9 @@ export async function ingestReviewedProofBuild(input: {
   definitionId: string;
   stateRoot?: string;
   save?: SaveBuild;
+  /** Trusted provider adapter. Reviewed web config is only an expectation and
+   * cannot mint provider provenance without this authoritative lookup. */
+  lookupWebDeployment?: AuthoritativeWebDeploymentLookup;
 }): Promise<{
   build: Build;
   verificationBuild: ChangeVerificationBuild;
@@ -324,32 +329,58 @@ export async function ingestReviewedProofBuild(input: {
       artifact,
     });
     const environmentRevision = observedEnvironmentRevision(definition, toolchain);
+    const webIdentity =
+      definition.platform === "web"
+        ? await issueWebBuildProviderReceiptFromAuthority({
+            lookup:
+              input.lookupWebDeployment ??
+              (() => {
+                throw new Error(
+                  "Provider-verified web ingestion requires an authoritative deployment lookup",
+                );
+              }),
+            expected: {
+              deploymentId: definition.id,
+              sourceUrl: definition.webDeployment!.url,
+              sourceSha: input.testedSha,
+              deploymentDigest: definition.webDeployment!.deploymentDigest as `sha256:${string}`,
+              configuration: definition.configuration,
+              environmentRevision,
+            },
+          })
+        : undefined;
     const buildInput: Omit<Build, "createdAt" | "updatedAt"> = {
       id: definition.id,
       projectId: input.projectId,
       name: definition.name,
       platform: definition.platform,
-      sourceUrl: definition.platform === "web" ? definition.webDeployment!.url : storedPath,
+      sourceUrl:
+        webIdentity?.deployment.sourceUrl ??
+        (definition.platform === "web" ? definition.webDeployment!.url : storedPath),
       sourceSha256: artifact.sourceSha256,
-      sourceSha: input.testedSha,
+      sourceSha: webIdentity?.deployment.sourceSha ?? input.testedSha,
       configuration: definition.configuration,
-      environmentRevision,
+      environmentRevision: webIdentity?.deployment.environmentRevision ?? environmentRevision,
       ...(definition.applicationId ? { applicationId: definition.applicationId } : {}),
       ...(definition.platform === "web"
-        ? { deploymentDigest: definition.webDeployment!.deploymentDigest }
+        ? {
+            deploymentDigest: webIdentity!.deployment.deploymentDigest,
+            webDeploymentMode: "provider-verified" as const,
+            webProviderReceipt: webIdentity!.receipt,
+          }
         : {}),
       status: "ready",
     };
     const build = await (input.save ?? saveBuild)(buildInput);
     const proofArtifactDigest =
-      definition.platform === "web" ? definition.webDeployment!.deploymentDigest : artifact.digest;
+      definition.platform === "web" ? webIdentity!.deployment.deploymentDigest : artifact.digest;
     const verificationBuild = changeVerificationBuildSchema.parse({
       id: definition.id,
       platform: definition.platform,
       artifactDigest: proofArtifactDigest,
-      sourceSha: input.testedSha,
+      sourceSha: webIdentity?.deployment.sourceSha ?? input.testedSha,
       configuration: definition.configuration,
-      environmentRevision,
+      environmentRevision: webIdentity?.deployment.environmentRevision ?? environmentRevision,
     });
     const receipt: ProofBuildIngestionReceipt = {
       schemaVersion: 1,

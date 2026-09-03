@@ -3,9 +3,20 @@ import { readdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { resolveAndroidSdkTool } from "./android-sdk-tools.js";
 import type { SnapshotNode } from "./device.js";
 
 const execFileAsync = promisify(execFile);
+
+type AndroidAdbExecOptions = {
+  timeout?: number;
+  maxBuffer?: number;
+  encoding?: BufferEncoding;
+};
+
+async function execAndroidAdb(args: string[], options: AndroidAdbExecOptions = {}) {
+  return execFileAsync(await resolveAndroidSdkTool("adb"), args, options);
+}
 
 type Attributes = Record<string, string>;
 
@@ -38,7 +49,7 @@ export function androidScreenIsInspectable(policy: string): boolean {
 }
 
 export async function wakeAndroidDisplay(serial: string): Promise<void> {
-  await execFileAsync("adb", ["-s", serial, "shell", "input", "keyevent", "KEYCODE_WAKEUP"], {
+  await execAndroidAdb(["-s", serial, "shell", "input", "keyevent", "KEYCODE_WAKEUP"], {
     timeout: 2_000,
   });
 }
@@ -47,8 +58,7 @@ export async function captureAndroidInspectionState(
   serial: string,
 ): Promise<AndroidInspectionState> {
   try {
-    const { stdout } = await execFileAsync(
-      "adb",
+    const { stdout } = await execAndroidAdb(
       ["-s", serial, "shell", "dumpsys", "window", "policy"],
       { timeout: 2_000, maxBuffer: 512 * 1024 },
     );
@@ -73,8 +83,7 @@ export function parseAndroidForegroundApp(output: string): string | undefined {
 /** Read the app that owns the pixels currently shown on the physical display. */
 export async function captureAndroidForegroundApp(serial: string): Promise<string | undefined> {
   try {
-    const { stdout } = await execFileAsync(
-      "adb",
+    const { stdout } = await execAndroidAdb(
       ["-s", serial, "shell", "dumpsys", "activity", "activities"],
       { timeout: 2_000, maxBuffer: 2 * 1024 * 1024 },
     );
@@ -347,11 +356,10 @@ function dumpAttemptFromNotice(notice: string): DumpAttempt {
 }
 
 async function dumpViaUiAutomatorFile(serial: string): Promise<DumpAttempt> {
-  await execFileAsync("adb", ["-s", serial, "shell", "rm", "-f", ANDROID_DUMP_PATH], {
+  await execAndroidAdb(["-s", serial, "shell", "rm", "-f", ANDROID_DUMP_PATH], {
     timeout: 2_000,
   }).catch(() => undefined);
-  const dumped = await execFileAsync(
-    "adb",
+  const dumped = await execAndroidAdb(
     ["-s", serial, "shell", "uiautomator", "dump", ANDROID_DUMP_PATH],
     { timeout: 6_000, maxBuffer: 64 * 1024, encoding: "utf8" },
   ).catch((error: unknown) => ({ stdout: "", stderr: dumpNotice(error) }));
@@ -359,11 +367,11 @@ async function dumpViaUiAutomatorFile(serial: string): Promise<DumpAttempt> {
   const classified = dumpAttemptFromNotice(notice);
   if (classified.blocked || classified.empty) return classified;
   try {
-    const { stdout } = await execFileAsync(
-      "adb",
-      ["-s", serial, "exec-out", "cat", ANDROID_DUMP_PATH],
-      { timeout: 4_000, maxBuffer: 4 * 1024 * 1024, encoding: "utf8" },
-    );
+    const { stdout } = await execAndroidAdb(["-s", serial, "exec-out", "cat", ANDROID_DUMP_PATH], {
+      timeout: 4_000,
+      maxBuffer: 4 * 1024 * 1024,
+      encoding: "utf8",
+    });
     return { nodes: parseAndroidUiSnapshot(stdout), blocked: false, empty: false };
   } catch {
     return { nodes: [], blocked: false, empty: false };
@@ -372,8 +380,7 @@ async function dumpViaUiAutomatorFile(serial: string): Promise<DumpAttempt> {
 
 async function dumpViaUiAutomatorExecOut(serial: string): Promise<DumpAttempt> {
   try {
-    const { stdout, stderr } = await execFileAsync(
-      "adb",
+    const { stdout, stderr } = await execAndroidAdb(
       ["-s", serial, "exec-out", "uiautomator", "dump", "--compressed", "/dev/tty"],
       { timeout: 4_500, maxBuffer: 4 * 1024 * 1024 },
     );
@@ -399,8 +406,7 @@ async function dumpViaUiAutomator(serial: string): Promise<DumpAttempt> {
 
 async function androidSnapshotHelperInstalled(serial: string): Promise<boolean> {
   try {
-    const { stdout } = await execFileAsync(
-      "adb",
+    const { stdout } = await execAndroidAdb(
       ["-s", serial, "shell", "pm", "path", ANDROID_SNAPSHOT_HELPER_PACKAGE],
       { timeout: 2_000, maxBuffer: 16 * 1024 },
     );
@@ -412,8 +418,7 @@ async function androidSnapshotHelperInstalled(serial: string): Promise<boolean> 
 
 async function androidSnapshotHelperProcessRunning(serial: string): Promise<boolean> {
   try {
-    const { stdout } = await execFileAsync(
-      "adb",
+    const { stdout } = await execAndroidAdb(
       ["-s", serial, "shell", "pidof", ANDROID_SNAPSHOT_HELPER_PACKAGE],
       { timeout: 2_000, maxBuffer: 4 * 1024 },
     );
@@ -451,7 +456,7 @@ async function ensureAndroidSnapshotHelperInstalled(serial: string): Promise<boo
   const apk = await bundledHelperApkPath();
   if (!apk) return false;
   try {
-    await execFileAsync("adb", ["-s", serial, "install", "-r", "-t", apk], {
+    await execAndroidAdb(["-s", serial, "install", "-r", "-t", apk], {
       timeout: 30_000,
       maxBuffer: 64 * 1024,
     });
@@ -489,7 +494,7 @@ async function dumpViaInstalledHelper(serial: string): Promise<SnapshotNode[]> {
   ];
   let output = "";
   try {
-    const { stdout, stderr } = await execFileAsync("adb", args, {
+    const { stdout, stderr } = await execAndroidAdb(args, {
       timeout: 15_000,
       maxBuffer: 8 * 1024 * 1024,
     });

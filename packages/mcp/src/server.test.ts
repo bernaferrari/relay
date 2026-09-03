@@ -392,6 +392,39 @@ test("outcome observation returns native pixels and bounded structured semantics
   }
 });
 
+test("outcome errors hand off canonical recovery operations outside the public façade", async () => {
+  const session = await connectMcp(
+    {
+      async invoke() {
+        throw new ApiError(503, "Apple device communication stalled", {
+          code: "target_unavailable",
+          recovery: { action: "retry-later", retryable: true },
+          recoveryAction: {
+            operationId: "target.recover",
+            input: { serial: "ipad-1", reason: "observe" },
+          },
+        });
+      },
+    },
+    "outcome",
+  );
+  try {
+    const result = callResult(
+      await session.request("tools/call", {
+        name: "relay_connect_target",
+        arguments: {},
+      }),
+    );
+    assert.equal(result.isError, true);
+    const error = result.structuredContent?.error as Record<string, unknown>;
+    assert.equal(error.recoveryAction, undefined);
+    assert.match(String(error.recoveryGuidance), /target\.recover/u);
+    assert.match(String(error.recoveryGuidance), /selected MCP profile "outcome"/u);
+  } finally {
+    await session.close();
+  }
+});
+
 test("snapshot capture returns a digest unless full is requested", async () => {
   const snapshot = {
     serial: "ipad-1",
@@ -1125,6 +1158,40 @@ test("returns sanitized structured ApiError recovery without losing revision sta
     });
     const serialized = JSON.stringify(result);
     assert.doesNotMatch(serialized, /private-credential|privateState|Users\/example/);
+  } finally {
+    await session.close();
+  }
+});
+
+test("does not emit a hidden recovery command from a least-privilege profile", async () => {
+  const session = await connectMcp(
+    {
+      async invoke() {
+        throw new ApiError(403, "This target is currently controlled by another actor", {
+          code: "TARGET_CONTROL_LEASE_CONFLICT",
+          recovery: { action: "request-access", retryable: false },
+          recoveryAction: {
+            operationId: "lease.takeover",
+            input: { leaseId: "lease-1" },
+            cli: { argv: ["lease", "takeover", "lease-1"] },
+          },
+        });
+      },
+    },
+    "control",
+  );
+  try {
+    const result = callResult(
+      await session.request("tools/call", {
+        name: "relay_target_interact",
+        arguments: { serial: "ipad-1", kind: "label", label: "Settings" },
+      }),
+    );
+    assert.equal(result.isError, true);
+    const error = result.structuredContent?.error as Record<string, unknown>;
+    assert.equal(error.recoveryAction, undefined);
+    assert.match(String(error.recoveryGuidance), /lease\.takeover/u);
+    assert.match(String(error.recoveryGuidance), /selected MCP profile "control"/u);
   } finally {
     await session.close();
   }

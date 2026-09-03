@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { resolveAndroidSdkTool } from "./android-sdk-tools.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -58,7 +59,7 @@ export function parseAdbDevices(output: string): AdbDeviceObservation[] {
 
 export async function probeAdbDevices(): Promise<AdbDeviceInventory> {
   try {
-    const { stdout } = await execFileAsync("adb", ["devices", "-l"], {
+    const { stdout } = await execFileAsync(await resolveAndroidSdkTool("adb"), ["devices", "-l"], {
       timeout: 4_000,
       maxBuffer: 64 * 1024,
     });

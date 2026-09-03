@@ -603,6 +603,28 @@ export type Project = {
   updatedAt: number;
 };
 
+/** Immutable provider assertion for a deployed web build.
+ *
+ * The signed receipt is intentionally carried as one value rather than
+ * treating the individual deployment fields as credentials. A caller may
+ * submit these fields to `build.save` only when the receipt authenticates the
+ * exact same values; local development uses the explicit self-managed mode
+ * instead.
+ */
+export type WebBuildProviderReceipt = {
+  schemaVersion: 1;
+  issuer: "relay-web-deployment-provider";
+  provider: string;
+  deploymentId: string;
+  sourceUrl: string;
+  sourceSha: string;
+  deploymentDigest: `sha256:${string}`;
+  configuration: string;
+  environmentRevision: string;
+  issuedAt: number;
+  signature: string;
+};
+
 export type Build = {
   id: string;
   projectId: string;
@@ -626,6 +648,11 @@ export type Build = {
   applicationId?: string;
   /** Provider-reported immutable deployment digest for a web build. */
   deploymentDigest?: string;
+  /** Web builds are either authenticated by a provider receipt or explicitly
+   * self-managed for loopback development. The latter can never bind Proof. */
+  webDeploymentMode?: "provider-verified" | "self-managed";
+  /** Exact signed provider assertion from which web provenance is derived. */
+  webProviderReceipt?: WebBuildProviderReceipt;
   status: "uploaded" | "ready" | "failed" | "archived";
   createdAt: number;
   updatedAt: number;
