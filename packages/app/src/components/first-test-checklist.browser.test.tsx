@@ -92,6 +92,12 @@ function button(root: HTMLElement, label: string): HTMLButtonElement {
   return found;
 }
 
+function buttonByLabel(root: HTMLElement, label: string): HTMLButtonElement {
+  const found = root.querySelector<HTMLButtonElement>(`button[aria-label='${label}']`);
+  if (!found) throw new Error(`Missing labelled button: ${label}`);
+  return found;
+}
+
 test("target step exposes real preflight action without advancing local progress", () => {
   const view = setup(state(), {
     targetCheck: { state: "failed", detail: "Keep the browser open, then check again." },
@@ -108,6 +114,7 @@ test("target step exposes real preflight action without advancing local progress
   expect(
     view.root.querySelector("[aria-label='First useful Test progress: Step 1 of 4']"),
   ).not.toBeNull();
+  expect(view.root.textContent).not.toContain("Not now");
   view.dispose();
 });
 
@@ -152,7 +159,7 @@ test("persisted completion hands off to its report and records only an explicit 
   );
   button(view.root, "Open saved Report").click();
   button(view.root, "Export YAML").click();
-  button(view.root, "Hide guide").click();
+  buttonByLabel(view.root, "Hide first useful test guide").click();
   expect(view.calls.onOpenReport).toHaveBeenCalledWith("report-1");
   expect(view.calls.onExportYaml).toHaveBeenCalledTimes(1);
   expect(view.calls.onDismiss).toHaveBeenCalledWith("completed");

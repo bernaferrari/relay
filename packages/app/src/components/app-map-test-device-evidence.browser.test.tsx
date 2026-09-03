@@ -220,7 +220,9 @@ test("a Test with no selected device offers the recovery action where the blocke
     () => <AppMapTestDeviceEvidence test={scenario} onChooseTarget={onChooseTarget} />,
     root,
   );
-  expect(root.textContent).toContain("Choose a device before interacting with its screen.");
+  expect(root.textContent).toContain(
+    "Select a target to see its latest directly observed pixels here.",
+  );
   const choose = [...root.querySelectorAll<HTMLButtonElement>("button")].find(
     (button) => button.textContent?.trim() === "Choose device",
   );

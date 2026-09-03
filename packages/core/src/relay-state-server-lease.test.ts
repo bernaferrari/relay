@@ -121,6 +121,94 @@ test("an aged dead lease from the previous local hostname is transactionally rec
   });
 });
 
+test("an aged dead lease from a legacy IP host is transactionally recovered with distinct provenance", async () => {
+  for (const legacyHost of ["192.168.1.20", "2001:db8::20"]) {
+    await withRoot((root) => {
+      const path = relayStateServerLeasePath(join(root, ".relay"));
+      mkdirSync(join(root, ".relay"), { recursive: true });
+      const stale = acquireRelayStateServerLease({
+        path,
+        pid: 999_999_999,
+        host: legacyHost,
+        acquiredAt: 1_000,
+      });
+
+      const recovery = recoverAbandonedLocalRelayStateServerLease({
+        path,
+        workspaceRoot: root,
+        currentHost: "relay-workstation.local",
+        now: 1_000 + 60 * 60_000,
+        minimumAgeMs: 5 * 60_000,
+        localPortHasListener: false,
+        workspaceFilesystem: "local",
+      });
+
+      assert.equal(recovery.status, "recovered");
+      if (recovery.status !== "recovered") return;
+      assert.equal(recovery.reason, "legacy-ip-host-recovered");
+      assert.equal(recovery.previousOwner.leaseId, stale.owner.leaseId);
+      assert.deepEqual(relayStateServerLeaseRecoveryAudit({ path }), [
+        {
+          auditId: recovery.auditId,
+          previousOwner: stale.owner,
+          recoveredAt: recovery.recoveredAt,
+          recoveredByHost: "relay-workstation.local",
+          reason: "legacy-ip-host-recovered",
+        },
+      ]);
+      stale.release();
+    });
+  }
+});
+
+test("legacy IP recovery preserves live-owner, listener, age, storage, and identity refusals", async () => {
+  await withRoot((root) => {
+    const path = relayStateServerLeasePath(join(root, ".relay"));
+    const common = {
+      path,
+      workspaceRoot: root,
+      currentHost: "relay-workstation.local",
+      now: 1_000_000,
+      minimumAgeMs: 300_000,
+      localPortHasListener: false,
+      workspaceFilesystem: "local" as const,
+    };
+    const attempt = (
+      host: string,
+      acquiredAt: number,
+      overrides: Partial<Parameters<typeof recoverAbandonedLocalRelayStateServerLease>[0]> = {},
+      pid = 999_999_999,
+    ) => {
+      const stale = acquireRelayStateServerLease({ path, pid, host, acquiredAt });
+      const result = recoverAbandonedLocalRelayStateServerLease({ ...common, ...overrides });
+      stale.release();
+      return result;
+    };
+
+    assert.equal(attempt("192.168.1.20", 1, {}, process.pid).reason, "owner-process-alive");
+    assert.equal(
+      attempt("192.168.1.20", 1, { localPortHasListener: true }).reason,
+      "local-port-listener-present",
+    );
+    assert.equal(
+      attempt("192.168.1.20", 1, { localPortHasListener: undefined }).reason,
+      "local-port-listener-unknown",
+    );
+    assert.equal(attempt("192.168.1.20", common.now - 1_000).reason, "lease-not-old-enough");
+    for (const workspaceFilesystem of ["shared", "unknown"] as const) {
+      assert.equal(
+        attempt("192.168.1.20", 1, { workspaceFilesystem }).reason,
+        "workspace-filesystem-not-local",
+      );
+    }
+    assert.equal(attempt("192.168.1.999", 1).reason, "foreign-host-not-local-rename");
+    assert.equal(
+      attempt("192.168.1.20", 1, { currentHost: "192.168.1.21" }).reason,
+      "foreign-host-not-local-rename",
+    );
+  });
+});
+
 test("local lease recovery refuses live, young, listening, unrelated, and shared owners", async () => {
   await withRoot((root) => {
     const path = relayStateServerLeasePath(join(root, ".relay"));

@@ -2,9 +2,9 @@ import { render } from "solid-js/web";
 import { expect, test, vi } from "vitest";
 
 vi.mock("./first-test-onboarding", () => ({
-  FirstTestChecklist: () => null,
+  FirstTestChecklist: () => <div data-testid="first-test-guide">First test guide</div>,
   useFirstTestOnboarding: (actions: { onRecord: () => void }) => ({
-    visible: () => false,
+    visible: () => true,
     canReopen: () => false,
     reopen: () => undefined,
     checklistProps: () => ({ onRecord: actions.onRecord }),
@@ -58,6 +58,7 @@ test("Record test remains owned by the Test workspace", async () => {
   expect(recordTest).toHaveBeenCalledOnce();
   expect(changeMode).not.toHaveBeenCalled();
   expect(root.textContent).not.toContain("Record path");
+  expect(root.querySelector("[data-testid='first-test-guide']")).toBeNull();
   dispose();
   root.remove();
 });

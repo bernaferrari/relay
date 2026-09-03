@@ -1,6 +1,5 @@
 import { Show, createSignal } from "solid-js";
 import { Button } from "@relay/ui/button";
-import { cn } from "../lib/cn";
 import type {
   FirstTestChecklistState,
   FirstTestStage,
@@ -22,9 +21,6 @@ export type FirstTestChecklistProps = {
   canSaveStartScreen: boolean;
   onTargetAction: () => void;
   onShowLiveDevice: () => void;
-  /** Rail presentation: a narrow column beside the live-device stage, so the
-   * capture-stage guidance survives opening the device instead of unmounting. */
-  rail?: boolean;
   onSaveStartScreen: () => void;
   onCreateStarter: (kind: "screen-check" | "blank") => void;
   onRecord: () => void;
@@ -49,7 +45,7 @@ function targetCheckIcon(check: TargetCheck): "check" | "alert" | "refresh" | "i
 }
 
 function targetActionLabel(target: FirstTestTargetStatus): string {
-  return target.kind === "ready" ? "Check Device" : target.actionLabel;
+  return target.kind === "ready" ? "Check device" : target.actionLabel;
 }
 
 const STAGE_NUMBER: Record<Exclude<FirstTestStage, "complete">, number> = {
@@ -102,19 +98,16 @@ export function FirstTestChecklist(props: FirstTestChecklistProps) {
 
   return (
     <section
-      class={cn(
-        "first-test-checklist rounded-xl border border-[var(--map-divider)] bg-[var(--map-control-surface)] p-3.5 text-left shadow-[var(--map-elevation-control)]",
-        props.rail ? "w-[min(100%,320px)]" : "min-w-0 w-[min(100%,340px)]",
-      )}
+      class="first-test-checklist min-w-0 w-[min(100%,340px)] rounded-2xl border border-[var(--map-divider)] bg-[var(--map-control-surface)] p-3 text-left shadow-[var(--map-elevation-control)]"
       aria-labelledby="first-test-checklist-title"
     >
       <header class="flex min-w-0 items-start justify-between gap-3">
         <div class="min-w-0">
           <p
-            class="m-0 text-micro font-medium text-[var(--text-weaker)]"
+            class="m-0 text-caption/[1.3] text-[var(--text-weak)]"
             aria-label={`First useful Test progress: ${progressLabel(props.state.stage)}`}
           >
-            First Test · {progressLabel(props.state.stage)}
+            First test <span aria-hidden="true">·</span> {progressLabel(props.state.stage)}
           </p>
           <h2
             id="first-test-checklist-title"
@@ -134,7 +127,7 @@ export function FirstTestChecklist(props: FirstTestChecklistProps) {
         </button>
       </header>
 
-      <div class="mt-3 border-t border-[var(--map-divider)] pt-3">
+      <div class="mt-3">
         <Show when={props.state.stage === "target"}>
           <div class="grid gap-3">
             <div class="grid gap-1">
@@ -334,12 +327,6 @@ export function FirstTestChecklist(props: FirstTestChecklistProps) {
           </div>
         </Show>
       </div>
-
-      <footer class="mt-2 flex justify-end">
-        <Button variant="ghost" size="sm" onClick={dismiss}>
-          {props.state.stage === "complete" ? "Hide guide" : "Not now"}
-        </Button>
-      </footer>
     </section>
   );
 }

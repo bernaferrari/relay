@@ -20,6 +20,7 @@ const REFUSAL_REASONS = new Set([
   "no-existing-lease",
 ]);
 const OWNERLESS_REFUSALS = new Set(["state-not-workspace-local", "no-existing-lease"]);
+const RECOVERY_REASONS = new Set(["local-hostname-collision-renamed", "legacy-ip-host-recovered"]);
 const LOCAL_FILESYSTEMS = new Set([
   "apfs",
   "hfs",
@@ -98,7 +99,7 @@ export function parseLeaseRecoveryResult(stdout) {
   if (result.status === "recovered") {
     if (
       !exactKeys(result, ["status", "reason", "previousOwner", "recoveredAt", "auditId"]) ||
-      result.reason !== "local-hostname-collision-renamed" ||
+      !RECOVERY_REASONS.has(result.reason) ||
       !validOwner(result.previousOwner) ||
       typeof result.recoveredAt !== "number" ||
       !Number.isFinite(result.recoveredAt) ||

@@ -122,16 +122,16 @@ export function firstTestTargetStatus(input: {
     return {
       kind: "offline",
       title: "Relay is offline",
-      detail: "Reconnect Relay before choosing a Device or starting a Test.",
-      actionLabel: "Reconnect Relay",
+      detail: "Start Relay, then try again. Your work is still here.",
+      actionLabel: "Try again",
     };
   }
   if (!input.target || input.readiness.kind === "choose-device") {
     return {
       kind: "choose-target",
-      title: "Choose a Device",
-      detail: "Select a connected Device or browser before recording a Test.",
-      actionLabel: "Choose Device",
+      title: "Choose a device",
+      detail: "Pick a connected device or browser to record your first test.",
+      actionLabel: "Choose device",
     };
   }
   if (input.readiness.kind !== "ready") {
@@ -148,21 +148,21 @@ export function firstTestTargetStatus(input: {
       kind: "needs-control",
       title: `Open ${targetName}`,
       detail: input.controlIssue,
-      actionLabel: "Open Device",
+      actionLabel: "Open device",
     };
   }
   if (!input.hasControl) {
     return {
       kind: "needs-control",
       title: `Waiting for control of ${targetName}`,
-      detail: "Relay needs Device control before it can record or run this Test.",
-      actionLabel: "Open Device",
+      detail: "Open the live device before recording or running this test.",
+      actionLabel: "Open device",
     };
   }
   return {
     kind: "ready",
     title: `${targetName} is ready`,
-    detail: "Relay can now record or run an explicitly chosen Test on this Device.",
+    detail: "You can record or run this test.",
   };
 }
 

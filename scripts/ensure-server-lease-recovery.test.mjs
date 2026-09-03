@@ -277,27 +277,27 @@ test("the adapter validates the complete recovery discriminant", () => {
     host: "relay-workstation-4.local",
     acquiredAt: 1,
   };
-  assert.deepEqual(
-    parseLeaseRecoveryResult(
-      `${JSON.stringify({
-        status: "recovered",
-        reason: "local-hostname-collision-renamed",
-        previousOwner: owner,
-        recoveredAt: 2,
-        auditId: "audit-1",
-      })}\n`,
-    ),
-    {
+  for (const reason of ["local-hostname-collision-renamed", "legacy-ip-host-recovered"]) {
+    const recovered = {
       status: "recovered",
-      reason: "local-hostname-collision-renamed",
+      reason,
       previousOwner: owner,
       recoveredAt: 2,
       auditId: "audit-1",
-    },
-  );
+    };
+    assert.deepEqual(parseLeaseRecoveryResult(`${JSON.stringify(recovered)}\n`), recovered);
+  }
   for (const malformed of [
     { status: "recovered" },
     { status: "recovered", reason: "no-existing-lease" },
+    {
+      status: "recovered",
+      reason: "legacy-ip-host-recovered",
+      previousOwner: owner,
+      recoveredAt: 2,
+      auditId: "audit-1",
+      unexpected: true,
+    },
     { status: "refused", reason: "owner-process-alive" },
     { status: "refused", reason: "invented", owner },
     { status: "refused", reason: "no-existing-lease", owner },

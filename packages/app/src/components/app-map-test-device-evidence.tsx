@@ -188,6 +188,9 @@ export function AppMapTestDeviceEvidence(props: {
     if (!selectedDevice()) return "Choose device";
     if (server.health() !== "online") return "Retry connection";
     if (server.controlIssue?.() || !server.selectedLeaseId?.()) return "Take control";
+    if (["screen-preparing", "checking-ios", "ios-preparing"].includes(readiness().kind)) {
+      return "Check again";
+    }
     return "Try again";
   });
 

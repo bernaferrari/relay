@@ -77,6 +77,7 @@ function renderPanel(input: {
 
 test("screen preparation is explained once while pixels are still loading", () => {
   const detail = "Relay is opening this browser target. You can keep working while it connects.";
+  const onRecover = vi.fn();
   document.body.replaceChildren();
   const root = document.createElement("div");
   document.body.append(root);
@@ -94,6 +95,7 @@ test("screen preparation is explained once while pixels are still loading", () =
         refreshing={false}
         interacting={false}
         interactionBlocker={detail}
+        recoveryAction={{ label: "Try again", busy: false, onAction: onRecover }}
         error=""
         onRefresh={() => undefined}
         onInteract={async () => true}
@@ -103,6 +105,47 @@ test("screen preparation is explained once while pixels are still loading", () =
   );
 
   expect(root.textContent?.match(new RegExp(detail.replaceAll(".", "\\."), "gu"))).toHaveLength(1);
+  expect(root.textContent?.match(/Connecting to Phone/gu)).toHaveLength(1);
+  const action = [...root.querySelectorAll<HTMLButtonElement>("button")].find((candidate) =>
+    candidate.textContent?.includes("Try again"),
+  );
+  action?.click();
+  expect(onRecover).toHaveBeenCalledOnce();
+  dispose();
+});
+
+test("an unavailable device has one recovery message and one action", () => {
+  const detail = "Relay will be ready once it can reach this device again.";
+  const onRecover = vi.fn();
+  document.body.replaceChildren();
+  const root = document.createElement("div");
+  document.body.append(root);
+  const dispose = render(
+    () => (
+      <AppMapTestDevicePanel
+        deviceSelected
+        deviceName="Phone"
+        readiness={{ kind: "device-unavailable", title: "Reconnect Phone", detail }}
+        offline={false}
+        refreshing={false}
+        interacting={false}
+        interactionBlocker={detail}
+        recoveryAction={{ label: "Reconnect", busy: false, onAction: onRecover }}
+        error=""
+        onRefresh={() => undefined}
+        onInteract={async () => true}
+      />
+    ),
+    root,
+  );
+
+  expect(root.textContent?.match(new RegExp(detail.replaceAll(".", "\\."), "gu"))).toHaveLength(1);
+  expect(root.textContent?.match(/Reconnect Phone/gu)).toHaveLength(1);
+  const action = [...root.querySelectorAll<HTMLButtonElement>("button")].find((candidate) =>
+    candidate.textContent?.includes("Reconnect"),
+  );
+  action?.click();
+  expect(onRecover).toHaveBeenCalledOnce();
   dispose();
 });
 

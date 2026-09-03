@@ -205,6 +205,25 @@ export function AppMapTestDevicePanel(props: {
         props.fullPageCapture.policy?.reason ??
         "Captures every viewport while preserving the original frames and accessibility data.")
       : fullPageFallback;
+  const recoveryButton = () => (
+    <Show when={props.recoveryAction}>
+      {(action) => (
+        <Button
+          variant="secondary"
+          size="sm"
+          class="shrink-0"
+          disabled={action().busy}
+          aria-busy={action().busy}
+          onClick={action().onAction}
+        >
+          <Show when={action().busy}>
+            <Icon name="refresh" size={12} class="ui-refresh-spin" />
+          </Show>
+          {action().busy ? "Working…" : action().label}
+        </Button>
+      )}
+    </Show>
+  );
   return (
     <div class="grid gap-2.5">
       <header class="flex items-center justify-between gap-2">
@@ -212,13 +231,13 @@ export function AppMapTestDevicePanel(props: {
           <strong class="block truncate text-caption font-medium text-text-strong">
             {props.deviceName ?? "No device selected"}
           </strong>
-          <span class="block text-caption/[1.3] text-text-weak" role="status" aria-live="polite">
-            {props.refreshing
-              ? "Requesting fresh pixels…"
-              : props.frame
-                ? `${props.offline ? "Last frame" : "Observed"} · ${formatTestContextTime(props.frame.capturedAt)}`
-                : (message()?.title ?? "Live pixels available")}
-          </span>
+          <Show when={props.refreshing || props.frame}>
+            <span class="block text-caption/[1.3] text-text-weak" role="status" aria-live="polite">
+              {props.refreshing
+                ? "Requesting fresh pixels…"
+                : `${props.offline ? "Last frame" : "Observed"} · ${formatTestContextTime(props.frame!.capturedAt)}`}
+            </span>
+          </Show>
         </div>
         <button
           type="button"
@@ -238,11 +257,18 @@ export function AppMapTestDevicePanel(props: {
       <Show
         when={props.frame}
         fallback={
-          <TestContextEmpty
-            icon="smartphone"
-            title={message()?.title ?? "Waiting for pixels"}
-            detail={message()?.detail ?? "Relay has not observed a frame from this device yet."}
-          />
+          <div aria-live="polite">
+            <TestContextEmpty
+              icon="smartphone"
+              title={message()?.title ?? "Waiting for live screen"}
+              detail={message()?.detail ?? "Relay has not received a screen from this device yet."}
+              action={
+                props.recoveryAction ? (
+                  <div class="mt-3 flex justify-center">{recoveryButton()}</div>
+                ) : undefined
+              }
+            />
+          </div>
         }
       >
         {(frame) => (
@@ -347,33 +373,11 @@ export function AppMapTestDevicePanel(props: {
           </figure>
         )}
       </Show>
-      <Show
-        when={
-          props.frame || props.readiness.kind !== "screen-preparing"
-            ? props.interactionBlocker
-            : undefined
-        }
-      >
+      <Show when={props.frame ? props.interactionBlocker : undefined}>
         {(blocker) => (
           <div class="flex items-center justify-between gap-2 rounded-lg border border-border-weak-base bg-surface-base px-2.5 py-2">
             <p class="m-0 min-w-0 text-caption/[1.4] text-text-weak">{blocker()}</p>
-            <Show when={props.recoveryAction}>
-              {(action) => (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  class="shrink-0"
-                  disabled={action().busy}
-                  aria-busy={action().busy}
-                  onClick={action().onAction}
-                >
-                  <Show when={action().busy}>
-                    <Icon name="refresh" size={12} class="ui-refresh-spin" />
-                  </Show>
-                  {action().busy ? "Working…" : action().label}
-                </Button>
-              )}
-            </Show>
+            {recoveryButton()}
           </div>
         )}
       </Show>

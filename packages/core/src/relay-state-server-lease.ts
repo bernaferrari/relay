@@ -9,6 +9,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
+import { isIP } from "node:net";
 import { hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -37,7 +38,7 @@ type PersistedRelayServerLeaseRecoveryAudit = {
   previousOwner: RelayStateServerLeaseOwner;
   recoveredAt: number;
   recoveredByHost: string;
-  reason: "local-hostname-collision-renamed";
+  reason: "local-hostname-collision-renamed" | "legacy-ip-host-recovered";
 };
 
 export type RelayStateServerLeaseOwner = Readonly<
@@ -300,7 +301,7 @@ type RelayStateServerLeaseRecoveryRefusalReason =
 export type RelayStateServerLeaseRecovery =
   | {
       readonly status: "recovered";
-      readonly reason: "local-hostname-collision-renamed";
+      readonly reason: "local-hostname-collision-renamed" | "legacy-ip-host-recovered";
       readonly previousOwner: RelayStateServerLeaseOwner;
       readonly recoveredAt: number;
       readonly auditId: string;
@@ -332,9 +333,25 @@ function isLocalHostnameRenamed(previous: string, current: string): boolean {
   );
 }
 
+function recoveryReasonForForeignHost(
+  previous: string,
+  current: string,
+): PersistedRelayServerLeaseRecoveryAudit["reason"] | undefined {
+  if (isLocalHostnameRenamed(previous, current)) return "local-hostname-collision-renamed";
+  // Older local builds persisted the machine's transient IP address as the
+  // lease host. A stable hostname is stronger owner evidence, but replacing
+  // one IP address with another would merely exchange one ambiguous identity
+  // for another and therefore remains forbidden.
+  if (isIP(previous.trim()) !== 0 && isIP(current.trim()) === 0) {
+    return "legacy-ip-host-recovered";
+  }
+  return undefined;
+}
+
 /**
- * Reclaim a stale foreign-host lease only when a local macOS collision rename,
- * a dead owner PID, sufficient age, and a known-empty local port all agree.
+ * Reclaim a stale foreign-host lease only when a proven local identity
+ * migration, a dead owner PID, sufficient age, and a known-empty local port
+ * all agree.
  * The exact row is compare-and-deleted and its audit record is written in the
  * same IMMEDIATE transaction. Anything less certain fails closed.
  */
@@ -379,7 +396,8 @@ export function recoverAbandonedLocalRelayStateServerLease(
     if (input.localPortHasListener === true) return refuse("local-port-listener-present");
     if (input.localPortHasListener !== false) return refuse("local-port-listener-unknown");
     if (now - owner.acquiredAt < minimumAgeMs) return refuse("lease-not-old-enough");
-    if (!isLocalHostnameRenamed(owner.host, currentHost)) {
+    const recoveryReason = recoveryReasonForForeignHost(owner.host, currentHost);
+    if (!recoveryReason) {
       return refuse("foreign-host-not-local-rename");
     }
     const audit: PersistedRelayServerLeaseRecoveryAudit = {
@@ -388,7 +406,7 @@ export function recoverAbandonedLocalRelayStateServerLease(
       previousOwner: owner,
       recoveredAt: now,
       recoveredByHost: currentHost,
-      reason: "local-hostname-collision-renamed",
+      reason: recoveryReason,
     };
     const deleted = database
       .prepare("DELETE FROM relay_server_state_leases WHERE slot = ? AND document = ?")
@@ -451,10 +469,13 @@ export function relayStateServerLeaseRecoveryAudit(
         recoveredAt: timestamp(audit.recoveredAt, "recovery audit recoveredAt"),
         recoveredByHost: nonEmpty(audit.recoveredByHost, "recovery audit recoveredByHost"),
         reason: (() => {
-          if (audit.reason !== "local-hostname-collision-renamed") {
+          if (
+            audit.reason !== "local-hostname-collision-renamed" &&
+            audit.reason !== "legacy-ip-host-recovered"
+          ) {
             throw new Error("Relay state server lease recovery audit reason is invalid");
           }
-          return "local-hostname-collision-renamed" as const;
+          return audit.reason;
         })(),
       };
     });

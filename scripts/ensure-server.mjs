@@ -151,8 +151,12 @@ async function bootstrap() {
     throw Object.assign(new Error(refusal.message), { detail: refusal });
   }
   if (leasePreparation.recovery.status === "recovered") {
+    const migration =
+      leasePreparation.recovery.reason === "legacy-ip-host-recovered"
+        ? "an abandoned lease from an older IP-based machine identity"
+        : "an abandoned lease from this Mac's previous local hostname";
     process.stderr.write(
-      `${JSON.stringify({
+      `Relay recovered ${migration}; the local service can start safely.\n${JSON.stringify({
         status: "recovered",
         stage: "relay-state-lease-recovery",
         recovery: leasePreparation.recovery,

@@ -103,7 +103,7 @@ test("honest device state blocks bind and run", () => {
   });
   assert.equal(state.stage, "device");
   assert.equal(state.action, "device");
-  assert.match(state.detail, /Select a connected Device/u);
+  assert.match(state.detail, /Pick a connected device or browser/u);
 });
 
 test("unbound Combine cells ask for an explicit profile without inventing one", () => {
