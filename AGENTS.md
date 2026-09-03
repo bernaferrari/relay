@@ -95,13 +95,13 @@ export RELAY_ACTOR_ID=agent:grok-ios-mapper
 - A tap that does not change AX fingerprint cannot become a new screen. If pixels changed, treat as handoff.
 - Prefer identifier → label → text → point. Huge SwiftUI cells are often `hittable:false`; tap the **label**, not the cell center. Ignore 20px status-bar app names.
 
-**Combine**
+**Data sets and Run Across**
 
-Same three words in the UI and the CLI:
+Product V2 uses public job language while the CLI keeps the stable engine commands:
 
-- **Variable** = a list you apply and undo (Language is just the first kind). Teach 1–2 rows, infer the rest. `relay variable save`
+- **Data set** = values applied while running a Test. The CLI stores these through `relay variable save`; Variable is an advanced implementation term.
 - **Test** = go here, click there, finish. `relay test run grok-android-manual-v2 supergrok-locale-tour`
-- **Combine** = selected Variable values × selected Tests. From the Test: `relay test run grok-android-manual-v2 supergrok-locale-tour --in language=hu,ro --lens visual --target current --revision current`. From a saved grid: `relay combine run grok-android-manual-v2 matrix-language-to-supergrok-locale-tour --cell hu`. Default is one cell. `--all` is explicit. Do **not** fire all cells unless asked. Capture is a lens (`visual` / `smoke`), never a Variable. After a batch: `relay combine export <batch-id>` writes per-locale screenshots + accessibility trees (and `full.png` when the destination was surveyed).
+- **Run Across** = run selected Tests with selected Data set values and Devices. The CLI continues to use `relay test run ... --in ...` and `relay combine run ...`; Combine, Cell, and Lens stay in Advanced/Audit UI. Default is one case. `--all` is explicit. Do **not** fire all cases unless asked. Capture remains an engine lens (`visual` / `smoke`). After a batch, `relay combine export <batch-id>` writes per-value screenshots + accessibility trees (and `full.png` when the destination was surveyed).
 - Do **not** write a per-screen `.mjs` capture script. The YAML Test + language Variable is the recipe. `device survey --dir --no-restore` is the full-surface verb when you are already on the screen.
 
 Tour seek reaches the origin screen (fingerprint, then mapped row overlap, then Back/Settings/prelude) before walking rows. Tour back is label-overlap, not nav title — Grok child sheets often keep header “Settings”.

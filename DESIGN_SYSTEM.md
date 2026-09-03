@@ -93,10 +93,12 @@ details, and advanced configuration in a clearly labelled overflow menu or discl
 
 Prefer user language:
 
-- App Map (canvas), path or run (execution)—not recipe, suite, or Journey in chrome
-- **Variable** (language/theme/account list), **Test** (what you run), **Combine** (Variables × Tests)—the three words AGENTS.md and the CLI use, so never “Modifier”, “State set”, option set, work, run matrix, or locale matrix in chrome
+- **App**, **Test**, **Run**, **Change**, and **Device** are the five primary V2 objects.
+- **Checkpoint**, **Report**, **Proof**, **Recording**, **Data set**, and **Map** support those objects. Proof is a verified result, not an object people create or operate.
+- **Run Across** applies a Test across Data set values and Devices. Variable, Combine, Cell, Lens, App Map, digest, and binding are engine terms shown only in Advanced or Audit surfaces.
+- Path or Run describes execution—never recipe, suite, or Journey in ordinary chrome.
 - Run report, not immutable report
-- Target or device, not adapter instance
+- Device, not target or adapter instance, unless an Audit surface names the underlying target
 - Saved with this run, not frozen observability payload
 
 IDs, serials, provider internals, and raw configuration belong in details, not list rows.

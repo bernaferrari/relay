@@ -24,6 +24,12 @@ export function allowedBrowserOriginsWith(origin, configured = "") {
   ].join(",");
 }
 
+export function relayAppPackage(args = []) {
+  const unknown = args.filter((argument) => argument !== "--v2");
+  if (unknown.length) throw new Error(`Unknown Relay app option: ${unknown[0]}`);
+  return args.includes("--v2") ? "@relay/app-v2" : "@relay/app";
+}
+
 async function portAvailable(port) {
   return await new Promise((resolve) => {
     const server = createServer();
@@ -43,6 +49,7 @@ async function chooseAppPort(preferred) {
 }
 
 async function main() {
+  const appPackage = relayAppPackage(process.argv.slice(2));
   const configured = Number(process.env.RELAY_APP_PORT || 3000);
   if (!Number.isSafeInteger(configured) || configured < 1 || configured > 65_535) {
     throw new Error("RELAY_APP_PORT must be an integer between 1 and 65535");
@@ -72,7 +79,7 @@ async function main() {
     "pnpm",
     [
       "--filter",
-      "@relay/app",
+      appPackage,
       "dev",
       "--",
       "--host",

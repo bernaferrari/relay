@@ -10,20 +10,10 @@ const arbitraryType = /\btext-\[\d+(?:\.\d+)?px\]/g;
 const numberedType =
   /\btext-(?:8|9|10|11|12|13|14|15|16|18|20|24|28)(?:-(?:regular|medium|semibold|bold))?\b/g;
 const arbitraryRadius = /\brounded(?:-[a-z]+)?-\[\d+(?:\.\d+)?px\]/g;
-/**
- * Chrome vocabulary. AGENTS.md makes the product's three words authoritative —
- * Variable, Test, Combine — and requires the UI to say what the CLI says
- * (`relay variable save`, `relay combine run`). Variable and Combine are
- * therefore sanctioned. "Modifier" was a euphemism for a Variable that never
- * appeared in the model — the protocol type has always been AppMapVariable —
- * so the chrome is what got renamed, along with the last few places the old
- * word had leaked back into preflight output.
- * The previous state collection and execution-grid spellings stay banned for the
- * same reason: internal names for a Variable and a Combine leaked into the
- * interface. Bare "matrix" is
- * allowed, because a compatibility matrix in Test environments is a different
- * object that really is called that.
- */
+/** Legacy-shell vocabulary guard. Product V2 has the stricter public-language
+ * boundary in PRODUCT_V2.md; this checker remains scoped to the Solid app while
+ * it is retired route by route. Historical euphemisms stay banned here so the
+ * legacy UI does not expand a second vocabulary during migration. */
 const banned = String.raw`State\sset|[Mm]odifiers?|[Rr]un\smatri(?:x|ces)`;
 const bannedVocab = new RegExp(
   String.raw`(['"\`])(?:(?!\1)[^\n])*?\b(?:${banned})\b(?:(?!\1)[^\n])*?\1|>\s*(?:${banned})\b`,
@@ -110,7 +100,7 @@ for (const directory of ["components", "lib", "pages", "context", "styles"]) {
     if (file.endsWith(".tsx")) {
       for (const match of source.matchAll(bannedVocab)) {
         violations.push(
-          `${file}:${source.slice(0, match.index).split("\n").length}: ${match[0]} (say Variable, Test or Combine — the words AGENTS.md and the CLI use)`,
+          `${file}:${source.slice(0, match.index).split("\n").length}: ${match[0]} (use the existing legacy term; new product language belongs in Product V2)`,
         );
       }
     }
@@ -119,7 +109,7 @@ for (const directory of ["components", "lib", "pages", "context", "styles"]) {
 
 if (violations.length) {
   console.error(
-    "UI boundary violations: use classic semantic tokens (no --v2-* / retired classes), the documented type/radius scale, the product's own three words (Variable, Test, Combine) in chrome, and humanError() for every failure a person reads.",
+    "UI boundary violations: use classic semantic tokens (no --v2-* / retired classes), the documented type/radius scale, the frozen legacy vocabulary, and humanError() for every failure a person reads.",
   );
   for (const violation of violations) console.error(`- ${violation}`);
   process.exitCode = 1;

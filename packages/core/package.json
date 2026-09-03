@@ -41,6 +41,7 @@
     "./matrix-yaml": "./src/matrix-yaml.ts",
     "./schedules": "./src/schedules.ts",
     "./targets": "./src/targets.ts",
+    "./target-execution-readiness": "./src/target-execution-readiness.ts",
     "./browser-target": "./src/browser-target.ts",
     "./device-setup": "./src/device-setup.ts",
     "./android-sdk-tools": "./src/android-sdk-tools.ts",

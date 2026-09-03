@@ -55,9 +55,10 @@ async function main() {
   process.chdir(root);
 
   const watchers = await bundleElectron({ watch: true });
+  const rendererConfig = process.env.RELAY_UI_V2 === "1" ? "vite.v2.config.ts" : "vite.config.ts";
 
   const server = await createServer({
-    configFile: resolve(root, "vite.config.ts"),
+    configFile: resolve(root, rendererConfig),
     server: {
       strictPort: false,
     },

@@ -13,4 +13,5 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 process.chdir(root);
 await Promise.all([bundleElectron({ watch: false }), bundleServer(), bundleIosPreviewSidecar()]);
 await build({ configFile: resolve(root, "vite.config.ts") });
+await build({ configFile: resolve(root, "vite.v2.config.ts") });
 console.log("[desktop] build complete → out/");

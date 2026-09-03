@@ -1,4 +1,5 @@
-import { targetExecutionReadiness, verifyChangeOffline } from "@relay/core";
+import { targetExecutionReadiness } from "@relay/core/target-execution-readiness";
+import { verifyChangeOffline } from "@relay/core/verify-change";
 import {
   measureTracePackJson,
   TRACE_PACK_OFFLINE_TRANSPORT_LIMITS,
@@ -11,6 +12,7 @@ import {
   type SourceRevision,
   type TracePack,
   type TracePackExportResponse,
+  type OperationOutput,
 } from "@relay/protocol";
 import type { RelayOperationPort } from "./operation-port.js";
 import { createRelayOperationPort, type RelayInvokeClient } from "./operation-port.js";
@@ -109,19 +111,89 @@ function runnableTarget(device: DeviceSummary): AuthoringTarget | undefined {
   return { kind: "device", platform: device.platform, targetId: device.serial || device.id };
 }
 
-async function targets(operations: RelayOperationPort): Promise<AuthoringTarget[]> {
-  const output = await operations.invoke("target.devices.list", {});
-  return output.devices.flatMap((device) => {
-    const target = runnableTarget(device);
-    return target ? [target] : [];
-  });
+type TargetCatalogEntry = {
+  identity: string;
+  device: DeviceSummary;
+  target?: AuthoringTarget;
+  blockedReason?: string;
+};
+
+function browserPreflightProblem(
+  targetId: string,
+  preflight: {
+    targetId: string;
+    ok: boolean;
+    checks: readonly { status: string; message: string }[];
+  },
+): string | undefined {
+  if (preflight.targetId !== targetId) {
+    throw new TypeError("Relay returned browser readiness for a different managed target.");
+  }
+  if (preflight.ok) return undefined;
+  const failures = preflight.checks
+    .filter((check) => check.status === "fail")
+    .map((check) => check.message.trim())
+    .filter(Boolean);
+  return failures.length > 0
+    ? `Managed browser target is not ready: ${failures.join("; ").slice(0, 480)}`
+    : "Managed browser target is not ready. Run target preflight again before recording.";
 }
 
-async function targetCatalog(
-  operations: RelayOperationPort,
-): Promise<Array<{ device: DeviceSummary; target?: AuthoringTarget }>> {
+async function targetCatalog(operations: RelayOperationPort): Promise<TargetCatalogEntry[]> {
   const output = await operations.invoke("target.devices.list", {});
-  return output.devices.map((device) => ({ device, target: runnableTarget(device) }));
+  const catalog: TargetCatalogEntry[] = output.devices.map((device) => ({
+    identity: device.serial || device.id,
+    device,
+    target: runnableTarget(device),
+  }));
+
+  // `/devices` includes managed browsers for the product's single target
+  // picker, but that discovery row is not sufficient authority to control a
+  // browser. Prove that it is still a registered Relay target and that its
+  // executable, profile, and start page pass the canonical server preflight.
+  const browserEntries = catalog.filter(({ device }) => device.platform === "browser");
+  if (browserEntries.length === 0) return catalog;
+
+  let registered: OperationOutput<"target.list">;
+  try {
+    registered = await operations.invoke("target.list", {});
+  } catch {
+    for (const entry of browserEntries) {
+      entry.blockedReason =
+        "Relay could not verify this managed browser target. Refresh targets, then try again.";
+    }
+    return catalog;
+  }
+
+  await Promise.all(
+    browserEntries.map(async (entry) => {
+      const matches = registered.targets.filter(
+        (target) => target.id === entry.identity && target.kind === "browser" && target.browser,
+      );
+      if (matches.length !== 1) {
+        entry.blockedReason =
+          matches.length === 0
+            ? "This browser is no longer a registered managed target. Refresh targets before recording."
+            : "This browser target has an ambiguous managed configuration. Refresh targets before recording.";
+        return;
+      }
+      try {
+        const { preflight } = await operations.invoke("target.preflight", {
+          targetId: entry.identity,
+        });
+        const problem = browserPreflightProblem(entry.identity, preflight);
+        if (problem) {
+          entry.blockedReason = problem;
+          return;
+        }
+        entry.target = { kind: "browser", platform: "browser", targetId: entry.identity };
+      } catch {
+        entry.blockedReason =
+          "Relay could not prove browser readiness. Run target preflight again before recording.";
+      }
+    }),
+  );
+  return catalog;
 }
 
 async function selectTarget(
@@ -133,19 +205,24 @@ async function selectTarget(
   if (targetId) {
     const selected = available.find((target) => target.targetId === targetId);
     if (selected) return selected;
-    const blocked = catalog.find(({ device }) => (device.serial || device.id) === targetId);
+    const blocked = catalog.find(({ identity }) => identity === targetId);
     if (blocked) {
+      if (blocked.blockedReason) {
+        throw new TypeError(`Target ${targetId} is not ready: ${blocked.blockedReason}`);
+      }
       const readiness = targetExecutionReadiness(blocked.device);
       if (!readiness.runnable) {
         throw new TypeError(`Target ${targetId} is not ready: ${readiness.recovery}`);
       }
     }
-    throw new TypeError(`Target ${targetId} is not a connected Android or iOS device.`);
+    throw new TypeError(
+      `Target ${targetId} is not a connected Android, iOS, or managed browser target.`,
+    );
   }
   if (available.length === 1) return available[0]!;
   throw new TypeError(
     available.length === 0
-      ? "No connected Android or iOS target is ready."
+      ? "No connected Android, iOS, or managed browser target is ready."
       : `Target selection is ambiguous: ${available.length} devices are ready. Choose one by id.`,
   );
 }
@@ -327,14 +404,27 @@ class CanonicalRelayOutcomeJobs implements RelayOutcomeJobs {
   private readonly eventSource?: WorkflowEventSource;
 
   async connect(intent: ConnectTargetIntent = { kind: "connect-target" }) {
-    const available = await targets(this.operations);
+    const catalog = await targetCatalog(this.operations);
+    const available = catalog.flatMap(({ target }) => (target ? [target] : []));
     const current = intent.targetId
       ? available.find((target) => target.targetId === intent.targetId)
       : available.length === 1
         ? available[0]
         : undefined;
     if (intent.targetId && !current) {
-      throw new TypeError(`Target ${intent.targetId} is not a connected Android or iOS device.`);
+      const blocked = catalog.find(({ identity }) => identity === intent.targetId);
+      if (blocked?.blockedReason) {
+        throw new TypeError(`Target ${intent.targetId} is not ready: ${blocked.blockedReason}`);
+      }
+      if (blocked) {
+        const readiness = targetExecutionReadiness(blocked.device);
+        if (!readiness.runnable) {
+          throw new TypeError(`Target ${intent.targetId} is not ready: ${readiness.recovery}`);
+        }
+      }
+      throw new TypeError(
+        `Target ${intent.targetId} is not a connected Android, iOS, or managed browser target.`,
+      );
     }
     return {
       targets: available,

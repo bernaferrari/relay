@@ -1,0 +1,183 @@
+@import "@relay/ui/styles";
+@import "@relay/ui/styles/tailwind";
+
+:root {
+  --relay-overlay-menu: 90;
+  --relay-overlay-popover: 100;
+  --relay-overlay-dialog: 110;
+  --relay-overlay-tooltip: 120;
+}
+
+.relay-button,
+.relay-icon-button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  font: inherit;
+  font-weight: var(--font-weight-medium);
+  color: var(--text-strong);
+  cursor: default;
+  touch-action: manipulation;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    transform 100ms ease;
+}
+
+.relay-button:focus-visible,
+.relay-icon-button:focus-visible {
+  outline: 2px solid var(--border-interactive-selected, var(--border-focus));
+  outline-offset: 2px;
+}
+
+.relay-button:active:not(:disabled),
+.relay-icon-button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.relay-button:disabled,
+.relay-icon-button:disabled {
+  color: var(--text-weaker);
+  background: var(--input-disabled);
+  border-color: var(--border-weak-disabled);
+  cursor: not-allowed;
+}
+
+.relay-button--medium {
+  min-height: 44px;
+  padding: 0 14px;
+  gap: 8px;
+}
+
+.relay-button--small {
+  min-height: 36px;
+  padding: 0 10px;
+  gap: 6px;
+}
+
+.relay-button--primary {
+  color: var(--button-primary-foreground);
+  background: var(--button-primary-base);
+  box-shadow: var(--shadow-xs);
+}
+
+.relay-button--secondary {
+  background: var(--button-secondary-base);
+  border-color: var(--border-weak-base);
+  box-shadow: var(--shadow-xs);
+}
+
+.relay-button--ghost,
+.relay-icon-button {
+  background: transparent;
+}
+
+.relay-icon-button {
+  position: relative;
+  inline-size: 44px;
+  block-size: 44px;
+}
+
+.relay-icon-button--small {
+  inline-size: 36px;
+  block-size: 36px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .relay-button--primary:hover:not(:disabled) {
+    background: var(--button-primary-hover);
+  }
+
+  .relay-button--secondary:hover:not(:disabled) {
+    background: var(--button-secondary-hover);
+    border-color: var(--border-hover);
+  }
+
+  .relay-button--ghost:hover:not(:disabled),
+  .relay-icon-button:hover:not(:disabled) {
+    background: var(--button-ghost-hover);
+  }
+}
+
+.relay-overlay-root {
+  position: relative;
+  z-index: var(--relay-overlay-menu);
+  isolation: isolate;
+}
+
+.relay-menu-positioner,
+.relay-popover-positioner,
+.relay-tooltip-positioner {
+  z-index: var(--relay-overlay-menu);
+  outline: 0;
+}
+
+.relay-popover-positioner {
+  z-index: var(--relay-overlay-popover);
+}
+
+.relay-tooltip-positioner {
+  z-index: var(--relay-overlay-tooltip);
+}
+
+.relay-overlay-popup {
+  max-inline-size: min(360px, calc(100vw - 24px));
+  border: 1px solid var(--border-weak-base);
+  border-radius: var(--radius-lg);
+  color: var(--text-strong);
+  background: var(--surface-raised-stronger-non-alpha);
+  box-shadow: var(--shadow-lg);
+}
+
+.relay-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--relay-overlay-dialog);
+  background: color-mix(in srgb, #000 28%, transparent);
+}
+
+.relay-dialog-viewport {
+  position: fixed;
+  inset: 0;
+  z-index: var(--relay-overlay-dialog);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.relay-dialog-popup {
+  inline-size: min(440px, 100%);
+  padding: 20px;
+}
+
+.relay-menu-popup {
+  min-inline-size: 220px;
+  padding: 6px;
+}
+
+.relay-menu-item {
+  display: flex;
+  min-block-size: 36px;
+  align-items: center;
+  border-radius: var(--radius-md);
+  padding: 0 10px;
+  color: var(--text-base);
+  outline: 0;
+  user-select: none;
+}
+
+.relay-menu-item[data-highlighted] {
+  color: var(--text-strong);
+  background: var(--surface-base-hover);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .relay-button,
+  .relay-icon-button {
+    transition: none;
+  }
+}

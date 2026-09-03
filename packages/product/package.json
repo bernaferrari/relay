@@ -1,0 +1,23 @@
+{
+  "name": "@relay/product",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./routes": "./src/routes.ts",
+    "./features": "./src/features.ts",
+    "./recording-journey": "./src/recording-journey.ts",
+    "./run-journey": "./src/run-journey.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "tsx --test src/*.test.ts"
+  },
+  "dependencies": {
+    "@relay/client": "workspace:*",
+    "@relay/protocol": "workspace:*",
+    "@relay/workflows": "workspace:*"
+  },
+  "devDependencies": { "@types/node": "^26.1.2", "tsx": "^4.23.6", "typescript": "catalog:" }
+}

@@ -145,5 +145,6 @@ export async function loadRenderer(win: BrowserWindow): Promise<void> {
     }
     return;
   }
-  await win.loadFile(join(root, "../renderer/index.html"));
+  const rendererDirectory = process.env.RELAY_UI_V2 === "1" ? "renderer-v2" : "renderer";
+  await win.loadFile(join(root, `../${rendererDirectory}/index.html`));
 }

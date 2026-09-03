@@ -1,0 +1,368 @@
+import { createRelayOutcomeJobs } from "@relay/workflows/outcomes";
+import type { AuthoringTarget } from "@relay/protocol";
+import type {
+  DurableWorkflowHandle,
+  RelayInvokeClient,
+  RelayOutcomeJobs,
+  RunTestOutcomeIntent,
+  RunTestSnapshot,
+  WorkflowPhase,
+  WorkflowProblem,
+  WorkflowSnapshot,
+} from "@relay/workflows";
+import { projectError, type HumanError } from "./errors.js";
+import { routeUrls } from "./routes.js";
+
+/** Product actions are intents; Relay remains the authority for whether they
+ * are currently valid and for the resulting phase. */
+export type ProductRunAction = "start" | "inspect" | "watch" | "cancel";
+
+export type ProductRunRecovery = HumanError & {
+  code: WorkflowProblem["code"] | "transport";
+  action?: ProductRunAction;
+};
+
+export type ProductRunStatus = "idle" | WorkflowPhase;
+
+/** The intentionally small snapshot exposed to framework adapters. In
+ * particular, compiled plans, legacy refs, frozen identity details, and raw
+ * provider/job payloads never cross this boundary. */
+export type ProductRunSnapshot = {
+  readonly schemaVersion: 1;
+  readonly kind: "run-test";
+  readonly title: string;
+  readonly phase: WorkflowPhase;
+  readonly version: string;
+  readonly workflow?: DurableWorkflowHandle;
+  readonly target?: AuthoringTarget;
+  readonly execution?: { readonly jobId: string; readonly runId?: string };
+  readonly progress: {
+    readonly label: string;
+    readonly completed?: number;
+    readonly total?: number;
+  };
+  readonly allowedNextActions: readonly ("inspect" | "cancel")[];
+  readonly problems: readonly WorkflowProblem[];
+  readonly evidenceRefs: readonly { readonly kind: "run"; readonly id: string }[];
+};
+
+/** A completed report is a durable Run identity plus a canonical route. It
+ * carries no locally calculated verdict; `phase` is the server's outcome. */
+export type ProductRunReport = {
+  readonly id: string;
+  readonly reportId: string;
+  readonly runId: string;
+  readonly title: string;
+  readonly phase: Extract<WorkflowPhase, "succeeded" | "failed" | "cancelled">;
+  readonly target?: AuthoringTarget;
+  readonly evidenceRefs: readonly { readonly kind: "run"; readonly id: string }[];
+  readonly navigation: {
+    readonly route: string;
+    readonly href: string;
+  };
+};
+
+export type ProductRunState = {
+  readonly status: ProductRunStatus;
+  readonly snapshot?: ProductRunSnapshot;
+  readonly report?: ProductRunReport;
+  readonly recovery?: ProductRunRecovery;
+};
+
+export type ProductRunStartInput = {
+  /** The saved Test's durable identity. */
+  testId: string;
+  /** Optional when exactly one App is available; Relay resolves it canonically. */
+  appMapId?: string;
+  /** A selected ready target. Relay rejects targets that are not runnable. */
+  targetId?: string;
+  confirmRisk?: true;
+};
+
+export type ProductRunWatchInput = {
+  signal?: AbortSignal;
+  onState?: (state: ProductRunState) => void;
+  disconnectedRefreshMs?: number;
+  reconnectMs?: number;
+};
+
+export type ProductRunJourney = {
+  state(): ProductRunState;
+  start(input: ProductRunStartInput): Promise<ProductRunState>;
+  /** Adopt a durable workflow after navigation or renderer reload. */
+  inspect(workflowId?: string): Promise<ProductRunState>;
+  /** Follow server-owned progress until Relay reports a terminal phase. */
+  watch(input?: ProductRunWatchInput): Promise<ProductRunState>;
+  /** Cancel using the latest canonical durable workflow version. */
+  cancel(): Promise<ProductRunState>;
+};
+
+type RunJobs = Pick<
+  RelayOutcomeJobs,
+  "run" | "inspect" | "watchWorkflow" | "cancelRun"
+>;
+
+const MAX_STRING_CHARS = 8_192;
+const MAX_PROBLEMS = 64;
+const MAX_EVIDENCE_REFS = 128;
+
+function boundedString(value: string): string {
+  return value.slice(0, MAX_STRING_CHARS);
+}
+
+function copyProblem(problem: WorkflowProblem): WorkflowProblem {
+  return {
+    code: problem.code,
+    title: boundedString(problem.title),
+    detail: boundedString(problem.detail),
+    recovery: boundedString(problem.recovery),
+    retryable: problem.retryable,
+    ...(problem.sourceCode ? { sourceCode: boundedString(problem.sourceCode) } : {}),
+  };
+}
+
+function copyTarget(target: AuthoringTarget): AuthoringTarget {
+  if (target.kind === "browser") {
+    return { kind: "browser", platform: "browser", targetId: boundedString(target.targetId) };
+  }
+  return {
+    kind: "device",
+    platform: target.platform,
+    targetId: boundedString(target.targetId),
+  };
+}
+
+function copySnapshot(snapshot: RunTestSnapshot): ProductRunSnapshot {
+  return {
+    schemaVersion: 1,
+    kind: "run-test",
+    title: boundedString(snapshot.title),
+    phase: snapshot.phase,
+    version: boundedString(snapshot.version),
+    ...(snapshot.workflow
+      ? {
+          workflow: {
+            workflowId: boundedString(snapshot.workflow.workflowId),
+            expectedVersion: snapshot.workflow.expectedVersion,
+          },
+        }
+      : {}),
+    ...(snapshot.frozen?.target
+      ? { target: copyTarget(snapshot.frozen.target) }
+      : {}),
+    ...(snapshot.execution
+      ? {
+          execution: {
+            jobId: boundedString(snapshot.execution.jobId),
+            ...(snapshot.execution.runId
+              ? { runId: boundedString(snapshot.execution.runId) }
+              : {}),
+          },
+        }
+      : {}),
+    progress: {
+      label: boundedString(snapshot.progress.label),
+      ...(snapshot.progress.completed === undefined
+        ? {}
+        : { completed: snapshot.progress.completed }),
+      ...(snapshot.progress.total === undefined ? {} : { total: snapshot.progress.total }),
+    },
+    allowedNextActions: snapshot.allowedNextActions.filter(
+      (action): action is "inspect" | "cancel" => action === "inspect" || action === "cancel",
+    ),
+    problems: snapshot.problems.slice(-MAX_PROBLEMS).map(copyProblem),
+    evidenceRefs: snapshot.evidenceRefs.slice(0, MAX_EVIDENCE_REFS).map((ref) => ({
+      kind: "run" as const,
+      id: boundedString(ref.id),
+    })),
+  };
+}
+
+function phaseStatus(snapshot: RunTestSnapshot | undefined): ProductRunStatus {
+  return snapshot?.phase ?? "idle";
+}
+
+function recoveryFromProblem(
+  problem: WorkflowProblem,
+  action?: ProductRunAction,
+): ProductRunRecovery {
+  return { ...copyProblem(problem), ...(action ? { action } : {}) };
+}
+
+function recoveryFromError(error: unknown, action?: ProductRunAction): ProductRunRecovery {
+  return { ...projectError(error), code: "transport", ...(action ? { action } : {}) };
+}
+
+function asRunSnapshot(snapshot: WorkflowSnapshot): RunTestSnapshot {
+  if (snapshot.kind !== "run-test") {
+    throw new TypeError("The durable workflow is not a Test Run.");
+  }
+  return snapshot;
+}
+
+function isTerminal(phase: WorkflowPhase): phase is "succeeded" | "failed" | "cancelled" {
+  return phase === "succeeded" || phase === "failed" || phase === "cancelled";
+}
+
+function reportFromSnapshot(snapshot: RunTestSnapshot): ProductRunReport | undefined {
+  const runId = snapshot.execution?.runId;
+  if (!runId || !isTerminal(snapshot.phase)) return undefined;
+  const id = boundedString(runId);
+  return {
+    id,
+    reportId: id,
+    runId: id,
+    title: boundedString(snapshot.title),
+    phase: snapshot.phase,
+    ...(snapshot.frozen?.target
+      ? { target: copyTarget(snapshot.frozen.target) }
+      : {}),
+    evidenceRefs: snapshot.evidenceRefs.slice(0, MAX_EVIDENCE_REFS).map((ref) => ({
+      kind: "run" as const,
+      id: boundedString(ref.id),
+    })),
+    navigation: {
+      route: routeUrls.run(id),
+      href: routeUrls.run(id),
+    },
+  };
+}
+
+/** Create the framework-neutral Product V2 Run boundary over canonical
+ * outcome jobs. This controller never invokes HTTP or decides an outcome. */
+export function createProductRunJourney(input: { jobs: RunJobs }): ProductRunJourney {
+  const jobs = input.jobs;
+  let canonical: RunTestSnapshot | undefined;
+  let current: ProductRunState = { status: "idle" };
+
+  function exposedState(): ProductRunState {
+    return {
+      status: current.status,
+      ...(current.snapshot ? { snapshot: structuredClone(current.snapshot) } : {}),
+      ...(current.report ? { report: structuredClone(current.report) } : {}),
+      ...(current.recovery ? { recovery: { ...current.recovery } } : {}),
+    };
+  }
+
+  function publish(snapshot: RunTestSnapshot, action?: ProductRunAction): ProductRunState {
+    canonical = snapshot;
+    const bounded = copySnapshot(snapshot);
+    const problem = bounded.problems.at(-1);
+    current = {
+      status: phaseStatus(snapshot),
+      snapshot: bounded,
+      ...(reportFromSnapshot(snapshot) ? { report: reportFromSnapshot(snapshot) } : {}),
+      ...(problem ? { recovery: recoveryFromProblem(problem, action) } : {}),
+    };
+    return exposedState();
+  }
+
+  function publishRecovery(error: unknown, action?: ProductRunAction): ProductRunState {
+    current = {
+      ...current,
+      recovery: recoveryFromError(error, action),
+    };
+    return exposedState();
+  }
+
+  async function start(input: ProductRunStartInput): Promise<ProductRunState> {
+    if (!input.testId.trim()) {
+      return publishRecovery(
+        new TypeError("Starting a Run requires a saved Test identifier."),
+        "start",
+      );
+    }
+    try {
+      const snapshot = await jobs.run({
+        kind: "run-test",
+        testId: input.testId,
+        ...(input.appMapId ? { appMapId: input.appMapId } : {}),
+        ...(input.targetId ? { targetId: input.targetId } : {}),
+        ...(input.confirmRisk ? { confirmRisk: true } : {}),
+      });
+      return publish(snapshot);
+    } catch (error) {
+      return publishRecovery(error, "start");
+    }
+  }
+
+  async function inspect(workflowId = canonical?.workflow?.workflowId): Promise<ProductRunState> {
+    if (!workflowId?.trim()) {
+      return publishRecovery(
+        new TypeError("A durable Run workflow identifier is required."),
+        "inspect",
+      );
+    }
+    try {
+      return publish(asRunSnapshot(await jobs.inspect({ workflowId })), "inspect");
+    } catch (error) {
+      return publishRecovery(error, "inspect");
+    }
+  }
+
+  async function watch(input: ProductRunWatchInput = {}): Promise<ProductRunState> {
+    if (!canonical?.workflow?.workflowId) {
+      const inspected = await inspect();
+      if (!canonical?.workflow?.workflowId) return inspected;
+    }
+    const workflowId = canonical!.workflow!.workflowId;
+    let notifiedVersion: string | undefined;
+    try {
+      const snapshot = await jobs.watchWorkflow({
+        workflowId,
+        initial: canonical!,
+        signal: input.signal,
+        disconnectedRefreshMs: input.disconnectedRefreshMs,
+        reconnectMs: input.reconnectMs,
+        onSnapshot: (next) => {
+          try {
+            const run = asRunSnapshot(next);
+            const state = publish(run, "watch");
+            notifiedVersion = run.version;
+            input.onState?.(state);
+          } catch (error) {
+            publishRecovery(error, "watch");
+          }
+        },
+      });
+      const run = asRunSnapshot(snapshot);
+      const state = publish(run, "watch");
+      if (run.version !== notifiedVersion) input.onState?.(state);
+      return state;
+    } catch (error) {
+      return publishRecovery(error, "watch");
+    }
+  }
+
+  async function cancel(): Promise<ProductRunState> {
+    const workflow = canonical?.workflow;
+    if (!workflow) return publishRecovery(new TypeError("No durable Run is selected."), "cancel");
+    try {
+      return publish(
+        await jobs.cancelRun({
+          kind: "cancel-run",
+          workflowId: workflow.workflowId,
+          expectedVersion: workflow.expectedVersion,
+          confirmCancel: true,
+        }),
+        "cancel",
+      );
+    } catch (error) {
+      return publishRecovery(error, "cancel");
+    }
+  }
+
+  return { state: exposedState, start, inspect, watch, cancel } satisfies ProductRunJourney;
+}
+
+/** Convenience constructor for adapters that own a Relay client. */
+export function createProductRunJourneyFromClient(input: {
+  client: RelayInvokeClient;
+  actorId: string;
+}): ProductRunJourney {
+  return createProductRunJourney({
+    jobs: createRelayOutcomeJobs(input.client, { actorId: input.actorId }),
+  });
+}
+
+export type { RunTestOutcomeIntent };

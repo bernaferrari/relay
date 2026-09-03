@@ -51,6 +51,7 @@ test("rejects new component, source, and script monoliths at their respective li
     evaluateSourceBudgets(
       [
         { path: "packages/app/src/components/new-panel.tsx", lines: COMPONENT_SOURCE_LIMIT + 1 },
+        { path: "packages/app-v2/src/layout/new-shell.tsx", lines: COMPONENT_SOURCE_LIMIT + 1 },
         { path: "packages/core/src/new-domain.ts", lines: DEFAULT_SOURCE_LIMIT + 1 },
         { path: "scripts/new-tool.mjs", lines: SCRIPT_SOURCE_LIMIT + 1 },
         { path: "packages/app/scripts/new-tool.mts", lines: SCRIPT_SOURCE_LIMIT + 1 },
@@ -59,6 +60,7 @@ test("rejects new component, source, and script monoliths at their respective li
     ),
     [
       `packages/app/src/components/new-panel.tsx has ${COMPONENT_SOURCE_LIMIT + 1} lines; split it below the ${COMPONENT_SOURCE_LIMIT}-line component limit.`,
+      `packages/app-v2/src/layout/new-shell.tsx has ${COMPONENT_SOURCE_LIMIT + 1} lines; split it below the ${COMPONENT_SOURCE_LIMIT}-line component limit.`,
       `packages/core/src/new-domain.ts has ${DEFAULT_SOURCE_LIMIT + 1} lines; split it below the ${DEFAULT_SOURCE_LIMIT}-line source limit.`,
       `scripts/new-tool.mjs has ${SCRIPT_SOURCE_LIMIT + 1} lines; split it below the ${SCRIPT_SOURCE_LIMIT}-line script module limit.`,
       `packages/app/scripts/new-tool.mts has ${SCRIPT_SOURCE_LIMIT + 1} lines; split it below the ${SCRIPT_SOURCE_LIMIT}-line script module limit.`,

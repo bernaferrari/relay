@@ -18,13 +18,20 @@
   },
   "dependencies": {
     "@relay/app": "workspace:*",
+    "@relay/app-v2": "workspace:*",
     "@relay/ui": "workspace:*",
+    "@relay/ui-react": "workspace:*",
     "playwright-core": "^1.62.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
     "solid-js": "catalog:"
   },
   "devDependencies": {
     "@tailwindcss/vite": "4.3.3",
     "@types/node": "^26.1.2",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.7",
+    "@vitejs/plugin-react": "6.1.1",
     "electron": "^43.3.0",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.1",
@@ -45,6 +52,7 @@
       "out/main/**/*",
       "out/preload/**/*",
       "out/renderer/**/*",
+      "out/renderer-v2/**/*",
       "package.json"
     ],
     "extraResources": [

@@ -1,86 +1,9 @@
 import { render } from "solid-js/web";
-import {
-  AppBaseProviders,
-  AppInterface,
-  type Platform,
-  type PlatformStorage,
-  type ThemeAppliedDetail,
-} from "@relay/app";
+import { AppBaseProviders, AppInterface, type Platform, type ThemeAppliedDetail } from "@relay/app";
 /* App CSS pulls AgentBoard-shaped @relay/ui/styles/tailwind + v2 */
 import "@relay/app/index.css";
 import "./styles.css";
-
-function createDesktopStorage(name = "default"): PlatformStorage {
-  const api = window.api;
-  return {
-    get: (key: string) => api.storeGet(name, key),
-    set: (key: string, value: string) => api.storeSet(name, key, value),
-    remove: (key: string) => api.storeDelete(name, key),
-  };
-}
-
-function createDesktopPlatform(): Platform {
-  const api = window.api;
-  const storage = createDesktopStorage("desktop");
-
-  return {
-    platform: "desktop",
-    version: "0.1.0",
-    openExternal: (url) => {
-      api.openExternal(url);
-    },
-    openXcode: () => {
-      void api.openXcode();
-    },
-    notify: (title, body) => {
-      api.notify(title, body);
-    },
-    copyImage: (base64, mime) => api.copyImage(base64, mime),
-    async getServerUrl() {
-      const stored = await storage.get("serverUrl");
-      if (stored?.trim()) return stored.replace(/\/+$/, "");
-      return (await api.getServerUrl()).replace(/\/+$/, "");
-    },
-    async getServerConnection() {
-      const url = await Promise.resolve(this.getServerUrl());
-      const token = await storage.get("authToken");
-      let actorId = await storage.get("actorId");
-      if (!actorId) {
-        actorId = `human:${crypto.randomUUID()}`;
-        await storage.set("actorId", actorId);
-      }
-      return {
-        url,
-        auth: token ? { type: "bearer" as const, token } : { type: "none" as const },
-        organizationId: (await storage.get("organizationId")) || "local",
-        projectId: (await storage.get("projectId")) || "default",
-        actorId,
-        actorKind: "human" as const,
-      };
-    },
-    async setServerConnection(connection) {
-      await Promise.all([
-        api.storeSet("desktop", "serverUrl", connection.url.replace(/\/+$/, "")),
-        api.storeSet("desktop", "organizationId", connection.organizationId),
-        api.storeSet("desktop", "projectId", connection.projectId),
-        api.storeSet("desktop", "actorId", connection.actorId),
-        connection.auth.type === "none"
-          ? api.storeDelete("desktop", "authToken")
-          : api.storeSet("desktop", "authToken", connection.auth.token),
-      ]);
-    },
-    setServerUrl(url) {
-      return api.storeSet("desktop", "serverUrl", url.replace(/\/+$/, ""));
-    },
-    storage,
-    updates: {
-      getState: () => api.updates.getState(),
-      check: () => api.updates.check(),
-      install: () => api.updates.install(),
-      subscribe: (listener) => api.updates.onState(listener),
-    },
-  };
-}
+import { createDesktopPlatform } from "./desktop-platform";
 
 function onThemeApplied(detail: ThemeAppliedDetail) {
   void window.api.setBackgroundColor(detail.background);
@@ -93,7 +16,7 @@ if (!root) {
   throw new Error("Root element #root not found");
 }
 
-const platform = createDesktopPlatform();
+const platform: Platform = createDesktopPlatform();
 
 render(
   () => (

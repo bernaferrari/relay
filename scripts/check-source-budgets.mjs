@@ -22,15 +22,24 @@ export const grandfatheredSourceLimits = Object.freeze({
   "packages/protocol/src/operations.ts": 1712,
 });
 
+const componentSourceRoots = [
+  "packages/app/src/components/",
+  "packages/app-v2/src/layout/",
+  "packages/app-v2/src/routes/",
+  "packages/ui-react/src/",
+];
+
+function isComponentSource(path) {
+  return componentSourceRoots.some((root) => path.startsWith(root)) && path.endsWith(".tsx");
+}
+
 export function defaultSourceLimit(path) {
   if ([".mjs", ".mts"].includes(extname(path))) return SCRIPT_SOURCE_LIMIT;
-  return path.startsWith("packages/app/src/components/")
-    ? COMPONENT_SOURCE_LIMIT
-    : DEFAULT_SOURCE_LIMIT;
+  return isComponentSource(path) ? COMPONENT_SOURCE_LIMIT : DEFAULT_SOURCE_LIMIT;
 }
 
 function sourceKind(path) {
-  if (path.startsWith("packages/app/src/components/")) return "component";
+  if (isComponentSource(path)) return "component";
   if ([".mjs", ".mts"].includes(extname(path))) return "script module";
   return "source";
 }
@@ -89,7 +98,11 @@ export function evaluateSourceBudgets(entries, exceptions = grandfatheredSourceL
 export function evaluateProductDocumentBoundaries(entries) {
   const violations = [];
   for (const { path, source = "" } of entries) {
-    if (!path.startsWith("packages/app/src/") || !source) continue;
+    if (
+      (!path.startsWith("packages/app/src/") && !path.startsWith("packages/app-v2/src/")) ||
+      !source
+    )
+      continue;
     const readsObservationDocument = /\bDiscoverySession\b/u.test(source);
     const authorsMapDocument = /\bCanvasGraph\b/u.test(source);
     if (readsObservationDocument && authorsMapDocument) {

@@ -8,6 +8,11 @@ import { cn } from "../../lib/cn";
 import { Icon } from "../icon";
 import { DataSourceControl } from "../data-source-control";
 import {
+  readPendingDataWorkspaceDraft,
+  removePendingDataWorkspaceDraft,
+  writePendingDataWorkspaceDraft,
+} from "../../lib/data-workspace-draft";
+import {
   dataSourceModePatch,
   dataSourceScopePatch,
   type DataSourceMode,
@@ -67,11 +72,16 @@ export function DataWorkspace(props: {
     if (remote.updatedAt <= 0 || hydrated()) return;
     const privateValues = readPrivateVariableValues(server.projectId());
     const sharedDrafts = readSharedVariableDrafts(server.projectId());
-    const nextRows = remote.value.map((variable) =>
+    const pending = readPendingDataWorkspaceDraft(server.projectId());
+    const source = pending ?? remote.value;
+    const nextRows = source.map((variable) =>
       variableToDataRow(variable, privateValues[variable.id], sharedDrafts[variable.id]),
     );
+    const remoteSnapshot = JSON.stringify(remote.value);
+    const nextSnapshot = JSON.stringify(nextRows.map(dataRowToVariable));
     setRows(nextRows);
-    lastSavedSnapshot = JSON.stringify(nextRows.map(dataRowToVariable));
+    lastSavedSnapshot = remoteSnapshot;
+    if (pending && nextSnapshot === remoteSnapshot) removePendingDataWorkspaceDraft(server.projectId());
     setHydrated(true);
   });
   createEffect(() => {
@@ -81,17 +91,39 @@ export function DataWorkspace(props: {
     if (!hydrated()) return;
     const snapshot = JSON.stringify(value);
     if (snapshot === lastSavedSnapshot) return;
+    writePendingDataWorkspaceDraft(server.projectId(), value);
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
       void server
         .saveProjectVariables(value)
         .then(() => {
           lastSavedSnapshot = snapshot;
+          if (JSON.stringify(readPendingDataWorkspaceDraft(server.projectId())) === snapshot) {
+            removePendingDataWorkspaceDraft(server.projectId());
+          }
         })
         .catch((error: unknown) => toast(humanError(error, "Could not save this data"), "error"));
     }, 450);
   });
-  onCleanup(() => clearTimeout(saveTimer));
+  onCleanup(() => {
+    clearTimeout(saveTimer);
+    // Cleanup is synchronous, so start the canonical save and retain the local
+    // draft until it confirms. Offline/failed saves therefore remain recoverable.
+    const value = rows()
+      .filter((row) => !draftIds().has(row.id))
+      .map(dataRowToVariable);
+    const snapshot = JSON.stringify(value);
+    if (!hydrated() || snapshot === lastSavedSnapshot) return;
+    writePendingDataWorkspaceDraft(server.projectId(), value);
+    void server
+      .saveProjectVariables(value)
+      .then(() => {
+        if (JSON.stringify(readPendingDataWorkspaceDraft(server.projectId())) === snapshot) {
+          removePendingDataWorkspaceDraft(server.projectId());
+        }
+      })
+      .catch(() => undefined);
+  });
 
   const patchRow = (id: string, changes: Partial<DataRow>) => {
     setDraftIds((current) => {

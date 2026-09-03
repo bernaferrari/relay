@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const repositoryRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const appSourceRoot = resolve(repositoryRoot, "packages/app/src");
+const appV2SourceRoot = resolve(repositoryRoot, "packages/app-v2/src");
 
 /**
  * These are deliberately narrow escape hatches for resources that are not
@@ -305,7 +306,13 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     process.exitCode = result.status ?? 1;
   } else {
     const operationDefinitions = await loadOperationDefinitions();
-    const violations = await scanRendererOperationTransport(operationDefinitions);
+    const violations = (
+      await Promise.all(
+        [appSourceRoot, appV2SourceRoot].map((root) =>
+          scanRendererOperationTransport(operationDefinitions, root),
+        ),
+      )
+    ).flat();
     if (violations.length) {
       console.error(
         `Renderer operation transport guard found ${violations.length} unsafe transport call(s). Use RelayClient.invoke(operationId, input) for registered operations; only the narrow unregistered immutable-read allowlist may use resources.`,

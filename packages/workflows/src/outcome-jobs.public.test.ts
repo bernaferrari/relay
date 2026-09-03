@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { TargetPreflight } from "@relay/protocol";
 import { createRelayOutcomeJobs } from "./outcome-jobs.js";
 import type { RelayInvokeClient } from "./operation-port.js";
 import { createScriptedRelayClient } from "./testing.js";
@@ -14,6 +15,56 @@ const pixel = {
   createdAt: 1,
   updatedAt: 1,
 };
+
+const managedBrowser = {
+  id: "browser-checkout",
+  serial: "browser-checkout",
+  name: "Checkout browser",
+  kind: "Managed browser",
+  booted: true,
+  platform: "browser" as const,
+};
+
+const managedBrowserDefinition = {
+  id: "browser-checkout",
+  name: "Checkout browser",
+  kind: "browser" as const,
+  createdAt: 1,
+  updatedAt: 1,
+  browser: {
+    startUrl: "https://example.test/checkout",
+    headless: true,
+  },
+};
+
+const managedBrowserPreflight: TargetPreflight = {
+  targetId: "browser-checkout",
+  ok: true,
+  checkedAt: 1,
+  capabilities: ["snapshot", "screenshot", "recording", "tap", "type", "scroll", "network", "logs"],
+  checks: [
+    { id: "executable", label: "Browser executable", status: "pass" as const, message: "Chrome" },
+    { id: "profile", label: "Isolated profile", status: "pass" as const, message: "Writable" },
+    {
+      id: "navigation",
+      label: "Start page",
+      status: "pass" as const,
+      message: "Reached https://example.test",
+    },
+  ],
+};
+
+function browserDiscoverySteps(
+  preflight = managedBrowserPreflight,
+  devices = [managedBrowser],
+  targets = [managedBrowserDefinition],
+) {
+  return [
+    { id: "target.devices.list" as const, output: { devices } },
+    { id: "target.list" as const, output: { targets } },
+    { id: "target.preflight" as const, output: { preflight } },
+  ];
+}
 
 function artifact(digit: string, mime: string, kind: "image" | "structured-data") {
   const sha256 = digit.repeat(64);
@@ -140,6 +191,140 @@ test("connect excludes Android targets that are listed but offline or unauthoriz
     platform: "android",
     targetId: "pixel-9",
   });
+});
+
+test("connect selects a ready managed browser only after canonical preflight", async () => {
+  const scripted = createScriptedRelayClient(browserDiscoverySteps());
+  const jobs = createRelayOutcomeJobs(scripted.client, { actorId: "agent:test" });
+
+  assert.deepEqual(await jobs.connect(), {
+    targets: [{ kind: "browser", platform: "browser", targetId: "browser-checkout" }],
+    current: { kind: "browser", platform: "browser", targetId: "browser-checkout" },
+  });
+  assert.deepEqual(
+    scripted.invocations.map(({ id, input }) => ({ id, input })),
+    [
+      { id: "target.devices.list", input: {} },
+      { id: "target.list", input: {} },
+      { id: "target.preflight", input: { targetId: "browser-checkout" } },
+    ],
+  );
+});
+
+test("connect excludes a browser whose executable or start page failed preflight", async () => {
+  const scripted = createScriptedRelayClient(
+    browserDiscoverySteps({
+      ...managedBrowserPreflight,
+      ok: false,
+      checks: [
+        {
+          id: "navigation",
+          label: "Start page",
+          status: "fail" as const,
+          message: "The start page could not be reached",
+        },
+      ],
+    }),
+  );
+  const jobs = createRelayOutcomeJobs(scripted.client, { actorId: "agent:test" });
+
+  const result = await jobs.connect();
+  assert.deepEqual(result.targets, []);
+  assert.equal(result.current, undefined);
+});
+
+test("connect keeps two ready managed browsers explicit instead of guessing", async () => {
+  const second = {
+    ...managedBrowser,
+    id: "browser-payments",
+    serial: "browser-payments",
+    name: "Payments browser",
+  };
+  const secondDefinition = {
+    ...managedBrowserDefinition,
+    id: "browser-payments",
+    name: "Payments browser",
+    browser: { ...managedBrowserDefinition.browser, startUrl: "https://example.test/payments" },
+  };
+  const scripted = createScriptedRelayClient(
+    browserDiscoverySteps(
+      managedBrowserPreflight,
+      [managedBrowser, second],
+      [managedBrowserDefinition, secondDefinition],
+    ).flatMap((step, index) =>
+      index === 2
+        ? [
+            step,
+            {
+              ...step,
+              output: { preflight: { ...managedBrowserPreflight, targetId: "browser-payments" } },
+            },
+          ]
+        : [step],
+    ),
+  );
+  const jobs = createRelayOutcomeJobs(scripted.client, { actorId: "agent:test" });
+
+  const result = await jobs.connect();
+  assert.equal(result.current, undefined);
+  assert.deepEqual(result.targets, [
+    { kind: "browser", platform: "browser", targetId: "browser-checkout" },
+    { kind: "browser", platform: "browser", targetId: "browser-payments" },
+  ]);
+});
+
+test("record freezes the selected browser target before reserving its durable workflow", async () => {
+  let durableIdentity: Record<string, unknown> | undefined;
+  const scripted = createScriptedRelayClient([
+    ...browserDiscoverySteps(),
+    { id: "app-map.get", output: { appMap: { revision: 7 } } },
+    {
+      id: "lease.list",
+      output: {
+        leases: [
+          {
+            id: "browser-lease",
+            projectId: "default",
+            poolId: "local",
+            deviceSerial: "browser-checkout",
+            ownerId: "agent:test",
+            status: "leased",
+            leasedAt: 1,
+            expiresAt: 10_000,
+          },
+        ],
+      },
+    },
+    { id: "app-map.get", output: { appMap: { revision: 7 } } },
+    {
+      id: "workflow.create",
+      error: new Error("workflow store unavailable"),
+      checkInput: (input) => {
+        durableIdentity = (input as { frozenIdentity: Record<string, unknown> }).frozenIdentity;
+      },
+    },
+  ]);
+  const jobs = createRelayOutcomeJobs(scripted.client, { actorId: "agent:test" });
+
+  const result = await jobs.record({
+    kind: "record-test",
+    appMapId: "settings",
+    title: "Checkout smoke path",
+    confirmControl: true,
+  });
+
+  assert.equal(result.phase, "blocked");
+  assert.deepEqual(durableIdentity?.target, {
+    kind: "browser",
+    platform: "browser",
+    targetId: "browser-checkout",
+  });
+  const durableInvocation = scripted.invocations.at(-1);
+  assert.equal(durableInvocation?.id, "workflow.create");
+  assert.deepEqual(
+    (durableInvocation?.input as { frozenIdentity?: unknown }).frozenIdentity,
+    durableIdentity,
+  );
 });
 
 test("explicit workflow target reports the precise iOS runtime recovery", async () => {
