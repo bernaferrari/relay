@@ -15,8 +15,10 @@ import {
   retainOrphanedDeviceClaims,
 } from '../../__tests__/test-utils/device-claim-store.ts';
 import { createDeviceClaimAdmission } from '../device-claim-admission.ts';
+import { acquireAllocatorHeldDeviceClaim } from '../device-claim-allocator.ts';
 import { abandonDeviceClaim, acquireDeviceClaim } from '../device-claims.ts';
 import { inspectDeviceClaims } from '../device-claim-inspection.ts';
+import { canonicalLocalDeviceKey, resolveDeviceClaimPath } from '../device-claim-paths.ts';
 import { createRequestExecutionScope } from '../request-execution-scope.ts';
 import { LeaseRegistry } from '../lease-registry.ts';
 import { SessionStore } from '../session-store.ts';
@@ -219,6 +221,163 @@ test.for(POLICY_CLAIMS.map(([policy]) => policy))(
     expect(fs.existsSync(claimsDir)).toBe(false);
   },
 );
+
+test('a transient-exclusive command executes under the allocator-held claim, acquires nothing and clears nothing', async () => {
+  const { stateDir, claimsDir } = setup();
+  await acquireAllocatorHeldDeviceClaim({
+    device: ANDROID_EMULATOR,
+    principal: { stateDir, instanceId: 'sim-a', identityIncarnationId: 'incarnation-1' },
+  });
+  const [before] = fs
+    .readdirSync(claimsDir)
+    .map((name) => fs.readFileSync(path.join(claimsDir, name), 'utf8'));
+
+  const admission = makeAdmission('transient-exclusive', stateDir, 'shutdown');
+  await admission.admit(ANDROID_EMULATOR, managedOwner, MANAGED_BINDING);
+  await admission[Symbol.asyncDispose]();
+
+  // One file, byte-identical: no transient claim was added and dispose removed nothing.
+  const after = fs
+    .readdirSync(claimsDir)
+    .map((name) => fs.readFileSync(path.join(claimsDir, name), 'utf8'));
+  expect(after).toEqual([before]);
+  expect(claimedSessions()).toEqual([undefined]);
+});
+
+test('an allocator-held claim of another installation refuses the managed binding as DEVICE_CLAIM_ALLOCATOR_HELD', async () => {
+  const { root, stateDir } = setup();
+  await acquireAllocatorHeldDeviceClaim({
+    device: ANDROID_EMULATOR,
+    principal: {
+      stateDir: path.join(root, 'foreign-installation'),
+      instanceId: 'sim-a',
+      identityIncarnationId: 'incarnation-1',
+    },
+  });
+
+  const admission = makeAdmission('transient-exclusive', stateDir, 'shutdown');
+  const error = asAppError(
+    await admission
+      .admit(ANDROID_EMULATOR, managedOwner, MANAGED_BINDING)
+      .catch((error: unknown) => error),
+  );
+
+  expect(error.code).toBe('DEVICE_IN_USE');
+  expect(error.details?.reason).toBe('DEVICE_CLAIM_ALLOCATOR_HELD');
+  expect(error.details?.retriable).toBe(false);
+  await admission[Symbol.asyncDispose]();
+});
+
+test('a managed binding fencing another identity incarnation is refused as stale, not covered', async () => {
+  const { stateDir } = setup();
+  await acquireAllocatorHeldDeviceClaim({
+    device: ANDROID_EMULATOR,
+    principal: { stateDir, instanceId: 'sim-a', identityIncarnationId: 'incarnation-1' },
+  });
+
+  const admission = makeAdmission('transient-exclusive', stateDir, 'shutdown');
+  const error = asAppError(
+    await admission
+      .admit(ANDROID_EMULATOR, managedOwner, {
+        kind: 'exact-owner',
+        owner: managedOwner,
+        fence: managedBindingFence({
+          requesterId: 'requester-1',
+          requestGeneration: 2,
+          identityIncarnationId: 'incarnation-2',
+        }),
+      })
+      .catch((error: unknown) => error),
+  );
+
+  expect(error.code).toBe('COMMAND_FAILED');
+  expect(error.details?.reason).toBe('allocator-claim-incarnation-stale');
+  expect(error.details?.heldIncarnationId).toBe('incarnation-1');
+  await admission[Symbol.asyncDispose]();
+});
+
+// An ordinary daemon must not reach a managed identity through an observe-policy command either:
+// `apps` and `app-state` boot the device through `ensureReady` exactly as a mutation would.
+test.for(POLICY_CLAIMS.map(([policy]) => policy).filter((policy) => policy !== 'none'))(
+  'an ordinary owner is refused DEVICE_CLAIM_ALLOCATOR_HELD under the %s policy',
+  async (policy, { expect }) => {
+    const { stateDir, claimsDir } = setup();
+    await acquireAllocatorHeldDeviceClaim({
+      device: ANDROID_EMULATOR,
+      principal: { stateDir, instanceId: 'sim-a', identityIncarnationId: 'incarnation-1' },
+    });
+    const before = fs.readdirSync(claimsDir);
+    const admission = makeAdmission(policy, stateDir);
+
+    const error = asAppError(
+      await admission
+        .admit(ANDROID_EMULATOR, localAndroid, ORDINARY)
+        .catch((error: unknown) => error),
+    );
+
+    expect(error.code).toBe('DEVICE_IN_USE');
+    expect(error.details?.reason).toBe('DEVICE_CLAIM_ALLOCATOR_HELD');
+    await admission[Symbol.asyncDispose]();
+    expect(fs.readdirSync(claimsDir)).toEqual(before);
+  },
+);
+
+// A claim file corrupted into declaring both the allocator schema version and a process
+// principal does not decode to either claim kind, but it is not provably a non-allocator
+// record either: it must refuse ordinary admission, not fall through as if the device were free.
+test('an ordinary owner is refused for a corrupted allocator-looking claim record, not waved through', async () => {
+  const { stateDir, claimsDir } = setup();
+  fs.mkdirSync(claimsDir, { recursive: true });
+  const deviceKey = canonicalLocalDeviceKey(ANDROID_EMULATOR);
+  fs.writeFileSync(
+    resolveDeviceClaimPath(deviceKey),
+    JSON.stringify({
+      schemaVersion: 3,
+      kind: 'allocator',
+      deviceKey,
+      device: {
+        family: 'android',
+        id: ANDROID_EMULATOR.id,
+        name: ANDROID_EMULATOR.name,
+        kind: ANDROID_EMULATOR.kind,
+      },
+      stateDir: '/state/host',
+      allocator: { instanceId: 'sim-a', identityIncarnationId: 'inc-1' },
+      // A process principal on an allocator record is exactly the corruption that must not
+      // decode: decodeAllocatorHeldClaim refuses it, and this is the record that refusal leaves.
+      ownerPid: 4242,
+      createdAtMs: 1,
+      updatedAtMs: 2,
+    }),
+  );
+  const admission = makeAdmission('observe', stateDir);
+
+  const error = asAppError(
+    await admission
+      .admit(ANDROID_EMULATOR, localAndroid, ORDINARY)
+      .catch((error: unknown) => error),
+  );
+
+  expect(error.code).toBe('DEVICE_IN_USE');
+  expect(error.details?.reason).toBe('DEVICE_CLAIM_OWNER_UNCERTAIN');
+  expect(error.details?.classification).toBe('allocator-inconsistent');
+  await admission[Symbol.asyncDispose]();
+});
+
+test('the none policy still reaches no device state at all', async () => {
+  const { stateDir, claimsDir } = setup();
+  await acquireAllocatorHeldDeviceClaim({
+    device: ANDROID_EMULATOR,
+    principal: { stateDir, instanceId: 'sim-a', identityIncarnationId: 'incarnation-1' },
+  });
+  const before = fs.readdirSync(claimsDir);
+
+  const admission = makeAdmission('none', stateDir);
+  await admission.admit(ANDROID_EMULATOR, localAndroid, ORDINARY);
+  await admission[Symbol.asyncDispose]();
+
+  expect(fs.readdirSync(claimsDir)).toEqual(before);
+});
 
 /** Claims visible while one command holds a device binding from the real request scope. */
 async function claimsWhileBound(command: string, stateDir: string) {
