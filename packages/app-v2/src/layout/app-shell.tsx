@@ -1,5 +1,14 @@
 /** @jsxImportSource react */
-import { Dialog, IconButton, SidebarProvider } from "@relay/ui-react";
+import {
+  Dialog,
+  DialogTrigger,
+  DialogClose,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+} from "@relay/ui-react/components/dialog";
+import { SidebarProvider } from "@relay/ui-react";
+import { Button } from "@relay/ui-react/components/button";
 import {
   Outlet,
   useLocation,
@@ -55,7 +64,7 @@ export function AppShell({ platform }: { platform: Platform }) {
   }, []);
 
   return (
-    <Dialog.Root open={navigationOpen} onOpenChange={setNavigationOpen}>
+    <Dialog open={navigationOpen} onOpenChange={setNavigationOpen}>
       <SidebarProvider
         className={`relay-shell${immersive ? " relay-shell--immersive" : ""}`}
         data-platform={platform.platform}
@@ -71,24 +80,26 @@ export function AppShell({ platform }: { platform: Platform }) {
               aria-label="Window navigation"
             >
               <div className="relay-history-controls relay-electron-no-drag">
-                <IconButton
-                  size="small"
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
                   className="relay-history-button"
                   aria-label="Go back"
                   onClick={goBack}
                   disabled={!canGoBack}
                 >
                   <ArrowLeft aria-hidden="true" />
-                </IconButton>
-                <IconButton
-                  size="small"
+                </Button>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
                   className="relay-history-button"
                   aria-label="Go forward"
                   onClick={() => router.history.forward()}
                   disabled={!historyAvailability.canGoForward}
                 >
                   <ArrowRight aria-hidden="true" />
-                </IconButton>
+                </Button>
               </div>
               <ActivityCenterButton />
               <button
@@ -104,15 +115,16 @@ export function AppShell({ platform }: { platform: Platform }) {
             </header>
           ) : null}
           <header className="relay-mobile-header relay-electron-drag">
-            <Dialog.Trigger
+            <DialogTrigger
               render={
-                <IconButton
-                  size="small"
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
                   className="relay-mobile-menu relay-electron-no-drag"
                   aria-label="Open navigation"
                 >
                   <PanelLeft aria-hidden="true" />
-                </IconButton>
+                </Button>
               }
             />
             <span className="relay-mobile-title">Relay</span>
@@ -124,19 +136,15 @@ export function AppShell({ platform }: { platform: Platform }) {
         <RouteAnnouncer />
         <CommandPalette open={commandOpen} onOpenChange={setCommandOpen} />
       </SidebarProvider>
-      <Dialog.Portal>
-        <Dialog.Backdrop className="relay-dialog-backdrop relay-navigation-backdrop" />
-        <Dialog.Viewport className="relay-dialog-viewport relay-navigation-viewport">
-          <Dialog.Popup className="relay-navigation-dialog">
-            <Dialog.Title className="relay-visually-hidden">Navigation</Dialog.Title>
-            <Dialog.Description className="relay-visually-hidden">
-              Choose a Relay workspace area.
-            </Dialog.Description>
-            <SidebarContent label="Mobile navigation" />
-          </Dialog.Popup>
-        </Dialog.Viewport>
-      </Dialog.Portal>
-    </Dialog.Root>
+
+      <DialogContent showCloseButton={false} className="relay-navigation-dialog">
+        <DialogTitle className="relay-visually-hidden">Navigation</DialogTitle>
+        <DialogDescription className="relay-visually-hidden">
+          Choose a Relay workspace area.
+        </DialogDescription>
+        <SidebarContent label="Mobile navigation" />
+      </DialogContent>
+    </Dialog>
   );
 }
 

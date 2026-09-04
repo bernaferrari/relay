@@ -1,8 +1,17 @@
 /** @jsxImportSource react */
-import { Badge, Button, Dialog, Disclosure } from "@relay/ui-react";
+import {
+  Dialog,
+  DialogTrigger,
+  DialogClose,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+} from "@relay/ui-react/components/dialog";
+import { Badge, Disclosure } from "@relay/ui-react";
+import { Button } from "@relay/ui-react/components/button";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useRouteContext } from "@tanstack/react-router";
-import { Pencil, RefreshCcw, Square } from "lucide-react";
+import { CircleAlert, Pencil, RefreshCcw, Square } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Breadcrumbs, EmptyState } from "../components/product-patterns";
 import { sessionQueryKeys, type ProductSessionDetail } from "../data/session-product-service";
@@ -26,9 +35,10 @@ export function SessionPage() {
   const session = useQuery({
     queryKey: sessionQueryKeys.session(sessionId),
     queryFn: () => sessionService.get(sessionId),
-    staleTime: 2_000,
-    refetchInterval: (state) =>
-      state.state.data && isActiveSession(state.state.data) ? 3_000 : false,
+    retry: false,
+    staleTime: Infinity,
+    refetchOnReconnect: false,
+    refetchOnWindowFocus: false,
   });
   const refresh = useMutation({
     mutationFn: () => sessionService.refresh(sessionId),
@@ -107,19 +117,20 @@ export function SessionPage() {
   return (
     <section className="relay-page relay-session-page">
       <Breadcrumbs
-        items={[{ label: "Sessions", to: "/sessions" }, { label: value?.title ?? "Session" }]}
+        items={[
+          { label: "Sessions", to: "/sessions" },
+          { label: value?.title ?? (session.isError ? "Unavailable" : "Session") },
+        ]}
       />
-      <header className="relay-page-header relay-session-detail-header">
-        <div>
-          <p className="relay-eyebrow">Session</p>
-          <h1>{value?.title ?? "Session"}</h1>
-          <p className="relay-page-description">
-            {value
-              ? `${targetLabel(value)} · ${value.actorKind === "agent" ? "Agent-owned" : "Human-owned"}`
-              : "Durable live target context"}
-          </p>
-        </div>
-        {value ? (
+      {value ? (
+        <header className="relay-page-header relay-session-detail-header">
+          <div>
+            <p className="relay-eyebrow">Session</p>
+            <h1>{value.title}</h1>
+            <p className="relay-page-description">
+              {targetLabel(value)} · {value.actorKind === "agent" ? "Agent-owned" : "Human-owned"}
+            </p>
+          </div>
           <div className="relay-session-actions">
             <Badge
               variant={
@@ -134,7 +145,7 @@ export function SessionPage() {
             </Badge>
             {canControl ? (
               <Button
-                variant="secondary"
+                variant="outline"
                 onClick={() => refresh.mutate()}
                 disabled={refresh.isPending}
               >
@@ -144,7 +155,8 @@ export function SessionPage() {
             ) : null}
             {canControl && value.committedTestId ? (
               <Button
-                variant="primary"
+                variant="default"
+                nativeButton={false}
                 render={
                   <Link
                     to="/tests/$testId/edit"
@@ -157,52 +169,88 @@ export function SessionPage() {
               </Button>
             ) : null}
             {isActiveSession(value) ? (
-              <Dialog.Root open={endOpen} onOpenChange={setEndOpen}>
-                <Dialog.Trigger render={<Button variant="ghost" />}>
+              <Dialog open={endOpen} onOpenChange={setEndOpen}>
+                <DialogTrigger render={<Button variant="ghost" />}>
                   <Square aria-hidden="true" /> End Session
-                </Dialog.Trigger>
-                <Dialog.Portal>
-                  <Dialog.Backdrop className="relay-dialog-backdrop" />
-                  <Dialog.Viewport className="relay-dialog-viewport">
-                    <Dialog.Popup className="relay-overlay-popup relay-dialog-popup">
-                      <Dialog.Title>End this Session?</Dialog.Title>
-                      <Dialog.Description>
-                        Relay will stop this active authoring Session. Saved evidence and its
-                        history remain available.
-                      </Dialog.Description>
-                      <div className="relay-form-actions relay-form-actions--end">
-                        <Dialog.Close render={<Button variant="ghost">Keep Session</Button>} />
-                        <Button
-                          className="relay-session-end-button"
-                          variant="secondary"
-                          onClick={() => end.mutate()}
-                          disabled={end.isPending}
-                        >
-                          {end.isPending ? "Ending…" : "End Session"}
-                        </Button>
-                      </div>
-                    </Dialog.Popup>
-                  </Dialog.Viewport>
-                </Dialog.Portal>
-              </Dialog.Root>
+                </DialogTrigger>
+
+                <DialogContent
+                  showCloseButton={false}
+                  className="relay-overlay-popup relay-dialog-popup"
+                >
+                  <DialogTitle>End this Session?</DialogTitle>
+                  <DialogDescription>
+                    Relay will stop this active authoring Session. Saved evidence and its history
+                    remain available.
+                  </DialogDescription>
+                  <div className="relay-form-actions relay-form-actions--end">
+                    <DialogClose render={<Button variant="ghost">Keep Session</Button>} />
+                    <Button
+                      className="relay-session-end-button"
+                      variant="outline"
+                      onClick={() => end.mutate()}
+                      disabled={end.isPending}
+                    >
+                      {end.isPending ? "Ending…" : "End Session"}
+                    </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
             ) : null}
           </div>
-        ) : null}
-      </header>
+        </header>
+      ) : null}
 
       {session.isPending ? <PageLoading label="Loading Session…" /> : null}
-      <RecordingProblem
-        error={session.error ?? refresh.error ?? end.error}
-        onRetry={() => void session.refetch()}
-        retrying={session.isFetching}
-      />
+      {session.isError && !value ? (
+        <section
+          className="mt-10 flex max-w-xl flex-col items-start"
+          role="alert"
+          aria-labelledby="session-load-error-title"
+        >
+          <div className="grid size-9 place-items-center rounded-lg bg-destructive/10 text-destructive">
+            <CircleAlert className="size-4" aria-hidden="true" />
+          </div>
+          <h1
+            id="session-load-error-title"
+            className="mt-5 text-2xl font-semibold tracking-tight text-foreground"
+          >
+            Couldn’t load this Session
+          </h1>
+          <p className="mt-2 max-w-[48ch] text-sm leading-6 text-muted-foreground">
+            Relay couldn’t retrieve this session. It may have expired or the link may no longer be
+            valid.
+          </p>
+          <div className="mt-5 flex flex-wrap items-center gap-2">
+            <Button nativeButton={false} render={<Link to="/sessions" />}>
+              Back to Sessions
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => void session.refetch()}
+              disabled={session.isFetching}
+            >
+              <RefreshCcw aria-hidden="true" />
+              {session.isFetching ? "Trying again…" : "Try again"}
+            </Button>
+          </div>
+        </section>
+      ) : null}
+      {value ? (
+        <RecordingProblem
+          className="mt-4 max-w-2xl"
+          error={refresh.error ?? end.error}
+          onRetry={() => void session.refetch()}
+          retrying={session.isFetching}
+        />
+      ) : null}
 
       {!session.isPending && !session.isError && !value ? (
         <EmptyState
           title="This Session is not available"
           detail="It may belong to another project or may have been removed. Return to Sessions to continue available work."
           action={
-            <Button variant="primary" render={<Link to="/sessions" />}>
+            <Button nativeButton={false} variant="default" render={<Link to="/sessions" />}>
               View Sessions
             </Button>
           }
@@ -221,8 +269,8 @@ export function SessionPage() {
               </div>
               {canControl && liveStatus === "degraded" ? (
                 <Button
-                  size="small"
-                  variant="secondary"
+                  size="sm"
+                  variant="outline"
                   onClick={() => setLiveAttempt((attempt) => attempt + 1)}
                 >
                   Reconnect view
@@ -246,7 +294,8 @@ export function SessionPage() {
                 <p>{sessionAvailability(value)}</p>
                 {value.state === "reviewing" ? (
                   <Button
-                    variant="primary"
+                    variant="default"
+                    nativeButton={false}
                     render={
                       <Link
                         to="/recordings/$recordingId/review"
@@ -258,7 +307,8 @@ export function SessionPage() {
                   </Button>
                 ) : value.committedTestId ? (
                   <Button
-                    variant="primary"
+                    variant="default"
+                    nativeButton={false}
                     render={<Link to="/tests/$testId" params={{ testId: value.committedTestId }} />}
                   >
                     Open saved Test

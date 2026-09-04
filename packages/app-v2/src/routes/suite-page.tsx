@@ -1,13 +1,17 @@
 /** @jsxImportSource react */
 import {
-  Button,
-  CheckboxCard,
   Dialog,
-  Field,
-  FieldError,
-  FieldLabel,
-  Input,
-} from "@relay/ui-react";
+  DialogTrigger,
+  DialogClose,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+} from "@relay/ui-react/components/dialog";
+import { Field, FieldError, FieldLabel } from "@relay/ui-react/components/field";
+import { Button } from "@relay/ui-react/components/button";
+import { Input } from "@relay/ui-react/components/input";
+import { Checkbox } from "@relay/ui-react/components/checkbox";
+import { FieldLabel as ChoiceLabel } from "@relay/ui-react/components/field";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { Play, RotateCcw, Trash2 } from "lucide-react";
@@ -147,7 +151,7 @@ export function SuitePage() {
           detail="Reload the saved coverage plan before making changes or starting work."
           action={
             <Button
-              variant="secondary"
+              variant="outline"
               onClick={() => {
                 void suite.refetch();
                 void editor.refetch();
@@ -180,11 +184,11 @@ export function SuitePage() {
               </p>
             </div>
             <div className="flex shrink-0 flex-wrap items-center gap-2">
-              <Button variant="secondary" onClick={beginEdit}>
+              <Button variant="outline" onClick={beginEdit}>
                 Edit Suite
               </Button>
               <Button
-                variant="primary"
+                variant="default"
                 onClick={() => start.mutate()}
                 disabled={
                   !selectedProfileIds.length ||
@@ -278,20 +282,30 @@ export function SuitePage() {
                   <fieldset className="mt-3 grid min-w-0 gap-2 border-0 p-0">
                     <legend className="sr-only">Environments</legend>
                     {environments.data.map((profile) => (
-                      <CheckboxCard
+                      <ChoiceLabel
                         key={profile.id}
-                        checked={profileIds.has(profile.id)}
-                        onCheckedChange={(checked) =>
-                          setProfileIds((current) => {
-                            const next = new Set(current);
-                            if (checked === true && next.size < 4) next.add(profile.id);
-                            if (checked !== true) next.delete(profile.id);
-                            return next;
-                          })
-                        }
-                        title={profile.name}
-                        description={`${profile.platform} · ${profile.target.name}`}
-                      />
+                        className="flex min-h-14 min-w-0 cursor-pointer items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50"
+                      >
+                        <span className="grid min-w-0 flex-1 gap-0.5">
+                          <span className="truncate text-sm font-medium text-foreground">
+                            {profile.name}
+                          </span>
+                          <span className="truncate text-xs leading-snug text-muted-foreground">
+                            {profile.platform} · {profile.target.name}
+                          </span>
+                        </span>
+                        <Checkbox
+                          checked={profileIds.has(profile.id)}
+                          onCheckedChange={(checked) =>
+                            setProfileIds((current) => {
+                              const next = new Set(current);
+                              if (checked === true && next.size < 4) next.add(profile.id);
+                              if (checked !== true) next.delete(profile.id);
+                              return next;
+                            })
+                          }
+                        />
+                      </ChoiceLabel>
                     ))}
                   </fieldset>
                 </Field>
@@ -376,113 +390,131 @@ export function SuitePage() {
                 Tests and Reports stay in the App.
               </p>
             </div>
-            <Dialog.Root open={removeOpen} onOpenChange={setRemoveOpen}>
-              <Dialog.Trigger render={<Button variant="secondary" />}>
+            <Dialog open={removeOpen} onOpenChange={setRemoveOpen}>
+              <DialogTrigger render={<Button variant="outline" />}>
                 <Trash2 aria-hidden="true" /> Remove
-              </Dialog.Trigger>
-              <Dialog.Portal>
-                <Dialog.Backdrop className="relay-dialog-backdrop" />
-                <Dialog.Viewport className="relay-dialog-viewport">
-                  <Dialog.Popup className="relay-overlay-popup relay-dialog-popup">
-                    <Dialog.Title>Remove {value.name}?</Dialog.Title>
-                    <Dialog.Description>
-                      This removes the Suite grouping. Its Tests and Reports remain available.
-                    </Dialog.Description>
-                    {remove.error ? (
-                      <FieldError>
-                        {remove.error instanceof Error
-                          ? remove.error.message
-                          : "Relay could not remove this Suite."}
-                      </FieldError>
-                    ) : null}
-                    <div className="relay-dialog-actions">
-                      <Dialog.Close render={<Button variant="ghost">Cancel</Button>} />
-                      <Button
-                        className="relay-suite-remove-confirm"
-                        onClick={() => remove.mutate()}
-                        disabled={remove.isPending}
-                      >
-                        {remove.isPending ? "Removing…" : "Remove Suite"}
-                      </Button>
-                    </div>
-                  </Dialog.Popup>
-                </Dialog.Viewport>
-              </Dialog.Portal>
-            </Dialog.Root>
+              </DialogTrigger>
+
+              <DialogContent
+                showCloseButton={false}
+                className="relay-overlay-popup relay-dialog-popup"
+              >
+                <DialogTitle>Remove {value.name}?</DialogTitle>
+                <DialogDescription>
+                  This removes the Suite grouping. Its Tests and Reports remain available.
+                </DialogDescription>
+                {remove.error ? (
+                  <FieldError>
+                    {remove.error instanceof Error
+                      ? remove.error.message
+                      : "Relay could not remove this Suite."}
+                  </FieldError>
+                ) : null}
+                <div className="relay-dialog-actions">
+                  <DialogClose render={<Button variant="ghost">Cancel</Button>} />
+                  <Button
+                    className="relay-suite-remove-confirm"
+                    onClick={() => remove.mutate()}
+                    disabled={remove.isPending}
+                  >
+                    {remove.isPending ? "Removing…" : "Remove Suite"}
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
           </section>
 
-          <Dialog.Root open={editOpen} onOpenChange={setEditOpen}>
-            <Dialog.Portal>
-              <Dialog.Backdrop className="relay-dialog-backdrop" />
-              <Dialog.Viewport className="relay-dialog-viewport">
-                <Dialog.Popup className="relay-overlay-popup relay-dialog-popup relay-suite-dialog">
-                  <Dialog.Title>Edit Suite</Dialog.Title>
-                  <Dialog.Description>
-                    Keep the scope deliberate. Removing a Test from this Suite does not delete it.
-                  </Dialog.Description>
-                  <form onSubmit={submit}>
-                    <Field>
-                      <FieldLabel htmlFor="edit-suite-name">Suite name</FieldLabel>
-                      <Input
-                        id="edit-suite-name"
-                        value={name}
-                        onChange={(event) => setName(event.currentTarget.value)}
-                      />
-                    </Field>
-                    <div className="relay-suite-dialog-scopes">
-                      <fieldset>
-                        <legend>Tests</legend>
-                        {editor.data?.tests.map((test) => (
-                          <CheckboxCard
-                            key={test.id}
-                            checked={testIds.has(test.id)}
-                            onCheckedChange={(checked) =>
-                              toggle(setTestIds, test.id, checked === true)
-                            }
-                            title={test.name}
-                            description={test.status === "ready" ? "Ready" : "Needs review"}
-                          />
-                        ))}
-                      </fieldset>
-                      {editor.data?.dataSets.length ? (
-                        <fieldset>
-                          <legend>Data sets</legend>
-                          {editor.data.dataSets.map((dataSet) => (
-                            <CheckboxCard
-                              key={dataSet.id}
-                              checked={variableIds.has(dataSet.id)}
-                              onCheckedChange={(checked) =>
-                                toggle(setVariableIds, dataSet.id, checked === true)
-                              }
-                              title={dataSet.name}
-                              description={`${dataSet.optionCount} saved ${dataSet.optionCount === 1 ? "value" : "values"}`}
-                            />
-                          ))}
-                        </fieldset>
-                      ) : null}
-                    </div>
-                    {save.error ? (
-                      <FieldError>
-                        {save.error instanceof Error
-                          ? save.error.message
-                          : "Relay could not save this Suite."}
-                      </FieldError>
-                    ) : null}
-                    <div className="relay-dialog-actions">
-                      <Dialog.Close render={<Button variant="ghost">Cancel</Button>} />
-                      <Button
-                        type="submit"
-                        variant="primary"
-                        disabled={!name.trim() || !testIds.size || save.isPending}
+          <Dialog open={editOpen} onOpenChange={setEditOpen}>
+            <DialogContent
+              showCloseButton={false}
+              className="relay-overlay-popup relay-dialog-popup relay-suite-dialog"
+            >
+              <DialogTitle>Edit Suite</DialogTitle>
+              <DialogDescription>
+                Keep the scope deliberate. Removing a Test from this Suite does not delete it.
+              </DialogDescription>
+              <form onSubmit={submit}>
+                <Field>
+                  <FieldLabel htmlFor="edit-suite-name">Suite name</FieldLabel>
+                  <Input
+                    id="edit-suite-name"
+                    value={name}
+                    onChange={(event) => setName(event.currentTarget.value)}
+                  />
+                </Field>
+                <div className="relay-suite-dialog-scopes">
+                  <fieldset>
+                    <legend>Tests</legend>
+                    {editor.data?.tests.map((test) => (
+                      <ChoiceLabel
+                        key={test.id}
+                        className="flex min-h-14 min-w-0 cursor-pointer items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50"
                       >
-                        {save.isPending ? "Saving…" : "Save changes"}
-                      </Button>
-                    </div>
-                  </form>
-                </Dialog.Popup>
-              </Dialog.Viewport>
-            </Dialog.Portal>
-          </Dialog.Root>
+                        <span className="grid min-w-0 flex-1 gap-0.5">
+                          <span className="truncate text-sm font-medium text-foreground">
+                            {test.name}
+                          </span>
+                          <span className="truncate text-xs leading-snug text-muted-foreground">
+                            {test.status === "ready" ? "Ready" : "Needs review"}
+                          </span>
+                        </span>
+                        <Checkbox
+                          checked={testIds.has(test.id)}
+                          onCheckedChange={(checked) =>
+                            toggle(setTestIds, test.id, checked === true)
+                          }
+                        />
+                      </ChoiceLabel>
+                    ))}
+                  </fieldset>
+                  {editor.data?.dataSets.length ? (
+                    <fieldset>
+                      <legend>Data sets</legend>
+                      {editor.data.dataSets.map((dataSet) => (
+                        <ChoiceLabel
+                          key={dataSet.id}
+                          className="flex min-h-14 min-w-0 cursor-pointer items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50"
+                        >
+                          <span className="grid min-w-0 flex-1 gap-0.5">
+                            <span className="truncate text-sm font-medium text-foreground">
+                              {dataSet.name}
+                            </span>
+                            <span className="truncate text-xs leading-snug text-muted-foreground">
+                              {dataSet.optionCount} saved{" "}
+                              {dataSet.optionCount === 1 ? "value" : "values"}
+                            </span>
+                          </span>
+                          <Checkbox
+                            checked={variableIds.has(dataSet.id)}
+                            onCheckedChange={(checked) =>
+                              toggle(setVariableIds, dataSet.id, checked === true)
+                            }
+                          />
+                        </ChoiceLabel>
+                      ))}
+                    </fieldset>
+                  ) : null}
+                </div>
+                {save.error ? (
+                  <FieldError>
+                    {save.error instanceof Error
+                      ? save.error.message
+                      : "Relay could not save this Suite."}
+                  </FieldError>
+                ) : null}
+                <div className="relay-dialog-actions">
+                  <DialogClose render={<Button variant="ghost">Cancel</Button>} />
+                  <Button
+                    type="submit"
+                    variant="default"
+                    disabled={!name.trim() || !testIds.size || save.isPending}
+                  >
+                    {save.isPending ? "Saving…" : "Save changes"}
+                  </Button>
+                </div>
+              </form>
+            </DialogContent>
+          </Dialog>
         </>
       ) : null}
     </section>

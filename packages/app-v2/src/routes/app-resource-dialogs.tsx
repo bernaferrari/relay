@@ -1,5 +1,15 @@
 /** @jsxImportSource react */
-import { Button, Dialog, Field, FieldError, FieldLabel, Input } from "@relay/ui-react";
+import {
+  Dialog,
+  DialogTrigger,
+  DialogClose,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+} from "@relay/ui-react/components/dialog";
+import { Field, FieldError, FieldLabel } from "@relay/ui-react/components/field";
+import { Button } from "@relay/ui-react/components/button";
+import { Input } from "@relay/ui-react/components/input";
 import { Box, Globe2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import type {
@@ -55,7 +65,7 @@ export function VersionRow({
       </time>
       {canEdit ? (
         <span className="relay-resource-row-actions">
-          <Button size="small" variant="ghost" onClick={onEdit} aria-label={`Edit ${version.name}`}>
+          <Button size="sm" variant="ghost" onClick={onEdit} aria-label={`Edit ${version.name}`}>
             Edit
           </Button>
         </span>
@@ -97,120 +107,118 @@ export function VersionEditorDialog({
   }
 
   return (
-    <Dialog.Root open onOpenChange={(open) => !open && onClose()}>
-      <Dialog.Portal>
-        <Dialog.Backdrop className="relay-dialog-backdrop" />
-        <Dialog.Viewport className="relay-dialog-viewport">
-          <Dialog.Popup className="relay-overlay-popup relay-dialog-popup relay-resource-dialog">
-            <Dialog.Title>{editing ? "Edit version" : "Add version"}</Dialog.Title>
-            <Dialog.Description>
-              Register the exact build identity Relay can use. This does not associate a build with
-              an App Map.
-            </Dialog.Description>
-            <form onSubmit={submit}>
-              <Field>
-                <FieldLabel htmlFor="version-id">Version ID</FieldLabel>
-                <Input
-                  id="version-id"
-                  value={draft.id}
-                  onChange={(event) => setDraft({ ...draft, id: event.currentTarget.value })}
-                  placeholder="checkout-ios-3-4"
-                  autoComplete="off"
-                  readOnly={editing}
-                />
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="version-name">Name</FieldLabel>
-                <Input
-                  id="version-name"
-                  value={draft.name}
-                  onChange={(event) => setDraft({ ...draft, name: event.currentTarget.value })}
-                  placeholder="Checkout 3.4.0"
-                  autoComplete="off"
-                />
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="version-platform">Platform</FieldLabel>
-                <select
-                  id="version-platform"
-                  value={draft.platform}
-                  onChange={(event) =>
-                    setDraft({
-                      ...draft,
-                      platform: event.currentTarget.value as ProductAppVersion["platform"],
-                    })
-                  }
-                  disabled={editing}
-                >
-                  <option value="ios">iOS</option>
-                  <option value="android">Android</option>
-                  <option value="web">Web</option>
-                </select>
-              </Field>
-              {editing ? (
-                <p className="relay-resource-lifecycle-note">
-                  Current status: <strong>{statusLabel(draft.status)}</strong>. Relay updates build
-                  readiness from preflight, installation, and launch results.
-                </p>
-              ) : null}
-              <div className="relay-resource-field-grid">
-                <Field>
-                  <FieldLabel htmlFor="version-configuration">Configuration</FieldLabel>
-                  <Input
-                    id="version-configuration"
-                    value={draft.configuration ?? ""}
-                    onChange={(event) =>
-                      setDraft({ ...draft, configuration: event.currentTarget.value })
-                    }
-                    placeholder="release"
-                    autoComplete="off"
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="version-application-id">Application ID</FieldLabel>
-                  <Input
-                    id="version-application-id"
-                    value={draft.applicationId ?? ""}
-                    onChange={(event) =>
-                      setDraft({ ...draft, applicationId: event.currentTarget.value })
-                    }
-                    placeholder="com.example.checkout"
-                    autoComplete="off"
-                  />
-                </Field>
-              </div>
-              <Field>
-                <FieldLabel htmlFor="version-source-sha">Source SHA (optional)</FieldLabel>
-                <Input
-                  id="version-source-sha"
-                  value={draft.sourceSha ?? ""}
-                  onChange={(event) => setDraft({ ...draft, sourceSha: event.currentTarget.value })}
-                  placeholder="40-character source revision"
-                  autoComplete="off"
-                />
-              </Field>
-              {error ? (
-                <FieldError>
-                  {error instanceof Error ? error.message : "Relay could not save this version."}
-                </FieldError>
-              ) : null}
-              <div className="relay-dialog-actions">
-                <Button type="button" variant="ghost" disabled={pending} onClick={onClose}>
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  variant="primary"
-                  disabled={!draft.id.trim() || !draft.name.trim() || pending}
-                >
-                  {pending ? "Saving…" : editing ? "Save version" : "Add version"}
-                </Button>
-              </div>
-            </form>
-          </Dialog.Popup>
-        </Dialog.Viewport>
-      </Dialog.Portal>
-    </Dialog.Root>
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent
+        showCloseButton={false}
+        className="relay-overlay-popup relay-dialog-popup relay-resource-dialog"
+      >
+        <DialogTitle>{editing ? "Edit version" : "Add version"}</DialogTitle>
+        <DialogDescription>
+          Register the exact build identity Relay can use. This does not associate a build with an
+          App Map.
+        </DialogDescription>
+        <form onSubmit={submit}>
+          <Field>
+            <FieldLabel htmlFor="version-id">Version ID</FieldLabel>
+            <Input
+              id="version-id"
+              value={draft.id}
+              onChange={(event) => setDraft({ ...draft, id: event.currentTarget.value })}
+              placeholder="checkout-ios-3-4"
+              autoComplete="off"
+              readOnly={editing}
+            />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="version-name">Name</FieldLabel>
+            <Input
+              id="version-name"
+              value={draft.name}
+              onChange={(event) => setDraft({ ...draft, name: event.currentTarget.value })}
+              placeholder="Checkout 3.4.0"
+              autoComplete="off"
+            />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="version-platform">Platform</FieldLabel>
+            <select
+              id="version-platform"
+              value={draft.platform}
+              onChange={(event) =>
+                setDraft({
+                  ...draft,
+                  platform: event.currentTarget.value as ProductAppVersion["platform"],
+                })
+              }
+              disabled={editing}
+            >
+              <option value="ios">iOS</option>
+              <option value="android">Android</option>
+              <option value="web">Web</option>
+            </select>
+          </Field>
+          {editing ? (
+            <p className="relay-resource-lifecycle-note">
+              Current status: <strong>{statusLabel(draft.status)}</strong>. Relay updates build
+              readiness from preflight, installation, and launch results.
+            </p>
+          ) : null}
+          <div className="relay-resource-field-grid">
+            <Field>
+              <FieldLabel htmlFor="version-configuration">Configuration</FieldLabel>
+              <Input
+                id="version-configuration"
+                value={draft.configuration ?? ""}
+                onChange={(event) =>
+                  setDraft({ ...draft, configuration: event.currentTarget.value })
+                }
+                placeholder="release"
+                autoComplete="off"
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="version-application-id">Application ID</FieldLabel>
+              <Input
+                id="version-application-id"
+                value={draft.applicationId ?? ""}
+                onChange={(event) =>
+                  setDraft({ ...draft, applicationId: event.currentTarget.value })
+                }
+                placeholder="com.example.checkout"
+                autoComplete="off"
+              />
+            </Field>
+          </div>
+          <Field>
+            <FieldLabel htmlFor="version-source-sha">Source SHA (optional)</FieldLabel>
+            <Input
+              id="version-source-sha"
+              value={draft.sourceSha ?? ""}
+              onChange={(event) => setDraft({ ...draft, sourceSha: event.currentTarget.value })}
+              placeholder="40-character source revision"
+              autoComplete="off"
+            />
+          </Field>
+          {error ? (
+            <FieldError>
+              {error instanceof Error ? error.message : "Relay could not save this version."}
+            </FieldError>
+          ) : null}
+          <div className="relay-dialog-actions">
+            <Button type="button" variant="ghost" disabled={pending} onClick={onClose}>
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="default"
+              disabled={!draft.id.trim() || !draft.name.trim() || pending}
+            >
+              {pending ? "Saving…" : editing ? "Save version" : "Add version"}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -250,76 +258,68 @@ export function BrowserAccountDialog({
   }
 
   return (
-    <Dialog.Root open onOpenChange={(open) => !open && onClose()}>
-      <Dialog.Portal>
-        <Dialog.Backdrop className="relay-dialog-backdrop" />
-        <Dialog.Viewport className="relay-dialog-viewport">
-          <Dialog.Popup className="relay-overlay-popup relay-dialog-popup relay-resource-dialog">
-            <Dialog.Title>
-              {editing ? "Refresh browser sign-in" : "Save browser sign-in"}
-            </Dialog.Title>
-            <Dialog.Description>
-              {editing
-                ? "Capture the current reviewed state from this exact managed browser into the same fixture."
-                : "Save the current reviewed state from an exact managed browser. Secrets stay on Relay and are never shown here."}
-            </Dialog.Description>
-            <form onSubmit={submit}>
-              <Field>
-                <FieldLabel htmlFor="account-name">Sign-in name</FieldLabel>
-                <Input
-                  id="account-name"
-                  value={name}
-                  onChange={(event) => setName(event.currentTarget.value)}
-                  placeholder="Staging buyer"
-                  autoComplete="off"
-                />
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="account-target">Managed browser</FieldLabel>
-                <select
-                  id="account-target"
-                  value={targetId}
-                  onChange={(event) => setTargetId(event.currentTarget.value)}
-                  disabled={editing}
-                >
-                  {targets.map((target) => (
-                    <option key={target.id} value={target.id}>
-                      {target.name}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="account-expiry">Expires on (optional)</FieldLabel>
-                <Input
-                  id="account-expiry"
-                  type="date"
-                  value={expiresAt}
-                  onChange={(event) => setExpiresAt(event.currentTarget.value)}
-                />
-              </Field>
-              {error ? (
-                <FieldError>
-                  {error instanceof Error ? error.message : "Relay could not update this sign-in."}
-                </FieldError>
-              ) : null}
-              <div className="relay-dialog-actions">
-                <Button type="button" variant="ghost" disabled={pending} onClick={onClose}>
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  variant="primary"
-                  disabled={!name.trim() || !targetId || pending}
-                >
-                  {pending ? "Saving…" : editing ? "Refresh sign-in" : "Save sign-in"}
-                </Button>
-              </div>
-            </form>
-          </Dialog.Popup>
-        </Dialog.Viewport>
-      </Dialog.Portal>
-    </Dialog.Root>
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent
+        showCloseButton={false}
+        className="relay-overlay-popup relay-dialog-popup relay-resource-dialog"
+      >
+        <DialogTitle>{editing ? "Refresh browser sign-in" : "Save browser sign-in"}</DialogTitle>
+        <DialogDescription>
+          {editing
+            ? "Capture the current reviewed state from this exact managed browser into the same fixture."
+            : "Save the current reviewed state from an exact managed browser. Secrets stay on Relay and are never shown here."}
+        </DialogDescription>
+        <form onSubmit={submit}>
+          <Field>
+            <FieldLabel htmlFor="account-name">Sign-in name</FieldLabel>
+            <Input
+              id="account-name"
+              value={name}
+              onChange={(event) => setName(event.currentTarget.value)}
+              placeholder="Staging buyer"
+              autoComplete="off"
+            />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="account-target">Managed browser</FieldLabel>
+            <select
+              id="account-target"
+              value={targetId}
+              onChange={(event) => setTargetId(event.currentTarget.value)}
+              disabled={editing}
+            >
+              {targets.map((target) => (
+                <option key={target.id} value={target.id}>
+                  {target.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="account-expiry">Expires on (optional)</FieldLabel>
+            <Input
+              id="account-expiry"
+              type="date"
+              value={expiresAt}
+              onChange={(event) => setExpiresAt(event.currentTarget.value)}
+            />
+          </Field>
+          {error ? (
+            <FieldError>
+              {error instanceof Error ? error.message : "Relay could not update this sign-in."}
+            </FieldError>
+          ) : null}
+          <div className="relay-dialog-actions">
+            <Button type="button" variant="ghost" disabled={pending} onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="default" disabled={!name.trim() || !targetId || pending}>
+              {pending ? "Saving…" : editing ? "Refresh sign-in" : "Save sign-in"}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -337,29 +337,27 @@ export function RevokeAccountDialog({
   onConfirm(): void;
 }) {
   return (
-    <Dialog.Root open onOpenChange={(open) => !open && onClose()}>
-      <Dialog.Portal>
-        <Dialog.Backdrop className="relay-dialog-backdrop" />
-        <Dialog.Viewport className="relay-dialog-viewport">
-          <Dialog.Popup className="relay-overlay-popup relay-dialog-popup relay-resource-dialog">
-            <Dialog.Title>Revoke browser sign-in?</Dialog.Title>
-            <Dialog.Description>
-              This revokes “{account.fixture.name}” on {account.target.name}. Relay will keep the
-              audit record, but it cannot be used for future authenticated Tests.
-            </Dialog.Description>
-            {error ? <FieldError>{error.message}</FieldError> : null}
-            <div className="relay-dialog-actions">
-              <Button type="button" variant="ghost" disabled={pending} onClick={onClose}>
-                Cancel
-              </Button>
-              <Button type="button" variant="primary" disabled={pending} onClick={onConfirm}>
-                {pending ? "Revoking…" : "Revoke sign-in"}
-              </Button>
-            </div>
-          </Dialog.Popup>
-        </Dialog.Viewport>
-      </Dialog.Portal>
-    </Dialog.Root>
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent
+        showCloseButton={false}
+        className="relay-overlay-popup relay-dialog-popup relay-resource-dialog"
+      >
+        <DialogTitle>Revoke browser sign-in?</DialogTitle>
+        <DialogDescription>
+          This revokes “{account.fixture.name}” on {account.target.name}. Relay will keep the audit
+          record, but it cannot be used for future authenticated Tests.
+        </DialogDescription>
+        {error ? <FieldError>{error.message}</FieldError> : null}
+        <div className="relay-dialog-actions">
+          <Button type="button" variant="ghost" disabled={pending} onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="button" variant="default" disabled={pending} onClick={onConfirm}>
+            {pending ? "Revoking…" : "Revoke sign-in"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

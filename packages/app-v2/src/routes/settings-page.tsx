@@ -1,23 +1,22 @@
 /** @jsxImportSource react */
 import type { SensitiveEvidenceChannel } from "@relay/protocol";
+import { Badge } from "@relay/ui-react/components/badge";
 import {
-  Alert,
-  AlertActions,
-  AlertDescription,
-  AlertTitle,
-  Badge,
-  Button,
   Field,
   FieldDescription,
   FieldLabel,
-  Input,
+} from "@relay/ui-react/components/field";
+import {
   Item,
   ItemActions,
   ItemContent,
   ItemDescription,
   ItemMedia,
   ItemTitle,
-} from "@relay/ui-react";
+} from "@relay/ui-react/components/item";
+import { Alert, AlertAction, AlertDescription, AlertTitle } from "@relay/ui-react/components/alert";
+import { Button } from "@relay/ui-react/components/button";
+import { Input } from "@relay/ui-react/components/input";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useRouteContext } from "@tanstack/react-router";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
@@ -73,7 +72,14 @@ function GeneralSettings() {
               : "Checking the current Relay workspace."
           }
         >
-          <Badge variant={connection.isError ? "warning" : "success"}>
+          <Badge
+            variant="secondary"
+            className={
+              connection.isError
+                ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+            }
+          >
             {connection.isPending ? "Checking" : connection.isError ? "Unavailable" : "Connected"}
           </Badge>
         </SettingRow>
@@ -87,7 +93,7 @@ function GeneralSettings() {
         >
           {platform.notify ? (
             <Button
-              size="small"
+              size="sm"
               onClick={() =>
                 void platform.notify?.(
                   "Relay notifications are ready",
@@ -146,12 +152,12 @@ function EvidenceSettings() {
         <PageLoading label="Loading evidence and privacy settings…" />
       ) : null}
       {error ? (
-        <Alert className="relay-settings-alert" variant="danger" role="alert">
+        <Alert className="relay-settings-alert" variant="destructive" role="alert">
           <AlertTitle>Relay could not load or save this setting</AlertTitle>
           <AlertDescription>{errorMessage(error)}</AlertDescription>
-          <AlertActions>
+          <AlertAction>
             <Button
-              size="small"
+              size="sm"
               onClick={() => {
                 privacyMutation.reset();
                 evidenceMutation.reset();
@@ -161,7 +167,7 @@ function EvidenceSettings() {
             >
               Try again
             </Button>
-          </AlertActions>
+          </AlertAction>
         </Alert>
       ) : null}
       {privacy.data && evidence.data ? (
@@ -261,16 +267,16 @@ function IntegrationsSettings() {
           <PageLoading label="Checking workspace integrations…" />
         ) : null}
         {connection.isError || (settingsService.integrations && integrations.error) ? (
-          <Alert className="relay-settings-alert" variant="danger" role="alert">
+          <Alert className="relay-settings-alert" variant="destructive" role="alert">
             <AlertTitle>The workspace connection is unavailable</AlertTitle>
             <AlertDescription>
               Open Advanced to check the Relay address, then try again.
             </AlertDescription>
-            <AlertActions>
-              <Button size="small" render={<Link to="/settings/advanced" />}>
+            <AlertAction>
+              <Button nativeButton={false} size="sm" render={<Link to="/settings/advanced" />}>
                 Open Advanced
               </Button>
-            </AlertActions>
+            </AlertAction>
           </Alert>
         ) : integrations.data ? (
           <div className="relay-integration-list">
@@ -292,12 +298,13 @@ function IntegrationsSettings() {
                 </ItemContent>
                 <ItemActions>
                   <Badge
-                    variant={
+                    variant={integration.state === "unsupported" ? "outline" : "secondary"}
+                    className={
                       integration.state === "connected"
-                        ? "success"
+                        ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
                         : integration.state === "unsupported"
-                          ? "secondary"
-                          : "warning"
+                          ? undefined
+                          : "bg-amber-500/15 text-amber-700 dark:text-amber-300"
                     }
                   >
                     {integration.state
@@ -320,7 +327,12 @@ function IntegrationsSettings() {
               </ItemDescription>
             </ItemContent>
             <ItemActions>
-              <Badge variant="success">Connected</Badge>
+              <Badge
+                variant="default"
+                className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+              >
+                Connected
+              </Badge>
             </ItemActions>
           </Item>
         ) : null}
@@ -388,7 +400,7 @@ function AdvancedSettings() {
         </header>
         {connection.isPending ? <PageLoading label="Loading the Relay address…" /> : null}
         {connection.isError ? (
-          <Alert className="relay-settings-alert" variant="danger" role="alert">
+          <Alert className="relay-settings-alert" variant="destructive" role="alert">
             <AlertTitle>The Relay address is unavailable</AlertTitle>
             <AlertDescription>{errorMessage(connection.error)}</AlertDescription>
           </Alert>
@@ -412,7 +424,7 @@ function AdvancedSettings() {
                 />
                 {platform.setServerUrl ? (
                   <Button
-                    variant="primary"
+                    variant="default"
                     type="submit"
                     disabled={!url.trim() || saveState === "saving"}
                   >
@@ -446,8 +458,8 @@ function AdvancedSettings() {
           </div>
           {apple.isError || android.isError ? (
             <Button
-              size="small"
-              variant="secondary"
+              size="sm"
+              variant="outline"
               onClick={() => {
                 void apple.refetch();
                 void android.refetch();
@@ -463,12 +475,12 @@ function AdvancedSettings() {
           loading={apple.isPending}
           action={
             platform.openXcode ? (
-              <Button size="small" onClick={() => void platform.openXcode?.()}>
+              <Button size="sm" onClick={() => void platform.openXcode?.()}>
                 Open Xcode
               </Button>
             ) : (
               <Button
-                size="small"
+                size="sm"
                 onClick={() => void platform.openExternal?.("https://developer.apple.com/xcode/")}
               >
                 Learn about Xcode
@@ -482,7 +494,7 @@ function AdvancedSettings() {
           loading={android.isPending}
           action={
             <Button
-              size="small"
+              size="sm"
               onClick={() =>
                 void platform.openExternal?.(
                   "https://developer.android.com/tools/releases/platform-tools",
@@ -564,15 +576,15 @@ function AboutSettings() {
           <SettingRow title="Updates" description={updateDescription(update)}>
             {update?.phase === "downloaded" ? (
               <Button
-                variant="primary"
-                size="small"
+                variant="default"
+                size="sm"
                 onClick={() => void platform.updates?.install()}
               >
                 Install update
               </Button>
             ) : (
               <Button
-                size="small"
+                size="sm"
                 onClick={() => void checkForUpdates()}
                 disabled={checking || update?.phase === "checking"}
               >
@@ -587,7 +599,7 @@ function AboutSettings() {
         >
           {platform.openExternal ? (
             <Button
-              size="small"
+            size="sm"
               onClick={() =>
                 void platform.openExternal?.("https://github.com/callstackincubator/agent-device")
               }

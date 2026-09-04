@@ -1,5 +1,10 @@
 /** @jsxImportSource react */
-import { Button, Disclosure } from "@relay/ui-react";
+import { Button } from "@relay/ui-react/components/button";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@relay/ui-react/components/collapsible";
 import { useMutation } from "@tanstack/react-query";
 import { useRouteContext } from "@tanstack/react-router";
 import type { ProductChangePublication } from "@relay/product/change-journey";
@@ -51,7 +56,7 @@ export function ChangePublicationStatus({ detail }: { detail: ProductChangeDetai
           </a>
         ) : null}
         {publication.canRetry ? (
-          <Button size="small" onClick={() => retry.mutate()} disabled={retry.isPending}>
+          <Button size="sm" onClick={() => retry.mutate()} disabled={retry.isPending}>
             {retry.isPending ? "Retrying…" : "Retry publication"}
           </Button>
         ) : null}
@@ -65,9 +70,9 @@ export function ChangeAuditDetails({ detail }: { detail: ProductChangeDetail }) 
   const details = detail.state.details!;
   const change = details.change;
   return (
-    <Disclosure.Root className="relay-change-audit">
-      <Disclosure.Trigger>Audit details</Disclosure.Trigger>
-      <Disclosure.Panel>
+    <Collapsible className="relay-change-audit">
+      <CollapsibleTrigger>Audit details</CollapsibleTrigger>
+      <CollapsibleContent>
         <p>Exact identities and receipts for operators and agents.</p>
         <dl>
           <div>
@@ -220,8 +225,8 @@ export function ChangeAuditDetails({ detail }: { detail: ProductChangeDetail }) 
             </ul>
           </section>
         ) : null}
-      </Disclosure.Panel>
-    </Disclosure.Root>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 

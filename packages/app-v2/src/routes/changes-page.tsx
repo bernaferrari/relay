@@ -1,6 +1,9 @@
 /** @jsxImportSource react */
 import type { ProductChange } from "@relay/product/change-journey";
-import { Badge, Button, Item, Tabs, TabsIndicator, TabsList, TabsTrigger } from "@relay/ui-react";
+import { Badge } from "@relay/ui-react/components/badge";
+import { Item } from "@relay/ui-react/components/item";
+import { Tabs, TabsList, TabsTrigger } from "@relay/ui-react/components/tabs";
+import { Button } from "@relay/ui-react/components/button";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { ChevronRight, RotateCcw } from "lucide-react";
@@ -56,7 +59,7 @@ export function ChangesPage() {
           </p>
         </div>
         {!changes.isError ? (
-          <Button variant="primary" onClick={() => prepare.mutate()} disabled={prepare.isPending}>
+          <Button variant="default" onClick={() => prepare.mutate()} disabled={prepare.isPending}>
             {prepare.isPending ? "Preparing verification…" : "Verify current Change"}
           </Button>
         ) : null}
@@ -87,7 +90,6 @@ export function ChangesPage() {
               {label}
             </TabsTrigger>
           ))}
-          <TabsIndicator />
         </TabsList>
       </Tabs>
 
@@ -99,8 +101,8 @@ export function ChangesPage() {
           detail="Start the local service, then reconnect. Your work is safe."
           action={
             <Button
-              size="small"
-              variant="secondary"
+              size="sm"
+              variant="outline"
               onClick={() => void changes.refetch()}
               disabled={changes.isFetching}
             >
@@ -139,7 +141,7 @@ export function ChangesPage() {
             action={
               <Button
                 variant="ghost"
-                size="small"
+                size="sm"
                 onClick={() => void navigate({ search: { status: "history" } })}
               >
                 View all Changes
@@ -152,7 +154,7 @@ export function ChangesPage() {
             detail="Prepare the current repository Change and Relay will select the Tests, builds, and devices needed to verify it."
             action={
               <Button
-                variant="primary"
+                variant="default"
                 onClick={() => prepare.mutate()}
                 disabled={prepare.isPending}
               >
@@ -196,10 +198,9 @@ function ChangeRow({ change }: { change: ProductChange }) {
 
 function changeBadgeVariant(
   tone: ReturnType<typeof changeStatus>["tone"],
-): "success" | "danger" | "warning" | "secondary" {
-  if (tone === "success") return "success";
-  if (tone === "danger") return "danger";
-  if (tone === "notice") return "warning";
+): "default" | "destructive" | "secondary" {
+  if (tone === "success") return "default";
+  if (tone === "danger") return "destructive";
   return "secondary";
 }
 

@@ -1,5 +1,6 @@
 /** @jsxImportSource react */
-import { Button, Skeleton } from "@relay/ui-react";
+import { Skeleton } from "@relay/ui-react/components/skeleton";
+import { Button } from "@relay/ui-react/components/button";
 import { projectError } from "@relay/product/errors";
 import { RotateCcw } from "lucide-react";
 import { RecoveryState } from "../components/product-patterns";
@@ -84,7 +85,7 @@ export function RecordingProblem({
       layout={layout}
       action={
         onRetry && (recovery?.retryable ?? true) ? (
-          <Button size="small" variant="secondary" onClick={onRetry} disabled={retrying}>
+          <Button size="sm" variant="outline" onClick={onRetry} disabled={retrying}>
             <RotateCcw aria-hidden="true" />
             {retrying ? "Trying again…" : "Try again"}
           </Button>

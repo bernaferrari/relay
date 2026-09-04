@@ -1,13 +1,17 @@
 /** @jsxImportSource react */
 import {
-  Button,
-  CheckboxCard,
   Dialog,
-  Field,
-  FieldError,
-  FieldLabel,
-  Input,
-} from "@relay/ui-react";
+  DialogTrigger,
+  DialogClose,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+} from "@relay/ui-react/components/dialog";
+import { Field, FieldError, FieldLabel } from "@relay/ui-react/components/field";
+import { Button } from "@relay/ui-react/components/button";
+import { Input } from "@relay/ui-react/components/input";
+import { Checkbox } from "@relay/ui-react/components/checkbox";
+import { FieldLabel as ChoiceLabel } from "@relay/ui-react/components/field";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { Globe2, Plus, RotateCcw } from "lucide-react";
@@ -74,80 +78,87 @@ export function EnvironmentsPage() {
           </p>
         </div>
         <div className="relay-environment-actions">
-          <Button render={<Link to="/devices" />} variant="secondary">
+          <Button nativeButton={false} render={<Link to="/devices" />} variant="outline">
             Devices
           </Button>
-          <Dialog.Root
+          <Dialog
             open={open}
             onOpenChange={(next) => {
               setOpen(next);
               if (next) reset();
             }}
           >
-            <Dialog.Trigger render={<Button variant="primary" />}>
+            <DialogTrigger render={<Button variant="default" />}>
               <Plus aria-hidden="true" /> New Browser Space
-            </Dialog.Trigger>
-            <Dialog.Portal>
-              <Dialog.Backdrop className="relay-dialog-backdrop" />
-              <Dialog.Viewport className="relay-dialog-viewport">
-                <Dialog.Popup className="relay-overlay-popup relay-dialog-popup relay-environment-dialog">
-                  <Dialog.Title>New Browser Space</Dialog.Title>
-                  <Dialog.Description>
-                    Relay keeps each managed browser isolated. Persistent Spaces retain their local
-                    profile between Sessions.
-                  </Dialog.Description>
-                  <form onSubmit={submit}>
-                    <Field>
-                      <FieldLabel htmlFor="space-name">Name</FieldLabel>
-                      <Input
-                        id="space-name"
-                        value={name}
-                        onChange={(event) => setName(event.currentTarget.value)}
-                        placeholder="For example, Staging member"
-                        autoComplete="off"
-                      />
-                    </Field>
-                    <Field>
-                      <FieldLabel htmlFor="space-url">Start URL</FieldLabel>
-                      <Input
-                        id="space-url"
-                        type="url"
-                        inputMode="url"
-                        value={startUrl}
-                        onChange={(event) => setStartUrl(event.currentTarget.value)}
-                        placeholder="https://staging.example.com"
-                        autoCapitalize="none"
-                        autoCorrect="off"
-                      />
-                    </Field>
-                    <CheckboxCard
-                      checked={persistent}
-                      onCheckedChange={(checked) => setPersistent(checked === true)}
-                      title="Keep this browser profile"
-                      description="Retain local storage and reviewed account fixtures between Sessions."
-                    />
-                    {create.error ? (
-                      <FieldError>
-                        {create.error instanceof Error
-                          ? create.error.message
-                          : "Relay could not create this Browser Space."}
-                      </FieldError>
-                    ) : null}
-                    <div className="relay-dialog-actions">
-                      <Dialog.Close render={<Button variant="ghost">Cancel</Button>} />
-                      <Button
-                        type="submit"
-                        variant="primary"
-                        disabled={!name.trim() || !startUrl.trim() || create.isPending}
-                      >
-                        {create.isPending ? "Creating…" : "Create Space"}
-                      </Button>
-                    </div>
-                  </form>
-                </Dialog.Popup>
-              </Dialog.Viewport>
-            </Dialog.Portal>
-          </Dialog.Root>
+            </DialogTrigger>
+
+            <DialogContent
+              showCloseButton={false}
+              className="relay-overlay-popup relay-dialog-popup relay-environment-dialog"
+            >
+              <DialogTitle>New Browser Space</DialogTitle>
+              <DialogDescription>
+                Relay keeps each managed browser isolated. Persistent Spaces retain their local
+                profile between Sessions.
+              </DialogDescription>
+              <form onSubmit={submit}>
+                <Field>
+                  <FieldLabel htmlFor="space-name">Name</FieldLabel>
+                  <Input
+                    id="space-name"
+                    value={name}
+                    onChange={(event) => setName(event.currentTarget.value)}
+                    placeholder="For example, Staging member"
+                    autoComplete="off"
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="space-url">Start URL</FieldLabel>
+                  <Input
+                    id="space-url"
+                    type="url"
+                    inputMode="url"
+                    value={startUrl}
+                    onChange={(event) => setStartUrl(event.currentTarget.value)}
+                    placeholder="https://staging.example.com"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                  />
+                </Field>
+                <ChoiceLabel className="flex min-h-14 min-w-0 cursor-pointer items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50">
+                  <span className="grid min-w-0 flex-1 gap-0.5">
+                    <span className="text-sm font-medium text-foreground">
+                      Keep this browser profile
+                    </span>
+                    <span className="text-xs leading-snug text-muted-foreground">
+                      Retain local storage and reviewed account fixtures between Sessions.
+                    </span>
+                  </span>
+                  <Checkbox
+                    checked={persistent}
+                    onCheckedChange={(checked) => setPersistent(checked === true)}
+                  />
+                </ChoiceLabel>
+                {create.error ? (
+                  <FieldError>
+                    {create.error instanceof Error
+                      ? create.error.message
+                      : "Relay could not create this Browser Space."}
+                  </FieldError>
+                ) : null}
+                <div className="relay-dialog-actions">
+                  <DialogClose render={<Button variant="ghost">Cancel</Button>} />
+                  <Button
+                    type="submit"
+                    variant="default"
+                    disabled={!name.trim() || !startUrl.trim() || create.isPending}
+                  >
+                    {create.isPending ? "Creating…" : "Create Space"}
+                  </Button>
+                </div>
+              </form>
+            </DialogContent>
+          </Dialog>
         </div>
       </header>
 
@@ -158,7 +169,7 @@ export function EnvironmentsPage() {
           title="Environments are unavailable"
           detail="Reconnect Relay, then load managed browser Spaces again."
           action={
-            <Button variant="secondary" onClick={() => void spaces.refetch()}>
+            <Button variant="outline" onClick={() => void spaces.refetch()}>
               <RotateCcw aria-hidden="true" /> Try again
             </Button>
           }
@@ -195,7 +206,7 @@ export function EnvironmentsPage() {
           detail="Create one reusable, isolated browser environment for recording and running Tests."
           action={
             <Button
-              variant="primary"
+              variant="default"
               onClick={() => {
                 reset();
                 setOpen(true);

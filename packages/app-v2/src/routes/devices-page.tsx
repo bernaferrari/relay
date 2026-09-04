@@ -1,18 +1,24 @@
 /** @jsxImportSource react */
+import { Badge } from "@relay/ui-react/components/badge";
+import { Button } from "@relay/ui-react/components/button";
 import {
-  Badge,
-  Button,
-  Disclosure,
-  Input,
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@relay/ui-react/components/collapsible";
+import { Input } from "@relay/ui-react/components/input";
+import {
   Item,
   ItemActions,
   ItemContent,
   ItemDescription,
   ItemMedia,
   ItemTitle,
+} from "@relay/ui-react/components/item";
+import {
   ToggleGroup,
   ToggleGroupItem,
-} from "@relay/ui-react";
+} from "@relay/ui-react/components/toggle-group";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { ChevronRight, Monitor, Smartphone, Tablet } from "lucide-react";
@@ -96,7 +102,7 @@ function DeviceRow({ device }: { device: ProductDevice }) {
     <li className="relay-device-row-item">
       <Item
         className="relay-device-row"
-        size="small"
+        size="sm"
         render={<Link to="/devices/$deviceId" params={{ deviceId: device.id }} />}
       >
         <ItemMedia>
@@ -107,7 +113,14 @@ function DeviceRow({ device }: { device: ProductDevice }) {
           <ItemDescription>{deviceMetadata(device)}</ItemDescription>
         </ItemContent>
         <ItemActions className="relay-device-row-end">
-          <Badge variant={device.status === "needs-attention" ? "warning" : "success"}>
+          <Badge
+            variant={device.status === "needs-attention" ? "destructive" : "default"}
+            className={
+              device.status === "needs-attention"
+                ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+            }
+          >
             {statusLabel(device)}
           </Badge>
           <ChevronRight className="relay-device-row-chevron" aria-hidden="true" />
@@ -138,8 +151,8 @@ function DeviceSection({
   );
   if (collapsed) {
     return (
-      <Disclosure.Root className="relay-device-section relay-device-section--collapsible">
-        <Disclosure.Trigger>
+      <Collapsible className="relay-device-section relay-device-section--collapsible">
+        <CollapsibleTrigger>
           <span>
             <strong id={headingId}>{title}</strong>
             <small>{description}</small>
@@ -147,9 +160,9 @@ function DeviceSection({
           <span className="relay-device-section-summary-end">
             <span className="relay-device-count">{devices.length} available</span>
           </span>
-        </Disclosure.Trigger>
-        <Disclosure.Panel>{content}</Disclosure.Panel>
-      </Disclosure.Root>
+        </CollapsibleTrigger>
+        <CollapsibleContent>{content}</CollapsibleContent>
+      </Collapsible>
     );
   }
   return (
@@ -217,7 +230,7 @@ export function DevicesPage() {
           </p>
         </div>
         {!devices.isError ? (
-          <Button size="small" onClick={() => void devices.refetch()} disabled={devices.isFetching}>
+          <Button size="sm" onClick={() => void devices.refetch()} disabled={devices.isFetching}>
             {devices.isFetching ? "Checking…" : "Check again"}
           </Button>
         ) : null}
@@ -226,10 +239,12 @@ export function DevicesPage() {
       <div className="relay-device-toolbar">
         <ToggleGroup
           className="relay-device-filter"
-          type="single"
-          value={activeFilter}
+          value={[activeFilter]}
           aria-label="Filter devices"
-          onValueChange={(next) => updateSearch({ status: next as DeviceFilter })}
+          onValueChange={(next) => {
+            const value = next[0];
+            if (value) updateSearch({ status: value as DeviceFilter });
+          }}
         >
           {FILTERS.map((filter) => (
             <ToggleGroupItem key={filter.id} value={filter.id}>
@@ -256,7 +271,7 @@ export function DevicesPage() {
           title="Relay could not check devices"
           detail="The local Relay service is not responding. Your saved Tests and device settings are safe."
           action={
-            <Button variant="primary" onClick={() => void devices.refetch()}>
+            <Button variant="default" onClick={() => void devices.refetch()}>
               Check connection
             </Button>
           }
@@ -268,7 +283,7 @@ export function DevicesPage() {
           title="No devices found yet"
           detail="Connect an iPhone, iPad, or Android device, or configure a managed browser. Relay will keep checking when you return."
           action={
-            <Button variant="primary" onClick={() => void devices.refetch()}>
+            <Button variant="default" onClick={() => void devices.refetch()}>
               Check for devices
             </Button>
           }
@@ -280,7 +295,7 @@ export function DevicesPage() {
           title={`No ${FILTERS.find((item) => item.id === activeFilter)?.label.toLowerCase()} devices`}
           detail="Choose another filter to see the devices Relay found."
           action={
-            <Button variant="secondary" onClick={() => updateSearch({ status: "all" })}>
+            <Button variant="outline" onClick={() => updateSearch({ status: "all" })}>
               Show all devices
             </Button>
           }

@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { Button } from "@relay/ui-react";
+import { Button } from "@relay/ui-react/components/button";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, getRouteApi, useRouteContext } from "@tanstack/react-router";
 import { Box, KeyRound, Plus, RotateCcw } from "lucide-react";
@@ -66,7 +66,7 @@ export function AppVersionsPage() {
       description="Review registered builds and deployments before choosing what Relay should verify."
       action={
         canWriteVersions ? (
-          <Button variant="primary" onClick={() => setEditor("create")}>
+          <Button variant="default" onClick={() => setEditor("create")}>
             <Plus aria-hidden="true" /> Add version
           </Button>
         ) : undefined
@@ -208,7 +208,7 @@ export function AppAccountsPage() {
       action={
         <span className="relay-resource-header-actions">
           <Button
-            variant="primary"
+            variant="default"
             onClick={() => setAccountDialog("save")}
             disabled={!canSaveAccount}
             title={
@@ -221,7 +221,7 @@ export function AppAccountsPage() {
           >
             <Plus aria-hidden="true" /> Save account
           </Button>
-          <Button render={<Link to="/devices" />} variant="secondary">
+          <Button nativeButton={false} render={<Link to="/devices" />} variant="outline">
             Open Devices
           </Button>
         </span>
@@ -366,7 +366,7 @@ function ResourceRecovery({
       title="Relay is not connected"
       detail={detail}
       action={
-        <Button variant="secondary" onClick={onRetry} disabled={retrying}>
+        <Button variant="outline" onClick={onRetry} disabled={retrying}>
           <RotateCcw aria-hidden="true" />
           {retrying ? "Trying again…" : "Try again"}
         </Button>
@@ -433,7 +433,7 @@ function AccountRow({
         <span className="relay-resource-row-actions">
           {canRefresh ? (
             <Button
-              size="small"
+              size="sm"
               variant="ghost"
               onClick={onRefresh}
               aria-label={`Refresh ${account.fixture.name}`}
@@ -443,7 +443,7 @@ function AccountRow({
           ) : null}
           {canRevoke && state !== "revoked" ? (
             <Button
-              size="small"
+              size="sm"
               variant="ghost"
               onClick={onRevoke}
               aria-label={`Revoke ${account.fixture.name}`}

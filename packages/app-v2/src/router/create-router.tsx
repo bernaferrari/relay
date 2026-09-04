@@ -9,7 +9,7 @@ import {
   redirect,
   type RouterHistory,
 } from "@tanstack/react-router";
-import { OverlayRoot, Skeleton } from "@relay/ui-react";
+import { Skeleton } from "@relay/ui-react/components/skeleton";
 import {
   createAppResourcesProductService,
   type AppResourcesProductService,
@@ -162,11 +162,7 @@ const rootRoute = createRootRouteWithContext<AppRouterContext>()({
 
 function RootLayout() {
   const { platform } = rootRoute.useRouteContext();
-  return (
-    <OverlayRoot>
-      <AppShell platform={platform} />
-    </OverlayRoot>
-  );
+  return <AppShell platform={platform} />;
 }
 
 function RoutePending() {

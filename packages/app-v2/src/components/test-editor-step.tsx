@@ -5,17 +5,18 @@ import type {
   AppMapTestBindingCandidate,
   AppMapTestStepPlacement,
 } from "@relay/protocol";
+import { ScrollArea } from "@relay/ui-react";
+import { Alert, AlertDescription, AlertTitle } from "@relay/ui-react/components/alert";
+import { Button } from "@relay/ui-react/components/button";
 import {
-  Alert,
-  AlertDescription,
-  AlertTitle,
-  Button,
-  CheckboxCard,
-  Disclosure,
-  Input,
-  ScrollArea,
-  Textarea,
-} from "@relay/ui-react";
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@relay/ui-react/components/collapsible";
+import { Input } from "@relay/ui-react/components/input";
+import { Checkbox } from "@relay/ui-react/components/checkbox";
+import { FieldLabel } from "@relay/ui-react/components/field";
+import { Textarea } from "@relay/ui-react/components/textarea";
 import { AlertTriangle } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -109,8 +110,8 @@ export function SelectedStepEditor({
               <>
                 <Button
                   type="button"
-                  size="small"
-                  variant="secondary"
+                  size="sm"
+                  variant="outline"
                   disabled={busy}
                   onClick={() => onAddChild("then")}
                 >
@@ -118,8 +119,8 @@ export function SelectedStepEditor({
                 </Button>
                 <Button
                   type="button"
-                  size="small"
-                  variant="secondary"
+                  size="sm"
+                  variant="outline"
                   disabled={busy}
                   onClick={() => onAddChild("else")}
                 >
@@ -129,8 +130,8 @@ export function SelectedStepEditor({
             ) : (
               <Button
                 type="button"
-                size="small"
-                variant="secondary"
+                size="sm"
+                variant="outline"
                 disabled={busy}
                 onClick={() => onAddChild("steps")}
               >
@@ -161,15 +162,19 @@ export function SelectedStepEditor({
           rows={4}
         />
       </label>
-      <CheckboxCard
-        className="relay-editor-check"
-        checked={capture}
-        onCheckedChange={setCapture}
-        title="Capture evidence after this step"
-        description="Keep a screenshot with the next Run’s report."
-      />
+      <FieldLabel className="relay-editor-check flex min-h-14 min-w-0 cursor-pointer items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50">
+        <span className="grid min-w-0 flex-1 gap-0.5">
+          <span className="text-sm font-medium text-foreground">
+            Capture evidence after this step
+          </span>
+          <span className="text-xs leading-snug text-muted-foreground">
+            Keep a screenshot with the next Run’s report.
+          </span>
+        </span>
+        <Checkbox checked={capture} onCheckedChange={setCapture} />
+      </FieldLabel>
       {entry.step.binding.status === "unresolved" ? (
-        <Alert variant="warning" className="relay-step-binding-alert">
+        <Alert variant="default" className="relay-step-binding-alert">
           <AlertTriangle aria-hidden="true" />
           <div>
             <AlertTitle>Step needs review</AlertTitle>
@@ -185,9 +190,9 @@ export function SelectedStepEditor({
           onBind={onBind}
         />
       ) : null}
-      <Disclosure.Root className="relay-editor-advanced">
-        <Disclosure.Trigger>Advanced</Disclosure.Trigger>
-        <Disclosure.Panel>
+      <Collapsible className="relay-editor-advanced">
+        <CollapsibleTrigger>Advanced</CollapsibleTrigger>
+        <CollapsibleContent>
           <div>
             <span>Technical details</span>
             <p className="relay-editor-advanced-help">
@@ -197,14 +202,14 @@ export function SelectedStepEditor({
               <pre>{JSON.stringify(entry.step.binding, null, 2)}</pre>
             </ScrollArea>
           </div>
-        </Disclosure.Panel>
-      </Disclosure.Root>
+        </CollapsibleContent>
+      </Collapsible>
       <div className="relay-form-actions">
-        <Button variant="primary" type="submit" disabled={!changed || !cleanIntent || busy}>
+        <Button variant="default" type="submit" disabled={!changed || !cleanIntent || busy}>
           {busy ? "Saving…" : "Save step"}
         </Button>
         {removeArmed ? (
-          <Alert variant="warning" className="relay-editor-remove-confirm">
+          <Alert variant="default" className="relay-editor-remove-confirm">
             <div>
               <AlertTitle>Remove this step?</AlertTitle>
               <AlertDescription>
@@ -220,7 +225,7 @@ export function SelectedStepEditor({
               >
                 Keep step
               </Button>
-              <Button variant="secondary" type="button" disabled={busy} onClick={onRemove}>
+              <Button variant="outline" type="button" disabled={busy} onClick={onRemove}>
                 Remove step
               </Button>
             </div>
@@ -276,8 +281,8 @@ function BindingRepair({
           <Button
             key={`${candidate.kind}:${candidate.id}`}
             type="button"
-            size="small"
-            variant="secondary"
+            size="sm"
+            variant="outline"
             disabled={busy}
             onClick={() =>
               onBind({

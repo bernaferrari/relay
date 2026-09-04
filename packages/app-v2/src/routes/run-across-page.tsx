@@ -1,5 +1,8 @@
 /** @jsxImportSource react */
-import { Button, CheckboxCard, RadioCard, RadioGroup } from "@relay/ui-react";
+import { Button } from "@relay/ui-react/components/button";
+import { Checkbox } from "@relay/ui-react/components/checkbox";
+import { FieldLabel } from "@relay/ui-react/components/field";
+import { RadioGroup, RadioGroupItem } from "@relay/ui-react/components/radio-group";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
@@ -98,15 +101,25 @@ export function RunAcrossPage() {
               <fieldset className="relay-run-across-options" key={dimension.id}>
                 <legend>{dimension.name}</legend>
                 {dimension.values.map((value) => (
-                  <CheckboxCard
+                  <FieldLabel
                     key={value.id}
-                    name={dimension.id}
-                    value={value.id}
-                    checked={selected[dimension.id]?.includes(value.id) ?? false}
-                    onCheckedChange={() => toggleValue(dimension.id, value.id)}
-                    title={value.label}
-                    description={value.detail}
-                  />
+                    className="flex min-h-14 min-w-0 cursor-pointer items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50"
+                  >
+                    <span className="grid min-w-0 flex-1 gap-0.5">
+                      <span className="truncate text-sm font-medium text-foreground">
+                        {value.label}
+                      </span>
+                      <span className="truncate text-xs leading-snug text-muted-foreground">
+                        {value.detail}
+                      </span>
+                    </span>
+                    <Checkbox
+                      name={dimension.id}
+                      value={value.id}
+                      checked={selected[dimension.id]?.includes(value.id) ?? false}
+                      onCheckedChange={() => toggleValue(dimension.id, value.id)}
+                    />
+                  </FieldLabel>
                 ))}
               </fieldset>
             ))}
@@ -129,12 +142,20 @@ export function RunAcrossPage() {
                 aria-labelledby="target-title"
               >
                 {targets.data.map((option) => (
-                  <RadioCard
+                  <FieldLabel
                     key={`${option.kind}:${option.targetId}`}
-                    value={option.targetId}
-                    title={option.name}
-                    description={option.detail}
-                  />
+                    className="flex min-h-14 min-w-0 cursor-pointer items-center gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50"
+                  >
+                    <RadioGroupItem value={option.targetId} />
+                    <span className="grid min-w-0 flex-1 gap-0.5">
+                      <span className="truncate text-sm font-medium text-foreground">
+                        {option.name}
+                      </span>
+                      <span className="truncate text-xs leading-snug text-muted-foreground">
+                        {option.detail}
+                      </span>
+                    </span>
+                  </FieldLabel>
                 ))}
               </RadioGroup>
             ) : (
@@ -162,7 +183,7 @@ export function RunAcrossPage() {
               </p>
             )}
             <Button
-              variant="primary"
+              variant="default"
               onClick={() => start.mutate()}
               disabled={!preview || start.isPending}
             >

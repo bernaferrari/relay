@@ -1,7 +1,7 @@
 import {
   createAgentDebugRecordingProductService,
   type AgentDebugRecordingProductService,
-} from "@relay/product/agent-debug";
+} from "@relay/product/agent-debug-recording";
 import type { DebugBugOutcomeIntent } from "@relay/workflows/types";
 import type { Platform } from "../platform/types";
 import { productClientForPlatform } from "./product-client";

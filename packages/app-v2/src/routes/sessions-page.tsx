@@ -1,5 +1,7 @@
 /** @jsxImportSource react */
-import { Badge, Button, Input, Tabs, TabsIndicator, TabsList, TabsTrigger } from "@relay/ui-react";
+import { Badge, Tabs, TabsIndicator, TabsList, TabsTrigger } from "@relay/ui-react";
+import { Button } from "@relay/ui-react/components/button";
+import { Input } from "@relay/ui-react/components/input";
 import { useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { ChevronRight, Monitor, Smartphone } from "lucide-react";
@@ -141,7 +143,7 @@ export function SessionsPage() {
           action={
             sessions.data?.length ? (
               <Button
-                variant="secondary"
+                variant="outline"
                 onClick={() => {
                   setQuery("");
                   setView("active");
@@ -150,7 +152,7 @@ export function SessionsPage() {
                 Show active Sessions
               </Button>
             ) : (
-              <Button variant="primary" render={<Link to="/tests/new" />}>
+              <Button nativeButton={false} variant="default" render={<Link to="/tests/new" />}>
                 Start a new Test
               </Button>
             )

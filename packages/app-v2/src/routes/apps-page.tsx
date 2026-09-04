@@ -1,5 +1,15 @@
 /** @jsxImportSource react */
-import { Button, Dialog, Field, FieldError, FieldLabel, Input } from "@relay/ui-react";
+import {
+  Dialog,
+  DialogTrigger,
+  DialogClose,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+} from "@relay/ui-react/components/dialog";
+import { Field, FieldError, FieldLabel } from "@relay/ui-react/components/field";
+import { Button } from "@relay/ui-react/components/button";
+import { Input } from "@relay/ui-react/components/input";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { Boxes, ChevronRight, Plus, RotateCcw } from "lucide-react";
@@ -63,59 +73,58 @@ export function AppsPage() {
             Keep each app’s Tests, Reports, and known behavior together.
           </p>
         </div>
-        <Dialog.Root open={dialogOpen} onOpenChange={setDialogOpen}>
-          <Dialog.Trigger render={<Button variant="primary" />}>
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <DialogTrigger render={<Button variant="default" />}>
             <Plus aria-hidden="true" /> Add App
-          </Dialog.Trigger>
-          <Dialog.Portal>
-            <Dialog.Backdrop className="relay-dialog-backdrop" />
-            <Dialog.Viewport className="relay-dialog-viewport">
-              <Dialog.Popup className="relay-overlay-popup relay-dialog-popup relay-add-app-dialog">
-                <Dialog.Title>Add an App</Dialog.Title>
-                <Dialog.Description>
-                  Give the app a clear name. Relay will create its App Map, then take you directly
-                  to target selection so you can record the first Test.
-                </Dialog.Description>
-                <form onSubmit={submit}>
-                  <Field>
-                    <FieldLabel htmlFor="new-app-name">App name</FieldLabel>
-                    <Input
-                      id="new-app-name"
-                      value={name}
-                      onChange={(event) => setName(event.currentTarget.value)}
-                      placeholder="For example, Checkout"
-                      autoComplete="off"
-                      autoFocus
-                    />
-                    {createApp.error ? (
-                      <FieldError>
-                        {createApp.error instanceof Error
-                          ? createApp.error.message
-                          : "Relay could not add this app."}
-                      </FieldError>
-                    ) : null}
-                  </Field>
-                  <div className="relay-dialog-actions">
-                    <Dialog.Close
-                      render={
-                        <Button variant="ghost" disabled={createApp.isPending}>
-                          Cancel
-                        </Button>
-                      }
-                    />
-                    <Button
-                      type="submit"
-                      variant="primary"
-                      disabled={!name.trim() || createApp.isPending}
-                    >
-                      {createApp.isPending ? "Adding…" : "Add App"}
+          </DialogTrigger>
+
+          <DialogContent
+            showCloseButton={false}
+            className="relay-overlay-popup relay-dialog-popup relay-add-app-dialog"
+          >
+            <DialogTitle>Add an App</DialogTitle>
+            <DialogDescription>
+              Give the app a clear name. Relay will create its App Map, then take you directly to
+              target selection so you can record the first Test.
+            </DialogDescription>
+            <form onSubmit={submit}>
+              <Field>
+                <FieldLabel htmlFor="new-app-name">App name</FieldLabel>
+                <Input
+                  id="new-app-name"
+                  value={name}
+                  onChange={(event) => setName(event.currentTarget.value)}
+                  placeholder="For example, Checkout"
+                  autoComplete="off"
+                  autoFocus
+                />
+                {createApp.error ? (
+                  <FieldError>
+                    {createApp.error instanceof Error
+                      ? createApp.error.message
+                      : "Relay could not add this app."}
+                  </FieldError>
+                ) : null}
+              </Field>
+              <div className="relay-dialog-actions">
+                <DialogClose
+                  render={
+                    <Button variant="ghost" disabled={createApp.isPending}>
+                      Cancel
                     </Button>
-                  </div>
-                </form>
-              </Dialog.Popup>
-            </Dialog.Viewport>
-          </Dialog.Portal>
-        </Dialog.Root>
+                  }
+                />
+                <Button
+                  type="submit"
+                  variant="default"
+                  disabled={!name.trim() || createApp.isPending}
+                >
+                  {createApp.isPending ? "Adding…" : "Add App"}
+                </Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
       </header>
 
       {loading ? <PageLoading label="Loading apps…" /> : null}
@@ -127,7 +136,7 @@ export function AppsPage() {
           detail="Start Relay, then try loading your apps again."
           action={
             <Button
-              variant="secondary"
+              variant="outline"
               onClick={retry}
               disabled={apps.isFetching || tests.isFetching || runs.isFetching}
             >
@@ -145,7 +154,7 @@ export function AppsPage() {
           title="No apps yet"
           detail="Add the first app you want Relay to map, test, and verify."
           action={
-            <Button variant="primary" onClick={() => setDialogOpen(true)}>
+            <Button variant="default" onClick={() => setDialogOpen(true)}>
               Add App
             </Button>
           }

@@ -14,7 +14,8 @@
     "./map-exploration": "./src/map-exploration.ts",
     "./change-journey": "./src/change-journey.ts",
     "./catalog": "./src/catalog.ts",
-    "./agent-debug": "./src/agent-debug.ts"
+    "./agent-debug": "./src/agent-debug.ts",
+    "./agent-debug-recording": "./src/agent-debug-recording.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",

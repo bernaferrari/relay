@@ -1,12 +1,6 @@
 /** @jsxImportSource react */
 import {
-  Alert,
-  AlertActions,
-  AlertDescription,
-  AlertIcon,
-  AlertTitle,
   Badge,
-  Button,
   Disclosure,
   Progress,
   ProgressLabel,
@@ -18,6 +12,8 @@ import {
   TabsList,
   TabsTrigger,
 } from "@relay/ui-react";
+import { Alert, AlertAction, AlertDescription, AlertTitle } from "@relay/ui-react/components/alert";
+import { Button } from "@relay/ui-react/components/button";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { ArrowLeft, ChevronRight, CircleAlert } from "lucide-react";
@@ -200,7 +196,7 @@ export function RunPage() {
             </Link>
           ) : null}
           {canCancel ? (
-            <Button variant="secondary" onClick={() => cancel.mutate()} disabled={cancel.isPending}>
+            <Button variant="outline" onClick={() => cancel.mutate()} disabled={cancel.isPending}>
               {cancel.isPending ? "Cancelling…" : "Cancel Run"}
             </Button>
           ) : null}
@@ -352,29 +348,28 @@ function RunReport({
           {failure ? (
             <Alert
               className="relay-causal-failure"
-              variant="danger"
+              variant="destructive"
               aria-labelledby="causal-failure-title"
             >
-              <AlertIcon>
-                <CircleAlert />
-              </AlertIcon>
+              <CircleAlert />
               <AlertTitle id="causal-failure-title">
                 {failureTitle(failure, report.category)}
               </AlertTitle>
               <AlertDescription>{nextAction(report.outcome)}</AlertDescription>
               {report.category || testId ? (
-                <AlertActions>
+                <AlertAction>
                   {report.category ? <Badge variant="danger">{report.category}</Badge> : null}
                   {testId ? (
                     <Button
-                      size="small"
-                      variant="secondary"
+                      size="sm"
+                      variant="outline"
+                      nativeButton={false}
                       render={<Link to="/tests/$testId" params={{ testId }} />}
                     >
                       Open Test to run again
                     </Button>
                   ) : null}
-                </AlertActions>
+                </AlertAction>
               ) : null}
               <Disclosure.Root className="relay-causal-technical">
                 <Disclosure.Trigger>Technical details</Disclosure.Trigger>
@@ -611,8 +606,8 @@ function RawEvidenceDisclosure({
             </p>
             {evidence.data !== undefined ? (
               <Button
-                size="small"
-                variant="secondary"
+                size="sm"
+                variant="outline"
                 onClick={async () => {
                   if (!navigator.clipboard) return;
                   try {
@@ -632,7 +627,7 @@ function RawEvidenceDisclosure({
           {evidence.isError ? (
             <div className="relay-raw-evidence-error" role="alert">
               <p>Audit details could not be loaded. The Report outcome above is unchanged.</p>
-              <Button size="small" variant="secondary" onClick={() => void evidence.refetch()}>
+              <Button size="sm" variant="outline" onClick={() => void evidence.refetch()}>
                 Try again
               </Button>
             </div>

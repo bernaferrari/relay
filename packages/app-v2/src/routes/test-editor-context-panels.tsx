@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { Button } from "@relay/ui-react";
+import { Button } from "@relay/ui-react/components/button";
 import { Check, CircleDot, History, Sparkles } from "lucide-react";
 import type {
   ProductTestEditorDocument,
@@ -39,15 +39,15 @@ export function RepairSection({
                 {proposal.status === "pending" ? (
                   <>
                     <Button
-                      size="small"
-                      variant="primary"
+                      size="sm"
+                      variant="default"
                       disabled={busy}
                       onClick={() => onDecision(proposal, "approve")}
                     >
                       Apply repair
                     </Button>
                     <Button
-                      size="small"
+                      size="sm"
                       variant="ghost"
                       disabled={busy}
                       onClick={() => onDecision(proposal, "reject")}
@@ -57,8 +57,8 @@ export function RepairSection({
                   </>
                 ) : (
                   <Button
-                    size="small"
-                    variant="secondary"
+                    size="sm"
+                    variant="outline"
                     disabled={busy}
                     onClick={() => onDecision(proposal, "revert")}
                   >

@@ -1,19 +1,14 @@
 /** @jsxImportSource react */
 import {
-  Alert,
-  AlertActions,
-  AlertDescription,
-  AlertIcon,
-  AlertTitle,
-  Badge,
-  type BadgeVariant,
   Empty,
   EmptyContent,
   EmptyDescription,
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
-} from "@relay/ui-react";
+} from "@relay/ui-react/components/empty";
+import { Badge } from "@relay/ui-react/components/badge";
+import { Alert, AlertAction, AlertDescription, AlertTitle } from "@relay/ui-react/components/alert";
 import { Link } from "@tanstack/react-router";
 import {
   AlertTriangle,
@@ -141,19 +136,17 @@ export function RecoveryState({
   return (
     <Alert
       className={`relay-recovery-state relay-recovery-state--compact${className ? ` ${className}` : ""}`}
-      variant="danger"
+      variant="destructive"
       role="alert"
     >
-      <AlertIcon>
-        <CircleAlert />
-      </AlertIcon>
+      <CircleAlert />
       <AlertTitle>{title}</AlertTitle>
       {supportingText ? (
         <AlertDescription>
           <p>{supportingText}</p>
         </AlertDescription>
       ) : null}
-      {action ? <AlertActions>{action}</AlertActions> : null}
+      {action ? <AlertAction>{action}</AlertAction> : null}
     </Alert>
   );
 }
@@ -161,18 +154,26 @@ export function RecoveryState({
 export function OutcomeMark({ outcome }: { outcome: string | undefined }) {
   const presentation = outcomePresentation(outcome);
   return (
-    <Badge className="relay-outcome-mark" variant={outcomeBadgeVariant(presentation.tone)}>
+    <Badge
+      className={`relay-outcome-mark ${outcomeBadgeClass(presentation.tone)}`}
+      variant={outcomeBadgeVariant(presentation.tone)}
+    >
       <presentation.icon aria-hidden="true" />
       {presentation.label}
     </Badge>
   );
 }
 
-function outcomeBadgeVariant(tone: ReturnType<typeof outcomePresentation>["tone"]): BadgeVariant {
-  if (tone === "success") return "success";
-  if (tone === "danger") return "danger";
-  if (tone === "notice") return "warning";
+function outcomeBadgeVariant(tone: ReturnType<typeof outcomePresentation>["tone"]): "default" | "secondary" | "destructive" {
+  if (tone === "danger") return "destructive";
+  if (tone === "success") return "default";
   return "secondary";
+}
+
+function outcomeBadgeClass(tone: ReturnType<typeof outcomePresentation>["tone"]): string {
+  if (tone === "success") return "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300";
+  if (tone === "notice") return "bg-amber-500/15 text-amber-700 dark:text-amber-300";
+  return "";
 }
 
 function outcomePresentation(outcome: string | undefined): {

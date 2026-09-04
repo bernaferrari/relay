@@ -4,7 +4,8 @@ import type {
   ProductBatchFailureCluster,
   ProductBatchReport,
 } from "@relay/product/run-across";
-import { Badge, Checkbox } from "@relay/ui-react";
+import { Badge } from "@relay/ui-react/components/badge";
+import { Checkbox } from "@relay/ui-react/components/checkbox";
 import { Link } from "@tanstack/react-router";
 import { ExternalLink } from "lucide-react";
 import {
@@ -166,7 +167,12 @@ function BatchCaseResult({
         <span className="relay-batch-result-spacer" />
       )}
       <span>
-        <Badge variant={caseVariant(item.status)}>{caseStatus(item.status)}</Badge>
+        <Badge
+          variant={caseVariant(item.status).variant}
+          className={caseVariant(item.status).className}
+        >
+          {caseStatus(item.status)}
+        </Badge>
         <small>{caseValues(item)}</small>
       </span>
       {item.runId ? (
@@ -200,11 +206,21 @@ function caseStatus(status: ProductBatchCase["status"]): string {
 
 function caseVariant(
   status: ProductBatchCase["status"],
-): "success" | "danger" | "warning" | "secondary" {
-  if (status === "passed") return "success";
-  if (status === "failed") return "danger";
-  if (status === "blocked") return "warning";
-  return "secondary";
+): { variant: "default" | "destructive" | "secondary"; className?: string } {
+  if (status === "passed") {
+    return {
+      variant: "default",
+      className: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
+    };
+  }
+  if (status === "failed") return { variant: "destructive" };
+  if (status === "blocked") {
+    return {
+      variant: "secondary",
+      className: "bg-amber-500/15 text-amber-700 dark:text-amber-300",
+    };
+  }
+  return { variant: "secondary" };
 }
 
 function failureKind(kind: ProductBatchFailureCluster["kind"]): string {

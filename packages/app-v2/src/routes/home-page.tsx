@@ -1,7 +1,8 @@
 /** @jsxImportSource react */
 import type { ProductRunSummary, ProductTestSummary } from "@relay/product/catalog";
 import type { ProductChange } from "@relay/product/change-journey";
-import { Button, Card, CardContent } from "@relay/ui-react";
+import { Button } from "@relay/ui-react/components/button";
+import { Card, CardContent } from "@relay/ui-react/components/card";
 import { useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useRouteContext } from "@tanstack/react-router";
 import {
@@ -130,7 +131,7 @@ export function HomePage() {
             </Link>
           ) : null}
           {hasTests ? (
-            <Button render={<Link to="/tests/new" />} variant="primary">
+            <Button nativeButton={false} render={<Link to="/tests/new" />} variant="default">
               <Plus aria-hidden="true" />
               Record a Test
             </Button>
@@ -153,7 +154,7 @@ export function HomePage() {
           detail="Relay needs an app before it can keep Tests, Runs, and proof in one trustworthy place."
           icon={Plus}
           action={
-            <Button render={<Link to="/apps" />} variant="primary">
+            <Button nativeButton={false} render={<Link to="/apps" />} variant="default">
               Add an App
             </Button>
           }
@@ -166,7 +167,7 @@ export function HomePage() {
           detail="Choose one path a person depends on. You can add broader coverage after the first clean replay."
           icon={FlaskConical}
           action={
-            <Button render={<Link to="/tests/new" />} variant="primary">
+            <Button nativeButton={false} render={<Link to="/tests/new" />} variant="default">
               Record a Test
             </Button>
           }
@@ -376,7 +377,7 @@ function NextCardLink({
   link: React.ReactElement;
 }) {
   return (
-    <Button render={link} className="relay-home-next-card" variant="ghost">
+    <Button nativeButton={false} render={link} className="relay-home-next-card" variant="ghost">
       <span className="relay-home-next-icon">
         <Icon aria-hidden="true" />
       </span>

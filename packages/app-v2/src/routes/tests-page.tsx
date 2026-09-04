@@ -1,6 +1,9 @@
 /** @jsxImportSource react */
 import type { ProductTestSummary } from "@relay/product/catalog";
-import { Badge, Button, Input, Item } from "@relay/ui-react";
+import { Badge } from "@relay/ui-react/components/badge";
+import { Item } from "@relay/ui-react/components/item";
+import { Button } from "@relay/ui-react/components/button";
+import { Input } from "@relay/ui-react/components/input";
 import { useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { useDeferredValue, useMemo, useState } from "react";
@@ -90,7 +93,7 @@ export function TestsPage() {
             Reviewed journeys you can run again on a device or browser.
           </p>
         </div>
-        <Button variant="primary" render={<Link to="/tests/new" />}>
+        <Button nativeButton={false} variant="default" render={<Link to="/tests/new" />}>
           New Test
         </Button>
       </header>
@@ -155,7 +158,7 @@ export function TestsPage() {
             title="No Tests match these filters"
             detail="Try another name, app, or status. Your saved Tests have not changed."
             action={
-              <Button variant="ghost" size="small" onClick={clearFilters}>
+        <Button variant="ghost" size="sm" onClick={clearFilters}>
                 Clear filters
               </Button>
             }
@@ -191,7 +194,14 @@ function TestRow({ test }: { test: ProductTestSummary }) {
           </span>
         </span>
         <span className="relay-library-row-status">
-          {test.status === "needs-review" ? <Badge variant="warning">Needs review</Badge> : null}
+          {test.status === "needs-review" ? (
+            <Badge
+              variant="secondary"
+              className="bg-amber-500/15 text-amber-700 dark:text-amber-300"
+            >
+              Needs review
+            </Badge>
+          ) : null}
         </span>
         <span className="relay-library-row-recent">
           {recent ? (

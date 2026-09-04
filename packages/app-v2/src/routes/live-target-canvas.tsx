@@ -1,5 +1,6 @@
 /** @jsxImportSource react */
-import { Button, Input } from "@relay/ui-react";
+import { Button } from "@relay/ui-react/components/button";
+import { Input } from "@relay/ui-react/components/input";
 import { MonitorSmartphone } from "lucide-react";
 import {
   useEffect,
@@ -180,7 +181,7 @@ export function LiveTargetCanvas({
           />
           <Button
             type="button"
-            variant="secondary"
+            variant="outline"
             disabled={!text || !streaming || busy}
             onClick={typeText}
           >

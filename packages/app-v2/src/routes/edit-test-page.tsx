@@ -1,6 +1,7 @@
 /** @jsxImportSource react */
 import type { AppMapScenarioTestStep, AppMapTestStepPlacement } from "@relay/protocol";
-import { Badge, Button, IconButton } from "@relay/ui-react";
+import { Badge } from "@relay/ui-react/components/badge";
+import { Button } from "@relay/ui-react/components/button";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { ArrowDown, ArrowUp, Check, ChevronRight, GripVertical, Redo2, Undo2 } from "lucide-react";
@@ -340,7 +341,12 @@ export function EditTestPage() {
       <header className="relay-page-header relay-test-editor-header">
         <div>
           <div className="relay-entity-context">
-            <Badge variant="success">Saved Test</Badge>
+            <Badge
+              variant="default"
+              className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+            >
+              Saved Test
+            </Badge>
             {editorDocument ? <span>{editorDocument.appName}</span> : null}
             {sessionId ? <Badge variant="secondary">Live Session</Badge> : null}
           </div>
@@ -358,7 +364,11 @@ export function EditTestPage() {
             {saveNotice === "Saved" ? <Check aria-hidden="true" /> : null}
             {saveNotice}
           </span>
-          <Button variant="primary" render={<Link to="/tests/$testId" params={{ testId }} />}>
+          <Button
+            nativeButton={false}
+            variant="default"
+            render={<Link to="/tests/$testId" params={{ testId }} />}
+          >
             Done editing
           </Button>
         </div>
@@ -393,7 +403,7 @@ export function EditTestPage() {
           <div className="relay-editor-toolbar" aria-label="Editing history">
             <Button
               variant="ghost"
-              size="small"
+              size="sm"
               onClick={undo}
               disabled={!canUndo || edit.isPending || historyAction.isPending}
               aria-label="Undo last saved change"
@@ -402,7 +412,7 @@ export function EditTestPage() {
             </Button>
             <Button
               variant="ghost"
-              size="small"
+              size="sm"
               onClick={redo}
               disabled={!canRedo || edit.isPending || historyAction.isPending}
               aria-label="Redo last undone change"
@@ -426,8 +436,8 @@ export function EditTestPage() {
                 <div className="relay-editor-outline-actions">
                   <span>{entries.length === 1 ? "1 step" : `${entries.length} steps`}</span>
                   <Button
-                    size="small"
-                    variant="secondary"
+                    size="sm"
+                    variant="outline"
                     onClick={addStep}
                     disabled={edit.isPending || repair.isPending}
                   >
@@ -496,22 +506,24 @@ export function EditTestPage() {
                           <ChevronRight aria-hidden="true" />
                         </button>
                         <span className="relay-editor-reorder-actions">
-                          <IconButton
-                            size="small"
+                          <Button
+                            size="icon-sm"
+                            variant="ghost"
                             onClick={() => move(entry, -1)}
                             disabled={entry.index === 0 || edit.isPending}
                             aria-label={`Move ${entry.step.intent} up`}
                           >
                             <ArrowUp aria-hidden="true" />
-                          </IconButton>
-                          <IconButton
-                            size="small"
+                          </Button>
+                          <Button
+                            size="icon-sm"
+                            variant="ghost"
                             onClick={() => move(entry, 1)}
                             disabled={entry.index === entry.siblingIds.length - 1 || edit.isPending}
                             aria-label={`Move ${entry.step.intent} down`}
                           >
                             <ArrowDown aria-hidden="true" />
-                          </IconButton>
+                          </Button>
                         </span>
                       </div>
                     </li>

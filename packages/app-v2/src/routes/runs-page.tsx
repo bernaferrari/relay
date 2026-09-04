@@ -1,6 +1,9 @@
 /** @jsxImportSource react */
 import type { ProductRunSummary } from "@relay/product/catalog";
-import { Button, Input, Item, Tabs, TabsIndicator, TabsList, TabsTrigger } from "@relay/ui-react";
+import { Item } from "@relay/ui-react/components/item";
+import { Tabs, TabsList, TabsTrigger } from "@relay/ui-react/components/tabs";
+import { Button } from "@relay/ui-react/components/button";
+import { Input } from "@relay/ui-react/components/input";
 import { useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { ChevronRight } from "lucide-react";
@@ -109,7 +112,6 @@ export function RunsPage() {
               {item.label}
             </TabsTrigger>
           ))}
-          <TabsIndicator />
         </TabsList>
       </Tabs>
 
@@ -173,7 +175,7 @@ export function RunsPage() {
             title={emptyRunTitle(view)}
             detail="Choose another view, app, or search. Existing Reports remain unchanged."
             action={
-              <Button variant="ghost" size="small" onClick={clearFilters}>
+              <Button variant="ghost" size="sm" onClick={clearFilters}>
                 Show latest Runs
               </Button>
             }

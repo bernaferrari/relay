@@ -1,17 +1,13 @@
 /** @jsxImportSource react */
 import {
-  Alert,
-  AlertActions,
-  AlertDescription,
-  AlertIcon,
-  AlertTitle,
-  Button,
   Field,
   FieldDescription,
   FieldError,
   FieldLabel,
-  Input,
-} from "@relay/ui-react";
+} from "@relay/ui-react/components/field";
+import { Alert, AlertAction, AlertDescription, AlertTitle } from "@relay/ui-react/components/alert";
+import { Button } from "@relay/ui-react/components/button";
+import { Input } from "@relay/ui-react/components/input";
 import type { DebugBugOutcome } from "@relay/product/agent-debug";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useRouteContext } from "@tanstack/react-router";
@@ -141,7 +137,7 @@ export function AgentDebugPage() {
             <div className="flex justify-end pt-1">
               <Button
                 type="submit"
-                variant="primary"
+                variant="default"
                 disabled={start.isPending || !title.trim() || !targetId}
                 className="w-full sm:w-auto"
               >
@@ -156,16 +152,15 @@ export function AgentDebugPage() {
         ? (() => {
             const outcome = start.data;
             return (
-              <Alert role="status" variant="success" className="w-full max-w-2xl">
-                <AlertIcon>
-                  <ShieldCheck aria-hidden="true" />
-                </AlertIcon>
+              <Alert role="status" variant="default" className="w-full max-w-2xl">
+                <ShieldCheck aria-hidden="true" />
                 <AlertTitle>Session ready for review</AlertTitle>
                 <AlertDescription>Your investigation is ready to review.</AlertDescription>
                 {outcome.recording.authoring?.sessionId ? (
-                  <AlertActions>
+                  <AlertAction>
                     <Button
-                      variant="secondary"
+                      variant="outline"
+                      nativeButton={false}
                       render={
                         <Link
                           to="/sessions/$sessionId"
@@ -175,7 +170,7 @@ export function AgentDebugPage() {
                     >
                       Open Session
                     </Button>
-                  </AlertActions>
+                  </AlertAction>
                 ) : null}
               </Alert>
             );

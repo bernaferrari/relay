@@ -1,5 +1,10 @@
 /** @jsxImportSource react */
-import { Button, Disclosure } from "@relay/ui-react";
+import { Button } from "@relay/ui-react/components/button";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@relay/ui-react/components/collapsible";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useRouteContext } from "@tanstack/react-router";
 import { InfiniteMapCanvas } from "../components/infinite-map-canvas";
@@ -148,9 +153,9 @@ export function MapPage() {
               ))}
             </ul>
           </section>
-          <Disclosure.Root className="relay-map-developer">
-            <Disclosure.Trigger>Edit Map · Developer Mode</Disclosure.Trigger>
-            <Disclosure.Panel className="relay-map-developer-panel">
+          <Collapsible className="relay-map-developer">
+            <CollapsibleTrigger>Edit Map · Developer Mode</CollapsibleTrigger>
+            <CollapsibleContent className="relay-map-developer-panel">
               <p>
                 Editing known screens and paths changes the saved verification source. Open this
                 mode only when you intend to review a proposal.
@@ -176,8 +181,8 @@ export function MapPage() {
                         </div>
                         <div>
                           <Button
-                            size="small"
-                            variant="primary"
+                            size="sm"
+                            variant="default"
                             disabled={decideProposal.isPending}
                             onClick={() =>
                               decideProposal.mutate({
@@ -189,7 +194,7 @@ export function MapPage() {
                             Approve
                           </Button>
                           <Button
-                            size="small"
+                            size="sm"
                             variant="ghost"
                             disabled={decideProposal.isPending}
                             onClick={() =>
@@ -205,8 +210,8 @@ export function MapPage() {
               ) : (
                 <p className="relay-context-empty">No proposal needs a decision.</p>
               )}
-            </Disclosure.Panel>
-          </Disclosure.Root>
+            </CollapsibleContent>
+          </Collapsible>
         </>
       ) : null}
       {map.data &&

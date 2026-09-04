@@ -1,5 +1,6 @@
 /** @jsxImportSource react */
-import { Badge, Button } from "@relay/ui-react";
+import { Badge } from "@relay/ui-react/components/badge";
+import { Button } from "@relay/ui-react/components/button";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useRouteContext } from "@tanstack/react-router";
 import { RotateCcw } from "lucide-react";
@@ -178,12 +179,13 @@ export function DevicePage() {
           ) : null}
         </div>
         {device.data?.status === "needs-attention" ? (
-          <Button variant="primary" onClick={() => recover.mutate()} disabled={recover.isPending}>
+          <Button variant="default" onClick={() => recover.mutate()} disabled={recover.isPending}>
             {recover.isPending ? "Reconnecting…" : "Reconnect device"}
           </Button>
         ) : device.data ? (
           <Button
-            variant="primary"
+            variant="default"
+            nativeButton={false}
             render={
               <Link
                 to="/tests/new"
@@ -204,7 +206,7 @@ export function DevicePage() {
           detail="The connection may have changed. Check again without losing your place."
           tone="notice"
           action={
-            <Button variant="primary" onClick={() => void device.refetch()}>
+            <Button variant="default" onClick={() => void device.refetch()}>
               Try again
             </Button>
           }
@@ -216,7 +218,7 @@ export function DevicePage() {
           title="This device is no longer available"
           detail="It may have been disconnected or renamed. Return to Devices to see what Relay can use now."
           action={
-            <Button variant="primary" render={<Link to="/devices" />}>
+            <Button nativeButton={false} variant="default" render={<Link to="/devices" />}>
               View Devices
             </Button>
           }
@@ -226,7 +228,14 @@ export function DevicePage() {
       {device.data && presentation ? (
         <div className="relay-device-detail-grid">
           <section className="relay-device-health" aria-labelledby="device-health-title">
-            <Badge variant={device.data.status === "needs-attention" ? "warning" : "success"}>
+            <Badge
+              variant={device.data.status === "needs-attention" ? "secondary" : "default"}
+              className={
+                device.data.status === "needs-attention"
+                  ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                  : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+              }
+            >
               {presentation.label}
             </Badge>
             <h2 id="device-health-title">{presentation.title}</h2>
@@ -321,7 +330,7 @@ export function DevicePage() {
                   />
                   <span>Relaunch if the app is already open</span>
                 </label>
-                <Button type="submit" variant="primary" disabled={appLaunch.isPending}>
+                <Button type="submit" variant="default" disabled={appLaunch.isPending}>
                   {appLaunch.isPending ? "Launching…" : "Launch app"}
                 </Button>
                 {appLaunch.error ? (
@@ -363,7 +372,7 @@ export function DevicePage() {
                   </p>
                 </div>
                 <Button
-                  size="small"
+                  size="sm"
                   variant="ghost"
                   onClick={() => setLiveAttempt((value) => value + 1)}
                 >

@@ -1,6 +1,8 @@
 /** @jsxImportSource react */
 import type { AuthoringRawOptimizationProposalResponse } from "@relay/protocol";
-import { Button, Checkbox, ScrollArea } from "@relay/ui-react";
+import { ScrollArea } from "@relay/ui-react";
+import { Checkbox } from "@relay/ui-react/components/checkbox";
+import { Button } from "@relay/ui-react/components/button";
 import { Image as ImageIcon, MoreHorizontal, Sparkles, Target } from "lucide-react";
 import { EmptyState } from "../components/product-patterns";
 import {
@@ -118,7 +120,7 @@ export function RecordingActionsPanel({
         <div className="relay-recording-heading-actions">
           <span>{captureSummary(actions)}</span>
           <Button
-            size="small"
+            size="sm"
             variant="ghost"
             onClick={onOptimize}
             disabled={!canOptimize || optimization.isFetching}

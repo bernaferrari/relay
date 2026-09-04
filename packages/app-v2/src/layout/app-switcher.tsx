@@ -1,5 +1,13 @@
 /** @jsxImportSource react */
-import { Menu } from "@relay/ui-react";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuGroup,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+} from "@relay/ui-react/components/dropdown-menu";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation, useRouter, useRouteContext } from "@tanstack/react-router";
 import { catalogQueryKeys } from "../data/catalog-queries";
@@ -83,8 +91,11 @@ export function AppSwitcher() {
   }
 
   return (
-    <Menu.Root>
-      <Menu.Trigger className="relay-app-switcher" aria-label={`App context: ${contextName}`}>
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        className="relay-app-switcher"
+        aria-label={`App context: ${contextName}`}
+      >
         <span className="relay-app-avatar" aria-hidden="true">
           {avatar}
         </span>
@@ -95,39 +106,43 @@ export function AppSwitcher() {
         <span className="relay-app-switcher-chevron" aria-hidden="true">
           ⌄
         </span>
-      </Menu.Trigger>
-      <Menu.Portal>
-        <Menu.Positioner className="relay-menu-positioner" sideOffset={6} align="start">
-          <Menu.Popup className="relay-overlay-popup relay-menu-popup">
-            <Menu.Group>
-              <Menu.GroupLabel className="relay-menu-label">Apps</Menu.GroupLabel>
-              <Menu.Item className="relay-menu-item" onClick={() => switchApp()}>
-                <span>All apps</span>
-                {scope.kind === "all" ? <span aria-hidden="true">✓</span> : null}
-              </Menu.Item>
-              {apps.data?.map((app) => (
-                <Menu.Item
-                  className="relay-menu-item"
-                  key={app.id}
-                  onClick={() => switchApp(app.id)}
-                >
-                  <span>{app.name}</span>
-                  {selectedApp?.id === app.id ? <span aria-hidden="true">✓</span> : null}
-                </Menu.Item>
-              ))}
-              {apps.isError ? (
-                <Menu.Item className="relay-menu-note" disabled>
-                  Apps are temporarily unavailable
-                </Menu.Item>
-              ) : null}
-              <Menu.Separator className="relay-menu-separator" />
-              <Menu.Item className="relay-menu-item" onClick={() => router.history.push("/apps")}>
-                Manage apps
-              </Menu.Item>
-            </Menu.Group>
-          </Menu.Popup>
-        </Menu.Positioner>
-      </Menu.Portal>
-    </Menu.Root>
+      </DropdownMenuTrigger>
+
+      <DropdownMenuContent
+        sideOffset={6}
+        align="start"
+        className="relay-overlay-popup relay-menu-popup"
+      >
+        <DropdownMenuGroup>
+          <DropdownMenuLabel className="relay-menu-label">Apps</DropdownMenuLabel>
+          <DropdownMenuItem className="relay-menu-item" onClick={() => switchApp()}>
+            <span>All apps</span>
+            {scope.kind === "all" ? <span aria-hidden="true">✓</span> : null}
+          </DropdownMenuItem>
+          {apps.data?.map((app) => (
+            <DropdownMenuItem
+              className="relay-menu-item"
+              key={app.id}
+              onClick={() => switchApp(app.id)}
+            >
+              <span>{app.name}</span>
+              {selectedApp?.id === app.id ? <span aria-hidden="true">✓</span> : null}
+            </DropdownMenuItem>
+          ))}
+          {apps.isError ? (
+            <DropdownMenuItem className="relay-menu-note" disabled>
+              Apps are temporarily unavailable
+            </DropdownMenuItem>
+          ) : null}
+          <DropdownMenuSeparator className="relay-menu-separator" />
+          <DropdownMenuItem
+            className="relay-menu-item"
+            onClick={() => router.history.push("/apps")}
+          >
+            Manage apps
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

@@ -1,6 +1,7 @@
 /** @jsxImportSource react */
+import { Tooltip, TooltipTrigger, TooltipContent } from "@relay/ui-react/components/tooltip";
 import type { ProductMapPath, ProductMapScreen } from "@relay/product/map-exploration";
-import { Button, IconButton, Tooltip } from "@relay/ui-react";
+import { Button } from "@relay/ui-react/components/button";
 import { Focus, Hand, LocateFixed, Minus, Plus, RotateCcw, X } from "lucide-react";
 import {
   useEffect,
@@ -375,16 +376,17 @@ function MapControl({
   onClick: () => void;
 }) {
   return (
-    <Tooltip.Root>
-      <Tooltip.Trigger render={<IconButton aria-label={label} onClick={onClick} />}>
+    <Tooltip>
+      <TooltipTrigger
+        render={<Button size="icon" variant="ghost" aria-label={label} onClick={onClick} />}
+      >
         <Icon aria-hidden="true" />
-      </Tooltip.Trigger>
-      <Tooltip.Portal>
-        <Tooltip.Positioner className="relay-tooltip-positioner" sideOffset={7}>
-          <Tooltip.Popup className="relay-overlay-popup relay-map-tooltip">{label}</Tooltip.Popup>
-        </Tooltip.Positioner>
-      </Tooltip.Portal>
-    </Tooltip.Root>
+      </TooltipTrigger>
+
+      <TooltipContent sideOffset={7} className="relay-overlay-popup relay-map-tooltip">
+        {label}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -531,9 +533,14 @@ function ScreenInspector({
               <p className="relay-section-label">Known screen</p>
               <h2>{screen.title}</h2>
             </div>
-            <IconButton size="small" aria-label="Close screen details" onClick={onClose}>
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              aria-label="Close screen details"
+              onClick={onClose}
+            >
               <X aria-hidden="true" />
-            </IconButton>
+            </Button>
           </header>
           {screen.description ? (
             <p className="relay-map-inspector-description">{screen.description}</p>
@@ -580,7 +587,8 @@ function ScreenInspector({
           ) : null}
           <Button
             className="relay-map-inspector-action"
-            size="small"
+            size="sm"
+            nativeButton={false}
             render={<Link to="/tests/new" search={{ app: appId }} />}
           >
             Create Test for this app

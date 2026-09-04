@@ -1,5 +1,8 @@
 /** @jsxImportSource react */
-import { Badge, Button, RadioCard, RadioGroup } from "@relay/ui-react";
+import { Badge } from "@relay/ui-react/components/badge";
+import { Button } from "@relay/ui-react/components/button";
+import { FieldLabel } from "@relay/ui-react/components/field";
+import { RadioGroup, RadioGroupItem } from "@relay/ui-react/components/radio-group";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
@@ -107,7 +110,12 @@ export function TestPage() {
         <div>
           {test.data ? (
             <div className="relay-entity-context">
-              <Badge variant="success">Saved Test</Badge>
+              <Badge
+                variant="default"
+                className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+              >
+                Saved Test
+              </Badge>
               <span>{test.data.appName}</span>
             </div>
           ) : (
@@ -120,16 +128,18 @@ export function TestPage() {
         </div>
         <div className="relay-test-header-actions">
           <Button
+            nativeButton={false}
             render={<Link to="/tests/$testId/edit" params={{ testId }} />}
-            variant="secondary"
-            size="small"
+            variant="outline"
+            size="sm"
           >
             Edit Test
           </Button>
           <Button
+            nativeButton={false}
             render={<Link to="/tests/$testId/run-across" params={{ testId }} />}
             variant="ghost"
-            size="small"
+            size="sm"
           >
             Run with data
           </Button>
@@ -166,8 +176,9 @@ export function TestPage() {
             <p>Resume it before starting this Test again.</p>
           </div>
           <Button
-            variant="primary"
-            size="small"
+            variant="default"
+            size="sm"
+            nativeButton={false}
             render={<Link to="/runs/$runId" params={{ runId: activeRun.runId }} />}
           >
             Resume Run
@@ -200,12 +211,20 @@ export function TestPage() {
                 {targets.data.map((target) => {
                   const label = targetLabel(target);
                   return (
-                    <RadioCard
+                    <FieldLabel
                       key={`${target.kind}:${target.targetId}`}
-                      value={target.targetId}
-                      title={label.title}
-                      description={label.detail}
-                    />
+                      className="flex min-h-14 min-w-0 cursor-pointer items-center gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50"
+                    >
+                      <RadioGroupItem value={target.targetId} />
+                      <span className="grid min-w-0 flex-1 gap-0.5">
+                        <span className="truncate text-sm font-medium text-foreground">
+                          {label.title}
+                        </span>
+                        <span className="truncate text-xs leading-snug text-muted-foreground">
+                          {label.detail}
+                        </span>
+                      </span>
+                    </FieldLabel>
                   );
                 })}
               </RadioGroup>
@@ -224,7 +243,7 @@ export function TestPage() {
             )}
             <div className="mt-5 flex items-center gap-3">
               <Button
-                variant="primary"
+                variant="default"
                 onClick={() => start.mutate()}
                 disabled={!targetId || start.isPending}
               >
@@ -279,7 +298,14 @@ export function TestPage() {
                 <p className="relay-section-label">Reliability</p>
                 <h2 id="test-stability-title">Recent stability</h2>
               </div>
-              <Badge variant={stability?.signals.length ? "warning" : "secondary"}>
+              <Badge
+                variant="secondary"
+                className={
+                  stability?.signals.length
+                    ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                    : undefined
+                }
+              >
                 {stabilityHistoryComplete ? "Complete history" : "Partial history"}
               </Badge>
             </div>

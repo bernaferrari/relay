@@ -1,24 +1,18 @@
 /** @jsxImportSource react */
+import { ScrollArea } from "@relay/ui-react";
+import { Alert, AlertAction, AlertDescription, AlertTitle } from "@relay/ui-react/components/alert";
+import { Button } from "@relay/ui-react/components/button";
 import {
-  Alert,
-  AlertActions,
-  AlertDescription,
-  AlertIcon,
-  AlertTitle,
-  Button,
   Card,
   CardContent,
   CardDescription,
   CardFooter,
   CardHeader,
   CardTitle,
-  Field,
-  FieldDescription,
-  RadioCard,
-  RadioGroup,
-  ScrollArea,
-  Skeleton,
-} from "@relay/ui-react";
+} from "@relay/ui-react/components/card";
+import { Field, FieldDescription, FieldLabel } from "@relay/ui-react/components/field";
+import { RadioGroup, RadioGroupItem } from "@relay/ui-react/components/radio-group";
+import { Skeleton } from "@relay/ui-react/components/skeleton";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate, useRouteContext } from "@tanstack/react-router";
 import {
@@ -238,13 +232,22 @@ export function NewTestPage() {
       required
     >
       {apps.data?.map((app) => (
-        <RadioCard
+        <FieldLabel
           key={app.id}
-          value={app.id}
-          title={app.name}
-          description="Saved App"
-          leading={<AppWindow />}
-        />
+          className="flex min-h-14 min-w-0 cursor-pointer items-center gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50"
+        >
+          <RadioGroupItem value={app.id} />
+          <span
+            className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground [&_svg]:size-4 [&_svg]:shrink-0"
+            aria-hidden="true"
+          >
+            <AppWindow />
+          </span>
+          <span className="grid min-w-0 flex-1 gap-0.5">
+            <span className="truncate text-sm font-medium text-foreground">{app.name}</span>
+            <span className="truncate text-xs leading-snug text-muted-foreground">Saved App</span>
+          </span>
+        </FieldLabel>
       ))}
     </RadioGroup>
   );
@@ -265,10 +268,8 @@ export function NewTestPage() {
       </header>
 
       {activePointer.data ? (
-        <Alert className="relay-resume-recording" variant="info">
-          <AlertIcon>
-            <CircleDot />
-          </AlertIcon>
+        <Alert className="relay-resume-recording" variant="default">
+          <CircleDot />
           <AlertTitle>
             {begin.data?.recovery
               ? "Recording status needs review"
@@ -281,9 +282,9 @@ export function NewTestPage() {
                 : "Continue the recording you started before creating another Test."}
             </p>
           </AlertDescription>
-          <AlertActions>
+          <AlertAction>
             <Button
-              size="small"
+              size="sm"
               onClick={() =>
                 void navigate({
                   to: "/recordings/$recordingId",
@@ -293,7 +294,7 @@ export function NewTestPage() {
             >
               Open recording
             </Button>
-          </AlertActions>
+          </AlertAction>
         </Alert>
       ) : null}
 
@@ -328,10 +329,8 @@ export function NewTestPage() {
               </CardHeader>
               <CardContent className="relay-new-test-fields">
                 {startsFromPath ? (
-                  <Alert variant="info">
-                    <AlertIcon>
-                      <Check />
-                    </AlertIcon>
+                  <Alert variant="default">
+                    <Check />
                     <AlertTitle>
                       {pathContext.data
                         ? `${pathContext.data.fromTitle} → ${pathContext.data.toTitle ?? "Finish"}`
@@ -404,13 +403,26 @@ export function NewTestPage() {
                       {targets.data?.targetOptions.map((target) => {
                         const label = targetLabel(target);
                         return (
-                          <RadioCard
+                          <FieldLabel
                             key={`${target.kind}:${target.targetId}`}
-                            value={target.targetId}
-                            title={label.title}
-                            description={label.detail}
-                            leading={target.kind === "browser" ? <Monitor /> : <Smartphone />}
-                          />
+                            className="flex min-h-14 min-w-0 cursor-pointer items-center gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50"
+                          >
+                            <RadioGroupItem value={target.targetId} />
+                            <span
+                              className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground [&_svg]:size-4 [&_svg]:shrink-0"
+                              aria-hidden="true"
+                            >
+                              {target.kind === "browser" ? <Monitor /> : <Smartphone />}
+                            </span>
+                            <span className="grid min-w-0 flex-1 gap-0.5">
+                              <span className="truncate text-sm font-medium text-foreground">
+                                {label.title}
+                              </span>
+                              <span className="truncate text-xs leading-snug text-muted-foreground">
+                                {label.detail}
+                              </span>
+                            </span>
+                          </FieldLabel>
                         );
                       })}
                     </RadioGroup>
@@ -425,14 +437,14 @@ export function NewTestPage() {
                         <h2 id="prerecord-title">Put the app where recording should begin</h2>
                       </div>
                       <div className="relay-prerecord-actions">
-                        <Button type="submit" variant="primary" size="small" disabled={!formReady}>
+                        <Button type="submit" variant="default" size="sm" disabled={!formReady}>
                           <Play aria-hidden="true" />
                           {begin.isPending ? "Starting…" : "Start recording"}
                         </Button>
                         <Button
                           type="button"
                           variant="ghost"
-                          size="small"
+                          size="sm"
                           onClick={() => setPreviewAttempt((value) => value + 1)}
                         >
                           <RotateCcw aria-hidden="true" /> Reconnect
@@ -453,7 +465,7 @@ export function NewTestPage() {
                 ) : null}
               </CardContent>
               <CardFooter className="relay-form-actions">
-                <Button render={<Link to="/tests" />} variant="ghost">
+                <Button nativeButton={false} render={<Link to="/tests" />} variant="ghost">
                   Cancel
                 </Button>
                 <span className="relay-form-readiness" aria-live="polite">

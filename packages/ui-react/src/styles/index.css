@@ -1,6 +1,40 @@
 @import "@relay/ui/styles";
 @import "@relay/ui/styles/tailwind";
 @import "@fontsource-variable/inter";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is([data-color-scheme="dark"] *));
+
+@theme inline {
+  --font-sans: "Inter Variable", Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
 
 :root {
   --relay-overlay-menu: 90;
@@ -9,6 +43,39 @@
   --relay-overlay-tooltip: 120;
   --relay-focus-ring: var(--text-strong);
   --font-family-sans: "Inter Variable", Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --background: var(--background-base);
+  --foreground: var(--text-strong);
+  --card: var(--surface-raised-strong);
+  --card-foreground: var(--text-strong);
+  --popover: var(--surface-raised-stronger-non-alpha);
+  --popover-foreground: var(--text-strong);
+  --primary: var(--button-primary-base);
+  --primary-foreground: var(--button-primary-foreground);
+  --secondary: var(--surface-base);
+  --secondary-foreground: var(--text-strong);
+  --muted: var(--background-weak);
+  --muted-foreground: var(--text-weaker);
+  --accent: var(--surface-base);
+  --accent-foreground: var(--text-strong);
+  --destructive: var(--surface-critical-base);
+  --border: var(--border-weak-base);
+  --input: var(--border-base);
+  --ring: var(--border-hover);
+  --radius: 0.625rem;
+  --sidebar: var(--background-weak);
+  --sidebar-foreground: var(--text-strong);
+  --sidebar-primary: var(--button-primary-base);
+  --sidebar-primary-foreground: var(--button-primary-foreground);
+  --sidebar-accent: var(--surface-base);
+  --sidebar-accent-foreground: var(--text-strong);
+  --sidebar-border: var(--border-weak-base);
+  --sidebar-ring: var(--border-hover);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
 }
 
 /* Shadcn Base Nova (b0) foundations, mapped onto Relay's public semantic

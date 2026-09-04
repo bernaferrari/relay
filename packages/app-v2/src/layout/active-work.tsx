@@ -1,5 +1,15 @@
 /** @jsxImportSource react */
-import { Badge, Button, Dialog, IconButton, ScrollArea } from "@relay/ui-react";
+import {
+  Dialog,
+  DialogTrigger,
+  DialogClose,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+} from "@relay/ui-react/components/dialog";
+import { ScrollArea } from "@relay/ui-react";
+import { Badge } from "@relay/ui-react/components/badge";
+import { Button } from "@relay/ui-react/components/button";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter, useRouteContext } from "@tanstack/react-router";
 import {
@@ -151,83 +161,77 @@ function ActivityCenter({
   }
 
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog.Portal>
-        <Dialog.Backdrop className="relay-dialog-backdrop relay-activity-backdrop" />
-        <Dialog.Viewport className="relay-dialog-viewport relay-activity-viewport">
-          <Dialog.Popup className="relay-overlay-popup relay-activity-center">
-            <header className="relay-activity-header">
-              <div>
-                <p className="relay-section-label">Workspace</p>
-                <Dialog.Title>Activity Center</Dialog.Title>
-                <Dialog.Description className="relay-activity-description">
-                  Recording, Runs, batches, and verification continue while you move around Relay.
-                </Dialog.Description>
-              </div>
-              <Dialog.Close
-                render={
-                  <IconButton
-                    size="small"
-                    className="relay-activity-close"
-                    aria-label="Close Activity Center"
-                  >
-                    <X aria-hidden="true" />
-                  </IconButton>
-                }
-              />
-            </header>
-            <ScrollArea className="relay-activity-list">
-              {items.length ? (
-                <div>
-                  {items.map((item) => {
-                    const Icon = iconForKind[item.kind];
-                    return (
-                      <button
-                        type="button"
-                        className="relay-activity-item"
-                        key={item.id}
-                        onClick={() => openItem(item)}
-                      >
-                        <span className={`relay-activity-icon relay-activity-icon--${item.kind}`}>
-                          <Icon aria-hidden="true" />
-                        </span>
-                        <span className="relay-activity-copy">
-                          <span>
-                            <Badge variant="secondary">{item.status}</Badge>
-                            <small>{item.detail}</small>
-                          </span>
-                          <strong>{item.title}</strong>
-                        </span>
-                        <span className="relay-activity-open">Open</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="relay-activity-empty">
-                  <FlaskConical aria-hidden="true" />
-                  <strong>No active work</strong>
-                  <p>
-                    Start a recording, Run, or Change verification and it will stay visible here.
-                  </p>
-                </div>
-              )}
-            </ScrollArea>
-            <footer className="relay-activity-footer">
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent showCloseButton={false} className="relay-overlay-popup relay-activity-center">
+        <header className="relay-activity-header">
+          <div>
+            <p className="relay-section-label">Workspace</p>
+            <DialogTitle>Activity Center</DialogTitle>
+            <DialogDescription className="relay-activity-description">
+              Recording, Runs, batches, and verification continue while you move around Relay.
+            </DialogDescription>
+          </div>
+          <DialogClose
+            render={
               <Button
+                size="icon-sm"
                 variant="ghost"
-                size="small"
-                onClick={() => {
-                  onOpenChange(false);
-                  router.history.push("/runs");
-                }}
+                className="relay-activity-close"
+                aria-label="Close Activity Center"
               >
-                View Run history
+                <X aria-hidden="true" />
               </Button>
-            </footer>
-          </Dialog.Popup>
-        </Dialog.Viewport>
-      </Dialog.Portal>
-    </Dialog.Root>
+            }
+          />
+        </header>
+        <ScrollArea className="relay-activity-list">
+          {items.length ? (
+            <div>
+              {items.map((item) => {
+                const Icon = iconForKind[item.kind];
+                return (
+                  <button
+                    type="button"
+                    className="relay-activity-item"
+                    key={item.id}
+                    onClick={() => openItem(item)}
+                  >
+                    <span className={`relay-activity-icon relay-activity-icon--${item.kind}`}>
+                      <Icon aria-hidden="true" />
+                    </span>
+                    <span className="relay-activity-copy">
+                      <span>
+                        <Badge variant="secondary">{item.status}</Badge>
+                        <small>{item.detail}</small>
+                      </span>
+                      <strong>{item.title}</strong>
+                    </span>
+                    <span className="relay-activity-open">Open</span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="relay-activity-empty">
+              <FlaskConical aria-hidden="true" />
+              <strong>No active work</strong>
+              <p>Start a recording, Run, or Change verification and it will stay visible here.</p>
+            </div>
+          )}
+        </ScrollArea>
+        <footer className="relay-activity-footer">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              onOpenChange(false);
+              router.history.push("/runs");
+            }}
+          >
+            View Run history
+          </Button>
+        </footer>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -1,5 +1,6 @@
 /** @jsxImportSource react */
-import { Button, Tabs, TabsIndicator, TabsList, TabsTrigger } from "@relay/ui-react";
+import { Button } from "@relay/ui-react/components/button";
+import { Tabs, TabsList, TabsTrigger } from "@relay/ui-react/components/tabs";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { RotateCcw } from "lucide-react";
@@ -126,7 +127,7 @@ export function BatchPage() {
             <IssueDraftButton source={{ kind: "batch", report }} />
             {!active && report.status !== "cancelled" && !report.export ? (
               <Button
-                variant="secondary"
+                variant="outline"
                 onClick={() => exportReport.mutate()}
                 disabled={exportReport.isPending}
               >
@@ -199,14 +200,14 @@ export function BatchPage() {
               <p>Check the representative Run before Relay starts the remaining cases.</p>
               <div className="relay-form-actions">
                 <Button
-                  variant="primary"
+                  variant="default"
                   onClick={() => continueRun.mutate()}
                   disabled={continueRun.isPending}
                 >
                   {continueRun.isPending ? "Continuing…" : "Continue remaining cases"}
                 </Button>
                 <Button
-                  variant="secondary"
+                  variant="outline"
                   onClick={() => cancel.mutate()}
                   disabled={cancel.isPending}
                 >
@@ -247,12 +248,11 @@ export function BatchPage() {
                   <TabsList variant="line" aria-label="Matrix results">
                     <TabsTrigger value="problems">Problems first</TabsTrigger>
                     <TabsTrigger value="all">All results</TabsTrigger>
-                    <TabsIndicator />
                   </TabsList>
                 </Tabs>
                 {rerunnableCases.length ? (
                   <Button
-                    size="small"
+                    size="sm"
                     variant="ghost"
                     onClick={() =>
                       setSelectedCases(
@@ -285,7 +285,7 @@ export function BatchPage() {
                   Only failed, blocked, or cancelled cases with durable Run evidence can be rerun.
                 </span>
               </div>
-              <Button variant="primary" onClick={() => rerun.mutate()} disabled={rerun.isPending}>
+              <Button variant="default" onClick={() => rerun.mutate()} disabled={rerun.isPending}>
                 <RotateCcw aria-hidden="true" />
                 {rerun.isPending ? "Starting rerun…" : `Rerun ${totalSelected}`}
               </Button>

@@ -1,5 +1,16 @@
 /** @jsxImportSource react */
-import { Badge, Button, Dialog, Field, FieldError, FieldLabel, Input } from "@relay/ui-react";
+import {
+  Dialog,
+  DialogTrigger,
+  DialogClose,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+} from "@relay/ui-react/components/dialog";
+import { Badge } from "@relay/ui-react/components/badge";
+import { Field, FieldError, FieldLabel } from "@relay/ui-react/components/field";
+import { Button } from "@relay/ui-react/components/button";
+import { Input } from "@relay/ui-react/components/input";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { ExternalLink, RotateCcw, ShieldCheck, Trash2 } from "lucide-react";
@@ -102,7 +113,7 @@ export function EnvironmentPage() {
           title="This Environment is unavailable"
           detail="Reconnect Relay, then load the managed browser Space again."
           action={
-            <Button variant="secondary" onClick={() => void spaces.refetch()}>
+            <Button variant="outline" onClick={() => void spaces.refetch()}>
               <RotateCcw aria-hidden="true" /> Try again
             </Button>
           }
@@ -130,7 +141,7 @@ export function EnvironmentPage() {
                 {space.persistent ? "Persistent profile" : "Ephemeral profile"}
               </p>
             </div>
-            <Button variant="primary" onClick={() => open.mutate()} disabled={open.isPending}>
+            <Button variant="default" onClick={() => open.mutate()} disabled={open.isPending}>
               <ExternalLink aria-hidden="true" /> {open.isPending ? "Opening…" : "Open Space"}
             </Button>
           </header>
@@ -153,7 +164,14 @@ export function EnvironmentPage() {
               {readiness.data ? (
                 <>
                   <div className="relay-environment-ready-line">
-                    <Badge variant={readiness.data.target.ok ? "success" : "warning"}>
+                    <Badge
+                      variant={readiness.data.target.ok ? "default" : "secondary"}
+                      className={
+                        readiness.data.target.ok
+                          ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                          : "bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                      }
+                    >
                       {readiness.data.target.ok ? "Ready" : "Needs attention"}
                     </Badge>
                     <span>{readiness.data.target.capabilities.length} available capabilities</span>
@@ -162,12 +180,13 @@ export function EnvironmentPage() {
                     {readiness.data.target.checks.map((check) => (
                       <li key={check.id}>
                         <Badge
-                          variant={
+                          variant={check.status === "fail" ? "destructive" : "secondary"}
+                          className={
                             check.status === "pass"
-                              ? "success"
-                              : check.status === "fail"
-                                ? "danger"
-                                : "warning"
+                              ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                              : check.status === "warning"
+                                ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                                : undefined
                           }
                         >
                           {check.status === "pass"
@@ -200,8 +219,8 @@ export function EnvironmentPage() {
                 </FieldError>
               ) : null}
               <Button
-                variant="secondary"
-                size="small"
+                variant="outline"
+                size="sm"
                 onClick={() => void readiness.refetch()}
                 disabled={readiness.isFetching}
               >
@@ -243,7 +262,7 @@ export function EnvironmentPage() {
                         {!fixture.revokedAt ? (
                           <>
                             <Button
-                              size="small"
+                              size="sm"
                               variant="ghost"
                               onClick={() =>
                                 refreshAccount.mutate({ fixtureId: fixture.id, name: fixture.name })
@@ -253,7 +272,7 @@ export function EnvironmentPage() {
                               Refresh
                             </Button>
                             <Button
-                              size="small"
+                              size="sm"
                               variant="ghost"
                               onClick={() => revokeAccount.mutate(fixture.reference)}
                               disabled={revokeAccount.isPending}
@@ -294,8 +313,8 @@ export function EnvironmentPage() {
                 </FieldError>
               ) : null}
               <Button
-                variant="secondary"
-                size="small"
+                variant="outline"
+                size="sm"
                 onClick={() => {
                   setAccountName("");
                   saveAccount.reset();
@@ -315,86 +334,83 @@ export function EnvironmentPage() {
                 Relay.
               </p>
             </div>
-            <Dialog.Root open={removeOpen} onOpenChange={setRemoveOpen}>
-              <Dialog.Trigger render={<Button variant="secondary" />}>
+            <Dialog open={removeOpen} onOpenChange={setRemoveOpen}>
+              <DialogTrigger render={<Button variant="outline" />}>
                 <Trash2 aria-hidden="true" /> Remove
-              </Dialog.Trigger>
-              <Dialog.Portal>
-                <Dialog.Backdrop className="relay-dialog-backdrop" />
-                <Dialog.Viewport className="relay-dialog-viewport">
-                  <Dialog.Popup className="relay-overlay-popup relay-dialog-popup">
-                    <Dialog.Title>Remove {space.name}?</Dialog.Title>
-                    <Dialog.Description>
-                      This removes the managed target from Relay. Reports already created from it
-                      remain durable.
-                    </Dialog.Description>
-                    {remove.error ? (
-                      <FieldError>
-                        {remove.error instanceof Error
-                          ? remove.error.message
-                          : "Relay could not remove this Space."}
-                      </FieldError>
-                    ) : null}
-                    <div className="relay-dialog-actions">
-                      <Dialog.Close render={<Button variant="ghost">Cancel</Button>} />
-                      <Button
-                        className="relay-suite-remove-confirm"
-                        onClick={() => remove.mutate()}
-                        disabled={remove.isPending}
-                      >
-                        {remove.isPending ? "Removing…" : "Remove Space"}
-                      </Button>
-                    </div>
-                  </Dialog.Popup>
-                </Dialog.Viewport>
-              </Dialog.Portal>
-            </Dialog.Root>
+              </DialogTrigger>
+
+              <DialogContent
+                showCloseButton={false}
+                className="relay-overlay-popup relay-dialog-popup"
+              >
+                <DialogTitle>Remove {space.name}?</DialogTitle>
+                <DialogDescription>
+                  This removes the managed target from Relay. Reports already created from it remain
+                  durable.
+                </DialogDescription>
+                {remove.error ? (
+                  <FieldError>
+                    {remove.error instanceof Error
+                      ? remove.error.message
+                      : "Relay could not remove this Space."}
+                  </FieldError>
+                ) : null}
+                <div className="relay-dialog-actions">
+                  <DialogClose render={<Button variant="ghost">Cancel</Button>} />
+                  <Button
+                    className="relay-suite-remove-confirm"
+                    onClick={() => remove.mutate()}
+                    disabled={remove.isPending}
+                  >
+                    {remove.isPending ? "Removing…" : "Remove Space"}
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
           </section>
 
-          <Dialog.Root open={accountOpen} onOpenChange={setAccountOpen}>
-            <Dialog.Portal>
-              <Dialog.Backdrop className="relay-dialog-backdrop" />
-              <Dialog.Viewport className="relay-dialog-viewport">
-                <Dialog.Popup className="relay-overlay-popup relay-dialog-popup">
-                  <Dialog.Title>Save current sign-in</Dialog.Title>
-                  <Dialog.Description>
-                    Open this Space, sign in yourself, then save the current reviewed browser state
-                    under a reusable name.
-                  </Dialog.Description>
-                  <form onSubmit={submitAccount}>
-                    <Field>
-                      <FieldLabel htmlFor="account-fixture-name">Account name</FieldLabel>
-                      <Input
-                        id="account-fixture-name"
-                        value={accountName}
-                        onChange={(event) => setAccountName(event.currentTarget.value)}
-                        placeholder="For example, Staging member"
-                        autoComplete="off"
-                        autoFocus
-                      />
-                    </Field>
-                    {saveAccount.error ? (
-                      <FieldError>
-                        {saveAccount.error instanceof Error
-                          ? saveAccount.error.message
-                          : "Relay could not save this sign-in."}
-                      </FieldError>
-                    ) : null}
-                    <div className="relay-dialog-actions">
-                      <Dialog.Close render={<Button variant="ghost">Cancel</Button>} />
-                      <Button
-                        type="submit"
-                        variant="primary"
-                        disabled={!accountName.trim() || saveAccount.isPending}
-                      >
-                        {saveAccount.isPending ? "Saving…" : "Save sign-in"}
-                      </Button>
-                    </div>
-                  </form>
-                </Dialog.Popup>
-              </Dialog.Viewport>
-            </Dialog.Portal>
-          </Dialog.Root>
+          <Dialog open={accountOpen} onOpenChange={setAccountOpen}>
+            <DialogContent
+              showCloseButton={false}
+              className="relay-overlay-popup relay-dialog-popup"
+            >
+              <DialogTitle>Save current sign-in</DialogTitle>
+              <DialogDescription>
+                Open this Space, sign in yourself, then save the current reviewed browser state
+                under a reusable name.
+              </DialogDescription>
+              <form onSubmit={submitAccount}>
+                <Field>
+                  <FieldLabel htmlFor="account-fixture-name">Account name</FieldLabel>
+                  <Input
+                    id="account-fixture-name"
+                    value={accountName}
+                    onChange={(event) => setAccountName(event.currentTarget.value)}
+                    placeholder="For example, Staging member"
+                    autoComplete="off"
+                    autoFocus
+                  />
+                </Field>
+                {saveAccount.error ? (
+                  <FieldError>
+                    {saveAccount.error instanceof Error
+                      ? saveAccount.error.message
+                      : "Relay could not save this sign-in."}
+                  </FieldError>
+                ) : null}
+                <div className="relay-dialog-actions">
+                  <DialogClose render={<Button variant="ghost">Cancel</Button>} />
+                  <Button
+                    type="submit"
+                    variant="default"
+                    disabled={!accountName.trim() || saveAccount.isPending}
+                  >
+                    {saveAccount.isPending ? "Saving…" : "Save sign-in"}
+                  </Button>
+                </div>
+              </form>
+            </DialogContent>
+          </Dialog>
         </>
       ) : null}
     </section>

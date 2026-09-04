@@ -1,6 +1,16 @@
 /** @jsxImportSource react */
+import {
+  Dialog,
+  DialogTrigger,
+  DialogClose,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+} from "@relay/ui-react/components/dialog";
 import type { AuthoringRecordingEdit } from "@relay/protocol";
-import { Button, Dialog, Field, FieldDescription, FieldLabel, Input } from "@relay/ui-react";
+import { Field, FieldDescription, FieldLabel } from "@relay/ui-react/components/field";
+import { Button } from "@relay/ui-react/components/button";
+import { Input } from "@relay/ui-react/components/input";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useRouteContext } from "@tanstack/react-router";
 import {
@@ -262,13 +272,14 @@ export function ReviewRecordingPage() {
         <div className="relay-review-complete-actions">
           {committedTestId ? (
             <Button
+              nativeButton={false}
               render={<Link to="/tests/$testId" params={{ testId: committedTestId }} />}
-              variant="primary"
+              variant="default"
             >
               Open Test
             </Button>
           ) : null}
-          <Button render={<Link to="/tests" />} variant="secondary">
+          <Button nativeButton={false} render={<Link to="/tests" />} variant="outline">
             All Tests
           </Button>
         </div>
@@ -331,7 +342,7 @@ export function ReviewRecordingPage() {
                 </div>
                 <div className="relay-recording-history-actions" aria-label="Edit history">
                   <Button
-                    size="small"
+                    size="sm"
                     variant="ghost"
                     onClick={() => restore("undo")}
                     disabled={!canEdit || undoStack.length === 0}
@@ -339,7 +350,7 @@ export function ReviewRecordingPage() {
                     <Undo2 aria-hidden="true" /> Undo
                   </Button>
                   <Button
-                    size="small"
+                    size="sm"
                     variant="ghost"
                     onClick={() => restore("redo")}
                     disabled={!canEdit || redoStack.length === 0}
@@ -363,7 +374,7 @@ export function ReviewRecordingPage() {
                     <FieldDescription>Describe the outcome in plain language.</FieldDescription>
                   </Field>
                   <Button
-                    size="small"
+                    size="sm"
                     onClick={() =>
                       edit({
                         kind: "rename",
@@ -392,8 +403,8 @@ export function ReviewRecordingPage() {
                       />
                       <FieldDescription>Use the target’s stable accessible name.</FieldDescription>
                       <Button
-                        size="small"
-                        variant="secondary"
+                        size="sm"
+                        variant="outline"
                         onClick={() =>
                           edit({
                             kind: "replace",
@@ -412,7 +423,7 @@ export function ReviewRecordingPage() {
                   ) : null}
                   <div className="relay-review-edit-row" aria-label="Reorder action">
                     <Button
-                      size="small"
+                      size="sm"
                       variant="ghost"
                       onClick={() => moveSelected(-1)}
                       disabled={!canEdit || selectedIndex <= 0}
@@ -420,7 +431,7 @@ export function ReviewRecordingPage() {
                       <ArrowUp aria-hidden="true" /> Move up
                     </Button>
                     <Button
-                      size="small"
+                      size="sm"
                       variant="ghost"
                       onClick={() => moveSelected(1)}
                       disabled={!canEdit || selectedIndex === actions.length - 1}
@@ -430,7 +441,7 @@ export function ReviewRecordingPage() {
                   </div>
                   {selectedAction.stepCount > 1 ? (
                     <Button
-                      size="small"
+                    size="sm"
                       variant="ghost"
                       onClick={() =>
                         edit({
@@ -447,7 +458,7 @@ export function ReviewRecordingPage() {
                 </>
               ) : selectedActions.length > 1 ? (
                 <Button
-                  size="small"
+                  size="sm"
                   onClick={() =>
                     edit({ kind: "merge", actionIds: selectedActions.map((action) => action.id) })
                   }
@@ -462,11 +473,11 @@ export function ReviewRecordingPage() {
               )}
 
               {selectedActions.length ? (
-                <Dialog.Root open={deleteOpen} onOpenChange={setDeleteOpen}>
-                  <Dialog.Trigger
+                <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+                  <DialogTrigger
                     render={
                       <Button
-                        size="small"
+                        size="sm"
                         variant="ghost"
                         className="relay-review-delete"
                         disabled={!canEdit}
@@ -475,36 +486,35 @@ export function ReviewRecordingPage() {
                   >
                     <Trash2 aria-hidden="true" /> Remove{" "}
                     {selectedActions.length === 1 ? "action" : "actions"}
-                  </Dialog.Trigger>
-                  <Dialog.Portal>
-                    <Dialog.Backdrop className="relay-dialog-backdrop" />
-                    <Dialog.Viewport className="relay-dialog-viewport">
-                      <Dialog.Popup className="relay-overlay-popup relay-dialog-popup">
-                        <Dialog.Title>
-                          Remove selected {selectedActions.length === 1 ? "action" : "actions"}?
-                        </Dialog.Title>
-                        <Dialog.Description>
-                          This changes the journey and requires a new replay before saving.
-                        </Dialog.Description>
-                        <div className="relay-dialog-actions">
-                          <Dialog.Close render={<Button variant="ghost">Cancel</Button>} />
-                          <Button
-                            className="relay-review-delete-confirm"
-                            onClick={() => {
-                              setDeleteOpen(false);
-                              edit({
-                                kind: "remove",
-                                actionIds: selectedActions.map((action) => action.id),
-                              });
-                            }}
-                          >
-                            Remove
-                          </Button>
-                        </div>
-                      </Dialog.Popup>
-                    </Dialog.Viewport>
-                  </Dialog.Portal>
-                </Dialog.Root>
+                  </DialogTrigger>
+
+                  <DialogContent
+                    showCloseButton={false}
+                    className="relay-overlay-popup relay-dialog-popup"
+                  >
+                    <DialogTitle>
+                      Remove selected {selectedActions.length === 1 ? "action" : "actions"}?
+                    </DialogTitle>
+                    <DialogDescription>
+                      This changes the journey and requires a new replay before saving.
+                    </DialogDescription>
+                    <div className="relay-dialog-actions">
+                      <DialogClose render={<Button variant="ghost">Cancel</Button>} />
+                      <Button
+                        className="relay-review-delete-confirm"
+                        onClick={() => {
+                          setDeleteOpen(false);
+                          edit({
+                            kind: "remove",
+                            actionIds: selectedActions.map((action) => action.id),
+                          });
+                        }}
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                  </DialogContent>
+                </Dialog>
               ) : null}
             </section>
 
@@ -537,7 +547,7 @@ export function ReviewRecordingPage() {
 
               {canApprove ? (
                 <Button
-                  variant="primary"
+                  variant="default"
                   onClick={() =>
                     transition.mutate({ action: "approve", testName: testName.trim() })
                   }
@@ -550,7 +560,7 @@ export function ReviewRecordingPage() {
                 </Button>
               ) : allowed.has("replay") ? (
                 <Button
-                  variant="primary"
+                  variant="default"
                   onClick={() => transition.mutate({ action: "replay" })}
                   disabled={transition.isPending}
                 >
@@ -610,8 +620,8 @@ export function ReviewRecordingPage() {
                 </label>
               </div>
               <Button
-                size="small"
-                variant="secondary"
+                size="sm"
+                variant="outline"
                 onClick={() => edit({ kind: "clip", fromMs: trimStartMs, toMs: trimEndMs })}
                 disabled={
                   !canEdit ||

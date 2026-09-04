@@ -1,13 +1,16 @@
 /** @jsxImportSource react */
 import {
-  Button,
   Dialog,
-  Field,
-  FieldDescription,
-  FieldLabel,
-  Input,
-  ScrollArea,
-} from "@relay/ui-react";
+  DialogTrigger,
+  DialogClose,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+} from "@relay/ui-react/components/dialog";
+import { ScrollArea } from "@relay/ui-react";
+import { Field, FieldDescription, FieldLabel } from "@relay/ui-react/components/field";
+import { Button } from "@relay/ui-react/components/button";
+import { Input } from "@relay/ui-react/components/input";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
@@ -308,8 +311,8 @@ function RecordingWorkspace({ workflowId, exitLink }: { workflowId: string; exit
           <span>Add a checkpoint only when a screen must be verified later.</span>
         </div>
         <div className="relay-capture-control-actions">
-          <Dialog.Root open={checkpointOpen} onOpenChange={setCheckpointOpen}>
-            <Dialog.Trigger
+          <Dialog open={checkpointOpen} onOpenChange={setCheckpointOpen}>
+            <DialogTrigger
               render={
                 <Button disabled={!allowed.has("checkpoint") || action.isPending}>
                   <BookmarkPlus aria-hidden="true" />
@@ -317,40 +320,39 @@ function RecordingWorkspace({ workflowId, exitLink }: { workflowId: string; exit
                 </Button>
               }
             />
-            <Dialog.Portal>
-              <Dialog.Backdrop className="relay-dialog-backdrop" />
-              <Dialog.Viewport className="relay-dialog-viewport">
-                <Dialog.Popup className="relay-overlay-popup relay-dialog-popup relay-checkpoint-dialog">
-                  <Dialog.Title>Save a checkpoint</Dialog.Title>
-                  <Dialog.Description>
-                    Mark a state someone should verify when this Test runs.
-                  </Dialog.Description>
-                  <form onSubmit={saveCheckpoint}>
-                    <Field>
-                      <FieldLabel htmlFor="checkpoint-label">Checkpoint name</FieldLabel>
-                      <Input
-                        id="checkpoint-label"
-                        value={checkpointLabel}
-                        onChange={(event) => setCheckpointLabel(event.currentTarget.value)}
-                        placeholder="For example, Order confirmation"
-                        maxLength={160}
-                        autoComplete="off"
-                      />
-                      <FieldDescription>Optional, but helpful in Reports.</FieldDescription>
-                    </Field>
-                    <div className="relay-dialog-actions">
-                      <Dialog.Close render={<Button variant="ghost">Cancel</Button>} />
-                      <Button type="submit" variant="primary" disabled={action.isPending}>
-                        {action.isPending ? "Saving…" : "Save checkpoint"}
-                      </Button>
-                    </div>
-                  </form>
-                </Dialog.Popup>
-              </Dialog.Viewport>
-            </Dialog.Portal>
-          </Dialog.Root>
+
+            <DialogContent
+              showCloseButton={false}
+              className="relay-overlay-popup relay-dialog-popup relay-checkpoint-dialog"
+            >
+              <DialogTitle>Save a checkpoint</DialogTitle>
+              <DialogDescription>
+                Mark a state someone should verify when this Test runs.
+              </DialogDescription>
+              <form onSubmit={saveCheckpoint}>
+                <Field>
+                  <FieldLabel htmlFor="checkpoint-label">Checkpoint name</FieldLabel>
+                  <Input
+                    id="checkpoint-label"
+                    value={checkpointLabel}
+                    onChange={(event) => setCheckpointLabel(event.currentTarget.value)}
+                    placeholder="For example, Order confirmation"
+                    maxLength={160}
+                    autoComplete="off"
+                  />
+                  <FieldDescription>Optional, but helpful in Reports.</FieldDescription>
+                </Field>
+                <div className="relay-dialog-actions">
+                  <DialogClose render={<Button variant="ghost">Cancel</Button>} />
+                  <Button type="submit" variant="default" disabled={action.isPending}>
+                    {action.isPending ? "Saving…" : "Save checkpoint"}
+                  </Button>
+                </div>
+              </form>
+            </DialogContent>
+          </Dialog>
           <Button
-            variant="primary"
+            variant="default"
             aria-label="Stop recording and review"
             onClick={() => action.mutate({ action: "stop" })}
             disabled={!allowed.has("stop") || action.isPending}

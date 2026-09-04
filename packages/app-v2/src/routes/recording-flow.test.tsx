@@ -366,7 +366,9 @@ describe("record, review, replay, and save", () => {
     await renderJourney("/tests/new", fake.service, platformWithStorage().platform);
 
     const cards = [
-      ...document.querySelectorAll<HTMLElement>(".relay-choice-group--apps .relay-radio-card"),
+      ...document.querySelectorAll<HTMLElement>(
+        ".relay-choice-group--apps [data-slot=field-label]",
+      ),
     ];
     expect(cards).toHaveLength(2);
     await click(cards[1]!);

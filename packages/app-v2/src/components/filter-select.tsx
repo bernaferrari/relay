@@ -1,6 +1,12 @@
 /** @jsxImportSource react */
-import { Select } from "@relay/ui-react";
-import { Check, ChevronDown, ChevronUp } from "lucide-react";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@relay/ui-react/components/select";
+import { Label } from "@relay/ui-react/components/label";
 
 export type FilterSelectOption = {
   value: string;
@@ -21,7 +27,7 @@ export function SelectField({
   className?: string;
 }) {
   return (
-    <Select.Root
+    <Select
       items={options}
       value={value}
       onValueChange={(nextValue) => {
@@ -29,43 +35,21 @@ export function SelectField({
       }}
     >
       <div className={className ?? "relay-select-field"}>
-        <Select.Label className="relay-select-field-label relay-library-filter-label">
+        <Label className="relay-select-field-label relay-library-filter-label">
           {label}
-        </Select.Label>
-        <Select.Trigger className="relay-select-trigger">
-          <Select.Value />
-          <Select.Icon className="relay-select-icon">
-            <ChevronDown aria-hidden="true" />
-          </Select.Icon>
-        </Select.Trigger>
+        </Label>
+        <SelectTrigger className="relay-select-trigger">
+          <SelectValue />
+        </SelectTrigger>
       </div>
-      <Select.Portal>
-        <Select.Positioner
-          className="relay-select-positioner"
-          sideOffset={6}
-          alignItemWithTrigger={false}
-        >
-          <Select.Popup className="relay-select-popup">
-            <Select.ScrollUpArrow className="relay-select-scroll-arrow">
-              <ChevronUp aria-hidden="true" />
-            </Select.ScrollUpArrow>
-            <Select.List className="relay-select-list">
-              {options.map((option) => (
-                <Select.Item key={option.value} value={option.value} className="relay-select-item">
-                  <Select.ItemText>{option.label}</Select.ItemText>
-                  <Select.ItemIndicator className="relay-select-item-indicator">
-                    <Check aria-hidden="true" />
-                  </Select.ItemIndicator>
-                </Select.Item>
-              ))}
-            </Select.List>
-            <Select.ScrollDownArrow className="relay-select-scroll-arrow">
-              <ChevronDown aria-hidden="true" />
-            </Select.ScrollDownArrow>
-          </Select.Popup>
-        </Select.Positioner>
-      </Select.Portal>
-    </Select.Root>
+      <SelectContent sideOffset={6} alignItemWithTrigger={false} className="relay-select-popup">
+        {options.map((option) => (
+          <SelectItem key={option.value} value={option.value} className="relay-select-item">
+            {option.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }
 

@@ -1,5 +1,10 @@
 /** @jsxImportSource react */
-import { Button, Disclosure } from "@relay/ui-react";
+import { Button } from "@relay/ui-react/components/button";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@relay/ui-react/components/collapsible";
 import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import type { RunProductService } from "../data/run-product-service";
@@ -46,9 +51,9 @@ export function RunReviewControls({
 
   if (!service.review && !service.compareVisual) return null;
   return (
-    <Disclosure.Root className="relay-report-review-controls">
-      <Disclosure.Trigger>Review and visual decisions</Disclosure.Trigger>
-      <Disclosure.Panel>
+    <Collapsible className="relay-report-review-controls">
+      <CollapsibleTrigger>Review and visual decisions</CollapsibleTrigger>
+      <CollapsibleContent>
         <p>
           Save a durable human decision for this Run, or compare its captured frames with the
           approved baseline.
@@ -56,15 +61,15 @@ export function RunReviewControls({
         {service.review ? (
           <div className="relay-report-review-actions" aria-label="Run review decision">
             <Button
-              size="small"
-              variant="secondary"
+              size="sm"
+              variant="outline"
               disabled={review.isPending}
               onClick={() => review.mutate("approve")}
             >
               Approve Run
             </Button>
             <Button
-              size="small"
+              size="sm"
               variant="ghost"
               disabled={review.isPending}
               onClick={() => review.mutate("defer")}
@@ -72,7 +77,7 @@ export function RunReviewControls({
               Defer
             </Button>
             <Button
-              size="small"
+              size="sm"
               variant="ghost"
               disabled={review.isPending}
               onClick={() => review.mutate("reject")}
@@ -84,8 +89,8 @@ export function RunReviewControls({
         {service.compareVisual ? (
           <div className="relay-report-visual-review">
             <Button
-              size="small"
-              variant="secondary"
+              size="sm"
+              variant="outline"
               disabled={compare.isPending}
               onClick={() => compare.mutate()}
             >
@@ -100,23 +105,23 @@ export function RunReviewControls({
                 </span>
                 <div className="relay-report-review-actions" aria-label="Visual review decision">
                   <Button
-                    size="small"
-                    variant="primary"
+                    size="sm"
+                    variant="default"
                     disabled={visualDecision.isPending}
                     onClick={() => visualDecision.mutate("approve-new-baseline")}
                   >
                     Approve new baseline
                   </Button>
                   <Button
-                    size="small"
-                    variant="secondary"
+                    size="sm"
+                    variant="outline"
                     disabled={visualDecision.isPending}
                     onClick={() => visualDecision.mutate("keep-baseline")}
                   >
                     Keep baseline
                   </Button>
                   <Button
-                    size="small"
+                    size="sm"
                     variant="ghost"
                     disabled={visualDecision.isPending}
                     onClick={() => visualDecision.mutate("retry")}
@@ -138,8 +143,8 @@ export function RunReviewControls({
             {errorMessage(problem)}
           </p>
         ) : null}
-      </Disclosure.Panel>
-    </Disclosure.Root>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 

@@ -231,13 +231,13 @@ function button(label: string): HTMLButtonElement {
   return result;
 }
 
-function input(label: string): HTMLInputElement {
+function input(label: string): HTMLElement {
   const element =
     document.querySelector(`[aria-label="${label}"]`) ??
     [...document.querySelectorAll("label")]
       .find((item) => item.textContent?.includes(label))
-      ?.querySelector("input");
-  if (!(element instanceof HTMLInputElement)) throw new Error(`Input not found: ${label}`);
+      ?.querySelector("input, [role=radio]");
+  if (!(element instanceof HTMLElement)) throw new Error(`Input not found: ${label}`);
   return element;
 }
 
@@ -317,7 +317,11 @@ describe("Devices", () => {
     const service = fakeDeviceService();
     await renderPath("/devices/phone", { deviceService: service });
 
-    expect(document.querySelectorAll(".relay-button--primary")).toHaveLength(1);
+    expect(
+      [...document.querySelectorAll("button")].filter(
+        (candidate) => candidate.textContent?.trim() === "Reconnect device",
+      ),
+    ).toHaveLength(1);
     expect(document.body.textContent).toContain("One step before this device is ready");
     await click(button("Reconnect device"));
     expect(service.recoveryCalls).toEqual(["phone"]);
@@ -435,7 +439,7 @@ describe("Settings", () => {
     await renderPath("/settings/appearance", { platform });
 
     expect(document.documentElement.dataset.colorScheme).toBe("dark");
-    expect(input("Light").checked).toBe(false);
+    expect(input("Light").getAttribute("aria-checked")).toBe("false");
     await click(input("Light"));
     expect(document.documentElement.dataset.colorScheme).toBe("light");
     expect(platform.values.get("appearance.colorScheme")).toBe("light");

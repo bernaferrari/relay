@@ -1,5 +1,10 @@
 /** @jsxImportSource react */
-import { Button, Disclosure } from "@relay/ui-react";
+import { Button } from "@relay/ui-react/components/button";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@relay/ui-react/components/collapsible";
 import { useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useRouteContext } from "@tanstack/react-router";
 import { ArrowRight } from "lucide-react";
@@ -60,7 +65,11 @@ export function AppPage() {
               </p>
             </div>
             <div className="relay-app-actions">
-              <Button render={<Link to="/tests/new" search={{ app: appId }} />} variant="primary">
+              <Button
+                nativeButton={false}
+                render={<Link to="/tests/new" search={{ app: appId }} />}
+                variant="default"
+              >
                 Record a Test
               </Button>
             </div>
@@ -192,17 +201,17 @@ export function AppPage() {
               </Link>
             </div>
           </section>
-          <Disclosure.Root className="relay-app-advanced">
-            <Disclosure.Trigger>Advanced</Disclosure.Trigger>
-            <Disclosure.Panel>
+          <Collapsible className="relay-app-advanced">
+            <CollapsibleTrigger>Advanced</CollapsibleTrigger>
+            <CollapsibleContent>
               <div>
                 <p>Inspect Relay’s known screens, verified paths, and coverage for this app.</p>
                 <Link className="relay-inline-link" to="/apps/$appId/map" params={{ appId }}>
                   Open App Map
                 </Link>
               </div>
-            </Disclosure.Panel>
-          </Disclosure.Root>
+            </CollapsibleContent>
+          </Collapsible>
         </>
       ) : null}
     </section>

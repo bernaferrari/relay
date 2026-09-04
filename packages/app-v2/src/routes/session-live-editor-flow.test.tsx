@@ -197,6 +197,25 @@ afterEach(async () => {
 });
 
 describe("live Session to Test editor", () => {
+  it("shows a compact recovery state when the Session cannot be loaded", async () => {
+    const unavailable = sessionService();
+    unavailable.get = vi.fn(async () => {
+      throw new Error("Relay returned HTTP 400.");
+    });
+
+    await render("/sessions/missing-session", { sessionService: unavailable });
+
+    expect(document.querySelector("h1")?.textContent).toBe("Couldn’t load this Session");
+    expect(document.body.textContent).not.toContain("Durable live target context");
+    expect(document.body.textContent).not.toContain("HTTP 400");
+    expect(document.querySelectorAll('[role="alert"]')).toHaveLength(1);
+    expect(
+      [...document.querySelectorAll<HTMLAnchorElement>('a[href="/sessions"]')].some(
+        (link) => link.textContent === "Back to Sessions",
+      ),
+    ).toBe(true);
+  });
+
   it("only offers live Test editing for a controllable committed Session and preserves the binding", async () => {
     const service = sessionService();
     await render("/sessions/session-live", { sessionService: service });

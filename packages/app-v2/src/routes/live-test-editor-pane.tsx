@@ -1,5 +1,6 @@
 /** @jsxImportSource react */
-import { Badge, Button } from "@relay/ui-react";
+import { Badge } from "@relay/ui-react/components/badge";
+import { Button } from "@relay/ui-react/components/button";
 import { Link } from "@tanstack/react-router";
 import { RadioTower } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -60,8 +61,9 @@ export function LiveTestEditorPane({
         </div>
         {session ? (
           <Button
-            size="small"
+            size="sm"
             variant="ghost"
+            nativeButton={false}
             render={<Link to="/sessions/$sessionId" params={{ sessionId: session.authoring.id }} />}
           >
             <RadioTower aria-hidden="true" /> Open Session
@@ -78,8 +80,13 @@ export function LiveTestEditorPane({
         <>
           <div className="relay-live-editor-status">
             <Badge
-              variant={
-                status === "streaming" ? "success" : status === "degraded" ? "warning" : "secondary"
+              variant="secondary"
+              className={
+                status === "streaming"
+                  ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                  : status === "degraded"
+                    ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                    : undefined
               }
             >
               {status === "streaming" ? "Live" : status}

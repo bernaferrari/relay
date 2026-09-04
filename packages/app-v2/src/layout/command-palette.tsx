@@ -1,5 +1,14 @@
 /** @jsxImportSource react */
-import { Dialog, Input, ScrollArea } from "@relay/ui-react";
+import {
+  Dialog,
+  DialogTrigger,
+  DialogClose,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+} from "@relay/ui-react/components/dialog";
+import { ScrollArea } from "@relay/ui-react";
+import { Input } from "@relay/ui-react/components/input";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter, useRouteContext } from "@tanstack/react-router";
 import {
@@ -171,51 +180,46 @@ export function CommandPalette({
   }
 
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog.Portal>
-        <Dialog.Backdrop className="relay-dialog-backdrop relay-command-backdrop" />
-        <Dialog.Viewport className="relay-dialog-viewport relay-command-viewport">
-          <Dialog.Popup className="relay-overlay-popup relay-command-palette">
-            <Dialog.Title className="relay-visually-hidden">Relay commands</Dialog.Title>
-            <Dialog.Description className="relay-visually-hidden">
-              Search destinations and common product actions.
-            </Dialog.Description>
-            <div className="relay-command-search">
-              <Search aria-hidden="true" />
-              <Input
-                autoFocus
-                aria-label="Search commands"
-                placeholder="Search Relay…"
-                value={query}
-                onChange={(event) => setQuery(event.currentTarget.value)}
-              />
-              <kbd>Esc</kbd>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent showCloseButton={false} className="relay-overlay-popup relay-command-palette">
+        <DialogTitle className="relay-visually-hidden">Relay commands</DialogTitle>
+        <DialogDescription className="relay-visually-hidden">
+          Search destinations and common product actions.
+        </DialogDescription>
+        <div className="relay-command-search">
+          <Search aria-hidden="true" />
+          <Input
+            autoFocus
+            aria-label="Search commands"
+            placeholder="Search Relay…"
+            value={query}
+            onChange={(event) => setQuery(event.currentTarget.value)}
+          />
+          <kbd>Esc</kbd>
+        </div>
+        <ScrollArea className="relay-command-results">
+          {commands.length ? (
+            <div role="list" aria-label="Commands">
+              {commands.map((command) => (
+                <button
+                  type="button"
+                  className="relay-command-item"
+                  key={command.id}
+                  onClick={() => choose(command)}
+                >
+                  <command.icon aria-hidden="true" />
+                  <span>
+                    <strong>{command.label}</strong>
+                    <small>{command.detail}</small>
+                  </span>
+                </button>
+              ))}
             </div>
-            <ScrollArea className="relay-command-results">
-              {commands.length ? (
-                <div role="list" aria-label="Commands">
-                  {commands.map((command) => (
-                    <button
-                      type="button"
-                      className="relay-command-item"
-                      key={command.id}
-                      onClick={() => choose(command)}
-                    >
-                      <command.icon aria-hidden="true" />
-                      <span>
-                        <strong>{command.label}</strong>
-                        <small>{command.detail}</small>
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <p className="relay-command-empty">No matching commands</p>
-              )}
-            </ScrollArea>
-          </Dialog.Popup>
-        </Dialog.Viewport>
-      </Dialog.Portal>
-    </Dialog.Root>
+          ) : (
+            <p className="relay-command-empty">No matching commands</p>
+          )}
+        </ScrollArea>
+      </DialogContent>
+    </Dialog>
   );
 }

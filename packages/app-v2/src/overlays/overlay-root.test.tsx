@@ -1,5 +1,11 @@
 /** @jsxImportSource react */
-import { Dialog, Menu, OverlayRoot } from "@relay/ui-react";
+import { Dialog, DialogContent, DialogTitle } from "@relay/ui-react/components/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@relay/ui-react/components/dropdown-menu";
 import { act, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
@@ -10,41 +16,31 @@ afterEach(() => {
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-describe("shared overlay root", () => {
-  it("portals Base UI layers into one owned container", async () => {
+describe("generated shadcn overlay portals", () => {
+  it("portals Base UI layers into document.body", async () => {
     const host = document.createElement("div");
     document.body.append(host);
     const root = createRoot(host);
 
     await act(async () => {
       root.render(
-        <OverlayRoot>
-          <Dialog.Root open>
-            <Dialog.Portal>
-              <Dialog.Backdrop />
-              <Dialog.Viewport>
-                <Dialog.Popup data-testid="dialog">
-                  <Dialog.Title>Test dialog</Dialog.Title>
-                </Dialog.Popup>
-              </Dialog.Viewport>
-            </Dialog.Portal>
-          </Dialog.Root>
-          <Menu.Root open>
-            <Menu.Portal>
-              <Menu.Positioner>
-                <Menu.Popup data-testid="menu">
-                  <Menu.Item>Menu item</Menu.Item>
-                </Menu.Popup>
-              </Menu.Positioner>
-            </Menu.Portal>
-          </Menu.Root>
-        </OverlayRoot>,
+        <>
+          <Dialog open>
+            <DialogContent showCloseButton={false} data-testid="dialog">
+              <DialogTitle>Test dialog</DialogTitle>
+            </DialogContent>
+          </Dialog>
+          <DropdownMenu open>
+            <DropdownMenuContent data-testid="menu">
+              <DropdownMenuItem>Menu item</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </>,
       );
     });
 
-    const container = document.querySelector("[data-relay-overlay-root]");
-    expect(container?.querySelector("[data-testid='dialog']")).not.toBeNull();
-    expect(container?.querySelector("[data-testid='menu']")).not.toBeNull();
+    expect(document.body.querySelector("[data-testid='dialog']")).not.toBeNull();
+    expect(document.body.querySelector("[data-testid='menu']")).not.toBeNull();
     await act(async () => root.unmount());
   });
 
@@ -57,28 +53,17 @@ describe("shared overlay root", () => {
       const [dialogOpen, setDialogOpen] = useState(true);
 
       return (
-        <OverlayRoot>
-          <Dialog.Root open={dialogOpen} onOpenChange={setDialogOpen}>
-            <Dialog.Portal>
-              <Dialog.Backdrop />
-              <Dialog.Viewport>
-                <Dialog.Popup data-testid="dialog">
-                  <Dialog.Title>Test dialog</Dialog.Title>
-                  <Menu.Root>
-                    <Menu.Trigger>Open menu</Menu.Trigger>
-                    <Menu.Portal>
-                      <Menu.Positioner>
-                        <Menu.Popup data-testid="menu">
-                          <Menu.Item>Menu item</Menu.Item>
-                        </Menu.Popup>
-                      </Menu.Positioner>
-                    </Menu.Portal>
-                  </Menu.Root>
-                </Dialog.Popup>
-              </Dialog.Viewport>
-            </Dialog.Portal>
-          </Dialog.Root>
-        </OverlayRoot>
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <DialogContent showCloseButton={false} data-testid="dialog">
+            <DialogTitle>Test dialog</DialogTitle>
+            <DropdownMenu>
+              <DropdownMenuTrigger>Open menu</DropdownMenuTrigger>
+              <DropdownMenuContent data-testid="menu">
+                <DropdownMenuItem>Menu item</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </DialogContent>
+        </Dialog>
       );
     }
 

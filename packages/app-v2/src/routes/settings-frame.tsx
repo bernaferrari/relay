@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { Switch } from "@relay/ui-react";
+import { Switch } from "@relay/ui-react/components/switch";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState, type ReactNode } from "react";
 import { settingsCategories, type SettingsCategory } from "../data/settings-product-service";

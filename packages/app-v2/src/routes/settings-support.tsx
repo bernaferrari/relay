@@ -1,13 +1,17 @@
 /** @jsxImportSource react */
+import { Badge } from "@relay/ui-react/components/badge";
 import {
-  Badge,
-  Disclosure,
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@relay/ui-react/components/collapsible";
+import {
   Item,
   ItemActions,
   ItemContent,
   ItemDescription,
   ItemTitle,
-} from "@relay/ui-react";
+} from "@relay/ui-react/components/item";
 import { type ReactNode } from "react";
 import type { SensitiveEvidenceChannel } from "@relay/protocol";
 
@@ -95,7 +99,7 @@ export function SetupRow({
   const ready = checks.length > 0 && !attention;
   return (
     <div className="relay-setup-status">
-      <Item className="relay-setting-row relay-setup-status-row" size="small">
+      <Item className="relay-setting-row relay-setup-status-row" size="sm">
         <ItemContent className="relay-setting-row-copy">
           <ItemTitle>{title}</ItemTitle>
           <ItemDescription>
@@ -108,20 +112,34 @@ export function SetupRow({
           </ItemDescription>
         </ItemContent>
         <ItemActions className="relay-setting-row-control relay-setup-status-actions">
-          <Badge variant={ready ? "success" : "warning"}>
+          <Badge
+            variant={ready ? "default" : "secondary"}
+            className={
+              ready
+                ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                : "bg-amber-500/15 text-amber-700 dark:text-amber-300"
+            }
+          >
             {loading ? "Checking" : ready ? "Ready" : "Needs attention"}
           </Badge>
           {!loading && attention ? action : null}
         </ItemActions>
       </Item>
       {!loading && attention && checks.length > 1 ? (
-        <Disclosure.Root className="relay-setup-checks">
-          <Disclosure.Trigger>Diagnostic checks ({checks.length})</Disclosure.Trigger>
-          <Disclosure.Panel>
+        <Collapsible className="relay-setup-checks">
+          <CollapsibleTrigger>Diagnostic checks ({checks.length})</CollapsibleTrigger>
+          <CollapsibleContent>
             <ul>
               {checks.map((check) => (
                 <li key={check.id}>
-                  <Badge variant={check.status === "ready" ? "success" : "warning"}>
+                  <Badge
+                    variant={check.status === "ready" ? "default" : "secondary"}
+                    className={
+                      check.status === "ready"
+                        ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                        : "bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                    }
+                  >
                     {check.status === "ready" ? "Ready" : "Needs attention"}
                   </Badge>
                   <div>
@@ -131,8 +149,8 @@ export function SetupRow({
                 </li>
               ))}
             </ul>
-          </Disclosure.Panel>
-        </Disclosure.Root>
+          </CollapsibleContent>
+        </Collapsible>
       ) : null}
     </div>
   );

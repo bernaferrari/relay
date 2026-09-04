@@ -1,4 +1,13 @@
 /** @jsxImportSource react */
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuGroup,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+} from "@relay/ui-react/components/dropdown-menu";
 import type {
   ProductAffectedTest,
   ProductChangeDetails,
@@ -6,15 +15,14 @@ import type {
   ProductChangeState,
   ProductVerificationItem,
 } from "@relay/product/change-journey";
+import { Field, FieldDescription, FieldLabel } from "@relay/ui-react/components/field";
+import { Button } from "@relay/ui-react/components/button";
 import {
-  Button,
-  Disclosure,
-  Field,
-  FieldDescription,
-  FieldLabel,
-  Menu,
-  Textarea,
-} from "@relay/ui-react";
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@relay/ui-react/components/collapsible";
+import { Textarea } from "@relay/ui-react/components/textarea";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { AlertTriangle, Check, CircleDot, Minus } from "lucide-react";
@@ -151,7 +159,7 @@ export function ChangePage() {
               <IssueDraftButton source={{ kind: "change", details }} />
               {action ? (
                 <Button
-                  variant="primary"
+                  variant="default"
                   onClick={() => mutation.mutate(action.kind)}
                   disabled={mutation.isPending}
                 >
@@ -161,21 +169,24 @@ export function ChangePage() {
                 </Button>
               ) : null}
               {canCancel(current.status) ? (
-                <Menu.Root>
-                  <Menu.Trigger render={<Button disabled={mutation.isPending}>More</Button>} />
-                  <Menu.Portal>
-                    <Menu.Positioner className="relay-menu-positioner" sideOffset={6} align="end">
-                      <Menu.Popup className="relay-overlay-popup relay-menu-popup">
-                        <Menu.Item
-                          className="relay-menu-item relay-menu-item--danger"
-                          onClick={() => mutation.mutate("cancel")}
-                        >
-                          Cancel verification
-                        </Menu.Item>
-                      </Menu.Popup>
-                    </Menu.Positioner>
-                  </Menu.Portal>
-                </Menu.Root>
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    render={<Button disabled={mutation.isPending}>More</Button>}
+                  />
+
+                  <DropdownMenuContent
+                    sideOffset={6}
+                    align="end"
+                    className="relay-overlay-popup relay-menu-popup"
+                  >
+                    <DropdownMenuItem
+                      className="relay-menu-item relay-menu-item--danger"
+                      onClick={() => mutation.mutate("cancel")}
+                    >
+                      Cancel verification
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               ) : null}
             </div>
           </header>
@@ -340,7 +351,7 @@ export function ChangePage() {
                   </Field>
                   <Button
                     type="submit"
-                    variant="primary"
+                    variant="default"
                     disabled={!evidenceObservation.trim() || humanEvidence.isPending}
                   >
                     {humanEvidence.isPending ? "Saving evidence…" : "Save evidence and continue"}
@@ -404,9 +415,9 @@ function RepairContext({ packet }: { packet: ProductChangeRepairPacket }) {
         </div>
       ) : null}
       {packet.relevantLogs.length ? (
-        <Disclosure.Root className="relay-change-repair-logs">
-          <Disclosure.Trigger>Relevant logs ({packet.relevantLogs.length})</Disclosure.Trigger>
-          <Disclosure.Panel>
+        <Collapsible className="relay-change-repair-logs">
+          <CollapsibleTrigger>Relevant logs ({packet.relevantLogs.length})</CollapsibleTrigger>
+          <CollapsibleContent>
             <ul>
               {packet.relevantLogs.map((line, index) => (
                 <li key={`${index}:${line}`}>
@@ -414,8 +425,8 @@ function RepairContext({ packet }: { packet: ProductChangeRepairPacket }) {
                 </li>
               ))}
             </ul>
-          </Disclosure.Panel>
-        </Disclosure.Root>
+          </CollapsibleContent>
+        </Collapsible>
       ) : null}
     </section>
   );
