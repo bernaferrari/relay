@@ -46,7 +46,8 @@ type FixtureName =
   | "suite-detail"
   | "environments-list"
   | "environment-detail"
-  | "agent-debug";
+  | "agent-debug"
+  | "devices";
 
 const FIXTURE_TIME = Date.UTC(2026, 8, 4, 12, 0, 0);
 const VISUAL_NOW = 1_788_390_000_000;

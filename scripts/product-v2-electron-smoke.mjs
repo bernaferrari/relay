@@ -120,7 +120,10 @@ async function assertDesktopChrome(page) {
   for (const [name, value] of Object.entries(chrome)) {
     assert(value, `Electron desktop chrome is missing ${name}`);
   }
-  assert(chrome.brand.left >= 80, `Relay brand overlaps macOS traffic lights: ${chrome.brand.left}`);
+  assert(
+    chrome.brand.left >= 80,
+    `Relay brand overlaps macOS traffic lights: ${chrome.brand.left}`,
+  );
   assert(chrome.toolbar.display !== "none", "Electron desktop toolbar is hidden at wide size");
   assert(
     chrome.toolbar.height >= 48 && chrome.toolbar.height <= 60,
@@ -128,10 +131,16 @@ async function assertDesktopChrome(page) {
   );
   assert(chrome.toolbar.appRegion === "drag", "Electron toolbar is not draggable");
   for (const control of [chrome.back, chrome.forward]) {
-    assert(control.width <= 34 && control.height <= 34, `History control is oversized: ${JSON.stringify(control)}`);
+    assert(
+      control.width <= 34 && control.height <= 34,
+      `History control is oversized: ${JSON.stringify(control)}`,
+    );
   }
   for (const icon of [chrome.backIcon, chrome.forwardIcon]) {
-    assert(icon.width <= 17 && icon.height <= 17, `History icon is oversized: ${JSON.stringify(icon)}`);
+    assert(
+      icon.width <= 17 && icon.height <= 17,
+      `History icon is oversized: ${JSON.stringify(icon)}`,
+    );
   }
   assert(
     chrome.command.left - chrome.activity.right >= 12,
@@ -154,8 +163,14 @@ async function assertCompactChrome(page) {
     };
   });
   assert(compact.header && compact.menu, "Electron compact title bar is missing");
-  assert(compact.header.height >= 56, `Electron compact title bar is too short: ${compact.header.height}`);
-  assert(compact.menu.left >= 80, `Compact menu overlaps macOS traffic lights: ${compact.menu.left}`);
+  assert(
+    compact.header.height >= 56,
+    `Electron compact title bar is too short: ${compact.header.height}`,
+  );
+  assert(
+    compact.menu.left >= 80,
+    `Compact menu overlaps macOS traffic lights: ${compact.menu.left}`,
+  );
 }
 
 async function assertAccessible(page, route) {

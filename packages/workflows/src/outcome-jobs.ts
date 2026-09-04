@@ -413,11 +413,17 @@ class CanonicalRelayOutcomeJobs implements RelayOutcomeJobs {
       if (created.session.id !== intent.create.id && intent.create.id !== undefined) {
         throw new TypeError("Relay returned a different Agent Debug discovery session.");
       }
+      if (created.session.targetId !== intent.create.targetId) {
+        throw new TypeError("Relay returned an Agent Debug session for a different target.");
+      }
       const session = intent.start
         ? (await this.operations.invoke("discovery.start", intent.start)).session
         : created.session;
       if (session.id !== created.session.id) {
         throw new TypeError("Relay returned a different Agent Debug discovery session.");
+      }
+      if (session.targetId !== intent.create.targetId) {
+        throw new TypeError("Relay started Agent Debug on a different target.");
       }
       return {
         schemaVersion: 1,

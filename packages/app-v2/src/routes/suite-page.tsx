@@ -135,7 +135,7 @@ export function SuitePage() {
   }
 
   return (
-    <section className="relay-page relay-suite-page">
+    <section className="relay-page max-w-5xl">
       <Breadcrumbs
         items={[{ label: "Suites", to: "/suites" }, { label: value?.name ?? "Suite" }]}
       />
@@ -171,16 +171,15 @@ export function SuitePage() {
       ) : null}
       {value ? (
         <>
-          <header className="relay-page-header relay-suite-detail-header">
-            <div>
+          <header className="relay-page-header flex items-start justify-between gap-8 max-lg:flex-col">
+            <div className="min-w-0 max-w-3xl">
               <p className="relay-eyebrow">{value.appName} · Suite</p>
-              <h1>{value.name}</h1>
-              <p className="relay-page-description">
-                Preview readiness across selected environments, then start one representative case
-                in a single environment.
+              <h1 className="text-balance">{value.name}</h1>
+              <p className="relay-page-description max-w-2xl">
+                Choose an environment and run a representative case.
               </p>
             </div>
-            <div className="relay-suite-detail-actions">
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
               <Button variant="secondary" onClick={beginEdit}>
                 Edit Suite
               </Button>
@@ -205,63 +204,79 @@ export function SuitePage() {
             </div>
           </header>
 
-          <dl className="relay-suite-facts" aria-label={`${value.name} scope`}>
-            <div>
-              <dt>Tests</dt>
-              <dd>{value.tests.length}</dd>
+          <dl
+            className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-3 border-y border-border-weak-base py-3"
+            aria-label={`${value.name} scope`}
+          >
+            <div className="flex items-center gap-2">
+              <dt className="text-xs text-text-weaker">Tests</dt>
+              <dd className="text-sm font-semibold text-text-strong">{value.tests.length}</dd>
             </div>
-            <div>
-              <dt>Data sets</dt>
-              <dd>{value.variableIds.length}</dd>
+            <div className="flex items-center gap-2">
+              <dt className="text-xs text-text-weaker">Data sets</dt>
+              <dd className="text-sm font-semibold text-text-strong">{value.variableIds.length}</dd>
             </div>
-            <div>
-              <dt>Status</dt>
+            <div className="flex items-center gap-2">
+              <dt className="text-xs text-text-weaker">Status</dt>
               <dd>
                 <OutcomeMark outcome={needsReview ? "needs-review" : "passed"} />
               </dd>
             </div>
           </dl>
 
-          <div className="relay-suite-workspace">
-            <section className="relay-suite-card" aria-labelledby="suite-tests-title">
+          <div className="mt-6 grid items-start gap-4 lg:grid-cols-2">
+            <section
+              className="min-w-0 rounded-xl border border-border-weak-base bg-surface-raised-strong p-4"
+              aria-labelledby="suite-tests-title"
+            >
               <p className="relay-section-label">Coverage</p>
-              <h2 id="suite-tests-title">Saved Tests</h2>
-              <ul className="relay-suite-scope-list">
+              <h2 id="suite-tests-title" className="mt-1 text-base font-semibold text-text-strong">
+                Saved Tests
+              </h2>
+              <ul className="mt-4 grid list-none gap-2 p-0">
                 {value.tests.map((test) => (
                   <li key={test.id}>
-                    <Link to="/tests/$testId" params={{ testId: test.id }}>
-                      <span>{test.name}</span>
+                    <Link
+                      className="flex min-h-9 items-center justify-between gap-3 rounded-md bg-background-weak px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-border-focus"
+                      to="/tests/$testId"
+                      params={{ testId: test.id }}
+                    >
+                      <span className="truncate text-sm font-medium text-text-strong">
+                        {test.name}
+                      </span>
                       <OutcomeMark outcome={test.status === "ready" ? "passed" : "needs-review"} />
                     </Link>
                   </li>
                 ))}
               </ul>
-              {value.variableIds.length ? (
-                <p className="relay-suite-data-summary">
-                  {value.variableIds.length} saved Data{" "}
-                  {value.variableIds.length === 1 ? "set expands" : "sets expand"} this scope using{" "}
-                  {value.strategy ?? "cartesian"} coverage.
-                </p>
-              ) : (
-                <p className="relay-suite-data-summary">
-                  Each Test runs once with its saved defaults.
-                </p>
-              )}
+              <p className="mt-4 border-t border-border-weak-base pt-3 text-xs leading-5 text-text-weak">
+                {value.variableIds.length
+                  ? `${value.variableIds.length} saved Data ${
+                      value.variableIds.length === 1 ? "set" : "sets"
+                    } will be applied.`
+                  : "Each Test runs once with its saved defaults."}
+              </p>
             </section>
 
-            <section className="relay-suite-card" aria-labelledby="suite-environment-title">
+            <section
+              className="min-w-0 rounded-xl border border-border-weak-base bg-surface-raised-strong p-4"
+              aria-labelledby="suite-environment-title"
+            >
               <p className="relay-section-label">Environment</p>
-              <h2 id="suite-environment-title">Where should Relay run?</h2>
+              <h2
+                id="suite-environment-title"
+                className="mt-1 text-base font-semibold text-text-strong"
+              >
+                Where should Relay run?
+              </h2>
               {environments.data?.length ? (
-                <Field>
-                  <FieldLabel>Environment Profiles</FieldLabel>
-                  <p className="relay-action-hint">
-                    Select up to four independent environments. Relay checks every target; a
-                    multi-environment selection is currently preview-only. Relay cannot yet run
-                    every Suite case in every selected environment.
+                <Field className="mt-3">
+                  <FieldLabel>Environment</FieldLabel>
+                  <p className="text-xs leading-5 text-text-weak">
+                    Choose one to run a pilot, or select more to compare readiness.
                   </p>
-                  <fieldset className="relay-suite-environment-options">
-                    <legend className="relay-visually-hidden">Environment Profiles</legend>
+                  <fieldset className="mt-3 grid min-w-0 gap-2 border-0 p-0">
+                    <legend className="sr-only">Environments</legend>
                     {environments.data.map((profile) => (
                       <CheckboxCard
                         key={profile.id}
@@ -293,15 +308,16 @@ export function SuitePage() {
                   }
                 />
               )}
-              {preview.isFetching ? (
-                <p className="relay-action-hint">Checking Suite readiness…</p>
-              ) : null}
               {preview.data ? (
                 <div
-                  className={`relay-suite-preflight${preview.data.blockers.length ? " relay-suite-preflight--blocked" : ""}`}
+                  className={`mt-4 grid gap-1 rounded-lg border p-3 text-xs ${
+                    preview.data.blockers.length
+                      ? "border-border-critical-base bg-surface-critical-weak"
+                      : "border-border-success-base bg-surface-success-weak"
+                  }`}
                   role="status"
                 >
-                  <strong>
+                  <strong className="font-semibold text-text-strong">
                     {preview.data.blockers.length
                       ? "Needs attention"
                       : `${preview.data.caseCount} ${
@@ -310,31 +326,23 @@ export function SuitePage() {
                           preview.data.execution?.capacity === "unavailable" ? "previewed" : "ready"
                         }`}
                   </strong>
-                  <span>
-                    {preview.data.checkCount} checks
+                  <span className="text-text-weak">
+                    {preview.data.checkCount} {preview.data.checkCount === 1 ? "check" : "checks"}
                     {preview.data.expectedScreenshots === undefined
                       ? ""
                       : ` · about ${preview.data.expectedScreenshots} screenshots`}
                   </span>
-                  {preview.data.execution ? (
-                    <small>
-                      {preview.data.execution.profileCount} Environment Profiles ·{" "}
-                      {preview.data.execution.estimatedDurationMs === undefined
-                        ? "duration not estimated"
-                        : `about ${preview.data.execution.estimatedDurationMs} ms observed p95`}
-                    </small>
-                  ) : null}
                   {preview.data.execution?.capacity === "unavailable" ? (
-                    <small>{preview.data.execution.detail}</small>
-                  ) : null}
-                  {preview.data.blockers.map((blocker) => (
-                    <small key={`${blocker.code}:${blocker.suiteCellId ?? "suite"}`}>
-                      {blocker.message}
+                    <small className="text-text-weak">
+                      Select one environment to start a pilot.
                     </small>
-                  ))}
-                  {preview.data.warnings.map((warning) => (
-                    <small key={`${warning.code}:${warning.suiteCellId ?? "suite"}`}>
-                      {warning.message}
+                  ) : null}
+                  {preview.data.blockers.slice(0, 1).map((blocker) => (
+                    <small
+                      className="leading-5 text-text-weak"
+                      key={`${blocker.code}:${blocker.suiteCellId ?? "suite"}`}
+                    >
+                      {friendlySuiteIssue(blocker.message)}
                     </small>
                   ))}
                 </div>
@@ -356,10 +364,17 @@ export function SuitePage() {
             </section>
           </div>
 
-          <section className="relay-suite-danger" aria-labelledby="remove-suite-title">
+          <section
+            className="mt-8 flex items-center justify-between gap-5 border-t border-border-weak-base pt-5 max-sm:items-start"
+            aria-labelledby="remove-suite-title"
+          >
             <div>
-              <h2 id="remove-suite-title">Remove Suite</h2>
-              <p>Tests and their Reports stay in the App. Only this saved grouping is removed.</p>
+              <h2 id="remove-suite-title" className="text-sm font-semibold text-text-strong">
+                Remove Suite
+              </h2>
+              <p className="mt-1 text-xs leading-5 text-text-weak">
+                Tests and Reports stay in the App.
+              </p>
             </div>
             <Dialog.Root open={removeOpen} onOpenChange={setRemoveOpen}>
               <Dialog.Trigger render={<Button variant="secondary" />}>
@@ -472,4 +487,14 @@ export function SuitePage() {
       ) : null}
     </section>
   );
+}
+
+function friendlySuiteIssue(message: string): string {
+  if (/ERR_CONNECTION_REFUSED|connection refused/i.test(message)) {
+    return "The selected environment could not reach the app. Check its URL or start the app, then try again.";
+  }
+  if (/runtime profile/i.test(message)) {
+    return "This environment needs a runtime profile before it can run the Suite.";
+  }
+  return "This environment is not ready yet. Review its configuration and try again.";
 }

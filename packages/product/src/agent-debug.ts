@@ -21,6 +21,10 @@ import {
   type VerifyChangeOutcomeIntent,
 } from "@relay/workflows";
 import { createRelayOperationPort } from "@relay/workflows/operation-port";
+import {
+  createRelayRecordingOutcomeJobs,
+  startDebugBugRecording,
+} from "@relay/workflows/recording-outcomes";
 
 export type { DebugBugOutcome, DebugBugOutcomeIntent } from "@relay/workflows";
 
@@ -177,6 +181,26 @@ export type AgentDebugProductService = {
   ) => ReturnType<RelayOutcomeJobs["verifyChange"]>;
   readonly exportEvidence: (intent: ExportEvidenceIntent) => Promise<AgentDebugEvidenceSummary>;
 };
+
+export type AgentDebugRecordingProductService = {
+  readonly debugBug: (
+    intent: Extract<DebugBugOutcomeIntent, { action: "start" }>,
+  ) => Promise<Extract<DebugBugOutcome, { action: "start" }>>;
+};
+
+/** Browser-safe Agent Debug entry point for renderers that only start a
+ * recording. The product boundary owns workflow construction so UI adapters
+ * do not assemble domain jobs themselves. */
+export function createAgentDebugRecordingProductService(
+  client: RelayInvokeClient,
+  options: { readonly actorId: string },
+): AgentDebugRecordingProductService {
+  assertActorId(options.actorId);
+  const jobs = createRelayRecordingOutcomeJobs(client, options);
+  return {
+    debugBug: (intent) => startDebugBugRecording(jobs, options.actorId, intent),
+  };
+}
 
 const MAX_DISCOVERY_SCREENS = 500;
 const MAX_DISCOVERY_TRANSITIONS = 2_000;

@@ -306,7 +306,7 @@ describe("Suite and Environment routes", () => {
 
     expect(document.body.textContent).toContain("2 cases previewed");
     expect(document.body.textContent).not.toContain("2 cases ready");
-    expect(document.body.textContent).toContain("start one representative case");
+    expect(document.body.textContent).toContain("Select one environment to start a pilot.");
   });
 
   it("creates a Browser Space with labeled fields and opens its canonical detail route", async () => {

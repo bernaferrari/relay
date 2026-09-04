@@ -16,7 +16,7 @@ export function createDebugBugInputSchema(
       .object({
         kind: z.literal("debug-bug"),
         action: z.literal("start"),
-        title: identifier,
+        title: identifier.max(160),
         appMapId: identifier.optional(),
         targetId,
       })

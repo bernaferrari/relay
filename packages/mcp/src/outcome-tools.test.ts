@@ -365,6 +365,27 @@ test("every default MCP outcome tool validates and invokes exactly one façade m
   }
 });
 
+test("Agent Debug title uses the same 160 character limit as the product UI", () => {
+  const descriptor = relayOutcomeTools.find(({ name }) => name === "relay_debug_bug");
+  assert.ok(descriptor);
+  assert.equal(
+    descriptor.inputSchema.safeParse({
+      kind: "debug-bug",
+      action: "start",
+      title: "a".repeat(160),
+    }).success,
+    true,
+  );
+  assert.equal(
+    descriptor.inputSchema.safeParse({
+      kind: "debug-bug",
+      action: "start",
+      title: "a".repeat(161),
+    }).success,
+    false,
+  );
+});
+
 test("protected outcome tools reject missing confirmation before workflow dispatch", async () => {
   for (const testCase of [
     {

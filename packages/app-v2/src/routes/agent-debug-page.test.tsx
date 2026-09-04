@@ -160,6 +160,20 @@ afterEach(async () => {
 });
 
 describe("Agent Debug route", () => {
+  it("keeps the start page focused on the investigation outcome", async () => {
+    await render();
+
+    expect(document.body.textContent).toContain(
+      "Capture a reproducible path and review the evidence with your team.",
+    );
+    expect(document.body.textContent).not.toContain(
+      "Relay keeps the Session, target owner, evidence, and human review boundary visible",
+    );
+    expect(document.body.textContent).not.toContain(
+      "Starting opens a server-owned recording Session on the selected target",
+    );
+  });
+
   it("offers only runnable targets and keeps the target label free of raw serials", async () => {
     await render({
       devices: [
@@ -230,7 +244,7 @@ describe("Agent Debug route", () => {
     await selectTarget("serial-ready");
     await clickStart();
 
-    expect(document.body.textContent).toContain("Session ready for human review");
+    expect(document.body.textContent).toContain("Session ready for review");
     expect(
       document.querySelector<HTMLAnchorElement>('a[href="/sessions/session-durable"]'),
     ).not.toBeNull();

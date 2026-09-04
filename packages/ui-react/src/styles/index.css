@@ -81,104 +81,6 @@
   --text-interactive-hover: oklch(0.985 0 0);
 }
 
-.relay-button,
-.relay-icon-button {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid transparent;
-  border-radius: var(--radius-md);
-  font: inherit;
-  font-weight: var(--font-weight-medium);
-  color: var(--text-strong);
-  cursor: pointer;
-  touch-action: manipulation;
-  font-size: 13px;
-  line-height: 1;
-  white-space: nowrap;
-  transition:
-    background-color 150ms ease,
-    border-color 150ms ease,
-    box-shadow 150ms ease,
-    transform 100ms ease;
-}
-
-.relay-button:focus-visible,
-.relay-icon-button:focus-visible {
-  outline: 2px solid var(--relay-focus-ring);
-  outline-offset: 2px;
-}
-
-.relay-button:active:not(:disabled),
-.relay-icon-button:active:not(:disabled) {
-  transform: scale(0.96);
-}
-
-.relay-button:disabled,
-.relay-icon-button:disabled {
-  color: var(--text-weaker);
-  background: var(--input-disabled);
-  border-color: var(--border-weak-disabled);
-  cursor: not-allowed;
-}
-
-.relay-button--medium {
-  min-height: 36px;
-  padding: 0 14px;
-  gap: 8px;
-}
-
-.relay-button--small {
-  min-height: 32px;
-  padding: 0 10px;
-  gap: 6px;
-}
-
-.relay-button--primary {
-  color: var(--button-primary-foreground);
-  background: var(--button-primary-base);
-  box-shadow: 0 1px 2px color-mix(in srgb, black 12%, transparent);
-}
-
-.relay-button--secondary {
-  background: var(--button-secondary-base);
-  border-color: var(--border-weak-base);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--text-strong) 4%, transparent);
-}
-
-.relay-button--ghost,
-.relay-icon-button {
-  background: transparent;
-}
-
-.relay-icon-button {
-  position: relative;
-  inline-size: 36px;
-  block-size: 36px;
-}
-
-.relay-icon-button--small {
-  inline-size: 32px;
-  block-size: 32px;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .relay-button--primary:hover:not(:disabled) {
-    background: var(--button-primary-hover);
-  }
-
-  .relay-button--secondary:hover:not(:disabled) {
-    background: var(--button-secondary-hover);
-    border-color: var(--border-hover);
-  }
-
-  .relay-button--ghost:hover:not(:disabled),
-  .relay-icon-button:hover:not(:disabled) {
-    background: var(--button-ghost-hover);
-  }
-}
-
 .relay-overlay-root {
   position: relative;
   z-index: var(--relay-overlay-menu);
@@ -265,30 +167,6 @@
   border-top: 1px solid var(--border-weak-base);
   border-radius: 0 0 calc(var(--radius-xl) - 1px) calc(var(--radius-xl) - 1px);
   background: color-mix(in srgb, var(--surface-base) 62%, transparent);
-}
-
-.relay-input {
-  inline-size: 100%;
-  min-block-size: 36px;
-  padding-inline: 12px;
-  border: 1px solid var(--border-base);
-  border-radius: var(--radius-md);
-  color: var(--text-strong);
-  background: var(--input-base);
-  box-shadow: 0 1px 2px color-mix(in srgb, black 5%, transparent);
-  font: inherit;
-  font-size: 16px;
-  outline: none;
-}
-
-.relay-input::placeholder {
-  color: var(--text-weaker);
-}
-
-.relay-input:focus-visible {
-  border-color: var(--relay-focus-ring);
-  outline: 3px solid color-mix(in srgb, var(--relay-focus-ring) 20%, transparent);
-  outline-offset: 1px;
 }
 
 .relay-textarea {
@@ -1154,112 +1032,6 @@ button.relay-item:active {
   }
 }
 
-.relay-radio-group {
-  display: grid;
-  min-inline-size: 0;
-  gap: 8px;
-}
-
-.relay-radio-card {
-  display: grid;
-  min-block-size: 56px;
-  min-inline-size: 0;
-  grid-template-columns: auto minmax(0, 1fr) 16px;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 11px;
-  border: 1px solid var(--border-weak-base);
-  border-radius: var(--radius-md);
-  color: var(--text-base);
-  background: var(--surface-raised-strong);
-  cursor: pointer;
-  user-select: none;
-}
-
-.relay-radio-card:not(:has(.relay-radio-card-leading)) {
-  grid-template-columns: minmax(0, 1fr) 16px;
-}
-
-.relay-radio-card:has(.relay-radio-group-item[data-checked]) {
-  border-color: var(--border-base);
-  background: var(--surface-base);
-}
-
-.relay-radio-card:has(.relay-radio-group-item:focus-visible) {
-  outline: 2px solid var(--relay-focus-ring);
-  outline-offset: 2px;
-}
-
-.relay-radio-card[data-disabled] {
-  color: var(--text-weaker);
-  background: var(--input-disabled);
-  cursor: not-allowed;
-}
-
-.relay-radio-card-leading {
-  display: grid;
-  inline-size: 34px;
-  block-size: 34px;
-  place-items: center;
-  border-radius: var(--radius-md);
-  color: var(--text-weak);
-  background: var(--surface-base);
-}
-
-.relay-radio-card-leading > svg {
-  inline-size: 17px;
-  block-size: 17px;
-  stroke-width: 1.8;
-}
-
-.relay-radio-card-copy {
-  display: grid;
-  min-inline-size: 0;
-  gap: 2px;
-}
-
-.relay-radio-card-title {
-  overflow: hidden;
-  color: var(--text-strong);
-  font-size: 13px;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.relay-radio-card-description {
-  overflow: hidden;
-  color: var(--text-weak);
-  font-size: 12px;
-  line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.relay-radio-group-item {
-  display: grid;
-  inline-size: 16px;
-  block-size: 16px;
-  place-items: center;
-  border: 1px solid var(--border-base);
-  border-radius: 999px;
-  color: var(--button-primary-foreground);
-  background: var(--background-strong);
-  outline: none;
-}
-
-.relay-radio-group-item[data-checked] {
-  border-color: var(--button-primary-base);
-  background: var(--button-primary-base);
-}
-
-.relay-radio-group-indicator {
-  inline-size: 5px;
-  block-size: 5px;
-  border-radius: 999px;
-  background: currentColor;
-}
-
 .relay-checkbox {
   display: grid;
   inline-size: 20px;
@@ -1482,33 +1254,9 @@ button.relay-item:active {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .relay-button,
-  .relay-icon-button,
   .relay-skeleton {
     transition: none;
     animation: none;
-  }
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .relay-radio-card:hover:not([data-disabled]) {
-    background: var(--surface-raised-strong-hover);
-  }
-}
-
-@media (pointer: coarse) {
-  .relay-button,
-  .relay-icon-button,
-  .relay-input,
-  .relay-select-trigger,
-  .relay-tabs-trigger,
-  .relay-toggle-group-item,
-  .relay-menu-item {
-    min-height: 44px;
-  }
-
-  .relay-icon-button {
-    min-width: 44px;
   }
 }
 

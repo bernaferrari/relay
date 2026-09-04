@@ -1,18 +1,9 @@
 /** @jsxImportSource react */
-import {
-  Badge,
-  Button,
-  Input,
-  Item,
-  Tabs,
-  TabsIndicator,
-  TabsList,
-  TabsTrigger,
-} from "@relay/ui-react";
+import { Badge, Button, Input, Tabs, TabsIndicator, TabsList, TabsTrigger } from "@relay/ui-react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { ChevronRight, Monitor, Smartphone } from "lucide-react";
-import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useMemo, useState } from "react";
 import { EmptyState } from "../components/product-patterns";
 import { sessionQueryKeys, type ProductSessionSummary } from "../data/session-product-service";
 import { PageLoading, RecordingProblem } from "./recording-shared";
@@ -32,19 +23,14 @@ export function SessionsPage() {
     search.status === "history" || search.status === "all" ? search.status : "active";
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query.trim().toLocaleLowerCase());
-  const [now, setNow] = useState(Date.now);
+  const referenceTime = Date.now();
   const sessions = useQuery({
     queryKey: sessionQueryKeys.sessionList({ includeHistory: true }),
     queryFn: () => sessionService.list({ includeHistory: true }),
-    staleTime: 3_000,
-    refetchInterval: (state) => (state.state.data?.some(isActiveSession) ? 3_000 : false),
+    staleTime: Infinity,
+    refetchOnReconnect: false,
+    refetchOnWindowFocus: false,
   });
-
-  useEffect(() => {
-    if (!sessions.data?.some(isActiveSession)) return;
-    const timer = window.setInterval(() => setNow(Date.now()), 1_000);
-    return () => window.clearInterval(timer);
-  }, [sessions.data]);
 
   const visible = useMemo(
     () =>
@@ -80,18 +66,15 @@ export function SessionsPage() {
   }
 
   return (
-    <section className="relay-page relay-library-page relay-sessions-page">
-      <header className="relay-library-header">
+    <section className="relay-page max-w-[1120px]">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="relay-eyebrow">Workspace</p>
           <h1>Sessions</h1>
           <p className="relay-page-description">
-            Return to durable browser and device work without losing its target, evidence, or owner.
+            Keep active device work and durable session history in one place.
           </p>
         </div>
-        <Button size="small" onClick={() => void sessions.refetch()} disabled={sessions.isFetching}>
-          {sessions.isFetching ? "Checking…" : "Check again"}
-        </Button>
       </header>
 
       <Tabs value={view} onValueChange={(value) => setView(value as SessionView)}>
@@ -103,11 +86,14 @@ export function SessionsPage() {
         </TabsList>
       </Tabs>
 
-      <div className="relay-session-toolbar">
-        <label htmlFor="session-search">Search Sessions</label>
+      <div className="mt-3.5 grid max-w-[440px] gap-1.5">
+        <label className="text-[11px] font-semibold text-text-weak" htmlFor="session-search">
+          Search Sessions
+        </label>
         <Input
           id="session-search"
           type="search"
+          className="h-9 text-base"
           value={query}
           onChange={(event) => setQuery(event.currentTarget.value)}
           placeholder="Search by name, target, or owner"
@@ -125,19 +111,19 @@ export function SessionsPage() {
       />
 
       {!sessions.isPending && !sessions.isError && visible.length ? (
-        <section className="relay-library-results" aria-labelledby="session-results-title">
-          <div className="relay-library-results-heading">
-            <h2 id="session-results-title">
+        <section className="mt-7" aria-labelledby="session-results-title">
+          <div className="flex min-h-8 items-center justify-between gap-5 px-0.5 pb-2.5">
+            <h2 className="text-[13px] font-semibold" id="session-results-title">
               {visible.length === 1 ? "1 Session" : `${visible.length} Sessions`}
             </h2>
-            <span aria-live="polite">
+            <span className="text-xs text-text-weak" aria-live="polite">
               {view === "active" ? "Ready to continue" : "Durable history"}
             </span>
           </div>
-          <ul className="relay-library-list relay-session-list">
+          <ul className="m-0 list-none overflow-hidden rounded-xl border border-border-weak-base bg-surface-raised-strong p-0">
             {visible.map((session) => (
-              <li key={session.id}>
-                <SessionRow session={session} now={now} />
+              <li className="border-b border-border-weak-base last:border-b-0" key={session.id}>
+                <SessionRow session={session} referenceTime={referenceTime} />
               </li>
             ))}
           </ul>
@@ -175,36 +161,50 @@ export function SessionsPage() {
   );
 }
 
-function SessionRow({ session, now }: { session: ProductSessionSummary; now: number }) {
+function SessionRow({
+  session,
+  referenceTime,
+}: {
+  session: ProductSessionSummary;
+  referenceTime: number;
+}) {
   const active = isActiveSession(session);
   const Icon = session.target.platform === "browser" ? Monitor : Smartphone;
   return (
-    <Item
-      className="relay-library-row relay-session-row"
-      render={<Link to="/sessions/$sessionId" params={{ sessionId: session.id }} />}
+    <Link
+      className="grid min-h-[78px] cursor-pointer grid-cols-[30px_minmax(0,1fr)_18px] items-center gap-x-3 gap-y-1.5 px-3.5 py-2.5 text-text-base transition-[background-color,color] duration-150 ease-out hover:bg-surface-raised-strong-hover focus-visible:relative focus-visible:z-[1] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-text-strong md:grid-cols-[30px_minmax(190px,1fr)_minmax(112px,auto)_minmax(112px,0.34fr)_18px] md:gap-[18px]"
+      to="/sessions/$sessionId"
+      params={{ sessionId: session.id }}
     >
-      <span className="relay-session-row-icon">
-        <Icon aria-hidden="true" />
+      <span className="grid size-[30px] place-items-center rounded-md border border-border-weak-base bg-surface-base text-text-weak">
+        <Icon className="size-[15px]" aria-hidden="true" />
       </span>
-      <span className="relay-library-row-main">
-        <strong>{session.title}</strong>
-        <span>
+      <span className="grid min-w-0 gap-1">
+        <strong className="truncate text-sm font-semibold text-text-strong">{session.title}</strong>
+        <span className="truncate text-xs text-text-weak">
           {session.target.targetId} · {session.actorKind === "agent" ? "Agent" : "Human"}
         </span>
       </span>
-      <span className="relay-library-row-status">
+      <span className="col-start-2 justify-self-start md:col-auto">
         <Badge variant={sessionVariant(session)}>{sessionStateLabel(session.state)}</Badge>
       </span>
-      <span className="relay-library-row-recent">
-        <strong>
-          {active ? formatElapsed(now - session.createdAt) : relativeTime(session.updatedAt, now)}
+      <span className="col-start-2 grid min-w-0 justify-items-start gap-1 md:col-auto">
+        <strong className="truncate text-xs font-semibold tabular-nums text-text-base">
+          Updated {relativeTime(session.updatedAt, referenceTime)}
         </strong>
-        <small>
-          {active ? "elapsed" : session.take ? `${session.take.actionCount} actions` : "No take"}
+        <small className="truncate text-xs text-text-weak">
+          {active
+            ? "Active session"
+            : session.take
+              ? `${session.take.actionCount} actions`
+              : "No actions yet"}
         </small>
       </span>
-      <ChevronRight className="relay-library-row-arrow" aria-hidden="true" />
-    </Item>
+      <ChevronRight
+        className="col-start-3 row-start-1 size-4 text-text-weaker md:col-start-5"
+        aria-hidden="true"
+      />
+    </Link>
   );
 }
 
@@ -228,21 +228,11 @@ function sessionVariant(
   return "secondary";
 }
 
-function formatElapsed(value: number): string {
-  const seconds = Math.max(0, Math.floor(value / 1_000));
-  const hours = Math.floor(seconds / 3_600);
-  const minutes = Math.floor((seconds % 3_600) / 60);
-  const remainder = seconds % 60;
-  return hours
-    ? `${hours}:${String(minutes).padStart(2, "0")}:${String(remainder).padStart(2, "0")}`
-    : `${minutes}:${String(remainder).padStart(2, "0")}`;
-}
-
 function relativeTime(value: number, now: number): string {
-  const minutes = Math.max(0, Math.round((now - value) / 60_000));
-  if (minutes < 1) return "Just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.round(hours / 24)}d ago`;
+  const ageMs = Math.max(0, now - value);
+  if (ageMs < 60_000) return "Just now";
+  if (ageMs < 3_600_000) return `${Math.floor(ageMs / 60_000)}m ago`;
+  if (ageMs < 86_400_000) return `${Math.floor(ageMs / 3_600_000)}h ago`;
+  if (ageMs < 604_800_000) return `${Math.floor(ageMs / 86_400_000)}d ago`;
+  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(value);
 }

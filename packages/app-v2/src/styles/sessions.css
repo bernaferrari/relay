@@ -1,46 +1,7 @@
-/* Product V2 — durable live Sessions */
+/* Product V2 — durable live Session detail */
 
-.relay-sessions-page,
 .relay-session-page {
   max-width: 1120px;
-}
-
-.relay-session-toolbar {
-  display: grid;
-  max-width: 440px;
-  gap: 6px;
-  margin-top: 14px;
-}
-
-.relay-session-toolbar label {
-  color: var(--text-weak);
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.relay-session-toolbar .relay-input {
-  min-height: 36px;
-  font-size: 16px;
-}
-
-.relay-session-row {
-  grid-template-columns: 30px minmax(190px, 1fr) minmax(112px, auto) minmax(112px, 0.34fr) 18px;
-}
-
-.relay-session-row-icon {
-  display: grid;
-  width: 30px;
-  height: 30px;
-  place-items: center;
-  border: 1px solid var(--border-weak-base);
-  border-radius: var(--radius-md);
-  color: var(--text-weak);
-  background: var(--background-weak);
-}
-
-.relay-session-row-icon svg {
-  width: 15px;
-  height: 15px;
 }
 
 .relay-session-detail-header,
@@ -215,14 +176,5 @@
 @media (max-width: 620px) {
   .relay-session-detail-header {
     display: grid;
-  }
-
-  .relay-session-row {
-    grid-template-columns: 30px minmax(0, 1fr) 18px;
-  }
-
-  .relay-session-row .relay-library-row-status,
-  .relay-session-row .relay-library-row-recent {
-    grid-column: 2;
   }
 }

@@ -571,6 +571,41 @@ test("debug-bug rejects unbounded exploration before contacting Relay", async ()
   assert.deepEqual(scripted.invocations, []);
 });
 
+test("debug-bug rejects a discovery session returned for another target", async () => {
+  const scripted = createScriptedRelayClient([
+    {
+      id: "discovery.create",
+      output: {
+        session: {
+          id: "discovery-1",
+          name: "Checkout discovery",
+          targetId: "other-device",
+          status: "draft",
+          createdAt: 1,
+          updatedAt: 1,
+          scope: { maxScreens: 20, maxTransitions: 40, maxDurationMs: 30_000 },
+          screens: [],
+          transitions: [],
+        },
+      },
+    },
+  ]);
+  const jobs = createRelayOutcomeJobs(scripted.client, { actorId: "agent:test" });
+  await assert.rejects(
+    jobs.debugBug({
+      kind: "debug-bug",
+      action: "explore",
+      create: {
+        id: "discovery-1",
+        name: "Checkout discovery",
+        targetId: "pixel-9",
+        scope: { maxScreens: 20, maxTransitions: 40, maxDurationMs: 30_000 },
+      },
+    }),
+    /different target/u,
+  );
+});
+
 test("propose-repair returns a review-only identity projection", async () => {
   const scripted = createScriptedRelayClient([
     {
