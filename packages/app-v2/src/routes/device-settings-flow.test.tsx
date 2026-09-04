@@ -300,16 +300,13 @@ describe("Devices", () => {
     await click(button("All"));
     expect(history.location.search).toBe("");
     expect(document.body.textContent).toContain("Design iPad");
-    const virtualDevices = document.querySelector<HTMLButtonElement>(
-      ".relay-device-section--collapsible > button",
-    );
+    const virtualDevices = [...document.querySelectorAll<HTMLButtonElement>('button[aria-expanded]')]
+      .find((candidate) => candidate.textContent?.includes("Virtual devices"));
     if (!virtualDevices) throw new Error("Virtual devices disclosure not found");
     await click(virtualDevices);
     expect(document.body.textContent).toContain("Checkout browser");
     expect(
-      document
-        .querySelector(".relay-device-section--collapsible > button")
-        ?.getAttribute("aria-expanded"),
+      virtualDevices.getAttribute("aria-expanded"),
     ).toBe("true");
   });
 

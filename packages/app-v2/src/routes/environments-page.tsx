@@ -94,7 +94,7 @@ export function EnvironmentsPage() {
 
             <DialogContent
               showCloseButton={false}
-              className="relay-overlay-popup relay-dialog-popup relay-environment-dialog"
+              className="relay-environment-dialog"
             >
               <DialogTitle>New Browser Space</DialogTitle>
               <DialogDescription>

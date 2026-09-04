@@ -341,7 +341,6 @@ export function EnvironmentPage() {
 
               <DialogContent
                 showCloseButton={false}
-                className="relay-overlay-popup relay-dialog-popup"
               >
                 <DialogTitle>Remove {space.name}?</DialogTitle>
                 <DialogDescription>
@@ -372,7 +371,6 @@ export function EnvironmentPage() {
           <Dialog open={accountOpen} onOpenChange={setAccountOpen}>
             <DialogContent
               showCloseButton={false}
-              className="relay-overlay-popup relay-dialog-popup"
             >
               <DialogTitle>Save current sign-in</DialogTitle>
               <DialogDescription>

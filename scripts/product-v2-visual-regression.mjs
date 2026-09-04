@@ -23,6 +23,7 @@ const MAX_DIFFERENT_PIXEL_RATIO = 0.0005;
 
 const fixtures = [
   { id: "home-empty", heading: "Prove one journey that matters" },
+  { id: "home-populated", heading: "Ready when you are" },
   { id: "apps-list", heading: "Apps" },
   { id: "apps-error", heading: "Apps" },
   { id: "app-versions", heading: "Versions" },
@@ -212,13 +213,15 @@ async function assertLayout(page, fixture, viewport) {
     }
   }
   if (fixture.id === "test-detail") {
-    const titles = page.locator(".relay-run-targets .relay-radio-card-title");
+    const radios = page.getByRole("radio");
+    const titles = page.locator('[data-slot="run-target-title"]');
+    if ((await radios.count()) !== 2) throw new Error("Test detail did not render both targets");
     if ((await titles.count()) !== 2) throw new Error("Test detail did not render both targets");
     const clipped = await titles.evaluateAll((nodes) =>
       nodes.some((node) => node.scrollWidth > node.clientWidth + 1),
     );
     if (clipped) throw new Error("Test detail truncated a target name");
-    await page.locator(".relay-run-targets .relay-radio-card").first().click();
+    await radios.first().click();
     if (await page.getByRole("button", { name: "Run Test" }).isDisabled()) {
       throw new Error("Test detail did not enable Run Test after target selection");
     }

@@ -133,12 +133,15 @@ async function fillTitle(value: string) {
 }
 
 async function selectTarget(value: string) {
-  const select = document.getElementById("agent-debug-target");
-  if (!(select instanceof HTMLSelectElement)) throw new Error("Target select not found");
+  const trigger = document.getElementById("agent-debug-target");
+  if (!(trigger instanceof HTMLButtonElement)) throw new Error("Target select not found");
   await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set?.call(select, value);
-    select.dispatchEvent(new Event("change", { bubbles: true }));
+    trigger.click();
   });
+  await settle();
+  const option = document.querySelector<HTMLElement>(`[role="option"][data-value="${value}"]`);
+  if (!option) throw new Error(`Target option ${value} not found`);
+  await act(async () => option.click());
   await settle();
 }
 
@@ -182,13 +185,16 @@ describe("Agent Debug route", () => {
       ],
     });
 
-    const select = document.getElementById("agent-debug-target");
-    if (!(select instanceof HTMLSelectElement)) throw new Error("Target select not found");
-    expect([...select.options].map((option) => option.textContent)).toEqual([
-      "Choose a ready target",
+    const trigger = document.getElementById("agent-debug-target");
+    if (!(trigger instanceof HTMLButtonElement)) throw new Error("Target select not found");
+    await act(async () => trigger.click());
+    await settle();
+
+    const options = [...document.querySelectorAll<HTMLElement>('[role="option"]')];
+    expect(options.map((option) => option.textContent?.trim())).toEqual([
       "Ready Pixel · android",
     ]);
-    expect(select.textContent).not.toContain("serial-ready");
+    expect(document.body.textContent).not.toContain("serial-ready");
   });
 
   it("explains how to recover when no runnable target is available", async () => {

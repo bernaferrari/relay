@@ -202,8 +202,10 @@ export function AppPage() {
             </div>
           </section>
           <Collapsible className="relay-app-advanced">
-            <CollapsibleTrigger>Advanced</CollapsibleTrigger>
-            <CollapsibleContent>
+            <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 py-2 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
+              Advanced
+            </CollapsibleTrigger>
+            <CollapsibleContent className="space-y-3 border-t pt-3 text-sm">
               <div>
                 <p>Inspect Relay’s known screens, verified paths, and coverage for this app.</p>
                 <Link className="relay-inline-link" to="/apps/$appId/map" params={{ appId }}>

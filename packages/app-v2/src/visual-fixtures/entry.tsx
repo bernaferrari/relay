@@ -24,6 +24,7 @@ import "../styles/app.css";
 
 type FixtureName =
   | "home-empty"
+  | "home-populated"
   | "apps-list"
   | "apps-error"
   | "app-versions"
@@ -54,6 +55,7 @@ const VISUAL_NOW = 1_788_390_000_000;
 const fixture = new URLSearchParams(window.location.search).get("fixture") as FixtureName | null;
 const definitions: Record<FixtureName, { path: string }> = {
   "home-empty": { path: "/home" },
+  "home-populated": { path: "/home" },
   "apps-list": { path: "/apps" },
   "apps-error": { path: "/apps" },
   "app-versions": { path: "/apps/checkout-app/versions" },
@@ -93,6 +95,7 @@ const platform: Platform = {
 
 const apps = [{ id: "checkout-app", name: "Checkout" }] as const;
 const prerecord = fixture.startsWith("prerecord-");
+const populatedHome = fixture === "home-populated";
 const previewTarget = {
   kind: "browser" as const,
   platform: "browser" as const,
@@ -105,10 +108,10 @@ const recordingService = {
   },
   connect: async () => ({
     status: "target-selection" as const,
-    targets: prerecord ? [previewTarget] : [],
+    targets: prerecord || populatedHome ? [previewTarget] : [],
   }),
   presentTargets: async () =>
-    prerecord
+    prerecord || populatedHome
       ? [{ ...previewTarget, name: "Checkout browser", detail: "Managed browser · Ready" }]
       : [],
   inspect: async () =>
@@ -259,7 +262,7 @@ function fixtureRun(index: number): ProductRunSummary {
 const largeRuns = Array.from({ length: 240 }, (_, index) => fixtureRun(index));
 const catalogService: CatalogProductService = {
   listTests: async () =>
-    fixture === "apps-list"
+    fixture === "apps-list" || populatedHome
       ? [
           {
             id: "test-checkout",
@@ -275,7 +278,11 @@ const catalogService: CatalogProductService = {
       : [],
   getTest: async () => undefined,
   listRuns: async () =>
-    fixture === "runs-large" ? largeRuns : fixture === "apps-list" ? [fixtureRun(0)] : [],
+    fixture === "runs-large"
+      ? largeRuns
+      : fixture === "apps-list" || populatedHome
+        ? [fixtureRun(0), fixtureRun(1), fixtureRun(2)]
+        : [],
   getRun: async () => undefined,
 };
 const mapService: MapProductService = {

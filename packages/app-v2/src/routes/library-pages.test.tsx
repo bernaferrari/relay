@@ -248,8 +248,8 @@ describe("Tests workspace", () => {
     expect(document.body.textContent).not.toContain("app-shop-internal");
     expect(document.body.textContent).not.toContain("test-language-internal");
     expect(document.querySelectorAll("select")).toHaveLength(0);
-    expect(document.querySelectorAll(".relay-select-trigger")).toHaveLength(2);
-    expect(document.querySelector(".relay-library-search-control svg")).not.toBeNull();
+    expect(document.querySelectorAll('[data-slot="select-trigger"]')).toHaveLength(2);
+    expect(document.querySelector('[data-slot="library-search-control"] svg')).not.toBeNull();
 
     const search = document.querySelector<HTMLInputElement>("#test-search")!;
     search.focus();
@@ -328,7 +328,7 @@ describe("Runs workspace", () => {
     expect(document.body.textContent).not.toContain("run-passed-internal");
     expect(document.querySelector('a[href="/runs/run-passed-internal"]')).not.toBeNull();
     expect(document.querySelectorAll("select")).toHaveLength(0);
-    expect(document.querySelectorAll(".relay-select-trigger")).toHaveLength(1);
+    expect(document.querySelectorAll('[data-slot="select-trigger"]')).toHaveLength(1);
   });
 
   it("uses the centered shared recovery state when Runs cannot load", async () => {

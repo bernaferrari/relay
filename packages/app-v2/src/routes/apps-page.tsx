@@ -80,7 +80,7 @@ export function AppsPage() {
 
           <DialogContent
             showCloseButton={false}
-            className="relay-overlay-popup relay-dialog-popup relay-add-app-dialog"
+            className="relay-add-app-dialog"
           >
             <DialogTitle>Add an App</DialogTitle>
             <DialogDescription>

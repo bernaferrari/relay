@@ -4,6 +4,7 @@ import { Item } from "@relay/ui-react/components/item";
 import { Tabs, TabsList, TabsTrigger } from "@relay/ui-react/components/tabs";
 import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
+import { Label } from "@relay/ui-react/components/label";
 import { useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { ChevronRight } from "lucide-react";
@@ -115,9 +116,14 @@ export function RunsPage() {
         </TabsList>
       </Tabs>
 
-      <div className="relay-library-toolbar relay-library-toolbar--runs" aria-label="Filter Runs">
-        <div className="relay-library-search">
-          <label htmlFor="run-search">Search Runs</label>
+      <div
+        className="mt-3 grid gap-3 md:grid-cols-[minmax(16rem,1fr)_10rem] md:items-end"
+        aria-label="Filter Runs"
+      >
+        <div className="grid min-w-0 gap-1.5">
+          <Label htmlFor="run-search" className="text-xs font-medium text-foreground">
+            Search Runs
+          </Label>
           <Input
             id="run-search"
             type="search"

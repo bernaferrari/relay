@@ -7,8 +7,13 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@relay/ui-react/components/dialog";
-import { Badge, Disclosure } from "@relay/ui-react";
+import { Badge } from "@relay/ui-react/components/badge";
 import { Button } from "@relay/ui-react/components/button";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@relay/ui-react/components/collapsible";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useRouteContext } from "@tanstack/react-router";
 import { CircleAlert, Pencil, RefreshCcw, Square } from "lucide-react";
@@ -133,13 +138,20 @@ export function SessionPage() {
           </div>
           <div className="relay-session-actions">
             <Badge
-              variant={
+              variant={sessionBadgeVariant(
                 value.state === "failed"
                   ? "warning"
                   : isActiveSession(value)
                     ? "success"
-                    : "secondary"
-              }
+                    : "secondary",
+              )}
+              className={sessionBadgeClass(
+                value.state === "failed"
+                  ? "warning"
+                  : isActiveSession(value)
+                    ? "success"
+                    : "secondary",
+              )}
             >
               {sessionStateLabel(value.state)}
             </Badge>
@@ -176,7 +188,6 @@ export function SessionPage() {
 
                 <DialogContent
                   showCloseButton={false}
-                  className="relay-overlay-popup relay-dialog-popup"
                 >
                   <DialogTitle>End this Session?</DialogTitle>
                   <DialogDescription>
@@ -344,9 +355,11 @@ export function SessionPage() {
                   <dd>{value.take?.evidenceCount ?? 0}</dd>
                 </div>
               </dl>
-              <Disclosure.Root className="relay-session-audit">
-                <Disclosure.Trigger>Audit details</Disclosure.Trigger>
-                <Disclosure.Panel>
+              <Collapsible className="relay-session-audit">
+                <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 py-2 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
+                  Audit details
+                </CollapsibleTrigger>
+                <CollapsibleContent className="space-y-3 border-t pt-3 text-sm">
                   <dl>
                     <div>
                       <dt>App Map ID</dt>
@@ -361,8 +374,8 @@ export function SessionPage() {
                       <dd>{value.lease?.status ?? "Unavailable"}</dd>
                     </div>
                   </dl>
-                </Disclosure.Panel>
-              </Disclosure.Root>
+                </CollapsibleContent>
+              </Collapsible>
             </section>
             <section className="relay-session-activity" aria-labelledby="session-activity-title">
               <p className="relay-section-label">Activity</p>
@@ -415,4 +428,16 @@ function sessionAvailability(session: ProductSessionDetail): string {
   if (session.lease.expiresAt <= Date.now())
     return "The target lease has expired. Live control stays disabled.";
   return "The target is not available for live control.";
+}
+
+type SessionBadgeTone = "success" | "warning" | "secondary";
+
+function sessionBadgeVariant(tone: SessionBadgeTone): "default" | "secondary" {
+  return tone === "success" ? "default" : "secondary";
+}
+
+function sessionBadgeClass(tone: SessionBadgeTone): string | undefined {
+  if (tone === "success") return "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300";
+  if (tone === "warning") return "bg-amber-500/15 text-amber-700 dark:text-amber-300";
+  return undefined;
 }

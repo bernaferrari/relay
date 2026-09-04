@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { ScrollArea } from "@relay/ui-react";
+import { ScrollArea } from "@relay/ui-react/components/scroll-area";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@relay/ui-react/components/alert";
 import { Button } from "@relay/ui-react/components/button";
 import {
@@ -10,7 +10,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@relay/ui-react/components/card";
-import { Field, FieldDescription, FieldLabel } from "@relay/ui-react/components/field";
+import { Field, FieldDescription, FieldLabel, FieldTitle } from "@relay/ui-react/components/field";
 import { RadioGroup, RadioGroupItem } from "@relay/ui-react/components/radio-group";
 import { Skeleton } from "@relay/ui-react/components/skeleton";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -343,10 +343,13 @@ export function NewTestPage() {
                 ) : null}
                 <Field>
                   <div className="relay-choice-heading">
-                    <div className="relay-field-label" id="test-app-title">
+                    <FieldTitle
+                      className="text-[13px] font-semibold text-foreground"
+                      id="test-app-title"
+                    >
                       App
-                    </div>
-                    <FieldDescription>Where this Test belongs</FieldDescription>
+                    </FieldTitle>
+                    <FieldDescription className="mt-0">Where this Test belongs</FieldDescription>
                   </div>
                   {noApps ? (
                     <div className="relay-choice-empty">
@@ -365,10 +368,13 @@ export function NewTestPage() {
 
                 <Field>
                   <div className="relay-choice-heading">
-                    <div className="relay-field-label" id="test-target-title">
+                    <FieldTitle
+                      className="text-[13px] font-semibold text-foreground"
+                      id="test-target-title"
+                    >
                       Device or browser
-                    </div>
-                    <FieldDescription>Where Relay will record</FieldDescription>
+                    </FieldTitle>
+                    <FieldDescription className="mt-0">Where Relay will record</FieldDescription>
                   </div>
                   {targets.isPending ? (
                     <div className="relay-choice-group relay-choice-group--loading" role="status">

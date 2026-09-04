@@ -146,7 +146,7 @@ describe("shell overlays", () => {
     await act(async () => trigger?.click());
     await settle();
 
-    expect(document.body.textContent).toContain("Activity Center");
+    expect(document.body.textContent).toContain("Activity");
     expect(document.body.textContent).toContain("Checkout");
     expect(document.body.textContent).toContain("Verify checkout change");
     expect(document.body.textContent).toContain("Verifying");

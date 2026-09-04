@@ -7,7 +7,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@relay/ui-react/components/dialog";
-import { ScrollArea } from "@relay/ui-react";
+import { ScrollArea } from "@relay/ui-react/components/scroll-area";
 import { Field, FieldDescription, FieldLabel } from "@relay/ui-react/components/field";
 import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
@@ -323,7 +323,7 @@ function RecordingWorkspace({ workflowId, exitLink }: { workflowId: string; exit
 
             <DialogContent
               showCloseButton={false}
-              className="relay-overlay-popup relay-dialog-popup relay-checkpoint-dialog"
+              className="relay-checkpoint-dialog"
             >
               <DialogTitle>Save a checkpoint</DialogTitle>
               <DialogDescription>

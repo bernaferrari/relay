@@ -149,7 +149,7 @@ export function SuitesPage() {
 
             <DialogContent
               showCloseButton={false}
-              className="relay-overlay-popup relay-dialog-popup relay-suite-dialog"
+              className="relay-suite-dialog"
             >
               <DialogTitle>New Suite</DialogTitle>
               <DialogDescription>

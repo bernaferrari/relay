@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import type { AuthoringRawOptimizationProposalResponse } from "@relay/protocol";
-import { ScrollArea } from "@relay/ui-react";
+import { ScrollArea } from "@relay/ui-react/components/scroll-area";
 import { Checkbox } from "@relay/ui-react/components/checkbox";
 import { Button } from "@relay/ui-react/components/button";
 import { Image as ImageIcon, MoreHorizontal, Sparkles, Target } from "lucide-react";

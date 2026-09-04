@@ -127,8 +127,10 @@ export function SetupRow({
       </Item>
       {!loading && attention && checks.length > 1 ? (
         <Collapsible className="relay-setup-checks">
-          <CollapsibleTrigger>Diagnostic checks ({checks.length})</CollapsibleTrigger>
-          <CollapsibleContent>
+          <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 py-2 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
+            Diagnostic checks ({checks.length})
+          </CollapsibleTrigger>
+          <CollapsibleContent className="space-y-2 border-t pt-3 text-sm">
             <ul>
               {checks.map((check) => (
                 <li key={check.id}>

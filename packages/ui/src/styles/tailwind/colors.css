@@ -8,7 +8,10 @@
   --color-background-strong: var(--background-strong);
   --color-background-stronger: var(--background-stronger);
   --color-surface-base: var(--surface-base);
-  --color-base: var(--base);
+  /* `--color-base` collides with Tailwind's `text-base` font-size utility,
+     which shadcn uses for form controls. Keep the legacy token available
+     under an unambiguous surface name instead. */
+  --color-surface-alpha-base: var(--base);
   --color-surface-base-hover: var(--surface-base-hover);
   --color-surface-base-active: var(--surface-base-active);
   --color-surface-base-interactive-active: var(--surface-base-interactive-active);

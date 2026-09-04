@@ -1,19 +1,15 @@
 /** @jsxImportSource react */
-import {
-  Badge,
-  Disclosure,
-  Progress,
-  ProgressLabel,
-  ProgressTrack,
-  ProgressValue,
-  ScrollArea,
-  Tabs,
-  TabsIndicator,
-  TabsList,
-  TabsTrigger,
-} from "@relay/ui-react";
+import { Badge } from "@relay/ui-react/components/badge";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@relay/ui-react/components/alert";
 import { Button } from "@relay/ui-react/components/button";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@relay/ui-react/components/collapsible";
+import { Progress, ProgressLabel, ProgressValue } from "@relay/ui-react/components/progress";
+import { ScrollArea } from "@relay/ui-react/components/scroll-area";
+import { Tabs, TabsList, TabsTrigger } from "@relay/ui-react/components/tabs";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { ArrowLeft, ChevronRight, CircleAlert } from "lucide-react";
@@ -224,7 +220,6 @@ export function RunPage() {
               <ProgressValue>
                 {() => `${snapshot.progress.completed ?? 0} of ${snapshot.progress.total}`}
               </ProgressValue>
-              <ProgressTrack />
             </Progress>
           ) : null}
         </div>
@@ -316,7 +311,6 @@ function RunReport({
                 {item.label}
               </TabsTrigger>
             ))}
-            <TabsIndicator />
           </TabsList>
         </Tabs>
       ) : null}
@@ -358,7 +352,7 @@ function RunReport({
               <AlertDescription>{nextAction(report.outcome)}</AlertDescription>
               {report.category || testId ? (
                 <AlertAction>
-                  {report.category ? <Badge variant="danger">{report.category}</Badge> : null}
+                  {report.category ? <Badge variant="destructive">{report.category}</Badge> : null}
                   {testId ? (
                     <Button
                       size="sm"
@@ -371,14 +365,16 @@ function RunReport({
                   ) : null}
                 </AlertAction>
               ) : null}
-              <Disclosure.Root className="relay-causal-technical">
-                <Disclosure.Trigger>Technical details</Disclosure.Trigger>
-                <Disclosure.Panel>
+              <Collapsible className="relay-causal-technical">
+                <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 py-2 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
+                  Technical details
+                </CollapsibleTrigger>
+                <CollapsibleContent className="border-t pt-3">
                   <ScrollArea className="relay-causal-technical-scroll">
                     <pre>{failure}</pre>
                   </ScrollArea>
-                </Disclosure.Panel>
-              </Disclosure.Root>
+                </CollapsibleContent>
+              </Collapsible>
             </Alert>
           ) : null}
 
@@ -590,14 +586,16 @@ function RawEvidenceDisclosure({
   });
 
   return (
-    <Disclosure.Root
+    <Collapsible
       id="raw-evidence"
       className="relay-raw-evidence"
       open={open}
       onOpenChange={onOpenChange}
     >
-      <Disclosure.Trigger>Audit details</Disclosure.Trigger>
-      <Disclosure.Panel>
+      <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 py-2 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
+        Audit details
+      </CollapsibleTrigger>
+      <CollapsibleContent className="border-t pt-3">
         <div className="relay-raw-evidence-body">
           <div className="relay-raw-evidence-heading">
             <p>
@@ -640,7 +638,7 @@ function RawEvidenceDisclosure({
             </ScrollArea>
           ) : null}
         </div>
-      </Disclosure.Panel>
-    </Disclosure.Root>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }

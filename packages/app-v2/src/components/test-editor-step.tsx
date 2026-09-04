@@ -5,7 +5,7 @@ import type {
   AppMapTestBindingCandidate,
   AppMapTestStepPlacement,
 } from "@relay/protocol";
-import { ScrollArea } from "@relay/ui-react";
+import { ScrollArea } from "@relay/ui-react/components/scroll-area";
 import { Alert, AlertDescription, AlertTitle } from "@relay/ui-react/components/alert";
 import { Button } from "@relay/ui-react/components/button";
 import {
@@ -191,8 +191,10 @@ export function SelectedStepEditor({
         />
       ) : null}
       <Collapsible className="relay-editor-advanced">
-        <CollapsibleTrigger>Advanced</CollapsibleTrigger>
-        <CollapsibleContent>
+        <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 py-2 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
+          Advanced
+        </CollapsibleTrigger>
+        <CollapsibleContent className="space-y-3 border-t pt-3 text-sm">
           <div>
             <span>Technical details</span>
             <p className="relay-editor-advanced-help">

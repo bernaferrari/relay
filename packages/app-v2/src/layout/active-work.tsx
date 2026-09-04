@@ -7,13 +7,14 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@relay/ui-react/components/dialog";
-import { ScrollArea } from "@relay/ui-react";
+import { ScrollArea } from "@relay/ui-react/components/scroll-area";
 import { Badge } from "@relay/ui-react/components/badge";
 import { Button } from "@relay/ui-react/components/button";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter, useRouteContext } from "@tanstack/react-router";
 import {
   Activity,
+  ArrowRight,
   CircleDot,
   FlaskConical,
   GitCompareArrows,
@@ -91,16 +92,21 @@ export function ActivityCenterButton() {
   const items = useActiveWorkItems(open);
   return (
     <>
-      <button
-        type="button"
-        className="relay-activity-trigger relay-electron-no-drag"
+      <Button
+        variant="ghost"
+        size="sm"
+        className="relay-electron-no-drag ml-auto text-muted-foreground"
         onClick={() => setOpen(true)}
         aria-label={`Open Activity Center${items.length ? `, ${items.length} active` : ""}`}
       >
-        <Activity aria-hidden="true" />
+        <Activity className="size-4" aria-hidden="true" />
         <span>Activity</span>
-        {items.length ? <Badge variant="secondary">{items.length}</Badge> : null}
-      </button>
+        {items.length ? (
+          <Badge variant="secondary" className="min-w-5 px-1.5 tabular-nums">
+            {items.length}
+          </Badge>
+        ) : null}
+      </Button>
       <ActivityCenter open={open} onOpenChange={setOpen} items={items} />
     </>
   );
@@ -162,12 +168,17 @@ function ActivityCenter({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent showCloseButton={false} className="relay-overlay-popup relay-activity-center">
-        <header className="relay-activity-header">
-          <div>
-            <p className="relay-section-label">Workspace</p>
-            <DialogTitle>Activity Center</DialogTitle>
-            <DialogDescription className="relay-activity-description">
+      <DialogContent
+        showCloseButton={false}
+        className="max-h-[min(38rem,calc(100vh-2rem))] gap-0 overflow-hidden p-0 sm:max-w-md"
+      >
+        <header className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-4 border-b px-4 py-4">
+          <div className="min-w-0">
+            <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              Workspace
+            </p>
+            <DialogTitle className="mt-1.5">Activity</DialogTitle>
+            <DialogDescription className="mt-1.5 max-w-[42ch] leading-5">
               Recording, Runs, batches, and verification continue while you move around Relay.
             </DialogDescription>
           </div>
@@ -176,50 +187,56 @@ function ActivityCenter({
               <Button
                 size="icon-sm"
                 variant="ghost"
-                className="relay-activity-close"
                 aria-label="Close Activity Center"
               >
-                <X aria-hidden="true" />
+                <X className="size-3.5" aria-hidden="true" />
               </Button>
             }
           />
         </header>
-        <ScrollArea className="relay-activity-list">
+        <ScrollArea className="min-h-0 max-h-[min(28rem,calc(100vh-12rem))]">
           {items.length ? (
-            <div>
+            <div className="grid gap-1 p-2">
               {items.map((item) => {
                 const Icon = iconForKind[item.kind];
                 return (
-                  <button
+                  <Button
                     type="button"
-                    className="relay-activity-item"
+                    variant="ghost"
+                    className="grid h-auto min-h-16 w-full grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-3 px-2.5 py-2 text-left whitespace-normal"
                     key={item.id}
                     onClick={() => openItem(item)}
                   >
-                    <span className={`relay-activity-icon relay-activity-icon--${item.kind}`}>
-                      <Icon aria-hidden="true" />
+                    <span className="grid size-8 place-items-center rounded-lg bg-muted text-foreground">
+                      <Icon className="size-4" aria-hidden="true" />
                     </span>
-                    <span className="relay-activity-copy">
-                      <span>
+                    <span className="grid min-w-0 gap-1.5">
+                      <span className="flex min-w-0 items-center gap-2">
                         <Badge variant="secondary">{item.status}</Badge>
-                        <small>{item.detail}</small>
+                        <small className="truncate text-xs font-normal text-muted-foreground">
+                          {item.detail}
+                        </small>
                       </span>
-                      <strong>{item.title}</strong>
+                      <strong className="truncate text-sm font-medium text-foreground">
+                        {item.title}
+                      </strong>
                     </span>
-                    <span className="relay-activity-open">Open</span>
-                  </button>
+                    <ArrowRight className="size-4 text-muted-foreground" aria-hidden="true" />
+                  </Button>
                 );
               })}
             </div>
           ) : (
-            <div className="relay-activity-empty">
-              <FlaskConical aria-hidden="true" />
-              <strong>No active work</strong>
-              <p>Start a recording, Run, or Change verification and it will stay visible here.</p>
+            <div className="grid min-h-52 place-items-center content-center gap-2 px-6 py-8 text-center">
+              <FlaskConical className="size-5 text-muted-foreground" aria-hidden="true" />
+              <strong className="text-sm font-medium text-foreground">No active work</strong>
+              <p className="max-w-[34ch] text-sm leading-5 text-muted-foreground">
+                Start a recording, Run, or Change verification and it will stay visible here.
+              </p>
             </div>
           )}
         </ScrollArea>
-        <footer className="relay-activity-footer">
+        <footer className="flex justify-end border-t p-3">
           <Button
             variant="ghost"
             size="sm"

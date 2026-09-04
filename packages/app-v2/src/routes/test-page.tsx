@@ -213,11 +213,14 @@ export function TestPage() {
                   return (
                     <FieldLabel
                       key={`${target.kind}:${target.targetId}`}
-                      className="flex min-h-14 min-w-0 cursor-pointer items-center gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50"
+                      className="flex min-h-14 w-full min-w-0 cursor-pointer items-center gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50"
                     >
                       <RadioGroupItem value={target.targetId} />
                       <span className="grid min-w-0 flex-1 gap-0.5">
-                        <span className="truncate text-sm font-medium text-foreground">
+                        <span
+                          data-slot="run-target-title"
+                          className="truncate text-sm font-medium text-foreground"
+                        >
                           {label.title}
                         </span>
                         <span className="truncate text-xs leading-snug text-muted-foreground">

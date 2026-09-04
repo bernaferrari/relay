@@ -34,7 +34,7 @@ export function IssueDraftButton({ source }: { source: ProductIssueSource }) {
 
       <DialogContent
         showCloseButton={false}
-        className="relay-overlay-popup relay-dialog-popup relay-issue-draft-dialog"
+        className="relay-issue-draft-dialog"
       >
         <DialogTitle>Issue handoff</DialogTitle>
         <DialogDescription>

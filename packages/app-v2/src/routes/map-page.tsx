@@ -154,8 +154,10 @@ export function MapPage() {
             </ul>
           </section>
           <Collapsible className="relay-map-developer">
-            <CollapsibleTrigger>Edit Map · Developer Mode</CollapsibleTrigger>
-            <CollapsibleContent className="relay-map-developer-panel">
+            <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 py-2 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
+              Edit Map · Developer Mode
+            </CollapsibleTrigger>
+            <CollapsibleContent className="relay-map-developer-panel space-y-3 border-t pt-3 text-sm">
               <p>
                 Editing known screens and paths changes the saved verification source. Open this
                 mode only when you intend to review a proposal.

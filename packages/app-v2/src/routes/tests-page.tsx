@@ -4,6 +4,7 @@ import { Badge } from "@relay/ui-react/components/badge";
 import { Item } from "@relay/ui-react/components/item";
 import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
+import { Label } from "@relay/ui-react/components/label";
 import { useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { useDeferredValue, useMemo, useState } from "react";
@@ -98,12 +99,21 @@ export function TestsPage() {
         </Button>
       </header>
 
-      <div className="relay-library-toolbar" aria-label="Filter Tests">
-        <div className="relay-library-search">
-          <label htmlFor="test-search">Search Tests</label>
-          <div className="relay-library-search-control">
-            <Search aria-hidden="true" />
+      <div
+        className="mt-8 grid gap-3 md:grid-cols-[minmax(16rem,1fr)_10rem_11rem] md:items-end"
+        aria-label="Filter Tests"
+      >
+        <div className="grid min-w-0 gap-1.5">
+          <Label htmlFor="test-search" className="text-xs font-medium text-foreground">
+            Search Tests
+          </Label>
+          <div data-slot="library-search-control" className="relative">
+            <Search
+              className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden="true"
+            />
             <Input
+              className="pl-8"
               id="test-search"
               type="search"
               value={query}

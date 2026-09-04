@@ -110,7 +110,7 @@ export function VersionEditorDialog({
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent
         showCloseButton={false}
-        className="relay-overlay-popup relay-dialog-popup relay-resource-dialog"
+        className="relay-resource-dialog"
       >
         <DialogTitle>{editing ? "Edit version" : "Add version"}</DialogTitle>
         <DialogDescription>
@@ -261,7 +261,7 @@ export function BrowserAccountDialog({
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent
         showCloseButton={false}
-        className="relay-overlay-popup relay-dialog-popup relay-resource-dialog"
+        className="relay-resource-dialog"
       >
         <DialogTitle>{editing ? "Refresh browser sign-in" : "Save browser sign-in"}</DialogTitle>
         <DialogDescription>
@@ -340,7 +340,7 @@ export function RevokeAccountDialog({
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent
         showCloseButton={false}
-        className="relay-overlay-popup relay-dialog-popup relay-resource-dialog"
+        className="relay-resource-dialog"
       >
         <DialogTitle>Revoke browser sign-in?</DialogTitle>
         <DialogDescription>

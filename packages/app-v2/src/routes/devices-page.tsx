@@ -21,7 +21,7 @@ import {
 } from "@relay/ui-react/components/toggle-group";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate, useRouteContext } from "@tanstack/react-router";
-import { ChevronRight, Monitor, Smartphone, Tablet } from "lucide-react";
+import { ChevronDown, ChevronRight, Monitor, Smartphone, Tablet } from "lucide-react";
 import { useDeferredValue, useState } from "react";
 import { EmptyState, RecoveryState } from "../components/product-patterns";
 import {
@@ -151,17 +151,27 @@ function DeviceSection({
   );
   if (collapsed) {
     return (
-      <Collapsible className="relay-device-section relay-device-section--collapsible">
-        <CollapsibleTrigger>
-          <span>
-            <strong id={headingId}>{title}</strong>
-            <small>{description}</small>
+      <Collapsible className="overflow-hidden rounded-xl border bg-card">
+        <CollapsibleTrigger className="group flex min-h-14 w-full items-center justify-between gap-4 px-4 py-3 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
+          <span className="grid min-w-0 gap-0.5">
+            <strong id={headingId} className="text-sm font-medium text-foreground">
+              {title}
+            </strong>
+            <small className="truncate text-xs font-normal text-muted-foreground">
+              {description}
+            </small>
           </span>
-          <span className="relay-device-section-summary-end">
-            <span className="relay-device-count">{devices.length} available</span>
+          <span className="flex shrink-0 items-center gap-2">
+            <Badge variant="secondary" className="tabular-nums">
+              {devices.length} available
+            </Badge>
+            <ChevronDown
+              className="size-4 text-muted-foreground transition-transform group-data-[panel-open]:rotate-180"
+              aria-hidden="true"
+            />
           </span>
         </CollapsibleTrigger>
-        <CollapsibleContent>{content}</CollapsibleContent>
+        <CollapsibleContent className="border-t p-3">{content}</CollapsibleContent>
       </Collapsible>
     );
   }

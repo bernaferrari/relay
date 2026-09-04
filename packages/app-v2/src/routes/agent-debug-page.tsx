@@ -8,6 +8,13 @@ import {
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@relay/ui-react/components/alert";
 import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@relay/ui-react/components/select";
 import type { DebugBugOutcome } from "@relay/product/agent-debug";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useRouteContext } from "@tanstack/react-router";
@@ -31,6 +38,7 @@ export function AgentDebugPage() {
     queryFn: () => deviceService.list(),
     staleTime: 5_000,
   });
+  const readyDevices = (devices.data ?? []).filter((device) => device.runnable);
   const start = useMutation({
     mutationFn: (input: Parameters<AgentDebugProductService["debugBug"]>[0]) =>
       agentDebugService.debugBug(input),
@@ -75,7 +83,6 @@ export function AgentDebugPage() {
               </FieldLabel>
               <Input
                 id="agent-debug-title"
-                className="h-9 text-base"
                 value={title}
                 onChange={(event) => setTitle(event.currentTarget.value)}
                 placeholder="Checkout button is unreachable"
@@ -98,22 +105,29 @@ export function AgentDebugPage() {
                   Loading targets…
                 </p>
               ) : null}
-              <select
-                id="agent-debug-target"
-                className="h-9 w-full rounded-md border border-border-base bg-input-base px-3 text-base text-text-strong shadow-xs outline-none transition-[border-color,box-shadow] focus-visible:border-border-focus focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-focus"
+              <Select
+                items={readyDevices.map((device) => ({
+                  value: device.serial,
+                  label: `${device.name} · ${device.platform}`,
+                }))}
                 value={targetId}
-                onChange={(event) => setTargetId(event.currentTarget.value)}
-                required
+                onValueChange={(nextValue) => setTargetId(nextValue ?? "")}
               >
-                <option value="">Choose a ready target</option>
-                {(devices.data ?? [])
-                  .filter((device) => device.runnable)
-                  .map((device) => (
-                    <option key={device.id} value={device.serial}>
+                <SelectTrigger id="agent-debug-target" className="w-full">
+                  <SelectValue placeholder="Choose a ready target" />
+                </SelectTrigger>
+                <SelectContent alignItemWithTrigger={false}>
+                  {readyDevices.map((device) => (
+                    <SelectItem
+                      key={device.id}
+                      value={device.serial}
+                      data-value={device.serial}
+                    >
                       {device.name} · {device.platform}
-                    </option>
+                    </SelectItem>
                   ))}
-              </select>
+                </SelectContent>
+              </Select>
               <FieldDescription className="text-sm leading-5 text-text-weak">
                 Choose a ready device or browser.
               </FieldDescription>

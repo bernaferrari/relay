@@ -177,10 +177,9 @@ export function ChangePage() {
                   <DropdownMenuContent
                     sideOffset={6}
                     align="end"
-                    className="relay-overlay-popup relay-menu-popup"
                   >
                     <DropdownMenuItem
-                      className="relay-menu-item relay-menu-item--danger"
+                      variant="destructive"
                       onClick={() => mutation.mutate("cancel")}
                     >
                       Cancel verification
@@ -416,8 +415,10 @@ function RepairContext({ packet }: { packet: ProductChangeRepairPacket }) {
       ) : null}
       {packet.relevantLogs.length ? (
         <Collapsible className="relay-change-repair-logs">
-          <CollapsibleTrigger>Relevant logs ({packet.relevantLogs.length})</CollapsibleTrigger>
-          <CollapsibleContent>
+          <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 py-2 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
+            Relevant logs ({packet.relevantLogs.length})
+          </CollapsibleTrigger>
+          <CollapsibleContent className="space-y-2 border-t pt-3 text-sm">
             <ul>
               {packet.relevantLogs.map((line, index) => (
                 <li key={`${index}:${line}`}>

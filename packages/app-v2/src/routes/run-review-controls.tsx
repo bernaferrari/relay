@@ -52,8 +52,10 @@ export function RunReviewControls({
   if (!service.review && !service.compareVisual) return null;
   return (
     <Collapsible className="relay-report-review-controls">
-      <CollapsibleTrigger>Review and visual decisions</CollapsibleTrigger>
-      <CollapsibleContent>
+      <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 py-2 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
+        Review and visual decisions
+      </CollapsibleTrigger>
+      <CollapsibleContent className="space-y-3 border-t pt-3 text-sm">
         <p>
           Save a durable human decision for this Run, or compare its captured frames with the
           approved baseline.

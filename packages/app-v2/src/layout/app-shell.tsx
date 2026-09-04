@@ -7,7 +7,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@relay/ui-react/components/dialog";
-import { SidebarProvider } from "@relay/ui-react";
+import { SidebarProvider } from "@relay/ui-react/components/sidebar";
 import { Button } from "@relay/ui-react/components/button";
 import {
   Outlet,

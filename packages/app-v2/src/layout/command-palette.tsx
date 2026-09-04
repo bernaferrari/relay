@@ -7,7 +7,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@relay/ui-react/components/dialog";
-import { ScrollArea } from "@relay/ui-react";
+import { ScrollArea } from "@relay/ui-react/components/scroll-area";
 import { Input } from "@relay/ui-react/components/input";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter, useRouteContext } from "@tanstack/react-router";
@@ -181,7 +181,7 @@ export function CommandPalette({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent showCloseButton={false} className="relay-overlay-popup relay-command-palette">
+      <DialogContent showCloseButton={false} className="relay-command-palette">
         <DialogTitle className="relay-visually-hidden">Relay commands</DialogTitle>
         <DialogDescription className="relay-visually-hidden">
           Search destinations and common product actions.

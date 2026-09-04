@@ -1,5 +1,6 @@
 /** @jsxImportSource react */
 import {
+  Sidebar as SharedSidebar,
   SidebarContent as SharedSidebarContent,
   SidebarFooter,
   SidebarGroup,
@@ -8,8 +9,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarRoot,
-} from "@relay/ui-react";
+} from "@relay/ui-react/components/sidebar";
 import { Link, useLocation } from "@tanstack/react-router";
 import {
   AppWindow,
@@ -96,7 +96,7 @@ export function SidebarContent({ label = "Primary" }: { label?: string }) {
 
 export function Sidebar() {
   return (
-    <SidebarRoot className="relay-sidebar" aria-label="Relay navigation">
+    <SharedSidebar collapsible="none" className="relay-sidebar" aria-label="Relay navigation">
       <SidebarHeader className="relay-sidebar-head relay-electron-drag">
         <div className="relay-brand" aria-label="Relay">
           <span className="relay-brand-mark" aria-hidden="true" />
@@ -104,6 +104,6 @@ export function Sidebar() {
         </div>
       </SidebarHeader>
       <SidebarContent />
-    </SidebarRoot>
+    </SharedSidebar>
   );
 }

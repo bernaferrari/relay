@@ -34,17 +34,15 @@ export function SelectField({
         if (nextValue !== null) onValueChange(nextValue);
       }}
     >
-      <div className={className ?? "relay-select-field"}>
-        <Label className="relay-select-field-label relay-library-filter-label">
-          {label}
-        </Label>
-        <SelectTrigger className="relay-select-trigger">
+      <div className={`grid min-w-0 gap-1.5 ${className ?? ""}`}>
+        <Label className="text-xs font-medium text-foreground">{label}</Label>
+        <SelectTrigger className="w-full">
           <SelectValue />
         </SelectTrigger>
       </div>
-      <SelectContent sideOffset={6} alignItemWithTrigger={false} className="relay-select-popup">
+      <SelectContent sideOffset={6} alignItemWithTrigger={false}>
         {options.map((option) => (
-          <SelectItem key={option.value} value={option.value} className="relay-select-item">
+          <SelectItem key={option.value} value={option.value}>
             {option.label}
           </SelectItem>
         ))}
@@ -54,5 +52,5 @@ export function SelectField({
 }
 
 export function FilterSelect(props: Omit<Parameters<typeof SelectField>[0], "className">) {
-  return <SelectField {...props} className="relay-library-filter" />;
+  return <SelectField {...props} />;
 }

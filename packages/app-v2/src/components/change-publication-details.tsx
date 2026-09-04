@@ -71,8 +71,10 @@ export function ChangeAuditDetails({ detail }: { detail: ProductChangeDetail }) 
   const change = details.change;
   return (
     <Collapsible className="relay-change-audit">
-      <CollapsibleTrigger>Audit details</CollapsibleTrigger>
-      <CollapsibleContent>
+      <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 py-2 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
+        Audit details
+      </CollapsibleTrigger>
+      <CollapsibleContent className="space-y-3 border-t pt-3 text-sm">
         <p>Exact identities and receipts for operators and agents.</p>
         <dl>
           <div>

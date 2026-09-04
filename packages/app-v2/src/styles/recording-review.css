@@ -271,7 +271,7 @@
   gap: 14px;
 }
 
-.relay-recording-inspector .relay-field .relay-button {
+.relay-recording-inspector [data-slot="field"] .relay-button {
   width: 100%;
   margin-top: 8px;
 }

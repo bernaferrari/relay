@@ -383,7 +383,7 @@ function MapControl({
         <Icon aria-hidden="true" />
       </TooltipTrigger>
 
-      <TooltipContent sideOffset={7} className="relay-overlay-popup relay-map-tooltip">
+      <TooltipContent sideOffset={7} className="relay-map-tooltip">
         {label}
       </TooltipContent>
     </Tooltip>

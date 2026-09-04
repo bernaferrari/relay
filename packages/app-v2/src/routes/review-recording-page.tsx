@@ -490,7 +490,6 @@ export function ReviewRecordingPage() {
 
                   <DialogContent
                     showCloseButton={false}
-                    className="relay-overlay-popup relay-dialog-popup"
                   >
                     <DialogTitle>
                       Remove selected {selectedActions.length === 1 ? "action" : "actions"}?

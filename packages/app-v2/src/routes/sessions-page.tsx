@@ -1,7 +1,8 @@
 /** @jsxImportSource react */
-import { Badge, Tabs, TabsIndicator, TabsList, TabsTrigger } from "@relay/ui-react";
+import { Badge } from "@relay/ui-react/components/badge";
 import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
+import { Tabs, TabsList, TabsTrigger } from "@relay/ui-react/components/tabs";
 import { useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { ChevronRight, Monitor, Smartphone } from "lucide-react";
@@ -84,7 +85,6 @@ export function SessionsPage() {
           <TabsTrigger value="active">Active</TabsTrigger>
           <TabsTrigger value="history">History</TabsTrigger>
           <TabsTrigger value="all">All</TabsTrigger>
-          <TabsIndicator />
         </TabsList>
       </Tabs>
 
@@ -95,7 +95,6 @@ export function SessionsPage() {
         <Input
           id="session-search"
           type="search"
-          className="h-9 text-base"
           value={query}
           onChange={(event) => setQuery(event.currentTarget.value)}
           placeholder="Search by name, target, or owner"
@@ -174,12 +173,12 @@ function SessionRow({
   const Icon = session.target.platform === "browser" ? Monitor : Smartphone;
   return (
     <Link
-      className="grid min-h-[78px] cursor-pointer grid-cols-[30px_minmax(0,1fr)_18px] items-center gap-x-3 gap-y-1.5 px-3.5 py-2.5 text-text-base transition-[background-color,color] duration-150 ease-out hover:bg-surface-raised-strong-hover focus-visible:relative focus-visible:z-[1] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-text-strong md:grid-cols-[30px_minmax(190px,1fr)_minmax(112px,auto)_minmax(112px,0.34fr)_18px] md:gap-[18px]"
+      className="grid min-h-16 cursor-pointer grid-cols-[28px_minmax(0,1fr)_18px] items-center gap-x-3 gap-y-1 px-3 py-2 text-text-base transition-colors hover:bg-surface-raised-strong-hover focus-visible:relative focus-visible:z-[1] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-text-strong md:grid-cols-[28px_minmax(190px,1fr)_minmax(112px,auto)_minmax(112px,0.34fr)_18px] md:gap-4"
       to="/sessions/$sessionId"
       params={{ sessionId: session.id }}
     >
-      <span className="grid size-[30px] place-items-center rounded-md border border-border-weak-base bg-surface-base text-text-weak">
-        <Icon className="size-[15px]" aria-hidden="true" />
+      <span className="grid size-7 place-items-center rounded-md border border-border-weak-base bg-surface-base text-text-weak">
+        <Icon className="size-3.5" aria-hidden="true" />
       </span>
       <span className="grid min-w-0 gap-1">
         <strong className="truncate text-sm font-semibold text-text-strong">{session.title}</strong>
@@ -188,7 +187,12 @@ function SessionRow({
         </span>
       </span>
       <span className="col-start-2 justify-self-start md:col-auto">
-        <Badge variant={sessionVariant(session)}>{sessionStateLabel(session.state)}</Badge>
+        <Badge
+          variant={sessionBadgeVariant(sessionVariant(session))}
+          className={sessionBadgeClass(sessionVariant(session))}
+        >
+          {sessionStateLabel(session.state)}
+        </Badge>
       </span>
       <span className="col-start-2 grid min-w-0 justify-items-start gap-1 md:col-auto">
         <strong className="truncate text-xs font-semibold tabular-nums text-text-base">
@@ -228,6 +232,20 @@ function sessionVariant(
   if (session.state === "ready" || session.state === "committed") return "success";
   if (session.state === "failed" || (!session.lease && isActiveSession(session))) return "warning";
   return "secondary";
+}
+
+function sessionBadgeVariant(
+  tone: ReturnType<typeof sessionVariant>,
+): "default" | "secondary" {
+  if (tone === "success") return "default";
+  return "secondary";
+}
+
+function sessionBadgeClass(tone: ReturnType<typeof sessionVariant>): string | undefined {
+  if (tone === "success") return "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300";
+  if (tone === "warning") return "bg-amber-500/15 text-amber-700 dark:text-amber-300";
+  if (tone === "danger") return "bg-red-500/15 text-red-700 dark:text-red-300";
+  return undefined;
 }
 
 function relativeTime(value: number, now: number): string {

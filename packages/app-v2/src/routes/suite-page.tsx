@@ -397,7 +397,6 @@ export function SuitePage() {
 
               <DialogContent
                 showCloseButton={false}
-                className="relay-overlay-popup relay-dialog-popup"
               >
                 <DialogTitle>Remove {value.name}?</DialogTitle>
                 <DialogDescription>
@@ -427,7 +426,7 @@ export function SuitePage() {
           <Dialog open={editOpen} onOpenChange={setEditOpen}>
             <DialogContent
               showCloseButton={false}
-              className="relay-overlay-popup relay-dialog-popup relay-suite-dialog"
+              className="relay-suite-dialog"
             >
               <DialogTitle>Edit Suite</DialogTitle>
               <DialogDescription>
