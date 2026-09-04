@@ -8,6 +8,20 @@ import {
   formatSignedBytes,
 } from './size-report-format.mjs';
 
+export const SNAPSHOT_BRIDGE_ASSET_PATHS = Object.freeze([
+  'apple/snapshot-bridge/SnapshotBridge.m',
+  'apple/snapshot-bridge/SnapshotBridgeRuntime.m',
+  'apple/snapshot-bridge/SnapshotBridgeRuntime.h',
+]);
+
+export function assertSnapshotBridgeAssets(presentPaths, context) {
+  const present = new Set(presentPaths);
+  const missing = SNAPSHOT_BRIDGE_ASSET_PATHS.filter((assetPath) => !present.has(assetPath));
+  if (missing.length > 0) {
+    throw new Error(`${context} is missing: ${missing.join(', ')}`);
+  }
+}
+
 const PACKAGE_COMPONENTS = [
   {
     id: 'js',
@@ -26,6 +40,12 @@ const PACKAGE_COMPONENTS = [
     matches: (entryPath) =>
       entryPath === 'dist/apple/snapshot-presentation' ||
       entryPath.startsWith('dist/apple/snapshot-presentation/'),
+  },
+  {
+    id: 'apple-snapshot-bridge',
+    label: 'Apple Simulator snapshot bridge source',
+    matches: (entryPath) =>
+      entryPath === 'apple/snapshot-bridge' || entryPath.startsWith('apple/snapshot-bridge/'),
   },
   {
     id: 'macos-helper',
@@ -52,7 +72,9 @@ export function collectNpmPack(root) {
   );
   const pack = parseNpmPackOutput(stdout);
   const entries = normalizeNpmPackEntries(pack);
-  assertPublishPackageContents(entries);
+  assertPublishPackageContents(entries, {
+    requireSnapshotBridge: fs.existsSync(path.join(root, 'apple', 'snapshot-bridge')),
+  });
   return {
     filename: pack.filename,
     tarballPath: path.join(cachePath, pack.filename),
@@ -64,7 +86,7 @@ export function collectNpmPack(root) {
   };
 }
 
-export function assertPublishPackageContents(entries) {
+export function assertPublishPackageContents(entries, options = {}) {
   const paths = entries.map((entry) => entry.path);
   const requiredAssets = [
     { directory: 'android/snapshot-helper/dist/', suffix: '.apk' },
@@ -72,16 +94,26 @@ export function assertPublishPackageContents(entries) {
     { directory: 'android/ime-helper/dist/', suffix: '.apk' },
     { directory: 'android/ime-helper/dist/', suffix: '.manifest.json' },
   ];
-  const missingAssets = requiredAssets.filter(
-    (asset) =>
-      !paths.some(
-        (entryPath) => entryPath.startsWith(asset.directory) && entryPath.endsWith(asset.suffix),
-      ),
+  if (
+    options.requireSnapshotBridge ??
+    paths.some((entryPath) => entryPath.startsWith('apple/snapshot-bridge/'))
+  ) {
+    assertSnapshotBridgeAssets(
+      paths.filter((entryPath) => SNAPSHOT_BRIDGE_ASSET_PATHS.includes(entryPath)),
+      'npm pack snapshot bridge',
+    );
+  }
+  const missingAssets = requiredAssets.filter((asset) =>
+    asset.path
+      ? !paths.includes(asset.path)
+      : !paths.some(
+          (entryPath) => entryPath.startsWith(asset.directory) && entryPath.endsWith(asset.suffix),
+        ),
   );
   if (missingAssets.length > 0) {
     throw new Error(
       `npm pack is missing publish assets: ${missingAssets
-        .map((asset) => `${asset.directory}*${asset.suffix}`)
+        .map((asset) => asset.path ?? `${asset.directory}*${asset.suffix}`)
         .join(', ')}`,
     );
   }
