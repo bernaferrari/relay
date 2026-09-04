@@ -84,6 +84,7 @@ type WorkflowTransitionFence = { workflowId: string; expectedVersion: number };
 export type WorkflowTransitionInput = WorkflowTransitionFence &
   (
     | { action: "attach-run"; jobId: string }
+    | { action: "abandon-run"; reason: string }
     | { action: "cancel-run" }
     | { action: "start-authoring"; leaseId: string }
     | { action: "authoring-record"; interaction: import("./authoring.js").AuthoringInteraction }

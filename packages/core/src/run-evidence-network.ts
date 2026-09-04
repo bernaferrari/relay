@@ -45,10 +45,7 @@ export function combinedNetworkResult(
 export function capturedPacketProvenance(
   packet: AndroidEmulatorNetworkCaptureResult,
 ): CapturedPacketProvenance {
-  if (
-    packet.summary.source.kind !== "emulator-packet" ||
-    packet.summary.source.backend === "agent-device-session-log"
-  ) {
+  if (packet.summary.source.kind !== "emulator-packet") {
     throw new TypeError("managed-emulator packet result has non-packet provenance");
   }
   return {

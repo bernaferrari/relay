@@ -1,15 +1,13 @@
-import { createRelayOutcomeJobs } from "@relay/workflows/outcomes";
+import { createRelayRunOutcomeJobs } from "@relay/workflows/run-outcomes";
 import type { AuthoringTarget } from "@relay/protocol";
+import type { RelayInvokeClient } from "@relay/workflows/operation-port";
 import type {
   DurableWorkflowHandle,
-  RelayInvokeClient,
-  RelayOutcomeJobs,
-  RunTestOutcomeIntent,
   RunTestSnapshot,
   WorkflowPhase,
   WorkflowProblem,
   WorkflowSnapshot,
-} from "@relay/workflows";
+} from "@relay/workflows/types";
 import { projectError, type HumanError } from "./errors.js";
 import { routeUrls } from "./routes.js";
 
@@ -19,6 +17,8 @@ export type ProductRunAction = "start" | "inspect" | "watch" | "cancel";
 
 export type ProductRunRecovery = HumanError & {
   code: WorkflowProblem["code"] | "transport";
+  /** Stable diagnostic identity for Audit and support surfaces. */
+  sourceCode?: string;
   action?: ProductRunAction;
 };
 
@@ -55,6 +55,7 @@ export type ProductRunReport = {
   readonly title: string;
   readonly phase: Extract<WorkflowPhase, "succeeded" | "failed" | "cancelled">;
   readonly target?: AuthoringTarget;
+  readonly problems: readonly WorkflowProblem[];
   readonly evidenceRefs: readonly { readonly kind: "run"; readonly id: string }[];
   readonly navigation: {
     readonly route: string;
@@ -64,6 +65,10 @@ export type ProductRunReport = {
 
 export type ProductRunState = {
   readonly status: ProductRunStatus;
+  /** Durable continuation identity suitable for persistence across routes. */
+  readonly workflow?: DurableWorkflowHandle;
+  /** Canonical execution identities; no provider payload is retained here. */
+  readonly run?: { readonly jobId: string; readonly runId?: string };
   readonly snapshot?: ProductRunSnapshot;
   readonly report?: ProductRunReport;
   readonly recovery?: ProductRunRecovery;
@@ -97,10 +102,21 @@ export type ProductRunJourney = {
   cancel(): Promise<ProductRunState>;
 };
 
-type RunJobs = Pick<
-  RelayOutcomeJobs,
-  "run" | "inspect" | "watchWorkflow" | "cancelRun"
->;
+type RunJobs = {
+  run: (intent: import("@relay/workflows/types").RunTestOutcomeIntent) => Promise<RunTestSnapshot>;
+  inspect: (input: { workflowId: string }) => Promise<WorkflowSnapshot>;
+  watchWorkflow: (input: {
+    workflowId: string;
+    initial: WorkflowSnapshot;
+    signal?: AbortSignal;
+    onSnapshot?: (snapshot: WorkflowSnapshot) => void;
+    disconnectedRefreshMs?: number;
+    reconnectMs?: number;
+  }) => Promise<WorkflowSnapshot>;
+  cancelRun: (
+    input: import("@relay/workflows/types").CancelRunOutcomeIntent,
+  ) => Promise<RunTestSnapshot>;
+};
 
 const MAX_STRING_CHARS = 8_192;
 const MAX_PROBLEMS = 64;
@@ -111,6 +127,16 @@ function boundedString(value: string): string {
 }
 
 function copyProblem(problem: WorkflowProblem): WorkflowProblem {
+  if (problem.sourceCode === "raw-evidence-recapture-required") {
+    return {
+      code: problem.code,
+      title: "The starting screen needs a fresh capture",
+      detail: "Relay does not have enough saved screen information to run this Test safely.",
+      recovery: "Open the Test, record its starting screen again, then save it.",
+      retryable: false,
+      sourceCode: problem.sourceCode,
+    };
+  }
   return {
     code: problem.code,
     title: boundedString(problem.title),
@@ -147,16 +173,12 @@ function copySnapshot(snapshot: RunTestSnapshot): ProductRunSnapshot {
           },
         }
       : {}),
-    ...(snapshot.frozen?.target
-      ? { target: copyTarget(snapshot.frozen.target) }
-      : {}),
+    ...(snapshot.frozen?.target ? { target: copyTarget(snapshot.frozen.target) } : {}),
     ...(snapshot.execution
       ? {
           execution: {
             jobId: boundedString(snapshot.execution.jobId),
-            ...(snapshot.execution.runId
-              ? { runId: boundedString(snapshot.execution.runId) }
-              : {}),
+            ...(snapshot.execution.runId ? { runId: boundedString(snapshot.execution.runId) } : {}),
           },
         }
       : {}),
@@ -193,6 +215,12 @@ function recoveryFromError(error: unknown, action?: ProductRunAction): ProductRu
   return { ...projectError(error), code: "transport", ...(action ? { action } : {}) };
 }
 
+function isAbortError(error: unknown): boolean {
+  return Boolean(
+    error && typeof error === "object" && (error as { name?: unknown }).name === "AbortError",
+  );
+}
+
 function asRunSnapshot(snapshot: WorkflowSnapshot): RunTestSnapshot {
   if (snapshot.kind !== "run-test") {
     throw new TypeError("The durable workflow is not a Test Run.");
@@ -214,9 +242,8 @@ function reportFromSnapshot(snapshot: RunTestSnapshot): ProductRunReport | undef
     runId: id,
     title: boundedString(snapshot.title),
     phase: snapshot.phase,
-    ...(snapshot.frozen?.target
-      ? { target: copyTarget(snapshot.frozen.target) }
-      : {}),
+    ...(snapshot.frozen?.target ? { target: copyTarget(snapshot.frozen.target) } : {}),
+    problems: snapshot.problems.slice(-MAX_PROBLEMS).map(copyProblem),
     evidenceRefs: snapshot.evidenceRefs.slice(0, MAX_EVIDENCE_REFS).map((ref) => ({
       kind: "run" as const,
       id: boundedString(ref.id),
@@ -236,9 +263,12 @@ export function createProductRunJourney(input: { jobs: RunJobs }): ProductRunJou
   let current: ProductRunState = { status: "idle" };
 
   function exposedState(): ProductRunState {
+    const snapshot = current.snapshot;
     return {
       status: current.status,
-      ...(current.snapshot ? { snapshot: structuredClone(current.snapshot) } : {}),
+      ...(snapshot?.workflow ? { workflow: structuredClone(snapshot.workflow) } : {}),
+      ...(snapshot?.execution ? { run: structuredClone(snapshot.execution) } : {}),
+      ...(snapshot ? { snapshot: structuredClone(snapshot) } : {}),
       ...(current.report ? { report: structuredClone(current.report) } : {}),
       ...(current.recovery ? { recovery: { ...current.recovery } } : {}),
     };
@@ -330,6 +360,7 @@ export function createProductRunJourney(input: { jobs: RunJobs }): ProductRunJou
       if (run.version !== notifiedVersion) input.onState?.(state);
       return state;
     } catch (error) {
+      if (isAbortError(error)) return exposedState();
       return publishRecovery(error, "watch");
     }
   }
@@ -361,8 +392,6 @@ export function createProductRunJourneyFromClient(input: {
   actorId: string;
 }): ProductRunJourney {
   return createProductRunJourney({
-    jobs: createRelayOutcomeJobs(input.client, { actorId: input.actorId }),
+    jobs: createRelayRunOutcomeJobs(input.client, { actorId: input.actorId }),
   });
 }
-
-export type { RunTestOutcomeIntent };

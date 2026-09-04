@@ -155,6 +155,12 @@ export type ChangeProofExecutionHumanEvidenceInput = ChangeVerificationScope & {
   cellId: string;
   stepId: string;
   evidenceDigest: `sha256:${string}`;
+  /** Provenance is attached only when the server persisted a new attachment.
+   * Digest-only callers remain parseable for backward compatibility. */
+  source?: "legacy-digest" | "server-attachment";
+  /** Server-computed binding of the evidence digest to the exact execution
+   * scope. Never accept a caller-computed value without rechecking it. */
+  scopeDigest?: `sha256:${string}`;
   actorId: string;
   requestId: string;
   at?: number;

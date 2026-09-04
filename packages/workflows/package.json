@@ -6,6 +6,10 @@
   "exports": {
     ".": "./src/index.ts",
     "./outcomes": "./src/outcome-jobs.ts",
+    "./run-outcomes": "./src/run-outcome-jobs.ts",
+    "./operation-port": "./src/operation-port.ts",
+    "./recording-outcomes": "./src/recording-outcome-jobs.ts",
+    "./types": "./src/types.ts",
     "./testing": "./src/testing.ts"
   },
   "scripts": {

@@ -143,7 +143,7 @@ const extraGuidance: Partial<Record<OperationId, string>> = {
   "proof.run":
     " Run or resume an approved Proof through the server-owned coordinator. Relay persists progress, survives client disconnects, and returns one bounded execution summary instead of exposing campaign or job choreography.",
   "proof.run.human-evidence":
-    " Record evidence for the exact paused human-only Proof step and resume its durable execution. This requires a human actor, exact execution/cell/step identities, and an evidence digest.",
+    " Record a bounded screenshot, snapshot, or video attachment for the exact paused human-only Proof step and resume its durable execution. The server persists and hashes the attachment; a legacy evidence digest remains accepted only for already persisted evidence. This requires a human actor and exact execution/cell/step identities.",
   "proof.continue":
     " Continue one Proof with an exact version and one bounded plan action: revise the plan, request review, or return to planning.",
   "proof.cancel":

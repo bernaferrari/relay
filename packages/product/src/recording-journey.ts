@@ -3,14 +3,14 @@ import type {
   AuthoringInteraction,
   AuthoringTarget,
 } from "@relay/protocol";
-import { createRelayOutcomeJobs } from "@relay/workflows/outcomes";
+import { createRelayRecordingOutcomeJobs } from "@relay/workflows/recording-outcomes";
 import {
   type AuthorTestSnapshot,
   type DurableAuthorTestDecision,
-  type RelayInvokeClient,
   type RelayOutcomeJobs,
   type WorkflowProblem,
-} from "@relay/workflows";
+} from "@relay/workflows/types";
+import type { RelayInvokeClient } from "@relay/workflows/operation-port";
 import { projectError, type HumanError } from "./errors.js";
 
 /** Actions exposed by the Product recording journey.
@@ -343,6 +343,6 @@ export function createProductRecordingJourneyFromClient(input: {
   actorId: string;
 }): ProductRecordingJourney {
   return createProductRecordingJourney({
-    jobs: createRelayOutcomeJobs(input.client, { actorId: input.actorId }),
+    jobs: createRelayRecordingOutcomeJobs(input.client, { actorId: input.actorId }),
   });
 }

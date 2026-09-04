@@ -32,7 +32,18 @@ function semanticIntent(
     const name = [target?.label, target?.identifier, target?.text].find(
       (value): value is string => typeof value === "string" && Boolean(value.trim()),
     );
-    return name ? `Tap “${name.trim()}”` : "Tap target";
+    if (name) return `Tap “${name.trim()}”`;
+    const point = target?.point as Record<string, unknown> | undefined;
+    if (
+      point &&
+      typeof point.x === "number" &&
+      Number.isFinite(point.x) &&
+      typeof point.y === "number" &&
+      Number.isFinite(point.y)
+    ) {
+      return `Tap at ${Math.round(point.x)}, ${Math.round(point.y)}`;
+    }
+    return "Tap the captured target";
   }
   if (step.kind === "type") return "Type text";
   if (step.kind === "sleep") return `Wait ${String(step.ms ?? "")} ms`.trim();

@@ -96,6 +96,10 @@ export function snapshotFromJob(input: {
   extraProblems?: readonly WorkflowProblem[];
 }): RunTestSnapshot {
   const { frozen, job } = input;
+  // Relay persists a Run under the canonical job id. Older/provider-specific
+  // projections may also include an explicit runId, but Product navigation
+  // must not depend on that redundant field being present.
+  const runId = job.runId ?? job.id;
   const phase = jobPhase(job);
   const problems = [...(input.extraProblems ?? [])];
   if (phase === "failed") {
@@ -128,13 +132,13 @@ export function snapshotFromJob(input: {
     ...(input.workflow ? { workflow: input.workflow } : {}),
     ...(input.ref ? { ref: input.ref } : {}),
     frozen,
-    execution: { jobId: job.id, ...(job.runId ? { runId: job.runId } : {}) },
+    execution: { jobId: job.id, runId },
     progress: {
       label: progressLabel(job, phase),
       ...(typeof job.frameCount === "number" ? { completed: job.frameCount } : {}),
     },
     allowedNextActions: active ? ["inspect", "cancel"] : ["inspect"],
     problems,
-    evidenceRefs: job.runId ? [{ kind: "run", id: job.runId }] : [],
+    evidenceRefs: [{ kind: "run", id: runId }],
   };
 }

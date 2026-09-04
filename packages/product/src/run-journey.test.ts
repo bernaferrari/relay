@@ -1,10 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AuthoringTarget } from "@relay/protocol";
-import type {
-  RelayOutcomeJobs,
-  RunTestSnapshot,
-} from "@relay/workflows";
+import type { RelayOutcomeJobs, RunTestSnapshot } from "@relay/workflows/types";
 import { createProductRunJourney } from "./run-journey.js";
 
 const target: AuthoringTarget = { kind: "device", platform: "android", targetId: "pixel-9" };
@@ -30,7 +27,8 @@ function snapshot(
     },
     execution: { jobId: "job-1", runId: "run-1" },
     progress: { label: phase, completed: phase === "running" ? 2 : undefined, total: 3 },
-    allowedNextActions: phase === "queued" || phase === "running" ? ["inspect", "cancel"] : ["inspect"],
+    allowedNextActions:
+      phase === "queued" || phase === "running" ? ["inspect", "cancel"] : ["inspect"],
     problems: [],
     evidenceRefs: [{ kind: "run", id: "run-1" }],
     ...extra,
@@ -72,10 +70,16 @@ test("start adopts canonical inspection and keeps the durable Run identity", asy
   });
   let inspectedInput: unknown;
   const journey = createProductRunJourney({
-    jobs: jobsFor({ started: snapshot("queued", 7), inspected, onInspect: (input) => (inspectedInput = input) }),
+    jobs: jobsFor({
+      started: snapshot("queued", 7),
+      inspected,
+      onInspect: (input) => (inspectedInput = input),
+    }),
   });
 
   const started = await journey.start({ testId: "test-1", appMapId: "app-1", targetId: "pixel-9" });
+  assert.deepEqual(started.workflow, { workflowId: "workflow-1", expectedVersion: 7 });
+  assert.deepEqual(started.run, { jobId: "job-1", runId: "run-1" });
   assert.deepEqual(started.snapshot?.workflow, { workflowId: "workflow-1", expectedVersion: 7 });
   assert.deepEqual(started.snapshot?.execution, { jobId: "job-1", runId: "run-1" });
 
@@ -159,7 +163,35 @@ test("failed Runs preserve the server problem and transport errors become recove
   const recovered = await transport.start({ testId: "test-1" });
   assert.equal(recovered.recovery?.code, "transport");
   assert.equal(recovered.recovery?.action, "start");
-  assert.match(recovered.recovery?.recovery ?? "", /connection/i);
+  assert.equal(
+    recovered.recovery?.recovery,
+    "Start Relay at its saved address, then try again. Your work on this screen is safe.",
+  );
+  assert.doesNotMatch(JSON.stringify(recovered.recovery), /network offline/i);
+});
+
+test("compile diagnostics use public recovery language while preserving their source code", async () => {
+  const blocked = snapshot("blocked", 1, {
+    problems: [
+      {
+        code: "compile-blocked",
+        title: "The Test has 1 compile blocker",
+        detail:
+          "Start has no immutable raw accessibility tree; recapture this screen before relying on offline geometry.",
+        recovery: "Repair the reviewed Test evidence or selector, then start a new workflow.",
+        retryable: false,
+        sourceCode: "raw-evidence-recapture-required",
+      },
+    ],
+  });
+  const journey = createProductRunJourney({ jobs: jobsFor({ started: blocked }) });
+  const state = await journey.start({ testId: "test-1" });
+
+  assert.equal(state.recovery?.title, "The starting screen needs a fresh capture");
+  assert.match(state.recovery?.detail ?? "", /run this Test safely/i);
+  assert.match(state.recovery?.recovery ?? "", /record its starting screen again/i);
+  assert.equal(state.recovery?.sourceCode, "raw-evidence-recapture-required");
+  assert.doesNotMatch(JSON.stringify(state), /immutable raw accessibility|offline geometry/u);
 });
 
 test("public state does not leak compiled plans, refs, frozen internals, or raw payloads", async () => {

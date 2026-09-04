@@ -10,7 +10,10 @@ import {
   changeVerificationSelectionSchema,
 } from "./change-verification.js";
 import { verificationPlanSchema } from "./change-impact.js";
-import { changeProofPublicationReceiptSchema } from "./change-proof-decision.js";
+import {
+  agentRepairPacketSchema,
+  changeProofPublicationReceiptSchema,
+} from "./change-proof-decision.js";
 import { changeProofPublicationOutboxRecordSchema } from "./change-proof-publication-outbox.js";
 import {
   changeProofRunInputSchema,
@@ -238,6 +241,9 @@ export const changeVerificationOperationOutputSchemas = {
       publicationOutbox: z.array(changeProofPublicationOutboxRecordSchema).max(100).readonly(),
       executionPreview: changeProofExecutionPreviewSchema.optional(),
       execution: changeProofExecutionSummarySchema.optional(),
+      /** Server-derived and bounded; absent when no authoritative rejected
+       * execution exists. */
+      repairPacket: agentRepairPacketSchema.optional(),
     })
     .strict(),
   "proof.plan.approve": mutationOutputSchema,

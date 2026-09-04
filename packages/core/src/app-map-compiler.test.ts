@@ -6,6 +6,7 @@ import {
   compileAppMapConnection,
   compileAppMapFlow,
 } from "./app-map-compiler.js";
+import { validateRecipeSteps } from "./recipe-validation.js";
 
 const at = 1_000;
 const scope = { organizationId: "org-1", projectId: "project-1", appMapId: "map-1" };
@@ -150,6 +151,24 @@ test("compiles an App Map flow into frozen runner recipes and destination verifi
   assert.deepEqual(plan.connections[0]!.compiledStepRange, [1, 4]);
   assert.equal(root.stepProvenance[0]!.origin, "source");
   assert.equal(root.stepProvenance[3]!.origin, "destination");
+});
+
+test("bounds generated Recipe step ids for long authoring identities", () => {
+  const map = fixture();
+  const existing = map.connections["open-home"]!;
+  const longId = `relay-test-${"authoring-identity-".repeat(5)}step`;
+  map.connections = { [longId]: { ...existing, id: longId } };
+  map.flows.checkout!.connectionIds = [longId];
+
+  const connection = compileAppMapConnection(map, longId);
+  const flow = compileAppMapFlow(map, "checkout");
+  for (const recipe of [...Object.values(connection.recipes), ...Object.values(flow.recipes)]) {
+    assert.doesNotThrow(() => validateRecipeSteps(recipe.steps));
+    assert.equal(
+      recipe.steps.every((step) => !step.id || step.id.length <= 96),
+      true,
+    );
+  }
 });
 
 test("compiles mapped scroll navigation as a semantic reveal", () => {

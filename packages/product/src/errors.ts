@@ -9,20 +9,50 @@ export function projectError(error: unknown): HumanError {
       recovery: error.recovery,
       retryable: error.retryable,
     };
-  if (error instanceof ApiError)
+  if (error instanceof ApiError) {
+    const problem = workflowProblemFromBody(error.body);
+    if (problem)
+      return {
+        title: problem.title,
+        detail: problem.detail,
+        recovery: problem.recovery,
+        retryable: problem.retryable,
+      };
     return {
       title: "Relay could not complete that request",
-      detail: error.message,
+      detail: `Relay returned HTTP ${error.status}.`,
       recovery:
         error.status >= 500 ? "Check Relay and try again." : "Review the request and try again.",
       retryable: error.status >= 500,
     };
+  }
+  if (isLocalServiceTransportFailure(error)) {
+    return {
+      title: "Relay is not connected",
+      detail: "The app could not reach the local Relay service.",
+      recovery:
+        "Start Relay at its saved address, then try again. Your work on this screen is safe.",
+      retryable: true,
+    };
+  }
   return {
     title: "Something went wrong",
-    detail: error instanceof Error ? error.message : "Relay returned an unexpected error.",
-    recovery: "Check your connection and try again.",
-    retryable: true,
+    detail: "Relay returned an unexpected error.",
+    recovery: "Check your connection and inspect Relay status before attempting this action again.",
+    retryable: false,
   };
+}
+
+function isLocalServiceTransportFailure(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const cause =
+    "cause" in error && error.cause instanceof Error
+      ? ` ${error.cause.name} ${error.cause.message}`
+      : "";
+  const message = `${error.name} ${error.message}${cause}`;
+  return /(?:failed to fetch|fetch failed|network\s*error|network request failed|load failed|err_connection_refused|connection (?:ended|failed|refused)|econnrefused|cors|cross-origin|offline)/iu.test(
+    message,
+  );
 }
 function isWorkflowProblem(value: unknown): value is WorkflowProblem {
   return Boolean(
@@ -33,4 +63,10 @@ function isWorkflowProblem(value: unknown): value is WorkflowProblem {
     "recovery" in value &&
     "retryable" in value,
   );
+}
+
+function workflowProblemFromBody(body: unknown): WorkflowProblem | undefined {
+  if (!body || typeof body !== "object") return undefined;
+  const error = (body as { error?: unknown }).error;
+  return isWorkflowProblem(error) ? error : undefined;
 }

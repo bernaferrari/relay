@@ -8,7 +8,11 @@
     "./routes": "./src/routes.ts",
     "./features": "./src/features.ts",
     "./recording-journey": "./src/recording-journey.ts",
-    "./run-journey": "./src/run-journey.ts"
+    "./run-journey": "./src/run-journey.ts",
+    "./run-across": "./src/run-across.ts",
+    "./map-exploration": "./src/map-exploration.ts",
+    "./change-journey": "./src/change-journey.ts",
+    "./catalog": "./src/catalog.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
@@ -19,5 +23,9 @@
     "@relay/protocol": "workspace:*",
     "@relay/workflows": "workspace:*"
   },
-  "devDependencies": { "@types/node": "^26.1.2", "tsx": "^4.23.6", "typescript": "catalog:" }
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "tsx": "^4.23.6",
+    "typescript": "catalog:"
+  }
 }

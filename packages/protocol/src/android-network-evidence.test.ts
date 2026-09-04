@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  androidNetworkEvidenceSourceSchema,
   parseAndroidNetworkEvidenceSummary,
   parseAndroidPacketCaptureProvenance,
 } from "./android-network-evidence.js";
@@ -66,6 +67,45 @@ test("packet-complete Android evidence requires one closed lossless packet windo
       }),
     /cannot claim packet-complete/u,
   );
+  assert.throws(
+    () =>
+      parseAndroidNetworkEvidenceSummary({
+        ...packetSummary(),
+        rawCapture: {
+          status: "truncated",
+          artifact: { path: "network/capture.pcap", bytes: 600 },
+          bytes: 600,
+          reason: "Retention bound reached",
+        },
+      }),
+    /incomplete raw packet retention/u,
+  );
+});
+
+test("source provenance rejects impossible backend and kind combinations", () => {
+  assert.deepEqual(
+    androidNetworkEvidenceSourceSchema.parse({
+      kind: "app-session-log",
+      backend: "agent-device-session-log",
+    }),
+    { kind: "app-session-log", backend: "agent-device-session-log" },
+  );
+  assert.throws(
+    () =>
+      androidNetworkEvidenceSourceSchema.parse({
+        kind: "app-session-log",
+        backend: "android-emulator-console",
+      }),
+    /Invalid input|agent-device-session-log/u,
+  );
+  assert.throws(
+    () =>
+      androidNetworkEvidenceSourceSchema.parse({
+        kind: "emulator-packet",
+        backend: "agent-device-session-log",
+      }),
+    /Invalid input|android-emulator/u,
+  );
 });
 
 test("app-session logs can claim only opportunistic coverage", () => {
@@ -88,7 +128,7 @@ test("app-session logs can claim only opportunistic coverage", () => {
         coverage: "opportunistic",
         scope: "session-log",
       }),
-    /session-log backend/u,
+    /session-log backend|agent-device-session-log/u,
   );
 });
 
@@ -137,6 +177,16 @@ test("raw packet bytes are addressable only when capture succeeded", () => {
       }),
     );
   }
+  assert.throws(() =>
+    parseAndroidNetworkEvidenceSummary({
+      ...packetSummary(),
+      rawCapture: {
+        status: "captured",
+        artifact: { path: "network/\u0000capture.pcap", bytes: 600 },
+        bytes: 600,
+      },
+    }),
+  );
   assert.throws(
     () =>
       parseAndroidNetworkEvidenceSummary({
@@ -148,6 +198,34 @@ test("raw packet bytes are addressable only when capture succeeded", () => {
         },
       }),
     /PCAP or PCAPNG/u,
+  );
+  assert.throws(
+    () =>
+      parseAndroidNetworkEvidenceSummary({
+        ...packetSummary(),
+        rawCapture: { status: "denied", bytes: 600, reason: "Consent not granted" },
+      }),
+    /only captured or truncated raw network evidence may report bytes/u,
+  );
+  assert.throws(
+    () =>
+      parseAndroidNetworkEvidenceSummary({
+        ...packetSummary(),
+        rawCapture: { status: "failed" },
+      }),
+    /failed raw network evidence needs a reason/u,
+  );
+  assert.throws(
+    () =>
+      parseAndroidNetworkEvidenceSummary({
+        ...packetSummary(),
+        rawCapture: {
+          status: "truncated",
+          artifact: { path: "network/capture.pcap", bytes: 600 },
+          bytes: 600,
+        },
+      }),
+    /truncated raw network evidence needs a reason/u,
   );
 });
 
@@ -171,6 +249,30 @@ test("packet source, scope, attribution, and flow window stay mutually consisten
         flows: [{ ...packetSummary().flows[0], startedAtMs: 999, durationMs: 2 }],
       }),
     /exceeds the captured Run window/u,
+  );
+  assert.throws(
+    () =>
+      parseAndroidNetworkEvidenceSummary({
+        ...packetSummary(),
+        bytesSent: 1,
+        bytesReceived: 1,
+      }),
+    /flow byte totals cannot exceed/u,
+  );
+  assert.throws(
+    () =>
+      parseAndroidNetworkEvidenceSummary({
+        ...packetSummary(),
+        source: { kind: "app-session-log", backend: "agent-device-session-log" },
+        coverage: "opportunistic",
+        scope: "target-application",
+        rawCapture: {
+          status: "captured",
+          artifact: { path: "network/capture.pcap", bytes: 600 },
+          bytes: 600,
+        },
+      }),
+    /cannot retain a raw packet artifact/u,
   );
 });
 

@@ -1,10 +1,4 @@
-import type {
-  DurableWorkflowOperationOutput,
-  OfflineTestPreflightFinding,
-  OperationInput,
-  OperationOutput,
-  WorkflowJsonValue,
-} from "@relay/protocol";
+import type { OperationInput, OperationOutput } from "@relay/protocol";
 import {
   createRelayOperationPort,
   type RelayInvokeClient,
@@ -42,18 +36,27 @@ import {
   encodeRunWorkflowRef,
   type RunWorkflowReference,
 } from "./workflow-ref.js";
-import { executionRiskPreflightProblem, isExecutionRisk } from "./execution-risk-preflight.js";
+import { executionRiskPreflightProblem } from "./execution-risk-preflight.js";
 import { invalidRefSnapshot } from "./invalid-workflow-snapshot.js";
 import {
   mutationUnknownWorkflowProblem as mutationUnknownProblem,
   unavailableWorkflowProblem as unavailableProblem,
   workflowErrorDetail as errorDetail,
 } from "./workflow-problems.js";
-type ValidCompile = {
-  plan: OperationOutput<"app-map.test.compile">["plan"];
-  preflight: OperationOutput<"app-map.test.compile">["preflight"];
-  blockers: OfflineTestPreflightFinding[];
-};
+import {
+  authoritativePreDispatch,
+  durableRunSnapshot,
+  frozenIdentity,
+  unavailableDurableRun,
+  preDispatchProblem,
+  readCompile,
+  selectBrowserTargetProfile,
+  selectDeviceTargetProfile,
+  type ValidCompile,
+  validRevision,
+  BrowserTargetProfileSelectionError,
+  DeviceTargetProfileSelectionError,
+} from "./run-workflow-support.js";
 
 function initialProblem(input: {
   intent: RunTestIntent;
@@ -77,207 +80,6 @@ function initialProblem(input: {
     problems: [input.problem],
     evidenceRefs: [],
   };
-}
-
-function validRevision(value: unknown): value is number {
-  return typeof value === "number" && Number.isInteger(value) && value >= 0;
-}
-
-function readCompile(
-  output: OperationOutput<"app-map.test.compile">,
-  identity: { appMapId: string; appMapRevision: number; testId: string },
-): ValidCompile | undefined {
-  const preflight = output.preflight;
-  if (
-    !preflight ||
-    typeof preflight !== "object" ||
-    !output.plan ||
-    typeof output.plan !== "object"
-  ) {
-    return undefined;
-  }
-  if (
-    preflight.schemaVersion !== 1 ||
-    preflight.mode !== "offline-test-preflight" ||
-    preflight.appMapId !== identity.appMapId ||
-    preflight.appMapRevision !== identity.appMapRevision ||
-    preflight.testId !== identity.testId ||
-    typeof preflight.planDigest !== "string" ||
-    !preflight.planDigest ||
-    !preflight.summary ||
-    !validRevision(preflight.summary.blockers) ||
-    !isExecutionRisk(preflight.executionRisk) ||
-    !Array.isArray(preflight.findings)
-  ) {
-    return undefined;
-  }
-  const blockers = preflight.findings.filter((finding): finding is OfflineTestPreflightFinding =>
-    Boolean(
-      finding &&
-      typeof finding === "object" &&
-      finding.severity === "blocker" &&
-      typeof finding.code === "string" &&
-      typeof finding.message === "string",
-    ),
-  );
-  if (blockers.length !== preflight.summary.blockers) return undefined;
-  return { plan: output.plan, preflight, blockers };
-}
-
-function frozenIdentity(
-  intent: RunTestIntent,
-  revision: number,
-  planDigest: string,
-  rootRecipeId?: string,
-): FrozenRunTestIdentity {
-  return {
-    appMapId: intent.appMapId,
-    appMapRevision: revision,
-    testId: intent.testId,
-    ...(rootRecipeId ? { rootRecipeId } : {}),
-    planDigest,
-    target: { ...intent.target },
-    ...(intent.startup ? { startup: { ...intent.startup } } : {}),
-    ...(intent.targetProfileId ? { targetProfileId: intent.targetProfileId } : {}),
-    ...(intent.sourceRevision ? { sourceRevision: { ...intent.sourceRevision } } : {}),
-    ...(intent.capture
-      ? { capture: { fullSurfaceScreenIds: [...intent.capture.fullSurfaceScreenIds] } }
-      : {}),
-    ...(intent.workflowRequestId ? { workflowRequestId: intent.workflowRequestId } : {}),
-  };
-}
-
-function durableRunIdentity(value: WorkflowJsonValue): FrozenRunTestIdentity | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-  const frozen = value as Record<string, WorkflowJsonValue>;
-  const target = frozen.target;
-  if (
-    typeof frozen.appMapId !== "string" ||
-    !frozen.appMapId ||
-    !validRevision(frozen.appMapRevision) ||
-    typeof frozen.testId !== "string" ||
-    !frozen.testId ||
-    typeof frozen.planDigest !== "string" ||
-    !frozen.planDigest ||
-    !target ||
-    typeof target !== "object" ||
-    Array.isArray(target)
-  ) {
-    return undefined;
-  }
-  const targetRecord = target as Record<string, WorkflowJsonValue>;
-  if (
-    (targetRecord.kind !== "device" && targetRecord.kind !== "browser") ||
-    typeof targetRecord.targetId !== "string" ||
-    !targetRecord.targetId ||
-    (targetRecord.kind === "device" &&
-      targetRecord.platform !== "android" &&
-      targetRecord.platform !== "ios")
-  ) {
-    return undefined;
-  }
-  return {
-    appMapId: frozen.appMapId,
-    appMapRevision: frozen.appMapRevision,
-    testId: frozen.testId,
-    planDigest: frozen.planDigest,
-    target:
-      targetRecord.kind === "device"
-        ? {
-            kind: "device",
-            platform: targetRecord.platform as "android" | "ios",
-            targetId: targetRecord.targetId,
-          }
-        : { kind: "browser", platform: "browser", targetId: targetRecord.targetId },
-    ...(typeof frozen.rootRecipeId === "string" && frozen.rootRecipeId
-      ? { rootRecipeId: frozen.rootRecipeId }
-      : {}),
-    ...(typeof frozen.targetProfileId === "string" && frozen.targetProfileId
-      ? { targetProfileId: frozen.targetProfileId }
-      : {}),
-    ...(typeof frozen.workflowRequestId === "string" && frozen.workflowRequestId
-      ? { workflowRequestId: frozen.workflowRequestId }
-      : {}),
-  };
-}
-
-function unavailableDurableRun(input: {
-  workflow: DurableWorkflowHandle;
-  frozen?: FrozenRunTestIdentity;
-  problem: WorkflowProblem;
-  jobId?: string;
-}): RunTestSnapshot {
-  return {
-    schemaVersion: 1,
-    kind: "run-test",
-    title: `Run ${input.frozen?.testId ?? "Test"}`,
-    phase: "needs-attention",
-    version: `workflow-v${input.workflow.expectedVersion}`,
-    workflow: input.workflow,
-    ...(input.frozen ? { frozen: input.frozen } : {}),
-    ...(input.jobId ? { execution: { jobId: input.jobId } } : {}),
-    progress: { label: input.problem.title },
-    allowedNextActions: ["inspect"],
-    problems: [input.problem],
-    evidenceRefs: [],
-  };
-}
-
-function durableRunSnapshot(output: DurableWorkflowOperationOutput): RunTestSnapshot {
-  const record = output.workflow.record;
-  const workflow = { workflowId: record.workflowId, expectedVersion: record.version };
-  const frozen = durableRunIdentity(record.frozenIdentity);
-  const job = parseCanonicalJob(output.job);
-  if (!frozen || record.kind !== "run-test") {
-    return unavailableDurableRun({
-      workflow,
-      problem: {
-        code: "malformed-response",
-        title: "Relay could not validate this Run workflow",
-        detail: "The durable workflow does not contain one valid frozen Run identity.",
-        recovery: "Inspect the server-owned workflow after repairing its canonical record.",
-        retryable: false,
-      },
-    });
-  }
-  if (!job || (record.resource?.kind === "job" && record.resource.id !== job.id)) {
-    return unavailableDurableRun({
-      workflow,
-      frozen,
-      ...(record.resource?.kind === "job" ? { jobId: record.resource.id } : {}),
-      problem: {
-        code: "mutation-outcome-unknown",
-        title: "The Run outcome still needs reconciliation",
-        detail: "Relay cannot yet prove one canonical job for this server-owned workflow.",
-        recovery: "Inspect this workflow again. Do not start or cancel another Run.",
-        retryable: false,
-      },
-    });
-  }
-  const projected = snapshotFromJob({ workflow, frozen, job });
-  if (
-    record.status === "needs-attention" ||
-    record.lastTransition === "cancel-requested" ||
-    record.lastTransition === "cancel-outcome-unknown"
-  ) {
-    return {
-      ...projected,
-      phase: "needs-attention",
-      allowedNextActions: ["inspect"],
-      progress: { label: "Run outcome needs reconciliation" },
-      problems: [
-        ...projected.problems,
-        {
-          code: "mutation-outcome-unknown",
-          title: "The last Run mutation has an uncertain outcome",
-          detail: `Relay stopped at ${record.lastTransition} and will not issue it again automatically.`,
-          recovery: "Inspect the canonical Run evidence before taking any further action.",
-          retryable: false,
-        },
-      ],
-    };
-  }
-  return projected;
 }
 
 class CanonicalRelayWorkflows implements RelayWorkflows {
@@ -476,7 +278,7 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
       return initialProblem({ intent, problem: unavailableProblem("compile the Test", error) });
     }
 
-    const checkedCompile = readCompile(compiled, {
+    let checkedCompile = readCompile(compiled, {
       appMapId: intent.appMapId,
       appMapRevision: revision,
       testId: intent.testId,
@@ -496,12 +298,107 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
       });
     }
 
-    const frozen = frozenIdentity(intent, revision, checkedCompile.preflight.planDigest);
+    let targetProfileId = intent.targetProfileId;
+    if (!targetProfileId && intent.target.kind === "browser") {
+      try {
+        targetProfileId = await selectBrowserTargetProfile(
+          this.operations,
+          checkedCompile,
+          intent.target.targetId,
+        );
+      } catch (error) {
+        return initialProblem({
+          intent,
+          compiled: checkedCompile,
+          problem:
+            error instanceof BrowserTargetProfileSelectionError
+              ? {
+                  code: "compile-blocked",
+                  title: "The browser target does not match one reviewed evidence profile",
+                  detail: error.message,
+                  recovery:
+                    "Choose the reviewed browser target, or record and replay this Test in the current browser environment.",
+                  retryable: false,
+                  sourceCode: error.sourceCode,
+                }
+              : unavailableProblem("resolve the current browser evidence profile", error),
+        });
+      }
+    } else if (!targetProfileId && intent.target.kind === "device") {
+      try {
+        targetProfileId = selectDeviceTargetProfile(checkedCompile, intent.target);
+      } catch (error) {
+        return initialProblem({
+          intent,
+          compiled: checkedCompile,
+          problem:
+            error instanceof DeviceTargetProfileSelectionError
+              ? {
+                  code: "compile-blocked",
+                  title: "The device does not match one reviewed evidence profile",
+                  detail: error.message,
+                  recovery:
+                    "Record and save this Test on the current device again, or choose a device with one matching reviewed profile.",
+                  retryable: false,
+                  sourceCode: error.sourceCode,
+                }
+              : unavailableProblem("resolve the reviewed device evidence profile", error),
+        });
+      }
+    }
+    const effectiveIntent = targetProfileId ? { ...intent, targetProfileId } : intent;
+    if (targetProfileId && targetProfileId !== intent.targetProfileId) {
+      let exactCompiled: OperationOutput<"app-map.test.compile">;
+      try {
+        exactCompiled = await this.operations.invoke("app-map.test.compile", {
+          appMapId: intent.appMapId,
+          testId: intent.testId,
+          targetProfileId,
+          ...(intent.startup?.mode === "verified-checkpoint"
+            ? { entryCheckpointScreenId: intent.startup.screenId }
+            : {}),
+          ...(intent.capture
+            ? { forceRecaptureScreenIds: [...intent.capture.fullSurfaceScreenIds] }
+            : {}),
+        });
+      } catch (error) {
+        return initialProblem({
+          intent: effectiveIntent,
+          problem: unavailableProblem("compile the Test for the selected target", error),
+        });
+      }
+      const checkedExactCompile = readCompile(exactCompiled, {
+        appMapId: intent.appMapId,
+        appMapRevision: revision,
+        testId: intent.testId,
+      });
+      if (!checkedExactCompile) {
+        return initialProblem({
+          intent: effectiveIntent,
+          problem: {
+            code: "malformed-response",
+            title: "Relay could not verify the target-scoped Test",
+            detail:
+              "The exact target compile did not match the requested App Map, Test, and frozen revision.",
+            recovery:
+              "Do not run this Test until the selected evidence profile compiles canonically.",
+            retryable: false,
+          },
+        });
+      }
+      checkedCompile = checkedExactCompile;
+    }
+
+    const provisionalFrozen = frozenIdentity(
+      effectiveIntent,
+      revision,
+      checkedCompile.preflight.planDigest,
+    );
     if (checkedCompile.blockers.length) {
       const primary = checkedCompile.blockers[0]!;
       return initialProblem({
-        intent,
-        frozen,
+        intent: effectiveIntent,
+        frozen: provisionalFrozen,
         compiled: checkedCompile,
         problem: {
           code: "compile-blocked",
@@ -520,12 +417,14 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
     );
     if (riskProblem) {
       return initialProblem({
-        intent,
-        frozen,
+        intent: effectiveIntent,
+        frozen: provisionalFrozen,
         compiled: checkedCompile,
         problem: riskProblem,
       });
     }
+
+    const frozen = frozenIdentity(effectiveIntent, revision, checkedCompile.preflight.planDigest);
 
     let durable: OperationOutput<"workflow.create"> | undefined;
     if (intent.continuation === "durable" && intent.workflowRequestId) {
@@ -573,7 +472,7 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
       testId: intent.testId,
       expectedRevision: revision,
       target: { ...intent.target },
-      ...(intent.targetProfileId ? { targetProfileId: intent.targetProfileId } : {}),
+      ...(targetProfileId ? { targetProfileId } : {}),
       ...(intent.startup ? { startup: { ...intent.startup } } : {}),
       ...(intent.sourceRevision ? { sourceRevision: { ...intent.sourceRevision } } : {}),
       ...(intent.capture
@@ -585,6 +484,39 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
     try {
       run = await this.operations.invoke("app-map.test.run", runInput);
     } catch (error) {
+      if (authoritativePreDispatch(error)) {
+        const problem = preDispatchProblem(error);
+        if (durable) {
+          try {
+            const abandoned = await this.operations.invoke("workflow.transition", {
+              workflowId: durable.workflow.record.workflowId,
+              expectedVersion: durable.workflow.record.version,
+              action: "abandon-run",
+              reason: problem.detail,
+            });
+            return {
+              ...durableRunSnapshot(abandoned),
+              compiled: { plan: checkedCompile.plan, preflight: checkedCompile.preflight },
+            };
+          } catch (transitionError) {
+            return {
+              ...unavailableDurableRun({
+                workflow: {
+                  workflowId: durable.workflow.record.workflowId,
+                  expectedVersion: durable.workflow.record.version,
+                },
+                frozen,
+                problem: mutationUnknownProblem(
+                  "the rejected Test run was finalized",
+                  transitionError,
+                ),
+              }),
+              compiled: { plan: checkedCompile.plan, preflight: checkedCompile.preflight },
+            };
+          }
+        }
+        return initialProblem({ intent, frozen, problem });
+      }
       if (durable) {
         return {
           ...unavailableDurableRun({
@@ -645,7 +577,7 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
     }
 
     const finalFrozen = frozenIdentity(
-      intent,
+      effectiveIntent,
       revision,
       checkedCompile.preflight.planDigest,
       identity.rootRecipeId,

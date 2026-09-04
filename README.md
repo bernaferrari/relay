@@ -254,12 +254,18 @@ For browser-only UI development, use one command:
 
 ```bash
 pnpm dev:web           # open http://localhost:3000
-pnpm dev:app           # compatibility alias
+pnpm dev:app           # React Product V2 (same browser launcher)
 ```
 
 Relay chooses an available loopback port, starts a fresh watched service that trusts exactly that
 renderer origin, and prints the URL. Set `RELAY_APP_PORT` only when you need a fixed port. It never
 falls back to a different origin without restarting the service with the matching trust boundary.
+
+The Electron shell uses the same React Product V2 renderer by default (`pnpm dev:desktop`). The
+legacy Solid shell is retained only for an explicit rollback while its deletion is completed:
+`pnpm dev:app:legacy` or `pnpm dev:desktop:legacy`. Normal desktop packaging includes only the
+React renderer; use `pnpm --filter @relay/desktop build:legacy` only when investigating a legacy
+compatibility issue.
 
 Run the normal quality gates with:
 

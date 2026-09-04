@@ -22,10 +22,15 @@ export type WatchWorkflowInput = {
   onSnapshot?: (snapshot: WorkflowSnapshot) => void;
   /** Slow canonical refresh used only while the event stream is disconnected. */
   disconnectedRefreshMs?: number;
+  /** Bounded reconciliation while connected. Some durable resources become
+   * terminal before their workflow record is advanced, so an idle event
+   * stream cannot be treated as proof that canonical state is unchanged. */
+  connectedRefreshMs?: number;
   reconnectMs?: number;
 };
 
 const DEFAULT_DISCONNECTED_REFRESH_MS = 15_000;
+const DEFAULT_CONNECTED_REFRESH_MS = 2_000;
 const DEFAULT_RECONNECT_MS = 1_000;
 
 function abortError(): DOMException {
@@ -67,8 +72,9 @@ function delay(milliseconds: number, signal: AbortSignal): Promise<void> {
 export async function watchWorkflow(input: WatchWorkflowInput): Promise<WorkflowSnapshot> {
   if (!input.workflowId.trim()) throw new TypeError("Workflow watch requires an id.");
   const disconnectedRefreshMs = input.disconnectedRefreshMs ?? DEFAULT_DISCONNECTED_REFRESH_MS;
+  const connectedRefreshMs = input.connectedRefreshMs ?? DEFAULT_CONNECTED_REFRESH_MS;
   const reconnectMs = input.reconnectMs ?? DEFAULT_RECONNECT_MS;
-  if (disconnectedRefreshMs < 1 || reconnectMs < 1) {
+  if (disconnectedRefreshMs < 1 || connectedRefreshMs < 1 || reconnectMs < 1) {
     throw new TypeError("Workflow watch intervals must be positive.");
   }
 
@@ -177,8 +183,8 @@ export async function watchWorkflow(input: WatchWorkflowInput): Promise<Workflow
         input.onSnapshot?.(current);
         continue;
       }
-      const wakeReason = await waitForWake(connected ? undefined : disconnectedRefreshMs);
-      if (wakeReason === "timeout" && !connected && !refreshRequested) refreshRequested = true;
+      const wakeReason = await waitForWake(connected ? connectedRefreshMs : disconnectedRefreshMs);
+      if (wakeReason === "timeout" && !refreshRequested) refreshRequested = true;
     }
     return current;
   } finally {

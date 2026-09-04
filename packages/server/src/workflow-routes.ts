@@ -1,15 +1,12 @@
-import { createHash } from "node:crypto";
 import type http from "node:http";
 import {
   cancelJob,
-  createDurableWorkflow,
   currentOperationContext,
   authoringSessions,
   getJob,
   listJobs,
   findRepeatCampaignsByWorkflow,
   now,
-  parseLegacyWorkflowAdoption,
   readDurableWorkflow,
   readCombineCampaign,
   projectCombineCampaign,
@@ -35,23 +32,24 @@ import {
 } from "./authoring-routes.js";
 import {
   authoringActionIsAllowed,
+  authoringIdentityAfterMutation,
   authoringIdentityFromSession,
   authoringIsTerminal,
+  authoringRecordFailureIsProven,
   reconcileAuthoring,
   type AuthoringWorkflowTransitionInput,
 } from "./workflow-authoring-reconciliation.js";
 import {
   assertRepeatWorkflowAccess,
   reconcileRepeat,
-  validateLegacyRepeatAdoption,
   type RepeatReconciliationRuntime,
 } from "./workflow-repeat-reconciliation.js";
 import {
   transitionRepeatWorkflow,
   type RepeatWorkflowTransitionInput,
 } from "./workflow-repeat-transition.js";
+import { handleWorkflowCreateRoute } from "./workflow-create-route.js";
 
-const DEFAULT_WORKFLOW_LIFETIME_MS = 24 * 60 * 60 * 1_000;
 const terminalJobStatuses = new Set([
   "ok",
   "healed",
@@ -123,21 +121,14 @@ function jsonRecord(value: WorkflowJsonValue | undefined): JsonRecord | undefine
     : undefined;
 }
 
-function scopedWorkflowId(scope: RequestContext, requestId: string): string {
-  const digest = createHash("sha256")
-    .update(scope.organizationId, "utf8")
-    .update("\0")
-    .update(scope.projectId, "utf8")
-    .update("\0")
-    .update(requestId, "utf8")
-    .digest("hex");
-  return `wf_${digest}`;
-}
-
 function artifact(job: TestJob, kind: string): Record<string, unknown> | undefined {
   return job.artifacts.find((candidate) => candidate.kind === kind)?.data as
     | Record<string, unknown>
     | undefined;
+}
+
+function workflowNotFound(): never {
+  throw new HttpError(404, "Workflow not found");
 }
 
 function runIdentityFromJob(
@@ -300,10 +291,6 @@ async function reconcileRun(
   return { workflow, ...(job ? { job } : {}) };
 }
 
-function workflowNotFound(): never {
-  throw new HttpError(404, "Workflow not found");
-}
-
 export async function handleWorkflowRoute(input: {
   method: string;
   pathname: string;
@@ -316,108 +303,15 @@ export async function handleWorkflowRoute(input: {
   const actorId = currentOperationContext()?.actorId ?? input.scope.subject;
   const at = runtime.now();
 
-  if (input.method === "POST" && input.pathname === "/workflows") {
-    const body = (await parseJsonBody(input.request)) as OperationInput<"workflow.create">;
-    const operation = currentOperationContext();
-    if (!operation) throw new HttpError(400, "Actor-aware operation context is required");
-    const adoption = body.legacyRef ? parseLegacyWorkflowAdoption(body.legacyRef) : undefined;
-    if (body.legacyRef && !adoption)
-      throw new HttpError(400, "Legacy workflow reference is invalid");
-    if (adoption && adoption.kind !== "run-test" && adoption.kind !== "repeat-test") {
-      throw new HttpError(400, "Only legacy Run and Repeat references can be adopted safely");
-    }
-    const requestIdentity = adoption?.digest ?? body.workflowId ?? operation.requestId;
-    if (!adoption && body.kind === "run-test") {
-      const frozen = body.frozenIdentity ? jsonRecord(body.frozenIdentity) : undefined;
-      if (typeof frozen?.workflowRequestId !== "string" || !frozen.workflowRequestId) {
-        throw new HttpError(400, "Run workflow request identity is missing");
-      }
-    }
-    if (!adoption && body.kind === "author-test") {
-      const frozen = body.frozenIdentity ? jsonRecord(body.frozenIdentity) : undefined;
-      if (
-        typeof frozen?.workflowRequestId !== "string" ||
-        !frozen.workflowRequestId ||
-        frozen.actorId !== actorId
-      ) {
-        throw new HttpError(400, "Authoring workflow request identity is missing or unauthorized");
-      }
-    }
-    if (!adoption && body.kind === "repeat-test") {
-      const frozen = body.frozenIdentity ? jsonRecord(body.frozenIdentity) : undefined;
-      if (
-        typeof frozen?.workflowRequestId !== "string" ||
-        !frozen.workflowRequestId ||
-        frozen.actorId !== actorId
-      ) {
-        throw new HttpError(400, "Repeat workflow request identity is missing or unauthorized");
-      }
-    }
-    if (adoption?.resource.kind === "job") {
-      const adoptedJob = runtime.getJob(adoption.resource.id);
-      assertJobAccess(input.scope, adoptedJob);
-    }
-    if (adoption?.resource.kind === "campaign") {
-      const campaign = await runtime.readRepeatCampaign(
-        input.scope.projectId,
-        adoption.resource.id,
-      );
-      const repeatIdentity = adoption.repeatIdentity;
-      if (!campaign || !repeatIdentity) workflowNotFound();
-      const legacyFrozen = validateLegacyRepeatAdoption({
-        projectId: input.scope.projectId,
-        actorId,
-        frozenIdentity: adoption.frozenIdentity,
-        campaign,
-        pilotJobId: repeatIdentity.pilotJobId,
-        selectedCaseIds: repeatIdentity.selectedCaseIds,
-      });
-      if (!legacyFrozen) workflowNotFound();
-      const target = jsonRecord(jsonRecord(legacyFrozen)?.target);
-      if (!target || typeof target.targetId !== "string") workflowNotFound();
-      await runtime.assertTargetControl(input.scope, target.targetId);
-      adoption.frozenIdentity = legacyFrozen;
-    }
-    const created = await createDurableWorkflow({
-      organizationId: input.scope.organizationId,
-      projectId: input.scope.projectId,
-      workflowId: scopedWorkflowId(input.scope, requestIdentity),
-      kind: adoption?.kind ?? body.kind!,
-      frozenIdentity: adoption?.frozenIdentity ?? body.frozenIdentity!,
-      ...(adoption ? { resource: adoption.resource, adoptedLegacyRefDigest: adoption.digest } : {}),
+  if (
+    await handleWorkflowCreateRoute({
+      ...input,
+      runtime,
       actorId,
       at,
-      expiresAt: body.expiresAt ?? at + DEFAULT_WORKFLOW_LIFETIME_MS,
-      transition: adoption ? "legacy-v1-adopted" : "created",
-    });
-    if (created.status === "conflict") {
-      recordAudit(input.scope, {
-        action: "workflow.create",
-        resource: created.current.record.workflowId,
-        result: "deny",
-      });
-      throw new HttpError(409, "Workflow request id is already bound to another intent");
-    }
-    recordAudit(input.scope, {
-      action: "workflow.create",
-      resource: created.workflow.record.workflowId,
-      result: "allow",
-    });
-    json(input.response, created.status === "created" ? 201 : 200, {
-      disposition: created.status === "created" ? "created" : "existing",
-      workflow: created.workflow,
-      ...(adoption?.resource.kind === "job"
-        ? { job: runtime.getJob(adoption.resource.id) as unknown as Record<string, unknown> }
-        : adoption?.resource.kind === "campaign"
-          ? {
-              campaign: (await runtime.projectRepeatCampaign(
-                (await runtime.readRepeatCampaign(input.scope.projectId, adoption.resource.id))!,
-              )) as unknown as Record<string, unknown>,
-            }
-          : {}),
-    });
+    })
+  )
     return true;
-  }
 
   const workflowMatch = matchPath(input.pathname, "/workflows/:workflowId");
   if (input.method === "GET" && workflowMatch) {
@@ -640,6 +534,9 @@ export async function handleWorkflowRoute(input: {
       if (body.action === "attach-run" || body.action === "cancel-run") {
         throw new HttpError(409, "This transition does not apply to Authoring");
       }
+      if (current.record.status === "terminal") {
+        throw new HttpError(409, "This Authoring workflow is already finished");
+      }
       const resource = current.record.resource;
       if (resource?.kind !== "authoring-session") {
         throw new HttpError(409, "Authoring workflow has no proven canonical session");
@@ -671,6 +568,7 @@ export async function handleWorkflowRoute(input: {
       if (reserved.status !== "updated") {
         throw new HttpError(409, "Workflow version changed before Authoring mutation");
       }
+      const recordInteraction = body.action === "authoring-record" ? body.interaction : undefined;
       let next: AuthoringSession;
       try {
         next = await runtime.transitionAuthoringSession(
@@ -686,6 +584,42 @@ export async function handleWorkflowRoute(input: {
           },
         );
       } catch (error) {
+        const failedSession = recordInteraction
+          ? await runtime.getAuthoringSession(session.id).catch(() => undefined)
+          : undefined;
+        if (
+          failedSession &&
+          recordInteraction &&
+          authoringIdentityFromSession(current.record, failedSession) &&
+          authoringRecordFailureIsProven(session, failedSession, recordInteraction)
+        ) {
+          const failed = await runtime.transitionWorkflow({
+            organizationId: input.scope.organizationId,
+            projectId: input.scope.projectId,
+            workflowId: current.record.workflowId,
+            expectedVersion: reserved.workflow.record.version,
+            actorId,
+            transition: `${body.action}-failed`,
+            status: "active",
+            resource,
+            at: runtime.now(),
+          });
+          if (failed.status !== "updated") {
+            throw new HttpError(
+              409,
+              "Authoring interaction failed but workflow reconciliation changed",
+            );
+          }
+          throw new HttpError(
+            422,
+            error instanceof Error ? error.message : "The target interaction failed",
+            {
+              code: "AUTHORING_INTERACTION_FAILED",
+              workflow: failed.workflow,
+              session: failedSession,
+            },
+          );
+        }
         await runtime.transitionWorkflow({
           organizationId: input.scope.organizationId,
           projectId: input.scope.projectId,
@@ -702,7 +636,12 @@ export async function handleWorkflowRoute(input: {
           error instanceof Error ? error.message : "Authoring mutation outcome is unknown",
         );
       }
-      if (!authoringIdentityFromSession(current.record, next)) {
+      if (
+        !authoringIdentityAfterMutation(current.record, next, {
+          action: body.action,
+          transitionVersion: reserved.workflow.record.version,
+        })
+      ) {
         throw new HttpError(409, "Authoring mutation returned a different canonical session");
       }
       const committed = await runtime.transitionWorkflow({
@@ -727,6 +666,38 @@ export async function handleWorkflowRoute(input: {
     }
     if (current.record.kind !== "run-test") {
       throw new HttpError(409, "This workflow kind is not supported yet");
+    }
+
+    if (body.action === "abandon-run") {
+      if (
+        current.record.status !== "active" ||
+        current.record.lastTransition !== "created" ||
+        current.record.resource
+      ) {
+        throw new HttpError(409, "Only an unattached Run reservation can be abandoned");
+      }
+      const abandoned = await transitionDurableWorkflow({
+        organizationId: input.scope.organizationId,
+        projectId: input.scope.projectId,
+        workflowId: current.record.workflowId,
+        expectedVersion: body.expectedVersion,
+        actorId,
+        transition: "run-abandoned",
+        status: "terminal",
+        resolution: { kind: "abandoned", reason: body.reason!, at },
+        at,
+      });
+      if (abandoned.status !== "updated")
+        throw new HttpError(409, "Workflow version changed", {
+          workflow: "current" in abandoned ? abandoned.current : undefined,
+        });
+      recordAudit(input.scope, {
+        action: "workflow.transition",
+        resource: current.record.workflowId,
+        result: "allow",
+      });
+      json(input.response, 200, { workflow: abandoned.workflow });
+      return true;
     }
 
     if (body.action === "attach-run") {

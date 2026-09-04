@@ -64,7 +64,15 @@ export type RouteDefinition = {
     | null;
   sidebar: Sidebar;
   back: "history";
-  allowedSearchKeys: readonly ("status" | "app" | "view" | "step" | "screen" | "section")[];
+  allowedSearchKeys: readonly (
+    | "status"
+    | "app"
+    | "view"
+    | "step"
+    | "screen"
+    | "path"
+    | "section"
+  )[];
   primaryAction: ContextualAction | null;
 };
 type ObjectKind = RouteDefinition["primaryObject"];
@@ -96,7 +104,7 @@ export const ROUTE_DEFINITIONS = [
   d("/apps/:appId/accounts", "/apps/:appId", "Accounts", "App", "apps", null, ["status", "view"]),
   d("/apps/:appId/map", "/apps/:appId", "Map", "Map", "apps", "explore-app", ["view", "screen"]),
   d("/tests", "/home", "Tests", "Test", "tests", "record-test", ["status", "app", "view"]),
-  d("/tests/new", "/tests", "New Test", "Test", "tests", "record-test", ["app", "view"]),
+  d("/tests/new", "/tests", "New Test", "Test", "tests", "record-test", ["app", "view", "path"]),
   d("/tests/:testId", "/tests", "Test", "Test", "tests", "run-test", ["view", "step", "screen"]),
   d("/tests/:testId/edit", "/tests/:testId", "Edit Test", "Test", "tests", "record-test", [
     "step",
@@ -105,7 +113,7 @@ export const ROUTE_DEFINITIONS = [
   d("/tests/:testId/record", "/tests/:testId", "Record Test", "Test", "tests", "record-test", [
     "screen",
   ]),
-  d("/tests/:testId/run-across", "/tests/:testId", "Run Test", "Test", "tests", "run-test", [
+  d("/tests/:testId/run-across", "/tests/:testId", "Run Across", "Test", "tests", "run-test", [
     "app",
     "view",
   ]),

@@ -53,6 +53,7 @@ import {
   type ChangeProofExecutionRunOptions,
 } from "./change-proof-execution-runner.js";
 import { publish } from "./events.js";
+import { changeProofHumanEvidenceScopeDigest } from "./change-proof-human-evidence.js";
 
 export {
   CHANGE_PROOF_EXECUTION_SCHEMA_VERSION,
@@ -124,6 +125,31 @@ async function recordHumanInterventionEvidence(
       "Human intervention evidence must be a canonical sha256 digest",
     );
   }
+  if (input.source === "server-attachment") {
+    if (!input.scopeDigest) {
+      throw new ChangeProofExecutionError(
+        "PROOF_EXECUTION_HUMAN_INTERVENTION",
+        "Server-persisted human evidence must include a scope binding",
+      );
+    }
+    const expectedScopeDigest = changeProofHumanEvidenceScopeDigest({
+      scope: {
+        organizationId: input.organizationId,
+        projectId: input.projectId,
+        proofId: input.proofId,
+        executionId: input.executionId,
+        cellId: input.cellId,
+        stepId: input.stepId,
+      },
+      evidenceDigest: input.evidenceDigest,
+    });
+    if (input.scopeDigest !== expectedScopeDigest) {
+      throw new ChangeProofExecutionError(
+        "PROOF_EXECUTION_HUMAN_INTERVENTION",
+        "Server-persisted human evidence scope binding is invalid",
+      );
+    }
+  }
   const existing = await readExecution(input, input.proofId);
   if (!existing) {
     throw new ChangeProofExecutionError(
@@ -169,6 +195,8 @@ async function recordHumanInterventionEvidence(
     recordedBy: input.actorId,
     recordedAt: at,
     requestId: input.requestId,
+    ...(input.source ? { source: input.source } : {}),
+    ...(input.scopeDigest ? { scopeDigest: input.scopeDigest } : {}),
   };
   const prior = existing.humanInterventionEvidence?.find(
     (item) => item.requestId === input.requestId,

@@ -136,6 +136,8 @@ export function recordedPauseAction(input: {
   evidenceIds?: string[];
   group?: string;
 }): AuthoringAction | undefined {
+  // Keep this constructor for compatibility with historical captured Takes;
+  // new recording sessions only create timing through explicit wait input.
   const durationMs = recordedPauseDuration(input.durationMs);
   if (durationMs === 0) return undefined;
   const actionId = `action-${randomUUID()}`;

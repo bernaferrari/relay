@@ -133,7 +133,7 @@ test("managed-emulator packet evidence brackets the Run and survives cancelled a
             if (args.includes("start")) {
               events.push("packet-start");
               await mkdir(join(avdDirectory, "console_out"), { recursive: true });
-              await writeFile(join(avdDirectory, "console_out", args.at(-1)!), emptyPcap);
+              await writeFile(args.at(-1)!, emptyPcap);
             } else {
               events.push("packet-stop");
             }
@@ -656,6 +656,45 @@ test("consent grants activate audio, crash, and network-body collectors", async 
   assert.equal(job.evidence?.channels.audio.status, "captured");
   assert.equal(job.evidence?.channels.crash.status, "captured");
   assert.equal(job.evidence?.collectionPolicy?.sensitive["network-body"]?.grantedBy, "tester");
+});
+
+test("sensitive consent events use only known manifest channels", () => {
+  const grant = { grantedAt: 1, grantedBy: "tester", reason: "contract test" };
+  const job = {
+    id: "evidence-channel-contract",
+    action: "chat-smoke",
+    platform: "android",
+    targetContext: testTarget,
+    status: "running",
+    queuedAt: 1,
+    attempts: 1,
+    logs: [],
+    steps: [],
+    frames: [],
+    glyphs: [],
+    kind: "Replay",
+    tone: "acc",
+    title: "Evidence channel contract",
+    artifacts: [],
+    resolvedInputs: {},
+    // Simulate a legacy/unknown persisted key: it must not become an
+    // arbitrary manifest channel through a type assertion.
+    evidencePolicy: {
+      schemaVersion: 1,
+      sensitive: {
+        "network-raw": grant,
+        "future-channel": grant,
+      },
+    },
+  } as unknown as TestJob;
+
+  const handle = initializeRunEvidence(job);
+  const consentEvents = handle.manifest.events.filter((item) => item.kind === "consent.granted");
+  assert.deepEqual(
+    consentEvents.map((item) => item.channel),
+    ["network"],
+  );
+  assert.equal(consentEvents[0]?.data && typeof consentEvents[0].data === "object", true);
 });
 
 test("timed-out collectors compensate when they start late", async () => {

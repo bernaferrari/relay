@@ -351,10 +351,16 @@ export const proofCommandDescriptors: readonly MappedOperationDescriptor[] = [
           description: "Exact human-only step identity",
         },
         {
+          name: "attachment",
+          type: "object",
+          required: true,
+          description:
+            "Server-persisted evidence attachment: kind, encoding (base64 or utf8), data, and capturedAt",
+        },
+        {
           name: "evidenceDigest",
           type: "sha256 digest",
-          required: true,
-          description: "Digest of the reviewed human-step evidence",
+          description: "Backward-compatible digest of evidence already persisted by the server",
         },
         {
           name: "wait",
@@ -363,9 +369,9 @@ export const proofCommandDescriptors: readonly MappedOperationDescriptor[] = [
         },
       ],
       examples: [
-        'relay proof resume-human <proof-id> --confirm --input \'{"executionId":"proof-execution:…","cellId":"…","stepId":"…","evidenceDigest":"sha256:…"}\'',
+        'relay proof resume-human <proof-id> --confirm --input \'{"executionId":"proof-execution:…","cellId":"…","stepId":"…","attachment":{"kind":"snapshot","encoding":"utf8","data":"{\\"reviewed\\":true}","capturedAt":1700000000000}}\'',
       ],
-      note: "Requires --confirm and a human actor. Every identity is checked against the durable paused execution before target control resumes.",
+      note: "Requires --confirm and a human actor. The server persists and hashes the attachment, binds it to the exact paused execution, then resumes target control. Legacy evidenceDigest input remains accepted for compatibility.",
     }),
   ),
   mapped(

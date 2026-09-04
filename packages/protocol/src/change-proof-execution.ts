@@ -6,6 +6,10 @@ const identifier = z.string().trim().min(1).max(256);
 const boundedText = z.string().trim().min(1).max(4_096);
 const timestamp = z.number().int().nonnegative();
 const sha256 = z.string().regex(/^sha256:[a-f0-9]{64}$/u);
+/** Keep human evidence small enough for the JSON operation envelope. The
+ * server's HTTP body limit remains the outer guard; this limit leaves room for
+ * the envelope and prevents a single attachment from consuming it. */
+export const CHANGE_PROOF_HUMAN_EVIDENCE_DATA_MAX_CHARS = 1_500_000;
 
 const confirmationScopeSchema = z
   .object({
@@ -150,6 +154,61 @@ export const changeProofExecutionHumanInterventionSchema = z
   })
   .strict();
 
+/** Product-safe evidence sent by a human resume action. The bytes are
+ * persisted by the server and the resulting content digest is recorded on the
+ * exact paused execution; clients never need to manufacture a digest. */
+export const changeProofExecutionHumanEvidenceAttachmentSchema = z
+  .object({
+    kind: z.enum(["screenshot", "snapshot", "video"]),
+    encoding: z.enum(["base64", "utf8"]),
+    data: z.string().min(1).max(CHANGE_PROOF_HUMAN_EVIDENCE_DATA_MAX_CHARS),
+    capturedAt: timestamp,
+    mime: z.string().trim().min(1).max(256).optional(),
+    startMs: timestamp.optional(),
+    endMs: timestamp.optional(),
+  })
+  .strict()
+  .superRefine((attachment, context) => {
+    if (attachment.kind === "screenshot" && attachment.encoding !== "base64") {
+      context.addIssue({
+        code: "custom",
+        path: ["encoding"],
+        message: "screenshots must use base64 encoding",
+      });
+    }
+    if (attachment.kind === "video" && attachment.encoding !== "base64") {
+      context.addIssue({
+        code: "custom",
+        path: ["encoding"],
+        message: "videos must use base64 encoding",
+      });
+    }
+    if (attachment.mime) {
+      const expectedPrefix =
+        attachment.kind === "screenshot"
+          ? "image/"
+          : attachment.kind === "video"
+            ? "video/"
+            : undefined;
+      if (expectedPrefix && !attachment.mime.toLowerCase().startsWith(expectedPrefix)) {
+        context.addIssue({
+          code: "custom",
+          path: ["mime"],
+          message: `must start with ${expectedPrefix} for ${attachment.kind} evidence`,
+        });
+      }
+    }
+    if (attachment.endMs !== undefined && attachment.startMs !== undefined) {
+      if (attachment.endMs <= attachment.startMs) {
+        context.addIssue({
+          code: "custom",
+          path: ["endMs"],
+          message: "must be later than startMs",
+        });
+      }
+    }
+  });
+
 /** Durable evidence boundary for one exact human-only step. The evidence
  * digest is intentionally opaque here; its identity is bound to the frozen
  * execution/cell/step and recorded by the authenticated human actor. */
@@ -164,8 +223,23 @@ export const changeProofExecutionHumanInterventionEvidenceSchema = z
     recordedBy: identifier,
     recordedAt: timestamp,
     requestId: identifier,
+    /** Server-derived provenance. Legacy digest-only callers omit this field. */
+    source: z.enum(["legacy-digest", "server-attachment"]).optional(),
+    /** Binds a server-persisted attachment to the exact proof/execution/cell/
+     * step scope. This is never accepted from a caller without server
+     * recomputation and validation. */
+    scopeDigest: sha256.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((evidence, context) => {
+    if (evidence.source === "server-attachment" && evidence.scopeDigest === undefined) {
+      context.addIssue({
+        code: "custom",
+        path: ["scopeDigest"],
+        message: "is required for server-persisted evidence",
+      });
+    }
+  });
 
 /** The intentionally small public projection of the server-owned Proof
  * coordinator. Frozen recipes/cells and provider-specific leases never cross
@@ -249,11 +323,23 @@ export const changeProofRunHumanEvidenceInputSchema = z
     executionId: identifier,
     cellId: identifier,
     stepId: identifier,
-    evidenceDigest: sha256,
+    /** Backward-compatible path for already persisted evidence. New product
+     * callers should send attachment so the server owns persistence. */
+    evidenceDigest: sha256.optional(),
+    attachment: changeProofExecutionHumanEvidenceAttachmentSchema.optional(),
     wait: z.boolean().optional(),
     confirm: z.literal(true),
   })
-  .strict();
+  .strict()
+  .superRefine((input, context) => {
+    if ((input.evidenceDigest === undefined) === (input.attachment === undefined)) {
+      context.addIssue({
+        code: "custom",
+        path: ["attachment"],
+        message: "provide exactly one of attachment or evidenceDigest",
+      });
+    }
+  });
 
 export const changeProofRunOutputSchema = z
   .object({
@@ -273,6 +359,9 @@ export type ChangeProofExecutionCancellation = z.output<
 >;
 export type ChangeProofExecutionHumanIntervention = z.output<
   typeof changeProofExecutionHumanInterventionSchema
+>;
+export type ChangeProofExecutionHumanEvidenceAttachment = z.output<
+  typeof changeProofExecutionHumanEvidenceAttachmentSchema
 >;
 export type ChangeProofExecutionHumanInterventionEvidence = z.output<
   typeof changeProofExecutionHumanInterventionEvidenceSchema

@@ -185,6 +185,45 @@ test("an existing request is reconciled and never dispatches the Run again", asy
   );
 });
 
+test("an authoritative pre-dispatch rejection terminally abandons its durable reservation", async () => {
+  const terminal = workflow(2, { status: "terminal", transition: "run-abandoned" });
+  terminal.record.resolution = {
+    kind: "abandoned",
+    reason: "TARGET_PROFILE_SELECTION_REQUIRED",
+    at: 2,
+  };
+  const scripted = createScriptedRelayClient([
+    compile(),
+    { id: "workflow.create", output: { disposition: "created", workflow: workflow(1) } },
+    {
+      id: "app-map.test.run",
+      error: Object.assign(new Error("TARGET_PROFILE_SELECTION_REQUIRED"), { status: 409 }),
+    },
+    {
+      id: "workflow.transition",
+      checkInput: (input) =>
+        assert.deepEqual(input, {
+          workflowId: "workflow-1",
+          expectedVersion: 1,
+          action: "abandon-run",
+          reason: "TARGET_PROFILE_SELECTION_REQUIRED",
+        }),
+      output: { workflow: terminal },
+    },
+  ]);
+
+  const snapshot = await createRelayWorkflows(scripted.client).start(intent());
+
+  assert.equal(snapshot.phase, "blocked");
+  assert.equal(snapshot.problems[0]?.title, "The Test run was rejected before dispatch");
+  assert.equal(snapshot.problems[0]?.retryable, false);
+  assert.deepEqual(snapshot.workflow, { workflowId: "workflow-1", expectedVersion: 2 });
+  assert.deepEqual(
+    scripted.invocations.map(({ id }) => id),
+    ["app-map.test.compile", "workflow.create", "app-map.test.run", "workflow.transition"],
+  );
+});
+
 test("a malformed post-enqueue response retains the reserved durable handle", async () => {
   const scripted = createScriptedRelayClient([
     compile(),

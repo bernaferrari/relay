@@ -26,6 +26,7 @@ export * from "./change-proof-integrity.js";
 export * from "./change-proof-decision.js";
 export * from "./change-proof-live-run.js";
 export * from "./change-proof-execution.js";
+export * from "./change-proof-human-evidence.js";
 export * from "./change-proof-confirmation.js";
 export * from "./change-proof-publication.js";
 export * from "./change-proof-publication-outbox.js";

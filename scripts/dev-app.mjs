@@ -24,10 +24,23 @@ export function allowedBrowserOriginsWith(origin, configured = "") {
   ].join(",");
 }
 
+/** Keep the preferred Relay URL trusted when an already-running renderer
+ * makes the launcher select the next port. This lets a V2 browser and a
+ * second development renderer coexist without the newer process silently
+ * breaking the first one's service access. */
+export function relayDevelopmentOrigins(preferredPort, selectedPort) {
+  return [
+    ...new Set([...relayBrowserOrigins(preferredPort), ...relayBrowserOrigins(selectedPort)]),
+  ];
+}
+
 export function relayAppPackage(args = []) {
-  const unknown = args.filter((argument) => argument !== "--v2");
+  const unknown = args.filter((argument) => argument !== "--v2" && argument !== "--legacy");
   if (unknown.length) throw new Error(`Unknown Relay app option: ${unknown[0]}`);
-  return args.includes("--v2") ? "@relay/app-v2" : "@relay/app";
+  if (args.includes("--v2") && args.includes("--legacy")) {
+    throw new Error("Choose either --v2 or --legacy, not both");
+  }
+  return args.includes("--legacy") ? "@relay/app" : "@relay/app-v2";
 }
 
 async function portAvailable(port) {
@@ -58,7 +71,7 @@ async function main() {
   const [browserUrl] = relayBrowserOrigins(port);
   const env = {
     ...process.env,
-    RELAY_ALLOWED_BROWSER_ORIGINS: relayBrowserOrigins(port).reduce(
+    RELAY_ALLOWED_BROWSER_ORIGINS: relayDevelopmentOrigins(configured, port).reduce(
       (configuredOrigins, allowedOrigin) =>
         allowedBrowserOriginsWith(allowedOrigin, configuredOrigins),
       process.env.RELAY_ALLOWED_BROWSER_ORIGINS ?? "",

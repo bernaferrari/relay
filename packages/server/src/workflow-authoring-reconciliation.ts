@@ -1,9 +1,12 @@
+import { isDeepStrictEqual } from "node:util";
 import type {
+  AuthoringInteraction,
   AuthoringSession,
   DurableWorkflowRecord,
   WorkflowJsonValue,
   WorkflowTransitionInput,
 } from "@relay/protocol";
+import { redactAuthoringRawInteraction } from "@relay/core";
 import type {
   DurableWorkflowRead,
   TransitionDurableWorkflowInput,
@@ -41,10 +44,10 @@ function sameTarget(frozen: JsonRecord, session: AuthoringSession): boolean {
   );
 }
 
-export function authoringIdentityFromSession(
+function authoringFrozenIdentityFromSession(
   record: DurableWorkflowRecord,
   session: AuthoringSession,
-): WorkflowJsonValue | undefined {
+): JsonRecord | undefined {
   if (
     record.kind !== "author-test" ||
     session.organizationId !== record.organizationId ||
@@ -57,7 +60,6 @@ export function authoringIdentityFromSession(
     session.workflowRequestId !== frozen.workflowRequestId ||
     session.actorId !== frozen.actorId ||
     session.appMapId !== frozen.appMapId ||
-    session.expectedAppMapRevision !== frozen.appMapRevision ||
     session.testName !== frozen.title ||
     session.sourceScreenId !== frozen.sourceScreenId ||
     session.pendingConnectionId !== frozen.pendingConnectionId ||
@@ -69,11 +71,84 @@ export function authoringIdentityFromSession(
   return frozen;
 }
 
+export function authoringIdentityFromSession(
+  record: DurableWorkflowRecord,
+  session: AuthoringSession,
+): WorkflowJsonValue | undefined {
+  const frozen = authoringFrozenIdentityFromSession(record, session);
+  if (!frozen) return undefined;
+  return session.expectedAppMapRevision === frozen.appMapRevision ? frozen : undefined;
+}
+
+/** A successful Authoring approval advances the App Map exactly once and then
+ * stores that new revision on the committed session. The durable workflow
+ * deliberately freezes the pre-commit revision, so post-dispatch validation
+ * must recognize this one receipt-proved identity transition without making
+ * any other frozen field mutable. */
+export function authoringIdentityAfterMutation(
+  record: DurableWorkflowRecord,
+  session: AuthoringSession,
+  mutation: { action: AuthoringWorkflowTransitionInput["action"]; transitionVersion: number },
+): WorkflowJsonValue | undefined {
+  const exact = authoringIdentityFromSession(record, session);
+  if (exact) return exact;
+  const frozen = authoringFrozenIdentityFromSession(record, session);
+  if (!frozen) return undefined;
+  const frozenRevision = frozen.appMapRevision;
+  if (
+    mutation.action !== "authoring-approve" ||
+    session.state !== "committed" ||
+    typeof frozenRevision !== "number" ||
+    !Number.isSafeInteger(frozenRevision) ||
+    session.expectedAppMapRevision !== frozenRevision + 1 ||
+    !session.committedConnectionId ||
+    !session.committedTestId ||
+    session.workflowMutation?.workflowId !== record.workflowId ||
+    session.workflowMutation.transitionVersion !== mutation.transitionVersion ||
+    session.workflowMutation.action !== mutation.action
+  ) {
+    return undefined;
+  }
+  return frozen;
+}
+
 export function authoringIsTerminal(session: AuthoringSession): boolean {
   return (
     session.state === "committed" ||
     session.state === "cancelled" ||
     session.archive?.reason === "discarded"
+  );
+}
+
+/** Prove the one recoverable failure shape emitted by recording today: the
+ * canonical session appended exactly one matching intent and its terminal
+ * `failed` outcome, without claiming that an Authoring action succeeded.
+ *
+ * This is deliberately stricter than "the session changed". Unknown outcomes,
+ * extra writes, mismatched commands, and every non-recording mutation remain
+ * fenced for inspection by the durable workflow coordinator. */
+export function authoringRecordFailureIsProven(
+  before: AuthoringSession,
+  after: AuthoringSession,
+  interaction: AuthoringInteraction,
+): boolean {
+  if (before.id !== after.id || before.state !== "recording" || after.state !== "recording") {
+    return false;
+  }
+  const beforeEvents = before.take?.rawEvents ?? [];
+  const afterEvents = after.take?.rawEvents ?? [];
+  if (afterEvents.length !== beforeEvents.length + 2) return false;
+  if (beforeEvents.some((event, index) => !isDeepStrictEqual(event, afterEvents[index]))) {
+    return false;
+  }
+  const intent = afterEvents.at(-2);
+  const outcome = afterEvents.at(-1);
+  return Boolean(
+    intent?.kind === "interaction-intent" &&
+    outcome?.kind === "interaction-outcome" &&
+    outcome.intentEventId === intent.id &&
+    outcome.outcome === "failed" &&
+    isDeepStrictEqual(intent.interaction, redactAuthoringRawInteraction(interaction)),
   );
 }
 
@@ -144,16 +219,44 @@ export async function reconcileAuthoring(
 ): Promise<{ workflow: DurableWorkflowRead; session?: AuthoringSession }> {
   let workflow = await expire(scope, runtime, input, actorId, at);
   if (workflow.record.status === "expired") return { workflow };
+  const pendingAtRead = pendingAuthoringMutation(workflow.record);
+  const matchesWorkflowIdentity = (candidate: AuthoringSession) => {
+    const terminalApproveReceiptVersion =
+      workflow.record.status === "terminal" &&
+      [
+        "authoring-approve-completed",
+        "authoring-approve-reconciled",
+        "authoring-committed",
+      ].includes(workflow.record.lastTransition) &&
+      candidate.workflowMutation?.workflowId === workflow.record.workflowId &&
+      candidate.workflowMutation.action === "authoring-approve" &&
+      candidate.workflowMutation.transitionVersion < workflow.record.version
+        ? candidate.workflowMutation.transitionVersion
+        : undefined;
+    return Boolean(
+      authoringIdentityFromSession(workflow.record, candidate) ||
+      (pendingAtRead &&
+        authoringIdentityAfterMutation(workflow.record, candidate, {
+          action: pendingAtRead.action as AuthoringWorkflowTransitionInput["action"],
+          transitionVersion: pendingAtRead.receiptVersion,
+        })) ||
+      (terminalApproveReceiptVersion !== undefined &&
+        authoringIdentityAfterMutation(workflow.record, candidate, {
+          action: "authoring-approve",
+          transitionVersion: terminalApproveReceiptVersion,
+        })),
+    );
+  };
   let session: AuthoringSession | undefined;
   if (workflow.record.resource?.kind === "authoring-session") {
     const candidate = await runtime
       .getAuthoringSession(workflow.record.resource.id)
       .catch(() => undefined);
-    if (candidate && authoringIdentityFromSession(workflow.record, candidate)) session = candidate;
+    if (candidate && matchesWorkflowIdentity(candidate)) session = candidate;
   }
   if (!session && workflow.record.resource === undefined) {
-    const matches = (await runtime.listAuthoringSessions(scope.projectId)).filter((candidate) =>
-      Boolean(authoringIdentityFromSession(workflow.record, candidate)),
+    const matches = (await runtime.listAuthoringSessions(scope.projectId)).filter(
+      matchesWorkflowIdentity,
     );
     if (matches.length === 1) {
       session = matches[0]!;

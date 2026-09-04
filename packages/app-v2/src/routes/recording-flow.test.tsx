@@ -8,11 +8,13 @@ import type {
   ProductRecordingState,
   RecordingProductService,
 } from "../data/recording-product-service";
+import type { LiveTargetSession } from "../data/live-target-session";
+import type { MapProductService } from "../data/map-product-service";
 import type { Platform } from "../platform/types";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const target = { kind: "device", platform: "ios", targetId: "ipad-pro" } as const;
+const target = { kind: "device", platform: "android", targetId: "emulator-5554" } as const;
 const roots: Root[] = [];
 
 afterEach(async () => {
@@ -73,7 +75,7 @@ function state(
                   proofStatus: "pixels-only" as const,
                   captureProof: options.replay
                     ? ("replay-proved" as const)
-                    : ("inferred-unproved" as const),
+                    : ("relay-controlled" as const),
                 },
               ],
               ...(options.replay
@@ -109,6 +111,14 @@ function fakeService(initial = state("recording", ["inspect", "record", "checkpo
       calls.push("connect");
       return { status: "target-selection", targets: [target], selectedTarget: target };
     },
+    async presentTargets(selected) {
+      calls.push("present-targets");
+      return selected.map((item) => ({
+        ...item,
+        name: "Pixel 9 Pro",
+        detail: "Android emulator · 15 · Ready",
+      }));
+    },
     async begin(input) {
       calls.push(`begin:${input.title}:${input.appMapId}:${input.targetId}`);
       current = state("recording", ["inspect", "record", "checkpoint", "stop"]);
@@ -141,6 +151,32 @@ function fakeService(initial = state("recording", ["inspect", "record", "checkpo
       current = state("committed", [], { committed: true });
       return current;
     },
+    async liveTarget(selected) {
+      let status: ReturnType<LiveTargetSession["snapshot"]> = {
+        status: "connecting",
+        target: selected,
+      };
+      const listeners = new Set<Parameters<LiveTargetSession["subscribe"]>[0]>();
+      return {
+        snapshot: () => status,
+        subscribe(listener) {
+          listeners.add(listener);
+          listener(status);
+          return () => listeners.delete(listener);
+        },
+        mount() {
+          status = { status: "streaming", target: selected, frameSequence: 1 };
+          for (const listener of listeners) listener(status);
+          return () => undefined;
+        },
+        async input(input) {
+          calls.push(`input:${input.kind}`);
+        },
+        close() {
+          status = { status: "closed", target: selected };
+        },
+      };
+    },
   };
   return { service, calls };
 }
@@ -163,6 +199,7 @@ async function renderJourney(
   path: string,
   productService: RecordingProductService,
   platform: Platform,
+  mapService?: MapProductService,
 ) {
   const history = createMemoryHistory({ initialEntries: [path] });
   const host = document.createElement("div");
@@ -171,7 +208,12 @@ async function renderJourney(
   roots.push(root);
   await act(async () => {
     root.render(
-      <RelayV2App platform={platform} history={history} productService={productService} />,
+      <RelayV2App
+        platform={platform}
+        history={history}
+        productService={productService}
+        mapService={mapService}
+      />,
     );
   });
   await settle();
@@ -201,7 +243,8 @@ async function click(element: HTMLElement) {
 
 async function fill(input: HTMLInputElement, value: string) {
   await act(async () => {
-    input.value = value;
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    setter?.call(input, value);
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
 }
@@ -215,7 +258,119 @@ async function beginRecording() {
   await click(button("Begin recording"));
 }
 
+async function interactWithLiveTarget() {
+  const canvas = document.querySelector<HTMLCanvasElement>(".relay-capture-live-target");
+  if (!canvas) throw new Error("Live target canvas not found");
+  canvas.width = 320;
+  canvas.height = 240;
+  canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 320, height: 240 }) as DOMRect;
+  canvas.setPointerCapture = () => undefined;
+  await act(async () => {
+    canvas.dispatchEvent(
+      new PointerEvent("pointerdown", { bubbles: true, pointerId: 1, clientX: 40, clientY: 50 }),
+    );
+    canvas.dispatchEvent(
+      new PointerEvent("pointerup", { bubbles: true, pointerId: 1, clientX: 40, clientY: 50 }),
+    );
+  });
+  await settle();
+  await act(async () => {
+    canvas.dispatchEvent(
+      new WheelEvent("wheel", {
+        bubbles: true,
+        cancelable: true,
+        clientX: 80,
+        clientY: 100,
+        deltaY: 30,
+      }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 160));
+  });
+  await settle();
+}
+
 describe("record, review, replay, and save", () => {
+  it("carries a verified Map path into the recording setup", async () => {
+    const fake = fakeService();
+    const mapService: MapProductService = {
+      async get(appMapId) {
+        expect(appMapId).toBe("app-1");
+        return {
+          appMapId,
+          appName: "Grok",
+          revision: 1,
+          screens: [],
+          paths: [
+            {
+              id: "settings-language",
+              label: "Open Language",
+              fromScreenId: "settings",
+              toScreenId: "language",
+              fromTitle: "Settings",
+              toTitle: "Language",
+              coveringTests: [],
+            },
+          ],
+          coverage: {
+            screenCount: 0,
+            coveredScreenCount: 0,
+            pathCount: 1,
+            coveredPathCount: 0,
+            testCount: 0,
+          },
+          pendingProposalCount: 0,
+          navigation: { route: "/apps/app-1/map", href: "/apps/app-1/map" },
+        };
+      },
+    };
+    await renderJourney(
+      "/tests/new?app=app-1&view=path&path=settings-language",
+      fake.service,
+      platformWithStorage().platform,
+      mapService,
+    );
+
+    expect(document.querySelector<HTMLInputElement>('input[name="app"]')?.checked).toBe(true);
+    expect(document.querySelector<HTMLInputElement>("#test-name")?.value).toBe(
+      "Settings to Language",
+    );
+    expect(document.body.textContent).toContain("Settings → Language");
+  });
+
+  it("selects app cards with one click and supports arrow-key radio navigation", async () => {
+    const fake = fakeService();
+    fake.service.listApps = async () => [
+      { id: "app-1", name: "Grok" },
+      { id: "app-2", name: "Relay Demo" },
+    ];
+    await renderJourney("/tests/new", fake.service, platformWithStorage().platform);
+
+    const cards = [
+      ...document.querySelectorAll<HTMLElement>(".relay-choice-group--apps .relay-radio-card"),
+    ];
+    expect(cards).toHaveLength(2);
+    await click(cards[1]!);
+
+    const appInputs = [...document.querySelectorAll<HTMLInputElement>('input[name="app"]')];
+    expect(appInputs[1]?.checked).toBe(true);
+    expect(cards[1]?.querySelector('[role="radio"]')?.getAttribute("aria-checked")).toBe("true");
+
+    const selectedRadio = cards[1]?.querySelector<HTMLElement>('[role="radio"]');
+    await act(async () => {
+      selectedRadio?.focus();
+    });
+    await settle();
+    await act(async () => {
+      selectedRadio?.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true, cancelable: true }),
+      );
+    });
+    await settle();
+
+    expect(appInputs[0]?.checked).toBe(true);
+    expect(cards[0]?.querySelector('[role="radio"]')?.getAttribute("aria-checked")).toBe("true");
+  });
+
   it("follows the full server-owned progression with one dominant review action", async () => {
     const fake = fakeService();
     const storage = platformWithStorage();
@@ -223,9 +378,13 @@ describe("record, review, replay, and save", () => {
 
     await beginRecording();
     expect(history.location.pathname).toBe("/tests/workflow-1/record");
-    expect(document.body.textContent).toContain("The capture is live");
+    expect(document.body.textContent).toContain("Relay records each supported interaction");
+    expect(document.body.textContent).toContain("Pixel 9 Pro");
+    expect(document.body.textContent).not.toContain("emulator-5554");
 
-    await click(button("Record"));
+    await interactWithLiveTarget();
+    await fill(document.querySelector<HTMLInputElement>("#live-target-text")!, "Arabic");
+    await click(button("Type"));
     await click(button("Checkpoint"));
     const checkpoint = document.querySelector<HTMLInputElement>("#checkpoint-label")!;
     await fill(checkpoint, "Language screen");
@@ -233,24 +392,30 @@ describe("record, review, replay, and save", () => {
     await click(button("Stop"));
 
     expect(history.location.pathname).toBe("/recordings/workflow-1/review");
-    expect(document.body.textContent).toContain("2 recorded steps");
+    expect(document.body.textContent).toContain("2 recorded moments");
     expect(document.body.textContent).toContain("Captured by Relay");
+    expect(document.body.textContent).toContain("replay it before saving the Test");
     expect(button("Replay recording").disabled).toBe(false);
     expect(document.body.textContent).not.toContain("Save Test");
 
     await click(button("Replay recording"));
-    expect(document.body.textContent).toContain("Replay passed");
+    expect(document.body.textContent).toContain("Ready to save");
+    expect(document.body.textContent).not.toContain("A passing replay is required before saving");
     expect(document.body.textContent).not.toContain("Replay recording");
+    expect(document.body.textContent).not.toContain("Replay again");
     expect(button("Save Test").disabled).toBe(false);
 
     await click(button("Save Test"));
     expect(document.body.textContent).toContain("Test saved");
     expect(document.body.textContent).toContain("Open Test");
+    expect(document.body.textContent).toContain("Relay verified the reviewed recording");
     expect(storage.values.has("activeRecordingWorkflowId")).toBe(false);
     expect(fake.calls).toEqual(
       expect.arrayContaining([
-        "begin:Change the app language:app-1:ipad-pro",
-        "record",
+        "begin:Change the app language:app-1:emulator-5554",
+        "input:touch",
+        "input:scroll",
+        "input:key",
         "checkpoint:Language screen",
         "stop",
         "replay",
@@ -264,9 +429,208 @@ describe("record, review, replay, and save", () => {
     const storage = platformWithStorage();
     await renderJourney("/tests/workflow-1/record", fake.service, storage.platform);
 
-    expect(document.body.textContent).toContain("The capture is live");
+    expect(document.body.textContent).toContain("Relay records each supported interaction");
     expect(fake.calls).toContain("inspect:workflow-1");
     expect(storage.values.get("activeRecordingWorkflowId")).toBe("workflow-1");
+  });
+
+  it("projects low-level capture actions as human review moments", async () => {
+    const reviewing = state("reviewing", ["inspect", "replay", "approve"], {
+      replay: "passed",
+    });
+    if (!reviewing.snapshot?.review) throw new Error("Review fixture was not created");
+    const actualProjection: ProductRecordingState = {
+      ...reviewing,
+      snapshot: {
+        ...reviewing.snapshot,
+        review: {
+          ...reviewing.snapshot.review,
+          actionCount: 5,
+          actions: [
+            {
+              id: "tap-target",
+              intent: "Tap target",
+              stepCount: 1,
+              proofStatus: "pixels-only",
+              captureProof: "replay-proved",
+            },
+            {
+              id: "tap-named-target",
+              intent: "Tap “Arabic”",
+              stepCount: 1,
+              proofStatus: "verified",
+              captureProof: "replay-proved",
+            },
+            {
+              id: "observed-state",
+              intent: "0 recorded steps",
+              stepCount: 0,
+              proofStatus: "pixels-only",
+              captureProof: "replay-proved",
+            },
+            {
+              id: "pause",
+              intent: "Recorded pause",
+              label: "Recorded pause",
+              stepCount: 1,
+              captureProof: "replay-proved",
+            },
+            {
+              id: "checkpoint",
+              intent: "Language settings visible",
+              label: "Language settings visible",
+              stepCount: 0,
+              proofStatus: "pixels-only",
+              captureProof: "replay-proved",
+            },
+          ],
+        },
+      },
+    };
+    const fake = fakeService(actualProjection);
+    const storage = platformWithStorage();
+    await renderJourney("/recordings/workflow-1/review", fake.service, storage.platform);
+
+    expect(document.body.textContent).toContain("5 recorded moments");
+    expect(document.body.textContent).toContain("Tap the highlighted target");
+    expect(document.body.textContent).toContain("Tap Arabic");
+    expect(document.body.textContent).not.toContain("Tap target");
+    expect(document.body.textContent).toContain("Screen captured");
+    expect(document.body.textContent).toContain("Pause");
+    expect(document.body.textContent).toContain("Relay waited before the next capture");
+    expect(document.body.textContent).toContain("Language settings visible");
+    expect(document.body.textContent).toContain("Checkpoint · Visual evidence");
+    expect(document.body.textContent).toContain("Verified by Relay");
+    expect(document.body.textContent).toContain("Ready to save");
+    expect(document.body.textContent).toContain("Review what Relay captured, then save the Test");
+    expect(document.body.textContent).not.toContain("0 recorded steps");
+    expect(document.body.textContent).not.toContain("Recorded pause");
+    expect(document.body.textContent).not.toContain("A passing replay is required before saving");
+    expect(document.body.textContent).not.toContain("replay it before saving the Test");
+    expect(document.body.textContent).not.toContain("Replay again");
+  });
+
+  it("keeps a failed replay calm and does not expose its internal error", async () => {
+    const reviewing = state("reviewing", ["inspect", "replay"], { replay: "failed" });
+    if (!reviewing.snapshot?.review?.latestReplay) throw new Error("Replay fixture missing");
+    const failed: ProductRecordingState = {
+      ...reviewing,
+      snapshot: {
+        ...reviewing.snapshot,
+        review: {
+          ...reviewing.snapshot.review,
+          latestReplay: {
+            ...reviewing.snapshot.review.latestReplay,
+            error: "selector app:id/language failed against raw accessibility geometry",
+          },
+        },
+      },
+    };
+    const fake = fakeService(failed);
+    await renderJourney(
+      "/recordings/workflow-1/review",
+      fake.service,
+      platformWithStorage().platform,
+    );
+
+    expect(document.body.textContent).toContain("Replay needs attention");
+    expect(document.body.textContent).toContain("Check the target, then replay it again");
+    expect(document.body.textContent).not.toContain("app:id/language");
+    expect(document.body.textContent).not.toContain("accessibility geometry");
+  });
+
+  it("never presents a retained snapshot as live while recovery is required", async () => {
+    const unavailable: ProductRecordingState = {
+      ...state("recording", ["inspect"]),
+      status: "needs-attention",
+      recovery: {
+        code: "transport",
+        title: "Relay could not inspect this recording",
+        detail: "The connection was interrupted.",
+        recovery: "Restore the connection and inspect again.",
+        retryable: true,
+      },
+    };
+    const fake = fakeService(unavailable);
+    const storage = platformWithStorage();
+    await renderJourney("/tests/workflow-1/record", fake.service, storage.platform);
+
+    expect(document.body.textContent).toContain("Restoring recording");
+    expect(document.body.textContent).not.toContain("Continue on the connected target");
+    expect(document.body.textContent).not.toContain("Relay records each supported interaction");
+    expect(button("Checkpoint").disabled).toBe(true);
+    expect(button("Stop").disabled).toBe(true);
+  });
+
+  it("does not show target choices from a failed connection", async () => {
+    const fake = fakeService();
+    fake.service.connect = async () => ({
+      status: "needs-attention",
+      targets: [target],
+      selectedTarget: target,
+      recovery: {
+        code: "transport",
+        title: "Relay could not load ready devices",
+        detail: "The connection was interrupted.",
+        recovery: "Check the connection, then try again.",
+        retryable: true,
+      },
+    });
+    await renderJourney("/tests/new", fake.service, platformWithStorage().platform);
+
+    expect(document.body.textContent).toContain("Relay could not load ready devices");
+    expect(document.body.textContent).not.toContain("Begin recording");
+    expect(document.body.textContent).not.toContain("Pixel 9 Pro");
+  });
+
+  it("does not expose retained review content or actions during recovery", async () => {
+    const unavailable: ProductRecordingState = {
+      ...state("reviewing", ["inspect", "replay", "approve"], { replay: "passed" }),
+      status: "needs-attention",
+      recovery: {
+        code: "transport",
+        title: "Relay could not inspect this recording",
+        detail: "The connection was interrupted.",
+        recovery: "Restore the connection and inspect again.",
+        retryable: true,
+      },
+    };
+    const fake = fakeService(unavailable);
+    const storage = platformWithStorage();
+    await renderJourney("/recordings/workflow-1/review", fake.service, storage.platform);
+
+    expect(document.body.textContent).toContain("Relay could not inspect this recording");
+    expect(document.body.textContent).not.toContain("2 recorded moments");
+    expect(document.body.textContent).not.toContain("Replay recording");
+    expect(document.body.textContent).not.toContain("Save Test");
+  });
+
+  it("clears a matching recovery pointer after refreshing a committed workflow", async () => {
+    const fake = fakeService(state("committed", [], { committed: true }));
+    const storage = platformWithStorage({ activeRecordingWorkflowId: "workflow-1" });
+    await renderJourney("/recordings/workflow-1/review", fake.service, storage.platform);
+
+    expect(document.body.textContent).toContain("Test saved");
+    expect(storage.values.has("activeRecordingWorkflowId")).toBe(false);
+  });
+
+  it("clears a matching recovery pointer after a recording is cancelled", async () => {
+    const fake = fakeService(state("cancelled", []));
+    const storage = platformWithStorage({ activeRecordingWorkflowId: "workflow-1" });
+    await renderJourney("/tests/workflow-1/record", fake.service, storage.platform);
+
+    expect(storage.values.has("activeRecordingWorkflowId")).toBe(false);
+  });
+
+  it("reconciles and removes a terminal pointer before blocking a new recording", async () => {
+    const fake = fakeService(state("cancelled", []));
+    const storage = platformWithStorage({ activeRecordingWorkflowId: "workflow-1" });
+    await renderJourney("/tests/new", fake.service, storage.platform);
+
+    expect(fake.calls).toContain("inspect:workflow-1");
+    expect(storage.values.has("activeRecordingWorkflowId")).toBe(false);
+    expect(document.body.textContent).toContain("Begin recording");
+    expect(document.body.textContent).not.toContain("A recording is already in progress");
   });
 
   it("blocks a second recording after Back and offers the stored pointer", async () => {
@@ -281,7 +645,50 @@ describe("record, review, replay, and save", () => {
     expect(document.body.textContent).toContain("A recording is already in progress");
     expect(document.body.textContent).not.toContain("Begin recording");
 
-    await click(button("Resume"));
+    await click(button("Open recording"));
+    expect(history.location.pathname).toBe("/tests/workflow-1/record");
+  });
+
+  it("does not discard server-owned work from an unfinished recording", async () => {
+    const fake = fakeService();
+    const storage = platformWithStorage({ activeRecordingWorkflowId: "workflow-uncertain" });
+    await renderJourney("/tests/new", fake.service, storage.platform);
+
+    expect(storage.values.get("activeRecordingWorkflowId")).toBe("workflow-uncertain");
+    expect(document.body.textContent).toContain(
+      "Continue the recording you started before creating another Test",
+    );
+    expect(document.body.textContent).toContain("Open recording");
+    expect(document.body.textContent).not.toContain("Start over");
+    expect(document.body.textContent).not.toContain("Begin recording");
+    expect(document.body.textContent).toContain("A recording is already in progress");
+  });
+
+  it("adopts uncertain server-owned work and hides the creation form", async () => {
+    const fake = fakeService();
+    fake.service.begin = async () => ({
+      ...state("recording", ["inspect"]),
+      status: "needs-attention",
+      recovery: {
+        code: "mutation-outcome-unknown",
+        title: "Relay is checking whether recording started",
+        detail: "The start response was interrupted.",
+        recovery: "Open the recording to inspect its latest saved state.",
+        retryable: true,
+      },
+    });
+    const storage = platformWithStorage();
+    const { history } = await renderJourney("/tests/new", fake.service, storage.platform);
+
+    await beginRecording();
+
+    expect(history.location.pathname).toBe("/tests/new");
+    expect(storage.values.get("activeRecordingWorkflowId")).toBe("workflow-1");
+    expect(document.body.textContent).toContain("Recording status needs review");
+    expect(document.body.textContent).toContain("Open recording");
+    expect(document.body.textContent).not.toContain("Begin recording");
+
+    await click(button("Open recording"));
     expect(history.location.pathname).toBe("/tests/workflow-1/record");
   });
 });

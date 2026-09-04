@@ -1,0 +1,343 @@
+/** @jsxImportSource react */
+import type { ProductRunSummary, ProductTestSummary } from "@relay/product/catalog";
+import { createMemoryHistory } from "@tanstack/react-router";
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, describe, expect, it } from "vitest";
+import { RelayV2App } from "../app";
+import type { CatalogProductService } from "../data/catalog-product-service";
+import type { MapProductService } from "../data/map-product-service";
+import type { RecordingProductService } from "../data/recording-product-service";
+import type { RunProductService } from "../data/run-product-service";
+import type { Platform } from "../platform/types";
+
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+const roots: Root[] = [];
+const platform: Platform = {
+  platform: "web",
+  getServerUrl: () => "http://127.0.0.1:8787",
+  storage: {
+    get: () => null,
+    set: () => undefined,
+    remove: () => undefined,
+  },
+};
+
+afterEach(async () => {
+  await act(async () => {
+    for (const root of roots.splice(0)) root.unmount();
+  });
+  document.body.replaceChildren();
+});
+
+function productRun(
+  input: Pick<ProductRunSummary, "id" | "title" | "phase" | "queuedAt"> &
+    Partial<ProductRunSummary>,
+): ProductRunSummary {
+  return {
+    action: "canonical execution action",
+    status: input.phase,
+    identity: { runId: input.id },
+    links: { self: `/runs/${input.id}` },
+    ...input,
+  };
+}
+
+const now = Date.now();
+const passedRun = productRun({
+  id: "run-passed-internal",
+  title: "Change language",
+  testName: "Change language",
+  testId: "test-language-internal",
+  appMapId: "app-shop-internal",
+  appName: "Shopping",
+  phase: "completed",
+  outcome: "passed",
+  queuedAt: now - 120_000,
+  finishedAt: now - 90_000,
+  durationMs: 2_500,
+});
+const tests: readonly ProductTestSummary[] = [
+  {
+    id: "test-language-internal",
+    name: "Change language",
+    appMapId: "app-shop-internal",
+    appName: "Shopping",
+    stepCount: 3,
+    status: "ready",
+    updatedAt: now - 100_000,
+    href: "/tests/test-language-internal",
+    recentRun: passedRun,
+  },
+  {
+    id: "test-checkout-internal",
+    name: "Complete checkout",
+    appMapId: "app-shop-internal",
+    appName: "Shopping",
+    stepCount: 5,
+    status: "needs-review",
+    updatedAt: now - 80_000,
+    href: "/tests/test-checkout-internal",
+  },
+];
+const runs: readonly ProductRunSummary[] = [
+  productRun({
+    id: "run-older-internal",
+    title: "Change language",
+    testName: "Change language",
+    testId: "test-language-internal",
+    appMapId: "app-shop-internal",
+    appName: "Shopping",
+    phase: "failed",
+    outcome: "product-failure",
+    queuedAt: now - 240_000,
+  }),
+  passedRun,
+  productRun({
+    id: "run-review-internal",
+    title: "Complete checkout",
+    testName: "Complete checkout",
+    testId: "test-checkout-internal",
+    appMapId: "app-shop-internal",
+    appName: "Shopping",
+    targetName: "Pixel 9",
+    phase: "completed",
+    outcome: "uncertain",
+    queuedAt: now - 60_000,
+  }),
+  productRun({
+    id: "run-active-internal",
+    title: "Open account",
+    testName: "Open account",
+    testId: "test-account-internal",
+    appMapId: "app-bank-internal",
+    appName: "Banking",
+    phase: "running",
+    queuedAt: now - 30_000,
+  }),
+];
+
+function catalog(overrides: Partial<CatalogProductService> = {}): CatalogProductService {
+  return {
+    listTests: async () => tests,
+    getTest: async () => undefined,
+    listRuns: async () => runs,
+    getRun: async () => undefined,
+    ...overrides,
+  };
+}
+
+async function render(path: string, service = catalog(), mapService?: MapProductService) {
+  const history = createMemoryHistory({ initialEntries: [path] });
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  roots.push(root);
+  await act(async () => {
+    root.render(
+      <RelayV2App
+        platform={platform}
+        history={history}
+        productService={{} as RecordingProductService}
+        runService={{} as RunProductService}
+        catalogService={service}
+        mapService={mapService}
+      />,
+    );
+  });
+  await settle();
+  return { history };
+}
+
+describe("App overview", () => {
+  it("keeps Tests, Reports, coverage, and the next action together", async () => {
+    const filters: string[] = [];
+    const service = catalog({
+      listTests: async (filter) => {
+        filters.push(`tests:${filter?.appMapId ?? "all"}`);
+        return tests;
+      },
+      listRuns: async (filter) => {
+        filters.push(`runs:${filter?.appMapId ?? "all"}`);
+        return runs;
+      },
+    });
+    const mapService: MapProductService = {
+      get: async () => ({
+        appMapId: "app-shop-internal",
+        appName: "Shopping",
+        revision: 3,
+        screens: [
+          {
+            id: "home",
+            title: "Home",
+            variantCount: 1,
+            coveringTests: [],
+            recentFailures: [],
+          },
+        ],
+        paths: [],
+        coverage: {
+          screenCount: 3,
+          coveredScreenCount: 2,
+          pathCount: 2,
+          coveredPathCount: 1,
+          testCount: 2,
+        },
+        pendingProposalCount: 0,
+        navigation: { route: "/apps/:appId/map", href: "/apps/app-shop-internal/map" },
+      }),
+    };
+
+    await render("/apps/app-shop-internal", service, mapService);
+
+    expect(filters).toContain("tests:app-shop-internal");
+    expect(filters).toContain("runs:app-shop-internal");
+    expect(document.body.textContent).toContain("Saved journeys");
+    expect(document.body.textContent).toContain("Recent results");
+    expect(document.body.textContent).toContain("2 of 3");
+    expect(document.querySelector('a[href="/tests/new?app=app-shop-internal"]')).not.toBeNull();
+    expect(document.querySelector('a[href="/apps/app-shop-internal/map"]')).not.toBeNull();
+  });
+});
+
+async function settle() {
+  for (let index = 0; index < 5; index += 1) {
+    await act(async () => void (await new Promise((resolve) => setTimeout(resolve, 0))));
+  }
+}
+
+async function fill(input: HTMLInputElement, value: string) {
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    setter?.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await settle();
+}
+
+async function click(label: string) {
+  const target = [...document.querySelectorAll<HTMLElement>("button, a")].find(
+    (candidate) => candidate.textContent?.trim() === label,
+  );
+  if (!target) throw new Error(`Control not found: ${label}`);
+  await act(async () => target.click());
+  await settle();
+}
+
+describe("Tests workspace", () => {
+  it("lists human Test summaries, recent outcomes, and a dominant creation action", async () => {
+    const { history } = await render("/tests");
+
+    const changes = document.querySelector<HTMLAnchorElement>('a[href="/changes"]');
+    expect(changes?.className).not.toContain("relay-nav-link--quiet");
+    expect(changes?.textContent?.trim()).toBe("Changes");
+    expect(changes?.hasAttribute("aria-disabled")).toBe(false);
+    expect(document.querySelector('a[href="/tests/new"]')?.textContent).toBe("New Test");
+    expect(document.body.textContent).toContain("Change language");
+    expect(document.body.textContent).toContain("Complete checkout");
+    expect(document.body.textContent).toContain("Passed");
+    expect(document.body.textContent).toContain("Not run yet");
+    expect(document.body.textContent).not.toContain("app-shop-internal");
+    expect(document.body.textContent).not.toContain("test-language-internal");
+    expect(document.querySelectorAll("select")).toHaveLength(0);
+    expect(document.querySelectorAll(".relay-select-trigger")).toHaveLength(2);
+    expect(document.querySelector(".relay-library-search-control svg")).not.toBeNull();
+
+    const search = document.querySelector<HTMLInputElement>("#test-search")!;
+    search.focus();
+    expect(document.activeElement).toBe(search);
+    await fill(search, "checkout");
+    expect(document.body.textContent).not.toContain("Change language");
+    expect(document.body.textContent).toContain("Complete checkout");
+
+    await act(async () =>
+      document.querySelector<HTMLElement>('a[href="/tests/test-checkout-internal"]')?.click(),
+    );
+    await settle();
+    expect(history.location.pathname).toBe("/tests/test-checkout-internal");
+  });
+
+  it("uses the centered shared recovery state when saved Tests cannot load", async () => {
+    await render(
+      "/tests",
+      catalog({
+        listTests: async () => {
+          throw new TypeError("Failed to fetch");
+        },
+      }),
+    );
+    await act(async () => void (await new Promise((resolve) => setTimeout(resolve, 1_100))));
+    await settle();
+
+    const recovery = document.querySelector(".relay-recording-problem");
+    expect(recovery?.className).toContain("relay-recovery-state--centered");
+    expect(recovery?.querySelectorAll(".relay-alert-description p")).toHaveLength(1);
+    expect(recovery?.textContent).toContain("The app could not reach the local Relay service.");
+    expect(recovery?.textContent).toContain("Try again");
+  });
+
+  it("keeps status filters in the route and explains an empty result", async () => {
+    const { history } = await render("/tests?status=needs-review");
+    expect(document.body.textContent).toContain("Complete checkout");
+    expect(document.body.textContent).not.toContain("Change language");
+
+    await fill(document.querySelector<HTMLInputElement>("#test-search")!, "missing");
+    expect(document.body.textContent).toContain("No Tests match these filters");
+    await click("Clear filters");
+    expect(history.location.search).toBe("");
+    expect(document.body.textContent).toContain("Change language");
+  });
+});
+
+describe("Runs workspace", () => {
+  it("defaults to the latest Run per Test and keeps every row durably addressable", async () => {
+    await render("/runs");
+
+    expect(document.body.textContent?.match(/Change language/g)).toHaveLength(1);
+    expect(document.body.textContent).toContain("Complete checkout");
+    expect(document.body.textContent).toContain("Open account");
+    expect(document.body.textContent).toContain("Needs review");
+    expect(document.body.textContent).toContain("Running");
+    expect(document.body.textContent?.match(/2\.5 s/g)).toHaveLength(1);
+    expect(document.body.textContent).not.toContain("run-passed-internal");
+    expect(document.querySelector('a[href="/runs/run-passed-internal"]')).not.toBeNull();
+    expect(document.querySelectorAll("select")).toHaveLength(0);
+    expect(document.querySelectorAll(".relay-select-trigger")).toHaveLength(1);
+  });
+
+  it("uses the centered shared recovery state when Runs cannot load", async () => {
+    await render(
+      "/runs",
+      catalog({
+        listRuns: async () => {
+          throw new TypeError("Failed to fetch");
+        },
+      }),
+    );
+    await act(async () => void (await new Promise((resolve) => setTimeout(resolve, 1_100))));
+    await settle();
+
+    const recovery = document.querySelector(".relay-recording-problem");
+    expect(recovery?.className).toContain("relay-recovery-state--centered");
+    expect(recovery?.querySelectorAll(".relay-alert-description p")).toHaveLength(1);
+    expect(recovery?.textContent).toContain("The app could not reach the local Relay service.");
+    expect(recovery?.textContent).toContain("Try again");
+  });
+
+  it("stores useful views in the URL and renders a calm empty state", async () => {
+    const { history } = await render("/runs");
+    await click("Failed");
+
+    expect(history.location.search).toContain("view=failed");
+    expect(document.body.textContent).toContain("Change language");
+    expect(document.body.textContent).not.toContain("Complete checkout");
+
+    await fill(document.querySelector<HTMLInputElement>("#run-search")!, "missing");
+    expect(document.body.textContent).toContain("No problem Runs match");
+    await click("Show latest Runs");
+    expect(history.location.search).toBe("");
+    expect(document.body.textContent).toContain("Complete checkout");
+  });
+});

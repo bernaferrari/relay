@@ -77,10 +77,7 @@ test("packet finalize failure remains typed and partial when the session log suc
           execAdb: async (args) => {
             if (args.includes("start")) {
               await mkdir(join(avdDirectory, "console_out"), { recursive: true });
-              await writeFile(
-                join(avdDirectory, "console_out", args.at(-1)!),
-                Buffer.from("not-a-pcap"),
-              );
+              await writeFile(args.at(-1)!, Buffer.from("not-a-pcap"));
             }
             return { stdout: "OK", stderr: "" };
           },

@@ -17,7 +17,9 @@ function isTestData(value: unknown): value is TestData {
     typeof candidate.id === "string" &&
     typeof candidate.name === "string" &&
     (candidate.scope === "shared" || candidate.scope === "private") &&
-    (candidate.source === "static" || candidate.source === "list" || candidate.source === "generated") &&
+    (candidate.source === "static" ||
+      candidate.source === "list" ||
+      candidate.source === "generated") &&
     (candidate.prompt === undefined || typeof candidate.prompt === "string") &&
     (candidate.values === undefined || isStringArray(candidate.values)) &&
     (candidate.fallback === undefined || typeof candidate.fallback === "string") &&

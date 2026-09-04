@@ -88,8 +88,10 @@ and peers) always refers to an App Map id — never a recipe id.
 | `@relay/cli`       | Server-first interface for people, scripts, CI, and agents                |
 | `@relay/mcp`       | Capability-scoped MCP adapter with native PNG observations                |
 | `@relay/tui`       | Terminal workspace                                                        |
-| `@relay/ui`        | Host-independent Solid design system                                      |
-| `@relay/app`       | Host-independent Solid product UI                                         |
+| `@relay/ui`        | Host-independent Solid design system (legacy renderer compatibility)      |
+| `@relay/app`       | Host-independent Solid product UI (legacy renderer compatibility)         |
+| `@relay/app-v2`    | Host-independent React Product V2 UI and canonical route shell            |
+| `@relay/ui-react`  | Host-independent React design system for Product V2                       |
 | `@relay/desktop`   | Sandboxed Electron host                                                   |
 
 ## One operation boundary

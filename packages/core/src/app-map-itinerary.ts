@@ -6,7 +6,11 @@ import type {
   RecipeStep,
 } from "@relay/protocol";
 import type { Recipe } from "./recipes.js";
-import { compileAppMapConnection, screenExpectation } from "./app-map-compiler.js";
+import {
+  compileAppMapConnection,
+  compiledAppMapStepId,
+  screenExpectation,
+} from "./app-map-compiler.js";
 import { selectEquivalentDirectConnection } from "./app-map-route-cost.js";
 
 function authoredSteps(action: ActionSpec): RecipeStep[] {
@@ -85,7 +89,7 @@ function compileReviewedConnection(
   const recipes: Record<string, Recipe> = {};
   for (const recipe of Object.values(compiled.recipes)) {
     const isRoot = recipe.id === compiled.rootRecipeId;
-    const rootSourceId = `relay-source-${connection.id}`;
+    const rootSourceId = compiledAppMapStepId("relay-source", connection.id);
     recipes[recipe.id] = {
       id: recipe.id,
       title: recipe.title,
@@ -112,7 +116,7 @@ function compileReviewedConnection(
   return {
     step: {
       kind: "module",
-      id: `relay-return-edge-${connection.id}`,
+      id: compiledAppMapStepId("relay-return-edge", connection.id),
       recipeId: compiled.rootRecipeId,
     },
     recipes,

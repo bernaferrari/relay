@@ -7,11 +7,7 @@ import type {
   AuthoringSession,
   AuthoringTakeRevision,
 } from "@relay/protocol";
-import {
-  actionSource,
-  recordedPauseAction,
-  stepsForInteraction,
-} from "./authoring-action-steps.js";
+import { actionSource, stepsForInteraction } from "./authoring-action-steps.js";
 import { currentRevision } from "./authoring-session-screen-proof.js";
 import { AuthoringStateError } from "./authoring-session-state.js";
 import {
@@ -98,9 +94,9 @@ export async function finishAuthoringRecording<Captured>(
     : [];
   session = nextRevision(session, "recording", (revision) => ({
     ...revision,
-    // Pauses are meaningful only between two recorded actions. Time spent
-    // inspecting the result and reaching for Stop is authoring overhead, not
-    // executable behavior, and must never slow every replay.
+    // Do not infer an idle pause from time spent before Stop. Explicit wait
+    // interactions are already stored as replay steps; operator review time is
+    // not executable behavior and must never slow every replay.
     actions: revision.actions,
     evidence: [...revision.evidence, ...captured.evidence, ...videoEvidence],
     after: captured.observation,
@@ -126,9 +122,9 @@ export async function recordAuthoringInteraction<Captured>(
   session: AuthoringSession,
   interaction: AuthoringInteraction,
   runtime: AuthoringRecordingRuntime<Captured>,
-  input: AuthoringRecordingLifecycleDependencies<Captured> & { idleStartedAt?: number },
+  input: AuthoringRecordingLifecycleDependencies<Captured>,
 ): Promise<AuthoringSession> {
-  const { idleStartedAt, now, persistObservation, nextRevision, writeSession } = input;
+  const { now, persistObservation, nextRevision, writeSession } = input;
   const revisionAtEntrance = currentRevision(session);
   const entrance = revisionAtEntrance.after ?? revisionAtEntrance.before;
   const retainedEntrance = retainAuthoringObservations(revisionAtEntrance.observations, [entrance]);
@@ -140,7 +136,6 @@ export async function recordAuthoringInteraction<Captured>(
     );
   }
   const startedAt = now();
-  const previousAction = revisionAtEntrance.actions.at(-1);
   const intent = appendAuthoringRawInteractionIntent(session.take!, {
     target: session.target,
     interaction,
@@ -227,21 +222,13 @@ export async function recordAuthoringInteraction<Captured>(
       : {}),
   };
   const next = nextRevision(session, "recording", (revision) => {
-    // Human cadence is meaningful recording data. Agent wall-clock gaps are
-    // orchestration latency (reasoning, tool round-trips, model queues), not
-    // application behavior, and must never make the saved replay slower.
-    const pause =
-      previousAction && session.actorKind === "human"
-        ? recordedPauseAction({
-            durationMs: startedAt - (idleStartedAt ?? previousAction.finishedAt),
-            finishedAt: startedAt,
-            evidenceIds: previousAction.evidenceIds,
-            group: session.group,
-          })
-        : undefined;
+    // The interval between completed interactions is operator/CUA idle time,
+    // not application behavior. Only an explicit `{ kind: "wait", ms }`
+    // interaction becomes a replay sleep, so app timing remains deterministic
+    // and editable without replaying human thinking time.
     return {
       ...revision,
-      actions: [...revision.actions, ...(pause ? [pause] : []), action],
+      actions: [...revision.actions, action],
       evidence: [...revision.evidence, ...captured.evidence],
       observations,
       after: captured.observation,

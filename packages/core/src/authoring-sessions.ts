@@ -88,7 +88,6 @@ const recordingLifecycleDependencies = {
 
 export class AuthoringSessionStore {
   readonly #queue = new KeyedSerialQueue();
-  readonly #recordingReadyAt = new Map<string, number>();
 
   async list(
     projectId = context().projectId,
@@ -327,10 +326,12 @@ export class AuthoringSessionStore {
       async (session) => {
         assertOwner(session);
         requireState(session, "recording");
-        return recordAuthoringInteraction(session, interaction, runtime, {
-          ...recordingLifecycleDependencies,
-          idleStartedAt: this.#recordingReadyAt.get(id),
-        });
+        return recordAuthoringInteraction(
+          session,
+          interaction,
+          runtime,
+          recordingLifecycleDependencies,
+        );
       },
       workflowMutation,
     );
@@ -341,40 +342,32 @@ export class AuthoringSessionStore {
     runtime: AuthoringRuntime,
     workflowMutation?: NonNullable<AuthoringSession["workflowMutation"]>,
   ): Promise<AuthoringSession> {
-    try {
-      const stopped = await this.#mutate(
-        id,
-        async (session) => {
-          assertOwner(session);
-          requireState(session, "recording");
-          session = await finishAuthoringRecording(
-            session,
-            runtime,
-            recordingLifecycleDependencies,
-          );
-          if (currentRevision(session).actions.length === 0) {
-            session = transition(session, "cancelled");
-            session.take = { ...session.take!, state: "discarded", updatedAt: session.updatedAt };
-            return session;
-          }
-          session = transition(session, "reviewing");
-          session.take = { ...session.take!, state: "reviewing", updatedAt: session.updatedAt };
-          return attachLiveDemonstrationAttempt(session);
+    const stopped = await this.#mutate(
+      id,
+      async (session) => {
+        assertOwner(session);
+        requireState(session, "recording");
+        session = await finishAuthoringRecording(session, runtime, recordingLifecycleDependencies);
+        if (currentRevision(session).actions.length === 0) {
+          session = transition(session, "cancelled");
+          session.take = { ...session.take!, state: "discarded", updatedAt: session.updatedAt };
+          return session;
+        }
+        session = transition(session, "reviewing");
+        session.take = { ...session.take!, state: "reviewing", updatedAt: session.updatedAt };
+        return attachLiveDemonstrationAttempt(session);
+      },
+      workflowMutation,
+    );
+    if (stopped.state === "reviewing")
+      await archiveSupersededAuthoringReviews({
+        replacement: stopped,
+        sessions: await this.#all(),
+        mutate: async (id, operation) => {
+          await this.#mutate(id, async (session) => operation(session));
         },
-        workflowMutation,
-      );
-      if (stopped.state === "reviewing")
-        await archiveSupersededAuthoringReviews({
-          replacement: stopped,
-          sessions: await this.#all(),
-          mutate: async (id, operation) => {
-            await this.#mutate(id, async (session) => operation(session));
-          },
-        });
-      return stopped;
-    } finally {
-      this.#recordingReadyAt.delete(id);
-    }
+      });
+    return stopped;
   }
 
   async trim(
@@ -486,6 +479,16 @@ export class AuthoringSessionStore {
         }
         let outcome: AuthoringReplayAttempt["outcome"] = "passed";
         let error: string | undefined;
+        let sourcePreparationFailed = false;
+        try {
+          await runtime.prepareReplaySource?.(session);
+        } catch (caught) {
+          outcome = "failed";
+          error = `Could not return to the recorded starting screen: ${
+            caught instanceof Error ? caught.message : String(caught)
+          }`;
+          sourcePreparationFailed = true;
+        }
         const source = await persistCapturedAuthoringObservation(await runtime.observe(session));
         const actionProofs: NonNullable<AuthoringReplayAttempt["actionProofs"]> = {};
         let replayObservations = retainAuthoringObservations(undefined, [source.observation]);
@@ -493,15 +496,17 @@ export class AuthoringSessionStore {
           throw new AuthoringStateError("Replay source observation could not be retained");
         }
         const evidence = [...source.evidence];
-        let sourceMismatch = false;
-        try {
-          await assertExpectedSource(session, source.observation, revision.before, "replaying");
-        } catch (caught) {
-          outcome = "failed";
-          error = caught instanceof Error ? caught.message : String(caught);
-          // This try block contains only source validation. Nothing may execute
-          // after it fails, regardless of the adapter's exact diagnostic text.
-          sourceMismatch = true;
+        let sourceMismatch = sourcePreparationFailed;
+        if (!sourcePreparationFailed) {
+          try {
+            await assertExpectedSource(session, source.observation, revision.before, "replaying");
+          } catch (caught) {
+            outcome = "failed";
+            error = caught instanceof Error ? caught.message : String(caught);
+            // This try block contains only source validation. Nothing may execute
+            // after it fails, regardless of the adapter's exact diagnostic text.
+            sourceMismatch = true;
+          }
         }
         if (!sourceMismatch && outcome === "passed") {
           if (replayAction && observeReplayActionEndpoint) {
@@ -727,36 +732,32 @@ export class AuthoringSessionStore {
     runtime?: AuthoringRuntime,
     workflowMutation?: NonNullable<AuthoringSession["workflowMutation"]>,
   ): Promise<AuthoringSession> {
-    try {
-      return await this.#mutate(
-        id,
-        async (session) => {
-          assertOwner(session);
-          if (session.state === "committed" || session.state === "cancelled") return session;
-          if (session.state === "recording") {
-            if (!runtime) {
-              throw new AuthoringStateError(
-                "Cancelling an active recording requires target reconciliation",
-              );
-            }
-            session = await finishAuthoringRecording(
-              session,
-              runtime,
-              recordingLifecycleDependencies,
+    return this.#mutate(
+      id,
+      async (session) => {
+        assertOwner(session);
+        if (session.state === "committed" || session.state === "cancelled") return session;
+        if (session.state === "recording") {
+          if (!runtime) {
+            throw new AuthoringStateError(
+              "Cancelling an active recording requires target reconciliation",
             );
           }
-          session = transition(session, "cancelled");
-          if (session.take) {
-            session.take = { ...session.take, state: "discarded", updatedAt: session.updatedAt };
-            session.archive = { reason: "discarded", archivedAt: session.updatedAt };
-          }
-          return session;
-        },
-        workflowMutation,
-      );
-    } finally {
-      this.#recordingReadyAt.delete(id);
-    }
+          session = await finishAuthoringRecording(
+            session,
+            runtime,
+            recordingLifecycleDependencies,
+          );
+        }
+        session = transition(session, "cancelled");
+        if (session.take) {
+          session.take = { ...session.take, state: "discarded", updatedAt: session.updatedAt };
+          session.archive = { reason: "discarded", archivedAt: session.updatedAt };
+        }
+        return session;
+      },
+      workflowMutation,
+    );
   }
 
   async cleanup(id: string): Promise<void> {
@@ -862,8 +863,6 @@ export class AuthoringSessionStore {
       let next = await operation(clone(current));
       if (workflowMutation) next = { ...next, workflowMutation: clone(workflowMutation) };
       await writeAuthoringSession(next);
-      if (next.state === "recording") this.#recordingReadyAt.set(id, now());
-      else if (current.state === "recording") this.#recordingReadyAt.delete(id);
       if (current.state !== "committed" && next.state === "committed")
         publishAuthoringCommittedEvent(next);
       else publishAuthoringSessionEvent(next);

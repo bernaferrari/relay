@@ -118,6 +118,7 @@ export const workflowRecordOperationInputSchemas = {
       ...transitionFence,
       action: z.enum([
         "attach-run",
+        "abandon-run",
         "cancel-run",
         "start-authoring",
         "authoring-record",
@@ -153,6 +154,8 @@ export const workflowRecordOperationInputSchemas = {
       };
       if (value.action === "attach-run")
         required(Boolean(value.jobId), "attach-run requires jobId");
+      if (value.action === "abandon-run")
+        required(Boolean(value.reason), "abandon-run requires reason");
       if (value.action === "start-authoring") {
         required(Boolean(value.leaseId), "start-authoring requires leaseId");
       }
@@ -170,6 +173,7 @@ export const workflowRecordOperationInputSchemas = {
       }
       const allowed = new Set<string>(["workflowId", "expectedVersion", "action"]);
       if (value.action === "attach-run") allowed.add("jobId");
+      if (value.action === "abandon-run") allowed.add("reason");
       if (value.action === "start-authoring") allowed.add("leaseId");
       if (value.action === "authoring-record") allowed.add("interaction");
       if (value.action === "authoring-checkpoint") allowed.add("label");

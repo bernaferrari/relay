@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, stat, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -58,18 +58,103 @@ function dnsPcap(): Buffer {
   return pcapForFrame(frame);
 }
 
+function vlanIpv6QuicPcap(): Buffer {
+  const frame = Buffer.alloc(14 + 4 + 40 + 8);
+  frame.writeUInt16BE(0x8100, 12);
+  frame.writeUInt16BE(0x0001, 14);
+  frame.writeUInt16BE(0x86dd, 16);
+  frame[18] = 0x60;
+  frame.writeUInt16BE(8, 22);
+  frame[24] = 17;
+  frame[25] = 64;
+  Buffer.from("20010db8000000000000000000000001", "hex").copy(frame, 26);
+  Buffer.from("26064700000000000000000000001111", "hex").copy(frame, 42);
+  frame.writeUInt16BE(54_321, 58);
+  frame.writeUInt16BE(443, 60);
+  frame.writeUInt16BE(8, 62);
+  return pcapForFrame(frame);
+}
+
+function pcapWithTruncatedRecord(): Buffer {
+  const complete = tcpPcap();
+  const truncatedHeader = Buffer.alloc(16);
+  truncatedHeader.writeUInt32LE(2, 0);
+  truncatedHeader.writeUInt32LE(32, 8);
+  truncatedHeader.writeUInt32LE(32, 12);
+  return Buffer.concat([complete, truncatedHeader, Buffer.alloc(4)]);
+}
+
 function pcapForFrame(frame: Buffer): Buffer {
+  return pcapForFrameWithOptions(frame);
+}
+
+function pcapForFrameWithOptions(
+  frame: Buffer,
+  options: {
+    endian?: "little" | "big";
+    nanos?: boolean;
+    fraction?: number;
+    linkType?: number;
+  } = {},
+): Buffer {
+  const endian = options.endian ?? "little";
+  const nanos = options.nanos ?? false;
   const pcap = Buffer.alloc(24 + 16 + frame.length);
+  const write16 = (value: number, offset: number) =>
+    endian === "little" ? pcap.writeUInt16LE(value, offset) : pcap.writeUInt16BE(value, offset);
+  const write32 = (value: number, offset: number) =>
+    endian === "little" ? pcap.writeUInt32LE(value, offset) : pcap.writeUInt32BE(value, offset);
+  const magic = nanos ? 0xa1b23c4d : 0xa1b2c3d4;
+  write32(magic, 0);
+  write16(2, 4);
+  write16(4, 6);
+  write32(65_535, 16);
+  write32(options.linkType ?? 1, 20);
+  write32(1, 24);
+  write32(options.fraction ?? 0, 28);
+  write32(frame.length, 32);
+  write32(frame.length, 36);
+  frame.copy(pcap, 40);
+  return pcap;
+}
+
+function pcapWithManyFrames(count: number): Buffer {
+  const frame = tcpPcap().subarray(40);
+  const recordLength = 16 + frame.length;
+  const pcap = Buffer.alloc(24 + count * recordLength);
+  pcap.writeUInt32LE(0xa1b2c3d4, 0);
+  pcap.writeUInt16LE(2, 4);
+  pcap.writeUInt16LE(4, 6);
+  pcap.writeUInt32LE(65_535, 16);
+  pcap.writeUInt32LE(1, 20);
+  for (let index = 0; index < count; index += 1) {
+    const offset = 24 + index * recordLength;
+    pcap.writeUInt32LE(index + 1, offset);
+    pcap.writeUInt32LE(0, offset + 4);
+    pcap.writeUInt32LE(frame.length, offset + 8);
+    pcap.writeUInt32LE(frame.length, offset + 12);
+    frame.copy(pcap, offset + 16);
+  }
+  return pcap;
+}
+
+function pcapWithOversizedRecord(): Buffer {
+  const pcap = pcapForFrame(Buffer.alloc(0));
+  pcap.writeUInt32LE(16 * 1024 * 1024 + 1, 32);
+  pcap.writeUInt32LE(16 * 1024 * 1024 + 1, 36);
+  return pcap;
+}
+
+function pcapBeyondAnalysisBound(): Buffer {
+  const pcap = Buffer.alloc(16 * 1024 * 1024 + 1);
   pcap.writeUInt32LE(0xa1b2c3d4, 0);
   pcap.writeUInt16LE(2, 4);
   pcap.writeUInt16LE(4, 6);
   pcap.writeUInt32LE(65_535, 16);
   pcap.writeUInt32LE(1, 20);
   pcap.writeUInt32LE(1, 24);
-  pcap.writeUInt32LE(0, 28);
-  pcap.writeUInt32LE(frame.length, 32);
-  pcap.writeUInt32LE(frame.length, 36);
-  frame.copy(pcap, 40);
+  pcap.writeUInt32LE(16 * 1024 * 1024, 32);
+  pcap.writeUInt32LE(16 * 1024 * 1024, 36);
   return pcap;
 }
 
@@ -96,6 +181,7 @@ test("captures one bounded emulator Run window and deletes transient packet byte
     const stalePath = join(directory, "console_out", "relay-0123456789abcdef01234567.pcap");
     await mkdir(join(directory, "console_out"), { recursive: true });
     await writeFile(stalePath, "stale packet bytes");
+    await utimes(stalePath, 0, 0);
     const handle = await startAndroidEmulatorNetworkCapture(
       { runId: "run-1", serial: "emulator-5554", avdName: "medium_phone" },
       runtime(directory, commands, 1_000),
@@ -133,9 +219,12 @@ test("reaps only stale Relay PCAP files and preserves foreign or non-file entrie
     const foreign = "capture.pcap";
     const malformed = "relay-0123456789abcdef0123456.pcap";
     const nested = "relay-fedcba9876543210fedcba98.pcap";
+    const fresh = "relay-bbbbbbbbbbbbbbbbbbbbbbbb.pcap";
     await writeFile(join(directory, stale), "stale");
+    await utimes(join(directory, stale), 0, 0);
     await writeFile(join(directory, foreign), "foreign");
     await writeFile(join(directory, malformed), "not Relay-owned");
+    await writeFile(join(directory, fresh), "fresh");
     await mkdir(join(directory, nested));
     await writeFile(join(root, "symlink-target"), "do not follow");
     await symlink(
@@ -147,6 +236,7 @@ test("reaps only stale Relay PCAP files and preserves foreign or non-file entrie
     await assert.rejects(stat(join(directory, stale)));
     assert.equal((await stat(join(directory, foreign))).isFile(), true);
     assert.equal((await stat(join(directory, malformed))).isFile(), true);
+    assert.equal((await stat(join(directory, fresh))).isFile(), true);
     assert.equal((await stat(join(directory, nested))).isDirectory(), true);
     assert.equal(
       (await stat(join(directory, "relay-aaaaaaaaaaaaaaaaaaaaaaaa.pcap"))).isFile(),
@@ -169,6 +259,7 @@ test("reaper protects the active capture while clearing a prior process's file",
     const stalePath = join(root, "console_out", "relay-0123456789abcdef01234567.pcap");
     await writeFile(active.sourcePath, tcpPcap());
     await writeFile(stalePath, "stale");
+    await utimes(stalePath, 0, 0);
 
     assert.deepEqual(await reapStaleAndroidEmulatorNetworkCaptures(join(root, "console_out")), [
       "relay-0123456789abcdef01234567.pcap",
@@ -185,7 +276,9 @@ test("startup sweep reaps stale captures across configured AVD directories", asy
   try {
     const avd = join(root, "phone.avd", "console_out");
     await mkdir(avd, { recursive: true });
-    await writeFile(join(avd, "relay-0123456789abcdef01234567.pcap"), "stale");
+    const stalePath = join(avd, "relay-0123456789abcdef01234567.pcap");
+    await writeFile(stalePath, "stale");
+    await utimes(stalePath, 0, 0);
     await writeFile(join(avd, "capture.pcap"), "foreign");
 
     assert.equal(await reapStaleAndroidEmulatorNetworkCapturesAtStartup(root), 1);
@@ -252,6 +345,184 @@ test("summarizes DNS transport facts without promoting them to HTTP", async () =
   }
 });
 
+test("summarizes VLAN-tagged IPv6 QUIC traffic without inventing HTTP fields", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "relay-emulator-network-ipv6-"));
+  try {
+    const commands: string[][] = [];
+    const captureRuntime = {
+      ...runtime(directory, commands, 1_000),
+      readLocalAddresses: async () => ["2001:db8::1"],
+    };
+    const handle = await startAndroidEmulatorNetworkCapture(
+      { runId: "run-ipv6", serial: "emulator-5563", avdName: "medium_phone" },
+      captureRuntime,
+    );
+    await writeFile(handle.sourcePath, vlanIpv6QuicPcap());
+    const result = await stopAndroidEmulatorNetworkCapture(
+      handle,
+      {},
+      {
+        ...captureRuntime,
+        now: () => 2_000,
+      },
+    );
+
+    assert.equal(result.summary.packets, 1);
+    assert.equal(result.summary.flows[0]?.protocol, "quic");
+    assert.equal(result.summary.flows[0]?.remoteAddress, "2606:4700::1111");
+    assert.equal(result.summary.flows[0]?.port, 443);
+    assert.equal(result.summary.flows[0]?.sentBytes, 66);
+    assert.equal("method" in result.summary.flows[0]!, false);
+    assert.equal("headers" in result.summary.flows[0]!, false);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("accepts big-endian nanosecond PCAP timestamps", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "relay-emulator-network-pcap-endian-"));
+  try {
+    const commands: string[][] = [];
+    const frame = tcpPcap().subarray(40);
+    const handle = await startAndroidEmulatorNetworkCapture(
+      { runId: "run-big-endian", serial: "emulator-5566", avdName: "medium_phone" },
+      runtime(directory, commands, 1_000),
+    );
+    await writeFile(
+      handle.sourcePath,
+      pcapForFrameWithOptions(frame, {
+        endian: "big",
+        nanos: true,
+        fraction: 500_000_000,
+      }),
+    );
+    const result = await stopAndroidEmulatorNetworkCapture(
+      handle,
+      {},
+      runtime(directory, commands, 2_000),
+    );
+
+    assert.equal(result.summary.packets, 1);
+    assert.equal(result.summary.flows[0]?.protocol, "tls");
+    assert.equal(result.summary.flows[0]?.startedAtMs, 500);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("marks an incomplete PCAP record as dropped instead of trusting partial bytes", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "relay-emulator-network-truncated-record-"));
+  try {
+    const commands: string[][] = [];
+    const handle = await startAndroidEmulatorNetworkCapture(
+      { runId: "run-truncated-record", serial: "emulator-5565", avdName: "medium_phone" },
+      runtime(directory, commands, 1_000),
+    );
+    await writeFile(handle.sourcePath, pcapWithTruncatedRecord());
+    const result = await stopAndroidEmulatorNetworkCapture(
+      handle,
+      {},
+      runtime(directory, commands, 2_000),
+    );
+
+    assert.equal(result.summary.packets, 1);
+    assert.equal(result.summary.dropped, 1);
+    assert.equal(result.summary.coverage, "partial");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("bounds oversized records before allocating or trusting their payload", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "relay-emulator-network-pcap-bound-"));
+  try {
+    const commands: string[][] = [];
+    const handle = await startAndroidEmulatorNetworkCapture(
+      { runId: "run-oversized-record", serial: "emulator-5567", avdName: "medium_phone" },
+      runtime(directory, commands, 1_000),
+    );
+    await writeFile(handle.sourcePath, pcapWithOversizedRecord());
+    const result = await stopAndroidEmulatorNetworkCapture(
+      handle,
+      {},
+      runtime(directory, commands, 2_000),
+    );
+
+    assert.equal(result.summary.packets, 0);
+    assert.equal(result.summary.dropped, 1);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("bounds transient PCAP reads and labels consented raw output as truncated", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "relay-emulator-network-pcap-file-bound-"));
+  const rawPath = join(directory, "run", "network", "capture.pcap");
+  try {
+    const commands: string[][] = [];
+    const handle = await startAndroidEmulatorNetworkCapture(
+      { runId: "run-file-bound", serial: "emulator-5570", avdName: "medium_phone" },
+      runtime(directory, commands, 1_000),
+    );
+    await writeFile(handle.sourcePath, pcapBeyondAnalysisBound());
+    const result = await stopAndroidEmulatorNetworkCapture(
+      handle,
+      { retainRawPath: rawPath, rawArtifact: "network/capture.pcap" },
+      runtime(directory, commands, 2_000),
+    );
+
+    assert.equal(result.summary.rawCapture.status, "truncated");
+    assert.equal(result.summary.rawCapture.bytes, 16 * 1024 * 1024);
+    assert.equal(result.summary.dropped, 1);
+    assert.match(result.summary.limitations.join(" "), /16 MiB analysis bound/u);
+    assert.equal((await stat(rawPath)).size, 16 * 1024 * 1024);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("caps parsed packets and reports the overflow as dropped", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "relay-emulator-network-pcap-packet-bound-"));
+  try {
+    const commands: string[][] = [];
+    const handle = await startAndroidEmulatorNetworkCapture(
+      { runId: "run-many-packets", serial: "emulator-5568", avdName: "medium_phone" },
+      runtime(directory, commands, 1_000),
+    );
+    await writeFile(handle.sourcePath, pcapWithManyFrames(100_001));
+    const result = await stopAndroidEmulatorNetworkCapture(
+      handle,
+      {},
+      runtime(directory, commands, 2_000),
+    );
+
+    assert.equal(result.summary.packets, 100_000);
+    assert.equal(result.summary.dropped, 1);
+    assert.equal(result.summary.flows.length, 1);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("rejects unsupported link types instead of interpreting them as Ethernet", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "relay-emulator-network-pcap-link-"));
+  try {
+    const commands: string[][] = [];
+    const handle = await startAndroidEmulatorNetworkCapture(
+      { runId: "run-link-type", serial: "emulator-5569", avdName: "medium_phone" },
+      runtime(directory, commands, 1_000),
+    );
+    await writeFile(handle.sourcePath, pcapForFrameWithOptions(Buffer.alloc(0), { linkType: 101 }));
+    await assert.rejects(
+      stopAndroidEmulatorNetworkCapture(handle, {}, runtime(directory, commands, 2_000)),
+      /link type 101 is unsupported/u,
+    );
+    await assert.rejects(stat(handle.sourcePath));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("malformed capture bytes fail closed, clean up, and release ownership", async () => {
   const directory = await mkdtemp(join(tmpdir(), "relay-emulator-network-invalid-"));
   try {
@@ -274,6 +545,73 @@ test("malformed capture bytes fail closed, clean up, and release ownership", asy
     );
     await writeFile(second.sourcePath, tcpPcap());
     await stopAndroidEmulatorNetworkCapture(second, {}, runtime(directory, commands, 2_000));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("cleans a partially created output and releases ownership when start fails", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "relay-emulator-network-start-failure-"));
+  const commands: string[][] = [];
+  let attemptedPath: string | undefined;
+  try {
+    await assert.rejects(
+      startAndroidEmulatorNetworkCapture(
+        { runId: "start-failure-1", serial: "emulator-5571", avdName: "medium_phone" },
+        {
+          ...runtime(directory, commands, 1_000),
+          execAdb: async (args) => {
+            commands.push(args);
+            if (args.includes("start")) {
+              attemptedPath = args.at(-1);
+              await writeFile(attemptedPath!, Buffer.from("partial capture"));
+              throw new Error("emulator rejected packet capture");
+            }
+            return { stdout: "OK\n", stderr: "" };
+          },
+        },
+      ),
+      /emulator rejected packet capture/u,
+    );
+    assert.ok(attemptedPath);
+    await assert.rejects(stat(attemptedPath!));
+
+    const retry = await startAndroidEmulatorNetworkCapture(
+      { runId: "start-failure-2", serial: "emulator-5571", avdName: "medium_phone" },
+      runtime(directory, commands, 2_000),
+    );
+    await writeFile(retry.sourcePath, tcpPcap());
+    await stopAndroidEmulatorNetworkCapture(retry, {}, runtime(directory, commands, 3_000));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("marks a stop-command failure interrupted while preserving bounded packet facts", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "relay-emulator-network-stop-failure-"));
+  const commands: string[][] = [];
+  try {
+    const handle = await startAndroidEmulatorNetworkCapture(
+      { runId: "stop-failure", serial: "emulator-5572", avdName: "medium_phone" },
+      runtime(directory, commands, 1_000),
+    );
+    await writeFile(handle.sourcePath, tcpPcap());
+    const result = await stopAndroidEmulatorNetworkCapture(
+      handle,
+      {},
+      {
+        ...runtime(directory, commands, 2_000),
+        execAdb: async (args) => {
+          commands.push(args);
+          if (args.at(-1) === "stop") throw new Error("emulator console stop timed out");
+          return { stdout: "OK\n", stderr: "" };
+        },
+      },
+    );
+
+    assert.equal(result.summary.coverage, "interrupted");
+    assert.equal(result.summary.packets, 1);
+    await assert.rejects(stat(handle.sourcePath));
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

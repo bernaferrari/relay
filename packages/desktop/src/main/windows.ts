@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { clampWindowBounds, parseWindowState, type PersistedWindowState } from "./window-state.js";
+import { relayDesktopRenderer } from "./renderer-choice.js";
 
 const root = dirname(fileURLToPath(import.meta.url));
 
@@ -145,6 +146,6 @@ export async function loadRenderer(win: BrowserWindow): Promise<void> {
     }
     return;
   }
-  const rendererDirectory = process.env.RELAY_UI_V2 === "1" ? "renderer-v2" : "renderer";
+  const rendererDirectory = relayDesktopRenderer();
   await win.loadFile(join(root, `../${rendererDirectory}/index.html`));
 }

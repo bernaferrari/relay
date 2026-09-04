@@ -102,3 +102,18 @@ test("a passing replay upgrades inferred actions without rewriting their provena
   assert.equal(snapshot.review?.actions[0]?.captureProof, "replay-proved");
   assert.equal(snapshot.allowedNextActions.includes("approve"), true);
 });
+
+test("point interactions remain distinguishable in human recording review", () => {
+  const withPoint = structuredClone(session);
+  withPoint.take!.revisions[0]!.actions[0]!.steps = [
+    { kind: "tap", target: { point: { x: 148.4, y: 92.6 } } },
+  ];
+
+  const snapshot = snapshotFromAuthoringSession({
+    ref: "opaque" as WorkflowRef,
+    frozen,
+    session: withPoint,
+  });
+
+  assert.equal(snapshot.review?.actions[0]?.intent, "Tap at 148, 93");
+});

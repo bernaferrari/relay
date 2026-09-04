@@ -144,6 +144,22 @@ test("an open stream refreshes canonical state even when replay is empty", async
   assert.equal(settled.workflow?.expectedVersion, 7);
 });
 
+test("a connected but idle stream still reconciles a terminal resource", async () => {
+  let inspections = 0;
+  const settled = await watchWorkflow({
+    workflowId: "workflow-1",
+    initial: snapshot("running", 2),
+    source: openSource(() => undefined),
+    connectedRefreshMs: 5,
+    inspect: async () => {
+      inspections += 1;
+      return inspections === 1 ? snapshot("running", 2) : snapshot("succeeded", 3);
+    },
+  });
+  assert.equal(inspections, 2);
+  assert.equal(settled.phase, "succeeded");
+});
+
 test("a disconnected event stream uses only the slow canonical fallback", async () => {
   let inspections = 0;
   const settled = await watchWorkflow({

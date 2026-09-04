@@ -11,6 +11,7 @@ const portableArtifactPath = z
     (value) =>
       !value.startsWith("/") &&
       !/^[A-Za-z]:[\\/]/u.test(value) &&
+      !value.includes("\0") &&
       !value.split(/[\\/]/u).some((segment) => !segment || segment === "." || segment === ".."),
     "raw network artifact must be a portable relative path",
   )
@@ -27,26 +28,34 @@ export const androidNetworkEvidenceCoverageSchema = z.enum([
   "interrupted",
 ]);
 
-export const androidNetworkEvidenceSourceSchema = z
-  .object({
-    kind: z.enum(["emulator-packet", "app-session-log"]),
-    backend: z.enum([
-      "android-emulator-tcpdump",
-      "android-emulator-console",
-      "android-emulator-netsim",
-      "agent-device-session-log",
-    ]),
-  })
-  .strict();
+const androidEmulatorPacketBackendSchema = z.enum([
+  "android-emulator-tcpdump",
+  "android-emulator-console",
+  "android-emulator-netsim",
+]);
+
+/** Source provenance is discriminated at the boundary so a session log can
+ * never be mislabeled as packet capture (or vice versa), even when callers
+ * parse this exported schema directly rather than the complete summary. */
+export const androidNetworkEvidenceSourceSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("emulator-packet"),
+      backend: androidEmulatorPacketBackendSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("app-session-log"),
+      backend: z.literal("agent-device-session-log"),
+    })
+    .strict(),
+]);
 
 const androidPacketCaptureSourceSchema = z
   .object({
     kind: z.literal("emulator-packet"),
-    backend: z.enum([
-      "android-emulator-tcpdump",
-      "android-emulator-console",
-      "android-emulator-netsim",
-    ]),
+    backend: androidEmulatorPacketBackendSchema,
   })
   .strict();
 
@@ -82,6 +91,16 @@ export const androidPacketCaptureProvenanceSchema = z
   .superRefine((value, context) => {
     if (value.finishedAt < value.startedAt) {
       context.addIssue({ code: "custom", message: "finishedAt cannot precede startedAt" });
+    }
+    if (
+      value.status === "captured" &&
+      value.source.backend === "android-emulator-console" &&
+      value.coverage === "packet-complete"
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "the emulator console backend cannot claim packet-complete coverage",
+      });
     }
   });
 
@@ -145,6 +164,24 @@ const androidRawNetworkCaptureSchema = z
         message: "only captured or truncated raw network evidence may name an artifact",
       });
     }
+    if (value.status !== "captured" && value.status !== "truncated" && value.bytes !== undefined) {
+      context.addIssue({
+        code: "custom",
+        message: "only captured or truncated raw network evidence may report bytes",
+      });
+    }
+    if ((value.status === "failed" || value.status === "denied") && !value.reason) {
+      context.addIssue({
+        code: "custom",
+        message: `${value.status} raw network evidence needs a reason`,
+      });
+    }
+    if (value.status === "truncated" && !value.reason) {
+      context.addIssue({
+        code: "custom",
+        message: "truncated raw network evidence needs a reason",
+      });
+    }
     if (
       (value.status === "captured" || value.status === "truncated") &&
       value.bytes !== value.artifact?.bytes
@@ -191,18 +228,23 @@ export const androidNetworkEvidenceSummarySchema = z
     }
     if (
       value.source.kind === "app-session-log" &&
-      (value.source.backend !== "agent-device-session-log" ||
-        !["target-application", "session-log"].includes(value.scope))
+      (value.rawCapture.status === "captured" || value.rawCapture.status === "truncated")
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "app-session-log evidence cannot retain a raw packet artifact",
+      });
+    }
+    if (
+      value.source.kind === "app-session-log" &&
+      !["target-application", "session-log"].includes(value.scope)
     ) {
       context.addIssue({
         code: "custom",
         message: "app-session-log evidence needs its session-log backend and application scope",
       });
     }
-    if (
-      value.source.kind === "emulator-packet" &&
-      (value.source.backend === "agent-device-session-log" || value.scope !== "entire-emulator")
-    ) {
+    if (value.source.kind === "emulator-packet" && value.scope !== "entire-emulator") {
       context.addIssue({
         code: "custom",
         message: "emulator-packet evidence needs a packet backend and entire-emulator scope",
@@ -227,6 +269,12 @@ export const androidNetworkEvidenceSummarySchema = z
           message: "the emulator console backend cannot claim packet-complete coverage",
         });
       }
+      if (value.rawCapture.status === "truncated" || value.rawCapture.status === "failed") {
+        context.addIssue({
+          code: "custom",
+          message: "packet-complete evidence cannot carry incomplete raw packet retention",
+        });
+      }
     }
     for (const flow of value.flows) {
       if (
@@ -239,6 +287,14 @@ export const androidNetworkEvidenceSummarySchema = z
         });
         break;
       }
+    }
+    const flowBytesSent = value.flows.reduce((sum, flow) => sum + flow.sentBytes, 0);
+    const flowBytesReceived = value.flows.reduce((sum, flow) => sum + flow.receivedBytes, 0);
+    if (flowBytesSent > value.bytesSent || flowBytesReceived > value.bytesReceived) {
+      context.addIssue({
+        code: "custom",
+        message: "network flow byte totals cannot exceed the captured Run totals",
+      });
     }
     if (value.attribution.confidence === "high") {
       if (

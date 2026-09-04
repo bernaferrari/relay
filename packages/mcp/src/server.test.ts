@@ -1,6 +1,6 @@
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { ApiError } from "@relay/client";
-import type { OperationId } from "@relay/protocol";
+import { operationDefinitions, type OperationId } from "@relay/protocol";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -197,8 +197,35 @@ test("server instructions only name Proof surfaces registered by the selected pr
   try {
     assert.equal(proof.initialized.result?.instructions, relayMcpInstructionsForProfile("proof"));
     assert.match(String(proof.initialized.result?.instructions), /proof\.prepare/);
+    assert.match(
+      String(proof.initialized.result?.instructions),
+      /bounded.*retry one exact exhausted publication/i,
+    );
   } finally {
     await proof.close();
+  }
+});
+
+test("every canonical confirmation contract is surfaced as MCP confirm consent", () => {
+  for (const definition of operationDefinitions) {
+    if (
+      definition.confirmation !== "none" &&
+      Object.hasOwn(definition.input.presentation.shape, "confirm") &&
+      !Object.hasOwn(definition.input.presentation.shape, "confirmation")
+    ) {
+      const descriptor = relayMcpTools.find(
+        (tool) => (tool.operationId as string) === definition.id,
+      );
+      assert.ok(descriptor, `${definition.id} must be MCP-eligible`);
+      assert.equal(descriptor.requiresConfirmation, true, definition.id);
+      assert.ok(
+        Object.hasOwn(
+          (descriptor.inputSchema as unknown as { shape: Record<string, unknown> }).shape,
+          "confirm",
+        ),
+        `${definition.id} must expose confirm`,
+      );
+    }
   }
 });
 

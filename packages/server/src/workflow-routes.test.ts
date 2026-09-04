@@ -167,6 +167,7 @@ async function withServer(
       if (input.action === "authoring-stop") next.state = "reviewing";
       if (input.action === "authoring-approve") {
         next.state = "committed";
+        next.expectedAppMapRevision += 1;
         next.committedConnectionId = "connection-1";
         next.committedTestId = "test-1";
       }
@@ -290,6 +291,54 @@ test("request identity is durable across restart and project scope remains autho
       restored.workflow.audit.map((event) => event.transition),
       ["created", "run-attached"],
     );
+  });
+});
+
+test("only a fresh unattached Run reservation can be abandoned", async () => {
+  await withServer(async ({ port, jobs }) => {
+    const runner = client(port, "agent:first");
+    const fresh = await runner.invoke("workflow.create", {
+      workflowId: "rejected-before-dispatch",
+      kind: "run-test",
+      frozenIdentity: frozen(),
+      expiresAt: 50_000,
+    });
+    const abandoned = await runner.invoke("workflow.transition", {
+      workflowId: fresh.workflow.record.workflowId,
+      expectedVersion: fresh.workflow.record.version,
+      action: "abandon-run",
+      reason: "Target profile is unavailable",
+    });
+    assert.equal(abandoned.workflow.record.status, "terminal");
+    assert.equal(abandoned.workflow.record.resolution?.kind, "abandoned");
+
+    jobs.set("job-1", runJob());
+    const attached = await runner.invoke("workflow.create", {
+      workflowId: "already-dispatched",
+      kind: "run-test",
+      frozenIdentity: frozen(),
+      expiresAt: 50_000,
+    });
+    const withJob = await runner.invoke("workflow.transition", {
+      workflowId: attached.workflow.record.workflowId,
+      expectedVersion: attached.workflow.record.version,
+      action: "attach-run",
+      jobId: "job-1",
+    });
+    await assert.rejects(
+      runner.invoke("workflow.transition", {
+        workflowId: withJob.workflow.record.workflowId,
+        expectedVersion: withJob.workflow.record.version,
+        action: "abandon-run",
+        reason: "Do not detach a canonical job",
+      }),
+      (error: unknown) => error instanceof ApiError && error.status === 409,
+    );
+    const canonical = await runner.invoke("workflow.get", {
+      workflowId: withJob.workflow.record.workflowId,
+    });
+    assert.equal(canonical.workflow.record.status, "active");
+    assert.deepEqual(canonical.workflow.record.resource, { kind: "job", id: "job-1" });
   });
 });
 
@@ -525,7 +574,11 @@ test("durable Authoring preserves identity and provenance across restart and cli
     const first = client(port, "agent:first");
     const created = await first.invoke(
       "workflow.create",
-      { kind: "author-test", frozenIdentity: frozenAuthor(), expiresAt: 50_000 },
+      {
+        kind: "author-test",
+        frozenIdentity: frozenAuthor(),
+        expiresAt: 50_000,
+      },
       { requestId: "author-request-1" },
     );
     const workflowId = created.workflow.record.workflowId;
@@ -572,7 +625,7 @@ test("Authoring stale versions do not mutate and approval commits exactly once",
     const actor = client(port, "agent:first");
     const created = await actor.invoke(
       "workflow.create",
-      { kind: "author-test", frozenIdentity: frozenAuthor(), expiresAt: 50_000 },
+      { kind: "author-test", frozenIdentity: frozenAuthor("author-stale"), expiresAt: 50_000 },
       { requestId: "author-stale" },
     );
     const workflowId = created.workflow.record.workflowId;
@@ -606,7 +659,12 @@ test("Authoring stale versions do not mutate and approval commits exactly once",
     assert.equal(approved.workflow.record.status, "terminal");
     assert.equal(approved.session?.committedConnectionId, "connection-1");
     assert.equal(approved.session?.committedTestId, "test-1");
+    assert.equal(approved.session?.expectedAppMapRevision, 8);
     assert.deepEqual(authoringTransitionCalls, ["authoring-stop", "authoring-approve"]);
+    const inspected = await actor.invoke("workflow.get", { workflowId });
+    assert.equal(inspected.workflow.record.status, "terminal");
+    assert.equal(inspected.session?.state, "committed");
+    assert.equal(inspected.session?.committedTestId, "test-1");
     await assert.rejects(
       actor.invoke("workflow.transition", {
         workflowId,
@@ -616,6 +674,58 @@ test("Authoring stale versions do not mutate and approval commits exactly once",
       (error: unknown) => error instanceof ApiError && error.status === 409,
     );
     assert.deepEqual(authoringTransitionCalls, ["authoring-stop", "authoring-approve"]);
+  });
+});
+
+test("Authoring approval rejects an unproved map revision jump", async () => {
+  await withServer(async ({ port, runtime, authoringSessions }) => {
+    const actor = client(port, "agent:first");
+    const created = await actor.invoke(
+      "workflow.create",
+      {
+        kind: "author-test",
+        frozenIdentity: frozenAuthor("author-hostile-revision"),
+        expiresAt: 50_000,
+      },
+      { requestId: "author-hostile-revision" },
+    );
+    const workflowId = created.workflow.record.workflowId;
+    await actor.invoke("workflow.transition", {
+      workflowId,
+      expectedVersion: 1,
+      action: "start-authoring",
+      leaseId: "lease-1",
+    });
+    const stopped = await actor.invoke("workflow.transition", {
+      workflowId,
+      expectedVersion: 3,
+      action: "authoring-stop",
+    });
+    const transition = runtime.transitionAuthoringSession;
+    runtime.transitionAuthoringSession = async (...input) => {
+      const committed = await transition(...input);
+      if (input[2].action !== "authoring-approve") return committed;
+      const hostile = {
+        ...committed,
+        expectedAppMapRevision: committed.expectedAppMapRevision + 1,
+      };
+      authoringSessions.set(hostile.id, hostile);
+      return hostile;
+    };
+
+    await assert.rejects(
+      actor.invoke("workflow.transition", {
+        workflowId,
+        expectedVersion: stopped.workflow.record.version,
+        action: "authoring-approve",
+      }),
+      (error: unknown) =>
+        error instanceof ApiError &&
+        error.status === 409 &&
+        /different canonical session/u.test(error.message),
+    );
+    const workflow = await readDurableWorkflow({ ...project, workflowId });
+    assert.notEqual(workflow?.record.status, "terminal");
   });
 });
 
@@ -657,6 +767,106 @@ test("an uncertain Authoring cancellation is fenced and never dispatched again",
       (error: unknown) => error instanceof ApiError && error.status === 409,
     );
     assert.deepEqual(authoringTransitionCalls, ["authoring-cancel"]);
+  });
+});
+
+test("a conclusively failed Authoring interaction keeps the durable workflow usable", async () => {
+  await withServer(async ({ port, runtime, authoringSessions }) => {
+    const actor = client(port, "agent:first");
+    const created = await actor.invoke(
+      "workflow.create",
+      {
+        kind: "author-test",
+        frozenIdentity: frozenAuthor("author-record-failed"),
+        expiresAt: 50_000,
+      },
+      { requestId: "author-record-failed" },
+    );
+    const workflowId = created.workflow.record.workflowId;
+    const started = await actor.invoke("workflow.transition", {
+      workflowId,
+      expectedVersion: 1,
+      action: "start-authoring",
+      leaseId: "lease-1",
+    });
+    const interaction = { kind: "tap", target: { point: { x: 120, y: 240 } } } as const;
+    const transition = runtime.transitionAuthoringSession;
+    runtime.transitionAuthoringSession = async (_scope, id, input) => {
+      if (input.action !== "authoring-record") throw new Error("Expected Authoring record");
+      const session = authoringSessions.get(id)!;
+      const source = {
+        kind: "authoring-runtime" as const,
+        target: structuredClone(session.target),
+        captureProvenance: session.captureProvenance,
+      };
+      const intentId = "raw-failed-intent";
+      authoringSessions.set(id, {
+        ...session,
+        take: {
+          rawCaptureVersion: 2,
+          rawEvents: [
+            {
+              id: intentId,
+              sequence: 1,
+              kind: "interaction-intent",
+              recordedAt: 1_010,
+              source,
+              startedAt: 1_010,
+              // Protocol parsing may normalize object property order. The
+              // proof must compare this redacted command structurally.
+              interaction: {
+                kind: "tap",
+                target: { point: { x: 120, y: 240 }, strategies: ["point"] },
+              },
+              links: { evidenceIds: [] },
+            },
+            {
+              id: "raw-failed-outcome",
+              sequence: 2,
+              kind: "interaction-outcome",
+              recordedAt: 1_011,
+              source,
+              intentEventId: intentId,
+              outcome: "failed",
+              finishedAt: 1_011,
+              links: { evidenceIds: [] },
+            },
+          ],
+        } as unknown as NonNullable<AuthoringSession["take"]>,
+      });
+      throw new Error("The selected point was outside the controllable target");
+    };
+
+    await assert.rejects(
+      actor.invoke("workflow.transition", {
+        workflowId,
+        expectedVersion: started.workflow.record.version,
+        action: "authoring-record",
+        interaction,
+      }),
+      (error: unknown) =>
+        error instanceof ApiError &&
+        error.status === 422 &&
+        error.body &&
+        typeof error.body === "object" &&
+        "code" in error.body &&
+        error.body.code === "AUTHORING_INTERACTION_FAILED",
+    );
+    runtime.transitionAuthoringSession = transition;
+
+    const inspectable = await actor.invoke("workflow.get", { workflowId });
+    assert.equal(inspectable.workflow.record.status, "active");
+    assert.equal(inspectable.workflow.record.lastTransition, "authoring-record-failed");
+    assert.equal(inspectable.session?.state, "recording");
+
+    const retried = await actor.invoke("workflow.transition", {
+      workflowId,
+      expectedVersion: inspectable.workflow.record.version,
+      action: "authoring-record",
+      interaction: { kind: "wait", ms: 1 },
+    });
+    assert.equal(retried.workflow.record.status, "active");
+    assert.equal(retried.workflow.record.lastTransition, "authoring-record-completed");
   });
 });
 

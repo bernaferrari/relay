@@ -10,6 +10,13 @@ export type AuthoringRuntime = {
   observe(session: AuthoringSession): Promise<CapturedAuthoringObservation>;
   execute(session: AuthoringSession, interaction: AuthoringInteraction): Promise<void>;
   replay(session: AuthoringSession, steps: RecipeStep[]): Promise<void>;
+  /**
+   * Returns a runtime with a deterministic reset primitive to the recorded
+   * source before Relay captures replay evidence. Managed browser targets use
+   * this to navigate to their configured start URL. Physical targets omit it:
+   * Relay must not guess how to reset a person's device or application.
+   */
+  prepareReplaySource?(session: AuthoringSession): Promise<void>;
   /** Executes one authored action as an atomic batch. When present, the store
    * captures durable entrance/exit evidence around each action; older
    * runtimes keep the final-only replay path instead of inventing links. */

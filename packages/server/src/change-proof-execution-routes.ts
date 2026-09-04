@@ -5,6 +5,7 @@ import {
   changeProofExecutionPreview,
   changeProofRequiredRunCases,
   decideChangeVerification,
+  persistChangeProofHumanEvidence,
   issueDurableChangeProofExecutionConfirmation,
   summarizeChangeProofExecution,
   validateChangeProofExecutionConfirmations,
@@ -245,6 +246,56 @@ export async function handleChangeProofExecutionRoutes(
         },
       );
     }
+    // Validate the exact paused boundary before persisting an attachment. A
+    // rejected identity must not leave an unbound evidence object in the
+    // workspace's content-addressed store.
+    if (
+      existing.id !== body.executionId ||
+      existing.status !== "paused-human" ||
+      !existing.humanIntervention ||
+      existing.humanIntervention.cellId !== body.cellId ||
+      existing.humanIntervention.stepId !== body.stepId
+    ) {
+      throw new HttpError(
+        409,
+        "Human intervention evidence does not match the exact paused execution boundary",
+        { code: "PROOF_EXECUTION_HUMAN_INTERVENTION" },
+      );
+    }
+    let evidenceDigest = body.evidenceDigest;
+    let evidenceSource: "server-attachment" | undefined;
+    let scopeDigest: `sha256:${string}` | undefined;
+    if (body.attachment) {
+      try {
+        const persisted = await persistChangeProofHumanEvidence({
+          scope: {
+            organizationId: input.scope.organizationId,
+            projectId: input.scope.projectId,
+            proofId: current.id,
+            executionId: body.executionId,
+            cellId: body.cellId,
+            stepId: body.stepId,
+          },
+          attachment: body.attachment,
+        });
+        evidenceDigest = persisted.evidenceDigest;
+        evidenceSource = "server-attachment";
+        scopeDigest = persisted.scopeDigest;
+      } catch (error) {
+        throw new HttpError(
+          400,
+          error instanceof Error ? error.message : "Human evidence attachment is invalid",
+          { code: "PROOF_EXECUTION_HUMAN_EVIDENCE_ATTACHMENT_INVALID" },
+        );
+      }
+    }
+    if (!evidenceDigest) {
+      throw new HttpError(
+        400,
+        "Human evidence must include a server-persisted attachment or an existing digest",
+        { code: "PROOF_EXECUTION_HUMAN_EVIDENCE_ATTACHMENT_INVALID" },
+      );
+    }
     let execution;
     try {
       execution = await input.runtime.executionCoordinator.recordHumanInterventionEvidence({
@@ -253,7 +304,9 @@ export async function handleChangeProofExecutionRoutes(
         executionId: body.executionId,
         cellId: body.cellId,
         stepId: body.stepId,
-        evidenceDigest: body.evidenceDigest as `sha256:${string}`,
+        evidenceDigest: evidenceDigest as `sha256:${string}`,
+        ...(evidenceSource ? { source: evidenceSource } : {}),
+        ...(scopeDigest ? { scopeDigest } : {}),
         actorId: input.actorId,
         requestId: input.requestId,
         at: input.at,

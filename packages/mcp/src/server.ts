@@ -2,6 +2,7 @@ import { McpServer, type CallToolResult } from "@modelcontextprotocol/server";
 import { RelayClient } from "@relay/client";
 import {
   operationDefinition,
+  operationDefinitions,
   parseAuthoringSessionResponse,
   REVIEWED_DOCUMENT_ORIGIN_CONFIRMATION,
   appMapGetListFromInput,
@@ -105,6 +106,11 @@ export function relayMcpInstructionsForProfile(profile: RelayMcpProfile): string
       instructions.push(
         `For change verification, use the registered ${registeredProofOperations.join(", ")} lifecycle operations with the returned Proof id and exact version; only a human may approve a Verification Plan.`,
       );
+      if (registeredProofOperations.includes("proof.publication.retry")) {
+        instructions.push(
+          "Proof publication recovery is bounded: inspect first, retry one exact exhausted publication at most once with its immutable Proof version, inspect again, and stop on a new exhaustion or conflict; never create a replacement provider check identity.",
+        );
+      }
     }
     if (profile === "proof") {
       instructions.push(
@@ -126,16 +132,21 @@ const reviewedOriginConfirmationOperationIds = new Set<OperationId>([
   "app-map.scroll-surface.origin.revoke",
 ]);
 
-const canonicalConfirmOperationIds = new Set<OperationId>([
-  "lease.takeover",
-  "target.browser-auth.save",
-  "target.browser-auth.revoke",
-  "proof.plan.approve",
-  "proof.cancel",
-  "proof.publication.retry",
-  "proof.run.confirm",
-  "proof.run.human-evidence",
-]);
+// Keep the MCP consent adapter derived from the canonical operation registry.
+// A newly-added confirmation-protected operation must not silently lose the
+// user's `confirm: true` when the transport strips its adapter-only field.
+// Reviewed-document authority is the one intentional exception: its protocol
+// contract uses a signed `confirmation` value and is translated below.
+const canonicalConfirmOperationIds = new Set<OperationId>(
+  operationDefinitions
+    .filter(
+      (definition) =>
+        definition.confirmation !== "none" &&
+        Object.hasOwn(definition.input.presentation.shape, "confirm") &&
+        !Object.hasOwn(definition.input.presentation.shape, "confirmation"),
+    )
+    .map(({ id }) => id),
+);
 
 function recoveryOptionsForProfile(
   profile: RelayMcpProfile,

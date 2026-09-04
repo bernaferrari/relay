@@ -61,6 +61,7 @@ class FakeRuntime implements AuthoringRuntime {
   fullCapture?: AuthoringCaptureContext;
   failReplay = false;
   replayScreen = "destination";
+  prepareReplaySource?: AuthoringRuntime["prepareReplaySource"];
   replayAction?: AuthoringRuntime["replayAction"];
   observeReplayActionEndpoint?: AuthoringRuntime["observeReplayActionEndpoint"];
 
@@ -683,7 +684,7 @@ test("per-action replay rejects an oversized editable Take before device observa
   });
 });
 
-test("human pauses become editable replay steps instead of hidden timing", async () => {
+test("operator idle gaps are not replayed while explicit waits stay editable", async () => {
   await withWorkspace(async ({ store, runtime, appMapId }) => {
     let session = await createReadySession(store, runtime, appMapId);
     session = await store.start(session.id, runtime);
@@ -694,31 +695,25 @@ test("human pauses become editable replay steps instead of hidden timing", async
     );
     await new Promise((resolve) => setTimeout(resolve, 230));
     session = await store.interact(session.id, { kind: "key", key: "back" }, runtime);
-    // Reviewing the destination before pressing Stop is not part of replay.
     await new Promise((resolve) => setTimeout(resolve, 230));
+    session = await store.interact(session.id, { kind: "wait", ms: 600 }, runtime);
     session = await store.stop(session.id, runtime);
 
     const revision = session.take!.revisions.at(-1)!;
     const pauses = revision.actions.filter((action) => action.label === "Recorded pause");
-    assert.equal(pauses.length, 1);
-    const pause = pauses[0];
-    assert.ok(pause);
-    assert.equal(pause.steps[0]?.kind, "sleep");
-    assert.ok(pause.steps[0]?.kind === "sleep" && pause.steps[0].ms >= 200);
-
-    session = await store.replace(session.id, pause.id, { kind: "wait", ms: 100 });
-    const editedPause = session
-      .take!.revisions.at(-1)!
-      .actions.find((action) => action.id === pause.id);
-    assert.equal(editedPause?.label, undefined);
-    assert.deepEqual(editedPause?.steps, [
-      { id: `${pause.id}-step-1`, group: "Settings", kind: "sleep", ms: 100 },
+    assert.equal(pauses.length, 0);
+    const explicitWait = revision.actions.find((action) =>
+      action.steps.some((step) => step.kind === "sleep" && step.ms === 600),
+    );
+    assert.ok(explicitWait);
+    assert.deepEqual(explicitWait?.steps, [
+      { id: `${explicitWait?.id}-step-1`, group: "Settings", kind: "sleep", ms: 600 },
     ]);
 
     runtime.screen = "source";
     session = await store.replay(session.id, runtime);
     assert.equal(session.take!.replayAttempts.at(-1)?.outcome, "passed");
-    assert.ok(runtime.replayed.at(-1)?.some((step) => step.kind === "sleep"));
+    assert.ok(runtime.replayed.at(-1)?.some((step) => step.kind === "sleep" && step.ms === 600));
   });
 });
 
@@ -1137,6 +1132,70 @@ test("a replay source mismatch marks every action not-run before any action batc
       assert.equal(proof?.transition, "unproven");
       assert.equal(proof?.entranceObservationId, undefined);
       assert.equal(proof?.exitObservationId, undefined);
+    }
+  });
+});
+
+test("replay prepares a deterministic source before capturing or executing evidence", async () => {
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    let session = await createReadySession(store, runtime, appMapId);
+    session = await store.start(session.id, runtime);
+    session = await store.interact(
+      session.id,
+      { kind: "tap", target: { label: "Continue" } },
+      runtime,
+    );
+    session = await store.stop(session.id, runtime);
+
+    runtime.screen = "destination";
+    runtime.prepareReplaySource = async () => {
+      runtime.lifecycle.push("prepare-replay-source");
+      runtime.screen = "source";
+    };
+    runtime.replayAction = async (_session, action) => {
+      runtime.lifecycle.push(`replay:${action.id}`);
+      runtime.replayedActions.push(action.id);
+      runtime.screen = "destination";
+    };
+    runtime.observeReplayActionEndpoint = () => runtime.immediateReplayEndpoint();
+    runtime.lifecycle = [];
+
+    session = await store.replay(session.id, runtime);
+
+    assert.equal(session.take!.replayAttempts.at(-1)?.outcome, "passed");
+    assert.equal(runtime.lifecycle[0], "prepare-replay-source");
+    assert.equal(runtime.lifecycle[1], "observe");
+    assert.ok(runtime.lifecycle[2]?.startsWith("replay:"));
+  });
+});
+
+test("a replay source preparation failure is durable and executes no actions", async () => {
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    let session = await createReadySession(store, runtime, appMapId);
+    session = await store.start(session.id, runtime);
+    session = await store.interact(
+      session.id,
+      { kind: "tap", target: { label: "Continue" } },
+      runtime,
+    );
+    session = await store.stop(session.id, runtime);
+
+    runtime.prepareReplaySource = async () => {
+      throw new Error("start URL is offline");
+    };
+    runtime.replayAction = async (_session, action) => {
+      runtime.replayedActions.push(action.id);
+    };
+    runtime.observeReplayActionEndpoint = () => runtime.immediateReplayEndpoint();
+
+    session = await store.replay(session.id, runtime);
+
+    const replay = session.take!.replayAttempts.at(-1)!;
+    assert.equal(replay.outcome, "failed");
+    assert.match(replay.error ?? "", /return to the recorded starting screen.*offline/u);
+    assert.deepEqual(runtime.replayedActions, []);
+    for (const proof of Object.values(replay.actionProofs ?? {})) {
+      assert.equal(proof.outcome, "not-run");
     }
   });
 });

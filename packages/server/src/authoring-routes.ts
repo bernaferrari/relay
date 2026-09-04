@@ -481,6 +481,10 @@ export function createAuthoringRuntime(): AuthoringRuntime {
     async replay(session, steps) {
       await executeSteps(session, steps);
     },
+    async prepareReplaySource(session) {
+      if (session.target.kind !== "browser") return;
+      await executeSteps(session, [{ kind: "key", key: "home" }]);
+    },
     async replayAction(session, action: AuthoringAction) {
       await executeSteps(session, action.steps);
     },

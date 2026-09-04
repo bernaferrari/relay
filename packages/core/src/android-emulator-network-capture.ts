@@ -3,13 +3,13 @@ import { execFile } from "node:child_process";
 import {
   chmod,
   copyFile,
+  lstat,
   mkdir,
   open,
   readFile,
   readdir,
   rm,
   stat,
-  lstat,
   writeFile,
 } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -24,6 +24,7 @@ const execFileAsync = promisify(execFile);
 const MAX_CAPTURE_BYTES = 16 * 1024 * 1024;
 const COMMAND_TIMEOUT_MS = 5_000;
 const MAX_PARSED_PACKETS = 100_000;
+const STALE_CAPTURE_AGE_MS = 15 * 60 * 1_000;
 type CaptureOwnership = {
   runId: string;
   state: "starting" | "running" | "stopping";
@@ -65,12 +66,15 @@ function safeCaptureName(runId: string): string {
 }
 
 /**
- * Reap only files created by Relay's managed packet collector. The emulator
- * owns `console_out`, so this intentionally refuses arbitrary directories and
- * symlinked output roots before it ever enumerates or removes a file.
+ * Reap only old files created by Relay's managed packet collector. The
+ * emulator owns `console_out`, so this intentionally refuses arbitrary
+ * directories and symlinked output roots before it ever enumerates or removes
+ * a file. A fresh Relay-named file may still belong to another process whose
+ * in-memory ownership is not visible here, so age is part of the safety check.
  */
 export async function reapStaleAndroidEmulatorNetworkCaptures(
   directory: string,
+  options: { now?: number; staleAfterMs?: number } = {},
 ): Promise<readonly string[]> {
   if (!isAbsolute(directory) || basename(directory) !== "console_out") {
     throw new Error("Android emulator capture cleanup requires an absolute console_out directory");
@@ -82,19 +86,46 @@ export async function reapStaleAndroidEmulatorNetworkCaptures(
   const protectedFiles = new Set(
     [...activeCaptures.values()].map(({ runId }) => safeCaptureName(runId)),
   );
+  const now = options.now ?? Date.now();
+  const staleAfterMs = options.staleAfterMs ?? STALE_CAPTURE_AGE_MS;
+  if (!Number.isFinite(now) || now < 0) throw new Error("capture cleanup clock is invalid");
+  if (!Number.isFinite(staleAfterMs) || staleAfterMs < 0) {
+    throw new Error("capture cleanup age is invalid");
+  }
   const entries = await readdir(directory, { withFileTypes: true }).catch(() => []);
-  const stale = entries.filter(
+  const candidates = entries.filter(
     (entry) =>
       entry.isFile() && RELAY_CAPTURE_FILE.test(entry.name) && !protectedFiles.has(entry.name),
   );
-  await Promise.all(stale.map((entry) => rm(join(directory, entry.name), { force: true })));
-  return stale.map((entry) => entry.name);
+  const stale = (
+    await Promise.all(
+      candidates.map(async (entry) => {
+        const info = await lstat(join(directory, entry.name)).catch(() => undefined);
+        if (!info?.isFile() || info.isSymbolicLink()) return undefined;
+        return now - info.mtimeMs >= staleAfterMs ? entry.name : undefined;
+      }),
+    )
+  ).filter((name): name is string => name !== undefined);
+  const removed = (
+    await Promise.all(
+      stale.map(async (name) => {
+        try {
+          await rm(join(directory, name), { force: true });
+          return name;
+        } catch {
+          return undefined;
+        }
+      }),
+    )
+  ).filter((name): name is string => name !== undefined);
+  return removed;
 }
 
 /**
  * Sweep configured AVD output roots on Relay startup. A host process can die
  * before the normal stop/finally path runs; the next server process has no
- * in-memory ownership map, so only the Relay filename contract is used here.
+ * in-memory ownership map, so the Relay filename contract and conservative
+ * age threshold are used here.
  * Missing or malformed AVD configuration is deliberately ignored: cleanup is
  * best effort at startup and a later capture performs its own strict check.
  */
@@ -229,12 +260,13 @@ export async function startAndroidEmulatorNetworkCapture(
   // first Run's evidence window.
   const reservation: CaptureOwnership = { runId: input.runId, state: "starting" };
   activeCaptures.set(input.serial, reservation);
+  let sourcePath: string | undefined;
   try {
     const resolveAvdDirectory = runtime.resolveAvdDirectory ?? resolveAndroidAvdDirectory;
     const directory = await resolveAvdDirectory(input.avdName);
     const fileName = safeCaptureName(input.runId);
     const consoleDirectory = join(directory, "console_out");
-    const sourcePath = join(consoleDirectory, fileName);
+    sourcePath = join(consoleDirectory, fileName);
     await mkdir(consoleDirectory, { recursive: true, mode: 0o700 });
     const consoleDirectoryInfo = await lstat(consoleDirectory);
     if (!consoleDirectoryInfo.isDirectory() || consoleDirectoryInfo.isSymbolicLink()) {
@@ -251,10 +283,20 @@ export async function startAndroidEmulatorNetworkCapture(
       : undefined;
     const execAdb = runtime.execAdb ?? execAndroidAdb;
     const startedAt = (runtime.now ?? Date.now)();
-    await execAdb(["-s", input.serial, "emu", "network", "capture", "start", fileName], {
+    // The Android emulator console accepts only a bare filename and writes it
+    // under the AVD's console_out directory. `adb emu` exits successfully even
+    // when the console replies with `KO`, so validate the textual response too.
+    const started = await execAdb(
+      ["-s", input.serial, "emu", "network", "capture", "start", fileName],
+      {
       timeout: COMMAND_TIMEOUT_MS,
       maxBuffer: 64 * 1024,
-    });
+      },
+    );
+    const response = `${started.stdout}\n${started.stderr}`.trim();
+    if (/^KO:/mu.test(response) || !/^OK(?::|$)/mu.test(response)) {
+      throw new Error(`Android emulator rejected packet capture: ${response || "no response"}`);
+    }
     activeCaptures.set(input.serial, { runId: input.runId, state: "running" });
     return {
       runId: input.runId,
@@ -268,6 +310,7 @@ export async function startAndroidEmulatorNetworkCapture(
     };
   } catch (error) {
     if (activeCaptures.get(input.serial) === reservation) activeCaptures.delete(input.serial);
+    if (sourcePath) await rm(sourcePath, { force: true }).catch(() => undefined);
     throw error;
   }
 }

@@ -40,6 +40,18 @@ test("registered descriptors and schema-first registries stay in exact parity", 
   );
 });
 
+test("GET Run inputs normalize their HTTP query representations", () => {
+  assert.deepEqual(
+    operationDefinition("run.evidence.get").input.parse({
+      runId: "run-1",
+      limit: "250",
+      includeBodies: "false",
+    }),
+    { runId: "run-1", limit: 250, includeBodies: false },
+  );
+  assert.deepEqual(operationDefinition("run.list").input.parse({ limit: "40" }), { limit: 40 });
+});
+
 test("browser target operations round-trip the frozen environment contract", () => {
   const environment = {
     engine: "webkit" as const,

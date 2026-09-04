@@ -13,6 +13,7 @@ import type {
   SemanticRevealPlan,
   StepTarget,
 } from "@relay/protocol";
+import { createHash } from "node:crypto";
 import { validateAppMap } from "./app-map.js";
 import { semanticTargetMatches } from "./scroll-surface-semantic-index.js";
 
@@ -39,6 +40,16 @@ function fail(code: AppMapCompileErrorCode, message: string): never {
 
 function recipeId(map: AppMap, kind: "flow" | "connection" | "routine", id: string): string {
   return `app-map:${map.id}:${kind}:${id}:r${map.revision}`;
+}
+
+/** Generated step identities share the public Recipe validation membrane.
+ * Preserve readable IDs when they fit and collapse long App Map entity IDs
+ * to a stable digest instead of emitting a plan that cannot be executed. */
+export function compiledAppMapStepId(prefix: string, sourceId: string): string {
+  const candidate = `${prefix}-${sourceId}`;
+  if (/^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$/u.test(candidate)) return candidate;
+  const digest = createHash("sha256").update(sourceId, "utf8").digest("hex").slice(0, 24);
+  return `${prefix}-${digest}`;
 }
 
 function routineCompiler(map: AppMap, recipes: Record<string, AppMapCompiledRecipe>) {
@@ -73,7 +84,7 @@ function routineCompiler(map: AppMap, recipes: Record<string, AppMapCompiledReci
 function stableStep(step: RecipeStep, actionId: string, index: number): RecipeStep {
   return {
     ...structuredClone(step),
-    id: step.id?.trim() || `relay-action-${actionId}-${index + 1}`,
+    id: step.id?.trim() || compiledAppMapStepId("relay-action", `${actionId}-${index + 1}`),
   };
 }
 
@@ -127,11 +138,15 @@ export function screenExpectation(
 
 function assertionStep(map: AppMap, actionId: string, assertion: AssertionSpec): RecipeStep {
   if (assertion.kind === "screen") {
-    return screenExpectation(map, map.screens[assertion.screenId]!, `relay-action-${actionId}`);
+    return screenExpectation(
+      map,
+      map.screens[assertion.screenId]!,
+      compiledAppMapStepId("relay-action", actionId),
+    );
   }
   if (assertion.kind === "target") {
     return {
-      id: `relay-action-${actionId}`,
+      id: compiledAppMapStepId("relay-action", actionId),
       kind: "expect",
       target: structuredClone(assertion.target),
       condition: assertion.condition,
@@ -140,7 +155,7 @@ function assertionStep(map: AppMap, actionId: string, assertion: AssertionSpec):
   }
   if (assertion.kind === "layout") {
     return {
-      id: `relay-action-${actionId}`,
+      id: compiledAppMapStepId("relay-action", actionId),
       kind: "assert-layout",
       relation: assertion.relation,
       first: structuredClone(assertion.first),
@@ -149,7 +164,7 @@ function assertionStep(map: AppMap, actionId: string, assertion: AssertionSpec):
     };
   }
   return {
-    id: `relay-action-${actionId}`,
+    id: compiledAppMapStepId("relay-action", actionId),
     kind: "assert-content",
     input: assertion.input,
     expected: assertion.expected,
@@ -200,7 +215,7 @@ function actionSteps(map: AppMap, action: ActionSpec, sourceScreenId?: string): 
       case "tap":
         return [
           {
-            id: `relay-action-${action.id}`,
+            id: compiledAppMapStepId("relay-action", action.id),
             kind: "tap",
             target: structuredClone(action.target),
             ...(action.expectedApp ? { expectedApp: action.expectedApp } : {}),
@@ -212,7 +227,7 @@ function actionSteps(map: AppMap, action: ActionSpec, sourceScreenId?: string): 
       case "text":
         return [
           {
-            id: `relay-action-${action.id}`,
+            id: compiledAppMapStepId("relay-action", action.id),
             kind: "type",
             text: action.text,
             ...(action.target ? { target: structuredClone(action.target) } : {}),
@@ -222,7 +237,7 @@ function actionSteps(map: AppMap, action: ActionSpec, sourceScreenId?: string): 
         return action.gesture.kind === "swipe"
           ? [
               {
-                id: `relay-action-${action.id}`,
+                id: compiledAppMapStepId("relay-action", action.id),
                 kind: "swipe",
                 from: structuredClone(action.gesture.from),
                 to: structuredClone(action.gesture.to),
@@ -233,7 +248,7 @@ function actionSteps(map: AppMap, action: ActionSpec, sourceScreenId?: string): 
             ]
           : [
               {
-                id: `relay-action-${action.id}`,
+                id: compiledAppMapStepId("relay-action", action.id),
                 kind: "scroll",
                 direction: action.gesture.direction,
                 ...(action.gesture.amount === undefined ? {} : { amount: action.gesture.amount }),
@@ -243,7 +258,7 @@ function actionSteps(map: AppMap, action: ActionSpec, sourceScreenId?: string): 
         const navigation = semanticRevealPlans(map, sourceScreenId, action.target);
         return [
           {
-            id: `relay-action-${action.id}`,
+            id: compiledAppMapStepId("relay-action", action.id),
             kind: "reveal",
             target: structuredClone(action.target),
             ...(action.direction ? { direction: action.direction } : {}),
@@ -254,11 +269,13 @@ function actionSteps(map: AppMap, action: ActionSpec, sourceScreenId?: string): 
       }
       case "back":
       case "home":
-        return [{ id: `relay-action-${action.id}`, kind: "key", key: action.kind }];
+        return [
+          { id: compiledAppMapStepId("relay-action", action.id), kind: "key", key: action.kind },
+        ];
       case "app":
         return [
           {
-            id: `relay-action-${action.id}`,
+            id: compiledAppMapStepId("relay-action", action.id),
             kind: "app",
             action: action.action,
             ...(action.app ? { app: action.app } : {}),
@@ -271,13 +288,19 @@ function actionSteps(map: AppMap, action: ActionSpec, sourceScreenId?: string): 
       case "wait":
         return action.ms === 0
           ? []
-          : [{ id: `relay-action-${action.id}`, kind: "sleep", ms: action.ms }];
+          : [
+              {
+                id: compiledAppMapStepId("relay-action", action.id),
+                kind: "sleep",
+                ms: action.ms,
+              },
+            ];
       case "assertion":
         return [assertionStep(map, action.id, action.assertion)];
       case "routine":
         return [
           {
-            id: `relay-action-${action.id}`,
+            id: compiledAppMapStepId("relay-action", action.id),
             kind: "module",
             recipeId: recipeId(map, "routine", action.routineId),
             ...(action.bindings ? { bindings: structuredClone(action.bindings) } : {}),
@@ -370,7 +393,7 @@ function navigationStep(connection: Connection): Extract<RecipeStep, { kind: "ta
   const [primary, ...fallbacks] = contract.targetAlternatives.map(navigationTarget);
   if (!primary) return undefined;
   return {
-    id: `relay-navigation-${connection.id}`,
+    id: compiledAppMapStepId("relay-navigation", connection.id),
     kind: "tap",
     target: primary,
     ...(fallbacks.length ? { fallbackTargets: fallbacks } : {}),
@@ -399,7 +422,7 @@ function destinationExpectation(map: AppMap, connection: Connection): RecipeStep
           identity: structuredClone(connection.navigation.expectedDestination.identity),
         }
       : destination,
-    `relay-destination-${connection.id}`,
+    compiledAppMapStepId("relay-destination", connection.id),
     destination.evidenceSurface ?? (hasOutgoingConnection ? "ordinary" : "dead-end"),
   );
 }
@@ -438,7 +461,7 @@ export function compileAppMapFlow(
   if (flow.setup) {
     ensureRoutine(flow.setup.routineId);
     const step = {
-      id: `relay-setup-${flow.id}`,
+      id: compiledAppMapStepId("relay-setup", flow.id),
       kind: "module" as const,
       recipeId: recipeId(map, "routine", flow.setup.routineId),
       ...(flow.setup.bindings ? { bindings: structuredClone(flow.setup.bindings) } : {}),
@@ -454,7 +477,7 @@ export function compileAppMapFlow(
     });
   }
   const source = map.screens[flow.startScreenId]!;
-  const sourceStep = screenExpectation(map, source, `relay-source-${flow.id}`);
+  const sourceStep = screenExpectation(map, source, compiledAppMapStepId("relay-source", flow.id));
   const sourceStepIndex = root.steps.length;
   root.steps.push(sourceStep);
   root.stepProvenance.push({
@@ -598,7 +621,11 @@ export function compileAppMapConnection(
   const ensureRoutine = routineCompiler(map, recipes);
   const rootRecipeId = recipeId(map, "connection", connection.id);
   const source = map.screens[connection.fromScreenId]!;
-  const sourceStep = screenExpectation(map, source, `relay-source-${connection.id}`);
+  const sourceStep = screenExpectation(
+    map,
+    source,
+    compiledAppMapStepId("relay-source", connection.id),
+  );
   const root: AppMapCompiledRecipe = {
     id: rootRecipeId,
     title: connection.label?.trim() || `${source.title} transition`,

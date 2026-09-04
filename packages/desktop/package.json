@@ -10,23 +10,23 @@
     "dev": "node scripts/dev.mjs",
     "inspect": "node scripts/inspect.mjs",
     "build": "node scripts/build.mjs",
+    "build:legacy": "RELAY_BUILD_LEGACY=1 node scripts/build.mjs",
     "package": "node scripts/build.mjs && electron-builder --mac dir",
     "dist": "node scripts/build.mjs && electron-builder --mac dmg zip",
     "preview": "node scripts/build.mjs && electron .",
-    "test": "node --experimental-strip-types --test src/main/server-readiness.test.ts src/main/ios-preview-sidecar.test.ts src/main/window-state.test.ts && node scripts/verify-server-bundle.mjs",
+    "test": "node --experimental-strip-types --test src/main/server-readiness.test.ts src/main/ios-preview-sidecar.test.ts src/main/renderer-choice.test.ts src/main/window-state.test.ts && node --test scripts/renderer-build.test.mjs && node scripts/verify-server-bundle.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@relay/app": "workspace:*",
     "@relay/app-v2": "workspace:*",
-    "@relay/ui": "workspace:*",
     "@relay/ui-react": "workspace:*",
     "playwright-core": "^1.62.1",
     "react": "19.2.8",
-    "react-dom": "19.2.8",
-    "solid-js": "catalog:"
+    "react-dom": "19.2.8"
   },
   "devDependencies": {
+    "@relay/app": "workspace:*",
+    "@relay/ui": "workspace:*",
     "@tailwindcss/vite": "4.3.3",
     "@types/node": "^26.1.2",
     "@types/react": "19.2.18",
@@ -35,6 +35,7 @@
     "electron": "^43.3.0",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.1",
+    "solid-js": "catalog:",
     "tailwindcss": "4.3.3",
     "typescript": "catalog:",
     "vite": "catalog:",
@@ -51,7 +52,6 @@
     "files": [
       "out/main/**/*",
       "out/preload/**/*",
-      "out/renderer/**/*",
       "out/renderer-v2/**/*",
       "package.json"
     ],

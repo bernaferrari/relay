@@ -68,7 +68,7 @@ const routePresentations = {
   "/tests/:testId/run-across": {
     path: "/tests/$testId/run-across",
     eyebrow: "Test",
-    description: "Run this test against a reviewed data set.",
+    description: "Choose a data set, preview the exact scope, and run across it deliberately.",
   },
   "/recordings/:recordingId/review": {
     path: "/recordings/$recordingId/review",

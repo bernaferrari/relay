@@ -10,6 +10,44 @@ import {
 import { createScriptedRelayClient, type ScriptedRelayStep } from "./testing.js";
 
 const target = { kind: "device", platform: "android", targetId: "pixel-9" } as const;
+const browserTarget = { kind: "browser", platform: "browser", targetId: "browser-golden" } as const;
+const browserCaseProfile = {
+  schemaVersion: 1 as const,
+  engine: "chromium" as const,
+  viewport: { width: 390, height: 844 },
+  deviceScaleFactor: 1,
+  mobile: false,
+  touch: false,
+  locale: "en-US",
+  timezoneId: "UTC",
+  colorScheme: "light" as const,
+  reducedMotion: "no-preference" as const,
+  permissions: [],
+  offline: false,
+  environmentRevision: "relay.browser-environment.v1",
+};
+
+function browserProfile(id = "browser-profile-1") {
+  return {
+    id,
+    targetId: browserTarget.targetId,
+    platform: "browser" as const,
+    viewport: browserCaseProfile.viewport,
+    browserCaseProfile,
+  };
+}
+
+const registeredBrowserTarget = {
+  id: browserTarget.targetId,
+  name: "Golden browser",
+  kind: "browser" as const,
+  createdAt: 1,
+  updatedAt: 1,
+  browser: {
+    startUrl: "http://127.0.0.1:1234",
+    environment: browserCaseProfile,
+  },
+};
 
 function intent(overrides: Partial<RunTestIntent> = {}): RunTestIntent {
   return {
@@ -102,6 +140,158 @@ function runStep(revision: number, status = "queued"): ScriptedRelayStep {
       job: job(status),
     },
   };
+}
+
+function browserCompileStep(profiles: ReturnType<typeof browserProfile>[]): ScriptedRelayStep {
+  return {
+    id: "app-map.test.compile",
+    output: {
+      plan: { rootRecipeId: "open-settings", rawAccessibilityTargetProfiles: profiles },
+      preflight: preflight(7),
+    },
+  };
+}
+
+function deviceCompileStep(selectedProfileId?: string): ScriptedRelayStep {
+  const profiles = ["device:pixel-9-old", "device:pixel-9-current"].map((id) => ({
+    id,
+    targetId: target.targetId,
+    platform: target.platform,
+    viewport: { width: 1080, height: 2400 },
+    capabilities: [],
+  }));
+  return {
+    id: "app-map.test.compile",
+    output: {
+      plan: {
+        rootRecipeId: "open-settings",
+        rawAccessibilityTargetProfiles: profiles,
+        rawAccessibilityVariantsByScreenId: {
+          "screen-current": [
+            {
+              id: "variant-current",
+              targetProfileId: "device:pixel-9-current",
+              targetId: target.targetId,
+              platform: target.platform,
+              viewport: { width: 1080, height: 2400 },
+              capabilities: [],
+            },
+          ],
+        },
+        recipes: {
+          "open-settings": {
+            id: "open-settings",
+            title: "Open Settings",
+            parameters: [],
+            steps: [
+              {
+                id: "expect-current",
+                kind: "expect-screen",
+                screenId: "screen-current",
+                screenTitle: "Settings",
+                fingerprint: "fingerprint-current",
+                timeoutMs: 5_000,
+              },
+            ],
+          },
+        },
+      },
+      preflight: preflight(7),
+    },
+    ...(selectedProfileId
+      ? {
+          checkInput(input: unknown) {
+            assert.equal(
+              (input as { targetProfileId?: string }).targetProfileId,
+              selectedProfileId,
+            );
+          },
+        }
+      : {}),
+  };
+}
+
+test("automatically binds the device profile referenced by the reviewed Test", async () => {
+  const scripted = createScriptedRelayClient([
+    deviceCompileStep(),
+    deviceCompileStep("device:pixel-9-current"),
+    runStep(7),
+  ]);
+  const workflows = createRelayWorkflows(scripted.client);
+
+  const snapshot = await workflows.start(intent({ revision: { exact: 7 } }));
+
+  assert.equal(snapshot.phase, "queued");
+  assert.equal(snapshot.frozen?.targetProfileId, "device:pixel-9-current");
+  const runInvocation = scripted.invocations.find(({ id }) => id === "app-map.test.run");
+  assert.ok(runInvocation);
+  assert.equal(
+    (runInvocation.input as { targetProfileId?: string }).targetProfileId,
+    "device:pixel-9-current",
+  );
+  assert.deepEqual(
+    scripted.invocations.map(({ id }) => id),
+    ["app-map.test.compile", "app-map.test.compile", "app-map.test.run"],
+  );
+});
+
+test("automatically binds the unique browser profile matching the registered environment", async () => {
+  const scripted = createScriptedRelayClient([
+    browserCompileStep([browserProfile()]),
+    { id: "target.list", output: { targets: [registeredBrowserTarget] } },
+    browserCompileStep([browserProfile()]),
+    runStep(7),
+  ]);
+  const workflows = createRelayWorkflows(scripted.client);
+
+  const snapshot = await workflows.start(intent({ target: browserTarget, revision: { exact: 7 } }));
+
+  assert.equal(snapshot.phase, "queued");
+  assert.equal(snapshot.frozen?.targetProfileId, "browser-profile-1");
+  const runInvocation = scripted.invocations.find(({ id }) => id === "app-map.test.run");
+  assert.ok(runInvocation);
+  assert.equal(
+    (runInvocation.input as { targetProfileId?: string }).targetProfileId,
+    "browser-profile-1",
+  );
+  assert.deepEqual(
+    scripted.invocations.map(({ id }) => id),
+    ["app-map.test.compile", "target.list", "app-map.test.compile", "app-map.test.run"],
+  );
+});
+
+for (const [label, profiles] of [
+  ["no matching", []],
+  ["ambiguous", [browserProfile("browser-profile-1"), browserProfile("browser-profile-2")]],
+] as const) {
+  test(`browser target profile selection fails closed when ${label}`, async () => {
+    const scripted = createScriptedRelayClient([
+      browserCompileStep([...profiles]),
+      { id: "target.list", output: { targets: [registeredBrowserTarget] } },
+    ]);
+    const workflows = createRelayWorkflows(scripted.client);
+
+    const snapshot = await workflows.start(
+      intent({
+        target: browserTarget,
+        revision: { exact: 7 },
+        continuation: "durable",
+        workflowRequestId: "browser-profile-selection",
+      }),
+    );
+
+    assert.equal(snapshot.phase, "blocked");
+    assert.equal(snapshot.problems[0]?.code, "compile-blocked");
+    assert.equal(snapshot.problems[0]?.sourceCode, "browser-target-profile-selection-required");
+    assert.equal(
+      scripted.invocations.some(({ id }) => id === "workflow.create"),
+      false,
+    );
+    assert.equal(
+      scripted.invocations.some(({ id }) => id === "app-map.test.run"),
+      false,
+    );
+  });
 }
 
 test("current revision is read once, compiled offline, and frozen into the exact run", async () => {
@@ -302,6 +492,27 @@ test("inspect reconstructs terminal progress and immutable evidence from the can
   assert.deepEqual(snapshot.allowedNextActions, ["inspect"]);
 });
 
+test("uses the canonical job id as the Run id when the adapter omits a redundant runId", async () => {
+  const scripted = createScriptedRelayClient([
+    compileStep(5),
+    runStep(5),
+    {
+      id: "job.get",
+      output: { job: job("ok", { startedAt: 110, finishedAt: 140 }) },
+    },
+  ]);
+  const workflows = createRelayWorkflows(scripted.client);
+  const started = await workflows.start(intent({ revision: { exact: 5 } }));
+  assert.ok(started.ref);
+
+  const snapshot = await workflows.inspect(started.ref);
+
+  assert.equal(snapshot.kind, "run-test");
+  if (snapshot.kind !== "run-test") throw new Error("Expected a Run snapshot");
+  assert.deepEqual(snapshot.execution, { jobId: "job-1", runId: "job-1" });
+  assert.deepEqual(snapshot.evidenceRefs, [{ kind: "run", id: "job-1" }]);
+});
+
 test("malformed adapter output is rejected by canonical parsing and fails closed", async () => {
   const scripted = createScriptedRelayClient([
     { id: "app-map.test.compile", output: { plan: {} } },
@@ -330,6 +541,24 @@ test("a mutation transport failure is never retried implicitly", async () => {
 
   assert.equal(snapshot.phase, "needs-attention");
   assert.equal(snapshot.problems[0]?.code, "mutation-outcome-unknown");
+  assert.equal(snapshot.problems[0]?.retryable, false);
+  assert.equal(scripted.invocations.filter(({ id }) => id === "app-map.test.run").length, 1);
+  assert.equal(scripted.remaining(), 1);
+});
+
+test("an authoritative 4xx Run rejection is terminal to the attempt, not mutation-unknown", async () => {
+  const rejection = Object.assign(new Error("TARGET_PROFILE_SELECTION_REQUIRED"), { status: 409 });
+  const scripted = createScriptedRelayClient([
+    compileStep(3),
+    { id: "app-map.test.run", error: rejection },
+    runStep(3),
+  ]);
+  const snapshot = await createRelayWorkflows(scripted.client).start(
+    intent({ revision: { exact: 3 } }),
+  );
+
+  assert.equal(snapshot.phase, "blocked");
+  assert.equal(snapshot.problems[0]?.code, "operation-unavailable");
   assert.equal(snapshot.problems[0]?.retryable, false);
   assert.equal(scripted.invocations.filter(({ id }) => id === "app-map.test.run").length, 1);
   assert.equal(scripted.remaining(), 1);

@@ -31,6 +31,9 @@ export interface ProofWorkflow {
   rerunAffectedVerification(
     input: OperationInput<"proof.rerun-affected">,
   ): Promise<OperationOutput<"proof.rerun-affected">>;
+  resumeHumanEvidence(
+    input: OperationInput<"proof.run.human-evidence">,
+  ): Promise<OperationOutput<"proof.run.human-evidence">>;
   listChangeVerifications(
     input?: OperationInput<"proof.list">,
   ): Promise<OperationOutput<"proof.list">>;
@@ -47,6 +50,7 @@ export type CancelChangeVerificationInput = OperationInput<"proof.cancel">;
 export type RetryProofPublicationInput = OperationInput<"proof.publication.retry">;
 export type RerunAffectedVerificationInput = OperationInput<"proof.rerun-affected">;
 export type ListChangeVerificationsInput = OperationInput<"proof.list">;
+export type ResumeHumanEvidenceInput = OperationInput<"proof.run.human-evidence">;
 
 /**
  * Create the Proof lifecycle facade from an already validated operation port.
@@ -71,6 +75,8 @@ export function createProofWorkflow(operations: RelayOperationPort): ProofWorkfl
       operations.invoke("proof.publication.retry", input),
     rerunAffectedVerification: (input: OperationInput<"proof.rerun-affected">) =>
       operations.invoke("proof.rerun-affected", input),
+    resumeHumanEvidence: (input: OperationInput<"proof.run.human-evidence">) =>
+      operations.invoke("proof.run.human-evidence", input),
     listChangeVerifications: (input: OperationInput<"proof.list"> = {}) =>
       operations.invoke("proof.list", input),
   });

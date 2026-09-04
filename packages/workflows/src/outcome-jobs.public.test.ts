@@ -287,7 +287,8 @@ test("record freezes the selected browser target before reserving its durable wo
             projectId: "default",
             poolId: "local",
             deviceSerial: "browser-checkout",
-            ownerId: "agent:test",
+            ownerId: "system:local-control:bG9jYWwAZGVmYXVsdA",
+            controlScope: "local-project",
             status: "leased",
             leasedAt: 1,
             expiresAt: 10_000,
@@ -321,8 +322,9 @@ test("record freezes the selected browser target before reserving its durable wo
   });
   const durableInvocation = scripted.invocations.at(-1);
   assert.equal(durableInvocation?.id, "workflow.create");
+  assert.ok(durableInvocation);
   assert.deepEqual(
-    (durableInvocation?.input as { frozenIdentity?: unknown }).frozenIdentity,
+    (durableInvocation.input as { frozenIdentity?: unknown }).frozenIdentity,
     durableIdentity,
   );
 });

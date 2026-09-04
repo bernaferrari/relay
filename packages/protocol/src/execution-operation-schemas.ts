@@ -1,5 +1,11 @@
 import * as z from "zod/v4";
-import { empty, identifier, natural, unknownRecord } from "./operation-schema-primitives.js";
+import {
+  empty,
+  identifier,
+  natural,
+  queryBoolean,
+  unknownRecord,
+} from "./operation-schema-primitives.js";
 
 const runRef = z.object({ runId: identifier("Persisted Run identifier") }).strict();
 const batchRef = z.object({ batchId: identifier("Batch identifier") }).strict();
@@ -88,7 +94,7 @@ export const executionOperationSchemas = {
   "job.combine.analysis": batchRef,
   "run.list": z
     .object({
-      limit: z.number().int().positive().optional(),
+      limit: z.coerce.number().int().positive().optional(),
       appMapId: z.string().optional(),
       cursor: z.string().min(1).max(512).optional(),
     })
@@ -105,8 +111,8 @@ export const executionOperationSchemas = {
   "run.evidence.get": z
     .object({
       runId: identifier("Persisted Run identifier"),
-      limit: z.number().int().positive().optional(),
-      includeBodies: z.boolean().optional(),
+      limit: z.coerce.number().int().positive().optional(),
+      includeBodies: queryBoolean.optional(),
     })
     .strict(),
   "run.story.get": runRef,

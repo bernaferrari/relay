@@ -104,4 +104,3 @@ rails, top-level nouns, visual themes, or public Combine/Variable surfaces to th
 V2 will delete StudioShell, MapModeSwitch, feature-specific Run return navigation, custom focus
 trapping, custom tooltip layers, the old Settings modal, legacy Results mode, public Combine UI,
 duplicate Variable surfaces, and the old onboarding as each replacement route reaches parity.
-

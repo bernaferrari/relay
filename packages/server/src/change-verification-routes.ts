@@ -17,6 +17,8 @@ import {
   readPersistedRun,
   supersedeChangeVerification,
   ChangeProofIntegrityError,
+  agentRepairPacketForDecision,
+  agentRepairPacketForExecution,
   canonicalSha256,
   summarizeChangeProofExecution,
   ChangeProofExecutionError,
@@ -144,6 +146,57 @@ async function publishTerminalProof(
       proof,
       publish: runtime.publishTerminal,
     });
+  }
+}
+
+/** Build the repair packet only from server-owned durable execution facts. The
+ * execution record is preferred because it survives client disconnects and
+ * contains the exact frozen-cell results. The Run fallback supports older
+ * terminal records that predate persisted cell results; every fallback fact is
+ * re-bound to this project before it reaches the decision authority. */
+async function repairPacketForInspection(
+  runtime: ChangeVerificationRouteRuntime,
+  scope: ChangeVerificationScope,
+  proof: ChangeVerification,
+  execution: Awaited<ReturnType<ChangeVerificationRouteRuntime["executionCoordinator"]["read"]>>,
+) {
+  if (execution) {
+    try {
+      const packet = agentRepairPacketForExecution({ proof, execution });
+      if (packet) return packet;
+    } catch {
+      // A malformed or incomplete durable execution must not become a packet
+      // by inference. Try the scoped persisted-Run compatibility path below.
+    }
+  }
+  if (!proof.runIds.length) return undefined;
+  const caseResults: unknown[] = [];
+  for (const runId of proof.runIds) {
+    let run;
+    try {
+      run = await runtime.readRun(runId);
+    } catch {
+      return undefined;
+    }
+    if (
+      !run ||
+      run.id !== runId ||
+      run.projectId !== scope.projectId ||
+      run.executionProvenance?.organizationId !== scope.organizationId ||
+      run.executionProvenance.projectId !== scope.projectId
+    ) {
+      return undefined;
+    }
+    try {
+      caseResults.push(await runtime.caseResultFromRun({ proof, run }));
+    } catch {
+      return undefined;
+    }
+  }
+  try {
+    return agentRepairPacketForDecision({ proof, caseResults });
+  } catch {
+    return undefined;
   }
 }
 
@@ -555,6 +608,7 @@ export async function handleChangeVerificationRoute(input: {
       (record) => record.proofId === proof.id,
     );
     const execution = await runtime.executionCoordinator.read(scope, proof.id);
+    const repairPacket = await repairPacketForInspection(runtime, scope, proof, execution);
     let executionPreview;
     try {
       executionPreview = changeProofExecutionPreview(proof);
@@ -568,6 +622,7 @@ export async function handleChangeVerificationRoute(input: {
       publicationOutbox,
       ...(executionPreview ? { executionPreview } : {}),
       ...(execution ? { execution: summarizeChangeProofExecution(execution) } : {}),
+      ...(repairPacket ? { repairPacket } : {}),
       ...(includeHistory === "true"
         ? {
             history: (await runtime.history(scope, proof.id))

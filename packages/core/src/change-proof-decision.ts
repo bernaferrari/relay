@@ -497,6 +497,22 @@ export function agentRepairPacketForDecision(input: {
   });
 }
 
+/** Project a repair packet from the coordinator's durable per-cell results.
+ * This keeps packet assembly in the decision authority instead of allowing a
+ * route, workflow, or renderer to synthesize failure details. Incomplete or
+ * tampered execution cells fail closed through the canonical decision parser. */
+export function agentRepairPacketForExecution(input: {
+  proof: unknown;
+  execution: { cells: readonly { result?: unknown }[] };
+}): AgentRepairPacket | undefined {
+  return agentRepairPacketForDecision({
+    proof: input.proof,
+    caseResults: input.execution.cells.flatMap((cell) =>
+      cell.result === undefined ? [] : [cell.result],
+    ),
+  });
+}
+
 export function providerCheckForChangeProof(input: {
   proof: unknown;
   decision: unknown;

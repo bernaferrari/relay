@@ -1,4 +1,3 @@
-import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import type {
   AndroidPacketCaptureProvenance,
@@ -31,6 +30,16 @@ import {
   proofApplicationId,
 } from "./run-evidence-network.js";
 import { withTimeout } from "./run-evidence-timeout.js";
+import {
+  byteCount,
+  droppedCount,
+  entryCount,
+  finiteOffset,
+  finiteTimestamp,
+  messageOf,
+  resequenceChronologically,
+  videoFiles,
+} from "./run-evidence-support.js";
 export { withTimeout, withTimeoutAndDrain } from "./run-evidence-timeout.js";
 
 const CHANNELS: EvidenceChannel[] = [
@@ -117,9 +126,8 @@ export function initializeRunEvidence(job: TestJob): RunEvidenceHandle {
     // Browser trace consent is recorded in the frozen collection policy and
     // enforced by the browser-proof collector. It is not a generic Evidence
     // channel, so do not emit an invalid `browser-trace` manifest event.
-    if (name === "browser-trace") continue;
-    const channelName: EvidenceChannel =
-      name === "network-body" || name === "network-raw" ? "network" : (name as EvidenceChannel);
+    const channelName = sensitiveManifestChannel(name);
+    if (!channelName) continue;
     event(handle, channelName, "consent.granted", {
       sensitiveChannel: name,
       grant,
@@ -162,6 +170,24 @@ function createManifest(job: TestJob, startedAt: number): EvidenceManifest {
 
 function channel(handle: RunEvidenceHandle, name: EvidenceChannel): EvidenceChannelRecord {
   return handle.manifest.channels[name];
+}
+
+/** Map sensitive policy keys to the single manifest channel that can carry
+ * their consent event. The policy object is persisted/runtime input, so do
+ * not cast arbitrary keys into EvidenceChannel and risk emitting a malformed
+ * manifest event. Browser tracing is intentionally not represented here. */
+function sensitiveManifestChannel(name: string): EvidenceChannel | undefined {
+  switch (name) {
+    case "audio":
+      return "audio";
+    case "crash":
+      return "crash";
+    case "network-body":
+    case "network-raw":
+      return "network";
+    default:
+      return undefined;
+  }
 }
 
 function event(
@@ -833,62 +859,4 @@ export async function stopRunEvidence(
   input.entries = handle.manifest.events.filter((item) => item.channel === "input").length;
   input.finishedAt = handle.manifest.finishedAt;
   job.evidence = handle.manifest;
-}
-
-function finiteTimestamp(value: number | undefined): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
-}
-
-function finiteOffset(value: number | undefined): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
-}
-
-function resequenceChronologically(manifest: EvidenceManifest): void {
-  manifest.events.sort(
-    (left, right) => left.monotonicMs - right.monotonicMs || left.sequence - right.sequence,
-  );
-  for (const [index, item] of manifest.events.entries()) item.sequence = index + 1;
-}
-
-async function videoFiles(job: TestJob): Promise<Array<{ path: string; bytes: number }>> {
-  if (!job.runDir) return [];
-  const dir = join(job.runDir, "video");
-  try {
-    const entries = await readdir(dir);
-    const files = await Promise.all(
-      entries
-        .filter((file) => /\.(mp4|webm)$/i.test(file))
-        .sort()
-        .map(async (file) => {
-          const info = await stat(join(dir, file));
-          return { path: `video/${file}`, bytes: info.size };
-        }),
-    );
-    return files.filter((file) => file.bytes > 0);
-  } catch {
-    return [];
-  }
-}
-
-function entryCount(value: unknown): number {
-  if (Array.isArray(value)) return value.length;
-  if (value && typeof value === "object" && "entries" in value) {
-    const entries = (value as { entries?: unknown }).entries;
-    return Array.isArray(entries) ? entries.length : 0;
-  }
-  return value === undefined || value === null ? 0 : 1;
-}
-
-function byteCount(value: unknown): number {
-  return Buffer.byteLength(JSON.stringify(value ?? null));
-}
-
-function droppedCount(value: unknown): number {
-  if (!value || typeof value !== "object" || !("dropped" in value)) return 0;
-  const dropped = (value as { dropped?: unknown }).dropped;
-  return typeof dropped === "number" && dropped > 0 ? dropped : 0;
-}
-
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

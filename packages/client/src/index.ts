@@ -197,6 +197,7 @@ export class RelayClient {
     path: string,
     init: RequestInit = {},
     accept = "application/json",
+    options: { timeout?: boolean } = {},
   ): Promise<Response> {
     const headers = new Headers(init.headers);
     headers.set("Accept", accept);
@@ -208,8 +209,13 @@ export class RelayClient {
     if (this.connection.auth.type !== "none") {
       headers.set("Authorization", `Bearer ${this.connection.auth.token}`);
     }
-    const timeoutSignal = AbortSignal.timeout(this.timeoutMs);
-    const signal = init.signal ? AbortSignal.any([init.signal, timeoutSignal]) : timeoutSignal;
+    const timeoutSignal =
+      options.timeout === false ? undefined : AbortSignal.timeout(this.timeoutMs);
+    const signal = timeoutSignal
+      ? init.signal
+        ? AbortSignal.any([init.signal, timeoutSignal])
+        : timeoutSignal
+      : init.signal;
     return this.fetcher(`${this.connection.url}${path}`, {
       ...init,
       headers,
@@ -376,6 +382,38 @@ export class RelayClient {
     return { bytes, headers: response.headers };
   }
 
+  /** Open a long-lived registered binary resource without the ordinary JSON
+   * request timeout. Stream consumers own cancellation through `signal`. */
+  async openStream(path: string, init: RequestInit = {}): Promise<Response> {
+    const method = (init.method ?? "GET").toUpperCase();
+    if (method !== "GET") throw new TypeError(`Streams must use GET: ${method}`);
+    const registered = registeredTransport(path, method);
+    const response = await this.requestResponse(
+      path,
+      {
+        ...init,
+        ...(registered ? { headers: this.operationHeaders(registered.definition.id) } : {}),
+      },
+      "application/octet-stream, application/x-relay-h264, application/x-relay-mjpeg",
+      { timeout: false },
+    );
+    if (!response.ok || !response.body) {
+      const text = await response.text().catch(() => "");
+      let body: unknown;
+      try {
+        body = text ? JSON.parse(text) : undefined;
+      } catch {
+        body = text;
+      }
+      throw new ApiError(
+        response.status,
+        httpErrorMessage(response.status, response.statusText, body),
+        body,
+      );
+    }
+    return response;
+  }
+
   async invoke<Id extends OperationId>(
     id: Id,
     input: OperationInput<Id>,
@@ -522,6 +560,24 @@ export class RelayClient {
   }
   authoringSessions(input: OperationInput<"authoring.session.list"> = {}) {
     return this.invoke("authoring.session.list", input);
+  }
+  appMaps() {
+    return this.invoke("app-map.list", {});
+  }
+  appMap(appMapId: string) {
+    return this.invoke("app-map.get", { appMapId });
+  }
+  editAppMapTest(input: OperationInput<"app-map.test.edit">) {
+    return this.invoke("app-map.test.edit", input);
+  }
+  saveAppMapTest(input: OperationInput<"app-map.test.save">) {
+    return this.invoke("app-map.test.save", input);
+  }
+  proposeAppMapTest(input: OperationInput<"app-map.test.propose">) {
+    return this.invoke("app-map.test.propose", input);
+  }
+  activity(input: OperationInput<"activity.list"> = {}) {
+    return this.invoke("activity.list", input);
   }
   authoringSession(sessionId: string) {
     return this.invoke("authoring.session.get", { sessionId });

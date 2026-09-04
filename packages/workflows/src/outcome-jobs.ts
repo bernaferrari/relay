@@ -1,18 +1,13 @@
-import { targetExecutionReadiness } from "@relay/core/target-execution-readiness";
 import { verifyChangeOffline } from "@relay/core/verify-change";
 import {
   measureTracePackJson,
   TRACE_PACK_OFFLINE_TRANSPORT_LIMITS,
   VERIFY_CHANGE_MAX_IDS,
   VERIFY_CHANGE_MAX_TRACE_PACKS,
-  type AuthoringTarget,
   type CampaignRepairTargetSummary,
-  type DeviceLease,
-  type DeviceSummary,
   type SourceRevision,
   type TracePack,
   type TracePackExportResponse,
-  type OperationOutput,
 } from "@relay/protocol";
 import type { RelayOperationPort } from "./operation-port.js";
 import { createRelayOperationPort, type RelayInvokeClient } from "./operation-port.js";
@@ -40,6 +35,7 @@ import type {
   VerifyChangeOutcomeIntent,
 } from "./types.js";
 import { runReplayLab } from "./replay-lab.js";
+import { acquireOwnLease, selectAppMap, selectTarget, targetCatalog } from "./target-catalog.js";
 
 export type RelayOutcomeJobOptions = { actorId: string };
 
@@ -102,186 +98,6 @@ function uniqueBoundedIds(values: readonly string[], label: string): string[] {
     throw new TypeError(`${label} accepts at most ${VERIFY_CHANGE_MAX_IDS} unique ids.`);
   }
   return unique;
-}
-
-function runnableTarget(device: DeviceSummary): AuthoringTarget | undefined {
-  if (device.platform !== "android" && device.platform !== "ios") return undefined;
-  const readiness = targetExecutionReadiness(device);
-  if (!readiness.runnable) return undefined;
-  return { kind: "device", platform: device.platform, targetId: device.serial || device.id };
-}
-
-type TargetCatalogEntry = {
-  identity: string;
-  device: DeviceSummary;
-  target?: AuthoringTarget;
-  blockedReason?: string;
-};
-
-function browserPreflightProblem(
-  targetId: string,
-  preflight: {
-    targetId: string;
-    ok: boolean;
-    checks: readonly { status: string; message: string }[];
-  },
-): string | undefined {
-  if (preflight.targetId !== targetId) {
-    throw new TypeError("Relay returned browser readiness for a different managed target.");
-  }
-  if (preflight.ok) return undefined;
-  const failures = preflight.checks
-    .filter((check) => check.status === "fail")
-    .map((check) => check.message.trim())
-    .filter(Boolean);
-  return failures.length > 0
-    ? `Managed browser target is not ready: ${failures.join("; ").slice(0, 480)}`
-    : "Managed browser target is not ready. Run target preflight again before recording.";
-}
-
-async function targetCatalog(operations: RelayOperationPort): Promise<TargetCatalogEntry[]> {
-  const output = await operations.invoke("target.devices.list", {});
-  const catalog: TargetCatalogEntry[] = output.devices.map((device) => ({
-    identity: device.serial || device.id,
-    device,
-    target: runnableTarget(device),
-  }));
-
-  // `/devices` includes managed browsers for the product's single target
-  // picker, but that discovery row is not sufficient authority to control a
-  // browser. Prove that it is still a registered Relay target and that its
-  // executable, profile, and start page pass the canonical server preflight.
-  const browserEntries = catalog.filter(({ device }) => device.platform === "browser");
-  if (browserEntries.length === 0) return catalog;
-
-  let registered: OperationOutput<"target.list">;
-  try {
-    registered = await operations.invoke("target.list", {});
-  } catch {
-    for (const entry of browserEntries) {
-      entry.blockedReason =
-        "Relay could not verify this managed browser target. Refresh targets, then try again.";
-    }
-    return catalog;
-  }
-
-  await Promise.all(
-    browserEntries.map(async (entry) => {
-      const matches = registered.targets.filter(
-        (target) => target.id === entry.identity && target.kind === "browser" && target.browser,
-      );
-      if (matches.length !== 1) {
-        entry.blockedReason =
-          matches.length === 0
-            ? "This browser is no longer a registered managed target. Refresh targets before recording."
-            : "This browser target has an ambiguous managed configuration. Refresh targets before recording.";
-        return;
-      }
-      try {
-        const { preflight } = await operations.invoke("target.preflight", {
-          targetId: entry.identity,
-        });
-        const problem = browserPreflightProblem(entry.identity, preflight);
-        if (problem) {
-          entry.blockedReason = problem;
-          return;
-        }
-        entry.target = { kind: "browser", platform: "browser", targetId: entry.identity };
-      } catch {
-        entry.blockedReason =
-          "Relay could not prove browser readiness. Run target preflight again before recording.";
-      }
-    }),
-  );
-  return catalog;
-}
-
-async function selectTarget(
-  operations: RelayOperationPort,
-  targetId?: string,
-): Promise<AuthoringTarget> {
-  const catalog = await targetCatalog(operations);
-  const available = catalog.flatMap(({ target }) => (target ? [target] : []));
-  if (targetId) {
-    const selected = available.find((target) => target.targetId === targetId);
-    if (selected) return selected;
-    const blocked = catalog.find(({ identity }) => identity === targetId);
-    if (blocked) {
-      if (blocked.blockedReason) {
-        throw new TypeError(`Target ${targetId} is not ready: ${blocked.blockedReason}`);
-      }
-      const readiness = targetExecutionReadiness(blocked.device);
-      if (!readiness.runnable) {
-        throw new TypeError(`Target ${targetId} is not ready: ${readiness.recovery}`);
-      }
-    }
-    throw new TypeError(
-      `Target ${targetId} is not a connected Android, iOS, or managed browser target.`,
-    );
-  }
-  if (available.length === 1) return available[0]!;
-  throw new TypeError(
-    available.length === 0
-      ? "No connected Android, iOS, or managed browser target is ready."
-      : `Target selection is ambiguous: ${available.length} devices are ready. Choose one by id.`,
-  );
-}
-
-async function selectAppMap(
-  operations: RelayOperationPort,
-  requestedId: string | undefined,
-  createForRecordingTitle?: string,
-): Promise<string> {
-  if (requestedId?.trim()) {
-    await operations.invoke("app-map.get", { appMapId: requestedId });
-    return requestedId;
-  }
-  const { appMaps } = await operations.invoke("app-map.list", {});
-  if (appMaps.length === 1) return appMaps[0]!.id;
-  if (appMaps.length === 0 && createForRecordingTitle) {
-    const { appMap } = await operations.invoke("app-map.create", {
-      appMapId: "default",
-      name: createForRecordingTitle,
-    });
-    return appMap.id;
-  }
-  throw new TypeError(
-    appMaps.length === 0
-      ? "No App Map exists. Record the first Test before running one."
-      : `App Map selection is ambiguous: ${appMaps.length} maps exist. Choose one by id.`,
-  );
-}
-
-function activeLeaseForTarget(
-  leases: readonly DeviceLease[],
-  targetId: string,
-): DeviceLease | undefined {
-  return leases.find((lease) => lease.deviceSerial === targetId && lease.status === "leased");
-}
-
-async function acquireOwnLease(
-  operations: RelayOperationPort,
-  actorId: string,
-  targetId: string,
-): Promise<string> {
-  const { leases } = await operations.invoke("lease.list", { status: "active" });
-  const active = activeLeaseForTarget(leases, targetId);
-  if (active) {
-    if (active.ownerId !== actorId) {
-      throw new TypeError(
-        `${targetId} is controlled by ${active.ownerId}. Relay will not take over that lease implicitly.`,
-      );
-    }
-    return active.id;
-  }
-  const { lease } = await operations.invoke("lease.create", {
-    poolId: "local",
-    deviceSerial: targetId,
-  });
-  if (lease.ownerId !== actorId || lease.deviceSerial !== targetId || lease.status !== "leased") {
-    throw new TypeError("Relay could not prove ownership of the acquired target lease.");
-  }
-  return lease.id;
 }
 
 function publicRecord(value: unknown, label: string): Record<string, unknown> {
@@ -412,19 +228,8 @@ class CanonicalRelayOutcomeJobs implements RelayOutcomeJobs {
         ? available[0]
         : undefined;
     if (intent.targetId && !current) {
-      const blocked = catalog.find(({ identity }) => identity === intent.targetId);
-      if (blocked?.blockedReason) {
-        throw new TypeError(`Target ${intent.targetId} is not ready: ${blocked.blockedReason}`);
-      }
-      if (blocked) {
-        const readiness = targetExecutionReadiness(blocked.device);
-        if (!readiness.runnable) {
-          throw new TypeError(`Target ${intent.targetId} is not ready: ${readiness.recovery}`);
-        }
-      }
-      throw new TypeError(
-        `Target ${intent.targetId} is not a connected Android, iOS, or managed browser target.`,
-      );
+      await selectTarget(this.operations, intent.targetId);
+      throw new TypeError(`Target ${intent.targetId} is not ready.`);
     }
     return {
       targets: available,

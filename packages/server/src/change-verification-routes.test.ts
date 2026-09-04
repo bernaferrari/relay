@@ -1090,6 +1090,98 @@ test("proof.run is a durable server operation and proof.inspect recovers its exe
   }
 });
 
+test("proof.inspect exposes only the server-derived repair packet for a rejected execution", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-proof-repair-packet-route-"));
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = root;
+  resetControlDatabaseCache();
+  const failureDigest = `sha256:${"f".repeat(64)}`;
+  const coordinator = createChangeProofExecutionCoordinator({
+    workerId: "worker:repair-packet-route",
+    projectRun: async ({ run }) => ({
+      appMapId: "settings",
+      testId: "settings-language",
+      targetCaseId: "chromium-compact-ar",
+      runId: (run as { id: string }).id,
+      sourceSha: headSha,
+      buildId: "web",
+      artifactDigest: digest,
+      outcome: "rejected",
+      evidenceDigests: [failureDigest],
+      evidenceComplete: true,
+      selectorResolution: "deterministic",
+      inputOutcome: "reconciled",
+      cleanup: "not-required",
+      failure: {
+        summary: "The Arabic heading overlaps the primary action.",
+        expected: "The heading remains inside its layout bounds.",
+        observed: "The heading overlaps the action.",
+        evidenceRefs: [failureDigest],
+        relevantLogs: ["layout assertion failed"],
+        suggestedScope: ["src/i18n/ar.json"],
+      },
+    }),
+  });
+  const server = await startServer({
+    host: "127.0.0.1",
+    port: 0,
+    proofRouteRuntime: {
+      executionCoordinator: coordinator,
+      executeCell: async () => ({
+        runId: "repair-packet-run",
+        wait: async () => ({ id: "repair-packet-run" }) as never,
+      }),
+    },
+  });
+  const relay = client(server.port);
+  const reviewer = client(server.port, projectId, "human");
+  try {
+    const created = await relay.invoke("proof.start", startInput(), {
+      requestId: "repair-packet-start",
+    });
+    const approved = await reviewer.invoke(
+      "proof.plan.approve",
+      {
+        proofId: created.proof.id,
+        expectedVersion: created.proof.version,
+        decisionId: "repair-packet-approval",
+        reason: "Review the exact layout check.",
+        confirm: true,
+      },
+      { requestId: "repair-packet-approval" },
+    );
+    const rejected = await relay.invoke(
+      "proof.run",
+      { proofId: approved.proof.id, expectedVersion: approved.proof.version, wait: true },
+      { requestId: "repair-packet-run-request" },
+    );
+    assert.equal(rejected.proof.state, "rejected");
+    const inspected = await relay.invoke("proof.inspect", { proofId: rejected.proof.id });
+    assert.deepEqual(inspected.repairPacket, {
+      schemaVersion: 1,
+      proofId: rejected.proof.id,
+      headSha,
+      runId: "repair-packet-run",
+      appMapId: "settings",
+      testId: "settings-language",
+      targetCaseId: "chromium-compact-ar",
+      firstCausalFailure: "The Arabic heading overlaps the primary action.",
+      expected: "The heading remains inside its layout bounds.",
+      observed: "The heading overlaps the action.",
+      evidenceRefs: [failureDigest],
+      relevantLogs: ["layout assertion failed"],
+      suggestedScope: ["src/i18n/ar.json"],
+      rerun: { operationId: "proof.rerun-affected", proofId: rejected.proof.id },
+    });
+  } finally {
+    await server.close();
+    resetControlDatabaseCache();
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("proof.cancel fences an active route execution before target dispatch", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-proof-cancel-route-"));
   const previous = process.env.RELAY_STATE_DIR;
@@ -1433,7 +1525,12 @@ test("destructive Proof cells stay paused and human evidence resumes only with a
         executionId: paused.execution.id,
         cellId: "cell-settings-chromium",
         stepId: "delete-fixture",
-        evidenceDigest: `sha256:${"e".repeat(64)}`,
+        attachment: {
+          kind: "snapshot",
+          encoding: "utf8",
+          data: '{"reviewed":true}',
+          capturedAt: paused.execution.humanIntervention!.at,
+        },
         wait: true,
         confirm: true,
       },
@@ -1441,6 +1538,8 @@ test("destructive Proof cells stay paused and human evidence resumes only with a
     );
     assert.equal(evidence.execution.status, "completed");
     assert.equal(evidence.evidence.recordedBy, "human:reviewer");
+    assert.equal(evidence.evidence.source, "server-attachment");
+    assert.match(evidence.evidence.scopeDigest ?? "", /^sha256:[a-f0-9]{64}$/u);
     assert.equal(dispatches, 1);
 
     await assert.rejects(

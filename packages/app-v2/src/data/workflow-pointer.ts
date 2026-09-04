@@ -22,3 +22,12 @@ export async function writeWorkflowPointer(platform: Platform, workflowId: strin
 export async function clearWorkflowPointer(platform: Platform): Promise<void> {
   await platform.storage.remove?.(POINTER_KEY);
 }
+
+export async function clearWorkflowPointerIfCurrent(
+  platform: Platform,
+  workflowId: string,
+): Promise<boolean> {
+  if ((await readWorkflowPointer(platform)) !== workflowId) return false;
+  await clearWorkflowPointer(platform);
+  return true;
+}

@@ -14,6 +14,9 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
     <button
       ref={ref}
       type={type}
+      data-slot="button"
+      data-variant="ghost"
+      data-size={`icon-${size}`}
       className={classNames("relay-icon-button", `relay-icon-button--${size}`, className)}
       {...props}
     />

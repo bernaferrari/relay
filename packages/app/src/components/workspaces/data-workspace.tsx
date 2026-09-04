@@ -81,7 +81,8 @@ export function DataWorkspace(props: {
     const nextSnapshot = JSON.stringify(nextRows.map(dataRowToVariable));
     setRows(nextRows);
     lastSavedSnapshot = remoteSnapshot;
-    if (pending && nextSnapshot === remoteSnapshot) removePendingDataWorkspaceDraft(server.projectId());
+    if (pending && nextSnapshot === remoteSnapshot)
+      removePendingDataWorkspaceDraft(server.projectId());
     setHydrated(true);
   });
   createEffect(() => {

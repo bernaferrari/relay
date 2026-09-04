@@ -5,27 +5,75 @@ import {
   createRootRouteWithContext,
   createRoute,
   createRouter,
-  Outlet,
   redirect,
   type RouterHistory,
 } from "@tanstack/react-router";
 import { OverlayRoot } from "@relay/ui-react";
 import {
+  createCatalogProductService,
+  type CatalogProductService,
+} from "../data/catalog-product-service";
+import {
+  createDeviceProductService,
+  type DeviceProductService,
+} from "../data/device-product-service";
+import {
   createRecordingProductService,
   type RecordingProductService,
 } from "../data/recording-product-service";
+import { createRunProductService, type RunProductService } from "../data/run-product-service";
+import {
+  createRunAcrossProductService,
+  type RunAcrossProductService,
+} from "../data/run-across-product-service";
+import { createMapProductService, type MapProductService } from "../data/map-product-service";
+import {
+  createSettingsProductService,
+  type SettingsProductService,
+} from "../data/settings-product-service";
+import {
+  createChangeProductService,
+  type ChangeProductService,
+} from "../data/change-product-service";
+import {
+  createTestEditorProductService,
+  type TestEditorProductService,
+} from "../data/test-editor-product-service";
 import { AppShell } from "../layout/app-shell";
 import type { Platform } from "../platform/types";
 import { NotFoundPage } from "../routes/not-found-page";
+import { HomePage } from "../routes/home-page";
 import { NewTestPage } from "../routes/new-test-page";
 import { PlaceholderPage } from "../routes/placeholder-page";
 import { RecordTestPage } from "../routes/record-test-page";
 import { ReviewRecordingPage } from "../routes/review-recording-page";
+import { RunPage } from "../routes/run-page";
+import { RunAcrossPage } from "../routes/run-across-page";
+import { BatchPage } from "../routes/batch-page";
+import { TestPage } from "../routes/test-page";
+import { EditTestPage } from "../routes/edit-test-page";
+import { TestsPage } from "../routes/tests-page";
+import { RunsPage } from "../routes/runs-page";
+import { DevicePage } from "../routes/device-page";
+import { DevicesPage } from "../routes/devices-page";
+import { SettingsPage } from "../routes/settings-page";
+import { ChangesPage } from "../routes/changes-page";
+import { ChangePage } from "../routes/change-page";
+import { MapPage } from "../routes/map-page";
+import { AppPage } from "../routes/app-page";
 import { assertAllowedRouteSearch, routeContract, type ProductRouteId } from "./route-contract";
 
 export type AppRouterContext = {
   platform: Platform;
   productService: RecordingProductService;
+  runService: RunProductService;
+  runAcrossService: RunAcrossProductService;
+  mapService: MapProductService;
+  catalogService: CatalogProductService;
+  deviceService: DeviceProductService;
+  settingsService: SettingsProductService;
+  changeService: ChangeProductService;
+  testEditorService: TestEditorProductService;
   queryClient: QueryClient;
 };
 
@@ -60,7 +108,7 @@ const indexRoute = createRoute({
 const homeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/home",
-  component: placeholderComponent("/home"),
+  component: HomePage,
 });
 const appsRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -70,7 +118,7 @@ const appsRoute = createRoute({
 const appRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/apps/$appId",
-  component: placeholderComponent("/apps/:appId"),
+  component: AppPage,
 });
 const appVersionsRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -85,12 +133,12 @@ const appAccountsRoute = createRoute({
 const appMapRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/apps/$appId/map",
-  component: placeholderComponent("/apps/:appId/map"),
+  component: MapPage,
 });
 const testsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tests",
-  component: placeholderComponent("/tests"),
+  component: TestsPage,
 });
 const newTestRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -100,12 +148,12 @@ const newTestRoute = createRoute({
 const testRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tests/$testId",
-  component: placeholderComponent("/tests/:testId"),
+  component: TestPage,
 });
 const editTestRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tests/$testId/edit",
-  component: placeholderComponent("/tests/:testId/edit"),
+  component: EditTestPage,
 });
 const recordTestRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -115,7 +163,7 @@ const recordTestRoute = createRoute({
 const runAcrossRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tests/$testId/run-across",
-  component: placeholderComponent("/tests/:testId/run-across"),
+  component: RunAcrossPage,
 });
 const recordingReviewRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -125,67 +173,67 @@ const recordingReviewRoute = createRoute({
 const runsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/runs",
-  component: placeholderComponent("/runs"),
+  component: RunsPage,
 });
 const runRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/runs/$runId",
-  component: placeholderComponent("/runs/:runId"),
+  component: RunPage,
 });
 const batchRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/batches/$batchId",
-  component: placeholderComponent("/batches/:batchId"),
+  component: BatchPage,
 });
 const changesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/changes",
-  component: placeholderComponent("/changes"),
+  component: ChangesPage,
 });
 const changeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/changes/$changeId",
-  component: placeholderComponent("/changes/:changeId"),
+  component: ChangePage,
 });
 const devicesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/devices",
-  component: placeholderComponent("/devices"),
+  component: DevicesPage,
 });
 const deviceRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/devices/$deviceId",
-  component: placeholderComponent("/devices/:deviceId"),
+  component: DevicePage,
 });
 const settingsGeneralRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/settings/general",
-  component: placeholderComponent("/settings/general"),
+  component: () => <SettingsPage category="general" />,
 });
 const settingsEvidenceRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/settings/evidence",
-  component: placeholderComponent("/settings/evidence"),
+  component: () => <SettingsPage category="evidence" />,
 });
 const settingsIntegrationsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/settings/integrations",
-  component: placeholderComponent("/settings/integrations"),
+  component: () => <SettingsPage category="integrations" />,
 });
 const settingsAppearanceRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/settings/appearance",
-  component: placeholderComponent("/settings/appearance"),
+  component: () => <SettingsPage category="appearance" />,
 });
 const settingsAdvancedRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/settings/advanced",
-  component: placeholderComponent("/settings/advanced"),
+  component: () => <SettingsPage category="advanced" />,
 });
 const settingsAboutRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/settings/about",
-  component: placeholderComponent("/settings/about"),
+  component: () => <SettingsPage category="about" />,
 });
 
 const routeTree = rootRoute.addChildren([
@@ -221,6 +269,14 @@ const routeTree = rootRoute.addChildren([
 export function createAppRouter(options: {
   platform: Platform;
   productService?: RecordingProductService;
+  runService?: RunProductService;
+  runAcrossService?: RunAcrossProductService;
+  mapService?: MapProductService;
+  catalogService?: CatalogProductService;
+  deviceService?: DeviceProductService;
+  settingsService?: SettingsProductService;
+  changeService?: ChangeProductService;
+  testEditorService?: TestEditorProductService;
   queryClient: QueryClient;
   history?: RouterHistory;
 }) {
@@ -230,6 +286,15 @@ export function createAppRouter(options: {
     context: {
       platform: options.platform,
       productService: options.productService ?? createRecordingProductService(options.platform),
+      runService: options.runService ?? createRunProductService(options.platform),
+      runAcrossService: options.runAcrossService ?? createRunAcrossProductService(options.platform),
+      mapService: options.mapService ?? createMapProductService(options.platform),
+      catalogService: options.catalogService ?? createCatalogProductService(options.platform),
+      deviceService: options.deviceService ?? createDeviceProductService(options.platform),
+      settingsService: options.settingsService ?? createSettingsProductService(options.platform),
+      changeService: options.changeService ?? createChangeProductService(options.platform),
+      testEditorService:
+        options.testEditorService ?? createTestEditorProductService(options.platform),
       queryClient: options.queryClient,
     },
     defaultPreload: "intent",

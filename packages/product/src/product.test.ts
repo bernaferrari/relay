@@ -9,6 +9,7 @@ import {
   createProductFeatures,
   projectError,
 } from "./index.js";
+import { ApiError } from "@relay/client";
 import { createScriptedRelayClient } from "@relay/workflows/testing";
 test("route registry is exhaustive and exact", () => {
   assert.equal(ROUTE_DEFINITIONS.length, 26);
@@ -73,6 +74,8 @@ test("feature functions use canonical operations", async () => {
   const features = createProductFeatures(scripted.client, { actorId: "actor-1" });
   assert.deepEqual(await features.device.list(), []);
   assert.equal(scripted.invocations[0]?.id, "target.list");
+  assert.equal(typeof features.change.open, "function");
+  assert.equal(typeof features.change.run, "function");
 });
 test("global Test lookup uses app-map.list", async () => {
   const app = { tests: { wanted: { id: "wanted" } } };
@@ -82,8 +85,63 @@ test("global Test lookup uses app-map.list", async () => {
   );
   assert.equal(found?.id, "wanted");
 });
+test("global Test lookup fails closed when an identity belongs to multiple Apps", async () => {
+  const test = { id: "duplicate" };
+  const scripted = createScriptedRelayClient([
+    {
+      id: "app-map.list",
+      output: {
+        appMaps: [
+          { id: "app-one", tests: { duplicate: test } },
+          { id: "app-two", tests: { duplicate: test } },
+        ],
+      },
+    },
+  ]);
+
+  await assert.rejects(
+    () => createProductFeatures(scripted.client, { actorId: "actor-1" }).test.get("duplicate"),
+    (error: unknown) => {
+      assert.equal((error as { code?: string }).code, "product-test-identity-ambiguous");
+      assert.deepEqual((error as { appMapIds?: string[] }).appMapIds, ["app-one", "app-two"]);
+      return true;
+    },
+  );
+});
 test("errors become human recovery guidance", () => {
   const error = projectError(new Error("offline"));
+  assert.equal(error.title, "Relay is not connected");
   assert.equal(error.retryable, true);
-  assert.match(error.recovery, /try again/);
+  assert.doesNotMatch(error.detail, /offline/);
+  assert.match(error.recovery, /Start Relay/);
+});
+test("browser transport failures become an actionable local-service error", () => {
+  for (const failure of [
+    new TypeError("Failed to fetch"),
+    new TypeError("Load failed"),
+    new Error("net::ERR_CONNECTION_REFUSED"),
+    new Error("Cross-Origin Request Blocked by CORS policy"),
+  ]) {
+    const error = projectError(failure);
+    assert.equal(error.title, "Relay is not connected");
+    assert.equal(error.retryable, true);
+    assert.match(error.detail, /local Relay service/);
+    assert.match(error.recovery, /try again/);
+  }
+});
+test("projectError preserves structured server WorkflowProblem semantics", () => {
+  const error = projectError(
+    new ApiError(409, "opaque transport text", {
+      error: {
+        code: "stale-workflow-version",
+        title: "This Change is out of date",
+        detail: "Inspect the latest Change before acting again.",
+        recovery: "Open the Change and review its current state.",
+        retryable: false,
+      },
+    }),
+  );
+  assert.equal(error.title, "This Change is out of date");
+  assert.equal(error.retryable, false);
+  assert.doesNotMatch(error.detail, /opaque transport text/);
 });

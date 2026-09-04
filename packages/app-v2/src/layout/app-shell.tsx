@@ -1,6 +1,7 @@
 /** @jsxImportSource react */
-import { Dialog } from "@relay/ui-react";
+import { Dialog, SidebarProvider } from "@relay/ui-react";
 import { Outlet, useLocation } from "@tanstack/react-router";
+import { PanelLeft } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { Platform } from "../platform/types";
 import { routeContractForPath } from "../router/route-contract";
@@ -16,7 +17,7 @@ export function AppShell({ platform }: { platform: Platform }) {
 
   useEffect(() => setNavigationOpen(false), [location.pathname]);
   useEffect(() => {
-    const wideLayout = window.matchMedia("(min-width: 721px)");
+    const wideLayout = window.matchMedia("(min-width: 861px)");
     const closeAtWideLayout = (event: MediaQueryListEvent) => {
       if (event.matches) setNavigationOpen(false);
     };
@@ -26,7 +27,7 @@ export function AppShell({ platform }: { platform: Platform }) {
 
   return (
     <Dialog.Root open={navigationOpen} onOpenChange={setNavigationOpen}>
-      <div
+      <SidebarProvider
         className={`relay-shell${immersive ? " relay-shell--immersive" : ""}`}
         data-platform={platform.platform}
       >
@@ -40,7 +41,7 @@ export function AppShell({ platform }: { platform: Platform }) {
               className="relay-icon-button relay-icon-button--small relay-mobile-menu relay-electron-no-drag"
               aria-label="Open navigation"
             >
-              <span aria-hidden="true">☰</span>
+              <PanelLeft aria-hidden="true" />
             </Dialog.Trigger>
             <span className="relay-mobile-title">Relay</span>
           </header>
@@ -49,7 +50,7 @@ export function AppShell({ platform }: { platform: Platform }) {
           </main>
         </div>
         <RouteAnnouncer />
-      </div>
+      </SidebarProvider>
       <Dialog.Portal>
         <Dialog.Backdrop className="relay-dialog-backdrop relay-navigation-backdrop" />
         <Dialog.Viewport className="relay-dialog-viewport relay-navigation-viewport">

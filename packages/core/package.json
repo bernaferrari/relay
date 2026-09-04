@@ -43,6 +43,8 @@
     "./targets": "./src/targets.ts",
     "./target-execution-readiness": "./src/target-execution-readiness.ts",
     "./browser-target": "./src/browser-target.ts",
+    "./browser-case-profile-target": "./src/browser-case-profile-target.ts",
+    "./app-map-runtime-target-profile": "./src/app-map-runtime-target-profile.ts",
     "./device-setup": "./src/device-setup.ts",
     "./android-sdk-tools": "./src/android-sdk-tools.ts",
     "./screen-identity": "./src/screen-identity.ts",
