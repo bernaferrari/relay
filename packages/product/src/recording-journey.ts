@@ -1,6 +1,7 @@
 import type {
   AuthoringCommitDestination,
   AuthoringInteraction,
+  AuthoringRecordingEdit,
   AuthoringTarget,
 } from "@relay/protocol";
 import { createRelayRecordingOutcomeJobs } from "@relay/workflows/recording-outcomes";
@@ -23,6 +24,7 @@ export type ProductRecordingAction =
   | { action: "record"; interaction: AuthoringInteraction }
   | { action: "checkpoint"; label?: string }
   | { action: "stop" }
+  | { action: "edit"; edit: AuthoringRecordingEdit }
   | { action: "replay" }
   | { action: "approve"; testName?: string; destination?: AuthoringCommitDestination };
 
@@ -65,6 +67,7 @@ export type ProductRecordingJourney = {
   record(interaction: AuthoringInteraction): Promise<ProductRecordingState>;
   checkpoint(label?: string): Promise<ProductRecordingState>;
   stop(): Promise<ProductRecordingState>;
+  edit(edit: AuthoringRecordingEdit): Promise<ProductRecordingState>;
   /** Public journey name for the server's authoring-stop transition. */
   compileReview(): Promise<ProductRecordingState>;
   replay(): Promise<ProductRecordingState>;
@@ -334,6 +337,7 @@ export function createProductRecordingJourney(input: {
     record: (interaction) => transition({ action: "record", interaction }),
     checkpoint: (label) => transition({ action: "checkpoint", ...(label ? { label } : {}) }),
     stop: () => transition({ action: "stop" }),
+    edit: (edit) => transition({ action: "edit", edit }),
     compileReview: () => transition({ action: "stop" }),
     replay: () => transition({ action: "replay" }),
     approve: (testName, destination) =>

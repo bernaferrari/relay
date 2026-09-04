@@ -191,6 +191,12 @@ select {
   gap: 16px;
 }
 
+.relay-menu-separator {
+  height: 1px;
+  margin: 8px 6px 0;
+  background: var(--border-weak-base);
+}
+
 .relay-menu-note {
   display: flex;
   min-height: 44px;
@@ -287,6 +293,116 @@ select {
   flex: 1;
   flex-direction: column;
   background: var(--background-base);
+}
+
+.relay-desktop-toolbar {
+  display: none;
+  min-height: 44px;
+  align-items: center;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--border-weak-base);
+  background: color-mix(in srgb, var(--background-base) 94%, transparent);
+}
+
+.relay-history-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.relay-history-controls .relay-icon-button {
+  color: var(--text-weak);
+}
+
+.relay-history-controls .relay-icon-button:disabled {
+  opacity: 0.35;
+}
+
+.relay-sidebar-active-work {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 8px;
+  padding: 9px;
+  border: 1px solid var(--border-weak-base);
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised-strong);
+}
+
+.relay-sidebar-active-heading {
+  display: flex;
+  min-height: 24px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--text-weaker);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.relay-sidebar-active-heading .relay-badge {
+  min-height: 20px;
+  padding-inline: 6px;
+  font-size: 9px;
+}
+
+.relay-sidebar-active-link {
+  display: grid;
+  min-height: 44px;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  padding: 6px;
+  border-radius: var(--radius-md);
+  color: var(--text-base);
+}
+
+.relay-sidebar-active-link > svg {
+  width: 15px;
+  height: 15px;
+  color: var(--text-interactive-base);
+  stroke-width: 2;
+}
+
+.relay-sidebar-active-link > span {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.relay-sidebar-active-link strong,
+.relay-sidebar-active-link small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.relay-sidebar-active-link strong {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.relay-sidebar-active-link small {
+  color: var(--text-weaker);
+  font-size: 10px;
+}
+
+.relay-sidebar-active-link:focus-visible {
+  outline: 2px solid var(--relay-focus-ring);
+  outline-offset: 1px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .relay-sidebar-active-link:hover {
+    background: var(--surface-base-hover);
+  }
+}
+
+@media (min-width: 861px) {
+  .relay-desktop-toolbar {
+    display: flex;
+  }
 }
 
 .relay-mobile-header {

@@ -1,13 +1,15 @@
 /** @jsxImportSource react */
 import { Menu } from "@relay/ui-react";
 import { useQuery } from "@tanstack/react-query";
-import { useLocation, useNavigate, useRouteContext } from "@tanstack/react-router";
+import { useLocation, useRouter, useRouteContext } from "@tanstack/react-router";
+import { catalogQueryKeys } from "../data/catalog-queries";
 import { recordingQueryKeys } from "../data/recording-queries";
+import { appContextDestination, appScopeForLocation } from "./app-scope";
 
 export function AppSwitcher() {
-  const navigate = useNavigate();
+  const router = useRouter();
   const location = useLocation();
-  const { productService } = useRouteContext({ from: "__root__" });
+  const { productService, catalogService } = useRouteContext({ from: "__root__" });
   const canListApps = typeof productService.listApps === "function";
   const apps = useQuery({
     queryKey: recordingQueryKeys.apps,
@@ -15,10 +17,34 @@ export function AppSwitcher() {
     enabled: canListApps,
     staleTime: 30_000,
   });
-  const appRouteId = /^\/apps\/([^/]+)/u.exec(location.pathname)?.[1];
-  const selectedApp = apps.data?.find((app) => app.id === appRouteId);
+  const needsCatalogScope = /^\/(?:tests|runs|batches)\//u.test(location.pathname);
+  const tests = useQuery({
+    queryKey: catalogQueryKeys.tests,
+    queryFn: () => catalogService.listTests(),
+    enabled: needsCatalogScope,
+    staleTime: 30_000,
+  });
+  const runs = useQuery({
+    queryKey: catalogQueryKeys.runs,
+    queryFn: () => catalogService.listRuns(),
+    enabled: needsCatalogScope,
+    staleTime: 15_000,
+  });
+  const selectedAppId = appScopeForLocation({
+    pathname: location.pathname,
+    search: location.search,
+    tests: tests.data,
+    runs: runs.data,
+  });
+  const selectedApp = apps.data?.find((app) => app.id === selectedAppId);
   const contextName = selectedApp?.name ?? "All apps";
   const avatar = selectedApp?.name.trim().slice(0, 1).toLocaleUpperCase() ?? "R";
+
+  function switchApp(appId?: string) {
+    router.history.push(
+      appContextDestination({ pathname: location.pathname, search: location.search, appId }),
+    );
+  }
 
   return (
     <Menu.Root>
@@ -39,7 +65,7 @@ export function AppSwitcher() {
           <Menu.Popup className="relay-overlay-popup relay-menu-popup">
             <Menu.Group>
               <Menu.GroupLabel className="relay-menu-label">Apps</Menu.GroupLabel>
-              <Menu.Item className="relay-menu-item" onClick={() => void navigate({ to: "/apps" })}>
+              <Menu.Item className="relay-menu-item" onClick={() => switchApp()}>
                 <span>All apps</span>
                 {!selectedApp ? <span aria-hidden="true">✓</span> : null}
               </Menu.Item>
@@ -47,7 +73,7 @@ export function AppSwitcher() {
                 <Menu.Item
                   className="relay-menu-item"
                   key={app.id}
-                  onClick={() => void navigate({ to: "/apps/$appId", params: { appId: app.id } })}
+                  onClick={() => switchApp(app.id)}
                 >
                   <span>{app.name}</span>
                   {selectedApp?.id === app.id ? <span aria-hidden="true">✓</span> : null}
@@ -58,6 +84,10 @@ export function AppSwitcher() {
                   Apps are temporarily unavailable
                 </Menu.Item>
               ) : null}
+              <Menu.Separator className="relay-menu-separator" />
+              <Menu.Item className="relay-menu-item" onClick={() => router.history.push("/apps")}>
+                Manage apps
+              </Menu.Item>
             </Menu.Group>
           </Menu.Popup>
         </Menu.Positioner>

@@ -20,6 +20,7 @@ import {
   Settings,
 } from "lucide-react";
 import { AppSwitcher } from "./app-switcher";
+import { ActiveWork } from "./active-work";
 
 const mainItems = [
   { to: "/home", label: "Home", icon: House },
@@ -65,6 +66,7 @@ export function SidebarContent({ label = "Primary" }: { label?: string }) {
         </nav>
       </SidebarGroup>
       <SidebarFooter className="relay-sidebar-footer">
+        <ActiveWork />
         <nav className="relay-nav relay-nav--secondary" aria-label={`${label} settings`}>
           <SidebarMenuButton
             render={<Link to="/settings/general" />}

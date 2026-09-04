@@ -53,6 +53,17 @@ export type ProductBatchStatus =
   | "needs-review"
   | "cancelled";
 
+export type ProductBatchCase = {
+  readonly id: string;
+  readonly index: number;
+  readonly phase: "pilot" | "coverage";
+  readonly status: "pending" | "queued" | "running" | "passed" | "failed" | "blocked" | "cancelled";
+  readonly values: Readonly<Record<string, string>>;
+  readonly world?: string;
+  readonly runId?: string;
+  readonly error?: string;
+};
+
 export type ProductRunAcrossBatch = {
   readonly id: string;
   readonly title: string;
@@ -66,6 +77,7 @@ export type ProductRunAcrossBatch = {
   readonly pendingCases: number;
   readonly targetNames: readonly string[];
   readonly runIds: readonly string[];
+  readonly cases: readonly ProductBatchCase[];
   readonly setup?: ProductRunAcrossSetup;
   readonly navigation: { readonly route: string; readonly href: string };
 };
@@ -103,8 +115,14 @@ export type ProductRunAcrossService = {
 };
 
 type CampaignCase = {
+  index?: number;
+  cellId?: string;
+  values?: Record<string, string>;
+  world?: string;
+  phase?: "pilot" | "coverage";
   status?: string;
   runId?: string;
+  error?: string;
   target?: { targetId?: string; platform?: string };
 };
 
@@ -260,9 +278,33 @@ function batchFromCampaign(
     pendingCases: Math.max(0, cases.length - completedCases),
     targetNames,
     runIds,
+    cases: cases.map((item, index) => ({
+      id: item.cellId ?? `case-${index + 1}`,
+      index: item.index ?? index,
+      phase: item.phase ?? (index === 0 ? "pilot" : "coverage"),
+      status: productCaseStatus(item.status),
+      values: { ...item.values },
+      ...(item.world ? { world: item.world } : {}),
+      ...(item.runId ? { runId: item.runId } : {}),
+      ...(item.error ? { error: item.error } : {}),
+    })),
     ...(setup ? { setup } : {}),
     navigation: { route: routeUrls.batch(campaign.id), href: routeUrls.batch(campaign.id) },
   };
+}
+
+function productCaseStatus(value: string | undefined): ProductBatchCase["status"] {
+  if (
+    value === "pending" ||
+    value === "queued" ||
+    value === "running" ||
+    value === "passed" ||
+    value === "failed" ||
+    value === "blocked" ||
+    value === "cancelled"
+  )
+    return value;
+  return "pending";
 }
 
 export function previewProductRunAcross(input: {

@@ -100,6 +100,33 @@ test("a transition forwards the inspected workflow version as the CAS fence", as
   assert.equal(next.status, "reviewing");
 });
 
+test("review edits use the canonical edit transition", async () => {
+  let decision: unknown;
+  const journey = createProductRecordingJourney({
+    jobs: jobsFor({
+      recorded: snapshot("reviewing", ["inspect", "edit", "replay"], 9),
+      inspected: snapshot("reviewing", ["inspect", "edit", "replay"], 9),
+      advanced: snapshot("reviewing", ["inspect", "edit", "replay"], 10),
+      onAdvance: (next) => (decision = next),
+    }),
+  });
+
+  await journey.begin({ title: "Settings language" });
+  const next = await journey.edit({
+    kind: "rename",
+    actionId: "action-1",
+    intent: "Open settings",
+  });
+
+  assert.deepEqual(decision, {
+    workflowId: "workflow-1",
+    expectedVersion: 9,
+    action: "edit",
+    edit: { kind: "rename", actionId: "action-1", intent: "Open settings" },
+  });
+  assert.equal(next.snapshot?.workflow?.expectedVersion, 10);
+});
+
 test("public state is bounded and detached from the canonical projection", async () => {
   const interaction = { kind: "screenshot", label: "Before" } as AuthoringInteraction;
   const unsafe = Object.assign(snapshot("recording", ["inspect", "record", "stop"]), {

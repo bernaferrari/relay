@@ -1,9 +1,29 @@
 /** @jsxImportSource react */
-import { Button, Field, FieldDescription, FieldLabel, Input } from "@relay/ui-react";
+import type { AuthoringRecordingEdit } from "@relay/protocol";
+import {
+  Button,
+  Checkbox,
+  Dialog,
+  Field,
+  FieldDescription,
+  FieldLabel,
+  Input,
+  ScrollArea,
+} from "@relay/ui-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useRouteContext } from "@tanstack/react-router";
-import { Check, MoreHorizontal, RotateCcw, Save } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import {
+  ArrowDown,
+  ArrowUp,
+  Check,
+  Combine,
+  MoreHorizontal,
+  RotateCcw,
+  Save,
+  Scissors,
+  Trash2,
+} from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Breadcrumbs, EmptyState } from "../components/product-patterns";
 import { recordingQueryKeys, refreshRecording } from "../data/recording-queries";
 import type { ProductRecordingState } from "../data/recording-product-service";
@@ -18,6 +38,9 @@ export function ReviewRecordingPage() {
   const workflowId = recordingId;
   const nameDraftKey = `recordingName:${workflowId}`;
   const [testName, setTestName] = useState("");
+  const [selectedActionIds, setSelectedActionIds] = useState<readonly string[]>([]);
+  const [actionIntent, setActionIntent] = useState("");
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [nameDraftLoaded, setNameDraftLoaded] = useState(false);
   const suggestionApplied = useRef(false);
 
@@ -42,17 +65,28 @@ export function ReviewRecordingPage() {
     staleTime: 0,
   });
   const transition = useMutation({
-    mutationFn: (intent: { action: "replay" } | { action: "approve"; testName: string }) =>
-      intent.action === "replay"
-        ? productService.replay()
-        : productService.approve(intent.testName),
+    mutationFn: (
+      intent:
+        | { action: "replay" }
+        | { action: "approve"; testName: string }
+        | { action: "edit"; edit: AuthoringRecordingEdit },
+    ) => {
+      if (intent.action === "replay") return productService.replay();
+      if (intent.action === "edit") return productService.edit(intent.edit);
+      return productService.approve(intent.testName);
+    },
     onSuccess: async (state, intent) => {
       const canonical = await refreshRecording(queryClient, productService, workflowId);
       if (state.recovery || canonical.recovery) return;
+      if (intent.action === "edit") {
+        const nextIds = canonical.snapshot?.review?.actions.map((action) => action.id) ?? [];
+        setSelectedActionIds((current) => current.filter((id) => nextIds.includes(id)).slice(0, 1));
+      }
       if (intent.action === "approve" && canonical.snapshot?.stage === "committed") {
         await Promise.resolve(platform.storage.remove?.(nameDraftKey));
         if (await clearWorkflowPointerIfCurrent(platform, workflowId)) {
           queryClient.setQueryData<string | null>(recordingQueryKeys.pointer, null);
+          queryClient.setQueryData<string | null>(recordingQueryKeys.reconciledPointer, null);
         }
       }
     },
@@ -65,6 +99,19 @@ export function ReviewRecordingPage() {
     snapshot && !state?.recovery && !recording.error && !transition.data?.recovery,
   );
   const allowed = new Set(reviewReady ? (snapshot?.allowedNextActions ?? []) : []);
+  const actions = useMemo(() => review?.actions ?? [], [review?.actions]);
+  const selectedActions = useMemo(
+    () => actions.filter((action) => selectedActionIds.includes(action.id)),
+    [actions, selectedActionIds],
+  );
+  const selectedAction = selectedActions.length === 1 ? selectedActions[0] : undefined;
+  const selectedIndex = selectedAction
+    ? actions.findIndex((action) => action.id === selectedAction.id)
+    : -1;
+  const selectionIsContiguous = selectedActions.every(
+    (action, index) => actions.indexOf(action) === actions.indexOf(selectedActions[0]!) + index,
+  );
+  const canEdit = allowed.has("edit") && !transition.isPending;
   const canApprove = allowed.has("approve");
   const committedTestId = snapshot?.authoring?.committedTestId;
   const saved = reviewReady && snapshot?.stage === "committed";
@@ -84,9 +131,48 @@ export function ReviewRecordingPage() {
   useEffect(() => {
     if (!saved) return;
     void clearWorkflowPointerIfCurrent(platform, workflowId).then((cleared) => {
-      if (cleared) queryClient.setQueryData<string | null>(recordingQueryKeys.pointer, null);
+      if (cleared) {
+        queryClient.setQueryData<string | null>(recordingQueryKeys.pointer, null);
+        queryClient.setQueryData<string | null>(recordingQueryKeys.reconciledPointer, null);
+      }
     });
   }, [platform, queryClient, saved, workflowId]);
+
+  useEffect(() => {
+    if (actions.length === 0) {
+      setSelectedActionIds([]);
+      return;
+    }
+    setSelectedActionIds((current) =>
+      current.some((id) => actions.some((action) => action.id === id)) ? current : [actions[0]!.id],
+    );
+  }, [actions]);
+
+  useEffect(() => {
+    setActionIntent(selectedAction?.intent ?? "");
+  }, [selectedAction?.id, selectedAction?.intent]);
+
+  function edit(edit: AuthoringRecordingEdit) {
+    transition.mutate({ action: "edit", edit });
+  }
+
+  function moveSelected(offset: -1 | 1) {
+    if (!selectedAction || selectedIndex < 0) return;
+    const destination = selectedIndex + offset;
+    if (destination < 0 || destination >= actions.length) return;
+    const actionIds = actions.map((action) => action.id);
+    [actionIds[selectedIndex], actionIds[destination]] = [
+      actionIds[destination]!,
+      actionIds[selectedIndex]!,
+    ];
+    edit({ kind: "reorder", actionIds });
+  }
+
+  function toggleAction(actionId: string, checked: boolean) {
+    setSelectedActionIds((current) =>
+      checked ? [...new Set([...current, actionId])] : current.filter((id) => id !== actionId),
+    );
+  }
 
   if (saved) {
     return (
@@ -143,29 +229,41 @@ export function ReviewRecordingPage() {
               <span>{captureSummary(review?.actions ?? [])}</span>
             </div>
 
-            {review?.actions.length ? (
-              <ol className="relay-review-steps">
-                {review.actions.map((step, index) => {
-                  const copy = reviewActionCopy(step);
-                  const ordinal = review.actions
-                    .slice(0, index + 1)
-                    .filter((candidate) => reviewActionCopy(candidate).kind !== "pause").length;
-                  return (
-                    <li
-                      className={`relay-review-step relay-review-step--${copy.kind}`}
-                      key={step.id}
-                    >
-                      <span className="relay-review-step-number" aria-hidden="true">
-                        {copy.kind === "pause" ? <MoreHorizontal /> : ordinal}
-                      </span>
-                      <div>
-                        <strong>{copy.title}</strong>
-                        <p>{copy.detail}</p>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ol>
+            {actions.length ? (
+              <ScrollArea className="relay-review-actions-scroll">
+                <ol className="relay-review-steps" aria-label="Recorded actions">
+                  {actions.map((step, index) => {
+                    const copy = reviewActionCopy(step);
+                    const ordinal = actions
+                      .slice(0, index + 1)
+                      .filter((candidate) => reviewActionCopy(candidate).kind !== "pause").length;
+                    const selected = selectedActionIds.includes(step.id);
+                    return (
+                      <li
+                        className={`relay-review-step relay-review-step--${copy.kind}${selected ? " relay-review-step--selected" : ""}`}
+                        key={step.id}
+                      >
+                        <Checkbox
+                          checked={selected}
+                          onCheckedChange={(checked) => toggleAction(step.id, checked)}
+                          aria-label={`Select ${copy.title}`}
+                        />
+                        <span className="relay-review-step-number" aria-hidden="true">
+                          {copy.kind === "pause" ? <MoreHorizontal /> : ordinal}
+                        </span>
+                        <button
+                          type="button"
+                          className="relay-review-step-copy"
+                          onClick={() => setSelectedActionIds([step.id])}
+                        >
+                          <strong>{copy.title}</strong>
+                          <p>{copy.detail}</p>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ol>
+              </ScrollArea>
             ) : (
               <EmptyState
                 title="No recorded moments are available"
@@ -175,56 +273,205 @@ export function ReviewRecordingPage() {
           </div>
 
           <aside className="relay-review-sidebar" aria-label="Replay and save">
-            <Field>
-              <FieldLabel htmlFor="review-test-name">Test name</FieldLabel>
-              <Input
-                id="review-test-name"
-                value={testName}
-                onChange={(event) => setTestName(event.currentTarget.value)}
-                placeholder="For example, Change the app language"
-                maxLength={160}
-                autoComplete="off"
-                spellCheck
-                required
-              />
-              <FieldDescription>Name the outcome a teammate should recognize.</FieldDescription>
-            </Field>
-            <div className="relay-replay-status">
-              <p className="relay-section-label">Replay</p>
-              <h2>
-                {replayTitle(review?.latestReplay?.outcome, review?.replayRequired, canApprove)}
-              </h2>
-              <p>{replayDetail(review?.latestReplay?.outcome, canApprove)}</p>
-            </div>
+            <section className="relay-review-editor" aria-labelledby="review-editor-title">
+              <div className="relay-review-editor-heading">
+                <div>
+                  <p className="relay-section-label">Edit</p>
+                  <h2 id="review-editor-title">
+                    {selectedActions.length === 0
+                      ? "Select an action"
+                      : selectedActions.length === 1
+                        ? "Action details"
+                        : `${selectedActions.length} actions selected`}
+                  </h2>
+                </div>
+                {selectedActions.length ? <span>{selectedActions.length} selected</span> : null}
+              </div>
 
-            {canApprove ? (
-              <Button
-                variant="primary"
-                onClick={() => transition.mutate({ action: "approve", testName: testName.trim() })}
-                disabled={transition.isPending || !testName.trim()}
-              >
-                <Save aria-hidden="true" />
-                {transition.isPending && transition.variables?.action === "approve"
-                  ? "Saving…"
-                  : "Save Test"}
-              </Button>
-            ) : allowed.has("replay") ? (
-              <Button
-                variant="primary"
-                onClick={() => transition.mutate({ action: "replay" })}
-                disabled={transition.isPending}
-              >
-                <RotateCcw aria-hidden="true" />
-                {transition.isPending ? "Replaying…" : "Replay recording"}
-              </Button>
-            ) : (
-              <p className="relay-review-waiting" role="status">
-                Waiting for Relay to make the next review action available.
-              </p>
-            )}
-            {allowed.has("replay") && review?.replayRequired ? (
-              <p className="relay-save-requirement">A passing replay is required before saving.</p>
-            ) : null}
+              {selectedAction ? (
+                <>
+                  <Field>
+                    <FieldLabel htmlFor="review-action-intent">Instruction</FieldLabel>
+                    <Input
+                      id="review-action-intent"
+                      value={actionIntent}
+                      onChange={(event) => setActionIntent(event.currentTarget.value)}
+                      maxLength={240}
+                      disabled={!canEdit}
+                    />
+                    <FieldDescription>Describe the outcome in plain language.</FieldDescription>
+                  </Field>
+                  <Button
+                    size="small"
+                    onClick={() =>
+                      edit({
+                        kind: "rename",
+                        actionId: selectedAction.id,
+                        intent: actionIntent.trim(),
+                      })
+                    }
+                    disabled={
+                      !canEdit ||
+                      !actionIntent.trim() ||
+                      actionIntent.trim() === selectedAction.intent
+                    }
+                  >
+                    Save instruction
+                  </Button>
+                  <div className="relay-review-edit-row" aria-label="Reorder action">
+                    <Button
+                      size="small"
+                      variant="ghost"
+                      onClick={() => moveSelected(-1)}
+                      disabled={!canEdit || selectedIndex <= 0}
+                    >
+                      <ArrowUp aria-hidden="true" /> Move up
+                    </Button>
+                    <Button
+                      size="small"
+                      variant="ghost"
+                      onClick={() => moveSelected(1)}
+                      disabled={!canEdit || selectedIndex === actions.length - 1}
+                    >
+                      <ArrowDown aria-hidden="true" /> Move down
+                    </Button>
+                  </div>
+                  {selectedAction.stepCount > 1 ? (
+                    <Button
+                      size="small"
+                      variant="ghost"
+                      onClick={() =>
+                        edit({
+                          kind: "split",
+                          actionId: selectedAction.id,
+                          atStep: Math.ceil(selectedAction.stepCount / 2),
+                        })
+                      }
+                      disabled={!canEdit}
+                    >
+                      <Scissors aria-hidden="true" /> Split action
+                    </Button>
+                  ) : null}
+                </>
+              ) : selectedActions.length > 1 ? (
+                <Button
+                  size="small"
+                  onClick={() =>
+                    edit({ kind: "merge", actionIds: selectedActions.map((action) => action.id) })
+                  }
+                  disabled={!canEdit || !selectionIsContiguous}
+                >
+                  <Combine aria-hidden="true" /> Merge actions
+                </Button>
+              ) : (
+                <p className="relay-review-editor-help">
+                  Choose an action to rename, reorder, split, or remove it.
+                </p>
+              )}
+
+              {selectedActions.length ? (
+                <Dialog.Root open={deleteOpen} onOpenChange={setDeleteOpen}>
+                  <Dialog.Trigger
+                    render={
+                      <Button
+                        size="small"
+                        variant="ghost"
+                        className="relay-review-delete"
+                        disabled={!canEdit}
+                      />
+                    }
+                  >
+                    <Trash2 aria-hidden="true" /> Remove{" "}
+                    {selectedActions.length === 1 ? "action" : "actions"}
+                  </Dialog.Trigger>
+                  <Dialog.Portal>
+                    <Dialog.Backdrop className="relay-dialog-backdrop" />
+                    <Dialog.Viewport className="relay-dialog-viewport">
+                      <Dialog.Popup className="relay-overlay-popup relay-dialog-popup">
+                        <Dialog.Title>
+                          Remove selected {selectedActions.length === 1 ? "action" : "actions"}?
+                        </Dialog.Title>
+                        <Dialog.Description>
+                          This changes the journey and requires a new replay before saving.
+                        </Dialog.Description>
+                        <div className="relay-dialog-actions">
+                          <Dialog.Close render={<Button variant="ghost">Cancel</Button>} />
+                          <Button
+                            className="relay-review-delete-confirm"
+                            onClick={() => {
+                              setDeleteOpen(false);
+                              edit({
+                                kind: "remove",
+                                actionIds: selectedActions.map((action) => action.id),
+                              });
+                            }}
+                          >
+                            Remove
+                          </Button>
+                        </div>
+                      </Dialog.Popup>
+                    </Dialog.Viewport>
+                  </Dialog.Portal>
+                </Dialog.Root>
+              ) : null}
+            </section>
+
+            <div className="relay-review-save-panel">
+              <Field>
+                <FieldLabel htmlFor="review-test-name">Test name</FieldLabel>
+                <Input
+                  id="review-test-name"
+                  value={testName}
+                  onChange={(event) => setTestName(event.currentTarget.value)}
+                  placeholder="For example, Change the app language"
+                  maxLength={160}
+                  autoComplete="off"
+                  spellCheck
+                  required
+                />
+                <FieldDescription>Name the outcome a teammate should recognize.</FieldDescription>
+              </Field>
+              <div className="relay-replay-status">
+                <p className="relay-section-label">Replay</p>
+                <h2>
+                  {replayTitle(review?.latestReplay?.outcome, review?.replayRequired, canApprove)}
+                </h2>
+                <p>{replayDetail(review?.latestReplay?.outcome, canApprove)}</p>
+              </div>
+
+              {canApprove ? (
+                <Button
+                  variant="primary"
+                  onClick={() =>
+                    transition.mutate({ action: "approve", testName: testName.trim() })
+                  }
+                  disabled={transition.isPending || !testName.trim()}
+                >
+                  <Save aria-hidden="true" />
+                  {transition.isPending && transition.variables?.action === "approve"
+                    ? "Saving…"
+                    : "Save Test"}
+                </Button>
+              ) : allowed.has("replay") ? (
+                <Button
+                  variant="primary"
+                  onClick={() => transition.mutate({ action: "replay" })}
+                  disabled={transition.isPending}
+                >
+                  <RotateCcw aria-hidden="true" />
+                  {transition.isPending ? "Replaying…" : "Replay recording"}
+                </Button>
+              ) : (
+                <p className="relay-review-waiting" role="status">
+                  Waiting for Relay to make the next review action available.
+                </p>
+              )}
+              {allowed.has("replay") && review?.replayRequired ? (
+                <p className="relay-save-requirement">
+                  A passing replay is required before saving.
+                </p>
+              ) : null}
+            </div>
           </aside>
         </div>
       ) : null}

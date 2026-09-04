@@ -3,7 +3,7 @@ import type { ProductRunSummary, ProductTestSummary } from "@relay/product/catal
 import type { ProductChange } from "@relay/product/change-journey";
 import { Button, Card, CardContent } from "@relay/ui-react";
 import { useQuery } from "@tanstack/react-query";
-import { Link, useRouteContext } from "@tanstack/react-router";
+import { Link, getRouteApi, useRouteContext } from "@tanstack/react-router";
 import {
   ArrowRight,
   CheckCircle2,
@@ -16,6 +16,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { EmptyState, OutcomeMark } from "../components/product-patterns";
+import { catalogQueryKeys } from "../data/catalog-queries";
 import { recordingQueryKeys } from "../data/recording-queries";
 import { runQueryKeys } from "../data/run-queries";
 import { readRunPointer } from "../data/run-pointer";
@@ -24,16 +25,17 @@ import { PageLoading, RecordingProblem } from "./recording-shared";
 
 const homeQueryKeys = {
   apps: ["home", "apps"] as const,
-  tests: ["home", "tests"] as const,
-  runs: ["home", "runs"] as const,
   changes: ["home", "changes"] as const,
   targets: ["home", "targets"] as const,
 };
+const routeApi = getRouteApi("/home");
 
 export function HomePage() {
   const { platform, productService, catalogService, changeService } = useRouteContext({
     from: "__root__",
   });
+  const search = routeApi.useSearch() as { app?: unknown };
+  const appScope = typeof search.app === "string" ? search.app : "";
   const recording = useQuery({
     queryKey: recordingQueryKeys.pointer,
     queryFn: async () => (await readWorkflowPointer(platform)) ?? null,
@@ -46,12 +48,12 @@ export function HomePage() {
   });
   const apps = useQuery({ queryKey: homeQueryKeys.apps, queryFn: () => productService.listApps() });
   const tests = useQuery({
-    queryKey: homeQueryKeys.tests,
+    queryKey: catalogQueryKeys.tests,
     queryFn: () => catalogService.listTests(),
     staleTime: 15_000,
   });
   const runs = useQuery({
-    queryKey: homeQueryKeys.runs,
+    queryKey: catalogQueryKeys.runs,
     queryFn: () => catalogService.listRuns(),
     staleTime: 15_000,
   });
@@ -72,15 +74,21 @@ export function HomePage() {
   const queries = [recording, run, apps, tests, runs, changes] as const;
   const loading = queries.some((query) => query.isPending);
   const error = queries.find((query) => query.error)?.error;
-  const latestTest = newest(tests.data ?? [], (test) => test.updatedAt);
+  const scopedTests = (tests.data ?? []).filter((test) => !appScope || test.appMapId === appScope);
+  const scopedRuns = (runs.data ?? []).filter((run) => !appScope || run.appMapId === appScope);
+  const scopedChanges = (changes.data ?? []).filter(
+    (change) => !appScope || change.appIds?.includes(appScope),
+  );
+  const selectedApp = apps.data?.find((app) => app.id === appScope);
+  const latestTest = newest(scopedTests, (test) => test.updatedAt);
   const currentChange = newest(
-    (changes.data ?? []).filter((change) => change.status !== "superseded"),
+    scopedChanges.filter((change) => change.status !== "superseded"),
     (change) => change.updatedAt,
   );
   const hasApps = Boolean(apps.data?.length);
-  const hasTests = Boolean(tests.data?.length);
+  const hasTests = Boolean(scopedTests.length);
   const hasWorkspaceData =
-    hasApps || hasTests || Boolean(runs.data?.length) || Boolean(changes.data?.length);
+    hasApps || hasTests || Boolean(scopedRuns.length) || Boolean(scopedChanges.length);
 
   const retry = () => {
     for (const query of [...queries, targets]) void query.refetch();
@@ -91,7 +99,13 @@ export function HomePage() {
       <header className="relay-page-header relay-home-header">
         <div>
           <p className="relay-eyebrow">Overview</p>
-          <h1>{hasWorkspaceData ? "Ready when you are" : "Prove one journey that matters"}</h1>
+          <h1>
+            {selectedApp
+              ? `${selectedApp.name}, ready when you are`
+              : hasWorkspaceData
+                ? "Ready when you are"
+                : "Prove one journey that matters"}
+          </h1>
           <p className="relay-page-description">
             {hasWorkspaceData
               ? "Pick up the most useful work, then inspect recent results without hunting through the app."
@@ -181,9 +195,9 @@ export function HomePage() {
                 View all Runs <ArrowRight aria-hidden="true" />
               </Link>
             </div>
-            {runs.data?.length ? (
+            {scopedRuns.length ? (
               <div className="relay-home-recent-list">
-                {[...(runs.data ?? [])]
+                {[...scopedRuns]
                   .sort((left, right) => runTime(right) - runTime(left))
                   .slice(0, 3)
                   .map((item) => (

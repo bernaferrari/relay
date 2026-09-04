@@ -167,6 +167,11 @@ function fakeService(initial = state("recording", ["inspect", "record", "checkpo
       current = state("reviewing", ["inspect", "replay"]);
       return current;
     },
+    async edit(edit) {
+      calls.push(`edit:${edit.kind}`);
+      current = state("reviewing", ["inspect", "edit", "replay"]);
+      return current;
+    },
     async replay() {
       calls.push("replay");
       current = state("reviewing", ["inspect", "replay", "approve"], { replay: "passed" });
@@ -423,6 +428,23 @@ describe("record, review, replay, and save", () => {
         "approve",
       ]),
     );
+  });
+
+  it("renames a recorded action through the canonical edit transition", async () => {
+    const fake = fakeService(state("reviewing", ["inspect", "edit", "replay"]));
+    await renderJourney(
+      "/recordings/workflow-1/review",
+      fake.service,
+      platformWithStorage().platform,
+    );
+
+    const instruction = document.querySelector<HTMLInputElement>("#review-action-intent");
+    if (!instruction) throw new Error("Action instruction editor was not rendered");
+    await fill(instruction, "Open language settings");
+    await click(button("Save instruction"));
+
+    expect(fake.calls).toContain("edit:rename");
+    expect(document.body.textContent).toContain("A passing replay is required before saving");
   });
 
   it("opens and controls the selected target before recording begins", async () => {

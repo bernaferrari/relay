@@ -1,5 +1,6 @@
 /** @jsxImportSource react */
-import { Button } from "@relay/ui-react";
+import type { ProductBatchCase } from "@relay/product/run-across";
+import { Badge, Button } from "@relay/ui-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useRouteContext } from "@tanstack/react-router";
 import { Breadcrumbs, EmptyState, OutcomeMark } from "../components/product-patterns";
@@ -35,6 +36,7 @@ export function BatchPage() {
   const report = batch.data;
   const active = report?.status === "pilot-running" || report?.status === "running";
   const canContinue = report?.status === "ready-to-continue" || report?.status === "needs-review";
+  const failureGroups = groupFailures(report?.cases ?? []);
   return (
     <section className="relay-page relay-batch-page">
       <Breadcrumbs
@@ -113,16 +115,62 @@ export function BatchPage() {
               </div>
             </section>
           ) : null}
-          {report.runIds.length ? (
-            <section className="relay-batch-runs">
-              <h2>Reports in this batch</h2>
+          {report.cases.length ? (
+            <section className="relay-batch-cases" aria-labelledby="batch-cases-title">
+              <div className="relay-section-heading">
+                <div>
+                  <p className="relay-section-label">Matrix</p>
+                  <h2 id="batch-cases-title">Cases in this batch</h2>
+                </div>
+                <span>{report.cases.length} total</span>
+              </div>
+              <div className="relay-batch-case-table" role="table" aria-label="Batch cases">
+                <div className="relay-batch-case-header" role="row">
+                  <span role="columnheader">Case</span>
+                  <span role="columnheader">Values</span>
+                  <span role="columnheader">Result</span>
+                  <span role="columnheader" className="relay-visually-hidden">
+                    Report
+                  </span>
+                </div>
+                {report.cases.map((item) => (
+                  <div className="relay-batch-case-row" role="row" key={item.id}>
+                    <span role="cell">
+                      <strong>{item.world ?? `Case ${item.index + 1}`}</strong>
+                      <small>{item.phase === "pilot" ? "Representative pilot" : "Coverage"}</small>
+                    </span>
+                    <span role="cell" className="relay-batch-case-values">
+                      {caseValues(item.values)}
+                    </span>
+                    <span role="cell">
+                      <Badge variant={caseVariant(item.status)}>{caseStatus(item.status)}</Badge>
+                    </span>
+                    <span role="cell">
+                      {item.runId ? (
+                        <Link to="/runs/$runId" params={{ runId: item.runId }}>
+                          Open report <span aria-hidden="true">→</span>
+                        </Link>
+                      ) : (
+                        <small>Not available yet</small>
+                      )}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
+          {failureGroups.length ? (
+            <section className="relay-batch-failures" aria-labelledby="batch-failures-title">
+              <p className="relay-section-label">Failure groups</p>
+              <h2 id="batch-failures-title">What needs attention</h2>
               <ul>
-                {report.runIds.map((runId, index) => (
-                  <li key={runId}>
-                    <span>Report {index + 1}</span>
-                    <Link to="/runs/$runId" params={{ runId }}>
-                      Open report <span aria-hidden="true">→</span>
-                    </Link>
+                {failureGroups.map((group) => (
+                  <li key={group.label}>
+                    <span>{group.count}</span>
+                    <div>
+                      <strong>{group.label}</strong>
+                      <p>{group.values.join(" · ")}</p>
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -153,4 +201,51 @@ export function BatchPage() {
       ) : null}
     </section>
   );
+}
+
+function caseValues(values: Readonly<Record<string, string>>): string {
+  const entries = Object.entries(values);
+  return entries.length
+    ? entries.map(([name, value]) => `${humanize(name)}: ${humanize(value)}`).join(" · ")
+    : "Default values";
+}
+
+function humanize(value: string): string {
+  return value
+    .replaceAll(/[-_.]+/gu, " ")
+    .replaceAll(/\s+/gu, " ")
+    .trim();
+}
+
+function caseStatus(status: ProductBatchCase["status"]): string {
+  if (status === "passed") return "Passed";
+  if (status === "failed") return "Failed";
+  if (status === "blocked") return "Blocked";
+  if (status === "cancelled") return "Cancelled";
+  if (status === "running") return "Running";
+  if (status === "queued") return "Queued";
+  return "Pending";
+}
+
+function caseVariant(
+  status: ProductBatchCase["status"],
+): "success" | "danger" | "warning" | "secondary" {
+  if (status === "passed") return "success";
+  if (status === "failed") return "danger";
+  if (status === "blocked") return "warning";
+  return "secondary";
+}
+
+function groupFailures(cases: readonly ProductBatchCase[]) {
+  const groups = new Map<string, { label: string; count: number; values: string[] }>();
+  for (const item of cases) {
+    if (item.status !== "failed" && item.status !== "blocked") continue;
+    const label =
+      item.error?.trim() || (item.status === "blocked" ? "Case was blocked" : "Run failed");
+    const group = groups.get(label) ?? { label, count: 0, values: [] };
+    group.count += 1;
+    group.values.push(caseValues(item.values));
+    groups.set(label, group);
+  }
+  return [...groups.values()];
 }

@@ -163,6 +163,19 @@ export function routeContractForPath(pathname: string): RouteContract | undefine
   });
 }
 
+export function parentPathForPath(pathname: string): string | undefined {
+  const contract = routeContractForPath(pathname);
+  if (!contract?.parent) return undefined;
+  const currentParts = contract.path.split("/").filter(Boolean);
+  const actualParts = pathname.split("/").filter(Boolean);
+  const params = new Map<string, string>();
+  for (const [index, part] of currentParts.entries()) {
+    if (part.startsWith("$") && actualParts[index]) params.set(part.slice(1), actualParts[index]!);
+  }
+  const parent = routeContract(contract.parent).path;
+  return parent.replaceAll(/\$([^/]+)/g, (_, key: string) => params.get(key) ?? "");
+}
+
 export function assertAllowedRouteSearch(
   pathname: string,
   search: Readonly<Record<string, unknown>>,

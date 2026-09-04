@@ -27,6 +27,7 @@ type FixtureName =
   | "prerecord-ready"
   | "prerecord-connecting"
   | "prerecord-failure"
+  | "recording-review"
   | "test-detail"
   | "runs-large"
   | "report-failed"
@@ -46,6 +47,7 @@ const definitions: Record<FixtureName, { path: string }> = {
   "prerecord-ready": { path: "/tests/new?app=checkout-app" },
   "prerecord-connecting": { path: "/tests/new?app=checkout-app" },
   "prerecord-failure": { path: "/tests/new?app=checkout-app" },
+  "recording-review": { path: "/recordings/recording-checkout/review" },
   "test-detail": { path: "/tests/test-checkout" },
   "runs-large": { path: "/runs?view=all" },
   "report-failed": { path: "/runs/run-checkout" },
@@ -84,7 +86,70 @@ const recordingService = {
     prerecord
       ? [{ ...previewTarget, name: "Checkout browser", detail: "Managed browser · Ready" }]
       : [],
-  inspect: async () => ({ status: "idle" as const, targets: [] }),
+  inspect: async () =>
+    fixture === "recording-review"
+      ? {
+          status: "reviewing" as const,
+          targets: [previewTarget],
+          selectedTarget: previewTarget,
+          snapshot: {
+            schemaVersion: 1 as const,
+            kind: "author-test" as const,
+            title: "Complete checkout and confirm the order",
+            phase: "running" as const,
+            stage: "reviewing" as const,
+            version: "review-fixture-v4",
+            workflow: { workflowId: "recording-checkout", expectedVersion: 4 },
+            frozen: {
+              title: "Complete checkout and confirm the order",
+              actorId: "human:fixture",
+              appMapId: "checkout-app",
+              appMapRevision: 4,
+              target: previewTarget,
+            },
+            authoring: { sessionId: "recording-checkout" },
+            review: {
+              actionCount: 4,
+              actions: [
+                {
+                  id: "open-cart",
+                  intent: "Open the shopping cart",
+                  stepCount: 1,
+                  proofStatus: "verified" as const,
+                  captureProof: "relay-controlled" as const,
+                },
+                {
+                  id: "apply-code",
+                  intent: "Apply the saved discount code",
+                  stepCount: 2,
+                  proofStatus: "verified" as const,
+                  captureProof: "relay-controlled" as const,
+                },
+                {
+                  id: "review-total",
+                  intent: "Discounted total is visible",
+                  label: "Discounted total is visible",
+                  stepCount: 0,
+                  proofStatus: "pixels-only" as const,
+                  captureProof: "relay-controlled" as const,
+                },
+                {
+                  id: "place-order",
+                  intent: "Place the order",
+                  stepCount: 1,
+                  proofStatus: "verified" as const,
+                  captureProof: "relay-controlled" as const,
+                },
+              ],
+              replayRequired: true,
+            },
+            progress: { label: "Ready to review" },
+            allowedNextActions: ["inspect", "edit", "replay"] as const,
+            problems: [],
+            evidenceRefs: [],
+          },
+        }
+      : { status: "idle" as const, targets: [] },
   previewTarget: async () => {
     if (fixture === "prerecord-failure") throw new Error("offline");
     let current: LiveTargetSnapshot = {
@@ -365,6 +430,23 @@ const batchReport: ProductBatchReport = {
   pendingCases: 0,
   targetNames: ["Golden Chromium", "Pixel 9"],
   runIds: Array.from({ length: 6 }, (_, index) => `batch-run-${index + 1}`),
+  cases: [
+    ["Guest · English", "guest", "en", "passed"],
+    ["Guest · Portuguese", "guest", "pt", "passed"],
+    ["Member · English", "member", "en", "passed"],
+    ["Member · Portuguese", "member", "pt", "failed"],
+    ["Admin · English", "admin", "en", "passed"],
+    ["Admin · Portuguese", "admin", "pt", "passed"],
+  ].map(([world, account, language, status], index) => ({
+    id: `case-${index + 1}`,
+    index,
+    phase: index === 0 ? ("pilot" as const) : ("coverage" as const),
+    status: status as "passed" | "failed",
+    values: { account: account!, language: language! },
+    world,
+    runId: `batch-run-${index + 1}`,
+    ...(status === "failed" ? { error: "Checkout confirmation did not appear" } : {}),
+  })),
   navigation: { route: "/batches/:batchId", href: "/batches/batch-checkout" },
   report: {
     headline: "5 of 6 cases passed",

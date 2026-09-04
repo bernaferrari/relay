@@ -2,9 +2,13 @@
 import { Badge, Button } from "@relay/ui-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useRouteContext } from "@tanstack/react-router";
+import { RotateCcw } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { Breadcrumbs, EmptyState } from "../components/product-patterns";
 import { deviceQueryKeys, type ProductDevice } from "../data/device-product-service";
-import { PageLoading } from "./recording-shared";
+import type { LiveTargetSession, LiveTargetStatus } from "../data/live-target-session";
+import { LiveTargetCanvas } from "./live-target-canvas";
+import { PageLoading, errorMessage } from "./recording-shared";
 
 const routeApi = getRouteApi("/devices/$deviceId");
 
@@ -40,7 +44,13 @@ function statusCopy(device: ProductDevice): { label: string; title: string; deta
 
 export function DevicePage() {
   const { deviceId } = routeApi.useParams();
-  const { deviceService, queryClient } = useRouteContext({ from: "__root__" });
+  const { deviceService, productService, queryClient } = useRouteContext({ from: "__root__" });
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const session = useRef<LiveTargetSession | undefined>(undefined);
+  const [liveStatus, setLiveStatus] = useState<LiveTargetStatus>("idle");
+  const [liveIssue, setLiveIssue] = useState<string>();
+  const [liveBusy, setLiveBusy] = useState(false);
+  const [liveAttempt, setLiveAttempt] = useState(0);
   const device = useQuery({
     queryKey: deviceQueryKeys.device(deviceId),
     queryFn: () => deviceService.get(deviceId),
@@ -56,7 +66,71 @@ export function DevicePage() {
       await queryClient.invalidateQueries({ queryKey: deviceQueryKeys.device(deviceId) });
     },
   });
+  const target = useQuery({
+    queryKey: ["devices", deviceId, "live-target"],
+    queryFn: async () => {
+      const connected = await productService.connect();
+      if (connected.recovery) return undefined;
+      const options = await productService.presentTargets(connected.targets);
+      return options.find(
+        (option) => option.targetId === device.data?.serial || option.targetId === device.data?.id,
+      );
+    },
+    enabled: Boolean(device.data && device.data.status !== "needs-attention"),
+    staleTime: 5_000,
+  });
   const presentation = device.data ? statusCopy(device.data) : undefined;
+
+  useEffect(() => {
+    const createPreview = productService.previewTarget;
+    if (!target.data || !canvas.current || !createPreview) return;
+    let disposed = false;
+    let unmount: (() => void) | undefined;
+    let unsubscribe: (() => void) | undefined;
+    let mounted: LiveTargetSession | undefined;
+    setLiveIssue(undefined);
+    setLiveStatus("connecting");
+    void createPreview(target.data)
+      .then((next) => {
+        if (disposed || !canvas.current) return next.close();
+        mounted = next;
+        session.current = next;
+        unsubscribe = next.subscribe((state) => {
+          setLiveStatus(state.status);
+          setLiveIssue(state.issue ? friendlyLiveIssue(state.issue) : undefined);
+        });
+        unmount = next.mount(canvas.current);
+      })
+      .catch((error: unknown) => {
+        if (!disposed) {
+          setLiveStatus("degraded");
+          setLiveIssue(friendlyLiveIssue(errorMessage(error)));
+        }
+      });
+    return () => {
+      disposed = true;
+      unmount?.();
+      unsubscribe?.();
+      if (session.current === mounted) session.current = undefined;
+      mounted?.close();
+    };
+  }, [liveAttempt, productService, target.data]);
+
+  async function send(input: Parameters<LiveTargetSession["input"]>[0]) {
+    if (!session.current) {
+      setLiveIssue("The live view is still connecting.");
+      return;
+    }
+    setLiveBusy(true);
+    setLiveIssue(undefined);
+    try {
+      await session.current.input(input);
+    } catch (error) {
+      setLiveIssue(friendlyLiveIssue(errorMessage(error)));
+    } finally {
+      setLiveBusy(false);
+    }
+  }
 
   return (
     <section className="relay-page relay-device-page">
@@ -80,7 +154,15 @@ export function DevicePage() {
             {recover.isPending ? "Reconnecting…" : "Reconnect device"}
           </Button>
         ) : device.data ? (
-          <Button variant="primary" render={<Link to="/tests/new" />}>
+          <Button
+            variant="primary"
+            render={
+              <Link
+                to="/tests/new"
+                search={{ target: target.data?.targetId ?? device.data.serial }}
+              />
+            }
+          >
             Use for a new Test
           </Button>
         ) : null}
@@ -158,8 +240,55 @@ export function DevicePage() {
               </div>
             </dl>
           </section>
+
+          {device.data.status !== "needs-attention" ? (
+            <section className="relay-device-live" aria-labelledby="device-live-title">
+              <div className="relay-device-live-heading">
+                <div>
+                  <p className="relay-section-label">Live session</p>
+                  <h2 id="device-live-title">Position the device before recording</h2>
+                  <p>
+                    Interact freely here. Nothing is recorded until you explicitly start a Test.
+                  </p>
+                </div>
+                <Button
+                  size="small"
+                  variant="ghost"
+                  onClick={() => setLiveAttempt((value) => value + 1)}
+                >
+                  <RotateCcw aria-hidden="true" /> Reconnect
+                </Button>
+              </div>
+              {target.isPending ? <PageLoading label="Opening the live device…" /> : null}
+              {target.data ? (
+                <LiveTargetCanvas
+                  canvasRef={canvas}
+                  status={liveStatus}
+                  issue={liveIssue}
+                  busy={liveBusy}
+                  targetTitle={target.data.name}
+                  targetDetail={target.data.detail}
+                  send={send}
+                  recording={false}
+                />
+              ) : !target.isPending ? (
+                <EmptyState
+                  title="Live control is not available yet"
+                  detail="Keep the device awake and connected, then reconnect. You can still use it when Relay reports it ready."
+                />
+              ) : null}
+            </section>
+          ) : null}
         </div>
       ) : null}
     </section>
   );
+}
+
+function friendlyLiveIssue(message: string): string {
+  if (/locked|unlock|view only/iu.test(message)) return "Unlock the device, then reconnect.";
+  if (/packet|transport|codec|decode|base64|operation|targetid/iu.test(message)) {
+    return "Relay could not show the live view. Keep the device connected, then reconnect.";
+  }
+  return message;
 }

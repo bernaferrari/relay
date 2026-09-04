@@ -6,6 +6,7 @@ import type { Platform } from "../platform/types";
 import { productClientForPlatform } from "./product-client";
 import type { LiveTargetSession } from "./live-target-session";
 import type { AuthoringTarget } from "@relay/protocol";
+import type { AuthoringRecordingEdit } from "@relay/protocol";
 import { presentReadyTargets, type ProductTargetOption } from "./target-presentation";
 
 export type ProductAppOption = {
@@ -24,6 +25,7 @@ export type RecordingProductService = {
   recordCurrent(): Promise<ProductRecordingState>;
   checkpoint(label?: string): Promise<ProductRecordingState>;
   stop(): Promise<ProductRecordingState>;
+  edit(edit: AuthoringRecordingEdit): Promise<ProductRecordingState>;
   replay(): Promise<ProductRecordingState>;
   approve(testName: string): Promise<ProductRecordingState>;
   /** Open the selected target for exploration before durable recording begins. */
@@ -80,6 +82,9 @@ export function createRecordingProductService(platform: Platform): RecordingProd
     },
     async stop() {
       return (await product()).journey.stop();
+    },
+    async edit(edit) {
+      return (await product()).journey.edit(edit);
     },
     async replay() {
       return (await product()).journey.replay();

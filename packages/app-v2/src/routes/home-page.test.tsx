@@ -46,6 +46,7 @@ function recording(apps: readonly { id: string; name: string }[]): RecordingProd
     recordCurrent: async () => ({ status: "idle", targets: [] }),
     checkpoint: async () => ({ status: "idle", targets: [] }),
     stop: async () => ({ status: "idle", targets: [] }),
+    edit: async () => ({ status: "idle", targets: [] }),
     replay: async () => ({ status: "idle", targets: [] }),
     approve: async () => ({ status: "idle", targets: [] }),
   };

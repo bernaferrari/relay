@@ -8,10 +8,10 @@ import { useDeferredValue, useMemo, useState } from "react";
 import { FilterSelect } from "../components/filter-select";
 import { EmptyState, OutcomeMark } from "../components/product-patterns";
 import { RunHistoryList, type RunHistoryRowInteraction } from "../components/run-history-list";
+import { catalogQueryKeys } from "../data/catalog-queries";
 import { PageLoading, RecordingProblem } from "./recording-shared";
 
 const routeApi = getRouteApi("/runs");
-const runsQueryKey = ["catalog", "runs"] as const;
 const allAppsValue = "all-apps";
 
 type RunView = "latest" | "all" | "failed" | "needs-review" | "active";
@@ -33,7 +33,7 @@ export function RunsPage() {
   const view = runView(search.view);
   const app = typeof search.app === "string" ? search.app : "";
   const runs = useQuery({
-    queryKey: runsQueryKey,
+    queryKey: catalogQueryKeys.runs,
     queryFn: () => catalogService.listRuns(),
     staleTime: 10_000,
     refetchInterval: (queryState) =>

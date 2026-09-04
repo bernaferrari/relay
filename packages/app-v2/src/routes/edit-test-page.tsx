@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { useMemo, useRef, useState, type CSSProperties } from "react";
 import { Breadcrumbs, EmptyState } from "../components/product-patterns";
-import { TestStepEvidencePreview } from "../components/test-step-evidence-preview";
+import { TestEditorEvidencePanel } from "../components/test-editor-evidence-panel";
 import {
   SelectedStepEditor,
   type EditTransaction,
@@ -486,23 +486,15 @@ export function EditTestPage() {
 
             <aside className="relay-editor-inspector" aria-label="Selected step editor">
               {selected ? (
-                <>
-                  <SelectedStepEditor
-                    key={`${selected.step.id}:${document.data.revision}`}
-                    entry={selected}
-                    busy={edit.isPending}
-                    onSave={apply}
-                    onBind={(transaction) => apply(transaction)}
-                    onRemove={() => removeStep(selected)}
-                    onAddChild={(branch) => addChildStep(selected, branch)}
-                  />
-                  <TestStepEvidencePreview
-                    step={selected.step}
-                    report={latestReport.data}
-                    hasRuns={Boolean(recentRuns.data?.length)}
-                    loading={reportLoading}
-                  />
-                </>
+                <SelectedStepEditor
+                  key={`${selected.step.id}:${document.data.revision}`}
+                  entry={selected}
+                  busy={edit.isPending}
+                  onSave={apply}
+                  onBind={(transaction) => apply(transaction)}
+                  onRemove={() => removeStep(selected)}
+                  onAddChild={(branch) => addChildStep(selected, branch)}
+                />
               ) : (
                 <EmptyState
                   title="Choose a step"
@@ -510,6 +502,13 @@ export function EditTestPage() {
                 />
               )}
             </aside>
+
+            <TestEditorEvidencePanel
+              step={selected?.step}
+              report={latestReport.data}
+              hasRuns={Boolean(recentRuns.data?.length)}
+              loading={reportLoading}
+            />
           </div>
 
           {document.data.repairs.length || document.data.history.length ? (

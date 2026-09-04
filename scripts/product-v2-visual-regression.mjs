@@ -32,6 +32,7 @@ const fixtures = [
   { id: "prerecord-ready", heading: "Record a Test" },
   { id: "prerecord-connecting", heading: "Record a Test" },
   { id: "prerecord-failure", heading: "Record a Test" },
+  { id: "recording-review", heading: "Review your recording", recordingReview: true },
   { id: "test-detail", heading: "Complete checkout and confirm the order" },
   { id: "runs-large", heading: "Run history" },
   { id: "report-failed", heading: "Complete checkout" },
@@ -211,6 +212,18 @@ async function assertLayout(page, fixture, viewport) {
     await page.locator(".relay-run-targets .relay-radio-card").first().click();
     if (await page.getByRole("button", { name: "Run Test" }).isDisabled()) {
       throw new Error("Test detail did not enable Run Test after target selection");
+    }
+  }
+  if (fixture.recordingReview) {
+    const actions = page.locator(".relay-review-step");
+    if ((await actions.count()) !== 4) {
+      throw new Error("Recording review did not render every editable action");
+    }
+    if (await page.getByRole("button", { name: "Save instruction" }).isEnabled()) {
+      throw new Error("Recording review enabled an unchanged instruction");
+    }
+    if ((await page.getByText("A passing replay is required before saving.").count()) !== 1) {
+      throw new Error("Recording review did not explain its replay gate");
     }
   }
   if (!fixture.batch) return;

@@ -1,9 +1,17 @@
 /** @jsxImportSource react */
-import { Button, Dialog, Field, FieldDescription, FieldLabel, Input } from "@relay/ui-react";
+import {
+  Button,
+  Dialog,
+  Field,
+  FieldDescription,
+  FieldLabel,
+  Input,
+  ScrollArea,
+} from "@relay/ui-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { ArrowLeft, BookmarkPlus, Square } from "lucide-react";
+import { ArrowLeft, BookmarkPlus, CheckCircle2, Circle, Square } from "lucide-react";
 import type { LiveTargetSession, LiveTargetStatus } from "../data/live-target-session";
 import { recordingQueryKeys, refreshRecording } from "../data/recording-queries";
 import { clearWorkflowPointerIfCurrent, writeWorkflowPointer } from "../data/workflow-pointer";
@@ -61,6 +69,7 @@ export function RecordTestPage() {
   const snapshot = recording.data?.snapshot;
   const captureReady = recording.data?.status === "recording" && !recording.data.recovery;
   const allowed = new Set(captureReady ? (snapshot?.allowedNextActions ?? []) : []);
+  const recordedActions = snapshot?.review?.actions ?? [];
 
   useEffect(() => {
     if (recording.data?.recovery || recording.error) return;
@@ -75,7 +84,10 @@ export function RecordTestPage() {
   useEffect(() => {
     if (snapshot?.stage !== "cancelled") return;
     void clearWorkflowPointerIfCurrent(platform, workflowId).then((cleared) => {
-      if (cleared) queryClient.setQueryData<string | null>(recordingQueryKeys.pointer, null);
+      if (cleared) {
+        queryClient.setQueryData<string | null>(recordingQueryKeys.pointer, null);
+        queryClient.setQueryData<string | null>(recordingQueryKeys.reconciledPointer, null);
+      }
     });
   }, [platform, queryClient, snapshot?.stage, workflowId]);
 
@@ -197,18 +209,58 @@ export function RecordTestPage() {
         />
 
         {!recording.isPending && snapshot && captureReady ? (
-          <div className="relay-capture-canvas" aria-label="Recording stage">
-            {selectedTarget ? (
-              <LiveTargetCanvas
-                canvasRef={liveCanvas}
-                status={liveStatus}
-                issue={liveIssue}
-                busy={liveInputBusy}
-                targetTitle={targetLabel(targetPresentation.data?.[0] ?? selectedTarget).title}
-                targetDetail={targetLabel(targetPresentation.data?.[0] ?? selectedTarget).detail}
-                send={sendLiveInput}
-              />
-            ) : null}
+          <div className="relay-capture-workspace">
+            <div className="relay-capture-canvas" aria-label="Recording stage">
+              {selectedTarget ? (
+                <LiveTargetCanvas
+                  canvasRef={liveCanvas}
+                  status={liveStatus}
+                  issue={liveIssue}
+                  busy={liveInputBusy}
+                  targetTitle={targetLabel(targetPresentation.data?.[0] ?? selectedTarget).title}
+                  targetDetail={targetLabel(targetPresentation.data?.[0] ?? selectedTarget).detail}
+                  send={sendLiveInput}
+                />
+              ) : null}
+            </div>
+            <aside className="relay-capture-timeline" aria-labelledby="capture-timeline-title">
+              <div className="relay-capture-timeline-heading">
+                <div>
+                  <p className="relay-section-label">Journey</p>
+                  <h2 id="capture-timeline-title">Captured actions</h2>
+                </div>
+                <span>{recordedActions.length}</span>
+              </div>
+              {recordedActions.length ? (
+                <ScrollArea className="relay-capture-timeline-scroll">
+                  <ol>
+                    {recordedActions.map((recorded, index) => (
+                      <li key={recorded.id}>
+                        {recorded.stepCount === 0 ? (
+                          <CheckCircle2 aria-hidden="true" />
+                        ) : (
+                          <Circle aria-hidden="true" />
+                        )}
+                        <span>
+                          <strong>{recorded.label ?? recorded.intent}</strong>
+                          <small>
+                            {recorded.stepCount === 0
+                              ? "Checkpoint"
+                              : `${recorded.stepCount} ${recorded.stepCount === 1 ? "interaction" : "interactions"}`}
+                          </small>
+                        </span>
+                        <span>{index + 1}</span>
+                      </li>
+                    ))}
+                  </ol>
+                </ScrollArea>
+              ) : (
+                <div className="relay-capture-timeline-empty">
+                  <Circle aria-hidden="true" />
+                  <p>Your clicks, taps, typing, and checkpoints will appear here.</p>
+                </div>
+              )}
+            </aside>
           </div>
         ) : null}
       </div>

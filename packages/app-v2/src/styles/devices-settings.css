@@ -318,6 +318,46 @@
   font-size: 13px;
 }
 
+.relay-device-live {
+  display: grid;
+  min-width: 0;
+  min-height: 460px;
+  grid-column: 1 / -1;
+  gap: 16px;
+  margin-top: 4px;
+  padding-top: 28px;
+  border-top: 1px solid var(--border-weak-base);
+}
+
+.relay-device-live-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.relay-device-live-heading h2 {
+  margin-top: 4px;
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+}
+
+.relay-device-live-heading p:last-child {
+  max-width: 62ch;
+  margin-top: 5px;
+  color: var(--text-weak);
+  font-size: 12px;
+}
+
+.relay-device-live > .relay-live-target {
+  min-height: 420px;
+  overflow: hidden;
+  border: 1px solid var(--border-weak-base);
+  border-radius: var(--radius-xl);
+  background: var(--surface-raised-strong);
+}
+
 /* Product V2 — Settings */
 
 .relay-settings-page {

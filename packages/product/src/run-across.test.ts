@@ -105,6 +105,23 @@ test("start, continue, and export use the canonical durable campaign", async () 
   await service.continue("batch-1");
   const report = await service.exportReport("batch-1");
   assert.deepEqual(report.export, { rootDir: "/tmp/report", jobIds: ["job-1"] });
+  assert.deepEqual(report.cases, [
+    {
+      id: "case-1",
+      index: 0,
+      phase: "pilot",
+      status: "passed",
+      values: {},
+      runId: "run-1",
+    },
+    {
+      id: "case-2",
+      index: 1,
+      phase: "coverage",
+      status: "pending",
+      values: {},
+    },
+  ]);
   assert.deepEqual(
     calls.map(([id]) => id),
     [

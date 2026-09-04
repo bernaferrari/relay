@@ -75,6 +75,135 @@
   background: var(--background-weak);
 }
 
+.relay-capture-workspace {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  min-height: 360px;
+  grid-template-columns: minmax(0, 1fr) 270px;
+  gap: 14px;
+}
+
+.relay-capture-timeline {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid var(--border-weak-base);
+  border-radius: var(--radius-xl);
+  background: var(--surface-raised-strong);
+}
+
+.relay-capture-timeline-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 15px;
+  border-bottom: 1px solid var(--border-weak-base);
+}
+
+.relay-capture-timeline-heading h2 {
+  margin-top: 2px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.relay-capture-timeline-heading > span {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 999px;
+  color: var(--text-weak);
+  background: var(--surface-base);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.relay-capture-timeline-scroll {
+  min-height: 0;
+}
+
+.relay-capture-timeline ol {
+  margin: 0;
+  padding: 5px 10px;
+  list-style: none;
+}
+
+.relay-capture-timeline li {
+  display: grid;
+  min-height: 56px;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 4px;
+  border-bottom: 1px solid var(--border-weak-base);
+}
+
+.relay-capture-timeline li:last-child {
+  border-bottom: 0;
+}
+
+.relay-capture-timeline li > svg {
+  width: 14px;
+  height: 14px;
+  color: var(--text-weaker);
+  stroke-width: 1.8;
+}
+
+.relay-capture-timeline li > span:nth-child(2) {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.relay-capture-timeline li strong,
+.relay-capture-timeline li small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.relay-capture-timeline li strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.relay-capture-timeline li small,
+.relay-capture-timeline li > span:last-child {
+  color: var(--text-weaker);
+  font-size: 10px;
+}
+
+.relay-capture-timeline-empty {
+  display: grid;
+  max-width: 22ch;
+  place-self: center;
+  justify-items: center;
+  gap: 10px;
+  padding: 20px;
+  color: var(--text-weaker);
+  text-align: center;
+}
+
+.relay-capture-timeline-empty > svg {
+  width: 18px;
+  height: 18px;
+}
+
+@media (max-width: 980px) {
+  .relay-capture-workspace {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(340px, 1fr) auto;
+  }
+
+  .relay-capture-timeline {
+    max-height: 220px;
+  }
+}
+
 .relay-live-target {
   display: grid;
   height: 100%;
@@ -319,11 +448,37 @@
 .relay-review-steps li {
   display: grid;
   min-height: 72px;
-  grid-template-columns: 28px minmax(0, 1fr) auto;
+  grid-template-columns: 18px 28px minmax(0, 1fr);
   align-items: center;
   gap: 12px;
   padding: 12px 0;
   border-bottom: 1px solid var(--border-weak-base);
+}
+
+.relay-review-actions-scroll {
+  max-height: min(58vh, 620px);
+}
+
+.relay-review-step-copy {
+  display: grid;
+  min-width: 0;
+  min-height: 44px;
+  align-content: center;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.relay-review-step-copy:focus-visible {
+  border-radius: var(--radius-sm);
+  outline: 2px solid var(--relay-focus-ring);
+  outline-offset: 2px;
+}
+
+.relay-review-step--selected {
+  background: var(--surface-base-active);
 }
 
 .relay-review-steps li.relay-review-step--pause {
@@ -392,6 +547,55 @@
   border-radius: var(--radius-xl);
   background: var(--surface-raised-strong);
   box-shadow: 0 1px 2px color-mix(in srgb, black 5%, transparent);
+}
+
+.relay-review-editor,
+.relay-review-save-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.relay-review-editor {
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--border-weak-base);
+}
+
+.relay-review-editor-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.relay-review-editor-heading h2 {
+  margin-top: 3px;
+  font-size: 15px;
+}
+
+.relay-review-editor-heading > span,
+.relay-review-editor-help {
+  color: var(--text-weaker);
+  font-size: 11px;
+}
+
+.relay-review-edit-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.relay-review-edit-row .relay-button {
+  justify-content: flex-start;
+}
+
+.relay-review-delete {
+  justify-content: flex-start;
+  color: var(--text-critical-base);
+}
+
+.relay-review-delete-confirm {
+  color: var(--button-primary-foreground);
+  background: var(--surface-critical-strong);
 }
 
 .relay-review-actions {

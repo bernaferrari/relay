@@ -16,8 +16,9 @@ type ChangeView = "current" | "active" | "ready" | "attention" | "history";
 export function ChangesPage() {
   const { changeService, queryClient } = useRouteContext({ from: "__root__" });
   const navigate = useNavigate({ from: "/changes" });
-  const search = routeApi.useSearch() as { status?: unknown };
+  const search = routeApi.useSearch() as { app?: unknown; status?: unknown };
   const view = changeView(search.status);
+  const app = typeof search.app === "string" ? search.app : "";
   const changes = useQuery({
     queryKey: changesQueryKey,
     queryFn: () => changeService.list(),
@@ -38,9 +39,9 @@ export function ChangesPage() {
   const visible = useMemo(
     () =>
       (changes.data ?? [])
-        .filter((change) => matchesView(change, view))
+        .filter((change) => matchesView(change, view) && (!app || change.appIds?.includes(app)))
         .sort((left, right) => right.updatedAt - left.updatedAt || right.id.localeCompare(left.id)),
-    [changes.data, view],
+    [app, changes.data, view],
   );
 
   return (

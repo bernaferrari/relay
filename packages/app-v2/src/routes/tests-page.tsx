@@ -7,10 +7,10 @@ import { useDeferredValue, useMemo, useState } from "react";
 import { ChevronRight, Search } from "lucide-react";
 import { FilterSelect } from "../components/filter-select";
 import { EmptyState, OutcomeMark } from "../components/product-patterns";
+import { catalogQueryKeys } from "../data/catalog-queries";
 import { PageLoading, RecordingProblem } from "./recording-shared";
 
 const routeApi = getRouteApi("/tests");
-const testsQueryKey = ["catalog", "tests"] as const;
 const allAppsValue = "all-apps";
 
 type TestFilter = "all" | "ready" | "needs-review";
@@ -24,7 +24,7 @@ export function TestsPage() {
   const status = testFilter(search.status);
   const app = typeof search.app === "string" ? search.app : "";
   const tests = useQuery({
-    queryKey: testsQueryKey,
+    queryKey: catalogQueryKeys.tests,
     queryFn: () => catalogService.listTests(),
     staleTime: 15_000,
   });

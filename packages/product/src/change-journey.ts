@@ -38,6 +38,7 @@ export type ProductChange = {
   readonly evidenceCount: number;
   readonly coverageGaps: readonly string[];
   readonly residualRisk: readonly string[];
+  readonly appIds?: readonly string[];
   readonly affectedTestCount: number;
   readonly requiredVerificationCount: number;
   readonly advisoryVerificationCount: number;
@@ -231,6 +232,7 @@ function changeOf(proof: Proof): ProductChange {
     evidenceCount: proof.evidenceDigests.length,
     coverageGaps: [...proof.coverageGaps],
     residualRisk: [...proof.residualRisk],
+    appIds: [...new Set(proof.selection.affectedJourneys.map((journey) => journey.appMapId))],
     affectedTestCount: proof.selection.affectedJourneys.length,
     requiredVerificationCount: cells.filter((cell) => cell.requirement === "required").length,
     advisoryVerificationCount: cells.filter((cell) => cell.requirement === "advisory").length,

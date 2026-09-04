@@ -210,7 +210,7 @@
 .relay-editor-toolbar,
 .relay-test-editor-layout,
 .relay-test-editor-context {
-  max-width: 1080px;
+  max-width: 1320px;
 }
 
 .relay-save-state {
@@ -262,13 +262,14 @@
 
 .relay-test-editor-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 390px);
+  grid-template-columns: minmax(220px, 0.9fr) minmax(250px, 0.95fr) minmax(250px, 1fr);
   align-items: start;
-  gap: 28px;
+  gap: 18px;
   margin-top: 24px;
 }
 
 .relay-editor-outline,
+.relay-editor-evidence,
 .relay-editor-context-panel {
   min-width: 0;
 }
@@ -420,7 +421,8 @@
   margin-inline: auto;
 }
 
-.relay-editor-inspector {
+.relay-editor-inspector,
+.relay-editor-evidence {
   position: sticky;
   top: 0;
   min-width: 0;
@@ -430,6 +432,37 @@
   box-shadow:
     0 1px 2px color-mix(in srgb, black 5%, transparent),
     0 12px 32px -30px color-mix(in srgb, black 32%, transparent);
+}
+
+.relay-editor-evidence {
+  top: 0;
+  padding: 20px;
+}
+
+.relay-editor-evidence-heading h2 {
+  margin-top: 3px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.relay-editor-evidence-heading > p:last-child {
+  margin-top: 5px;
+  color: var(--text-weaker);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.relay-editor-evidence > .relay-step-evidence {
+  margin-top: 18px;
+  padding-top: 16px;
+}
+
+.relay-editor-evidence-placeholder {
+  display: block;
+  min-height: 220px;
+  margin-top: 18px;
+  border-radius: var(--radius-lg);
+  background: var(--surface-base);
 }
 
 .relay-selected-step-form {
@@ -689,7 +722,8 @@
     grid-template-columns: 1fr;
   }
 
-  .relay-editor-inspector {
+  .relay-editor-inspector,
+  .relay-editor-evidence {
     position: static;
   }
 

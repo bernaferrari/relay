@@ -355,9 +355,18 @@ function RunReport({
                 {failureTitle(failure, report.category)}
               </AlertTitle>
               <AlertDescription>{nextAction(report.outcome)}</AlertDescription>
-              {report.category ? (
+              {report.category || testId ? (
                 <AlertActions>
-                  <Badge variant="danger">{report.category}</Badge>
+                  {report.category ? <Badge variant="danger">{report.category}</Badge> : null}
+                  {testId ? (
+                    <Button
+                      size="small"
+                      variant="secondary"
+                      render={<Link to="/tests/$testId" params={{ testId }} />}
+                    >
+                      Open Test to run again
+                    </Button>
+                  ) : null}
                 </AlertActions>
               ) : null}
               <Disclosure.Root className="relay-causal-technical">

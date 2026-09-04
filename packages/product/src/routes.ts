@@ -71,6 +71,7 @@ export type RouteDefinition = {
     | "step"
     | "screen"
     | "path"
+    | "target"
     | "section"
   )[];
   primaryAction: ContextualAction | null;
@@ -104,7 +105,12 @@ export const ROUTE_DEFINITIONS = [
   d("/apps/:appId/accounts", "/apps/:appId", "Accounts", "App", "apps", null, ["status", "view"]),
   d("/apps/:appId/map", "/apps/:appId", "Map", "Map", "apps", "explore-app", ["view", "screen"]),
   d("/tests", "/home", "Tests", "Test", "tests", "record-test", ["status", "app", "view"]),
-  d("/tests/new", "/tests", "New Test", "Test", "tests", "record-test", ["app", "view", "path"]),
+  d("/tests/new", "/tests", "New Test", "Test", "tests", "record-test", [
+    "app",
+    "view",
+    "path",
+    "target",
+  ]),
   d("/tests/:testId", "/tests", "Test", "Test", "tests", "run-test", ["view", "step", "screen"]),
   d("/tests/:testId/edit", "/tests/:testId", "Edit Test", "Test", "tests", "record-test", [
     "step",

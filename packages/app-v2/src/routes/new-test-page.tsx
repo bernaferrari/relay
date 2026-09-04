@@ -52,10 +52,11 @@ export function NewTestPage() {
   const search = rawSearch as Readonly<Record<string, unknown>>;
   const requestedAppId = typeof search.app === "string" ? search.app : undefined;
   const requestedPathId = typeof search.path === "string" ? search.path : undefined;
+  const requestedTargetId = typeof search.target === "string" ? search.target : undefined;
   const startsFromPath = search.view === "path" && Boolean(requestedAppId && requestedPathId);
   const navigate = useNavigate();
   const [appId, setAppId] = useState(requestedAppId ?? "");
-  const [targetId, setTargetId] = useState("");
+  const [targetId, setTargetId] = useState(requestedTargetId ?? "");
   const previewCanvas = useRef<HTMLCanvasElement>(null);
   const previewSession = useRef<LiveTargetSession | undefined>(undefined);
   const [previewStatus, setPreviewStatus] = useState<LiveTargetStatus>("idle");
@@ -91,10 +92,10 @@ export function NewTestPage() {
   useEffect(() => {
     if (!draft.data) return;
     if (!requestedAppId && !appId && draft.data.appId) setAppId(draft.data.appId);
-    if (!targetId && draft.data.targetId) setTargetId(draft.data.targetId);
-  }, [appId, draft.data, requestedAppId, targetId]);
+    if (!requestedTargetId && !targetId && draft.data.targetId) setTargetId(draft.data.targetId);
+  }, [appId, draft.data, requestedAppId, requestedTargetId, targetId]);
   const activePointer = useQuery({
-    queryKey: recordingQueryKeys.pointer,
+    queryKey: recordingQueryKeys.reconciledPointer,
     queryFn: async () => {
       const workflowId = await readWorkflowPointer(platform);
       if (!workflowId) return null;
@@ -102,6 +103,7 @@ export function NewTestPage() {
       const stage = current.snapshot?.stage;
       if (!current.recovery && (stage === "cancelled" || stage === "committed")) {
         await clearWorkflowPointerIfCurrent(platform, workflowId);
+        queryClient.setQueryData<string | null>(recordingQueryKeys.pointer, null);
         return null;
       }
       return workflowId;
@@ -191,6 +193,7 @@ export function NewTestPage() {
       if (workflowId) {
         await writeWorkflowPointer(platform, workflowId);
         queryClient.setQueryData<string | null>(recordingQueryKeys.pointer, workflowId);
+        queryClient.setQueryData<string | null>(recordingQueryKeys.reconciledPointer, workflowId);
       } else if (!state.recovery) {
         throw new TypeError("Relay could not start this recording.");
       }

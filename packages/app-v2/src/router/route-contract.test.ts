@@ -1,6 +1,6 @@
 import { ROUTE_DEFINITIONS, type RoutePattern } from "@relay/product/routes";
 import { describe, expect, it } from "vitest";
-import { assertAllowedRouteSearch, routeContracts } from "./route-contract";
+import { assertAllowedRouteSearch, parentPathForPath, routeContracts } from "./route-contract";
 
 const expectedPaths = {
   "/home": "/home",
@@ -54,5 +54,11 @@ describe("React route contract", () => {
     expect(() =>
       assertAllowedRouteSearch("/tests/draft-1/record", { screen: "home" }),
     ).not.toThrow();
+  });
+
+  it("builds semantic parent locations for direct-entry navigation", () => {
+    expect(parentPathForPath("/tests/test-1/edit")).toBe("/tests/test-1");
+    expect(parentPathForPath("/apps/app%201/versions")).toBe("/apps/app%201");
+    expect(parentPathForPath("/home")).toBeUndefined();
   });
 });
