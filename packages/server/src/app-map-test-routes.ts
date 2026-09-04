@@ -14,6 +14,7 @@ import {
   preflightCompiledAppMapTestOffline,
   preflightAppMapCombine,
   proposalConflictsSince,
+  scenarioTestEditEntityKeys,
   readAppMap,
   removeAppMapCombine,
   removeAppMapTest,
@@ -24,7 +25,11 @@ import {
 import type { OperationInput } from "@relay/protocol";
 import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
 import type { RequestContext } from "./security.js";
-import { applyAppMapMutation, applyRebasableAppMapMutation } from "./app-map-route-mutations.js";
+import {
+  applyAppMapMutation,
+  applyAppMapTestHistoryMutation,
+  applyRebasableAppMapMutation,
+} from "./app-map-route-mutations.js";
 
 type AppMapTestRouteInput = {
   method: string;
@@ -197,9 +202,34 @@ export async function handleAppMapTestRoute(input: AppMapTestRouteInput): Promis
           throw error;
         }
       },
+      {
+        recordTestEdit: {
+          testId: testEdit.testId!,
+          touched: scenarioTestEditEntityKeys(testEdit.testId!, body.edits),
+        },
+      },
     );
     json(response, 200, { appMap });
     return true;
+  }
+  for (const direction of ["undo", "redo"] as const) {
+    const historyRoute = matchPath(pathname, `/app-maps/:appMapId/tests/:testId/${direction}`);
+    if (method === "POST" && historyRoute) {
+      const body = (await parseJsonBody(request)) as Omit<
+        OperationInput<"app-map.test.undo"> | OperationInput<"app-map.test.redo">,
+        "appMapId" | "testId"
+      >;
+      const appMap = await applyAppMapTestHistoryMutation(
+        scope,
+        historyRoute.appMapId!,
+        historyRoute.testId!,
+        body.expectedRevision,
+        body.eventId,
+        direction,
+      );
+      json(response, 200, { appMap });
+      return true;
+    }
   }
   const testProposal = matchPath(pathname, "/app-maps/:appMapId/tests/:testId/proposals");
   if (method === "POST" && testProposal) {

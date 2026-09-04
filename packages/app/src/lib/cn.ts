@@ -1,4 +1,0 @@
-/** Lightweight className join — OpenCode-style `cn` without clsx dep. */
-export function cn(...parts: Array<string | false | null | undefined | 0>): string {
-  return parts.filter(Boolean).join(" ");
-}

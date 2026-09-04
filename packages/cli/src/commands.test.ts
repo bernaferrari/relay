@@ -722,6 +722,17 @@ test("declared read-only resources build encoded paths", () => {
   );
 });
 
+test("run evidence CLI resource exposes packet provenance through the canonical route", () => {
+  const descriptor = cliResourceDescriptors.find((item) => item.resourceId === "run.evidence");
+  assert.ok(descriptor);
+  assert.match(descriptor.label, /packet provenance/u);
+  assert.match(descriptor.path.summary ?? "", /coverage/u);
+  assert.deepEqual(
+    descriptor.resourcePath({ runId: "emulator-run" }),
+    "/runs/emulator-run/evidence",
+  );
+});
+
 test("root help documents exit codes, --confirm, and the machine envelopes", () => {
   const help = renderHelp();
   for (const code of ["0", "2", "3", "4", "5", "6", "7", "8", "9"]) {

@@ -25,7 +25,9 @@ export type RecordingProductService = {
   checkpoint(label?: string): Promise<ProductRecordingState>;
   stop(): Promise<ProductRecordingState>;
   replay(): Promise<ProductRecordingState>;
-  approve(): Promise<ProductRecordingState>;
+  approve(testName: string): Promise<ProductRecordingState>;
+  /** Open the selected target for exploration before durable recording begins. */
+  previewTarget?(target: AuthoringTarget): Promise<LiveTargetSession>;
   liveTarget?(target: AuthoringTarget): Promise<LiveTargetSession>;
 };
 
@@ -82,8 +84,8 @@ export function createRecordingProductService(platform: Platform): RecordingProd
     async replay() {
       return (await product()).journey.replay();
     },
-    async approve() {
-      return (await product()).journey.approve();
+    async approve(testName) {
+      return (await product()).journey.approve(testName);
     },
     async liveTarget(target) {
       const [recording, { createLiveTargetSession }] = await Promise.all([
@@ -103,6 +105,13 @@ export function createRecordingProductService(platform: Platform): RecordingProd
           }
         },
       });
+    },
+    async previewTarget(target) {
+      const [recording, { createLiveTargetSession }] = await Promise.all([
+        product(),
+        import("./live-target-session"),
+      ]);
+      return createLiveTargetSession({ client: recording.client, target });
     },
   };
 }

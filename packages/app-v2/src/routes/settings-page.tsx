@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import type { SensitiveEvidenceChannel } from "@relay/protocol";
-import { Button } from "@relay/ui-react";
+import { Button, Disclosure, Field, FieldDescription, FieldLabel, Input } from "@relay/ui-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useRouteContext } from "@tanstack/react-router";
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
@@ -371,26 +371,28 @@ function SetupRow({
           {!loading && attention ? action : null}
         </div>
       </div>
-      {!loading && checks.length > 1 ? (
-        <details className="relay-setup-checks">
-          <summary>View all {checks.length} checks</summary>
-          <ul>
-            {checks.map((check) => (
-              <li key={check.id}>
-                <span
-                  className={`relay-device-status ${check.status === "ready" ? "relay-device-status--ready" : "relay-device-status--needs-attention"}`}
-                >
-                  <span aria-hidden="true" />
-                  {check.status === "ready" ? "Ready" : "Needs attention"}
-                </span>
-                <div>
-                  <strong>{check.label}</strong>
-                  <p>{check.detail}</p>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </details>
+      {!loading && attention && checks.length > 1 ? (
+        <Disclosure.Root className="relay-setup-checks">
+          <Disclosure.Trigger>Diagnostic checks ({checks.length})</Disclosure.Trigger>
+          <Disclosure.Panel>
+            <ul>
+              {checks.map((check) => (
+                <li key={check.id}>
+                  <span
+                    className={`relay-device-status ${check.status === "ready" ? "relay-device-status--ready" : "relay-device-status--needs-attention"}`}
+                  >
+                    <span aria-hidden="true" />
+                    {check.status === "ready" ? "Ready" : "Needs attention"}
+                  </span>
+                  <div>
+                    <strong>{check.label}</strong>
+                    <p>{check.detail}</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </Disclosure.Panel>
+        </Disclosure.Root>
       ) : null}
     </div>
   );
@@ -400,22 +402,24 @@ function AdvancedSettings() {
   const { platform, settingsService, queryClient } = useRouteContext({ from: "__root__" });
   const connection = useQuery({
     queryKey: CONNECTION_QUERY_KEY,
-    queryFn: () => Promise.resolve(platform.getServerUrl()),
+    queryFn: () => Promise.resolve(platform.getServerUrl()).then((url) => ({ url })),
   });
   const apple = useQuery({
     queryKey: settingsQueryKeys.appleSetup,
     queryFn: () => settingsService.appleSetup(),
+    retry: false,
   });
   const android = useQuery({
     queryKey: settingsQueryKeys.androidSetup,
     queryFn: () => settingsService.androidSetup(),
+    retry: false,
   });
   const [url, setUrl] = useState("");
   const [saveState, setSaveState] = useState<SaveState | undefined>();
   const [savedNotice, setSavedNotice] = useState(false);
 
   useEffect(() => {
-    if (connection.data) setUrl(connection.data);
+    if (connection.data) setUrl(connection.data.url);
   }, [connection.data]);
 
   async function saveConnection(event: FormEvent<HTMLFormElement>) {
@@ -425,7 +429,7 @@ function AdvancedSettings() {
     setSavedNotice(false);
     try {
       await Promise.resolve(platform.setServerUrl(url.trim()));
-      queryClient.setQueryData(CONNECTION_QUERY_KEY, url.trim());
+      queryClient.setQueryData(CONNECTION_QUERY_KEY, { url: url.trim() });
       setSavedNotice(true);
       setSaveState("saved");
     } catch {
@@ -450,37 +454,38 @@ function AdvancedSettings() {
         ) : null}
         {connection.data ? (
           <form className="relay-settings-form" onSubmit={saveConnection}>
-            <div className="relay-form-field">
-              <label htmlFor="relay-server-url">Server URL</label>
-              <input
-                id="relay-server-url"
-                className="relay-input"
-                type="url"
-                value={url}
-                required
-                spellCheck={false}
-                autoComplete="off"
-                onChange={(event) => {
-                  setUrl(event.currentTarget.value);
-                  setSavedNotice(false);
-                }}
-              />
-              <p>For example, http://127.0.0.1:8787</p>
-            </div>
-            {platform.setServerUrl ? (
-              <Button
-                variant="primary"
-                type="submit"
-                disabled={!url.trim() || saveState === "saving"}
-              >
-                {saveState === "saving" ? "Saving…" : "Save address"}
-              </Button>
-            ) : null}
-            {savedNotice ? (
-              <p className="relay-settings-saved-notice" role="status">
-                Saved. Reopen Relay to use the new address everywhere.
-              </p>
-            ) : null}
+            <Field className="relay-settings-address-field">
+              <FieldLabel htmlFor="relay-server-url">Server URL</FieldLabel>
+              <div className="relay-settings-address-control">
+                <Input
+                  id="relay-server-url"
+                  type="url"
+                  value={url}
+                  required
+                  spellCheck={false}
+                  autoComplete="off"
+                  onChange={(event) => {
+                    setUrl(event.currentTarget.value);
+                    setSavedNotice(false);
+                  }}
+                />
+                {platform.setServerUrl ? (
+                  <Button
+                    variant="primary"
+                    type="submit"
+                    disabled={!url.trim() || saveState === "saving"}
+                  >
+                    {saveState === "saving" ? "Saving…" : "Save address"}
+                  </Button>
+                ) : null}
+              </div>
+              <FieldDescription>For example, http://127.0.0.1:8787</FieldDescription>
+              {savedNotice ? (
+                <p className="relay-settings-saved-notice" role="status">
+                  Saved. Reopen Relay to use the new address everywhere.
+                </p>
+              ) : null}
+            </Field>
           </form>
         ) : null}
       </section>
@@ -490,17 +495,18 @@ function AdvancedSettings() {
         id="device-support"
         aria-labelledby="device-support-title"
       >
-        <header>
-          <p className="relay-section-label">Device support</p>
-          <h2 id="device-support-title">Local readiness</h2>
-          <p>These checks explain what to install or open when a mobile device needs attention.</p>
-        </header>
-        {apple.isError || android.isError ? (
-          <div className="relay-settings-alert" role="alert">
-            <strong>Some device-support checks are unavailable</strong>
-            <p>Keep the Relay server running, then check again.</p>
+        <header className="relay-settings-section-header">
+          <div>
+            <p className="relay-section-label">Device support</p>
+            <h2 id="device-support-title">Local readiness</h2>
+            <p>
+              These checks explain what to install or open when a mobile device needs attention.
+            </p>
+          </div>
+          {apple.isError || android.isError ? (
             <Button
               size="small"
+              variant="secondary"
               onClick={() => {
                 void apple.refetch();
                 void android.refetch();
@@ -508,8 +514,8 @@ function AdvancedSettings() {
             >
               Check again
             </Button>
-          </div>
-        ) : null}
+          ) : null}
+        </header>
         <SetupRow
           title="Apple devices"
           checks={setupChecks(apple.data)}

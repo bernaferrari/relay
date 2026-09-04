@@ -198,6 +198,12 @@ describe("App overview", () => {
     expect(document.body.textContent).toContain("Recent results");
     expect(document.body.textContent).toContain("2 of 3");
     expect(document.querySelector('a[href="/tests/new?app=app-shop-internal"]')).not.toBeNull();
+    const advanced = [...document.querySelectorAll("button")].find(
+      (item) => item.textContent?.trim() === "Advanced",
+    );
+    if (!advanced) throw new Error("Advanced disclosure not found");
+    await act(async () => advanced.click());
+    await settle();
     expect(document.querySelector('a[href="/apps/app-shop-internal/map"]')).not.toBeNull();
   });
 });
@@ -339,5 +345,48 @@ describe("Runs workspace", () => {
     await click("Show latest Runs");
     expect(history.location.search).toBe("");
     expect(document.body.textContent).toContain("Complete checkout");
+  });
+
+  it("windows very large histories and keeps every rendered Report as a keyboard URL", async () => {
+    const largeHistory = Array.from({ length: 500 }, (_, index) =>
+      productRun({
+        id: `run-${index}`,
+        title: `Regression pass ${index + 1}`,
+        testName: `Regression pass ${index + 1}`,
+        testId: `test-${index}`,
+        appMapId: "app-shop-internal",
+        appName: "Shopping",
+        phase: "completed",
+        outcome: "passed",
+        queuedAt: now - index * 1_000,
+        durationMs: 1_200,
+      }),
+    );
+    await render(
+      "/runs?view=all",
+      catalog({
+        listRuns: async () => largeHistory,
+      }),
+    );
+
+    const links = document.querySelectorAll<HTMLAnchorElement>("[data-run-index]");
+    expect(document.querySelector(".relay-windowed-run-scroll")).not.toBeNull();
+    expect(links.length).toBeGreaterThan(0);
+    expect(links.length).toBeLessThan(40);
+    expect(links[0]?.getAttribute("href")).toBe("/runs/run-0");
+    expect(links[0]?.tabIndex).toBe(0);
+    expect(links[0]?.closest("li")?.getAttribute("aria-setsize")).toBe("500");
+
+    await act(async () => {
+      links[0]?.focus();
+      links[0]?.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true }));
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    });
+    await settle();
+
+    const last = document.querySelector<HTMLAnchorElement>('[data-run-index="499"]');
+    expect(last?.getAttribute("href")).toBe("/runs/run-499");
+    expect(document.activeElement).toBe(last);
+    expect(document.querySelectorAll("[data-run-index]").length).toBeLessThan(40);
   });
 });

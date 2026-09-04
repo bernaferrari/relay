@@ -102,6 +102,32 @@ function state(
 function fakeService(initial = state("recording", ["inspect", "record", "checkpoint", "stop"])) {
   let current = initial;
   const calls: string[] = [];
+  async function targetSession(selected: typeof target): Promise<LiveTargetSession> {
+    let status: ReturnType<LiveTargetSession["snapshot"]> = {
+      status: "connecting",
+      target: selected,
+    };
+    const listeners = new Set<Parameters<LiveTargetSession["subscribe"]>[0]>();
+    return {
+      snapshot: () => status,
+      subscribe(listener) {
+        listeners.add(listener);
+        listener(status);
+        return () => listeners.delete(listener);
+      },
+      mount() {
+        status = { status: "streaming", target: selected, frameSequence: 1 };
+        for (const listener of listeners) listener(status);
+        return () => undefined;
+      },
+      async input(input) {
+        calls.push(`input:${input.kind}`);
+      },
+      close() {
+        status = { status: "closed", target: selected };
+      },
+    };
+  }
   const service: RecordingProductService = {
     async listApps() {
       calls.push("list-apps");
@@ -151,32 +177,8 @@ function fakeService(initial = state("recording", ["inspect", "record", "checkpo
       current = state("committed", [], { committed: true });
       return current;
     },
-    async liveTarget(selected) {
-      let status: ReturnType<LiveTargetSession["snapshot"]> = {
-        status: "connecting",
-        target: selected,
-      };
-      const listeners = new Set<Parameters<LiveTargetSession["subscribe"]>[0]>();
-      return {
-        snapshot: () => status,
-        subscribe(listener) {
-          listeners.add(listener);
-          listener(status);
-          return () => listeners.delete(listener);
-        },
-        mount() {
-          status = { status: "streaming", target: selected, frameSequence: 1 };
-          for (const listener of listeners) listener(status);
-          return () => undefined;
-        },
-        async input(input) {
-          calls.push(`input:${input.kind}`);
-        },
-        close() {
-          status = { status: "closed", target: selected };
-        },
-      };
-    },
+    previewTarget: targetSession,
+    liveTarget: targetSession,
   };
   return { service, calls };
 }
@@ -250,12 +252,9 @@ async function fill(input: HTMLInputElement, value: string) {
 }
 
 async function beginRecording() {
-  const name = document.querySelector<HTMLInputElement>("#test-name");
-  if (!name) throw new Error("Test name input not found");
-  await fill(name, "Change the app language");
   await click(document.querySelector<HTMLInputElement>('input[name="app"]')!);
   await click(document.querySelector<HTMLInputElement>('input[name="target"]')!);
-  await click(button("Begin recording"));
+  await click(button("Start recording"));
 }
 
 async function interactWithLiveTarget() {
@@ -331,10 +330,8 @@ describe("record, review, replay, and save", () => {
     );
 
     expect(document.querySelector<HTMLInputElement>('input[name="app"]')?.checked).toBe(true);
-    expect(document.querySelector<HTMLInputElement>("#test-name")?.value).toBe(
-      "Settings to Language",
-    );
     expect(document.body.textContent).toContain("Settings → Language");
+    expect(document.querySelector("#test-name")).toBeNull();
   });
 
   it("selects app cards with one click and supports arrow-key radio navigation", async () => {
@@ -405,6 +402,10 @@ describe("record, review, replay, and save", () => {
     expect(document.body.textContent).not.toContain("Replay again");
     expect(button("Save Test").disabled).toBe(false);
 
+    await fill(
+      document.querySelector<HTMLInputElement>("#review-test-name")!,
+      "Change the app language",
+    );
     await click(button("Save Test"));
     expect(document.body.textContent).toContain("Test saved");
     expect(document.body.textContent).toContain("Open Test");
@@ -412,7 +413,7 @@ describe("record, review, replay, and save", () => {
     expect(storage.values.has("activeRecordingWorkflowId")).toBe(false);
     expect(fake.calls).toEqual(
       expect.arrayContaining([
-        "begin:Change the app language:app-1:emulator-5554",
+        "begin:Untitled recording:app-1:emulator-5554",
         "input:touch",
         "input:scroll",
         "input:key",
@@ -422,6 +423,26 @@ describe("record, review, replay, and save", () => {
         "approve",
       ]),
     );
+  });
+
+  it("opens and controls the selected target before recording begins", async () => {
+    const fake = fakeService();
+    const { history } = await renderJourney(
+      "/tests/new",
+      fake.service,
+      platformWithStorage().platform,
+    );
+    await click(document.querySelector<HTMLInputElement>('input[name="app"]')!);
+    await click(document.querySelector<HTMLInputElement>('input[name="target"]')!);
+
+    expect(document.body.textContent).toContain("Put the app where recording should begin");
+    expect(button("Start recording").disabled).toBe(false);
+    await interactWithLiveTarget();
+    expect(fake.calls).toContain("input:touch");
+    expect(fake.calls.some((call) => call.startsWith("begin:"))).toBe(false);
+
+    await click(button("Start recording"));
+    expect(history.location.pathname).toBe("/tests/workflow-1/record");
   });
 
   it("uses the route parameter to adopt a recording after refresh", async () => {
@@ -579,7 +600,7 @@ describe("record, review, replay, and save", () => {
     await renderJourney("/tests/new", fake.service, platformWithStorage().platform);
 
     expect(document.body.textContent).toContain("Relay could not load ready devices");
-    expect(document.body.textContent).not.toContain("Begin recording");
+    expect(document.body.textContent).not.toContain("Start recording");
     expect(document.body.textContent).not.toContain("Pixel 9 Pro");
   });
 
@@ -629,7 +650,7 @@ describe("record, review, replay, and save", () => {
 
     expect(fake.calls).toContain("inspect:workflow-1");
     expect(storage.values.has("activeRecordingWorkflowId")).toBe(false);
-    expect(document.body.textContent).toContain("Begin recording");
+    expect(document.body.textContent).toContain("Start recording");
     expect(document.body.textContent).not.toContain("A recording is already in progress");
   });
 
@@ -643,7 +664,7 @@ describe("record, review, replay, and save", () => {
     await settle();
     expect(history.location.pathname).toBe("/tests/new");
     expect(document.body.textContent).toContain("A recording is already in progress");
-    expect(document.body.textContent).not.toContain("Begin recording");
+    expect(document.body.textContent).not.toContain("Start recording");
 
     await click(button("Open recording"));
     expect(history.location.pathname).toBe("/tests/workflow-1/record");
@@ -660,7 +681,7 @@ describe("record, review, replay, and save", () => {
     );
     expect(document.body.textContent).toContain("Open recording");
     expect(document.body.textContent).not.toContain("Start over");
-    expect(document.body.textContent).not.toContain("Begin recording");
+    expect(document.body.textContent).not.toContain("Start recording");
     expect(document.body.textContent).toContain("A recording is already in progress");
   });
 
@@ -686,7 +707,7 @@ describe("record, review, replay, and save", () => {
     expect(storage.values.get("activeRecordingWorkflowId")).toBe("workflow-1");
     expect(document.body.textContent).toContain("Recording status needs review");
     expect(document.body.textContent).toContain("Open recording");
-    expect(document.body.textContent).not.toContain("Begin recording");
+    expect(document.body.textContent).not.toContain("Start recording");
 
     await click(button("Open recording"));
     expect(history.location.pathname).toBe("/tests/workflow-1/record");

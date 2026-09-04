@@ -779,6 +779,8 @@ export type ActivityEvent = AppMapScope & {
     | "variable.saved"
     | "variable.removed"
     | "test.saved"
+    | "test.undone"
+    | "test.redone"
     | "test.removed"
     | "combine.saved"
     | "combine.removed"

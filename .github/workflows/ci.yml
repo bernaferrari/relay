@@ -75,11 +75,8 @@ jobs:
       - name: Test Vite+ workspace
         run: pnpm exec vp test
 
-      - name: Validate UI boundaries
-        run: pnpm --filter @relay/app check:ui
-
-      - name: Build app
-        run: pnpm --filter @relay/app build
+      - name: Build React Product V2 app
+        run: pnpm --filter @relay/app-v2 build
 
       - name: Build desktop
         run: pnpm --filter @relay/desktop build

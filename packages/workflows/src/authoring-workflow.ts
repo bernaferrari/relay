@@ -264,6 +264,7 @@ function durableTransitionInput(
       ...fence,
       action: "authoring-approve",
       ...(decision.destination ? { destination: decision.destination } : {}),
+      ...(decision.testName ? { testName: decision.testName } : {}),
     };
   }
   if (decision.action === "discard") return { ...fence, action: "authoring-discard" };
@@ -646,6 +647,7 @@ export class CanonicalAuthoringWorkflow {
       return this.operations.invoke("authoring.session.commit", {
         sessionId,
         ...(decision.destination ? { destination: decision.destination } : {}),
+        ...(decision.testName ? { testName: decision.testName } : {}),
         createTest: true,
       });
     }

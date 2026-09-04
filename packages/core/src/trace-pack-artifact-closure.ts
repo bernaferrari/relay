@@ -31,6 +31,10 @@ type RequestedArtifact = {
   expectedBytes: Set<number>;
   mediaTypes: Set<string>;
   frame: boolean;
+  /** Set from the typed Android rawCapture field, not from filename or
+   * channel. This prevents unchanneled and non-PCAP raw bytes bypassing
+   * network-raw consent. */
+  rawNetwork: boolean;
 };
 
 type ArtifactClosure = {
@@ -156,7 +160,17 @@ function browserTraceRetentionAllowed(run: PersistedRun): boolean {
 }
 
 function rawNetworkRetentionAllowed(run: PersistedRun): boolean {
-  return Boolean(run.evidence?.collectionPolicy?.sensitive["network-raw"]);
+  const grant = run.evidence?.collectionPolicy?.sensitive?.["network-raw"];
+  return Boolean(
+    grant &&
+    typeof grant === "object" &&
+    Number.isFinite(grant.grantedAt) &&
+    grant.grantedAt >= 0 &&
+    typeof grant.grantedBy === "string" &&
+    grant.grantedBy.trim() &&
+    typeof grant.reason === "string" &&
+    grant.reason.trim(),
+  );
 }
 
 function looksLikeRunArtifact(path: string, channel?: string): boolean {
@@ -194,6 +208,63 @@ function collectNestedPaths(
   }
   for (const [key, child] of Object.entries(record)) {
     if (key !== "path") collectNestedPaths(child, `${source}.${key}`, channel, emit, depth + 1);
+  }
+}
+
+/** Find semantic raw-network references before generic path heuristics run.
+ * The rawCapture marker is intentionally authoritative even when its path is
+ * extensionless, lives under run.result, or is not attached to the network
+ * channel. Unknown statuses are treated conservatively as raw too: malformed
+ * persisted evidence must never widen retention. */
+function collectTypedRawNetworkPaths(
+  value: unknown,
+  source: string,
+  emit: (
+    path: string,
+    source: string,
+    channel?: string,
+    expectedBytes?: number,
+    frame?: boolean,
+    external?: boolean,
+    mediaType?: string,
+    rawNetwork?: boolean,
+  ) => void,
+  depth = 0,
+): void {
+  if (depth > 64 || !value || typeof value !== "object") return;
+  if (Array.isArray(value)) {
+    value.forEach((item, index) =>
+      collectTypedRawNetworkPaths(item, `${source}[${index}]`, emit, depth + 1),
+    );
+    return;
+  }
+  const record = value as Record<string, unknown>;
+  const rawCapture = record.rawCapture;
+  if (rawCapture && typeof rawCapture === "object" && !Array.isArray(rawCapture)) {
+    const artifact = (rawCapture as Record<string, unknown>).artifact;
+    if (artifact && typeof artifact === "object" && !Array.isArray(artifact)) {
+      const path = (artifact as Record<string, unknown>).path;
+      if (typeof path === "string" && path.trim()) {
+        const bytes = (artifact as Record<string, unknown>).bytes;
+        emit(
+          path,
+          `${source}.rawCapture.artifact.path`,
+          "network",
+          typeof bytes === "number" && Number.isSafeInteger(bytes) && bytes >= 0
+            ? bytes
+            : undefined,
+          false,
+          path.startsWith("relay-evidence://"),
+          undefined,
+          true,
+        );
+      }
+    }
+  }
+  for (const [key, child] of Object.entries(record)) {
+    if (key !== "rawCapture") {
+      collectTypedRawNetworkPaths(child, `${source}.${key}`, emit, depth + 1);
+    }
   }
 }
 
@@ -244,6 +315,7 @@ function requestedArtifacts(run: PersistedRun, maxArtifacts: number): RequestedA
     frame = false,
     external = false,
     mediaType?: string,
+    rawNetwork = false,
   ): void => {
     const logicalPath = external ? undefined : portablePath(run, path);
     const key = external
@@ -265,6 +337,7 @@ function requestedArtifacts(run: PersistedRun, maxArtifacts: number): RequestedA
         expectedBytes: new Set(),
         mediaTypes: new Set(),
         frame,
+        rawNetwork,
       };
       byPath.set(key, request);
     }
@@ -277,6 +350,7 @@ function requestedArtifacts(run: PersistedRun, maxArtifacts: number): RequestedA
     if (mediaType) request.mediaTypes.add(mediaType);
     request.frame ||= frame;
     request.external ||= external;
+    request.rawNetwork ||= rawNetwork;
   };
   run.frames.forEach((frame, index) =>
     emit(frame.path, `run.frames[${index}].path`, "screenshot", frame.bytes, true),
@@ -325,8 +399,15 @@ function requestedArtifacts(run: PersistedRun, maxArtifacts: number): RequestedA
     }
   });
   collectNestedPaths(run.result, "run.result", undefined, emit);
+  const collectRaw = (value: unknown, source: string): void =>
+    collectTypedRawNetworkPaths(value, source, emit);
+  run.artifacts.forEach((artifact, index) =>
+    collectRaw(artifact.data, `run.artifacts[${index}].data`),
+  );
+  collectRaw(run.result, "run.result");
   run.evidence?.events.forEach((event, index) => {
     collectNestedPaths(event.data, `run.evidence.events[${index}].data`, event.channel, emit);
+    collectRaw(event.data, `run.evidence.events[${index}].data`);
     if (typeof event.artifact === "string" && looksLikeRunArtifact(event.artifact, event.channel)) {
       emit(event.artifact, `run.evidence.events[${index}].artifact`, event.channel);
     }
@@ -378,6 +459,18 @@ async function closeArtifact(
   const channelRecords = run.evidence?.channels as
     | Record<string, { status: EvidenceChannelStatus }>
     | undefined;
+  if (request.rawNetwork && !rawNetworkRetentionAllowed(run)) {
+    return {
+      reference: {
+        path: request.path,
+        status: "redacted",
+        sources,
+        channels,
+        ...(expectedBytes === undefined ? {} : { expectedBytes }),
+        reason: "redacted-channel",
+      },
+    };
+  }
   // Browser traces are privileged archives. Older Runs may have captured one
   // before this consent existed; keep the immutable local Run intact, but
   // never copy the bytes into a portable TracePack without an explicit frozen

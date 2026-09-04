@@ -1,4 +1,4 @@
-/* Apply the saved theme before Solid mounts, avoiding a bright first frame. */
+/* Apply the saved theme before React mounts, avoiding a bright first frame. */
 (function () {
   try {
     var key = "relay-theme-id";

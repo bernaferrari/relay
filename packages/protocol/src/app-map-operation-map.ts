@@ -510,6 +510,24 @@ export type AppMapOperationMap = {
     };
     output: { appMap: AppMap };
   };
+  "app-map.test.undo": {
+    input: {
+      appMapId: string;
+      testId: string;
+      expectedRevision: number;
+      eventId?: string;
+    };
+    output: { appMap: AppMap };
+  };
+  "app-map.test.redo": {
+    input: {
+      appMapId: string;
+      testId: string;
+      expectedRevision: number;
+      eventId?: string;
+    };
+    output: { appMap: AppMap };
+  };
   "app-map.test.propose": {
     input: {
       appMapId: string;

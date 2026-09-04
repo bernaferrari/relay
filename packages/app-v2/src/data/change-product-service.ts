@@ -24,6 +24,13 @@ export type ChangeProductService = {
   }): Promise<ProductChangeDetail>;
   cancel(changeId: string, expectedVersion: number): Promise<ProductChangeDetail>;
   rerunAffected(changeId: string, expectedVersion: number): Promise<ProductChangeDetail>;
+  resumeHumanEvidence(input: {
+    changeId: string;
+    executionId: string;
+    cellId: string;
+    stepId: string;
+    observation: string;
+  }): Promise<ProductChangeDetail>;
   retryPublication(input: {
     changeId: string;
     publicationId: string;
@@ -111,6 +118,25 @@ export function createChangeProductService(platform: Platform): ChangeProductSer
     async rerunAffected(changeId, expectedVersion) {
       const { journey } = await runtime();
       return detail(await journey.rerunAffected({ changeId, expectedVersion }));
+    },
+    async resumeHumanEvidence(input) {
+      const { journey } = await runtime();
+      return detail(
+        await journey.resumeHumanEvidence({
+          changeId: input.changeId,
+          executionId: input.executionId,
+          cellId: input.cellId,
+          stepId: input.stepId,
+          attachment: {
+            kind: "snapshot",
+            encoding: "utf8",
+            data: JSON.stringify({ observation: input.observation.trim() }),
+            capturedAt: Date.now(),
+            mime: "application/json",
+          },
+          wait: false,
+        }),
+      );
     },
     async retryPublication(input) {
       const { journey } = await runtime();

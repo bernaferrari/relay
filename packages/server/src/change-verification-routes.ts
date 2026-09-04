@@ -160,7 +160,12 @@ async function repairPacketForInspection(
   proof: ChangeVerification,
   execution: Awaited<ReturnType<ChangeVerificationRouteRuntime["executionCoordinator"]["read"]>>,
 ) {
-  if (execution) {
+  if (
+    execution &&
+    execution.organizationId === scope.organizationId &&
+    execution.projectId === scope.projectId &&
+    execution.proofId === proof.id
+  ) {
     try {
       const packet = agentRepairPacketForExecution({ proof, execution });
       if (packet) return packet;

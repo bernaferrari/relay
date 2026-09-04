@@ -28,7 +28,7 @@ test("route fixture is canonical and overlay priority is deterministic", () => {
 
 test("advanced engine nouns are explicit and cannot be silently public", () => {
   const document =
-    "## Promise and public model\n## Canonical routes\n## Interaction laws\n## Responsive and accessibility contract\n## Public vocabulary boundary\n## Legacy expansion freeze and deletion targets";
+    "## Promise and public model\n## Canonical routes\n## Interaction laws\n## Responsive and accessibility contract\n## Public vocabulary boundary\n## One product shell";
   const violations = evaluateProductV2Contract({
     document,
     advancedTerms: PRODUCT_V2_ADVANCED_TERMS.slice(0, -1),

@@ -2,6 +2,7 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState, type ReactNode } from "react";
 import { settingsCategories, type SettingsCategory } from "../data/settings-product-service";
+import { SelectField } from "../components/filter-select";
 
 export type SaveState = "saved" | "saving" | "failed" | "unavailable";
 
@@ -90,21 +91,15 @@ export function SettingsFrame({
         {visibleSaveState ? <SaveStatus state={visibleSaveState} /> : null}
       </header>
       <div className="relay-settings-mobile-nav">
-        <label htmlFor="settings-section">Settings section</label>
-        <select
-          id="settings-section"
-          className="relay-input"
+        <SelectField
+          className="relay-settings-mobile-select"
+          label="Settings section"
           value={`/settings/${category}`}
-          onChange={(event) => {
-            void navigate({ to: event.currentTarget.value, search });
+          options={settingsCategories.map((item) => ({ value: item.path, label: item.label }))}
+          onValueChange={(value) => {
+            void navigate({ to: value, search });
           }}
-        >
-          {settingsCategories.map((item) => (
-            <option key={item.id} value={item.path}>
-              {item.label}
-            </option>
-          ))}
-        </select>
+        />
       </div>
       <div className="relay-settings-layout">
         <nav className="relay-settings-nav" aria-label="Settings sections">

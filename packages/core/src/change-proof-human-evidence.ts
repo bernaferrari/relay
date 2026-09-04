@@ -45,9 +45,7 @@ function decodeAttachment(attachment: ChangeProofExecutionHumanEvidenceAttachmen
   // canonical round-trip so the server hashes exactly what the client sent.
   if (
     attachment.data.length % 4 !== 0 ||
-    !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(
-      attachment.data,
-    )
+    !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(attachment.data)
   ) {
     throw new Error("Human evidence attachment is not canonical base64");
   }

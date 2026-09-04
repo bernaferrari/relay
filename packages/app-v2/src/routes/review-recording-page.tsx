@@ -1,9 +1,9 @@
 /** @jsxImportSource react */
-import { Button } from "@relay/ui-react";
+import { Button, Field, FieldDescription, FieldLabel, Input } from "@relay/ui-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useRouteContext } from "@tanstack/react-router";
 import { Check, MoreHorizontal, RotateCcw, Save } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Breadcrumbs, EmptyState } from "../components/product-patterns";
 import { recordingQueryKeys, refreshRecording } from "../data/recording-queries";
 import type { ProductRecordingState } from "../data/recording-product-service";
@@ -16,6 +16,25 @@ export function ReviewRecordingPage() {
   const { productService, platform, queryClient } = useRouteContext({ from: "__root__" });
   const { recordingId } = routeApi.useParams();
   const workflowId = recordingId;
+  const nameDraftKey = `recordingName:${workflowId}`;
+  const [testName, setTestName] = useState("");
+  const [nameDraftLoaded, setNameDraftLoaded] = useState(false);
+  const suggestionApplied = useRef(false);
+
+  useEffect(() => {
+    let disposed = false;
+    void Promise.resolve(platform.storage.get(nameDraftKey)).then((stored) => {
+      if (disposed) return;
+      if (stored) {
+        setTestName(stored);
+        suggestionApplied.current = true;
+      }
+      setNameDraftLoaded(true);
+    });
+    return () => {
+      disposed = true;
+    };
+  }, [nameDraftKey, platform]);
 
   const recording = useQuery({
     queryKey: recordingQueryKeys.workflow(workflowId),
@@ -23,12 +42,15 @@ export function ReviewRecordingPage() {
     staleTime: 0,
   });
   const transition = useMutation({
-    mutationFn: (action: "replay" | "approve") =>
-      action === "replay" ? productService.replay() : productService.approve(),
-    onSuccess: async (state, action) => {
+    mutationFn: (intent: { action: "replay" } | { action: "approve"; testName: string }) =>
+      intent.action === "replay"
+        ? productService.replay()
+        : productService.approve(intent.testName),
+    onSuccess: async (state, intent) => {
       const canonical = await refreshRecording(queryClient, productService, workflowId);
       if (state.recovery || canonical.recovery) return;
-      if (action === "approve" && canonical.snapshot?.stage === "committed") {
+      if (intent.action === "approve" && canonical.snapshot?.stage === "committed") {
+        await Promise.resolve(platform.storage.remove?.(nameDraftKey));
         if (await clearWorkflowPointerIfCurrent(platform, workflowId)) {
           queryClient.setQueryData<string | null>(recordingQueryKeys.pointer, null);
         }
@@ -48,6 +70,18 @@ export function ReviewRecordingPage() {
   const saved = reviewReady && snapshot?.stage === "committed";
 
   useEffect(() => {
+    if (!nameDraftLoaded || suggestionApplied.current || !snapshot) return;
+    suggestionApplied.current = true;
+    if (snapshot.title !== "Untitled recording") setTestName(snapshot.title);
+  }, [nameDraftLoaded, snapshot]);
+
+  useEffect(() => {
+    if (saved || !nameDraftLoaded) return;
+    if (testName) void Promise.resolve(platform.storage.set(nameDraftKey, testName));
+    else void Promise.resolve(platform.storage.remove?.(nameDraftKey));
+  }, [nameDraftKey, nameDraftLoaded, platform, saved, testName]);
+
+  useEffect(() => {
     if (!saved) return;
     void clearWorkflowPointerIfCurrent(platform, workflowId).then((cleared) => {
       if (cleared) queryClient.setQueryData<string | null>(recordingQueryKeys.pointer, null);
@@ -63,26 +97,18 @@ export function ReviewRecordingPage() {
         <p className="relay-eyebrow">Test saved</p>
         <h1>{snapshot.title}</h1>
         <p>Relay verified the reviewed recording. This Test is ready to run.</p>
-        <div className="relay-saved-lineage" aria-label="Test creation complete">
-          <span>Recorded</span>
-          <span aria-hidden="true">→</span>
-          <span>Replayed</span>
-          <span aria-hidden="true">→</span>
-          <strong>Saved Test</strong>
-        </div>
         <div className="relay-review-complete-actions">
           {committedTestId ? (
-            <Link
-              className="relay-button relay-button--primary relay-button--medium"
-              to="/tests/$testId"
-              params={{ testId: committedTestId }}
+            <Button
+              render={<Link to="/tests/$testId" params={{ testId: committedTestId }} />}
+              variant="primary"
             >
               Open Test
-            </Link>
+            </Button>
           ) : null}
-          <Link className="relay-button relay-button--secondary relay-button--medium" to="/tests">
+          <Button render={<Link to="/tests" />} variant="secondary">
             All Tests
-          </Link>
+          </Button>
         </div>
       </section>
     );
@@ -93,12 +119,9 @@ export function ReviewRecordingPage() {
       <Breadcrumbs items={[{ label: "Tests", to: "/tests" }, { label: "Review" }]} />
       <header className="relay-review-header relay-electron-drag">
         <div>
-          <h1>{snapshot?.title ?? "Review recording"}</h1>
+          <h1>Review your recording</h1>
           <p>{reviewInstruction(review?.replayRequired, canApprove)}</p>
         </div>
-        <Link className="relay-review-back relay-electron-no-drag" to="/tests">
-          All Tests
-        </Link>
       </header>
 
       {recording.isPending ? <PageLoading label="Loading the reviewed recording…" /> : null}
@@ -152,6 +175,20 @@ export function ReviewRecordingPage() {
           </div>
 
           <aside className="relay-review-sidebar" aria-label="Replay and save">
+            <Field>
+              <FieldLabel htmlFor="review-test-name">Test name</FieldLabel>
+              <Input
+                id="review-test-name"
+                value={testName}
+                onChange={(event) => setTestName(event.currentTarget.value)}
+                placeholder="For example, Change the app language"
+                maxLength={160}
+                autoComplete="off"
+                spellCheck
+                required
+              />
+              <FieldDescription>Name the outcome a teammate should recognize.</FieldDescription>
+            </Field>
             <div className="relay-replay-status">
               <p className="relay-section-label">Replay</p>
               <h2>
@@ -163,18 +200,18 @@ export function ReviewRecordingPage() {
             {canApprove ? (
               <Button
                 variant="primary"
-                onClick={() => transition.mutate("approve")}
-                disabled={transition.isPending}
+                onClick={() => transition.mutate({ action: "approve", testName: testName.trim() })}
+                disabled={transition.isPending || !testName.trim()}
               >
                 <Save aria-hidden="true" />
-                {transition.isPending && transition.variables === "approve"
+                {transition.isPending && transition.variables?.action === "approve"
                   ? "Saving…"
                   : "Save Test"}
               </Button>
             ) : allowed.has("replay") ? (
               <Button
                 variant="primary"
-                onClick={() => transition.mutate("replay")}
+                onClick={() => transition.mutate({ action: "replay" })}
                 disabled={transition.isPending}
               >
                 <RotateCcw aria-hidden="true" />

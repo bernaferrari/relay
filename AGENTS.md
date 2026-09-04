@@ -34,8 +34,8 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) and [README.md](./README.md).
 | `@relay/workflows` | `packages/workflows` | Outcome-oriented workflow façade |
 | `@relay/cli`       | `packages/cli`       | Primary host                     |
 | `@relay/tui`       | `packages/tui`       | ANSI terminal UI                 |
-| `@relay/ui`        | `packages/ui`        | Solid design system + themes     |
-| `@relay/app`       | `packages/app`       | Solid product UI (host-agnostic) |
+| `@relay/ui`        | `packages/ui`        | Shared semantic tokens + themes  |
+| `@relay/app-v2`    | `packages/app-v2`    | React product UI (host-agnostic) |
 | `@relay/desktop`   | `packages/desktop`   | Electron shell                   |
 
 ## Rules

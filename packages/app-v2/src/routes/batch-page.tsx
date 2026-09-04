@@ -128,18 +128,20 @@ export function BatchPage() {
               </ul>
             </section>
           ) : null}
-          {!active && report.status !== "cancelled" ? (
+          {!active && report.status !== "cancelled" && !report.export ? (
             <Button
+              className="relay-batch-export"
               variant="secondary"
               onClick={() => exportReport.mutate()}
               disabled={exportReport.isPending}
             >
-              {exportReport.isPending
-                ? "Preparing export…"
-                : report.export
-                  ? "Export ready"
-                  : "Export Batch Report"}
+              {exportReport.isPending ? "Preparing export…" : "Prepare Batch export"}
             </Button>
+          ) : null}
+          {report.export ? (
+            <p className="relay-batch-export-ready" role="status">
+              Export prepared in the Relay workspace.
+            </p>
           ) : null}
           {report.status === "cancelled" && !report.runIds.length ? (
             <EmptyState

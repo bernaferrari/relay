@@ -224,6 +224,38 @@ export function editAppMapScenarioTest(
   );
 }
 
+export function restoreAppMapScenarioTest(
+  map: AppMap,
+  testId: string,
+  snapshot: AppMapTest,
+  context: AppMapMutationContext,
+  direction: "undo" | "redo",
+  touched: readonly string[],
+): AppMap {
+  const current = map.tests[testId];
+  if (!current) appMapFail("missing-reference", `Test ${testId} does not exist`);
+  assertEntityScope(map, snapshot);
+  if (snapshot.id !== testId) {
+    appMapFail("scope-mismatch", `Test ${snapshot.id} does not match ${testId}`);
+  }
+  return mutateAppMap(
+    map,
+    context,
+    {
+      eventType: direction === "undo" ? "test.undone" : "test.redone",
+      subject: { kind: "test", id: testId },
+      touched: [...touched],
+      summary: `${direction === "undo" ? "Undid" : "Redid"} edit to ${current.name}`,
+    },
+    (draft) => {
+      draft.tests[testId] = {
+        ...structuredClone(snapshot),
+        updatedAt: context.at,
+      };
+    },
+  );
+}
+
 export function removeAppMapTest(
   map: AppMap,
   testId: string,

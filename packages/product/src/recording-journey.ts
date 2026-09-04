@@ -24,7 +24,7 @@ export type ProductRecordingAction =
   | { action: "checkpoint"; label?: string }
   | { action: "stop" }
   | { action: "replay" }
-  | { action: "approve"; destination?: AuthoringCommitDestination };
+  | { action: "approve"; testName?: string; destination?: AuthoringCommitDestination };
 
 export type ProductRecordingRecovery = HumanError & {
   code: WorkflowProblem["code"] | "transport";
@@ -68,9 +68,15 @@ export type ProductRecordingJourney = {
   /** Public journey name for the server's authoring-stop transition. */
   compileReview(): Promise<ProductRecordingState>;
   replay(): Promise<ProductRecordingState>;
-  approve(destination?: AuthoringCommitDestination): Promise<ProductRecordingState>;
+  approve(
+    testName?: string,
+    destination?: AuthoringCommitDestination,
+  ): Promise<ProductRecordingState>;
   /** Public journey name for the server's authoring-approve transition. */
-  commit(destination?: AuthoringCommitDestination): Promise<ProductRecordingState>;
+  commit(
+    testName?: string,
+    destination?: AuthoringCommitDestination,
+  ): Promise<ProductRecordingState>;
 };
 
 type RecordingJobs = Pick<RelayOutcomeJobs, "connect" | "record" | "inspect" | "advanceRecording">;
@@ -330,10 +336,18 @@ export function createProductRecordingJourney(input: {
     stop: () => transition({ action: "stop" }),
     compileReview: () => transition({ action: "stop" }),
     replay: () => transition({ action: "replay" }),
-    approve: (destination) =>
-      transition({ action: "approve", ...(destination ? { destination } : {}) }),
-    commit: (destination) =>
-      transition({ action: "approve", ...(destination ? { destination } : {}) }),
+    approve: (testName, destination) =>
+      transition({
+        action: "approve",
+        ...(testName?.trim() ? { testName: testName.trim() } : {}),
+        ...(destination ? { destination } : {}),
+      }),
+    commit: (testName, destination) =>
+      transition({
+        action: "approve",
+        ...(testName?.trim() ? { testName: testName.trim() } : {}),
+        ...(destination ? { destination } : {}),
+      }),
   } satisfies ProductRecordingJourney;
 }
 

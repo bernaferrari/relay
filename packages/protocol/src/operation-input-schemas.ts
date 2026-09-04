@@ -463,6 +463,22 @@ export const operationInputSchemas = {
       edits: testSemanticEdits,
     })
     .strict(),
+  "app-map.test.undo": z
+    .object({
+      appMapId: identifier("App Map identifier"),
+      testId: identifier("Graph-native Test identifier"),
+      expectedRevision: natural("Current App Map revision"),
+      eventId: identifier("Optional idempotent activity event identifier").optional(),
+    })
+    .strict(),
+  "app-map.test.redo": z
+    .object({
+      appMapId: identifier("App Map identifier"),
+      testId: identifier("Graph-native Test identifier"),
+      expectedRevision: natural("Current App Map revision"),
+      eventId: identifier("Optional idempotent activity event identifier").optional(),
+    })
+    .strict(),
   "app-map.test.propose": z
     .object({
       appMapId: identifier("App Map identifier"),
@@ -605,6 +621,7 @@ export const operationInputSchemas = {
     .object({
       ...sessionReference,
       destination: destination.optional(),
+      testName: z.string().trim().min(1).max(160).optional(),
       createTest: z.literal(true).optional(),
     })
     .strict(),

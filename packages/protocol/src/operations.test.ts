@@ -573,6 +573,8 @@ test("App Map descriptors keep their canonical contiguous order", () => {
       "app-map.test.save",
       "app-map.test.remove",
       "app-map.test.edit",
+      "app-map.test.undo",
+      "app-map.test.redo",
       "app-map.test.propose",
       "app-map.test.compile",
       "app-map.test.from-intent",
@@ -591,6 +593,25 @@ test("App Map descriptors keep their canonical contiguous order", () => {
       "app-map.proposal.revert",
     ],
   );
+});
+
+test("durable Test history operations require only an exact revision fence", () => {
+  for (const id of ["app-map.test.undo", "app-map.test.redo"] as const) {
+    const operation = operationDefinition(id);
+    assert.deepEqual(
+      operation.input.parse({ appMapId: "map", testId: "test", expectedRevision: 4 }),
+      { appMapId: "map", testId: "test", expectedRevision: 4 },
+    );
+    assert.throws(
+      () => operation.input.parse({ appMapId: "map", testId: "test", expectedRevision: -1 }),
+      /expectedRevision/u,
+    );
+    assert.throws(
+      () =>
+        operation.input.parse({ appMapId: "map", testId: "test", expectedRevision: 4, edits: [] }),
+      /Unrecognized key/u,
+    );
+  }
 });
 
 test("alias-observe output carries the approved logical screen variant", () => {

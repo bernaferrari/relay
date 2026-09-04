@@ -35,12 +35,9 @@ export function relayDevelopmentOrigins(preferredPort, selectedPort) {
 }
 
 export function relayAppPackage(args = []) {
-  const unknown = args.filter((argument) => argument !== "--v2" && argument !== "--legacy");
+  const unknown = args.filter((argument) => argument !== "--v2");
   if (unknown.length) throw new Error(`Unknown Relay app option: ${unknown[0]}`);
-  if (args.includes("--v2") && args.includes("--legacy")) {
-    throw new Error("Choose either --v2 or --legacy, not both");
-  }
-  return args.includes("--legacy") ? "@relay/app" : "@relay/app-v2";
+  return "@relay/app-v2";
 }
 
 async function portAvailable(port) {

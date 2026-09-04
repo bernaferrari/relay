@@ -15,7 +15,7 @@ import {
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { promisify } from "node:util";
-import type { AndroidNetworkEvidenceSummary } from "@relay/protocol";
+import type { AndroidNetworkEvidenceSummary, EvidenceConsentGrant } from "@relay/protocol";
 import { parseAndroidNetworkEvidenceSummary } from "@relay/protocol";
 import { execAndroidAdb } from "./android-adb-host.js";
 import { resolveAndroidSdkTool } from "./android-sdk-tools.js";
@@ -60,6 +60,20 @@ export type AndroidEmulatorNetworkCaptureRuntime = {
     appPackage: string,
   ) => Promise<AndroidUidNetworkCounters | undefined>;
 };
+
+function validRawConsent(value: unknown): value is EvidenceConsentGrant {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const grant = value as Partial<EvidenceConsentGrant>;
+  return (
+    typeof grant.grantedAt === "number" &&
+    Number.isFinite(grant.grantedAt) &&
+    grant.grantedAt >= 0 &&
+    typeof grant.grantedBy === "string" &&
+    grant.grantedBy.trim().length > 0 &&
+    typeof grant.reason === "string" &&
+    grant.reason.trim().length > 0
+  );
+}
 
 function safeCaptureName(runId: string): string {
   return `relay-${createHash("sha256").update(runId).digest("hex").slice(0, 24)}.pcap`;
@@ -249,6 +263,10 @@ export async function startAndroidEmulatorNetworkCapture(
   },
   runtime: AndroidEmulatorNetworkCaptureRuntime = {},
 ): Promise<AndroidEmulatorNetworkCaptureHandle> {
+  // Starting the bounded packet window is metadata collection only. The
+  // emulator's source file remains transient and is deleted by stop/failure
+  // cleanup; network-raw consent is consulted later, only when bytes would be
+  // copied into Run-owned storage.
   if (!/^emulator-\d+$/u.test(input.serial)) {
     throw new Error("packet capture requires one Android emulator target");
   }
@@ -289,8 +307,8 @@ export async function startAndroidEmulatorNetworkCapture(
     const started = await execAdb(
       ["-s", input.serial, "emu", "network", "capture", "start", fileName],
       {
-      timeout: COMMAND_TIMEOUT_MS,
-      maxBuffer: 64 * 1024,
+        timeout: COMMAND_TIMEOUT_MS,
+        maxBuffer: 64 * 1024,
       },
     );
     const response = `${started.stdout}\n${started.stderr}`.trim();
@@ -364,6 +382,12 @@ type ParsedPacket = {
   destinationPort?: number;
   outcome: AndroidNetworkEvidenceSummary["flows"][number]["outcome"];
   host?: string;
+};
+
+type ParsedCapture = {
+  packets: ParsedPacket[];
+  dropped: number;
+  parseFailure?: string;
 };
 
 function parseEthernetPacket(frame: Buffer, at: number): ParsedPacket | undefined {
@@ -441,17 +465,34 @@ function parseEthernetPacket(frame: Buffer, at: number): ParsedPacket | undefine
   };
 }
 
-function parsePcap(bytes: Buffer): { packets: ParsedPacket[]; dropped: number } {
-  if (bytes.length < 24) throw new Error("emulator packet capture has no PCAP header");
+function parsePcap(bytes: Buffer): ParsedCapture {
+  if (bytes.length < 24) {
+    return {
+      packets: [],
+      dropped: 1,
+      parseFailure: "Emulator packet capture has no PCAP header",
+    };
+  }
   const littleMagic = bytes.readUInt32LE(0);
   const bigMagic = bytes.readUInt32BE(0);
   const little = littleMagic === 0xa1b2c3d4 || littleMagic === 0xa1b23c4d;
   const big = bigMagic === 0xa1b2c3d4 || bigMagic === 0xa1b23c4d;
-  if (!little && !big) throw new Error("emulator packet capture uses an unsupported format");
+  if (!little && !big) {
+    return {
+      packets: [],
+      dropped: 1,
+      parseFailure: "Emulator packet capture uses an unsupported format",
+    };
+  }
   const read32 = little ? Buffer.prototype.readUInt32LE : Buffer.prototype.readUInt32BE;
   const linkType = read32.call(bytes, 20);
-  if (linkType !== 1)
-    throw new Error(`emulator packet capture link type ${linkType} is unsupported`);
+  if (linkType !== 1) {
+    return {
+      packets: [],
+      dropped: 1,
+      parseFailure: `Emulator packet capture link type ${linkType} is unsupported`,
+    };
+  }
   const nanos = little ? littleMagic === 0xa1b23c4d : bigMagic === 0xa1b23c4d;
   const packets: ParsedPacket[] = [];
   let dropped = 0;
@@ -459,21 +500,37 @@ function parsePcap(bytes: Buffer): { packets: ParsedPacket[]; dropped: number } 
   while (offset < bytes.length) {
     if (offset + 16 > bytes.length) {
       dropped += 1;
-      break;
+      return {
+        packets,
+        dropped,
+        parseFailure: "Emulator packet capture ended with an incomplete packet record header",
+      };
     }
     const seconds = read32.call(bytes, offset);
     const fraction = read32.call(bytes, offset + 4);
     const capturedLength = read32.call(bytes, offset + 8);
     if (capturedLength > MAX_CAPTURE_BYTES || offset + 16 + capturedLength > bytes.length) {
       dropped += 1;
-      break;
+      return {
+        packets,
+        dropped,
+        parseFailure: "Emulator packet capture contains an incomplete packet record",
+      };
     }
     const frame = bytes.subarray(offset + 16, offset + 16 + capturedLength);
     const packet = parseEthernetPacket(
       frame,
       seconds * 1_000 + fraction / (nanos ? 1_000_000 : 1_000),
     );
-    if (!packet || packets.length >= MAX_PARSED_PACKETS) dropped += 1;
+    if (!packet) {
+      dropped += 1;
+      return {
+        packets,
+        dropped,
+        parseFailure: "Emulator packet capture contains an unsupported or malformed frame",
+      };
+    }
+    if (packets.length >= MAX_PARSED_PACKETS) dropped += 1;
     else packets.push(packet);
     offset += 16 + capturedLength;
   }
@@ -516,6 +573,7 @@ function summarizeCapture(input: {
   localAddresses: readonly string[];
   finalCounters?: AndroidUidNetworkCounters;
   interrupted: boolean;
+  interruptionReason?: string;
   truncated: boolean;
   rawCapture: AndroidNetworkEvidenceSummary["rawCapture"];
 }): AndroidNetworkEvidenceSummary {
@@ -570,6 +628,12 @@ function summarizeCapture(input: {
     ...(input.truncated
       ? ["The transient packet capture exceeded Relay's 16 MiB analysis bound"]
       : []),
+    ...(input.interruptionReason
+      ? [`The packet capture stop command failed: ${input.interruptionReason}`]
+      : []),
+    ...(parsed.parseFailure
+      ? [`Packet summary parsing was incomplete: ${parsed.parseFailure}`]
+      : []),
     ...(flowsTruncated ? ["The packet summary reached Relay's 1,000-flow presentation bound"] : []),
   ];
   return parseAndroidNetworkEvidenceSummary({
@@ -590,6 +654,14 @@ function summarizeCapture(input: {
       input.finalCounters,
     ),
     rawCapture: input.rawCapture,
+    ...(parsed.parseFailure
+      ? {
+          parseFailure: {
+            kind: "packet-parse-failure" as const,
+            message: parsed.parseFailure,
+          },
+        }
+      : {}),
     dropped,
     redactions: 0,
     limitations,
@@ -598,7 +670,12 @@ function summarizeCapture(input: {
 
 export async function stopAndroidEmulatorNetworkCapture(
   handle: AndroidEmulatorNetworkCaptureHandle,
-  options: { retainRawPath?: string; rawArtifact?: string; rawDeniedReason?: string } = {},
+  options: {
+    retainRawPath?: string;
+    rawArtifact?: string;
+    rawDeniedReason?: string;
+    rawConsent?: EvidenceConsentGrant;
+  } = {},
   runtime: AndroidEmulatorNetworkCaptureRuntime = {},
 ): Promise<AndroidEmulatorNetworkCaptureResult> {
   const owner = activeCaptures.get(handle.serial);
@@ -612,13 +689,18 @@ export async function stopAndroidEmulatorNetworkCapture(
   const now = runtime.now ?? Date.now;
   const execAdb = runtime.execAdb ?? execAndroidAdb;
   let interrupted = false;
+  let interruptionReason: string | undefined;
   try {
     await execAdb(["-s", handle.serial, "emu", "network", "capture", "stop"], {
       timeout: COMMAND_TIMEOUT_MS,
       maxBuffer: 64 * 1024,
     });
-  } catch {
+  } catch (error) {
     interrupted = true;
+    interruptionReason =
+      error instanceof Error && error.message.trim()
+        ? error.message.trim().slice(0, 512)
+        : "unknown emulator stop failure";
   }
   const finishedAt = now();
   try {
@@ -632,37 +714,48 @@ export async function stopAndroidEmulatorNetworkCapture(
           ).catch(() => undefined)
         : undefined,
     ]);
+    const retainRawPath = options.retainRawPath;
+    const rawArtifact = options.rawArtifact;
+    const rawRetentionRequested = Boolean(retainRawPath && rawArtifact);
+    const rawRetentionAllowed = rawRetentionRequested && validRawConsent(options.rawConsent);
     let rawCapture: AndroidNetworkEvidenceSummary["rawCapture"] = {
       status: options.rawDeniedReason
         ? "denied"
-        : options.retainRawPath
-          ? "failed"
-          : "not-requested",
+        : rawRetentionRequested && !rawRetentionAllowed
+          ? "denied"
+          : retainRawPath
+            ? "failed"
+            : "not-requested",
+      retention: "ephemeral",
       ...(options.rawDeniedReason
         ? { reason: options.rawDeniedReason }
-        : options.retainRawPath
-          ? { reason: "Raw packet retention did not complete" }
-          : {}),
+        : rawRetentionRequested && !rawRetentionAllowed
+          ? { reason: "Raw packet retention requires explicit network-raw consent" }
+          : retainRawPath
+            ? { reason: "Raw packet retention did not complete" }
+            : {}),
     };
     let rawPath: string | undefined;
-    if (options.retainRawPath && options.rawArtifact && !truncated) {
-      await mkdir(dirname(options.retainRawPath), { recursive: true, mode: 0o700 });
-      await copyFile(handle.sourcePath, options.retainRawPath);
-      await chmod(options.retainRawPath, 0o600);
-      rawPath = options.retainRawPath;
+    if (rawRetentionAllowed && retainRawPath && rawArtifact && !truncated) {
+      await mkdir(dirname(retainRawPath), { recursive: true, mode: 0o700 });
+      await copyFile(handle.sourcePath, retainRawPath);
+      await chmod(retainRawPath, 0o600);
+      rawPath = retainRawPath;
       rawCapture = {
         status: "captured",
-        artifact: { path: options.rawArtifact, bytes: bytes.byteLength },
+        retention: "retained",
+        artifact: { path: rawArtifact, bytes: bytes.byteLength },
         bytes: bytes.byteLength,
       };
-    } else if (options.retainRawPath && options.rawArtifact && truncated) {
-      await mkdir(dirname(options.retainRawPath), { recursive: true, mode: 0o700 });
-      await writeFile(options.retainRawPath, bytes, { mode: 0o600 });
-      await chmod(options.retainRawPath, 0o600);
-      rawPath = options.retainRawPath;
+    } else if (rawRetentionAllowed && retainRawPath && rawArtifact && truncated) {
+      await mkdir(dirname(retainRawPath), { recursive: true, mode: 0o700 });
+      await writeFile(retainRawPath, bytes, { mode: 0o600 });
+      await chmod(retainRawPath, 0o600);
+      rawPath = retainRawPath;
       rawCapture = {
         status: "truncated",
-        artifact: { path: options.rawArtifact, bytes: bytes.byteLength },
+        retention: "retained",
+        artifact: { path: rawArtifact, bytes: bytes.byteLength },
         bytes: bytes.byteLength,
         reason: "Raw capture exceeded Relay's 16 MiB retention bound",
       };
@@ -675,6 +768,7 @@ export async function stopAndroidEmulatorNetworkCapture(
         localAddresses,
         ...(finalCounters ? { finalCounters } : {}),
         interrupted,
+        ...(interruptionReason ? { interruptionReason } : {}),
         truncated,
         rawCapture,
       }),

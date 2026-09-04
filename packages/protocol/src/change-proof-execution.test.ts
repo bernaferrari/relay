@@ -20,10 +20,10 @@ test("human evidence accepts a server-owned attachment without a digest", () => 
     data: '{"reviewed":true}',
     capturedAt: 100,
   };
-  assert.deepEqual(
-    changeProofRunHumanEvidenceInputSchema.parse({ ...identity, attachment }),
-    { ...identity, attachment },
-  );
+  assert.deepEqual(changeProofRunHumanEvidenceInputSchema.parse({ ...identity, attachment }), {
+    ...identity,
+    attachment,
+  });
 });
 
 test("human evidence keeps digest-only input backward compatible but rejects ambiguity", () => {
@@ -46,10 +46,7 @@ test("human evidence keeps digest-only input backward compatible but rejects amb
       }),
     /exactly one/u,
   );
-  assert.throws(
-    () => changeProofRunHumanEvidenceInputSchema.parse(identity),
-    /exactly one/u,
-  );
+  assert.throws(() => changeProofRunHumanEvidenceInputSchema.parse(identity), /exactly one/u);
 });
 
 test("binary human evidence requires canonical encoding and matching media", () => {

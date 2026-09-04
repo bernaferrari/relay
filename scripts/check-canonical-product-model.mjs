@@ -21,7 +21,6 @@ const canonicalTeachingBoundary = new Map([
     "packages/server/src/app-map-capture-routes.ts",
     "/app-maps/:appMapId/variables/:variableId/infer",
   ],
-  ["packages/app/src/lib/server-combine-remote.ts", 'invoke("app-map.variable.infer"'],
   ["packages/cli/src/commands.ts", '"app-map.variable.infer"'],
   ["packages/mcp/src/tools.ts", '"app-map.variable.infer"'],
 ]);
@@ -88,7 +87,7 @@ async function main() {
     process.exitCode = 1;
   } else {
     console.log(
-      `Canonical product-model verification passed: ${entries.length} files expose only Variable, Test, and Combine, with one typed teaching path.`,
+      `Canonical product-model verification passed: ${entries.length} files expose only Variable, Test, and Combine through reviewed operation boundaries.`,
     );
   }
 }

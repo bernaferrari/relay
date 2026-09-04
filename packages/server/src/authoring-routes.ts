@@ -659,6 +659,7 @@ export async function executeControlledAuthoringTransition(
       sessionId,
       {
         ...(input.destination ? { destination: input.destination } : {}),
+        ...(input.testName ? { testName: input.testName } : {}),
         createTest: true,
       },
       undefined,
@@ -850,6 +851,7 @@ export async function handleAuthoringRoute(input: {
       const value = await body<CommitAuthoringSessionInput>(request);
       const session = await authoringSessions.commit(sessionId, {
         destination: value.destination,
+        ...(value.testName ? { testName: value.testName } : {}),
         ...(value.createTest ? { createTest: true } : {}),
       });
       json(response, 200, { session });

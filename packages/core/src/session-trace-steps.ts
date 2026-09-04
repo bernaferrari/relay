@@ -24,6 +24,8 @@ export function openStep(
   const step: TraceStep = {
     id: randomUUID(),
     index: job.steps.length,
+    ...(partial.recipeId ? { recipeId: partial.recipeId } : {}),
+    ...(partial.recipeStepId ? { recipeStepId: partial.recipeStepId } : {}),
     kind: partial.kind,
     tone: partial.tone,
     title: partial.title,

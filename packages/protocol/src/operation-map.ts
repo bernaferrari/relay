@@ -660,7 +660,7 @@ type SpecificOperationMap = {
     output: { run: OperationRecord; review: RunReview };
   };
   "run.evidence.get": {
-    input: { runId: string; limit?: number; includeBodies?: boolean };
+    input: { runId: string; limit?: number; includeBodies?: boolean; testStepId?: string };
     output: { evidence: OperationRecord };
   };
   "run.story.get": { input: { runId: string }; output: { story: OperationRecord } };

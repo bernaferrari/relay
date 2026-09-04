@@ -5,10 +5,12 @@ import { expect } from "vitest";
 async function packageJson(path = "package.json"): Promise<{
   scripts?: Record<string, string>;
   dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
 }> {
   return JSON.parse(await readFile(path, "utf8")) as {
     scripts?: Record<string, string>;
     dependencies?: Record<string, string>;
+    devDependencies?: Record<string, string>;
   };
 }
 
@@ -25,11 +27,22 @@ describe("Relay workspace verification", () => {
   });
 
   it("discovers package tests recursively instead of listing files", async () => {
-    const app = await packageJson("packages/app/package.json");
-    expect(app.scripts?.test).toBe(
-      "tsx --test src/**/*.test.ts && vitest run --config vite.browser-test.config.ts",
-    );
-    expect(app.scripts?.test).not.toContain("step-sentence.test.ts");
+    const productV2 = await packageJson("packages/app-v2/package.json");
+    expect(productV2.scripts?.test).toBe("vitest run");
+    expect(productV2.scripts?.build).toBe("vp build");
+  });
+
+  it("builds the React Product V2 package from the root verification gate", async () => {
+    const root = await packageJson();
+    const desktop = await packageJson("packages/desktop/package.json");
+    expect(root.scripts?.verify).toContain("pnpm --filter @relay/app-v2 build");
+    expect(root.scripts?.verify).not.toContain("pnpm --filter @relay/app build");
+    expect(root.scripts?.["dev:app:legacy"]).toBeUndefined();
+    expect(root.scripts?.["dev:desktop:legacy"]).toBeUndefined();
+    expect(desktop.scripts?.["build:legacy"]).toBeUndefined();
+    expect(desktop.devDependencies?.["@relay/app"]).toBeUndefined();
+    expect(desktop.devDependencies?.["solid-js"]).toBeUndefined();
+    await expect(readFile("packages/app/package.json", "utf8")).rejects.toThrow();
   });
 
   it("keeps package tests separate from Vite+ workspace tests", async () => {

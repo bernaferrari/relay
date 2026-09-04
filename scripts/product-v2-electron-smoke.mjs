@@ -86,8 +86,8 @@ async function assertLayout(page) {
 async function assertAccessible(page, route) {
   const result = await new AxeBuilder({ page })
     // Electron's Playwright context cannot create axe's auxiliary blank page.
-    // Relay has no cross-origin frames, so the same-origin legacy runner covers
-    // the complete renderer without weakening the selected WCAG rule set.
+    // Relay has no cross-origin frames, so the same-origin runner covers the
+    // complete renderer without weakening the selected WCAG rule set.
     .setLegacyMode(true)
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
     .analyze();

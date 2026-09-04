@@ -187,17 +187,16 @@ test("raw packet bytes are addressable only when capture succeeded", () => {
       },
     }),
   );
-  assert.throws(
-    () =>
-      parseAndroidNetworkEvidenceSummary({
-        ...packetSummary(),
-        rawCapture: {
-          status: "captured",
-          artifact: { path: "network/raw.json", bytes: 600 },
-          bytes: 600,
-        },
-      }),
-    /PCAP or PCAPNG/u,
+  assert.doesNotThrow(() =>
+    parseAndroidNetworkEvidenceSummary({
+      ...packetSummary(),
+      rawCapture: {
+        status: "captured",
+        retention: "retained",
+        artifact: { path: "network/raw.bin", bytes: 600 },
+        bytes: 600,
+      },
+    }),
   );
   assert.throws(
     () =>
@@ -226,6 +225,31 @@ test("raw packet bytes are addressable only when capture succeeded", () => {
         },
       }),
     /truncated raw network evidence needs a reason/u,
+  );
+  assert.throws(
+    () =>
+      parseAndroidNetworkEvidenceSummary({
+        ...packetSummary(),
+        rawCapture: {
+          status: "captured",
+          retention: "ephemeral",
+          artifact: { path: "network/raw.bin", bytes: 600 },
+          bytes: 600,
+        },
+      }),
+    /cannot be labeled ephemeral/u,
+  );
+  assert.throws(
+    () =>
+      parseAndroidNetworkEvidenceSummary({
+        ...packetSummary(),
+        rawCapture: {
+          status: "denied",
+          retention: "retained",
+          reason: "Consent not granted",
+        },
+      }),
+    /may be retained/u,
   );
 });
 
@@ -286,8 +310,10 @@ test("packet collector provenance distinguishes capture from start and finalize 
     finishedAt: 1_001,
     stage: "start",
     message: "Managed emulator capture command was unavailable",
+    retention: "ephemeral",
   });
   assert.equal(failed.status, "failed");
+  assert.equal(failed.retention, "ephemeral");
   if (failed.status === "failed") assert.equal(failed.stage, "start");
   assert.equal(
     parseAndroidPacketCaptureProvenance({
@@ -298,6 +324,7 @@ test("packet collector provenance distinguishes capture from start and finalize 
       startedAt: 1_000,
       finishedAt: 2_000,
       coverage: "packet-complete",
+      retention: "ephemeral",
     }).status,
     "captured",
   );
@@ -314,5 +341,30 @@ test("packet collector provenance distinguishes capture from start and finalize 
         message: "Wrong collector",
       }),
     /invalid_value|emulator-packet|entire-emulator/u,
+  );
+});
+
+test("malformed packet summaries remain typed partial packet evidence", () => {
+  const summary = parseAndroidNetworkEvidenceSummary({
+    ...packetSummary(),
+    coverage: "partial",
+    source: { kind: "emulator-packet", backend: "android-emulator-console" },
+    rawCapture: { status: "not-requested", retention: "ephemeral" },
+    parseFailure: {
+      kind: "packet-parse-failure",
+      message: "Emulator packet capture has no PCAP header",
+    },
+  });
+  assert.equal(summary.source.kind, "emulator-packet");
+  assert.equal(summary.parseFailure?.kind, "packet-parse-failure");
+  assert.throws(
+    () =>
+      parseAndroidNetworkEvidenceSummary({
+        ...summary,
+        source: { kind: "app-session-log", backend: "agent-device-session-log" },
+        coverage: "opportunistic",
+        scope: "session-log",
+      }),
+    /packet parse failures require/u,
   );
 });

@@ -6,6 +6,7 @@ import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react
 import { useDeferredValue, useMemo, useState } from "react";
 import { FilterSelect } from "../components/filter-select";
 import { EmptyState, OutcomeMark } from "../components/product-patterns";
+import { RunHistoryList, type RunHistoryRowInteraction } from "../components/run-history-list";
 import { PageLoading, RecordingProblem } from "./recording-shared";
 
 const routeApi = getRouteApi("/runs");
@@ -160,11 +161,9 @@ export function RunsPage() {
             </h2>
             <span aria-live="polite">{runViewDescription(view)}</span>
           </div>
-          <ul className="relay-library-list relay-run-list">
-            {visibleRuns.map((run) => (
-              <RunRow key={run.id} run={run} />
-            ))}
-          </ul>
+          <RunHistoryList runs={visibleRuns}>
+            {(run, _index, interaction) => <RunRow run={run} interaction={interaction} />}
+          </RunHistoryList>
         </section>
       ) : null}
 
@@ -195,34 +194,39 @@ export function RunsPage() {
   );
 }
 
-function RunRow({ run }: { run: ProductRunSummary }) {
+function RunRow({
+  run,
+  interaction,
+}: {
+  run: ProductRunSummary;
+  interaction?: RunHistoryRowInteraction;
+}) {
   const title = run.testName ?? run.title;
   const context = [run.appName, run.targetName ?? platformName(run.platform)].filter(Boolean);
   return (
-    <li>
-      <Link
-        className="relay-library-row relay-run-row"
-        to="/runs/$runId"
-        params={{ runId: run.id }}
-      >
-        <span className="relay-library-row-main">
-          <strong>{title}</strong>
-          <span className="relay-run-row-context">
-            <OutcomeMark outcome={run.outcome ?? phaseOutcome(run)} />
-            <span>{context.length ? context.join(" · ") : "Saved Run"}</span>
-          </span>
+    <Link
+      className="relay-library-row relay-run-row"
+      to="/runs/$runId"
+      params={{ runId: run.id }}
+      {...interaction}
+    >
+      <span className="relay-library-row-main">
+        <strong>{title}</strong>
+        <span className="relay-run-row-context">
+          <OutcomeMark outcome={run.outcome ?? phaseOutcome(run)} />
+          <span>{context.length ? context.join(" · ") : "Saved Run"}</span>
         </span>
-        <span className="relay-library-row-recent">
-          <strong>
-            {run.durationMs === undefined ? phaseDetail(run) : formatDuration(run.durationMs)}
-          </strong>
-          <small>{relativeTime(run.finishedAt ?? run.startedAt ?? run.queuedAt)}</small>
-        </span>
-        <span className="relay-library-row-arrow" aria-hidden="true">
-          →
-        </span>
-      </Link>
-    </li>
+      </span>
+      <span className="relay-library-row-recent">
+        <strong>
+          {run.durationMs === undefined ? phaseDetail(run) : formatDuration(run.durationMs)}
+        </strong>
+        <small>{relativeTime(run.finishedAt ?? run.startedAt ?? run.queuedAt)}</small>
+      </span>
+      <span className="relay-library-row-arrow" aria-hidden="true">
+        →
+      </span>
+    </Link>
   );
 }
 

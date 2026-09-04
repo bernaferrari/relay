@@ -7,16 +7,18 @@ export type FilterSelectOption = {
   label: string;
 };
 
-export function FilterSelect({
+export function SelectField({
   label,
   value,
   options,
   onValueChange,
+  className,
 }: {
   label: string;
   value: string;
   options: readonly FilterSelectOption[];
   onValueChange: (value: string) => void;
+  className?: string;
 }) {
   return (
     <Select.Root
@@ -26,8 +28,10 @@ export function FilterSelect({
         if (nextValue !== null) onValueChange(nextValue);
       }}
     >
-      <div className="relay-library-filter">
-        <Select.Label className="relay-library-filter-label">{label}</Select.Label>
+      <div className={className ?? "relay-select-field"}>
+        <Select.Label className="relay-select-field-label relay-library-filter-label">
+          {label}
+        </Select.Label>
         <Select.Trigger className="relay-select-trigger">
           <Select.Value />
           <Select.Icon className="relay-select-icon">
@@ -63,4 +67,8 @@ export function FilterSelect({
       </Select.Portal>
     </Select.Root>
   );
+}
+
+export function FilterSelect(props: Omit<Parameters<typeof SelectField>[0], "className">) {
+  return <SelectField {...props} className="relay-library-filter" />;
 }

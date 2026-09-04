@@ -118,7 +118,7 @@ export function HomePage() {
           {hasTests ? (
             <Button render={<Link to="/tests/new" />} variant="primary">
               <Plus aria-hidden="true" />
-              New Test
+              Record a Test
             </Button>
           ) : null}
         </div>
@@ -126,9 +126,11 @@ export function HomePage() {
 
       {loading ? <PageLoading label="Loading your Relay workspace…" /> : null}
       <RecordingProblem
+        className="relay-home-recovery"
         error={error}
         onRetry={retry}
         retrying={[...queries, targets].some((query) => query.isFetching)}
+        layout="centered"
       />
 
       {!loading && !error && !hasWorkspaceData ? (

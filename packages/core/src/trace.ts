@@ -45,6 +45,10 @@ export type TraceAction = {
 export type TraceStep = {
   id: string;
   index: number;
+  /** Immutable recipe identity captured at execution time when available. */
+  recipeId?: string;
+  /** Immutable compiled recipe-step identity; never inferred from trace id. */
+  recipeStepId?: string;
   kind: StepKind;
   tone: StepTone;
   title: string;

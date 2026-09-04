@@ -258,6 +258,36 @@ test("buildRunEvidence keeps emulator packet facts separate from HTTP events", (
   assert.match(evidence.networkCapture.detail, /does not parse HTTP methods/u);
 });
 
+test("buildRunEvidence projects authored-step joins and filters by stable Test step id", () => {
+  const stepEvidence = {
+    schemaVersion: 1 as const,
+    testStepId: "step-a",
+    recipeId: "root",
+    recipeStepId: "recipe-a",
+    traceStepId: "trace-a",
+    traceStepIndex: 0,
+    occurrence: 1,
+    evidence: { framePaths: ["frames/a.png"], eventSequences: [1], artifactKinds: ["ui-tree"] },
+  };
+  const runWithEvidence = run({
+    testStepEvidence: [
+      stepEvidence,
+      { ...stepEvidence, testStepId: "step-b", recipeStepId: "recipe-b", occurrence: 1 },
+    ],
+  });
+  assert.deepEqual(
+    buildRunEvidence(runWithEvidence).testStepEvidence.map((item) => item.testStepId),
+    ["step-a", "step-b"],
+  );
+  assert.deepEqual(
+    buildRunEvidence(runWithEvidence, { testStepId: "step-b" }).testStepEvidence.map(
+      (item) => item.testStepId,
+    ),
+    ["step-b"],
+  );
+  assert.deepEqual(buildRunEvidence(run()).testStepEvidence, []);
+});
+
 test("buildRunEvidence preserves typed packet failure beside a successful session log", () => {
   const evidence = buildRunEvidence(
     run({
@@ -348,4 +378,48 @@ test("buildRunEvidence fails closed when packet evidence is malformed", () => {
   assert.equal(evidence.networkCapture.mode, "unavailable");
   assert.match(evidence.networkCapture.detail, /malformed/u);
   assert.ok(evidence.notes.some((note) => /malformed/u.test(note)));
+});
+
+test("buildRunEvidence does not relabel a typed partial packet parse as session-log", () => {
+  const evidence = buildRunEvidence(
+    run({
+      artifacts: [
+        {
+          kind: "network",
+          capturedAt: 22,
+          data: {
+            entries: [{ method: "GET", url: "https://example.test/health", status: 200 }],
+            androidNetwork: {
+              schemaVersion: 1,
+              source: { kind: "emulator-packet", backend: "android-emulator-console" },
+              coverage: "partial",
+              scope: "entire-emulator",
+              startedAt: 1,
+              finishedAt: 22,
+              packets: 0,
+              bytesSent: 0,
+              bytesReceived: 0,
+              domains: [],
+              flows: [],
+              attribution: { confidence: "unavailable", reason: "No package" },
+              rawCapture: { status: "not-requested", retention: "ephemeral" },
+              parseFailure: {
+                kind: "packet-parse-failure",
+                message: "Emulator packet capture has no PCAP header",
+              },
+              dropped: 1,
+              redactions: 0,
+              limitations: ["Packet summary parsing was incomplete"],
+            },
+          },
+        },
+      ],
+    }),
+  );
+
+  assert.equal(evidence.androidNetwork?.source.kind, "emulator-packet");
+  assert.equal(evidence.networkCapture.mode, "emulator-packet");
+  assert.match(evidence.networkCapture.label, /partial parse/u);
+  assert.doesNotMatch(evidence.networkCapture.label, /session-log/u);
+  assert.equal(evidence.network.length, 1);
 });

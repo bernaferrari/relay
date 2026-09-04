@@ -26,12 +26,12 @@ const routePresentations = {
   "/apps/:appId/versions": {
     path: "/apps/$appId/versions",
     eyebrow: "App",
-    description: "Review the versions Relay can verify.",
+    description: "Review registered builds and deployments available to this workspace.",
   },
   "/apps/:appId/accounts": {
     path: "/apps/$appId/accounts",
     eyebrow: "App",
-    description: "Manage the test accounts available to this app.",
+    description: "Review saved browser sign-ins available while testing this app.",
   },
   "/apps/:appId/map": {
     path: "/apps/$appId/map",

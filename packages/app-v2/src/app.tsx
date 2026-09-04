@@ -4,6 +4,10 @@ import { RouterProvider, type RouterHistory } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { applyColorScheme, readColorScheme } from "./data/appearance-preference";
 import {
+  createAppResourcesProductService,
+  type AppResourcesProductService,
+} from "./data/app-resources-product-service";
+import {
   createCatalogProductService,
   type CatalogProductService,
 } from "./data/catalog-product-service";
@@ -63,6 +67,7 @@ export function RelayV2App({
   platform,
   history,
   productService,
+  appResourcesService,
   runService,
   catalogService,
   deviceService,
@@ -75,6 +80,7 @@ export function RelayV2App({
   platform: Platform;
   history?: RouterHistory;
   productService?: RecordingProductService;
+  appResourcesService?: AppResourcesProductService;
   runService?: RunProductService;
   catalogService?: CatalogProductService;
   deviceService?: DeviceProductService;
@@ -86,6 +92,9 @@ export function RelayV2App({
 }) {
   const [queryClient] = useState(createRelayQueryClient);
   const [service] = useState(() => productService ?? createRecordingProductService(platform));
+  const [appResources] = useState(
+    () => appResourcesService ?? createAppResourcesProductService(platform),
+  );
   const [runs] = useState(() => runService ?? createRunProductService(platform));
   const [runAcross] = useState(() => runAcrossService ?? createRunAcrossProductService(platform));
   const [map] = useState(() => mapService ?? createMapProductService(platform));
@@ -99,6 +108,7 @@ export function RelayV2App({
   const [router] = useState(() =>
     createAppRouter({
       platform,
+      appResourcesService: appResources,
       productService: service,
       runService: runs,
       runAcrossService: runAcross,

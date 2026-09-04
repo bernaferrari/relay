@@ -563,6 +563,70 @@ test("TracePack never embeds PCAP referenced outside the network channel without
   }
 });
 
+test("TracePack gates typed raw network provenance independent of extension and channel", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "relay-trace-pack-typed-raw-consent-"));
+  try {
+    await mkdir(join(directory, "network"));
+    const rawBytes = Buffer.from("private packet bytes");
+    await writeFile(join(directory, "network", "capture.raw"), rawBytes);
+    const run = persistedRun();
+    run.dir = directory;
+    run.result = {
+      // Deliberately unchanneled and extensionless: the typed rawCapture
+      // marker, rather than the path or channel, carries the privacy meaning.
+      androidNetwork: {
+        rawCapture: {
+          status: "captured",
+          artifact: { path: "network/capture.raw", bytes: rawBytes.byteLength },
+          bytes: rawBytes.byteLength,
+        },
+      },
+    };
+    run.evidence!.collectionPolicy = { schemaVersion: 1, sensitive: {} };
+
+    const redacted = await exportTracePack(run);
+    const redactedReference = redacted.completeness.artifacts?.find(
+      ({ path }) => path === "network/capture.raw",
+    );
+    assert.equal(redactedReference?.status, "redacted");
+    assert.equal(redactedReference?.reason, "redacted-channel");
+    assert.equal(
+      redacted.objects.some(({ path }) => path === "files/network/capture.raw"),
+      false,
+    );
+
+    run.evidence!.collectionPolicy = {
+      schemaVersion: 1,
+      sensitive: {
+        "network-raw": { grantedAt: 1, grantedBy: "human:test", reason: "fixture" },
+      },
+    };
+    const retained = await exportTracePack(run);
+    const retainedReference = retained.completeness.artifacts?.find(
+      ({ path }) => path === "network/capture.raw",
+    );
+    assert.equal(retainedReference?.status, "embedded");
+    assert.equal(
+      retained.objects.some(({ path }) => path === "files/network/capture.raw"),
+      true,
+    );
+
+    run.evidence!.collectionPolicy = {
+      schemaVersion: 1,
+      // A truthy but malformed persisted grant must not widen raw retention.
+      sensitive: { "network-raw": {} },
+    } as unknown as NonNullable<PersistedRun["evidence"]>["collectionPolicy"];
+    const malformedGrant = await exportTracePack(run);
+    assert.equal(
+      malformedGrant.completeness.artifacts?.find(({ path }) => path === "network/capture.raw")
+        ?.status,
+      "redacted",
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("artifact closure is bounded without silently dropping references", async () => {
   const directory = await mkdtemp(join(tmpdir(), "relay-trace-pack-limits-"));
   try {

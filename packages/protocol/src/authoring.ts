@@ -620,6 +620,8 @@ export type EditAuthoringTakeInput = AuthoringSessionRef & {
 
 export type CommitAuthoringSessionInput = AuthoringSessionRef & {
   destination?: AuthoringCommitDestination;
+  /** Final public Test name chosen during review. */
+  testName?: string;
   /** Create the first runnable Test in the same App Map transaction as the
    * reviewed Connection. */
   createTest?: true;

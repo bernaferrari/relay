@@ -17,6 +17,7 @@ import type {
 } from "./change-verification-store.js";
 import { readControlStore, type ControlStore } from "./collaboration-store.js";
 import { canonicalSha256 } from "./canonical-json.js";
+import { changeProofHumanEvidenceScopeDigest } from "./change-proof-human-evidence.js";
 import type { ChangeProofExecutionUpdateGuard } from "./change-proof-execution-db.js";
 import {
   CHANGE_PROOF_EXECUTION_SCHEMA_VERSION,
@@ -317,7 +318,31 @@ export function normalizeRecord(value: unknown): ChangeProofExecutionRecord {
           }
           const evidence = humanInterventionEvidenceValue.map((value, index) => {
             try {
-              return changeProofExecutionHumanInterventionEvidenceSchema.parse(value);
+              const parsed = changeProofExecutionHumanInterventionEvidenceSchema.parse(value);
+              if (
+                parsed.executionId !== nonEmpty(input.id, "id") ||
+                parsed.proofId !== nonEmpty(input.proofId, "proofId") ||
+                !normalizedCells.some(({ cell }) => cell.cellId === parsed.cellId)
+              ) {
+                throw new Error("evidence identity is outside this execution");
+              }
+              if (parsed.source === "server-attachment") {
+                const expectedScopeDigest = changeProofHumanEvidenceScopeDigest({
+                  scope: {
+                    organizationId: nonEmpty(input.organizationId, "organizationId"),
+                    projectId: nonEmpty(input.projectId, "projectId"),
+                    proofId: nonEmpty(input.proofId, "proofId"),
+                    executionId: parsed.executionId,
+                    cellId: parsed.cellId,
+                    stepId: parsed.stepId,
+                  },
+                  evidenceDigest: parsed.evidenceDigest as `sha256:${string}`,
+                });
+                if (parsed.scopeDigest !== expectedScopeDigest) {
+                  throw new Error("scope binding does not match evidence identity");
+                }
+              }
+              return parsed;
             } catch {
               throw new Error(`Human intervention evidence ${index} is invalid`);
             }

@@ -261,11 +261,9 @@ Relay chooses an available loopback port, starts a fresh watched service that tr
 renderer origin, and prints the URL. Set `RELAY_APP_PORT` only when you need a fixed port. It never
 falls back to a different origin without restarting the service with the matching trust boundary.
 
-The Electron shell uses the same React Product V2 renderer by default (`pnpm dev:desktop`). The
-legacy Solid shell is retained only for an explicit rollback while its deletion is completed:
-`pnpm dev:app:legacy` or `pnpm dev:desktop:legacy`. Normal desktop packaging includes only the
-React renderer; use `pnpm --filter @relay/desktop build:legacy` only when investigating a legacy
-compatibility issue.
+The Electron shell and browser launcher use the same React product (`pnpm dev:desktop`). Desktop
+development and packaging have one renderer, so local and packaged behavior cannot diverge through
+a legacy UI flag.
 
 Run the normal quality gates with:
 
@@ -275,8 +273,9 @@ vp test
 pnpm run verify
 ```
 
-`pnpm run verify` includes formatting, linting, type checks, tests, UI-boundary checks, source-size
-ratchets, production app/desktop builds, and a target-native, checksummed iOS preview sidecar.
+`pnpm run verify` includes formatting, linting, type checks, tests, source-size ratchets, production
+React Product V2 and desktop builds, and a target-native,
+checksummed iOS preview sidecar.
 CI also builds and verifies both Apple Silicon and Intel sidecars.
 
 The packaged macOS desktop build ships a reviewed, pixel-only iOS preview sidecar per target

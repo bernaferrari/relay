@@ -87,6 +87,9 @@ function changes(items: readonly ProductChange[]): ChangeProductService {
     rerunAffected: async () => {
       throw new Error("not used");
     },
+    resumeHumanEvidence: async () => {
+      throw new Error("not used");
+    },
     retryPublication: async () => {
       throw new Error("not used");
     },

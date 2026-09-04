@@ -334,7 +334,7 @@ function detailsOf(value: Inspect): ProductChangeDetails {
             kind: value.proof.smallestNextVerification.kind,
             reason: value.proof.smallestNextVerification.reason,
           },
-      }
+        }
       : {}),
     ...(value.repairPacket ? { repairPacket: value.repairPacket } : {}),
     planApproved: value.proof.planApproval !== undefined,

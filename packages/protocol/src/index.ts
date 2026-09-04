@@ -84,6 +84,7 @@ export * from "./app-map-canvas.js";
 export * from "./ios-mutation-terminality-contract.js";
 export * from "./browser-proof-evidence.js";
 export * from "./android-network-evidence.js";
+export * from "./run-test-step-evidence.js";
 import type {
   AndroidNetworkEvidenceSummary,
   AndroidPacketCaptureProvenance,
@@ -92,6 +93,7 @@ import type { ResourceEventPayload } from "./coordination.js";
 import type { ServerConnection, TargetProfile, TargetSelector } from "./target-contract.js";
 import type { SourceRevision } from "./source-revision.js";
 import { parseOptionalSourceRevision } from "./source-revision.js";
+import type { RunTestStepEvidence } from "./run-test-step-evidence.js";
 export type { RunReview } from "./run-review.js";
 
 export type EvidenceChannel =
@@ -251,6 +253,10 @@ export type TraceFrameDto = {
 export type TraceStepDto = {
   id: string;
   index: number;
+  /** Immutable recipe identity captured at execution time when available. */
+  recipeId?: string;
+  /** Immutable compiled recipe-step identity; never inferred from trace id. */
+  recipeStepId?: string;
   kind: string;
   tone: string;
   title: string;
@@ -379,6 +385,8 @@ export type RunEvidenceQuery = {
   channels: Partial<Record<EvidenceChannel, EvidenceChannelRecord>>;
   logs: RunEvidenceLogEntry[];
   network: RunEvidenceNetworkEntry[];
+  /** Stable authored-step joins; empty for legacy Runs without provenance. */
+  testStepEvidence: RunTestStepEvidence[];
   networkCapture: {
     mode:
       | "browser-events"

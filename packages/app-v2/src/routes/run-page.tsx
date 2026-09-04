@@ -1,9 +1,19 @@
 /** @jsxImportSource react */
-import { Button, ScrollArea } from "@relay/ui-react";
+import { Button, Disclosure, ScrollArea } from "@relay/ui-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { ArrowLeft } from "lucide-react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Breadcrumbs, OutcomeMark } from "../components/product-patterns";
+import {
+  firstSentence,
+  failureTitle,
+  formatDuration,
+  highlightJson,
+  nextAction,
+  outcomeSentence,
+  readableJson,
+} from "../components/run-report-formatters";
 import type { ProductRunState, RunProductService } from "../data/run-product-service";
 import { runQueryKeys } from "../data/run-queries";
 import { clearRunPointerIfCurrent, readRunPointer } from "../data/run-pointer";
@@ -27,6 +37,7 @@ export function RunPage() {
     queryFn: () => runService.inspect(activePointer!.workflowId),
     enabled: Boolean(activePointer),
     staleTime: 0,
+    retry: false,
   });
   const terminal = isTerminal(run.data?.status);
   const target = run.data?.snapshot?.target;
@@ -40,6 +51,7 @@ export function RunPage() {
     queryKey: runQueryKeys.report(runId),
     queryFn: () => runService.getReport(runId, run.data?.report),
     enabled: !pointer.isPending && (!activePointer || terminal),
+    retry: false,
   });
   const shouldWatch = Boolean(
     activePointer && run.data?.snapshot && !run.data.recovery && !terminal,
@@ -101,6 +113,44 @@ export function RunPage() {
     snapshot?.allowedNextActions.includes("cancel") && !state?.recovery && !cancel.data?.recovery,
   );
   const loading = pointer.isPending || run.isPending || (terminal && report.isPending);
+  const problem = pointer.error ?? run.error ?? report.error ?? cancel.error;
+  const recovery = cancel.data?.recovery ?? state?.recovery;
+  const retrying = pointer.isFetching || run.isFetching || report.isFetching;
+  const retry = () => {
+    void pointer.refetch();
+    if (activePointer) void run.refetch();
+    if (!activePointer || terminal) void report.refetch();
+  };
+
+  if (problem || recovery) {
+    return (
+      <section className="relay-page relay-run-page">
+        <Breadcrumbs items={[{ label: "Runs", to: "/runs" }, { label: "Run" }]} />
+        <h1 className="relay-visually-hidden">{snapshot?.title ?? "Run unavailable"}</h1>
+        <RecordingProblem
+          className="relay-run-recovery"
+          error={problem}
+          recovery={recovery}
+          onRetry={retry}
+          retrying={retrying}
+          layout="centered"
+        />
+      </section>
+    );
+  }
+
+  if (loading) {
+    return (
+      <section className="relay-page relay-run-page">
+        <Breadcrumbs items={[{ label: "Runs", to: "/runs" }, { label: "In progress" }]} />
+        <header className="relay-run-context-header">
+          <p className="relay-eyebrow">Run</p>
+          <h1>{snapshot?.title ?? "Loading Run"}</h1>
+        </header>
+        <PageLoading label="Loading the Run…" />
+      </section>
+    );
+  }
 
   return (
     <section className="relay-page relay-run-page">
@@ -137,19 +187,7 @@ export function RunPage() {
         </div>
       </header>
 
-      {loading ? <PageLoading label="Loading the Run…" /> : null}
-      <RecordingProblem
-        error={run.error ?? report.error ?? cancel.error}
-        recovery={cancel.data?.recovery ?? state?.recovery}
-        onRetry={() => {
-          void pointer.refetch();
-          void run.refetch();
-          void report.refetch();
-        }}
-        retrying={run.isFetching || report.isFetching}
-      />
-
-      {!loading && snapshot && !state?.recovery ? (
+      {snapshot ? (
         <div className="relay-run-progress" role="status">
           <div className="relay-run-progress-heading">
             <div>
@@ -193,6 +231,12 @@ function RunReport({
 }) {
   const target = report.targetName ?? "the selected device or browser";
   const failure = report.outcome && report.outcome !== "passed" ? report.cause : undefined;
+  const firstEvidenceIsDistinct = Boolean(
+    report.firstEvidence &&
+    (!failure ||
+      firstSentence(report.firstEvidence.label).toLocaleLowerCase() !==
+        firstSentence(failure).toLocaleLowerCase()),
+  );
   const search = routeApi.useSearch() as { view?: unknown };
   const navigate = useNavigate({ from: "/runs/$runId" });
   const requestedView = reportView(search.view);
@@ -229,13 +273,13 @@ function RunReport({
   }
   return (
     <section className="relay-page relay-report-page">
-      <Breadcrumbs
-        items={[
-          { label: "Runs", to: "/runs" },
-          ...(testId ? [{ label: report.title }] : []),
-          { label: "Report" },
-        ]}
-      />
+      {testId ? (
+        <Link className="relay-back-link" to="/tests/$testId" params={{ testId }}>
+          <ArrowLeft aria-hidden="true" /> Back to Test
+        </Link>
+      ) : (
+        <Breadcrumbs items={[{ label: "Runs", to: "/runs" }, { label: "Report" }]} />
+      )}
       <header className="relay-report-header">
         <div>
           <div className="relay-report-kicker">
@@ -245,19 +289,11 @@ function RunReport({
           <h1>{report.title}</h1>
           <p className="relay-report-outcome">{outcomeSentence(report.outcome, target)}</p>
         </div>
-        {testId ? (
-          <Link
-            className="relay-text-link relay-header-link"
-            to="/tests/$testId"
-            params={{ testId }}
-          >
-            Back to Test
-          </Link>
-        ) : (
+        {!testId ? (
           <Link className="relay-text-link relay-header-link" to="/runs">
             All Runs
           </Link>
-        )}
+        ) : null}
       </header>
 
       {views.length > 1 ? (
@@ -304,16 +340,26 @@ function RunReport({
 
           {failure ? (
             <section className="relay-causal-failure" aria-labelledby="causal-failure-title">
-              <p className="relay-section-label">First problem</p>
-              <h2 id="causal-failure-title">{firstSentence(failure)}</h2>
-              {report.category ? (
-                <p className="relay-causal-category">Category · {report.category}</p>
-              ) : null}
-              <p>{nextAction(report.outcome)}</p>
+              <div className="relay-causal-failure-copy">
+                <p className="relay-section-label">Run stopped</p>
+                <h2 id="causal-failure-title">{failureTitle(failure, report.category)}</h2>
+                <p>{nextAction(report.outcome)}</p>
+              </div>
+              <div className="relay-causal-failure-actions">
+                {report.category ? <span>{report.category}</span> : null}
+              </div>
+              <Disclosure.Root className="relay-causal-technical">
+                <Disclosure.Trigger>Technical details</Disclosure.Trigger>
+                <Disclosure.Panel>
+                  <ScrollArea className="relay-causal-technical-scroll">
+                    <pre>{failure}</pre>
+                  </ScrollArea>
+                </Disclosure.Panel>
+              </Disclosure.Root>
             </section>
           ) : null}
 
-          {report.firstEvidence ? (
+          {firstEvidenceIsDistinct && report.firstEvidence ? (
             <section className="relay-report-first-evidence" aria-labelledby="first-evidence-title">
               <p className="relay-section-label">
                 {report.outcome === "passed" ? "What Relay verified" : "Evidence at this point"}
@@ -467,9 +513,20 @@ function EvidencePreview({
             {section.items.map((item) => (
               <li
                 key={item.id}
-                className={`relay-evidence-item relay-evidence-item--${item.tone ?? "neutral"}`}
+                className={`relay-evidence-item relay-evidence-item--${item.tone ?? "neutral"}${item.media ? " relay-evidence-item--media" : ""}`}
               >
-                <span className="relay-evidence-item-mark" aria-hidden="true" />
+                {item.media ? (
+                  <span className="relay-evidence-image-frame" aria-hidden="true">
+                    <img
+                      src={item.media.src}
+                      alt=""
+                      width={item.media.width}
+                      height={item.media.height}
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  </span>
+                ) : null}
                 <span className="relay-evidence-item-copy">
                   <strong>{item.title}</strong>
                   {item.detail ? <span>{item.detail}</span> : null}
@@ -509,140 +566,57 @@ function RawEvidenceDisclosure({
   });
 
   return (
-    <details
+    <Disclosure.Root
       id="raw-evidence"
       className="relay-raw-evidence"
       open={open}
-      onToggle={(event) => onOpenChange(event.currentTarget.open)}
+      onOpenChange={onOpenChange}
     >
-      <summary>Audit details</summary>
-      <div className="relay-raw-evidence-body">
-        <div className="relay-raw-evidence-heading">
-          <p>
-            Technical evidence for forensic review. It may include internal identifiers and captured
-            content.
-          </p>
+      <Disclosure.Trigger>Audit details</Disclosure.Trigger>
+      <Disclosure.Panel>
+        <div className="relay-raw-evidence-body">
+          <div className="relay-raw-evidence-heading">
+            <p>
+              Technical evidence for forensic review. It may include internal identifiers and
+              captured content.
+            </p>
+            {evidence.data !== undefined ? (
+              <Button
+                size="small"
+                variant="secondary"
+                onClick={async () => {
+                  if (!navigator.clipboard) return;
+                  try {
+                    await navigator.clipboard.writeText(readableJson(evidence.data));
+                    setCopied(true);
+                    window.setTimeout(() => setCopied(false), 1_500);
+                  } catch {
+                    setCopied(false);
+                  }
+                }}
+              >
+                {copied ? "Copied" : "Copy JSON"}
+              </Button>
+            ) : null}
+          </div>
+          {evidence.isPending ? <PageLoading label="Loading audit details…" /> : null}
+          {evidence.isError ? (
+            <div className="relay-raw-evidence-error" role="alert">
+              <p>Audit details could not be loaded. The Report outcome above is unchanged.</p>
+              <Button size="small" variant="secondary" onClick={() => void evidence.refetch()}>
+                Try again
+              </Button>
+            </div>
+          ) : null}
           {evidence.data !== undefined ? (
-            <Button
-              size="small"
-              variant="secondary"
-              onClick={async () => {
-                if (!navigator.clipboard) return;
-                try {
-                  await navigator.clipboard.writeText(readableJson(evidence.data));
-                  setCopied(true);
-                  window.setTimeout(() => setCopied(false), 1_500);
-                } catch {
-                  setCopied(false);
-                }
-              }}
-            >
-              {copied ? "Copied" : "Copy JSON"}
-            </Button>
+            <ScrollArea className="relay-raw-evidence-scroll">
+              <pre tabIndex={0} aria-label="Raw evidence JSON">
+                <code>{highlightJson(readableJson(evidence.data))}</code>
+              </pre>
+            </ScrollArea>
           ) : null}
         </div>
-        {evidence.isPending ? <PageLoading label="Loading audit details…" /> : null}
-        {evidence.isError ? (
-          <div className="relay-raw-evidence-error" role="alert">
-            <p>Audit details could not be loaded. The Report outcome above is unchanged.</p>
-            <Button size="small" variant="secondary" onClick={() => void evidence.refetch()}>
-              Try again
-            </Button>
-          </div>
-        ) : null}
-        {evidence.data !== undefined ? (
-          <ScrollArea className="relay-raw-evidence-scroll">
-            <pre tabIndex={0} aria-label="Raw evidence JSON">
-              <code>{highlightJson(readableJson(evidence.data))}</code>
-            </pre>
-          </ScrollArea>
-        ) : null}
-      </div>
-    </details>
+      </Disclosure.Panel>
+    </Disclosure.Root>
   );
-}
-
-function readableJson(value: unknown): string {
-  try {
-    return JSON.stringify(value, null, 2) ?? "null";
-  } catch {
-    return "Raw evidence could not be formatted as JSON.";
-  }
-}
-
-const JSON_TOKEN =
-  /(?<string>"(?:\\.|[^"\\])*")(?<keySuffix>\s*:)?|(?<number>-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)|(?<boolean>true|false)|(?<nil>null)/gu;
-
-function highlightJson(json: string): ReactNode[] {
-  const output: ReactNode[] = [];
-  let cursor = 0;
-
-  for (const match of json.matchAll(JSON_TOKEN)) {
-    const index = match.index;
-    if (index > cursor) output.push(json.slice(cursor, index));
-
-    const groups = match.groups ?? {};
-    const token = groups.string ?? groups.number ?? groups.boolean ?? groups.nil ?? match[0];
-    const kind = groups.string
-      ? groups.keySuffix
-        ? "key"
-        : "string"
-      : groups.number
-        ? "number"
-        : groups.boolean
-          ? "boolean"
-          : "null";
-
-    output.push(
-      <span key={`${index}-${kind}`} className={`relay-json-token relay-json-token--${kind}`}>
-        {token}
-      </span>,
-    );
-    if (groups.keySuffix) output.push(groups.keySuffix);
-    cursor = index + match[0].length;
-  }
-
-  if (cursor < json.length) output.push(json.slice(cursor));
-  return output;
-}
-
-function outcomeSentence(
-  outcome: Awaited<ReturnType<RunProductService["getReport"]>>["outcome"],
-  target: string,
-): string {
-  if (outcome === "passed") return `This Test passed on ${target}.`;
-  if (outcome === "product-failure") return `This Test found a product problem on ${target}.`;
-  if (outcome === "harness-failure") return `Relay could not complete this Test on ${target}.`;
-  if (outcome === "uncertain") return `Relay could not confirm the outcome on ${target}.`;
-  if (outcome === "cancelled") return `This Run was cancelled on ${target}.`;
-  return `Relay has not published a terminal outcome for this Run on ${target}.`;
-}
-
-function firstSentence(value: string): string {
-  const line = value.split(/\r?\n/, 1)[0]?.trim() ?? "";
-  return line.slice(0, 280).replace(/[.:!?]+$/u, "") + ".";
-}
-
-function formatDuration(durationMs: number): string {
-  if (durationMs < 1_000) return `${Math.round(durationMs)} ms`;
-  if (durationMs < 60_000) return `${(durationMs / 1_000).toFixed(durationMs < 10_000 ? 1 : 0)} s`;
-  const minutes = Math.floor(durationMs / 60_000);
-  const seconds = Math.round((durationMs % 60_000) / 1_000);
-  return `${minutes} min ${seconds} s`;
-}
-
-function nextAction(
-  outcome: Awaited<ReturnType<RunProductService["getReport"]>>["outcome"],
-): string {
-  if (outcome === "product-failure") {
-    return "Review this moment first, then decide whether the app or the saved Test needs to change.";
-  }
-  if (outcome === "harness-failure") {
-    return "Reconnect the device or browser, then run this Test again.";
-  }
-  if (outcome === "uncertain") {
-    return "Review the captured evidence before deciding whether to run this Test again.";
-  }
-  if (outcome === "cancelled") return "Run this Test again when the device or browser is ready.";
-  return "Review the Report before taking the next action.";
 }

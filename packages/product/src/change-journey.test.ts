@@ -121,7 +121,9 @@ test("Change journey resumes a paused human step with a server-owned attachment"
           proof,
           publications: [],
           publicationOutbox: [],
-          execution: resumed ? { ...execution, status: "completed", nextAction: "complete" } : execution,
+          execution: resumed
+            ? { ...execution, status: "completed", nextAction: "complete" }
+            : execution,
         } as OperationOutput<Id>;
       return {
         proof,

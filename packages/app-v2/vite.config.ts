@@ -6,7 +6,7 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   root: import.meta.dirname,
   plugins: [react(), tailwindcss()],
-  publicDir: resolve(import.meta.dirname, "../app/public"),
+  publicDir: resolve(import.meta.dirname, "public"),
   server: {
     host: "0.0.0.0",
     port: 5173,

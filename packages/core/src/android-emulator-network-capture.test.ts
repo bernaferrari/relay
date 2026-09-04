@@ -204,6 +204,7 @@ test("captures one bounded emulator Run window and deletes transient packet byte
     assert.equal(result.summary.flows[0]?.protocol, "tls");
     assert.equal(result.summary.flows[0]?.host, undefined);
     assert.equal(result.summary.rawCapture.status, "not-requested");
+    assert.equal(result.summary.rawCapture.retention, "ephemeral");
     await assert.rejects(stat(handle.sourcePath));
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -289,7 +290,7 @@ test("startup sweep reaps stale captures across configured AVD directories", asy
   }
 });
 
-test("retains private raw PCAP only when an owned destination is explicitly supplied", async () => {
+test("retains private raw PCAP only with explicit network-raw consent and an owned destination", async () => {
   const directory = await mkdtemp(join(tmpdir(), "relay-emulator-network-raw-"));
   const runDirectory = join(directory, "run");
   const rawPath = join(runDirectory, "network", "capture.pcap");
@@ -303,18 +304,49 @@ test("retains private raw PCAP only when an owned destination is explicitly supp
     await writeFile(handle.sourcePath, tcpPcap());
     const result = await stopAndroidEmulatorNetworkCapture(
       handle,
-      { retainRawPath: rawPath, rawArtifact: "network/capture.pcap" },
+      {
+        retainRawPath: rawPath,
+        rawArtifact: "network/capture.pcap",
+        rawConsent: { grantedAt: 1, grantedBy: "human:test", reason: "fixture" },
+      },
       runtime(directory, commands, 2_000),
     );
 
     assert.equal(result.rawPath, rawPath);
     assert.deepEqual(result.summary.rawCapture, {
       status: "captured",
+      retention: "retained",
       artifact: { path: "network/capture.pcap", bytes: tcpPcap().byteLength },
       bytes: tcpPcap().byteLength,
     });
     assert.deepEqual(await readFile(rawPath), tcpPcap());
     assert.equal((await stat(rawPath)).mode & 0o777, 0o600);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("keeps packet capture ephemeral when raw consent is absent", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "relay-emulator-network-ephemeral-"));
+  const rawPath = join(directory, "run", "network", "capture.pcap");
+  try {
+    const commands: string[][] = [];
+    const handle = await startAndroidEmulatorNetworkCapture(
+      { runId: "run-ephemeral", serial: "emulator-5574", avdName: "medium_phone" },
+      runtime(directory, commands, 1_000),
+    );
+    await writeFile(handle.sourcePath, tcpPcap());
+    const result = await stopAndroidEmulatorNetworkCapture(
+      handle,
+      { retainRawPath: rawPath, rawArtifact: "network/capture.pcap" },
+      runtime(directory, commands, 2_000),
+    );
+
+    assert.equal(result.rawPath, undefined);
+    assert.equal(result.summary.rawCapture.status, "denied");
+    assert.equal(result.summary.rawCapture.retention, "ephemeral");
+    assert.match(result.summary.rawCapture.reason ?? "", /explicit network-raw consent/u);
+    await assert.rejects(stat(rawPath));
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -467,7 +499,11 @@ test("bounds transient PCAP reads and labels consented raw output as truncated",
     await writeFile(handle.sourcePath, pcapBeyondAnalysisBound());
     const result = await stopAndroidEmulatorNetworkCapture(
       handle,
-      { retainRawPath: rawPath, rawArtifact: "network/capture.pcap" },
+      {
+        retainRawPath: rawPath,
+        rawArtifact: "network/capture.pcap",
+        rawConsent: { grantedAt: 1, grantedBy: "human:test", reason: "fixture" },
+      },
       runtime(directory, commands, 2_000),
     );
 
@@ -504,7 +540,7 @@ test("caps parsed packets and reports the overflow as dropped", async () => {
   }
 });
 
-test("rejects unsupported link types instead of interpreting them as Ethernet", async () => {
+test("retains unsupported link types as typed partial packet parse failures", async () => {
   const directory = await mkdtemp(join(tmpdir(), "relay-emulator-network-pcap-link-"));
   try {
     const commands: string[][] = [];
@@ -513,17 +549,22 @@ test("rejects unsupported link types instead of interpreting them as Ethernet", 
       runtime(directory, commands, 1_000),
     );
     await writeFile(handle.sourcePath, pcapForFrameWithOptions(Buffer.alloc(0), { linkType: 101 }));
-    await assert.rejects(
-      stopAndroidEmulatorNetworkCapture(handle, {}, runtime(directory, commands, 2_000)),
-      /link type 101 is unsupported/u,
+    const result = await stopAndroidEmulatorNetworkCapture(
+      handle,
+      {},
+      runtime(directory, commands, 2_000),
     );
+    assert.equal(result.summary.source.kind, "emulator-packet");
+    assert.equal(result.summary.coverage, "partial");
+    assert.equal(result.summary.parseFailure?.kind, "packet-parse-failure");
+    assert.match(result.summary.parseFailure?.message ?? "", /link type 101 is unsupported/u);
     await assert.rejects(stat(handle.sourcePath));
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
 });
 
-test("malformed capture bytes fail closed, clean up, and release ownership", async () => {
+test("malformed capture bytes remain typed partial, clean up, and release ownership", async () => {
   const directory = await mkdtemp(join(tmpdir(), "relay-emulator-network-invalid-"));
   try {
     const commands: string[][] = [];
@@ -533,8 +574,12 @@ test("malformed capture bytes fail closed, clean up, and release ownership", asy
       captureRuntime,
     );
     await writeFile(first.sourcePath, "not a packet capture");
-    await assert.rejects(
-      stopAndroidEmulatorNetworkCapture(first, {}, captureRuntime),
+    const malformed = await stopAndroidEmulatorNetworkCapture(first, {}, captureRuntime);
+    assert.equal(malformed.summary.source.kind, "emulator-packet");
+    assert.equal(malformed.summary.coverage, "partial");
+    assert.equal(malformed.summary.parseFailure?.kind, "packet-parse-failure");
+    assert.match(
+      malformed.summary.parseFailure?.message ?? "",
       /no PCAP header|unsupported format/u,
     );
     await assert.rejects(stat(first.sourcePath));
@@ -563,7 +608,7 @@ test("cleans a partially created output and releases ownership when start fails"
           execAdb: async (args) => {
             commands.push(args);
             if (args.includes("start")) {
-              attemptedPath = args.at(-1);
+              attemptedPath = join(directory, "console_out", args.at(-1)!);
               await writeFile(attemptedPath!, Buffer.from("partial capture"));
               throw new Error("emulator rejected packet capture");
             }
@@ -578,6 +623,38 @@ test("cleans a partially created output and releases ownership when start fails"
 
     const retry = await startAndroidEmulatorNetworkCapture(
       { runId: "start-failure-2", serial: "emulator-5571", avdName: "medium_phone" },
+      runtime(directory, commands, 2_000),
+    );
+    await writeFile(retry.sourcePath, tcpPcap());
+    await stopAndroidEmulatorNetworkCapture(retry, {}, runtime(directory, commands, 3_000));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("rejects an emulator console KO response even when adb exits successfully", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "relay-emulator-network-console-ko-"));
+  const commands: string[][] = [];
+  try {
+    await assert.rejects(
+      startAndroidEmulatorNetworkCapture(
+        { runId: "console-ko", serial: "emulator-5573", avdName: "medium_phone" },
+        {
+          ...runtime(directory, commands, 1_000),
+          execAdb: async (args) => {
+            commands.push(args);
+            return {
+              stdout: "KO: capture filename must be bare\n",
+              stderr: "",
+            };
+          },
+        },
+      ),
+      /Android emulator rejected packet capture: KO: capture filename must be bare/u,
+    );
+
+    const retry = await startAndroidEmulatorNetworkCapture(
+      { runId: "console-ko-retry", serial: "emulator-5573", avdName: "medium_phone" },
       runtime(directory, commands, 2_000),
     );
     await writeFile(retry.sourcePath, tcpPcap());
@@ -611,6 +688,7 @@ test("marks a stop-command failure interrupted while preserving bounded packet f
 
     assert.equal(result.summary.coverage, "interrupted");
     assert.equal(result.summary.packets, 1);
+    assert.match(result.summary.limitations.join(" "), /packet capture stop command failed/u);
     await assert.rejects(stat(handle.sourcePath));
   } finally {
     await rm(directory, { recursive: true, force: true });

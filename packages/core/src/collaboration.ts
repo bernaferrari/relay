@@ -22,6 +22,7 @@ import {
   readControlStore,
   withControlStore,
   type AppMapRecoveryDocument,
+  type ControlStore,
   type DegradedAppMap,
 } from "./collaboration-store.js";
 
@@ -30,6 +31,7 @@ export {
   listDurableControlEvents,
   recoverCollaborationState,
   type AppMapRecoveryDocument,
+  type ControlStore,
   type DegradedAppMap,
 } from "./collaboration-store.js";
 export {
@@ -594,6 +596,7 @@ export async function deleteAppMap(projectId: string, appMapId: string): Promise
     const current = store.appMap(key);
     if (!current) return false;
     store.deleteAppMap(key);
+    store.clearAppMapTestHistory(projectId, appMapId);
     emit({
       type: "resource.deleted",
       at: now(),
@@ -628,6 +631,7 @@ export async function createAppMap(input: {
       throw new Error(`App Map ${input.appMapId} already exists`);
     }
     if (store.hasAppMap(key)) throw new Error(`App Map ${input.appMapId} already exists`);
+    store.clearAppMapTestHistory(input.projectId, input.appMapId);
     if (replayKey && store.idempotency(replayKey) !== undefined) {
       throw new Error("Idempotency key was already used with different App Map input");
     }
@@ -702,6 +706,7 @@ export async function importAppMap(input: {
       projectId: input.projectId,
       appMapId,
     });
+    store.clearAppMapTestHistory(input.projectId, appMapId);
     store.upsertAppMap(key, appMap);
     // Import/replace/copy are all new local map incarnations even when the
     // portable YAML happens to have identical ids, revision, and raw hashes.
@@ -787,6 +792,7 @@ export async function duplicateAppMap(input: {
       createdAt: at,
       updatedAt: at,
     });
+    store.clearAppMapTestHistory(input.projectId, input.appMapId);
     store.upsertAppMap(key, appMap);
     store.rotateReviewedDocumentOriginMapEpoch(key, randomUUID(), at);
     emit({
@@ -804,14 +810,18 @@ export async function duplicateAppMap(input: {
 export async function mutateStoredAppMap(
   projectId: string,
   appMapId: string,
-  transform: (current: AppMap) => AppMap,
+  transform: (current: AppMap, store: ControlStore) => AppMap,
+  options: {
+    preserveTestHistory?: boolean;
+    onPersist?: (store: ControlStore, current: AppMap, next: AppMap) => void;
+  } = {},
 ): Promise<AppMap> {
   return withControlStore((store) => {
     const key = appMapKey(projectId, appMapId);
     const current = store.appMap(key);
     if (!current) throw new Error(`App Map ${appMapId} not found`);
     const validatedCurrent = validateAppMap(current);
-    const next = validateAppMap(transform(validatedCurrent));
+    const next = validateAppMap(transform(validatedCurrent, store));
     if (
       next.id !== appMapId ||
       next.projectId !== projectId ||
@@ -822,6 +832,19 @@ export async function mutateStoredAppMap(
     if (next.revision !== validatedCurrent.revision + 1) {
       throw new Error("App Map mutation must advance exactly one revision");
     }
+    if (!options.preserveTestHistory) {
+      for (const [testId, previous] of Object.entries(validatedCurrent.tests)) {
+        if (JSON.stringify(previous) !== JSON.stringify(next.tests[testId])) {
+          store.clearAppMapTestHistoryRedo(projectId, appMapId, testId);
+        }
+      }
+      for (const testId of Object.keys(next.tests)) {
+        if (!validatedCurrent.tests[testId]) {
+          store.clearAppMapTestHistoryRedo(projectId, appMapId, testId);
+        }
+      }
+    }
+    options.onPersist?.(store, validatedCurrent, next);
     store.upsertAppMap(key, next);
     emit({
       type: "resource.updated",

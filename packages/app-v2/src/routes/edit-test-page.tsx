@@ -1,22 +1,9 @@
 /** @jsxImportSource react */
-import type {
-  AppMapScenarioTestEdit,
-  AppMapScenarioTestStep,
-  AppMapTestStepPlacement,
-} from "@relay/protocol";
-import {
-  Alert,
-  AlertDescription,
-  AlertTitle,
-  Button,
-  CheckboxCard,
-  Input,
-  ScrollArea,
-} from "@relay/ui-react";
+import type { AppMapScenarioTestStep, AppMapTestStepPlacement } from "@relay/protocol";
+import { Button } from "@relay/ui-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import {
-  AlertTriangle,
   ArrowDown,
   ArrowUp,
   Check,
@@ -28,35 +15,25 @@ import {
   Sparkles,
   Undo2,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useMemo, useRef, useState, type CSSProperties } from "react";
 import { Breadcrumbs, EmptyState } from "../components/product-patterns";
+import { TestStepEvidencePreview } from "../components/test-step-evidence-preview";
+import {
+  SelectedStepEditor,
+  type EditTransaction,
+  type StepEntry,
+} from "../components/test-editor-step";
 import type {
   ProductTestEditorDocument,
   ProductTestRepair,
 } from "../data/test-editor-product-service";
+import { useLatestTestReport } from "../hooks/use-latest-test-report";
 import { PageLoading, RecordingProblem } from "./recording-shared";
 
 const routeApi = getRouteApi("/tests/$testId/edit");
 
-type StepEntry = {
-  step: AppMapScenarioTestStep;
-  depth: number;
-  number: string;
-  placement?: AppMapTestStepPlacement;
-  siblingIds: readonly string[];
-  index: number;
-};
-
-type EditTransaction = {
-  label: string;
-  forward: readonly AppMapScenarioTestEdit[];
-  reverse: readonly AppMapScenarioTestEdit[];
-};
-
-type MutationIntent = { transaction: EditTransaction; direction: "forward" | "undo" | "redo" };
-
 export function EditTestPage() {
-  const { testEditorService, queryClient } = useRouteContext({ from: "__root__" });
+  const { testEditorService, runService, queryClient } = useRouteContext({ from: "__root__" });
   const { testId } = routeApi.useParams();
   const search = routeApi.useSearch() as { step?: unknown };
   const navigate = useNavigate({ from: "/tests/$testId/edit" });
@@ -73,32 +50,52 @@ export function EditTestPage() {
   const requestedStepId = typeof search.step === "string" ? search.step : undefined;
   const selected =
     entries.find((entry) => entry.step.id === requestedStepId) ?? entries.at(0) ?? undefined;
-  const [undoStack, setUndoStack] = useState<EditTransaction[]>([]);
-  const [redoStack, setRedoStack] = useState<EditTransaction[]>([]);
+  const {
+    recentRuns,
+    latestReport,
+    loading: reportLoading,
+  } = useLatestTestReport(runService, testId);
   const [saveNotice, setSaveNotice] = useState("Saved");
   const draggedStepId = useRef<string | undefined>(undefined);
+  const selectAfterSave = useRef<string | null | undefined>(undefined);
 
   const edit = useMutation({
-    mutationFn: async ({ transaction, direction }: MutationIntent) => {
+    mutationFn: async (transaction: EditTransaction) => {
       const current = queryClient.getQueryData<ProductTestEditorDocument | undefined>(queryKey);
       if (!current) throw new TypeError("Reload this Test before saving more changes.");
-      const edits = direction === "undo" ? transaction.reverse : transaction.forward;
-      return testEditorService.edit({ document: current, edits });
+      return testEditorService.edit({ document: current, edits: transaction.forward });
     },
     onMutate: () => setSaveNotice("Saving…"),
-    onSuccess: (next, intent) => {
+    onSuccess: (next) => {
       queryClient.setQueryData(queryKey, next);
       setSaveNotice("Saved");
-      if (intent.direction === "forward") {
-        setUndoStack((current) => [...current, intent.transaction]);
-        setRedoStack([]);
-      } else if (intent.direction === "undo") {
-        setUndoStack((current) => current.slice(0, -1));
-        setRedoStack((current) => [...current, intent.transaction]);
-      } else {
-        setRedoStack((current) => current.slice(0, -1));
-        setUndoStack((current) => [...current, intent.transaction]);
+      const nextSelection = selectAfterSave.current;
+      selectAfterSave.current = undefined;
+      if (nextSelection === null) {
+        void navigate({ search: (previous) => ({ ...previous, step: undefined }), replace: true });
+      } else if (nextSelection) {
+        selectStep(nextSelection);
       }
+    },
+    onError: () => {
+      selectAfterSave.current = undefined;
+      setSaveNotice("Could not save");
+      void queryClient.invalidateQueries({ queryKey });
+    },
+  });
+
+  const historyAction = useMutation({
+    mutationFn: async (direction: "undo" | "redo") => {
+      const current = queryClient.getQueryData<ProductTestEditorDocument | undefined>(queryKey);
+      if (!current) throw new TypeError("Reload this Test before changing its history.");
+      const operation = testEditorService[direction];
+      if (!operation) throw new TypeError("Saved history is not available on this Relay server.");
+      return operation({ document: current });
+    },
+    onMutate: () => setSaveNotice("Saving…"),
+    onSuccess: (next) => {
+      queryClient.setQueryData(queryKey, next);
+      setSaveNotice("Saved");
     },
     onError: () => {
       setSaveNotice("Could not save");
@@ -125,8 +122,6 @@ export function EditTestPage() {
     onSuccess: (next) => {
       queryClient.setQueryData(queryKey, next);
       setSaveNotice("Saved");
-      setUndoStack([]);
-      setRedoStack([]);
     },
     onError: () => void queryClient.invalidateQueries({ queryKey }),
   });
@@ -135,8 +130,84 @@ export function EditTestPage() {
     void navigate({ search: (previous) => ({ ...previous, step: stepId }), replace: true });
   }
 
-  function apply(transaction: EditTransaction) {
-    if (!edit.isPending && !repair.isPending) edit.mutate({ transaction, direction: "forward" });
+  function apply(transaction: EditTransaction, nextSelection?: string | null) {
+    if (edit.isPending || repair.isPending) return;
+    selectAfterSave.current = nextSelection;
+    edit.mutate(transaction);
+  }
+
+  function addStepAt(placement: AppMapTestStepPlacement | undefined, index: number, label: string) {
+    const id = `step-${globalThis.crypto?.randomUUID?.() ?? Date.now()}`;
+    const step: AppMapScenarioTestStep = {
+      id,
+      kind: "instruction",
+      intent: "Describe the next action",
+      binding: {
+        status: "unresolved",
+        reason: "Choose a saved action for this step before running the Test.",
+      },
+    };
+    apply(
+      {
+        label,
+        forward: [
+          {
+            kind: "step.add",
+            step,
+            ...(placement ? { placement } : {}),
+            index,
+          },
+        ],
+        reverse: [{ kind: "step.remove", stepId: id }],
+      },
+      id,
+    );
+  }
+
+  function addStep() {
+    addStepAt(selected?.placement, selected ? selected.index + 1 : entries.length, "Added a step");
+  }
+
+  function addChildStep(entry: StepEntry, branch: "then" | "else" | "steps") {
+    const children =
+      entry.step.kind === "decision"
+        ? branch === "then"
+          ? entry.step.thenSteps
+          : branch === "else"
+            ? (entry.step.elseSteps ?? [])
+            : undefined
+        : entry.step.kind === "loop" && branch === "steps"
+          ? entry.step.steps
+          : undefined;
+    if (!children) return;
+    addStepAt(
+      { parentStepId: entry.step.id, branch },
+      children.length,
+      `Added a step to the ${branch === "steps" ? "repeat" : branch} branch`,
+    );
+  }
+
+  function removeStep(entry: StepEntry) {
+    const nextSelection =
+      entry.siblingIds[entry.index + 1] ??
+      entry.siblingIds[entry.index - 1] ??
+      entry.placement?.parentStepId ??
+      null;
+    apply(
+      {
+        label: `Removed ${entry.step.intent}`,
+        forward: [{ kind: "step.remove", stepId: entry.step.id }],
+        reverse: [
+          {
+            kind: "step.add",
+            step: structuredClone(entry.step),
+            ...(entry.placement ? { placement: entry.placement } : {}),
+            index: entry.index,
+          },
+        ],
+      },
+      nextSelection,
+    );
   }
 
   function move(entry: StepEntry, delta: -1 | 1) {
@@ -194,14 +265,18 @@ export function EditTestPage() {
   }
 
   function undo() {
-    const transaction = undoStack.at(-1);
-    if (transaction && !edit.isPending) edit.mutate({ transaction, direction: "undo" });
+    if (canUndo && !edit.isPending) historyAction.mutate("undo");
   }
 
   function redo() {
-    const transaction = redoStack.at(-1);
-    if (transaction && !edit.isPending) edit.mutate({ transaction, direction: "redo" });
+    if (canRedo && !edit.isPending) historyAction.mutate("redo");
   }
+
+  const latestHistory = document.data?.history[0];
+  const canRedo = latestHistory?.eventType === "test.undone" && Boolean(testEditorService.redo);
+  const canUndo =
+    Boolean(testEditorService.undo) &&
+    Boolean(document.data?.history.some((item) => item.eventType !== "test.redone"));
 
   return (
     <section
@@ -260,7 +335,7 @@ export function EditTestPage() {
 
       {document.isPending ? <PageLoading label="Loading Test steps…" /> : null}
       <RecordingProblem
-        error={document.error ?? edit.error ?? repair.error}
+        error={document.error ?? edit.error ?? historyAction.error ?? repair.error}
         onRetry={() => void document.refetch()}
         retrying={document.isFetching}
       />
@@ -283,7 +358,7 @@ export function EditTestPage() {
               variant="ghost"
               size="small"
               onClick={undo}
-              disabled={!undoStack.length || edit.isPending}
+              disabled={!canUndo || edit.isPending || historyAction.isPending}
               aria-label="Undo last saved change"
             >
               <Undo2 aria-hidden="true" /> Undo
@@ -292,14 +367,14 @@ export function EditTestPage() {
               variant="ghost"
               size="small"
               onClick={redo}
-              disabled={!redoStack.length || edit.isPending}
+              disabled={!canRedo || edit.isPending || historyAction.isPending}
               aria-label="Redo last undone change"
             >
               <Redo2 aria-hidden="true" /> Redo
             </Button>
-            {undoStack.at(-1) ? (
+            {latestHistory ? (
               <span className="relay-editor-last-change">
-                Last change: {undoStack.at(-1)!.label}
+                Last saved change: {latestHistory.summary}
               </span>
             ) : null}
           </div>
@@ -311,7 +386,17 @@ export function EditTestPage() {
                   <p className="relay-section-label">Journey</p>
                   <h2 id="test-steps-title">Steps</h2>
                 </div>
-                <span>{entries.length === 1 ? "1 step" : `${entries.length} steps`}</span>
+                <div className="relay-editor-outline-actions">
+                  <span>{entries.length === 1 ? "1 step" : `${entries.length} steps`}</span>
+                  <Button
+                    size="small"
+                    variant="secondary"
+                    onClick={addStep}
+                    disabled={edit.isPending || repair.isPending}
+                  >
+                    Add step
+                  </Button>
+                </div>
               </div>
               <p className="relay-editor-help">
                 Drag within a group, use the arrow buttons, or press Alt + ↑/↓ on a step.
@@ -366,6 +451,7 @@ export function EditTestPage() {
                           <span className="relay-editor-step-copy">
                             <strong>{entry.step.intent}</strong>
                             <small>
+                              {entry.placement ? `${branchLabel(entry.placement)} · ` : ""}
                               {stepKindLabel(entry.step)} ·{" "}
                               {entry.step.binding.status === "resolved" ? "Ready" : "Needs review"}
                             </small>
@@ -404,12 +490,23 @@ export function EditTestPage() {
 
             <aside className="relay-editor-inspector" aria-label="Selected step editor">
               {selected ? (
-                <SelectedStepEditor
-                  key={`${selected.step.id}:${document.data.revision}`}
-                  entry={selected}
-                  busy={edit.isPending}
-                  onSave={apply}
-                />
+                <>
+                  <SelectedStepEditor
+                    key={`${selected.step.id}:${document.data.revision}`}
+                    entry={selected}
+                    busy={edit.isPending}
+                    onSave={apply}
+                    onBind={(transaction) => apply(transaction)}
+                    onRemove={() => removeStep(selected)}
+                    onAddChild={(branch) => addChildStep(selected, branch)}
+                  />
+                  <TestStepEvidencePreview
+                    step={selected.step}
+                    report={latestReport.data}
+                    hasRuns={Boolean(recentRuns.data?.length)}
+                    loading={reportLoading}
+                  />
+                </>
               ) : (
                 <EmptyState
                   title="Choose a step"
@@ -419,132 +516,23 @@ export function EditTestPage() {
             </aside>
           </div>
 
-          <div className="relay-test-editor-context">
-            <RepairSection
-              repairs={document.data.repairs}
-              busy={repair.isPending}
-              onDecision={(proposal, decision) => repair.mutate({ proposal, decision })}
-            />
-            <HistorySection items={document.data.history} />
-          </div>
+          {document.data.repairs.length || document.data.history.length ? (
+            <div className="relay-test-editor-context">
+              {document.data.repairs.length ? (
+                <RepairSection
+                  repairs={document.data.repairs}
+                  busy={repair.isPending}
+                  onDecision={(proposal, decision) => repair.mutate({ proposal, decision })}
+                />
+              ) : null}
+              {document.data.history.length ? (
+                <HistorySection items={document.data.history} />
+              ) : null}
+            </div>
+          ) : null}
         </>
       ) : null}
     </section>
-  );
-}
-
-function SelectedStepEditor({
-  entry,
-  busy,
-  onSave,
-}: {
-  entry: StepEntry;
-  busy: boolean;
-  onSave(transaction: EditTransaction): void;
-}) {
-  const [intent, setIntent] = useState(entry.step.intent);
-  const [note, setNote] = useState(entry.step.note ?? "");
-  const [capture, setCapture] = useState(entry.step.capture === true);
-  useEffect(() => {
-    setIntent(entry.step.intent);
-    setNote(entry.step.note ?? "");
-    setCapture(entry.step.capture === true);
-  }, [entry.step]);
-  const cleanIntent = intent.trim();
-  const changed =
-    cleanIntent !== entry.step.intent ||
-    note.trim() !== (entry.step.note ?? "") ||
-    capture !== (entry.step.capture === true);
-
-  return (
-    <form
-      className="relay-selected-step-form"
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (!changed || !cleanIntent) return;
-        onSave({
-          label: `Updated ${cleanIntent}`,
-          forward: [
-            {
-              kind: "step.patch",
-              stepId: entry.step.id,
-              patch: { intent: cleanIntent, note: note.trim() || null, capture },
-            },
-          ],
-          reverse: [
-            {
-              kind: "step.patch",
-              stepId: entry.step.id,
-              patch: {
-                intent: entry.step.intent,
-                note: entry.step.note ?? null,
-                capture: entry.step.capture === true,
-              },
-            },
-          ],
-        });
-      }}
-    >
-      <div className="relay-inspector-heading">
-        <span className="relay-editor-step-number">{entry.number}</span>
-        <div>
-          <p className="relay-section-label">Selected step</p>
-          <h2>{stepKindLabel(entry.step)}</h2>
-        </div>
-      </div>
-      <label className="relay-editor-field" htmlFor="selected-step-intent">
-        <span>What should happen</span>
-        <Input
-          id="selected-step-intent"
-          value={intent}
-          onChange={(event) => setIntent(event.currentTarget.value)}
-          maxLength={2_000}
-        />
-      </label>
-      <label className="relay-editor-field" htmlFor="selected-step-note">
-        <span>
-          Note <small>Optional</small>
-        </span>
-        <textarea
-          id="selected-step-note"
-          value={note}
-          onChange={(event) => setNote(event.currentTarget.value)}
-          maxLength={4_000}
-          rows={4}
-        />
-      </label>
-      <CheckboxCard
-        className="relay-editor-check"
-        checked={capture}
-        onCheckedChange={setCapture}
-        title="Capture evidence after this step"
-        description="Keep a screenshot with the next Run’s report."
-      />
-      {entry.step.binding.status === "unresolved" ? (
-        <Alert variant="warning" className="relay-step-binding-alert">
-          <AlertTriangle aria-hidden="true" />
-          <div>
-            <AlertTitle>Step needs review</AlertTitle>
-            <AlertDescription>{entry.step.binding.reason}</AlertDescription>
-          </div>
-        </Alert>
-      ) : null}
-      <details className="relay-editor-advanced">
-        <summary>Advanced</summary>
-        <div>
-          <span>Saved binding</span>
-          <ScrollArea className="relay-editor-binding-scroll">
-            <pre>{JSON.stringify(entry.step.binding, null, 2)}</pre>
-          </ScrollArea>
-        </div>
-      </details>
-      <div className="relay-form-actions">
-        <Button variant="primary" type="submit" disabled={!changed || !cleanIntent || busy}>
-          {busy ? "Saving…" : "Save step"}
-        </Button>
-        {!changed ? <span className="relay-action-hint">No unsaved changes</span> : null}
-      </div>
-    </form>
   );
 }
 
@@ -685,6 +673,13 @@ function stepKindLabel(step: AppMapScenarioTestStep): string {
   if (step.kind === "decision") return "Decision";
   if (step.kind === "loop") return "Repeat";
   return "Script";
+}
+
+function branchLabel(placement: AppMapTestStepPlacement): string {
+  if (placement.branch === "then") return "Then branch";
+  if (placement.branch === "else") return "Else branch";
+  if (placement.branch === "steps") return "Repeated steps";
+  return "Main path";
 }
 
 function relativeTime(value: number): string {

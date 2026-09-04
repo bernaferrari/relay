@@ -28,7 +28,8 @@ import {
 import type { ReactNode } from "react";
 
 type BreadcrumbItem =
-  | { label: string; to: "/tests" | "/runs" | "/changes" | "/devices" | "/home" }
+  | { label: string; to: "/apps" | "/tests" | "/runs" | "/changes" | "/devices" | "/home" }
+  | { label: string; to: "/apps/$appId"; params: { appId: string } }
   | { label: string };
 
 export function Breadcrumbs({ items }: { items: readonly BreadcrumbItem[] }) {
@@ -42,7 +43,11 @@ export function Breadcrumbs({ items }: { items: readonly BreadcrumbItem[] }) {
               {index ? (
                 <ChevronRight className="relay-breadcrumb-separator" aria-hidden="true" />
               ) : null}
-              {"to" in item ? (
+              {"to" in item && item.to === "/apps/$appId" ? (
+                <Link to={item.to} params={item.params}>
+                  {item.label}
+                </Link>
+              ) : "to" in item ? (
                 <Link to={item.to}>{item.label}</Link>
               ) : (
                 <span aria-current={current ? "page" : undefined}>{item.label}</span>

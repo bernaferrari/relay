@@ -53,7 +53,7 @@ test(
     const actorId = "agent:alias-observe-route-test";
     const targetId = "ios-alias-fixture";
     const raster = await readFile(
-      fileURLToPath(new URL("../../app/public/relay-icon.png", import.meta.url)),
+      fileURLToPath(new URL("../../app-v2/public/relay-icon.png", import.meta.url)),
     );
     // The stub device shows whichever tree the test last installed, standing in
     // for one physical screen observed under two locales.
@@ -199,7 +199,7 @@ test(
       environment,
     });
     const raster = await readFile(
-      fileURLToPath(new URL("../../app/public/relay-icon.png", import.meta.url)),
+      fileURLToPath(new URL("../../app-v2/public/relay-icon.png", import.meta.url)),
     );
     let liveNodes = englishNodes;
     const authoringRuntime: AuthoringRuntime = {

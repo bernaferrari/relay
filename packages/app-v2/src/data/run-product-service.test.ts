@@ -31,6 +31,10 @@ describe("run report projection", () => {
             path: "frames/language.png",
             caption: "Language settings",
             capturedAt: 1_700_000_000_000,
+            mime: "image/png",
+            base64: "iVBORw0KGgo=",
+            width: 320,
+            height: 640,
           },
         ],
         artifacts: [
@@ -67,7 +71,17 @@ describe("run report projection", () => {
       detail: "2 screenshots",
       summary: "See the screens Relay captured while this Test ran.",
       inspectable: true,
-      items: [{ title: "Language settings" }],
+      items: [
+        {
+          title: "Language settings",
+          media: {
+            kind: "image",
+            src: "data:image/png;base64,iVBORw0KGgo=",
+            width: 320,
+            height: 640,
+          },
+        },
+      ],
     });
     expect(report.timeline).toEqual([
       expect.objectContaining({

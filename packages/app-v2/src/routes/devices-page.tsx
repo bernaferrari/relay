@@ -1,8 +1,8 @@
 /** @jsxImportSource react */
-import { Button, Input } from "@relay/ui-react";
+import { Button, Disclosure, Input } from "@relay/ui-react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate, useRouteContext } from "@tanstack/react-router";
-import { ChevronDown, ChevronRight, Monitor, Smartphone, Tablet } from "lucide-react";
+import { ChevronRight, Monitor, Smartphone, Tablet } from "lucide-react";
 import { useDeferredValue, useState } from "react";
 import { EmptyState, RecoveryState } from "../components/product-patterns";
 import {
@@ -122,19 +122,18 @@ function DeviceSection({
   );
   if (collapsed) {
     return (
-      <details className="relay-device-section relay-device-section--collapsible">
-        <summary>
+      <Disclosure.Root className="relay-device-section relay-device-section--collapsible">
+        <Disclosure.Trigger>
           <span>
             <strong id={headingId}>{title}</strong>
             <small>{description}</small>
           </span>
           <span className="relay-device-section-summary-end">
             <span className="relay-device-count">{devices.length} available</span>
-            <ChevronDown aria-hidden="true" />
           </span>
-        </summary>
-        {content}
-      </details>
+        </Disclosure.Trigger>
+        <Disclosure.Panel>{content}</Disclosure.Panel>
+      </Disclosure.Root>
     );
   }
   return (

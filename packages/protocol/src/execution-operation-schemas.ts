@@ -113,6 +113,7 @@ export const executionOperationSchemas = {
       runId: identifier("Persisted Run identifier"),
       limit: z.coerce.number().int().positive().optional(),
       includeBodies: queryBoolean.optional(),
+      testStepId: identifier("authored Test step identifier").optional(),
     })
     .strict(),
   "run.story.get": runRef,

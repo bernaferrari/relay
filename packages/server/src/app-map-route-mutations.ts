@@ -3,10 +3,16 @@ import {
   connectionIdsFromProposal,
   currentOperationContext,
   IosMutationOutcomeUnknownError,
+  appendAppMapTestMutationHistory,
   mutateStoredAppMap,
   now,
   proveConnectionOnDevice,
   readAppMap,
+  type ControlStore,
+  readAppMapTestMutationHistory,
+  restoreAppMapScenarioTest,
+  sameAppMapTestContent,
+  setAppMapTestHistoryCursor,
   updateAppMapConnection,
   type AppMap,
   type AppMapMutationContext,
@@ -21,11 +27,52 @@ function domainStatus(error: AppMapDomainError): number {
     error.code === "revision-conflict" ||
     error.code === "in-use" ||
     error.code === "proposal-state" ||
-    error.code === "duplicate-id"
+    error.code === "duplicate-id" ||
+    error.code === "history-empty" ||
+    error.code === "history-conflict"
   ) {
     return 409;
   }
   return 400;
+}
+
+export type AppMapMutationOptions = {
+  preserveTestHistory?: boolean;
+  recordTestEdit?: { testId: string; touched: readonly string[] };
+  onPersist?: (store: ControlStore, current: AppMap, next: AppMap) => void;
+};
+
+function composeMutationOptions(
+  projectId: string,
+  appMapId: string,
+  stableEventId: string,
+  options: AppMapMutationOptions | undefined,
+): AppMapMutationOptions {
+  if (!options?.recordTestEdit) return options ?? {};
+  const { testId, touched } = options.recordTestEdit;
+  return {
+    ...options,
+    onPersist(store, current, next) {
+      const before = current.tests[testId];
+      const after = next.tests[testId];
+      if (!before || !after) {
+        throw new AppMapDomainError(
+          "missing-reference",
+          `Test ${testId} disappeared while recording its edit history`,
+        );
+      }
+      appendAppMapTestMutationHistory(store, projectId, appMapId, testId, {
+        eventId: stableEventId,
+        beforeRevision: current.revision,
+        afterRevision: next.revision,
+        before: structuredClone(before),
+        after: structuredClone(after),
+        touched: [...touched],
+        at: next.updatedAt,
+      });
+      options.onPersist?.(store, current, next);
+    },
+  };
 }
 
 export async function applyAppMapMutation(
@@ -34,6 +81,7 @@ export async function applyAppMapMutation(
   expectedRevision: number,
   eventId: string | undefined,
   transform: (map: AppMap, context: AppMapMutationContext) => AppMap,
+  options?: AppMapMutationOptions,
 ): Promise<AppMap> {
   const operation = currentOperationContext();
   if (!operation) throw new HttpError(500, "App Map operation context is unavailable");
@@ -42,14 +90,18 @@ export async function applyAppMapMutation(
   if (!current) throw new HttpError(404, `App Map ${appMapId} not found`);
   if (current.activity[stableEventId]) return current;
   try {
-    return await mutateStoredAppMap(scope.projectId, appMapId, (map) =>
-      transform(map, {
-        expectedRevision,
-        eventId: stableEventId,
-        actorId: operation.actorId,
-        actorKind: operation.actorKind,
-        at: Math.max(now(), map.updatedAt),
-      }),
+    return await mutateStoredAppMap(
+      scope.projectId,
+      appMapId,
+      (map) =>
+        transform(map, {
+          expectedRevision,
+          eventId: stableEventId,
+          actorId: operation.actorId,
+          actorKind: operation.actorKind,
+          at: Math.max(now(), map.updatedAt),
+        }),
+      composeMutationOptions(scope.projectId, appMapId, stableEventId, options),
     );
   } catch (error) {
     if (error instanceof AppMapDomainError) {
@@ -74,6 +126,7 @@ export async function applyRebasableAppMapMutation(
   appMapId: string,
   eventId: string | undefined,
   transform: (map: AppMap, context: AppMapMutationContext) => AppMap,
+  options?: AppMapMutationOptions,
 ): Promise<AppMap> {
   const operation = currentOperationContext();
   if (!operation) throw new HttpError(500, "App Map operation context is unavailable");
@@ -82,14 +135,18 @@ export async function applyRebasableAppMapMutation(
   if (!current) throw new HttpError(404, `App Map ${appMapId} not found`);
   if (current.activity[stableEventId]) return current;
   try {
-    return await mutateStoredAppMap(scope.projectId, appMapId, (map) =>
-      transform(map, {
-        expectedRevision: map.revision,
-        eventId: stableEventId,
-        actorId: operation.actorId,
-        actorKind: operation.actorKind,
-        at: Math.max(now(), map.updatedAt),
-      }),
+    return await mutateStoredAppMap(
+      scope.projectId,
+      appMapId,
+      (map) =>
+        transform(map, {
+          expectedRevision: map.revision,
+          eventId: stableEventId,
+          actorId: operation.actorId,
+          actorKind: operation.actorKind,
+          at: Math.max(now(), map.updatedAt),
+        }),
+      composeMutationOptions(scope.projectId, appMapId, stableEventId, options),
     );
   } catch (error) {
     if (error instanceof AppMapDomainError) {
@@ -99,6 +156,99 @@ export async function applyRebasableAppMapMutation(
           error.code === "revision-conflict"
             ? "Review the conflicting screen or connection, then update the proposal."
             : "Inspect the referenced App Map entities and retry.",
+        current: await readAppMap(scope.projectId, appMapId),
+      });
+    }
+    throw error;
+  }
+}
+
+export async function applyAppMapTestHistoryMutation(
+  scope: RequestContext,
+  appMapId: string,
+  testId: string,
+  expectedRevision: number,
+  eventId: string | undefined,
+  direction: "undo" | "redo",
+): Promise<AppMap> {
+  const operation = currentOperationContext();
+  if (!operation) throw new HttpError(500, "App Map operation context is unavailable");
+  const stableEventId = eventId?.trim() || operation.requestId;
+  const current = await readAppMap(scope.projectId, appMapId);
+  if (!current) throw new HttpError(404, `App Map ${appMapId} not found`);
+  if (current.activity[stableEventId]) return current;
+  let nextCursor: number | undefined;
+  try {
+    return await mutateStoredAppMap(
+      scope.projectId,
+      appMapId,
+      (map, store) => {
+        if (expectedRevision !== map.revision) {
+          throw new AppMapDomainError(
+            "revision-conflict",
+            `Expected App Map revision ${expectedRevision}, current revision is ${map.revision}`,
+          );
+        }
+        const history = readAppMapTestMutationHistory(store, scope.projectId, appMapId, testId);
+        const entry = history.entries.find(
+          (candidate) =>
+            candidate.index === (direction === "undo" ? history.cursor : history.cursor + 1),
+        );
+        if (!entry) {
+          throw new AppMapDomainError(
+            "history-empty",
+            `No Test edit is available to ${direction} for ${testId}`,
+          );
+        }
+        const expected = direction === "undo" ? entry.after : entry.before;
+        const live = map.tests[testId];
+        if (!live)
+          throw new AppMapDomainError("missing-reference", `Test ${testId} does not exist`);
+        if (!sameAppMapTestContent(live, expected)) {
+          throw new AppMapDomainError(
+            "history-conflict",
+            `Test ${testId} changed outside the durable edit history; reload before ${direction}`,
+          );
+        }
+        nextCursor = direction === "undo" ? entry.index - 1 : entry.index;
+        return restoreAppMapScenarioTest(
+          map,
+          testId,
+          direction === "undo" ? entry.before : entry.after,
+          {
+            expectedRevision: map.revision,
+            eventId: stableEventId,
+            actorId: operation.actorId,
+            actorKind: operation.actorKind,
+            at: Math.max(now(), map.updatedAt),
+          },
+          direction,
+          entry.touched,
+        );
+      },
+      {
+        preserveTestHistory: true,
+        onPersist(store, _before, next) {
+          if (nextCursor === undefined) throw new Error("Test history cursor was not selected");
+          setAppMapTestHistoryCursor(
+            store,
+            scope.projectId,
+            appMapId,
+            testId,
+            nextCursor,
+            next.updatedAt,
+          );
+        },
+      },
+    );
+  } catch (error) {
+    if (error instanceof AppMapDomainError) {
+      throw new HttpError(domainStatus(error), error.message, {
+        code: error.code,
+        recovery:
+          error.code === "revision-conflict"
+            ? "Reload the App Map and retry against its current revision."
+            : "Reload the Test and retry the requested history operation.",
         current: await readAppMap(scope.projectId, appMapId),
       });
     }

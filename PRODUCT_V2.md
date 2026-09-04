@@ -95,12 +95,8 @@ runtime profile, plan digest, publication receipt, Campaign, Connection
 Use “Repeat”, “Data set”, “Device”, “Report”, and “Proof” in ordinary flows instead. **Proof** is
 the successful evidence-backed result of verifying a Change, not an object users must create.
 
-## Legacy expansion freeze and deletion targets
+## One product shell
 
-Until V2 replaces a route, legacy work is limited to correctness, trust, evidence, device
-reliability, security, and blocking fixes. Do not add Map modes, report tabs, Settings categories,
-rails, top-level nouns, visual themes, or public Combine/Variable surfaces to the legacy shell.
-
-V2 will delete StudioShell, MapModeSwitch, feature-specific Run return navigation, custom focus
-trapping, custom tooltip layers, the old Settings modal, legacy Results mode, public Combine UI,
-duplicate Variable surfaces, and the old onboarding as each replacement route reaches parity.
+React Product V2 is Relay's only browser and Electron product shell. Retired Studio, Results,
+Settings, onboarding, Combine, Variable, focus, and tooltip implementations are not compatibility
+surfaces and must not be reintroduced alongside the canonical routes.

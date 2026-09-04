@@ -95,6 +95,7 @@ export type WorkflowTransitionInput = WorkflowTransitionFence &
     | {
         action: "authoring-approve";
         destination?: import("./authoring.js").AuthoringCommitDestination;
+        testName?: string;
       }
     | { action: "authoring-discard" }
     | { action: "authoring-cancel" }

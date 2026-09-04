@@ -31,6 +31,7 @@ import { createDiscoveryOperationDefinitions } from "./discovery-operation-defin
 import { combineOperationDefinitions } from "./combine-operation-definitions.js";
 import { workspaceOperationDefinitions } from "./workspace-operation-definitions.js";
 import { createOperationBuilders } from "./operation-builders.js";
+import { runEvidenceInputParser } from "./run-evidence-operation-parser.js";
 import { validateOperationDefinitions as validateDefinitions } from "./operation-definition-validation.js";
 import type {
   ActionSummary,
@@ -381,33 +382,6 @@ const offlineRunReplayOutputParser = objectParser<OperationOutput<"run.replay.of
     for (const key of ["cursorTimeline", "checks", "blockers"]) {
       if (!Array.isArray(report[key])) {
         fail(`offline run replay report ${key}`, "must be an array");
-      }
-    }
-  },
-);
-
-const runEvidenceInputParser = objectParser<OperationInput<"run.evidence.get">>(
-  "run evidence input",
-  (input) => {
-    string(input.runId, "run id");
-    if (input.limit !== undefined) {
-      const rawLimit =
-        typeof input.limit === "string"
-          ? Number(input.limit)
-          : number(input.limit, "run evidence limit");
-      const limit = rawLimit;
-      if (!Number.isInteger(limit) || limit < 1 || limit > 2_000) {
-        fail("run evidence limit", "must be an integer between 1 and 2000");
-      }
-    }
-    if (input.includeBodies !== undefined) {
-      if (
-        input.includeBodies !== true &&
-        input.includeBodies !== false &&
-        input.includeBodies !== "true" &&
-        input.includeBodies !== "false"
-      ) {
-        fail("includeBodies", "must be a boolean");
       }
     }
   },
@@ -986,7 +960,8 @@ const commitAuthoringSessionParser = objectParser<CommitAuthoringSessionInput>(
         string(destination.title, "destination title");
     }
     if (input.createTest !== undefined && input.createTest !== true)
-      fail("authoring createTest", "must be true when provided");
+      fail("authoring createTest", "must be true");
+    if (input.testName !== undefined) string(input.testName, "authoring Test name");
   },
 );
 const authoringSessionResponseParser: RuntimeParser<AuthoringSessionResponse> = {

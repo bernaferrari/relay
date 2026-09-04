@@ -5,7 +5,9 @@ import type {
   RunOutcome,
   RunReview,
   RunSummary,
+  RunTestStepEvidence,
 } from "@relay/protocol";
+import { parseOptionalRunTestStepEvidence } from "@relay/protocol";
 import { createRelayOperationPort, type RelayInvokeClient } from "@relay/workflows/operation-port";
 import { routeUrls } from "./routes.js";
 import { findUniqueProductTestOwner, type ProductTestOwner } from "./test-identity.js";
@@ -99,6 +101,8 @@ export type ProductRunSummary = {
 
 export type ProductRunDetail = ProductRunSummary & {
   steps: readonly ProductRunStep[];
+  /** Stable authored Test-step evidence joins; empty for legacy Runs. */
+  stepEvidence: readonly RunTestStepEvidence[];
   evidence: { available: boolean; frameCount: number; artifactCount: number };
   error?: string;
 };
@@ -383,7 +387,12 @@ export function productTestDetail(
 
 export function productRunDetail(run: RunSummary, maps: readonly AppMap[] = []): ProductRunDetail {
   const summary = projectRun(run, maps);
-  const raw = run as RunSummary & { steps?: unknown[]; artifacts?: unknown[]; error?: unknown };
+  const raw = run as RunSummary & {
+    steps?: unknown[];
+    artifacts?: unknown[];
+    error?: unknown;
+    testStepEvidence?: unknown;
+  };
   const steps = Array.isArray(raw.steps)
     ? raw.steps.map((value, index) => {
         const item = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
@@ -398,9 +407,11 @@ export function productRunDetail(run: RunSummary, maps: readonly AppMap[] = []):
         } satisfies ProductRunStep;
       })
     : [];
+  const stepEvidence = parseOptionalRunTestStepEvidence(raw.testStepEvidence) ?? [];
   return {
     ...summary,
     steps,
+    stepEvidence,
     evidence: {
       available: run.frameCount > 0 || (raw.artifacts?.length ?? 0) > 0,
       frameCount: run.frameCount,

@@ -7,9 +7,12 @@ import { join, basename, isAbsolute, relative, sep } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import type { TestJob } from "./session.js";
 import type { TraceFrameRef, TraceStep } from "./trace.js";
+import { projectRunTestStepEvidence } from "./run-test-step-evidence.js";
+import { parseAppMapTestExecutionIntentArtifact } from "./app-map-test-execution-intent.js";
 import {
   assertExecutionTargetRef,
   parseBrowserCaseProfile,
+  parseOptionalRunTestStepEvidence,
   parseOptionalSourceRevision,
   type ActorKind,
   type ArtifactRefProjection,
@@ -19,6 +22,7 @@ import {
   type FailureCategory,
   type RunOutcome,
   type RunReview,
+  type RunTestStepEvidence,
   type SourceRevision,
   type TargetProfile,
 } from "@relay/protocol";
@@ -117,6 +121,8 @@ export type PersistedRun = {
   caseCount?: number;
   logs: string[];
   steps: TraceStep[];
+  /** Additive stable authored-Test-step joins for persisted runtime evidence. */
+  testStepEvidence?: RunTestStepEvidence[];
   frames: TraceFrameRef[];
   frameCount?: number;
   dir: string;
@@ -259,6 +265,12 @@ function buildPersistedRun(job: TestJob, dir: string, writtenAt: number): Persis
     ...s,
     frames: s.frames.map(({ base64: _b, ...rest }) => rest),
   }));
+  const testStepEvidence = projectRunTestStepEvidence({
+    steps,
+    provenance: executionIntentProvenance(job.artifacts),
+    events: job.evidence?.events,
+    artifacts: job.artifacts,
+  });
   const privateSafe = <T>(value: T): T =>
     redactPrivateValue(value, job.resolvedInputs, job.sensitiveInputNames ?? []);
   const executionTarget = persistedExecutionTarget(job);
@@ -312,6 +324,7 @@ function buildPersistedRun(job: TestJob, dir: string, writtenAt: number): Persis
     caseCount: job.caseCount,
     logs: privateSafe(job.logs.map(redactText)),
     steps: privateSafe(steps),
+    ...(testStepEvidence.length ? { testStepEvidence: privateSafe(testStepEvidence) } : {}),
     frames: privateSafe(frames),
     frameCount: frames.length,
     dir,
@@ -327,6 +340,16 @@ function buildPersistedRun(job: TestJob, dir: string, writtenAt: number): Persis
     evidence: privateSafe(redactValue(job.evidence)) as EvidenceManifest | undefined,
     executionProvenance: persistedExecutionProvenance(job),
   };
+}
+
+function executionIntentProvenance(
+  artifacts: TestJob["artifacts"],
+): import("@relay/protocol").AppMapTestStepProvenance[] {
+  const artifact = artifacts.find(
+    (candidate) => candidate.kind === "app-map-test-execution-intent",
+  );
+  if (!artifact) return [];
+  return parseAppMapTestExecutionIntentArtifact(artifact)?.plan.stepProvenance ?? [];
 }
 
 const MAX_PROVENANCE_IDENTIFIER_LENGTH = 256;
@@ -369,6 +392,11 @@ async function readCompletedRun(dir: string): Promise<PersistedRun | null> {
     }
     if (parsed.sourceRevision !== undefined) {
       parsed.sourceRevision = parseOptionalSourceRevision(parsed.sourceRevision);
+    }
+    if (parsed.testStepEvidence !== undefined) {
+      const testStepEvidence = parseOptionalRunTestStepEvidence(parsed.testStepEvidence);
+      if (testStepEvidence === undefined) delete parsed.testStepEvidence;
+      else parsed.testStepEvidence = testStepEvidence;
     }
     // Pre-v5 runs did not have an atomic commit marker. They remain readable
     // as historical single-manifest runs, while every current run must pass

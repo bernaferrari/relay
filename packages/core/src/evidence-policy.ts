@@ -91,5 +91,14 @@ export function hasSensitiveEvidenceConsent(
   policy: EvidenceCollectionPolicy | undefined,
   channel: SensitiveEvidenceChannel,
 ): boolean {
-  return Boolean(policy?.sensitive[channel]);
+  const grant = policy?.sensitive?.[channel];
+  return Boolean(
+    grant &&
+    Number.isFinite(grant.grantedAt) &&
+    grant.grantedAt >= 0 &&
+    typeof grant.grantedBy === "string" &&
+    grant.grantedBy.trim() &&
+    typeof grant.reason === "string" &&
+    grant.reason.trim(),
+  );
 }

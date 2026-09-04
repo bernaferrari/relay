@@ -22,10 +22,18 @@ import {
 } from "./collaboration-json.js";
 import type { StoredAppMapDisposition } from "./app-map/stored-map-repair.js";
 import { ensureChangeVerificationSchema } from "./change-verification-db.js";
+import { ensureAppMapTestHistorySchema } from "./app-map-test-history-db.js";
+export {
+  appendAppMapTestHistoryRow,
+  clearAppMapTestHistoryRedoRows,
+  deleteAppMapTestHistoryRows,
+  listAppMapTestHistoryRows,
+  setAppMapTestHistoryCursorRow,
+} from "./app-map-test-history-db.js";
 export * from "./change-proof-publication-outbox-db.js";
 export * from "./reviewed-document-origin-db.js";
 export const CONTROL_DB_NAME = "control.sqlite",
-  CONTROL_SCHEMA_VERSION = 7,
+  CONTROL_SCHEMA_VERSION = 8,
   JSON_MIGRATED_META = "json_migrated",
   RECOVERED_FROM_BACKUP_META = "recovered_from_json_backup",
   REPAIRED_ON_MIGRATE_META = "repaired_on_migrate";
@@ -218,6 +226,7 @@ export function applyControlSchema(db: DatabaseSync): void {
     );
   `);
   ensureChangeVerificationSchema(db);
+  ensureAppMapTestHistorySchema(db);
   migrateControlSchema(db);
 }
 
@@ -333,6 +342,11 @@ function migrateControlSchema(db: DatabaseSync): void {
   if (version < 7) {
     ensureChangeVerificationSchema(db);
     db.exec("PRAGMA user_version = 7");
+    version = 7;
+  }
+  if (version < 8) {
+    ensureAppMapTestHistorySchema(db);
+    db.exec("PRAGMA user_version = 8");
   }
 }
 

@@ -59,6 +59,10 @@ import {
   type ControlEventRow,
 } from "./collaboration-db.js";
 import {
+  createAppMapTestHistoryStore,
+  type AppMapTestHistoryStore,
+} from "./app-map-test-history-store.js";
+import {
   changeProofExecution,
   changeProofExecutionByProof,
   changeProofExecutions,
@@ -141,7 +145,7 @@ function parseAppMapDocument(source: string): unknown | undefined {
   }
 }
 
-export type ControlStore = {
+export type ControlStore = AppMapTestHistoryStore & {
   projects(): Project[];
   upsertProject(project: Project): void;
   builds(projectId?: string): Build[];
@@ -623,6 +627,7 @@ function createStore(db: DatabaseSync): ControlStore {
       const loaded = loadStoredAppMap(document, key);
       return loaded.ok ? loaded.appMap : undefined;
     },
+    ...createAppMapTestHistoryStore(db),
     appMapRecoveryDocument(key) {
       const row = db
         .prepare("SELECT document, source_document, disposition FROM app_maps WHERE map_key = ?")

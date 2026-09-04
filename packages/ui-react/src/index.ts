@@ -17,6 +17,7 @@ export {
   CardTitle,
 } from "./primitives/card";
 export { Checkbox, CheckboxCard, type CheckboxProps } from "./primitives/checkbox";
+export { Disclosure } from "./primitives/disclosure";
 export {
   Empty,
   EmptyContent,
@@ -38,6 +39,7 @@ export {
 export { ScrollArea, ScrollBar } from "./primitives/scroll-area";
 export { Select } from "./primitives/select";
 export { Skeleton } from "./primitives/skeleton";
+export { Textarea } from "./primitives/textarea";
 export {
   SidebarContent,
   SidebarFooter,

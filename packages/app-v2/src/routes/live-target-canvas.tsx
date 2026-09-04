@@ -5,7 +5,6 @@ import {
   useEffect,
   useRef,
   useState,
-  type FormEvent,
   type KeyboardEvent,
   type PointerEvent,
   type RefObject,
@@ -23,6 +22,7 @@ export function LiveTargetCanvas({
   targetTitle,
   targetDetail,
   send,
+  recording = true,
 }: {
   canvasRef: RefObject<HTMLCanvasElement | null>;
   status: LiveTargetStatus;
@@ -31,6 +31,7 @@ export function LiveTargetCanvas({
   targetTitle: string;
   targetDetail: string;
   send(input: LiveTargetInput): Promise<void>;
+  recording?: boolean;
 }) {
   const [text, setText] = useState("");
   const pointerStart = useRef<Point | undefined>(undefined);
@@ -112,8 +113,7 @@ export function LiveTargetCanvas({
     }
   }
 
-  function typeText(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  function typeText() {
     const value = text;
     if (!value || busy || !streaming) return;
     void send({ kind: "key", key: "enter", text: value }).then(() => setText(""));
@@ -145,7 +145,11 @@ export function LiveTargetCanvas({
             <p>{issue ?? "The app will appear here as soon as the target is ready."}</p>
           </div>
         ) : null}
-        {busy ? <span className="relay-live-target-busy">Recording interaction…</span> : null}
+        {busy ? (
+          <span className="relay-live-target-busy">
+            {recording ? "Recording interaction…" : "Sending interaction…"}
+          </span>
+        ) : null}
       </div>
 
       <div className="relay-live-target-tools">
@@ -153,7 +157,7 @@ export function LiveTargetCanvas({
           <strong>{targetTitle}</strong>
           <span>{targetDetail}</span>
         </div>
-        <form onSubmit={typeText}>
+        <div className="relay-live-target-type">
           <label className="relay-visually-hidden" htmlFor="live-target-text">
             Text to type into the focused target field
           </label>
@@ -162,18 +166,31 @@ export function LiveTargetCanvas({
             className="relay-input"
             value={text}
             onChange={(event) => setText(event.currentTarget.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                typeText();
+              }
+            }}
             placeholder="Type into the target"
             disabled={!streaming || busy}
             autoComplete="off"
             maxLength={16_384}
           />
-          <Button type="submit" variant="secondary" disabled={!text || !streaming || busy}>
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={!text || !streaming || busy}
+            onClick={typeText}
+          >
             Type
           </Button>
-        </form>
+        </div>
       </div>
       <p id="live-target-help" className="relay-live-target-help">
-        Click, drag, scroll, or type here. Relay records each supported interaction in this Test.
+        {recording
+          ? "Click, drag, scroll, or type here. Relay records each supported interaction in this Test."
+          : "Click, drag, scroll, or type here to put the app on the screen where recording should begin."}
       </p>
     </div>
   );

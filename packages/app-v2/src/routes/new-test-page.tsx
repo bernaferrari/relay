@@ -14,8 +14,6 @@ import {
   CardTitle,
   Field,
   FieldDescription,
-  FieldLabel,
-  Input,
   RadioCard,
   RadioGroup,
   ScrollArea,
@@ -23,8 +21,18 @@ import {
 } from "@relay/ui-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate, useRouteContext } from "@tanstack/react-router";
-import { AppWindow, ArrowLeft, Check, CircleDot, Monitor, Play, Smartphone } from "lucide-react";
-import { useEffect, useState, type FormEvent } from "react";
+import {
+  AppWindow,
+  ArrowLeft,
+  Check,
+  CircleDot,
+  Monitor,
+  Play,
+  RotateCcw,
+  Smartphone,
+} from "lucide-react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import type { LiveTargetSession, LiveTargetStatus } from "../data/live-target-session";
 import { recordingQueryKeys } from "../data/recording-queries";
 import {
   clearWorkflowPointerIfCurrent,
@@ -32,6 +40,9 @@ import {
   writeWorkflowPointer,
 } from "../data/workflow-pointer";
 import { PageLoading, RecordingProblem, targetLabel } from "./recording-shared";
+import { LiveTargetCanvas } from "./live-target-canvas";
+
+const NEW_TEST_DRAFT_KEY = "newTestDraft";
 
 export function NewTestPage() {
   const { mapService, platform, productService, queryClient } = useRouteContext({
@@ -45,11 +56,21 @@ export function NewTestPage() {
   const navigate = useNavigate();
   const [appId, setAppId] = useState(requestedAppId ?? "");
   const [targetId, setTargetId] = useState("");
-  const [title, setTitle] = useState("");
+  const previewCanvas = useRef<HTMLCanvasElement>(null);
+  const previewSession = useRef<LiveTargetSession | undefined>(undefined);
+  const [previewStatus, setPreviewStatus] = useState<LiveTargetStatus>("idle");
+  const [previewIssue, setPreviewIssue] = useState<string>();
+  const [previewBusy, setPreviewBusy] = useState(false);
+  const [previewAttempt, setPreviewAttempt] = useState(0);
 
   const apps = useQuery({
     queryKey: recordingQueryKeys.apps,
     queryFn: () => productService.listApps(),
+  });
+  const draft = useQuery({
+    queryKey: ["recording", "new-test-draft"],
+    queryFn: () => readNewTestDraft(platform),
+    staleTime: Infinity,
   });
   const targets = useQuery({
     queryKey: recordingQueryKeys.targets,
@@ -59,6 +80,19 @@ export function NewTestPage() {
     },
     staleTime: 5_000,
   });
+  useEffect(() => {
+    if (!appId && apps.data?.length === 1) setAppId(apps.data[0]!.id);
+  }, [appId, apps.data]);
+  useEffect(() => {
+    if (!targetId && targets.data?.targetOptions.length === 1) {
+      setTargetId(targets.data.targetOptions[0]!.targetId);
+    }
+  }, [targetId, targets.data?.targetOptions]);
+  useEffect(() => {
+    if (!draft.data) return;
+    if (!requestedAppId && !appId && draft.data.appId) setAppId(draft.data.appId);
+    if (!targetId && draft.data.targetId) setTargetId(draft.data.targetId);
+  }, [appId, draft.data, requestedAppId, targetId]);
   const activePointer = useQuery({
     queryKey: recordingQueryKeys.pointer,
     queryFn: async () => {
@@ -85,14 +119,74 @@ export function NewTestPage() {
   });
 
   useEffect(() => {
-    if (!title && pathContext.data) {
-      setTitle(`${pathContext.data.fromTitle} to ${pathContext.data.toTitle ?? "Finish"}`);
+    if (!draft.isFetched) return;
+    void Promise.resolve(
+      platform.storage.set(NEW_TEST_DRAFT_KEY, JSON.stringify({ appId, targetId })),
+    );
+  }, [appId, draft.isFetched, platform, targetId]);
+
+  const selectedTarget = targets.data?.targetOptions.find((target) => target.targetId === targetId);
+  useEffect(() => {
+    if (!selectedTarget || !previewCanvas.current || !productService.previewTarget) {
+      setPreviewStatus("idle");
+      return;
     }
-  }, [pathContext.data, title]);
+    let disposed = false;
+    let unmount: (() => void) | undefined;
+    let unsubscribe: (() => void) | undefined;
+    let session: LiveTargetSession | undefined;
+    setPreviewIssue(undefined);
+    setPreviewStatus("connecting");
+    void productService
+      .previewTarget(selectedTarget)
+      .then((next) => {
+        if (disposed || !previewCanvas.current) return next.close();
+        session = next;
+        previewSession.current = next;
+        unsubscribe = next.subscribe((state) => {
+          setPreviewStatus(state.status);
+          setPreviewIssue(state.issue ? friendlyPreviewIssue(state.issue) : undefined);
+        });
+        unmount = next.mount(previewCanvas.current);
+      })
+      .catch(() => {
+        if (!disposed) {
+          setPreviewStatus("degraded");
+          setPreviewIssue("Relay could not open the live view. Check the target, then reconnect.");
+        }
+      });
+    return () => {
+      disposed = true;
+      unmount?.();
+      unsubscribe?.();
+      if (previewSession.current === session) previewSession.current = undefined;
+      session?.close();
+    };
+  }, [previewAttempt, productService, selectedTarget?.targetId]);
+
+  async function sendPreview(input: Parameters<LiveTargetSession["input"]>[0]) {
+    const session = previewSession.current;
+    if (!session) {
+      setPreviewIssue("The live view is still connecting.");
+      return;
+    }
+    setPreviewBusy(true);
+    setPreviewIssue(undefined);
+    try {
+      await session.input(input);
+    } catch {
+      setPreviewIssue("Relay could not send that interaction. Reconnect, then try again.");
+    } finally {
+      setPreviewBusy(false);
+    }
+  }
 
   const begin = useMutation({
     mutationFn: async () => {
-      const state = await productService.begin({ title: title.trim(), appMapId: appId, targetId });
+      const suggestedName = pathContext.data
+        ? `${pathContext.data.fromTitle} to ${pathContext.data.toTitle ?? "Finish"}`
+        : "Untitled recording";
+      const state = await productService.begin({ title: suggestedName, appMapId: appId, targetId });
       const workflowId = state.snapshot?.workflow?.workflowId;
       if (workflowId) {
         await writeWorkflowPointer(platform, workflowId);
@@ -106,20 +200,21 @@ export function NewTestPage() {
       if (state.recovery) return;
       const workflowId = state.snapshot?.workflow?.workflowId;
       if (!workflowId) return;
+      await Promise.resolve(platform.storage.remove?.(NEW_TEST_DRAFT_KEY));
       await navigate({ to: "/tests/$testId/record", params: { testId: workflowId } });
     },
   });
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!title.trim() || !appId || !targetId || begin.isPending) return;
+    if (!appId || !targetId || previewStatus !== "streaming" || begin.isPending) return;
     begin.mutate();
   }
 
   const loading = apps.isPending || activePointer.isPending;
   const noApps = apps.data?.length === 0;
   const noTargets = targets.data?.targetOptions.length === 0;
-  const formReady = Boolean(title.trim() && appId && targetId && !begin.isPending);
+  const formReady = Boolean(appId && targetId && previewStatus === "streaming" && !begin.isPending);
   const appChoices = (
     <RadioGroup
       className="relay-choice-group relay-choice-group--apps"
@@ -213,9 +308,9 @@ export function NewTestPage() {
           <form className="relay-recording-form" onSubmit={submit}>
             <Card className="relay-new-test-card">
               <CardHeader>
-                <CardTitle>Set up the recording</CardTitle>
+                <CardTitle>Choose where to record</CardTitle>
                 <CardDescription>
-                  You can change the name later. The app and target stay attached to this recording.
+                  Position the app first. You will name the Test after recording.
                 </CardDescription>
               </CardHeader>
               <CardContent className="relay-new-test-fields">
@@ -234,22 +329,6 @@ export function NewTestPage() {
                     </AlertDescription>
                   </Alert>
                 ) : null}
-                <Field className="relay-test-name-field">
-                  <FieldLabel htmlFor="test-name">What should this Test prove?</FieldLabel>
-                  <Input
-                    id="test-name"
-                    value={title}
-                    onChange={(event) => setTitle(event.currentTarget.value)}
-                    placeholder="For example, Change the app language"
-                    maxLength={160}
-                    autoComplete="off"
-                    spellCheck
-                  />
-                  <FieldDescription>
-                    Use the outcome a teammate would recognize in a Report.
-                  </FieldDescription>
-                </Field>
-
                 <Field>
                   <div className="relay-choice-heading">
                     <div className="relay-field-label" id="test-app-title">
@@ -324,11 +403,40 @@ export function NewTestPage() {
                     </RadioGroup>
                   )}
                 </Field>
+
+                {selectedTarget ? (
+                  <section className="relay-prerecord-workspace" aria-labelledby="prerecord-title">
+                    <div className="relay-prerecord-heading">
+                      <div>
+                        <p className="relay-section-label">Starting point</p>
+                        <h2 id="prerecord-title">Put the app where recording should begin</h2>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="small"
+                        onClick={() => setPreviewAttempt((value) => value + 1)}
+                      >
+                        <RotateCcw aria-hidden="true" /> Reconnect
+                      </Button>
+                    </div>
+                    <LiveTargetCanvas
+                      canvasRef={previewCanvas}
+                      status={previewStatus}
+                      issue={previewIssue}
+                      busy={previewBusy}
+                      targetTitle={targetLabel(selectedTarget).title}
+                      targetDetail={targetLabel(selectedTarget).detail}
+                      send={sendPreview}
+                      recording={false}
+                    />
+                  </section>
+                ) : null}
               </CardContent>
               <CardFooter className="relay-form-actions">
                 <Button type="submit" variant="primary" disabled={!formReady}>
                   <Play aria-hidden="true" />
-                  {begin.isPending ? "Starting…" : "Begin recording"}
+                  {begin.isPending ? "Starting…" : "Start recording"}
                 </Button>
                 <Button render={<Link to="/tests" />} variant="ghost">
                   Cancel
@@ -338,8 +446,10 @@ export function NewTestPage() {
                     <>
                       <Check aria-hidden="true" /> Ready to record
                     </>
+                  ) : targetId && previewStatus !== "streaming" ? (
+                    "Wait for the live view"
                   ) : (
-                  "Add a name, app, and target"
+                    "Choose an app and target"
                   )}
                 </span>
               </CardFooter>
@@ -349,4 +459,34 @@ export function NewTestPage() {
       ) : null}
     </section>
   );
+}
+
+function friendlyPreviewIssue(message: string): string {
+  if (/view only|locked|unlock/iu.test(message)) {
+    return "Keep the target connected and unlocked, then reconnect.";
+  }
+  if (/packet|transport|codec|decode|base64|operation|targetid/iu.test(message)) {
+    return "Relay could not show the live view. Check the target, then reconnect.";
+  }
+  return message;
+}
+
+async function readNewTestDraft(platform: {
+  storage: { get(key: string): string | null | Promise<string | null> };
+}): Promise<{
+  appId?: string;
+  targetId?: string;
+}> {
+  try {
+    const stored = await Promise.resolve(platform.storage.get(NEW_TEST_DRAFT_KEY));
+    const parsed = JSON.parse(stored ?? "null") as unknown;
+    if (!parsed || typeof parsed !== "object") return {};
+    const value = parsed as Record<string, unknown>;
+    return {
+      ...(typeof value.appId === "string" ? { appId: value.appId } : {}),
+      ...(typeof value.targetId === "string" ? { targetId: value.targetId } : {}),
+    };
+  } catch {
+    return {};
+  }
 }

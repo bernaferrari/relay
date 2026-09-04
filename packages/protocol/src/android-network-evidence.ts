@@ -14,10 +14,6 @@ const portableArtifactPath = z
       !value.includes("\0") &&
       !value.split(/[\\/]/u).some((segment) => !segment || segment === "." || segment === ".."),
     "raw network artifact must be a portable relative path",
-  )
-  .refine(
-    (value) => /\.pcap(?:ng)?$/iu.test(value),
-    "raw network artifact must use a PCAP or PCAPNG path",
   );
 
 export const androidNetworkEvidenceCoverageSchema = z.enum([
@@ -59,6 +55,15 @@ const androidPacketCaptureSourceSchema = z
   })
   .strict();
 
+export const androidNetworkPacketParseFailureSchema = z
+  .object({
+    kind: z.literal("packet-parse-failure"),
+    message: boundedText,
+  })
+  .strict();
+
+export const androidPacketRetentionSchema = z.enum(["ephemeral", "retained"]);
+
 /** Typed provenance for the managed-emulator packet collector attempt. A
  * failed attempt remains distinct from any opportunistic app-session log that
  * happened to succeed during the same Run. */
@@ -73,6 +78,9 @@ export const androidPacketCaptureProvenanceSchema = z
         startedAt: finiteTimestamp,
         finishedAt: finiteTimestamp,
         coverage: androidNetworkEvidenceCoverageSchema,
+        /** `ephemeral` is the default packet-window behavior. `retained`
+         * means bytes were copied into Run-owned storage under raw consent. */
+        retention: androidPacketRetentionSchema.optional(),
       })
       .strict(),
     z
@@ -85,6 +93,7 @@ export const androidPacketCaptureProvenanceSchema = z
         finishedAt: finiteTimestamp,
         stage: z.enum(["start", "finalize"]),
         message: boundedText,
+        retention: androidPacketRetentionSchema.optional(),
       })
       .strict(),
   ])
@@ -137,9 +146,12 @@ const androidNetworkAttributionSchema = z
   })
   .strict();
 
-const androidRawNetworkCaptureSchema = z
+export const androidRawNetworkCaptureSchema = z
   .object({
     status: z.enum(["not-requested", "denied", "captured", "truncated", "failed"]),
+    /** Optional for v1 compatibility; current producers always state whether
+     * bytes remained ephemeral or were retained in Run-owned storage. */
+    retention: androidPacketRetentionSchema.optional(),
     artifact: z
       .object({
         path: portableArtifactPath,
@@ -191,6 +203,25 @@ const androidRawNetworkCaptureSchema = z
         message: "raw network artifact byte counts must agree",
       });
     }
+    if (
+      value.retention === "retained" &&
+      value.status !== "captured" &&
+      value.status !== "truncated"
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "only captured or truncated raw network evidence may be retained",
+      });
+    }
+    if (
+      value.retention === "ephemeral" &&
+      (value.status === "captured" || value.status === "truncated")
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "captured raw network evidence cannot be labeled ephemeral",
+      });
+    }
   });
 
 /** A bounded statement about one Android Run window. Packet sources describe
@@ -211,6 +242,10 @@ export const androidNetworkEvidenceSummarySchema = z
     flows: z.array(androidNetworkFlowSchema).max(1_000),
     attribution: androidNetworkAttributionSchema,
     rawCapture: androidRawNetworkCaptureSchema,
+    /** A packet source can still produce bounded facts when the packet stream
+     * is malformed. Keep that outcome typed instead of falling back to the
+     * opportunistic session-log adapter. */
+    parseFailure: androidNetworkPacketParseFailureSchema.optional(),
     dropped: z.number().int().nonnegative(),
     redactions: z.number().int().nonnegative(),
     limitations: z.array(boundedText).max(32),
@@ -248,6 +283,18 @@ export const androidNetworkEvidenceSummarySchema = z
       context.addIssue({
         code: "custom",
         message: "emulator-packet evidence needs a packet backend and entire-emulator scope",
+      });
+    }
+    if (value.parseFailure && value.source.kind !== "emulator-packet") {
+      context.addIssue({
+        code: "custom",
+        message: "packet parse failures require an emulator-packet source",
+      });
+    }
+    if (value.parseFailure && value.coverage === "packet-complete") {
+      context.addIssue({
+        code: "custom",
+        message: "packet parse failures require partial or interrupted coverage",
       });
     }
     if (value.coverage === "packet-complete") {
@@ -312,6 +359,11 @@ export const androidNetworkEvidenceSummarySchema = z
   });
 
 export type AndroidNetworkEvidenceCoverage = z.output<typeof androidNetworkEvidenceCoverageSchema>;
+export type AndroidPacketRetention = z.output<typeof androidPacketRetentionSchema>;
+export type AndroidRawNetworkCapture = z.output<typeof androidRawNetworkCaptureSchema>;
+export type AndroidNetworkPacketParseFailure = z.output<
+  typeof androidNetworkPacketParseFailureSchema
+>;
 export type AndroidNetworkEvidenceSummary = z.output<typeof androidNetworkEvidenceSummarySchema>;
 export type AndroidPacketCaptureProvenance = z.output<typeof androidPacketCaptureProvenanceSchema>;
 

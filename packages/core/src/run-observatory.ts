@@ -12,6 +12,7 @@ import type {
 import {
   parseAndroidNetworkEvidenceSummary,
   parseAndroidPacketCaptureProvenance,
+  parseOptionalRunTestStepEvidence,
 } from "@relay/protocol";
 import type { PersistedRun } from "./runs.js";
 
@@ -55,15 +56,31 @@ function androidNetworkProjection(value: unknown): {
   }
   try {
     const summary = parseAndroidNetworkEvidenceSummary(candidate);
+    if (summary.parseFailure && !issue) issue = summary.parseFailure.message;
+    if (
+      summary.source.kind === "emulator-packet" &&
+      (summary.parseFailure || summary.coverage === "interrupted") &&
+      packetCapture?.status === "captured"
+    ) {
+      packetCapture = undefined;
+    }
     if (!packetCapture && summary.source.kind === "emulator-packet") {
       packetCapture = parseAndroidPacketCaptureProvenance({
         schemaVersion: 1,
-        status: "captured",
+        status: summary.parseFailure || summary.coverage === "interrupted" ? "failed" : "captured",
         source: summary.source,
         scope: "entire-emulator",
         startedAt: summary.startedAt,
         finishedAt: summary.finishedAt ?? summary.startedAt,
-        coverage: summary.coverage,
+        ...(summary.parseFailure || summary.coverage === "interrupted"
+          ? {
+              stage: "finalize" as const,
+              message: summary.parseFailure
+                ? `Emulator packet evidence is partial: ${summary.parseFailure.message}`
+                : "Emulator packet capture stop command failed; packet evidence is partial",
+            }
+          : { coverage: summary.coverage }),
+        ...(summary.rawCapture.retention ? { retention: summary.rawCapture.retention } : {}),
       });
     }
     return {
@@ -367,7 +384,7 @@ function evidenceEvents(input: {
 /** Build a bounded, provider-neutral observability view from a persisted run. */
 export function buildRunEvidence(
   run: PersistedRun,
-  options: { limit?: number; includeBodies?: boolean } = {},
+  options: { limit?: number; includeBodies?: boolean; testStepId?: string } = {},
 ): RunEvidenceQuery {
   const requested = options.limit ?? DEFAULT_LIMIT;
   const applied = Math.max(1, Math.min(MAX_LIMIT, Math.floor(requested)));
@@ -426,11 +443,14 @@ export function buildRunEvidence(
       : androidNetwork
         ? {
             mode: "emulator-packet" as const,
-            label: network.length
-              ? "Emulator packets and session network log"
-              : "Emulator packet metadata",
-            detail:
-              "Transport metadata covers the bounded emulator Run window. Packet capture does not parse HTTP methods, statuses, headers, or bodies; encrypted payloads remain opaque.",
+            label: androidNetwork.parseFailure
+              ? "Emulator packet metadata · partial parse"
+              : network.length
+                ? "Emulator packets and session network log"
+                : "Emulator packet metadata",
+            detail: `${
+              androidNetwork.parseFailure ? `${androidNetwork.parseFailure.message} ` : ""
+            }Transport metadata covers the bounded emulator Run window. Packet capture does not parse HTTP methods, statuses, headers, or bodies; encrypted payloads remain opaque.`,
           }
         : androidNetworkIssue && network.length > 0
           ? {
@@ -466,6 +486,10 @@ export function buildRunEvidence(
   }
   const artifacts = run.artifacts.map(artifactSummary);
   const crashes = crashArtifacts.map((artifact) => artifact.data).slice(-applied);
+  const persistedTestStepEvidence = parseOptionalRunTestStepEvidence(run.testStepEvidence) ?? [];
+  const testStepEvidence = options.testStepId
+    ? persistedTestStepEvidence.filter((item) => item.testStepId === options.testStepId)
+    : persistedTestStepEvidence;
   return {
     schemaVersion: 1,
     runId: run.id,
@@ -479,6 +503,7 @@ export function buildRunEvidence(
     channels,
     logs,
     network,
+    testStepEvidence,
     networkCapture,
     ...(androidNetwork ? { androidNetwork } : {}),
     ...(androidPacketCapture ? { androidPacketCapture } : {}),

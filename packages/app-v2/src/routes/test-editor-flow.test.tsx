@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import type { AppMapScenarioTestEdit } from "@relay/protocol";
+import type { AppMapScenarioTestEdit, AppMapScenarioTestStep } from "@relay/protocol";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -55,6 +55,7 @@ const initialDocument: ProductTestEditorDocument = {
   history: [
     {
       id: "event-one",
+      eventType: "test.saved",
       actorKind: "human",
       summary: "Edited Complete checkout",
       at: Date.now() - 60_000,
@@ -82,10 +83,11 @@ afterEach(async () => {
   document.body.replaceChildren();
 });
 
-function service() {
-  let current = structuredClone(initialDocument);
+function service(source: ProductTestEditorDocument = initialDocument) {
+  let current = structuredClone(source);
   const edits: AppMapScenarioTestEdit[][] = [];
   const decisions: string[] = [];
+  const historyCalls: string[] = [];
   const editor: TestEditorProductService = {
     get: async () => structuredClone(current),
     edit: async ({ edits: nextEdits }) => {
@@ -108,12 +110,61 @@ function service() {
           );
         }
         if (edit.kind === "step.reorder") {
-          current.test.steps = edit.orderedStepIds.map(
-            (id) => current.test.steps.find((step) => step.id === id)!,
+          current.test.steps = edit.orderedStepIds.map((id) =>
+            current.test.steps.find((step) => step.id === id)!,
+          );
+        }
+        if (edit.kind === "step.add") {
+          current.test.steps.splice(
+            edit.index ?? current.test.steps.length,
+            0,
+            structuredClone(edit.step),
+          );
+        }
+        if (edit.kind === "step.remove") {
+          current.test.steps = current.test.steps.filter((step) => step.id !== edit.stepId);
+        }
+        if (edit.kind === "step.bind") {
+          current.test.steps = current.test.steps.map((step) =>
+            step.id === edit.stepId
+              ? ({ ...step, binding: structuredClone(edit.binding) } as AppMapScenarioTestStep)
+              : step,
+          );
+        }
+        if (edit.kind === "step.unbind") {
+          current.test.steps = current.test.steps.map((step) =>
+            step.id === edit.stepId
+              ? {
+                  ...step,
+                  binding: {
+                    status: "unresolved",
+                    reason: edit.reason,
+                    ...(edit.candidates ? { candidates: structuredClone(edit.candidates) } : {}),
+                  },
+                }
+              : step,
           );
         }
       }
       current.revision += 1;
+      return structuredClone(current);
+    },
+    undo: async () => {
+      historyCalls.push("undo");
+      current.revision += 1;
+      current.history = [
+        { ...current.history[0]!, id: `undo-${current.revision}`, eventType: "test.undone" },
+        ...current.history,
+      ];
+      return structuredClone(current);
+    },
+    redo: async () => {
+      historyCalls.push("redo");
+      current.revision += 1;
+      current.history = [
+        { ...current.history[0]!, id: `redo-${current.revision}`, eventType: "test.redone" },
+        ...current.history,
+      ];
       return structuredClone(current);
     },
     decideRepair: async ({ decision }) => {
@@ -123,12 +174,15 @@ function service() {
       return structuredClone(current);
     },
   };
-  return { editor, edits, decisions };
+  return { editor, edits, decisions, historyCalls };
 }
 
-async function render(editor: TestEditorProductService) {
+async function render(
+  editor: TestEditorProductService,
+  path = "/tests/test-checkout/edit?step=step-pay",
+) {
   const history = createMemoryHistory({
-    initialEntries: ["/tests/test-checkout/edit?step=step-pay"],
+    initialEntries: [path],
   });
   const host = document.createElement("div");
   document.body.append(host);
@@ -214,9 +268,10 @@ describe("Test editor", () => {
     ]);
 
     await click("Undo last saved change");
-    expect(harness.edits.at(-1)).toEqual([
-      { kind: "step.reorder", orderedStepIds: ["step-cart", "step-pay"] },
-    ]);
+    expect(harness.historyCalls).toEqual(["undo"]);
+    expect(document.body.textContent).toContain("Last saved change");
+    await click("Redo last undone change");
+    expect(harness.historyCalls).toEqual(["undo", "redo"]);
   });
 
   it("reviews a production-backed repair proposal", async () => {
@@ -226,6 +281,57 @@ describe("Test editor", () => {
     expect(document.body.textContent).toContain("Use the updated total label");
     await click("Apply repair");
     expect(harness.decisions).toEqual(["approve"]);
-    expect(document.body.textContent).toContain("No repairs are waiting for review");
+    expect(document.body.textContent).not.toContain("Suggested repairs");
+    expect(document.body.textContent).toContain("Edited Complete checkout");
+  });
+
+  it("adds and removes steps through stable canonical edits", async () => {
+    const harness = service();
+    await render(harness.editor);
+
+    await click("Add step");
+    const added = harness.edits.at(-1)?.[0];
+    expect(added?.kind).toBe("step.add");
+    if (added?.kind !== "step.add") throw new Error("Expected step.add");
+    expect(added.step.kind).toBe("instruction");
+    expect(added.step.binding).toEqual({
+      status: "unresolved",
+      reason: "Choose a saved action for this step before running the Test.",
+    });
+    expect(document.querySelector<HTMLInputElement>("#selected-step-intent")?.value).toBe(
+      "Describe the next action",
+    );
+
+    await click("Remove step");
+    expect(document.body.textContent).toContain("Remove this step?");
+    await click("Remove step");
+    expect(harness.edits.at(-1)).toEqual([{ kind: "step.remove", stepId: added.step.id }]);
+
+    await click("Undo last saved change");
+    expect(harness.historyCalls.at(-1)).toBe("undo");
+  });
+
+  it("repairs a compatible saved action through step.bind", async () => {
+    const source = structuredClone(initialDocument);
+    const action = source.test.steps[0];
+    if (!action || action.kind !== "instruction") throw new Error("Expected action step");
+    action.binding = {
+      status: "unresolved",
+      reason: "The saved action needs a new target.",
+      candidates: [{ kind: "connection", id: "cart", label: "Open the cart" }],
+    };
+    const harness = service(source);
+    await render(harness.editor, "/tests/test-checkout/edit?step=step-cart");
+
+    expect(document.body.textContent).toContain("Use Open the cart");
+    await click("Use Open the cart");
+    expect(harness.edits.at(-1)).toEqual([
+      {
+        kind: "step.bind",
+        stepId: "step-cart",
+        binding: { status: "resolved", kind: "connections", connectionIds: ["cart"] },
+      },
+    ]);
+    expect(document.body.textContent).toContain("Ready");
   });
 });

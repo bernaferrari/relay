@@ -93,7 +93,7 @@ const requiredSections = [
   "Interaction laws",
   "Responsive and accessibility contract",
   "Public vocabulary boundary",
-  "Legacy expansion freeze and deletion targets",
+  "One product shell",
 ];
 
 export function evaluateProductV2Contract({

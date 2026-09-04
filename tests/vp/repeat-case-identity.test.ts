@@ -13,8 +13,10 @@ import {
 import { prepareAppMapCombineCells } from "../../packages/core/src/app-map-combine-cell-prepare.js";
 import { summarizeJob } from "../../packages/core/src/session-summary.js";
 import { runWithOperationContext } from "../../packages/core/src/operation-context.js";
-import type { JobInfo } from "../../packages/app/src/lib/api-types.js";
-import { findPreviousApprovedRepeatCapture } from "../../packages/app/src/lib/repeat-result-review.js";
+import {
+  findPreviousApprovedRepeatCapture,
+  type RepeatCaptureJob,
+} from "../../packages/core/src/repeat-result-review.js";
 
 function scope(appMapId: string, id: string) {
   return { organizationId: "org", projectId: "project", appMapId, id };
@@ -159,7 +161,7 @@ async function stage(appMapId: string): Promise<StagedAppMapCombineCellBatch> {
 function reviewJob(
   staged: StagedAppMapCombineCellBatch,
   input: { queuedAt: number; approved?: boolean },
-): JobInfo {
+): RepeatCaptureJob & { action: string; status: string; logs: string[] } {
   const job = staged.jobs[0]!;
   job.queuedAt = input.queuedAt;
   const summary = summarizeJob(job);

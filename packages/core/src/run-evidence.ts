@@ -634,14 +634,23 @@ export async function stopRunEvidence(
         handle.androidPacketRuntime,
       );
       packetCapture = capturedPacketProvenance(packetResult);
-      event(handle, "network", "packet.capture.stopped", {
-        coverage: packetResult.summary.coverage,
-        packets: packetResult.summary.packets,
-        dropped: packetResult.summary.dropped,
-        rawCapture: packetResult.summary.rawCapture.status,
-      });
+      if (packetCapture.status === "failed") packetIssue = packetCapture.message;
+      event(
+        handle,
+        "network",
+        packetCapture.status === "failed" ? "packet.capture.failed" : "packet.capture.stopped",
+        {
+          coverage: packetResult.summary.coverage,
+          packets: packetResult.summary.packets,
+          dropped: packetResult.summary.dropped,
+          rawCapture: packetResult.summary.rawCapture.status,
+          ...(packetCapture.status === "failed" ? { message: packetCapture.message } : {}),
+        },
+      );
       log(
-        `evidence: Android emulator packet window saved (${packetResult.summary.packets} packets, ${packetResult.summary.coverage} coverage)`,
+        packetCapture.status === "failed"
+          ? `warn: Android emulator packet window is partial (${packetCapture.message})`
+          : `evidence: Android emulator packet window saved (${packetResult.summary.packets} packets, ${packetResult.summary.coverage} coverage)`,
       );
     } catch (error) {
       packetIssue = `Emulator packet capture could not be finalized: ${messageOf(error)}`;

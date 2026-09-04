@@ -201,6 +201,11 @@ function fakeChangeService(initial: ProductChange["status"] = "planning") {
       current = state("planning");
       return current;
     },
+    async resumeHumanEvidence(input) {
+      calls.push(`resume-human:${input.observation}`);
+      current = state("running-pilot");
+      return current;
+    },
     async retryPublication() {
       calls.push("retry-publication");
       return current;
@@ -251,6 +256,19 @@ function button(label: string) {
 
 async function click(element: HTMLElement) {
   await act(async () => element.click());
+  await settle();
+}
+
+async function fillTextarea(value: string) {
+  const textarea = document.querySelector<HTMLTextAreaElement>("#change-human-observation");
+  if (!textarea) throw new Error("Human evidence textarea not found");
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(
+      textarea,
+      value,
+    );
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  });
   await settle();
 }
 
@@ -321,7 +339,7 @@ describe("Change verification", () => {
     expect(document.body.textContent).toContain("Ready to merge");
     expect(document.body.textContent?.match(/Ready to merge/g)).toHaveLength(1);
     expect(document.body.textContent).toContain("GitHub received this verification result");
-    expect(document.body.textContent).toContain("Published to GitHub");
+    expect(document.body.textContent).toContain("Published");
     expect(document.body.textContent).not.toContain("Start Proof");
   });
 
@@ -352,14 +370,131 @@ describe("Change verification", () => {
     expect(button("Prepare selective rerun")).not.toBeNull();
   });
 
+  it("shows the server-owned repair context without leaking it into the plan", async () => {
+    const fake = fakeChangeService("rejected");
+    const original = state("rejected");
+    const details: ProductChangeDetails = {
+      ...original.state.details!,
+      repairPacket: {
+        proofId: "change-proof-private-id",
+        headSha: "b".repeat(40),
+        runId: "run-failed",
+        appMapId: "settings",
+        testId: "arabic-layout",
+        targetCaseId: "pixel-9-ar",
+        firstCausalFailure: "The Arabic heading overlapped the primary action.",
+        expected: "The heading remains inside its layout bounds.",
+        observed: "The heading overlaps the action.",
+        evidenceRefs: [`sha256:${"e".repeat(64)}`],
+        relevantLogs: ["layout assertion failed"],
+        suggestedScope: ["src/i18n/ar.json"],
+        rerun: { operationId: "proof.rerun-affected", proofId: "change-proof-private-id" },
+      },
+    };
+    fake.service.open = async () => ({
+      ...original,
+      state: { ...original.state, change: details.change, details },
+    });
+    await renderChange("/changes/change-proof-private-id", fake.service);
+
+    const repair = document.querySelector(".relay-change-repair-context");
+    expect(repair?.textContent).toContain("Smallest useful fix");
+    expect(repair?.textContent).toContain("The heading remains inside its layout bounds.");
+    expect(repair?.textContent).toContain("The heading overlaps the action.");
+    expect(repair?.textContent).toContain("src/i18n/ar.json");
+    await click(button("Relevant logs (1)"));
+    expect(repair?.textContent).toContain("layout assertion failed");
+    expect(document.querySelector(".relay-verification-plan")?.textContent).not.toContain(
+      "src/i18n/ar.json",
+    );
+  });
+
+  it("resumes exact paused human evidence and preserves a retryable observation", async () => {
+    const fake = fakeChangeService("ready");
+    const paused = state("ready");
+    const details: ProductChangeDetails = {
+      ...paused.state.details!,
+      execution: {
+        id: "execution-private-id",
+        status: "paused-human",
+        completed: 0,
+        total: 1,
+        nextAction: "human-intervention",
+        attention: {
+          kind: "human-evidence",
+          reason: "Confirm the final layout on the connected device.",
+          executionId: "execution-private-id",
+          cellId: "verification-cell-private-id",
+          stepId: "human-check-private-id",
+        },
+      },
+    };
+    const detail: ProductChangeDetail = {
+      ...paused,
+      state: { ...paused.state, status: "needs-attention", change: details.change, details },
+    };
+    fake.service.open = async () => detail;
+    let attempts = 0;
+    fake.service.resumeHumanEvidence = async (input) => {
+      attempts += 1;
+      fake.calls.push(`resume-human:${input.observation}`);
+      if (attempts === 1) throw new TypeError("Failed to fetch");
+      return state("running-pilot");
+    };
+    await renderChange("/changes/change-proof-private-id", fake.service);
+
+    expect(document.body.textContent).toContain("Human evidence is required");
+    expect(document.body.textContent).toContain("Confirm the final layout");
+    await fillTextarea("The heading stays clear of the action at 200% zoom.");
+    await click(button("Save evidence and continue"));
+    expect(document.body.textContent).toContain("Relay is not connected");
+    expect(document.body.textContent).toContain("The app could not reach the local Relay service.");
+    expect(document.querySelector<HTMLTextAreaElement>("#change-human-observation")?.value).toBe(
+      "The heading stays clear of the action at 200% zoom.",
+    );
+
+    await click(button("Try again"));
+    expect(fake.calls).toContain(
+      "resume-human:The heading stays clear of the action at 200% zoom.",
+    );
+    expect(attempts).toBe(2);
+  });
+
   it("keeps exact proof identity and digests in one Audit disclosure", async () => {
     const fake = fakeChangeService("proved");
     await renderChange("/changes/change-proof-private-id", fake.service);
 
-    const audit = document.querySelector<HTMLDetailsElement>(".relay-change-audit")!;
-    expect(audit.open).toBe(false);
+    const audit = document.querySelector(".relay-change-audit")!;
+    expect(audit.querySelector("button")?.getAttribute("aria-expanded")).toBe("false");
+    await click(button("Audit details"));
     expect(audit.textContent).toContain("change-proof-private-id");
     expect(audit.textContent).toContain("sha256:");
     expect(document.querySelector(".relay-change-verdict")?.textContent).not.toContain("sha256:");
+  });
+
+  it("keeps a completed verdict compact without a redundant progress meter", async () => {
+    const fake = fakeChangeService("proved");
+    const proved = state("proved");
+    const details: ProductChangeDetails = {
+      ...proved.state.details!,
+      execution: {
+        id: "execution-private-id",
+        status: "completed",
+        completed: 2,
+        total: 2,
+        nextAction: "complete",
+      },
+    };
+    fake.service.open = async () => ({
+      ...proved,
+      state: { ...proved.state, change: details.change, details },
+    });
+    await renderChange("/changes/change-proof-private-id", fake.service);
+
+    const verdict = document.querySelector(".relay-change-verdict");
+    expect(verdict?.textContent).toContain("Ready to merge");
+    expect(verdict?.textContent).toContain("2 of 2 checks complete");
+    expect(verdict?.textContent).not.toContain("Verdict");
+    expect(verdict?.querySelector("progress")).toBeNull();
   });
 });

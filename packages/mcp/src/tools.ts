@@ -143,7 +143,7 @@ const extraGuidance: Partial<Record<OperationId, string>> = {
   "proof.run":
     " Run or resume an approved Proof through the server-owned coordinator. Relay persists progress, survives client disconnects, and returns one bounded execution summary instead of exposing campaign or job choreography.",
   "proof.run.human-evidence":
-    " Record a bounded screenshot, snapshot, or video attachment for the exact paused human-only Proof step and resume its durable execution. The server persists and hashes the attachment; a legacy evidence digest remains accepted only for already persisted evidence. This requires a human actor and exact execution/cell/step identities.",
+    " Record a bounded screenshot, snapshot, or video attachment for the exact paused human-only Proof step and resume its durable execution. The server persists and hashes the attachment; a legacy evidence digest remains accepted for backward compatibility. This requires a human actor and exact execution/cell/step identities.",
   "proof.continue":
     " Continue one Proof with an exact version and one bounded plan action: revise the plan, request review, or return to planning.",
   "proof.cancel":
@@ -185,7 +185,10 @@ function toolDescriptor(
       openWorldHint: false,
     }),
     requiresConfirmation,
-    inputSchema: presentation.extend({
+    // A few canonical inputs carry cross-field fail-closed refinements (for
+    // example, attachment XOR legacy digest). Zod requires safeExtend to keep
+    // those checks when MCP adds its transport-level confirmation field.
+    inputSchema: presentation.safeExtend({
       confirm: requiresConfirmation
         ? z.literal(true).describe("Explicit approval for this protected operation")
         : z.literal(true).optional().describe("Optional explicit approval"),

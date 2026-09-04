@@ -290,10 +290,17 @@ describe("Devices", () => {
     await click(button("All"));
     expect(history.location.search).toBe("");
     expect(document.body.textContent).toContain("Design iPad");
+    const virtualDevices = document.querySelector<HTMLButtonElement>(
+      ".relay-device-section--collapsible > button",
+    );
+    if (!virtualDevices) throw new Error("Virtual devices disclosure not found");
+    await click(virtualDevices);
     expect(document.body.textContent).toContain("Checkout browser");
     expect(
-      document.querySelector<HTMLDetailsElement>(".relay-device-section--collapsible")?.open,
-    ).toBe(false);
+      document
+        .querySelector(".relay-device-section--collapsible > button")
+        ?.getAttribute("aria-expanded"),
+    ).toBe("true");
   });
 
   it("gives a device needing attention one dominant recovery action", async () => {
@@ -369,5 +376,66 @@ describe("Settings", () => {
     expect(document.body.textContent).toContain("Install Platform Tools, then reopen Relay.");
     expect(document.body.textContent).not.toContain("adb");
     expect(document.body.textContent).not.toContain("teamId");
+  });
+
+  it("keeps the Relay address shape stable after General cached the connection", async () => {
+    const history = await renderPath("/settings/general");
+    const advanced = [...document.querySelectorAll<HTMLAnchorElement>("a")].find(
+      (item) => item.textContent?.trim() === "Advanced",
+    );
+    if (!advanced) throw new Error("Advanced settings link not found");
+    await click(advanced);
+
+    expect(history.location.pathname).toBe("/settings/advanced");
+    expect(document.body.textContent).not.toContain("Something went wrong");
+    expect(document.querySelector<HTMLInputElement>("#relay-server-url")?.value).toBe(
+      "http://127.0.0.1:8787",
+    );
+    const controls = document.querySelector(".relay-settings-address-control");
+    expect(controls?.querySelector("input")).not.toBeNull();
+    expect(controls?.querySelector("button")?.textContent).toContain("Save address");
+  });
+
+  it("keeps partial support failure in the rows with one quiet retry", async () => {
+    const service: SettingsProductService = {
+      ...fakeSettingsService(),
+      async androidSetup() {
+        throw new TypeError("Failed to fetch");
+      },
+    };
+    await renderPath("/settings/advanced", { settingsService: service });
+    expect(document.body.textContent).not.toContain("Some device-support checks are unavailable");
+    expect(document.querySelectorAll(".relay-settings-alert")).toHaveLength(0);
+    expect(button("Check again")).not.toBeNull();
+    expect(document.body.textContent).toContain("Android devices");
+    expect(document.body.textContent).toContain("Needs attention");
+  });
+
+  it("keeps detailed support checks in a quiet keyboard-operable disclosure", async () => {
+    const service: SettingsProductService = {
+      ...fakeSettingsService(),
+      async appleSetup() {
+        return {
+          checks: [
+            { id: "xcode", label: "Xcode", status: "ready", detail: "Installed" },
+            {
+              id: "runner",
+              label: "Relay runner",
+              status: "needs-attention",
+              detail: "Open Xcode once to finish setup.",
+            },
+          ],
+        };
+      },
+    };
+    await renderPath("/settings/advanced", { settingsService: service });
+
+    const trigger = button("Diagnostic checks (2)");
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    trigger.focus();
+    expect(document.activeElement).toBe(trigger);
+    await click(trigger);
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    expect(document.body.textContent).toContain("Open Xcode once to finish setup.");
   });
 });

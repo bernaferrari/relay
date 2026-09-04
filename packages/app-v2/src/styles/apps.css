@@ -1,0 +1,455 @@
+/* Product V2 — Apps and app resources */
+
+.relay-apps-page,
+.relay-app-resource-page,
+.relay-app-page {
+  max-width: 1040px;
+}
+
+.relay-apps-header,
+.relay-app-resource-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 28px;
+}
+
+.relay-app-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 30px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.relay-app-grid a {
+  display: grid;
+  min-height: 76px;
+  grid-template-columns: 38px minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border-weak-base);
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised-strong);
+  box-shadow: var(--shadow-xs);
+  transition:
+    border-color 140ms ease-out,
+    background-color 140ms ease-out,
+    box-shadow 140ms ease-out;
+}
+
+.relay-app-grid-icon,
+.relay-resource-icon {
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border-weak-base);
+  border-radius: var(--radius-md);
+  background: var(--surface-base);
+  color: var(--text-strong);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.relay-app-grid-icon {
+  width: 38px;
+  height: 38px;
+}
+
+.relay-app-grid-copy,
+.relay-resource-copy {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.relay-app-grid-copy strong,
+.relay-resource-copy strong {
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 13px;
+  font-weight: 620;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.relay-app-grid-copy small,
+.relay-resource-copy small {
+  overflow: hidden;
+  color: var(--text-weak);
+  font-size: 11px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.relay-app-grid a > svg {
+  width: 16px;
+  color: var(--icon-base);
+}
+
+.relay-app-grid a:focus-visible,
+.relay-app-resource-links a:focus-visible {
+  outline: 2px solid var(--relay-focus-ring);
+  outline-offset: 2px;
+}
+
+.relay-add-app-dialog form {
+  display: grid;
+  gap: 20px;
+  margin-top: 22px;
+}
+
+.relay-app-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 28px;
+}
+
+.relay-app-actions {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.relay-app-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 30px 0 0;
+  padding: 18px 0;
+  border-block: 1px solid var(--border-weak-base);
+}
+
+.relay-app-facts > div {
+  display: grid;
+  gap: 4px;
+  padding-inline: 18px;
+}
+
+.relay-app-facts > div:first-child {
+  padding-left: 0;
+}
+
+.relay-app-facts > div + div {
+  border-left: 1px solid var(--border-weak-base);
+}
+
+.relay-app-facts dt {
+  color: var(--text-weak);
+  font-size: 12px;
+}
+
+.relay-app-facts dd {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 19px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.relay-app-workspace {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 36px;
+  margin-top: 38px;
+}
+
+.relay-app-section {
+  min-width: 0;
+}
+
+.relay-app-section > .relay-section-heading {
+  min-height: 48px;
+  align-items: end;
+}
+
+.relay-app-section > .relay-section-heading h2 {
+  margin-top: 2px;
+  font-size: 17px;
+  font-weight: 620;
+}
+
+.relay-app-list {
+  margin: 12px 0 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-weak-base);
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised-strong);
+  list-style: none;
+}
+
+.relay-app-list li + li {
+  border-top: 1px solid var(--border-weak-base);
+}
+
+.relay-app-list a {
+  display: flex;
+  min-height: 64px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 13px;
+  border-radius: var(--radius-sm);
+  transition: background-color 140ms ease-out;
+}
+
+.relay-app-list a > span:first-child {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.relay-app-list strong {
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.relay-app-list small {
+  overflow: hidden;
+  color: var(--text-weak);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.relay-app-list-action {
+  display: inline-flex !important;
+  flex: none;
+  grid-auto-flow: column;
+  align-items: center;
+  gap: 6px !important;
+  color: var(--text-interactive-base);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.relay-app-list a:focus-visible {
+  outline: 2px solid var(--relay-focus-ring);
+  outline-offset: -2px;
+}
+
+.relay-app-section > .relay-empty-state {
+  min-height: 160px;
+  margin-top: 12px;
+  padding: 24px;
+}
+
+.relay-app-resources {
+  margin-top: 34px;
+}
+
+.relay-app-resource-links {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.relay-app-resource-links a {
+  display: flex;
+  min-height: 64px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-weak-base);
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised-strong);
+}
+
+.relay-app-resource-links a > span {
+  display: grid;
+  gap: 3px;
+}
+
+.relay-app-resource-links strong {
+  color: var(--text-strong);
+  font-size: 13px;
+  font-weight: 620;
+}
+
+.relay-app-resource-links small {
+  color: var(--text-weak);
+  font-size: 11px;
+}
+
+.relay-app-resource-links svg {
+  width: 16px;
+  color: var(--icon-base);
+}
+
+.relay-app-resource-section {
+  margin-top: 30px;
+}
+
+.relay-app-resource-heading {
+  max-width: 720px;
+}
+
+.relay-app-resource-heading h2 {
+  margin-top: 3px;
+  color: var(--text-strong);
+  font-size: 17px;
+  font-weight: 650;
+}
+
+.relay-app-resource-heading > p:last-child {
+  max-width: 72ch;
+  margin-top: 6px;
+  color: var(--text-weak);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.relay-resource-list {
+  overflow: hidden;
+  margin: 18px 0 0;
+  padding: 0;
+  border: 1px solid var(--border-weak-base);
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised-strong);
+  list-style: none;
+}
+
+.relay-resource-row {
+  display: grid;
+  min-height: 66px;
+  grid-template-columns: 36px minmax(0, 1fr) auto minmax(110px, auto);
+  align-items: center;
+  gap: 12px;
+  padding: 11px 14px;
+}
+
+.relay-resource-row + .relay-resource-row {
+  border-top: 1px solid var(--border-weak-base);
+}
+
+.relay-resource-icon {
+  width: 36px;
+  height: 36px;
+}
+
+.relay-resource-icon svg {
+  width: 16px;
+}
+
+.relay-resource-status {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: var(--surface-base);
+  color: var(--text-weak);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.relay-resource-status--ready {
+  background: color-mix(in oklch, var(--icon-success-base) 12%, transparent);
+  color: var(--text-success-base);
+}
+
+.relay-resource-status--failed,
+.relay-resource-status--expired,
+.relay-resource-status--revoked {
+  background: color-mix(in oklch, var(--icon-critical-base) 10%, transparent);
+  color: var(--text-critical-base);
+}
+
+.relay-resource-row time {
+  color: var(--text-weaker);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.relay-app-advanced {
+  max-width: 620px;
+  margin-top: 34px;
+  border-top: 1px solid var(--border-weak-base);
+}
+
+.relay-app-advanced > .relay-disclosure-trigger {
+  width: fit-content;
+  min-height: 48px;
+}
+
+.relay-app-advanced > .relay-disclosure-panel > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 2px 0 14px;
+}
+
+.relay-app-advanced p {
+  max-width: 52ch;
+  color: var(--text-weak);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .relay-app-grid a:hover,
+  .relay-app-resource-links a:hover {
+    border-color: var(--border-base);
+    background: var(--surface-base-hover);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .relay-app-list a:hover {
+    background: var(--surface-base-hover);
+  }
+}
+
+@media (max-width: 780px) {
+  .relay-apps-header,
+  .relay-app-resource-header,
+  .relay-app-header {
+    flex-direction: column;
+  }
+
+  .relay-app-grid,
+  .relay-app-resource-links,
+  .relay-app-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .relay-resource-row {
+    grid-template-columns: 36px minmax(0, 1fr) auto;
+  }
+
+  .relay-resource-row time {
+    grid-column: 2 / -1;
+    text-align: left;
+  }
+}
+
+@media (max-width: 560px) {
+  .relay-app-facts {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .relay-app-facts > div {
+    padding-inline: 0;
+  }
+
+  .relay-app-facts > div + div {
+    padding-top: 14px;
+    border-top: 1px solid var(--border-weak-base);
+    border-left: 0;
+  }
+}

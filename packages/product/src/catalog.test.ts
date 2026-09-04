@@ -271,3 +271,37 @@ test("Run detail recovers Test identity from the immutable execution artifact", 
   });
   assert.equal(detail.testName, "Checkout");
 });
+
+test("Run detail exposes stable authored-step evidence and keeps legacy Runs empty", () => {
+  const detail = productRunDetail(
+    run({
+      id: "run-provenance",
+      action: "test.run",
+      status: "ok",
+      queuedAt: 1,
+      testStepEvidence: [
+        {
+          schemaVersion: 1,
+          testStepId: "checkout-step",
+          recipeId: "test:root",
+          recipeStepId: "recipe-step",
+          traceStepId: "generated-trace-id",
+          traceStepIndex: 0,
+          occurrence: 2,
+          evidence: {
+            framePaths: ["frames/002.png"],
+            eventSequences: [7],
+            artifactKinds: ["command-attempt"],
+          },
+        },
+      ],
+    } as never),
+  );
+  assert.equal(detail.stepEvidence[0]?.testStepId, "checkout-step");
+  assert.equal(detail.stepEvidence[0]?.occurrence, 2);
+  assert.deepEqual(
+    productRunDetail(run({ id: "legacy", action: "test.run", status: "ok", queuedAt: 1 }))
+      .stepEvidence,
+    [],
+  );
+});

@@ -14,16 +14,12 @@ export const SCRIPT_SOURCE_LIMIT = 650;
  * recorded ceiling in the same change.
  */
 export const grandfatheredSourceLimits = Object.freeze({
-  "packages/app/src/components/app-map-workspace.tsx": 1098,
-  "packages/app/src/components/runs-workspace.tsx": 883,
-  "packages/app/src/components/stage.tsx": 1384,
-  "packages/app/src/components/studio-shell.tsx": 801,
   "packages/core/src/device.ts": 1345,
-  "packages/protocol/src/operations.ts": 1712,
+  "packages/protocol/src/operations.ts": 1687,
 });
 
 const componentSourceRoots = [
-  "packages/app/src/components/",
+  "packages/app-v2/src/components/",
   "packages/app-v2/src/layout/",
   "packages/app-v2/src/routes/",
   "packages/ui-react/src/",
@@ -98,11 +94,7 @@ export function evaluateSourceBudgets(entries, exceptions = grandfatheredSourceL
 export function evaluateProductDocumentBoundaries(entries) {
   const violations = [];
   for (const { path, source = "" } of entries) {
-    if (
-      (!path.startsWith("packages/app/src/") && !path.startsWith("packages/app-v2/src/")) ||
-      !source
-    )
-      continue;
+    if (!path.startsWith("packages/app-v2/src/") || !source) continue;
     const readsObservationDocument = /\bDiscoverySession\b/u.test(source);
     const authorsMapDocument = /\bCanvasGraph\b/u.test(source);
     if (readsObservationDocument && authorsMapDocument) {

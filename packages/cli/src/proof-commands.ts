@@ -360,7 +360,8 @@ export const proofCommandDescriptors: readonly MappedOperationDescriptor[] = [
         {
           name: "evidenceDigest",
           type: "sha256 digest",
-          description: "Backward-compatible digest of evidence already persisted by the server",
+          description:
+            "Backward-compatible digest for an evidence object persisted by another adapter",
         },
         {
           name: "wait",

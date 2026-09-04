@@ -104,7 +104,16 @@ function report(outcome: ProductRunReportOverview["outcome"] = "passed"): Produc
         summary: "See the screens Relay captured while this Test ran.",
         inspectable: true,
         items: [
-          { id: "screen-1", title: "Language settings" },
+          {
+            id: "screen-1",
+            title: "Language settings",
+            media: {
+              kind: "image",
+              src: "data:image/png;base64,iVBORw0KGgo=",
+              width: 320,
+              height: 640,
+            },
+          },
           { id: "screen-2", title: "Language checkpoint" },
         ],
       },
@@ -312,18 +321,16 @@ describe("Run and Report", () => {
     expect(document.body.textContent).toContain("Screenshots");
     expect(document.body.textContent).toContain("Interface snapshots");
     expect(document.body.textContent).toContain("Language settings");
+    expect(document.querySelector<HTMLImageElement>(".relay-evidence-image-frame img")?.src).toBe(
+      "data:image/png;base64,iVBORw0KGgo=",
+    );
     expect(fake.calls).not.toContain("raw-evidence:run-1");
 
-    const rawEvidence = document.querySelector<HTMLDetailsElement>(".relay-raw-evidence")!;
-    expect(rawEvidence.open).toBe(false);
-    expect(document.body.textContent).toContain("Audit details");
+    const auditTrigger = button("Audit details");
+    expect(auditTrigger.getAttribute("aria-expanded")).toBe("false");
     expect(document.querySelector('[aria-label="Raw evidence JSON"]')).toBeNull();
-    await act(async () => {
-      rawEvidence.open = true;
-      rawEvidence.dispatchEvent(new Event("toggle"));
-    });
-    await settle();
-    expect(rawEvidence.open).toBe(true);
+    await click(auditTrigger);
+    expect(auditTrigger.getAttribute("aria-expanded")).toBe("true");
     expect(fake.calls).toContain("raw-evidence:run-1");
     const rawJson = document.querySelector('[aria-label="Raw evidence JSON"]');
     expect(rawJson?.textContent).toContain('\n  "channels": {\n');
@@ -360,6 +367,31 @@ describe("Run and Report", () => {
     expect(fake.calls).toContain("inspect:workflow-run-1");
     expect(document.body.textContent).toContain("Checking Language");
     expect(document.body.textContent).not.toContain("emulator-5554");
+  });
+
+  it("shows only one centered recovery state when an in-progress Run disconnects", async () => {
+    const fake = fakeRunService();
+    fake.service.inspect = async () => {
+      throw new TypeError("Failed to fetch");
+    };
+    const storage = platformWithStorage({
+      activeRunWorkflow: JSON.stringify({
+        workflowId: "workflow-run-1",
+        runId: "run-1",
+        testId: "test-1",
+      }),
+    });
+    await renderRun("/runs/run-1", fake.service, storage.platform);
+
+    const recovery = document.querySelector(".relay-run-recovery");
+    expect(recovery?.classList.contains("relay-recovery-state--centered")).toBe(true);
+    expect(recovery?.textContent).toContain("Relay is not connected");
+    expect(document.body.textContent).not.toContain("Restoring progress");
+    expect(document.body.textContent).not.toContain("Loading the Run");
+    expect(document.querySelector('[data-slot="skeleton"]')).toBeNull();
+    expect(document.querySelector(".relay-run-progress")).toBeNull();
+    expect(document.querySelector("h1")?.classList.contains("relay-visually-hidden")).toBe(true);
+    expect(button("Try again")).not.toBeNull();
   });
 
   it("offers only Resume Run while a durable Run is active", async () => {
@@ -456,28 +488,27 @@ describe("Run and Report", () => {
     expect(document.body.textContent).not.toContain("run-1");
   });
 
-  it("leads a failed Report with the first problem and a justified next action", async () => {
+  it("keeps a failed Report human-readable and collapses the raw exception", async () => {
     const fake = fakeRunService();
     fake.service.getReport = async () => ({
       runId: "run-1",
       title: "Change the app language",
-      outcome: "product-failure",
-      targetName: "Pixel 9",
-      cause: "The Language screen did not appear.",
-      category: "Expected check",
-      firstEvidence: { label: "Language checkpoint was missing" },
+      outcome: "harness-failure",
+      targetName: "Golden Chromium",
+      cause:
+        "page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:4173\nCall log:\n  - navigating",
+      category: "Browser connection",
       timeline: [],
       evidence: [],
     });
     await renderRun("/runs/run-1", fake.service, platformWithStorage().platform);
 
-    expect(document.body.textContent).toContain("Product issue");
-    expect(document.body.textContent).toContain("First problem");
-    expect(document.body.textContent).toContain("The Language screen did not appear.");
-    expect(document.body.textContent).toContain("Category · Expected check");
-    expect(document.body.textContent).toContain("app or the saved Test needs to change");
-    expect(document.body.textContent).toContain("Evidence at this point");
-    expect(document.body.textContent).not.toContain("No additional evidence was captured");
+    expect(document.body.textContent).toContain("Browser could not open the app");
+    expect(document.body.textContent).toContain("Browser connection");
+    expect(document.body.textContent).toContain("Reconnect the device or browser");
+    expect(document.body.textContent).toContain("Technical details");
+    expect(document.body.textContent).not.toContain("ERR_CONNECTION_REFUSED");
+    expect(document.body.textContent).not.toContain("Evidence at this point");
     expect(document.querySelector('[role="tab"]')).toBeNull();
   });
 });

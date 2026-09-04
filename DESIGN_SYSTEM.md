@@ -6,8 +6,9 @@ actually uses today—not a migration plan and not a mood board.
 
 ## 1. Token reality
 
-Product UI uses **one** vocabulary from `@relay/ui` classic tokens, plus a handful of map-only
-layout tokens. Do not invent a second family and do not use `--v2-*` in product TSX or CSS.
+The React Product V2 UI uses **one** vocabulary from the semantic tokens supplied by `@relay/ui`
+and the React primitives in `@relay/ui-react`, plus a handful of map-only layout tokens. Do not
+invent a second family and do not use `--v2-*` in product TSX or CSS.
 
 ### Semantic tokens
 
@@ -22,21 +23,22 @@ Via `var(--…)` or the matching Tailwind utilities (`text-text-strong`, `bg-bac
 - Accent wash: `--product-accent-soft` (tint of `--text-interactive-base`)
 - Elevation: `--shadow-md`, `--shadow-lg`, plus map elevations below
 
-### App Map shell tokens (`packages/app/src/styles/tokens.css`)
+### App Map surface
 
-Canvas-only: `--map-canvas`, `--map-grid-dot`, `--map-control-surface`, `--map-divider`,
-`--map-elevation-control`, `--map-elevation-panel`, `--shell-nav-width`.
+Product V2's map surface (`packages/app-v2/src/styles/map.css`) uses the same semantic surface,
+border, text, and focus tokens as the rest of the product. It must not introduce a second map-token
+family; geometry and canvas-only layout belong in the map stylesheet.
 
 ### What is banned
 
-`packages/app/scripts/check-ui-boundaries.mjs` rejects `--v2-*` / `bg-v2-*` and retired numbered
-classes (`relay-text-2`, `relay-panel-3`, `relay-data`, `relay-workflow`). Theme JSON may still emit
+The Product V2 stylesheet is the source of truth for product selectors. Theme JSON may still emit
 v2 ramps internally; product code must not mention them.
 
 ## 2. Styling ownership
 
-- **`@relay/ui` primitives** own shared controls: `Button`, `Card`, `Icon`, switches, and related
-  primitive CSS. Prefer them before hand-rolling an equivalent control.
+- **`@relay/ui-react` primitives** own shared React controls: `Button`, `Card`, `IconButton`, fields,
+  disclosures, and related primitive CSS. Prefer them before hand-rolling an equivalent control.
+- **`@relay/ui`** supplies the shared semantic token and theme CSS consumed by the React primitives.
 - **Tailwind utilities in product TSX** own ordinary layout, spacing, typography, borders, colors
   (including `text-[var(--text-strong)]` / `bg-[var(--surface-base)]` patterns), hover,
   focus-visible, selected, disabled, and responsive behavior.

@@ -1,17 +1,17 @@
-import type { AndroidPacketCaptureProvenance } from "@relay/protocol";
+import type { AndroidPacketCaptureProvenance, EvidenceConsentGrant } from "@relay/protocol";
 import { join } from "node:path";
 import { hasSensitiveEvidenceConsent } from "./evidence-policy.js";
 import { ensureRunDir } from "./runs.js";
 import type { TestJob } from "./session.js";
 import type { AndroidEmulatorNetworkCaptureResult } from "./android-emulator-network-capture.js";
 
-type CapturedPacketProvenance = Extract<AndroidPacketCaptureProvenance, { status: "captured" }>;
 type FailedPacketProvenance = Extract<AndroidPacketCaptureProvenance, { status: "failed" }>;
 
 export type PacketRetentionOptions = {
   retainRawPath?: string;
   rawArtifact?: string;
   rawDeniedReason?: string;
+  rawConsent?: EvidenceConsentGrant;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -44,9 +44,30 @@ export function combinedNetworkResult(
 
 export function capturedPacketProvenance(
   packet: AndroidEmulatorNetworkCaptureResult,
-): CapturedPacketProvenance {
+): AndroidPacketCaptureProvenance {
   if (packet.summary.source.kind !== "emulator-packet") {
     throw new TypeError("managed-emulator packet result has non-packet provenance");
+  }
+  if (packet.summary.coverage === "interrupted" || packet.summary.parseFailure) {
+    const reason =
+      packet.summary.coverage === "interrupted"
+        ? `Emulator packet capture stop command failed; packet evidence is partial${
+            packet.summary.parseFailure?.message ? `: ${packet.summary.parseFailure.message}` : ""
+          }`
+        : `Emulator packet evidence is partial: ${packet.summary.parseFailure?.message ?? "packet parsing failed"}`;
+    return {
+      schemaVersion: 1,
+      status: "failed",
+      source: { kind: "emulator-packet", backend: packet.summary.source.backend },
+      scope: "entire-emulator",
+      startedAt: packet.summary.startedAt,
+      finishedAt: packet.summary.finishedAt ?? packet.summary.startedAt,
+      stage: "finalize",
+      message: reason.slice(0, 512),
+      ...(packet.summary.rawCapture.retention
+        ? { retention: packet.summary.rawCapture.retention }
+        : {}),
+    };
   }
   return {
     schemaVersion: 1,
@@ -56,6 +77,9 @@ export function capturedPacketProvenance(
     startedAt: packet.summary.startedAt,
     finishedAt: packet.summary.finishedAt ?? packet.summary.startedAt,
     coverage: packet.summary.coverage,
+    ...(packet.summary.rawCapture.retention
+      ? { retention: packet.summary.rawCapture.retention }
+      : {}),
   };
 }
 
@@ -75,6 +99,7 @@ export function failedPacketProvenance(input: {
     finishedAt: Math.max(input.startedAt, input.finishedAt),
     stage: input.stage,
     message,
+    retention: "ephemeral",
   };
 }
 
@@ -90,9 +115,11 @@ export async function packetRetentionOptions(job: TestJob): Promise<PacketRetent
     };
   }
   const runDir = await ensureRunDir(job);
+  const rawConsent = job.evidencePolicy.sensitive["network-raw"];
   return {
     retainRawPath: join(runDir, "network", "capture.pcap"),
     rawArtifact: "network/capture.pcap",
+    ...(rawConsent ? { rawConsent } : {}),
   };
 }
 
@@ -103,6 +130,7 @@ export async function packetRetentionOptions(job: TestJob): Promise<PacketRetent
 export function packetCollectionIsIncomplete(packet: AndroidEmulatorNetworkCaptureResult): boolean {
   return (
     packet.summary.coverage === "interrupted" ||
+    packet.summary.parseFailure !== undefined ||
     packet.summary.dropped > 0 ||
     packet.summary.rawCapture.status === "failed" ||
     packet.summary.rawCapture.status === "truncated"

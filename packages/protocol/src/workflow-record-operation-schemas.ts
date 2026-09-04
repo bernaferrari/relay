@@ -145,6 +145,7 @@ export const workflowRecordOperationInputSchemas = {
       label: z.string().trim().min(1).max(256).optional(),
       edit: authoringRecordingEdit.optional(),
       destination: destination.optional(),
+      testName: z.string().trim().min(1).max(160).optional(),
       reason: z.string().trim().min(1).max(1_000).optional(),
     })
     .strict()
@@ -178,7 +179,10 @@ export const workflowRecordOperationInputSchemas = {
       if (value.action === "authoring-record") allowed.add("interaction");
       if (value.action === "authoring-checkpoint") allowed.add("label");
       if (value.action === "authoring-edit") allowed.add("edit");
-      if (value.action === "authoring-approve") allowed.add("destination");
+      if (value.action === "authoring-approve") {
+        allowed.add("destination");
+        allowed.add("testName");
+      }
       if (value.action === "authoring-abandon") allowed.add("reason");
       if (value.action === "attach-repeat") allowed.add("campaignId");
       if (value.action === "reserve-repeat-resume") allowed.add("reviewed");

@@ -55,9 +55,9 @@ export const cliResourceDescriptors: readonly CliResourceDescriptor[] = [
   runResource("run story", "/story", "Get a shareable run story from existing artifacts"),
   {
     resourceId: "run.evidence",
-    label: "Get bounded structured run evidence",
+    label: "Get bounded structured run evidence and packet provenance",
     path: path("run evidence", ["runId"], undefined, {
-      summary: "Inspect logs, network, performance, and collector status",
+      summary: "Inspect logs, HTTP entries, packet provenance, coverage, and collector status",
       argumentHelp: [{ name: "runId", type: "string", description: "Persisted run identifier" }],
       inputHelp: [
         { name: "limit", type: "number", description: "Maximum entries per evidence channel" },

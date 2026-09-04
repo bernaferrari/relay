@@ -336,7 +336,7 @@ export type AuthorTestDecision = VersionedDecision &
     | { action: "stop" }
     | { action: "edit"; edit: AuthoringRecordingEdit }
     | { action: "replay" }
-    | { action: "approve"; destination?: AuthoringCommitDestination }
+    | { action: "approve"; destination?: AuthoringCommitDestination; testName?: string }
     | { action: "discard" }
     | { action: "cancel" }
     | { action: "abandon"; reason: string }
@@ -349,7 +349,7 @@ export type DurableAuthorTestDecision = DurableWorkflowHandle &
     | { action: "stop" }
     | { action: "edit"; edit: AuthoringRecordingEdit }
     | { action: "replay" }
-    | { action: "approve"; destination?: AuthoringCommitDestination }
+    | { action: "approve"; destination?: AuthoringCommitDestination; testName?: string }
     | { action: "discard" }
     | { action: "cancel" }
     | { action: "abandon"; reason: string }

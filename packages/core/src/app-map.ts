@@ -64,7 +64,18 @@ export {
   saveAppMapRoutine,
   submitAppMapProposal,
   updateAppMap,
+  restoreAppMapScenarioTest,
 } from "./app-map/entity-operations.js";
+export {
+  appendAppMapTestMutationHistory,
+  readAppMapTestMutationHistory,
+  sameAppMapTestContent,
+  setAppMapTestHistoryCursor,
+} from "./app-map/test-history.js";
+export type {
+  AppMapTestMutationHistory,
+  AppMapTestMutationHistoryEntry,
+} from "./app-map/test-history-model.js";
 export { serializeAppMap } from "./app-map/serialization.js";
 export {
   discoveryLandChanges,

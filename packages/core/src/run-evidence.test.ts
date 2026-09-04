@@ -133,7 +133,7 @@ test("managed-emulator packet evidence brackets the Run and survives cancelled a
             if (args.includes("start")) {
               events.push("packet-start");
               await mkdir(join(avdDirectory, "console_out"), { recursive: true });
-              await writeFile(args.at(-1)!, emptyPcap);
+              await writeFile(join(avdDirectory, "console_out", args.at(-1)!), emptyPcap);
             } else {
               events.push("packet-stop");
             }
@@ -160,10 +160,20 @@ test("managed-emulator packet evidence brackets the Run and survives cancelled a
     assert.equal(
       (
         artifact.data as {
-          androidNetwork?: { rawCapture?: { status?: string; artifact?: { path?: string } } };
+          androidNetwork?: {
+            rawCapture?: { status?: string; retention?: string; artifact?: { path?: string } };
+          };
         }
       ).androidNetwork?.rawCapture?.status,
       "captured",
+    );
+    assert.equal(
+      (
+        artifact.data as {
+          androidNetwork?: { rawCapture?: { retention?: string } };
+        }
+      ).androidNetwork?.rawCapture?.retention,
+      "retained",
     );
     assert.equal(
       (

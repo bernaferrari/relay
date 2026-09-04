@@ -490,6 +490,28 @@ export function createAppMapOperationDefinitions(parserDependencies: AppMapParse
       },
     ),
     command(
+      "app-map.test.undo",
+      "Undo the latest durable Test edit",
+      "POST",
+      "/app-maps/:appMapId/tests/:testId/undo",
+      {
+        category: "authoring",
+        input: appMapMutationParser<"app-map.test.undo">("Test undo", undefined, ["testId"]),
+        output: appMapOutputParser,
+      },
+    ),
+    command(
+      "app-map.test.redo",
+      "Redo the next durable Test edit",
+      "POST",
+      "/app-maps/:appMapId/tests/:testId/redo",
+      {
+        category: "authoring",
+        input: appMapMutationParser<"app-map.test.redo">("Test redo", undefined, ["testId"]),
+        output: appMapOutputParser,
+      },
+    ),
+    command(
       "app-map.test.propose",
       "Propose stable-ID edits to a graph-native map test",
       "POST",

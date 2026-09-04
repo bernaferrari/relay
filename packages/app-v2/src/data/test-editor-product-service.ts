@@ -10,7 +10,14 @@ import { productClientForPlatform } from "./product-client";
 
 export type ProductTestHistoryItem = Pick<
   ActivityEvent,
-  "id" | "actorKind" | "summary" | "at" | "beforeRevision" | "afterRevision" | "touched"
+  | "id"
+  | "eventType"
+  | "actorKind"
+  | "summary"
+  | "at"
+  | "beforeRevision"
+  | "afterRevision"
+  | "touched"
 >;
 
 export type ProductTestRepair = Pick<
@@ -35,6 +42,8 @@ export type TestEditorProductService = {
     document: ProductTestEditorDocument;
     edits: readonly AppMapScenarioTestEdit[];
   }): Promise<ProductTestEditorDocument>;
+  undo?(input: { document: ProductTestEditorDocument }): Promise<ProductTestEditorDocument>;
+  redo?(input: { document: ProductTestEditorDocument }): Promise<ProductTestEditorDocument>;
   decideRepair(input: {
     document: ProductTestEditorDocument;
     proposalId: string;
@@ -57,7 +66,9 @@ export function createTestEditorProductService(platform: Platform): TestEditorPr
       return owners[0] ? documentFromMap(owners[0], testId) : undefined;
     },
     async edit({ document, edits }) {
-      const { appMap } = await (await client()).invoke("app-map.test.edit", {
+      const { appMap } = await (
+        await client()
+      ).invoke("app-map.test.edit", {
         appMapId: document.appMapId,
         testId: document.test.id,
         expectedRevision: document.revision,
@@ -65,9 +76,31 @@ export function createTestEditorProductService(platform: Platform): TestEditorPr
       });
       return requireDocument(appMap, document.test.id);
     },
+    async undo({ document }) {
+      const { appMap } = await (
+        await client()
+      ).invoke("app-map.test.undo", {
+        appMapId: document.appMapId,
+        testId: document.test.id,
+        expectedRevision: document.revision,
+      });
+      return requireDocument(appMap, document.test.id);
+    },
+    async redo({ document }) {
+      const { appMap } = await (
+        await client()
+      ).invoke("app-map.test.redo", {
+        appMapId: document.appMapId,
+        testId: document.test.id,
+        expectedRevision: document.revision,
+      });
+      return requireDocument(appMap, document.test.id);
+    },
     async decideRepair({ document, proposalId, decision }) {
       const operation = `app-map.proposal.${decision}` as const;
-      const { appMap } = await (await client()).invoke(operation, {
+      const { appMap } = await (
+        await client()
+      ).invoke(operation, {
         appMapId: document.appMapId,
         proposalId,
         expectedRevision: document.revision,
@@ -94,6 +127,7 @@ export function documentFromMap(
     .sort((left, right) => right.at - left.at)
     .map((event) => ({
       id: event.id,
+      eventType: event.eventType,
       actorKind: event.actorKind,
       summary: event.summary,
       at: event.at,
@@ -121,7 +155,8 @@ export function documentFromMap(
       ...(proposal.repair ? { repair: structuredClone(proposal.repair) } : {}),
       editCount: proposal.changes.reduce(
         (count, change) =>
-          count + (change.kind === "test.edit" && change.testId === testId ? change.edits.length : 0),
+          count +
+          (change.kind === "test.edit" && change.testId === testId ? change.edits.length : 0),
         0,
       ),
     }));

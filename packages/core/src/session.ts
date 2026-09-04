@@ -477,9 +477,15 @@ async function runRecipeSteps(
   job.resolvedInputs = { ...recipe.variables, ...job.resolvedInputs };
   const runtime: RecipeRuntimeState = {};
   pushLog(`==> recipe: ${recipe.title} · ${recipe.steps.length} step(s)`);
-  for (const step of recipe.steps) {
+  for (const [stepIndex, step] of recipe.steps.entries()) {
     await cooperativeCheckpoint(job.id);
+    // The generated TraceStep id is intentionally opaque and changes on every
+    // run. Carry the frozen recipe identity alongside it so persisted evidence
+    // can join back to the authored Test provenance without guessing by UUID.
+    const recipeStepId = step.id?.trim() || `${recipeId}:${stepIndex + 1}`;
     const ts = openStep(job, {
+      recipeId,
+      recipeStepId,
       kind: "Replay",
       tone: "acc",
       title: describeRecipeStep(step),

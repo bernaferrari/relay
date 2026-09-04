@@ -557,8 +557,13 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
       ? Math.max(1, Math.min(2_000, Math.floor(rawLimit)))
       : 500;
     const includeBodies = url.searchParams.get("includeBodies") === "true";
+    const testStepId = url.searchParams.get("testStepId")?.trim() || undefined;
     json(response, 200, {
-      evidence: buildRunEvidence(run, { limit, includeBodies }),
+      evidence: buildRunEvidence(run, {
+        limit,
+        includeBodies,
+        ...(testStepId ? { testStepId } : {}),
+      }),
     });
     return true;
   }

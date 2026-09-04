@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { Button } from "@relay/ui-react";
+import { Button, Disclosure } from "@relay/ui-react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useRouteContext } from "@tanstack/react-router";
 import { ArrowRight } from "lucide-react";
@@ -61,13 +61,7 @@ export function AppPage() {
             </div>
             <div className="relay-app-actions">
               <Button render={<Link to="/tests/new" search={{ app: appId }} />} variant="primary">
-                New Test
-              </Button>
-              <Button
-                render={<Link to="/apps/$appId/map" params={{ appId }} />}
-                variant="secondary"
-              >
-                Explore map
+                Record a Test
               </Button>
             </div>
           </header>
@@ -78,7 +72,7 @@ export function AppPage() {
               <dd>{tests.data?.length ?? app.data.coverage.testCount}</dd>
             </div>
             <div>
-              <dt>Recent Reports</dt>
+              <dt>Reports</dt>
               <dd>{runs.data?.length ?? 0}</dd>
             </div>
             <div>
@@ -167,6 +161,41 @@ export function AppPage() {
               )}
             </section>
           </div>
+          <section className="relay-app-resources" aria-labelledby="app-resources-title">
+            <header className="relay-section-heading">
+              <div>
+                <p className="relay-section-label">Configuration</p>
+                <h2 id="app-resources-title">App resources</h2>
+              </div>
+            </header>
+            <div className="relay-app-resource-links">
+              <Link to="/apps/$appId/versions" params={{ appId }}>
+                <span>
+                  <strong>Versions</strong>
+                  <small>Registered builds and web deployments</small>
+                </span>
+                <ArrowRight aria-hidden="true" />
+              </Link>
+              <Link to="/apps/$appId/accounts" params={{ appId }}>
+                <span>
+                  <strong>Accounts</strong>
+                  <small>Reviewed browser sign-ins</small>
+                </span>
+                <ArrowRight aria-hidden="true" />
+              </Link>
+            </div>
+          </section>
+          <Disclosure.Root className="relay-app-advanced">
+            <Disclosure.Trigger>Advanced</Disclosure.Trigger>
+            <Disclosure.Panel>
+              <div>
+                <p>Inspect Relay’s known screens, verified paths, and coverage for this app.</p>
+                <Link className="relay-inline-link" to="/apps/$appId/map" params={{ appId }}>
+                  Open App Map
+                </Link>
+              </div>
+            </Disclosure.Panel>
+          </Disclosure.Root>
         </>
       ) : null}
     </section>

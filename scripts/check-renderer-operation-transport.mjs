@@ -5,7 +5,6 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const repositoryRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
-const appSourceRoot = resolve(repositoryRoot, "packages/app/src");
 const appV2SourceRoot = resolve(repositoryRoot, "packages/app-v2/src");
 
 /**
@@ -269,7 +268,7 @@ async function sourceFiles(directory) {
   return files;
 }
 
-export async function scanRendererOperationTransport(definitions, root = appSourceRoot) {
+export async function scanRendererOperationTransport(definitions, root = appV2SourceRoot) {
   const files = await sourceFiles(root);
   const violations = [];
   for (const file of files) {
@@ -286,9 +285,10 @@ export function formatViolations(violations) {
   );
 }
 
-const requireFromApp = createRequire(resolve(repositoryRoot, "packages/app/package.json"));
+// Resolve the canonical protocol through the shipped React product.
+const requireFromProductV2 = createRequire(resolve(repositoryRoot, "packages/app-v2/package.json"));
 export async function loadOperationDefinitions() {
-  const protocolEntry = requireFromApp.resolve("@relay/protocol");
+  const protocolEntry = requireFromProductV2.resolve("@relay/protocol");
   return (await import(pathToFileURL(protocolEntry).href)).operationDefinitions;
 }
 
@@ -306,13 +306,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     process.exitCode = result.status ?? 1;
   } else {
     const operationDefinitions = await loadOperationDefinitions();
-    const violations = (
-      await Promise.all(
-        [appSourceRoot, appV2SourceRoot].map((root) =>
-          scanRendererOperationTransport(operationDefinitions, root),
-        ),
-      )
-    ).flat();
+    const violations = await scanRendererOperationTransport(operationDefinitions);
     if (violations.length) {
       console.error(
         `Renderer operation transport guard found ${violations.length} unsafe transport call(s). Use RelayClient.invoke(operationId, input) for registered operations; only the narrow unregistered immutable-read allowlist may use resources.`,

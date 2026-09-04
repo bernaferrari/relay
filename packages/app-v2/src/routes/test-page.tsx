@@ -5,8 +5,10 @@ import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react
 import { useState } from "react";
 import type { ProductTestStep } from "@relay/product/catalog";
 import { Breadcrumbs, EmptyState, OutcomeMark } from "../components/product-patterns";
+import { TestStepEvidencePreview } from "../components/test-step-evidence-preview";
 import { runQueryKeys } from "../data/run-queries";
 import { readRunPointer, writeRunPointer } from "../data/run-pointer";
+import { useLatestTestReport } from "../hooks/use-latest-test-report";
 import { PageLoading, RecordingProblem, targetLabel } from "./recording-shared";
 
 const routeApi = getRouteApi("/tests/$testId");
@@ -16,16 +18,16 @@ export function TestPage() {
   const { testId } = routeApi.useParams();
   const navigate = useNavigate();
   const [targetId, setTargetId] = useState("");
+  const [evidenceStepId, setEvidenceStepId] = useState("");
   const test = useQuery({
     queryKey: runQueryKeys.test(testId),
     queryFn: () => runService.getTest(testId),
   });
-  const recentRuns = useQuery({
-    queryKey: ["catalog", "runs", "test", testId],
-    queryFn: () => runService.listTestRuns!(testId),
-    enabled: typeof runService.listTestRuns === "function",
-    staleTime: 10_000,
-  });
+  const {
+    recentRuns,
+    latestReport,
+    loading: reportLoading,
+  } = useLatestTestReport(runService, testId);
   const pointer = useQuery({
     queryKey: runQueryKeys.pointer,
     queryFn: async () => (await readRunPointer(platform)) ?? null,
@@ -71,6 +73,9 @@ export function TestPage() {
 
   const activeRun = pointer.data;
   const loading = test.isPending || targets.isPending || pointer.isPending;
+  const evidenceSteps = flattenSteps(test.data?.steps ?? []);
+  const selectedEvidenceStep =
+    evidenceSteps.find((step) => step.id === evidenceStepId) ?? evidenceSteps.at(0);
 
   return (
     <section className="relay-page relay-test-page">
@@ -154,19 +159,21 @@ export function TestPage() {
           <section className="relay-test-overview" aria-labelledby="test-overview-title">
             <div className="relay-section-heading">
               <div>
-                <p className="relay-section-label">Test</p>
-                <h2 id="test-overview-title">Ready to run</h2>
+                <p className="relay-section-label">Journey</p>
+                <h2 id="test-overview-title">Saved steps</h2>
               </div>
               <span>{test.data.stepCount === 1 ? "1 step" : `${test.data.stepCount} steps`}</span>
             </div>
-            <p className="relay-test-overview-copy">
-              Relay repeats this reviewed journey without changing its saved steps. The result and
-              evidence are kept together in one report.
-            </p>
             {test.data.steps?.length ? (
               <ol className="relay-test-readable-steps">
                 {test.data.steps.map((step, index) => (
-                  <ReadableStep key={step.id} step={step} number={String(index + 1)} />
+                  <ReadableStep
+                    key={step.id}
+                    step={step}
+                    number={String(index + 1)}
+                    selectedId={selectedEvidenceStep?.id}
+                    onSelect={setEvidenceStepId}
+                  />
                 ))}
               </ol>
             ) : (
@@ -227,6 +234,15 @@ export function TestPage() {
         </div>
       ) : null}
 
+      {!loading && test.data && selectedEvidenceStep ? (
+        <TestStepEvidencePreview
+          step={selectedEvidenceStep}
+          report={latestReport.data}
+          hasRuns={Boolean(recentRuns.data?.length)}
+          loading={reportLoading}
+        />
+      ) : null}
+
       {!loading && test.data && recentRuns.data?.length ? (
         <section className="relay-test-runs" aria-labelledby="test-runs-title">
           <div className="relay-section-heading">
@@ -262,27 +278,47 @@ export function TestPage() {
   );
 }
 
-function ReadableStep({ step, number }: { step: ProductTestStep; number: string }) {
+function ReadableStep({
+  step,
+  number,
+  selectedId,
+  onSelect,
+}: {
+  step: ProductTestStep;
+  number: string;
+  selectedId: string | undefined;
+  onSelect(stepId: string): void;
+}) {
   return (
-    <li>
+    <li data-selected={selectedId === step.id}>
       <span>{number}</span>
-      <div>
+      <button type="button" aria-pressed={selectedId === step.id} onClick={() => onSelect(step.id)}>
         <strong>{step.intent}</strong>
         <small>
           {step.kind === "validation" ? "Checkpoint" : "Action"}
           {step.capture ? " · Evidence captured" : ""}
           {step.status === "needs-review" ? " · Needs review" : ""}
         </small>
-        {step.children?.length ? (
-          <ol>
-            {step.children.map((child, index) => (
-              <ReadableStep key={child.id} step={child} number={`${number}.${index + 1}`} />
-            ))}
-          </ol>
-        ) : null}
-      </div>
+      </button>
+      {step.children?.length ? (
+        <ol>
+          {step.children.map((child, index) => (
+            <ReadableStep
+              key={child.id}
+              step={child}
+              number={`${number}.${index + 1}`}
+              selectedId={selectedId}
+              onSelect={onSelect}
+            />
+          ))}
+        </ol>
+      ) : null}
     </li>
   );
+}
+
+function flattenSteps(steps: readonly ProductTestStep[]): readonly ProductTestStep[] {
+  return steps.flatMap((step) => [step, ...flattenSteps(step.children ?? [])]);
 }
 
 function formatRunDate(value: number): string {

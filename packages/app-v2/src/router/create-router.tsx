@@ -10,6 +10,10 @@ import {
 } from "@tanstack/react-router";
 import { OverlayRoot } from "@relay/ui-react";
 import {
+  createAppResourcesProductService,
+  type AppResourcesProductService,
+} from "../data/app-resources-product-service";
+import {
   createCatalogProductService,
   type CatalogProductService,
 } from "../data/catalog-product-service";
@@ -44,7 +48,8 @@ import type { Platform } from "../platform/types";
 import { NotFoundPage } from "../routes/not-found-page";
 import { HomePage } from "../routes/home-page";
 import { NewTestPage } from "../routes/new-test-page";
-import { PlaceholderPage } from "../routes/placeholder-page";
+import { AppsPage } from "../routes/apps-page";
+import { AppAccountsPage, AppVersionsPage } from "../routes/app-resource-pages";
 import { RecordTestPage } from "../routes/record-test-page";
 import { ReviewRecordingPage } from "../routes/review-recording-page";
 import { RunPage } from "../routes/run-page";
@@ -61,10 +66,11 @@ import { ChangesPage } from "../routes/changes-page";
 import { ChangePage } from "../routes/change-page";
 import { MapPage } from "../routes/map-page";
 import { AppPage } from "../routes/app-page";
-import { assertAllowedRouteSearch, routeContract, type ProductRouteId } from "./route-contract";
+import { assertAllowedRouteSearch } from "./route-contract";
 
 export type AppRouterContext = {
   platform: Platform;
+  appResourcesService: AppResourcesProductService;
   productService: RecordingProductService;
   runService: RunProductService;
   runAcrossService: RunAcrossProductService;
@@ -92,11 +98,6 @@ function RootLayout() {
   );
 }
 
-function placeholderComponent(id: ProductRouteId) {
-  const contract = routeContract(id);
-  return () => <PlaceholderPage contract={contract} />;
-}
-
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
@@ -113,7 +114,7 @@ const homeRoute = createRoute({
 const appsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/apps",
-  component: placeholderComponent("/apps"),
+  component: AppsPage,
 });
 const appRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -123,12 +124,12 @@ const appRoute = createRoute({
 const appVersionsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/apps/$appId/versions",
-  component: placeholderComponent("/apps/:appId/versions"),
+  component: AppVersionsPage,
 });
 const appAccountsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/apps/$appId/accounts",
-  component: placeholderComponent("/apps/:appId/accounts"),
+  component: AppAccountsPage,
 });
 const appMapRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -268,6 +269,7 @@ const routeTree = rootRoute.addChildren([
 
 export function createAppRouter(options: {
   platform: Platform;
+  appResourcesService?: AppResourcesProductService;
   productService?: RecordingProductService;
   runService?: RunProductService;
   runAcrossService?: RunAcrossProductService;
@@ -285,6 +287,8 @@ export function createAppRouter(options: {
     history: options.history ?? createHashHistory(),
     context: {
       platform: options.platform,
+      appResourcesService:
+        options.appResourcesService ?? createAppResourcesProductService(options.platform),
       productService: options.productService ?? createRecordingProductService(options.platform),
       runService: options.runService ?? createRunProductService(options.platform),
       runAcrossService: options.runAcrossService ?? createRunAcrossProductService(options.platform),

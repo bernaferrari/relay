@@ -263,7 +263,7 @@ export async function handleChangeProofExecutionRoutes(
       );
     }
     let evidenceDigest = body.evidenceDigest;
-    let evidenceSource: "server-attachment" | undefined;
+    let evidenceSource: "legacy-digest" | "server-attachment" = "legacy-digest";
     let scopeDigest: `sha256:${string}` | undefined;
     if (body.attachment) {
       try {
@@ -305,7 +305,7 @@ export async function handleChangeProofExecutionRoutes(
         cellId: body.cellId,
         stepId: body.stepId,
         evidenceDigest: evidenceDigest as `sha256:${string}`,
-        ...(evidenceSource ? { source: evidenceSource } : {}),
+        source: evidenceSource,
         ...(scopeDigest ? { scopeDigest } : {}),
         actorId: input.actorId,
         requestId: input.requestId,

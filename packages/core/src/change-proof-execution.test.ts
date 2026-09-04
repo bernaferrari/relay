@@ -1028,6 +1028,16 @@ test("human-only execution pauses at an exact step and resumes only through reco
       recordedAt: 400,
       requestId: "human-evidence-1",
     });
+    assert.throws(
+      () =>
+        normalizeRecord({
+          ...queued,
+          humanInterventionEvidence: [
+            { ...queued.humanInterventionEvidence![0]!, executionId: "other-execution" },
+          ],
+        }),
+      /human intervention evidence .* invalid/iu,
+    );
     await assert.rejects(
       coordinator.recordHumanInterventionEvidence(evidenceInput),
       (error) =>

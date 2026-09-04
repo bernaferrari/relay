@@ -648,7 +648,7 @@ export class AuthoringSessionStore {
 
   async commit(
     id: string,
-    input: { destination?: AuthoringCommitDestination; createTest?: true },
+    input: { destination?: AuthoringCommitDestination; createTest?: true; testName?: string },
     fault?: AuthoringCommitFault,
     workflowMutation?: NonNullable<AuthoringSession["workflowMutation"]>,
   ): Promise<AuthoringSession> {
@@ -657,6 +657,7 @@ export class AuthoringSessionStore {
       async (session) => {
         assertOwner(session);
         requireState(session, "reviewing");
+        if (input.testName?.trim()) session.testName = input.testName.trim();
         const take = session.take!;
         const revision = currentRevision(session);
         const destination = await destinationForSession(session, input.destination);

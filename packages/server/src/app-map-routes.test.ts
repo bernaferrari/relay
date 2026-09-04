@@ -73,7 +73,7 @@ test("typed Variable inference captures a target and returns a reviewable App Ma
   const actorId = "agent:variable-infer-route-test";
   const targetId = "android-variable-fixture";
   const raster = await readFile(
-    fileURLToPath(new URL("../../app/public/relay-icon.png", import.meta.url)),
+    fileURLToPath(new URL("../../app-v2/public/relay-icon.png", import.meta.url)),
   );
   setLocalDeviceProvider({
     kind: "device",

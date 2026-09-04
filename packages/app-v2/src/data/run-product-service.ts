@@ -8,8 +8,10 @@ import type {
   AuthoringTarget,
   EvidenceChannel,
   EvidenceChannelRecord,
+  RunTestStepEvidence,
   RunOutcome,
 } from "@relay/protocol";
+import { parseOptionalRunTestStepEvidence } from "@relay/protocol";
 import type { ProductRunSummary, ProductTestStep } from "@relay/product/catalog";
 import type { Platform } from "../platform/types";
 import { productClientForPlatform } from "./product-client";
@@ -40,6 +42,12 @@ export type ReportEvidenceItem = {
   detail?: string;
   meta?: string;
   tone?: "neutral" | "success" | "warning" | "critical";
+  media?: {
+    kind: "image";
+    src: string;
+    width?: number;
+    height?: number;
+  };
 };
 
 export type ReportTimelineItem = {
@@ -63,6 +71,8 @@ export type ProductRunReportOverview = {
   firstEvidence?: { label: string; detail?: string };
   timeline: readonly ReportTimelineItem[];
   evidence: readonly ReportEvidenceSection[];
+  /** Undefined for legacy Runs that predate authored-step provenance. */
+  stepEvidence?: readonly RunTestStepEvidence[];
   evidenceUnavailable?: true;
 };
 
@@ -222,6 +232,28 @@ function finite(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
 }
 
+const MAX_INLINE_EVIDENCE_BASE64_CHARS = 24 * 1_024 * 1_024;
+
+function frameImageMedia(frame: Record<string, unknown>): ReportEvidenceItem["media"] {
+  const mime = text(frame.mime)?.toLocaleLowerCase();
+  const base64 =
+    typeof frame.base64 === "string" && frame.base64.length <= MAX_INLINE_EVIDENCE_BASE64_CHARS
+      ? frame.base64.replace(/\s+/gu, "")
+      : undefined;
+  if (!mime || !["image/jpeg", "image/png", "image/webp"].includes(mime) || !base64) {
+    return undefined;
+  }
+  if (!/^[a-zA-Z0-9+/]+={0,2}$/u.test(base64)) return undefined;
+  const width = finite(frame.width);
+  const height = finite(frame.height);
+  return {
+    kind: "image",
+    src: `data:${mime};base64,${base64}`,
+    ...(width && width > 0 ? { width } : {}),
+    ...(height && height > 0 ? { height } : {}),
+  };
+}
+
 function runOutcome(value: unknown): RunOutcome | undefined {
   return ["passed", "product-failure", "harness-failure", "uncertain", "cancelled"].includes(
     String(value),
@@ -338,9 +370,11 @@ function evidenceItems(
   if (frames.length) {
     output.screenshot = frames.map((value, index) => {
       const frame = record(value) ?? {};
+      const media = frameImageMedia(frame);
       return {
         id: text(frame.path) ?? `screenshot-${index}`,
         title: publicFrameCaption(frame.caption) ?? `Screenshot ${index + 1}`,
+        ...(media ? { media } : {}),
         ...(finite(frame.capturedAt) === undefined
           ? {}
           : { meta: formatEvidenceTime(finite(frame.capturedAt)!) }),
@@ -782,6 +816,7 @@ export function projectRunReport(
   const traceEvidence = firstTraceEvidence(run, outcome);
   const targetName = humanTargetName(run.deviceName);
   const testId = sourceTestId(run);
+  const stepEvidence = parseOptionalRunTestStepEvidence(run.testStepEvidence);
   return {
     runId,
     ...(testId ? { testId } : {}),
@@ -798,6 +833,7 @@ export function projectRunReport(
         : {}),
     timeline: reportTimeline(rawRun),
     evidence: sections,
+    ...(stepEvidence === undefined ? {} : { stepEvidence }),
     ...(evidenceUnavailable ? { evidenceUnavailable: true as const } : {}),
   };
 }

@@ -295,6 +295,88 @@
   outline-offset: 1px;
 }
 
+.relay-textarea {
+  inline-size: 100%;
+  min-block-size: 96px;
+  resize: vertical;
+  padding: 10px 12px;
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius-md);
+  color: var(--text-strong);
+  background: var(--input-base);
+  box-shadow: 0 1px 2px color-mix(in srgb, black 5%, transparent);
+  font: inherit;
+  font-size: 16px;
+  line-height: 1.5;
+  outline: none;
+}
+
+.relay-textarea::placeholder {
+  color: var(--text-weaker);
+}
+
+.relay-textarea:hover:not(:disabled) {
+  border-color: var(--border-hover);
+}
+
+.relay-textarea:focus-visible {
+  border-color: var(--relay-focus-ring);
+  outline: 3px solid color-mix(in srgb, var(--relay-focus-ring) 20%, transparent);
+  outline-offset: 1px;
+}
+
+.relay-disclosure-trigger {
+  display: flex;
+  inline-size: 100%;
+  min-block-size: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  color: var(--text-weak);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: start;
+  cursor: pointer;
+}
+
+.relay-disclosure-trigger > svg {
+  inline-size: 16px;
+  block-size: 16px;
+  flex: none;
+  fill: none;
+  stroke: currentcolor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.5;
+  transition: transform 150ms ease-out;
+}
+
+.relay-disclosure-trigger[data-panel-open] > svg {
+  transform: rotate(180deg);
+}
+
+.relay-disclosure-trigger:focus-visible {
+  outline: 2px solid var(--relay-focus-ring);
+  outline-offset: 2px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .relay-disclosure-trigger:hover {
+    color: var(--text-strong);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .relay-disclosure-trigger > svg {
+    transition: none;
+  }
+}
+
 .relay-field {
   display: grid;
   min-inline-size: 0;

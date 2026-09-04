@@ -2,14 +2,29 @@
 import type {
   ProductAffectedTest,
   ProductChangeDetails,
+  ProductChangeRepairPacket,
   ProductChangeState,
   ProductVerificationItem,
 } from "@relay/product/change-journey";
-import { Button, Menu } from "@relay/ui-react";
+import {
+  Button,
+  Disclosure,
+  Field,
+  FieldDescription,
+  FieldLabel,
+  Menu,
+  Textarea,
+} from "@relay/ui-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { AlertTriangle, Check, CircleDot, Minus } from "lucide-react";
+import { useEffect, useState, type FormEvent } from "react";
 import type { ProductChangeDetail } from "../data/change-product-service";
+import {
+  ChangeAuditDetails,
+  ChangePublicationStatus,
+  ChangeSectionHeader,
+} from "../components/change-publication-details";
 import { Breadcrumbs, EmptyState } from "../components/product-patterns";
 import { PageLoading, RecordingProblem } from "./recording-shared";
 import { changeStatus, changesQueryKey } from "./changes-page";
@@ -23,6 +38,7 @@ export function ChangePage() {
   const { changeId } = routeApi.useParams();
   const { changeService, queryClient } = useRouteContext({ from: "__root__" });
   const navigate = useNavigate({ from: "/changes/$changeId" });
+  const [evidenceObservation, setEvidenceObservation] = useState("");
   const change = useQuery({
     queryKey: changeQueryKey(changeId),
     queryFn: () => changeService.open(changeId),
@@ -44,6 +60,34 @@ export function ChangePage() {
       if (nextId !== changeId) {
         void navigate({ to: "/changes/$changeId", params: { changeId: nextId }, replace: true });
       }
+    },
+  });
+  const humanEvidence = useMutation({
+    mutationFn: async () => {
+      const attention = change.data?.state.details?.execution?.attention;
+      const current = change.data?.state.change;
+      if (
+        !current ||
+        attention?.kind !== "human-evidence" ||
+        !attention.executionId ||
+        !attention.cellId ||
+        !attention.stepId ||
+        !evidenceObservation.trim()
+      ) {
+        throw new TypeError("Add what you verified before continuing.");
+      }
+      return changeService.resumeHumanEvidence({
+        changeId: current.id,
+        executionId: attention.executionId,
+        cellId: attention.cellId,
+        stepId: attention.stepId,
+        observation: evidenceObservation.trim(),
+      });
+    },
+    onSuccess: (next) => {
+      const nextId = next.state.change?.id ?? changeId;
+      queryClient.setQueryData(changeQueryKey(nextId), next);
+      if (!next.state.recovery) setEvidenceObservation("");
     },
   });
 
@@ -147,10 +191,9 @@ export function ChangePage() {
           >
             <div className="relay-change-verdict-main">
               <span className="relay-change-verdict-mark" aria-hidden="true">
-                {verdictMark(status.tone)}
+                <VerdictIcon tone={status.tone} />
               </span>
               <div>
-                <p className="relay-section-label">Verdict</p>
                 <h2 id="change-verdict-title">{verdictTitle(current.status)}</h2>
                 <p>{verdictDetail(detail.state, details)}</p>
               </div>
@@ -175,9 +218,11 @@ export function ChangePage() {
             </section>
           ) : null}
 
+          {details.repairPacket ? <RepairContext packet={details.repairPacket} /> : null}
+
           <div className="relay-change-overview-grid">
             <section className="relay-change-section" aria-labelledby="change-summary-title">
-              <SectionHeader eyebrow="Claim" title="What changed" id="change-summary-title" />
+              <ChangeSectionHeader eyebrow="Claim" title="What changed" id="change-summary-title" />
               {current.agentClaim ? (
                 <>
                   <p className="relay-change-claim">{current.agentClaim.summary}</p>
@@ -197,14 +242,14 @@ export function ChangePage() {
               )}
             </section>
 
-            <PublicationStatus detail={detail} />
+            <ChangePublicationStatus detail={detail} />
           </div>
 
           <section
             className="relay-change-section relay-change-wide-section"
             aria-labelledby="affected-tests-title"
           >
-            <SectionHeader
+            <ChangeSectionHeader
               eyebrow="Coverage"
               title="Tests selected for coverage"
               id="affected-tests-title"
@@ -225,7 +270,7 @@ export function ChangePage() {
             className="relay-change-section relay-change-wide-section"
             aria-labelledby="verification-plan-title"
           >
-            <SectionHeader
+            <ChangeSectionHeader
               eyebrow="Verification plan"
               title="Exact execution plan"
               id="verification-plan-title"
@@ -259,7 +304,10 @@ export function ChangePage() {
           )}
 
           {details.execution?.attention ? (
-            <section className="relay-change-attention" aria-labelledby="verification-paused-title">
+            <section
+              className={`relay-change-attention relay-change-attention--${details.execution.attention.kind}`}
+              aria-labelledby="verification-paused-title"
+            >
               <p className="relay-section-label">Verification paused safely</p>
               <h2 id="verification-paused-title">
                 {details.execution.attention.kind === "human-evidence"
@@ -267,14 +315,110 @@ export function ChangePage() {
                   : "Relay needs reconciliation"}
               </h2>
               <p>{details.execution.attention.reason}</p>
-              <p className="relay-change-muted">
-                Relay will not make a merge decision until this step is resolved.
-              </p>
+              {details.execution.attention.kind === "human-evidence" ? (
+                <form
+                  className="relay-human-evidence-form"
+                  onSubmit={(event: FormEvent<HTMLFormElement>) => {
+                    event.preventDefault();
+                    if (!humanEvidence.isPending && evidenceObservation.trim()) {
+                      humanEvidence.mutate();
+                    }
+                  }}
+                >
+                  <Field>
+                    <FieldLabel htmlFor="change-human-observation">What did you verify?</FieldLabel>
+                    <Textarea
+                      id="change-human-observation"
+                      value={evidenceObservation}
+                      onChange={(event) => setEvidenceObservation(event.currentTarget.value)}
+                      placeholder="Describe the visible result you confirmed"
+                      maxLength={8_000}
+                      rows={4}
+                      disabled={humanEvidence.isPending}
+                    />
+                    <FieldDescription>
+                      Relay saves this observation on the exact paused step, then continues the
+                      server-owned verification.
+                    </FieldDescription>
+                  </Field>
+                  <Button
+                    type="submit"
+                    variant="primary"
+                    disabled={!evidenceObservation.trim() || humanEvidence.isPending}
+                  >
+                    {humanEvidence.isPending ? "Saving evidence…" : "Save evidence and continue"}
+                  </Button>
+                </form>
+              ) : (
+                <p className="relay-change-muted">
+                  Relay will not make a merge decision until this step is resolved.
+                </p>
+              )}
+              <RecordingProblem
+                recovery={humanEvidence.data?.state.recovery}
+                error={humanEvidence.error}
+                onRetry={evidenceObservation.trim() ? () => humanEvidence.mutate() : undefined}
+                retrying={humanEvidence.isPending}
+              />
             </section>
           ) : null}
 
-          <AuditDetails detail={detail} />
+          <ChangeAuditDetails detail={detail} />
         </>
+      ) : null}
+    </section>
+  );
+}
+
+function RepairContext({ packet }: { packet: ProductChangeRepairPacket }) {
+  return (
+    <section className="relay-change-repair-context" aria-labelledby="repair-context-title">
+      <header>
+        <p className="relay-section-label">Repair context</p>
+        <h2 id="repair-context-title">Smallest useful fix</h2>
+        <p>{packet.firstCausalFailure}</p>
+      </header>
+      {packet.expected || packet.observed ? (
+        <dl>
+          {packet.expected ? (
+            <div>
+              <dt>Expected</dt>
+              <dd>{packet.expected}</dd>
+            </div>
+          ) : null}
+          {packet.observed ? (
+            <div>
+              <dt>Observed</dt>
+              <dd>{packet.observed}</dd>
+            </div>
+          ) : null}
+        </dl>
+      ) : null}
+      {packet.suggestedScope.length ? (
+        <div className="relay-change-repair-scope">
+          <strong>Suggested scope</strong>
+          <ul>
+            {packet.suggestedScope.map((path) => (
+              <li key={path}>
+                <code>{path}</code>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {packet.relevantLogs.length ? (
+        <Disclosure.Root className="relay-change-repair-logs">
+          <Disclosure.Trigger>Relevant logs ({packet.relevantLogs.length})</Disclosure.Trigger>
+          <Disclosure.Panel>
+            <ul>
+              {packet.relevantLogs.map((line, index) => (
+                <li key={`${index}:${line}`}>
+                  <code>{line}</code>
+                </li>
+              ))}
+            </ul>
+          </Disclosure.Panel>
+        </Disclosure.Root>
       ) : null}
     </section>
   );
@@ -314,6 +458,14 @@ function ExecutionProgress({ details }: { details: ProductChangeDetails }) {
   const execution = details.execution!;
   const total = Math.max(execution.total, 1);
   const percent = Math.round((execution.completed / total) * 100);
+  const complete = execution.total > 0 && execution.completed >= execution.total;
+  if (complete) {
+    return (
+      <p className="relay-change-progress-complete" role="status">
+        {execution.completed} of {execution.total} checks complete
+      </p>
+    );
+  }
   return (
     <div className="relay-change-progress" role="status" aria-live="polite">
       <div>
@@ -411,7 +563,7 @@ function RiskSection({
   const id = `${title.toLocaleLowerCase().replaceAll(" ", "-")}-title`;
   return (
     <section className="relay-change-section" aria-labelledby={id}>
-      <SectionHeader eyebrow="Confidence" title={title} id={id} />
+      <ChangeSectionHeader eyebrow="Confidence" title={title} id={id} />
       {values.length ? (
         <ul className="relay-change-risk-list">
           {values.map((value) => (
@@ -425,152 +577,6 @@ function RiskSection({
         </p>
       )}
     </section>
-  );
-}
-
-function PublicationStatus({ detail }: { detail: ProductChangeDetail }) {
-  const publication = detail.state.details?.publications[0];
-  const { changeService, queryClient } = useRouteContext({ from: "__root__" });
-  const retry = useMutation({
-    mutationFn: () => {
-      const change = detail.state.change!;
-      return changeService.retryPublication({
-        changeId: change.id,
-        publicationId: publication!.id,
-        expectedVersion: change.version,
-      });
-    },
-    onSuccess: (next) => {
-      if (next.state.change) queryClient.setQueryData(changeQueryKey(next.state.change.id), next);
-    },
-  });
-  if (!publication) {
-    return (
-      <section className="relay-change-section" aria-labelledby="publication-status-title">
-        <SectionHeader
-          eyebrow="GitHub delivery"
-          title="Not published"
-          id="publication-status-title"
-        />
-        <p className="relay-change-muted">Relay has not sent this verification result to GitHub.</p>
-      </section>
-    );
-  }
-  const presentation = publicationPresentation(publication.status);
-  return (
-    <section className="relay-change-section" aria-labelledby="publication-status-title">
-      <SectionHeader
-        eyebrow="GitHub delivery"
-        title={presentation.title}
-        id="publication-status-title"
-      />
-      <p>{presentation.detail}</p>
-      <div className="relay-publication-status">
-        {publication.detailsUrl ? (
-          <a href={publication.detailsUrl} target="_blank" rel="noreferrer">
-            Open GitHub check
-          </a>
-        ) : null}
-        {publication.canRetry ? (
-          <Button size="small" onClick={() => retry.mutate()} disabled={retry.isPending}>
-            {retry.isPending ? "Retrying…" : "Retry publication"}
-          </Button>
-        ) : null}
-        {retry.data?.state.recovery ? <p role="alert">{retry.data.state.recovery.detail}</p> : null}
-      </div>
-    </section>
-  );
-}
-
-function AuditDetails({ detail }: { detail: ProductChangeDetail }) {
-  const details = detail.state.details!;
-  const change = details.change;
-  return (
-    <details className="relay-change-audit">
-      <summary>Audit details</summary>
-      <p>Exact identities and receipts for operators and agents.</p>
-      <dl>
-        <div>
-          <dt>Proof ID</dt>
-          <dd>{change.id}</dd>
-        </div>
-        <div>
-          <dt>Version</dt>
-          <dd>{details.audit.proofVersion}</dd>
-        </div>
-        <div>
-          <dt>Base revision</dt>
-          <dd>{change.baseRevision}</dd>
-        </div>
-        <div>
-          <dt>Tested revision</dt>
-          <dd>{change.requestedRevision}</dd>
-        </div>
-        <div>
-          <dt>Policy</dt>
-          <dd>{details.audit.policy}</dd>
-        </div>
-        <div>
-          <dt>Plan digest</dt>
-          <dd>{details.audit.planDigest ?? "Not available"}</dd>
-        </div>
-        <div>
-          <dt>Decision digest</dt>
-          <dd>{details.audit.decisionDigest ?? "Not available"}</dd>
-        </div>
-        <div>
-          <dt>Requested by</dt>
-          <dd>{details.audit.requestedBy}</dd>
-        </div>
-        <div>
-          <dt>Builds</dt>
-          <dd>{details.audit.buildIds.length ? details.audit.buildIds.join(", ") : "None"}</dd>
-        </div>
-      </dl>
-      {details.publications.length ? (
-        <section
-          className="relay-change-publication-history"
-          aria-labelledby="publication-history-title"
-        >
-          <h3 id="publication-history-title">Publication history</h3>
-          <ul>
-            {details.publications.map((publication) => (
-              <li key={publication.id}>
-                <span>{publicationLabel(publication.status)}</span>
-                <code>{publication.id}</code>
-                <span>
-                  {publication.attempts === undefined
-                    ? "Historical receipt"
-                    : `${publication.attempts} attempt${publication.attempts === 1 ? "" : "s"}`}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
-    </details>
-  );
-}
-
-function SectionHeader({
-  eyebrow,
-  title,
-  id,
-  aside,
-}: {
-  eyebrow: string;
-  title: string;
-  id: string;
-  aside?: string;
-}) {
-  return (
-    <header className="relay-change-section-header">
-      <div>
-        <p className="relay-section-label">{eyebrow}</p>
-        <h2 id={id}>{title}</h2>
-      </div>
-      {aside ? <span>{aside}</span> : null}
-    </header>
   );
 }
 
@@ -588,11 +594,16 @@ function verdictTitle(status: string): string {
   return "A newer verification replaced this one";
 }
 
-function verdictMark(tone: ReturnType<typeof changeStatus>["tone"]): string {
-  if (tone === "success") return "✓";
-  if (tone === "danger" || tone === "notice") return "!";
-  if (tone === "active") return "•";
-  return "·";
+function VerdictIcon({ tone }: { tone: ReturnType<typeof changeStatus>["tone"] }) {
+  const Icon =
+    tone === "success"
+      ? Check
+      : tone === "danger" || tone === "notice"
+        ? AlertTriangle
+        : tone === "active"
+          ? CircleDot
+          : Minus;
+  return <Icon />;
 }
 
 function verdictDetail(state: ProductChangeState, details: ProductChangeDetails): string {
@@ -649,37 +660,4 @@ function formatDuration(durationMs: number): string {
   if (durationMs < 1_000) return `${durationMs} ms`;
   if (durationMs < 60_000) return `${Math.round(durationMs / 100) / 10} s`;
   return `${Math.round(durationMs / 60_000)} min`;
-}
-
-function publicationLabel(status: string): string {
-  if (status === "published" || status === "completed") return "Published to GitHub";
-  if (status === "claimed" || status === "in_progress") return "Publishing to GitHub";
-  if (status === "retry") return "GitHub publication needs attention";
-  return "Queued for GitHub";
-}
-
-function publicationPresentation(status: string): { title: string; detail: string } {
-  if (status === "published" || status === "completed") {
-    return {
-      title: "Published",
-      detail: "GitHub received this verification result.",
-    };
-  }
-  if (status === "claimed" || status === "in_progress") {
-    return {
-      title: "Publishing",
-      detail: "Relay is delivering this verification result to GitHub.",
-    };
-  }
-  if (status === "retry") {
-    return {
-      title: "Needs attention",
-      detail:
-        "The verdict is safely stored in Relay, but GitHub has not received the latest result.",
-    };
-  }
-  return {
-    title: "Waiting to publish",
-    detail: "This verification result is queued for delivery to GitHub.",
-  };
 }

@@ -254,7 +254,10 @@ export function snapshotFromAuthoringSession(input: {
   return {
     schemaVersion: 1,
     kind: "author-test",
-    title: frozen.title,
+    // The public Test name is chosen at approval time. The authoring session is
+    // canonical here so a refresh after commit shows that final name rather
+    // than the temporary label used to start capture.
+    title: session.testName ?? frozen.title,
     phase: needsAttention ? "needs-attention" : phaseForSession(session),
     stage: session.state,
     version: input.workflow

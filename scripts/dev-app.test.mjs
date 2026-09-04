@@ -40,10 +40,9 @@ test("a fallback development port preserves the preferred browser origin", () =>
   ]);
 });
 
-test("browser development uses the React product by default and keeps an explicit legacy escape hatch", () => {
+test("browser development always uses the React product", () => {
   assert.equal(relayAppPackage([]), "@relay/app-v2");
   assert.equal(relayAppPackage(["--v2"]), "@relay/app-v2");
-  assert.equal(relayAppPackage(["--legacy"]), "@relay/app");
-  assert.throws(() => relayAppPackage(["--v2", "--legacy"]), /Choose either --v2 or --legacy/u);
+  assert.throws(() => relayAppPackage(["--legacy"]), /Unknown Relay app option/u);
   assert.throws(() => relayAppPackage(["--unknown"]), /Unknown Relay app option/u);
 });

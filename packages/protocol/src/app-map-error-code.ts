@@ -6,4 +6,6 @@ export type AppMapErrorCode =
   | "duplicate-id"
   | "missing-reference"
   | "in-use"
-  | "proposal-state";
+  | "proposal-state"
+  | "history-empty"
+  | "history-conflict";
