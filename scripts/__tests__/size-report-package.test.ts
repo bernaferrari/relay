@@ -23,6 +23,9 @@ test('classifies every shipped entry into one named component', () => {
       ['dist/src/index.d.ts', 'js'],
       ['dist/apple/runner/RunnerTests.swift', 'apple-runner'],
       ['dist/apple/snapshot-presentation/Package.swift', 'apple-snapshot-presentation'],
+      ['apple/snapshot-bridge/SnapshotBridge.m', 'apple-snapshot-bridge'],
+      ['apple/snapshot-bridge/SnapshotBridgeRuntime.m', 'apple-snapshot-bridge'],
+      ['apple/snapshot-bridge/SnapshotBridgeRuntime.h', 'apple-snapshot-bridge'],
       ['apple/macos-helper/Sources/main.swift', 'macos-helper'],
       ['android/snapshot-helper/dist/helper.apk', 'android-helpers'],
       ['android/snapshot-helper/dist/helper.manifest.json', 'android-helpers'],
@@ -52,6 +55,21 @@ test('publish package requires both Android helpers and excludes benchmark scrip
   );
   assert.throws(
     () =>
+      assertPublishPackageContents(
+        fixturePack.files.filter(
+          (entry) => entry.path !== 'apple/snapshot-bridge/SnapshotBridgeRuntime.m',
+        ),
+        { requireSnapshotBridge: true },
+      ),
+    /SnapshotBridgeRuntime\.m/,
+  );
+  assert.doesNotThrow(() =>
+    assertPublishPackageContents(
+      fixturePack.files.filter((entry) => !entry.path.startsWith('apple/snapshot-bridge/')),
+    ),
+  );
+  assert.throws(
+    () =>
       assertPublishPackageContents([
         ...fixturePack.files,
         { path: 'scripts/ios-snapshot-benchmark/run.ts', size: 1 },
@@ -73,6 +91,7 @@ test('component bytes sum exactly to npm pack unpackedSize', () => {
       js: 503,
       'apple-runner': 503,
       'apple-snapshot-presentation': 113,
+      'apple-snapshot-bridge': 0,
       'macos-helper': 211,
       'android-helpers': 812,
       other: 177,
