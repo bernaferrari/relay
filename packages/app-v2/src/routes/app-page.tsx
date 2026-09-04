@@ -169,6 +169,13 @@ export function AppPage() {
               </div>
             </header>
             <div className="relay-app-resource-links">
+              <Link to="/suites" search={{ app: appId }}>
+                <span>
+                  <strong>Suites</strong>
+                  <small>Reusable groups of Tests and Data sets</small>
+                </span>
+                <ArrowRight aria-hidden="true" />
+              </Link>
               <Link to="/apps/$appId/versions" params={{ appId }}>
                 <span>
                   <strong>Versions</strong>

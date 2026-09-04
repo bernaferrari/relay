@@ -23,6 +23,7 @@ export function LiveTargetCanvas({
   targetDetail,
   send,
   recording = true,
+  helpText,
 }: {
   canvasRef: RefObject<HTMLCanvasElement | null>;
   status: LiveTargetStatus;
@@ -32,6 +33,7 @@ export function LiveTargetCanvas({
   targetDetail: string;
   send(input: LiveTargetInput): Promise<void>;
   recording?: boolean;
+  helpText?: string;
 }) {
   const [text, setText] = useState("");
   const pointerStart = useRef<Point | undefined>(undefined);
@@ -187,9 +189,10 @@ export function LiveTargetCanvas({
         </div>
       </div>
       <p id="live-target-help" className="relay-live-target-help">
-        {recording
-          ? "Click, drag, scroll, or type here. Relay records each supported interaction in this Test."
-          : "Click, drag, scroll, or type here to put the app on the screen where recording should begin."}
+        {helpText ??
+          (recording
+            ? "Click, drag, scroll, or type here. Relay records each supported interaction in this Test."
+            : "Click, drag, scroll, or type here to put the app on the screen where recording should begin.")}
       </p>
     </div>
   );

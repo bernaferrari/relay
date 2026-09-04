@@ -19,6 +19,10 @@ import { Breadcrumbs, EmptyState, OutcomeMark } from "../components/product-patt
 import { TestStepEvidencePreview } from "../components/test-step-evidence-preview";
 import { runQueryKeys } from "../data/run-queries";
 import { readRunPointer, writeRunPointer } from "../data/run-pointer";
+import {
+  stabilitySamplesFromRuns,
+  summarizeProductStability,
+} from "../data/stability-product-service";
 import { useLatestTestReport } from "../hooks/use-latest-test-report";
 import { PageLoading, RecordingProblem, targetLabel } from "./recording-shared";
 
@@ -90,6 +94,13 @@ export function TestPage() {
   const evidenceSteps = flattenSteps(test.data?.steps ?? []);
   const selectedEvidenceStep =
     evidenceSteps.find((step) => step.id === evidenceStepId) ?? evidenceSteps.at(0);
+  const stability = recentRuns.data
+    ? summarizeProductStability({
+        samples: stabilitySamplesFromRuns(recentRuns.data),
+        historyComplete: false,
+        scope: { testId },
+      })
+    : undefined;
 
   return (
     <section className="relay-page relay-test-page">
@@ -262,35 +273,77 @@ export function TestPage() {
       ) : null}
 
       {!loading && test.data && recentRuns.data?.length ? (
-        <section className="relay-test-runs" aria-labelledby="test-runs-title">
-          <div className="relay-section-heading">
-            <div>
-              <p className="relay-section-label">Reports</p>
-              <h2 id="test-runs-title">Recent Runs</h2>
+        <div className="relay-test-history-grid">
+          <section className="relay-test-stability" aria-labelledby="test-stability-title">
+            <div className="relay-section-heading">
+              <div>
+                <p className="relay-section-label">Reliability</p>
+                <h2 id="test-stability-title">Recent stability</h2>
+              </div>
+              <Badge variant={stability?.signals.length ? "warning" : "secondary"}>
+                Partial history
+              </Badge>
             </div>
-            <Link className="relay-inline-link" to="/runs" search={{ view: "all" }}>
-              View all Runs
-            </Link>
-          </div>
-          <ul>
-            {[...recentRuns.data]
-              .sort(
-                (left, right) =>
-                  (right.finishedAt ?? right.startedAt ?? right.queuedAt) -
-                  (left.finishedAt ?? left.startedAt ?? left.queuedAt),
-              )
-              .slice(0, 4)
-              .map((run) => (
-                <li key={run.id}>
-                  <Link to="/runs/$runId" params={{ runId: run.id }}>
-                    <OutcomeMark outcome={run.outcome ?? run.phase} />
-                    <span>{run.targetName ?? "Saved target"}</span>
-                    <small>{formatRunDate(run.finishedAt ?? run.startedAt ?? run.queuedAt)}</small>
-                  </Link>
-                </li>
-              ))}
-          </ul>
-        </section>
+            <dl>
+              <div>
+                <dt>Observed Runs</dt>
+                <dd>{stability?.sampleCount ?? 0}</dd>
+              </div>
+              <div>
+                <dt>Verified passes</dt>
+                <dd>{stability?.passedCount ?? 0}</dd>
+              </div>
+              <div>
+                <dt>Product failures</dt>
+                <dd>{stability?.failedCount ?? 0}</dd>
+              </div>
+            </dl>
+            {stability?.signals.length ? (
+              <ul>
+                {stability.signals.map((signal) => (
+                  <li key={`${signal.kind}:${signal.environmentId ?? "all"}`}>{signal.summary}</li>
+                ))}
+              </ul>
+            ) : (
+              <p>
+                Relay has not found a repeated stability signal in the loaded Runs. Rates stay
+                hidden until complete history is available.
+              </p>
+            )}
+          </section>
+
+          <section className="relay-test-runs" aria-labelledby="test-runs-title">
+            <div className="relay-section-heading">
+              <div>
+                <p className="relay-section-label">Reports</p>
+                <h2 id="test-runs-title">Recent Runs</h2>
+              </div>
+              <Link className="relay-inline-link" to="/runs" search={{ view: "all" }}>
+                View all Runs
+              </Link>
+            </div>
+            <ul>
+              {[...recentRuns.data]
+                .sort(
+                  (left, right) =>
+                    (right.finishedAt ?? right.startedAt ?? right.queuedAt) -
+                    (left.finishedAt ?? left.startedAt ?? left.queuedAt),
+                )
+                .slice(0, 4)
+                .map((run) => (
+                  <li key={run.id}>
+                    <Link to="/runs/$runId" params={{ runId: run.id }}>
+                      <OutcomeMark outcome={run.outcome ?? run.phase} />
+                      <span>{run.targetName ?? "Saved target"}</span>
+                      <small>
+                        {formatRunDate(run.finishedAt ?? run.startedAt ?? run.queuedAt)}
+                      </small>
+                    </Link>
+                  </li>
+                ))}
+            </ul>
+          </section>
+        </div>
       ) : null}
     </section>
   );

@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import { Button, Skeleton } from "@relay/ui-react";
-import { projectError } from "@relay/product";
+import { projectError } from "@relay/product/errors";
 import { RotateCcw } from "lucide-react";
 import { RecoveryState } from "../components/product-patterns";
 type ProductRecovery = {

@@ -37,7 +37,7 @@ export function AppsPage() {
       await queryClient.invalidateQueries({ queryKey: recordingQueryKeys.apps });
       setDialogOpen(false);
       setName("");
-      await navigate({ to: "/apps/$appId", params: { appId: app.id } });
+      await navigate({ to: "/tests/new", search: { app: app.id } });
     },
   });
   const loading = apps.isPending || tests.isPending || runs.isPending;
@@ -73,8 +73,8 @@ export function AppsPage() {
               <Dialog.Popup className="relay-overlay-popup relay-dialog-popup relay-add-app-dialog">
                 <Dialog.Title>Add an App</Dialog.Title>
                 <Dialog.Description>
-                  Give the app a clear name. Relay will create its empty App Map and open the app
-                  workspace.
+                  Give the app a clear name. Relay will create its App Map, then take you directly
+                  to target selection so you can record the first Test.
                 </Dialog.Description>
                 <form onSubmit={submit}>
                   <Field>

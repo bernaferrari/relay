@@ -318,7 +318,7 @@ function bindingForCandidate(
   return undefined;
 }
 
-function stepKindLabel(step: AppMapScenarioTestStep): string {
+export function stepKindLabel(step: AppMapScenarioTestStep): string {
   if (step.kind === "validation") return "Checkpoint";
   if (step.kind === "instruction") return "Action";
   if (step.kind === "manual") return "Human check";

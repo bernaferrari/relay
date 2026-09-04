@@ -1,4 +1,5 @@
 /** @jsxImportSource react */
+import type { AuthoringRecordingEdit } from "@relay/protocol";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -102,6 +103,7 @@ function state(
 function fakeService(initial = state("recording", ["inspect", "record", "checkpoint", "stop"])) {
   let current = initial;
   const calls: string[] = [];
+  const edits: AuthoringRecordingEdit[] = [];
   async function targetSession(selected: typeof target): Promise<LiveTargetSession> {
     let status: ReturnType<LiveTargetSession["snapshot"]> = {
       status: "connecting",
@@ -154,6 +156,12 @@ function fakeService(initial = state("recording", ["inspect", "record", "checkpo
       calls.push(`inspect:${workflowId}`);
       return current;
     },
+    async getOptimization() {
+      return { proposal: null };
+    },
+    async getEvidencePreview() {
+      return null;
+    },
     async recordCurrent() {
       calls.push("record");
       return current;
@@ -169,7 +177,17 @@ function fakeService(initial = state("recording", ["inspect", "record", "checkpo
     },
     async edit(edit) {
       calls.push(`edit:${edit.kind}`);
+      edits.push(edit);
+      const previousReview = current.snapshot?.review;
       current = state("reviewing", ["inspect", "edit", "replay"]);
+      if (current.snapshot?.review && previousReview?.currentRevision) {
+        Object.assign(current.snapshot.review, {
+          currentRevision: previousReview.currentRevision + 1,
+          revisionCount: (previousReview.revisionCount ?? previousReview.currentRevision) + 1,
+          ...(previousReview.timeline ? { timeline: previousReview.timeline } : {}),
+          ...(previousReview.videoClip ? { videoClip: previousReview.videoClip } : {}),
+        });
+      }
       return current;
     },
     async replay() {
@@ -185,7 +203,7 @@ function fakeService(initial = state("recording", ["inspect", "record", "checkpo
     previewTarget: targetSession,
     liveTarget: targetSession,
   };
-  return { service, calls };
+  return { service, calls, edits };
 }
 
 function platformWithStorage(initial: Record<string, string> = {}) {
@@ -379,7 +397,7 @@ describe("record, review, replay, and save", () => {
     const { history } = await renderJourney("/tests/new", fake.service, storage.platform);
 
     await beginRecording();
-    expect(history.location.pathname).toBe("/tests/workflow-1/record");
+    expect(history.location.pathname).toBe("/recordings/workflow-1");
     expect(document.body.textContent).toContain("Relay records each supported interaction");
     expect(document.body.textContent).toContain("Pixel 9 Pro");
     expect(document.body.textContent).not.toContain("emulator-5554");
@@ -447,6 +465,108 @@ describe("record, review, replay, and save", () => {
     expect(document.body.textContent).toContain("A passing replay is required before saving");
   });
 
+  it("replaces a tap target without exposing selector internals", async () => {
+    const reviewing = state("reviewing", ["inspect", "edit", "replay"]);
+    if (!reviewing.snapshot?.review) throw new Error("Review fixture was not created");
+    reviewing.snapshot.review.actions[0]!.kind = "tap";
+    reviewing.snapshot.review.currentRevision = 2;
+    reviewing.snapshot.review.revisionCount = 2;
+    const fake = fakeService(reviewing);
+    await renderJourney(
+      "/recordings/workflow-1/review",
+      fake.service,
+      platformWithStorage().platform,
+    );
+
+    const target = document.querySelector<HTMLInputElement>("#review-replacement-label");
+    if (!target) throw new Error("Replacement target editor was not rendered");
+    await fill(target, "Preferred language");
+    await click(button("Replace target"));
+
+    expect(fake.edits).toContainEqual({
+      kind: "replace",
+      actionId: "step-1",
+      interaction: { kind: "tap", target: { label: "Preferred language" } },
+    });
+  });
+
+  it("trims the reviewed time range", async () => {
+    const reviewing = state("reviewing", ["inspect", "edit", "replay"]);
+    if (!reviewing.snapshot?.review) throw new Error("Review fixture was not created");
+    Object.assign(reviewing.snapshot.review, {
+      currentRevision: 3,
+      revisionCount: 3,
+      timeline: {
+        startedAt: 1_000,
+        finishedAt: 11_000,
+        durationMs: 10_000,
+        actionCount: 2,
+        evidenceCount: 2,
+        observationCount: 3,
+      },
+    });
+    const trimFake = fakeService(reviewing);
+    await renderJourney(
+      "/recordings/workflow-1/review",
+      trimFake.service,
+      platformWithStorage().platform,
+    );
+    const ranges = document.querySelectorAll<HTMLInputElement>('input[type="range"]');
+    await fill(ranges[0]!, "1000");
+    await click(button("Apply trim"));
+    expect(trimFake.edits[0]).toEqual({ kind: "clip", fromMs: 1_000, toMs: 10_000 });
+  });
+
+  it("restores a prior immutable revision for Undo", async () => {
+    const undoReview = state("reviewing", ["inspect", "edit", "replay"]);
+    if (!undoReview.snapshot?.review) throw new Error("Review fixture was not created");
+    undoReview.snapshot.review.currentRevision = 3;
+    undoReview.snapshot.review.revisionCount = 3;
+    const undoFake = fakeService(undoReview);
+    await renderJourney(
+      "/recordings/workflow-2/review",
+      undoFake.service,
+      platformWithStorage().platform,
+    );
+    await click(button("Undo"));
+    expect(undoFake.edits[0]).toEqual({ kind: "restore", sourceRevision: 2 });
+    await click(button("Redo"));
+    expect(undoFake.edits[1]).toEqual({ kind: "restore", sourceRevision: 3 });
+  });
+
+  it("labels optimizer output as review-only and never applies it automatically", async () => {
+    const fake = fakeService(state("reviewing", ["inspect", "edit", "replay"]));
+    fake.service.getOptimization = async () => ({
+      proposal: {
+        schemaVersion: 1,
+        kind: "authoring-raw-optimization",
+        reviewOnly: true,
+        takeId: "take-1",
+        captureVersion: 2,
+        baseRevision: 1,
+        sourceEventIds: ["raw-1"],
+        suggestions: [
+          {
+            kind: "review-wait",
+            rawEventId: "raw-1",
+            actionId: "step-1",
+            reason: "This wait may be longer than the visible transition needs.",
+          },
+        ],
+      },
+    });
+    await renderJourney(
+      "/recordings/workflow-1/review",
+      fake.service,
+      platformWithStorage().platform,
+    );
+
+    await click(button("Find cleanup"));
+    expect(document.body.textContent).toContain("review-only suggestions");
+    expect(document.body.textContent).toContain("never apply these automatically");
+    expect(fake.edits).toHaveLength(0);
+  });
+
   it("opens and controls the selected target before recording begins", async () => {
     const fake = fakeService();
     const { history } = await renderJourney(
@@ -464,17 +584,27 @@ describe("record, review, replay, and save", () => {
     expect(fake.calls.some((call) => call.startsWith("begin:"))).toBe(false);
 
     await click(button("Start recording"));
-    expect(history.location.pathname).toBe("/tests/workflow-1/record");
+    expect(history.location.pathname).toBe("/recordings/workflow-1");
   });
 
   it("uses the route parameter to adopt a recording after refresh", async () => {
     const fake = fakeService();
     const storage = platformWithStorage();
-    await renderJourney("/tests/workflow-1/record", fake.service, storage.platform);
+    await renderJourney("/recordings/workflow-1", fake.service, storage.platform);
 
     expect(document.body.textContent).toContain("Relay records each supported interaction");
     expect(fake.calls).toContain("inspect:workflow-1");
     expect(storage.values.get("activeRecordingWorkflowId")).toBe("workflow-1");
+  });
+
+  it("keeps the Test-owned recording route available for a true Test ID", async () => {
+    const fake = fakeService();
+    const storage = platformWithStorage();
+    await renderJourney("/tests/test-1/record", fake.service, storage.platform);
+
+    expect(document.body.textContent).toContain("Relay records each supported interaction");
+    expect(fake.calls).toContain("inspect:test-1");
+    expect(storage.values.get("activeRecordingWorkflowId")).toBe("test-1");
   });
 
   it("projects low-level capture actions as human review moments", async () => {
@@ -596,7 +726,7 @@ describe("record, review, replay, and save", () => {
     };
     const fake = fakeService(unavailable);
     const storage = platformWithStorage();
-    await renderJourney("/tests/workflow-1/record", fake.service, storage.platform);
+    await renderJourney("/recordings/workflow-1", fake.service, storage.platform);
 
     expect(document.body.textContent).toContain("Restoring recording");
     expect(document.body.textContent).not.toContain("Continue on the connected target");
@@ -660,7 +790,7 @@ describe("record, review, replay, and save", () => {
   it("clears a matching recovery pointer after a recording is cancelled", async () => {
     const fake = fakeService(state("cancelled", []));
     const storage = platformWithStorage({ activeRecordingWorkflowId: "workflow-1" });
-    await renderJourney("/tests/workflow-1/record", fake.service, storage.platform);
+    await renderJourney("/recordings/workflow-1", fake.service, storage.platform);
 
     expect(storage.values.has("activeRecordingWorkflowId")).toBe(false);
   });
@@ -689,7 +819,7 @@ describe("record, review, replay, and save", () => {
     expect(document.body.textContent).not.toContain("Start recording");
 
     await click(button("Open recording"));
-    expect(history.location.pathname).toBe("/tests/workflow-1/record");
+    expect(history.location.pathname).toBe("/recordings/workflow-1");
   });
 
   it("does not discard server-owned work from an unfinished recording", async () => {
@@ -732,6 +862,6 @@ describe("record, review, replay, and save", () => {
     expect(document.body.textContent).not.toContain("Start recording");
 
     await click(button("Open recording"));
-    expect(history.location.pathname).toBe("/tests/workflow-1/record");
+    expect(history.location.pathname).toBe("/recordings/workflow-1");
   });
 });

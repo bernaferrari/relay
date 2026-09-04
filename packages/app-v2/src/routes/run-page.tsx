@@ -23,6 +23,7 @@ import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react
 import { ArrowLeft, ChevronRight, CircleAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Breadcrumbs, OutcomeMark } from "../components/product-patterns";
+import { IssueDraftButton } from "../components/issue-draft-button";
 import {
   firstSentence,
   failureTitle,
@@ -36,6 +37,7 @@ import type { ProductRunState, RunProductService } from "../data/run-product-ser
 import { runQueryKeys } from "../data/run-queries";
 import { clearRunPointerIfCurrent, readRunPointer } from "../data/run-pointer";
 import { PageLoading, RecordingProblem, targetLabel } from "./recording-shared";
+import { RunReviewControls } from "./run-review-controls";
 
 const routeApi = getRouteApi("/runs/$runId");
 
@@ -295,11 +297,14 @@ function RunReport({
           <h1>{report.title}</h1>
           <p className="relay-report-outcome">{outcomeSentence(report.outcome, target)}</p>
         </div>
-        {!testId ? (
-          <Link className="relay-text-link relay-header-link" to="/runs">
-            All Runs
-          </Link>
-        ) : null}
+        <div className="relay-report-header-actions">
+          <IssueDraftButton source={{ kind: "run", report }} />
+          {!testId ? (
+            <Link className="relay-text-link relay-header-link" to="/runs">
+              All Runs
+            </Link>
+          ) : null}
+        </div>
       </header>
 
       {views.length > 1 ? (
@@ -341,6 +346,8 @@ function RunReport({
               </dd>
             </div>
           </dl>
+
+          <RunReviewControls runId={report.runId} service={runService} />
 
           {failure ? (
             <Alert

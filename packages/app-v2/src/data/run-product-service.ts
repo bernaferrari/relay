@@ -8,6 +8,8 @@ import type {
   AuthoringTarget,
   EvidenceChannel,
   EvidenceChannelRecord,
+  OperationInput,
+  OperationOutput,
   RunTestStepEvidence,
   RunOutcome,
 } from "@relay/protocol";
@@ -76,6 +78,13 @@ export type ProductRunReportOverview = {
   evidenceUnavailable?: true;
 };
 
+export type ProductRunReview = OperationOutput<"run.review">["review"];
+export type ProductVisualReviewResult = Pick<
+  OperationOutput<"run.visual.review">,
+  "decision" | "baseline"
+>;
+export type ProductVisualBaselineApproval = OperationOutput<"run.visual-baseline.update">;
+
 export type RunProductService = {
   getTest(testId: string): Promise<ProductTestSummary | undefined>;
   listTestRuns?(testId: string): Promise<readonly ProductRunSummary[]>;
@@ -85,6 +94,22 @@ export type RunProductService = {
   inspect(workflowId: string): Promise<ProductRunState>;
   watch(input?: ProductRunWatchInput): Promise<ProductRunState>;
   cancel(): Promise<ProductRunState>;
+  /** Durable review mutation; the returned review is the canonical decision. */
+  review?(input: OperationInput<"run.review">): Promise<ProductRunReview>;
+  /** Bounded evidence drilldown; callers choose whether sensitive bodies are requested. */
+  getEvidence?(
+    runId: string,
+    input?: Omit<OperationInput<"run.evidence.get">, "runId">,
+  ): Promise<OperationOutput<"run.evidence.get">["evidence"]>;
+  compareVisual?(runId: string): Promise<OperationOutput<"run.visual.compare">["comparison"]>;
+  reviewVisual?(input: OperationInput<"run.visual.review">): Promise<ProductVisualReviewResult>;
+  getVisualPolicy?(runId: string): Promise<OperationOutput<"run.visual-policy.get">["policy"]>;
+  updateVisualPolicy?(
+    input: OperationInput<"run.visual-policy.update">,
+  ): Promise<OperationOutput<"run.visual-policy.update">>;
+  approveVisualBaseline?(
+    input: OperationInput<"run.visual-baseline.update">,
+  ): Promise<ProductVisualBaselineApproval>;
   getReport(runId: string, canonical?: ProductRunReport): Promise<ProductRunReportOverview>;
   getRawEvidence(runId: string): Promise<unknown>;
 };
@@ -144,6 +169,14 @@ export function createRunProductService(platform: Platform): RunProductService {
     return runtimePromise;
   }
 
+  async function evidence(
+    runId: string,
+    input: Omit<OperationInput<"run.evidence.get">, "runId"> = {},
+  ): Promise<OperationOutput<"run.evidence.get">["evidence"]> {
+    return (await (await runtime()).client.invoke("run.evidence.get", { runId, ...input }))
+      .evidence;
+  }
+
   return {
     async getTest(testId) {
       const { client } = await runtime();
@@ -194,6 +227,28 @@ export function createRunProductService(platform: Platform): RunProductService {
     async cancel() {
       return (await runtime()).journey.cancel();
     },
+    async review(input) {
+      return (await (await runtime()).client.invoke("run.review", input)).review;
+    },
+    getEvidence: evidence,
+    async compareVisual(runId) {
+      return (await (await runtime()).client.invoke("run.visual.compare", { runId })).comparison;
+    },
+    async reviewVisual(input) {
+      const { decision, baseline } = await (
+        await runtime()
+      ).client.invoke("run.visual.review", input);
+      return { decision, baseline };
+    },
+    async getVisualPolicy(runId) {
+      return (await (await runtime()).client.invoke("run.visual-policy.get", { runId })).policy;
+    },
+    async updateVisualPolicy(input) {
+      return (await runtime()).client.invoke("run.visual-policy.update", input);
+    },
+    async approveVisualBaseline(input) {
+      return (await runtime()).client.invoke("run.visual-baseline.update", input);
+    },
     async getReport(runId, canonical) {
       const { client } = await runtime();
       const [{ run }, evidenceResult, appsResult] = await Promise.all([
@@ -211,8 +266,7 @@ export function createRunProductService(platform: Platform): RunProductService {
       );
     },
     async getRawEvidence(runId) {
-      const { client } = await runtime();
-      return (await client.invoke("run.evidence.get", { runId, includeBodies: true })).evidence;
+      return evidence(runId, { includeBodies: true });
     },
   };
 }

@@ -1,0 +1,219 @@
+/* Product V2 — durable live Sessions */
+
+.relay-sessions-page,
+.relay-session-page {
+  max-width: 1120px;
+}
+
+.relay-session-toolbar {
+  display: grid;
+  max-width: 440px;
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.relay-session-toolbar label {
+  color: var(--text-weak);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.relay-session-toolbar .relay-input {
+  min-height: 44px;
+  font-size: 16px;
+}
+
+.relay-session-row {
+  grid-template-columns: 30px minmax(190px, 1fr) minmax(112px, auto) minmax(112px, 0.34fr) 18px;
+}
+
+.relay-session-row-icon {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 1px solid var(--border-weak-base);
+  border-radius: var(--radius-md);
+  color: var(--text-weak);
+  background: var(--background-weak);
+}
+
+.relay-session-row-icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+.relay-session-detail-header,
+.relay-session-actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.relay-session-actions {
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.relay-session-actions .relay-button svg {
+  width: 14px;
+  height: 14px;
+}
+
+.relay-session-end-button {
+  border-color: var(--border-critical-base);
+  color: var(--text-critical-base);
+  background: var(--surface-critical-weak);
+}
+
+.relay-session-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(280px, 0.55fr);
+  align-items: start;
+  gap: 18px;
+  margin-top: 30px;
+}
+
+.relay-session-stage,
+.relay-session-context > section {
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--border-weak-base);
+  border-radius: var(--radius-xl);
+  background: var(--surface-raised-strong);
+  box-shadow: var(--shadow-xs);
+}
+
+.relay-session-stage .relay-live-target {
+  min-height: 520px;
+  margin-top: 14px;
+  overflow: hidden;
+  border: 1px solid var(--border-weak-base);
+  border-radius: var(--radius-lg);
+}
+
+.relay-session-context {
+  display: grid;
+  gap: 14px;
+}
+
+.relay-session-context h2,
+.relay-session-stage h2 {
+  margin-top: 3px;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.relay-session-context dl {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.relay-session-context dl > div {
+  display: grid;
+  grid-template-columns: minmax(72px, 0.42fr) minmax(0, 1fr);
+  gap: 10px;
+}
+
+.relay-session-context dt {
+  color: var(--text-weaker);
+  font-size: 11px;
+}
+
+.relay-session-context dd {
+  overflow-wrap: anywhere;
+  color: var(--text-strong);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.relay-session-unavailable {
+  display: grid;
+  min-height: 280px;
+  place-items: center;
+  align-content: center;
+  gap: 16px;
+  margin-top: 14px;
+  padding: 30px;
+  border: 1px dashed var(--border-base);
+  border-radius: var(--radius-lg);
+  color: var(--text-weak);
+  text-align: center;
+}
+
+.relay-session-activity ol {
+  display: grid;
+  gap: 12px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.relay-session-activity li {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr);
+  gap: 9px;
+}
+
+.relay-session-activity li > span {
+  width: 7px;
+  height: 7px;
+  margin-top: 5px;
+  border-radius: 999px;
+  background: var(--border-strong);
+}
+
+.relay-session-activity li div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.relay-session-activity strong,
+.relay-session-activity small,
+.relay-session-activity-empty {
+  font-size: 11px;
+}
+
+.relay-session-activity strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.relay-session-activity small,
+.relay-session-activity-empty {
+  color: var(--text-weaker);
+}
+
+.relay-session-activity-empty {
+  margin-top: 14px;
+  line-height: 1.5;
+}
+
+@media (max-width: 880px) {
+  .relay-session-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .relay-session-stage .relay-live-target {
+    min-height: 420px;
+  }
+}
+
+@media (max-width: 620px) {
+  .relay-session-detail-header {
+    display: grid;
+  }
+
+  .relay-session-row {
+    grid-template-columns: 30px minmax(0, 1fr) 18px;
+  }
+
+  .relay-session-row .relay-library-row-status,
+  .relay-session-row .relay-library-row-recent {
+    grid-column: 2;
+  }
+}

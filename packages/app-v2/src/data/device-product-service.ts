@@ -1,4 +1,4 @@
-import type { DeviceSummary, ActionSummary } from "@relay/protocol";
+import type { ActionSummary, DeviceSummary, OperationOutput } from "@relay/protocol";
 import type { Platform } from "../platform/types";
 import { productClientForPlatform } from "./product-client";
 
@@ -26,6 +26,8 @@ export type ProductDeviceRecovery = {
   session: { status: string; detail: string; app?: string; fallback?: boolean };
 };
 
+export type ProductLaunchedApp = OperationOutput<"target.app.launch">["launched"];
+
 export type DeviceProductService = {
   list(): Promise<readonly ProductDevice[]>;
   get(deviceId: string): Promise<ProductDevice | undefined>;
@@ -34,6 +36,9 @@ export type DeviceProductService = {
     serial: string,
     reason?: "connect" | "observe" | "control" | "record" | "auto",
   ): Promise<ProductDeviceRecovery>;
+  /** Launch is supported only for attached Android/iOS devices by the
+   * canonical target operation; managed browsers remain a separate target. */
+  launchApp?(deviceId: string, app: string, relaunch?: boolean): Promise<ProductLaunchedApp>;
 };
 
 export const deviceQueryKeys = {
@@ -135,13 +140,14 @@ export function createDeviceProductService(platform: Platform): DeviceProductSer
   let clientPromise: ReturnType<typeof productClientForPlatform> | undefined;
   const client = () =>
     (clientPromise ??= productClientForPlatform(platform)).then(({ client }) => client);
+  async function listDevices(): Promise<readonly ProductDevice[]> {
+    const result = await (await client()).invoke("target.devices.list", {});
+    return projectDevices(result.devices);
+  }
   return {
-    async list() {
-      const result = await (await client()).invoke("target.devices.list", {});
-      return projectDevices(result.devices);
-    },
+    list: listDevices,
     async get(deviceId) {
-      return (await this.list()).find(
+      return (await listDevices()).find(
         (device) => device.id === deviceId || device.serial === deviceId,
       );
     },
@@ -151,6 +157,25 @@ export function createDeviceProductService(platform: Platform): DeviceProductSer
     async recover(serial, reason = "auto") {
       const result = await (await client()).invoke("target.recover", { serial, reason });
       return result.recovery;
+    },
+    async launchApp(deviceId, app, relaunch) {
+      const device = (await listDevices()).find(
+        (candidate) => candidate.id === deviceId || candidate.serial === deviceId,
+      );
+      if (!device) throw new TypeError(`Device ${deviceId} is not available.`);
+      if (device.platform !== "android" && device.platform !== "ios") {
+        throw new TypeError("App launch is supported only for attached Android and iOS devices.");
+      }
+      const name = app.trim();
+      if (!name) throw new TypeError("Enter an app name, package, or bundle identifier.");
+      const result = await (
+        await client()
+      ).invoke("target.app.launch", {
+        serial: device.serial,
+        app: name,
+        ...(relaunch === undefined ? {} : { relaunch }),
+      });
+      return result.launched;
     },
   };
 }

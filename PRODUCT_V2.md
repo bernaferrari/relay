@@ -8,11 +8,13 @@ their richer implementation vocabulary; those terms must not leak into ordinary 
 
 Relay proves that software written by humans or agents works on real apps, browsers, and devices.
 
-The five primary objects are **App** (the product being verified), **Test** (one reviewed,
+The six primary objects are **App** (the product being verified), **Test** (one reviewed,
 repeatable journey), **Run** (one execution of a Test), **Change** (code claiming to alter product
-behavior), and **Device** (where the product executes).
+behavior), **Device** (where the product executes), and **Session** (a durable live browser or
+device workspace used for recording and debugging).
 
-Supporting public terms are **Checkpoint**, **Report**, **Proof**, **Recording**, **Data set**, and
+Supporting public terms are **Suite** (saved Tests and Data sets run together), **Environment**
+(a reusable execution setup), **Checkpoint**, **Report**, **Proof**, **Recording**, **Data set**, and
 **Map**. Record, Repeat, Explore, and Verify are actions. Map is derived, optional App intelligence;
 creating a Map is never an opening toll.
 
@@ -38,6 +40,13 @@ Verification: Change → Verification plan → Runs → Evidence → merge decis
 /tests/:testId/edit
 /tests/:testId/record
 /tests/:testId/run-across
+/suites
+/apps/:appId/suites/:suiteId
+/environments
+/environments/:profileId
+/sessions
+/sessions/:sessionId
+/recordings/:recordingId
 /recordings/:recordingId/review
 /runs
 /runs/:runId
@@ -55,7 +64,7 @@ Verification: Change → Verification plan → Runs → Evidence → merge decis
 ```
 
 Selected entities and useful substate belong in the URL. Query state may include `status`, `app`,
-`view`, `step`, `screen`, and `section`. Every route has one parent, title, primary object, primary
+`view`, `step`, `screen`, `session`, and `section`. Every route has one parent, title, primary object, primary
 action, sidebar selection, Back behavior, restorable view state, and explicit loading/error rules.
 
 ## Interaction laws
@@ -71,7 +80,8 @@ action, sidebar selection, Back behavior, restorable view state, and explicit lo
 4. Only one contextual side surface is open at a time.
 5. Save state is always visible: Saved, Saving, Offline — saved locally, Could not save, or
    Unsaved changes. Route changes preserve or flush recoverable drafts.
-6. Recording, Runs, Repeat, and Change verification persist in the Activity Center across routes.
+6. Sessions, Recording, Runs, Repeat, and Change verification persist in the Activity Center
+   across routes.
    UI state may project server state but cannot decide completion, mutation, pass, or approval.
 
 ## Responsive and accessibility contract

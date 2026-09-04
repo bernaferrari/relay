@@ -146,6 +146,7 @@ async function run() {
     await check();
     for (const [name, route] of [
       ["Tests", "/tests"],
+      ["Sessions", "/sessions"],
       ["Devices", "/devices"],
       ["Changes", "/changes"],
       ["Runs", "/runs"],

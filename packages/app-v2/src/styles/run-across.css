@@ -541,6 +541,264 @@
   line-height: 1.5;
 }
 
+.relay-batch-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.relay-batch-clusters,
+.relay-batch-matrix {
+  margin-top: 30px;
+}
+
+.relay-batch-clusters .relay-section-heading > span,
+.relay-batch-matrix .relay-section-heading > span {
+  color: var(--text-weaker);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.relay-batch-clusters ul {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.relay-batch-clusters li {
+  display: grid;
+  min-height: 66px;
+  grid-template-columns: auto 30px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 13px;
+  border: 1px solid color-mix(in srgb, var(--text-critical-base) 16%, var(--border-weak-base));
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--surface-critical-weak) 64%, var(--surface-raised-strong));
+}
+
+.relay-batch-cluster-mark {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 999px;
+  color: var(--text-critical-base);
+  background: var(--surface-critical-base);
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.relay-batch-clusters li > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.relay-batch-clusters li strong {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.relay-batch-clusters li p,
+.relay-batch-cluster-notice {
+  color: var(--text-weak);
+  font-size: 11px;
+}
+
+.relay-batch-clusters li > a {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-interactive-base);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.relay-batch-clusters li > a svg,
+.relay-batch-result > a svg,
+.relay-batch-selection .relay-button svg {
+  width: 13px;
+  height: 13px;
+}
+
+.relay-batch-cluster-notice {
+  margin-top: 10px;
+}
+
+.relay-batch-matrix-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.relay-batch-matrix {
+  margin-top: 14px;
+}
+
+.relay-batch-matrix-scroll {
+  margin-top: 12px;
+  overflow: auto;
+  border: 1px solid var(--border-weak-base);
+  border-radius: var(--radius-xl);
+  background: var(--surface-raised-strong);
+  overscroll-behavior-inline: contain;
+}
+
+.relay-batch-matrix table {
+  width: 100%;
+  min-width: 680px;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.relay-batch-matrix th,
+.relay-batch-matrix td {
+  min-width: 184px;
+  padding: 10px 12px;
+  border-right: 1px solid var(--border-weak-base);
+  border-bottom: 1px solid var(--border-weak-base);
+  text-align: left;
+  vertical-align: top;
+}
+
+.relay-batch-matrix th:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  width: 190px;
+  min-width: 190px;
+  background: var(--background-strong);
+  box-shadow: 1px 0 0 var(--border-weak-base);
+}
+
+.relay-batch-matrix thead th {
+  color: var(--text-weak);
+  background: var(--background-weak);
+}
+
+.relay-batch-matrix tr:last-child > * {
+  border-bottom: 0;
+}
+
+.relay-batch-matrix tr > *:last-child {
+  border-right: 0;
+}
+
+.relay-batch-matrix th strong,
+.relay-batch-matrix th small {
+  display: block;
+}
+
+.relay-batch-matrix th strong {
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 12px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.relay-batch-matrix th small {
+  margin-top: 3px;
+  color: var(--text-weaker);
+  font-size: 10px;
+}
+
+.relay-batch-matrix-cell--problem {
+  background: color-mix(in srgb, var(--surface-critical-weak) 44%, transparent);
+}
+
+.relay-batch-matrix-cell {
+  display: grid;
+  gap: 8px;
+}
+
+.relay-batch-result {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.relay-batch-result > span:nth-child(2) {
+  display: grid;
+  min-width: 0;
+  justify-items: start;
+  gap: 4px;
+}
+
+.relay-batch-result small {
+  max-width: 22ch;
+  overflow: hidden;
+  color: var(--text-weaker);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.relay-batch-result > a {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border-radius: var(--radius-md);
+  color: var(--text-interactive-base);
+}
+
+.relay-batch-result-spacer {
+  width: 16px;
+}
+
+.relay-batch-matrix-empty {
+  display: block;
+  padding: 9px;
+  color: var(--text-weaker);
+  text-align: center;
+}
+
+.relay-batch-selection {
+  position: sticky;
+  bottom: 16px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin: 22px auto 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius-xl);
+  background: color-mix(in srgb, var(--background-strong) 94%, transparent);
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: blur(12px);
+}
+
+.relay-batch-selection > div {
+  display: grid;
+  gap: 3px;
+}
+
+.relay-batch-selection strong {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.relay-batch-selection span {
+  color: var(--text-weak);
+  font-size: 11px;
+}
+
 @media (max-width: 820px) {
   .relay-run-across-workspace,
   .relay-batch-summary {
@@ -549,6 +807,22 @@
 
   .relay-batch-summary dl {
     flex-wrap: wrap;
+  }
+
+  .relay-batch-header,
+  .relay-batch-matrix-toolbar,
+  .relay-batch-selection {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .relay-batch-clusters li {
+    grid-template-columns: auto 30px minmax(0, 1fr);
+  }
+
+  .relay-batch-clusters li > a {
+    grid-column: 3;
+    justify-self: start;
   }
 
   .relay-batch-case-header {

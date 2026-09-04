@@ -35,6 +35,7 @@ import type {
   VerifyChangeOutcomeIntent,
 } from "./types.js";
 import { runReplayLab } from "./replay-lab.js";
+import { recordingPathContext } from "./recording-path-context.js";
 import { acquireOwnLease, selectAppMap, selectTarget, targetCatalog } from "./target-catalog.js";
 
 export type RelayOutcomeJobOptions = { actorId: string };
@@ -278,6 +279,7 @@ class CanonicalRelayOutcomeJobs implements RelayOutcomeJobs {
       target,
       leaseId,
       revision: "current",
+      ...recordingPathContext(intent),
       workflowRequestId: crypto.randomUUID(),
       continuation: "durable",
     });

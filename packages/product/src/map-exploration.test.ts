@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { projectProductMap } from "./map-exploration.js";
+import { createProductMapService, projectProductMap } from "./map-exploration.js";
 
 test("map projection presents bounded known screens, paths, coverage, and failures", () => {
   const map = {
@@ -81,4 +81,91 @@ test("map projection handles realistic empty maps without inventing paths", () =
   });
   assert.equal(overview.pendingProposalCount, 0);
   assert.equal(overview.paths.length, 0);
+});
+
+test("map drilldowns reuse the canonical App Map snapshot and fail closed for unknown ids", async () => {
+  const map = {
+    id: "app-1",
+    name: "Checkout",
+    revision: 2,
+    screens: { home: { id: "home", title: "Home", variantIds: [] } },
+    connections: {},
+    tests: {},
+    targetResults: {},
+  } as never;
+  const calls: string[] = [];
+  const service = createProductMapService({
+    async invoke(id: string) {
+      calls.push(id);
+      return { appMap: map };
+    },
+  } as never);
+  assert.equal((await service.getScreen!("app-1", "home"))?.title, "Home");
+  assert.equal(await service.getScreen!("app-1", "missing"), undefined);
+  assert.equal(await service.getPath!("app-1", "missing"), undefined);
+  assert.deepEqual(calls, ["app-map.get", "app-map.get", "app-map.get"]);
+});
+
+test("map proposal review forwards revision-guarded canonical mutations", async () => {
+  const map = {
+    id: "app-1",
+    name: "Checkout",
+    revision: 2,
+    screens: {},
+    connections: {},
+    tests: {},
+    targetResults: {},
+    proposals: {
+      proposal: {
+        id: "proposal",
+        title: "Repair checkout path",
+        status: "pending",
+        createdAt: 1,
+        updatedAt: 2,
+        baseRevision: 1,
+      },
+    },
+  } as never;
+  const calls: Array<{ id: string; input: unknown }> = [];
+  const service = createProductMapService({
+    async invoke(id: string, input: unknown) {
+      calls.push({ id, input });
+      return { appMap: map };
+    },
+  } as never);
+  const proposals = await service.listProposals!("app-1");
+  assert.deepEqual(proposals, [
+    {
+      id: "proposal",
+      title: "Repair checkout path",
+      status: "pending",
+      createdAt: 1,
+      updatedAt: 2,
+      baseRevision: 1,
+    },
+  ]);
+  await service.approveProposal!({
+    appMapId: "app-1",
+    proposalId: "proposal",
+    expectedRevision: 2,
+    reason: "Reviewed repair",
+    prove: false,
+  });
+  await service.rejectProposal!({
+    appMapId: "app-1",
+    proposalId: "proposal",
+    expectedRevision: 2,
+    reason: "Not reproducible",
+  });
+  assert.deepEqual(
+    calls.map(({ id }) => id),
+    ["app-map.get", "app-map.proposal.approve", "app-map.proposal.reject"],
+  );
+  assert.deepEqual(calls[1]?.input, {
+    appMapId: "app-1",
+    proposalId: "proposal",
+    expectedRevision: 2,
+    reason: "Reviewed repair",
+    prove: false,
+  });
 });

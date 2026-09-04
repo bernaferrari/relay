@@ -607,6 +607,7 @@ export type ReplaceAuthoringActionInput = AuthoringSessionRef & {
  * immutable revision; callers never reconstruct those rules themselves. */
 export type AuthoringRecordingEdit =
   | { kind: "clip"; fromMs?: number; toMs?: number }
+  | { kind: "restore"; sourceRevision: number }
   | { kind: "remove"; actionIds: string[] }
   | { kind: "reorder"; actionIds: string[] }
   | { kind: "replace"; actionId: string; interaction: AuthoringInteraction }

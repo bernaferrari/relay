@@ -188,7 +188,17 @@ export function NewTestPage() {
       const suggestedName = pathContext.data
         ? `${pathContext.data.fromTitle} to ${pathContext.data.toTitle ?? "Finish"}`
         : "Untitled recording";
-      const state = await productService.begin({ title: suggestedName, appMapId: appId, targetId });
+      const state = await productService.begin({
+        title: suggestedName,
+        appMapId: appId,
+        targetId,
+        ...(pathContext.data
+          ? {
+              sourceScreenId: pathContext.data.fromScreenId,
+              pendingConnectionId: pathContext.data.id,
+            }
+          : {}),
+      });
       const workflowId = state.snapshot?.workflow?.workflowId;
       if (workflowId) {
         await writeWorkflowPointer(platform, workflowId);
@@ -204,7 +214,7 @@ export function NewTestPage() {
       const workflowId = state.snapshot?.workflow?.workflowId;
       if (!workflowId) return;
       await Promise.resolve(platform.storage.remove?.(NEW_TEST_DRAFT_KEY));
-      await navigate({ to: "/tests/$testId/record", params: { testId: workflowId } });
+      await navigate({ to: "/recordings/$recordingId", params: { recordingId: workflowId } });
     },
   });
 
@@ -276,8 +286,8 @@ export function NewTestPage() {
               size="small"
               onClick={() =>
                 void navigate({
-                  to: "/tests/$testId/record",
-                  params: { testId: activePointer.data! },
+                  to: "/recordings/$recordingId",
+                  params: { recordingId: activePointer.data! },
                 })
               }
             >

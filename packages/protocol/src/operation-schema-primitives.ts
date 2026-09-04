@@ -232,6 +232,12 @@ export const authoringRecordingEdit = z.discriminatedUnion("kind", [
     ),
   z
     .object({
+      kind: z.literal("restore"),
+      sourceRevision: z.number().int().nonnegative().describe("Earlier Take revision to restore"),
+    })
+    .strict(),
+  z
+    .object({
       kind: z.literal("remove"),
       actionIds: z.array(identifier("Authoring action identifier")).min(1),
     })

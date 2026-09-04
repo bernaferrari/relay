@@ -1,0 +1,188 @@
+/** @jsxImportSource react */
+import type { ProductChange } from "@relay/product/change-journey";
+import type { ProductRunSummary, ProductTestSummary } from "@relay/product/catalog";
+import { createMemoryHistory } from "@tanstack/react-router";
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, describe, expect, it } from "vitest";
+import { RelayV2App } from "../app";
+import type { CatalogProductService } from "../data/catalog-product-service";
+import type { ChangeProductService } from "../data/change-product-service";
+import type { RecordingProductService } from "../data/recording-product-service";
+import type { Platform } from "../platform/types";
+
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+const roots: Root[] = [];
+
+afterEach(async () => {
+  await act(async () => {
+    for (const root of roots.splice(0)) root.unmount();
+  });
+  document.body.replaceChildren();
+});
+
+function platform(): Platform {
+  return {
+    platform: "web",
+    getServerUrl: () => "http://127.0.0.1:8787",
+    storage: { get: () => null, set: () => undefined, remove: () => undefined },
+  };
+}
+
+function recording(): RecordingProductService {
+  return {
+    listApps: async () => [],
+    connect: async () => ({ status: "idle", targets: [] }),
+    presentTargets: async () => [],
+    begin: async () => ({ status: "idle", targets: [] }),
+    inspect: async () => ({ status: "idle", targets: [] }),
+    getOptimization: async () => ({ proposal: null }),
+    getEvidencePreview: async () => null,
+    recordCurrent: async () => ({ status: "idle", targets: [] }),
+    checkpoint: async () => ({ status: "idle", targets: [] }),
+    stop: async () => ({ status: "idle", targets: [] }),
+    edit: async () => ({ status: "idle", targets: [] }),
+    replay: async () => ({ status: "idle", targets: [] }),
+    approve: async () => ({ status: "idle", targets: [] }),
+  };
+}
+
+function catalog(runs: readonly ProductRunSummary[]): CatalogProductService {
+  const tests: readonly ProductTestSummary[] = [];
+  return {
+    listTests: async () => tests,
+    getTest: async () => undefined,
+    listRuns: async () => runs,
+    getRun: async () => undefined,
+  };
+}
+
+function changes(items: readonly ProductChange[]): ChangeProductService {
+  const unsupported = async (): Promise<never> => {
+    throw new Error("not used in shell overlay tests");
+  };
+  return {
+    list: async () => items,
+    open: unsupported,
+    prepare: unsupported,
+    approve: unsupported,
+    run: unsupported,
+    watch: unsupported,
+    cancel: unsupported,
+    rerunAffected: unsupported,
+    resumeHumanEvidence: unsupported,
+    retryPublication: unsupported,
+  };
+}
+
+async function renderShell(input: {
+  runs?: readonly ProductRunSummary[];
+  changes?: readonly ProductChange[];
+}) {
+  const host = document.createElement("div");
+  document.body.append(host);
+  const history = createMemoryHistory({ initialEntries: ["/home"] });
+  const root = createRoot(host);
+  roots.push(root);
+  await act(async () => {
+    root.render(
+      <RelayV2App
+        platform={platform()}
+        history={history}
+        productService={recording()}
+        catalogService={catalog(input.runs ?? [])}
+        changeService={changes(input.changes ?? [])}
+      />,
+    );
+  });
+  await settle();
+  return history;
+}
+
+async function settle() {
+  for (let index = 0; index < 6; index += 1) {
+    await act(async () => void (await new Promise((resolve) => setTimeout(resolve, 0))));
+  }
+}
+
+describe("shell overlays", () => {
+  it("opens Activity Center and shows server-backed Runs and Changes", async () => {
+    const run: ProductRunSummary = {
+      id: "run-server",
+      title: "Checkout",
+      action: "test",
+      status: "running",
+      phase: "running",
+      testName: "Checkout",
+      targetName: "Managed Chromium",
+      queuedAt: Date.now(),
+      identity: { runId: "run-server" },
+      links: { self: "/runs/run-server" },
+    };
+    const change: ProductChange = {
+      id: "change-server",
+      version: 1,
+      status: "running",
+      repository: "relay",
+      title: "Verify checkout change",
+      baseRevision: "base",
+      requestedRevision: "head",
+      runs: [],
+      evidenceCount: 0,
+      coverageGaps: [],
+      residualRisk: [],
+      affectedTestCount: 1,
+      requiredVerificationCount: 1,
+      advisoryVerificationCount: 0,
+      updatedAt: Date.now(),
+    };
+    await renderShell({ runs: [run], changes: [change] });
+
+    const trigger = document.querySelector<HTMLButtonElement>(
+      'button[aria-label^="Open Activity Center"]',
+    );
+    expect(trigger).toBeTruthy();
+    await act(async () => trigger?.click());
+    await settle();
+
+    expect(document.body.textContent).toContain("Activity Center");
+    expect(document.body.textContent).toContain("Checkout");
+    expect(document.body.textContent).toContain("Verify checkout change");
+    expect(document.body.textContent).toContain("Verifying");
+  });
+
+  it("opens the command palette with the keyboard, searches, and navigates", async () => {
+    const history = await renderShell({});
+
+    await act(async () => {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true, cancelable: true }),
+      );
+    });
+    await settle();
+
+    const input = document.querySelector<HTMLInputElement>('input[aria-label="Search commands"]');
+    expect(input).toBeTruthy();
+    await act(async () => {
+      if (!input) return;
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+      setter?.call(input, "failed");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await settle();
+    const results = document.querySelector('[role="list"][aria-label="Commands"]');
+    expect(results?.textContent).toContain("Review failed Runs");
+    expect(results?.textContent).not.toContain("Open Home");
+
+    await act(async () => {
+      const failedRuns = [...document.querySelectorAll("button")].find((button) =>
+        button.textContent?.includes("Review failed Runs"),
+      );
+      failedRuns?.click();
+    });
+    await settle();
+    expect(history.location.pathname).toBe("/runs");
+    expect(history.location.search).toBe("?view=failed");
+  });
+});

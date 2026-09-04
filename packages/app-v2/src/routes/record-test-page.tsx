@@ -10,7 +10,7 @@ import {
 } from "@relay/ui-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { ArrowLeft, BookmarkPlus, CheckCircle2, Circle, Square } from "lucide-react";
 import type { LiveTargetSession, LiveTargetStatus } from "../data/live-target-session";
 import { recordingQueryKeys, refreshRecording } from "../data/recording-queries";
@@ -18,15 +18,51 @@ import { clearWorkflowPointerIfCurrent, writeWorkflowPointer } from "../data/wor
 import { LiveTargetCanvas } from "./live-target-canvas";
 import { PageLoading, RecordingProblem, errorMessage, targetLabel } from "./recording-shared";
 
-const routeApi = getRouteApi("/tests/$testId/record");
+const testRouteApi = getRouteApi("/tests/$testId/record");
+const recordingRouteApi = getRouteApi("/recordings/$recordingId");
 
 type CaptureAction = { action: "checkpoint"; label?: string } | { action: "stop" };
 
 export function RecordTestPage() {
+  const { testId } = testRouteApi.useParams();
+  return (
+    <RecordingWorkspace
+      workflowId={testId}
+      exitLink={
+        <Link
+          className="relay-capture-back relay-electron-no-drag"
+          to="/tests/$testId"
+          params={{ testId }}
+        >
+          <ArrowLeft aria-hidden="true" />
+          Exit recording
+        </Link>
+      }
+    />
+  );
+}
+
+/** The recording-owned route is used while a new Test has no Test ID yet. It
+ * intentionally shares the exact recorder workspace with true Test recording
+ * instead of teaching two route-specific UIs the same workflow behavior. */
+export function RecordingPage() {
+  const { recordingId } = recordingRouteApi.useParams();
+  return (
+    <RecordingWorkspace
+      workflowId={recordingId}
+      exitLink={
+        <Link className="relay-capture-back relay-electron-no-drag" to="/tests/new">
+          <ArrowLeft aria-hidden="true" />
+          Exit recording
+        </Link>
+      }
+    />
+  );
+}
+
+function RecordingWorkspace({ workflowId, exitLink }: { workflowId: string; exitLink: ReactNode }) {
   const { productService, platform, queryClient } = useRouteContext({ from: "__root__" });
-  const { testId } = routeApi.useParams();
   const navigate = useNavigate();
-  const workflowId = testId;
   const [checkpointOpen, setCheckpointOpen] = useState(false);
   const [checkpointLabel, setCheckpointLabel] = useState("");
   const liveCanvas = useRef<HTMLCanvasElement>(null);
@@ -38,12 +74,16 @@ export function RecordTestPage() {
 
   const recording = useQuery({
     queryKey: recordingQueryKeys.workflow(workflowId),
-    queryFn: async () => {
-      await writeWorkflowPointer(platform, workflowId);
-      return productService.inspect(workflowId);
-    },
+    queryFn: () => productService.inspect(workflowId),
     staleTime: 0,
   });
+
+  useEffect(() => {
+    void writeWorkflowPointer(platform, workflowId).then(() => {
+      queryClient.setQueryData<string | null>(recordingQueryKeys.pointer, workflowId);
+      queryClient.setQueryData<string | null>(recordingQueryKeys.reconciledPointer, workflowId);
+    });
+  }, [platform, queryClient, workflowId]);
 
   const action = useMutation({
     mutationFn: async (intent: CaptureAction) => {
@@ -180,10 +220,7 @@ export function RecordTestPage() {
   return (
     <section className="relay-capture-stage">
       <header className="relay-capture-header relay-electron-drag">
-        <Link className="relay-capture-back relay-electron-no-drag" to="/tests/new">
-          <ArrowLeft aria-hidden="true" />
-          Exit recording
-        </Link>
+        {exitLink}
         <div className="relay-capture-title">
           <span
             className={captureReady ? "relay-recording-dot" : "relay-recording-idle-dot"}

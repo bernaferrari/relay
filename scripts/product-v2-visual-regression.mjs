@@ -38,6 +38,13 @@ const fixtures = [
   { id: "report-failed", heading: "Complete checkout" },
   { id: "report-evidence", heading: "Complete checkout", evidenceMedia: true },
   { id: "batch-completed", heading: "Checkout across saved accounts", batch: true },
+  { id: "sessions-list", heading: "Sessions" },
+  { id: "session-detail", heading: "Complete checkout and confirm the order" },
+  { id: "live-test-editor", heading: "Complete checkout and confirm the order" },
+  { id: "suites-list", heading: "Suites" },
+  { id: "suite-detail", heading: "Release smoke" },
+  { id: "environments-list", heading: "Environments" },
+  { id: "environment-detail", heading: "Checkout staging" },
 ];
 const viewports = [
   { id: "compact", width: 800, height: 560 },
@@ -227,7 +234,7 @@ async function assertLayout(page, fixture, viewport) {
     }
   }
   if (!fixture.batch) return;
-  const reportLinks = page.getByRole("link", { name: /Open report/u });
+  const reportLinks = page.getByRole("link", { name: /Open Report/iu });
   if ((await reportLinks.count()) !== 6) throw new Error("Batch fixture did not render 6 Reports");
   const firstLink = await reportLinks.first().boundingBox();
   if (!firstLink || firstLink.height < 44) {

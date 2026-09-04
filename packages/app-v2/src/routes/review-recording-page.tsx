@@ -1,36 +1,46 @@
 /** @jsxImportSource react */
 import type { AuthoringRecordingEdit } from "@relay/protocol";
-import {
-  Button,
-  Checkbox,
-  Dialog,
-  Field,
-  FieldDescription,
-  FieldLabel,
-  Input,
-  ScrollArea,
-} from "@relay/ui-react";
+import { Button, Dialog, Field, FieldDescription, FieldLabel, Input } from "@relay/ui-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useRouteContext } from "@tanstack/react-router";
 import {
   ArrowDown,
   ArrowUp,
   Check,
+  Clock3,
   Combine,
-  MoreHorizontal,
+  Redo2,
   RotateCcw,
   Save,
   Scissors,
+  Target,
   Trash2,
+  Undo2,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Breadcrumbs, EmptyState } from "../components/product-patterns";
+import { Breadcrumbs } from "../components/product-patterns";
 import { recordingQueryKeys, refreshRecording } from "../data/recording-queries";
-import type { ProductRecordingState } from "../data/recording-product-service";
 import { clearWorkflowPointerIfCurrent } from "../data/workflow-pointer";
 import { PageLoading, RecordingProblem } from "./recording-shared";
+import { RecordingActionsPanel, RecordingEvidencePanel } from "./recording-review-panels";
+import {
+  formatDuration,
+  replayDetail,
+  replayTitle,
+  reviewInstruction,
+  useEvidenceObjectUrl,
+} from "./recording-review-presentation";
 
 const routeApi = getRouteApi("/recordings/$recordingId/review");
+
+type ReviewTransitionIntent =
+  | { action: "replay" }
+  | { action: "approve"; testName: string }
+  | {
+      action: "edit";
+      edit: AuthoringRecordingEdit;
+      history?: { kind: "new" | "undo" | "redo"; fromRevision: number };
+    };
 
 export function ReviewRecordingPage() {
   const { productService, platform, queryClient } = useRouteContext({ from: "__root__" });
@@ -40,9 +50,16 @@ export function ReviewRecordingPage() {
   const [testName, setTestName] = useState("");
   const [selectedActionIds, setSelectedActionIds] = useState<readonly string[]>([]);
   const [actionIntent, setActionIntent] = useState("");
+  const [replacementLabel, setReplacementLabel] = useState("");
+  const [evidenceRole, setEvidenceRole] = useState<"entrance" | "exit">("exit");
+  const [trimStartMs, setTrimStartMs] = useState(0);
+  const [trimEndMs, setTrimEndMs] = useState(0);
+  const [undoStack, setUndoStack] = useState<readonly number[]>([]);
+  const [redoStack, setRedoStack] = useState<readonly number[]>([]);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [nameDraftLoaded, setNameDraftLoaded] = useState(false);
   const suggestionApplied = useRef(false);
+  const historyInitialized = useRef(false);
 
   useEffect(() => {
     let disposed = false;
@@ -65,12 +82,7 @@ export function ReviewRecordingPage() {
     staleTime: 0,
   });
   const transition = useMutation({
-    mutationFn: (
-      intent:
-        | { action: "replay" }
-        | { action: "approve"; testName: string }
-        | { action: "edit"; edit: AuthoringRecordingEdit },
-    ) => {
+    mutationFn: (intent: ReviewTransitionIntent) => {
       if (intent.action === "replay") return productService.replay();
       if (intent.action === "edit") return productService.edit(intent.edit);
       return productService.approve(intent.testName);
@@ -81,6 +93,16 @@ export function ReviewRecordingPage() {
       if (intent.action === "edit") {
         const nextIds = canonical.snapshot?.review?.actions.map((action) => action.id) ?? [];
         setSelectedActionIds((current) => current.filter((id) => nextIds.includes(id)).slice(0, 1));
+        if (intent.history?.kind === "new") {
+          setUndoStack((current) => [...current, intent.history!.fromRevision]);
+          setRedoStack([]);
+        } else if (intent.history?.kind === "undo") {
+          setUndoStack((current) => current.slice(0, -1));
+          setRedoStack((current) => [...current, intent.history!.fromRevision]);
+        } else if (intent.history?.kind === "redo") {
+          setRedoStack((current) => current.slice(0, -1));
+          setUndoStack((current) => [...current, intent.history!.fromRevision]);
+        }
       }
       if (intent.action === "approve" && canonical.snapshot?.stage === "committed") {
         await Promise.resolve(platform.storage.remove?.(nameDraftKey));
@@ -115,6 +137,24 @@ export function ReviewRecordingPage() {
   const canApprove = allowed.has("approve");
   const committedTestId = snapshot?.authoring?.committedTestId;
   const saved = reviewReady && snapshot?.stage === "committed";
+  const currentRevision = review?.currentRevision;
+  const sessionId = snapshot?.authoring?.sessionId;
+  const optimization = useQuery({
+    queryKey: ["recording-optimization", sessionId ?? "unselected", currentRevision ?? 0],
+    queryFn: () => productService.getOptimization(sessionId!),
+    enabled: false,
+  });
+  const evidence =
+    selectedAction?.evidence?.find(
+      (candidate) => candidate.kind === "screenshot" && candidate.roles.includes(evidenceRole),
+    ) ?? selectedAction?.evidence?.find((candidate) => candidate.kind === "screenshot");
+  const evidencePreview = useQuery({
+    queryKey: ["recording-evidence-preview", sessionId ?? "unselected", evidence?.id ?? "none"],
+    queryFn: () => productService.getEvidencePreview(sessionId!, evidence!.id),
+    enabled: Boolean(sessionId && evidence),
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+  const evidenceUrl = useEvidenceObjectUrl(evidencePreview.data);
 
   useEffect(() => {
     if (!nameDraftLoaded || suggestionApplied.current || !snapshot) return;
@@ -150,10 +190,46 @@ export function ReviewRecordingPage() {
 
   useEffect(() => {
     setActionIntent(selectedAction?.intent ?? "");
+    setReplacementLabel("");
   }, [selectedAction?.id, selectedAction?.intent]);
 
+  useEffect(() => {
+    if (!review?.timeline) return;
+    setTrimStartMs(review.videoClip?.startMs ?? 0);
+    setTrimEndMs(review.videoClip?.endMs ?? review.timeline.durationMs);
+  }, [review?.currentRevision, review?.timeline, review?.videoClip]);
+
+  useEffect(() => {
+    historyInitialized.current = false;
+    setUndoStack([]);
+    setRedoStack([]);
+  }, [workflowId]);
+
+  useEffect(() => {
+    if (historyInitialized.current || !currentRevision) return;
+    historyInitialized.current = true;
+    setUndoStack(Array.from({ length: Math.max(0, currentRevision - 1) }, (_, index) => index + 1));
+  }, [currentRevision]);
+
   function edit(edit: AuthoringRecordingEdit) {
-    transition.mutate({ action: "edit", edit });
+    transition.mutate({
+      action: "edit",
+      edit,
+      ...(currentRevision
+        ? { history: { kind: "new" as const, fromRevision: currentRevision } }
+        : {}),
+    });
+  }
+
+  function restore(kind: "undo" | "redo") {
+    if (!currentRevision) return;
+    const sourceRevision = (kind === "undo" ? undoStack : redoStack).at(-1);
+    if (sourceRevision === undefined) return;
+    transition.mutate({
+      action: "edit",
+      edit: { kind: "restore", sourceRevision },
+      history: { kind, fromRevision: currentRevision },
+    });
   }
 
   function moveSelected(offset: -1 | 1) {
@@ -201,7 +277,7 @@ export function ReviewRecordingPage() {
   }
 
   return (
-    <section className="relay-review-page">
+    <section className="relay-review-page relay-recording-review-page">
       <Breadcrumbs items={[{ label: "Tests", to: "/tests" }, { label: "Review" }]} />
       <header className="relay-review-header relay-electron-drag">
         <div>
@@ -219,64 +295,32 @@ export function ReviewRecordingPage() {
       />
 
       {!recording.isPending && snapshot && reviewReady ? (
-        <div className="relay-review-layout">
-          <div className="relay-review-main">
-            <div className="relay-review-section-heading">
-              <div>
-                <p className="relay-section-label">Journey</p>
-                <h2>{recordedMomentCount(review?.actionCount ?? 0)}</h2>
-              </div>
-              <span>{captureSummary(review?.actions ?? [])}</span>
-            </div>
+        <div className="relay-recording-review-workspace">
+          <RecordingEvidencePanel
+            action={selectedAction}
+            evidenceRole={evidenceRole}
+            previewUrl={evidenceUrl}
+            onEvidenceRoleChange={setEvidenceRole}
+          />
+          <RecordingActionsPanel
+            actions={actions}
+            selectedActionIds={selectedActionIds}
+            optimization={{
+              isFetching: optimization.isFetching,
+              isFetched: optimization.isFetched,
+              suggestions: optimization.data?.proposal?.suggestions ?? [],
+            }}
+            canOptimize={Boolean(sessionId)}
+            onOptimize={() => void optimization.refetch()}
+            onSelect={(actionId) => setSelectedActionIds([actionId])}
+            onToggle={toggleAction}
+          />
 
-            {actions.length ? (
-              <ScrollArea className="relay-review-actions-scroll">
-                <ol className="relay-review-steps" aria-label="Recorded actions">
-                  {actions.map((step, index) => {
-                    const copy = reviewActionCopy(step);
-                    const ordinal = actions
-                      .slice(0, index + 1)
-                      .filter((candidate) => reviewActionCopy(candidate).kind !== "pause").length;
-                    const selected = selectedActionIds.includes(step.id);
-                    return (
-                      <li
-                        className={`relay-review-step relay-review-step--${copy.kind}${selected ? " relay-review-step--selected" : ""}`}
-                        key={step.id}
-                      >
-                        <Checkbox
-                          checked={selected}
-                          onCheckedChange={(checked) => toggleAction(step.id, checked)}
-                          aria-label={`Select ${copy.title}`}
-                        />
-                        <span className="relay-review-step-number" aria-hidden="true">
-                          {copy.kind === "pause" ? <MoreHorizontal /> : ordinal}
-                        </span>
-                        <button
-                          type="button"
-                          className="relay-review-step-copy"
-                          onClick={() => setSelectedActionIds([step.id])}
-                        >
-                          <strong>{copy.title}</strong>
-                          <p>{copy.detail}</p>
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ol>
-              </ScrollArea>
-            ) : (
-              <EmptyState
-                title="No recorded moments are available"
-                detail="Return to recording and interact with the app before saving this Test."
-              />
-            )}
-          </div>
-
-          <aside className="relay-review-sidebar" aria-label="Replay and save">
+          <aside className="relay-recording-inspector" aria-label="Edit, replay, and save">
             <section className="relay-review-editor" aria-labelledby="review-editor-title">
-              <div className="relay-review-editor-heading">
+              <div className="relay-recording-panel-heading">
                 <div>
-                  <p className="relay-section-label">Edit</p>
+                  <p className="relay-section-label">Inspector</p>
                   <h2 id="review-editor-title">
                     {selectedActions.length === 0
                       ? "Select an action"
@@ -285,7 +329,24 @@ export function ReviewRecordingPage() {
                         : `${selectedActions.length} actions selected`}
                   </h2>
                 </div>
-                {selectedActions.length ? <span>{selectedActions.length} selected</span> : null}
+                <div className="relay-recording-history-actions" aria-label="Edit history">
+                  <Button
+                    size="small"
+                    variant="ghost"
+                    onClick={() => restore("undo")}
+                    disabled={!canEdit || undoStack.length === 0}
+                  >
+                    <Undo2 aria-hidden="true" /> Undo
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="ghost"
+                    onClick={() => restore("redo")}
+                    disabled={!canEdit || redoStack.length === 0}
+                  >
+                    <Redo2 aria-hidden="true" /> Redo
+                  </Button>
+                </div>
               </div>
 
               {selectedAction ? (
@@ -318,6 +379,37 @@ export function ReviewRecordingPage() {
                   >
                     Save instruction
                   </Button>
+                  {selectedAction.kind === "tap" ? (
+                    <Field>
+                      <FieldLabel htmlFor="review-replacement-label">Replace target</FieldLabel>
+                      <Input
+                        id="review-replacement-label"
+                        value={replacementLabel}
+                        onChange={(event) => setReplacementLabel(event.currentTarget.value)}
+                        placeholder="Accessible label"
+                        maxLength={160}
+                        disabled={!canEdit}
+                      />
+                      <FieldDescription>Use the target’s stable accessible name.</FieldDescription>
+                      <Button
+                        size="small"
+                        variant="secondary"
+                        onClick={() =>
+                          edit({
+                            kind: "replace",
+                            actionId: selectedAction.id,
+                            interaction: {
+                              kind: "tap",
+                              target: { label: replacementLabel.trim() },
+                            },
+                          })
+                        }
+                        disabled={!canEdit || !replacementLabel.trim()}
+                      >
+                        <Target aria-hidden="true" /> Replace target
+                      </Button>
+                    </Field>
+                  ) : null}
                   <div className="relay-review-edit-row" aria-label="Reorder action">
                     <Button
                       size="small"
@@ -365,7 +457,7 @@ export function ReviewRecordingPage() {
                 </Button>
               ) : (
                 <p className="relay-review-editor-help">
-                  Choose an action to rename, reorder, split, or remove it.
+                  Choose an action to rename, reorder, replace, split, or remove it.
                 </p>
               )}
 
@@ -429,10 +521,14 @@ export function ReviewRecordingPage() {
                   spellCheck
                   required
                 />
-                <FieldDescription>Name the outcome a teammate should recognize.</FieldDescription>
+                <FieldDescription>
+                  {testName
+                    ? "Draft saved locally until verification passes."
+                    : "Name the outcome a teammate should recognize."}
+                </FieldDescription>
               </Field>
               <div className="relay-replay-status">
-                <p className="relay-section-label">Replay</p>
+                <p className="relay-section-label">Verification</p>
                 <h2>
                   {replayTitle(review?.latestReplay?.outcome, review?.replayRequired, canApprove)}
                 </h2>
@@ -473,132 +569,62 @@ export function ReviewRecordingPage() {
               ) : null}
             </div>
           </aside>
+
+          {review?.timeline ? (
+            <section className="relay-recording-trim" aria-labelledby="recording-trim-title">
+              <div className="relay-recording-trim-copy">
+                <Clock3 aria-hidden="true" />
+                <div>
+                  <p className="relay-section-label">Time range</p>
+                  <h2 id="recording-trim-title">
+                    {formatDuration(trimStartMs)} – {formatDuration(trimEndMs)}
+                  </h2>
+                </div>
+              </div>
+              <div className="relay-recording-range-fields">
+                <label>
+                  Start
+                  <input
+                    type="range"
+                    min={0}
+                    max={Math.max(1, review.timeline.durationMs)}
+                    value={trimStartMs}
+                    onChange={(event) =>
+                      setTrimStartMs(Math.min(Number(event.currentTarget.value), trimEndMs))
+                    }
+                    disabled={!canEdit}
+                  />
+                </label>
+                <label>
+                  End
+                  <input
+                    type="range"
+                    min={0}
+                    max={Math.max(1, review.timeline.durationMs)}
+                    value={trimEndMs}
+                    onChange={(event) =>
+                      setTrimEndMs(Math.max(Number(event.currentTarget.value), trimStartMs))
+                    }
+                    disabled={!canEdit}
+                  />
+                </label>
+              </div>
+              <Button
+                size="small"
+                variant="secondary"
+                onClick={() => edit({ kind: "clip", fromMs: trimStartMs, toMs: trimEndMs })}
+                disabled={
+                  !canEdit ||
+                  (trimStartMs === (review.videoClip?.startMs ?? 0) &&
+                    trimEndMs === (review.videoClip?.endMs ?? review.timeline.durationMs))
+                }
+              >
+                Apply trim
+              </Button>
+            </section>
+          ) : null}
         </div>
       ) : null}
     </section>
   );
-}
-
-function proofLabel(proof: "verified" | "pixels-only" | "unresolved"): string {
-  if (proof === "verified") return "Verified";
-  if (proof === "pixels-only") return "Visual evidence";
-  return "Needs review";
-}
-
-type ReviewAction = NonNullable<
-  NonNullable<ProductRecordingState["snapshot"]>["review"]
->["actions"][number];
-
-function recordedMomentCount(count: number): string {
-  return count === 1 ? "1 recorded moment" : `${count} recorded moments`;
-}
-
-function reviewActionCopy(action: ReviewAction): {
-  title: string;
-  detail: string;
-  kind: "action" | "checkpoint" | "observation" | "pause";
-} {
-  const proof = action.proofStatus ? proofLabel(action.proofStatus) : undefined;
-  if (isPauseAction(action)) {
-    return { title: "Pause", detail: "Relay waited before the next capture.", kind: "pause" };
-  }
-  if (
-    action.stepCount === 0 &&
-    (/^0 recorded steps$/iu.test(action.intent) || /^0 recorded steps$/iu.test(action.label ?? ""))
-  ) {
-    return {
-      title: "Screen captured",
-      detail: proof ?? "Current state captured",
-      kind: "observation",
-    };
-  }
-  if (action.stepCount === 0 && action.label) {
-    return {
-      title: action.label,
-      detail: proof ? `Checkpoint · ${proof}` : "Checkpoint",
-      kind: "checkpoint",
-    };
-  }
-  if (action.stepCount === 0 || /^0 recorded steps$/i.test(action.intent)) {
-    return {
-      title: "Screen captured",
-      detail: proof ?? "Current state captured",
-      kind: "observation",
-    };
-  }
-  const count = action.stepCount === 1 ? "1 action" : `${action.stepCount} actions`;
-  return {
-    title: action.label ?? humanActionTitle(action.intent),
-    detail: proof ? `${count} · ${proof}` : count,
-    kind: "action",
-  };
-}
-
-function isPauseAction(action: ReviewAction): boolean {
-  return /^recorded pause$/iu.test(action.label ?? "") || /^recorded pause$/iu.test(action.intent);
-}
-
-function humanActionTitle(intent: string): string {
-  const value = intent.trim();
-  if (/^(?:tap|click)(?: (?:the|a))? (?:target|captured target)$/iu.test(value)) {
-    return "Tap the highlighted target";
-  }
-  const namedTarget = /^(?:tap|click)\s+[“'"](.+)[”'"]$/iu.exec(value)?.[1]?.trim();
-  if (namedTarget) return `Tap ${namedTarget}`;
-  const direct = /^(?:tap|click)\s+(?:label|text)\s+(.+)$/iu.exec(value)?.[1]?.trim();
-  if (direct) return `Tap ${direct.replace(/^['"]|['"]$/gu, "")}`;
-  if (/^(?:scroll|swipe)\b/iu.test(value)) return "Scroll";
-  if (/^(?:type|enter text)\b/iu.test(value)) return "Type text";
-  if (/^(?:press|key)\s+enter$/iu.test(value)) return "Press Enter";
-  if (/identifier|selector|xpath|coordinates?|app:id|\{.+\}/iu.test(value)) {
-    return "Recorded interaction";
-  }
-  return value || "Recorded interaction";
-}
-
-function captureSummary(actions: readonly ReviewAction[]): string {
-  if (actions.length === 0) return "Nothing captured";
-  if (actions.every((action) => action.captureProof === "replay-proved")) {
-    return "Verified by Relay";
-  }
-  if (
-    actions.some(
-      (action) =>
-        action.captureProof === "inferred-unproved" ||
-        action.captureProof === "instrumented-unproved",
-    )
-  ) {
-    return "Replay needed";
-  }
-  return "Captured by Relay";
-}
-
-function reviewInstruction(replayRequired: boolean | undefined, canApprove: boolean): string {
-  if (canApprove) return "Review what Relay captured, then save the Test when it looks right.";
-  if (replayRequired) return "Review what Relay captured, then replay it before saving the Test.";
-  return "Review what Relay captured while Relay prepares the next action.";
-}
-
-function replayTitle(
-  outcome: "passed" | "failed" | "cancelled" | undefined,
-  required: boolean | undefined,
-  canApprove: boolean,
-) {
-  if (canApprove) return "Ready to save";
-  if (outcome === "passed" && !required) return "Verified";
-  if (outcome === "failed") return "Replay needs attention";
-  if (outcome === "cancelled") return "Replay was cancelled";
-  return "Replay required";
-}
-
-function replayDetail(outcome: "passed" | "failed" | "cancelled" | undefined, canApprove: boolean) {
-  if (outcome === "passed" && canApprove) {
-    return "Relay verified this exact reviewed version. It can now be saved.";
-  }
-  if (outcome === "passed") return "Relay verified this exact reviewed version.";
-  if (outcome === "failed") {
-    return "Relay could not verify the recorded journey. Check the target, then replay it again.";
-  }
-  if (outcome === "cancelled") return "Run the replay again when the target is ready.";
-  return "Replay the reviewed steps on the selected target.";
 }

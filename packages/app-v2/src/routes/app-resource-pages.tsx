@@ -1,13 +1,23 @@
 /** @jsxImportSource react */
 import { Button } from "@relay/ui-react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, getRouteApi, useRouteContext } from "@tanstack/react-router";
-import { Box, Globe2, KeyRound, RotateCcw } from "lucide-react";
+import { Box, KeyRound, Plus, RotateCcw } from "lucide-react";
+import { useMemo, useState } from "react";
 import { Breadcrumbs, EmptyState, RecoveryState } from "../components/product-patterns";
 import type {
   ProductAppVersion,
   ProductBrowserAccount,
 } from "../data/app-resources-product-service";
+import {
+  BrowserAccountDialog,
+  RevokeAccountDialog,
+  VersionEditorDialog,
+  VersionRow,
+  type AccountDraft,
+  type AccountRefreshInput,
+  type VersionDraft,
+} from "./app-resource-dialogs";
 import { PageLoading } from "./recording-shared";
 
 const versionsRoute = getRouteApi("/apps/$appId/versions");
@@ -16,6 +26,8 @@ const accountsRoute = getRouteApi("/apps/$appId/accounts");
 export function AppVersionsPage() {
   const { appId } = versionsRoute.useParams();
   const { mapService, appResourcesService } = useRouteContext({ from: "__root__" });
+  const queryClient = useQueryClient();
+  const [editor, setEditor] = useState<ProductAppVersion | "create">();
   const app = useQuery({
     queryKey: ["app", appId],
     queryFn: () => mapService.get(appId),
@@ -28,6 +40,23 @@ export function AppVersionsPage() {
   });
   const error = app.error ?? versions.error;
   const loading = app.isPending || versions.isPending;
+  const saveVersion = useMutation({
+    mutationFn: async ({ mode, input }: { mode: "create" | "edit"; input: VersionDraft }) => {
+      const operation =
+        mode === "edit"
+          ? (appResourcesService.updateVersion ?? appResourcesService.saveVersion)
+          : (appResourcesService.createVersion ?? appResourcesService.saveVersion);
+      if (!operation) throw new Error("Version editing is unavailable in this Relay connection.");
+      return operation(input);
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["app-resources", "versions"] });
+      setEditor(undefined);
+    },
+  });
+  const canWriteVersions = Boolean(
+    appResourcesService.createVersion ?? appResourcesService.saveVersion,
+  );
 
   return (
     <AppResourceFrame
@@ -35,6 +64,13 @@ export function AppVersionsPage() {
       appName={app.data?.appName}
       title="Versions"
       description="Review registered builds and deployments before choosing what Relay should verify."
+      action={
+        canWriteVersions ? (
+          <Button variant="primary" onClick={() => setEditor("create")}>
+            <Plus aria-hidden="true" /> Add version
+          </Button>
+        ) : undefined
+      }
     >
       {loading ? <PageLoading label="Loading registered versions…" /> : null}
       {error ? (
@@ -58,7 +94,14 @@ export function AppVersionsPage() {
           {versions.data?.length ? (
             <ul className="relay-resource-list">
               {versions.data.map((version) => (
-                <VersionRow key={version.id} version={version} />
+                <VersionRow
+                  key={version.id}
+                  version={version}
+                  canEdit={Boolean(
+                    appResourcesService.updateVersion ?? appResourcesService.saveVersion,
+                  )}
+                  onEdit={() => setEditor(version)}
+                />
               ))}
             </ul>
           ) : (
@@ -75,6 +118,22 @@ export function AppVersionsPage() {
           )}
         </section>
       ) : null}
+      {editor ? (
+        <VersionEditorDialog
+          value={editor === "create" ? undefined : editor}
+          pending={saveVersion.isPending}
+          error={saveVersion.error}
+          onClose={() => {
+            if (!saveVersion.isPending) {
+              saveVersion.reset();
+              setEditor(undefined);
+            }
+          }}
+          onSubmit={(input) =>
+            saveVersion.mutate({ mode: editor === "create" ? "create" : "edit", input })
+          }
+        />
+      ) : null}
     </AppResourceFrame>
   );
 }
@@ -82,6 +141,9 @@ export function AppVersionsPage() {
 export function AppAccountsPage() {
   const { appId } = accountsRoute.useParams();
   const { mapService, appResourcesService } = useRouteContext({ from: "__root__" });
+  const queryClient = useQueryClient();
+  const [accountDialog, setAccountDialog] = useState<"save" | ProductBrowserAccount>();
+  const [revokeAccount, setRevokeAccount] = useState<ProductBrowserAccount>();
   const app = useQuery({
     queryKey: ["app", appId],
     queryFn: () => mapService.get(appId),
@@ -94,6 +156,48 @@ export function AppAccountsPage() {
   });
   const error = app.error ?? accounts.error;
   const loading = app.isPending || accounts.isPending;
+  const targets = useMemo(() => {
+    const seen = new Map<string, { id: string; name: string }>();
+    for (const account of accounts.data ?? []) seen.set(account.target.id, account.target);
+    return [...seen.values()].sort((left, right) => left.name.localeCompare(right.name));
+  }, [accounts.data]);
+  const saveAccount = useMutation({
+    mutationFn: async (input: AccountDraft) => {
+      if (!appResourcesService.saveBrowserAccount) {
+        throw new Error("Saving browser sign-ins is unavailable in this Relay connection.");
+      }
+      return appResourcesService.saveBrowserAccount(input);
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["app-resources", "browser-accounts"] });
+      setAccountDialog(undefined);
+    },
+  });
+  const refreshAccount = useMutation({
+    mutationFn: async (input: AccountRefreshInput) => {
+      if (!appResourcesService.refreshBrowserAccount) {
+        throw new Error("Refreshing browser sign-ins is unavailable in this Relay connection.");
+      }
+      return appResourcesService.refreshBrowserAccount(input);
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["app-resources", "browser-accounts"] });
+      setAccountDialog(undefined);
+    },
+  });
+  const revoke = useMutation({
+    mutationFn: async (input: { targetId: string; reference: string }) => {
+      if (!appResourcesService.revokeBrowserAccount) {
+        throw new Error("Revoking browser sign-ins is unavailable in this Relay connection.");
+      }
+      return appResourcesService.revokeBrowserAccount(input);
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["app-resources", "browser-accounts"] });
+      setRevokeAccount(undefined);
+    },
+  });
+  const canSaveAccount = Boolean(appResourcesService.saveBrowserAccount) && targets.length > 0;
 
   return (
     <AppResourceFrame
@@ -102,9 +206,25 @@ export function AppAccountsPage() {
       title="Accounts"
       description="Review saved browser sign-ins that can be reused while testing this app."
       action={
-        <Button render={<Link to="/devices" />} variant="secondary">
-          Open Devices
-        </Button>
+        <span className="relay-resource-header-actions">
+          <Button
+            variant="primary"
+            onClick={() => setAccountDialog("save")}
+            disabled={!canSaveAccount}
+            title={
+              !appResourcesService.saveBrowserAccount
+                ? "Saving browser sign-ins is unavailable in this Relay connection."
+                : targets.length === 0
+                  ? "Open Devices and create a managed browser before saving a sign-in."
+                  : undefined
+            }
+          >
+            <Plus aria-hidden="true" /> Save account
+          </Button>
+          <Button render={<Link to="/devices" />} variant="secondary">
+            Open Devices
+          </Button>
+        </span>
       }
     >
       {loading ? <PageLoading label="Loading browser sign-ins…" /> : null}
@@ -129,7 +249,14 @@ export function AppAccountsPage() {
           {accounts.data?.length ? (
             <ul className="relay-resource-list">
               {accounts.data.map((account) => (
-                <AccountRow key={account.fixture.reference} account={account} />
+                <AccountRow
+                  key={account.fixture.reference}
+                  account={account}
+                  canRefresh={Boolean(appResourcesService.refreshBrowserAccount)}
+                  canRevoke={Boolean(appResourcesService.revokeBrowserAccount)}
+                  onRefresh={() => setAccountDialog(account)}
+                  onRevoke={() => setRevokeAccount(account)}
+                />
               ))}
             </ul>
           ) : (
@@ -145,6 +272,42 @@ export function AppAccountsPage() {
             />
           )}
         </section>
+      ) : null}
+      {accountDialog ? (
+        <BrowserAccountDialog
+          account={accountDialog === "save" ? undefined : accountDialog}
+          targets={targets}
+          pending={accountDialog === "save" ? saveAccount.isPending : refreshAccount.isPending}
+          error={accountDialog === "save" ? saveAccount.error : refreshAccount.error}
+          onClose={() => {
+            if (!saveAccount.isPending && !refreshAccount.isPending) {
+              saveAccount.reset();
+              refreshAccount.reset();
+              setAccountDialog(undefined);
+            }
+          }}
+          onSave={(input) => saveAccount.mutate(input)}
+          onRefresh={(input) => refreshAccount.mutate(input)}
+        />
+      ) : null}
+      {revokeAccount ? (
+        <RevokeAccountDialog
+          account={revokeAccount}
+          pending={revoke.isPending}
+          error={revoke.error}
+          onClose={() => {
+            if (!revoke.isPending) {
+              revoke.reset();
+              setRevokeAccount(undefined);
+            }
+          }}
+          onConfirm={() =>
+            revoke.mutate({
+              targetId: revokeAccount.target.id,
+              reference: revokeAccount.fixture.reference,
+            })
+          }
+        />
       ) : null}
     </AppResourceFrame>
   );
@@ -232,31 +395,19 @@ function ResourceHeading({
   );
 }
 
-function VersionRow({ version }: { version: ProductAppVersion }) {
-  return (
-    <li className="relay-resource-row">
-      <span className="relay-resource-icon" aria-hidden="true">
-        {version.platform === "web" ? <Globe2 /> : <Box />}
-      </span>
-      <span className="relay-resource-copy">
-        <strong>{version.name}</strong>
-        <small>
-          {platformLabel(version.platform)}
-          {version.configuration ? ` · ${version.configuration}` : ""}
-          {version.applicationId ? ` · ${version.applicationId}` : ""}
-        </small>
-      </span>
-      <span className={`relay-resource-status relay-resource-status--${version.status}`}>
-        {statusLabel(version.status)}
-      </span>
-      <time dateTime={new Date(version.updatedAt).toISOString()}>
-        Updated {shortDate(version.updatedAt)}
-      </time>
-    </li>
-  );
-}
-
-function AccountRow({ account }: { account: ProductBrowserAccount }) {
+function AccountRow({
+  account,
+  canRefresh,
+  canRevoke,
+  onRefresh,
+  onRevoke,
+}: {
+  account: ProductBrowserAccount;
+  canRefresh: boolean;
+  canRevoke: boolean;
+  onRefresh(): void;
+  onRevoke(): void;
+}) {
   const state = accountState(account.fixture);
   return (
     <li className="relay-resource-row relay-resource-row--account">
@@ -278,6 +429,30 @@ function AccountRow({ account }: { account: ProductBrowserAccount }) {
       <time dateTime={new Date(account.fixture.createdAt).toISOString()}>
         Saved {shortDate(account.fixture.createdAt)}
       </time>
+      {canRefresh || (canRevoke && state !== "revoked") ? (
+        <span className="relay-resource-row-actions">
+          {canRefresh ? (
+            <Button
+              size="small"
+              variant="ghost"
+              onClick={onRefresh}
+              aria-label={`Refresh ${account.fixture.name}`}
+            >
+              Refresh
+            </Button>
+          ) : null}
+          {canRevoke && state !== "revoked" ? (
+            <Button
+              size="small"
+              variant="ghost"
+              onClick={onRevoke}
+              aria-label={`Revoke ${account.fixture.name}`}
+            >
+              Revoke
+            </Button>
+          ) : null}
+        </span>
+      ) : null}
     </li>
   );
 }
@@ -286,12 +461,6 @@ function accountState(fixture: ProductBrowserAccount["fixture"]): "ready" | "rev
   if (fixture.revokedAt !== undefined) return "revoked";
   if (fixture.expiresAt !== undefined && fixture.expiresAt <= Date.now()) return "expired";
   return "ready";
-}
-
-function platformLabel(platform: ProductAppVersion["platform"]): string {
-  if (platform === "ios") return "iOS";
-  if (platform === "android") return "Android";
-  return "Web";
 }
 
 function statusLabel(status: string): string {

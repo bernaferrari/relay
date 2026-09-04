@@ -1,0 +1,169 @@
+import { describe, expect, it } from "vitest";
+import type { ProductRunSummary } from "@relay/product/catalog";
+import type { ProductBatchReport } from "@relay/product/run-across";
+import {
+  stabilitySamplesFromBatch,
+  stabilitySamplesFromRuns,
+  summarizeProductStability,
+  type ProductStabilitySample,
+} from "./stability-product-service";
+
+function run(
+  id: string,
+  outcome: ProductRunSummary["outcome"],
+  finishedAt: number,
+  durationMs = 100,
+  identity = true,
+): ProductRunSummary {
+  return {
+    id,
+    title: id,
+    action: "run",
+    status: outcome === "passed" ? "completed" : "failed",
+    phase: outcome === "passed" ? "completed" : "failed",
+    ...(outcome ? { outcome } : {}),
+    ...(identity ? { appMapId: "app-1", testId: "test-1" } : {}),
+    queuedAt: finishedAt - durationMs,
+    finishedAt,
+    durationMs,
+    identity: { runId: id, ...(identity ? { appMapId: "app-1", testId: "test-1" } : {}) },
+    links: { self: `/runs/${id}` },
+  };
+}
+
+describe("stability product service", () => {
+  it("reports a complete, explainable summary from identified terminal Runs", () => {
+    const samples = stabilitySamplesFromRuns([
+      run("run-1", "passed", 1_000, 100),
+      run("run-2", "product-failure", 2_000, 110),
+      run("run-3", "passed", 3_000, 120),
+      run("run-4", "passed", 4_000, 130),
+    ]).map((sample) => ({ ...sample, environmentId: "env-1" }));
+    const summary = summarizeProductStability({
+      samples,
+      historyComplete: true,
+      scope: { appMapId: "app-1", testId: "test-1", environmentId: "env-1" },
+    });
+
+    expect(summary).toMatchObject({
+      sampleCount: 4,
+      completedCount: 4,
+      passedCount: 3,
+      failedCount: 1,
+      unknownCount: 0,
+      passRate: 0.75,
+      medianDurationMs: 115,
+      trend: "improving",
+      confidence: "complete",
+    });
+    expect(summary.byEnvironment).toEqual([
+      expect.objectContaining({ environmentId: "env-1", passRate: 0.75, confidence: "complete" }),
+    ]);
+    expect(summary.signals).toEqual([
+      expect.objectContaining({ kind: "possible-flakiness", environmentId: "env-1" }),
+    ]);
+  });
+
+  it("fails closed when history is partial, outcomes are non-terminal, or identity is legacy", () => {
+    const samples = stabilitySamplesFromRuns([
+      run("run-1", "passed", 1_000),
+      run("run-2", "uncertain", 2_000),
+      run("run-3", undefined, 3_000, 100, false),
+    ]);
+    const summary = summarizeProductStability({ samples, historyComplete: false });
+
+    expect(summary.passRate).toBeNull();
+    expect(summary.medianDurationMs).toBeNull();
+    expect(summary.trend).toBe("unknown");
+    expect(summary.confidence).toBe("partial");
+    expect(summary.unknownCount).toBe(2);
+    expect(summary.signals).toEqual([]);
+  });
+
+  it("does not call a mixed Test/environment history flaky without durable identity", () => {
+    const samples: ProductStabilitySample[] = [
+      {
+        id: "run-1",
+        runId: "run-1",
+        appMapId: "app-1",
+        testId: "test-1",
+        environmentId: "env-1",
+        outcome: "passed",
+        queuedAt: 1,
+      },
+      {
+        id: "run-2",
+        runId: "run-2",
+        appMapId: "app-1",
+        testId: "test-1",
+        outcome: "product-failure",
+        queuedAt: 2,
+      },
+    ];
+    const summary = summarizeProductStability({
+      samples,
+      historyComplete: true,
+      scope: { environmentId: "env-1" },
+    });
+
+    expect(summary.passRate).toBeNull();
+    expect(summary.confidence).toBe("partial");
+    expect(summary.signals).toEqual([]);
+  });
+
+  it("keeps Batch failures unknown and refuses a rate when a case lacks identity", () => {
+    const report = {
+      id: "batch-1",
+      title: "Smoke matrix",
+      status: "completed-with-problems",
+      createdAt: 1,
+      updatedAt: 2,
+      totalCases: 2,
+      completedCases: 2,
+      passedCases: 1,
+      failedCases: 1,
+      pendingCases: 0,
+      targetNames: ["Chrome"],
+      runIds: ["run-1"],
+      cases: [
+        {
+          id: "case-1",
+          index: 0,
+          phase: "coverage",
+          status: "passed",
+          values: {},
+          runId: "run-1",
+          identity: {
+            testId: "test-1",
+            environmentId: "env-1",
+            environmentPlatform: "browser",
+            runId: "run-1",
+          },
+        },
+        { id: "case-2", index: 1, phase: "coverage", status: "failed", values: {} },
+      ],
+      setup: {
+        appMapId: "app-1",
+        appMapRevision: 1,
+        testId: "test-1",
+        testName: "Smoke",
+        appName: "Checkout",
+        dataSet: { name: "Default", dimensions: [] },
+      },
+      navigation: { route: "/batches/batch-1", href: "/batches/batch-1" },
+      report: { headline: "1 case needs attention", detail: "1 passed · 1 failed" },
+    } as unknown as ProductBatchReport;
+
+    const summary = summarizeProductStability({
+      samples: stabilitySamplesFromBatch(report),
+      historyComplete: true,
+      scope: { testId: "test-1" },
+    });
+    expect(summary.passRate).toBeNull();
+    expect(summary.unknownCount).toBe(1);
+    expect(summary.byEnvironment[0]).toMatchObject({
+      environmentId: "env-1",
+      passRate: 1,
+    });
+  });
+});

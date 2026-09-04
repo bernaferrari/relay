@@ -1,7 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { appContextDestination, appScopeForLocation } from "./app-scope";
+import {
+  appContextDestination,
+  appScopeDetailsForLocation,
+  appScopeForLocation,
+  safeDecodeURIComponent,
+} from "./app-scope";
 
 describe("App scope", () => {
+  it("decodes valid route segments and ignores malformed segments safely", () => {
+    expect(safeDecodeURIComponent("app%2F1")).toBe("app/1");
+    expect(safeDecodeURIComponent("%E0%A4%A")).toBeUndefined();
+    expect(
+      appScopeDetailsForLocation({
+        pathname: "/apps/%E0%A4%A",
+        search: { app: "stale-app" },
+      }),
+    ).toEqual({ kind: "all" });
+  });
+
   it("resolves scope from list filters and owned detail records", () => {
     expect(appScopeForLocation({ pathname: "/tests", search: { app: "app-1" } })).toBe("app-1");
     expect(
@@ -18,6 +34,53 @@ describe("App scope", () => {
         runs: [{ id: "run-1", appMapId: "app-3" }],
       }),
     ).toBe("app-3");
+  });
+
+  it("prefers canonical detail ownership over a stale collection filter", () => {
+    expect(
+      appScopeForLocation({
+        pathname: "/tests/test-1/edit",
+        search: { app: "stale-app" },
+        tests: [{ id: "test-1", appMapId: "owned-app" }],
+      }),
+    ).toBe("owned-app");
+  });
+
+  it("resolves recordings and changes from their resource ownership", () => {
+    expect(
+      appScopeForLocation({
+        pathname: "/recordings/recording-1/review",
+        search: {},
+        recordings: [{ id: "recording-1", appMapId: "app-4" }],
+      }),
+    ).toBe("app-4");
+    expect(
+      appScopeForLocation({
+        pathname: "/changes/change-1",
+        search: {},
+        changes: [{ id: "change-1", appIds: ["app-5"] }],
+      }),
+    ).toBe("app-5");
+  });
+
+  it("represents multi-App batches and Changes honestly", () => {
+    expect(
+      appScopeDetailsForLocation({
+        pathname: "/batches/batch-1",
+        search: {},
+        runs: [
+          { id: "run-1", batchId: "batch-1", appMapId: "app-1" },
+          { id: "run-2", batchId: "batch-1", appMapId: "app-2" },
+        ],
+      }),
+    ).toEqual({ kind: "multiple", appIds: ["app-1", "app-2"] });
+    expect(
+      appScopeDetailsForLocation({
+        pathname: "/changes/change-1",
+        search: {},
+        changes: [{ id: "change-1", appIds: ["app-2", "app-1", "app-2"] }],
+      }),
+    ).toEqual({ kind: "multiple", appIds: ["app-2", "app-1"] });
   });
 
   it("preserves the active workspace and its supported filters", () => {

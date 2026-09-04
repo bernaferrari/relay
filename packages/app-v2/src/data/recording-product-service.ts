@@ -5,14 +5,44 @@ import type {
 import type { Platform } from "../platform/types";
 import { productClientForPlatform } from "./product-client";
 import type { LiveTargetSession } from "./live-target-session";
-import type { AuthoringTarget } from "@relay/protocol";
-import type { AuthoringRecordingEdit } from "@relay/protocol";
+import type {
+  AuthoringInteraction,
+  AuthoringRawOptimizationProposalResponse,
+  AuthoringRecordingEdit,
+  AuthoringTarget,
+} from "@relay/protocol";
 import { presentReadyTargets, type ProductTargetOption } from "./target-presentation";
 
 export type ProductAppOption = {
   id: string;
   name: string;
 };
+
+export type RecordingEvidencePreview = {
+  bytes: Uint8Array;
+  mime: string;
+};
+
+/** Named review edits exposed to the React product surface.
+ *
+ * The adapter keeps React callers from constructing the protocol union while
+ * retaining the protocol's immutable, server-owned edit semantics. Arrays are
+ * readonly at the product boundary so callers can safely pass selected IDs
+ * from component state; the adapter clones them before crossing the boundary.
+ */
+export type RecordingEditAdapter = {
+  clip(fromMs?: number, toMs?: number): Promise<ProductRecordingState>;
+  restore(sourceRevision: number): Promise<ProductRecordingState>;
+  remove(actionIds: readonly string[]): Promise<ProductRecordingState>;
+  reorder(actionIds: readonly string[]): Promise<ProductRecordingState>;
+  replace(actionId: string, interaction: AuthoringInteraction): Promise<ProductRecordingState>;
+  merge(actionIds: readonly string[], intent?: string): Promise<ProductRecordingState>;
+  split(actionId: string, atStep: number): Promise<ProductRecordingState>;
+  rename(actionId: string, intent: string): Promise<ProductRecordingState>;
+};
+
+/** Product-facing alias for consumers that model service slices explicitly. */
+export type RecordingEditProductService = RecordingEditAdapter;
 
 /** The only recording capability React components can see. It expresses
  * product intents rather than transports or workflow mutations. */
@@ -22,6 +52,14 @@ export type RecordingProductService = {
   presentTargets(targets: readonly AuthoringTarget[]): Promise<readonly ProductTargetOption[]>;
   begin(input: ProductRecordingBeginInput): Promise<ProductRecordingState>;
   inspect(workflowId: string): Promise<ProductRecordingState>;
+  /** Read-only optimizer suggestions for one canonical authoring session. */
+  getOptimization(sessionId: string): Promise<AuthoringRawOptimizationProposalResponse>;
+  /** Resolve one screenshot owned by the current authoring session through the
+   * authenticated binary transport. Raw session state never crosses this seam. */
+  getEvidencePreview(
+    sessionId: string,
+    evidenceId: string,
+  ): Promise<RecordingEvidencePreview | null>;
   recordCurrent(): Promise<ProductRecordingState>;
   checkpoint(label?: string): Promise<ProductRecordingState>;
   stop(): Promise<ProductRecordingState>;
@@ -33,7 +71,42 @@ export type RecordingProductService = {
   liveTarget?(target: AuthoringTarget): Promise<LiveTargetSession>;
 };
 
-export function createRecordingProductService(platform: Platform): RecordingProductService {
+/**
+ * Adapt the canonical edit operation into named product intents.
+ *
+ * This function is deliberately transport-agnostic: the supplied `edit`
+ * method remains responsible for the durable workflow transition and its
+ * optimistic concurrency fence. Keeping this seam small also makes it easy to
+ * use in React tests without constructing a Relay client.
+ */
+export function createRecordingEditAdapter(
+  service: Pick<RecordingProductService, "edit">,
+): RecordingEditAdapter {
+  return {
+    clip: (fromMs, toMs) =>
+      service.edit({
+        kind: "clip",
+        ...(fromMs !== undefined ? { fromMs } : {}),
+        ...(toMs !== undefined ? { toMs } : {}),
+      }),
+    restore: (sourceRevision) => service.edit({ kind: "restore", sourceRevision }),
+    remove: (actionIds) => service.edit({ kind: "remove", actionIds: [...actionIds] }),
+    reorder: (actionIds) => service.edit({ kind: "reorder", actionIds: [...actionIds] }),
+    replace: (actionId, interaction) => service.edit({ kind: "replace", actionId, interaction }),
+    merge: (actionIds, intent) =>
+      service.edit({
+        kind: "merge",
+        actionIds: [...actionIds],
+        ...(intent !== undefined ? { intent } : {}),
+      }),
+    split: (actionId, atStep) => service.edit({ kind: "split", actionId, atStep }),
+    rename: (actionId, intent) => service.edit({ kind: "rename", actionId, intent }),
+  };
+}
+
+export function createRecordingProductService(
+  platform: Platform,
+): RecordingProductService & RecordingEditAdapter {
   let productPromise:
     | Promise<{
         client: Awaited<ReturnType<typeof productClientForPlatform>>["client"];
@@ -57,6 +130,10 @@ export function createRecordingProductService(platform: Platform): RecordingProd
     return productPromise;
   }
 
+  async function edit(edit: AuthoringRecordingEdit): Promise<ProductRecordingState> {
+    return (await product()).journey.edit(edit);
+  }
+
   return {
     async listApps() {
       const { appMaps } = await (await product()).client.invoke("app-map.list", {});
@@ -74,6 +151,31 @@ export function createRecordingProductService(platform: Platform): RecordingProd
     async inspect(workflowId) {
       return (await product()).journey.inspect(workflowId);
     },
+    async getOptimization(sessionId) {
+      return (await product()).client.invoke("authoring.take.optimization.get", { sessionId });
+    },
+    async getEvidencePreview(sessionId, evidenceId) {
+      const { client } = await product();
+      const { session } = await client.invoke("authoring.session.get", { sessionId });
+      const take = session.take;
+      const revision = take?.revisions.find(
+        (candidate) => candidate.revision === take.currentRevision,
+      );
+      const evidence = revision?.evidence.find(
+        (candidate) => candidate.id === evidenceId && candidate.kind === "screenshot",
+      );
+      if (!evidence) return null;
+      const match = /^relay-evidence:\/\/([a-f\d]{64})$/iu.exec(evidence.uri);
+      if (!match) return null;
+      const mime = evidence.mime?.startsWith("image/") ? evidence.mime : "image/png";
+      const resource = await client.binaryResource(
+        `/authoring-evidence/${encodeURIComponent(match[1]!)}?mime=${encodeURIComponent(mime)}`,
+      );
+      return {
+        bytes: resource.bytes,
+        mime: resource.headers.get("content-type")?.split(";")[0] ?? mime,
+      };
+    },
     async recordCurrent() {
       return (await product()).journey.record({ kind: "observe" });
     },
@@ -83,9 +185,8 @@ export function createRecordingProductService(platform: Platform): RecordingProd
     async stop() {
       return (await product()).journey.stop();
     },
-    async edit(edit) {
-      return (await product()).journey.edit(edit);
-    },
+    edit,
+    ...createRecordingEditAdapter({ edit }),
     async replay() {
       return (await product()).journey.replay();
     },

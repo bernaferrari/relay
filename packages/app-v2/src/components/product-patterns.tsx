@@ -30,7 +30,19 @@ import {
 import type { ReactNode } from "react";
 
 type BreadcrumbItem =
-  | { label: string; to: "/apps" | "/tests" | "/runs" | "/changes" | "/devices" | "/home" }
+  | {
+      label: string;
+      to:
+        | "/apps"
+        | "/tests"
+        | "/suites"
+        | "/environments"
+        | "/sessions"
+        | "/runs"
+        | "/changes"
+        | "/devices"
+        | "/home";
+    }
   | { label: string; to: "/apps/$appId"; params: { appId: string } }
   | { label: string };
 

@@ -1173,6 +1173,20 @@ test("recording review exposes one bounded semantic edit command", () => {
       edit: { kind: "split", actionId: "multi-step", atStep: 1 },
     },
   );
+  assert.deepEqual(
+    parse({
+      sessionId: "session-1",
+      edit: { kind: "restore", sourceRevision: 2 },
+    }),
+    {
+      sessionId: "session-1",
+      edit: { kind: "restore", sourceRevision: 2 },
+    },
+  );
+  assert.throws(
+    () => parse({ sessionId: "session-1", edit: { kind: "restore", sourceRevision: 1.5 } }),
+    /sourceRevision/u,
+  );
   assert.throws(
     () => parse({ sessionId: "session-1", edit: { kind: "merge", actionIds: ["only-one"] } }),
     /actionIds|array/u,

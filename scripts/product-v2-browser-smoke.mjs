@@ -2,10 +2,9 @@
 /**
  * Bounded browser quality smoke for the Product V2 renderer.
  *
- * This intentionally starts only the Vite renderer. The Relay service is an
- * operator-owned process and must already be healthy (or be started with
- * `pnpm ensure:serve`); starting it from here could replace another agent's
- * shared :8787 service. Playwright-core uses an installed system Chrome.
+ * This script starts only the Vite renderer. The package command prepares the
+ * repository-owned Relay service with this renderer's exact browser origins
+ * before entering this bounded smoke. Playwright-core uses system Chrome.
  */
 import { createRequire } from "node:module";
 import { spawn } from "node:child_process";
@@ -166,13 +165,11 @@ async function clickNav(page, name, route) {
   // drawer. Open it only when the desktop sidebar is not in the DOM.
   if (!(await page.getByRole("link", { name, exact: true }).count())) {
     process.stderr.write(`[browser-smoke] opening compact navigation\n`);
-    await page
-      .getByRole("button", { name: "Open navigation", exact: true })
-      .evaluate((element) => element.click());
+    await page.getByRole("button", { name: "Open navigation", exact: true }).click();
     process.stderr.write(`[browser-smoke] compact navigation open\n`);
   }
   process.stderr.write(`[browser-smoke] clicking ${name}\n`);
-  await page.getByRole("link", { name, exact: true }).evaluate((element) => element.click());
+  await page.getByRole("link", { name, exact: true }).click();
   process.stderr.write(`[browser-smoke] clicked ${name}; url=${page.url()}; waiting for route\n`);
   await waitForRoute(page, route);
 }
@@ -303,8 +300,10 @@ async function runSmoke(options) {
     await assertKeyboardFocus(page);
     await checkAccessibility();
 
-    trace("checking Tests, Devices, Changes, Runs and Settings routes");
+    trace("checking Tests, Sessions, Devices, Changes, Runs and Settings routes");
     await clickNav(page, "Tests", "/tests");
+    await checkAccessibility();
+    await clickNav(page, "Sessions", "/sessions");
     await checkAccessibility();
     await clickNav(page, "Devices", "/devices");
     await checkAccessibility();

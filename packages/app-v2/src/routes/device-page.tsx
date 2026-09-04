@@ -51,6 +51,9 @@ export function DevicePage() {
   const [liveIssue, setLiveIssue] = useState<string>();
   const [liveBusy, setLiveBusy] = useState(false);
   const [liveAttempt, setLiveAttempt] = useState(0);
+  const [appIdentifier, setAppIdentifier] = useState("");
+  const [appIdentifierError, setAppIdentifierError] = useState<string>();
+  const [relaunchApp, setRelaunchApp] = useState(false);
   const device = useQuery({
     queryKey: deviceQueryKeys.device(deviceId),
     queryFn: () => deviceService.get(deviceId),
@@ -64,6 +67,15 @@ export function DevicePage() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: deviceQueryKeys.devices });
       await queryClient.invalidateQueries({ queryKey: deviceQueryKeys.device(deviceId) });
+    },
+  });
+  const appLaunch = useMutation({
+    mutationFn: async () => {
+      if (!device.data) throw new TypeError("This device is no longer available.");
+      if (!deviceService.launchApp) {
+        throw new TypeError("App launch is not available from this Relay host.");
+      }
+      return deviceService.launchApp(device.data.id, appIdentifier.trim(), relaunchApp);
     },
   });
   const target = useQuery({
@@ -80,6 +92,22 @@ export function DevicePage() {
     staleTime: 5_000,
   });
   const presentation = device.data ? statusCopy(device.data) : undefined;
+  const appLaunchSupported = Boolean(
+    device.data?.status === "ready" &&
+    (device.data.platform === "android" || device.data.platform === "ios") &&
+    deviceService.launchApp,
+  );
+
+  function submitAppLaunch(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const identifier = appIdentifier.trim();
+    if (!identifier) {
+      setAppIdentifierError("Enter an app name, package, or bundle identifier.");
+      return;
+    }
+    setAppIdentifierError(undefined);
+    appLaunch.mutate();
+  }
 
   useEffect(() => {
     const createPreview = productService.previewTarget;
@@ -241,14 +269,97 @@ export function DevicePage() {
             </dl>
           </section>
 
+          <section className="relay-device-launch" aria-labelledby="device-launch-title">
+            <div className="relay-device-launch-copy">
+              <p className="relay-section-label">App control</p>
+              <h2 id="device-launch-title">Launch an app</h2>
+              <p>Open an installed app on this device by name, package, or bundle identifier.</p>
+            </div>
+            {appLaunchSupported ? (
+              <form className="relay-device-launch-form" onSubmit={submitAppLaunch} noValidate>
+                <div className="relay-form-field">
+                  <label htmlFor="device-app-identifier">App/package/bundle identifier</label>
+                  <input
+                    id="device-app-identifier"
+                    className="relay-input"
+                    type="text"
+                    value={appIdentifier}
+                    placeholder="com.example.app"
+                    autoComplete="off"
+                    spellCheck={false}
+                    required
+                    aria-invalid={appIdentifierError ? true : undefined}
+                    aria-describedby={
+                      appIdentifierError
+                        ? "device-app-identifier-error"
+                        : "device-app-identifier-help"
+                    }
+                    onChange={(event) => {
+                      setAppIdentifier(event.target.value);
+                      if (appIdentifierError) setAppIdentifierError(undefined);
+                      if (appLaunch.error || appLaunch.data) appLaunch.reset();
+                    }}
+                  />
+                  <p id="device-app-identifier-help">
+                    Relay sends this exact identifier to the attached {device.data.platform} device.
+                  </p>
+                  {appIdentifierError ? (
+                    <p
+                      id="device-app-identifier-error"
+                      className="relay-settings-error"
+                      role="alert"
+                    >
+                      {appIdentifierError}
+                    </p>
+                  ) : null}
+                </div>
+                <label className="relay-device-launch-relaunch">
+                  <input
+                    type="checkbox"
+                    checked={relaunchApp}
+                    onChange={(event) => setRelaunchApp(event.target.checked)}
+                  />
+                  <span>Relaunch if the app is already open</span>
+                </label>
+                <Button type="submit" variant="primary" disabled={appLaunch.isPending}>
+                  {appLaunch.isPending ? "Launching…" : "Launch app"}
+                </Button>
+                {appLaunch.error ? (
+                  <p className="relay-settings-error" role="alert">
+                    {friendlyAppLaunchIssue(appLaunch.error)}
+                  </p>
+                ) : null}
+                {appLaunch.data ? (
+                  <div className="relay-device-launch-result" role="status" aria-live="polite">
+                    <strong>Launch requested</strong>
+                    <p>
+                      Relay launched {appLaunch.data.app} on {device.data.name}.
+                    </p>
+                  </div>
+                ) : null}
+              </form>
+            ) : (
+              <p className="relay-device-launch-unavailable" role="note">
+                {device.data.platform === "browser"
+                  ? "App launch is not available for managed browsers. Use the live session below instead."
+                  : device.data.status !== "ready"
+                    ? "Reconnect this device and wait until Relay reports it ready before launching an app."
+                    : deviceService.launchApp
+                      ? "App launch is available only for attached Android and iOS devices."
+                      : "This Relay host cannot launch apps yet."}
+              </p>
+            )}
+          </section>
+
           {device.data.status !== "needs-attention" ? (
             <section className="relay-device-live" aria-labelledby="device-live-title">
               <div className="relay-device-live-heading">
                 <div>
-                  <p className="relay-section-label">Live session</p>
+                  <p className="relay-section-label">Live preview</p>
                   <h2 id="device-live-title">Position the device before recording</h2>
                   <p>
-                    Interact freely here. Nothing is recorded until you explicitly start a Test.
+                    Interact freely here. This preview closes when you leave; start a Test to create
+                    a durable Session with saved evidence and history.
                   </p>
                 </div>
                 <Button
@@ -291,4 +402,14 @@ function friendlyLiveIssue(message: string): string {
     return "Relay could not show the live view. Keep the device connected, then reconnect.";
   }
   return message;
+}
+
+function friendlyAppLaunchIssue(error: unknown): string {
+  const rawMessage = error instanceof Error ? error.message : "";
+  if (/device|target|serial|offline|disconnected|unauthorized|not found/iu.test(rawMessage)) {
+    return "Relay could not launch the app. Keep the device connected and try again.";
+  }
+  const message = errorMessage(error);
+  if (/not available|attached Android and iOS/iu.test(message)) return message;
+  return "Relay could not launch the app. Check the identifier and try again.";
 }

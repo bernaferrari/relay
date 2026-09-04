@@ -13,6 +13,9 @@
 @import "./map.css";
 @import "./recovery-overrides.css";
 @import "./final-polish.css";
+@import "./recording-review.css";
+@import "./sessions.css";
+@import "./suites-environments.css";
 
 @source "../**/*.{ts,tsx}";
 @source "../../../ui-react/src/**/*.{ts,tsx}";

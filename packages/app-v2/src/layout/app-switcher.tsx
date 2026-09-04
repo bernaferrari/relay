@@ -4,12 +4,16 @@ import { useQuery } from "@tanstack/react-query";
 import { useLocation, useRouter, useRouteContext } from "@tanstack/react-router";
 import { catalogQueryKeys } from "../data/catalog-queries";
 import { recordingQueryKeys } from "../data/recording-queries";
-import { appContextDestination, appScopeForLocation } from "./app-scope";
+import {
+  appContextDestination,
+  appScopeDetailsForLocation,
+  safeDecodeURIComponent,
+} from "./app-scope";
 
 export function AppSwitcher() {
   const router = useRouter();
   const location = useLocation();
-  const { productService, catalogService } = useRouteContext({ from: "__root__" });
+  const { productService, catalogService, changeService } = useRouteContext({ from: "__root__" });
   const canListApps = typeof productService.listApps === "function";
   const apps = useQuery({
     queryKey: recordingQueryKeys.apps,
@@ -30,15 +34,47 @@ export function AppSwitcher() {
     enabled: needsCatalogScope,
     staleTime: 15_000,
   });
-  const selectedAppId = appScopeForLocation({
+  const changeId = safeDecodeURIComponent(
+    /^\/changes\/([^/]+)$/u.exec(location.pathname)?.[1] ?? "",
+  );
+  const change = useQuery({
+    queryKey: ["change", changeId ?? "unselected"],
+    queryFn: () => changeService.open(changeId!),
+    enabled: Boolean(changeId),
+    staleTime: 15_000,
+  });
+  const recordingId = safeDecodeURIComponent(
+    /^\/recordings\/([^/]+)(?:\/review)?$/u.exec(location.pathname)?.[1] ?? "",
+  );
+  const recording = useQuery({
+    queryKey: recordingQueryKeys.workflow(recordingId ?? "unselected"),
+    queryFn: () => productService.inspect(recordingId!),
+    enabled: Boolean(recordingId),
+    staleTime: 5_000,
+  });
+  const scope = appScopeDetailsForLocation({
     pathname: location.pathname,
     search: location.search,
     tests: tests.data,
     runs: runs.data,
+    changes: change.data?.state.change ? [change.data.state.change] : undefined,
+    recordings: recording.data?.snapshot?.frozen
+      ? [
+          {
+            id: recordingId!,
+            appMapId: recording.data.snapshot.frozen.appMapId,
+          },
+        ]
+      : undefined,
   });
+  const selectedAppId = scope.kind === "single" ? scope.appId : undefined;
   const selectedApp = apps.data?.find((app) => app.id === selectedAppId);
-  const contextName = selectedApp?.name ?? "All apps";
-  const avatar = selectedApp?.name.trim().slice(0, 1).toLocaleUpperCase() ?? "R";
+  const contextName =
+    scope.kind === "multiple" ? "Multiple apps" : (selectedApp?.name ?? "All apps");
+  const avatar =
+    scope.kind === "multiple"
+      ? String(scope.appIds.length)
+      : (selectedApp?.name.trim().slice(0, 1).toLocaleUpperCase() ?? "R");
 
   function switchApp(appId?: string) {
     router.history.push(
@@ -67,7 +103,7 @@ export function AppSwitcher() {
               <Menu.GroupLabel className="relay-menu-label">Apps</Menu.GroupLabel>
               <Menu.Item className="relay-menu-item" onClick={() => switchApp()}>
                 <span>All apps</span>
-                {!selectedApp ? <span aria-hidden="true">✓</span> : null}
+                {scope.kind === "all" ? <span aria-hidden="true">✓</span> : null}
               </Menu.Item>
               {apps.data?.map((app) => (
                 <Menu.Item

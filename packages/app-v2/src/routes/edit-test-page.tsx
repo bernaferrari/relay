@@ -3,18 +3,7 @@ import type { AppMapScenarioTestStep, AppMapTestStepPlacement } from "@relay/pro
 import { Badge, Button, IconButton } from "@relay/ui-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
-import {
-  ArrowDown,
-  ArrowUp,
-  Check,
-  ChevronRight,
-  CircleDot,
-  GripVertical,
-  History,
-  Redo2,
-  Sparkles,
-  Undo2,
-} from "lucide-react";
+import { ArrowDown, ArrowUp, Check, ChevronRight, GripVertical, Redo2, Undo2 } from "lucide-react";
 import { useMemo, useRef, useState, type CSSProperties } from "react";
 import { Breadcrumbs, EmptyState } from "../components/product-patterns";
 import { TestEditorEvidencePanel } from "../components/test-editor-evidence-panel";
@@ -27,25 +16,44 @@ import type {
   ProductTestEditorDocument,
   ProductTestRepair,
 } from "../data/test-editor-product-service";
+import type { LiveTestEditorSession } from "../data/live-test-editor-product-service";
 import { useLatestTestReport } from "../hooks/use-latest-test-report";
+import { LiveTestEditorPane } from "./live-test-editor-pane";
 import { PageLoading, RecordingProblem } from "./recording-shared";
+import { HistorySection, RepairSection } from "./test-editor-context-panels";
+import { branchLabel, collectStepEntries, stepKindLabel } from "./test-editor-route-helpers";
 
 const routeApi = getRouteApi("/tests/$testId/edit");
 
 export function EditTestPage() {
-  const { testEditorService, runService, queryClient } = useRouteContext({ from: "__root__" });
+  const { testEditorService, liveTestEditorService, runService, queryClient } = useRouteContext({
+    from: "__root__",
+  });
   const { testId } = routeApi.useParams();
-  const search = routeApi.useSearch() as { step?: unknown };
+  const search = routeApi.useSearch() as { step?: unknown; session?: unknown };
+  const sessionId = typeof search.session === "string" ? search.session : undefined;
   const navigate = useNavigate({ from: "/tests/$testId/edit" });
   const queryKey = useMemo(() => ["test-editor", testId] as const, [testId]);
+  const liveQueryKey = useMemo(
+    () => ["live-test-editor", testId, sessionId] as const,
+    [sessionId, testId],
+  );
   const document = useQuery({
     queryKey,
     queryFn: () => testEditorService.get(testId),
     staleTime: 5_000,
+    enabled: !sessionId,
   });
+  const liveEditor = useQuery({
+    queryKey: liveQueryKey,
+    queryFn: () => liveTestEditorService.open({ testId, sessionId: sessionId! }),
+    staleTime: Number.POSITIVE_INFINITY,
+    enabled: Boolean(sessionId),
+  });
+  const editorDocument = liveEditor.data?.test ?? document.data;
   const entries = useMemo(
-    () => collectStepEntries(document.data?.test.steps ?? []),
-    [document.data],
+    () => collectStepEntries(editorDocument?.test.steps ?? []),
+    [editorDocument],
   );
   const requestedStepId = typeof search.step === "string" ? search.step : undefined;
   const selected =
@@ -59,15 +67,30 @@ export function EditTestPage() {
   const draggedStepId = useRef<string | undefined>(undefined);
   const selectAfterSave = useRef<string | null | undefined>(undefined);
 
+  function currentLiveEditor(): LiveTestEditorSession | undefined {
+    return queryClient.getQueryData<LiveTestEditorSession | undefined>(liveQueryKey);
+  }
+
+  function currentDocument(): ProductTestEditorDocument | undefined {
+    return currentLiveEditor()?.test ?? queryClient.getQueryData(queryKey);
+  }
+
+  function saveDocument(next: ProductTestEditorDocument | LiveTestEditorSession) {
+    if ("liveTarget" in next) queryClient.setQueryData(liveQueryKey, next);
+    else queryClient.setQueryData(queryKey, next);
+  }
+
   const edit = useMutation({
     mutationFn: async (transaction: EditTransaction) => {
-      const current = queryClient.getQueryData<ProductTestEditorDocument | undefined>(queryKey);
+      const live = currentLiveEditor();
+      if (live) return liveTestEditorService.edit({ current: live, edits: transaction.forward });
+      const current = currentDocument();
       if (!current) throw new TypeError("Reload this Test before saving more changes.");
       return testEditorService.edit({ document: current, edits: transaction.forward });
     },
     onMutate: () => setSaveNotice("Saving…"),
     onSuccess: (next) => {
-      queryClient.setQueryData(queryKey, next);
+      saveDocument(next);
       setSaveNotice("Saved");
       const nextSelection = selectAfterSave.current;
       selectAfterSave.current = undefined;
@@ -80,13 +103,15 @@ export function EditTestPage() {
     onError: () => {
       selectAfterSave.current = undefined;
       setSaveNotice("Could not save");
-      void queryClient.invalidateQueries({ queryKey });
+      void queryClient.invalidateQueries({ queryKey: sessionId ? liveQueryKey : queryKey });
     },
   });
 
   const historyAction = useMutation({
     mutationFn: async (direction: "undo" | "redo") => {
-      const current = queryClient.getQueryData<ProductTestEditorDocument | undefined>(queryKey);
+      const live = currentLiveEditor();
+      if (live) return liveTestEditorService[direction]({ current: live });
+      const current = currentDocument();
       if (!current) throw new TypeError("Reload this Test before changing its history.");
       const operation = testEditorService[direction];
       if (!operation) throw new TypeError("Saved history is not available on this Relay server.");
@@ -94,12 +119,12 @@ export function EditTestPage() {
     },
     onMutate: () => setSaveNotice("Saving…"),
     onSuccess: (next) => {
-      queryClient.setQueryData(queryKey, next);
+      saveDocument(next);
       setSaveNotice("Saved");
     },
     onError: () => {
       setSaveNotice("Could not save");
-      void queryClient.invalidateQueries({ queryKey });
+      void queryClient.invalidateQueries({ queryKey: sessionId ? liveQueryKey : queryKey });
     },
   });
 
@@ -111,7 +136,15 @@ export function EditTestPage() {
       proposal: ProductTestRepair;
       decision: "approve" | "reject" | "revert";
     }) => {
-      const current = queryClient.getQueryData<ProductTestEditorDocument | undefined>(queryKey);
+      const live = currentLiveEditor();
+      if (live) {
+        return liveTestEditorService.decideRepair({
+          current: live,
+          proposalId: proposal.id,
+          decision,
+        });
+      }
+      const current = currentDocument();
       if (!current) throw new TypeError("Reload this Test before reviewing a repair.");
       return testEditorService.decideRepair({
         document: current,
@@ -120,10 +153,11 @@ export function EditTestPage() {
       });
     },
     onSuccess: (next) => {
-      queryClient.setQueryData(queryKey, next);
+      saveDocument(next);
       setSaveNotice("Saved");
     },
-    onError: () => void queryClient.invalidateQueries({ queryKey }),
+    onError: () =>
+      void queryClient.invalidateQueries({ queryKey: sessionId ? liveQueryKey : queryKey }),
   });
 
   function selectStep(stepId: string) {
@@ -272,11 +306,11 @@ export function EditTestPage() {
     if (canRedo && !edit.isPending) historyAction.mutate("redo");
   }
 
-  const latestHistory = document.data?.history[0];
+  const latestHistory = editorDocument?.history[0];
   const canRedo = latestHistory?.eventType === "test.undone" && Boolean(testEditorService.redo);
   const canUndo =
     Boolean(testEditorService.undo) &&
-    Boolean(document.data?.history.some((item) => item.eventType !== "test.redone"));
+    Boolean(editorDocument?.history.some((item) => item.eventType !== "test.redone"));
 
   return (
     <section
@@ -299,7 +333,7 @@ export function EditTestPage() {
       <Breadcrumbs
         items={[
           { label: "Tests", to: "/tests" },
-          { label: document.data?.test.name ?? "Test" },
+          { label: editorDocument?.test.name ?? "Test" },
           { label: "Edit" },
         ]}
       />
@@ -307,9 +341,10 @@ export function EditTestPage() {
         <div>
           <div className="relay-entity-context">
             <Badge variant="success">Saved Test</Badge>
-            {document.data ? <span>{document.data.appName}</span> : null}
+            {editorDocument ? <span>{editorDocument.appName}</span> : null}
+            {sessionId ? <Badge variant="secondary">Live Session</Badge> : null}
           </div>
-          <h1>{document.data?.test.name ?? "Edit Test"}</h1>
+          <h1>{editorDocument?.test.name ?? "Edit Test"}</h1>
           <p className="relay-page-description">
             Refine what Relay does and checks, one step at a time.
           </p>
@@ -329,13 +364,19 @@ export function EditTestPage() {
         </div>
       </header>
 
-      {document.isPending ? <PageLoading label="Loading Test steps…" /> : null}
+      {(sessionId ? liveEditor.isPending : document.isPending) ? (
+        <PageLoading label="Loading Test steps…" />
+      ) : null}
       <RecordingProblem
-        error={document.error ?? edit.error ?? historyAction.error ?? repair.error}
-        onRetry={() => void document.refetch()}
-        retrying={document.isFetching}
+        error={
+          liveEditor.error ?? document.error ?? edit.error ?? historyAction.error ?? repair.error
+        }
+        onRetry={() => void (sessionId ? liveEditor.refetch() : document.refetch())}
+        retrying={sessionId ? liveEditor.isFetching : document.isFetching}
       />
-      {!document.isPending && !document.data && !document.isError ? (
+      {!(sessionId ? liveEditor.isPending : document.isPending) &&
+      !editorDocument &&
+      !(sessionId ? liveEditor.isError : document.isError) ? (
         <EmptyState
           title="This Test is not available"
           detail="It may have been removed or may belong to another app. Choose a saved Test to continue."
@@ -347,7 +388,7 @@ export function EditTestPage() {
         />
       ) : null}
 
-      {document.data ? (
+      {editorDocument ? (
         <>
           <div className="relay-editor-toolbar" aria-label="Editing history">
             <Button
@@ -487,7 +528,7 @@ export function EditTestPage() {
             <aside className="relay-editor-inspector" aria-label="Selected step editor">
               {selected ? (
                 <SelectedStepEditor
-                  key={`${selected.step.id}:${document.data.revision}`}
+                  key={`${selected.step.id}:${editorDocument.revision}`}
                   entry={selected}
                   busy={edit.isPending}
                   onSave={apply}
@@ -503,25 +544,34 @@ export function EditTestPage() {
               )}
             </aside>
 
-            <TestEditorEvidencePanel
-              step={selected?.step}
-              report={latestReport.data}
-              hasRuns={Boolean(recentRuns.data?.length)}
-              loading={reportLoading}
-            />
+            <div className="relay-editor-stage-evidence">
+              {sessionId ? (
+                <LiveTestEditorPane
+                  session={liveEditor.data}
+                  loading={liveEditor.isPending}
+                  error={liveEditor.error}
+                />
+              ) : null}
+              <TestEditorEvidencePanel
+                step={selected?.step}
+                report={latestReport.data}
+                hasRuns={Boolean(recentRuns.data?.length)}
+                loading={reportLoading}
+              />
+            </div>
           </div>
 
-          {document.data.repairs.length || document.data.history.length ? (
+          {editorDocument.repairs.length || editorDocument.history.length ? (
             <div className="relay-test-editor-context">
-              {document.data.repairs.length ? (
+              {editorDocument.repairs.length ? (
                 <RepairSection
-                  repairs={document.data.repairs}
+                  repairs={editorDocument.repairs}
                   busy={repair.isPending}
                   onDecision={(proposal, decision) => repair.mutate({ proposal, decision })}
                 />
               ) : null}
-              {document.data.history.length ? (
-                <HistorySection items={document.data.history} />
+              {editorDocument.history.length ? (
+                <HistorySection items={editorDocument.history} />
               ) : null}
             </div>
           ) : null}
@@ -529,158 +579,4 @@ export function EditTestPage() {
       ) : null}
     </section>
   );
-}
-
-function RepairSection({
-  repairs,
-  busy,
-  onDecision,
-}: {
-  repairs: readonly ProductTestRepair[];
-  busy: boolean;
-  onDecision(repair: ProductTestRepair, decision: "approve" | "reject" | "revert"): void;
-}) {
-  return (
-    <section className="relay-editor-context-panel" aria-labelledby="repairs-title">
-      <div className="relay-context-heading">
-        <Sparkles aria-hidden="true" />
-        <div>
-          <p className="relay-section-label">Review</p>
-          <h2 id="repairs-title">Suggested repairs</h2>
-        </div>
-      </div>
-      {repairs.length ? (
-        <ul className="relay-editor-context-list">
-          {repairs.map((proposal) => (
-            <li key={proposal.id}>
-              <div>
-                <strong>{proposal.title}</strong>
-                <p>
-                  {proposal.description ??
-                    `${proposal.editCount} suggested ${proposal.editCount === 1 ? "change" : "changes"}`}
-                </p>
-              </div>
-              <div>
-                {proposal.status === "pending" ? (
-                  <>
-                    <Button
-                      size="small"
-                      variant="primary"
-                      disabled={busy}
-                      onClick={() => onDecision(proposal, "approve")}
-                    >
-                      Apply repair
-                    </Button>
-                    <Button
-                      size="small"
-                      variant="ghost"
-                      disabled={busy}
-                      onClick={() => onDecision(proposal, "reject")}
-                    >
-                      Dismiss
-                    </Button>
-                  </>
-                ) : (
-                  <Button
-                    size="small"
-                    variant="secondary"
-                    disabled={busy}
-                    onClick={() => onDecision(proposal, "revert")}
-                  >
-                    Revert repair
-                  </Button>
-                )}
-              </div>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="relay-context-empty">
-          <Check aria-hidden="true" /> No repairs are waiting for review.
-        </p>
-      )}
-    </section>
-  );
-}
-
-function HistorySection({ items }: { items: ProductTestEditorDocument["history"] }) {
-  return (
-    <section className="relay-editor-context-panel" aria-labelledby="history-title">
-      <div className="relay-context-heading">
-        <History aria-hidden="true" />
-        <div>
-          <p className="relay-section-label">Saved activity</p>
-          <h2 id="history-title">History</h2>
-        </div>
-      </div>
-      {items.length ? (
-        <ol className="relay-editor-history-list">
-          {items.slice(0, 8).map((item) => (
-            <li key={item.id}>
-              <CircleDot aria-hidden="true" />
-              <div>
-                <strong>{item.summary}</strong>
-                <span>
-                  {item.actorKind === "human" ? "You" : "Agent"} · {relativeTime(item.at)}
-                </span>
-              </div>
-            </li>
-          ))}
-        </ol>
-      ) : (
-        <p className="relay-context-empty">Saved edits will appear here.</p>
-      )}
-    </section>
-  );
-}
-
-function collectStepEntries(steps: readonly AppMapScenarioTestStep[]): StepEntry[] {
-  const entries: StepEntry[] = [];
-  function visit(
-    siblings: readonly AppMapScenarioTestStep[],
-    depth: number,
-    prefix: string,
-    placement?: AppMapTestStepPlacement,
-  ) {
-    const siblingIds = siblings.map((step) => step.id);
-    siblings.forEach((step, index) => {
-      const number = prefix ? `${prefix}.${index + 1}` : String(index + 1);
-      entries.push({ step, depth, number, placement, siblingIds, index });
-      if (step.kind === "decision") {
-        visit(step.thenSteps, depth + 1, number, { parentStepId: step.id, branch: "then" });
-        if (step.elseSteps?.length)
-          visit(step.elseSteps, depth + 1, `${number}b`, { parentStepId: step.id, branch: "else" });
-      } else if (step.kind === "loop") {
-        visit(step.steps, depth + 1, number, { parentStepId: step.id, branch: "steps" });
-      }
-    });
-  }
-  visit(steps, 0, "");
-  return entries;
-}
-
-function stepKindLabel(step: AppMapScenarioTestStep): string {
-  if (step.kind === "validation") return "Checkpoint";
-  if (step.kind === "instruction") return "Action";
-  if (step.kind === "manual") return "Human check";
-  if (step.kind === "extraction") return "Remember value";
-  if (step.kind === "module") return "Saved section";
-  if (step.kind === "decision") return "Decision";
-  if (step.kind === "loop") return "Repeat";
-  return "Script";
-}
-
-function branchLabel(placement: AppMapTestStepPlacement): string {
-  if (placement.branch === "then") return "Then branch";
-  if (placement.branch === "else") return "Else branch";
-  if (placement.branch === "steps") return "Repeated steps";
-  return "Main path";
-}
-
-function relativeTime(value: number): string {
-  const elapsed = Math.max(0, Date.now() - value);
-  if (elapsed < 60_000) return "Just now";
-  if (elapsed < 3_600_000) return `${Math.floor(elapsed / 60_000)}m ago`;
-  if (elapsed < 86_400_000) return `${Math.floor(elapsed / 3_600_000)}h ago`;
-  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(value);
 }

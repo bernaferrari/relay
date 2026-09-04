@@ -1,4 +1,11 @@
-import type { AppMap, AppMapScenarioTestStep, Connection, Screen } from "@relay/protocol";
+import type {
+  AppMap,
+  AppMapScenarioTestStep,
+  Connection,
+  OperationInput,
+  Proposal,
+  Screen,
+} from "@relay/protocol";
 import { createRelayOperationPort, type RelayInvokeClient } from "@relay/workflows/operation-port";
 import { routeUrls } from "./routes.js";
 
@@ -30,6 +37,18 @@ export type ProductMapPath = {
   readonly coveringTests: readonly { readonly id: string; readonly name: string }[];
 };
 
+export type ProductMapProposal = Pick<
+  Proposal,
+  | "id"
+  | "title"
+  | "description"
+  | "status"
+  | "createdAt"
+  | "updatedAt"
+  | "baseRevision"
+  | "sourceRevision"
+>;
+
 export type ProductMapOverview = {
   readonly appMapId: string;
   readonly appName: string;
@@ -51,6 +70,12 @@ export type ProductMapOverview = {
 
 export type ProductMapService = {
   get(appMapId: string): Promise<ProductMapOverview>;
+  /** Bounded drilldown over the same canonical App Map snapshot as `get`. */
+  getScreen?(appMapId: string, screenId: string): Promise<ProductMapScreen | undefined>;
+  getPath?(appMapId: string, pathId: string): Promise<ProductMapPath | undefined>;
+  listProposals?(appMapId: string): Promise<readonly ProductMapProposal[]>;
+  approveProposal?(input: OperationInput<"app-map.proposal.approve">): Promise<ProductMapOverview>;
+  rejectProposal?(input: OperationInput<"app-map.proposal.reject">): Promise<ProductMapOverview>;
 };
 
 function text(value: unknown, fallback: string): string {
@@ -166,11 +191,48 @@ function projectMap(map: AppMap): ProductMapOverview {
   };
 }
 
+function projectProposal(proposal: Proposal): ProductMapProposal {
+  return {
+    id: proposal.id,
+    title: text(proposal.title, "Map proposal"),
+    ...(proposal.description ? { description: text(proposal.description, "") } : {}),
+    status: proposal.status,
+    createdAt: proposal.createdAt,
+    updatedAt: proposal.updatedAt,
+    baseRevision: proposal.baseRevision,
+    ...(proposal.sourceRevision === undefined ? {} : { sourceRevision: proposal.sourceRevision }),
+  };
+}
+
 export function createProductMapService(client: RelayInvokeClient): ProductMapService {
   const operations = createRelayOperationPort(client);
+  async function getOverview(appMapId: string): Promise<ProductMapOverview> {
+    const { appMap } = await operations.invoke("app-map.get", { appMapId });
+    return projectMap(appMap);
+  }
   return {
-    async get(appMapId) {
+    get: getOverview,
+    async getScreen(appMapId, screenId) {
+      return (await getOverview(appMapId)).screens.find((screen) => screen.id === screenId);
+    },
+    async getPath(appMapId, pathId) {
+      return (await getOverview(appMapId)).paths.find((path) => path.id === pathId);
+    },
+    async listProposals(appMapId) {
       const { appMap } = await operations.invoke("app-map.get", { appMapId });
+      return Object.values(appMap.proposals ?? {})
+        .map(projectProposal)
+        .sort(
+          (left, right) =>
+            right.updatedAt - left.updatedAt || left.title.localeCompare(right.title),
+        );
+    },
+    async approveProposal(input) {
+      const { appMap } = await operations.invoke("app-map.proposal.approve", input);
+      return projectMap(appMap);
+    },
+    async rejectProposal(input) {
+      const { appMap } = await operations.invoke("app-map.proposal.reject", input);
       return projectMap(appMap);
     },
   };

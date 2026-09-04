@@ -7,7 +7,6 @@ import {
   AlertTitle,
   Badge,
   Button,
-  Disclosure,
   Field,
   FieldDescription,
   FieldLabel,
@@ -21,80 +20,19 @@ import {
 } from "@relay/ui-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useRouteContext } from "@tanstack/react-router";
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { settingsQueryKeys, type SettingsCategory } from "../data/settings-product-service";
 import type { DesktopUpdateState } from "../platform/types";
 import { AppearanceSettings } from "./appearance-settings";
 import { PageLoading } from "./recording-shared";
 import { SettingRow, SettingsFrame, ToggleRow, type SaveState } from "./settings-frame";
-
-type SetupCheck = { id: string; label: string; status: string; detail: string };
-
-const CONNECTION_QUERY_KEY = ["settings", "connection"] as const;
-const CHANNELS: readonly {
-  id: SensitiveEvidenceChannel;
-  label: string;
-  description: string;
-}[] = [
-  {
-    id: "crash",
-    label: "Crash details",
-    description: "Keep crash reports that help explain why a Test stopped.",
-  },
-  {
-    id: "audio",
-    label: "Audio recordings",
-    description: "Keep audio only when a Test needs to verify sound.",
-  },
-  {
-    id: "network-body",
-    label: "Request and response bodies",
-    description: "Keep HTTP content that may include personal or account data.",
-  },
-  {
-    id: "network-raw",
-    label: "Raw network captures",
-    description:
-      "Keep PCAP files after a Run. Android emulator packet metadata is captured temporarily either way.",
-  },
-  {
-    id: "browser-trace",
-    label: "Browser diagnostics",
-    description: "Keep a detailed browser trace for difficult failures.",
-  },
-];
-
-function recordValue(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === "object" ? (value as Record<string, unknown>) : undefined;
-}
-
-function setupChecks(value: unknown): readonly SetupCheck[] {
-  const checks = recordValue(value)?.checks;
-  if (!Array.isArray(checks)) return [];
-  return checks.flatMap((item) => {
-    const check = recordValue(item);
-    return typeof check?.id === "string" &&
-      typeof check.label === "string" &&
-      typeof check.status === "string" &&
-      typeof check.detail === "string"
-      ? [
-          {
-            id: check.id,
-            label: check.label,
-            status: check.status,
-            detail: check.detail,
-          },
-        ]
-      : [];
-  });
-}
-
-function errorMessage(error: unknown): string {
-  if (error instanceof Error && /failed to fetch|network|load failed/i.test(error.message)) {
-    return "The Relay server could not be reached. Your existing settings are unchanged.";
-  }
-  return error instanceof Error ? error.message : "Relay could not complete this change.";
-}
+import {
+  CHANNELS,
+  CONNECTION_QUERY_KEY,
+  SetupRow,
+  errorMessage,
+  setupChecks,
+} from "./settings-support";
 
 function GeneralSettings() {
   const { platform } = useRouteContext({ from: "__root__" });
@@ -287,7 +225,13 @@ function EvidenceSettings() {
 }
 
 function IntegrationsSettings() {
-  const { platform } = useRouteContext({ from: "__root__" });
+  const { platform, settingsService } = useRouteContext({ from: "__root__" });
+  const integrations = useQuery({
+    queryKey: ["settings", "integrations"],
+    queryFn: () => settingsService.integrations!.list(),
+    enabled: Boolean(settingsService.integrations),
+    staleTime: 10_000,
+  });
   const connection = useQuery({
     queryKey: CONNECTION_QUERY_KEY,
     queryFn: () =>
@@ -313,8 +257,10 @@ function IntegrationsSettings() {
           <h2 id="integration-title">Connected services</h2>
           <p>Relay works locally without requiring an external account.</p>
         </header>
-        {connection.isPending ? <PageLoading label="Checking workspace connection…" /> : null}
-        {connection.isError ? (
+        {connection.isPending || (settingsService.integrations && integrations.isPending) ? (
+          <PageLoading label="Checking workspace integrations…" />
+        ) : null}
+        {connection.isError || (settingsService.integrations && integrations.error) ? (
           <Alert className="relay-settings-alert" variant="danger" role="alert">
             <AlertTitle>The workspace connection is unavailable</AlertTitle>
             <AlertDescription>
@@ -326,6 +272,42 @@ function IntegrationsSettings() {
               </Button>
             </AlertActions>
           </Alert>
+        ) : integrations.data ? (
+          <div className="relay-integration-list">
+            {integrations.data.map((integration) => (
+              <Item className="relay-integration-card" variant="outline" key={integration.provider}>
+                <ItemMedia className="relay-integration-mark" aria-hidden="true">
+                  {integration.name.slice(0, 1).toLocaleUpperCase()}
+                </ItemMedia>
+                <ItemContent>
+                  <ItemTitle>{integration.name}</ItemTitle>
+                  <ItemDescription>{integration.detail}</ItemDescription>
+                  {integration.capabilities.length ? (
+                    <span className="relay-integration-capabilities">
+                      {integration.capabilities
+                        .map((capability) => capability.replace(/-/gu, " "))
+                        .join(" · ")}
+                    </span>
+                  ) : null}
+                </ItemContent>
+                <ItemActions>
+                  <Badge
+                    variant={
+                      integration.state === "connected"
+                        ? "success"
+                        : integration.state === "unsupported"
+                          ? "secondary"
+                          : "warning"
+                    }
+                  >
+                    {integration.state
+                      .replace(/-/gu, " ")
+                      .replace(/^./u, (letter) => letter.toLocaleUpperCase())}
+                  </Badge>
+                </ItemActions>
+              </Item>
+            ))}
+          </div>
         ) : connection.data ? (
           <Item className="relay-integration-card" variant="outline">
             <ItemMedia className="relay-integration-mark" aria-hidden="true">
@@ -345,8 +327,8 @@ function IntegrationsSettings() {
         <div className="relay-settings-empty-inline">
           <h3>No external service is required</h3>
           <p>
-            Git and CI activity will appear as Changes when those services send work to this
-            workspace. Relay keeps local Tests usable either way.
+            Provider credentials remain server-managed. Relay does not claim Slack, webhook, or
+            issue delivery until a canonical operation can prove it.
           </p>
           <Link className="relay-inline-link" to="/changes">
             View Changes
@@ -354,64 +336,6 @@ function IntegrationsSettings() {
         </div>
       </section>
     </SettingsFrame>
-  );
-}
-
-function SetupRow({
-  title,
-  checks,
-  loading,
-  action,
-}: {
-  title: string;
-  checks: readonly SetupCheck[];
-  loading: boolean;
-  action?: ReactNode;
-}) {
-  const attention = checks.find((check) => check.status !== "ready");
-  const ready = checks.length > 0 && !attention;
-  return (
-    <div className="relay-setup-status">
-      <Item className="relay-setting-row relay-setup-status-row" size="small">
-        <ItemContent className="relay-setting-row-copy">
-          <ItemTitle>{title}</ItemTitle>
-          <ItemDescription>
-            {loading
-              ? "Checking support on this computer…"
-              : (attention?.detail ??
-                (ready
-                  ? "Relay has the local support it needs."
-                  : "Relay could not read this support check."))}
-          </ItemDescription>
-        </ItemContent>
-        <ItemActions className="relay-setting-row-control relay-setup-status-actions">
-          <Badge variant={ready ? "success" : "warning"}>
-            {loading ? "Checking" : ready ? "Ready" : "Needs attention"}
-          </Badge>
-          {!loading && attention ? action : null}
-        </ItemActions>
-      </Item>
-      {!loading && attention && checks.length > 1 ? (
-        <Disclosure.Root className="relay-setup-checks">
-          <Disclosure.Trigger>Diagnostic checks ({checks.length})</Disclosure.Trigger>
-          <Disclosure.Panel>
-            <ul>
-              {checks.map((check) => (
-                <li key={check.id}>
-                  <Badge variant={check.status === "ready" ? "success" : "warning"}>
-                    {check.status === "ready" ? "Ready" : "Needs attention"}
-                  </Badge>
-                  <div>
-                    <strong>{check.label}</strong>
-                    <p>{check.detail}</p>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </Disclosure.Panel>
-        </Disclosure.Root>
-      ) : null}
-    </div>
   );
 }
 

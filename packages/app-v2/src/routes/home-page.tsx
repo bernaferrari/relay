@@ -320,7 +320,7 @@ function NextCard({
         title={title}
         detail={detail}
         action={action}
-        link={<Link to="/tests/$testId/record" params={{ testId: id }} />}
+        link={<Link to="/recordings/$recordingId" params={{ recordingId: id }} />}
       />
     );
   }

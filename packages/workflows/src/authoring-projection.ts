@@ -6,6 +6,7 @@ import {
 } from "@relay/protocol";
 import type {
   AuthorTestSnapshot,
+  AuthoringReviewActionKind,
   FrozenAuthorTestIdentity,
   DurableWorkflowHandle,
   WorkflowProblem,
@@ -52,6 +53,98 @@ function semanticIntent(
   if (step.kind === "swipe") return "Swipe";
   if (step.kind === "key") return `Press ${String(step.key ?? "key")}`;
   return "Recorded action";
+}
+
+type ReviewEvidenceRole = "action" | "entrance" | "exit";
+
+type AuthoringRevision = NonNullable<AuthoringSession["take"]>["revisions"][number];
+
+function observationsForRevision(
+  revision: AuthoringRevision,
+): Map<string, NonNullable<AuthoringRevision["observations"]>[number]> {
+  const observations = new Map<string, NonNullable<AuthoringRevision["observations"]>[number]>();
+  for (const observation of revision.observations ?? []) {
+    observations.set(observation.id, observation);
+  }
+  if (revision.before) observations.set(revision.before.id, revision.before);
+  if (revision.after) observations.set(revision.after.id, revision.after);
+  return observations;
+}
+
+function reviewActionKind(
+  action: NonNullable<AuthoringSession["take"]>["revisions"][number]["actions"][number],
+): AuthoringReviewActionKind {
+  const kinds = [...new Set(action.steps.map((step) => step.kind))];
+  if (kinds.length === 0) return "observe";
+  if (kinds.length === 1) return kinds[0]!;
+  return "mixed";
+}
+
+function reviewEvidenceForAction(
+  action: NonNullable<AuthoringSession["take"]>["revisions"][number]["actions"][number],
+  revision: NonNullable<AuthoringSession["take"]>["revisions"][number],
+): {
+  evidenceIds: string[];
+  evidence: Array<{
+    id: string;
+    kind: "screenshot" | "snapshot" | "video";
+    capturedAt: number;
+    roles: ReviewEvidenceRole[];
+  }>;
+} {
+  const rolesByEvidenceId = new Map<string, Set<ReviewEvidenceRole>>();
+  const add = (id: string, role: ReviewEvidenceRole) => {
+    const roles = rolesByEvidenceId.get(id) ?? new Set<ReviewEvidenceRole>();
+    roles.add(role);
+    rolesByEvidenceId.set(id, roles);
+  };
+  for (const id of action.evidenceIds) add(id, "action");
+
+  const observations = observationsForRevision(revision);
+  for (const [observationId, role] of [
+    [action.entranceObservationId, "entrance"],
+    [action.exitObservationId, "exit"],
+  ] as const) {
+    if (!observationId) continue;
+    for (const id of observations.get(observationId)?.evidenceIds ?? []) add(id, role);
+  }
+
+  const evidenceById = new Map(revision.evidence.map((item) => [item.id, item]));
+  const evidence = [...rolesByEvidenceId].flatMap(([id, roles]) => {
+    const item = evidenceById.get(id);
+    // Keep dangling links as IDs below, but never invent evidence metadata.
+    if (!item) return [];
+    return [
+      {
+        id: item.id,
+        kind: item.kind,
+        capturedAt: item.capturedAt,
+        roles: [...roles],
+      },
+    ];
+  });
+  return { evidenceIds: [...rolesByEvidenceId.keys()], evidence };
+}
+
+function timelineForRevision(
+  revision: NonNullable<AuthoringSession["take"]>["revisions"][number],
+): NonNullable<AuthorTestSnapshot["review"]>["timeline"] {
+  const observations = observationsForRevision(revision);
+  const timestamps = [
+    ...revision.actions.flatMap((action) => [action.startedAt, action.finishedAt]),
+    ...revision.evidence.map((item) => item.capturedAt),
+    ...[...observations.values()].map((observation) => observation.capturedAt),
+  ].filter((value) => Number.isFinite(value));
+  const startedAt = Math.min(...(timestamps.length ? timestamps : [revision.createdAt]));
+  const finishedAt = Math.max(...(timestamps.length ? timestamps : [revision.createdAt]));
+  return {
+    startedAt,
+    finishedAt,
+    durationMs: Math.max(0, finishedAt - startedAt),
+    actionCount: revision.actions.length,
+    evidenceCount: revision.evidence.length,
+    observationCount: observations.size,
+  };
 }
 
 export function workflowVersionForAuthoringSession(session: AuthoringSession): string {
@@ -117,14 +210,29 @@ function reviewForSession(session: AuthoringSession): AuthorTestSnapshot["review
   const captureProvenance = authoringCaptureProvenance(session.captureProvenance);
   return {
     actionCount: revision.actions.length,
-    actions: revision.actions.map((action) => ({
-      id: action.id,
-      intent: semanticIntent(action),
-      ...(action.label ? { label: action.label } : {}),
-      stepCount: action.steps.length,
-      ...(action.proofStatus ? { proofStatus: action.proofStatus } : {}),
-      captureProof: captureProofForAuthoring(captureProvenance, approvedReplay),
-    })),
+    currentRevision: revision.revision,
+    revisionCount: take.revisions.length,
+    ...(revision.videoClip ? { videoClip: { ...revision.videoClip } } : {}),
+    actions: revision.actions.map((action) => {
+      const linkedEvidence = reviewEvidenceForAction(action, revision);
+      return {
+        id: action.id,
+        intent: semanticIntent(action),
+        ...(action.label ? { label: action.label } : {}),
+        stepCount: action.steps.length,
+        kind: reviewActionKind(action),
+        startedAt: action.startedAt,
+        finishedAt: action.finishedAt,
+        durationMs: Math.max(0, action.finishedAt - action.startedAt),
+        evidenceIds: linkedEvidence.evidenceIds,
+        evidenceCount: linkedEvidence.evidenceIds.length,
+        evidenceKinds: [...new Set(linkedEvidence.evidence.map((item) => item.kind))],
+        evidence: linkedEvidence.evidence,
+        ...(action.proofStatus ? { proofStatus: action.proofStatus } : {}),
+        captureProof: captureProofForAuthoring(captureProvenance, approvedReplay),
+      };
+    }),
+    timeline: timelineForRevision(revision),
     ...(latestReplay
       ? {
           latestReplay: {

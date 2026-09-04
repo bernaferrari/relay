@@ -1,16 +1,26 @@
 /** @jsxImportSource react */
-import type { ProductBatchCase } from "@relay/product/run-across";
-import { Badge, Button } from "@relay/ui-react";
+import { Button, Tabs, TabsIndicator, TabsList, TabsTrigger } from "@relay/ui-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Link, getRouteApi, useRouteContext } from "@tanstack/react-router";
+import { getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
+import { RotateCcw } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { Breadcrumbs, EmptyState, OutcomeMark } from "../components/product-patterns";
+import { IssueDraftButton } from "../components/issue-draft-button";
+import { isBatchCaseRerunnable, selectedClusterCaseIds } from "./batch-triage";
+import { BatchFailureClusters, BatchResultMatrix } from "./batch-triage-panels";
 import { PageLoading, RecordingProblem } from "./recording-shared";
 
 const routeApi = getRouteApi("/batches/$batchId");
+type MatrixView = "problems" | "all";
 
 export function BatchPage() {
   const { runAcrossService, queryClient } = useRouteContext({ from: "__root__" });
   const { batchId } = routeApi.useParams();
+  const search = routeApi.useSearch() as { view?: unknown };
+  const navigate = useNavigate({ from: "/batches/$batchId" });
+  const view: MatrixView = search.view === "all" ? "all" : "problems";
+  const [selectedCases, setSelectedCases] = useState<Set<string>>(() => new Set());
+  const [selectedClusters, setSelectedClusters] = useState<Set<string>>(() => new Set());
   const batch = useQuery({
     queryKey: ["run-across", "batch", batchId],
     queryFn: () => runAcrossService.getReport(batchId),
@@ -19,48 +29,129 @@ export function BatchPage() {
         ? 3_000
         : false,
   });
+  const report = batch.data;
+  const hasProblems = Boolean(
+    report?.cases.some(
+      (item) =>
+        item.status === "failed" || item.status === "blocked" || item.status === "cancelled",
+    ),
+  );
+  const clusters = useQuery({
+    queryKey: ["run-across", "batch", batchId, "failure-clusters"],
+    queryFn: () => runAcrossService.getFailureClusters(batchId),
+    enabled: hasProblems,
+    staleTime: 5_000,
+  });
   const continueRun = useMutation({
     mutationFn: () => runAcrossService.continue(batchId),
-    onSuccess: () =>
-      void queryClient.invalidateQueries({ queryKey: ["run-across", "batch", batchId] }),
+    onSuccess: () => refreshBatch(),
   });
   const cancel = useMutation({
     mutationFn: () => runAcrossService.cancel(batchId),
-    onSuccess: () =>
-      void queryClient.invalidateQueries({ queryKey: ["run-across", "batch", batchId] }),
+    onSuccess: () => refreshBatch(),
   });
   const exportReport = useMutation({
     mutationFn: () => runAcrossService.exportReport(batchId),
-    onSuccess: (report) => queryClient.setQueryData(["run-across", "batch", batchId], report),
+    onSuccess: (value) => queryClient.setQueryData(["run-across", "batch", batchId], value),
   });
-  const report = batch.data;
+  const rerun = useMutation({
+    mutationFn: () =>
+      runAcrossService.rerun(batchId, {
+        ...(selectedCases.size ? { caseIds: [...selectedCases] } : {}),
+        ...(selectedClusters.size ? { clusterIds: [...selectedClusters] } : {}),
+      }),
+    onSuccess: async () => {
+      setSelectedCases(new Set());
+      setSelectedClusters(new Set());
+      await refreshBatch();
+    },
+  });
   const active = report?.status === "pilot-running" || report?.status === "running";
   const canContinue = report?.status === "ready-to-continue" || report?.status === "needs-review";
-  const failureGroups = groupFailures(report?.cases ?? []);
+  const clusterValues = clusters.data?.clusters ?? [];
+  const selectedClusterCases = selectedClusterCaseIds(clusterValues, selectedClusters);
+  const totalSelected = useMemo(
+    () => new Set([...selectedCases, ...selectedClusterCases]).size,
+    [selectedCases, selectedClusterCases],
+  );
+  const rerunnableCases = report?.cases.filter(isBatchCaseRerunnable) ?? [];
+
+  useEffect(() => {
+    if (!report) return;
+    const eligible = new Set(report.cases.filter(isBatchCaseRerunnable).map((item) => item.id));
+    setSelectedCases((current) => new Set([...current].filter((id) => eligible.has(id))));
+  }, [report]);
+
+  async function refreshBatch() {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["run-across", "batch", batchId] }),
+      queryClient.invalidateQueries({
+        queryKey: ["run-across", "batch", batchId, "failure-clusters"],
+      }),
+    ]);
+  }
+
+  function toggleCase(caseId: string, checked: boolean) {
+    setSelectedCases((current) => {
+      const next = new Set(current);
+      if (checked) next.add(caseId);
+      else next.delete(caseId);
+      return next;
+    });
+  }
+
+  function toggleCluster(clusterId: string, checked: boolean) {
+    setSelectedClusters((current) => {
+      const next = new Set(current);
+      if (checked) next.add(clusterId);
+      else next.delete(clusterId);
+      return next;
+    });
+  }
+
   return (
     <section className="relay-page relay-batch-page">
-      <Breadcrumbs
-        items={[{ label: "Runs", to: "/runs" }, { label: report?.title ?? "Batch Report" }]}
-      />
-      <header className="relay-page-header">
-        <p className="relay-eyebrow">Batch Report</p>
-        <h1>{report?.title ?? "Batch Report"}</h1>
-        <p className="relay-page-description">
-          The cases Relay ran, their results, and the evidence saved with each report.
-        </p>
+      <Breadcrumbs items={[{ label: "Runs", to: "/runs" }, { label: report?.title ?? "Batch" }]} />
+      <header className="relay-page-header relay-batch-header">
+        <div>
+          <p className="relay-eyebrow">Run Across</p>
+          <h1>{report?.title ?? "Batch"}</h1>
+          <p className="relay-page-description">
+            Triage failures across Tests and Environments, then rerun only the evidence-backed cases
+            you select.
+          </p>
+        </div>
+        {report ? (
+          <div className="relay-batch-header-actions">
+            <IssueDraftButton source={{ kind: "batch", report }} />
+            {!active && report.status !== "cancelled" && !report.export ? (
+              <Button
+                variant="secondary"
+                onClick={() => exportReport.mutate()}
+                disabled={exportReport.isPending}
+              >
+                {exportReport.isPending ? "Preparing…" : "Prepare export"}
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
       </header>
-      {batch.isPending ? <PageLoading label="Loading Batch Report…" /> : null}
+
+      {batch.isPending ? <PageLoading label="Loading Batch…" /> : null}
       <RecordingProblem
-        error={batch.error ?? continueRun.error ?? cancel.error ?? exportReport.error}
+        error={
+          batch.error ?? continueRun.error ?? cancel.error ?? exportReport.error ?? rerun.error
+        }
         onRetry={() => void batch.refetch()}
         retrying={batch.isFetching}
       />
+
       {report ? (
         <>
           <section className="relay-batch-summary" aria-labelledby="batch-summary-title">
             <OutcomeMark
               outcome={
-                report.failedCases
+                hasProblems
                   ? "product-failure"
                   : report.status === "completed"
                     ? "passed"
@@ -73,30 +164,39 @@ export function BatchPage() {
             </div>
             <dl>
               <div>
-                <dt>Cases</dt>
+                <dt>Passed</dt>
+                <dd>{report.passedCases}</dd>
+              </div>
+              <div>
+                <dt>Problems</dt>
+                <dd>
+                  {
+                    report.cases.filter((item) =>
+                      ["failed", "blocked", "cancelled"].includes(item.status),
+                    ).length
+                  }
+                </dd>
+              </div>
+              <div>
+                <dt>Complete</dt>
                 <dd>
                   {report.completedCases} / {report.totalCases}
                 </dd>
               </div>
-              <div>
-                <dt>Device or browser</dt>
-                <dd>{report.targetNames.join(", ") || "Recorded in the Report"}</dd>
-              </div>
             </dl>
           </section>
+
           {active ? (
             <div className="relay-batch-active" role="status">
               <span aria-hidden="true" />
-              <p>Relay is running the selected cases. This page updates automatically.</p>
+              <p>Relay is running this Batch. Results update automatically.</p>
             </div>
           ) : null}
+
           {canContinue ? (
             <section className="relay-batch-next-step">
               <h2>Review the pilot before continuing</h2>
-              <p>
-                Relay has paused before the remaining cases. Continue deliberately after checking
-                the representative Run.
-              </p>
+              <p>Check the representative Run before Relay starts the remaining cases.</p>
               <div className="relay-form-actions">
                 <Button
                   variant="primary"
@@ -110,82 +210,88 @@ export function BatchPage() {
                   onClick={() => cancel.mutate()}
                   disabled={cancel.isPending}
                 >
-                  {cancel.isPending ? "Stopping…" : "Stop batch"}
+                  {cancel.isPending ? "Stopping…" : "Stop Batch"}
                 </Button>
               </div>
             </section>
           ) : null}
+
+          {hasProblems ? (
+            <BatchFailureClusters
+              clusters={clusterValues}
+              selected={selectedClusters}
+              onToggle={(cluster, checked) => toggleCluster(cluster.id, checked)}
+            />
+          ) : null}
+
+          {clusters.isError ? (
+            <p className="relay-batch-cluster-notice" role="status">
+              Failure grouping is unavailable, but every case and Report remains available below.
+            </p>
+          ) : null}
+
           {report.cases.length ? (
-            <section className="relay-batch-cases" aria-labelledby="batch-cases-title">
-              <div className="relay-section-heading">
-                <div>
-                  <p className="relay-section-label">Matrix</p>
-                  <h2 id="batch-cases-title">Cases in this batch</h2>
-                </div>
-                <span>{report.cases.length} total</span>
+            <>
+              <div className="relay-batch-matrix-toolbar">
+                <Tabs
+                  value={view}
+                  onValueChange={(next) =>
+                    void navigate({
+                      search: (previous) => ({
+                        ...previous,
+                        view: next === "problems" ? undefined : next,
+                      }),
+                    })
+                  }
+                >
+                  <TabsList variant="line" aria-label="Matrix results">
+                    <TabsTrigger value="problems">Problems first</TabsTrigger>
+                    <TabsTrigger value="all">All results</TabsTrigger>
+                    <TabsIndicator />
+                  </TabsList>
+                </Tabs>
+                {rerunnableCases.length ? (
+                  <Button
+                    size="small"
+                    variant="ghost"
+                    onClick={() =>
+                      setSelectedCases(
+                        selectedCases.size === rerunnableCases.length
+                          ? new Set()
+                          : new Set(rerunnableCases.map((item) => item.id)),
+                      )
+                    }
+                  >
+                    {selectedCases.size === rerunnableCases.length
+                      ? "Clear selection"
+                      : "Select all problems"}
+                  </Button>
+                ) : null}
               </div>
-              <div className="relay-batch-case-table" role="table" aria-label="Batch cases">
-                <div className="relay-batch-case-header" role="row">
-                  <span role="columnheader">Case</span>
-                  <span role="columnheader">Values</span>
-                  <span role="columnheader">Result</span>
-                  <span role="columnheader" className="relay-visually-hidden">
-                    Report
-                  </span>
-                </div>
-                {report.cases.map((item) => (
-                  <div className="relay-batch-case-row" role="row" key={item.id}>
-                    <span role="cell">
-                      <strong>{item.world ?? `Case ${item.index + 1}`}</strong>
-                      <small>{item.phase === "pilot" ? "Representative pilot" : "Coverage"}</small>
-                    </span>
-                    <span role="cell" className="relay-batch-case-values">
-                      {caseValues(item.values)}
-                    </span>
-                    <span role="cell">
-                      <Badge variant={caseVariant(item.status)}>{caseStatus(item.status)}</Badge>
-                    </span>
-                    <span role="cell">
-                      {item.runId ? (
-                        <Link to="/runs/$runId" params={{ runId: item.runId }}>
-                          Open report <span aria-hidden="true">→</span>
-                        </Link>
-                      ) : (
-                        <small>Not available yet</small>
-                      )}
-                    </span>
-                  </div>
-                ))}
+              <BatchResultMatrix
+                report={report}
+                failuresOnly={view === "problems" && hasProblems}
+                selected={selectedCases}
+                onToggleCase={(item, checked) => toggleCase(item.id, checked)}
+              />
+            </>
+          ) : null}
+
+          {totalSelected ? (
+            <div className="relay-batch-selection" role="region" aria-label="Selected Batch cases">
+              <div>
+                <strong>{totalSelected} selected</strong>
+                <span>
+                  Only failed, blocked, or cancelled cases with durable Run evidence can be rerun.
+                </span>
               </div>
-            </section>
+              <Button variant="primary" onClick={() => rerun.mutate()} disabled={rerun.isPending}>
+                <RotateCcw aria-hidden="true" />
+                {rerun.isPending ? "Starting rerun…" : `Rerun ${totalSelected}`}
+              </Button>
+            </div>
           ) : null}
-          {failureGroups.length ? (
-            <section className="relay-batch-failures" aria-labelledby="batch-failures-title">
-              <p className="relay-section-label">Failure groups</p>
-              <h2 id="batch-failures-title">What needs attention</h2>
-              <ul>
-                {failureGroups.map((group) => (
-                  <li key={group.label}>
-                    <span>{group.count}</span>
-                    <div>
-                      <strong>{group.label}</strong>
-                      <p>{group.values.join(" · ")}</p>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ) : null}
-          {!active && report.status !== "cancelled" && !report.export ? (
-            <Button
-              className="relay-batch-export"
-              variant="secondary"
-              onClick={() => exportReport.mutate()}
-              disabled={exportReport.isPending}
-            >
-              {exportReport.isPending ? "Preparing export…" : "Prepare Batch export"}
-            </Button>
-          ) : null}
+
           {report.export ? (
             <p className="relay-batch-export-ready" role="status">
               Export prepared in the Relay workspace.
@@ -194,58 +300,11 @@ export function BatchPage() {
           {report.status === "cancelled" && !report.runIds.length ? (
             <EmptyState
               title="Batch stopped"
-              detail="No remaining cases were started. The pilot evidence remains durable."
+              detail="No cases were started. Any pilot evidence remains durable."
             />
           ) : null}
         </>
       ) : null}
     </section>
   );
-}
-
-function caseValues(values: Readonly<Record<string, string>>): string {
-  const entries = Object.entries(values);
-  return entries.length
-    ? entries.map(([name, value]) => `${humanize(name)}: ${humanize(value)}`).join(" · ")
-    : "Default values";
-}
-
-function humanize(value: string): string {
-  return value
-    .replaceAll(/[-_.]+/gu, " ")
-    .replaceAll(/\s+/gu, " ")
-    .trim();
-}
-
-function caseStatus(status: ProductBatchCase["status"]): string {
-  if (status === "passed") return "Passed";
-  if (status === "failed") return "Failed";
-  if (status === "blocked") return "Blocked";
-  if (status === "cancelled") return "Cancelled";
-  if (status === "running") return "Running";
-  if (status === "queued") return "Queued";
-  return "Pending";
-}
-
-function caseVariant(
-  status: ProductBatchCase["status"],
-): "success" | "danger" | "warning" | "secondary" {
-  if (status === "passed") return "success";
-  if (status === "failed") return "danger";
-  if (status === "blocked") return "warning";
-  return "secondary";
-}
-
-function groupFailures(cases: readonly ProductBatchCase[]) {
-  const groups = new Map<string, { label: string; count: number; values: string[] }>();
-  for (const item of cases) {
-    if (item.status !== "failed" && item.status !== "blocked") continue;
-    const label =
-      item.error?.trim() || (item.status === "blocked" ? "Case was blocked" : "Run failed");
-    const group = groups.get(label) ?? { label, count: 0, values: [] };
-    group.count += 1;
-    group.values.push(caseValues(item.values));
-    groups.set(label, group);
-  }
-  return [...groups.values()];
 }

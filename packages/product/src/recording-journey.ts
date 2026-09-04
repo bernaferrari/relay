@@ -8,6 +8,7 @@ import { createRelayRecordingOutcomeJobs } from "@relay/workflows/recording-outc
 import {
   type AuthorTestSnapshot,
   type DurableAuthorTestDecision,
+  type RecordingPathContext,
   type RelayOutcomeJobs,
   type WorkflowProblem,
 } from "@relay/workflows/types";
@@ -51,7 +52,7 @@ export type ProductRecordingState = {
   readonly recovery?: ProductRecordingRecovery;
 };
 
-export type ProductRecordingBeginInput = {
+export type ProductRecordingBeginInput = RecordingPathContext & {
   title: string;
   appMapId?: string;
   targetId?: string;
@@ -268,6 +269,9 @@ export function createProductRecordingJourney(input: {
         ...((input.targetId ?? current.selectedTarget?.targetId)
           ? { targetId: input.targetId ?? current.selectedTarget?.targetId }
           : {}),
+        ...(input.sourceScreenId ? { sourceScreenId: input.sourceScreenId } : {}),
+        ...(input.pendingConnectionId ? { pendingConnectionId: input.pendingConnectionId } : {}),
+        ...(input.group ? { group: input.group } : {}),
         confirmControl: true,
       });
       return publishSnapshot(snapshot);

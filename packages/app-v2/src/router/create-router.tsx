@@ -37,6 +37,22 @@ import {
   type SettingsProductService,
 } from "../data/settings-product-service";
 import {
+  createSessionProductService,
+  type SessionProductService,
+} from "../data/session-product-service";
+import {
+  createSuiteProfileProductService,
+  type SuiteProfileProductService,
+} from "../data/suite-profile-product-service";
+import {
+  createBrowserSpacesProductService,
+  type BrowserSpacesProductService,
+} from "../data/browser-spaces-product-service";
+import {
+  createLiveTestEditorProductService,
+  type LiveTestEditorProductService,
+} from "../data/live-test-editor-product-service";
+import {
   createChangeProductService,
   type ChangeProductService,
 } from "../data/change-product-service";
@@ -79,11 +95,24 @@ const NewTestPage = lazyNamedRoute(() => import("../routes/new-test-page"), "New
 const TestPage = lazyNamedRoute(() => import("../routes/test-page"), "TestPage");
 const EditTestPage = lazyNamedRoute(() => import("../routes/edit-test-page"), "EditTestPage");
 const RecordTestPage = lazyNamedRoute(() => import("../routes/record-test-page"), "RecordTestPage");
+const RecordingPage = lazyNamedRoute(() => import("../routes/record-test-page"), "RecordingPage");
 const RunAcrossPage = lazyNamedRoute(() => import("../routes/run-across-page"), "RunAcrossPage");
+const SuitesPage = lazyNamedRoute(() => import("../routes/suites-page"), "SuitesPage");
+const SuitePage = lazyNamedRoute(() => import("../routes/suite-page"), "SuitePage");
+const EnvironmentsPage = lazyNamedRoute(
+  () => import("../routes/environments-page"),
+  "EnvironmentsPage",
+);
+const EnvironmentPage = lazyNamedRoute(
+  () => import("../routes/environment-page"),
+  "EnvironmentPage",
+);
 const ReviewRecordingPage = lazyNamedRoute(
   () => import("../routes/review-recording-page"),
   "ReviewRecordingPage",
 );
+const SessionsPage = lazyNamedRoute(() => import("../routes/sessions-page"), "SessionsPage");
+const SessionPage = lazyNamedRoute(() => import("../routes/session-page"), "SessionPage");
 const RunsPage = lazyNamedRoute(() => import("../routes/runs-page"), "RunsPage");
 const RunPage = lazyNamedRoute(() => import("../routes/run-page"), "RunPage");
 const BatchPage = lazyNamedRoute(() => import("../routes/batch-page"), "BatchPage");
@@ -112,6 +141,10 @@ export type AppRouterContext = {
   settingsService: SettingsProductService;
   changeService: ChangeProductService;
   testEditorService: TestEditorProductService;
+  sessionService: SessionProductService;
+  suiteProfileService: SuiteProfileProductService;
+  browserSpacesService: BrowserSpacesProductService;
+  liveTestEditorService: LiveTestEditorProductService;
   queryClient: QueryClient;
 };
 
@@ -213,15 +246,50 @@ const recordTestRoute = createRoute({
   path: "/tests/$testId/record",
   component: RecordTestPage,
 });
+const recordingRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/recordings/$recordingId",
+  component: RecordingPage,
+});
 const runAcrossRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tests/$testId/run-across",
   component: RunAcrossPage,
 });
+const suitesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/suites",
+  component: SuitesPage,
+});
+const suiteRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/apps/$appId/suites/$suiteId",
+  component: SuitePage,
+});
+const environmentsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/environments",
+  component: EnvironmentsPage,
+});
+const environmentRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/environments/$profileId",
+  component: EnvironmentPage,
+});
 const recordingReviewRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/recordings/$recordingId/review",
   component: ReviewRecordingPage,
+});
+const sessionsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sessions",
+  component: SessionsPage,
+});
+const sessionRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sessions/$sessionId",
+  component: SessionPage,
 });
 const runsRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -302,8 +370,15 @@ const routeTree = rootRoute.addChildren([
   testRoute,
   editTestRoute,
   recordTestRoute,
+  recordingRoute,
   runAcrossRoute,
+  suitesRoute,
+  suiteRoute,
+  environmentsRoute,
+  environmentRoute,
   recordingReviewRoute,
+  sessionsRoute,
+  sessionRoute,
   runsRoute,
   runRoute,
   batchRoute,
@@ -331,9 +406,17 @@ export function createAppRouter(options: {
   settingsService?: SettingsProductService;
   changeService?: ChangeProductService;
   testEditorService?: TestEditorProductService;
+  sessionService?: SessionProductService;
+  suiteProfileService?: SuiteProfileProductService;
+  browserSpacesService?: BrowserSpacesProductService;
+  liveTestEditorService?: LiveTestEditorProductService;
   queryClient: QueryClient;
   history?: RouterHistory;
 }) {
+  const productService = options.productService ?? createRecordingProductService(options.platform);
+  const testEditorService =
+    options.testEditorService ?? createTestEditorProductService(options.platform);
+  const sessionService = options.sessionService ?? createSessionProductService(options.platform);
   return createRouter({
     routeTree,
     history: options.history ?? createHashHistory(),
@@ -341,7 +424,7 @@ export function createAppRouter(options: {
       platform: options.platform,
       appResourcesService:
         options.appResourcesService ?? createAppResourcesProductService(options.platform),
-      productService: options.productService ?? createRecordingProductService(options.platform),
+      productService,
       runService: options.runService ?? createRunProductService(options.platform),
       runAcrossService: options.runAcrossService ?? createRunAcrossProductService(options.platform),
       mapService: options.mapService ?? createMapProductService(options.platform),
@@ -349,8 +432,19 @@ export function createAppRouter(options: {
       deviceService: options.deviceService ?? createDeviceProductService(options.platform),
       settingsService: options.settingsService ?? createSettingsProductService(options.platform),
       changeService: options.changeService ?? createChangeProductService(options.platform),
-      testEditorService:
-        options.testEditorService ?? createTestEditorProductService(options.platform),
+      testEditorService,
+      sessionService,
+      suiteProfileService:
+        options.suiteProfileService ?? createSuiteProfileProductService(options.platform),
+      browserSpacesService:
+        options.browserSpacesService ?? createBrowserSpacesProductService(options.platform),
+      liveTestEditorService:
+        options.liveTestEditorService ??
+        createLiveTestEditorProductService({
+          editor: testEditorService,
+          sessions: sessionService,
+          recording: productService,
+        }),
       queryClient: options.queryClient,
     },
     defaultPreload: "intent",

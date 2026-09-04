@@ -55,6 +55,7 @@ export type {
   AuthoringIntentStep,
 } from "./authoring-intent.js";
 export type {
+  AuthoringReviewActionKind,
   AuthoringReview,
   CancelRunOutcomeIntent,
   AuthorTestDecision,
@@ -104,6 +105,7 @@ export type {
   ProveChangeOutcomeIntent,
   RepairProposalResult,
   RecordTestOutcomeIntent,
+  RecordingPathContext,
   RelayOutcomeJobs,
   RepeatTestOutcomeIntent,
   ReplayLabOutcomeIntent,

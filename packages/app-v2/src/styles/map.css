@@ -538,6 +538,53 @@
   line-height: 1.5;
 }
 
+.relay-map-proposal-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.relay-map-proposal-list li {
+  display: flex;
+  min-height: 64px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-weak-base);
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised);
+}
+
+.relay-map-proposal-list li > div:last-child {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
+.relay-map-proposal-list strong,
+.relay-map-proposal-list small {
+  display: block;
+}
+
+.relay-map-proposal-list p {
+  margin-top: 3px;
+  color: var(--text-weak);
+}
+
+.relay-map-proposal-list small {
+  margin-top: 5px;
+  color: var(--text-weaker);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 620px) {
+  .relay-map-proposal-list li {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
 @media (hover: hover) and (pointer: fine) {
   .relay-map-screen:hover {
     border-color: var(--border-hover);

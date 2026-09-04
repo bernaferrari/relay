@@ -143,7 +143,8 @@ describe("App routes", () => {
     await click(button("Add App", document.querySelector('[role="dialog"]')!));
 
     expect(created).toEqual(["Inventory"]);
-    expect(history.location.pathname).toBe("/apps/inventory-app");
+    expect(history.location.pathname).toBe("/tests/new");
+    expect(history.location.search).toBe("?app=inventory-app");
   });
 
   it("uses one centered recovery message when apps cannot load", async () => {
@@ -187,6 +188,76 @@ describe("App routes", () => {
     expect(document.body.textContent).not.toContain("private-revision");
   });
 
+  it("creates and edits versions through build.save and does not invent removal", async () => {
+    const created: unknown[] = [];
+    const updated: unknown[] = [];
+    await render(
+      "/apps/checkout-app/versions",
+      resources({
+        listVersions: async () => [
+          {
+            id: "build-private",
+            name: "Checkout 3.4.0",
+            platform: "ios",
+            status: "ready",
+            updatedAt: now,
+          },
+        ],
+        createVersion: async (input) => {
+          created.push(input);
+          return { ...input, updatedAt: now };
+        },
+        updateVersion: async (input) => {
+          updated.push(input);
+          return { ...input, updatedAt: now };
+        },
+      }),
+    );
+
+    await click(button("Add version"));
+    await fill(document.querySelector<HTMLInputElement>("#version-id")!, "checkout-ios-3-5");
+    await fill(document.querySelector<HTMLInputElement>("#version-name")!, "Checkout 3.5.0");
+    await click(button("Add version", document.querySelector('[role="dialog"]')!));
+    expect(created).toEqual([
+      {
+        id: "checkout-ios-3-5",
+        name: "Checkout 3.5.0",
+        platform: "ios",
+        status: "uploaded",
+      },
+    ]);
+    expect(document.body.textContent).not.toContain("Remove version");
+
+    await click(button("Edit"));
+    await fill(document.querySelector<HTMLInputElement>("#version-name")!, "Checkout 3.4.1");
+    await click(button("Save version", document.querySelector('[role="dialog"]')!));
+    expect(updated).toEqual([
+      {
+        id: "build-private",
+        name: "Checkout 3.4.1",
+        platform: "ios",
+        status: "ready",
+      },
+    ]);
+  });
+
+  it("keeps the version dialog open and reports canonical save failures", async () => {
+    await render(
+      "/apps/checkout-app/versions",
+      resources({
+        createVersion: async () => Promise.reject(new Error("revision conflict")),
+      }),
+    );
+
+    await click(button("Add version"));
+    await fill(document.querySelector<HTMLInputElement>("#version-id")!, "checkout-ios-3-5");
+    await fill(document.querySelector<HTMLInputElement>("#version-name")!, "Checkout 3.5.0");
+    await click(button("Add version", document.querySelector('[role="dialog"]')!));
+
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain("revision conflict");
+  });
+
   it("shows reviewed browser sign-ins with their true target ownership", async () => {
     await render(
       "/apps/checkout-app/accounts",
@@ -218,6 +289,91 @@ describe("App routes", () => {
     expect(document.body.textContent).toContain("Checkout browser · https://checkout.example");
     expect(document.body.textContent).not.toContain("authfx:");
     expect(document.body.textContent).not.toContain("browser-private");
+  });
+
+  it("saves, refreshes, and revokes accounts with exact target identity without rendering secrets", async () => {
+    const saved: unknown[] = [];
+    const refreshed: unknown[] = [];
+    const revoked: unknown[] = [];
+    await render(
+      "/apps/checkout-app/accounts",
+      resources({
+        listBrowserAccounts: async () => [
+          {
+            target: { id: "browser-private", name: "Checkout browser" },
+            fixture: {
+              schemaVersion: 1,
+              id: "fixture-1",
+              reference: "authfx:fixture-1:1",
+              revision: 1,
+              projectId: "default",
+              targetId: "browser-private",
+              name: "Staging buyer",
+              origins: ["https://checkout.example"],
+              cookieCount: 3,
+              createdAt: now,
+            },
+          },
+        ],
+        saveBrowserAccount: async (input) => {
+          saved.push(input);
+          return {} as never;
+        },
+        refreshBrowserAccount: async (input) => {
+          refreshed.push(input);
+          return {} as never;
+        },
+        revokeBrowserAccount: async (input) => {
+          revoked.push(input);
+          return {} as never;
+        },
+      }),
+    );
+
+    await click(button("Save account"));
+    await fill(document.querySelector<HTMLInputElement>("#account-name")!, "Reviewed buyer");
+    await click(button("Save sign-in", document.querySelector('[role="dialog"]')!));
+    expect(saved).toEqual([{ targetId: "browser-private", name: "Reviewed buyer" }]);
+
+    await click(button("Refresh"));
+    await click(button("Refresh sign-in", document.querySelector('[role="dialog"]')!));
+    expect(refreshed).toEqual([
+      { targetId: "browser-private", name: "Staging buyer", fixtureId: "fixture-1" },
+    ]);
+
+    await click(button("Revoke"));
+    await click(button("Revoke sign-in", document.querySelector('[role="dialog"]')!));
+    expect(revoked).toEqual([{ targetId: "browser-private", reference: "authfx:fixture-1:1" }]);
+    expect(document.body.textContent).not.toContain("authfx:fixture-1:1");
+  });
+
+  it("does not show account mutations when the adapter is read-only", async () => {
+    await render(
+      "/apps/checkout-app/accounts",
+      resources({
+        listBrowserAccounts: async () => [
+          {
+            target: { id: "browser-private", name: "Checkout browser" },
+            fixture: {
+              schemaVersion: 1,
+              id: "fixture-1",
+              reference: "authfx:fixture-1:1",
+              revision: 1,
+              projectId: "default",
+              targetId: "browser-private",
+              name: "Staging buyer",
+              origins: [],
+              cookieCount: 0,
+              createdAt: now,
+            },
+          },
+        ],
+      }),
+    );
+
+    expect(button("Save account").disabled).toBe(true);
+    expect(document.querySelector('button[aria-label="Refresh Staging buyer"]')).toBeNull();
+    expect(document.querySelector('button[aria-label="Revoke Staging buyer"]')).toBeNull();
   });
 
   it.each([

@@ -783,6 +783,65 @@
   font-variant-numeric: tabular-nums;
 }
 
+.relay-report-review-controls {
+  max-width: 760px;
+  margin-top: 18px;
+  border-block: 1px solid var(--border-weak-base);
+}
+
+.relay-report-review-controls > .relay-disclosure-trigger {
+  width: 100%;
+  min-height: 44px;
+  justify-content: flex-start;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  font-weight: 600;
+}
+
+.relay-report-review-controls > .relay-disclosure-panel {
+  padding: 0 0 14px;
+}
+
+.relay-report-review-controls > .relay-disclosure-panel > p {
+  max-width: 65ch;
+  color: var(--text-weak);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.relay-report-review-actions,
+.relay-report-visual-review {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.relay-report-visual-review {
+  align-items: flex-start;
+  flex-direction: column;
+}
+
+.relay-report-visual-result {
+  display: grid;
+  gap: 3px;
+  padding-left: 12px;
+  border-left: 2px solid var(--border-interactive-base);
+}
+
+.relay-report-visual-result > span,
+.relay-report-review-saved {
+  color: var(--text-weaker);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.relay-report-review-saved {
+  margin-top: 10px;
+  color: var(--text-success-base);
+}
+
 .relay-report-first-evidence {
   max-width: 760px;
   margin-top: 28px;
@@ -1528,4 +1587,77 @@
   .relay-library-row {
     transition: none;
   }
+}
+.relay-report-header-actions,
+.relay-batch-header-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.relay-issue-draft-dialog {
+  width: min(720px, calc(100vw - 32px));
+}
+
+.relay-issue-draft-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 18px;
+}
+
+.relay-issue-draft-meta span {
+  padding: 4px 7px;
+  border-radius: 999px;
+  color: var(--text-weak);
+  background: var(--background-weak);
+  font-size: 10px;
+  text-transform: capitalize;
+}
+
+.relay-issue-draft-dialog > label {
+  display: block;
+  margin: 15px 0 6px;
+  color: var(--text-weak);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.relay-issue-draft-title,
+.relay-issue-draft-body {
+  width: 100%;
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius-md);
+  color: var(--text-strong);
+  background: var(--surface-base);
+  font: inherit;
+  font-size: 12px;
+}
+
+.relay-issue-draft-title {
+  min-height: 44px;
+  padding: 0 11px;
+}
+
+.relay-issue-draft-body {
+  max-height: 320px;
+  padding: 11px;
+  resize: vertical;
+  font-family: var(--font-mono);
+  line-height: 1.5;
+}
+
+.relay-issue-draft-title:focus-visible,
+.relay-issue-draft-body:focus-visible {
+  outline: 2px solid var(--relay-focus-ring);
+  outline-offset: 2px;
+}
+
+.relay-issue-draft-note {
+  margin-top: 10px;
+  color: var(--text-weaker);
+  font-size: 11px;
 }

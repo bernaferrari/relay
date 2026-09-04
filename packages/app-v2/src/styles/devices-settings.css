@@ -318,6 +318,88 @@
   font-size: 13px;
 }
 
+.relay-device-launch {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.75fr);
+  gap: 32px;
+  padding-top: 28px;
+  border-top: 1px solid var(--border-weak-base);
+}
+
+.relay-device-launch-copy > p:last-child,
+.relay-device-launch-unavailable {
+  max-width: 54ch;
+  margin-top: 6px;
+  color: var(--text-weak);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.relay-device-launch-copy h2 {
+  margin-top: 4px;
+  color: var(--text-strong);
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+}
+
+.relay-device-launch-form {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+}
+
+.relay-device-launch-form .relay-form-field > p {
+  color: var(--text-weaker);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.relay-device-launch-relaunch {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-base);
+  font-size: 13px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.relay-device-launch-relaunch input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--text-interactive-base);
+}
+
+.relay-device-launch-relaunch:focus-within {
+  outline: 2px solid var(--relay-focus-ring);
+  outline-offset: 2px;
+}
+
+.relay-device-launch-form .relay-button,
+.relay-device-launch-form .relay-input {
+  touch-action: manipulation;
+}
+
+.relay-device-launch-result {
+  display: grid;
+  gap: 3px;
+  padding: 11px 12px;
+  border: 1px solid var(--border-weak-base);
+  border-radius: var(--radius-md);
+  color: var(--text-success-base);
+  background: var(--surface-raised-strong);
+}
+
+.relay-device-launch-result p {
+  color: var(--text-weak);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .relay-device-live {
   display: grid;
   min-width: 0;
@@ -614,6 +696,24 @@
   box-shadow: var(--shadow-xs);
 }
 
+.relay-integration-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.relay-integration-list .relay-integration-card {
+  margin-top: 0;
+}
+
+.relay-integration-capabilities {
+  display: block;
+  margin-top: 5px;
+  color: var(--text-weaker);
+  font-size: 10px;
+  text-transform: capitalize;
+}
+
 .relay-integration-mark {
   display: grid;
   width: 36px;
@@ -813,6 +913,11 @@
   .relay-device-detail-grid {
     grid-template-columns: 1fr;
     gap: 30px;
+  }
+
+  .relay-device-launch {
+    grid-template-columns: 1fr;
+    gap: 18px;
   }
 
   .relay-setting-row {

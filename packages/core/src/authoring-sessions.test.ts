@@ -1557,6 +1557,65 @@ test("editing a Take still requires a successful replay before commit", async ()
   });
 });
 
+test("restoring a prior Take revision appends a proof-invalidated copy and preserves raw capture", async () => {
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    let session = await createReadySession(store, runtime, appMapId);
+    session = await store.start(session.id, runtime);
+    session = await store.interact(
+      session.id,
+      { kind: "tap", target: { label: "Continue" } },
+      runtime,
+    );
+    session = await store.stop(session.id, runtime);
+
+    const takeBeforeEdits = session.take!;
+    const source = takeBeforeEdits.revisions.find((revision) => revision.revision === 3);
+    assert.ok(source);
+    const sourceSnapshot = structuredClone(source);
+    const rawSnapshot = structuredClone(takeBeforeEdits.rawEvents);
+
+    session = await store.edit(session.id, {
+      kind: "rename",
+      actionId: source.actions[0]!.id,
+      intent: "Edited action",
+    });
+    assert.equal(session.take!.currentRevision, 4);
+    assert.equal(session.take!.revisions.at(-1)?.actions[0]?.label, "Edited action");
+
+    session = await store.edit(session.id, { kind: "restore", sourceRevision: 3 });
+    const restored = session.take!.revisions.at(-1)!;
+    assert.equal(restored.revision, 5);
+    assert.equal(session.take!.currentRevision, 5);
+    assert.deepEqual(restored.evidence, sourceSnapshot.evidence);
+    assert.deepEqual(restored.observations, sourceSnapshot.observations);
+    assert.deepEqual(restored.before, sourceSnapshot.before);
+    assert.deepEqual(restored.after, sourceSnapshot.after);
+    assert.deepEqual(restored.videoClip, sourceSnapshot.videoClip);
+    const expectedAction = { ...sourceSnapshot.actions[0]! };
+    delete expectedAction.entranceObservationId;
+    delete expectedAction.exitObservationId;
+    delete expectedAction.proofStatus;
+    assert.deepEqual(restored.actions[0], expectedAction);
+    assert.equal(restored.actions[0]?.label, sourceSnapshot.actions[0]?.label);
+    assert.deepEqual(session.take!.rawEvents, rawSnapshot);
+    assert.deepEqual(session.take!.revisions[2], sourceSnapshot);
+
+    await assert.rejects(
+      store.edit(session.id, { kind: "restore", sourceRevision: 0 }),
+      /existing prior Take revision/u,
+    );
+    await assert.rejects(
+      store.edit(session.id, { kind: "restore", sourceRevision: 5 }),
+      /existing prior Take revision/u,
+    );
+    await assert.rejects(
+      store.edit(session.id, { kind: "restore", sourceRevision: 6 }),
+      /existing prior Take revision/u,
+    );
+    assert.equal((await store.get(session.id)).take!.currentRevision, 5);
+  });
+});
+
 test("a zero-action Take cannot manufacture an observe-only path", async () => {
   await withWorkspace(async ({ store, runtime, appMapId }) => {
     let session = await createReadySession(store, runtime, appMapId);

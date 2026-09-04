@@ -1,4 +1,11 @@
-import type { AppMap, AppMapVariable, AuthoringTarget } from "@relay/protocol";
+import type {
+  AppMap,
+  AppMapVariable,
+  AuthoringTarget,
+  FailureCategory,
+  RepeatFailureKind,
+  RepeatFailureClusterReport,
+} from "@relay/protocol";
 import {
   createRelayOperationPort,
   type RelayInvokeClient,
@@ -61,7 +68,59 @@ export type ProductBatchCase = {
   readonly values: Readonly<Record<string, string>>;
   readonly world?: string;
   readonly runId?: string;
+  /** Present only when durable execution state identifies both the Test and
+   * its bound environment. Legacy campaigns remain readable without an
+   * invented identity. */
+  readonly identity?: ProductBatchResultIdentity;
+  readonly priorRunIds?: readonly string[];
   readonly error?: string;
+};
+
+/** Stable product identity for one Test × environment result. The environment
+ * id is the saved target profile identity. Legacy records without that binding
+ * omit the identity rather than repurposing a provider serial; this is never a
+ * credential or readiness claim. */
+export type ProductBatchResultIdentity = {
+  readonly testId: string;
+  readonly environmentId: string;
+  readonly environmentPlatform: "android" | "ios" | "browser";
+  readonly runId?: string;
+};
+
+export type ProductBatchFailureSignature = {
+  readonly kind: RepeatFailureKind;
+  readonly digest: string;
+  readonly summary: string;
+  readonly failureCategory?: FailureCategory;
+  readonly checkIds: readonly string[];
+};
+
+/** Compact, product-safe cluster projection. Raw failure keys and artifact
+ * payloads remain behind the evidence routes; members stay addressable by
+ * their exact case ids for selective reruns. */
+export type ProductBatchFailureCluster = {
+  readonly id: string;
+  readonly kind: RepeatFailureKind;
+  readonly signature: ProductBatchFailureSignature;
+  readonly environmentId: string;
+  readonly representativeCaseId: string;
+  readonly representativeRunId: string;
+  readonly caseIds: readonly string[];
+};
+
+export type ProductBatchFailureClusterReport = {
+  readonly campaignId: string;
+  readonly clusters: readonly ProductBatchFailureCluster[];
+};
+
+export type ProductBatchSelectionInput = {
+  readonly caseIds?: readonly string[];
+  readonly clusterIds?: readonly string[];
+};
+
+export type ProductBatchSelection = {
+  readonly caseIds: readonly string[];
+  readonly clusterIds: readonly string[];
 };
 
 export type ProductRunAcrossBatch = {
@@ -109,6 +168,12 @@ export type ProductRunAcrossService = {
   startPilot(input: ProductRunAcrossStartInput): Promise<ProductRunAcrossBatch>;
   continue(batchId: string): Promise<ProductRunAcrossBatch>;
   inspect(batchId: string): Promise<ProductRunAcrossBatch>;
+  getFailureClusters(
+    batchId: string,
+    filters?: { failureKind?: RepeatFailureKind; environmentId?: string },
+  ): Promise<ProductBatchFailureClusterReport>;
+  select(batchId: string, input: ProductBatchSelectionInput): Promise<ProductBatchSelection>;
+  rerun(batchId: string, input: ProductBatchSelectionInput): Promise<ProductRunAcrossBatch>;
   cancel(batchId: string): Promise<ProductRunAcrossBatch>;
   getReport(batchId: string): Promise<ProductBatchReport>;
   exportReport(batchId: string): Promise<ProductBatchReport>;
@@ -122,7 +187,10 @@ type CampaignCase = {
   phase?: "pilot" | "coverage";
   status?: string;
   runId?: string;
+  priorRunIds?: string[];
   error?: string;
+  testId?: string;
+  targetProfileId?: string;
   target?: { targetId?: string; platform?: string };
 };
 
@@ -134,10 +202,17 @@ type Campaign = {
   updatedAt: number;
   appMapId: string;
   cases: readonly CampaignCase[];
+  target?: { targetId?: string; platform?: string };
   execution?: { selected?: Record<string, string[]> };
 };
 
 type CampaignResponse = { campaign: Campaign };
+
+type ProductTargetPlatform = "android" | "ios" | "browser";
+
+function targetPlatform(value: string | undefined): ProductTargetPlatform | undefined {
+  return value === "android" || value === "ios" || value === "browser" ? value : undefined;
+}
 
 function nonEmpty(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim() ? value.trim().slice(0, 8_192) : fallback;
@@ -244,7 +319,7 @@ function batchFromCampaign(
   const passedCases = cases.filter((item) => item.status === "passed").length;
   const failedCases = cases.filter((item) => item.status === "failed").length;
   const completedCases = cases.filter((item) =>
-    ["passed", "failed", "cancelled"].includes(item.status ?? ""),
+    ["passed", "failed", "blocked", "cancelled"].includes(item.status ?? ""),
   ).length;
   const runIds = cases.flatMap((item) => (item.runId ? [item.runId] : []));
   const targetNames = [
@@ -278,18 +353,111 @@ function batchFromCampaign(
     pendingCases: Math.max(0, cases.length - completedCases),
     targetNames,
     runIds,
-    cases: cases.map((item, index) => ({
-      id: item.cellId ?? `case-${index + 1}`,
-      index: item.index ?? index,
-      phase: item.phase ?? (index === 0 ? "pilot" : "coverage"),
-      status: productCaseStatus(item.status),
-      values: { ...item.values },
-      ...(item.world ? { world: item.world } : {}),
-      ...(item.runId ? { runId: item.runId } : {}),
-      ...(item.error ? { error: item.error } : {}),
-    })),
+    cases: cases.map((item, index) => {
+      const target = item.target ?? campaign.target;
+      const platform = targetPlatform(target?.platform);
+      return {
+        id: item.cellId ?? `case-${index + 1}`,
+        index: item.index ?? index,
+        phase: item.phase ?? (index === 0 ? "pilot" : "coverage"),
+        status: productCaseStatus(item.status),
+        values: { ...item.values },
+        ...(item.world ? { world: item.world } : {}),
+        ...(item.runId ? { runId: item.runId } : {}),
+        ...(item.priorRunIds?.length ? { priorRunIds: [...item.priorRunIds] } : {}),
+        ...(item.testId && item.targetProfileId && platform
+          ? {
+              identity: {
+                testId: item.testId,
+                environmentId: item.targetProfileId,
+                environmentPlatform: platform,
+                ...(item.runId ? { runId: item.runId } : {}),
+              },
+            }
+          : {}),
+        ...(item.error ? { error: item.error } : {}),
+      };
+    }),
     ...(setup ? { setup } : {}),
     navigation: { route: routeUrls.batch(campaign.id), href: routeUrls.batch(campaign.id) },
+  };
+}
+
+function productFailureClusters(
+  report: RepeatFailureClusterReport,
+): ProductBatchFailureClusterReport {
+  return {
+    campaignId: report.campaignId,
+    clusters: report.clusters.map((cluster) => ({
+      id: cluster.id,
+      kind: cluster.kind,
+      signature: {
+        kind: cluster.signature.kind,
+        digest: cluster.signature.digest,
+        summary: cluster.signature.summary,
+        ...(cluster.signature.failureCategory
+          ? { failureCategory: cluster.signature.failureCategory }
+          : {}),
+        checkIds: [...cluster.signature.checkIds],
+      },
+      environmentId: cluster.cohort,
+      representativeCaseId: cluster.representativeCellId,
+      representativeRunId: cluster.representativeRunId,
+      caseIds: cluster.cases.map((item) => item.cellId),
+    })),
+  };
+}
+
+function uniqueIds(values: readonly string[] | undefined, label: string): string[] {
+  if (values === undefined) return [];
+  const ids = values.map((value) => value.trim());
+  if (ids.some((value) => !value) || new Set(ids).size !== ids.length) {
+    throw new TypeError(`${label} must contain unique non-empty ids.`);
+  }
+  return ids;
+}
+
+/** Resolve a bulk case/cluster selection against one current product batch.
+ * Only terminal non-passing results with immutable Run evidence are eligible;
+ * pending, active, and passed cases can never be silently rerun. */
+export function selectProductBatchCases(
+  batch: Pick<ProductRunAcrossBatch, "id" | "cases">,
+  input: ProductBatchSelectionInput,
+  clusters?: ProductBatchFailureClusterReport,
+): ProductBatchSelection {
+  const requestedCaseIds = uniqueIds(input.caseIds, "caseIds");
+  const requestedClusterIds = uniqueIds(input.clusterIds, "clusterIds");
+  if (!requestedCaseIds.length && !requestedClusterIds.length) {
+    throw new TypeError("Choose at least one failed Batch case or failure cluster.");
+  }
+  if (requestedClusterIds.length) {
+    if (!clusters || clusters.campaignId !== batch.id) {
+      throw new TypeError("Current failure clusters are required for cluster selection.");
+    }
+    const known = new Set(clusters.clusters.map((cluster) => cluster.id));
+    const unknown = requestedClusterIds.find((id) => !known.has(id));
+    if (unknown) throw new TypeError(`Failure cluster ${unknown} is not in this Batch.`);
+  }
+  const selected = new Set(requestedCaseIds);
+  for (const cluster of clusters?.clusters ?? []) {
+    if (requestedClusterIds.includes(cluster.id)) {
+      for (const caseId of cluster.caseIds) selected.add(caseId);
+    }
+  }
+  const byId = new Map(batch.cases.map((item) => [item.id, item]));
+  for (const caseId of selected) {
+    const item = byId.get(caseId);
+    if (!item) throw new TypeError(`Batch case ${caseId} is not present.`);
+    if (item.status !== "failed" && item.status !== "blocked" && item.status !== "cancelled") {
+      throw new TypeError(`Batch case ${caseId} is ${item.status} and cannot be rerun.`);
+    }
+    if (!item.runId) {
+      throw new TypeError(`Batch case ${caseId} has no immutable Run evidence.`);
+    }
+  }
+  return {
+    caseIds: [...selected].sort(),
+    clusterIds: [...requestedClusterIds].sort(),
   };
 }
 
@@ -362,6 +530,21 @@ export function createProductRunAcrossService(
     return batchFromCampaign(response.campaign, setup);
   }
 
+  async function failureClusters(
+    batchId: string,
+    filters?: { failureKind?: RepeatFailureKind; environmentId?: string },
+  ): Promise<ProductBatchFailureClusterReport> {
+    const report = await operations.invoke("job.combine.campaign.repeat.clusters", {
+      batchId,
+      ...(filters?.failureKind ? { failureKind: filters.failureKind } : {}),
+      ...(filters?.environmentId ? { cohort: filters.environmentId } : {}),
+    });
+    if (report.campaignId !== batchId) {
+      throw new TypeError("Relay returned failure clusters for a different Batch.");
+    }
+    return productFailureClusters(report);
+  }
+
   return {
     getSetup,
     preview: previewProductRunAcross,
@@ -393,6 +576,27 @@ export function createProductRunAcrossService(
       return campaign(batchId);
     },
     async inspect(batchId) {
+      return campaign(batchId);
+    },
+    async getFailureClusters(batchId, filters) {
+      return failureClusters(batchId, filters);
+    },
+    async select(batchId, input) {
+      const clusterIds = uniqueIds(input.clusterIds, "clusterIds");
+      const batch = await campaign(batchId);
+      const clusters = clusterIds.length ? await failureClusters(batchId) : undefined;
+      return selectProductBatchCases(batch, input, clusters);
+    },
+    async rerun(batchId, input) {
+      const clusterIds = uniqueIds(input.clusterIds, "clusterIds");
+      const batch = await campaign(batchId);
+      const clusters = clusterIds.length ? await failureClusters(batchId) : undefined;
+      const selection = selectProductBatchCases(batch, input, clusters);
+      await operations.invoke("job.combine.campaign.resume", {
+        batchId,
+        reviewed: true,
+        cellIds: [...selection.caseIds],
+      });
       return campaign(batchId);
     },
     async cancel(batchId) {

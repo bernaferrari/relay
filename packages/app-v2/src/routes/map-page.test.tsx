@@ -71,13 +71,12 @@ afterEach(async () => {
   document.body.replaceChildren();
 });
 
-async function render() {
+async function render(mapService: MapProductService = { get: async () => overview }) {
   const history = createMemoryHistory({ initialEntries: ["/apps/shop/map"] });
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
   roots.push(root);
-  const mapService: MapProductService = { get: async () => overview };
   await act(async () => {
     root.render(
       <RelayV2App
@@ -203,7 +202,45 @@ describe("Map exploration", () => {
     expect(developerMode.getAttribute("aria-expanded")).toBe("false");
     await act(async () => developerMode.click());
     expect(developerMode.getAttribute("aria-expanded")).toBe("true");
-    expect(document.body.textContent).toContain("Edit Map is not enabled in Explore");
+    expect(document.body.textContent).toContain("No proposal needs a decision");
+  });
+
+  it("reviews canonical Map proposals with the current revision", async () => {
+    const decisions: unknown[] = [];
+    let pending = true;
+    await render({
+      get: async () => ({ ...overview, pendingProposalCount: pending ? 1 : 0 }),
+      listProposals: async () =>
+        pending
+          ? [
+              {
+                id: "proposal-1",
+                title: "Add checkout path",
+                description: "Observed during a reviewed Session.",
+                status: "pending",
+                createdAt: 1,
+                updatedAt: 2,
+                baseRevision: 4,
+              },
+            ]
+          : [],
+      approveProposal: async (input) => {
+        decisions.push(input);
+        pending = false;
+        return { ...overview, revision: 5, pendingProposalCount: 0 };
+      },
+    });
+    await act(async () => button("Edit Map · Developer Mode").click());
+    expect(document.body.textContent).toContain("Add checkout path");
+    await act(async () => button("Approve").click());
+    expect(decisions).toEqual([
+      {
+        appMapId: "shop",
+        proposalId: "proposal-1",
+        expectedRevision: 4,
+        reason: "Reviewed in Relay",
+      },
+    ]);
   });
 });
 

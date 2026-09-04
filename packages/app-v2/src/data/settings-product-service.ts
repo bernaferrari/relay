@@ -1,6 +1,8 @@
 import type { EvidenceCollectionPolicy, RedactionPolicy } from "@relay/protocol";
 import type { Platform } from "../platform/types";
 import { productClientForPlatform } from "./product-client";
+import type { IntegrationsProductService } from "./integration-product-service";
+import { createIntegrationsProductService } from "./integration-product-service";
 
 export type SettingsCategory =
   | "general"
@@ -41,6 +43,8 @@ export type SettingsProductService = {
   }): Promise<EvidenceCollectionPolicy>;
   appleSetup(): Promise<unknown>;
   androidSetup(): Promise<unknown>;
+  /** Optional for existing settings fixture adapters; production exposes the read-only integration seam. */
+  integrations?: IntegrationsProductService;
 };
 
 export function createSettingsProductService(platform: Platform): SettingsProductService {
@@ -70,5 +74,6 @@ export function createSettingsProductService(platform: Platform): SettingsProduc
     async androidSetup() {
       return (await client()).resource("/settings/devices/android");
     },
+    integrations: createIntegrationsProductService(platform),
   };
 }

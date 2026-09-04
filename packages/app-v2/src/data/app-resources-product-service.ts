@@ -1,5 +1,6 @@
 import type {
   BrowserAuthenticationFixture,
+  OperationInput,
   OperationOutput,
   TargetDefinition,
 } from "@relay/protocol";
@@ -7,6 +8,12 @@ import type { Platform } from "../platform/types";
 import { productClientForPlatform } from "./product-client";
 
 type RegisteredBuild = OperationOutput<"build.list">["builds"][number];
+
+export type ProductAppVersionInput = OperationInput<"build.save">;
+export type ProductBrowserAccountInput = Pick<
+  OperationInput<"target.browser-auth.save">,
+  "targetId" | "name" | "expiresAt" | "fixtureId"
+>;
 
 export type ProductAppVersion = Pick<
   RegisteredBuild,
@@ -21,9 +28,52 @@ export type ProductAppVersion = Pick<
 >;
 
 export type ProductBrowserAccount = {
-  fixture: BrowserAuthenticationFixture;
+  fixture: Pick<
+    BrowserAuthenticationFixture,
+    | "id"
+    | "reference"
+    | "revision"
+    | "targetId"
+    | "name"
+    | "origins"
+    | "cookieCount"
+    | "createdAt"
+    | "expiresAt"
+    | "revokedAt"
+  >;
   target: Pick<TargetDefinition, "id" | "name">;
 };
+
+export type AppVersionProductService = {
+  /** `build.save` is the canonical create/upsert operation. */
+  saveVersion(input: ProductAppVersionInput): Promise<ProductAppVersion>;
+  createVersion(input: ProductAppVersionInput): Promise<ProductAppVersion>;
+  /** Updates use the same idempotent canonical upsert as creates. */
+  updateVersion(input: ProductAppVersionInput): Promise<ProductAppVersion>;
+  preflightVersion(
+    input: OperationInput<"build.preflight">,
+  ): Promise<OperationOutput<"build.preflight">["preflight"]>;
+  installVersion(input: OperationInput<"build.install">): Promise<OperationOutput<"build.install">>;
+  launchVersion(
+    input: OperationInput<"build.launch">,
+  ): Promise<OperationOutput<"build.launch">["launched"]>;
+};
+
+export type BrowserAccountProductService = {
+  saveBrowserAccount(input: ProductBrowserAccountInput): Promise<ProductBrowserAccount>;
+  /** Refresh captures current managed-browser state into the same fixture id. */
+  refreshBrowserAccount(
+    input: ProductBrowserAccountInput & { fixtureId: string },
+  ): Promise<ProductBrowserAccount>;
+  revokeBrowserAccount(input: {
+    targetId: string;
+    reference: string;
+  }): Promise<ProductBrowserAccount>;
+};
+
+export type OperationalAppResourcesProductService = AppResourcesProductService &
+  AppVersionProductService &
+  BrowserAccountProductService;
 
 /** Project-scoped app resources. Builds and browser sign-ins are not silently
  * attributed to an App because the canonical contracts do not store that link. */
@@ -31,7 +81,51 @@ export type AppResourcesProductService = {
   createApp(name: string): Promise<{ id: string; name: string }>;
   listVersions(): Promise<readonly ProductAppVersion[]>;
   listBrowserAccounts(): Promise<readonly ProductBrowserAccount[]>;
+  /** Optional for existing read-only fixture adapters; production includes the operations below. */
+  saveVersion?: AppVersionProductService["saveVersion"];
+  createVersion?: AppVersionProductService["createVersion"];
+  updateVersion?: AppVersionProductService["updateVersion"];
+  preflightVersion?: AppVersionProductService["preflightVersion"];
+  installVersion?: AppVersionProductService["installVersion"];
+  launchVersion?: AppVersionProductService["launchVersion"];
+  saveBrowserAccount?: BrowserAccountProductService["saveBrowserAccount"];
+  refreshBrowserAccount?: BrowserAccountProductService["refreshBrowserAccount"];
+  revokeBrowserAccount?: BrowserAccountProductService["revokeBrowserAccount"];
 };
+
+function projectVersion(build: RegisteredBuild): ProductAppVersion {
+  return {
+    id: build.id,
+    name: build.name,
+    platform: build.platform,
+    status: build.status,
+    ...(build.applicationId ? { applicationId: build.applicationId } : {}),
+    ...(build.configuration ? { configuration: build.configuration } : {}),
+    ...(build.sourceSha ? { sourceSha: build.sourceSha } : {}),
+    updatedAt: build.updatedAt,
+  };
+}
+
+function projectBrowserAccount(
+  fixture: BrowserAuthenticationFixture,
+  target: Pick<TargetDefinition, "id" | "name">,
+): ProductBrowserAccount {
+  return {
+    fixture: {
+      id: fixture.id,
+      reference: fixture.reference,
+      revision: fixture.revision,
+      targetId: fixture.targetId,
+      name: fixture.name,
+      origins: [...fixture.origins],
+      cookieCount: fixture.cookieCount,
+      createdAt: fixture.createdAt,
+      ...(fixture.expiresAt === undefined ? {} : { expiresAt: fixture.expiresAt }),
+      ...(fixture.revokedAt === undefined ? {} : { revokedAt: fixture.revokedAt }),
+    },
+    target: { id: target.id, name: target.name },
+  };
+}
 
 export function appIdFromName(name: string, suffix = crypto.randomUUID().slice(0, 8)): string {
   const slug = name
@@ -47,10 +141,17 @@ export function appIdFromName(name: string, suffix = crypto.randomUUID().slice(0
     .slice(0, 8)}`;
 }
 
-export function createAppResourcesProductService(platform: Platform): AppResourcesProductService {
+export function createAppResourcesProductService(
+  platform: Platform,
+): OperationalAppResourcesProductService {
   let clientPromise: ReturnType<typeof productClientForPlatform> | undefined;
   const client = () =>
     (clientPromise ??= productClientForPlatform(platform)).then((value) => value.client);
+
+  async function saveVersion(input: ProductAppVersionInput): Promise<ProductAppVersion> {
+    const { build } = await (await client()).invoke("build.save", { ...input });
+    return projectVersion(build);
+  }
 
   return {
     async createApp(name) {
@@ -67,16 +168,7 @@ export function createAppResourcesProductService(platform: Platform): AppResourc
     async listVersions() {
       const { builds } = await (await client()).invoke("build.list", {});
       return builds
-        .map((build) => ({
-          id: build.id,
-          name: build.name,
-          platform: build.platform,
-          status: build.status,
-          ...(build.applicationId ? { applicationId: build.applicationId } : {}),
-          ...(build.configuration ? { configuration: build.configuration } : {}),
-          ...(build.sourceSha ? { sourceSha: build.sourceSha } : {}),
-          updatedAt: build.updatedAt,
-        }))
+        .map(projectVersion)
         .sort(
           (left, right) => right.updatedAt - left.updatedAt || left.name.localeCompare(right.name),
         );
@@ -107,5 +199,50 @@ export function createAppResourcesProductService(platform: Platform): AppResourc
             left.fixture.name.localeCompare(right.fixture.name),
         );
     },
-  };
+    saveVersion,
+    async createVersion(input) {
+      return saveVersion(input);
+    },
+    async updateVersion(input) {
+      return saveVersion(input);
+    },
+    async preflightVersion(input) {
+      return (await (await client()).invoke("build.preflight", { ...input })).preflight;
+    },
+    async installVersion(input) {
+      return (await (
+        await client()
+      ).invoke("build.install", { ...input })) as OperationOutput<"build.install">;
+    },
+    async launchVersion(input) {
+      return (await (await client()).invoke("build.launch", { ...input })).launched;
+    },
+    async saveBrowserAccount(input) {
+      const result = await (
+        await client()
+      ).invoke("target.browser-auth.save", {
+        ...input,
+        confirm: true,
+      });
+      return projectBrowserAccount(result.fixture, result.target);
+    },
+    async refreshBrowserAccount(input) {
+      const result = await (
+        await client()
+      ).invoke("target.browser-auth.save", {
+        ...input,
+        confirm: true,
+      });
+      return projectBrowserAccount(result.fixture, result.target);
+    },
+    async revokeBrowserAccount(input) {
+      const result = await (
+        await client()
+      ).invoke("target.browser-auth.revoke", {
+        ...input,
+        confirm: true,
+      });
+      return projectBrowserAccount(result.fixture, result.target);
+    },
+  } as OperationalAppResourcesProductService;
 }

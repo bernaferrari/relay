@@ -1,5 +1,9 @@
 import type {
+  ProductBatchFailureClusterReport,
   ProductBatchReport,
+  ProductBatchResultIdentity,
+  ProductBatchSelection,
+  ProductBatchSelectionInput,
   ProductRunAcrossBatch,
   ProductRunAcrossPreview,
   ProductRunAcrossService,
@@ -28,6 +32,10 @@ export function createRunAcrossProductService(platform: Platform): RunAcrossProd
       service().then((item) => item.startPilot(input)),
     continue: (batchId) => service().then((item) => item.continue(batchId)),
     inspect: (batchId) => service().then((item) => item.inspect(batchId)),
+    getFailureClusters: (batchId, filters) =>
+      service().then((item) => item.getFailureClusters(batchId, filters)),
+    select: (batchId, input) => service().then((item) => item.select(batchId, input)),
+    rerun: (batchId, input) => service().then((item) => item.rerun(batchId, input)),
     cancel: (batchId) => service().then((item) => item.cancel(batchId)),
     getReport: (batchId) => service().then((item) => item.getReport(batchId)),
     exportReport: (batchId) => service().then((item) => item.exportReport(batchId)),
@@ -38,6 +46,10 @@ export function createRunAcrossProductService(platform: Platform): RunAcrossProd
 // the product package in component signatures.
 export type {
   ProductBatchReport,
+  ProductBatchFailureClusterReport,
+  ProductBatchResultIdentity,
+  ProductBatchSelection,
+  ProductBatchSelectionInput,
   ProductRunAcrossBatch,
   ProductRunAcrossPreview,
   ProductRunAcrossSetup,

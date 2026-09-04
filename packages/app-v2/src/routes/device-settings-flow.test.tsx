@@ -213,6 +213,16 @@ async function click(element: HTMLElement) {
   await settle();
 }
 
+async function fillInput(element: HTMLInputElement, value: string) {
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    setter?.call(element, value);
+    element.dispatchEvent(new Event("input", { bubbles: true }));
+    element.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await settle();
+}
+
 function button(label: string): HTMLButtonElement {
   const result = [...document.querySelectorAll("button")].find(
     (candidate) => candidate.textContent?.trim() === label,
@@ -313,6 +323,70 @@ describe("Devices", () => {
     expect(service.recoveryCalls).toEqual(["phone"]);
     expect(document.body.textContent).toContain("Device is ready");
     expect(document.body.textContent).toContain("Relay reconnected and checked this device.");
+  });
+
+  it("launches an app on a ready attached device with an explicit relaunch choice", async () => {
+    const service = fakeDeviceService();
+    const launchCalls: Array<{ deviceId: string; app: string; relaunch?: boolean }> = [];
+    service.launchApp = async (deviceId, app, relaunch) => {
+      launchCalls.push({ deviceId, app, relaunch });
+      return { serial: deviceId, app, platform: "ios", launchedAt: 10 };
+    };
+    await renderPath("/devices/ipad", { deviceService: service });
+
+    const identifier = document.querySelector<HTMLInputElement>("#device-app-identifier");
+    if (!identifier) throw new Error("App identifier input not found");
+    expect(identifier.required).toBe(true);
+    expect(document.querySelector('input[type="checkbox"]')).not.toBeNull();
+    await fillInput(identifier, "  com.example.shop  ");
+    await click(document.querySelector('input[type="checkbox"]')!);
+    await click(button("Launch app"));
+
+    expect(launchCalls).toEqual([{ deviceId: "ipad", app: "com.example.shop", relaunch: true }]);
+    expect(document.body.textContent).toContain("Launch requested");
+    expect(document.body.textContent).toContain("Relay launched com.example.shop on Design iPad.");
+  });
+
+  it("keeps app launch unavailable for managed browsers", async () => {
+    await renderPath("/devices/browser");
+
+    expect(document.querySelector(".relay-device-launch-form")).toBeNull();
+    expect(document.querySelector(".relay-device-launch-unavailable")?.textContent).toContain(
+      "not available for managed browsers",
+    );
+  });
+
+  it("keeps launch failures visible without hiding the device context", async () => {
+    const service = fakeDeviceService();
+    service.launchApp = async () => {
+      throw new Error("target disconnected");
+    };
+    await renderPath("/devices/ipad", { deviceService: service });
+    const identifier = document.querySelector<HTMLInputElement>("#device-app-identifier");
+    if (!identifier) throw new Error("App identifier input not found");
+    await fillInput(identifier, "com.example.shop");
+    await click(button("Launch app"));
+
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+      "Keep the device connected and try again",
+    );
+    expect(document.body.textContent).toContain("Device details");
+  });
+
+  it("validates an empty app identifier before making an operation call", async () => {
+    const service = fakeDeviceService();
+    const launchCalls: string[] = [];
+    service.launchApp = async (deviceId) => {
+      launchCalls.push(deviceId);
+      return { serial: deviceId, app: "", platform: "ios", launchedAt: 10 };
+    };
+    await renderPath("/devices/ipad", { deviceService: service });
+    await click(button("Launch app"));
+
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+      "Enter an app name, package, or bundle identifier",
+    );
+    expect(launchCalls).toEqual([]);
   });
 });
 

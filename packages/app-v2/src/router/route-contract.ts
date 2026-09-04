@@ -70,11 +70,46 @@ const routePresentations = {
     eyebrow: "Test",
     description: "Choose a data set, preview the exact scope, and run across it deliberately.",
   },
+  "/suites": {
+    path: "/suites",
+    eyebrow: "Library",
+    description: "Group reviewed Tests and Data sets into reusable coverage plans.",
+  },
+  "/apps/:appId/suites/:suiteId": {
+    path: "/apps/$appId/suites/$suiteId",
+    eyebrow: "Suite",
+    description: "Review scope and readiness before running this saved coverage plan.",
+  },
+  "/environments": {
+    path: "/environments",
+    eyebrow: "Workspace",
+    description: "Manage reusable browser Spaces and inspect available execution resources.",
+  },
+  "/environments/:profileId": {
+    path: "/environments/$profileId",
+    eyebrow: "Environment",
+    description: "Inspect readiness, browser settings, and reviewed account fixtures.",
+  },
+  "/sessions": {
+    path: "/sessions",
+    eyebrow: "Workspace",
+    description: "Reopen durable browser and device Sessions for recording or debugging.",
+  },
+  "/sessions/:sessionId": {
+    path: "/sessions/$sessionId",
+    eyebrow: "Session",
+    description: "Inspect one durable target Session and its operation context.",
+  },
+  "/recordings/:recordingId": {
+    path: "/recordings/$recordingId",
+    eyebrow: "Recording",
+    description: "Continue capturing a focused, repeatable journey.",
+    chrome: "immersive",
+  },
   "/recordings/:recordingId/review": {
     path: "/recordings/$recordingId/review",
     eyebrow: "Recording",
     description: "Review captured steps and checkpoints before saving a test.",
-    chrome: "immersive",
   },
   "/runs": {
     path: "/runs",
@@ -109,7 +144,7 @@ const routePresentations = {
   "/devices/:deviceId": {
     path: "/devices/$deviceId",
     eyebrow: "Devices",
-    description: "Review connection health and capabilities for this device.",
+    description: "Review readiness and capabilities for this device.",
   },
   "/settings/general": {
     path: "/settings/general",

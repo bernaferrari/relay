@@ -17,9 +17,30 @@ function clone<T>(value: T): T {
 export function editAuthoringTakeRevision(input: {
   revision: AuthoringTakeRevision;
   edit: AuthoringRecordingEdit;
+  sourceRevision?: AuthoringTakeRevision;
   group?: string;
 }): AuthoringTakeRevision {
   const { revision, edit } = input;
+  if (edit.kind === "restore") {
+    const source = input.sourceRevision;
+    if (
+      !source ||
+      source.takeId !== revision.takeId ||
+      source.revision !== edit.sourceRevision ||
+      source.revision >= revision.revision
+    ) {
+      throw new AuthoringStateError(
+        "Restore source revision must reference an existing prior Take revision",
+      );
+    }
+    const restored = clone(source);
+    return {
+      ...restored,
+      // A restored path is a new current revision. Any action-level proof from
+      // the old revision is tied to that old revision and cannot be reused.
+      actions: restored.actions.map(invalidateAuthoringActionProof),
+    };
+  }
   const byId = new Map(revision.actions.map((action) => [action.id, action]));
   const requireActions = (actionIds: readonly string[], minimum: number): AuthoringAction[] => {
     if (actionIds.length < minimum || new Set(actionIds).size !== actionIds.length) {

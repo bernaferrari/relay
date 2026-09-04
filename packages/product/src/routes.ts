@@ -11,6 +11,13 @@ export type RoutePattern =
   | "/tests/:testId/edit"
   | "/tests/:testId/record"
   | "/tests/:testId/run-across"
+  | "/suites"
+  | "/apps/:appId/suites/:suiteId"
+  | "/environments"
+  | "/environments/:profileId"
+  | "/sessions"
+  | "/sessions/:sessionId"
+  | "/recordings/:recordingId"
   | "/recordings/:recordingId/review"
   | "/runs"
   | "/runs/:runId"
@@ -40,13 +47,27 @@ export type ContextualAction =
   | "review-run"
   | "inspect-run"
   | "review-recording"
+  | "inspect-session"
+  | "create-suite"
+  | "run-suite"
+  | "add-environment"
+  | "inspect-environment"
   | "review-batch"
   | "verify-change"
   | "inspect-change"
   | "connect-device"
   | "inspect-device"
   | "save-settings";
-export type Sidebar = "home" | "apps" | "tests" | "runs" | "changes" | "devices" | "settings";
+export type Sidebar =
+  | "home"
+  | "apps"
+  | "tests"
+  | "sessions"
+  | "suites"
+  | "runs"
+  | "changes"
+  | "devices"
+  | "settings";
 export type RouteDefinition = {
   id: RoutePattern;
   pattern: RoutePattern;
@@ -58,6 +79,9 @@ export type RouteDefinition = {
     | "Run"
     | "Change"
     | "Device"
+    | "Session"
+    | "Suite"
+    | "Environment"
     | "Recording"
     | "Report"
     | "Map"
@@ -72,6 +96,7 @@ export type RouteDefinition = {
     | "screen"
     | "path"
     | "target"
+    | "session"
     | "section"
   )[];
   primaryAction: ContextualAction | null;
@@ -115,6 +140,7 @@ export const ROUTE_DEFINITIONS = [
   d("/tests/:testId/edit", "/tests/:testId", "Edit Test", "Test", "tests", "record-test", [
     "step",
     "screen",
+    "session",
   ]),
   d("/tests/:testId/record", "/tests/:testId", "Record Test", "Test", "tests", "record-test", [
     "screen",
@@ -122,6 +148,35 @@ export const ROUTE_DEFINITIONS = [
   d("/tests/:testId/run-across", "/tests/:testId", "Run Across", "Test", "tests", "run-test", [
     "app",
     "view",
+  ]),
+  d("/suites", "/home", "Suites", "Suite", "suites", "create-suite", ["app", "status"]),
+  d("/apps/:appId/suites/:suiteId", "/suites", "Suite", "Suite", "suites", "run-suite", [
+    "view",
+    "target",
+  ]),
+  d("/environments", "/home", "Environments", "Environment", "suites", "add-environment", [
+    "status",
+    "view",
+  ]),
+  d(
+    "/environments/:profileId",
+    "/environments",
+    "Environment",
+    "Environment",
+    "suites",
+    "inspect-environment",
+    ["view"],
+  ),
+  d("/sessions", "/home", "Sessions", "Session", "sessions", "inspect-session", [
+    "status",
+    "target",
+  ]),
+  d("/sessions/:sessionId", "/sessions", "Session", "Session", "sessions", "inspect-session", [
+    "view",
+  ]),
+  d("/recordings/:recordingId", "/tests", "Recording", "Recording", "tests", "continue-recording", [
+    "view",
+    "screen",
   ]),
   d(
     "/recordings/:recordingId/review",
@@ -201,7 +256,10 @@ export function resolveHomeAction(input: {
 type Params = {
   appId?: string;
   testId?: string;
+  suiteId?: string;
+  profileId?: string;
   recordingId?: string;
+  sessionId?: string;
   runId?: string;
   batchId?: string;
   changeId?: string;
@@ -223,6 +281,14 @@ export const routeUrls = {
   testEdit: (testId: string) => build("/tests/:testId/edit", { testId }),
   testRecord: (testId: string) => build("/tests/:testId/record", { testId }),
   testRunAcross: (testId: string) => build("/tests/:testId/run-across", { testId }),
+  suites: () => "/suites",
+  suite: (appId: string, suiteId: string) =>
+    build("/apps/:appId/suites/:suiteId", { appId, suiteId }),
+  environments: () => "/environments",
+  environment: (profileId: string) => build("/environments/:profileId", { profileId }),
+  sessions: () => "/sessions",
+  session: (sessionId: string) => build("/sessions/:sessionId", { sessionId }),
+  recording: (recordingId: string) => build("/recordings/:recordingId", { recordingId }),
   recordingReview: (recordingId: string) =>
     build("/recordings/:recordingId/review", { recordingId }),
   run: (runId: string) => build("/runs/:runId", { runId }),

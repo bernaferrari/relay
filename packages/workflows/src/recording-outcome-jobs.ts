@@ -1,6 +1,7 @@
 import type { AuthorTestSnapshot } from "./types.js";
 import { CanonicalAuthoringWorkflow } from "./authoring-workflow.js";
 import { createRelayOperationPort, type RelayInvokeClient } from "./operation-port.js";
+import { recordingPathContext } from "./recording-path-context.js";
 import { acquireOwnLease, selectAppMap, selectTarget, targetCatalog } from "./target-catalog.js";
 import type {
   ConnectTargetIntent,
@@ -65,6 +66,7 @@ export function createRelayRecordingOutcomeJobs(
         target,
         leaseId,
         revision: "current",
+        ...recordingPathContext(intent),
         workflowRequestId: crypto.randomUUID(),
         continuation: "durable",
       });

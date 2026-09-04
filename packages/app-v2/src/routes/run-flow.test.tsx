@@ -3,7 +3,7 @@ import type { ProductRunReport, ProductRunState } from "@relay/product/run-journ
 import { createMemoryHistory } from "@tanstack/react-router";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { RelayV2App } from "../app";
 import type { RecordingProductService } from "../data/recording-product-service";
 import type { ProductRunReportOverview, RunProductService } from "../data/run-product-service";
@@ -517,6 +517,106 @@ describe("Run and Report", () => {
     expect(document.body.textContent).toContain("Language settings");
     expect(document.body.textContent).not.toContain("What Relay verified");
     expect(document.querySelector('#report-tab-evidence[aria-selected="true"]')).not.toBeNull();
+  });
+
+  it("routes durable Run review decisions with the canonical Run identity", async () => {
+    const fake = fakeRunService();
+    const review = vi.fn().mockResolvedValue({ status: "approved" } as never);
+    fake.service.review = review;
+    await renderRun("/runs/run-1", fake.service, platformWithStorage().platform);
+
+    await click(button("Review and visual decisions"));
+    await click(button("Approve Run"));
+    await click(button("Defer"));
+    await click(button("Reject"));
+
+    expect(review).toHaveBeenNthCalledWith(1, {
+      runId: "run-1",
+      action: "approve",
+      note: "Reviewed in Relay",
+    });
+    expect(review).toHaveBeenNthCalledWith(2, {
+      runId: "run-1",
+      action: "defer",
+      note: "Reviewed in Relay",
+    });
+    expect(review).toHaveBeenNthCalledWith(3, {
+      runId: "run-1",
+      action: "reject",
+      note: "Reviewed in Relay",
+    });
+    expect(document.body.textContent).toContain("Run review saved");
+  });
+
+  it("renders visual comparison facts and routes baseline decisions by comparison id", async () => {
+    const fake = fakeRunService();
+    const comparison = {
+      id: "comparison-7",
+      code: "VISUAL_CHANGED",
+      diff: { changedFrames: 2, addedFrames: 1, removedFrames: 0 },
+    } as never;
+    const compareVisual = vi.fn().mockResolvedValue(comparison);
+    const approveVisualBaseline = vi.fn().mockResolvedValue({ status: "approved" } as never);
+    const reviewVisual = vi.fn().mockResolvedValue({ status: "reviewed" } as never);
+    fake.service.compareVisual = compareVisual;
+    fake.service.approveVisualBaseline = approveVisualBaseline;
+    fake.service.reviewVisual = reviewVisual;
+    await renderRun("/runs/run-1", fake.service, platformWithStorage().platform);
+
+    await click(button("Review and visual decisions"));
+    await click(button("Compare visual evidence"));
+    expect(compareVisual).toHaveBeenCalledWith("run-1");
+    expect(document.body.textContent).toContain("Visual changes need review");
+    expect(document.body.textContent).toContain("2 changed · 1 added · 0 removed");
+
+    await click(button("Approve new baseline"));
+    expect(approveVisualBaseline).toHaveBeenCalledWith({
+      runId: "run-1",
+      action: "approve-new-baseline",
+      note: "Reviewed in Relay",
+    });
+
+    await click(button("Keep baseline"));
+    await click(button("Retry later"));
+    expect(reviewVisual).toHaveBeenNthCalledWith(1, {
+      runId: "run-1",
+      comparisonId: "comparison-7",
+      action: "keep-baseline",
+      note: "Reviewed in Relay",
+    });
+    expect(reviewVisual).toHaveBeenNthCalledWith(2, {
+      runId: "run-1",
+      comparisonId: "comparison-7",
+      action: "retry",
+      note: "Reviewed in Relay",
+    });
+  });
+
+  it("labels Test reliability as partial while loaded Run history is incomplete", async () => {
+    const fake = fakeRunService();
+    fake.service.listTestRuns = async () =>
+      [
+        {
+          id: "run-1",
+          title: "Change the app language",
+          action: "Open report",
+          status: "completed",
+          phase: "completed",
+          outcome: "passed",
+          appMapId: "settings-language-proof",
+          queuedAt: 1,
+          finishedAt: 2,
+          identity: { runId: "run-1", appMapId: "settings-language-proof" },
+          links: { self: "/runs/run-1", app: "/apps/settings-language-proof" },
+        },
+      ] as never;
+    await renderRun("/tests/test-1", fake.service, platformWithStorage().platform);
+
+    expect(document.body.textContent).toContain("Recent stability");
+    expect(document.body.textContent).toContain("Partial history");
+    expect(document.body.textContent).toContain(
+      "Rates stay hidden until complete history is available.",
+    );
   });
 
   it("keeps unavailable evidence calm without weakening the saved outcome", async () => {

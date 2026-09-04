@@ -3,6 +3,7 @@ import type {
   AuthoringInteraction,
   AuthoringCaptureMode,
   AuthoringCaptureProof,
+  AuthoringEvidence,
   AuthoringCaptureProvenance,
   AuthoringRecordingEdit,
   AuthoringTarget,
@@ -20,6 +21,7 @@ import type {
   ChangeProofRunOutput,
   OperationInput,
   OperationOutput,
+  RecipeStep,
   VerifyChangeIntent,
   VerifyChangeResult,
 } from "@relay/protocol";
@@ -53,9 +55,15 @@ export type RunTestIntent = {
   confirmRisk?: true;
 };
 
+export type RecordingPathContext = {
+  sourceScreenId?: string;
+  pendingConnectionId?: string;
+  group?: string;
+};
+
 /** Start one canonical recording session and leave it ready to accept recorded
  * interactions. The App Map revision is frozen before any target mutation. */
-export type AuthorTestIntent = {
+export type AuthorTestIntent = RecordingPathContext & {
   kind: "author-test";
   actorId: string;
   title: string;
@@ -63,9 +71,6 @@ export type AuthorTestIntent = {
   target: AuthoringTarget;
   leaseId: string;
   revision?: "current" | { exact: number };
-  sourceScreenId?: string;
-  pendingConnectionId?: string;
-  group?: string;
   /** Stable before dispatch so response loss can reconcile one session. */
   workflowRequestId?: string;
   continuation?: "durable";
@@ -154,15 +159,12 @@ export type FrozenRunTestIdentity = {
   workflowRequestId?: string;
 };
 
-export type FrozenAuthorTestIdentity = {
+export type FrozenAuthorTestIdentity = RecordingPathContext & {
   title: string;
   actorId: string;
   appMapId: string;
   appMapRevision: number;
   target: AuthoringTarget;
-  sourceScreenId?: string;
-  pendingConnectionId?: string;
-  group?: string;
   workflowRequestId?: string;
 };
 
@@ -217,13 +219,33 @@ export type RunTestSnapshot = {
   evidenceRefs: readonly { kind: "run"; id: string }[];
 };
 
+export type AuthoringReviewActionKind = RecipeStep["kind"] | "observe" | "mixed";
+
 export type AuthoringReview = {
   actionCount: number;
+  currentRevision?: number;
+  revisionCount?: number;
+  videoClip?: { startMs: number; endMs: number };
   actions: readonly {
     id: string;
     intent: string;
     label?: string;
     stepCount: number;
+    /** The recipe step kind(s), without exposing step payloads such as typed text. */
+    kind?: AuthoringReviewActionKind;
+    startedAt?: number;
+    finishedAt?: number;
+    durationMs?: number;
+    /** Safe evidence metadata; content URIs, hashes, and semantic nodes stay private. */
+    evidence?: readonly {
+      id: string;
+      kind: AuthoringEvidence["kind"];
+      capturedAt: number;
+      roles: readonly ("action" | "entrance" | "exit")[];
+    }[];
+    evidenceIds?: readonly string[];
+    evidenceCount?: number;
+    evidenceKinds?: readonly AuthoringEvidence["kind"][];
     proofStatus?: "verified" | "pixels-only" | "unresolved";
     /** Origin truth before replay; inferred/instrumented actions remain
      * explicitly unproved until this exact revision passes replay. */
@@ -234,6 +256,15 @@ export type AuthoringReview = {
     takeRevision: number;
     outcome: "passed" | "failed" | "cancelled";
     error?: string;
+  };
+  /** Bounded wall-clock facts for the reviewed revision, not raw event data. */
+  timeline?: {
+    startedAt: number;
+    finishedAt: number;
+    durationMs: number;
+    actionCount: number;
+    evidenceCount: number;
+    observationCount: number;
   };
   replayRequired: boolean;
 };
@@ -389,14 +420,15 @@ export type ConnectTargetIntent = OutcomeTargetSelection & { kind: "connect-targ
 
 export type ObserveTargetIntent = OutcomeTargetSelection & { kind: "observe-target" };
 
-export type RecordTestOutcomeIntent = OutcomeTargetSelection & {
-  kind: "record-test";
-  appMapId?: string;
-  title: string;
-  /** Recording controls a target. This explicit consent permits Relay to
-   * acquire a new lease, but never to take over somebody else's lease. */
-  confirmControl: true;
-};
+export type RecordTestOutcomeIntent = OutcomeTargetSelection &
+  RecordingPathContext & {
+    kind: "record-test";
+    appMapId?: string;
+    title: string;
+    /** Recording controls a target. This explicit consent permits Relay to
+     * acquire a new lease, but never to take over somebody else's lease. */
+    confirmControl: true;
+  };
 
 export type RunTestOutcomeIntent = OutcomeTargetSelection & {
   kind: "run-test";

@@ -40,6 +40,7 @@ function jobsFor(input: {
   recorded?: AuthorTestSnapshot;
   inspected?: AuthorTestSnapshot;
   advanced?: AuthorTestSnapshot;
+  onRecord?: (intent: unknown) => void;
   onAdvance?: (decision: unknown) => void;
 }) {
   return {
@@ -47,7 +48,7 @@ function jobsFor(input: {
       return { targets: [target], current: target };
     },
     async record(intent: unknown) {
-      void intent;
+      input.onRecord?.(intent);
       return input.recorded ?? snapshot("recording", ["inspect", "stop"]);
     },
     async inspect() {
@@ -59,6 +60,31 @@ function jobsFor(input: {
     },
   };
 }
+
+test("recording preserves selected Map path identity", async () => {
+  let recordedIntent: unknown;
+  const journey = createProductRecordingJourney({
+    jobs: jobsFor({ onRecord: (intent) => (recordedIntent = intent) }),
+  });
+
+  await journey.begin({
+    title: "Checkout path",
+    appMapId: "app-1",
+    targetId: "pixel-9",
+    sourceScreenId: "cart",
+    pendingConnectionId: "cart-to-confirmation",
+  });
+
+  assert.deepEqual(recordedIntent, {
+    kind: "record-test",
+    title: "Checkout path",
+    appMapId: "app-1",
+    targetId: "pixel-9",
+    sourceScreenId: "cart",
+    pendingConnectionId: "cart-to-confirmation",
+    confirmControl: true,
+  });
+});
 
 test("recording transitions are gated by canonical allowedNextActions", async () => {
   let advanceCalls = 0;

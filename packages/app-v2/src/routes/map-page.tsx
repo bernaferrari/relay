@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import { Button, Disclosure } from "@relay/ui-react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useRouteContext } from "@tanstack/react-router";
 import { InfiniteMapCanvas } from "../components/infinite-map-canvas";
 import { Breadcrumbs, EmptyState } from "../components/product-patterns";
@@ -9,12 +9,43 @@ import { PageLoading, RecordingProblem } from "./recording-shared";
 const routeApi = getRouteApi("/apps/$appId/map");
 
 export function MapPage() {
-  const { mapService } = useRouteContext({ from: "__root__" });
+  const { mapService, queryClient } = useRouteContext({ from: "__root__" });
   const { appId } = routeApi.useParams();
   const map = useQuery({
     queryKey: ["map", appId],
     queryFn: () => mapService.get(appId),
     staleTime: 15_000,
+  });
+  const proposals = useQuery({
+    queryKey: ["map", appId, "proposals"],
+    queryFn: () => mapService.listProposals?.(appId) ?? Promise.resolve([]),
+    enabled: Boolean(map.data && mapService.listProposals),
+    staleTime: 5_000,
+  });
+  const decideProposal = useMutation({
+    mutationFn: async ({
+      proposalId,
+      decision,
+    }: {
+      proposalId: string;
+      decision: "approve" | "reject";
+    }) => {
+      const current = map.data;
+      if (!current) throw new TypeError("Reload this App Map before reviewing a proposal.");
+      const operation =
+        decision === "approve" ? mapService.approveProposal : mapService.rejectProposal;
+      if (!operation) throw new TypeError("Map proposal review is unavailable.");
+      return operation({
+        appMapId: appId,
+        proposalId,
+        expectedRevision: current.revision,
+        reason: decision === "approve" ? "Reviewed in Relay" : "Rejected in Relay",
+      });
+    },
+    onSuccess: async (next) => {
+      queryClient.setQueryData(["map", appId], next);
+      await queryClient.invalidateQueries({ queryKey: ["map", appId, "proposals"] });
+    },
   });
   const visibleScreens = map.data?.screens.slice(0, 500) ?? [];
   const visiblePaths = map.data?.paths.slice(0, 500) ?? [];
@@ -35,9 +66,12 @@ export function MapPage() {
       </header>
       {map.isPending ? <PageLoading label="Loading known screens…" /> : null}
       <RecordingProblem
-        error={map.error}
-        onRetry={() => void map.refetch()}
-        retrying={map.isFetching}
+        error={map.error ?? proposals.error ?? decideProposal.error}
+        onRetry={() => {
+          void map.refetch();
+          void proposals.refetch();
+        }}
+        retrying={map.isFetching || proposals.isFetching}
       />
       {map.data ? (
         <>
@@ -126,9 +160,51 @@ export function MapPage() {
                   ? `${map.data.pendingProposalCount} proposal${map.data.pendingProposalCount === 1 ? "" : "s"} await review.`
                   : "There are no pending proposals."}
               </p>
-              <Button size="small" variant="secondary" disabled>
-                Edit Map is not enabled in Explore
-              </Button>
+              {proposals.data?.some((proposal) => proposal.status === "pending") ? (
+                <ul className="relay-map-proposal-list">
+                  {proposals.data
+                    .filter((proposal) => proposal.status === "pending")
+                    .map((proposal) => (
+                      <li key={proposal.id}>
+                        <div>
+                          <strong>{proposal.title}</strong>
+                          <p>
+                            {proposal.description ??
+                              "Review this proposed change to the saved App Map."}
+                          </p>
+                          <small>Based on revision {proposal.baseRevision}</small>
+                        </div>
+                        <div>
+                          <Button
+                            size="small"
+                            variant="primary"
+                            disabled={decideProposal.isPending}
+                            onClick={() =>
+                              decideProposal.mutate({
+                                proposalId: proposal.id,
+                                decision: "approve",
+                              })
+                            }
+                          >
+                            Approve
+                          </Button>
+                          <Button
+                            size="small"
+                            variant="ghost"
+                            disabled={decideProposal.isPending}
+                            onClick={() =>
+                              decideProposal.mutate({ proposalId: proposal.id, decision: "reject" })
+                            }
+                          >
+                            Reject
+                          </Button>
+                        </div>
+                      </li>
+                    ))}
+                </ul>
+              ) : (
+                <p className="relay-context-empty">No proposal needs a decision.</p>
+              )}
             </Disclosure.Panel>
           </Disclosure.Root>
         </>

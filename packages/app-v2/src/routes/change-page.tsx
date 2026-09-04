@@ -26,6 +26,7 @@ import {
   ChangeSectionHeader,
 } from "../components/change-publication-details";
 import { Breadcrumbs, EmptyState } from "../components/product-patterns";
+import { IssueDraftButton } from "../components/issue-draft-button";
 import { PageLoading, RecordingProblem } from "./recording-shared";
 import { changeStatus, changesQueryKey } from "./changes-page";
 
@@ -147,6 +148,7 @@ export function ChangePage() {
               </p>
             </div>
             <div className="relay-change-actions">
+              <IssueDraftButton source={{ kind: "change", details }} />
               {action ? (
                 <Button
                   variant="primary"

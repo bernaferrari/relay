@@ -43,6 +43,8 @@ function recording(apps: readonly { id: string; name: string }[]): RecordingProd
       })),
     begin: async () => ({ status: "idle", targets: [] }),
     inspect: async () => ({ status: "idle", targets: [] }),
+    getOptimization: async () => ({ proposal: null }),
+    getEvidencePreview: async () => null,
     recordCurrent: async () => ({ status: "idle", targets: [] }),
     checkpoint: async () => ({ status: "idle", targets: [] }),
     stop: async () => ({ status: "idle", targets: [] }),
@@ -129,7 +131,11 @@ describe("Home", () => {
 
     expect(document.body.textContent).toContain("Prove one journey that matters");
     expect(document.body.textContent).toContain("Add the app you want to verify");
-    expect(document.querySelector('a[href="/apps"]')?.textContent).toContain("Add an App");
+    expect(
+      [...document.querySelectorAll('a[href="/apps"]')].some((link) =>
+        link.textContent?.includes("Add an App"),
+      ),
+    ).toBe(true);
     expect(document.body.textContent).not.toContain("Latest results");
   });
 

@@ -9,10 +9,14 @@ import type { AppResourcesProductService } from "../data/app-resources-product-s
 import type { CatalogProductService } from "../data/catalog-product-service";
 import type { ChangeProductService } from "../data/change-product-service";
 import type { MapProductService } from "../data/map-product-service";
+import type { LiveTestEditorProductService } from "../data/live-test-editor-product-service";
 import type { RecordingProductService } from "../data/recording-product-service";
 import type { ProductRunReportOverview, RunProductService } from "../data/run-product-service";
 import type { LiveTargetSnapshot } from "../data/live-target-session";
 import type { RunAcrossProductService } from "../data/run-across-product-service";
+import type { SessionProductService } from "../data/session-product-service";
+import type { SuiteProfileProductService } from "../data/suite-profile-product-service";
+import type { BrowserSpacesProductService } from "../data/browser-spaces-product-service";
 import type { Platform } from "../platform/types";
 import "../styles/app.css";
 
@@ -32,9 +36,17 @@ type FixtureName =
   | "runs-large"
   | "report-failed"
   | "report-evidence"
-  | "batch-completed";
+  | "batch-completed"
+  | "sessions-list"
+  | "session-detail"
+  | "live-test-editor"
+  | "suites-list"
+  | "suite-detail"
+  | "environments-list"
+  | "environment-detail";
 
 const FIXTURE_TIME = Date.UTC(2026, 8, 4, 12, 0, 0);
+const VISUAL_NOW = 1_788_390_000_000;
 const fixture = new URLSearchParams(window.location.search).get("fixture") as FixtureName | null;
 const definitions: Record<FixtureName, { path: string }> = {
   "home-empty": { path: "/home" },
@@ -53,6 +65,13 @@ const definitions: Record<FixtureName, { path: string }> = {
   "report-failed": { path: "/runs/run-checkout" },
   "report-evidence": { path: "/runs/run-checkout?view=evidence" },
   "batch-completed": { path: "/batches/batch-checkout" },
+  "sessions-list": { path: "/sessions" },
+  "session-detail": { path: "/sessions/session-checkout" },
+  "live-test-editor": { path: "/tests/test-checkout/edit?session=session-checkout" },
+  "suites-list": { path: "/suites" },
+  "suite-detail": { path: "/apps/checkout-app/suites/release-smoke" },
+  "environments-list": { path: "/environments" },
+  "environment-detail": { path: "/environments/checkout-browser" },
 };
 if (!fixture || !definitions[fixture]) throw new TypeError(`Unknown visual fixture: ${fixture}`);
 
@@ -110,11 +129,18 @@ const recordingService = {
             authoring: { sessionId: "recording-checkout" },
             review: {
               actionCount: 4,
+              currentRevision: 4,
+              revisionCount: 4,
               actions: [
                 {
                   id: "open-cart",
                   intent: "Open the shopping cart",
                   stepCount: 1,
+                  kind: "tap" as const,
+                  startedAt: FIXTURE_TIME,
+                  finishedAt: FIXTURE_TIME + 1_200,
+                  durationMs: 1_200,
+                  evidenceCount: 2,
                   proofStatus: "verified" as const,
                   captureProof: "relay-controlled" as const,
                 },
@@ -122,6 +148,11 @@ const recordingService = {
                   id: "apply-code",
                   intent: "Apply the saved discount code",
                   stepCount: 2,
+                  kind: "mixed" as const,
+                  startedAt: FIXTURE_TIME + 1_200,
+                  finishedAt: FIXTURE_TIME + 4_800,
+                  durationMs: 3_600,
+                  evidenceCount: 3,
                   proofStatus: "verified" as const,
                   captureProof: "relay-controlled" as const,
                 },
@@ -130,6 +161,11 @@ const recordingService = {
                   intent: "Discounted total is visible",
                   label: "Discounted total is visible",
                   stepCount: 0,
+                  kind: "screenshot" as const,
+                  startedAt: FIXTURE_TIME + 4_800,
+                  finishedAt: FIXTURE_TIME + 5_100,
+                  durationMs: 300,
+                  evidenceCount: 1,
                   proofStatus: "pixels-only" as const,
                   captureProof: "relay-controlled" as const,
                 },
@@ -137,10 +173,23 @@ const recordingService = {
                   id: "place-order",
                   intent: "Place the order",
                   stepCount: 1,
+                  kind: "tap" as const,
+                  startedAt: FIXTURE_TIME + 5_100,
+                  finishedAt: FIXTURE_TIME + 7_800,
+                  durationMs: 2_700,
+                  evidenceCount: 2,
                   proofStatus: "verified" as const,
                   captureProof: "relay-controlled" as const,
                 },
               ],
+              timeline: {
+                startedAt: FIXTURE_TIME,
+                finishedAt: FIXTURE_TIME + 7_800,
+                durationMs: 7_800,
+                actionCount: 4,
+                evidenceCount: 8,
+                observationCount: 5,
+              },
               replayRequired: true,
             },
             progress: { label: "Ready to review" },
@@ -455,11 +504,283 @@ const batchReport: ProductBatchReport = {
 };
 const runAcrossService = {
   getReport: async () => batchReport,
+  getFailureClusters: async () => ({ batchId: batchReport.id, clusters: [] }),
   exportReport: async () => ({
     ...batchReport,
     export: { rootDir: "/relay/exports/batch-checkout", jobIds: [...batchReport.runIds] },
   }),
 } as unknown as RunAcrossProductService;
+
+const fixtureSuite = {
+  id: "release-smoke",
+  appMapId: "checkout-app",
+  appMapRevision: 4,
+  appName: "Checkout",
+  name: "Release smoke",
+  testIds: ["test-checkout", "test-discount", "test-guest"],
+  tests: [
+    { id: "test-checkout", name: "Complete checkout", status: "ready" as const },
+    { id: "test-discount", name: "Apply discount", status: "ready" as const },
+    { id: "test-guest", name: "Guest checkout", status: "needs-review" as const },
+  ],
+  variableIds: ["locale", "account"],
+  strategy: "cartesian" as const,
+  source: { kind: "app-map-combine" as const, id: "release-smoke" },
+};
+const fixtureProfile = {
+  id: "checkout-browser",
+  name: "Checkout staging",
+  targetId: "checkout-browser",
+  source: { kind: "managed-target" as const, id: "checkout-browser" },
+  target: {
+    id: "checkout-browser",
+    name: "Checkout staging",
+    kind: "browser" as const,
+    browser: {
+      startUrl: "https://checkout.example",
+      environment: { locale: "en-US", timezoneId: "America/New_York" },
+      profileRetention: "retain" as const,
+    },
+  },
+  platform: "browser" as const,
+  browserEnvironment: { locale: "en-US", timezoneId: "America/New_York" },
+  authenticationOptions: [
+    {
+      id: "fixture-buyer",
+      reference: "authfx:fixture-buyer:2",
+      revision: 2,
+      targetId: "checkout-browser",
+      name: "Staging buyer",
+      origins: ["https://checkout.example"],
+      cookieCount: 3,
+      createdAt: FIXTURE_TIME - 180_000,
+    },
+  ],
+  buildOptions: [
+    {
+      id: "checkout-web-staging",
+      name: "Checkout web staging",
+      platform: "web" as const,
+      status: "ready",
+      updatedAt: FIXTURE_TIME - 86_400_000,
+    },
+  ],
+};
+const suiteProfileService = {
+  listSuites: async () => [fixtureSuite],
+  getSuite: async () => fixtureSuite,
+  getSuiteEditor: async () => ({
+    appMapId: "checkout-app",
+    appName: "Checkout",
+    revision: 4,
+    tests: fixtureSuite.tests,
+    dataSets: [
+      { id: "locale", name: "Locale", kind: "language", optionCount: 4 },
+      { id: "account", name: "Account", kind: "account", optionCount: 3 },
+    ],
+  }),
+  listEnvironmentProfiles: async () => [fixtureProfile],
+  getEnvironmentProfile: async () => fixtureProfile,
+  previewSuite: async () => ({
+    suite: fixtureSuite,
+    environment: fixtureProfile,
+    caseCount: 12,
+    checkCount: 36,
+    expectedScreenshots: 24,
+    blockers: [],
+    warnings: [{ code: "review", message: "Guest checkout needs review before full coverage." }],
+  }),
+  preflightEnvironment: async () => ({
+    profile: fixtureProfile,
+    target: {
+      targetId: "checkout-browser",
+      ok: true,
+      checkedAt: FIXTURE_TIME,
+      capabilities: ["screenshot", "snapshot", "tap"],
+      checks: [
+        {
+          id: "browser",
+          label: "Managed browser",
+          status: "pass",
+          message: "Browser runtime is ready.",
+        },
+        {
+          id: "profile",
+          label: "Profile storage",
+          status: "pass",
+          message: "Persistent profile is available.",
+        },
+      ],
+    },
+  }),
+} as unknown as SuiteProfileProductService;
+const browserSpacesService = {
+  listSpaces: async () => [
+    {
+      id: "checkout-browser",
+      name: "Checkout staging",
+      startUrl: "https://checkout.example",
+      createdAt: FIXTURE_TIME - 604_800_000,
+      updatedAt: FIXTURE_TIME - 60_000,
+      environment: { locale: "en-US", timezoneId: "America/New_York" },
+      profileRetention: "retain" as const,
+      persistent: true,
+      source: { kind: "managed-browser-target" as const, id: "checkout-browser" },
+    },
+    {
+      id: "checkout-guest",
+      name: "Guest checkout",
+      startUrl: "https://checkout.example/guest",
+      createdAt: FIXTURE_TIME - 86_400_000,
+      updatedAt: FIXTURE_TIME - 120_000,
+      profileRetention: "ephemeral" as const,
+      persistent: false,
+      source: { kind: "managed-browser-target" as const, id: "checkout-guest" },
+    },
+  ],
+  listAuthenticationFixtures: async () => fixtureProfile.authenticationOptions,
+} as unknown as BrowserSpacesProductService;
+const fixtureSession = {
+  id: "session-checkout",
+  title: "Complete checkout and confirm the order",
+  state: "recording" as const,
+  target: previewTarget,
+  appMapId: "checkout-app",
+  actorId: "human:fixture",
+  actorKind: "human" as const,
+  captureProvenance: "relay-controlled" as const,
+  createdAt: VISUAL_NOW - 720_000,
+  updatedAt: VISUAL_NOW - 30_000,
+  lease: {
+    id: "lease-checkout",
+    projectId: "default",
+    poolId: "browser",
+    deviceSerial: "checkout-browser",
+    ownerId: "human:fixture",
+    status: "leased" as const,
+    leasedAt: VISUAL_NOW - 720_000,
+    expiresAt: VISUAL_NOW + 3_600_000,
+  },
+  take: {
+    id: "take-checkout",
+    state: "recording" as const,
+    revision: 3,
+    actionCount: 4,
+    evidenceCount: 8,
+  },
+  committedTestId: "test-checkout",
+  hasError: false,
+  archived: false,
+};
+function fixtureLiveTarget() {
+  const snapshot = {
+    status: "streaming" as const,
+    target: previewTarget,
+    lastFrameAt: VISUAL_NOW,
+  };
+  return {
+    snapshot: () => snapshot,
+    subscribe(listener: (value: LiveTargetSnapshot) => void) {
+      listener(snapshot);
+      return () => undefined;
+    },
+    mount: (canvas: HTMLCanvasElement) => {
+      canvas.width = 768;
+      canvas.height = 512;
+      const context = canvas.getContext("2d");
+      if (context) {
+        context.fillStyle = "#f5f6f8";
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.fillStyle = "#ffffff";
+        context.fillRect(92, 46, 584, 420);
+        context.fillStyle = "#171719";
+        context.font = "600 28px system-ui";
+        context.fillText("Checkout", 132, 104);
+        context.fillStyle = "#62636a";
+        context.font = "18px system-ui";
+        context.fillText("Order summary", 132, 150);
+        context.fillStyle = "#e5e7eb";
+        context.fillRect(132, 184, 504, 2);
+        context.fillStyle = "#171719";
+        context.font = "600 22px system-ui";
+        context.fillText("Total", 132, 240);
+        context.fillText("$84.00", 548, 240);
+        context.fillStyle = "#171719";
+        context.fillRect(132, 322, 504, 64);
+        context.fillStyle = "#ffffff";
+        context.font = "600 20px system-ui";
+        context.fillText("Place order", 330, 362);
+      }
+      return () => undefined;
+    },
+    input: async () => undefined,
+    close: () => undefined,
+  };
+}
+const sessionProductService = {
+  list: async () => [fixtureSession],
+  get: async () => ({
+    ...fixtureSession,
+    projectId: "default",
+    testName: fixtureSession.title,
+    activity: [
+      {
+        activityId: "activity-1",
+        actorId: "human:fixture",
+        actorKind: "human" as const,
+        operationId: "authoring.session.interact",
+        requestId: "request-1",
+        timestamp: VISUAL_NOW - 30_000,
+        eventType: "operation.succeeded" as const,
+        summary: "Captured the checkout confirmation",
+      },
+    ],
+  }),
+  live: async () => fixtureLiveTarget(),
+} as unknown as SessionProductService;
+const liveTestEditorService = {
+  open: async () => ({
+    test: {
+      appMapId: "checkout-app",
+      appName: "Checkout",
+      revision: 4,
+      test: {
+        id: "test-checkout",
+        organizationId: "local",
+        projectId: "default",
+        appMapId: "checkout-app",
+        name: "Complete checkout and confirm the order",
+        kind: "scenario" as const,
+        intentSchemaVersion: 1 as const,
+        steps: [
+          {
+            id: "open-cart",
+            kind: "instruction" as const,
+            intent: "Open the cart",
+            binding: {
+              status: "resolved" as const,
+              kind: "connections" as const,
+              connectionIds: ["open-cart"],
+            },
+          },
+          {
+            id: "place-order",
+            kind: "validation" as const,
+            intent: "Order confirmation is visible",
+            binding: { status: "unresolved" as const, reason: "Review this checkpoint" },
+          },
+        ],
+        createdAt: FIXTURE_TIME - 86_400_000,
+        updatedAt: FIXTURE_TIME,
+      },
+      history: [],
+      repairs: [],
+    },
+    authoring: await sessionProductService.get("session-checkout"),
+    liveTarget: fixtureLiveTarget(),
+    capabilities: { edit: true as const, observe: true as const, record: false },
+  }),
+} as unknown as LiveTestEditorProductService;
 
 document.documentElement.dataset.visualFixture = fixture;
 const root = document.getElementById("root");
@@ -476,6 +797,10 @@ createRoot(root).render(
       changeService={changeService}
       runService={runService}
       runAcrossService={runAcrossService}
+      suiteProfileService={suiteProfileService}
+      browserSpacesService={browserSpacesService}
+      sessionService={sessionProductService}
+      liveTestEditorService={liveTestEditorService}
     />
   </StrictMode>,
 );

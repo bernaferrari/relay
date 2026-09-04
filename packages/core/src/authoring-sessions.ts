@@ -439,10 +439,26 @@ export class AuthoringSessionStore {
       async (session) => {
         assertOwner(session);
         requireState(session, "reviewing");
+        const previous = currentRevision(session);
+        const sourceRevision =
+          edit.kind === "restore"
+            ? session.take!.revisions.find(
+                (candidate) => candidate.revision === edit.sourceRevision,
+              )
+            : undefined;
+        if (
+          edit.kind === "restore" &&
+          (!sourceRevision || sourceRevision.revision >= previous.revision)
+        ) {
+          throw new AuthoringStateError(
+            "Restore source revision must reference an existing prior Take revision",
+          );
+        }
         return nextRevision(session, "edit", (revision) =>
           editAuthoringTakeRevision({
             revision,
             edit,
+            ...(sourceRevision ? { sourceRevision } : {}),
             ...(session.group ? { group: session.group } : {}),
           }),
         );

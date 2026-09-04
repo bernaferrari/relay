@@ -7,12 +7,14 @@
     ".": "./src/index.ts",
     "./routes": "./src/routes.ts",
     "./features": "./src/features.ts",
+    "./errors": "./src/errors.ts",
     "./recording-journey": "./src/recording-journey.ts",
     "./run-journey": "./src/run-journey.ts",
     "./run-across": "./src/run-across.ts",
     "./map-exploration": "./src/map-exploration.ts",
     "./change-journey": "./src/change-journey.ts",
-    "./catalog": "./src/catalog.ts"
+    "./catalog": "./src/catalog.ts",
+    "./agent-debug": "./src/agent-debug.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
