@@ -5,10 +5,11 @@ import {
   createRootRouteWithContext,
   createRoute,
   createRouter,
+  lazyRouteComponent,
   redirect,
   type RouterHistory,
 } from "@tanstack/react-router";
-import { OverlayRoot } from "@relay/ui-react";
+import { OverlayRoot, Skeleton } from "@relay/ui-react";
 import {
   createAppResourcesProductService,
   type AppResourcesProductService,
@@ -45,28 +46,59 @@ import {
 } from "../data/test-editor-product-service";
 import { AppShell } from "../layout/app-shell";
 import type { Platform } from "../platform/types";
-import { NotFoundPage } from "../routes/not-found-page";
-import { HomePage } from "../routes/home-page";
-import { NewTestPage } from "../routes/new-test-page";
-import { AppsPage } from "../routes/apps-page";
-import { AppAccountsPage, AppVersionsPage } from "../routes/app-resource-pages";
-import { RecordTestPage } from "../routes/record-test-page";
-import { ReviewRecordingPage } from "../routes/review-recording-page";
-import { RunPage } from "../routes/run-page";
-import { RunAcrossPage } from "../routes/run-across-page";
-import { BatchPage } from "../routes/batch-page";
-import { TestPage } from "../routes/test-page";
-import { EditTestPage } from "../routes/edit-test-page";
-import { TestsPage } from "../routes/tests-page";
-import { RunsPage } from "../routes/runs-page";
-import { DevicePage } from "../routes/device-page";
-import { DevicesPage } from "../routes/devices-page";
-import { SettingsPage } from "../routes/settings-page";
-import { ChangesPage } from "../routes/changes-page";
-import { ChangePage } from "../routes/change-page";
-import { MapPage } from "../routes/map-page";
-import { AppPage } from "../routes/app-page";
 import { assertAllowedRouteSearch } from "./route-contract";
+
+type PreloadableRoute = { preload?: () => Promise<unknown> };
+
+const preloadableRoutes: PreloadableRoute[] = [];
+
+function lazyNamedRoute<TModule extends Record<string, unknown>, TName extends keyof TModule>(
+  importer: () => Promise<TModule>,
+  name: TName,
+) {
+  const component = lazyRouteComponent(importer, name);
+  preloadableRoutes.push(component as PreloadableRoute);
+  return component;
+}
+
+const NotFoundPage = lazyNamedRoute(() => import("../routes/not-found-page"), "NotFoundPage");
+const HomePage = lazyNamedRoute(() => import("../routes/home-page"), "HomePage");
+const AppsPage = lazyNamedRoute(() => import("../routes/apps-page"), "AppsPage");
+const AppPage = lazyNamedRoute(() => import("../routes/app-page"), "AppPage");
+const AppVersionsPage = lazyNamedRoute(
+  () => import("../routes/app-resource-pages"),
+  "AppVersionsPage",
+);
+const AppAccountsPage = lazyNamedRoute(
+  () => import("../routes/app-resource-pages"),
+  "AppAccountsPage",
+);
+const MapPage = lazyNamedRoute(() => import("../routes/map-page"), "MapPage");
+const TestsPage = lazyNamedRoute(() => import("../routes/tests-page"), "TestsPage");
+const NewTestPage = lazyNamedRoute(() => import("../routes/new-test-page"), "NewTestPage");
+const TestPage = lazyNamedRoute(() => import("../routes/test-page"), "TestPage");
+const EditTestPage = lazyNamedRoute(() => import("../routes/edit-test-page"), "EditTestPage");
+const RecordTestPage = lazyNamedRoute(() => import("../routes/record-test-page"), "RecordTestPage");
+const RunAcrossPage = lazyNamedRoute(() => import("../routes/run-across-page"), "RunAcrossPage");
+const ReviewRecordingPage = lazyNamedRoute(
+  () => import("../routes/review-recording-page"),
+  "ReviewRecordingPage",
+);
+const RunsPage = lazyNamedRoute(() => import("../routes/runs-page"), "RunsPage");
+const RunPage = lazyNamedRoute(() => import("../routes/run-page"), "RunPage");
+const BatchPage = lazyNamedRoute(() => import("../routes/batch-page"), "BatchPage");
+const ChangesPage = lazyNamedRoute(() => import("../routes/changes-page"), "ChangesPage");
+const ChangePage = lazyNamedRoute(() => import("../routes/change-page"), "ChangePage");
+const DevicesPage = lazyNamedRoute(() => import("../routes/devices-page"), "DevicesPage");
+const DevicePage = lazyNamedRoute(() => import("../routes/device-page"), "DevicePage");
+const SettingsPage = lazyNamedRoute(() => import("../routes/settings-page"), "SettingsPage");
+
+// Route tests assert settled product behavior, not Suspense timing. Production
+// keeps the split chunks and TanStack intent preloading; tests eagerly resolve
+// the same route registry once so React 19's `use()` boundary is deterministic.
+if (import.meta.env.MODE === "test") {
+  await Promise.all(preloadableRoutes.map((route) => route.preload?.()));
+}
 
 export type AppRouterContext = {
   platform: Platform;
@@ -95,6 +127,26 @@ function RootLayout() {
     <OverlayRoot>
       <AppShell platform={platform} />
     </OverlayRoot>
+  );
+}
+
+function RoutePending() {
+  return (
+    <section
+      className="relay-page relay-route-pending"
+      role="status"
+      aria-busy="true"
+      aria-label="Loading page"
+    >
+      <span className="relay-visually-hidden">Loading page…</span>
+      <Skeleton className="relay-route-pending-eyebrow" />
+      <Skeleton className="relay-route-pending-title" />
+      <Skeleton className="relay-route-pending-description" />
+      <div className="relay-route-pending-content">
+        <Skeleton />
+        <Skeleton />
+      </div>
+    </section>
   );
 }
 
@@ -303,6 +355,9 @@ export function createAppRouter(options: {
     },
     defaultPreload: "intent",
     defaultPreloadStaleTime: 0,
+    defaultPendingComponent: RoutePending,
+    defaultPendingMs: 300,
+    defaultPendingMinMs: 300,
     scrollRestoration: true,
   });
 }

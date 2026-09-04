@@ -324,6 +324,40 @@ select {
   padding: clamp(28px, 4.5vw, 56px) clamp(20px, 5vw, 64px);
 }
 
+.relay-route-pending {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+}
+
+.relay-route-pending-eyebrow {
+  width: 72px;
+  height: 12px;
+}
+
+.relay-route-pending-title {
+  width: min(360px, 58vw);
+  height: 38px;
+  margin-top: 2px;
+}
+
+.relay-route-pending-description {
+  width: min(520px, 76vw);
+  height: 18px;
+}
+
+.relay-route-pending-content {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 34px;
+}
+
+.relay-route-pending-content > .relay-skeleton {
+  height: 112px;
+  border-radius: var(--radius-xl);
+}
+
 .relay-breadcrumbs {
   margin-bottom: 22px;
   color: var(--text-weaker);
@@ -463,4 +497,10 @@ select {
   border-radius: var(--radius-sm);
   outline: 2px solid var(--relay-focus-ring);
   outline-offset: 2px;
+}
+
+@media (max-width: 640px) {
+  .relay-route-pending-content {
+    grid-template-columns: 1fr;
+  }
 }
