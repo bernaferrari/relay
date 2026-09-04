@@ -94,7 +94,8 @@ export function ChangesPage() {
         <RecoveryState
           className="relay-changes-recovery"
           layout="centered"
-          title="Relay is offline. Start the local service, then reconnect—your work is safe."
+          title="Relay is offline"
+          detail="Start the local service, then reconnect. Your work is safe."
           action={
             <Button
               size="small"

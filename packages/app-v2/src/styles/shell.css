@@ -433,50 +433,6 @@ select {
   color: var(--text-weak);
 }
 
-.relay-empty-state {
-  display: flex;
-  max-width: 680px;
-  min-height: 108px;
-  align-items: flex-start;
-  gap: 13px;
-  margin-top: 32px;
-  padding: 20px 0;
-  border-block: 1px solid var(--border-weak-base);
-}
-
-.relay-empty-state--notice {
-  padding-inline: 16px;
-  border: 1px solid var(--border-weak-base);
-  border-radius: var(--radius-lg);
-  background: var(--surface-base);
-}
-
-.relay-empty-state-mark {
-  width: 9px;
-  height: 9px;
-  flex: none;
-  margin-top: 5px;
-  border: 2px solid var(--text-weaker);
-  border-radius: 999px;
-}
-
-.relay-empty-state h2 {
-  color: var(--text-base);
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.relay-empty-state p {
-  max-width: 58ch;
-  margin-top: 4px;
-  color: var(--text-weak);
-  line-height: 1.5;
-}
-
-.relay-empty-state-action {
-  margin-top: 14px;
-}
-
 .relay-not-found {
   padding-top: clamp(72px, 14vh, 144px);
 }

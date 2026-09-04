@@ -56,27 +56,11 @@
 .relay-empty-state {
   max-width: 760px;
   min-height: 280px;
-  gap: 0;
   margin-top: 38px;
-  padding: 36px 28px;
-  border: 1px dashed var(--border-base);
-  background: color-mix(in srgb, var(--surface-raised-strong) 68%, transparent);
 }
 
 .relay-empty-state--notice {
   background: var(--surface-raised-strong);
-}
-
-.relay-empty-state h2 {
-  font-size: 16px;
-}
-
-.relay-empty-state p {
-  margin-top: 0;
-}
-
-.relay-empty-state-action {
-  margin-top: 18px;
 }
 
 .relay-outcome-mark > svg {
@@ -484,83 +468,13 @@
 }
 
 .relay-resume-recording,
-.relay-recording-problem:not(.relay-recovery-state--centered) {
+.relay-recording-problem {
   max-width: 640px;
   margin-top: 28px;
 }
 
-.relay-resume-recording.relay-alert,
-.relay-recording-problem.relay-alert:not(.relay-recovery-state--centered) {
-  display: grid;
-  padding: 14px 16px;
-  box-shadow: 0 1px 2px color-mix(in srgb, black 4%, transparent);
-}
-
-.relay-recording-problem.relay-alert:not(.relay-recovery-state--centered) {
-  grid-template-columns: 36px minmax(0, 1fr);
-  gap: 3px 14px;
-  padding: 18px;
-  border-color: var(--border-weak-base);
-  background: var(--surface-raised-strong);
-  box-shadow: var(--shadow-sm);
-}
-
-.relay-recording-problem:not(.relay-recovery-state--centered) .relay-alert-icon {
-  width: 36px;
-  height: 36px;
-  grid-row: 1 / span 3;
-  border-radius: var(--radius-md);
-  color: var(--text-critical-base);
-  background: var(--surface-critical-weak);
-}
-
-.relay-recording-problem:not(.relay-recovery-state--centered) .relay-alert-icon > svg {
-  width: 18px;
-  height: 18px;
-}
-
-.relay-recording-problem:not(.relay-recovery-state--centered) .relay-alert-title {
-  font-size: 14px;
-  line-height: 1.35;
-}
-
-.relay-recording-problem:not(.relay-recovery-state--centered) .relay-alert-description {
-  grid-column: 2;
-  max-width: 54ch;
-  line-height: 1.55;
-}
-
-.relay-recording-problem:not(.relay-recovery-state--centered) .relay-recording-recovery {
-  color: var(--text-base);
-}
-
-.relay-recording-problem:not(.relay-recovery-state--centered) .relay-alert-actions {
-  grid-column: 2;
-  grid-row: auto;
-  justify-self: start;
-  margin-top: 8px;
-}
-
-/* Home owns the whole results area when loading fails. Keep this centered
-   recovery state unboxed even if compact recording recovery evolves later. */
-.relay-home-page > .relay-home-recovery.relay-recovery-state--centered.relay-alert {
-  width: 100%;
-  min-height: clamp(240px, 38vh, 340px);
-  margin-top: 20px;
-  padding: 32px 24px;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-.relay-run-page > .relay-run-recovery.relay-recovery-state--centered.relay-alert {
-  width: 100%;
-  min-height: clamp(260px, 42vh, 380px);
+.relay-run-page > .relay-run-recovery.relay-empty {
   margin-top: 10px;
-  padding: 32px 24px;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
 }
 
 .relay-recording-loading {

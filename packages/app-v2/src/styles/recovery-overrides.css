@@ -1,125 +1,38 @@
-/* Product recovery states: compact for in-flow failures, centered when the
-   workspace itself has no data to show. */
-.relay-recovery-state.relay-alert {
-  display: grid;
-  width: fit-content;
-  max-width: min(100%, 760px);
-  min-height: 48px;
-  grid-template-columns: 28px minmax(0, auto) auto;
-  align-items: center;
-  gap: 10px;
+/* Recovery has two deliberate forms: an in-flow Alert and a page-level Empty.
+   Their structure and behavior stay owned by the shared primitives. */
+.relay-recovery-state--compact.relay-alert {
+  width: 100%;
+  max-width: 680px;
   margin-top: 28px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
 }
 
-.relay-recovery-state .relay-alert-icon {
-  display: grid;
-  width: 28px;
-  height: 28px;
-  grid-row: auto;
-  place-items: center;
-  border: 0;
-  border-radius: 999px;
-  color: var(--text-critical-base);
-  background: color-mix(in srgb, var(--surface-critical-weak) 72%, transparent);
-}
-
-.relay-recovery-state .relay-alert-icon > svg {
-  width: 15px;
-  height: 15px;
-  stroke-width: 1.9;
-}
-
-.relay-recovery-state-copy {
-  display: grid;
-  min-width: 0;
-  gap: 2px;
-}
-
-.relay-recovery-state .relay-alert-title {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.4;
-  text-wrap: balance;
-}
-
-.relay-recovery-state .relay-alert-description {
-  display: flex;
-  grid-column: auto;
-  flex-wrap: wrap;
-  gap: 2px 6px;
-  max-width: 68ch;
-  color: var(--text-weak);
-  font-size: 13px;
-  line-height: 1.45;
-}
-
-.relay-recovery-state .relay-alert-actions {
-  grid-column: auto;
-  grid-row: auto;
-  align-self: center;
-  justify-self: start;
-  margin-left: 2px;
-}
-
-.relay-recovery-state--centered.relay-alert {
+.relay-recovery-state--centered.relay-empty {
   width: 100%;
   max-width: none;
   min-height: clamp(260px, 42vh, 380px);
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 12px;
+  margin-top: 20px;
   padding: 40px 24px;
   border: 0;
   background: transparent;
-  box-shadow: none;
-  text-align: center;
 }
 
-.relay-recovery-state--centered .relay-alert-icon {
-  width: 46px;
-  height: 46px;
-  border-color: var(--border-weak-base);
-  border-style: solid;
-  border-width: 1px;
+.relay-recovery-state--centered .relay-empty-media {
+  width: 48px;
+  height: 48px;
+  border-color: color-mix(in srgb, var(--border-critical-base) 24%, var(--border-weak-base));
   color: var(--text-weak);
-  background: var(--surface-base);
+  background: color-mix(in srgb, var(--surface-critical-weak) 38%, var(--surface-base));
 }
 
-.relay-recovery-state--centered .relay-alert-icon > svg {
-  width: 19px;
-  height: 19px;
+.relay-recovery-state--centered .relay-empty-media > svg {
+  width: 21px;
+  height: 21px;
 }
 
-.relay-recovery-state .relay-alert-actions button svg,
-.relay-recovery-state .relay-alert-actions a svg {
+.relay-recovery-state button svg,
+.relay-recovery-state a svg {
   width: 16px;
   height: 16px;
-}
-
-.relay-recovery-state--centered .relay-recovery-state-copy {
-  max-width: 480px;
-  justify-items: center;
-  gap: 5px;
-}
-
-.relay-recovery-state--centered .relay-alert-title {
-  font-size: 16px;
-}
-
-.relay-recovery-state--centered .relay-alert-description {
-  display: grid;
-  justify-items: center;
-  gap: 2px;
-}
-
-.relay-recovery-state--centered .relay-alert-actions {
-  justify-self: center;
-  margin-top: 4px;
 }
 
 .relay-tests-page .relay-library-toolbar {
@@ -324,26 +237,6 @@
 }
 
 @media (max-width: 720px) {
-  .relay-recovery-state.relay-alert {
-    width: 100%;
-    grid-template-columns: 28px minmax(0, 1fr);
-    align-items: start;
-  }
-
-  .relay-recovery-state .relay-alert-actions {
-    grid-column: 2;
-    justify-self: start;
-    margin-top: 4px;
-  }
-
-  .relay-recovery-state--centered.relay-alert {
-    display: flex;
-  }
-
-  .relay-recovery-state--centered .relay-alert-actions {
-    margin-top: 4px;
-  }
-
   .relay-tests-page .relay-library-toolbar {
     grid-template-columns: 1fr;
   }

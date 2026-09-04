@@ -279,7 +279,8 @@ describe("Tests workspace", () => {
 
     const recovery = document.querySelector(".relay-recording-problem");
     expect(recovery?.className).toContain("relay-recovery-state--centered");
-    expect(recovery?.querySelectorAll(".relay-alert-description p")).toHaveLength(1);
+    expect(recovery?.getAttribute("data-slot")).toBe("empty");
+    expect(recovery?.querySelectorAll('[data-slot="empty-description"]')).toHaveLength(1);
     expect(recovery?.textContent).toContain("The app could not reach the local Relay service.");
     expect(recovery?.textContent).toContain("Try again");
   });
@@ -327,7 +328,8 @@ describe("Runs workspace", () => {
 
     const recovery = document.querySelector(".relay-recording-problem");
     expect(recovery?.className).toContain("relay-recovery-state--centered");
-    expect(recovery?.querySelectorAll(".relay-alert-description p")).toHaveLength(1);
+    expect(recovery?.getAttribute("data-slot")).toBe("empty");
+    expect(recovery?.querySelectorAll('[data-slot="empty-description"]')).toHaveLength(1);
     expect(recovery?.textContent).toContain("The app could not reach the local Relay service.");
     expect(recovery?.textContent).toContain("Try again");
   });

@@ -105,23 +105,40 @@ export function RecoveryState({
   className?: string;
 }) {
   const supportingText = detail ?? recovery;
+
+  if (layout === "centered") {
+    return (
+      <Empty
+        className={`relay-recovery-state relay-recovery-state--centered${className ? ` ${className}` : ""}`}
+        role="alert"
+      >
+        <EmptyHeader>
+          <EmptyMedia>
+            <CircleAlert />
+          </EmptyMedia>
+          <EmptyTitle>{title}</EmptyTitle>
+          {supportingText ? <EmptyDescription>{supportingText}</EmptyDescription> : null}
+        </EmptyHeader>
+        {action ? <EmptyContent>{action}</EmptyContent> : null}
+      </Empty>
+    );
+  }
+
   return (
     <Alert
-      className={`relay-recovery-state relay-recovery-state--${layout}${className ? ` ${className}` : ""}`}
+      className={`relay-recovery-state relay-recovery-state--compact${className ? ` ${className}` : ""}`}
       variant="danger"
       role="alert"
     >
       <AlertIcon>
         <CircleAlert />
       </AlertIcon>
-      <div className="relay-recovery-state-copy">
-        <AlertTitle>{title}</AlertTitle>
-        {supportingText ? (
-          <AlertDescription>
-            <p>{supportingText}</p>
-          </AlertDescription>
-        ) : null}
-      </div>
+      <AlertTitle>{title}</AlertTitle>
+      {supportingText ? (
+        <AlertDescription>
+          <p>{supportingText}</p>
+        </AlertDescription>
+      ) : null}
       {action ? <AlertActions>{action}</AlertActions> : null}
     </Alert>
   );
