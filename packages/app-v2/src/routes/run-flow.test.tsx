@@ -619,6 +619,35 @@ describe("Run and Report", () => {
     );
   });
 
+  it("labels Test reliability complete only when the explicit complete-history read is available", async () => {
+    const fake = fakeRunService();
+    const history = [
+      {
+        id: "run-1",
+        title: "Change the app language",
+        action: "Open report",
+        status: "completed",
+        phase: "completed",
+        outcome: "passed",
+        appMapId: "settings-language-proof",
+        testId: "test-1",
+        queuedAt: 1,
+        finishedAt: 2,
+        identity: {
+          runId: "run-1",
+          appMapId: "settings-language-proof",
+          testId: "test-1",
+        },
+        links: { self: "/runs/run-1", app: "/apps/settings-language-proof" },
+      },
+    ] as never;
+    fake.service.listTestRuns = async () => history;
+    fake.service.listTestRunsComplete = async () => history;
+    await renderRun("/tests/test-1", fake.service, platformWithStorage().platform);
+
+    expect(document.body.textContent).toContain("Complete history");
+  });
+
   it("keeps unavailable evidence calm without weakening the saved outcome", async () => {
     const fake = fakeRunService();
     fake.service.getReport = async () => ({

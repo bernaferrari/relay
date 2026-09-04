@@ -54,6 +54,10 @@ import {
   createTestEditorProductService,
   type TestEditorProductService,
 } from "./data/test-editor-product-service";
+import {
+  createAgentDebugProductService,
+  type AgentDebugProductService,
+} from "./data/agent-debug-product-service";
 import type { Platform } from "./platform/types";
 import { createAppRouter } from "./router/create-router";
 
@@ -96,6 +100,7 @@ export function RelayV2App({
   suiteProfileService,
   browserSpacesService,
   liveTestEditorService,
+  agentDebugService,
 }: {
   platform: Platform;
   history?: RouterHistory;
@@ -113,6 +118,7 @@ export function RelayV2App({
   suiteProfileService?: SuiteProfileProductService;
   browserSpacesService?: BrowserSpacesProductService;
   liveTestEditorService?: LiveTestEditorProductService;
+  agentDebugService?: AgentDebugProductService;
 }) {
   const [queryClient] = useState(createRelayQueryClient);
   const [service] = useState(() => productService ?? createRecordingProductService(platform));
@@ -141,6 +147,9 @@ export function RelayV2App({
       liveTestEditorService ??
       createLiveTestEditorProductService({ editor: testEditor, sessions, recording: service }),
   );
+  const [agentDebug] = useState(
+    () => agentDebugService ?? createAgentDebugProductService(platform),
+  );
   const [router] = useState(() =>
     createAppRouter({
       platform,
@@ -158,6 +167,7 @@ export function RelayV2App({
       suiteProfileService: suiteProfiles,
       browserSpacesService: browserSpaces,
       liveTestEditorService: liveTestEditor,
+      agentDebugService: agentDebug,
       queryClient,
       history,
     }),

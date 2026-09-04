@@ -472,6 +472,74 @@ describe("Change verification", () => {
     expect(document.querySelector(".relay-change-verdict")?.textContent).not.toContain("sha256:");
   });
 
+  it("shows bounded provider delivery diagnostics only inside Audit details", async () => {
+    const fake = fakeChangeService("proved");
+    const proved = state("proved");
+    const details = proved.state.details!;
+    const richDetails: ProductChangeDetails = {
+      ...details,
+      publications: [
+        {
+          id: "publication-retry-id",
+          status: "retry",
+          provider: "github",
+          attempts: 3,
+          maxAttempts: 3,
+          nextAttemptAt: 1_700_000_000_000,
+          lastFailure: { kind: "provider-error", at: 1_699_999_999_000 },
+          recovery: {
+            requestId: "recovery-request-id",
+            requestDigest: `sha256:${"a".repeat(64)}`,
+            requestedBy: "human:reviewer",
+            requestedAt: 1_699_999_998_000,
+          },
+          canRetry: true,
+        },
+        {
+          id: "publication-published-id",
+          status: "published",
+          provider: "github",
+          attempts: 1,
+          maxAttempts: 3,
+          publishedAt: 1_699_999_997_000,
+          receipt: {
+            sequence: 2,
+            proofVersion: 5,
+            checkRunId: 42,
+            checkDigest: `sha256:${"b".repeat(64)}`,
+            status: "completed",
+            conclusion: "success",
+            publishedAt: 1_699_999_997_000,
+          },
+          canRetry: false,
+        },
+      ],
+    };
+    fake.service.open = async () => ({
+      ...proved,
+      state: { ...proved.state, change: richDetails.change, details: richDetails },
+    });
+    await renderChange("/changes/change-proof-private-id", fake.service);
+
+    expect(document.querySelector(".relay-change-section")?.textContent).not.toContain(
+      "Provider failure",
+    );
+    await click(button("Audit details"));
+    const audit = document.querySelector(".relay-change-audit")!;
+    expect(audit.textContent).toContain("Provider failureProvider rejected delivery");
+    expect(audit.textContent).toContain("Next retry2023-11-14T22:13:20.000Z");
+    expect(audit.textContent).toContain("Attempts3 of 3");
+    expect(audit.textContent).toContain("Recovery requestrecovery-request-id");
+    expect(audit.textContent).toContain("Recovery requested byhuman:reviewer");
+    expect(audit.textContent).toContain("Check run ID42");
+    expect(audit.textContent).toContain("Receipt sequence2");
+    expect(audit.textContent).toContain("Receipt statuscompleted");
+    expect(audit.textContent).toContain("Receipt conclusionsuccess");
+    expect(audit.textContent).toContain("Receipt Proof version5");
+    expect(audit.textContent).toContain(`Check digestsha256:${"b".repeat(64)}`);
+    expect(audit.textContent).not.toContain("publication-private-token");
+  });
+
   it("keeps a completed verdict compact without a redundant progress meter", async () => {
     const fake = fakeChangeService("proved");
     const proved = state("proved");

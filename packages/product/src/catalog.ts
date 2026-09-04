@@ -120,8 +120,15 @@ export type ProductCatalog = {
   listTests(filter?: ProductTestFilter): Promise<readonly ProductTestSummary[]>;
   getTest(testId: string, appMapId?: string): Promise<ProductTestDetail | undefined>;
   listRuns(filter?: ProductRunFilter): Promise<readonly ProductRunSummary[]>;
+  /**
+   * Reads the complete bounded Run history by following the server's opaque
+   * continuation cursor. Ordinary indexes should use listRuns instead.
+   */
+  listRunsComplete?(filter?: ProductRunFilter): Promise<readonly ProductRunSummary[]>;
   getRun(runId: string): Promise<ProductRunDetail | undefined>;
 };
+
+const MAX_RUN_LIST_PAGES = 100;
 
 const machineName = /^(?:app-map|run|job|test)[:_-]/iu;
 const machineTarget = /^(?:emulator-\d+|(?:[0-9a-f]{16,}|[A-Za-z0-9_-]{24,}))$/u;
@@ -424,6 +431,33 @@ export function productRunDetail(run: RunSummary, maps: readonly AppMap[] = []):
 /** Operation-backed Product V2 catalog. It never writes or invents runtime state. */
 export function createProductCatalog(client: RelayInvokeClient): ProductCatalog {
   const operations = createRelayOperationPort(client);
+  async function runPage(appMapId?: string, cursor?: string, complete = false) {
+    return operations.invoke(
+      "run.list",
+      cursor
+        ? { cursor, ...(appMapId ? { appMapId } : {}) }
+        : appMapId
+          ? complete
+            ? { appMapId, limit: 200 }
+            : { appMapId }
+          : complete
+            ? { limit: 200 }
+            : {},
+    );
+  }
+  async function allRunSummaries(appMapId?: string): Promise<readonly RunSummary[]> {
+    const runs: RunSummary[] = [];
+    let cursor: string | undefined;
+    for (let page = 0; ; page += 1) {
+      const result = await runPage(appMapId, cursor, true);
+      runs.push(...result.runs);
+      if (!result.nextCursor) return runs;
+      if (page + 1 >= MAX_RUN_LIST_PAGES) {
+        throw new Error("Run history exceeds Relay's bounded pagination window");
+      }
+      cursor = result.nextCursor;
+    }
+  }
   async function maps(appMapId?: string): Promise<readonly AppMap[]> {
     if (appMapId) return [(await operations.invoke("app-map.get", { appMapId })).appMap];
     return (await operations.invoke("app-map.list", {})).appMaps;
@@ -448,9 +482,13 @@ export function createProductCatalog(client: RelayInvokeClient): ProductCatalog 
       return productTestDetail(owner, runs);
     },
     async listRuns(filter = {}) {
-      const runs = (
-        await operations.invoke("run.list", filter.appMapId ? { appMapId: filter.appMapId } : {})
-      ).runs;
+      const runs = (await runPage(filter.appMapId)).runs;
+      const appMaps = await maps(filter.appMapId);
+      const projected = projectProductRuns(runs, appMaps).filter((run) => matchesRun(run, filter));
+      return filter.view === "latest" ? latestRuns(projected) : projected;
+    },
+    async listRunsComplete(filter = {}) {
+      const runs = await allRunSummaries(filter.appMapId);
       const appMaps = await maps(filter.appMapId);
       const projected = projectProductRuns(runs, appMaps).filter((run) => matchesRun(run, filter));
       return filter.view === "latest" ? latestRuns(projected) : projected;

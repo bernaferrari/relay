@@ -74,6 +74,7 @@ export type ProductSessionActivity = Pick<
  * deliberately not projected here. */
 export type ProductSessionDetail = ProductSessionSummary & {
   projectId: string;
+  appName?: string;
   sourceScreenId?: string;
   testName?: string;
   committedConnectionId?: string;
@@ -238,10 +239,12 @@ export function projectSessionDetail(
   session: AuthoringSession,
   leases: readonly DeviceLease[],
   records: readonly ActivityRecord[],
+  appName?: string,
 ): ProductSessionDetail {
   return {
     ...projectSessionSummary(session, leases),
     projectId: session.projectId,
+    ...(appName ? { appName } : {}),
     ...(session.sourceScreenId ? { sourceScreenId: session.sourceScreenId } : {}),
     ...(boundedText(session.testName, 160) ? { testName: boundedText(session.testName, 160) } : {}),
     ...(session.committedConnectionId
@@ -288,8 +291,15 @@ async function detail(
   client: SessionClient,
   session: AuthoringSession,
 ): Promise<ProductSessionDetail> {
-  const [leaseRecords, activityRecords] = await Promise.all([leases(client), activities(client)]);
-  return projectSessionDetail(session, leaseRecords, activityRecords);
+  const [leaseRecords, activityRecords, appName] = await Promise.all([
+    leases(client),
+    activities(client),
+    client
+      .invoke("app-map.get", { appMapId: session.appMapId })
+      .then(({ appMap }) => boundedText(appMap.name, 160))
+      .catch(() => undefined),
+  ]);
+  return projectSessionDetail(session, leaseRecords, activityRecords, appName);
 }
 
 export function createSessionProductService(platform: Platform): SessionProductService {

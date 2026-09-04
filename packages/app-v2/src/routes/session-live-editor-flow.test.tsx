@@ -39,6 +39,7 @@ const session = {
   state: "recording",
   target: { kind: "browser", platform: "browser", targetId: "browser-1" },
   appMapId: "app-1",
+  appName: "Checkout",
   actorId: "human:test",
   actorKind: "human",
   captureProvenance: "live",
@@ -208,6 +209,11 @@ describe("live Session to Test editor", () => {
     ).not.toBeNull();
     expect(service.get).toHaveBeenCalledWith("session-live");
     expect(service.live).toHaveBeenCalledWith("session-live");
+    expect(document.body.textContent).toContain("Checkout");
+    expect(document.body.textContent).toContain("Human");
+    await click("Audit details");
+    expect(document.body.textContent).toContain("App Map ID");
+    expect(document.body.textContent).toContain("Lease status");
 
     await clearMountedApp();
     const ended = {

@@ -208,6 +208,48 @@ test("Run list applies public views after the server-scoped query", async () => 
   assert.deepEqual(scripted.invocations[0]?.input, { appMapId: "app-one" });
 });
 
+test("Complete Run history follows the canonical opaque cursor", async () => {
+  const map = app("app-one", "Shopping", { ready: scenario("ready", "Checkout") });
+  const scripted = createScriptedRelayClient([
+    {
+      id: "run.list",
+      output: {
+        runs: [
+          run({ id: "new", action: "app-map:app-one:test:ready:run", status: "ok", queuedAt: 3 }),
+        ],
+        totalCount: 2,
+        nextCursor: "cursor-page-2",
+      },
+    },
+    {
+      id: "run.list",
+      output: {
+        runs: [
+          run({ id: "old", action: "app-map:app-one:test:ready:run", status: "ok", queuedAt: 2 }),
+        ],
+        totalCount: 2,
+      },
+    },
+    { id: "app-map.get", output: { appMap: map } },
+  ]);
+
+  const runs = await createProductCatalog(scripted.client).listRunsComplete!({
+    appMapId: "app-one",
+  });
+
+  assert.deepEqual(
+    runs.map((item) => item.id),
+    ["new", "old"],
+  );
+  assert.deepEqual(
+    scripted.invocations.slice(0, 2).map((item) => item.input),
+    [
+      { appMapId: "app-one", limit: 200 },
+      { appMapId: "app-one", cursor: "cursor-page-2" },
+    ],
+  );
+});
+
 test("latest Run view keeps one newest durable Run per Test", async () => {
   const map = app("app-one", "Shopping", { ready: scenario("ready", "Checkout") });
   const scripted = createScriptedRelayClient([

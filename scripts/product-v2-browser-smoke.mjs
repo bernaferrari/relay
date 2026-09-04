@@ -300,10 +300,12 @@ async function runSmoke(options) {
     await assertKeyboardFocus(page);
     await checkAccessibility();
 
-    trace("checking Tests, Sessions, Devices, Changes, Runs and Settings routes");
+    trace("checking Tests, Sessions, Agent Debug, Devices, Changes, Runs and Settings routes");
     await clickNav(page, "Tests", "/tests");
     await checkAccessibility();
     await clickNav(page, "Sessions", "/sessions");
+    await checkAccessibility();
+    await clickNav(page, "Agent Debug", "/debug");
     await checkAccessibility();
     await clickNav(page, "Devices", "/devices");
     await checkAccessibility();

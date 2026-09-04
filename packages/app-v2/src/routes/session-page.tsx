@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { Badge, Button, Dialog } from "@relay/ui-react";
+import { Badge, Button, Dialog, Disclosure } from "@relay/ui-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useRouteContext } from "@tanstack/react-router";
 import { Pencil, RefreshCcw, Square } from "lucide-react";
@@ -279,11 +279,11 @@ export function SessionPage() {
                 </div>
                 <div>
                   <dt>App</dt>
-                  <dd>{value.appMapId}</dd>
+                  <dd>{value.appName ?? "Saved app"}</dd>
                 </div>
                 <div>
                   <dt>Owner</dt>
-                  <dd>{value.actorId}</dd>
+                  <dd>{value.actorKind === "agent" ? "Agent" : "Human"}</dd>
                 </div>
                 <div>
                   <dt>Actions</dt>
@@ -293,11 +293,26 @@ export function SessionPage() {
                   <dt>Evidence</dt>
                   <dd>{value.take?.evidenceCount ?? 0}</dd>
                 </div>
-                <div>
-                  <dt>Lease</dt>
-                  <dd>{value.lease?.status ?? "Unavailable"}</dd>
-                </div>
               </dl>
+              <Disclosure.Root className="relay-session-audit">
+                <Disclosure.Trigger>Audit details</Disclosure.Trigger>
+                <Disclosure.Panel>
+                  <dl>
+                    <div>
+                      <dt>App Map ID</dt>
+                      <dd>{value.appMapId}</dd>
+                    </div>
+                    <div>
+                      <dt>Actor ID</dt>
+                      <dd>{value.actorId}</dd>
+                    </div>
+                    <div>
+                      <dt>Lease status</dt>
+                      <dd>{value.lease?.status ?? "Unavailable"}</dd>
+                    </div>
+                  </dl>
+                </Disclosure.Panel>
+              </Disclosure.Root>
             </section>
             <section className="relay-session-activity" aria-labelledby="session-activity-title">
               <p className="relay-section-label">Activity</p>

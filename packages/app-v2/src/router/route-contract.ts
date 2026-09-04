@@ -146,6 +146,11 @@ const routePresentations = {
     eyebrow: "Devices",
     description: "Review readiness and capabilities for this device.",
   },
+  "/debug": {
+    path: "/debug",
+    eyebrow: "Agent Debug",
+    description: "Investigate a failure with bounded exploration, human review, and durable proof.",
+  },
   "/settings/general": {
     path: "/settings/general",
     eyebrow: "Settings",

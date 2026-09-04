@@ -16,6 +16,9 @@ export function TestStepEvidencePreview({
   const matches = report?.stepEvidence?.filter((item) => item.testStepId === step.id) ?? [];
   const titleId = `step-evidence-${step.id}`;
 
+  // Runs without step-level evidence cannot add anything useful to this step view.
+  if (!loading && report && report.stepEvidence === undefined) return null;
+
   return (
     <section className="relay-step-evidence" aria-labelledby={titleId}>
       <header className="relay-step-evidence-heading">
@@ -43,12 +46,6 @@ export function TestStepEvidencePreview({
       ) : null}
       {!loading && hasRuns && !report ? (
         <p className="relay-step-evidence-note">The latest Run has not produced a report yet.</p>
-      ) : null}
-      {!loading && report && report.stepEvidence === undefined ? (
-        <p className="relay-step-evidence-note">
-          This older Run is not linked to individual Test steps. Its full evidence is still
-          available in the report.
-        </p>
       ) : null}
       {!loading && report?.stepEvidence && matches.length === 0 ? (
         <p className="relay-step-evidence-note">

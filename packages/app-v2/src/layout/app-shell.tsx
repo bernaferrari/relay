@@ -73,6 +73,7 @@ export function AppShell({ platform }: { platform: Platform }) {
               <div className="relay-history-controls relay-electron-no-drag">
                 <IconButton
                   size="small"
+                  className="relay-history-button"
                   aria-label="Go back"
                   onClick={goBack}
                   disabled={!canGoBack}
@@ -81,6 +82,7 @@ export function AppShell({ platform }: { platform: Platform }) {
                 </IconButton>
                 <IconButton
                   size="small"
+                  className="relay-history-button"
                   aria-label="Go forward"
                   onClick={() => router.history.forward()}
                   disabled={!historyAvailability.canGoForward}

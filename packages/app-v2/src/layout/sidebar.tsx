@@ -13,6 +13,7 @@ import {
 import { Link, useLocation } from "@tanstack/react-router";
 import {
   AppWindow,
+  Bug,
   FlaskConical,
   GitCompareArrows,
   History,
@@ -32,6 +33,7 @@ const mainItems = [
   { to: "/tests", label: "Tests", icon: FlaskConical },
   { to: "/suites", label: "Suites", icon: Layers3 },
   { to: "/sessions", label: "Sessions", icon: RadioTower },
+  { to: "/debug", label: "Agent Debug", icon: Bug },
   { to: "/runs", label: "Runs", icon: History },
   { to: "/changes", label: "Changes", icon: GitCompareArrows },
   { to: "/environments", label: "Environments", icon: Orbit },

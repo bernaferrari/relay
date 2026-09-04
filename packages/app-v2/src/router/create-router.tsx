@@ -60,6 +60,10 @@ import {
   createTestEditorProductService,
   type TestEditorProductService,
 } from "../data/test-editor-product-service";
+import {
+  createAgentDebugProductService,
+  type AgentDebugProductService,
+} from "../data/agent-debug-product-service";
 import { AppShell } from "../layout/app-shell";
 import type { Platform } from "../platform/types";
 import { assertAllowedRouteSearch } from "./route-contract";
@@ -121,6 +125,7 @@ const ChangePage = lazyNamedRoute(() => import("../routes/change-page"), "Change
 const DevicesPage = lazyNamedRoute(() => import("../routes/devices-page"), "DevicesPage");
 const DevicePage = lazyNamedRoute(() => import("../routes/device-page"), "DevicePage");
 const SettingsPage = lazyNamedRoute(() => import("../routes/settings-page"), "SettingsPage");
+const AgentDebugPage = lazyNamedRoute(() => import("../routes/agent-debug-page"), "AgentDebugPage");
 
 // Route tests assert settled product behavior, not Suspense timing. Production
 // keeps the split chunks and TanStack intent preloading; tests eagerly resolve
@@ -145,6 +150,7 @@ export type AppRouterContext = {
   suiteProfileService: SuiteProfileProductService;
   browserSpacesService: BrowserSpacesProductService;
   liveTestEditorService: LiveTestEditorProductService;
+  agentDebugService: AgentDebugProductService;
   queryClient: QueryClient;
 };
 
@@ -321,6 +327,11 @@ const devicesRoute = createRoute({
   path: "/devices",
   component: DevicesPage,
 });
+const agentDebugRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/debug",
+  component: AgentDebugPage,
+});
 const deviceRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/devices/$deviceId",
@@ -386,6 +397,7 @@ const routeTree = rootRoute.addChildren([
   changeRoute,
   devicesRoute,
   deviceRoute,
+  agentDebugRoute,
   settingsGeneralRoute,
   settingsEvidenceRoute,
   settingsIntegrationsRoute,
@@ -410,6 +422,7 @@ export function createAppRouter(options: {
   suiteProfileService?: SuiteProfileProductService;
   browserSpacesService?: BrowserSpacesProductService;
   liveTestEditorService?: LiveTestEditorProductService;
+  agentDebugService?: AgentDebugProductService;
   queryClient: QueryClient;
   history?: RouterHistory;
 }) {
@@ -445,6 +458,8 @@ export function createAppRouter(options: {
           sessions: sessionService,
           recording: productService,
         }),
+      agentDebugService:
+        options.agentDebugService ?? createAgentDebugProductService(options.platform),
       queryClient: options.queryClient,
     },
     defaultPreload: "intent",

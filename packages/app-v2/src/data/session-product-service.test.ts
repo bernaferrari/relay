@@ -110,12 +110,14 @@ describe("Session product projection", () => {
         return { session: session({ state: "cancelled" }) };
       if (operation === "lease.list") return { leases: [lease()] };
       if (operation === "activity.list") return { records: [activity()] };
+      if (operation === "app-map.get") return { appMap: { name: "Checkout" } };
       throw new Error(`unexpected operation ${operation}`);
     });
 
     const service = createSessionProductService(platform);
     await expect(service.get("authoring-session-1")).resolves.toMatchObject({
       projectId: "default",
+      appName: "Checkout",
       activity: [expect.objectContaining({ activityId: "activity-1" })],
     });
     await service.refresh("authoring-session-1");

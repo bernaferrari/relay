@@ -124,13 +124,13 @@
 }
 
 .relay-button--medium {
-  min-height: 44px;
+  min-height: 36px;
   padding: 0 14px;
   gap: 8px;
 }
 
 .relay-button--small {
-  min-height: 44px;
+  min-height: 32px;
   padding: 0 10px;
   gap: 6px;
 }
@@ -154,13 +154,13 @@
 
 .relay-icon-button {
   position: relative;
-  inline-size: 44px;
-  block-size: 44px;
+  inline-size: 36px;
+  block-size: 36px;
 }
 
 .relay-icon-button--small {
-  inline-size: 44px;
-  block-size: 44px;
+  inline-size: 32px;
+  block-size: 32px;
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -269,7 +269,7 @@
 
 .relay-input {
   inline-size: 100%;
-  min-block-size: 44px;
+  min-block-size: 36px;
   padding-inline: 12px;
   border: 1px solid var(--border-base);
   border-radius: var(--radius-md);
@@ -283,10 +283,6 @@
 
 .relay-input::placeholder {
   color: var(--text-weaker);
-}
-
-.relay-input:hover:not(:disabled) {
-  border-color: var(--border-hover);
 }
 
 .relay-input:focus-visible {
@@ -313,10 +309,6 @@
 
 .relay-textarea::placeholder {
   color: var(--text-weaker);
-}
-
-.relay-textarea:hover:not(:disabled) {
-  border-color: var(--border-hover);
 }
 
 .relay-textarea:focus-visible {
@@ -587,7 +579,7 @@
   z-index: 1;
   display: inline-flex;
   min-width: 0;
-  min-height: 40px;
+  min-height: 34px;
   flex: none;
   align-items: center;
   justify-content: center;
@@ -609,7 +601,7 @@
 }
 
 .relay-tabs-list[data-variant="line"] .relay-tabs-trigger {
-  min-height: 44px;
+  min-height: 36px;
   padding: 0 1px;
   border-radius: var(--radius-sm);
 }
@@ -665,8 +657,8 @@
   display: inline-flex;
   min-width: 0;
   align-items: center;
-  gap: 2px;
-  padding: 3px;
+  gap: 1px;
+  padding: 2px;
   border-radius: var(--radius-lg);
   background: var(--surface-base);
   box-shadow: inset 0 0 0 1px var(--border-weak-base);
@@ -674,7 +666,7 @@
 
 .relay-toggle-group-item {
   display: inline-flex;
-  min-height: 40px;
+  min-height: 32px;
   flex: none;
   align-items: center;
   justify-content: center;
@@ -1017,7 +1009,7 @@ button.relay-item:active {
   display: flex;
   width: 100%;
   min-width: 0;
-  min-height: 44px;
+  min-height: 36px;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -1154,13 +1146,6 @@ button.relay-item:active {
   height: 14px;
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .relay-select-trigger:hover {
-    border-color: var(--border-hover);
-    background: var(--input-hover);
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .relay-select-trigger,
   .relay-select-icon,
@@ -1177,32 +1162,32 @@ button.relay-item:active {
 
 .relay-radio-card {
   display: grid;
-  min-block-size: 64px;
+  min-block-size: 56px;
   min-inline-size: 0;
-  grid-template-columns: auto minmax(0, 1fr) 20px;
+  grid-template-columns: auto minmax(0, 1fr) 16px;
   align-items: center;
-  gap: 12px;
-  padding: 11px 12px;
+  gap: 10px;
+  padding: 9px 11px;
   border: 1px solid var(--border-weak-base);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   color: var(--text-base);
   background: var(--surface-raised-strong);
-  box-shadow: 0 1px 2px color-mix(in srgb, black 3%, transparent);
   cursor: pointer;
   user-select: none;
 }
 
+.relay-radio-card:not(:has(.relay-radio-card-leading)) {
+  grid-template-columns: minmax(0, 1fr) 16px;
+}
+
 .relay-radio-card:has(.relay-radio-group-item[data-checked]) {
-  border-color: color-mix(in srgb, var(--text-strong) 46%, var(--border-base));
-  background: color-mix(in srgb, var(--text-strong) 4%, var(--surface-raised-strong));
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--text-strong) 10%, transparent),
-    0 1px 2px color-mix(in srgb, black 4%, transparent);
+  border-color: var(--border-base);
+  background: var(--surface-base);
 }
 
 .relay-radio-card:has(.relay-radio-group-item:focus-visible) {
-  outline: 3px solid color-mix(in srgb, var(--relay-focus-ring) 20%, transparent);
-  outline-offset: 1px;
+  outline: 2px solid var(--relay-focus-ring);
+  outline-offset: 2px;
 }
 
 .relay-radio-card[data-disabled] {
@@ -1253,8 +1238,8 @@ button.relay-item:active {
 
 .relay-radio-group-item {
   display: grid;
-  inline-size: 18px;
-  block-size: 18px;
+  inline-size: 16px;
+  block-size: 16px;
   place-items: center;
   border: 1px solid var(--border-base);
   border-radius: 999px;
@@ -1269,8 +1254,8 @@ button.relay-item:active {
 }
 
 .relay-radio-group-indicator {
-  inline-size: 6px;
-  block-size: 6px;
+  inline-size: 5px;
+  block-size: 5px;
   border-radius: 999px;
   background: currentColor;
 }
@@ -1507,8 +1492,23 @@ button.relay-item:active {
 
 @media (hover: hover) and (pointer: fine) {
   .relay-radio-card:hover:not([data-disabled]) {
-    border-color: var(--border-hover);
     background: var(--surface-raised-strong-hover);
+  }
+}
+
+@media (pointer: coarse) {
+  .relay-button,
+  .relay-icon-button,
+  .relay-input,
+  .relay-select-trigger,
+  .relay-tabs-trigger,
+  .relay-toggle-group-item,
+  .relay-menu-item {
+    min-height: 44px;
+  }
+
+  .relay-icon-button {
+    min-width: 44px;
   }
 }
 

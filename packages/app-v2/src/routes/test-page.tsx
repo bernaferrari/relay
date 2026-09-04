@@ -2,12 +2,6 @@
 import {
   Badge,
   Button,
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
   RadioCard,
   RadioGroup,
 } from "@relay/ui-react";
@@ -43,6 +37,11 @@ export function TestPage() {
     latestReport,
     loading: reportLoading,
   } = useLatestTestReport(runService, testId);
+  const completeStabilityRuns = useQuery({
+    queryKey: runQueryKeys.testStability(testId),
+    queryFn: () => runService.listTestRunsComplete!(testId),
+    enabled: typeof runService.listTestRunsComplete === "function",
+  });
   const pointer = useQuery({
     queryKey: runQueryKeys.pointer,
     queryFn: async () => (await readRunPointer(platform)) ?? null,
@@ -94,10 +93,12 @@ export function TestPage() {
   const evidenceSteps = flattenSteps(test.data?.steps ?? []);
   const selectedEvidenceStep =
     evidenceSteps.find((step) => step.id === evidenceStepId) ?? evidenceSteps.at(0);
-  const stability = recentRuns.data
+  const stabilityRuns = completeStabilityRuns.data ?? recentRuns.data;
+  const stabilityHistoryComplete = completeStabilityRuns.data !== undefined;
+  const stability = stabilityRuns
     ? summarizeProductStability({
-        samples: stabilitySamplesFromRuns(recentRuns.data),
-        historyComplete: false,
+        samples: stabilitySamplesFromRuns(stabilityRuns),
+        historyComplete: stabilityHistoryComplete,
         scope: { testId },
       })
     : undefined;
@@ -180,38 +181,41 @@ export function TestPage() {
       ) : null}
 
       {!loading && test.data && !activeRun && !targets.isError ? (
-        <div className="relay-test-content">
-          <Card className="relay-run-setup">
-            <CardHeader className="relay-run-setup-header">
-              <div>
-                <CardTitle id="run-target-title">Run this Test</CardTitle>
-                <CardDescription>
-                  Choose a ready device or browser. Relay will repeat the saved steps unchanged.
-                </CardDescription>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {targets.data?.length ? (
-                <RadioGroup
-                  className="relay-run-targets"
-                  name="run-target"
-                  value={targetId}
-                  onValueChange={setTargetId}
-                  aria-labelledby="run-target-title"
-                >
-                  {targets.data.map((target) => {
-                    const label = targetLabel(target);
-                    return (
-                      <RadioCard
-                        key={`${target.kind}:${target.targetId}`}
-                        value={target.targetId}
-                        title={label.title}
-                        description={label.detail}
-                      />
-                    );
-                  })}
-                </RadioGroup>
-              ) : (
+        <div className="mt-8 grid max-w-5xl gap-9">
+          <section
+            className="w-full max-w-3xl rounded-xl border border-border-weak-base bg-surface-raised-strong p-5 text-text-strong"
+            aria-labelledby="run-target-title"
+          >
+            <header className="space-y-1">
+              <h2 id="run-target-title" className="text-lg font-semibold tracking-tight">
+                Run this Test
+              </h2>
+              <p className="max-w-2xl text-sm leading-5 text-text-weak">
+                Choose a ready device or browser. Relay will repeat the saved steps unchanged.
+              </p>
+            </header>
+            {targets.data?.length ? (
+              <RadioGroup
+                className="mt-5 grid max-w-2xl gap-2"
+                name="run-target"
+                value={targetId}
+                onValueChange={setTargetId}
+                aria-labelledby="run-target-title"
+              >
+                {targets.data.map((target) => {
+                  const label = targetLabel(target);
+                  return (
+                    <RadioCard
+                      key={`${target.kind}:${target.targetId}`}
+                      value={target.targetId}
+                      title={label.title}
+                      description={label.detail}
+                    />
+                  );
+                })}
+              </RadioGroup>
+            ) : (
+              <div className="mt-5">
                 <EmptyState
                   title="No device or browser is ready"
                   detail="Connect a device or managed browser, then return here to run this Test."
@@ -221,9 +225,9 @@ export function TestPage() {
                     </Link>
                   }
                 />
-              )}
-            </CardContent>
-            <CardFooter className="relay-run-setup-actions">
+              </div>
+            )}
+            <div className="mt-5 flex items-center gap-3">
               <Button
                 variant="primary"
                 onClick={() => start.mutate()}
@@ -232,10 +236,10 @@ export function TestPage() {
                 {start.isPending ? "Starting…" : "Run Test"}
               </Button>
               {!targetId && targets.data?.length ? (
-                <span className="relay-action-hint">Choose where to run</span>
+                <span className="text-xs text-text-weaker">Choose where to run</span>
               ) : null}
-            </CardFooter>
-          </Card>
+            </div>
+          </section>
 
           <section className="relay-test-overview" aria-labelledby="test-overview-title">
             <div className="relay-section-heading">
@@ -281,7 +285,7 @@ export function TestPage() {
                 <h2 id="test-stability-title">Recent stability</h2>
               </div>
               <Badge variant={stability?.signals.length ? "warning" : "secondary"}>
-                Partial history
+                {stabilityHistoryComplete ? "Complete history" : "Partial history"}
               </Badge>
             </div>
             <dl>

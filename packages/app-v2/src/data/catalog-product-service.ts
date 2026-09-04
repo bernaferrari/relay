@@ -31,6 +31,10 @@ export function createCatalogProductService(platform: Platform): CatalogProductS
     listTests: (filter) => catalog().then((service) => service.listTests(filter)),
     getTest: (testId, appMapId) => catalog().then((service) => service.getTest(testId, appMapId)),
     listRuns: (filter) => catalog().then((service) => service.listRuns(filter)),
+    listRunsComplete: (filter) =>
+      catalog().then((service) =>
+        service.listRunsComplete ? service.listRunsComplete(filter) : service.listRuns(filter),
+      ),
     getRun: (runId) => catalog().then((service) => service.getRun(runId)),
   };
 }

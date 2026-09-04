@@ -164,6 +164,7 @@ test("Agent Debug service delegates discovery and outcome stages", async () => {
       }),
       verifyChange: async () => ({}) as never,
       exportEvidence: async () => ({}) as never,
+      debugBug: async () => ({}) as never,
     },
   });
 

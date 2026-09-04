@@ -263,6 +263,24 @@ test("every default MCP outcome tool validates and invokes exactly one façade m
       },
     },
     {
+      name: "relay_debug_bug",
+      argumentsValue: {
+        kind: "debug-bug",
+        action: "start",
+        title: "Checkout failure",
+        targetId: "pixel-9",
+      },
+      confirmed: true,
+      method: "debugBug",
+      expected: {
+        kind: "debug-bug",
+        action: "start",
+        title: "Checkout failure",
+        targetId: "pixel-9",
+        confirmControl: true,
+      },
+    },
+    {
       name: "relay_replay_lab",
       argumentsValue: {
         analysis: "compare",
@@ -361,6 +379,14 @@ test("protected outcome tools reject missing confirmation before workflow dispat
       name: "relay_continue_repeat" as const,
       argumentsValue: { workflowId: "repeat-workflow", expectedVersion: 1 },
     },
+    {
+      name: "relay_debug_bug" as const,
+      argumentsValue: {
+        kind: "debug-bug",
+        action: "start",
+        title: "Smoke",
+      },
+    },
   ]) {
     const invocations: Invocation[] = [];
     await assert.rejects(
@@ -373,6 +399,40 @@ test("protected outcome tools reject missing confirmation before workflow dispat
     );
     assert.deepEqual(invocations, []);
   }
+});
+
+test("Agent Debug exploration requires transport confirmation only when it controls a target", async () => {
+  const invocations: Invocation[] = [];
+  const create = {
+    kind: "debug-bug",
+    action: "explore",
+    create: {
+      id: "discovery-1",
+      name: "Checkout discovery",
+      targetId: "pixel-9",
+      scope: { maxScreens: 20, maxTransitions: 40, maxDurationMs: 30_000 },
+    },
+  } as const;
+  await invokeRelayOutcomeToolWithJobs({
+    name: "relay_debug_bug",
+    argumentsValue: create,
+    confirmed: false,
+    jobs: recordingJobs(invocations),
+  });
+  assert.deepEqual(invocations, [{ method: "debugBug", argumentsValue: [create] }]);
+
+  await assert.rejects(
+    invokeRelayOutcomeToolWithJobs({
+      name: "relay_debug_bug",
+      argumentsValue: {
+        ...create,
+        start: { sessionId: "discovery-1", strategy: "surface", maxDepth: 2 },
+      },
+      confirmed: false,
+      jobs: recordingJobs([]),
+    }),
+    /requires confirm: true/u,
+  );
 });
 
 test("Run risk consent comes only from transport confirmation and preserves two-call preflight", async () => {

@@ -1,4 +1,4 @@
-import type { AuthorTestSnapshot } from "./types.js";
+import type { AuthorTestSnapshot, DebugBugOutcome, DebugBugOutcomeIntent } from "./types.js";
 import { CanonicalAuthoringWorkflow } from "./authoring-workflow.js";
 import { createRelayOperationPort, type RelayInvokeClient } from "./operation-port.js";
 import { recordingPathContext } from "./recording-path-context.js";
@@ -16,6 +16,29 @@ export type RelayRecordingOutcomeJobs = {
   inspect(input: { workflowId: string }): Promise<AuthorTestSnapshot>;
   advanceRecording(decision: DurableAuthorTestDecision): Promise<AuthorTestSnapshot>;
 };
+
+type DebugBugStartIntent = Extract<DebugBugOutcomeIntent, { action: "start" }>;
+type DebugBugStartOutcome = Extract<DebugBugOutcome, { action: "start" }>;
+
+/** Shared browser-safe projection for the recording entry point of Agent Debug.
+ * Both the complete outcome facade and the React adapter use this exact path,
+ * while offline Proof dependencies remain outside the renderer bundle. */
+export async function startDebugBugRecording(
+  jobs: Pick<RelayRecordingOutcomeJobs, "record">,
+  actorId: string,
+  intent: DebugBugStartIntent,
+): Promise<DebugBugStartOutcome> {
+  const { action: _action, kind: _kind, ...recordIntent } = intent;
+  const recording = await jobs.record({ ...recordIntent, kind: "record-test" });
+  return {
+    schemaVersion: 1,
+    kind: "debug-bug",
+    action: "start",
+    actorId,
+    nextAction: "review-recording",
+    recording,
+  };
+}
 
 /** Browser-safe outcome boundary for the Product V2 recording journey.
  *

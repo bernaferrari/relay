@@ -26,7 +26,7 @@ export function SuitePage() {
   const { suiteProfileService, queryClient } = useRouteContext({ from: "__root__" });
   const { appId, suiteId } = routeApi.useParams();
   const navigate = useNavigate();
-  const [profileId, setProfileId] = useState("");
+  const [profileIds, setProfileIds] = useState<Set<string>>(() => new Set());
   const [editOpen, setEditOpen] = useState(false);
   const [removeOpen, setRemoveOpen] = useState(false);
   const [name, setName] = useState("");
@@ -48,12 +48,20 @@ export function SuitePage() {
     staleTime: 10_000,
   });
   useEffect(() => {
-    if (!profileId && environments.data?.[0]) setProfileId(environments.data[0].id);
-  }, [environments.data, profileId]);
+    if (!profileIds.size && environments.data?.[0]) {
+      setProfileIds(new Set([environments.data[0].id]));
+    }
+  }, [environments.data, profileIds]);
+  const selectedProfileIds = [...profileIds];
   const preview = useQuery({
-    queryKey: ["suites", appId, suiteId, "preview", profileId],
-    queryFn: () => suiteProfileService.previewSuite({ appMapId: appId, suiteId, profileId }),
-    enabled: Boolean(suite.data && profileId),
+    queryKey: ["suites", appId, suiteId, "preview", selectedProfileIds],
+    queryFn: () =>
+      suiteProfileService.previewSuite({
+        appMapId: appId,
+        suiteId,
+        profileIds: selectedProfileIds,
+      }),
+    enabled: Boolean(suite.data && selectedProfileIds.length),
     retry: false,
   });
   const save = useMutation({
@@ -95,7 +103,7 @@ export function SuitePage() {
       suiteProfileService.startSuite({
         appMapId: appId,
         suiteId,
-        profileId,
+        profileIds: selectedProfileIds,
         executionMode: "pilot",
       }),
     onSuccess: ({ batchId }) => navigate({ to: "/batches/$batchId", params: { batchId } }),
@@ -168,7 +176,8 @@ export function SuitePage() {
               <p className="relay-eyebrow">{value.appName} · Suite</p>
               <h1>{value.name}</h1>
               <p className="relay-page-description">
-                Review scope and readiness, then start with one representative case.
+                Preview readiness across selected environments, then start one representative case
+                in a single environment.
               </p>
             </div>
             <div className="relay-suite-detail-actions">
@@ -178,9 +187,20 @@ export function SuitePage() {
               <Button
                 variant="primary"
                 onClick={() => start.mutate()}
-                disabled={!profileId || Boolean(preview.data?.blockers.length) || start.isPending}
+                disabled={
+                  !selectedProfileIds.length ||
+                  !preview.data ||
+                  Boolean(preview.data?.blockers.length) ||
+                  preview.data?.execution?.capacity === "unavailable" ||
+                  start.isPending
+                }
               >
-                <Play aria-hidden="true" /> {start.isPending ? "Starting…" : "Start pilot"}
+                <Play aria-hidden="true" />
+                {start.isPending
+                  ? "Starting…"
+                  : selectedProfileIds.length > 1
+                    ? "Run Across unavailable"
+                    : "Start pilot"}
               </Button>
             </div>
           </header>
@@ -234,19 +254,31 @@ export function SuitePage() {
               <h2 id="suite-environment-title">Where should Relay run?</h2>
               {environments.data?.length ? (
                 <Field>
-                  <FieldLabel htmlFor="suite-environment">Environment</FieldLabel>
-                  <select
-                    id="suite-environment"
-                    className="relay-native-select"
-                    value={profileId}
-                    onChange={(event) => setProfileId(event.currentTarget.value)}
-                  >
+                  <FieldLabel>Environment Profiles</FieldLabel>
+                  <p className="relay-action-hint">
+                    Select up to four independent environments. Relay checks every target; a
+                    multi-environment selection is currently preview-only. Relay cannot yet run
+                    every Suite case in every selected environment.
+                  </p>
+                  <fieldset className="relay-suite-environment-options">
+                    <legend className="relay-visually-hidden">Environment Profiles</legend>
                     {environments.data.map((profile) => (
-                      <option key={profile.id} value={profile.id}>
-                        {profile.name}
-                      </option>
+                      <CheckboxCard
+                        key={profile.id}
+                        checked={profileIds.has(profile.id)}
+                        onCheckedChange={(checked) =>
+                          setProfileIds((current) => {
+                            const next = new Set(current);
+                            if (checked === true && next.size < 4) next.add(profile.id);
+                            if (checked !== true) next.delete(profile.id);
+                            return next;
+                          })
+                        }
+                        title={profile.name}
+                        description={`${profile.platform} · ${profile.target.name}`}
+                      />
                     ))}
-                  </select>
+                  </fieldset>
                 </Field>
               ) : environments.isPending ? (
                 <PageLoading label="Loading Environments…" />
@@ -272,7 +304,11 @@ export function SuitePage() {
                   <strong>
                     {preview.data.blockers.length
                       ? "Needs attention"
-                      : `${preview.data.caseCount} ${preview.data.caseCount === 1 ? "case" : "cases"} ready`}
+                      : `${preview.data.caseCount} ${
+                          preview.data.caseCount === 1 ? "case" : "cases"
+                        } ${
+                          preview.data.execution?.capacity === "unavailable" ? "previewed" : "ready"
+                        }`}
                   </strong>
                   <span>
                     {preview.data.checkCount} checks
@@ -280,6 +316,17 @@ export function SuitePage() {
                       ? ""
                       : ` · about ${preview.data.expectedScreenshots} screenshots`}
                   </span>
+                  {preview.data.execution ? (
+                    <small>
+                      {preview.data.execution.profileCount} Environment Profiles ·{" "}
+                      {preview.data.execution.estimatedDurationMs === undefined
+                        ? "duration not estimated"
+                        : `about ${preview.data.execution.estimatedDurationMs} ms observed p95`}
+                    </small>
+                  ) : null}
+                  {preview.data.execution?.capacity === "unavailable" ? (
+                    <small>{preview.data.execution.detail}</small>
+                  ) : null}
                   {preview.data.blockers.map((blocker) => (
                     <small key={`${blocker.code}:${blocker.suiteCellId ?? "suite"}`}>
                       {blocker.message}

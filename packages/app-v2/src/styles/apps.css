@@ -348,7 +348,7 @@
 
 .relay-resource-dialog select {
   inline-size: 100%;
-  min-block-size: 44px;
+  min-block-size: 36px;
   border: 1px solid var(--border-base);
   border-radius: var(--radius-md);
   background: var(--surface-base);

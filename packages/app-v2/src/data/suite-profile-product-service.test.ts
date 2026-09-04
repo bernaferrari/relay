@@ -393,6 +393,90 @@ describe("suite and environment product projections", () => {
     expect(preview.warnings).toEqual([{ code: "target-runner", message: "Warm-up required." }]);
   });
 
+  it("previews up to four independently selected environments without claiming multi-target execution", async () => {
+    const browserMap = { ...map, combines: { [combine.id]: combine } } as unknown as AppMap;
+    const environments = [target("browser-a", "browser"), target("browser-b", "browser")];
+    relay.invoke.mockReset().mockImplementation(async (operation: string) => {
+      if (operation === "app-map.get") return { appMap: browserMap };
+      if (operation === "target.list") return { targets: environments };
+      if (operation === "build.list") return { builds: [] };
+      if (operation === "target.browser-auth.list") return { fixtures: [] };
+      if (operation === "app-map.combine.preflight") {
+        return {
+          preflight: {
+            deviceRuns: 2,
+            checks: 3,
+            blockers: [],
+            warnings: [],
+            expectedScreenshots: 4,
+          },
+        };
+      }
+      if (operation === "target.preflight") {
+        return {
+          preflight: { targetId: "browser", ok: true, checkedAt: 4, capabilities: [], checks: [] },
+        };
+      }
+      throw new Error(`Unexpected operation ${operation}`);
+    });
+    const preview = await createSuiteProfileProductService({} as never).previewSuite({
+      appMapId: "app-1",
+      suiteId: combine.id,
+      profileIds: ["browser-a", "browser-b"],
+    });
+    expect(preview.environments?.map((item) => item.id)).toEqual(["browser-a", "browser-b"]);
+    expect(preview.caseCount).toBe(4);
+    expect(preview.checkCount).toBe(6);
+    expect(preview.expectedScreenshots).toBe(8);
+    expect(preview.execution).toMatchObject({
+      profileCount: 2,
+      selectedProfileIds: ["browser-a", "browser-b"],
+      capacity: "unavailable",
+      duration: "unavailable",
+      detail:
+        "Relay can preview each selected environment, but cannot yet run every Suite case in every selected environment.",
+    });
+  });
+
+  it("fails closed when starting more than one environment because canonical admission is absent", async () => {
+    relay.invoke.mockReset().mockImplementation(async (operation: string) => {
+      if (operation === "app-map.get")
+        return { appMap: { ...map, combines: { [combine.id]: combine } } };
+      if (operation === "target.list") {
+        return { targets: [target("browser-a", "browser"), target("browser-b", "browser")] };
+      }
+      if (operation === "build.list") return { builds: [] };
+      if (operation === "target.browser-auth.list") return { fixtures: [] };
+      throw new Error(`Unexpected operation ${operation}`);
+    });
+    await expect(
+      createSuiteProfileProductService({} as never).startSuite({
+        appMapId: "app-1",
+        suiteId: combine.id,
+        profileIds: ["browser-a", "browser-b"],
+      }),
+    ).rejects.toThrow(/every Suite case in every selected environment/u);
+    expect(relay.invoke).not.toHaveBeenCalledWith("job.combine.start", expect.anything());
+  });
+
+  it("fails closed for multiple environments instead of dropping cells on a round-robin target", async () => {
+    relay.invoke.mockReset().mockImplementation(async (operation: string) => {
+      if (operation === "target.list") {
+        return { targets: [target("ios-a", "ios"), target("android-b", "android")] };
+      }
+      if (operation === "build.list") return { builds: [] };
+      throw new Error(`Unexpected operation ${operation}`);
+    });
+    await expect(
+      createSuiteProfileProductService({} as never).startSuite({
+        appMapId: "app-1",
+        suiteId: combine.id,
+        profileIds: ["ios-a", "android-b"],
+      }),
+    ).rejects.toThrow(/every Suite case in every selected environment/u);
+    expect(relay.invoke).not.toHaveBeenCalledWith("job.combine.start", expect.anything());
+  });
+
   it("starts a browser Suite with an exact managed target and returns campaign identity", async () => {
     const browserMap = { ...map, combines: { [combine.id]: combine } } as unknown as AppMap;
     relay.invoke.mockReset().mockImplementation(async (operation: string, input: unknown) => {

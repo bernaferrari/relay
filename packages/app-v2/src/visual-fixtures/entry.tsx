@@ -8,6 +8,7 @@ import { RelayV2App } from "../app";
 import type { AppResourcesProductService } from "../data/app-resources-product-service";
 import type { CatalogProductService } from "../data/catalog-product-service";
 import type { ChangeProductService } from "../data/change-product-service";
+import type { DeviceProductService } from "../data/device-product-service";
 import type { MapProductService } from "../data/map-product-service";
 import type { LiveTestEditorProductService } from "../data/live-test-editor-product-service";
 import type { RecordingProductService } from "../data/recording-product-service";
@@ -17,6 +18,7 @@ import type { RunAcrossProductService } from "../data/run-across-product-service
 import type { SessionProductService } from "../data/session-product-service";
 import type { SuiteProfileProductService } from "../data/suite-profile-product-service";
 import type { BrowserSpacesProductService } from "../data/browser-spaces-product-service";
+import type { AgentDebugProductService } from "../data/agent-debug-product-service";
 import type { Platform } from "../platform/types";
 import "../styles/app.css";
 
@@ -43,7 +45,8 @@ type FixtureName =
   | "suites-list"
   | "suite-detail"
   | "environments-list"
-  | "environment-detail";
+  | "environment-detail"
+  | "agent-debug";
 
 const FIXTURE_TIME = Date.UTC(2026, 8, 4, 12, 0, 0);
 const VISUAL_NOW = 1_788_390_000_000;
@@ -72,6 +75,8 @@ const definitions: Record<FixtureName, { path: string }> = {
   "suite-detail": { path: "/apps/checkout-app/suites/release-smoke" },
   "environments-list": { path: "/environments" },
   "environment-detail": { path: "/environments/checkout-browser" },
+  "agent-debug": { path: "/debug" },
+  devices: { path: "/devices" },
 };
 if (!fixture || !definitions[fixture]) throw new TypeError(`Unknown visual fixture: ${fixture}`);
 
@@ -646,6 +651,7 @@ const fixtureSession = {
   state: "recording" as const,
   target: previewTarget,
   appMapId: "checkout-app",
+  appName: "Checkout",
   actorId: "human:fixture",
   actorKind: "human" as const,
   captureProvenance: "relay-controlled" as const,
@@ -782,6 +788,61 @@ const liveTestEditorService = {
   }),
 } as unknown as LiveTestEditorProductService;
 
+const debugDevice = {
+  id: "checkout-pixel",
+  name: "Pixel 9 Pro XL",
+  serial: "fixture-android",
+  platform: "android" as const,
+  kind: "emulator",
+  osVersion: "16",
+  status: "ready" as const,
+  runnable: true,
+  device: {
+    id: "checkout-pixel",
+    serial: "fixture-android",
+    name: "Pixel 9 Pro XL",
+    platform: "android" as const,
+    kind: "emulator",
+    booted: true,
+    createdAt: FIXTURE_TIME,
+    updatedAt: FIXTURE_TIME,
+  },
+};
+const visualDevices = [
+  debugDevice,
+  ...Array.from({ length: 40 }, (_, index) => ({
+    ...debugDevice,
+    id: `managed-browser-${index + 1}`,
+    serial: `fixture-browser-${index + 1}`,
+    name: `Managed browser ${index + 1}`,
+    platform: "browser" as const,
+    kind: "managed-browser",
+    osVersion: "Chromium",
+    status: "virtual" as const,
+    device: {
+      ...debugDevice.device,
+      id: `managed-browser-${index + 1}`,
+      serial: `fixture-browser-${index + 1}`,
+      name: `Managed browser ${index + 1}`,
+      platform: "browser" as const,
+      kind: "managed-browser",
+    },
+  })),
+];
+const deviceService = {
+  list: async () => (fixture === "devices" ? visualDevices : [debugDevice]),
+  get: async () => debugDevice,
+  actions: async () => [],
+  recover: async () => {
+    throw new TypeError("Recovery is not available in the visual fixture.");
+  },
+} as unknown as DeviceProductService;
+const agentDebugService = {
+  debugBug: async () => {
+    throw new TypeError("Starting Agent Debug is not available in the visual fixture.");
+  },
+} as unknown as AgentDebugProductService;
+
 document.documentElement.dataset.visualFixture = fixture;
 const root = document.getElementById("root");
 if (!root) throw new TypeError("Visual fixture root is missing");
@@ -801,6 +862,8 @@ createRoot(root).render(
       browserSpacesService={browserSpacesService}
       sessionService={sessionProductService}
       liveTestEditorService={liveTestEditorService}
+      deviceService={deviceService}
+      agentDebugService={agentDebugService}
     />
   </StrictMode>,
 );

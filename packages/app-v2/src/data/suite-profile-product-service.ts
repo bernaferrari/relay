@@ -128,11 +128,24 @@ export type ProductSuiteIssue = {
 export type ProductSuitePreview = {
   readonly suite: ProductSuite;
   readonly environment?: ProductEnvironmentProfile;
+  /** All independently selected environments in this preview. The singular
+   * field remains for compatibility with the original one-target surface. */
+  readonly environments?: readonly ProductEnvironmentProfile[];
   readonly caseCount: number;
   readonly checkCount: number;
   readonly expectedScreenshots?: number;
   readonly blockers: readonly ProductSuiteIssue[];
   readonly warnings: readonly ProductSuiteIssue[];
+  /** Capacity and duration are explicit facts. Unknown values stay unknown;
+   * a product preview must never turn a guessed duration into a promise. */
+  readonly execution?: {
+    readonly profileCount: number;
+    readonly selectedProfileIds: readonly string[];
+    readonly capacity: "single-target" | "multi-target" | "unavailable";
+    readonly duration: "observed" | "unavailable";
+    readonly estimatedDurationMs?: number;
+    readonly detail: string;
+  };
 };
 
 export type SuiteProfileProductService = {
@@ -151,6 +164,7 @@ export type SuiteProfileProductService = {
     appMapId: string;
     suiteId: string;
     profileId?: string;
+    profileIds?: readonly string[];
   }): Promise<ProductSuitePreview>;
   preflightEnvironment(input: {
     profileId: string;
@@ -160,7 +174,8 @@ export type SuiteProfileProductService = {
   startSuite(input: {
     appMapId: string;
     suiteId: string;
-    profileId: string;
+    profileId?: string;
+    profileIds?: readonly string[];
     executionMode?: "pilot" | "all";
   }): Promise<{ batchId: string }>;
 };
@@ -308,11 +323,13 @@ function previewFromPreflight(
   preflight: AppMapCombinePreflight,
   environment?: ProductEnvironmentProfile,
   targetPreflight?: TargetPreflight,
+  environments: readonly ProductEnvironmentProfile[] = environment ? [environment] : [],
 ): ProductSuitePreview {
   const targetProblems = targetPreflight?.checks.filter((check) => check.status !== "pass") ?? [];
   return {
     suite,
     ...(environment ? { environment } : {}),
+    ...(environments.length > 1 ? { environments } : {}),
     caseCount: preflight.deviceRuns,
     checkCount: preflight.checks,
     ...(preflight.expectedScreenshots === undefined
@@ -330,6 +347,21 @@ function previewFromPreflight(
         .filter((check) => check.status === "warning")
         .map((check) => ({ code: `target-${check.id}`, message: check.message })),
     ],
+    ...(environments.length
+      ? {
+          execution: {
+            profileCount: environments.length,
+            selectedProfileIds: environments.map((item) => item.id),
+            capacity:
+              environments.length === 1 ? ("single-target" as const) : ("unavailable" as const),
+            duration: "unavailable" as const,
+            detail:
+              environments.length === 1
+                ? "One canonical target is selected. Duration remains unreported until Relay returns observed timing evidence."
+                : "Relay can preview each selected environment, but cannot yet run every Suite case in every selected environment.",
+          },
+        }
+      : {}),
   };
 }
 
@@ -472,31 +504,102 @@ export function createSuiteProfileProductService(platform: Platform): SuiteProfi
       const combine = appMap.combines[input.suiteId];
       if (!combine) throw new TypeError(`Suite ${input.suiteId} is not available in this App.`);
       const suite = projectProductSuite(appMap, combine);
-      const environment = input.profileId
-        ? (await environments()).find((profile) => profile.id === input.profileId)
-        : undefined;
-      if (input.profileId && !environment) {
-        throw new TypeError(`Environment profile ${input.profileId} is not available.`);
-      }
-      const relay = await client();
-      const [preflight, targetPreflight] = await Promise.all([
-        relay.invoke("app-map.combine.preflight", {
-          appMapId: input.appMapId,
-          combineId: input.suiteId,
-          ...(environment && environment.platform !== "browser"
-            ? { serial: environment.target.id }
-            : {}),
-        }),
-        environment
-          ? relay.invoke("target.preflight", { targetId: environment.target.id })
-          : Promise.resolve(undefined),
-      ]);
-      return previewFromPreflight(
-        suite,
-        preflight.preflight,
-        environment,
-        targetPreflight?.preflight,
+      const selectedProfileIds = [
+        ...(input.profileIds ?? []),
+        ...(input.profileId ? [input.profileId] : []),
+      ];
+      const uniqueProfileIds = [...new Set(selectedProfileIds.map((id) => id.trim()))].filter(
+        Boolean,
       );
+      if (uniqueProfileIds.length > 4) {
+        throw new TypeError("Select no more than four Environment Profiles.");
+      }
+      const availableEnvironments = await environments();
+      const selectedEnvironments = uniqueProfileIds.map((profileId) => {
+        const selected = availableEnvironments.find((profile) => profile.id === profileId);
+        if (!selected) {
+          throw new TypeError(`Environment profile ${profileId} is not available.`);
+        }
+        return selected;
+      });
+      const relay = await client();
+      const preflightInputs = selectedEnvironments.length ? selectedEnvironments : [undefined];
+      const preflights = await Promise.all(
+        preflightInputs.map(async (selected) => {
+          const [preflight, targetPreflight] = await Promise.all([
+            relay.invoke("app-map.combine.preflight", {
+              appMapId: input.appMapId,
+              combineId: input.suiteId,
+              ...(selected && selected.platform !== "browser"
+                ? { serial: selected.target.id }
+                : {}),
+            }),
+            selected
+              ? relay.invoke("target.preflight", { targetId: selected.target.id })
+              : Promise.resolve(undefined),
+          ]);
+          return { preflight, targetPreflight, selected };
+        }),
+      );
+      const first = preflights[0]!;
+      const preview = previewFromPreflight(
+        suite,
+        first.preflight.preflight,
+        first.selected,
+        first.targetPreflight?.preflight,
+        selectedEnvironments,
+      );
+      if (preflights.length <= 1) return preview;
+      const combinedBlockers = preflights.flatMap(({ preflight, targetPreflight, selected }) => {
+        const prefix = selected ? `${selected.name}: ` : "";
+        return [
+          ...preflight.preflight.blockers.map((item) => ({
+            ...issue(item),
+            message: `${prefix}${issue(item).message}`,
+          })),
+          ...(targetPreflight?.preflight.checks ?? [])
+            .filter((check) => check.status === "fail")
+            .map((check) => ({ code: `target-${check.id}`, message: `${prefix}${check.message}` })),
+        ];
+      });
+      const combinedWarnings = preflights.flatMap(({ preflight, targetPreflight, selected }) => {
+        const prefix = selected ? `${selected.name}: ` : "";
+        return [
+          ...preflight.preflight.warnings.map((item) => ({
+            ...issue(item),
+            message: `${prefix}${issue(item).message}`,
+          })),
+          ...(targetPreflight?.preflight.checks ?? [])
+            .filter((check) => check.status === "warning")
+            .map((check) => ({ code: `target-${check.id}`, message: `${prefix}${check.message}` })),
+        ];
+      });
+      const combinedPreview = {
+        ...preview,
+        caseCount: preflights.reduce((sum, item) => sum + item.preflight.preflight.deviceRuns, 0),
+        checkCount: preflights.reduce((sum, item) => sum + item.preflight.preflight.checks, 0),
+        ...(preflights.every((item) => item.preflight.preflight.expectedScreenshots !== undefined)
+          ? {
+              expectedScreenshots: preflights.reduce(
+                (sum, item) => sum + (item.preflight.preflight.expectedScreenshots ?? 0),
+                0,
+              ),
+            }
+          : {}),
+        blockers: combinedBlockers,
+        warnings: combinedWarnings,
+      } satisfies ProductSuitePreview;
+      return {
+        ...combinedPreview,
+        execution: {
+          profileCount: selectedEnvironments.length,
+          selectedProfileIds: selectedEnvironments.map((item) => item.id),
+          capacity: "unavailable" as const,
+          duration: "unavailable" as const,
+          detail:
+            "Relay can preview each selected environment, but cannot yet run every Suite case in every selected environment.",
+        },
+      };
     },
     async preflightEnvironment(input) {
       const relay = await client();
@@ -523,8 +626,28 @@ export function createSuiteProfileProductService(platform: Platform): SuiteProfi
       };
     },
     async startSuite(input) {
-      const profile = (await environments()).find((candidate) => candidate.id === input.profileId);
-      if (!profile) throw new TypeError(`Environment ${input.profileId} is not available.`);
+      const selectedProfileIds = [
+        ...(input.profileIds ?? []),
+        ...(input.profileId ? [input.profileId] : []),
+      ];
+      const uniqueProfileIds = [...new Set(selectedProfileIds.map((id) => id.trim()))].filter(
+        Boolean,
+      );
+      if (!uniqueProfileIds.length) throw new TypeError("Choose at least one Environment Profile.");
+      const availableEnvironments = await environments();
+      const selectedProfiles = uniqueProfileIds.map((profileId) => {
+        const profile = availableEnvironments.find((candidate) => candidate.id === profileId);
+        if (!profile) throw new TypeError(`Environment profile ${profileId} is not available.`);
+        return profile;
+      });
+      if (selectedProfiles.length > 4)
+        throw new TypeError("Select no more than four Environment Profiles.");
+      if (selectedProfiles.length > 1) {
+        throw new TypeError(
+          "Relay cannot yet run every Suite case in every selected environment. Choose one Environment Profile to start.",
+        );
+      }
+      const profile = selectedProfiles[0]!;
       const result = await (
         await client()
       ).invoke("job.combine.start", {

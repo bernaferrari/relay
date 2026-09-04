@@ -262,6 +262,9 @@ importers:
       '@relay/ui-react':
         specifier: workspace:*
         version: link:../ui-react
+      '@relay/workflows':
+        specifier: workspace:*
+        version: link:../workflows
       '@tanstack/react-query':
         specifier: 5.102.8
         version: 5.102.8(react@19.2.8)

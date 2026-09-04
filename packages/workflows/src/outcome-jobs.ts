@@ -16,6 +16,9 @@ import { watchWorkflow, type WorkflowEventSource } from "./workflow-watch.js";
 import type {
   ConnectTargetIntent,
   ConnectTargetResult,
+  DebugBugOutcome,
+  DebugBugDiscoverySummary,
+  DebugBugOutcomeIntent,
   ExportEvidenceIntent,
   FailureEvidenceSummary,
   FailureInspection,
@@ -36,6 +39,7 @@ import type {
 } from "./types.js";
 import { runReplayLab } from "./replay-lab.js";
 import { recordingPathContext } from "./recording-path-context.js";
+import { startDebugBugRecording } from "./recording-outcome-jobs.js";
 import { acquireOwnLease, selectAppMap, selectTarget, targetCatalog } from "./target-catalog.js";
 
 export type RelayOutcomeJobOptions = { actorId: string };
@@ -47,6 +51,71 @@ const PUBLIC_ID_MAX_CHARS = 512;
 const PUBLIC_LABEL_MAX_CHARS = 1_024;
 const PUBLIC_ERROR_MAX_CHARS = 8_192;
 const PUBLIC_EVIDENCE_CHANNELS_MAX = 64;
+const DEBUG_BUG_MAX_DISCOVERY_SCREENS = 500;
+const DEBUG_BUG_MAX_DISCOVERY_TRANSITIONS = 2_000;
+const DEBUG_BUG_MAX_DISCOVERY_DURATION_MS = 60 * 60 * 1_000;
+const DEBUG_BUG_MAX_TEXT_CHARS = 2_048;
+
+function boundedDebugBugDiscovery(input: DebugBugOutcomeIntent): void {
+  if (input.action !== "explore") return;
+  const scope = input.create.scope;
+  if (!scope || typeof scope !== "object" || Array.isArray(scope)) {
+    throw new TypeError("Agent Debug exploration requires an explicit bounded scope.");
+  }
+  const value = scope as Record<string, unknown>;
+  const bounds: readonly [string, number][] = [
+    ["maxScreens", DEBUG_BUG_MAX_DISCOVERY_SCREENS],
+    ["maxTransitions", DEBUG_BUG_MAX_DISCOVERY_TRANSITIONS],
+    ["maxDurationMs", DEBUG_BUG_MAX_DISCOVERY_DURATION_MS],
+  ];
+  for (const [name, maximum] of bounds) {
+    const candidate = value[name];
+    if (
+      typeof candidate !== "number" ||
+      !Number.isInteger(candidate) ||
+      candidate < 1 ||
+      candidate > maximum
+    ) {
+      throw new TypeError(`${name} must be an integer between 1 and ${maximum}.`);
+    }
+  }
+}
+
+function boundedDebugBugText(value: string, label: string): string {
+  const normalized = value.trim();
+  if (!normalized || normalized.length > DEBUG_BUG_MAX_TEXT_CHARS) {
+    throw new TypeError(`${label} must be between 1 and ${DEBUG_BUG_MAX_TEXT_CHARS} characters.`);
+  }
+  return normalized;
+}
+
+function projectDebugBugDiscovery(session: {
+  id: string;
+  name: string;
+  targetId: string;
+  status: string;
+  scope: unknown;
+  screens: readonly unknown[];
+  transitions: readonly unknown[];
+  currentScreenId?: string;
+}): DebugBugDiscoverySummary {
+  const scope = session.scope as Record<string, unknown>;
+  const projected = {
+    id: session.id,
+    name: session.name,
+    targetId: session.targetId,
+    status: session.status,
+    scope: {
+      maxScreens: scope.maxScreens as number,
+      maxTransitions: scope.maxTransitions as number,
+      maxDurationMs: scope.maxDurationMs as number,
+    },
+    screenCount: session.screens.length,
+    transitionCount: session.transitions.length,
+    ...(session.currentScreenId ? { currentScreenId: session.currentScreenId } : {}),
+  };
+  return projected;
+}
 
 async function mapWithConcurrency<T, R>(
   values: readonly T[],
@@ -331,6 +400,99 @@ class CanonicalRelayOutcomeJobs implements RelayOutcomeJobs {
       repairProposals: repairs.repairs
         .filter((repair) => repair.source.runId === intent.runId)
         .map((repair) => repairProposal(repair, intent.runId)),
+    };
+  }
+
+  async debugBug(intent: DebugBugOutcomeIntent): Promise<DebugBugOutcome> {
+    if (intent.action === "start") {
+      return startDebugBugRecording(this, this.options.actorId, intent);
+    }
+    if (intent.action === "explore") {
+      boundedDebugBugDiscovery(intent);
+      const created = await this.operations.invoke("discovery.create", intent.create);
+      if (created.session.id !== intent.create.id && intent.create.id !== undefined) {
+        throw new TypeError("Relay returned a different Agent Debug discovery session.");
+      }
+      const session = intent.start
+        ? (await this.operations.invoke("discovery.start", intent.start)).session
+        : created.session;
+      if (session.id !== created.session.id) {
+        throw new TypeError("Relay returned a different Agent Debug discovery session.");
+      }
+      return {
+        schemaVersion: 1,
+        kind: "debug-bug",
+        action: "explore",
+        actorId: this.options.actorId,
+        nextAction: "review-discovery",
+        session: projectDebugBugDiscovery(session),
+      };
+    }
+    if (intent.action === "run") {
+      const run = await this.run({ ...intent, kind: "run-test" });
+      return {
+        schemaVersion: 1,
+        kind: "debug-bug",
+        action: "run",
+        actorId: this.options.actorId,
+        nextAction: "inspect-run",
+        run,
+      };
+    }
+    if (intent.action === "inspect") {
+      const failure = await this.inspectFailure({ kind: "inspect-failure", runId: intent.runId });
+      return {
+        schemaVersion: 1,
+        kind: "debug-bug",
+        action: "inspect",
+        actorId: this.options.actorId,
+        nextAction: failure.repairProposals.length ? "review-repair" : "verify-change",
+        failure,
+        clustering: {
+          status: "unavailable",
+          reason:
+            "Relay has no canonical failure-clustering operation; this outcome preserves the immutable evidence and repair queue without inferring a cluster.",
+        },
+      };
+    }
+    if (intent.action === "propose-repair") {
+      const repair = await this.proposeRepair({
+        ...intent,
+        kind: "propose-repair",
+        reason: boundedDebugBugText(intent.reason, "Repair reason"),
+      });
+      return {
+        schemaVersion: 1,
+        kind: "debug-bug",
+        action: "propose-repair",
+        actorId: this.options.actorId,
+        nextAction: "human-review",
+        repair,
+      };
+    }
+    if (intent.action === "verify") {
+      const verification = await this.verifyChange({
+        kind: "verify-change",
+        selection: intent.selection,
+        ...(intent.confirmationSatisfied === true ? { confirmationSatisfied: true } : {}),
+      });
+      return {
+        schemaVersion: 1,
+        kind: "debug-bug",
+        action: "verify",
+        actorId: this.options.actorId,
+        nextAction: "inspect-verdict",
+        verification,
+      };
+    }
+    const evidence = await this.exportEvidence({ kind: "export-evidence", runId: intent.runId });
+    return {
+      schemaVersion: 1,
+      kind: "debug-bug",
+      action: "export",
+      actorId: this.options.actorId,
+      nextAction: "share-proof",
+      evidence,
     };
   }
 

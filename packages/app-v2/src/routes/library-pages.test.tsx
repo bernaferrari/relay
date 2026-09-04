@@ -3,7 +3,7 @@ import type { ProductRunSummary, ProductTestSummary } from "@relay/product/catal
 import { createMemoryHistory } from "@tanstack/react-router";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { RelayV2App } from "../app";
 import type { CatalogProductService } from "../data/catalog-product-service";
 import type { MapProductService } from "../data/map-product-service";
@@ -299,6 +299,23 @@ describe("Tests workspace", () => {
 });
 
 describe("Runs workspace", () => {
+  it("uses the cursor-following catalog before calling history complete", async () => {
+    const listRuns = vi.fn(async () => runs.slice(0, 1));
+    const listRunsComplete = vi.fn(async () => runs);
+    await render(
+      "/runs?view=all",
+      catalog({
+        listRuns,
+        listRunsComplete,
+      }),
+    );
+
+    expect(listRunsComplete).toHaveBeenCalledOnce();
+    expect(listRuns).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain("Complete history");
+    expect(document.body.textContent).toContain("Open account");
+  });
+
   it("defaults to the latest Run per Test and keeps every row durably addressable", async () => {
     await render("/runs");
 

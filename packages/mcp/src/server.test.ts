@@ -311,6 +311,81 @@ test("default outcome profile registers only the small jobs-to-be-done surface",
   }
 });
 
+test("Agent Debug MCP accepts its discriminated transport schema", async () => {
+  const calls: Array<{ operationId: OperationId; input: unknown }> = [];
+  const session = await connectMcp(
+    {
+      async invoke(operationId, input) {
+        calls.push({ operationId, input });
+        if (operationId === "discovery.create") {
+          return {
+            session: {
+              id: "discovery-1",
+              name: "Checkout discovery",
+              targetId: "pixel-9",
+              status: "draft",
+              createdAt: 1,
+              updatedAt: 1,
+              scope: { maxScreens: 20, maxTransitions: 40, maxDurationMs: 30_000 },
+              screens: [],
+              transitions: [],
+            },
+          };
+        }
+        throw new Error(`unexpected ${operationId}`);
+      },
+    },
+    "outcome",
+  );
+  try {
+    const response = await session.request("tools/call", {
+      name: "relay_debug_bug",
+      arguments: {
+        kind: "debug-bug",
+        action: "explore",
+        create: {
+          id: "discovery-1",
+          name: "Checkout discovery",
+          targetId: "pixel-9",
+          scope: { maxScreens: 20, maxTransitions: 40, maxDurationMs: 30_000 },
+        },
+      },
+    });
+    assert.equal(response.error, undefined);
+    const result = callResult(response);
+    assert.equal(result.isError, undefined);
+    assert.deepEqual(result.structuredContent?.result, {
+      schemaVersion: 1,
+      kind: "debug-bug",
+      action: "explore",
+      actorId: "agent:mcp",
+      nextAction: "review-discovery",
+      session: {
+        id: "discovery-1",
+        name: "Checkout discovery",
+        targetId: "pixel-9",
+        status: "draft",
+        scope: { maxScreens: 20, maxTransitions: 40, maxDurationMs: 30_000 },
+        screenCount: 0,
+        transitionCount: 0,
+      },
+    });
+    assert.deepEqual(calls, [
+      {
+        operationId: "discovery.create",
+        input: {
+          id: "discovery-1",
+          name: "Checkout discovery",
+          targetId: "pixel-9",
+          scope: { maxScreens: 20, maxTransitions: 40, maxDurationMs: 30_000 },
+        },
+      },
+    ]);
+  } finally {
+    await session.close();
+  }
+});
+
 test("outcome observation returns native pixels and bounded structured semantics", async () => {
   const png =
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";

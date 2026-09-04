@@ -45,6 +45,8 @@ const fixtures = [
   { id: "suite-detail", heading: "Release smoke" },
   { id: "environments-list", heading: "Environments" },
   { id: "environment-detail", heading: "Checkout staging" },
+  { id: "agent-debug", heading: "Investigate a bug" },
+  { id: "devices", heading: "Devices" },
 ];
 const viewports = [
   { id: "compact", width: 800, height: 560 },

@@ -32,9 +32,11 @@ export function RunsPage() {
   const deferredQuery = useDeferredValue(query.trim().toLocaleLowerCase());
   const view = runView(search.view);
   const app = typeof search.app === "string" ? search.app : "";
+  const historyComplete = typeof catalogService.listRunsComplete === "function";
   const runs = useQuery({
-    queryKey: catalogQueryKeys.runs,
-    queryFn: () => catalogService.listRuns(),
+    queryKey: [...catalogQueryKeys.runs, historyComplete ? "complete" : "first-page"],
+    queryFn: () =>
+      historyComplete ? catalogService.listRunsComplete!() : catalogService.listRuns(),
     staleTime: 10_000,
     refetchInterval: (queryState) =>
       queryState.state.data?.some((run) => run.phase === "queued" || run.phase === "running")
@@ -157,7 +159,7 @@ export function RunsPage() {
             <h2 id="run-history-title">
               {visibleRuns.length === 1 ? "1 Run" : `${visibleRuns.length} Runs`}
             </h2>
-            <span aria-live="polite">{runViewDescription(view)}</span>
+            <span aria-live="polite">{runViewDescription(view, historyComplete)}</span>
           </div>
           <RunHistoryList runs={visibleRuns}>
             {(run, _index, interaction) => <RunRow run={run} interaction={interaction} />}
@@ -243,12 +245,12 @@ function runView(value: unknown): RunView {
     : "latest";
 }
 
-function runViewDescription(view: RunView) {
+function runViewDescription(view: RunView, historyComplete: boolean) {
   if (view === "latest") return "Most recent result for each Test";
   if (view === "failed") return "App failures and Runs that could not start";
   if (view === "needs-review") return "Waiting for review";
   if (view === "active") return "Queued and in progress";
-  return "Complete history";
+  return historyComplete ? "Complete history" : "Loaded history";
 }
 
 function emptyRunTitle(view: RunView) {

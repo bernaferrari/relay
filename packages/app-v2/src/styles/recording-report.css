@@ -1384,7 +1384,6 @@
 }
 
 @media (max-width: 860px) {
-  .relay-run-targets,
   .relay-choice-group,
   .relay-review-layout {
     grid-template-columns: 1fr;
@@ -1638,7 +1637,7 @@
 }
 
 .relay-issue-draft-title {
-  min-height: 44px;
+  min-height: 36px;
   padding: 0 11px;
 }
 

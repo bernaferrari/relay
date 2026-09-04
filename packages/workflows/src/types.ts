@@ -24,6 +24,7 @@ import type {
   RecipeStep,
   VerifyChangeIntent,
   VerifyChangeResult,
+  DiscoveryScope,
 } from "@relay/protocol";
 export type { TargetObservation, TargetObservationControl } from "@relay/protocol";
 
@@ -448,6 +449,104 @@ export type RepeatTestOutcomeIntent = OutcomeTargetSelection & {
 
 export type InspectFailureIntent = { kind: "inspect-failure"; runId: string };
 
+/**
+ * One bounded, resumable Agent Debug outcome. The action is deliberately
+ * explicit: a caller can start recording, explore, run, inspect, propose a
+ * repair, verify, or export without the facade guessing which mutation is
+ * safe. Server-owned workflow and discovery operations remain authoritative.
+ */
+export type DebugBugOutcomeIntent =
+  | (Omit<RecordTestOutcomeIntent, "kind"> & { kind: "debug-bug"; action: "start" })
+  | {
+      kind: "debug-bug";
+      action: "explore";
+      create: OperationInput<"discovery.create">;
+      start?: OperationInput<"discovery.start">;
+    }
+  | (Omit<RunTestOutcomeIntent, "kind"> & { kind: "debug-bug"; action: "run" })
+  | (Omit<InspectFailureIntent, "kind"> & { kind: "debug-bug"; action: "inspect" })
+  | (Omit<ProposeRepairIntent, "kind"> & { kind: "debug-bug"; action: "propose-repair" })
+  | {
+      kind: "debug-bug";
+      action: "verify";
+      selection: VerifyChangeIntent["selection"];
+      confirmationSatisfied?: true;
+    }
+  | (Omit<ExportEvidenceIntent, "kind"> & { kind: "debug-bug"; action: "export" });
+
+export type DebugBugDiscoverySummary = {
+  id: string;
+  name: string;
+  targetId: string;
+  status: string;
+  scope: Pick<DiscoveryScope, "maxScreens" | "maxTransitions" | "maxDurationMs">;
+  screenCount: number;
+  transitionCount: number;
+  currentScreenId?: string;
+};
+
+export type DebugBugOutcome =
+  | {
+      schemaVersion: 1;
+      kind: "debug-bug";
+      action: "start";
+      actorId: string;
+      nextAction: "review-recording";
+      recording: AuthorTestSnapshot;
+    }
+  | {
+      schemaVersion: 1;
+      kind: "debug-bug";
+      action: "explore";
+      actorId: string;
+      nextAction: "review-discovery";
+      session: DebugBugDiscoverySummary;
+    }
+  | {
+      schemaVersion: 1;
+      kind: "debug-bug";
+      action: "run";
+      actorId: string;
+      nextAction: "inspect-run";
+      run: RunTestSnapshot;
+    }
+  | {
+      schemaVersion: 1;
+      kind: "debug-bug";
+      action: "inspect";
+      actorId: string;
+      nextAction: "review-repair" | "verify-change";
+      failure: FailureInspection;
+      clustering: {
+        status: "unavailable";
+        reason: string;
+      };
+    }
+  | {
+      schemaVersion: 1;
+      kind: "debug-bug";
+      action: "propose-repair";
+      actorId: string;
+      nextAction: "human-review";
+      repair: RepairProposalResult;
+    }
+  | {
+      schemaVersion: 1;
+      kind: "debug-bug";
+      action: "verify";
+      actorId: string;
+      nextAction: "inspect-verdict";
+      verification: VerifyChangeResult;
+    }
+  | {
+      schemaVersion: 1;
+      kind: "debug-bug";
+      action: "export";
+      actorId: string;
+      nextAction: "share-proof";
+      evidence: EvidenceExportResult;
+    };
+
 export type ProposeRepairIntent = {
   kind: "propose-repair";
   runId: string;
@@ -565,6 +664,7 @@ export interface RelayOutcomeJobs {
   run(intent: RunTestOutcomeIntent): Promise<RunTestSnapshot>;
   repeat(intent: RepeatTestOutcomeIntent): Promise<RepeatTestSnapshot>;
   inspectFailure(intent: InspectFailureIntent): Promise<FailureInspection>;
+  debugBug(intent: DebugBugOutcomeIntent): Promise<DebugBugOutcome>;
   proposeRepair(intent: ProposeRepairIntent): Promise<RepairProposalResult>;
   exportEvidence(intent: ExportEvidenceIntent): Promise<EvidenceExportResult>;
   replayLab(intent: ReplayLabOutcomeIntent): Promise<ReplayLabReport>;

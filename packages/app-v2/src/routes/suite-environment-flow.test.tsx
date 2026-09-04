@@ -287,6 +287,28 @@ describe("Suite and Environment routes", () => {
     expect(history.location.pathname).toBe("/suites");
   });
 
+  it("labels an unavailable multi-environment result as previewed, not ready", async () => {
+    await render("/apps/app-1/suites/suite-1", {
+      suiteService: suiteService({
+        previewSuite: async () => ({
+          ...suitePreview(),
+          caseCount: 2,
+          execution: {
+            profileCount: 2,
+            selectedProfileIds: ["space-1", "space-2"],
+            capacity: "unavailable",
+            duration: "unavailable",
+            detail: "Multi-environment execution is unavailable.",
+          },
+        }),
+      }),
+    });
+
+    expect(document.body.textContent).toContain("2 cases previewed");
+    expect(document.body.textContent).not.toContain("2 cases ready");
+    expect(document.body.textContent).toContain("start one representative case");
+  });
+
   it("creates a Browser Space with labeled fields and opens its canonical detail route", async () => {
     const created = { ...space, id: "space-2", name: "New staging" };
     const create = vi.fn(async () => created);

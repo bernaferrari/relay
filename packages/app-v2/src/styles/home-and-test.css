@@ -253,49 +253,6 @@
   margin-left: 40px;
 }
 
-.relay-run-setup {
-  width: 100%;
-  max-width: 960px;
-}
-
-.relay-test-content {
-  display: grid;
-  max-width: 960px;
-  gap: 36px;
-  margin-top: 34px;
-}
-
-.relay-run-setup-header {
-  padding: 22px 22px 0;
-}
-
-.relay-run-setup .relay-card-content {
-  padding: 20px 22px 22px;
-}
-
-.relay-run-targets {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.relay-run-targets .relay-radio-card {
-  min-height: 70px;
-}
-
-.relay-run-targets .relay-radio-card-title,
-.relay-run-targets .relay-radio-card-description {
-  overflow: visible;
-  text-overflow: clip;
-  white-space: normal;
-}
-
-.relay-run-setup-actions {
-  gap: 12px;
-  min-height: 72px;
-  padding-inline: 22px;
-}
-
 .relay-test-overview {
   min-width: 0;
   padding-top: 4px;
@@ -492,7 +449,7 @@
 
 .relay-library-search .relay-input,
 .relay-select {
-  min-height: 44px;
+  min-height: 36px;
   border: 1px solid var(--border-base);
   border-radius: var(--radius-md);
   color: var(--text-strong);
@@ -665,18 +622,6 @@
   cursor: pointer;
 }
 
-.relay-run-setup h2 {
-  margin-top: 4px;
-  font-size: 18px;
-  font-weight: 600;
-}
-
-.relay-run-setup > div > p:last-child {
-  margin-top: 5px;
-  color: var(--text-weak);
-  font-size: 13px;
-}
-
 .relay-form-field,
 .relay-choice-group {
   display: grid;
@@ -701,7 +646,7 @@
 
 .relay-input {
   width: 100%;
-  min-height: 44px;
+  min-height: 36px;
   padding: 0 12px;
   border: 1px solid var(--border-base);
   border-radius: var(--radius-md);

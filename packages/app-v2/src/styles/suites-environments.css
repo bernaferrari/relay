@@ -194,7 +194,7 @@
 
 .relay-native-select {
   width: 100%;
-  min-height: 44px;
+  min-height: 36px;
   padding: 0 34px 0 12px;
   border: 1px solid var(--border-base);
   border-radius: var(--radius-md);
@@ -207,6 +207,15 @@
 .relay-native-select:focus-visible {
   outline: 2px solid var(--relay-focus-ring);
   outline-offset: 2px;
+}
+
+.relay-suite-environment-options {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin: 10px 0 0;
+  padding: 0;
+  border: 0;
 }
 
 .relay-suite-workspace,

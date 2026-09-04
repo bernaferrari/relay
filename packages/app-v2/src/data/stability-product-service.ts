@@ -65,7 +65,7 @@ export type ProductStabilitySummary = {
 
 export type ProductStabilitySummaryInput = {
   readonly samples: readonly ProductStabilitySample[];
-  /** Required because run.list currently has no total or continuation contract. */
+  /** Explicitly identifies whether the caller loaded the complete history. */
   readonly historyComplete: boolean;
   readonly scope?: ProductStabilityScope;
 };
@@ -367,7 +367,9 @@ export function createStabilityProductService(platform: Platform): StabilityProd
     return catalogPromise;
   }
   const listRuns = (filter?: ProductRunFilter) =>
-    catalog().then((service) => service.listRuns(filter));
+    catalog().then((service) =>
+      service.listRunsComplete ? service.listRunsComplete(filter) : service.listRuns(filter),
+    );
   return {
     listRuns,
     summarize: summarizeProductStability,

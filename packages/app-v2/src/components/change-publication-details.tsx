@@ -2,6 +2,7 @@
 import { Button, Disclosure } from "@relay/ui-react";
 import { useMutation } from "@tanstack/react-query";
 import { useRouteContext } from "@tanstack/react-router";
+import type { ProductChangePublication } from "@relay/product/change-journey";
 import type { ProductChangeDetail } from "../data/change-product-service";
 
 const changeQueryKey = (changeId: string) => ["change", changeId] as const;
@@ -115,13 +116,105 @@ export function ChangeAuditDetails({ detail }: { detail: ProductChangeDetail }) 
             <ul>
               {details.publications.map((publication) => (
                 <li key={publication.id}>
-                  <span>{publicationLabel(publication.status)}</span>
-                  <code>{publication.id}</code>
-                  <span>
-                    {publication.attempts === undefined
-                      ? "Historical receipt"
-                      : `${publication.attempts} attempt${publication.attempts === 1 ? "" : "s"}`}
-                  </span>
+                  <dl className="relay-publication-facts">
+                    <div>
+                      <dt>Status</dt>
+                      <dd>{publicationLabel(publication.status)}</dd>
+                    </div>
+                    {publication.provider ? (
+                      <div>
+                        <dt>Provider</dt>
+                        <dd>{publication.provider}</dd>
+                      </div>
+                    ) : null}
+                    <div>
+                      <dt>Publication ID</dt>
+                      <dd>
+                        <code>{publication.id}</code>
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Attempts</dt>
+                      <dd>
+                        {publication.attempts === undefined
+                          ? "Historical receipt"
+                          : `${publication.attempts}${
+                              publication.maxAttempts === undefined
+                                ? ""
+                                : ` of ${publication.maxAttempts}`
+                            }`}
+                      </dd>
+                    </div>
+                    {publication.lastFailure ? (
+                      <div>
+                        <dt>Provider failure</dt>
+                        <dd>
+                          {publicationFailureLabel(publication.lastFailure.kind)} at{" "}
+                          {publicationTime(publication.lastFailure.at)}
+                        </dd>
+                      </div>
+                    ) : null}
+                    {publication.nextAttemptAt !== undefined ? (
+                      <div>
+                        <dt>Next retry</dt>
+                        <dd>{publicationTime(publication.nextAttemptAt)}</dd>
+                      </div>
+                    ) : null}
+                    {publication.recovery ? (
+                      <>
+                        <div>
+                          <dt>Recovery request</dt>
+                          <dd>
+                            <code>{publication.recovery.requestId}</code>
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>Recovery requested by</dt>
+                          <dd>{publication.recovery.requestedBy}</dd>
+                        </div>
+                        <div>
+                          <dt>Recovery requested at</dt>
+                          <dd>{publicationTime(publication.recovery.requestedAt)}</dd>
+                        </div>
+                      </>
+                    ) : null}
+                    {publication.receipt ? (
+                      <>
+                        <div>
+                          <dt>Check run ID</dt>
+                          <dd>
+                            <code>{publication.receipt.checkRunId}</code>
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>Receipt sequence</dt>
+                          <dd>{publication.receipt.sequence}</dd>
+                        </div>
+                        <div>
+                          <dt>Receipt status</dt>
+                          <dd>{publication.receipt.status ?? "completed"}</dd>
+                        </div>
+                        {publication.receipt.conclusion ? (
+                          <div>
+                            <dt>Receipt conclusion</dt>
+                            <dd>{publication.receipt.conclusion}</dd>
+                          </div>
+                        ) : null}
+                        {publication.receipt.proofVersion !== undefined ? (
+                          <div>
+                            <dt>Receipt Proof version</dt>
+                            <dd>{publication.receipt.proofVersion}</dd>
+                          </div>
+                        ) : null}
+                        <div>
+                          <dt>Check digest</dt>
+                          <dd>
+                            <code>{publication.receipt.checkDigest}</code>
+                          </dd>
+                        </div>
+                      </>
+                    ) : null}
+                  </dl>
                 </li>
               ))}
             </ul>
@@ -159,6 +252,18 @@ function publicationLabel(status: string): string {
   if (status === "claimed" || status === "in_progress") return "Publishing to GitHub";
   if (status === "retry") return "GitHub publication needs attention";
   return "Queued for GitHub";
+}
+
+function publicationFailureLabel(
+  kind: NonNullable<ProductChangePublication["lastFailure"]>["kind"],
+): string {
+  if (kind === "provider-error") return "Provider rejected delivery";
+  if (kind === "reconciliation-error") return "Provider receipt reconciliation failed";
+  return "Delivery lease was lost";
+}
+
+function publicationTime(value: number): string {
+  return new Date(value).toISOString();
 }
 
 function publicationPresentation(status: string): { title: string; detail: string } {

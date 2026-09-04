@@ -16,6 +16,11 @@ import { createRelayOutcomeJobs } from "@relay/workflows/outcomes";
 import * as z from "zod/v4";
 import type { OperationInvoker } from "./server.js";
 import { proofOutcomeTools } from "./proof-outcome-tools.js";
+import {
+  createDebugBugInputSchema,
+  createDebugBugOutcomeTool,
+  invokeDebugBugOutcomeTool,
+} from "./debug-bug-outcome-tool.js";
 
 type OutcomeInputSchema = z.ZodType<Record<string, unknown>>;
 
@@ -131,6 +136,7 @@ const replayLabTracePacks = z
       });
     }
   });
+
 const replayLabTracePackTransport = boundedTracePackArray(boundedTracePackTransport).min(2);
 const verifyChangeSelection = z.discriminatedUnion("kind", [
   z
@@ -182,6 +188,8 @@ const verifyChangeSelectionTransport = z.discriminatedUnion("kind", [
     .object({ kind: z.literal("source-revision"), sourceRevision, appMapId: identifier.optional() })
     .strict(),
 ]);
+
+const debugBugInputSchema = createDebugBugInputSchema(verifyChangeSelectionTransport);
 
 function assertRawTracePackPayloads(value: unknown, maxPacks: number): void {
   if (!Array.isArray(value)) return;
@@ -534,6 +542,7 @@ export const relayOutcomeTools = Object.freeze([
       openWorldHint: false,
     },
   },
+  createDebugBugOutcomeTool(debugBugInputSchema),
   {
     name: "relay_replay_lab",
     title: "Compare TracePacks offline",
@@ -705,12 +714,17 @@ export async function invokeRelayOutcomeToolWithJobs(input: {
   }
   assertRawOutcomeInputBounds(input.name, input.argumentsValue);
   let parsed = descriptor.inputSchema.parse(input.argumentsValue) as Record<string, unknown>;
-  if (input.name === "relay_replay_lab") {
+  if (input.name === "relay_debug_bug") {
+    parsed = debugBugInputSchema.parse(input.argumentsValue) as Record<string, unknown>;
+  } else if (input.name === "relay_replay_lab") {
     parsed = { ...parsed, tracePacks: replayLabTracePacks.parse(parsed.tracePacks) };
   } else if (input.name === "relay_proof_analyze" || input.name === "relay_verify_change") {
     parsed = { ...parsed, selection: verifyChangeSelection.parse(parsed.selection) };
   }
   const { jobs } = input;
+  if (input.name === "relay_debug_bug") {
+    return invokeDebugBugOutcomeTool({ parsed, confirmed: input.confirmed, jobs });
+  }
   if (input.name === "relay_connect_target") {
     return jobs.connect({
       kind: "connect-target",

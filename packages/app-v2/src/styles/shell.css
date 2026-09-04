@@ -62,13 +62,14 @@ select {
 
 .relay-sidebar-head {
   display: flex;
-  height: 60px;
+  min-height: 52px;
   align-items: center;
   padding: 0 16px;
 }
 
 [data-platform="desktop"] .relay-sidebar-head {
-  padding-left: 72px;
+  min-height: 60px;
+  padding-left: 82px;
 }
 
 .relay-brand {
@@ -108,8 +109,8 @@ select {
 }
 
 .relay-sidebar-section-label {
-  min-height: 32px;
-  padding: 10px 8px 6px;
+  min-height: 28px;
+  padding: 8px 8px 4px;
   color: var(--text-weaker);
   font-size: 11px;
   font-weight: 600;
@@ -137,7 +138,7 @@ select {
 .relay-app-switcher {
   display: grid;
   width: 100%;
-  min-height: 52px;
+  min-height: 44px;
   grid-template-columns: 30px minmax(0, 1fr) 18px;
   align-items: center;
   gap: 9px;
@@ -239,7 +240,7 @@ select {
 
 .relay-nav-link {
   display: flex;
-  min-height: 44px;
+  min-height: 36px;
   align-items: center;
   gap: 10px;
   padding: 0 11px;
@@ -298,8 +299,9 @@ select {
 
 .relay-desktop-toolbar {
   display: none;
-  min-height: 44px;
+  min-height: 54px;
   align-items: center;
+  gap: 16px;
   padding: 5px 10px;
   border-bottom: 1px solid var(--border-weak-base);
   background: color-mix(in srgb, var(--background-base) 94%, transparent);
@@ -308,13 +310,33 @@ select {
 .relay-history-controls {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: 1px;
+}
+
+.relay-history-controls .relay-history-button {
+  inline-size: 32px;
+  block-size: 32px;
+  border-color: transparent;
+  background: transparent;
+}
+
+.relay-history-controls .relay-history-button > svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 1.6;
+}
+
+.relay-history-controls .relay-history-button:disabled {
+  border-color: transparent;
+  color: var(--text-weaker);
+  background: transparent;
+  opacity: 0.38;
 }
 
 .relay-command-trigger {
   display: inline-flex;
   min-width: 220px;
-  min-height: 34px;
+  min-height: 36px;
   align-items: center;
   gap: 8px;
   margin-left: 0;
@@ -331,7 +353,7 @@ select {
 
 .relay-activity-trigger {
   display: inline-flex;
-  min-height: 34px;
+  min-height: 36px;
   align-items: center;
   gap: 7px;
   margin-left: auto;
@@ -346,8 +368,9 @@ select {
 }
 
 .relay-activity-trigger > svg {
-  width: 16px;
-  height: 16px;
+  width: 15px;
+  height: 15px;
+  stroke-width: 1.7;
 }
 
 .relay-activity-trigger .relay-badge {
@@ -516,10 +539,6 @@ select {
   color: var(--text-weak);
 }
 
-.relay-history-controls .relay-icon-button:disabled {
-  opacity: 0.35;
-}
-
 .relay-sidebar-active-work {
   display: grid;
   gap: 4px;
@@ -633,6 +652,38 @@ select {
   flex-direction: column;
   overflow: hidden;
   border-radius: var(--radius-xl);
+  opacity: 1;
+  transform: translateX(0);
+  transition:
+    opacity 180ms cubic-bezier(0.32, 0.72, 0, 1),
+    transform 220ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.relay-activity-backdrop {
+  opacity: 1;
+  transition: opacity 180ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.relay-activity-backdrop[data-starting-style],
+.relay-activity-backdrop[data-ending-style] {
+  opacity: 0;
+}
+
+.relay-activity-center[data-starting-style],
+.relay-activity-center[data-ending-style] {
+  opacity: 0;
+  transform: translateX(12px);
+}
+
+.relay-activity-close {
+  inline-size: 28px;
+  block-size: 28px;
+}
+
+.relay-activity-close > svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 1.7;
 }
 
 .relay-activity-header {
@@ -806,6 +857,11 @@ select {
   padding: 0 8px;
   border-bottom: 1px solid var(--border-weak-base);
   background: var(--background-base);
+}
+
+[data-platform="desktop"] .relay-mobile-header {
+  min-height: 60px;
+  padding-left: 82px;
 }
 
 .relay-mobile-title {
@@ -1011,5 +1067,12 @@ select {
 @media (max-width: 640px) {
   .relay-route-pending-content {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .relay-activity-backdrop,
+  .relay-activity-center {
+    transition: none;
   }
 }

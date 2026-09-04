@@ -1,5 +1,6 @@
 export const runQueryKeys = {
   test: (testId: string) => ["run", "test", testId] as const,
+  testStability: (testId: string) => ["run", "test", testId, "stability"] as const,
   targets: ["run", "targets"] as const,
   targetPresentation: (targetId: string) => ["run", "target-presentation", targetId] as const,
   pointer: ["run", "active-pointer"] as const,

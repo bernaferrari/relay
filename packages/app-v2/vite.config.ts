@@ -20,5 +20,9 @@ export default defineConfig({
     environment: "happy-dom",
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
     setupFiles: ["./src/test-setup.ts"],
+    // Route tests eagerly resolve the production lazy-route graph. Keep the
+    // per-test budget aligned with the repository gate so cold parallel
+    // transforms cannot fail a correct interaction after Vitest's 5s default.
+    testTimeout: 30_000,
   },
 });

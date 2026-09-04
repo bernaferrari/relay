@@ -156,12 +156,14 @@ function DeviceSection({
     <section className="relay-device-section" aria-labelledby={headingId}>
       <header>
         <div>
-          <h2 id={headingId}>{title}</h2>
+          <div className="relay-device-section-title">
+            <h2 id={headingId}>{title}</h2>
+            <span className="relay-device-count" aria-label={`${devices.length} devices`}>
+              {devices.length}
+            </span>
+          </div>
           <p>{description}</p>
         </div>
-        <span className="relay-device-count" aria-label={`${devices.length} devices`}>
-          {devices.length}
-        </span>
       </header>
       {content}
     </section>

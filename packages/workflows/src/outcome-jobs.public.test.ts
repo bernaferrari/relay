@@ -483,6 +483,94 @@ test("inspect-failure rejects legacy repair envelopes instead of guessing", asyn
   );
 });
 
+test("debug-bug keeps discovery bounded, attributed, and free of raw evidence", async () => {
+  const scripted = createScriptedRelayClient([
+    {
+      id: "discovery.create",
+      output: {
+        session: {
+          id: "discovery-1",
+          name: "Checkout discovery",
+          targetId: "pixel-9",
+          status: "draft",
+          createdAt: 1,
+          updatedAt: 1,
+          scope: { maxScreens: 20, maxTransitions: 40, maxDurationMs: 30_000 },
+          screens: [],
+          transitions: [],
+          currentScreenId: "screen-1",
+        },
+      },
+    },
+    {
+      id: "discovery.start",
+      output: {
+        session: {
+          id: "discovery-1",
+          name: "Checkout discovery",
+          targetId: "pixel-9",
+          status: "running",
+          createdAt: 1,
+          updatedAt: 2,
+          scope: { maxScreens: 20, maxTransitions: 40, maxDurationMs: 30_000 },
+          screens: [],
+          transitions: [],
+        },
+      },
+    },
+  ]);
+  const jobs = createRelayOutcomeJobs(scripted.client, { actorId: "agent:test" });
+  const outcome = await jobs.debugBug({
+    kind: "debug-bug",
+    action: "explore",
+    create: {
+      id: "discovery-1",
+      name: "Checkout discovery",
+      targetId: "pixel-9",
+      scope: { maxScreens: 20, maxTransitions: 40, maxDurationMs: 30_000 },
+    },
+    start: { sessionId: "discovery-1", strategy: "surface", maxDepth: 2 },
+  });
+  assert.deepEqual(outcome, {
+    schemaVersion: 1,
+    kind: "debug-bug",
+    action: "explore",
+    actorId: "agent:test",
+    nextAction: "review-discovery",
+    session: {
+      id: "discovery-1",
+      name: "Checkout discovery",
+      targetId: "pixel-9",
+      status: "running",
+      scope: { maxScreens: 20, maxTransitions: 40, maxDurationMs: 30_000 },
+      screenCount: 0,
+      transitionCount: 0,
+    },
+  });
+  assert.deepEqual(
+    scripted.invocations.map(({ id }) => id),
+    ["discovery.create", "discovery.start"],
+  );
+});
+
+test("debug-bug rejects unbounded exploration before contacting Relay", async () => {
+  const scripted = createScriptedRelayClient([]);
+  const jobs = createRelayOutcomeJobs(scripted.client, { actorId: "agent:test" });
+  await assert.rejects(
+    jobs.debugBug({
+      kind: "debug-bug",
+      action: "explore",
+      create: {
+        name: "Unbounded",
+        targetId: "pixel-9",
+        scope: { maxScreens: 501, maxTransitions: 1, maxDurationMs: 1 },
+      },
+    }),
+    /maxScreens/u,
+  );
+  assert.deepEqual(scripted.invocations, []);
+});
+
 test("propose-repair returns a review-only identity projection", async () => {
   const scripted = createScriptedRelayClient([
     {

@@ -83,6 +83,81 @@ async function assertLayout(page) {
   );
 }
 
+async function assertDesktopChrome(page) {
+  await page.waitForFunction(() => window.matchMedia("(min-width: 861px)").matches, null, {
+    timeout: CHECK_TIMEOUT_MS,
+  });
+  const chrome = await page.evaluate(() => {
+    const rect = (selector) => {
+      const element = document.querySelector(selector);
+      if (!(element instanceof HTMLElement)) return null;
+      const bounds = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return {
+        left: bounds.left,
+        right: bounds.right,
+        top: bounds.top,
+        bottom: bounds.bottom,
+        width: bounds.width,
+        height: bounds.height,
+        display: style.display,
+        backgroundColor: style.backgroundColor,
+        appRegion: style.getPropertyValue("-webkit-app-region"),
+      };
+    };
+    return {
+      brand: rect(".relay-brand"),
+      sidebarHeader: rect(".relay-sidebar-head"),
+      toolbar: rect(".relay-desktop-toolbar"),
+      back: rect('.relay-history-button[aria-label="Go back"]'),
+      forward: rect('.relay-history-button[aria-label="Go forward"]'),
+      backIcon: rect('.relay-history-button[aria-label="Go back"] svg'),
+      forwardIcon: rect('.relay-history-button[aria-label="Go forward"] svg'),
+      activity: rect(".relay-activity-trigger"),
+      command: rect(".relay-command-trigger"),
+    };
+  });
+  for (const [name, value] of Object.entries(chrome)) {
+    assert(value, `Electron desktop chrome is missing ${name}`);
+  }
+  assert(chrome.brand.left >= 80, `Relay brand overlaps macOS traffic lights: ${chrome.brand.left}`);
+  assert(chrome.toolbar.display !== "none", "Electron desktop toolbar is hidden at wide size");
+  assert(
+    chrome.toolbar.height >= 48 && chrome.toolbar.height <= 60,
+    `Electron toolbar height drifted: ${chrome.toolbar.height}`,
+  );
+  assert(chrome.toolbar.appRegion === "drag", "Electron toolbar is not draggable");
+  for (const control of [chrome.back, chrome.forward]) {
+    assert(control.width <= 34 && control.height <= 34, `History control is oversized: ${JSON.stringify(control)}`);
+  }
+  for (const icon of [chrome.backIcon, chrome.forwardIcon]) {
+    assert(icon.width <= 17 && icon.height <= 17, `History icon is oversized: ${JSON.stringify(icon)}`);
+  }
+  assert(
+    chrome.command.left - chrome.activity.right >= 12,
+    `Activity and search are cramped: ${chrome.command.left - chrome.activity.right}px`,
+  );
+  assert(chrome.command.width >= 220, `Command search is too narrow: ${chrome.command.width}`);
+}
+
+async function assertCompactChrome(page) {
+  await page.waitForFunction(() => !window.matchMedia("(min-width: 861px)").matches, null, {
+    timeout: CHECK_TIMEOUT_MS,
+  });
+  if (process.platform !== "darwin") return;
+  const compact = await page.evaluate(() => {
+    const header = document.querySelector(".relay-mobile-header")?.getBoundingClientRect();
+    const menu = document.querySelector(".relay-mobile-menu")?.getBoundingClientRect();
+    return {
+      header: header ? { height: header.height } : null,
+      menu: menu ? { left: menu.left } : null,
+    };
+  });
+  assert(compact.header && compact.menu, "Electron compact title bar is missing");
+  assert(compact.header.height >= 56, `Electron compact title bar is too short: ${compact.header.height}`);
+  assert(compact.menu.left >= 80, `Compact menu overlaps macOS traffic lights: ${compact.menu.left}`);
+}
+
 async function assertAccessible(page, route) {
   const result = await new AxeBuilder({ page })
     // Electron's Playwright context cannot create axe's auxiliary blank page.
@@ -133,10 +208,14 @@ async function run() {
     page.on("pageerror", (error) => failures.push(`pageerror: ${error.message}`));
 
     const nativeWindow = await application.browserWindow(page);
-    await nativeWindow.evaluate((window) => window.setSize(800, 560));
+    await nativeWindow.evaluate((window) => window.setSize(1200, 760));
     await waitForRoute(page, "/home");
     await page.getByRole("heading", { level: 1 }).first().waitFor();
     await assertLayout(page);
+    await assertDesktopChrome(page);
+
+    await nativeWindow.evaluate((window) => window.setSize(800, 560));
+    await assertCompactChrome(page);
 
     const check = async () => {
       const route = appRoute(page.url());
@@ -147,6 +226,7 @@ async function run() {
     for (const [name, route] of [
       ["Tests", "/tests"],
       ["Sessions", "/sessions"],
+      ["Agent Debug", "/debug"],
       ["Devices", "/devices"],
       ["Changes", "/changes"],
       ["Runs", "/runs"],

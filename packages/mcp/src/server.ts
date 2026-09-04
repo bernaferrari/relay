@@ -82,7 +82,7 @@ export function relayMcpInstructionsForProfile(profile: RelayMcpProfile): string
     "Use Relay tools only within the configured organization and project scope.",
     "Treat tool results as server-authoritative and preserve Relay actor identity.",
     profile === "outcome"
-      ? "Prefer outcome tools: connect, observe, record, run, repeat, inspect, repair, and export evidence."
+      ? "Prefer outcome tools: connect, observe, record, run, repeat, inspect, debug, repair, and export evidence."
       : "Use only tools registered in the selected profile; start with read-only inspection and choose the narrowest tool that can complete the requested task.",
     "Omit the advanced appMapId and targetId fields when exactly one Test workspace and one ready Device exist.",
     "Never retry an outcome whose snapshot says the mutation outcome is unknown; inspect its continuation reference.",
@@ -609,7 +609,14 @@ function registerRelayOutcomeTool(
   actorId: string,
   recoveryOptions: RelayMcpErrorOptions,
 ): void {
-  const schema = descriptor.inputSchema as z.ZodObject;
+  const schema = descriptor.inputSchema;
+  const confirmation = descriptor.requiresConfirmation
+    ? z.literal(true).describe("Explicit approval for this protected outcome")
+    : z.literal(true).optional().describe("Optional explicit approval");
+  const inputSchema =
+    typeof (schema as { safeExtend?: unknown }).safeExtend === "function"
+      ? (schema as z.ZodObject).safeExtend({ confirm: confirmation })
+      : schema.and(z.object({ confirm: confirmation }).strict());
   server.registerTool(
     descriptor.name,
     {
@@ -617,13 +624,12 @@ function registerRelayOutcomeTool(
       description: descriptor.description,
       outputSchema: relayToolOutputSchema,
       annotations: descriptor.annotations,
-      inputSchema: schema.safeExtend({
-        confirm: descriptor.requiresConfirmation
-          ? z.literal(true).describe("Explicit approval for this protected outcome")
-          : z.literal(true).optional().describe("Optional explicit approval"),
-      }),
+      inputSchema,
     },
-    async (argumentsValue, context) => {
+    async (
+      argumentsValue: Record<string, unknown>,
+      context: { mcpReq: { signal: AbortSignal } },
+    ) => {
       const { confirm, ...argumentsWithoutConfirmation } = argumentsValue as Record<
         string,
         unknown

@@ -4,6 +4,9 @@ import type {
   ChangeProofExecutionStatus,
   AgentRepairPacket,
   ChangeProofPublicationOutboxStatus,
+  ChangeProofPublicationOutboxFailure,
+  ChangeProofPublicationRecovery,
+  ChangeProofPublicationReceipt,
   ChangeVerificationDecision,
   ChangeVerificationState,
   OperationInput,
@@ -109,6 +112,26 @@ export type ProductChangePublication = {
   readonly provider?: "github";
   readonly detailsUrl?: string;
   readonly attempts?: number;
+  readonly maxAttempts?: number;
+  readonly nextAttemptAt?: number;
+  readonly lastFailure?: Pick<ChangeProofPublicationOutboxFailure, "kind" | "at">;
+  readonly recovery?: Pick<
+    ChangeProofPublicationRecovery,
+    "requestId" | "requestDigest" | "requestedBy" | "requestedAt"
+  >;
+  readonly publishedAt?: number;
+  /** Token-free provider acknowledgement for the exact Proof/check identity. */
+  readonly receipt?: Pick<
+    ChangeProofPublicationReceipt,
+    | "sequence"
+    | "proofVersion"
+    | "checkRunId"
+    | "checkDigest"
+    | "status"
+    | "conclusion"
+    | "htmlUrl"
+    | "publishedAt"
+  >;
   readonly canRetry: boolean;
 };
 
@@ -271,6 +294,36 @@ function detailsOf(value: Inspect): ProductChangeDetails {
           status: record.status,
           provider: record.provider,
           attempts: record.attempts,
+          maxAttempts: record.maxAttempts,
+          ...(record.nextAttemptAt !== undefined ? { nextAttemptAt: record.nextAttemptAt } : {}),
+          ...(record.lastFailure ? { lastFailure: record.lastFailure } : {}),
+          ...(record.recovery
+            ? {
+                recovery: {
+                  requestId: record.recovery.requestId,
+                  requestDigest: record.recovery.requestDigest,
+                  requestedBy: record.recovery.requestedBy,
+                  requestedAt: record.recovery.requestedAt,
+                },
+              }
+            : {}),
+          ...(record.publishedAt !== undefined ? { publishedAt: record.publishedAt } : {}),
+          ...(record.receipt
+            ? {
+                receipt: {
+                  sequence: record.receipt.sequence,
+                  ...(record.receipt.proofVersion !== undefined
+                    ? { proofVersion: record.receipt.proofVersion }
+                    : {}),
+                  checkRunId: record.receipt.checkRunId,
+                  checkDigest: record.receipt.checkDigest,
+                  ...(record.receipt.status ? { status: record.receipt.status } : {}),
+                  ...(record.receipt.conclusion ? { conclusion: record.receipt.conclusion } : {}),
+                  ...(record.receipt.htmlUrl ? { htmlUrl: record.receipt.htmlUrl } : {}),
+                  publishedAt: record.receipt.publishedAt,
+                },
+              }
+            : {}),
           canRetry: record.status === "retry" && record.attempts >= record.maxAttempts,
           ...(record.receipt?.htmlUrl ? { detailsUrl: record.receipt.htmlUrl } : {}),
         }),

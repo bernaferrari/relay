@@ -19,7 +19,7 @@
 }
 
 .relay-session-toolbar .relay-input {
-  min-height: 44px;
+  min-height: 36px;
   font-size: 16px;
 }
 
@@ -127,6 +127,15 @@
   color: var(--text-strong);
   font-size: 12px;
   font-weight: 600;
+}
+
+.relay-session-audit {
+  margin-top: 18px;
+}
+
+.relay-session-audit > button {
+  color: var(--text-weak);
+  font-size: 12px;
 }
 
 .relay-session-unavailable {

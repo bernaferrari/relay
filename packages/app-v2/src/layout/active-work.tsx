@@ -166,7 +166,11 @@ function ActivityCenter({
               </div>
               <Dialog.Close
                 render={
-                  <IconButton size="small" aria-label="Close Activity Center">
+                  <IconButton
+                    size="small"
+                    className="relay-activity-close"
+                    aria-label="Close Activity Center"
+                  >
                     <X aria-hidden="true" />
                   </IconButton>
                 }

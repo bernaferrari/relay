@@ -14,19 +14,13 @@ import type {
   RunOutcome,
 } from "@relay/protocol";
 import { parseOptionalRunTestStepEvidence } from "@relay/protocol";
-import type { ProductRunSummary, ProductTestStep } from "@relay/product/catalog";
+import type { ProductRunSummary } from "@relay/product/catalog";
 import type { Platform } from "../platform/types";
 import { productClientForPlatform } from "./product-client";
+import { projectTestStep, type ProductTestSummary } from "./run-test-projection";
 import { presentReadyTargets, type ProductTargetOption } from "./target-presentation";
 
-export type ProductTestSummary = {
-  id: string;
-  name: string;
-  appMapId: string;
-  appName: string;
-  stepCount: number;
-  steps?: readonly ProductTestStep[];
-};
+export type { ProductTestSummary } from "./run-test-projection";
 
 export type ReportEvidenceSection = {
   id: EvidenceChannel;
@@ -88,6 +82,8 @@ export type ProductVisualBaselineApproval = OperationOutput<"run.visual-baseline
 export type RunProductService = {
   getTest(testId: string): Promise<ProductTestSummary | undefined>;
   listTestRuns?(testId: string): Promise<readonly ProductRunSummary[]>;
+  /** Complete, cursor-following history for stability views only. */
+  listTestRunsComplete?(testId: string): Promise<readonly ProductRunSummary[]>;
   listTargets(): Promise<readonly ProductTargetOption[]>;
   presentTargets(targets: readonly AuthoringTarget[]): Promise<readonly ProductTargetOption[]>;
   start(input: ProductRunStartInput): Promise<ProductRunState>;
@@ -123,30 +119,6 @@ type ProductRuntime = {
     (typeof import("@relay/product/recording-journey"))["createProductRecordingJourneyFromClient"]
   >;
 };
-
-function projectTestStep(step: import("@relay/protocol").AppMapScenarioTestStep): ProductTestStep {
-  const children =
-    step.kind === "decision"
-      ? [...step.thenSteps, ...(step.elseSteps ?? [])]
-      : step.kind === "loop"
-        ? step.steps
-        : [];
-  const needsReview =
-    step.execution?.status === "disabled" ||
-    step.binding.status === "unresolved" ||
-    children.some(
-      (child) => child.execution?.status === "disabled" || child.binding.status === "unresolved",
-    );
-  return {
-    id: step.id,
-    kind: step.kind,
-    intent: step.intent,
-    ...(step.note ? { note: step.note } : {}),
-    capture: step.capture === true,
-    status: needsReview ? "needs-review" : "ready",
-    ...(children.length ? { children: children.map(projectTestStep) } : {}),
-  };
-}
 
 export function createRunProductService(platform: Platform): RunProductService {
   let runtimePromise: Promise<ProductRuntime> | undefined;
@@ -203,6 +175,14 @@ export function createRunProductService(platform: Platform): RunProductService {
       const { client } = await runtime();
       const { createProductCatalog } = await import("@relay/product/catalog");
       return createProductCatalog(client).listRuns({ testId });
+    },
+    async listTestRunsComplete(testId) {
+      const { client } = await runtime();
+      const { createProductCatalog } = await import("@relay/product/catalog");
+      const catalog = createProductCatalog(client);
+      return catalog.listRunsComplete
+        ? catalog.listRunsComplete({ testId })
+        : catalog.listRuns({ testId });
     },
     async listTargets() {
       const { client, targetJourney } = await runtime();

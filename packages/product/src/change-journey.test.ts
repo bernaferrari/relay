@@ -179,29 +179,61 @@ test("Change journey resumes a paused human step with a server-owned attachment"
   assert.equal("evidenceDigest" in ((resume?.input ?? {}) as object), false);
 });
 
-test("Change publications use the server-owned outbox identity", async () => {
+test("Change publications project server-owned receipts, retry state, and recovery audit", async () => {
   const operations: RelayOperationPort = {
     async invoke<Id extends OperationId>(id: Id) {
       if (id === "proof.inspect")
         return {
           proof,
-          publications: [
-            {
-              sequence: 7,
-              externalId: "change-1",
-              headSha: "b",
-              provider: "github",
-            },
-          ],
+          publications: [],
           publicationOutbox: [
             {
-              id: "change-proof-publication:canonical",
+              id: "change-proof-publication:retry",
+              externalId: "change-1",
+              headSha: "b",
+              proofId: "change-1",
+              proofVersion: 3,
+              status: "retry",
+              provider: "github",
+              attempts: 3,
+              maxAttempts: 3,
+              lastFailure: { kind: "provider-error", at: 5 },
+              recovery: {
+                requestId: "recovery-1",
+                requestDigest: `sha256:${"a".repeat(64)}`,
+                requestedBy: "human:reviewer",
+                requestedAt: 6,
+              },
+            },
+            {
+              id: "change-proof-publication:published",
               externalId: "change-1",
               headSha: "b",
               proofId: "change-1",
               proofVersion: 3,
               status: "published",
               provider: "github",
+              attempts: 1,
+              maxAttempts: 3,
+              publishedAt: 10,
+              receipt: {
+                schemaVersion: 1,
+                sequence: 2,
+                organizationId: "local",
+                projectId: "default",
+                proofId: "change-1",
+                proofVersion: 3,
+                provider: "github",
+                repository: "acme/app",
+                headSha: "b",
+                externalId: "change-1",
+                checkRunId: 42,
+                checkDigest: `sha256:${"b".repeat(64)}`,
+                status: "completed",
+                conclusion: "success",
+                htmlUrl: "https://github.com/acme/app/runs/42",
+                publishedAt: 10,
+              },
             },
           ],
         } as never;
@@ -209,7 +241,72 @@ test("Change publications use the server-owned outbox identity", async () => {
     },
   };
   const state = await createProductChangeJourney({ operations }).open("change-1");
-  assert.equal(state.details?.publications[0]?.id, "change-proof-publication:canonical");
+  assert.deepEqual(state.details?.publications, [
+    {
+      id: "change-proof-publication:retry",
+      status: "retry",
+      provider: "github",
+      attempts: 3,
+      maxAttempts: 3,
+      lastFailure: { kind: "provider-error", at: 5 },
+      recovery: {
+        requestId: "recovery-1",
+        requestDigest: `sha256:${"a".repeat(64)}`,
+        requestedBy: "human:reviewer",
+        requestedAt: 6,
+      },
+      canRetry: true,
+    },
+    {
+      id: "change-proof-publication:published",
+      status: "published",
+      provider: "github",
+      attempts: 1,
+      maxAttempts: 3,
+      publishedAt: 10,
+      receipt: {
+        sequence: 2,
+        proofVersion: 3,
+        checkRunId: 42,
+        checkDigest: `sha256:${"b".repeat(64)}`,
+        status: "completed",
+        conclusion: "success",
+        htmlUrl: "https://github.com/acme/app/runs/42",
+        publishedAt: 10,
+      },
+      detailsUrl: "https://github.com/acme/app/runs/42",
+      canRetry: false,
+    },
+  ]);
+});
+
+test("Change publication retry delegates the exact outbox identity to the canonical recovery operation", async () => {
+  const calls: Array<{ id: OperationId; input: unknown }> = [];
+  const operations: RelayOperationPort = {
+    async invoke<Id extends OperationId>(id: Id, input: OperationInput<Id>) {
+      calls.push({ id, input });
+      if (id === "proof.inspect") {
+        return { proof, publications: [], publicationOutbox: [] } as OperationOutput<Id>;
+      }
+      return { proof, publication: {} } as unknown as OperationOutput<Id>;
+    },
+  };
+  await createProductChangeJourney({ operations }).retryPublication({
+    changeId: "change-1",
+    publicationId: "change-proof-publication:retry",
+    expectedVersion: 3,
+    reason: "Retry after reviewing the provider receipt.",
+  });
+  assert.deepEqual(calls[0], {
+    id: "proof.publication.retry",
+    input: {
+      proofId: "change-1",
+      publicationId: "change-proof-publication:retry",
+      expectedProofVersion: 3,
+      reason: "Retry after reviewing the provider receipt.",
+      confirm: true,
+    },
+  });
 });
 
 test("Change details project the reviewed plan, claim, failure, and audit boundary", async () => {

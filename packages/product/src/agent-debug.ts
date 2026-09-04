@@ -7,6 +7,8 @@ import type {
 } from "@relay/protocol";
 import {
   type ExportEvidenceIntent,
+  type DebugBugOutcome,
+  type DebugBugOutcomeIntent,
   type FailureInspection,
   type InspectFailureIntent,
   type ProposeRepairIntent,
@@ -19,6 +21,8 @@ import {
   type VerifyChangeOutcomeIntent,
 } from "@relay/workflows";
 import { createRelayOperationPort } from "@relay/workflows/operation-port";
+
+export type { DebugBugOutcome, DebugBugOutcomeIntent } from "@relay/workflows";
 
 /** The deliberately small public view of one discovery session.
  * Controls, accessibility trees, screenshots, and raw transitions remain in
@@ -154,6 +158,8 @@ export type AgentDebugPlanInput = {
 
 export type AgentDebugProductService = {
   readonly plan: (input: AgentDebugPlanInput) => AgentDebugPlan;
+  /** Advance one explicit, bounded Agent Debug stage through canonical jobs. */
+  readonly debugBug: (intent: DebugBugOutcomeIntent) => Promise<DebugBugOutcome>;
   readonly record: (intent: RecordTestOutcomeIntent) => ReturnType<RelayOutcomeJobs["record"]>;
   readonly createDiscovery: (
     input: OperationInput<"discovery.create">,
@@ -372,7 +378,13 @@ export type AgentDebugProductServiceOptions = {
   readonly actorId: string;
   readonly jobs?: Pick<
     RelayOutcomeJobs,
-    "record" | "run" | "inspectFailure" | "proposeRepair" | "verifyChange" | "exportEvidence"
+    | "record"
+    | "run"
+    | "inspectFailure"
+    | "proposeRepair"
+    | "verifyChange"
+    | "exportEvidence"
+    | "debugBug"
   >;
   readonly operations?: RelayOperationPort;
 };
@@ -390,6 +402,7 @@ export function createAgentDebugProductService(
   const operations = options.operations ?? createRelayOperationPort(client);
   return {
     plan: (input) => planAgentDebug({ ...input, actorId: options.actorId }),
+    debugBug: (intent) => jobsPromise.then((jobs) => jobs.debugBug(intent)),
     record: async (intent) => (await jobsPromise).record(intent),
     async createDiscovery(input) {
       boundedScope(input.scope);
