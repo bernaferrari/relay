@@ -4,9 +4,6 @@ import {
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuGroup,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
 } from "@relay/ui-react/components/dropdown-menu";
 import type {
   ProductAffectedTest,
@@ -174,10 +171,7 @@ export function ChangePage() {
                     render={<Button disabled={mutation.isPending}>More</Button>}
                   />
 
-                  <DropdownMenuContent
-                    sideOffset={6}
-                    align="end"
-                  >
+                  <DropdownMenuContent sideOffset={6} align="end">
                     <DropdownMenuItem
                       variant="destructive"
                       onClick={() => mutation.mutate("cancel")}

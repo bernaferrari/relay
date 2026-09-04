@@ -291,7 +291,7 @@ describe("Devices", () => {
     expect(document.body.textContent).toContain("QA phone");
     expect(document.body.textContent).not.toContain("Design iPad");
     expect(document.body.textContent).not.toContain("Checkout browser");
-    expect(button("Needs attention").getAttribute("aria-pressed")).toBe("true");
+    expect(button("Needs attention").getAttribute("aria-selected")).toBe("true");
     expect(document.body.textContent).not.toContain("Comfortable");
     expect(document.body.textContent).not.toContain("Compact");
     expect(document.body.textContent).not.toMatch(/\b(?:lease|profile|inventory)\b/i);
@@ -300,14 +300,13 @@ describe("Devices", () => {
     await click(button("All"));
     expect(history.location.search).toBe("");
     expect(document.body.textContent).toContain("Design iPad");
-    const virtualDevices = [...document.querySelectorAll<HTMLButtonElement>('button[aria-expanded]')]
-      .find((candidate) => candidate.textContent?.includes("Virtual devices"));
+    const virtualDevices = [
+      ...document.querySelectorAll<HTMLButtonElement>("button[aria-expanded]"),
+    ].find((candidate) => candidate.textContent?.includes("Virtual devices"));
     if (!virtualDevices) throw new Error("Virtual devices disclosure not found");
     await click(virtualDevices);
     expect(document.body.textContent).toContain("Checkout browser");
-    expect(
-      virtualDevices.getAttribute("aria-expanded"),
-    ).toBe("true");
+    expect(virtualDevices.getAttribute("aria-expanded")).toBe("true");
   });
 
   it("gives a device needing attention one dominant recovery action", async () => {

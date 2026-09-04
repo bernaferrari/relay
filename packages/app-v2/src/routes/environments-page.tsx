@@ -92,10 +92,7 @@ export function EnvironmentsPage() {
               <Plus aria-hidden="true" /> New Browser Space
             </DialogTrigger>
 
-            <DialogContent
-              showCloseButton={false}
-              className="relay-environment-dialog"
-            >
+            <DialogContent showCloseButton={false} className="relay-environment-dialog">
               <DialogTitle>New Browser Space</DialogTitle>
               <DialogDescription>
                 Relay keeps each managed browser isolated. Persistent Spaces retain their local

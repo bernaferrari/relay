@@ -204,9 +204,10 @@ function caseStatus(status: ProductBatchCase["status"]): string {
   return "Pending";
 }
 
-function caseVariant(
-  status: ProductBatchCase["status"],
-): { variant: "default" | "destructive" | "secondary"; className?: string } {
+function caseVariant(status: ProductBatchCase["status"]): {
+  variant: "default" | "destructive" | "secondary";
+  className?: string;
+} {
   if (status === "passed") {
     return {
       variant: "default",

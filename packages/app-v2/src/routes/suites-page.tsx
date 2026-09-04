@@ -147,10 +147,7 @@ export function SuitesPage() {
               <Plus aria-hidden="true" /> New Suite
             </DialogTrigger>
 
-            <DialogContent
-              showCloseButton={false}
-              className="relay-suite-dialog"
-            >
+            <DialogContent showCloseButton={false} className="relay-suite-dialog">
               <DialogTitle>New Suite</DialogTitle>
               <DialogDescription>
                 Choose one App, then group the reviewed Tests and optional Data sets that belong

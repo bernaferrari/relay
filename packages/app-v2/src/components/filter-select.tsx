@@ -36,7 +36,7 @@ export function SelectField({
     >
       <div className={`grid min-w-0 gap-1.5 ${className ?? ""}`}>
         <Label className="text-xs font-medium text-foreground">{label}</Label>
-        <SelectTrigger className="w-full">
+        <SelectTrigger className="w-full" aria-label={label}>
           <SelectValue />
         </SelectTrigger>
       </div>

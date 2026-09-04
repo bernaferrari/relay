@@ -339,9 +339,7 @@ export function EnvironmentPage() {
                 <Trash2 aria-hidden="true" /> Remove
               </DialogTrigger>
 
-              <DialogContent
-                showCloseButton={false}
-              >
+              <DialogContent showCloseButton={false}>
                 <DialogTitle>Remove {space.name}?</DialogTitle>
                 <DialogDescription>
                   This removes the managed target from Relay. Reports already created from it remain
@@ -369,9 +367,7 @@ export function EnvironmentPage() {
           </section>
 
           <Dialog open={accountOpen} onOpenChange={setAccountOpen}>
-            <DialogContent
-              showCloseButton={false}
-            >
+            <DialogContent showCloseButton={false}>
               <DialogTitle>Save current sign-in</DialogTitle>
               <DialogDescription>
                 Open this Space, sign in yourself, then save the current reviewed browser state

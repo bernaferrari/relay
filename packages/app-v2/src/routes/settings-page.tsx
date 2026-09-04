@@ -1,11 +1,7 @@
 /** @jsxImportSource react */
 import type { SensitiveEvidenceChannel } from "@relay/protocol";
 import { Badge } from "@relay/ui-react/components/badge";
-import {
-  Field,
-  FieldDescription,
-  FieldLabel,
-} from "@relay/ui-react/components/field";
+import { Field, FieldDescription, FieldLabel } from "@relay/ui-react/components/field";
 import {
   Item,
   ItemActions,
@@ -575,11 +571,7 @@ function AboutSettings() {
         {platform.updates ? (
           <SettingRow title="Updates" description={updateDescription(update)}>
             {update?.phase === "downloaded" ? (
-              <Button
-                variant="default"
-                size="sm"
-                onClick={() => void platform.updates?.install()}
-              >
+              <Button variant="default" size="sm" onClick={() => void platform.updates?.install()}>
                 Install update
               </Button>
             ) : (
@@ -599,7 +591,7 @@ function AboutSettings() {
         >
           {platform.openExternal ? (
             <Button
-            size="sm"
+              size="sm"
               onClick={() =>
                 void platform.openExternal?.("https://github.com/callstackincubator/agent-device")
               }

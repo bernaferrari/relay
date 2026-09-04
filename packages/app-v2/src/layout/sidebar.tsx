@@ -9,6 +9,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  useSidebar,
 } from "@relay/ui-react/components/sidebar";
 import { Link, useLocation } from "@tanstack/react-router";
 import {
@@ -49,7 +50,11 @@ export function isSidebarItemActive(pathname: string, itemPath: (typeof mainItem
 
 export function SidebarContent({ label = "Primary" }: { label?: string }) {
   const { pathname } = useLocation();
+  const { isMobile, setOpenMobile } = useSidebar();
   const settingsActive = pathname.startsWith("/settings/");
+  const closeMobileNavigation = () => {
+    if (isMobile) setOpenMobile(false);
+  };
 
   return (
     <SharedSidebarContent className="relay-sidebar-body">
@@ -63,7 +68,7 @@ export function SidebarContent({ label = "Primary" }: { label?: string }) {
               return (
                 <SidebarMenuItem key={item.to}>
                   <SidebarMenuButton
-                    render={<Link to={item.to} />}
+                    render={<Link to={item.to} onClick={closeMobileNavigation} />}
                     isActive={active}
                     aria-current={active ? "page" : undefined}
                     className={`relay-nav-link${active ? " relay-nav-link--active" : ""}`}
@@ -81,7 +86,7 @@ export function SidebarContent({ label = "Primary" }: { label?: string }) {
         <ActiveWork />
         <nav className="relay-nav relay-nav--secondary" aria-label={`${label} settings`}>
           <SidebarMenuButton
-            render={<Link to="/settings/general" />}
+            render={<Link to="/settings/general" onClick={closeMobileNavigation} />}
             isActive={settingsActive}
             className={`relay-nav-link${settingsActive ? " relay-nav-link--active" : ""}`}
           >
@@ -96,7 +101,7 @@ export function SidebarContent({ label = "Primary" }: { label?: string }) {
 
 export function Sidebar() {
   return (
-    <SharedSidebar collapsible="none" className="relay-sidebar" aria-label="Relay navigation">
+    <SharedSidebar className="relay-sidebar" aria-label="Relay navigation">
       <SidebarHeader className="relay-sidebar-head relay-electron-drag">
         <div className="relay-brand" aria-label="Relay">
           <span className="relay-brand-mark" aria-hidden="true" />

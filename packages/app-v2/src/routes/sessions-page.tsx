@@ -234,9 +234,7 @@ function sessionVariant(
   return "secondary";
 }
 
-function sessionBadgeVariant(
-  tone: ReturnType<typeof sessionVariant>,
-): "default" | "secondary" {
+function sessionBadgeVariant(tone: ReturnType<typeof sessionVariant>): "default" | "secondary" {
   if (tone === "success") return "default";
   return "secondary";
 }

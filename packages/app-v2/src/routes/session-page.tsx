@@ -186,9 +186,7 @@ export function SessionPage() {
                   <Square aria-hidden="true" /> End Session
                 </DialogTrigger>
 
-                <DialogContent
-                  showCloseButton={false}
-                >
+                <DialogContent showCloseButton={false}>
                   <DialogTitle>End this Session?</DialogTitle>
                   <DialogDescription>
                     Relay will stop this active authoring Session. Saved evidence and its history

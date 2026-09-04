@@ -32,10 +32,7 @@ export function IssueDraftButton({ source }: { source: ProductIssueSource }) {
         <FileWarning aria-hidden="true" /> Draft issue
       </DialogTrigger>
 
-      <DialogContent
-        showCloseButton={false}
-        className="relay-issue-draft-dialog"
-      >
+      <DialogContent showCloseButton={false} className="relay-issue-draft-dialog">
         <DialogTitle>Issue handoff</DialogTitle>
         <DialogDescription>
           Relay prepared a bounded, redacted draft. Nothing is sent to GitHub or another provider.

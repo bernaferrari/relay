@@ -134,7 +134,12 @@ export function HomePage() {
             </Button>
           ) : null}
           {hasTests ? (
-            <Button nativeButton={false} render={<Link to="/tests/new" />} variant="default" size="sm">
+            <Button
+              nativeButton={false}
+              render={<Link to="/tests/new" />}
+              variant="default"
+              size="sm"
+            >
               <Plus className="size-4" aria-hidden="true" />
               Record a Test
             </Button>
@@ -181,8 +186,12 @@ export function HomePage() {
           <section className="min-w-0" aria-labelledby="home-next-title">
             <div className="flex items-end justify-between gap-4">
               <div>
-                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Continue</p>
-                <h2 className="mt-1 text-lg font-semibold tracking-tight text-foreground">Pick up where you left off</h2>
+                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                  Continue
+                </p>
+                <h2 className="mt-1 text-lg font-semibold tracking-tight text-foreground">
+                  Pick up where you left off
+                </h2>
               </div>
             </div>
             <HomeNextAction
@@ -196,10 +205,23 @@ export function HomePage() {
           <section className="min-w-0" aria-labelledby="home-recent-title">
             <div className="flex items-end justify-between gap-4">
               <div>
-                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Recent</p>
-                <h2 id="home-recent-title" className="mt-1 text-lg font-semibold tracking-tight text-foreground">Latest results</h2>
+                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                  Recent
+                </p>
+                <h2
+                  id="home-recent-title"
+                  className="mt-1 text-lg font-semibold tracking-tight text-foreground"
+                >
+                  Latest results
+                </h2>
               </div>
-              <Button nativeButton={false} render={<Link to="/runs" />} variant="ghost" size="sm" className="gap-1 text-muted-foreground">
+              <Button
+                nativeButton={false}
+                render={<Link to="/runs" />}
+                variant="ghost"
+                size="sm"
+                className="gap-1 text-muted-foreground"
+              >
                 View all <ArrowRight className="size-4" aria-hidden="true" />
               </Button>
             </div>
@@ -215,10 +237,15 @@ export function HomePage() {
             ) : (
               <Card className="mt-4" size="sm">
                 <CardContent className="flex items-start gap-3">
-                  <CheckCircle2 className="mt-0.5 size-4 text-muted-foreground" aria-hidden="true" />
+                  <CheckCircle2
+                    className="mt-0.5 size-4 text-muted-foreground"
+                    aria-hidden="true"
+                  />
                   <div className="space-y-1">
                     <strong className="text-sm font-medium text-foreground">No results yet</strong>
-                    <p className="text-sm text-muted-foreground">Open a saved Test and run it when you are ready.</p>
+                    <p className="text-sm text-muted-foreground">
+                      Open a saved Test and run it when you are ready.
+                    </p>
                   </div>
                 </CardContent>
               </Card>
@@ -394,8 +421,15 @@ function NextCardLink({
         <Icon className="size-4" aria-hidden="true" />
       </span>
       <span className="grid min-w-0 gap-1.5">
-        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{eyebrow}</span>
-        <strong id="home-next-title" className="text-base font-semibold tracking-tight text-foreground">{title}</strong>
+        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          {eyebrow}
+        </span>
+        <strong
+          id="home-next-title"
+          className="text-base font-semibold tracking-tight text-foreground"
+        >
+          {title}
+        </strong>
         <span className="max-w-prose text-sm leading-5 text-muted-foreground">{detail}</span>
       </span>
       <span className="col-span-2 inline-flex items-center gap-1 text-sm font-medium text-foreground md:col-span-1 md:mt-1">
@@ -407,15 +441,24 @@ function NextCardLink({
 
 function RecentRun({ run }: { run: ProductRunSummary }) {
   return (
-    <Link className="group grid min-h-16 grid-cols-[minmax(0,1fr)_auto_1rem] items-center gap-3 border-b border-border/60 px-4 py-3 last:border-b-0 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset" to="/runs/$runId" params={{ runId: run.id }}>
+    <Link
+      className="group grid min-h-16 grid-cols-[minmax(0,1fr)_auto_1rem] items-center gap-3 border-b border-border/60 px-4 py-3 last:border-b-0 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+      to="/runs/$runId"
+      params={{ runId: run.id }}
+    >
       <span className="grid min-w-0 gap-1">
-        <strong className="truncate text-sm font-medium text-foreground">{run.testName ?? run.title}</strong>
+        <strong className="truncate text-sm font-medium text-foreground">
+          {run.testName ?? run.title}
+        </strong>
         <small className="truncate text-xs text-muted-foreground">
           {run.targetName ?? run.appName ?? "Saved Test"} · {relativeTime(runTime(run))}
         </small>
       </span>
       <OutcomeMark outcome={run.outcome ?? run.phase} />
-      <ArrowRight className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+      <ArrowRight
+        className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5"
+        aria-hidden="true"
+      />
     </Link>
   );
 }

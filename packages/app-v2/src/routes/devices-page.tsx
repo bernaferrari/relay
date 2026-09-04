@@ -15,10 +15,7 @@ import {
   ItemMedia,
   ItemTitle,
 } from "@relay/ui-react/components/item";
-import {
-  ToggleGroup,
-  ToggleGroupItem,
-} from "@relay/ui-react/components/toggle-group";
+import { Tabs, TabsList, TabsTrigger } from "@relay/ui-react/components/tabs";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { ChevronDown, ChevronRight, Monitor, Smartphone, Tablet } from "lucide-react";
@@ -246,24 +243,22 @@ export function DevicesPage() {
         ) : null}
       </header>
 
-      <div className="relay-device-toolbar">
-        <ToggleGroup
-          className="relay-device-filter"
-          value={[activeFilter]}
-          aria-label="Filter devices"
-          onValueChange={(next) => {
-            const value = next[0];
-            if (value) updateSearch({ status: value as DeviceFilter });
-          }}
+      <div className="mt-8 flex min-w-0 flex-col gap-3 border-b border-border/60 pb-4 md:flex-row md:items-center">
+        <Tabs
+          className="min-w-0 flex-1"
+          value={activeFilter}
+          onValueChange={(value) => updateSearch({ status: value as DeviceFilter })}
         >
-          {FILTERS.map((filter) => (
-            <ToggleGroupItem key={filter.id} value={filter.id}>
-              {filter.label}
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
+          <TabsList className="max-w-full justify-start" variant="line" aria-label="Filter devices">
+            {FILTERS.map((filter) => (
+              <TabsTrigger key={filter.id} value={filter.id}>
+                {filter.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
         <Input
-          className="relay-device-search"
+          className="w-full min-w-0 md:w-56 md:max-w-[35%]"
           type="search"
           value={query}
           onChange={(event) => setQuery(event.currentTarget.value)}

@@ -78,10 +78,7 @@ export function AppsPage() {
             <Plus aria-hidden="true" /> Add App
           </DialogTrigger>
 
-          <DialogContent
-            showCloseButton={false}
-            className="relay-add-app-dialog"
-          >
+          <DialogContent showCloseButton={false} className="relay-add-app-dialog">
             <DialogTitle>Add an App</DialogTitle>
             <DialogDescription>
               Give the app a clear name. Relay will create its App Map, then take you directly to

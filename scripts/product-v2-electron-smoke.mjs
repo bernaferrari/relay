@@ -59,11 +59,16 @@ async function waitForRoute(page, expected) {
 
 async function clickNav(page, name, route) {
   const link = page.getByRole("link", { name, exact: true }).first();
+  let openedCompactNavigation = false;
   if (!(await link.isVisible().catch(() => false))) {
     await page.getByRole("button", { name: "Open navigation", exact: true }).click();
+    openedCompactNavigation = true;
   }
   await link.click();
   await waitForRoute(page, route);
+  if (openedCompactNavigation) {
+    await page.getByRole("dialog").waitFor({ state: "hidden", timeout: CHECK_TIMEOUT_MS });
+  }
 }
 
 async function assertLayout(page) {
@@ -90,7 +95,7 @@ async function assertDesktopChrome(page) {
   const chrome = await page.evaluate(() => {
     const rect = (selector) => {
       const element = document.querySelector(selector);
-      if (!(element instanceof HTMLElement)) return null;
+      if (!(element instanceof Element)) return null;
       const bounds = element.getBoundingClientRect();
       const style = getComputedStyle(element);
       return {
@@ -113,7 +118,7 @@ async function assertDesktopChrome(page) {
       forward: rect('.relay-history-button[aria-label="Go forward"]'),
       backIcon: rect('.relay-history-button[aria-label="Go back"] svg'),
       forwardIcon: rect('.relay-history-button[aria-label="Go forward"] svg'),
-      activity: rect(".relay-activity-trigger"),
+      activity: rect('[aria-label^="Open Activity Center"]'),
       command: rect(".relay-command-trigger"),
     };
   });

@@ -321,10 +321,7 @@ function RecordingWorkspace({ workflowId, exitLink }: { workflowId: string; exit
               }
             />
 
-            <DialogContent
-              showCloseButton={false}
-              className="relay-checkpoint-dialog"
-            >
+            <DialogContent showCloseButton={false} className="relay-checkpoint-dialog">
               <DialogTitle>Save a checkpoint</DialogTitle>
               <DialogDescription>
                 Mark a state someone should verify when this Test runs.

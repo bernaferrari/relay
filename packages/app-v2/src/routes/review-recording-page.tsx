@@ -441,7 +441,7 @@ export function ReviewRecordingPage() {
                   </div>
                   {selectedAction.stepCount > 1 ? (
                     <Button
-                    size="sm"
+                      size="sm"
                       variant="ghost"
                       onClick={() =>
                         edit({
@@ -488,9 +488,7 @@ export function ReviewRecordingPage() {
                     {selectedActions.length === 1 ? "action" : "actions"}
                   </DialogTrigger>
 
-                  <DialogContent
-                    showCloseButton={false}
-                  >
+                  <DialogContent showCloseButton={false}>
                     <DialogTitle>
                       Remove selected {selectedActions.length === 1 ? "action" : "actions"}?
                     </DialogTitle>

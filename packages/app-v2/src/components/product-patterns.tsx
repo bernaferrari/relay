@@ -164,7 +164,9 @@ export function OutcomeMark({ outcome }: { outcome: string | undefined }) {
   );
 }
 
-function outcomeBadgeVariant(tone: ReturnType<typeof outcomePresentation>["tone"]): "default" | "secondary" | "destructive" {
+function outcomeBadgeVariant(
+  tone: ReturnType<typeof outcomePresentation>["tone"],
+): "default" | "secondary" | "destructive" {
   if (tone === "danger") return "destructive";
   if (tone === "success") return "default";
   return "secondary";

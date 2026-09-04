@@ -54,10 +54,10 @@
   --secondary: var(--surface-base);
   --secondary-foreground: var(--text-strong);
   --muted: var(--background-weak);
-  --muted-foreground: var(--text-weaker);
+  --muted-foreground: var(--text-weak);
   --accent: var(--surface-base);
   --accent-foreground: var(--text-strong);
-  --destructive: var(--surface-critical-base);
+  --destructive: var(--text-critical-base);
   --border: var(--border-weak-base);
   --input: var(--border-base);
   --ring: var(--border-hover);

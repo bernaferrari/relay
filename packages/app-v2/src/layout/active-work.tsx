@@ -1,7 +1,6 @@
 /** @jsxImportSource react */
 import {
   Dialog,
-  DialogTrigger,
   DialogClose,
   DialogContent,
   DialogTitle,
@@ -184,11 +183,7 @@ function ActivityCenter({
           </div>
           <DialogClose
             render={
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                aria-label="Close Activity Center"
-              >
+              <Button size="icon-sm" variant="ghost" aria-label="Close Activity Center">
                 <X className="size-3.5" aria-hidden="true" />
               </Button>
             }

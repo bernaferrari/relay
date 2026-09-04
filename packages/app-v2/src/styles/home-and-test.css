@@ -408,60 +408,6 @@
   flex: none;
 }
 
-.relay-library-toolbar {
-  display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(140px, 0.42fr) minmax(150px, 0.5fr);
-  gap: 12px;
-  margin-top: 34px;
-  padding: 14px;
-  border: 1px solid var(--border-weak-base);
-  border-radius: var(--radius-xl);
-  background: var(--background-weak);
-  box-shadow: 0 1px 2px color-mix(in srgb, black 4%, transparent);
-}
-
-.relay-library-toolbar--runs {
-  grid-template-columns: minmax(240px, 1fr) minmax(160px, 0.42fr);
-  margin-top: 12px;
-}
-
-.relay-library-search,
-.relay-library-filter {
-  display: grid;
-  min-width: 0;
-  gap: 6px;
-}
-
-.relay-library-search label,
-.relay-library-filter label {
-  color: var(--text-weak);
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.relay-library-search .relay-input,
-.relay-select {
-  min-height: 36px;
-  border: 1px solid var(--border-base);
-  border-radius: var(--radius-md);
-  color: var(--text-strong);
-  background: var(--background-strong);
-  font: inherit;
-  font-size: 16px;
-  box-shadow: var(--shadow-xs);
-}
-
-.relay-library-search .relay-input {
-  padding-inline: 12px;
-}
-
-.relay-select {
-  width: 100%;
-  padding: 0 34px 0 11px;
-  cursor: pointer;
-}
-
-.relay-select:focus-visible,
 .relay-run-view:focus-visible,
 .relay-library-row:focus-visible,
 .relay-inline-button:focus-visible {

@@ -1,5 +1,6 @@
 /** @jsxImportSource react */
 import type { ProductRunSummary } from "@relay/product/catalog";
+import { ScrollArea } from "@relay/ui-react/components/scroll-area";
 import {
   useEffect,
   useMemo,
@@ -150,11 +151,14 @@ function WindowedRunHistory({
         This long history is windowed for performance. Use Up and Down to move one Report, Page Up
         and Page Down to move by a screen, and Home or End to jump to the first or last Report.
       </p>
-      <div
-        ref={viewportRef}
-        className="relay-windowed-run-scroll min-w-0 overflow-auto overscroll-contain"
-        aria-label={`${runs.length} Runs`}
-        aria-describedby="run-history-keyboard-help"
+      <ScrollArea
+        viewportRef={viewportRef}
+        viewportProps={{
+          "aria-label": `${runs.length} Runs`,
+          "aria-describedby": "run-history-keyboard-help",
+          className: "overscroll-contain",
+        }}
+        className="relay-windowed-run-scroll h-[calc(100dvh-20rem)] min-h-64 max-h-[64rem] min-w-0 md:h-[calc(100dvh-22rem)] md:min-h-[30rem]"
       >
         <ul
           className="relay-library-list relay-run-list relay-windowed-run-list"
@@ -184,7 +188,7 @@ function WindowedRunHistory({
             );
           })}
         </ul>
-      </div>
+      </ScrollArea>
     </div>
   );
 }

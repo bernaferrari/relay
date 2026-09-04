@@ -1,8 +1,6 @@
 /** @jsxImportSource react */
 import {
   Dialog,
-  DialogTrigger,
-  DialogClose,
   DialogContent,
   DialogTitle,
   DialogDescription,
@@ -108,10 +106,7 @@ export function VersionEditorDialog({
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent
-        showCloseButton={false}
-        className="relay-resource-dialog"
-      >
+      <DialogContent showCloseButton={false} className="relay-resource-dialog">
         <DialogTitle>{editing ? "Edit version" : "Add version"}</DialogTitle>
         <DialogDescription>
           Register the exact build identity Relay can use. This does not associate a build with an
@@ -259,10 +254,7 @@ export function BrowserAccountDialog({
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent
-        showCloseButton={false}
-        className="relay-resource-dialog"
-      >
+      <DialogContent showCloseButton={false} className="relay-resource-dialog">
         <DialogTitle>{editing ? "Refresh browser sign-in" : "Save browser sign-in"}</DialogTitle>
         <DialogDescription>
           {editing
@@ -338,10 +330,7 @@ export function RevokeAccountDialog({
 }) {
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent
-        showCloseButton={false}
-        className="relay-resource-dialog"
-      >
+      <DialogContent showCloseButton={false} className="relay-resource-dialog">
         <DialogTitle>Revoke browser sign-in?</DialogTitle>
         <DialogDescription>
           This revokes “{account.fixture.name}” on {account.target.name}. Relay will keep the audit

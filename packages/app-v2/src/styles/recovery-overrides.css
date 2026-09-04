@@ -35,53 +35,6 @@
   height: 16px;
 }
 
-.relay-tests-page .relay-library-toolbar {
-  grid-template-columns: minmax(260px, 1fr) minmax(156px, 0.38fr) minmax(172px, 0.46fr);
-  align-items: end;
-  gap: 14px;
-  margin-top: 34px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-.relay-tests-page .relay-library-search,
-.relay-tests-page .relay-library-filter {
-  gap: 7px;
-}
-
-.relay-tests-page .relay-library-search label,
-.relay-tests-page .relay-library-filter-label {
-  color: var(--text-base);
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1.25;
-}
-
-.relay-library-search-control {
-  position: relative;
-}
-
-.relay-library-search-control > svg {
-  position: absolute;
-  z-index: 1;
-  top: 50%;
-  left: 12px;
-  width: 16px;
-  height: 16px;
-  color: var(--text-weaker);
-  pointer-events: none;
-  transform: translateY(-50%);
-  stroke-width: 1.8;
-}
-
-.relay-tests-page .relay-library-search .relay-input {
-  width: 100%;
-  padding-right: 12px;
-  padding-left: 38px;
-}
-
 .relay-changes-page .relay-empty-state--filtered {
   display: flex;
   width: 100%;
@@ -232,10 +185,6 @@
 }
 
 @media (max-width: 720px) {
-  .relay-tests-page .relay-library-toolbar {
-    grid-template-columns: 1fr;
-  }
-
   .relay-devices-page .relay-device-row {
     grid-template-columns: 38px minmax(0, 1fr) auto;
   }

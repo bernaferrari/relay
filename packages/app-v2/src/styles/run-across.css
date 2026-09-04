@@ -368,17 +368,6 @@
   min-width: 0;
 }
 
-.relay-windowed-run-scroll {
-  height: min(480px, max(260px, calc(100dvh - 300px)));
-  min-height: 260px;
-  border-radius: var(--radius-xl);
-}
-
-.relay-windowed-run-scroll > .relay-scroll-area-viewport {
-  border-radius: inherit;
-  overscroll-behavior: contain;
-}
-
 .relay-windowed-run-list {
   position: relative;
   width: 100%;

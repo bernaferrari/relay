@@ -395,9 +395,7 @@ export function SuitePage() {
                 <Trash2 aria-hidden="true" /> Remove
               </DialogTrigger>
 
-              <DialogContent
-                showCloseButton={false}
-              >
+              <DialogContent showCloseButton={false}>
                 <DialogTitle>Remove {value.name}?</DialogTitle>
                 <DialogDescription>
                   This removes the Suite grouping. Its Tests and Reports remain available.
@@ -424,10 +422,7 @@ export function SuitePage() {
           </section>
 
           <Dialog open={editOpen} onOpenChange={setEditOpen}>
-            <DialogContent
-              showCloseButton={false}
-              className="relay-suite-dialog"
-            >
+            <DialogContent showCloseButton={false} className="relay-suite-dialog">
               <DialogTitle>Edit Suite</DialogTitle>
               <DialogDescription>
                 Keep the scope deliberate. Removing a Test from this Suite does not delete it.

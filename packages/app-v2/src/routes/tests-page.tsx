@@ -168,7 +168,7 @@ export function TestsPage() {
             title="No Tests match these filters"
             detail="Try another name, app, or status. Your saved Tests have not changed."
             action={
-        <Button variant="ghost" size="sm" onClick={clearFilters}>
+              <Button variant="ghost" size="sm" onClick={clearFilters}>
                 Clear filters
               </Button>
             }

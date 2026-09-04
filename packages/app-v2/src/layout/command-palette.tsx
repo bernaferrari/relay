@@ -1,8 +1,6 @@
 /** @jsxImportSource react */
 import {
   Dialog,
-  DialogTrigger,
-  DialogClose,
   DialogContent,
   DialogTitle,
   DialogDescription,

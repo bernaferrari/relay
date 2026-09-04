@@ -163,15 +163,20 @@ async function clickNav(page, name, route) {
   process.stderr.write(`[browser-smoke] navigate ${name} -> ${route}\n`);
   // 800px is the Product V2 minimum shell and uses the compact navigation
   // drawer. Open it only when the desktop sidebar is not in the DOM.
+  let openedCompactNavigation = false;
   if (!(await page.getByRole("link", { name, exact: true }).count())) {
     process.stderr.write(`[browser-smoke] opening compact navigation\n`);
     await page.getByRole("button", { name: "Open navigation", exact: true }).click();
+    openedCompactNavigation = true;
     process.stderr.write(`[browser-smoke] compact navigation open\n`);
   }
   process.stderr.write(`[browser-smoke] clicking ${name}\n`);
   await page.getByRole("link", { name, exact: true }).click();
   process.stderr.write(`[browser-smoke] clicked ${name}; url=${page.url()}; waiting for route\n`);
   await waitForRoute(page, route);
+  if (openedCompactNavigation) {
+    await page.getByRole("dialog").waitFor({ state: "hidden", timeout: CHECK_TIMEOUT_MS });
+  }
 }
 
 async function assertMinimumLayout(page) {

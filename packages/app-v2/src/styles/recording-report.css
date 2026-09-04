@@ -1313,31 +1313,6 @@
   white-space: nowrap;
 }
 
-.relay-navigation-backdrop,
-.relay-navigation-viewport {
-  display: block;
-}
-
-.relay-navigation-viewport {
-  place-items: stretch start;
-  padding: 0;
-}
-
-.relay-navigation-dialog {
-  width: min(var(--relay-sidebar-width), calc(100vw - 48px));
-  height: 100dvh;
-  border-right: 1px solid var(--border-weak-base);
-  color: var(--text-strong);
-  background: var(--background-weak);
-  box-shadow: var(--shadow-lg);
-  outline: 0;
-}
-
-.relay-navigation-dialog .relay-sidebar-body {
-  height: 100%;
-  padding-top: 12px;
-}
-
 .relay-electron-drag {
   -webkit-user-select: none;
   user-select: none;
@@ -1558,9 +1533,7 @@
     box-shadow: 0 1px 3px color-mix(in srgb, black 5%, transparent);
   }
 
-  .relay-mobile-header,
-  .relay-navigation-backdrop,
-  .relay-navigation-viewport {
+  .relay-mobile-header {
     display: none;
   }
 

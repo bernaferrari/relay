@@ -191,9 +191,7 @@ describe("Agent Debug route", () => {
     await settle();
 
     const options = [...document.querySelectorAll<HTMLElement>('[role="option"]')];
-    expect(options.map((option) => option.textContent?.trim())).toEqual([
-      "Ready Pixel · android",
-    ]);
+    expect(options.map((option) => option.textContent?.trim())).toEqual(["Ready Pixel · android"]);
     expect(document.body.textContent).not.toContain("serial-ready");
   });
 

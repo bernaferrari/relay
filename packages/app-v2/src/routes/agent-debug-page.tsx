@@ -1,10 +1,5 @@
 /** @jsxImportSource react */
-import {
-  Field,
-  FieldDescription,
-  FieldError,
-  FieldLabel,
-} from "@relay/ui-react/components/field";
+import { Field, FieldDescription, FieldError, FieldLabel } from "@relay/ui-react/components/field";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@relay/ui-react/components/alert";
 import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
@@ -118,11 +113,7 @@ export function AgentDebugPage() {
                 </SelectTrigger>
                 <SelectContent alignItemWithTrigger={false}>
                   {readyDevices.map((device) => (
-                    <SelectItem
-                      key={device.id}
-                      value={device.serial}
-                      data-value={device.serial}
-                    >
+                    <SelectItem key={device.id} value={device.serial} data-value={device.serial}>
                       {device.name} · {device.platform}
                     </SelectItem>
                   ))}

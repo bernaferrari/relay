@@ -22,24 +22,6 @@
   margin-top: 1px;
 }
 
-.relay-device-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 20px;
-  margin-top: 32px;
-  padding-bottom: 18px;
-  border-bottom: 1px solid var(--border-weak-base);
-}
-
-.relay-device-filter {
-  flex: none;
-}
-
-.relay-device-search {
-  flex: 0 1 300px;
-}
-
 .relay-device-name:focus-visible,
 .relay-device-open:focus-visible,
 .relay-settings-nav-link:focus-visible,
@@ -971,19 +953,9 @@
 @media (max-width: 700px) {
   .relay-devices-header,
   .relay-device-detail-header,
-  .relay-settings-header,
-  .relay-device-toolbar {
+  .relay-settings-header {
     align-items: flex-start;
     flex-direction: column;
-  }
-
-  .relay-device-toolbar {
-    overflow: hidden;
-  }
-
-  .relay-device-toolbar > .relay-device-filter {
-    width: 100%;
-    overflow-x: auto;
   }
 
   .relay-device-row {

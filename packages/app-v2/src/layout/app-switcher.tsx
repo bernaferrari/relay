@@ -108,10 +108,7 @@ export function AppSwitcher() {
         </span>
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent
-        sideOffset={6}
-        align="start"
-      >
+      <DropdownMenuContent sideOffset={6} align="start">
         <DropdownMenuGroup>
           <DropdownMenuLabel className="relay-menu-label">Apps</DropdownMenuLabel>
           <DropdownMenuItem onClick={() => switchApp()}>
@@ -119,10 +116,7 @@ export function AppSwitcher() {
             {scope.kind === "all" ? <span aria-hidden="true">✓</span> : null}
           </DropdownMenuItem>
           {apps.data?.map((app) => (
-            <DropdownMenuItem
-              key={app.id}
-              onClick={() => switchApp(app.id)}
-            >
+            <DropdownMenuItem key={app.id} onClick={() => switchApp(app.id)}>
               <span>{app.name}</span>
               {selectedApp?.id === app.id ? <span aria-hidden="true">✓</span> : null}
             </DropdownMenuItem>
@@ -133,9 +127,7 @@ export function AppSwitcher() {
             </DropdownMenuItem>
           ) : null}
           <DropdownMenuSeparator className="relay-menu-separator" />
-          <DropdownMenuItem
-            onClick={() => router.history.push("/apps")}
-          >
+          <DropdownMenuItem onClick={() => router.history.push("/apps")}>
             Manage apps
           </DropdownMenuItem>
         </DropdownMenuGroup>
