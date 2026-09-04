@@ -1,8 +1,18 @@
 /** @jsxImportSource react */
-import { Button, RadioCard, RadioGroup } from "@relay/ui-react";
+import {
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+  RadioCard,
+  RadioGroup,
+} from "@relay/ui-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ProductTestStep } from "@relay/product/catalog";
 import { Breadcrumbs, EmptyState, OutcomeMark } from "../components/product-patterns";
 import { TestStepEvidencePreview } from "../components/test-step-evidence-preview";
@@ -38,6 +48,9 @@ export function TestPage() {
     queryFn: () => runService.listTargets(),
     staleTime: 5_000,
   });
+  useEffect(() => {
+    if (!targetId && targets.data?.length === 1) setTargetId(targets.data[0]!.targetId);
+  }, [targetId, targets.data]);
   const start = useMutation({
     mutationFn: async () => {
       if (!test.data || !targetId) {
@@ -98,20 +111,20 @@ export function TestPage() {
           ) : null}
         </div>
         <div className="relay-test-header-actions">
-          <Link
-            className="relay-button relay-button--secondary relay-button--small"
-            to="/tests/$testId/edit"
-            params={{ testId }}
+          <Button
+            render={<Link to="/tests/$testId/edit" params={{ testId }} />}
+            variant="secondary"
+            size="small"
           >
             Edit Test
-          </Link>
-          <Link
-            className="relay-button relay-button--ghost relay-button--small"
-            to="/tests/$testId/run-across"
-            params={{ testId }}
+          </Button>
+          <Button
+            render={<Link to="/tests/$testId/run-across" params={{ testId }} />}
+            variant="ghost"
+            size="small"
           >
             Run with data
-          </Link>
+          </Button>
         </div>
       </header>
 
@@ -155,7 +168,63 @@ export function TestPage() {
       ) : null}
 
       {!loading && test.data && !activeRun && !targets.isError ? (
-        <div className="relay-test-workspace">
+        <div className="relay-test-content">
+          <Card className="relay-run-setup">
+            <CardHeader className="relay-run-setup-header">
+              <div>
+                <CardTitle id="run-target-title">Run this Test</CardTitle>
+                <CardDescription>
+                  Choose a ready device or browser. Relay will repeat the saved steps unchanged.
+                </CardDescription>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {targets.data?.length ? (
+                <RadioGroup
+                  className="relay-run-targets"
+                  name="run-target"
+                  value={targetId}
+                  onValueChange={setTargetId}
+                  aria-labelledby="run-target-title"
+                >
+                  {targets.data.map((target) => {
+                    const label = targetLabel(target);
+                    return (
+                      <RadioCard
+                        key={`${target.kind}:${target.targetId}`}
+                        value={target.targetId}
+                        title={label.title}
+                        description={label.detail}
+                      />
+                    );
+                  })}
+                </RadioGroup>
+              ) : (
+                <EmptyState
+                  title="No device or browser is ready"
+                  detail="Connect a device or managed browser, then return here to run this Test."
+                  action={
+                    <Link className="relay-inline-link" to="/devices">
+                      View devices
+                    </Link>
+                  }
+                />
+              )}
+            </CardContent>
+            <CardFooter className="relay-run-setup-actions">
+              <Button
+                variant="primary"
+                onClick={() => start.mutate()}
+                disabled={!targetId || start.isPending}
+              >
+                {start.isPending ? "Starting…" : "Run Test"}
+              </Button>
+              {!targetId && targets.data?.length ? (
+                <span className="relay-action-hint">Choose where to run</span>
+              ) : null}
+            </CardFooter>
+          </Card>
+
           <section className="relay-test-overview" aria-labelledby="test-overview-title">
             <div className="relay-section-heading">
               <div>
@@ -179,68 +248,16 @@ export function TestPage() {
             ) : (
               <p className="relay-test-no-steps">This Test has no reviewed steps yet.</p>
             )}
-          </section>
-
-          <section className="relay-run-setup" aria-labelledby="run-target-title">
-            <div>
-              <p className="relay-section-label">Device or browser</p>
-              <h2 id="run-target-title">Choose where to run</h2>
-              <p>Relay will repeat the saved Test without changing it.</p>
-            </div>
-            {targets.data?.length ? (
-              <RadioGroup
-                className="relay-choice-group relay-choice-group--single"
-                name="run-target"
-                value={targetId}
-                onValueChange={setTargetId}
-                aria-labelledby="run-target-title"
-              >
-                {targets.data.map((target) => {
-                  const label = targetLabel(target);
-                  return (
-                    <RadioCard
-                      key={`${target.kind}:${target.targetId}`}
-                      value={target.targetId}
-                      title={label.title}
-                      description={label.detail}
-                    />
-                  );
-                })}
-              </RadioGroup>
-            ) : (
-              <EmptyState
-                title="No device or browser is ready"
-                detail="Connect a device or managed browser, then return here to run this Test."
-                action={
-                  <Link className="relay-inline-link" to="/devices">
-                    View devices
-                  </Link>
-                }
+            {selectedEvidenceStep ? (
+              <TestStepEvidencePreview
+                step={selectedEvidenceStep}
+                report={latestReport.data}
+                hasRuns={Boolean(recentRuns.data?.length)}
+                loading={reportLoading}
               />
-            )}
-            <div className="relay-form-actions">
-              <Button
-                variant="primary"
-                onClick={() => start.mutate()}
-                disabled={!targetId || start.isPending}
-              >
-                {start.isPending ? "Starting…" : "Run Test"}
-              </Button>
-              {!targetId && targets.data?.length ? (
-                <span className="relay-action-hint">Choose a device or browser to continue</span>
-              ) : null}
-            </div>
+            ) : null}
           </section>
         </div>
-      ) : null}
-
-      {!loading && test.data && selectedEvidenceStep ? (
-        <TestStepEvidencePreview
-          step={selectedEvidenceStep}
-          report={latestReport.data}
-          hasRuns={Boolean(recentRuns.data?.length)}
-          loading={reportLoading}
-        />
       ) : null}
 
       {!loading && test.data && recentRuns.data?.length ? (

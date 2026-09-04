@@ -411,14 +411,20 @@ export function NewTestPage() {
                         <p className="relay-section-label">Starting point</p>
                         <h2 id="prerecord-title">Put the app where recording should begin</h2>
                       </div>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="small"
-                        onClick={() => setPreviewAttempt((value) => value + 1)}
-                      >
-                        <RotateCcw aria-hidden="true" /> Reconnect
-                      </Button>
+                      <div className="relay-prerecord-actions">
+                        <Button type="submit" variant="primary" size="small" disabled={!formReady}>
+                          <Play aria-hidden="true" />
+                          {begin.isPending ? "Starting…" : "Start recording"}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="small"
+                          onClick={() => setPreviewAttempt((value) => value + 1)}
+                        >
+                          <RotateCcw aria-hidden="true" /> Reconnect
+                        </Button>
+                      </div>
                     </div>
                     <LiveTargetCanvas
                       canvasRef={previewCanvas}
@@ -434,10 +440,6 @@ export function NewTestPage() {
                 ) : null}
               </CardContent>
               <CardFooter className="relay-form-actions">
-                <Button type="submit" variant="primary" disabled={!formReady}>
-                  <Play aria-hidden="true" />
-                  {begin.isPending ? "Starting…" : "Start recording"}
-                </Button>
                 <Button render={<Link to="/tests" />} variant="ghost">
                   Cancel
                 </Button>

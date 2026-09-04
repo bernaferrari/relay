@@ -23,15 +23,21 @@
 
 .relay-test-readable-steps li {
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr);
-  gap: 10px;
-  padding: 10px 0;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 0;
+  padding: 0;
   border-top: 1px solid var(--border-weak-base);
+}
+
+.relay-test-readable-steps li[data-selected="true"] {
+  background: var(--surface-raised-strong-hover);
+  box-shadow: 2px 0 0 var(--text-strong) inset;
 }
 
 .relay-test-readable-steps li > button {
   min-width: 0;
-  padding: 2px 8px 7px;
+  min-height: 64px;
+  padding: 11px 12px 12px 0;
   border: 0;
   border-radius: var(--radius-md);
   color: inherit;
@@ -40,22 +46,26 @@
   cursor: pointer;
 }
 
-.relay-test-readable-steps li > button:hover {
-  background: var(--surface-raised-strong-hover);
-}
-
 .relay-test-readable-steps li > button:focus-visible {
   outline: 2px solid var(--relay-focus-ring);
   outline-offset: 2px;
 }
 
 .relay-test-readable-steps li[data-selected="true"] > span {
-  border-color: var(--border-strong-base);
   color: var(--text-strong);
-  background: var(--surface-raised-strong);
 }
 
-.relay-test-readable-steps li > span,
+.relay-test-readable-steps li > span {
+  display: grid;
+  width: auto;
+  height: auto;
+  place-items: center;
+  color: var(--text-weaker);
+  background: transparent;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
 .relay-editor-step-number {
   display: grid;
   width: 28px;
@@ -97,7 +107,7 @@
   display: grid;
   max-width: 960px;
   gap: 12px;
-  margin-top: 34px;
+  margin-top: 24px;
   padding-top: 18px;
   border-top: 1px solid var(--border-weak-base);
 }
@@ -161,6 +171,12 @@
   margin-top: 44px;
   padding-top: 22px;
   border-top: 1px solid var(--border-weak-base);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .relay-test-readable-steps li:hover {
+    background: var(--surface-raised-strong-hover);
+  }
 }
 
 .relay-test-runs li > a {

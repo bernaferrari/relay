@@ -32,6 +32,7 @@ const fixtures = [
   { id: "prerecord-ready", heading: "Record a Test" },
   { id: "prerecord-connecting", heading: "Record a Test" },
   { id: "prerecord-failure", heading: "Record a Test" },
+  { id: "test-detail", heading: "Complete checkout and confirm the order" },
   { id: "runs-large", heading: "Run history" },
   { id: "report-failed", heading: "Complete checkout" },
   { id: "report-evidence", heading: "Complete checkout", evidenceMedia: true },
@@ -198,6 +199,18 @@ async function assertLayout(page, fixture, viewport) {
     const copy = await page.locator("#main-content").innerText();
     if (/isn't available here yet|placeholder/iu.test(copy)) {
       throw new Error(`${fixture.id}/${viewport.id} rendered placeholder copy`);
+    }
+  }
+  if (fixture.id === "test-detail") {
+    const titles = page.locator(".relay-run-targets .relay-radio-card-title");
+    if ((await titles.count()) !== 2) throw new Error("Test detail did not render both targets");
+    const clipped = await titles.evaluateAll((nodes) =>
+      nodes.some((node) => node.scrollWidth > node.clientWidth + 1),
+    );
+    if (clipped) throw new Error("Test detail truncated a target name");
+    await page.locator(".relay-run-targets .relay-radio-card").first().click();
+    if (await page.getByRole("button", { name: "Run Test" }).isDisabled()) {
+      throw new Error("Test detail did not enable Run Test after target selection");
     }
   }
   if (!fixture.batch) return;

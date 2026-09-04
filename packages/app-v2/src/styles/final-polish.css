@@ -368,16 +368,22 @@
 }
 
 .relay-prerecord-heading {
-  display: flex;
+  display: grid;
   align-items: start;
-  justify-content: space-between;
-  gap: 16px;
+  gap: 10px;
 }
 
 .relay-prerecord-heading h2 {
   margin-top: 3px;
   font-size: 15px;
   font-weight: 600;
+}
+
+.relay-prerecord-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
 }
 
 .relay-prerecord-workspace .relay-live-target-frame {
@@ -417,27 +423,32 @@
 
 .relay-choice-heading {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: baseline;
-  gap: 6px 24px;
+  gap: 2px;
   padding-inline: 1px;
 }
 
 .relay-choice-heading .relay-field-description {
-  flex: none;
+  margin: 0;
 }
 
-.relay-choice-group {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+.relay-new-test-fields > .relay-field .relay-choice-group {
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
 }
 
-.relay-radio-card {
-  min-height: 62px;
+.relay-new-test-fields > .relay-field .relay-radio-card {
+  min-height: 60px;
+}
+
+.relay-new-test-fields > .relay-field .relay-radio-card-title,
+.relay-new-test-fields > .relay-field .relay-radio-card-description {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
 }
 
 .relay-choice-scroll {
-  height: 132px;
+  height: 196px;
   margin-right: -7px;
 }
 
@@ -951,11 +962,15 @@
 
   .relay-prerecord-heading {
     align-items: stretch;
-    flex-direction: column;
   }
 
   .relay-prerecord-heading .relay-button {
     width: fit-content;
+  }
+
+  .relay-prerecord-actions {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .relay-prerecord-workspace .relay-live-target-frame {

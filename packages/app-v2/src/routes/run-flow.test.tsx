@@ -143,6 +143,29 @@ function fakeRunService(initial: ProductRunState = runState("running")) {
         appMapId: "settings-language-proof",
         appName: "Settings Language Proof",
         stepCount: 3,
+        steps: [
+          {
+            id: "step-open",
+            kind: "instruction",
+            intent: "Open Language settings",
+            capture: true,
+            status: "ready",
+          },
+          {
+            id: "step-check",
+            kind: "validation",
+            intent: "Confirm the selected language",
+            capture: true,
+            status: "ready",
+          },
+          {
+            id: "step-finish",
+            kind: "instruction",
+            intent: "Return to the app",
+            capture: false,
+            status: "ready",
+          },
+        ],
       };
     },
     async listTargets() {
@@ -280,6 +303,25 @@ async function click(element: HTMLElement) {
 }
 
 describe("Run and Report", () => {
+  it("selects the only ready target so a Test can run immediately", async () => {
+    const fake = fakeRunService();
+    fake.service.listTargets = async () => [
+      {
+        kind: "browser",
+        platform: "browser",
+        targetId: "browser-golden",
+        name: "Checkout browser",
+        detail: "Managed browser · Ready",
+      },
+    ];
+    await renderRun("/tests/test-1", fake.service, platformWithStorage().platform);
+
+    expect(document.querySelector<HTMLInputElement>('input[value="browser-golden"]')?.checked).toBe(
+      true,
+    );
+    expect(button("Run Test").disabled).toBe(false);
+  });
+
   it("starts one canonical Run, follows progress, and renders only real evidence", async () => {
     const fake = fakeRunService();
     const storage = platformWithStorage();
@@ -291,6 +333,14 @@ describe("Run and Report", () => {
     expect(document.body.textContent).toContain("Pixel 9 Pro");
     expect(document.body.textContent).not.toContain("browser-golden");
     expect(document.body.textContent).not.toContain("emulator-5554");
+    expect(document.body.textContent).toContain("Evidence for this step");
+    const savedSteps = [
+      ...document.querySelectorAll<HTMLButtonElement>(".relay-test-readable-steps button"),
+    ];
+    expect(savedSteps).toHaveLength(3);
+    expect(savedSteps[0]?.getAttribute("aria-pressed")).toBe("true");
+    await click(savedSteps[1]!);
+    expect(savedSteps[1]?.getAttribute("aria-pressed")).toBe("true");
     await click(document.querySelector<HTMLInputElement>('input[value="browser-golden"]')!);
     expect(button("Run Test").disabled).toBe(false);
     await click(button("Run Test"));

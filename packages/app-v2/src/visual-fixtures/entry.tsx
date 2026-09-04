@@ -27,12 +27,13 @@ type FixtureName =
   | "prerecord-ready"
   | "prerecord-connecting"
   | "prerecord-failure"
+  | "test-detail"
   | "runs-large"
   | "report-failed"
   | "report-evidence"
   | "batch-completed";
 
-const FIXTURE_TIME = Date.now();
+const FIXTURE_TIME = Date.UTC(2026, 8, 4, 12, 0, 0);
 const fixture = new URLSearchParams(window.location.search).get("fixture") as FixtureName | null;
 const definitions: Record<FixtureName, { path: string }> = {
   "home-empty": { path: "/home" },
@@ -45,6 +46,7 @@ const definitions: Record<FixtureName, { path: string }> = {
   "prerecord-ready": { path: "/tests/new?app=checkout-app" },
   "prerecord-connecting": { path: "/tests/new?app=checkout-app" },
   "prerecord-failure": { path: "/tests/new?app=checkout-app" },
+  "test-detail": { path: "/tests/test-checkout" },
   "runs-large": { path: "/runs?view=all" },
   "report-failed": { path: "/runs/run-checkout" },
   "report-evidence": { path: "/runs/run-checkout?view=evidence" },
@@ -301,7 +303,51 @@ const failedReport: ProductRunReportOverview = {
     },
   ],
 };
+const fixtureTest = {
+  id: "test-checkout",
+  name: "Complete checkout and confirm the order",
+  appMapId: "checkout-app",
+  appName: "Checkout",
+  stepCount: 4,
+  steps: [
+    { id: "open-cart", kind: "instruction" as const, intent: "Open the cart", capture: true },
+    {
+      id: "submit-order",
+      kind: "instruction" as const,
+      intent: "Submit the order with the saved delivery address",
+      capture: true,
+    },
+    {
+      id: "confirmation",
+      kind: "validation" as const,
+      intent: "Confirm the order number and total",
+      capture: true,
+    },
+    { id: "receipt", kind: "instruction" as const, intent: "Open the receipt", capture: false },
+  ],
+};
 const runService = {
+  getTest: async () => (fixture === "test-detail" ? fixtureTest : undefined),
+  listTestRuns: async () => (fixture === "test-detail" ? [fixtureRun(0), fixtureRun(1)] : []),
+  listTargets: async () =>
+    fixture === "test-detail"
+      ? [
+          {
+            kind: "browser" as const,
+            platform: "browser" as const,
+            targetId: "checkout-browser",
+            name: "Golden Chromium — Checkout staging",
+            detail: "Managed browser · Ready",
+          },
+          {
+            kind: "device" as const,
+            platform: "android" as const,
+            targetId: "checkout-pixel",
+            name: "Pixel 9 Pro XL API 36",
+            detail: "Android emulator · Ready",
+          },
+        ]
+      : [],
   getReport: async () => failedReport,
   getRawEvidence: async () => ({ redacted: true, events: [] }),
 } as unknown as RunProductService;
