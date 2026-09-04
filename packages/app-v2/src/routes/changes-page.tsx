@@ -184,7 +184,12 @@ function ChangeRow({ change }: { change: ProductChange }) {
           </span>
         </span>
         <span className="relay-library-row-status">
-          <Badge variant={changeBadgeVariant(status.tone)}>{status.label}</Badge>
+          <Badge
+            variant={changeBadgeVariant(status.tone)}
+            className={changeBadgeClass(status.tone)}
+          >
+            {status.label}
+          </Badge>
         </span>
         <span className="relay-library-row-recent">
           <strong>{relativeTime(change.updatedAt)}</strong>
@@ -202,6 +207,12 @@ function changeBadgeVariant(
   if (tone === "success") return "default";
   if (tone === "danger") return "destructive";
   return "secondary";
+}
+
+function changeBadgeClass(tone: ReturnType<typeof changeStatus>["tone"]): string | undefined {
+  if (tone === "success") return "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300";
+  if (tone === "notice") return "bg-amber-500/15 text-amber-700 dark:text-amber-300";
+  return undefined;
 }
 
 export function changeStatus(change: ProductChange): {
