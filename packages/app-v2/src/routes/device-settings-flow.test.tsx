@@ -239,12 +239,12 @@ describe("Devices", () => {
       'a.relay-device-row[href="/devices/ipad"]',
     );
     expect(row).not.toBeNull();
-    expect(row?.querySelector(".relay-device-icon-tile")).not.toBeNull();
-    expect(row?.querySelector(".relay-device-copy")?.textContent).toContain("Design iPad");
-    expect(row?.querySelector(".relay-device-metadata")?.textContent).toBe(
+    expect(row?.querySelector('[data-slot="item-media"]')).not.toBeNull();
+    expect(row?.querySelector('[data-slot="item-content"]')?.textContent).toContain("Design iPad");
+    expect(row?.querySelector('[data-slot="item-description"]')?.textContent).toBe(
       "Apple device · Physical device",
     );
-    expect(row?.querySelector(".relay-device-status")?.textContent).toContain("Ready");
+    expect(row?.querySelector('[data-slot="badge"]')?.textContent).toContain("Ready");
     expect(row?.querySelector(".relay-device-row-chevron")).not.toBeNull();
 
     await click(row!);

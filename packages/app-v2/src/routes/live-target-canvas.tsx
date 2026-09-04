@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { Button } from "@relay/ui-react";
+import { Button, Input } from "@relay/ui-react";
 import { MonitorSmartphone } from "lucide-react";
 import {
   useEffect,
@@ -161,9 +161,8 @@ export function LiveTargetCanvas({
           <label className="relay-visually-hidden" htmlFor="live-target-text">
             Text to type into the focused target field
           </label>
-          <input
+          <Input
             id="live-target-text"
-            className="relay-input"
             value={text}
             onChange={(event) => setText(event.currentTarget.value)}
             onKeyDown={(event) => {

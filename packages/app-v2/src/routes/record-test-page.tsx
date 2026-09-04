@@ -221,12 +221,13 @@ export function RecordTestPage() {
         <div className="relay-capture-control-actions">
           <Dialog.Root open={checkpointOpen} onOpenChange={setCheckpointOpen}>
             <Dialog.Trigger
-              className="relay-button relay-button--secondary relay-button--medium"
-              disabled={!allowed.has("checkpoint") || action.isPending}
-            >
-              <BookmarkPlus aria-hidden="true" />
-              Checkpoint
-            </Dialog.Trigger>
+              render={
+                <Button disabled={!allowed.has("checkpoint") || action.isPending}>
+                  <BookmarkPlus aria-hidden="true" />
+                  Checkpoint
+                </Button>
+              }
+            />
             <Dialog.Portal>
               <Dialog.Backdrop className="relay-dialog-backdrop" />
               <Dialog.Viewport className="relay-dialog-viewport">
@@ -249,9 +250,7 @@ export function RecordTestPage() {
                       <FieldDescription>Optional, but helpful in Reports.</FieldDescription>
                     </Field>
                     <div className="relay-dialog-actions">
-                      <Dialog.Close className="relay-button relay-button--ghost relay-button--medium">
-                        Cancel
-                      </Dialog.Close>
+                      <Dialog.Close render={<Button variant="ghost">Cancel</Button>} />
                       <Button type="submit" variant="primary" disabled={action.isPending}>
                         {action.isPending ? "Saving…" : "Save checkpoint"}
                       </Button>

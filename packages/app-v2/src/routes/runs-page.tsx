@@ -1,8 +1,9 @@
 /** @jsxImportSource react */
 import type { ProductRunSummary } from "@relay/product/catalog";
-import { Input } from "@relay/ui-react";
+import { Button, Input, Item, Tabs, TabsIndicator, TabsList, TabsTrigger } from "@relay/ui-react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
+import { ChevronRight } from "lucide-react";
 import { useDeferredValue, useMemo, useState } from "react";
 import { FilterSelect } from "../components/filter-select";
 import { EmptyState, OutcomeMark } from "../components/product-patterns";
@@ -99,19 +100,16 @@ export function RunsPage() {
         </div>
       </header>
 
-      <div className="relay-run-views" role="group" aria-label="Run view">
-        {runViews.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            className="relay-run-view"
-            aria-pressed={view === item.id}
-            onClick={() => setView(item.id)}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
+      <Tabs value={view} onValueChange={(next) => setView(next as RunView)}>
+        <TabsList variant="line" aria-label="Run view">
+          {runViews.map((item) => (
+            <TabsTrigger key={item.id} value={item.id}>
+              {item.label}
+            </TabsTrigger>
+          ))}
+          <TabsIndicator />
+        </TabsList>
+      </Tabs>
 
       <div className="relay-library-toolbar relay-library-toolbar--runs" aria-label="Filter Runs">
         <div className="relay-library-search">
@@ -173,9 +171,9 @@ export function RunsPage() {
             title={emptyRunTitle(view)}
             detail="Choose another view, app, or search. Existing Reports remain unchanged."
             action={
-              <button className="relay-inline-button" type="button" onClick={clearFilters}>
+              <Button variant="ghost" size="small" onClick={clearFilters}>
                 Show latest Runs
-              </button>
+              </Button>
             }
           />
         ) : (
@@ -204,10 +202,9 @@ function RunRow({
   const title = run.testName ?? run.title;
   const context = [run.appName, run.targetName ?? platformName(run.platform)].filter(Boolean);
   return (
-    <Link
+    <Item
       className="relay-library-row relay-run-row"
-      to="/runs/$runId"
-      params={{ runId: run.id }}
+      render={<Link to="/runs/$runId" params={{ runId: run.id }} />}
       {...interaction}
     >
       <span className="relay-library-row-main">
@@ -223,10 +220,8 @@ function RunRow({
         </strong>
         <small>{relativeTime(run.finishedAt ?? run.startedAt ?? run.queuedAt)}</small>
       </span>
-      <span className="relay-library-row-arrow" aria-hidden="true">
-        →
-      </span>
-    </Link>
+      <ChevronRight className="relay-library-row-arrow" aria-hidden="true" />
+    </Item>
   );
 }
 

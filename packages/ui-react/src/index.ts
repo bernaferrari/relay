@@ -29,6 +29,19 @@ export {
 export { Field, FieldDescription, FieldError, FieldLabel } from "./primitives/field";
 export { IconButton, type IconButtonProps } from "./primitives/icon-button";
 export { Input } from "./primitives/input";
+export { Badge, type BadgeVariant } from "./primitives/badge";
+export {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemGroup,
+  ItemMedia,
+  ItemSeparator,
+  ItemTitle,
+  type ItemProps,
+} from "./primitives/item";
+export { Progress, ProgressLabel, ProgressTrack, ProgressValue } from "./primitives/progress";
 export {
   RadioCard,
   RadioGroup,
@@ -39,7 +52,10 @@ export {
 export { ScrollArea, ScrollBar } from "./primitives/scroll-area";
 export { Select } from "./primitives/select";
 export { Skeleton } from "./primitives/skeleton";
+export { Switch, type SwitchProps } from "./primitives/switch";
+export { Tabs, TabsContent, TabsIndicator, TabsList, TabsTrigger } from "./primitives/tabs";
 export { Textarea } from "./primitives/textarea";
+export { ToggleGroup, ToggleGroupItem } from "./primitives/toggle-group";
 export {
   SidebarContent,
   SidebarFooter,

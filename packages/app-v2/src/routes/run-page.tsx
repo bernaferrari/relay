@@ -1,9 +1,27 @@
 /** @jsxImportSource react */
-import { Button, Disclosure, ScrollArea } from "@relay/ui-react";
+import {
+  Alert,
+  AlertActions,
+  AlertDescription,
+  AlertIcon,
+  AlertTitle,
+  Badge,
+  Button,
+  Disclosure,
+  Progress,
+  ProgressLabel,
+  ProgressTrack,
+  ProgressValue,
+  ScrollArea,
+  Tabs,
+  TabsIndicator,
+  TabsList,
+  TabsTrigger,
+} from "@relay/ui-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
-import { ArrowLeft } from "lucide-react";
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { ArrowLeft, ChevronRight, CircleAlert } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { Breadcrumbs, OutcomeMark } from "../components/product-patterns";
 import {
   firstSentence,
@@ -199,16 +217,17 @@ export function RunPage() {
             ) : null}
           </div>
           {snapshot.progress.total !== undefined ? (
-            <div className="relay-run-progress-meter">
-              <progress
-                value={snapshot.progress.completed ?? 0}
-                max={snapshot.progress.total}
-                aria-label={snapshot.progress.label}
-              />
-              <span>
-                {snapshot.progress.completed ?? 0} of {snapshot.progress.total}
-              </span>
-            </div>
+            <Progress
+              className="relay-run-progress-meter"
+              value={snapshot.progress.completed ?? 0}
+              max={snapshot.progress.total}
+            >
+              <ProgressLabel>{snapshot.progress.label}</ProgressLabel>
+              <ProgressValue>
+                {() => `${snapshot.progress.completed ?? 0} of ${snapshot.progress.total}`}
+              </ProgressValue>
+              <ProgressTrack />
+            </Progress>
           ) : null}
         </div>
       ) : null}
@@ -258,19 +277,6 @@ function RunReport({
       }),
     });
   }
-  function moveView(event: KeyboardEvent<HTMLButtonElement>, index: number) {
-    let nextIndex: number | undefined;
-    if (event.key === "ArrowRight") nextIndex = (index + 1) % views.length;
-    if (event.key === "ArrowLeft") nextIndex = (index - 1 + views.length) % views.length;
-    if (event.key === "Home") nextIndex = 0;
-    if (event.key === "End") nextIndex = views.length - 1;
-    if (nextIndex === undefined) return;
-    event.preventDefault();
-    const next = views[nextIndex];
-    if (!next) return;
-    selectView(next.id);
-    window.requestAnimationFrame(() => document.getElementById(`report-tab-${next.id}`)?.focus());
-  }
   return (
     <section className="relay-page relay-report-page">
       {testId ? (
@@ -297,23 +303,21 @@ function RunReport({
       </header>
 
       {views.length > 1 ? (
-        <div className="relay-report-nav" role="tablist" aria-label="Report view">
-          {views.map((item, index) => (
-            <button
-              key={item.id}
-              id={`report-tab-${item.id}`}
-              type="button"
-              role="tab"
-              aria-selected={view === item.id}
-              aria-controls={`report-panel-${item.id}`}
-              tabIndex={view === item.id ? 0 : -1}
-              onClick={() => selectView(item.id)}
-              onKeyDown={(event) => moveView(event, index)}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
+        <Tabs value={view} onValueChange={(next) => selectView(next as ReportView)}>
+          <TabsList className="relay-report-nav" variant="line" aria-label="Report view">
+            {views.map((item) => (
+              <TabsTrigger
+                key={item.id}
+                id={`report-tab-${item.id}`}
+                value={item.id}
+                aria-controls={`report-panel-${item.id}`}
+              >
+                {item.label}
+              </TabsTrigger>
+            ))}
+            <TabsIndicator />
+          </TabsList>
+        </Tabs>
       ) : null}
 
       {view === "overview" ? (
@@ -339,15 +343,23 @@ function RunReport({
           </dl>
 
           {failure ? (
-            <section className="relay-causal-failure" aria-labelledby="causal-failure-title">
-              <div className="relay-causal-failure-copy">
-                <p className="relay-section-label">Run stopped</p>
-                <h2 id="causal-failure-title">{failureTitle(failure, report.category)}</h2>
-                <p>{nextAction(report.outcome)}</p>
-              </div>
-              <div className="relay-causal-failure-actions">
-                {report.category ? <span>{report.category}</span> : null}
-              </div>
+            <Alert
+              className="relay-causal-failure"
+              variant="danger"
+              aria-labelledby="causal-failure-title"
+            >
+              <AlertIcon>
+                <CircleAlert />
+              </AlertIcon>
+              <AlertTitle id="causal-failure-title">
+                {failureTitle(failure, report.category)}
+              </AlertTitle>
+              <AlertDescription>{nextAction(report.outcome)}</AlertDescription>
+              {report.category ? (
+                <AlertActions>
+                  <Badge variant="danger">{report.category}</Badge>
+                </AlertActions>
+              ) : null}
               <Disclosure.Root className="relay-causal-technical">
                 <Disclosure.Trigger>Technical details</Disclosure.Trigger>
                 <Disclosure.Panel>
@@ -356,7 +368,7 @@ function RunReport({
                   </ScrollArea>
                 </Disclosure.Panel>
               </Disclosure.Root>
-            </section>
+            </Alert>
           ) : null}
 
           {firstEvidenceIsDistinct && report.firstEvidence ? (
@@ -396,22 +408,23 @@ function RunReport({
             <p>Only evidence Relay actually saved is shown here.</p>
           </header>
           <div className="relay-evidence-workspace">
-            <div className="relay-evidence-channels" aria-label="Evidence type">
-              {report.evidence.map((section) => (
-                <button
-                  key={section.id}
-                  type="button"
-                  aria-pressed={selectedEvidence.id === section.id}
-                  onClick={() => setSelectedEvidenceId(section.id)}
-                >
-                  <span>
-                    <strong>{section.label}</strong>
-                    <small>{section.detail}</small>
-                  </span>
-                  <span aria-hidden="true">›</span>
-                </button>
-              ))}
-            </div>
+            <Tabs
+              value={selectedEvidence.id}
+              onValueChange={(next) => setSelectedEvidenceId(next)}
+              orientation="vertical"
+            >
+              <TabsList className="relay-evidence-channels" aria-label="Evidence type">
+                {report.evidence.map((section) => (
+                  <TabsTrigger key={section.id} value={section.id}>
+                    <span>
+                      <strong>{section.label}</strong>
+                      <small>{section.detail}</small>
+                    </span>
+                    <ChevronRight aria-hidden="true" />
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
             <EvidencePreview section={selectedEvidence} />
           </div>
           <RawEvidenceDisclosure

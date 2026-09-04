@@ -1,6 +1,24 @@
 /** @jsxImportSource react */
 import type { SensitiveEvidenceChannel } from "@relay/protocol";
-import { Button, Disclosure, Field, FieldDescription, FieldLabel, Input } from "@relay/ui-react";
+import {
+  Alert,
+  AlertActions,
+  AlertDescription,
+  AlertTitle,
+  Badge,
+  Button,
+  Disclosure,
+  Field,
+  FieldDescription,
+  FieldLabel,
+  Input,
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemMedia,
+  ItemTitle,
+} from "@relay/ui-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useRouteContext } from "@tanstack/react-router";
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
@@ -117,12 +135,9 @@ function GeneralSettings() {
               : "Checking the current Relay workspace."
           }
         >
-          <span
-            className={`relay-device-status ${connection.isError ? "relay-device-status--needs-attention" : "relay-device-status--ready"}`}
-          >
-            <span aria-hidden="true" />
+          <Badge variant={connection.isError ? "warning" : "success"}>
             {connection.isPending ? "Checking" : connection.isError ? "Unavailable" : "Connected"}
-          </span>
+          </Badge>
         </SettingRow>
         <SettingRow
           title="Desktop notifications"
@@ -193,21 +208,23 @@ function EvidenceSettings() {
         <PageLoading label="Loading evidence and privacy settings…" />
       ) : null}
       {error ? (
-        <div className="relay-settings-alert" role="alert">
-          <strong>Relay could not load or save this setting.</strong>
-          <p>{errorMessage(error)}</p>
-          <Button
-            size="small"
-            onClick={() => {
-              privacyMutation.reset();
-              evidenceMutation.reset();
-              void privacy.refetch();
-              void evidence.refetch();
-            }}
-          >
-            Try again
-          </Button>
-        </div>
+        <Alert className="relay-settings-alert" variant="danger" role="alert">
+          <AlertTitle>Relay could not load or save this setting</AlertTitle>
+          <AlertDescription>{errorMessage(error)}</AlertDescription>
+          <AlertActions>
+            <Button
+              size="small"
+              onClick={() => {
+                privacyMutation.reset();
+                evidenceMutation.reset();
+                void privacy.refetch();
+                void evidence.refetch();
+              }}
+            >
+              Try again
+            </Button>
+          </AlertActions>
+        </Alert>
       ) : null}
       {privacy.data && evidence.data ? (
         <>
@@ -298,26 +315,32 @@ function IntegrationsSettings() {
         </header>
         {connection.isPending ? <PageLoading label="Checking workspace connection…" /> : null}
         {connection.isError ? (
-          <div className="relay-settings-alert" role="alert">
-            <strong>The workspace connection is unavailable</strong>
-            <p>Open Advanced to check the Relay address, then try again.</p>
-            <Link className="relay-inline-link" to="/settings/advanced">
-              Open Advanced
-            </Link>
-          </div>
+          <Alert className="relay-settings-alert" variant="danger" role="alert">
+            <AlertTitle>The workspace connection is unavailable</AlertTitle>
+            <AlertDescription>
+              Open Advanced to check the Relay address, then try again.
+            </AlertDescription>
+            <AlertActions>
+              <Button size="small" render={<Link to="/settings/advanced" />}>
+                Open Advanced
+              </Button>
+            </AlertActions>
+          </Alert>
         ) : connection.data ? (
-          <div className="relay-integration-card">
-            <span className="relay-integration-mark" aria-hidden="true">
+          <Item className="relay-integration-card" variant="outline">
+            <ItemMedia className="relay-integration-mark" aria-hidden="true">
               R
-            </span>
-            <div>
-              <h3>Relay workspace</h3>
-              <p>Runs and Reports are connected through {serverName}.</p>
-            </div>
-            <span className="relay-device-status relay-device-status--ready">
-              <span aria-hidden="true" /> Connected
-            </span>
-          </div>
+            </ItemMedia>
+            <ItemContent>
+              <ItemTitle>Relay workspace</ItemTitle>
+              <ItemDescription>
+                Runs and Reports are connected through {serverName}.
+              </ItemDescription>
+            </ItemContent>
+            <ItemActions>
+              <Badge variant="success">Connected</Badge>
+            </ItemActions>
+          </Item>
         ) : null}
         <div className="relay-settings-empty-inline">
           <h3>No external service is required</h3>
@@ -349,28 +372,25 @@ function SetupRow({
   const ready = checks.length > 0 && !attention;
   return (
     <div className="relay-setup-status">
-      <div className="relay-setting-row relay-setup-status-row">
-        <div className="relay-setting-row-copy">
-          <h3>{title}</h3>
-          <p>
+      <Item className="relay-setting-row relay-setup-status-row" size="small">
+        <ItemContent className="relay-setting-row-copy">
+          <ItemTitle>{title}</ItemTitle>
+          <ItemDescription>
             {loading
               ? "Checking support on this computer…"
               : (attention?.detail ??
                 (ready
                   ? "Relay has the local support it needs."
                   : "Relay could not read this support check."))}
-          </p>
-        </div>
-        <div className="relay-setting-row-control relay-setup-status-actions">
-          <span
-            className={`relay-device-status ${ready ? "relay-device-status--ready" : "relay-device-status--needs-attention"}`}
-          >
-            <span aria-hidden="true" />
+          </ItemDescription>
+        </ItemContent>
+        <ItemActions className="relay-setting-row-control relay-setup-status-actions">
+          <Badge variant={ready ? "success" : "warning"}>
             {loading ? "Checking" : ready ? "Ready" : "Needs attention"}
-          </span>
+          </Badge>
           {!loading && attention ? action : null}
-        </div>
-      </div>
+        </ItemActions>
+      </Item>
       {!loading && attention && checks.length > 1 ? (
         <Disclosure.Root className="relay-setup-checks">
           <Disclosure.Trigger>Diagnostic checks ({checks.length})</Disclosure.Trigger>
@@ -378,12 +398,9 @@ function SetupRow({
             <ul>
               {checks.map((check) => (
                 <li key={check.id}>
-                  <span
-                    className={`relay-device-status ${check.status === "ready" ? "relay-device-status--ready" : "relay-device-status--needs-attention"}`}
-                  >
-                    <span aria-hidden="true" />
+                  <Badge variant={check.status === "ready" ? "success" : "warning"}>
                     {check.status === "ready" ? "Ready" : "Needs attention"}
-                  </span>
+                  </Badge>
                   <div>
                     <strong>{check.label}</strong>
                     <p>{check.detail}</p>
@@ -447,10 +464,10 @@ function AdvancedSettings() {
         </header>
         {connection.isPending ? <PageLoading label="Loading the Relay address…" /> : null}
         {connection.isError ? (
-          <div className="relay-settings-alert" role="alert">
-            <strong>The Relay address is unavailable</strong>
-            <p>{errorMessage(connection.error)}</p>
-          </div>
+          <Alert className="relay-settings-alert" variant="danger" role="alert">
+            <AlertTitle>The Relay address is unavailable</AlertTitle>
+            <AlertDescription>{errorMessage(connection.error)}</AlertDescription>
+          </Alert>
         ) : null}
         {connection.data ? (
           <form className="relay-settings-form" onSubmit={saveConnection}>

@@ -160,12 +160,7 @@ export function ChangePage() {
               ) : null}
               {canCancel(current.status) ? (
                 <Menu.Root>
-                  <Menu.Trigger
-                    className="relay-button relay-button--secondary relay-button--medium"
-                    disabled={mutation.isPending}
-                  >
-                    More
-                  </Menu.Trigger>
+                  <Menu.Trigger render={<Button disabled={mutation.isPending}>More</Button>} />
                   <Menu.Portal>
                     <Menu.Positioner className="relay-menu-positioner" sideOffset={6} align="end">
                       <Menu.Popup className="relay-overlay-popup relay-menu-popup">

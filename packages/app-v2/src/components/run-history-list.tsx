@@ -19,7 +19,7 @@ const OVERSCAN = 5;
 export type RunHistoryRowInteraction = {
   tabIndex: number;
   "data-run-index": number;
-  onKeyDown: KeyboardEventHandler<HTMLAnchorElement>;
+  onKeyDown: KeyboardEventHandler<HTMLElement>;
 };
 
 export function RunHistoryList({
@@ -118,13 +118,11 @@ function WindowedRunHistory({
       }
     }
     window.requestAnimationFrame(() => {
-      viewportRef.current
-        ?.querySelector<HTMLAnchorElement>(`[data-run-index="${nextIndex}"]`)
-        ?.focus();
+      viewportRef.current?.querySelector<HTMLElement>(`[data-run-index="${nextIndex}"]`)?.focus();
     });
   }
 
-  function rowKeyDown(index: number): KeyboardEventHandler<HTMLAnchorElement> {
+  function rowKeyDown(index: number): KeyboardEventHandler<HTMLElement> {
     return (event) => {
       const pageSize = Math.max(1, Math.floor(viewportHeight / rowHeight));
       const next =

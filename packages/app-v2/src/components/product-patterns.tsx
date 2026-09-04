@@ -5,6 +5,8 @@ import {
   AlertDescription,
   AlertIcon,
   AlertTitle,
+  Badge,
+  type BadgeVariant,
   Empty,
   EmptyContent,
   EmptyDescription,
@@ -147,11 +149,18 @@ export function RecoveryState({
 export function OutcomeMark({ outcome }: { outcome: string | undefined }) {
   const presentation = outcomePresentation(outcome);
   return (
-    <span className={`relay-outcome-mark relay-outcome-mark--${presentation.tone}`}>
+    <Badge className="relay-outcome-mark" variant={outcomeBadgeVariant(presentation.tone)}>
       <presentation.icon aria-hidden="true" />
       {presentation.label}
-    </span>
+    </Badge>
   );
+}
+
+function outcomeBadgeVariant(tone: ReturnType<typeof outcomePresentation>["tone"]): BadgeVariant {
+  if (tone === "success") return "success";
+  if (tone === "danger") return "danger";
+  if (tone === "notice") return "warning";
+  return "secondary";
 }
 
 function outcomePresentation(outcome: string | undefined): {

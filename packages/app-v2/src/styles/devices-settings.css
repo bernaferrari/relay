@@ -32,40 +32,6 @@
   border-bottom: 1px solid var(--border-weak-base);
 }
 
-.relay-segmented-control {
-  display: inline-flex;
-  min-width: 0;
-  padding: 3px;
-  border-radius: var(--radius-lg);
-  background: var(--surface-base);
-  box-shadow: inset 0 0 0 1px var(--border-weak-base);
-}
-
-.relay-segmented-control button {
-  min-height: 44px;
-  padding: 0 11px;
-  border: 0;
-  border-radius: calc(var(--radius-lg) - 3px);
-  color: var(--text-weak);
-  background: transparent;
-  font: inherit;
-  font-weight: 500;
-  white-space: nowrap;
-  cursor: pointer;
-  transition:
-    color 150ms ease-out,
-    background-color 150ms ease-out,
-    box-shadow 150ms ease-out,
-    transform 100ms ease-out;
-}
-
-.relay-segmented-control button[aria-pressed="true"] {
-  color: var(--text-strong);
-  background: var(--surface-raised-strong);
-  box-shadow: var(--shadow-xs);
-}
-
-.relay-segmented-control button:focus-visible,
 .relay-device-name:focus-visible,
 .relay-device-open:focus-visible,
 .relay-settings-nav-link:focus-visible,
@@ -74,7 +40,6 @@
   outline-offset: 2px;
 }
 
-.relay-segmented-control button:active,
 .relay-device-open:active,
 .relay-settings-nav-link:active {
   transform: scale(0.96);
@@ -253,45 +218,6 @@
   display: flex;
   align-items: center;
   gap: 14px;
-}
-
-.relay-device-status {
-  display: inline-flex;
-  width: fit-content;
-  min-height: 28px;
-  align-items: center;
-  gap: 7px;
-  padding: 0 9px;
-  border-radius: 999px;
-  color: var(--text-weak);
-  background: var(--surface-base);
-  font-size: 11px;
-  font-weight: 600;
-  white-space: nowrap;
-  box-shadow: inset 0 0 0 1px var(--border-weak-base);
-}
-
-.relay-device-status > span:first-child {
-  width: 6px;
-  height: 6px;
-  flex: none;
-  border-radius: 999px;
-  background: currentColor;
-}
-
-.relay-device-status--ready {
-  color: var(--text-success-base);
-  background: var(--surface-success-weak);
-}
-
-.relay-device-status--needs-attention {
-  color: var(--text-warning-base, var(--text-base));
-  background: var(--surface-warning-weak, var(--surface-base));
-}
-
-.relay-device-status--virtual {
-  color: var(--text-interactive-base);
-  background: var(--surface-interactive-base);
 }
 
 .relay-device-open {
@@ -601,77 +527,9 @@
   cursor: not-allowed;
 }
 
-.relay-switch {
-  position: relative;
-  display: block;
-  width: 44px;
-  height: 28px;
-  flex: none;
-}
-
-.relay-switch input {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  width: 44px;
-  height: 28px;
-  margin: 0;
-  opacity: 0;
-  cursor: pointer;
-}
-
-.relay-switch > span {
-  position: absolute;
-  inset: 0;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--text-base) 12%, var(--input-base));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-base) 30%, var(--border-base));
-  transition:
-    background-color 150ms ease-out,
-    box-shadow 150ms ease-out;
-}
-
-.relay-switch > span::after {
-  position: absolute;
-  top: 4px;
-  left: 4px;
-  width: 20px;
-  height: 20px;
-  border-radius: 999px;
-  background: var(--background-strong);
-  box-shadow:
-    inset 0 0 0 1px var(--border-base),
-    var(--shadow-sm, var(--shadow-xs));
-  content: "";
-  transition: transform 150ms ease-out;
-}
-
-.relay-switch input:checked + span {
-  background: var(--button-primary-base);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--button-primary-base) 80%, black);
-}
-
-.relay-switch input:checked + span::after {
-  transform: translateX(16px);
-}
-
-.relay-switch input:focus-visible + span {
-  outline: 2px solid var(--relay-focus-ring);
-  outline-offset: 2px;
-}
-
-.relay-setting-toggle-row:has(input:focus-visible) {
+.relay-setting-toggle-row:has(.relay-switch:focus-visible) {
   border-radius: var(--radius-md);
   box-shadow: inset 3px 0 0 var(--relay-focus-ring);
-}
-
-.relay-switch input:disabled {
-  cursor: not-allowed;
-}
-
-.relay-switch input:disabled + span {
-  background: var(--input-disabled);
-  box-shadow: inset 0 0 0 1px var(--border-weak-disabled);
 }
 
 .relay-settings-policy-note strong {
@@ -748,8 +606,9 @@
 .relay-settings-empty-inline {
   min-height: 128px;
   margin-top: 18px;
-  padding: 20px 0 4px;
-  border-top: 1px solid var(--border-weak-base);
+  padding: 16px;
+  border-radius: var(--radius-lg);
+  background: var(--background-weak);
 }
 
 .relay-settings-empty-inline .relay-inline-link {
@@ -766,29 +625,25 @@
 }
 
 .relay-appearance-option {
-  display: grid;
-  min-width: 0;
-  gap: 4px;
+  grid-template-columns: minmax(0, 1fr) 20px;
+  gap: 8px;
   padding: 6px 6px 12px;
-  border-radius: var(--radius-xl);
-  background: var(--surface-raised-strong);
-  box-shadow: var(--shadow-xs);
-  cursor: pointer;
-  transition:
-    box-shadow 150ms ease-out,
-    transform 100ms ease-out;
 }
 
 .relay-appearance-option:active {
   transform: scale(0.96);
 }
 
-.relay-appearance-option input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
+.relay-appearance-option .relay-radio-card-leading {
+  width: 100%;
+  height: auto;
+  grid-column: 1 / -1;
+  border-radius: 0;
+  background: transparent;
+}
+
+.relay-appearance-option .relay-radio-card-copy {
+  padding-inline: 4px;
 }
 
 .relay-appearance-preview {
@@ -853,25 +708,12 @@
   );
 }
 
-.relay-appearance-option:has(input:checked) {
-  box-shadow:
-    0 0 0 2px var(--text-strong),
-    var(--shadow-xs);
-}
-
-.relay-appearance-option strong,
-.relay-appearance-option small {
-  padding-inline: 4px;
-}
-
-.relay-appearance-option strong {
+.relay-appearance-option .relay-radio-card-title {
   margin-top: 4px;
-  color: var(--text-strong);
   font-size: 12px;
 }
 
-.relay-appearance-option small {
-  color: var(--text-weak);
+.relay-appearance-option .relay-radio-card-description {
   font-size: 11px;
 }
 
@@ -911,7 +753,6 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .relay-segmented-control button:hover,
   .relay-device-open:hover,
   .relay-settings-nav-link:hover {
     color: var(--text-strong);
@@ -973,7 +814,7 @@
     overflow: hidden;
   }
 
-  .relay-device-toolbar > .relay-segmented-control {
+  .relay-device-toolbar > .relay-device-filter {
     width: 100%;
     overflow-x: auto;
   }
@@ -1036,7 +877,7 @@
     grid-template-columns: 36px minmax(0, 1fr);
   }
 
-  .relay-integration-card > .relay-device-status {
+  .relay-integration-card > .relay-item-actions {
     grid-column: 2;
   }
 }

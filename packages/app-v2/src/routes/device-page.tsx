@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { Button } from "@relay/ui-react";
+import { Badge, Button } from "@relay/ui-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useRouteContext } from "@tanstack/react-router";
 import { Breadcrumbs, EmptyState } from "../components/product-patterns";
@@ -80,9 +80,9 @@ export function DevicePage() {
             {recover.isPending ? "Reconnecting…" : "Reconnect device"}
           </Button>
         ) : device.data ? (
-          <Link className="relay-button relay-button--primary relay-button--medium" to="/tests/new">
+          <Button variant="primary" render={<Link to="/tests/new" />}>
             Use for a new Test
-          </Link>
+          </Button>
         ) : null}
       </header>
 
@@ -106,9 +106,9 @@ export function DevicePage() {
           title="This device is no longer available"
           detail="It may have been disconnected or renamed. Return to Devices to see what Relay can use now."
           action={
-            <Link className="relay-button relay-button--primary relay-button--medium" to="/devices">
+            <Button variant="primary" render={<Link to="/devices" />}>
               View Devices
-            </Link>
+            </Button>
           }
         />
       ) : null}
@@ -116,10 +116,9 @@ export function DevicePage() {
       {device.data && presentation ? (
         <div className="relay-device-detail-grid">
           <section className="relay-device-health" aria-labelledby="device-health-title">
-            <span className={`relay-device-status relay-device-status--${device.data.status}`}>
-              <span aria-hidden="true" />
+            <Badge variant={device.data.status === "needs-attention" ? "warning" : "success"}>
               {presentation.label}
-            </span>
+            </Badge>
             <h2 id="device-health-title">{presentation.title}</h2>
             <p>{presentation.detail}</p>
             {recover.error ? (

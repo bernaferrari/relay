@@ -1,4 +1,5 @@
 /** @jsxImportSource react */
+import { RadioCard, RadioGroup } from "@relay/ui-react";
 import { useRouteContext } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import {
@@ -57,35 +58,34 @@ export function AppearanceSettings() {
           <h2 id="appearance-title">Match the way you work</h2>
           <p>System follows this computer and changes automatically throughout the day.</p>
         </header>
-        <fieldset className="relay-appearance-options">
-          <legend className="relay-visually-hidden">Color scheme</legend>
+        <RadioGroup
+          className="relay-appearance-options"
+          value={preference}
+          onValueChange={(next) => void choose(next)}
+          aria-labelledby="appearance-title"
+        >
           {(["system", "light", "dark"] as const).map((value) => (
-            <label key={value} className="relay-appearance-option">
-              <input
-                type="radio"
-                name="color-scheme"
-                value={value}
-                checked={preference === value}
-                onChange={() => void choose(value)}
-              />
-              <span
-                className={`relay-appearance-preview relay-appearance-preview--${value}`}
-                aria-hidden="true"
-              >
-                <span />
-                <span />
-              </span>
-              <strong>{value[0]!.toUpperCase() + value.slice(1)}</strong>
-              <small>
-                {value === "system"
+            <RadioCard
+              key={value}
+              value={value}
+              className="relay-appearance-option"
+              title={value[0]!.toUpperCase() + value.slice(1)}
+              description={
+                value === "system"
                   ? "Follow this computer"
                   : value === "light"
                     ? "Light surfaces"
-                    : "Low-light surfaces"}
-              </small>
-            </label>
+                    : "Low-light surfaces"
+              }
+              leading={
+                <span className={`relay-appearance-preview relay-appearance-preview--${value}`}>
+                  <span />
+                  <span />
+                </span>
+              }
+            />
           ))}
-        </fieldset>
+        </RadioGroup>
       </section>
     </SettingsFrame>
   );

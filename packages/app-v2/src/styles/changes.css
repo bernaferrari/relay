@@ -20,34 +20,6 @@
   font-weight: 600;
 }
 
-.relay-change-status--success {
-  border-color: color-mix(in srgb, var(--border-success-base) 60%, var(--border-weak-base));
-  color: var(--text-success-base);
-  background: var(--surface-success-weak);
-}
-
-.relay-change-status--danger {
-  border-color: color-mix(in srgb, var(--border-critical-base) 60%, var(--border-weak-base));
-  color: var(--text-critical-base);
-  background: var(--surface-critical-weak);
-}
-
-.relay-change-status--notice {
-  color: var(--text-warning-base, var(--text-base));
-  background: var(--surface-warning-weak, var(--surface-base));
-}
-
-.relay-change-status--active {
-  border-color: color-mix(in srgb, var(--text-interactive-base) 35%, var(--border-weak-base));
-  color: var(--text-interactive-base);
-  background: var(--product-accent-soft);
-}
-
-.relay-change-status--quiet {
-  color: var(--text-weak);
-  background: var(--surface-base);
-}
-
 .relay-change-detail-header {
   display: flex;
   align-items: flex-start;

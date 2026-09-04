@@ -346,7 +346,7 @@ function executionIntentProvenance(
   artifacts: TestJob["artifacts"],
 ): import("@relay/protocol").AppMapTestStepProvenance[] {
   const artifact = artifacts.find(
-    (candidate) => candidate.kind === "app-map-test-execution-intent",
+    (candidate) => candidate?.kind === "app-map-test-execution-intent",
   );
   if (!artifact) return [];
   return parseAppMapTestExecutionIntentArtifact(artifact)?.plan.stepProvenance ?? [];

@@ -1,9 +1,9 @@
 /** @jsxImportSource react */
 import type { ProductChange } from "@relay/product/change-journey";
-import { Button } from "@relay/ui-react";
+import { Badge, Button, Item, Tabs, TabsIndicator, TabsList, TabsTrigger } from "@relay/ui-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
-import { RotateCcw } from "lucide-react";
+import { ChevronRight, RotateCcw } from "lucide-react";
 import { useMemo } from "react";
 import { EmptyState, RecoveryState } from "../components/product-patterns";
 import { PageLoading, RecordingProblem } from "./recording-shared";
@@ -61,34 +61,34 @@ export function ChangesPage() {
         ) : null}
       </header>
 
-      <nav className="relay-run-views" aria-label="Change views">
-        {(
-          [
-            ["current", "Current"],
-            ["active", "In progress"],
-            ["ready", "Ready to verify"],
-            ["attention", "Needs attention"],
-            ["history", "History"],
-          ] as const
-        ).map(([value, label]) => (
-          <button
-            key={value}
-            className="relay-run-view"
-            type="button"
-            aria-pressed={view === value}
-            onClick={() =>
-              void navigate({
-                search: (previous) => ({
-                  ...previous,
-                  status: value === "current" ? undefined : value,
-                }),
-              })
-            }
-          >
-            {label}
-          </button>
-        ))}
-      </nav>
+      <Tabs
+        value={view}
+        onValueChange={(next) =>
+          void navigate({
+            search: (previous) => ({
+              ...previous,
+              status: next === "current" ? undefined : next,
+            }),
+          })
+        }
+      >
+        <TabsList variant="line" aria-label="Change views">
+          {(
+            [
+              ["current", "Current"],
+              ["active", "In progress"],
+              ["ready", "Ready to verify"],
+              ["attention", "Needs attention"],
+              ["history", "History"],
+            ] as const
+          ).map(([value, label]) => (
+            <TabsTrigger key={value} value={value}>
+              {label}
+            </TabsTrigger>
+          ))}
+          <TabsIndicator />
+        </TabsList>
+      </Tabs>
 
       {changes.isError ? (
         <RecoveryState
@@ -136,13 +136,13 @@ export function ChangesPage() {
             title={emptyViewTitle(view)}
             detail="There is nothing in this view right now."
             action={
-              <button
-                className="relay-inline-button"
-                type="button"
+              <Button
+                variant="ghost"
+                size="small"
                 onClick={() => void navigate({ search: { status: "history" } })}
               >
                 View all Changes
-              </button>
+              </Button>
             }
           />
         ) : (
@@ -169,10 +169,9 @@ function ChangeRow({ change }: { change: ProductChange }) {
   const status = changeStatus(change);
   return (
     <li>
-      <Link
+      <Item
         className="relay-library-row relay-change-row"
-        to="/changes/$changeId"
-        params={{ changeId: change.id }}
+        render={<Link to="/changes/$changeId" params={{ changeId: change.id }} />}
       >
         <span className="relay-library-row-main">
           <strong>{change.title}</strong>
@@ -182,20 +181,25 @@ function ChangeRow({ change }: { change: ProductChange }) {
           </span>
         </span>
         <span className="relay-library-row-status">
-          <span className={`relay-status-pill relay-change-status--${status.tone}`}>
-            {status.label}
-          </span>
+          <Badge variant={changeBadgeVariant(status.tone)}>{status.label}</Badge>
         </span>
         <span className="relay-library-row-recent">
           <strong>{relativeTime(change.updatedAt)}</strong>
           <small>{coverageLabel(change)}</small>
         </span>
-        <span className="relay-library-row-arrow" aria-hidden="true">
-          →
-        </span>
-      </Link>
+        <ChevronRight className="relay-library-row-arrow" aria-hidden="true" />
+      </Item>
     </li>
   );
+}
+
+function changeBadgeVariant(
+  tone: ReturnType<typeof changeStatus>["tone"],
+): "success" | "danger" | "warning" | "secondary" {
+  if (tone === "success") return "success";
+  if (tone === "danger") return "danger";
+  if (tone === "notice") return "warning";
+  return "secondary";
 }
 
 export function changeStatus(change: ProductChange): {

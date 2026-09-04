@@ -1,4 +1,5 @@
 /** @jsxImportSource react */
+import { Switch } from "@relay/ui-react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState, type ReactNode } from "react";
 import { settingsCategories, type SettingsCategory } from "../data/settings-product-service";
@@ -173,17 +174,13 @@ export function ToggleRow({
         <strong>{title}</strong>
         <span id={descriptionId}>{description}</span>
       </span>
-      <span className="relay-switch">
-        <input
-          id={id}
-          type="checkbox"
-          checked={checked}
-          disabled={disabled}
-          aria-describedby={descriptionId}
-          onChange={(event) => onChange(event.currentTarget.checked)}
-        />
-        <span aria-hidden="true" />
-      </span>
+      <Switch
+        id={id}
+        checked={checked}
+        disabled={disabled}
+        aria-describedby={descriptionId}
+        onCheckedChange={onChange}
+      />
     </label>
   );
 }

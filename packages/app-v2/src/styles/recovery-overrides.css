@@ -203,11 +203,6 @@
   gap: 8px;
 }
 
-.relay-devices-page .relay-device-status {
-  min-height: 26px;
-  padding-inline: 9px;
-}
-
 .relay-devices-page .relay-device-row-chevron {
   width: 16px;
   height: 16px;
@@ -244,31 +239,14 @@
   .relay-devices-page .relay-device-row {
     grid-template-columns: 38px minmax(0, 1fr) auto;
   }
-
-  .relay-devices-page .relay-device-status {
-    width: 8px;
-    min-width: 8px;
-    height: 8px;
-    min-height: 8px;
-    gap: 0;
-    overflow: hidden;
-    padding: 0;
-    background: transparent;
-    box-shadow: none;
-  }
-
-  .relay-devices-page .relay-device-status > span:first-child {
-    width: 8px;
-    height: 8px;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .relay-segmented-control button,
+  .relay-toggle-group-item,
   .relay-device-open,
   .relay-settings-nav-link,
-  .relay-switch > span,
-  .relay-switch > span::after,
+  .relay-switch,
+  .relay-switch-thumb,
   .relay-appearance-option {
     transition: none;
   }

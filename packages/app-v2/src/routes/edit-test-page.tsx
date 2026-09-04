@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import type { AppMapScenarioTestStep, AppMapTestStepPlacement } from "@relay/protocol";
-import { Button } from "@relay/ui-react";
+import { Badge, Button, IconButton } from "@relay/ui-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import {
@@ -306,7 +306,7 @@ export function EditTestPage() {
       <header className="relay-page-header relay-test-editor-header">
         <div>
           <div className="relay-entity-context">
-            <span className="relay-status-pill relay-status-pill--saved">Saved Test</span>
+            <Badge variant="success">Saved Test</Badge>
             {document.data ? <span>{document.data.appName}</span> : null}
           </div>
           <h1>{document.data?.test.name ?? "Edit Test"}</h1>
@@ -323,13 +323,9 @@ export function EditTestPage() {
             {saveNotice === "Saved" ? <Check aria-hidden="true" /> : null}
             {saveNotice}
           </span>
-          <Link
-            className="relay-button relay-button--primary relay-button--medium"
-            to="/tests/$testId"
-            params={{ testId }}
-          >
+          <Button variant="primary" render={<Link to="/tests/$testId" params={{ testId }} />}>
             Done editing
-          </Link>
+          </Button>
         </div>
       </header>
 
@@ -459,22 +455,22 @@ export function EditTestPage() {
                           <ChevronRight aria-hidden="true" />
                         </button>
                         <span className="relay-editor-reorder-actions">
-                          <button
-                            type="button"
+                          <IconButton
+                            size="small"
                             onClick={() => move(entry, -1)}
                             disabled={entry.index === 0 || edit.isPending}
                             aria-label={`Move ${entry.step.intent} up`}
                           >
                             <ArrowUp aria-hidden="true" />
-                          </button>
-                          <button
-                            type="button"
+                          </IconButton>
+                          <IconButton
+                            size="small"
                             onClick={() => move(entry, 1)}
                             disabled={entry.index === entry.siblingIds.length - 1 || edit.isPending}
                             aria-label={`Move ${entry.step.intent} down`}
                           >
                             <ArrowDown aria-hidden="true" />
-                          </button>
+                          </IconButton>
                         </span>
                       </div>
                     </li>

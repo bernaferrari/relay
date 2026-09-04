@@ -1,5 +1,18 @@
 /** @jsxImportSource react */
-import { Button, Disclosure, Input } from "@relay/ui-react";
+import {
+  Badge,
+  Button,
+  Disclosure,
+  Input,
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemMedia,
+  ItemTitle,
+  ToggleGroup,
+  ToggleGroupItem,
+} from "@relay/ui-react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { ChevronRight, Monitor, Smartphone, Tablet } from "lucide-react";
@@ -81,22 +94,25 @@ function DeviceIcon({ device }: { device: ProductDevice }) {
 function DeviceRow({ device }: { device: ProductDevice }) {
   return (
     <li className="relay-device-row-item">
-      <Link className="relay-device-row" to="/devices/$deviceId" params={{ deviceId: device.id }}>
-        <span className="relay-device-icon-tile">
+      <Item
+        className="relay-device-row"
+        size="small"
+        render={<Link to="/devices/$deviceId" params={{ deviceId: device.id }} />}
+      >
+        <ItemMedia>
           <DeviceIcon device={device} />
-        </span>
-        <span className="relay-device-copy">
-          <strong>{device.name}</strong>
-          <span className="relay-device-metadata">{deviceMetadata(device)}</span>
-        </span>
-        <span className="relay-device-row-end">
-          <span className={`relay-device-status relay-device-status--${device.status}`}>
-            <span aria-hidden="true" />
+        </ItemMedia>
+        <ItemContent>
+          <ItemTitle>{device.name}</ItemTitle>
+          <ItemDescription>{deviceMetadata(device)}</ItemDescription>
+        </ItemContent>
+        <ItemActions className="relay-device-row-end">
+          <Badge variant={device.status === "needs-attention" ? "warning" : "success"}>
             {statusLabel(device)}
-          </span>
+          </Badge>
           <ChevronRight className="relay-device-row-chevron" aria-hidden="true" />
-        </span>
-      </Link>
+        </ItemActions>
+      </Item>
     </li>
   );
 }
@@ -206,18 +222,19 @@ export function DevicesPage() {
       </header>
 
       <div className="relay-device-toolbar">
-        <div className="relay-segmented-control" role="group" aria-label="Filter devices">
+        <ToggleGroup
+          className="relay-device-filter"
+          type="single"
+          value={activeFilter}
+          aria-label="Filter devices"
+          onValueChange={(next) => updateSearch({ status: next as DeviceFilter })}
+        >
           {FILTERS.map((filter) => (
-            <button
-              key={filter.id}
-              type="button"
-              aria-pressed={activeFilter === filter.id}
-              onClick={() => updateSearch({ status: filter.id })}
-            >
+            <ToggleGroupItem key={filter.id} value={filter.id}>
               {filter.label}
-            </button>
+            </ToggleGroupItem>
           ))}
-        </div>
+        </ToggleGroup>
         <Input
           className="relay-device-search"
           type="search"

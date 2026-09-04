@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import type { ProductMapPath, ProductMapScreen } from "@relay/product/map-exploration";
-import { IconButton, Tooltip } from "@relay/ui-react";
+import { Button, IconButton, Tooltip } from "@relay/ui-react";
 import { Focus, Hand, LocateFixed, Minus, Plus, RotateCcw, X } from "lucide-react";
 import {
   useEffect,
@@ -578,13 +578,13 @@ function ScreenInspector({
               </ul>
             </section>
           ) : null}
-          <Link
-            className="relay-button relay-button--secondary relay-button--small relay-map-inspector-action"
-            to="/tests/new"
-            search={{ app: appId }}
+          <Button
+            className="relay-map-inspector-action"
+            size="small"
+            render={<Link to="/tests/new" search={{ app: appId }} />}
           >
             Create Test for this app
-          </Link>
+          </Button>
         </>
       ) : (
         <div className="relay-map-inspector-empty">

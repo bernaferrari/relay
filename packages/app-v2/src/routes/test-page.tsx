@@ -1,5 +1,6 @@
 /** @jsxImportSource react */
 import {
+  Badge,
   Button,
   Card,
   CardContent,
@@ -99,7 +100,7 @@ export function TestPage() {
         <div>
           {test.data ? (
             <div className="relay-entity-context">
-              <span className="relay-status-pill relay-status-pill--saved">Saved Test</span>
+              <Badge variant="success">Saved Test</Badge>
               <span>{test.data.appName}</span>
             </div>
           ) : (
@@ -157,13 +158,13 @@ export function TestPage() {
             <strong>A Run is already in progress</strong>
             <p>Resume it before starting this Test again.</p>
           </div>
-          <Link
-            className="relay-button relay-button--primary relay-button--small"
-            to="/runs/$runId"
-            params={{ runId: activeRun.runId }}
+          <Button
+            variant="primary"
+            size="small"
+            render={<Link to="/runs/$runId" params={{ runId: activeRun.runId }} />}
           >
             Resume Run
-          </Link>
+          </Button>
         </div>
       ) : null}
 

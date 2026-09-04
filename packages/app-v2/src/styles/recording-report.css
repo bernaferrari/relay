@@ -494,26 +494,11 @@
   font-size: 12px;
 }
 
-.relay-run-progress progress {
-  width: 100%;
-  height: 6px;
+.relay-run-progress-meter {
   margin-top: 20px;
-  border: 0;
-  border-radius: 999px;
-  overflow: hidden;
-  color: var(--button-primary-base);
-  background: var(--surface-base);
 }
 
-.relay-run-progress progress::-webkit-progress-bar {
-  background: var(--surface-base);
-}
-
-.relay-run-progress progress::-webkit-progress-value {
-  background: var(--button-primary-base);
-}
-
-.relay-run-progress progress::-moz-progress-bar {
+.relay-run-progress-meter .relay-progress-indicator {
   background: var(--button-primary-base);
 }
 
@@ -552,33 +537,7 @@
 }
 
 .relay-report-nav {
-  display: flex;
-  width: 100%;
-  gap: 20px;
   margin-top: 34px;
-  border-bottom: 1px solid var(--border-weak-base);
-}
-
-.relay-report-nav > button {
-  min-width: 24px;
-  min-height: 44px;
-  padding: 0 1px;
-  border-bottom: 2px solid transparent;
-  color: var(--text-weak);
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.relay-report-nav > button[aria-selected="true"] {
-  border-bottom-color: var(--text-strong);
-  color: var(--text-strong);
-}
-
-.relay-report-nav > button:focus-visible {
-  border-radius: var(--radius-sm);
-  outline: 2px solid var(--relay-focus-ring);
-  outline-offset: 2px;
 }
 
 .relay-report-panel {
@@ -630,45 +589,23 @@
 }
 
 .relay-causal-failure {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
-  gap: 14px 24px;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
   max-width: 760px;
   margin-top: 28px;
-  padding: 16px 0;
-  border-block: 1px solid var(--border-weak-base);
-  background: transparent;
 }
 
-.relay-causal-failure h2 {
+.relay-causal-failure .relay-alert-title {
   max-width: 62ch;
-  margin-top: 5px;
-  font-size: 16px;
-  font-weight: 600;
   line-height: 1.45;
 }
 
-.relay-causal-failure-copy > p:last-child {
+.relay-causal-failure .relay-alert-description {
   max-width: 65ch;
-  margin-top: 8px;
-  color: var(--text-weak);
   line-height: 1.5;
 }
 
-.relay-causal-failure-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.relay-causal-failure-actions > span {
-  color: var(--text-weaker);
-  font-size: 11px;
-}
-
 .relay-causal-technical {
-  grid-column: 1 / -1;
+  grid-column: 2 / -1;
 }
 
 .relay-causal-technical-scroll {
@@ -821,6 +758,7 @@
 
 .relay-evidence-channels {
   display: grid;
+  width: 100%;
   align-content: start;
   padding: 6px;
   border-right: 1px solid var(--border-weak-base);
@@ -840,7 +778,7 @@
   cursor: pointer;
 }
 
-.relay-evidence-channels > button[aria-pressed="true"] {
+.relay-evidence-channels > button[data-active] {
   color: var(--text-strong);
   background: var(--surface-raised-strong);
   box-shadow:
@@ -1173,12 +1111,11 @@
     background: var(--surface-base-hover);
   }
 
-  .relay-run-view:hover,
-  .relay-report-nav > button:hover {
+  .relay-run-view:hover {
     color: var(--text-strong);
   }
 
-  .relay-evidence-channels > button:not([aria-pressed="true"]):hover {
+  .relay-evidence-channels > button:not([data-active]):hover {
     background: var(--surface-base-hover);
   }
 }

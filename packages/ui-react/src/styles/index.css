@@ -550,6 +550,469 @@
   margin-block-start: 18px;
 }
 
+.relay-tabs {
+  min-width: 0;
+}
+
+.relay-tabs-list {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--radius-lg);
+  background: var(--surface-base);
+  color: var(--text-weak);
+  isolation: isolate;
+}
+
+.relay-tabs-list[data-variant="line"] {
+  width: 100%;
+  gap: 18px;
+  padding: 0;
+  overflow-x: auto;
+  border-radius: 0;
+  border-bottom: 1px solid var(--border-weak-base);
+  background: transparent;
+  scrollbar-width: none;
+}
+
+.relay-tabs-list[data-variant="line"]::-webkit-scrollbar {
+  display: none;
+}
+
+.relay-tabs-trigger {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  min-width: 0;
+  min-height: 40px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 12px;
+  border-radius: calc(var(--radius-lg) - 3px);
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition:
+    color 150ms ease-out,
+    background-color 150ms ease-out,
+    transform 100ms ease-out;
+}
+
+.relay-tabs-list[data-variant="line"] .relay-tabs-trigger {
+  min-height: 44px;
+  padding: 0 1px;
+  border-radius: var(--radius-sm);
+}
+
+.relay-tabs-trigger[data-active] {
+  color: var(--text-strong);
+}
+
+.relay-tabs-trigger:focus-visible {
+  outline: 2px solid var(--relay-focus-ring);
+  outline-offset: 2px;
+}
+
+.relay-tabs-trigger:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.relay-tabs-trigger:disabled {
+  color: var(--text-weaker);
+  cursor: not-allowed;
+}
+
+.relay-tabs-indicator {
+  position: absolute;
+  z-index: 0;
+  top: var(--active-tab-top);
+  left: var(--active-tab-left);
+  width: var(--active-tab-width);
+  height: var(--active-tab-height);
+  border-radius: calc(var(--radius-lg) - 3px);
+  background: var(--surface-raised-strong);
+  box-shadow: var(--shadow-xs);
+  transition:
+    left 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    width 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.relay-tabs-list[data-variant="line"] .relay-tabs-indicator {
+  top: auto;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--text-strong);
+  box-shadow: none;
+}
+
+.relay-tabs-content:focus-visible {
+  outline: 2px solid var(--relay-focus-ring);
+  outline-offset: 3px;
+}
+
+.relay-toggle-group {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--radius-lg);
+  background: var(--surface-base);
+  box-shadow: inset 0 0 0 1px var(--border-weak-base);
+}
+
+.relay-toggle-group-item {
+  display: inline-flex;
+  min-height: 40px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  padding: 0 11px;
+  border-radius: calc(var(--radius-lg) - 3px);
+  color: var(--text-weak);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition:
+    color 150ms ease-out,
+    background-color 150ms ease-out,
+    box-shadow 150ms ease-out,
+    transform 100ms ease-out;
+}
+
+.relay-toggle-group-item[data-pressed] {
+  color: var(--text-strong);
+  background: var(--surface-raised-strong);
+  box-shadow: var(--shadow-xs);
+}
+
+.relay-toggle-group-item:focus-visible {
+  outline: 2px solid var(--relay-focus-ring);
+  outline-offset: 2px;
+}
+
+.relay-toggle-group-item:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.relay-toggle-group-item:disabled {
+  color: var(--text-weaker);
+  cursor: not-allowed;
+}
+
+.relay-switch {
+  position: relative;
+  display: inline-flex;
+  width: 38px;
+  height: 22px;
+  flex: none;
+  align-items: center;
+  padding: 2px;
+  border: 1px solid var(--border-base);
+  border-radius: 999px;
+  background: var(--surface-base);
+  cursor: pointer;
+  touch-action: manipulation;
+  transition:
+    border-color 150ms ease-out,
+    background-color 150ms ease-out,
+    box-shadow 150ms ease-out;
+}
+
+.relay-switch::before {
+  position: absolute;
+  inset: -11px -3px;
+  content: "";
+}
+
+.relay-switch[data-checked] {
+  border-color: var(--button-primary-base);
+  background: var(--button-primary-base);
+}
+
+.relay-switch:focus-visible {
+  outline: 2px solid var(--relay-focus-ring);
+  outline-offset: 2px;
+}
+
+.relay-switch[data-disabled] {
+  border-color: var(--border-weak-disabled);
+  background: var(--input-disabled);
+  cursor: not-allowed;
+}
+
+.relay-switch-thumb {
+  display: block;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--surface-raised-strong);
+  box-shadow:
+    0 1px 2px color-mix(in srgb, black 18%, transparent),
+    0 0 0 0.5px color-mix(in srgb, black 8%, transparent);
+  transform: translateX(0);
+  transition: transform 150ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.relay-switch[data-checked] .relay-switch-thumb {
+  transform: translateX(16px);
+}
+
+.relay-badge {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  color: var(--button-primary-foreground);
+  background: var(--button-primary-base);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.relay-badge > svg {
+  width: 13px;
+  height: 13px;
+  stroke-width: 2;
+}
+
+.relay-badge--secondary {
+  color: var(--text-base);
+  background: var(--surface-base);
+}
+
+.relay-badge--success {
+  border-color: color-mix(in srgb, var(--border-success-base) 42%, transparent);
+  color: var(--text-success-base);
+  background: var(--surface-success-weak);
+}
+
+.relay-badge--warning {
+  border-color: color-mix(in srgb, var(--border-warning-base) 42%, transparent);
+  color: var(--text-warning-base);
+  background: var(--surface-warning-weak);
+}
+
+.relay-badge--danger {
+  border-color: color-mix(in srgb, var(--border-critical-base) 42%, transparent);
+  color: var(--text-critical-base);
+  background: var(--surface-critical-weak);
+}
+
+.relay-badge--outline {
+  border-color: var(--border-base);
+  color: var(--text-base);
+  background: transparent;
+}
+
+.relay-progress {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 5px 12px;
+}
+
+.relay-progress-label,
+.relay-progress-value {
+  color: var(--text-weak);
+  font-size: 12px;
+}
+
+.relay-progress-value {
+  font-variant-numeric: tabular-nums;
+}
+
+.relay-progress-track {
+  position: relative;
+  grid-column: 1 / -1;
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-base);
+}
+
+.relay-progress-indicator {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--text-strong);
+  transition: width 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.relay-item-group {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-weak-base);
+  border-radius: var(--radius-xl);
+  background: var(--surface-raised-strong);
+}
+
+.relay-item {
+  display: grid;
+  min-width: 0;
+  min-height: 68px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  color: var(--text-base);
+}
+
+.relay-item[data-size="small"] {
+  min-height: 58px;
+  padding-block: 8px;
+}
+
+.relay-item[data-size="compact"] {
+  min-height: 48px;
+  padding-block: 6px;
+}
+
+.relay-item[data-variant="outline"] {
+  border: 1px solid var(--border-weak-base);
+  border-radius: var(--radius-lg);
+}
+
+.relay-item[data-variant="muted"] {
+  border-radius: var(--radius-lg);
+  background: var(--background-weak);
+}
+
+.relay-item-media {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  place-items: center;
+  border: 1px solid var(--border-weak-base);
+  border-radius: var(--radius-md);
+  color: var(--text-weak);
+  background: var(--surface-base);
+}
+
+.relay-item-media > svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 1.7;
+}
+
+.relay-item-content {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.relay-item-title {
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.relay-item-description {
+  overflow: hidden;
+  color: var(--text-weak);
+  font-size: 12px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.relay-item-actions {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.relay-item-separator {
+  height: 1px;
+  margin: 0 14px;
+  border: 0;
+  background: var(--border-weak-base);
+}
+
+.relay-item-group > .relay-item + .relay-item,
+.relay-item-group > .relay-item-separator + .relay-item {
+  border-top: 1px solid var(--border-weak-base);
+}
+
+.relay-item[role="button"],
+a.relay-item,
+button.relay-item {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition:
+    color 140ms ease-out,
+    background-color 140ms ease-out,
+    transform 100ms ease-out;
+}
+
+.relay-item[role="button"]:focus-visible,
+a.relay-item:focus-visible,
+button.relay-item:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid var(--relay-focus-ring);
+  outline-offset: -2px;
+}
+
+.relay-item[role="button"]:active,
+a.relay-item:active,
+button.relay-item:active {
+  transform: scale(0.995);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .relay-tabs-trigger:not([data-active]):not(:disabled):hover,
+  .relay-toggle-group-item:not([data-pressed]):not(:disabled):hover {
+    color: var(--text-strong);
+    background: var(--surface-base-hover);
+  }
+
+  .relay-item[role="button"]:hover,
+  a.relay-item:hover,
+  button.relay-item:hover {
+    background: var(--surface-raised-strong-hover);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .relay-tabs-trigger,
+  .relay-tabs-indicator,
+  .relay-toggle-group-item,
+  .relay-switch,
+  .relay-switch-thumb,
+  .relay-progress-indicator,
+  .relay-item {
+    transition: none;
+  }
+}
+
 .relay-select-trigger {
   display: flex;
   width: 100%;

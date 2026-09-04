@@ -70,6 +70,44 @@ export const graphTestCommandDescriptors: readonly MappedOperationDescriptor[] =
     }),
   ),
   mapped(
+    "app-map.test.undo",
+    path("test undo", ["appMapId", "testId"], undefined, {
+      summary: "Undo the latest durable edit to a graph-native Test",
+      inputHelp: [
+        {
+          name: "expectedRevision",
+          type: "number",
+          required: true,
+          description: "Current App Map revision",
+        },
+        {
+          name: "eventId",
+          type: "string",
+          description: "Stable idempotency key for safe retries",
+        },
+      ],
+    }),
+  ),
+  mapped(
+    "app-map.test.redo",
+    path("test redo", ["appMapId", "testId"], undefined, {
+      summary: "Redo the next durable edit to a graph-native Test",
+      inputHelp: [
+        {
+          name: "expectedRevision",
+          type: "number",
+          required: true,
+          description: "Current App Map revision",
+        },
+        {
+          name: "eventId",
+          type: "string",
+          description: "Stable idempotency key for safe retries",
+        },
+      ],
+    }),
+  ),
+  mapped(
     "app-map.test.propose",
     path("test propose", ["appMapId", "testId"], undefined, {
       summary: "Submit stable-ID Test edits for human review",

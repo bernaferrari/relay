@@ -9,6 +9,8 @@ test("graph Test commands expose one canonical scenario-only workflow", () => {
     [
       "app-map.test.save",
       "app-map.test.edit",
+      "app-map.test.undo",
+      "app-map.test.redo",
       "app-map.test.propose",
       "app-map.test.compile",
       "app-map.test.from-intent",
@@ -21,6 +23,8 @@ test("graph Test commands expose one canonical scenario-only workflow", () => {
     [
       "test save",
       "test edit",
+      "test undo",
+      "test redo",
       "test propose",
       "test compile",
       "test from-intent",

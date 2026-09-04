@@ -1,10 +1,10 @@
 /** @jsxImportSource react */
 import type { ProductTestSummary } from "@relay/product/catalog";
-import { Input } from "@relay/ui-react";
+import { Badge, Button, Input, Item } from "@relay/ui-react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { useDeferredValue, useMemo, useState } from "react";
-import { Search } from "lucide-react";
+import { ChevronRight, Search } from "lucide-react";
 import { FilterSelect } from "../components/filter-select";
 import { EmptyState, OutcomeMark } from "../components/product-patterns";
 import { PageLoading, RecordingProblem } from "./recording-shared";
@@ -90,9 +90,9 @@ export function TestsPage() {
             Reviewed journeys you can run again on a device or browser.
           </p>
         </div>
-        <Link className="relay-button relay-button--primary relay-button--medium" to="/tests/new">
+        <Button variant="primary" render={<Link to="/tests/new" />}>
           New Test
-        </Link>
+        </Button>
       </header>
 
       <div className="relay-library-toolbar" aria-label="Filter Tests">
@@ -155,9 +155,9 @@ export function TestsPage() {
             title="No Tests match these filters"
             detail="Try another name, app, or status. Your saved Tests have not changed."
             action={
-              <button className="relay-inline-button" type="button" onClick={clearFilters}>
+              <Button variant="ghost" size="small" onClick={clearFilters}>
                 Clear filters
-              </button>
+              </Button>
             }
           />
         ) : (
@@ -180,7 +180,10 @@ function TestRow({ test }: { test: ProductTestSummary }) {
   const recent = test.recentRun;
   return (
     <li>
-      <Link className="relay-library-row" to="/tests/$testId" params={{ testId: test.id }}>
+      <Item
+        className="relay-library-row"
+        render={<Link to="/tests/$testId" params={{ testId: test.id }} />}
+      >
         <span className="relay-library-row-main">
           <strong>{test.name}</strong>
           <span>
@@ -188,9 +191,7 @@ function TestRow({ test }: { test: ProductTestSummary }) {
           </span>
         </span>
         <span className="relay-library-row-status">
-          {test.status === "needs-review" ? (
-            <span className="relay-status-pill relay-status-pill--attention">Needs review</span>
-          ) : null}
+          {test.status === "needs-review" ? <Badge variant="warning">Needs review</Badge> : null}
         </span>
         <span className="relay-library-row-recent">
           {recent ? (
@@ -205,10 +206,8 @@ function TestRow({ test }: { test: ProductTestSummary }) {
             </>
           )}
         </span>
-        <span className="relay-library-row-arrow" aria-hidden="true">
-          →
-        </span>
-      </Link>
+        <ChevronRight className="relay-library-row-arrow" aria-hidden="true" />
+      </Item>
     </li>
   );
 }

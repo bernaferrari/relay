@@ -97,11 +97,12 @@ export function AppsPage() {
                   </Field>
                   <div className="relay-dialog-actions">
                     <Dialog.Close
-                      className="relay-button relay-button--ghost relay-button--medium"
-                      disabled={createApp.isPending}
-                    >
-                      Cancel
-                    </Dialog.Close>
+                      render={
+                        <Button variant="ghost" disabled={createApp.isPending}>
+                          Cancel
+                        </Button>
+                      }
+                    />
                     <Button
                       type="submit"
                       variant="primary"

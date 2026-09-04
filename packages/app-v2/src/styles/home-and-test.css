@@ -439,49 +439,6 @@
   font-size: 12px;
 }
 
-.relay-status-pill,
-.relay-outcome-mark {
-  display: inline-flex;
-  width: fit-content;
-  min-height: 26px;
-  align-items: center;
-  gap: 6px;
-  padding: 0 9px;
-  border: 1px solid var(--border-weak-base);
-  border-radius: 999px;
-  color: var(--text-base);
-  background: var(--surface-base);
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.relay-status-pill--saved {
-  color: var(--text-success-base);
-  background: var(--surface-success-weak);
-}
-
-.relay-outcome-mark--success {
-  border-color: color-mix(in srgb, var(--border-success-base) 60%, var(--border-weak-base));
-  color: var(--text-success-base);
-  background: var(--surface-success-weak);
-}
-
-.relay-outcome-mark--danger {
-  border-color: color-mix(in srgb, var(--border-critical-base) 60%, var(--border-weak-base));
-  color: var(--text-critical-base);
-  background: var(--surface-critical-weak);
-}
-
-.relay-outcome-mark--notice {
-  color: var(--text-warning-base, var(--text-base));
-  background: var(--surface-warning-weak, var(--surface-base));
-}
-
-.relay-status-pill--attention {
-  color: var(--text-warning-base, var(--text-base));
-  background: var(--surface-warning-weak, var(--surface-base));
-}
-
 .relay-library-page {
   max-width: 1040px;
 }

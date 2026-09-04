@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { Dialog, SidebarProvider } from "@relay/ui-react";
+import { Dialog, IconButton, SidebarProvider } from "@relay/ui-react";
 import { Outlet, useLocation } from "@tanstack/react-router";
 import { PanelLeft } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -38,11 +38,16 @@ export function AppShell({ platform }: { platform: Platform }) {
         <div className="relay-workspace">
           <header className="relay-mobile-header relay-electron-drag">
             <Dialog.Trigger
-              className="relay-icon-button relay-icon-button--small relay-mobile-menu relay-electron-no-drag"
-              aria-label="Open navigation"
-            >
-              <PanelLeft aria-hidden="true" />
-            </Dialog.Trigger>
+              render={
+                <IconButton
+                  size="small"
+                  className="relay-mobile-menu relay-electron-no-drag"
+                  aria-label="Open navigation"
+                >
+                  <PanelLeft aria-hidden="true" />
+                </IconButton>
+              }
+            />
             <span className="relay-mobile-title">Relay</span>
           </header>
           <main id="main-content" className="relay-main" tabIndex={-1}>
