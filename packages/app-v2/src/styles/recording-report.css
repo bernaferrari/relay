@@ -380,7 +380,7 @@
 .relay-review-header h1,
 .relay-review-complete h1 {
   font-size: clamp(25px, 3vw, 34px);
-  font-weight: 580;
+  font-weight: 650;
   letter-spacing: -0.03em;
 }
 
@@ -707,13 +707,15 @@
 }
 
 .relay-report-page {
-  max-width: 1040px;
+  width: 100%;
+  max-width: 1440px;
+  padding: 28px clamp(20px, 3vw, 40px);
 }
 
 .relay-report-header h1 {
   margin-top: 6px;
-  font-size: clamp(27px, 3vw, 38px);
-  font-weight: 580;
+  font-size: clamp(24px, 2.4vw, 28px);
+  font-weight: 650;
   letter-spacing: -0.035em;
 }
 
@@ -734,32 +736,32 @@
 
 .relay-report-outcome {
   max-width: 66ch;
-  margin-top: 12px;
+  margin-top: 8px;
   color: var(--text-base);
   font-size: 16px;
   line-height: 1.55;
 }
 
 .relay-report-nav {
-  margin-top: 34px;
+  margin-top: 20px;
 }
 
 .relay-report-panel {
-  max-width: 860px;
+  max-width: none;
   min-height: 340px;
-  padding-top: 26px;
+  padding-top: 16px;
 }
 
 .relay-report-facts {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  max-width: 680px;
-  margin-top: 0;
+  max-width: none;
+  margin: 0 0 20px;
   border-block: 1px solid var(--border-weak-base);
 }
 
 .relay-report-facts > div {
-  padding: 16px 0;
+  padding: 12px 0;
 }
 
 .relay-report-facts > div + div {

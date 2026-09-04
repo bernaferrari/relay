@@ -13,7 +13,7 @@ import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ArrowLeft, BookmarkPlus, CheckCircle2, Circle, Square } from "lucide-react";
 import type { LiveTargetSession, LiveTargetStatus } from "../data/live-target-session";
 import { recordingQueryKeys, refreshRecording } from "../data/recording-queries";
@@ -28,21 +28,7 @@ type CaptureAction = { action: "checkpoint"; label?: string } | { action: "stop"
 
 export function RecordTestPage() {
   const { testId } = testRouteApi.useParams();
-  return (
-    <RecordingWorkspace
-      workflowId={testId}
-      exitLink={
-        <Link
-          className="relay-capture-back relay-electron-no-drag"
-          to="/tests/$testId"
-          params={{ testId }}
-        >
-          <ArrowLeft aria-hidden="true" />
-          Exit recording
-        </Link>
-      }
-    />
-  );
+  return <RecordingWorkspace workflowId={testId} exitDestination={{ kind: "test", testId }} />;
 }
 
 /** The recording-owned route is used while a new Test has no Test ID yet. It
@@ -50,30 +36,27 @@ export function RecordTestPage() {
  * instead of teaching two route-specific UIs the same workflow behavior. */
 export function RecordingPage() {
   const { recordingId } = recordingRouteApi.useParams();
-  return (
-    <RecordingWorkspace
-      workflowId={recordingId}
-      exitLink={
-        <Link className="relay-capture-back relay-electron-no-drag" to="/tests/new">
-          <ArrowLeft aria-hidden="true" />
-          Exit recording
-        </Link>
-      }
-    />
-  );
+  return <RecordingWorkspace workflowId={recordingId} exitDestination={{ kind: "new" }} />;
 }
 
-function RecordingWorkspace({ workflowId, exitLink }: { workflowId: string; exitLink: ReactNode }) {
+function RecordingWorkspace({
+  workflowId,
+  exitDestination,
+}: {
+  workflowId: string;
+  exitDestination: { kind: "new" } | { kind: "test"; testId: string };
+}) {
   const { productService, platform, queryClient } = useRouteContext({ from: "__root__" });
   const navigate = useNavigate();
   const [checkpointOpen, setCheckpointOpen] = useState(false);
+  const [exitOpen, setExitOpen] = useState(false);
   const [checkpointLabel, setCheckpointLabel] = useState("");
   const liveCanvas = useRef<HTMLCanvasElement>(null);
   const [liveStatus, setLiveStatus] = useState<LiveTargetStatus>("idle");
   const [liveIssue, setLiveIssue] = useState<string>();
   const [liveInputBusy, setLiveInputBusy] = useState(false);
   const liveSession = useRef<LiveTargetSession | undefined>(undefined);
-  const liveInputQueue = useRef(Promise.resolve());
+  const liveInputQueue = useRef<Promise<boolean>>(Promise.resolve(true));
 
   const recording = useQuery({
     queryKey: recordingQueryKeys.workflow(workflowId),
@@ -192,26 +175,28 @@ function RecordingWorkspace({ workflowId, exitLink }: { workflowId: string; exit
     };
   }, [captureReady, platform, productService, selectedTargetId]);
 
-  function sendLiveInput(input: Parameters<LiveTargetSession["input"]>[0]): Promise<void> {
+  function sendLiveInput(input: Parameters<LiveTargetSession["input"]>[0]): Promise<boolean> {
     const queued = liveInputQueue.current
-      .catch(() => undefined)
+      .catch(() => true)
       .then(async () => {
         if (!allowed.has("record")) {
           setLiveIssue("Relay is not ready to record another interaction yet.");
-          return;
+          return false;
         }
         const session = liveSession.current;
         if (!session) {
           setLiveIssue("The live target is still connecting.");
-          return;
+          return false;
         }
         setLiveInputBusy(true);
         setLiveIssue(undefined);
         try {
           await session.input(input);
           await refreshRecording(queryClient, productService, workflowId);
+          return true;
         } catch (error) {
           setLiveIssue(liveIssueMessage(errorMessage(error)));
+          return false;
         } finally {
           setLiveInputBusy(false);
         }
@@ -223,7 +208,54 @@ function RecordingWorkspace({ workflowId, exitLink }: { workflowId: string; exit
   return (
     <section className="relay-capture-stage">
       <header className="relay-capture-header relay-electron-drag">
-        {exitLink}
+        <Dialog open={exitOpen} onOpenChange={setExitOpen}>
+          <DialogTrigger
+            render={
+              <Button
+                className="relay-capture-back relay-electron-no-drag"
+                variant="ghost"
+                size="sm"
+              />
+            }
+          >
+            <ArrowLeft aria-hidden="true" />
+            Leave recording
+          </DialogTrigger>
+          <DialogContent showCloseButton={false}>
+            <DialogTitle>Leave this recording?</DialogTitle>
+            <DialogDescription>
+              Keep the recording running and return later, or stop it now to review the captured
+              journey. Leaving does not discard captured work.
+            </DialogDescription>
+            <div className="relay-dialog-actions">
+              <DialogClose render={<Button variant="ghost">Keep recording</Button>} />
+              <Button
+                variant="outline"
+                nativeButton={false}
+                render={
+                  exitDestination.kind === "new" ? (
+                    <Link to="/tests/new" />
+                  ) : (
+                    <Link to="/tests/$testId" params={{ testId: exitDestination.testId }} />
+                  )
+                }
+                onClick={() => setExitOpen(false)}
+              >
+                Leave running
+              </Button>
+              <Button
+                variant="default"
+                onClick={() => {
+                  setExitOpen(false);
+                  action.mutate({ action: "stop" });
+                }}
+                disabled={!allowed.has("stop") || action.isPending}
+              >
+                Stop and review
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
         <div className="relay-capture-title">
           <span
             className={captureReady ? "relay-recording-dot" : "relay-recording-idle-dot"}

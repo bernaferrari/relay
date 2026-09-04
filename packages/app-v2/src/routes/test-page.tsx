@@ -86,7 +86,9 @@ export function TestPage() {
     },
   });
 
-  const activeRun = pointer.data;
+  // The run pointer is workspace-wide. It should only interrupt the document
+  // that owns the run; a run for another Test belongs in Activity, not here.
+  const activeRun = pointer.data?.testId === testId ? pointer.data : undefined;
   const loading = test.isPending || targets.isPending || pointer.isPending;
   const evidenceSteps = flattenSteps(test.data?.steps ?? []);
   const selectedEvidenceStep =
@@ -123,7 +125,13 @@ export function TestPage() {
           )}
           <h1>{test.data?.name ?? "Test"}</h1>
           {test.data ? (
-            <p className="relay-page-description">A reviewed journey, ready to run again.</p>
+            <p className="relay-page-description">
+              {(test.data.steps ?? []).some((step) => step.status === "needs-review")
+                ? "Review the highlighted steps before running this Test."
+                : recentRuns.data?.length
+                  ? "Run the saved journey again or inspect its latest evidence."
+                  : "Choose a device or browser to run this Test for the first time."}
+            </p>
           ) : null}
         </div>
         <div className="relay-test-header-actions">
@@ -187,22 +195,22 @@ export function TestPage() {
       ) : null}
 
       {!loading && test.data && !activeRun && !targets.isError ? (
-        <div className="mt-8 grid max-w-5xl gap-9">
+        <div className="relay-test-workbench">
           <section
-            className="w-full max-w-3xl rounded-xl border border-border-weak-base bg-surface-raised-strong p-5 text-text-strong"
+            className="relay-test-run-config rounded-xl border border-border-weak-base bg-surface-raised-strong p-4 text-text-strong"
             aria-labelledby="run-target-title"
           >
-            <header className="space-y-1">
+            <header className="relay-test-run-config-heading">
               <h2 id="run-target-title" className="text-lg font-semibold tracking-tight">
                 Run this Test
               </h2>
-              <p className="max-w-2xl text-sm leading-5 text-text-weak">
-                Choose a ready device or browser. Relay will repeat the saved steps unchanged.
+              <p className="text-sm leading-5 text-text-weak">
+                Choose where to run the saved steps.
               </p>
             </header>
             {targets.data?.length ? (
               <RadioGroup
-                className="mt-5 grid max-w-2xl gap-2"
+                className="relay-test-targets"
                 name="run-target"
                 value={targetId}
                 onValueChange={setTargetId}
@@ -219,11 +227,11 @@ export function TestPage() {
                       <span className="grid min-w-0 flex-1 gap-0.5">
                         <span
                           data-slot="run-target-title"
-                          className="truncate text-sm font-medium text-foreground"
+                          className="text-sm font-medium break-words whitespace-normal text-foreground"
                         >
                           {label.title}
                         </span>
-                        <span className="truncate text-xs leading-snug text-muted-foreground">
+                        <span className="text-xs leading-snug break-words whitespace-normal text-muted-foreground">
                           {label.detail}
                         </span>
                       </span>
@@ -244,7 +252,7 @@ export function TestPage() {
                 />
               </div>
             )}
-            <div className="mt-5 flex items-center gap-3">
+            <div className="relay-test-run-action">
               <Button
                 variant="default"
                 onClick={() => start.mutate()}
@@ -346,7 +354,7 @@ export function TestPage() {
                 <p className="relay-section-label">Reports</p>
                 <h2 id="test-runs-title">Recent Runs</h2>
               </div>
-              <Link className="relay-inline-link" to="/runs" search={{ view: "all" }}>
+              <Link className="relay-inline-link" to="/runs" search={{ view: "all", test: testId }}>
                 View all Runs
               </Link>
             </div>

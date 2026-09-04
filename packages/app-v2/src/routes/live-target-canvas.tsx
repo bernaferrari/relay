@@ -32,7 +32,7 @@ export function LiveTargetCanvas({
   busy: boolean;
   targetTitle: string;
   targetDetail: string;
-  send(input: LiveTargetInput): Promise<void>;
+  send(input: LiveTargetInput): Promise<boolean | void>;
   recording?: boolean;
   helpText?: string;
 }) {
@@ -119,7 +119,12 @@ export function LiveTargetCanvas({
   function typeText() {
     const value = text;
     if (!value || busy || !streaming) return;
-    void send({ kind: "key", key: "enter", text: value }).then(() => setText(""));
+    void send({ kind: "key", key: "enter", text: value }).then((delivered) => {
+      // Keep the draft visible when the transport rejects or recording cannot
+      // accept the interaction. Clearing on an attempted send made text look
+      // successfully recorded when it had actually been lost.
+      if (delivered !== false) setText("");
+    });
   }
 
   return (

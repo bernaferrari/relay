@@ -36,6 +36,15 @@ describe("App scope", () => {
     ).toBe("app-3");
   });
 
+  it("keeps the creation route scoped to its selected app", () => {
+    expect(
+      appScopeDetailsForLocation({ pathname: "/tests/new", search: { app: "app-7" } }),
+    ).toEqual({ kind: "single", appId: "app-7" });
+    expect(appScopeDetailsForLocation({ pathname: "/tests/new", search: {} })).toEqual({
+      kind: "all",
+    });
+  });
+
   it("prefers canonical detail ownership over a stale collection filter", () => {
     expect(
       appScopeForLocation({
@@ -92,8 +101,32 @@ describe("App scope", () => {
       }),
     ).toBe("/runs?view=failed&app=new-app");
     expect(
+      appContextDestination({
+        pathname: "/tests/test-1/run-across",
+        search: { app: "old-app" },
+        appId: "new-app",
+      }),
+    ).toBe("/tests?app=new-app");
+    expect(
+      appContextDestination({
+        pathname: "/accounts",
+        search: { app: "old-app" },
+        appId: "new-app",
+      }),
+    ).toBe("/accounts");
+    expect(
       appContextDestination({ pathname: "/apps/old-app/versions", search: {}, appId: "new/app" }),
-    ).toBe("/apps/new%2Fapp/versions");
+    ).toBe("/versions");
+  });
+
+  it("does not let workspace-only resources inherit a stale app filter", () => {
+    expect(appScopeDetailsForLocation({ pathname: "/accounts", search: { app: "app-1" } })).toEqual(
+      { kind: "all" },
+    );
+    expect(appScopeDetailsForLocation({ pathname: "/suites", search: { app: "app-1" } })).toEqual({
+      kind: "single",
+      appId: "app-1",
+    });
   });
 
   it("returns detail screens to the matching scoped collection", () => {

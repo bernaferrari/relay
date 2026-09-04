@@ -31,8 +31,11 @@ export function AppPage() {
     queryFn: () => catalogService.listRuns({ appMapId: appId }),
     staleTime: 10_000,
   });
-  const loading = app.isPending || tests.isPending || runs.isPending;
-  const error = app.error ?? tests.error ?? runs.error;
+  // The app identity is the shell for this page. Secondary panels should be
+  // independently recoverable so a transient Runs or Tests failure does not
+  // erase the rest of the working context.
+  const loading = app.isPending;
+  const error = app.error;
   const retry = () => {
     void app.refetch();
     void tests.refetch();
@@ -85,7 +88,7 @@ export function AppPage() {
               <dd>{runs.data?.length ?? 0}</dd>
             </div>
             <div>
-              <dt>Screen coverage</dt>
+              <dt>Known screen coverage</dt>
               <dd>
                 {app.data.coverage.coveredScreenCount} of {app.data.coverage.screenCount}
               </dd>
@@ -104,8 +107,23 @@ export function AppPage() {
                     View all <ArrowRight aria-hidden="true" />
                   </Link>
                 ) : null}
+                <Link className="relay-inline-action" to="/suites" search={{ app: appId }}>
+                  Suites <ArrowRight aria-hidden="true" />
+                </Link>
               </header>
-              {tests.data?.length ? (
+              {tests.isPending ? (
+                <p className="relay-app-panel-state">Loading Tests…</p>
+              ) : tests.isError ? (
+                <EmptyState
+                  title="Tests are temporarily unavailable"
+                  detail="The app overview is still available. Open the Tests library when the service responds."
+                  action={
+                    <Link className="relay-inline-link" to="/tests" search={{ app: appId }}>
+                      Open Tests
+                    </Link>
+                  }
+                />
+              ) : tests.data?.length ? (
                 <ul className="relay-app-list">
                   {tests.data.slice(0, 4).map((test) => (
                     <li key={test.id}>
@@ -148,14 +166,29 @@ export function AppPage() {
                   </Link>
                 ) : null}
               </header>
-              {recentRuns.length ? (
+              {runs.isPending ? (
+                <p className="relay-app-panel-state">Loading recent results…</p>
+              ) : runs.isError ? (
+                <EmptyState
+                  title="Recent results are temporarily unavailable"
+                  detail="You can keep working in this app while Run history reconnects."
+                  action={
+                    <Link className="relay-inline-link" to="/runs" search={{ app: appId }}>
+                      Open Runs
+                    </Link>
+                  }
+                />
+              ) : recentRuns.length ? (
                 <ul className="relay-app-list">
                   {recentRuns.map((run) => (
                     <li key={run.id}>
                       <Link to="/runs/$runId" params={{ runId: run.id }}>
                         <span>
                           <strong>{run.testName ?? run.title}</strong>
-                          <small>{run.targetName ?? "Device or browser recorded in Report"}</small>
+                          <small>
+                            {run.targetName ?? "Device or browser recorded in Report"} ·{" "}
+                            {relativeTime(runTime(run))}
+                          </small>
                         </span>
                         <OutcomeMark outcome={run.outcome ?? run.phase} />
                       </Link>
@@ -174,25 +207,18 @@ export function AppPage() {
             <header className="relay-section-heading">
               <div>
                 <p className="relay-section-label">Configuration</p>
-                <h2 id="app-resources-title">App resources</h2>
+                <h2 id="app-resources-title">Workspace resources</h2>
               </div>
             </header>
             <div className="relay-app-resource-links">
-              <Link to="/suites" search={{ app: appId }}>
-                <span>
-                  <strong>Suites</strong>
-                  <small>Reusable groups of Tests and Data sets</small>
-                </span>
-                <ArrowRight aria-hidden="true" />
-              </Link>
-              <Link to="/apps/$appId/versions" params={{ appId }}>
+              <Link to="/versions">
                 <span>
                   <strong>Versions</strong>
                   <small>Registered builds and web deployments</small>
                 </span>
                 <ArrowRight aria-hidden="true" />
               </Link>
-              <Link to="/apps/$appId/accounts" params={{ appId }}>
+              <Link to="/accounts">
                 <span>
                   <strong>Accounts</strong>
                   <small>Reviewed browser sign-ins</small>
@@ -222,4 +248,12 @@ export function AppPage() {
 
 function runTime(run: { finishedAt?: number; startedAt?: number; queuedAt: number }): number {
   return run.finishedAt ?? run.startedAt ?? run.queuedAt;
+}
+
+function relativeTime(timestamp: number): string {
+  const elapsed = Math.max(0, Date.now() - timestamp);
+  if (elapsed < 60_000) return "Just now";
+  if (elapsed < 3_600_000) return `${Math.floor(elapsed / 60_000)}m ago`;
+  if (elapsed < 86_400_000) return `${Math.floor(elapsed / 3_600_000)}h ago`;
+  return `${Math.floor(elapsed / 86_400_000)}d ago`;
 }

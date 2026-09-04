@@ -11,6 +11,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useRouter, useRouteContext } from "@tanstack/react-router";
 import {
   AppWindow,
+  Box,
   CircleDot,
   FlaskConical,
   GitCompareArrows,
@@ -18,6 +19,7 @@ import {
   House,
   MonitorSmartphone,
   Plus,
+  KeyRound,
   Search,
   type LucideIcon,
 } from "lucide-react";
@@ -74,6 +76,20 @@ const workspaceCommands: readonly Command[] = [
     icon: MonitorSmartphone,
   },
   {
+    id: "versions",
+    label: "Manage versions",
+    detail: "Workspace builds and deployments",
+    href: "/versions",
+    icon: Box,
+  },
+  {
+    id: "accounts",
+    label: "Manage browser accounts",
+    detail: "Workspace managed-browser sign-ins",
+    href: "/accounts",
+    icon: KeyRound,
+  },
+  {
     id: "record-test",
     label: "Record a new Test",
     detail: "Start from a live target",
@@ -103,6 +119,7 @@ export function CommandPalette({
   const router = useRouter();
   const { platform, productService, catalogService } = useRouteContext({ from: "__root__" });
   const [query, setQuery] = useState("");
+  const [activeIndex, setActiveIndex] = useState(0);
   const apps = useQuery({
     queryKey: recordingQueryKeys.apps,
     queryFn: () => productService.listApps(),
@@ -133,7 +150,10 @@ export function CommandPalette({
   }, [onOpenChange, open]);
 
   useEffect(() => {
-    if (!open) setQuery("");
+    if (!open) {
+      setQuery("");
+      setActiveIndex(0);
+    }
   }, [open]);
 
   const commands = useMemo(() => {
@@ -157,7 +177,9 @@ export function CommandPalette({
         keywords: "application",
       });
     }
-    for (const test of (tests.data ?? []).slice(0, 30)) {
+    // Search the complete catalog before rendering results. Limiting the
+    // source list first makes exact searches fail for the 31st test onward.
+    for (const test of tests.data ?? []) {
       contextual.push({
         id: `test:${test.appMapId}:${test.id}`,
         label: `Open ${test.name}`,
@@ -171,6 +193,31 @@ export function CommandPalette({
       commandMatches(command, query),
     );
   }, [apps.data, query, recording.data, tests.data]);
+
+  useEffect(() => setActiveIndex(0), [query]);
+
+  useEffect(() => {
+    const activeId = commands[activeIndex]?.id;
+    if (!activeId) return;
+    const active = document.getElementById(`relay-command-${activeId}`);
+    if (active && typeof active.scrollIntoView === "function") {
+      active.scrollIntoView({ block: "nearest" });
+    }
+  }, [activeIndex, commands]);
+
+  function handleKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (!commands.length) return;
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setActiveIndex((index) => (index + 1) % commands.length);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setActiveIndex((index) => (index - 1 + commands.length) % commands.length);
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      choose(commands[activeIndex] ?? commands[0]!);
+    }
+  }
 
   function choose(command: Command) {
     onOpenChange(false);
@@ -189,20 +236,32 @@ export function CommandPalette({
           <Input
             autoFocus
             aria-label="Search commands"
+            role="combobox"
+            aria-autocomplete="list"
+            aria-controls="relay-command-results"
+            aria-expanded={commands.length > 0}
             placeholder="Search Relay…"
             value={query}
             onChange={(event) => setQuery(event.currentTarget.value)}
+            onKeyDown={handleKeyDown}
+            aria-activedescendant={
+              commands[activeIndex] ? `relay-command-${commands[activeIndex].id}` : undefined
+            }
           />
           <kbd>Esc</kbd>
         </div>
         <ScrollArea className="relay-command-results">
-          {commands.length ? (
-            <div role="list" aria-label="Commands">
-              {commands.map((command) => (
+          <div id="relay-command-results" role="listbox" aria-label="Commands">
+            {commands.length ? (
+              commands.map((command, index) => (
                 <button
+                  role="option"
                   type="button"
-                  className="relay-command-item"
+                  className={`relay-command-item${index === activeIndex ? " relay-command-item--active" : ""}`}
                   key={command.id}
+                  id={`relay-command-${command.id}`}
+                  aria-selected={index === activeIndex}
+                  onMouseEnter={() => setActiveIndex(index)}
                   onClick={() => choose(command)}
                 >
                   <command.icon aria-hidden="true" />
@@ -211,11 +270,11 @@ export function CommandPalette({
                     <small>{command.detail}</small>
                   </span>
                 </button>
-              ))}
-            </div>
-          ) : (
-            <p className="relay-command-empty">No matching commands</p>
-          )}
+              ))
+            ) : (
+              <p className="relay-command-empty">No matching commands</p>
+            )}
+          </div>
         </ScrollArea>
       </DialogContent>
     </Dialog>

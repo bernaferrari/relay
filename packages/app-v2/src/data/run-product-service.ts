@@ -10,7 +10,6 @@ import type {
   EvidenceChannelRecord,
   OperationInput,
   OperationOutput,
-  RunTestStepEvidence,
   RunOutcome,
 } from "@relay/protocol";
 import { parseOptionalRunTestStepEvidence } from "@relay/protocol";
@@ -22,55 +21,19 @@ import { presentReadyTargets, type ProductTargetOption } from "./target-presenta
 
 export type { ProductTestSummary } from "./run-test-projection";
 
-export type ReportEvidenceSection = {
-  id: EvidenceChannel;
-  label: string;
-  count: number;
-  detail: string;
-  summary: string;
-  inspectable: boolean;
-  items: readonly ReportEvidenceItem[];
-};
-
-export type ReportEvidenceItem = {
-  id: string;
-  title: string;
-  detail?: string;
-  meta?: string;
-  tone?: "neutral" | "success" | "warning" | "critical";
-  media?: {
-    kind: "image";
-    src: string;
-    width?: number;
-    height?: number;
-  };
-};
-
-export type ReportTimelineItem = {
-  id: string;
-  index: number;
-  title: string;
-  state: "passed" | "failed" | "running" | "recovered" | "pending";
-  durationMs?: number;
-  evidenceCount: number;
-};
-
-export type ProductRunReportOverview = {
-  runId: string;
-  testId?: string;
-  title: string;
-  outcome?: RunOutcome;
-  targetName?: string;
-  durationMs?: number;
-  cause?: string;
-  category?: string;
-  firstEvidence?: { label: string; detail?: string };
-  timeline: readonly ReportTimelineItem[];
-  evidence: readonly ReportEvidenceSection[];
-  /** Undefined for legacy Runs that predate authored-step provenance. */
-  stepEvidence?: readonly RunTestStepEvidence[];
-  evidenceUnavailable?: true;
-};
+export { framePathsForTraceStep } from "./run-report-model";
+export type {
+  ReportEvidenceSection,
+  ReportEvidenceItem,
+  ReportTimelineItem,
+  ProductRunReportOverview,
+} from "./run-report-model";
+import type {
+  ReportEvidenceSection,
+  ReportEvidenceItem,
+  ReportTimelineItem,
+  ProductRunReportOverview,
+} from "./run-report-model";
 
 export type ProductRunReview = OperationOutput<"run.review">["review"];
 export type ProductVisualReviewResult = Pick<
@@ -575,6 +538,11 @@ function reportTimeline(rawRun: unknown): ReportTimelineItem[] {
         state,
         ...(finite(step.durationMs) === undefined ? {} : { durationMs: finite(step.durationMs) }),
         evidenceCount: array(step.frames).length,
+        framePaths: array(step.frames).flatMap((frame) => {
+          const path = text(record(frame)?.path);
+          return path ? [path] : [];
+        }),
+        ...(text(step.log) ? { observed: text(step.log) } : {}),
       },
     ];
   });
@@ -851,6 +819,16 @@ export function projectRunReport(
   const targetName = humanTargetName(run.deviceName);
   const testId = sourceTestId(run);
   const stepEvidence = parseOptionalRunTestStepEvidence(run.testStepEvidence);
+  const sourceRevision = record(run.sourceRevision);
+  const browserProfile = record(run.browserCaseProfile);
+  const targetProfile = record(run.targetProfile);
+  const executionContext = {
+    ...(text(sourceRevision?.sha) ? { sourceRevision: text(sourceRevision?.sha) } : {}),
+    ...(text(sourceRevision?.buildId) ? { buildId: text(sourceRevision?.buildId) } : {}),
+    ...(text(browserProfile?.engine) ? { browser: text(browserProfile?.engine) } : {}),
+    ...(text(targetProfile?.id) ? { targetProfileId: text(targetProfile?.id) } : {}),
+    ...(text(run.appVersion) ? { appVersion: text(run.appVersion) } : {}),
+  };
   return {
     runId,
     ...(testId ? { testId } : {}),
@@ -868,6 +846,7 @@ export function projectRunReport(
     timeline: reportTimeline(rawRun),
     evidence: sections,
     ...(stepEvidence === undefined ? {} : { stepEvidence }),
+    ...(Object.keys(executionContext).length ? { executionContext } : {}),
     ...(evidenceUnavailable ? { evidenceUnavailable: true as const } : {}),
   };
 }

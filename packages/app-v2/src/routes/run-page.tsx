@@ -30,6 +30,7 @@ import { runQueryKeys } from "../data/run-queries";
 import { clearRunPointerIfCurrent, readRunPointer } from "../data/run-pointer";
 import { PageLoading, RecordingProblem, targetLabel } from "./recording-shared";
 import { RunReviewControls } from "./run-review-controls";
+import { RunWorkbench, RunContextFacts } from "./run-workbench";
 
 const routeApi = getRouteApi("/runs/$runId");
 
@@ -188,7 +189,7 @@ export function RunPage() {
               to="/tests/$testId"
               params={{ testId: activePointer.testId }}
             >
-              Back to Test
+              View test
             </Link>
           ) : null}
           {canCancel ? (
@@ -249,9 +250,10 @@ function RunReport({
       firstSentence(report.firstEvidence.label).toLocaleLowerCase() !==
         firstSentence(failure).toLocaleLowerCase()),
   );
-  const search = routeApi.useSearch() as { view?: unknown };
+  const search = routeApi.useSearch() as { view?: unknown; step?: unknown };
   const navigate = useNavigate({ from: "/runs/$runId" });
   const requestedView = reportView(search.view);
+  const requestedStep = typeof search.step === "string" ? Number.parseInt(search.step, 10) : 0;
   const views = [
     { id: "overview" as const, label: "Overview", available: true },
     { id: "timeline" as const, label: "Timeline", available: report.timeline.length > 0 },
@@ -259,6 +261,13 @@ function RunReport({
   ].filter((view) => view.available);
   const view = views.some((item) => item.id === requestedView) ? requestedView : "overview";
   const [selectedEvidenceId, setSelectedEvidenceId] = useState(report.evidence[0]?.id);
+  const selectedStepIndex =
+    Number.isFinite(requestedStep) && requestedStep > 0
+      ? Math.min(requestedStep - 1, Math.max(0, report.timeline.length - 1))
+      : Math.max(
+          0,
+          report.timeline.findIndex((item) => item.state === "failed"),
+        );
   const [rawEvidenceOpen, setRawEvidenceOpen] = useState(false);
   const selectedEvidence =
     report.evidence.find((section) => section.id === selectedEvidenceId) ?? report.evidence[0];
@@ -274,7 +283,7 @@ function RunReport({
     <section className="relay-page relay-report-page">
       {testId ? (
         <Link className="relay-back-link" to="/tests/$testId" params={{ testId }}>
-          <ArrowLeft aria-hidden="true" /> Back to Test
+          <ArrowLeft aria-hidden="true" /> View test
         </Link>
       ) : (
         <Breadcrumbs items={[{ label: "Runs", to: "/runs" }, { label: "Report" }]} />
@@ -289,7 +298,20 @@ function RunReport({
           <p className="relay-report-outcome">{outcomeSentence(report.outcome, target)}</p>
         </div>
         <div className="relay-report-header-actions">
-          <IssueDraftButton source={{ kind: "run", report }} />
+          {report.outcome === "product-failure" ||
+          report.outcome === "harness-failure" ||
+          report.outcome === "uncertain" ? (
+            <IssueDraftButton source={{ kind: "run", report }} />
+          ) : null}
+          {testId ? (
+            <Button
+              nativeButton={false}
+              render={<Link to="/tests/$testId" params={{ testId }} />}
+              variant={report.outcome === "passed" ? "default" : "outline"}
+            >
+              Set up another run
+            </Button>
+          ) : null}
           {!testId ? (
             <Link className="relay-text-link relay-header-link" to="/runs">
               All Runs
@@ -322,20 +344,23 @@ function RunReport({
           role={views.length > 1 ? "tabpanel" : undefined}
           aria-labelledby={views.length > 1 ? "report-tab-overview" : undefined}
         >
-          <dl className="relay-report-facts">
-            <div>
-              <dt>Device or browser</dt>
-              <dd>{report.targetName ?? "Not recorded"}</dd>
-            </div>
-            <div>
-              <dt>Duration</dt>
-              <dd>
-                {report.durationMs === undefined
-                  ? "Not recorded"
-                  : formatDuration(report.durationMs)}
-              </dd>
-            </div>
-          </dl>
+          <RunContextFacts
+            report={report}
+            duration={
+              report.durationMs === undefined ? "Not recorded" : formatDuration(report.durationMs)
+            }
+          />
+
+          {report.timeline.length || report.evidence.length ? (
+            <RunWorkbench
+              report={report}
+              selectedStepIndex={selectedStepIndex}
+              renderEvidence={(section) => <EvidencePreview section={section} />}
+              onSelectStep={(index) => {
+                void navigate({ search: (previous) => ({ ...previous, step: String(index + 1) }) });
+              }}
+            />
+          ) : null}
 
           <RunReviewControls runId={report.runId} service={runService} />
 

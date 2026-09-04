@@ -95,10 +95,10 @@ details, and advanced configuration in a clearly labelled overflow menu or discl
 
 Prefer user language:
 
-- **App**, **Test**, **Run**, **Change**, and **Device** are the five primary V2 objects.
+- [PRODUCT_V2.md](./PRODUCT_V2.md) owns the public model: **App**, **Test**, **Run**, **Change**, **Device**, and **Session**. Live is the navigation home for Sessions.
 - **Checkpoint**, **Report**, **Proof**, **Recording**, **Data set**, and **Map** support those objects. Proof is a verified result, not an object people create or operate.
 - **Run Across** applies a Test across Data set values and Devices. Variable, Combine, Cell, Lens, App Map, digest, and binding are engine terms shown only in Advanced or Audit surfaces.
-- Path or Run describes execution—never recipe, suite, or Journey in ordinary chrome.
+- Path or Run describes execution. A Suite groups Tests; recipe is an engine term.
 - Run report, not immutable report
 - Device, not target or adapter instance, unless an Audit surface names the underlying target
 - Saved with this run, not frozen observability payload

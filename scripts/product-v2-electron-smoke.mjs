@@ -71,6 +71,16 @@ async function clickNav(page, name, route) {
   }
 }
 
+async function openRoute(page, route) {
+  const target = new URL(page.url());
+  target.hash = `#${route}`;
+  await page.goto(target.toString(), {
+    waitUntil: "domcontentloaded",
+    timeout: CHECK_TIMEOUT_MS,
+  });
+  await waitForRoute(page, route);
+}
+
 async function assertLayout(page) {
   const layout = await page.evaluate(() => ({
     viewport: { width: window.innerWidth, height: window.innerHeight },
@@ -245,9 +255,25 @@ async function run() {
     await check();
     for (const [name, route] of [
       ["Tests", "/tests"],
-      ["Sessions", "/sessions"],
-      ["Agent Debug", "/debug"],
-      ["Devices", "/devices"],
+      ["Live", "/sessions"],
+    ]) {
+      await clickNav(page, name, route);
+      await check();
+    }
+
+    const debugLink = page.getByRole("link", { name: "Agent Debug", exact: true });
+    if (await debugLink.count()) {
+      await debugLink.first().click();
+      await waitForRoute(page, "/debug");
+    } else {
+      // Agent Debug is contextual to an active Live target. Keep route and
+      // accessibility coverage when this smoke profile has no such target.
+      await openRoute(page, "/debug");
+    }
+    await check();
+
+    for (const [name, route] of [
+      ["Devices & browsers", "/devices"],
       ["Changes", "/changes"],
       ["Runs", "/runs"],
     ]) {

@@ -33,6 +33,16 @@ const routePresentations = {
     eyebrow: "App",
     description: "Review saved browser sign-ins available while testing this app.",
   },
+  "/versions": {
+    path: "/versions",
+    eyebrow: "Workspace",
+    description: "Review registered builds and deployments available to this workspace.",
+  },
+  "/accounts": {
+    path: "/accounts",
+    eyebrow: "Workspace",
+    description: "Review browser sign-ins saved for managed browsers in this workspace.",
+  },
   "/apps/:appId/map": {
     path: "/apps/$appId/map",
     eyebrow: "App",

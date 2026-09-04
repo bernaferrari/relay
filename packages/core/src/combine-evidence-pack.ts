@@ -45,6 +45,8 @@ export type { CombineEvidencePackManifest };
 export type CombineEvidenceCase = Pick<
   TestJob,
   | "id"
+  | "projectId"
+  | "ownerId"
   | "action"
   | "batchId"
   | "caseIndex"
@@ -308,7 +310,7 @@ function authoredFrames(job: CombineEvidenceCase): CombineEvidenceCase["frames"]
 export async function analyzeCombineEvidenceBatch(
   batchId: string,
 ): Promise<CombineEvidenceAnalysisReport> {
-  return analyzeCombineEvidenceJobs(batchId, await combineBatchJobs(batchId));
+  return analyzeCombineEvidenceJobs(batchId, await readCombineEvidenceBatchJobs(batchId));
 }
 
 /** A matrix batch names its recipe after itself, once per kind of matrix. */
@@ -335,7 +337,9 @@ const MAX_BATCH_CASES = 2000;
  * first, so reading it back unsorted would quietly make the restore case the
  * baseline and compare every locale against the language the sweep ended on.
  */
-async function combineBatchJobs(batchId: string): Promise<CombineEvidenceCase[]> {
+export async function readCombineEvidenceBatchJobs(
+  batchId: string,
+): Promise<CombineEvidenceCase[]> {
   const byId = new Map<string, CombineEvidenceCase>();
   for (const prefix of BATCH_ACTION_PREFIXES) {
     const persisted = await listPersistedRuns(MAX_BATCH_CASES, `${prefix}${batchId}`);
@@ -670,7 +674,7 @@ export async function exportCombineEvidencePackFromBatchId(batchId: string): Pro
   manifest: CombineEvidencePackManifest;
   jobs: CombineEvidenceCase[];
 }> {
-  const jobs = await combineBatchJobs(batchId);
+  const jobs = await readCombineEvidenceBatchJobs(batchId);
   const exported = await exportCombineEvidencePack({ batchId, jobs });
   return { ...exported, jobs };
 }

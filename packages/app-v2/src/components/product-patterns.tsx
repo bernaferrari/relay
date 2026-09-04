@@ -184,6 +184,7 @@ function outcomePresentation(outcome: string | undefined): {
   tone: "success" | "danger" | "notice" | "quiet";
 } {
   if (outcome === "passed") return { label: "Passed", icon: Check, tone: "success" };
+  if (outcome === "ready") return { label: "Ready", icon: Check, tone: "success" };
   if (outcome === "product-failure") {
     return { label: "Product issue", icon: X, tone: "danger" };
   }
@@ -201,5 +202,6 @@ function outcomePresentation(outcome: string | undefined): {
   if (outcome === "queued") return { label: "Queued", icon: CircleDashed, tone: "quiet" };
   if (outcome === "running") return { label: "Running", icon: CircleDashed, tone: "quiet" };
   if (outcome === "completed") return { label: "Completed", icon: Check, tone: "success" };
-  return { label: "In progress", icon: CircleDashed, tone: "quiet" };
+  if (outcome === undefined) return { label: "In progress", icon: CircleDashed, tone: "quiet" };
+  return { label: "Unknown result", icon: CircleHelp, tone: "notice" };
 }

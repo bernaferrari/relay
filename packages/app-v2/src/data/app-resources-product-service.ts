@@ -81,6 +81,7 @@ export type AppResourcesProductService = {
   createApp(name: string): Promise<{ id: string; name: string }>;
   listVersions(): Promise<readonly ProductAppVersion[]>;
   listBrowserAccounts(): Promise<readonly ProductBrowserAccount[]>;
+  listBrowserTargets?(): Promise<readonly Pick<TargetDefinition, "id" | "name">[]>;
   /** Optional for existing read-only fixture adapters; production includes the operations below. */
   saveVersion?: AppVersionProductService["saveVersion"];
   createVersion?: AppVersionProductService["createVersion"];
@@ -172,6 +173,12 @@ export function createAppResourcesProductService(
         .sort(
           (left, right) => right.updatedAt - left.updatedAt || left.name.localeCompare(right.name),
         );
+    },
+    async listBrowserTargets() {
+      const { targets } = await (await client()).invoke("target.list", {});
+      return targets
+        .filter((target) => target.kind === "browser" && target.browser)
+        .map(({ id, name }) => ({ id, name }));
     },
     async listBrowserAccounts() {
       const relay = await client();

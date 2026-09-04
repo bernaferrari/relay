@@ -181,7 +181,7 @@ describe("App routes", () => {
     );
 
     expect(document.body.textContent).toContain("Registered versions");
-    expect(document.body.textContent).toContain("Builds are project-scoped");
+    expect(document.body.textContent).toContain("Builds are workspace-scoped");
     expect(document.body.textContent).toContain("Checkout 3.4.0");
     expect(document.body.textContent).toContain("iOS · release · com.example.checkout");
     expect(document.body.textContent).not.toContain("build-private");
@@ -256,6 +256,21 @@ describe("App routes", () => {
 
     expect(document.querySelector('[role="dialog"]')).not.toBeNull();
     expect(document.querySelector('[role="alert"]')?.textContent).toContain("revision conflict");
+  });
+
+  it("offers an existing browser when saving the first account", async () => {
+    await render(
+      "/apps/checkout-app/accounts",
+      resources({
+        listBrowserTargets: async () => [{ id: "first-browser", name: "First browser" }],
+        saveBrowserAccount: async () => {
+          throw new Error("capture failed");
+        },
+      }),
+    );
+    expect(button("Save account").disabled).toBe(false);
+    await click(button("Save account"));
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("First browser");
   });
 
   it("shows reviewed browser sign-ins with their true target ownership", async () => {
@@ -386,10 +401,9 @@ describe("App routes", () => {
 
     const alert = document.querySelector('[role="alert"]');
     expect(alert?.classList.contains("relay-recovery-state--centered")).toBe(true);
-    expect(alert?.textContent).toContain("Relay is not connected");
+    expect(alert?.textContent).toContain("Could not load resources");
     expect(alert?.textContent).toContain(`try loading ${subject} again`);
     expect(alert?.querySelectorAll("button")).toHaveLength(1);
-    expect(document.body.textContent).toContain("Checkout");
   });
 });
 

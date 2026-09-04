@@ -1,7 +1,42 @@
 import { describe, expect, it } from "vitest";
-import { projectRunReport } from "./run-product-service";
+import { framePathsForTraceStep, projectRunReport } from "./run-product-service";
 
 describe("run report projection", () => {
+  it("joins frames by authoritative trace step index and never by array position", () => {
+    const evidence = [
+      {
+        schemaVersion: 1 as const,
+        testStepId: "a",
+        recipeId: "r",
+        recipeStepId: "a",
+        traceStepId: "trace-a",
+        traceStepIndex: 4,
+        occurrence: 1,
+        evidence: {
+          framePaths: ["frames/a.png"],
+          eventSequences: [],
+          artifactKinds: ["screenshot"],
+        },
+      },
+      {
+        schemaVersion: 1 as const,
+        testStepId: "b",
+        recipeId: "r",
+        recipeStepId: "b",
+        traceStepId: "trace-b",
+        traceStepIndex: 9,
+        occurrence: 1,
+        evidence: {
+          framePaths: ["frames/b.png"],
+          eventSequences: [],
+          artifactKinds: ["screenshot"],
+        },
+      },
+    ];
+    expect(framePathsForTraceStep(evidence, 9)).toEqual(["frames/b.png"]);
+    expect(framePathsForTraceStep(evidence, 1)).toEqual([]);
+  });
+
   it("keeps the canonical outcome and human target while omitting empty evidence", () => {
     const report = projectRunReport(
       "run-1",
@@ -10,6 +45,10 @@ describe("run report projection", () => {
         outcome: "passed",
         deviceName: "Pixel 9",
         durationMs: 1_550,
+        sourceRevision: { vcs: "git", sha: "abcdef1234567" },
+        browserCaseProfile: { engine: "chromium", channel: "stable" },
+        targetProfile: { id: "target-profile-1" },
+        appVersion: "1.2.3",
         steps: [
           {
             index: 0,
@@ -56,6 +95,12 @@ describe("run report projection", () => {
         artifacts: [],
       },
     );
+    expect(report.executionContext).toEqual({
+      sourceRevision: "abcdef1234567",
+      browser: "chromium",
+      targetProfileId: "target-profile-1",
+      appVersion: "1.2.3",
+    });
 
     expect(report).toMatchObject({
       outcome: "passed",
@@ -89,6 +134,32 @@ describe("run report projection", () => {
         state: "passed",
       }),
     ]);
+  });
+
+  it("projects persisted TraceStep frames and log as observed legacy evidence", () => {
+    const report = projectRunReport(
+      "run-trace",
+      {
+        title: "Legacy trace",
+        outcome: "passed",
+        steps: [
+          {
+            id: "trace-1",
+            index: 3,
+            title: "Verify checkout",
+            status: "ok",
+            log: "Checkout confirmation was visible",
+            frames: [{ path: "frames/checkout.png" }],
+          },
+        ],
+      },
+      { channels: { screenshot: { entries: 1 } } },
+    );
+    expect(report.timeline[0]).toMatchObject({
+      index: 3,
+      framePaths: ["frames/checkout.png"],
+      observed: "Checkout confirmation was visible",
+    });
   });
 
   it("does not turn a harness failure into a product verdict", () => {

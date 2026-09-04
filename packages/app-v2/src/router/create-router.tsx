@@ -211,11 +211,25 @@ const appRoute = createRoute({
 const appVersionsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/apps/$appId/versions",
-  component: AppVersionsPage,
+  beforeLoad: () => {
+    throw redirect({ to: "/versions", replace: true });
+  },
 });
 const appAccountsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/apps/$appId/accounts",
+  beforeLoad: () => {
+    throw redirect({ to: "/accounts", replace: true });
+  },
+});
+const versionsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/versions",
+  component: AppVersionsPage,
+});
+const accountsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/accounts",
   component: AppAccountsPage,
 });
 const appMapRoute = createRoute({
@@ -371,6 +385,8 @@ const routeTree = rootRoute.addChildren([
   appRoute,
   appVersionsRoute,
   appAccountsRoute,
+  versionsRoute,
+  accountsRoute,
   appMapRoute,
   testsRoute,
   newTestRoute,

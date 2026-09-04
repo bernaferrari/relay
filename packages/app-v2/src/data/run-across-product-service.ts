@@ -15,6 +15,7 @@ import type { Platform } from "../platform/types";
 import { productClientForPlatform } from "./product-client";
 
 export type RunAcrossProductService = ProductRunAcrossService;
+export type RunAcrossArtifactService = RunAcrossProductService;
 
 export function createRunAcrossProductService(platform: Platform): RunAcrossProductService {
   let servicePromise: Promise<ProductRunAcrossService> | undefined;
@@ -39,6 +40,17 @@ export function createRunAcrossProductService(platform: Platform): RunAcrossProd
     cancel: (batchId) => service().then((item) => item.cancel(batchId)),
     getReport: (batchId) => service().then((item) => item.getReport(batchId)),
     exportReport: (batchId) => service().then((item) => item.exportReport(batchId)),
+    downloadExport: async (batchId) => {
+      const { client } = await productClientForPlatform(platform);
+      const response = await client.download(
+        `/jobs/combine/${encodeURIComponent(batchId)}/export?download=archive`,
+      );
+      if (!response.ok)
+        throw new Error(
+          `Export download failed (${response.status}). The export may have expired.`,
+        );
+      return response.blob();
+    },
   };
 }
 

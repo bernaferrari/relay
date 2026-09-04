@@ -445,6 +445,13 @@ describe("Change verification", () => {
 
     expect(document.body.textContent).toContain("Human evidence is required");
     expect(document.body.textContent).toContain("Confirm the final layout");
+    const attention = document.querySelector(".relay-change-attention");
+    const plan = document.querySelector(".relay-verification-plan");
+    expect(
+      attention && plan
+        ? attention.compareDocumentPosition(plan) & Node.DOCUMENT_POSITION_FOLLOWING
+        : 0,
+    ).toBeTruthy();
     await fillTextarea("The heading stays clear of the action at 200% zoom.");
     await click(button("Save evidence and continue"));
     expect(document.body.textContent).toContain("Relay is not connected");

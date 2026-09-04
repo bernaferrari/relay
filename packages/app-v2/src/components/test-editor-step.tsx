@@ -35,8 +35,12 @@ export type EditTransaction = {
   reverse: readonly AppMapScenarioTestEdit[];
 };
 
+export type StepDraft = { intent: string; note: string; capture: boolean };
+
 export function SelectedStepEditor({
   entry,
+  draft,
+  onDraftChange,
   busy,
   onSave,
   onBind,
@@ -44,22 +48,33 @@ export function SelectedStepEditor({
   onAddChild,
 }: {
   entry: StepEntry;
+  draft?: StepDraft;
+  onDraftChange?(draft: StepDraft): void;
   busy: boolean;
   onSave(transaction: EditTransaction): void;
   onBind(transaction: EditTransaction): void;
   onRemove(): void;
   onAddChild(branch: "then" | "else" | "steps"): void;
 }) {
-  const [intent, setIntent] = useState(entry.step.intent);
-  const [note, setNote] = useState(entry.step.note ?? "");
-  const [capture, setCapture] = useState(entry.step.capture === true);
+  const [intent, setIntent] = useState(draft?.intent ?? entry.step.intent);
+  const [note, setNote] = useState(draft?.note ?? entry.step.note ?? "");
+  const [capture, setCapture] = useState(draft?.capture ?? entry.step.capture === true);
   const [removeArmed, setRemoveArmed] = useState(false);
   useEffect(() => {
-    setIntent(entry.step.intent);
-    setNote(entry.step.note ?? "");
-    setCapture(entry.step.capture === true);
+    setIntent(draft?.intent ?? entry.step.intent);
+    setNote(draft?.note ?? entry.step.note ?? "");
+    setCapture(draft?.capture ?? entry.step.capture === true);
     setRemoveArmed(false);
-  }, [entry.step]);
+  }, [draft, entry.step]);
+  function updateDraft(next: Partial<StepDraft>) {
+    const value = {
+      intent,
+      note,
+      capture,
+      ...next,
+    };
+    onDraftChange?.(value);
+  }
   const cleanIntent = intent.trim();
   const changed =
     cleanIntent !== entry.step.intent ||
@@ -146,7 +161,11 @@ export function SelectedStepEditor({
         <Input
           id="selected-step-intent"
           value={intent}
-          onChange={(event) => setIntent(event.currentTarget.value)}
+          onChange={(event) => {
+            const value = event.currentTarget.value;
+            setIntent(value);
+            updateDraft({ intent: value });
+          }}
           maxLength={2_000}
         />
       </label>
@@ -157,7 +176,11 @@ export function SelectedStepEditor({
         <Textarea
           id="selected-step-note"
           value={note}
-          onChange={(event) => setNote(event.currentTarget.value)}
+          onChange={(event) => {
+            const value = event.currentTarget.value;
+            setNote(value);
+            updateDraft({ note: value });
+          }}
           maxLength={4_000}
           rows={4}
         />
@@ -171,7 +194,13 @@ export function SelectedStepEditor({
             Keep a screenshot with the next Run’s report.
           </span>
         </span>
-        <Checkbox checked={capture} onCheckedChange={setCapture} />
+        <Checkbox
+          checked={capture}
+          onCheckedChange={(value) => {
+            setCapture(value === true);
+            updateDraft({ capture: value === true });
+          }}
+        />
       </FieldLabel>
       {entry.step.binding.status === "unresolved" ? (
         <Alert variant="default" className="relay-step-binding-alert">

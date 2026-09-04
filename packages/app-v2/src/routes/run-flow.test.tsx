@@ -355,7 +355,9 @@ describe("Run and Report", () => {
     await settle();
 
     expect(document.body.textContent).toContain("This Test passed on Pixel 9.");
-    expect(document.body.textContent).toContain("Back to Test");
+    expect(document.body.textContent).not.toContain("Draft issue");
+    expect(document.body.textContent).toContain("Set up another run");
+    expect(document.body.textContent).toContain("View test");
     expect(document.body.textContent).toContain("1.6 s");
     expect(document.body.textContent).toContain("Language checkpoint passed");
     expect(document.body.textContent).toContain("What Relay verified");
@@ -507,6 +509,7 @@ describe("Run and Report", () => {
     expect(fake.calls).not.toContain("inspect:workflow-run-1");
     expect(fake.calls).toContain("report:run-1");
     expect(document.body.textContent).toContain("This Test passed on Pixel 9.");
+    expect(document.body.textContent).not.toContain("Draft issue");
   });
 
   it("restores an available Report destination from the URL", async () => {
@@ -662,6 +665,7 @@ describe("Run and Report", () => {
     await renderRun("/runs/run-1", fake.service, platformWithStorage().platform);
 
     expect(document.body.textContent).toContain("This Test passed on Pixel 9.");
+    expect(document.body.textContent).not.toContain("Draft issue");
     expect(document.body.textContent).toContain("Evidence details are temporarily unavailable");
     expect(document.body.textContent).toContain("saved outcome above is unchanged");
     expect(document.body.textContent).not.toContain("run-1");

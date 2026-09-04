@@ -12,7 +12,8 @@ import type { DeviceProductService } from "../data/device-product-service";
 import type { MapProductService } from "../data/map-product-service";
 import type { LiveTestEditorProductService } from "../data/live-test-editor-product-service";
 import type { RecordingProductService } from "../data/recording-product-service";
-import type { ProductRunReportOverview, RunProductService } from "../data/run-product-service";
+import type { RunProductService } from "../data/run-product-service";
+import { failedReport } from "./report-fixture";
 import type { LiveTargetSnapshot } from "../data/live-target-session";
 import type { RunAcrossProductService } from "../data/run-across-product-service";
 import type { SessionProductService } from "../data/session-product-service";
@@ -26,6 +27,7 @@ type FixtureName =
   | "home-empty"
   | "home-populated"
   | "apps-list"
+  | "app-overview"
   | "apps-error"
   | "app-versions"
   | "app-versions-error"
@@ -57,6 +59,7 @@ const definitions: Record<FixtureName, { path: string }> = {
   "home-empty": { path: "/home" },
   "home-populated": { path: "/home" },
   "apps-list": { path: "/apps" },
+  "app-overview": { path: "/apps/checkout-app" },
   "apps-error": { path: "/apps" },
   "app-versions": { path: "/apps/checkout-app/versions" },
   "app-versions-error": { path: "/apps/checkout-app/versions" },
@@ -262,7 +265,7 @@ function fixtureRun(index: number): ProductRunSummary {
 const largeRuns = Array.from({ length: 240 }, (_, index) => fixtureRun(index));
 const catalogService: CatalogProductService = {
   listTests: async () =>
-    fixture === "apps-list" || populatedHome
+    fixture === "apps-list" || fixture === "app-overview" || populatedHome
       ? [
           {
             id: "test-checkout",
@@ -280,7 +283,7 @@ const catalogService: CatalogProductService = {
   listRuns: async () =>
     fixture === "runs-large"
       ? largeRuns
-      : fixture === "apps-list" || populatedHome
+      : fixture === "apps-list" || fixture === "app-overview" || populatedHome
         ? [fixtureRun(0), fixtureRun(1), fixtureRun(2)]
         : [],
   getRun: async () => undefined,
@@ -354,82 +357,6 @@ const changeService = {
   list: async () => [],
 } as unknown as ChangeProductService;
 
-const failedReport: ProductRunReportOverview = {
-  runId: "run-checkout",
-  testId: "test-checkout",
-  title: "Complete checkout",
-  outcome: "harness-failure",
-  targetName: "Golden Chromium",
-  durationMs: 12_480,
-  category: "Browser connection",
-  cause:
-    "page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:4173/checkout\nCall log:\n  - navigating to the saved app address, waiting until load",
-  firstEvidence: {
-    label: "Order confirmation was missing",
-    detail:
-      "Relay reached the final checkout step, but the saved confirmation text was not visible.",
-  },
-  timeline: [
-    {
-      id: "open-cart",
-      index: 0,
-      title: "Open the cart",
-      state: "passed",
-      durationMs: 1_100,
-      evidenceCount: 1,
-    },
-    {
-      id: "submit-order",
-      index: 1,
-      title: "Submit the order",
-      state: "passed",
-      durationMs: 2_240,
-      evidenceCount: 1,
-    },
-    {
-      id: "confirmation",
-      index: 2,
-      title: "Check the order confirmation",
-      state: "failed",
-      durationMs: 9_140,
-      evidenceCount: 2,
-    },
-  ],
-  evidence: [
-    {
-      id: "screenshot",
-      label: "Screenshots",
-      count: 4,
-      detail: "4 screenshots",
-      summary: "See the screens Relay captured while this Test ran.",
-      inspectable: true,
-      items: [
-        { id: "cart", title: "Cart ready" },
-        { id: "checkout", title: "Checkout submitted" },
-        {
-          id: "missing",
-          title: "Confirmation missing",
-          tone: "critical",
-          media: {
-            kind: "image",
-            src: "/src/visual-fixtures/checkout-observed.svg",
-            width: 320,
-            height: 200,
-          },
-        },
-      ],
-    },
-    {
-      id: "logs",
-      label: "Logs",
-      count: 1,
-      detail: "1 log message",
-      summary: "Review the app and system messages captured during this Run.",
-      inspectable: true,
-      items: [{ id: "log", title: "Checkout completed without confirmation", tone: "warning" }],
-    },
-  ],
-};
 const fixtureTest = {
   id: "test-checkout",
   name: "Complete checkout and confirm the order",

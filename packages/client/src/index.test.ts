@@ -48,6 +48,60 @@ test("RelayClient applies scope and bearer authentication", async () => {
   assert.ok(request?.headers.get("idempotency-key"));
 });
 
+test("download sends authenticated scope headers and preserves binary artifacts", async () => {
+  let request: Request | undefined;
+  const payload = new Uint8Array([0, 255, 8, 1]);
+  const client = new RelayClient(
+    {
+      url: "https://relay.test/",
+      auth: { type: "bearer", token: "secret" },
+      organizationId: "acme",
+      projectId: "gemini",
+      actorId: "human:test",
+      actorKind: "human",
+    },
+    {
+      fetch: async (input, init) => {
+        request = new Request(input, init);
+        return new Response(payload, {
+          status: 200,
+          headers: { "Content-Type": "application/gzip" },
+        });
+      },
+    },
+  );
+  const response = await client.download("/jobs/batch/export?download=archive");
+  assert.deepEqual([...new Uint8Array(await response.arrayBuffer())], [...payload]);
+  assert.equal(request?.headers.get("authorization"), "Bearer secret");
+  assert.equal(request?.headers.get("x-organization-id"), "acme");
+  assert.equal(request?.headers.get("x-project-id"), "gemini");
+  assert.equal(request?.headers.get("x-relay-actor-id"), "human:test");
+  assert.equal(request?.headers.get("x-relay-actor-kind"), "human");
+});
+
+test("download turns forbidden and missing artifacts into ApiError", async () => {
+  for (const status of [403, 404]) {
+    const client = new RelayClient(
+      {
+        url: "https://relay.test",
+        auth: { type: "none" },
+        organizationId: "local",
+        projectId: "default",
+        actorId: "human:test",
+        actorKind: "human",
+      },
+      { fetch: async () => new Response("expired", { status, statusText: "Nope" }) },
+    );
+    await assert.rejects(
+      () => client.download("/jobs/missing/export?download=archive"),
+      (error: unknown) =>
+        error instanceof ApiError &&
+        error.status === status &&
+        /expired|Nope/iu.test(error.message),
+    );
+  }
+});
+
 test("RelayClient never invokes a supplied fetch with itself as the receiver", async () => {
   function browserLikeFetch(this: unknown): Promise<Response> {
     assert.equal(this, undefined);

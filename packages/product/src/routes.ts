@@ -4,6 +4,8 @@ export type RoutePattern =
   | "/apps/:appId"
   | "/apps/:appId/versions"
   | "/apps/:appId/accounts"
+  | "/versions"
+  | "/accounts"
   | "/apps/:appId/map"
   | "/tests"
   | "/tests/new"
@@ -129,6 +131,8 @@ export const ROUTE_DEFINITIONS = [
   d("/apps/:appId", "/apps", "App", "App", "apps", "explore-app", ["view"]),
   d("/apps/:appId/versions", "/apps/:appId", "Versions", "App", "apps", null, ["status", "view"]),
   d("/apps/:appId/accounts", "/apps/:appId", "Accounts", "App", "apps", null, ["status", "view"]),
+  d("/versions", "/home", "Versions", null, "apps", null, ["status", "view"]),
+  d("/accounts", "/home", "Accounts", null, "apps", null, ["status", "view"]),
   d("/apps/:appId/map", "/apps/:appId", "Map", "Map", "apps", "explore-app", ["view", "screen"]),
   d("/tests", "/home", "Tests", "Test", "tests", "record-test", ["status", "app", "view"]),
   d("/tests/new", "/tests", "New Test", "Test", "tests", "record-test", [
@@ -278,6 +282,8 @@ export const routeUrls = {
   app: (appId: string) => build("/apps/:appId", { appId }),
   appVersions: (appId: string) => build("/apps/:appId/versions", { appId }),
   appAccounts: (appId: string) => build("/apps/:appId/accounts", { appId }),
+  versions: () => "/versions",
+  accounts: () => "/accounts",
   appMap: (appId: string) => build("/apps/:appId/map", { appId }),
   test: (testId: string) => build("/tests/:testId", { testId }),
   testEdit: (testId: string) => build("/tests/:testId/edit", { testId }),

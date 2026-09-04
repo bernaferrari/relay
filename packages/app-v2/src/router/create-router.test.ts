@@ -14,8 +14,8 @@ const deepLinks = [
   "/home",
   "/apps",
   "/apps/app-1",
-  "/apps/app-1/versions",
-  "/apps/app-1/accounts",
+  "/versions",
+  "/accounts",
   "/apps/app-1/map",
   "/tests",
   "/tests/new",
@@ -67,6 +67,15 @@ describe("React router", () => {
     const router = testRouter(["/"]);
     await router.load();
     expect(router.state.location.pathname).toBe("/home");
+  });
+
+  it.each([
+    ["/apps/app-1/versions", "/versions"],
+    ["/apps/app-1/accounts", "/accounts"],
+  ] as const)("moves legacy resource route %s to workspace route", async (legacy, canonical) => {
+    const router = testRouter([legacy]);
+    await router.load();
+    expect(router.state.location.pathname).toBe(canonical);
   });
 
   it("uses the injected history for navigation and Back", async () => {

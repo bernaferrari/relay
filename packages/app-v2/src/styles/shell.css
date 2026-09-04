@@ -487,6 +487,10 @@ select {
   background: var(--surface-base-hover);
 }
 
+.relay-command-item--active {
+  background: var(--surface-base-hover);
+}
+
 .relay-command-empty {
   padding: 28px 16px;
   color: var(--text-weaker);
@@ -745,7 +749,7 @@ select {
 }
 
 .relay-page-header {
-  max-width: 680px;
+  max-width: none;
 }
 
 .relay-eyebrow {
@@ -756,12 +760,12 @@ select {
   letter-spacing: 0.02em;
 }
 
-.relay-page h1 {
+.relay-page :where(h1) {
   color: var(--text-strong);
-  font-size: clamp(27px, 3vw, 36px);
+  font-size: clamp(24px, 2.4vw, 28px);
   font-weight: 650;
-  letter-spacing: -0.04em;
-  line-height: 1.08;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
   text-wrap: balance;
 }
 

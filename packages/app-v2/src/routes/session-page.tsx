@@ -103,17 +103,19 @@ export function SessionPage() {
     };
   }, [canControl, liveAttempt, sessionId, sessionService]);
 
-  async function send(input: Parameters<LiveTargetSession["input"]>[0]) {
+  async function send(input: Parameters<LiveTargetSession["input"]>[0]): Promise<boolean> {
     if (!live.current) {
       setLiveIssue("The live Session is still connecting.");
-      return;
+      return false;
     }
     setLiveBusy(true);
     setLiveIssue(undefined);
     try {
       await live.current.input(input);
+      return true;
     } catch (error) {
       setLiveIssue(errorMessage(error));
+      return false;
     } finally {
       setLiveBusy(false);
     }

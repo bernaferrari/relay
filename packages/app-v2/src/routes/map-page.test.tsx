@@ -187,6 +187,30 @@ describe("Map exploration", () => {
     expect(history.location.search).toContain("path=home-cart");
   }, 15_000);
 
+  it("searches paths beyond the former 24-row limit and clears empty results", async () => {
+    await render({
+      get: async () => ({
+        ...overview,
+        paths: Array.from({ length: 30 }, (_, index) => ({
+          ...overview.paths[0]!,
+          id: `path-${index}`,
+          fromTitle: `Screen ${index}`,
+          label: `Journey ${index}`,
+        })),
+      }),
+    });
+    expect(document.querySelector('a[href*="path=path-29"]')).not.toBeNull();
+    const input = document.querySelector<HTMLInputElement>("#map-path-search")!;
+    const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    await act(async () => {
+      set.call(input, "missing");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(document.body.textContent).toContain("No matching paths");
+    await act(async () => button("Clear search").click());
+    expect(document.querySelector('a[href*="path=path-29"]')).not.toBeNull();
+  });
+
   it("focuses a screen into its Tests and failure evidence, with repair gated", async () => {
     await render();
     const cart = [...document.querySelectorAll("button")].find((button) =>

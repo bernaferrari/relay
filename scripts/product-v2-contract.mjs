@@ -8,6 +8,8 @@ export const PRODUCT_V2_ROUTES = Object.freeze([
   "/apps/:appId",
   "/apps/:appId/versions",
   "/apps/:appId/accounts",
+  "/versions",
+  "/accounts",
   "/apps/:appId/map",
   "/tests",
   "/tests/new",

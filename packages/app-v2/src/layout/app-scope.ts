@@ -1,3 +1,5 @@
+import { routeContractForPath } from "../router/route-contract";
+
 export type AppScopeTest = { id: string; appMapId: string };
 export type AppScopeRun = { id: string; appMapId?: string; batchId?: string };
 export type AppScopeChange = { id: string; appIds?: readonly string[] };
@@ -30,8 +32,16 @@ export function appScopeDetailsForLocation(input: {
   changes?: readonly AppScopeChange[];
   recordings?: readonly AppScopeRecording[];
 }): AppScope {
+  const route = routeContractForPath(input.pathname);
   const routeApp = /^\/apps\/([^/]+)/u.exec(input.pathname)?.[1];
   if (routeApp) return single(decode(routeApp));
+
+  // `/tests/new` is a creation route, not a test detail route. Resolve its
+  // optional app selector from the query string instead of treating `new` as
+  // an entity id and accidentally falling back to all apps.
+  if (routeContractForPath(input.pathname)?.id === "/tests/new") {
+    return fromSearchApp(input.search);
+  }
 
   const testId = /^\/tests\/([^/]+)/u.exec(input.pathname)?.[1];
   if (testId) return single(input.tests?.find((test) => test.id === decode(testId))?.appMapId);
@@ -60,10 +70,13 @@ export function appScopeDetailsForLocation(input: {
     );
   }
 
-  if (typeof input.search.app === "string" && input.search.app.trim()) {
-    return { kind: "single", appId: input.search.app };
-  }
-  return { kind: "all" };
+  return route?.allowedSearchKeys.includes("app") ? fromSearchApp(input.search) : { kind: "all" };
+}
+
+function fromSearchApp(search: Readonly<Record<string, unknown>>): AppScope {
+  return typeof search.app === "string" && search.app.trim()
+    ? { kind: "single", appId: search.app.trim() }
+    : { kind: "all" };
 }
 
 function single(appId: string | undefined): AppScope {
@@ -86,7 +99,10 @@ export function appContextDestination(input: {
   appId?: string;
 }): string {
   const appId = input.appId?.trim();
-  const appRoute = /^\/apps\/[^/]+(\/versions|\/accounts|\/map)?$/u.exec(input.pathname);
+  if (/^\/apps\/[^/]+\/versions$/u.test(input.pathname)) return "/versions";
+  if (/^\/apps\/[^/]+\/accounts$/u.test(input.pathname)) return "/accounts";
+  if (input.pathname === "/versions" || input.pathname === "/accounts") return input.pathname;
+  const appRoute = /^\/apps\/[^/]+(\/map)?$/u.exec(input.pathname);
   if (appRoute) return appId ? `/apps/${encodeURIComponent(appId)}${appRoute[1] ?? ""}` : "/apps";
 
   if (isScopeAwareRoute(input.pathname)) {
@@ -103,9 +119,9 @@ function isScopeAwareRoute(pathname: string): boolean {
     pathname === "/home" ||
     pathname === "/tests" ||
     pathname === "/tests/new" ||
+    pathname === "/suites" ||
     pathname === "/runs" ||
-    pathname === "/changes" ||
-    /^\/tests\/[^/]+\/run-across$/u.test(pathname)
+    pathname === "/changes"
   );
 }
 

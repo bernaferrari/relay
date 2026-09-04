@@ -221,6 +221,65 @@ export function ChangePage() {
 
           {details.repairPacket ? <RepairContext packet={details.repairPacket} /> : null}
 
+          {details.execution?.attention ? (
+            <section
+              className={`relay-change-attention relay-change-attention--${details.execution.attention.kind}`}
+              aria-labelledby="verification-paused-title"
+            >
+              <p className="relay-section-label">Verification paused safely</p>
+              <h2 id="verification-paused-title">
+                {details.execution.attention.kind === "human-evidence"
+                  ? "Human evidence is required"
+                  : "Relay needs reconciliation"}
+              </h2>
+              <p>{details.execution.attention.reason}</p>
+              {details.execution.attention.kind === "human-evidence" ? (
+                <form
+                  className="relay-human-evidence-form"
+                  onSubmit={(event: FormEvent<HTMLFormElement>) => {
+                    event.preventDefault();
+                    if (!humanEvidence.isPending && evidenceObservation.trim())
+                      humanEvidence.mutate();
+                  }}
+                >
+                  <Field>
+                    <FieldLabel htmlFor="change-human-observation">What did you verify?</FieldLabel>
+                    <Textarea
+                      id="change-human-observation"
+                      value={evidenceObservation}
+                      onChange={(event) => setEvidenceObservation(event.currentTarget.value)}
+                      placeholder="Describe the visible result you confirmed"
+                      maxLength={8_000}
+                      rows={4}
+                      disabled={humanEvidence.isPending}
+                    />
+                    <FieldDescription>
+                      Relay saves this observation on the exact paused step, then continues the
+                      server-owned verification.
+                    </FieldDescription>
+                  </Field>
+                  <Button
+                    type="submit"
+                    variant="default"
+                    disabled={!evidenceObservation.trim() || humanEvidence.isPending}
+                  >
+                    {humanEvidence.isPending ? "Saving evidence…" : "Save evidence and continue"}
+                  </Button>
+                </form>
+              ) : (
+                <p className="relay-change-muted">
+                  Relay will not make a merge decision until this step is resolved.
+                </p>
+              )}
+              <RecordingProblem
+                recovery={humanEvidence.data?.state.recovery}
+                error={humanEvidence.error}
+                onRetry={evidenceObservation.trim() ? () => humanEvidence.mutate() : undefined}
+                retrying={humanEvidence.isPending}
+              />
+            </section>
+          ) : null}
+
           <div className="relay-change-overview-grid">
             <section className="relay-change-section" aria-labelledby="change-summary-title">
               <ChangeSectionHeader eyebrow="Claim" title="What changed" id="change-summary-title" />
@@ -303,66 +362,6 @@ export function ChangePage() {
           ) : (
             <p className="relay-change-clear-state">No known coverage gaps or remaining risk.</p>
           )}
-
-          {details.execution?.attention ? (
-            <section
-              className={`relay-change-attention relay-change-attention--${details.execution.attention.kind}`}
-              aria-labelledby="verification-paused-title"
-            >
-              <p className="relay-section-label">Verification paused safely</p>
-              <h2 id="verification-paused-title">
-                {details.execution.attention.kind === "human-evidence"
-                  ? "Human evidence is required"
-                  : "Relay needs reconciliation"}
-              </h2>
-              <p>{details.execution.attention.reason}</p>
-              {details.execution.attention.kind === "human-evidence" ? (
-                <form
-                  className="relay-human-evidence-form"
-                  onSubmit={(event: FormEvent<HTMLFormElement>) => {
-                    event.preventDefault();
-                    if (!humanEvidence.isPending && evidenceObservation.trim()) {
-                      humanEvidence.mutate();
-                    }
-                  }}
-                >
-                  <Field>
-                    <FieldLabel htmlFor="change-human-observation">What did you verify?</FieldLabel>
-                    <Textarea
-                      id="change-human-observation"
-                      value={evidenceObservation}
-                      onChange={(event) => setEvidenceObservation(event.currentTarget.value)}
-                      placeholder="Describe the visible result you confirmed"
-                      maxLength={8_000}
-                      rows={4}
-                      disabled={humanEvidence.isPending}
-                    />
-                    <FieldDescription>
-                      Relay saves this observation on the exact paused step, then continues the
-                      server-owned verification.
-                    </FieldDescription>
-                  </Field>
-                  <Button
-                    type="submit"
-                    variant="default"
-                    disabled={!evidenceObservation.trim() || humanEvidence.isPending}
-                  >
-                    {humanEvidence.isPending ? "Saving evidence…" : "Save evidence and continue"}
-                  </Button>
-                </form>
-              ) : (
-                <p className="relay-change-muted">
-                  Relay will not make a merge decision until this step is resolved.
-                </p>
-              )}
-              <RecordingProblem
-                recovery={humanEvidence.data?.state.recovery}
-                error={humanEvidence.error}
-                onRetry={evidenceObservation.trim() ? () => humanEvidence.mutate() : undefined}
-                retrying={humanEvidence.isPending}
-              />
-            </section>
-          ) : null}
 
           <ChangeAuditDetails detail={detail} />
         </>

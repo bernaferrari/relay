@@ -23,13 +23,20 @@ import { LiveTestEditorPane } from "./live-test-editor-pane";
 import { PageLoading, RecordingProblem } from "./recording-shared";
 import { HistorySection, RepairSection } from "./test-editor-context-panels";
 import { branchLabel, collectStepEntries, stepKindLabel } from "./test-editor-route-helpers";
+import { useTestStepDrafts } from "./use-test-step-drafts";
 
 const routeApi = getRouteApi("/tests/$testId/edit");
 
 export function EditTestPage() {
-  const { testEditorService, liveTestEditorService, runService, queryClient } = useRouteContext({
-    from: "__root__",
-  });
+  const { testId } = routeApi.useParams();
+  return <TestEditorDocument key={testId} />;
+}
+
+function TestEditorDocument() {
+  const { testEditorService, liveTestEditorService, runService, queryClient, platform } =
+    useRouteContext({
+      from: "__root__",
+    });
   const { testId } = routeApi.useParams();
   const search = routeApi.useSearch() as { step?: unknown; session?: unknown };
   const sessionId = typeof search.session === "string" ? search.session : undefined;
@@ -65,6 +72,11 @@ export function EditTestPage() {
     loading: reportLoading,
   } = useLatestTestReport(runService, testId);
   const [saveNotice, setSaveNotice] = useState("Saved");
+  const { stepDrafts, updateStepDraft, clearStepDraftIfUnchanged } = useTestStepDrafts(
+    platform,
+    testId,
+    setSaveNotice,
+  );
   const draggedStepId = useRef<string | undefined>(undefined);
   const selectAfterSave = useRef<string | null | undefined>(undefined);
 
@@ -90,8 +102,21 @@ export function EditTestPage() {
       return testEditorService.edit({ document: current, edits: transaction.forward });
     },
     onMutate: () => setSaveNotice("Saving…"),
-    onSuccess: (next) => {
+    onSuccess: (next, transaction) => {
       saveDocument(next);
+      for (const edit of transaction.forward) {
+        if (edit.kind !== "step.patch") continue;
+        const savedIntent = edit.patch.intent;
+        const savedNote = edit.patch.note;
+        const savedCapture = edit.patch.capture;
+        if (savedIntent !== undefined && savedNote !== undefined && savedCapture !== undefined) {
+          clearStepDraftIfUnchanged(edit.stepId, {
+            intent: savedIntent,
+            note: savedNote ?? "",
+            capture: savedCapture,
+          });
+        }
+      }
       setSaveNotice("Saved");
       const nextSelection = selectAfterSave.current;
       selectAfterSave.current = undefined;
@@ -308,6 +333,7 @@ export function EditTestPage() {
   }
 
   const latestHistory = editorDocument?.history[0];
+  const hasUnsavedDrafts = Object.keys(stepDrafts).length > 0;
   const canRedo = latestHistory?.eventType === "test.undone" && Boolean(testEditorService.redo);
   const canUndo =
     Boolean(testEditorService.undo) &&
@@ -358,11 +384,13 @@ export function EditTestPage() {
         <div className="relay-editor-header-actions">
           <span
             className="relay-save-state"
-            data-state={saveNotice === "Could not save" ? "error" : "saved"}
+            data-state={
+              saveNotice.includes("failed") || saveNotice === "Could not save" ? "error" : "saved"
+            }
             aria-live="polite"
           >
-            {saveNotice === "Saved" ? <Check aria-hidden="true" /> : null}
-            {saveNotice}
+            {saveNotice === "Saved" && !hasUnsavedDrafts ? <Check aria-hidden="true" /> : null}
+            {hasUnsavedDrafts && saveNotice === "Saved" ? "Unsaved draft" : saveNotice}
           </span>
           <Button
             nativeButton={false}
@@ -542,6 +570,8 @@ export function EditTestPage() {
                 <SelectedStepEditor
                   key={`${selected.step.id}:${editorDocument.revision}`}
                   entry={selected}
+                  draft={stepDrafts[selected.step.id]}
+                  onDraftChange={(draft) => updateStepDraft(selected.step.id, draft)}
                   busy={edit.isPending}
                   onSave={apply}
                   onBind={(transaction) => apply(transaction)}

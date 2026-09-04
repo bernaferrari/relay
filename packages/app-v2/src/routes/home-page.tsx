@@ -82,8 +82,32 @@ export function HomePage() {
   );
   const selectedApp = apps.data?.find((app) => app.id === appScope);
   const latestTest = newest(scopedTests, (test) => test.updatedAt);
+  const recentTests = [...scopedTests]
+    .sort((left, right) => right.updatedAt - left.updatedAt)
+    .slice(0, 5);
+  // A later successful run resolves an earlier failure of the same test.
+  const latestByTest = new Map<string, ProductRunSummary>();
+  for (const item of [...scopedRuns].sort((left, right) => runTime(right) - runTime(left))) {
+    const key = item.testId ?? item.id;
+    if (!latestByTest.has(key)) latestByTest.set(key, item);
+  }
+  const attentionRuns = [...latestByTest.values()].filter((item) =>
+    ["product-failure", "harness-failure", "uncertain", "needs-review"].includes(
+      item.outcome ?? item.phase,
+    ),
+  );
+  const visibleChanges = scopedChanges.filter((change) => change.status !== "superseded");
   const currentChange = newest(
-    scopedChanges.filter((change) => change.status !== "superseded"),
+    visibleChanges.filter((change) =>
+      [
+        "ready",
+        "rejected",
+        "needs-review",
+        "insufficient-evidence",
+        "running",
+        "running-pilot",
+      ].includes(change.status),
+    ),
     (change) => change.updatedAt,
   );
   const hasApps = Boolean(apps.data?.length);
@@ -97,19 +121,19 @@ export function HomePage() {
 
   return (
     <section className="relay-page flex w-full max-w-6xl flex-col gap-8">
-      <header className="flex max-w-none flex-col gap-5 border-b border-border/60 pb-7 lg:flex-row lg:items-end lg:justify-between">
+      <header className="flex max-w-none flex-col gap-4 border-b border-border/60 pb-6 lg:flex-row lg:items-end lg:justify-between">
         <div className="max-w-2xl">
           <p className="text-sm font-medium text-muted-foreground">Overview</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
+          <h1 className="mt-1 text-3xl font-semibold tracking-tight text-foreground">
             {selectedApp
-              ? `${selectedApp.name}, ready when you are`
+              ? selectedApp.name
               : hasWorkspaceData
-                ? "Ready when you are"
+                ? "Your workspace"
                 : "Prove one journey that matters"}
           </h1>
           <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
             {hasWorkspaceData
-              ? "Pick up the most useful work, then inspect recent results without hunting through the app."
+              ? `${scopedTests.length} saved ${scopedTests.length === 1 ? "test" : "tests"} · ${attentionRuns.length ? `${attentionRuns.length} ${attentionRuns.length === 1 ? "result needs" : "results need"} attention` : "No results need attention"}`
               : "Record a real path through your app. Relay will replay it and keep the evidence with every result."}
           </p>
         </div>
@@ -136,7 +160,7 @@ export function HomePage() {
           {hasTests ? (
             <Button
               nativeButton={false}
-              render={<Link to="/tests/new" />}
+              render={<Link to="/tests/new" search={{ app: appScope || undefined }} />}
               variant="default"
               size="sm"
             >
@@ -174,7 +198,11 @@ export function HomePage() {
           detail="Choose one path a person depends on. You can add broader coverage after the first clean replay."
           icon={FlaskConical}
           action={
-            <Button nativeButton={false} render={<Link to="/tests/new" />} variant="default">
+            <Button
+              nativeButton={false}
+              render={<Link to="/tests/new" search={{ app: appScope || undefined }} />}
+              variant="default"
+            >
               Record a Test
             </Button>
           }
@@ -195,11 +223,47 @@ export function HomePage() {
               </div>
             </div>
             <HomeNextAction
-              recordingId={recording.data}
-              runId={run.data?.runId}
+              recordingId={!appScope ? recording.data : undefined}
+              runId={
+                !appScope || scopedRuns.some((item) => item.id === run.data?.runId)
+                  ? run.data?.runId
+                  : undefined
+              }
               change={currentChange}
+              attentionRun={attentionRuns[0]}
               test={latestTest}
             />
+            <div className="mt-7 flex items-center justify-between gap-4">
+              <h2 className="text-base font-semibold">Recent tests</h2>
+              <Link
+                className="text-sm text-muted-foreground hover:text-foreground hover:underline"
+                to="/tests"
+                search={{ app: appScope || undefined }}
+              >
+                Browse tests
+              </Link>
+            </div>
+            <ul className="mt-3 divide-y divide-border/60 border-y border-border/60">
+              {recentTests.map((test) => (
+                <li key={test.id} className="flex min-h-16 items-center justify-between gap-4 py-3">
+                  <div className="min-w-0">
+                    <Link
+                      to="/tests/$testId"
+                      params={{ testId: test.id }}
+                      className="block truncate text-sm font-medium hover:underline"
+                    >
+                      {test.name}
+                    </Link>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {test.appName} · {test.stepCount} steps
+                    </p>
+                  </div>
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    {test.status === "ready" ? "Ready" : "Needs review"}
+                  </span>
+                </li>
+              ))}
+            </ul>
           </section>
 
           <section className="min-w-0" aria-labelledby="home-recent-title">
@@ -217,7 +281,7 @@ export function HomePage() {
               </div>
               <Button
                 nativeButton={false}
-                render={<Link to="/runs" />}
+                render={<Link to="/runs" search={{ app: appScope || undefined }} />}
                 variant="ghost"
                 size="sm"
                 className="gap-1 text-muted-foreground"
@@ -261,11 +325,13 @@ function HomeNextAction({
   recordingId,
   runId,
   change,
+  attentionRun,
   test,
 }: {
   recordingId: string | null | undefined;
   runId: string | undefined;
   change: ProductChange | undefined;
+  attentionRun: ProductRunSummary | undefined;
   test: ProductTestSummary | undefined;
 }) {
   if (recordingId) {
@@ -291,6 +357,19 @@ function HomeNextAction({
         action="Open Run"
         to="run"
         id={runId}
+      />
+    );
+  }
+  if (attentionRun) {
+    return (
+      <NextCard
+        icon={CircleAlert}
+        eyebrow="Result needs attention"
+        title={attentionRun.testName ?? attentionRun.title}
+        detail={`${attentionRun.targetName ?? "Saved run"} · Inspect the recorded result and evidence.`}
+        action="Inspect result"
+        to="run"
+        id={attentionRun.id}
       />
     );
   }
@@ -320,9 +399,13 @@ function HomeNextAction({
   return test ? (
     <NextCard
       icon={Play}
-      eyebrow="Ready to run"
+      eyebrow={test.status === "ready" ? "Ready to run" : "Test needs review"}
       title={test.name}
-      detail={`Open this Test to run its ${test.stepCount} ${test.stepCount === 1 ? "step" : "steps"} or choose more devices and values.`}
+      detail={
+        test.status === "ready"
+          ? `${test.stepCount} saved steps. Choose where to run and inspect the result.`
+          : "Review the unfinished steps before running this test."
+      }
       action="Open Test"
       to="test"
       id={test.id}

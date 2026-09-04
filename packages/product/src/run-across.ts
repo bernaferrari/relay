@@ -177,6 +177,8 @@ export type ProductRunAcrossService = {
   cancel(batchId: string): Promise<ProductRunAcrossBatch>;
   getReport(batchId: string): Promise<ProductBatchReport>;
   exportReport(batchId: string): Promise<ProductBatchReport>;
+  /** Authenticated binary export for UI consumers. */
+  downloadExport?(batchId: string): Promise<Blob>;
 };
 
 type CampaignCase = {

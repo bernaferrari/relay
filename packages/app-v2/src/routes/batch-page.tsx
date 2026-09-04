@@ -22,6 +22,7 @@ export function BatchPage() {
   const view: MatrixView = search.view === "all" ? "all" : "problems";
   const [selectedCases, setSelectedCases] = useState<Set<string>>(() => new Set());
   const [selectedClusters, setSelectedClusters] = useState<Set<string>>(() => new Set());
+  const [downloadUrl, setDownloadUrl] = useState<string>();
   const batch = useQuery({
     queryKey: ["run-across", "batch", batchId],
     queryFn: () => runAcrossService.getReport(batchId),
@@ -37,6 +38,9 @@ export function BatchPage() {
         item.status === "failed" || item.status === "blocked" || item.status === "cancelled",
     ),
   );
+  const hasFailedCases = Boolean(report?.cases.some((item) => item.status === "failed"));
+  const hasBlockedCases = Boolean(report?.cases.some((item) => item.status === "blocked"));
+  const hasCancelledCases = Boolean(report?.cases.some((item) => item.status === "cancelled"));
   const clusters = useQuery({
     queryKey: ["run-across", "batch", batchId, "failure-clusters"],
     queryFn: () => runAcrossService.getFailureClusters(batchId),
@@ -54,6 +58,17 @@ export function BatchPage() {
   const exportReport = useMutation({
     mutationFn: () => runAcrossService.exportReport(batchId),
     onSuccess: (value) => queryClient.setQueryData(["run-across", "batch", batchId], value),
+  });
+  const downloadExport = useMutation({
+    mutationFn: async () => {
+      if (!runAcrossService.downloadExport)
+        throw new Error("Evidence pack download is unavailable in this Relay host.");
+      return runAcrossService.downloadExport(batchId);
+    },
+    onSuccess: (blob) => {
+      if (downloadUrl) URL.revokeObjectURL(downloadUrl);
+      setDownloadUrl(URL.createObjectURL(blob));
+    },
   });
   const rerun = useMutation({
     mutationFn: () =>
@@ -78,10 +93,18 @@ export function BatchPage() {
   const rerunnableCases = report?.cases.filter(isBatchCaseRerunnable) ?? [];
 
   useEffect(() => {
+    setDownloadUrl(undefined);
     if (!report) return;
     const eligible = new Set(report.cases.filter(isBatchCaseRerunnable).map((item) => item.id));
     setSelectedCases((current) => new Set([...current].filter((id) => eligible.has(id))));
-  }, [report]);
+  }, [batchId, report]);
+
+  useEffect(
+    () => () => {
+      if (downloadUrl) URL.revokeObjectURL(downloadUrl);
+    },
+    [downloadUrl],
+  );
 
   async function refreshBatch() {
     await Promise.all([
@@ -141,7 +164,12 @@ export function BatchPage() {
       {batch.isPending ? <PageLoading label="Loading Batch…" /> : null}
       <RecordingProblem
         error={
-          batch.error ?? continueRun.error ?? cancel.error ?? exportReport.error ?? rerun.error
+          batch.error ??
+          continueRun.error ??
+          cancel.error ??
+          exportReport.error ??
+          downloadExport.error ??
+          rerun.error
         }
         onRetry={() => void batch.refetch()}
         retrying={batch.isFetching}
@@ -152,11 +180,15 @@ export function BatchPage() {
           <section className="relay-batch-summary" aria-labelledby="batch-summary-title">
             <OutcomeMark
               outcome={
-                hasProblems
-                  ? "product-failure"
-                  : report.status === "completed"
-                    ? "passed"
-                    : undefined
+                hasFailedCases
+                  ? "failed"
+                  : hasBlockedCases
+                    ? "harness-failure"
+                    : hasCancelledCases
+                      ? "cancelled"
+                      : report.status === "completed"
+                        ? "passed"
+                        : undefined
               }
             />
             <div>
@@ -191,6 +223,14 @@ export function BatchPage() {
             <div className="relay-batch-active" role="status">
               <span aria-hidden="true" />
               <p>Relay is running this Batch. Results update automatically.</p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => cancel.mutate()}
+                disabled={cancel.isPending}
+              >
+                {cancel.isPending ? "Stopping…" : "Stop Batch"}
+              </Button>
             </div>
           ) : null}
 
@@ -293,9 +333,26 @@ export function BatchPage() {
           ) : null}
 
           {report.export ? (
-            <p className="relay-batch-export-ready" role="status">
-              Export prepared in the Relay workspace.
-            </p>
+            <div className="relay-batch-export-ready" role="status">
+              <p>Export ready: {report.export.jobIds.length} run artifacts prepared.</p>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => downloadExport.mutate()}
+                disabled={downloadExport.isPending}
+              >
+                {downloadExport.isPending ? "Preparing download…" : "Download evidence pack"}
+              </Button>
+              {downloadUrl ? (
+                <a
+                  className="relay-inline-link"
+                  href={downloadUrl}
+                  download={`relay-${batchId}.tar.gz`}
+                >
+                  Save downloaded pack
+                </a>
+              ) : null}
+            </div>
           ) : null}
           {report.status === "cancelled" && !report.runIds.length ? (
             <EmptyState

@@ -39,14 +39,18 @@ export function LiveTestEditorPane({
     };
   }, [target]);
 
-  async function send(input: Parameters<LiveTestEditorSession["liveTarget"]["input"]>[0]) {
-    if (!session) return;
+  async function send(
+    input: Parameters<LiveTestEditorSession["liveTarget"]["input"]>[0],
+  ): Promise<boolean> {
+    if (!session) return false;
     setBusy(true);
     setIssue(undefined);
     try {
       await session.liveTarget.input(input);
+      return true;
     } catch (caught) {
       setIssue(errorMessage(caught));
+      return false;
     } finally {
       setBusy(false);
     }

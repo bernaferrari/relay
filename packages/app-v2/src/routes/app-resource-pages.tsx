@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import { Button } from "@relay/ui-react/components/button";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, getRouteApi, useRouteContext } from "@tanstack/react-router";
+import { Link, useRouteContext } from "@tanstack/react-router";
 import { Box, KeyRound, Plus, RotateCcw } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Breadcrumbs, EmptyState, RecoveryState } from "../components/product-patterns";
@@ -20,26 +20,17 @@ import {
 } from "./app-resource-dialogs";
 import { PageLoading } from "./recording-shared";
 
-const versionsRoute = getRouteApi("/apps/$appId/versions");
-const accountsRoute = getRouteApi("/apps/$appId/accounts");
-
 export function AppVersionsPage() {
-  const { appId } = versionsRoute.useParams();
-  const { mapService, appResourcesService } = useRouteContext({ from: "__root__" });
+  const { appResourcesService } = useRouteContext({ from: "__root__" });
   const queryClient = useQueryClient();
   const [editor, setEditor] = useState<ProductAppVersion | "create">();
-  const app = useQuery({
-    queryKey: ["app", appId],
-    queryFn: () => mapService.get(appId),
-    staleTime: 15_000,
-  });
   const versions = useQuery({
     queryKey: ["app-resources", "versions"],
     queryFn: () => appResourcesService.listVersions(),
     staleTime: 15_000,
   });
-  const error = app.error ?? versions.error;
-  const loading = app.isPending || versions.isPending;
+  const error = versions.error;
+  const loading = versions.isPending;
   const saveVersion = useMutation({
     mutationFn: async ({ mode, input }: { mode: "create" | "edit"; input: VersionDraft }) => {
       const operation =
@@ -60,8 +51,6 @@ export function AppVersionsPage() {
 
   return (
     <AppResourceFrame
-      appId={appId}
-      appName={app.data?.appName}
       title="Versions"
       description="Review registered builds and deployments before choosing what Relay should verify."
       action={
@@ -76,9 +65,8 @@ export function AppVersionsPage() {
       {error ? (
         <ResourceRecovery
           detail="Start Relay, then try loading registered versions again."
-          retrying={app.isFetching || versions.isFetching}
+          retrying={versions.isFetching}
           onRetry={() => {
-            void app.refetch();
             void versions.refetch();
           }}
         />
@@ -89,7 +77,7 @@ export function AppVersionsPage() {
             id="registered-versions-title"
             label="Workspace registry"
             title="Registered versions"
-            detail={`Builds are project-scoped. Relay shows the versions available when configuring verification for ${app.data?.appName ?? "this app"} without implying an App link the registry does not store.`}
+            detail="Builds are workspace-scoped and available when configuring verification."
           />
           {versions.data?.length ? (
             <ul className="relay-resource-list">
@@ -110,8 +98,8 @@ export function AppVersionsPage() {
               title="No registered versions"
               detail="No mobile build or web deployment has been registered in this workspace yet."
               action={
-                <Link className="relay-inline-link" to="/apps/$appId" params={{ appId }}>
-                  Back to app
+                <Link className="relay-inline-link" to="/tests">
+                  Open Tests
                 </Link>
               }
             />
@@ -139,28 +127,28 @@ export function AppVersionsPage() {
 }
 
 export function AppAccountsPage() {
-  const { appId } = accountsRoute.useParams();
-  const { mapService, appResourcesService } = useRouteContext({ from: "__root__" });
+  const { appResourcesService } = useRouteContext({ from: "__root__" });
   const queryClient = useQueryClient();
   const [accountDialog, setAccountDialog] = useState<"save" | ProductBrowserAccount>();
   const [revokeAccount, setRevokeAccount] = useState<ProductBrowserAccount>();
-  const app = useQuery({
-    queryKey: ["app", appId],
-    queryFn: () => mapService.get(appId),
-    staleTime: 15_000,
-  });
   const accounts = useQuery({
     queryKey: ["app-resources", "browser-accounts"],
     queryFn: () => appResourcesService.listBrowserAccounts(),
     staleTime: 10_000,
   });
-  const error = app.error ?? accounts.error;
-  const loading = app.isPending || accounts.isPending;
+  const browsers = useQuery({
+    queryKey: ["app-resources", "browser-targets"],
+    queryFn: () => appResourcesService.listBrowserTargets?.() ?? Promise.resolve([]),
+    staleTime: 10_000,
+  });
+  const error = accounts.error ?? browsers.error;
+  const loading = accounts.isPending || browsers.isPending;
   const targets = useMemo(() => {
     const seen = new Map<string, { id: string; name: string }>();
     for (const account of accounts.data ?? []) seen.set(account.target.id, account.target);
+    for (const target of browsers.data ?? []) seen.set(target.id, target);
     return [...seen.values()].sort((left, right) => left.name.localeCompare(right.name));
-  }, [accounts.data]);
+  }, [accounts.data, browsers.data]);
   const saveAccount = useMutation({
     mutationFn: async (input: AccountDraft) => {
       if (!appResourcesService.saveBrowserAccount) {
@@ -201,10 +189,8 @@ export function AppAccountsPage() {
 
   return (
     <AppResourceFrame
-      appId={appId}
-      appName={app.data?.appName}
       title="Accounts"
-      description="Review saved browser sign-ins that can be reused while testing this app."
+      description="Review saved browser sign-ins attached to managed browsers in this workspace."
       action={
         <span className="relay-resource-header-actions">
           <Button
@@ -231,10 +217,10 @@ export function AppAccountsPage() {
       {error ? (
         <ResourceRecovery
           detail="Start Relay, then try loading saved browser sign-ins again."
-          retrying={app.isFetching || accounts.isFetching}
+          retrying={accounts.isFetching || browsers.isFetching}
           onRetry={() => {
-            void app.refetch();
             void accounts.refetch();
+            void browsers.refetch();
           }}
         />
       ) : null}
@@ -244,7 +230,7 @@ export function AppAccountsPage() {
             id="browser-signins-title"
             label="Managed browsers"
             title="Saved browser sign-ins"
-            detail={`Sign-ins belong to an exact managed browser, not directly to an App. These are the reviewed sign-ins available while testing ${app.data?.appName ?? "this app"}.`}
+            detail="Sign-ins belong to an exact managed browser, not directly to an App."
           />
           {accounts.data?.length ? (
             <ul className="relay-resource-list">
@@ -314,15 +300,11 @@ export function AppAccountsPage() {
 }
 
 function AppResourceFrame({
-  appId,
-  appName,
   title,
   description,
   action,
   children,
 }: {
-  appId: string;
-  appName?: string;
   title: string;
   description: string;
   action?: React.ReactNode;
@@ -330,16 +312,10 @@ function AppResourceFrame({
 }) {
   return (
     <section className="relay-page relay-app-resource-page">
-      <Breadcrumbs
-        items={[
-          { label: "Apps", to: "/apps" },
-          { label: appName ?? "App details", to: "/apps/$appId", params: { appId } },
-          { label: title },
-        ]}
-      />
+      <Breadcrumbs items={[{ label: "Workspace", to: "/home" }, { label: title }]} />
       <header className="relay-page-header relay-app-resource-header">
         <div>
-          <p className="relay-eyebrow">{appName ?? "App"}</p>
+          <p className="relay-eyebrow">Workspace</p>
           <h1>{title}</h1>
           <p className="relay-page-description">{description}</p>
         </div>
@@ -363,7 +339,7 @@ function ResourceRecovery({
     <RecoveryState
       className="relay-apps-recovery"
       layout="centered"
-      title="Relay is not connected"
+      title="Could not load resources"
       detail={detail}
       action={
         <Button variant="outline" onClick={onRetry} disabled={retrying}>

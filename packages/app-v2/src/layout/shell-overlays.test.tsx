@@ -48,8 +48,10 @@ function recording(): RecordingProductService {
   };
 }
 
-function catalog(runs: readonly ProductRunSummary[]): CatalogProductService {
-  const tests: readonly ProductTestSummary[] = [];
+function catalog(
+  runs: readonly ProductRunSummary[],
+  tests: readonly ProductTestSummary[] = [],
+): CatalogProductService {
   return {
     listTests: async () => tests,
     getTest: async () => undefined,
@@ -78,6 +80,7 @@ function changes(items: readonly ProductChange[]): ChangeProductService {
 
 async function renderShell(input: {
   runs?: readonly ProductRunSummary[];
+  tests?: readonly ProductTestSummary[];
   changes?: readonly ProductChange[];
 }) {
   const host = document.createElement("div");
@@ -91,7 +94,7 @@ async function renderShell(input: {
         platform={platform()}
         history={history}
         productService={recording()}
-        catalogService={catalog(input.runs ?? [])}
+        catalogService={catalog(input.runs ?? [], input.tests ?? [])}
         changeService={changes(input.changes ?? [])}
       />,
     );
@@ -143,6 +146,9 @@ describe("shell overlays", () => {
       'button[aria-label^="Open Activity Center"]',
     );
     expect(trigger).toBeTruthy();
+    // The global badge is live before opening the center, so closed Activity
+    // still communicates work that needs attention.
+    expect(trigger?.getAttribute("aria-label")).toMatch(/2 active/);
     await act(async () => trigger?.click());
     await settle();
 
@@ -164,6 +170,10 @@ describe("shell overlays", () => {
 
     const input = document.querySelector<HTMLInputElement>('input[aria-label="Search commands"]');
     expect(input).toBeTruthy();
+    expect(input?.getAttribute("role")).toBe("combobox");
+    expect(input?.getAttribute("aria-controls")).toBe("relay-command-results");
+    expect(input?.getAttribute("aria-autocomplete")).toBe("list");
+    expect(input?.getAttribute("aria-expanded")).toBe("true");
     await act(async () => {
       if (!input) return;
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
@@ -171,7 +181,7 @@ describe("shell overlays", () => {
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
     await settle();
-    const results = document.querySelector('[role="list"][aria-label="Commands"]');
+    const results = document.querySelector('[role="listbox"][aria-label="Commands"]');
     expect(results?.textContent).toContain("Review failed Runs");
     expect(results?.textContent).not.toContain("Open Home");
 
@@ -184,5 +194,61 @@ describe("shell overlays", () => {
     await settle();
     expect(history.location.pathname).toBe("/runs");
     expect(history.location.search).toBe("?view=failed");
+  });
+
+  it("searches tests beyond the first thirty catalog entries", async () => {
+    const tests = Array.from(
+      { length: 31 },
+      (_, index): ProductTestSummary => ({
+        id: `test-${index + 1}`,
+        name: index === 30 ? "Thirty-first checkout" : `Checkout ${index + 1}`,
+        appMapId: "app-1",
+        appName: "Checkout",
+        stepCount: 2,
+        status: "ready",
+        updatedAt: Date.now() - index,
+        href: `/tests/test-${index + 1}`,
+      }),
+    );
+    await renderShell({ tests });
+    await act(async () => {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true }),
+      );
+    });
+    await settle();
+    const input = document.querySelector<HTMLInputElement>('input[aria-label="Search commands"]');
+    expect(input).toBeTruthy();
+    await act(async () => {
+      if (!input) return;
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+      setter?.call(input, "Thirty-first");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await settle();
+    expect(
+      document.querySelector('[role="listbox"][aria-label="Commands"]')?.textContent,
+    ).toContain("Thirty-first checkout");
+  });
+
+  it("selects a command with the keyboard", async () => {
+    const history = await renderShell({});
+    await act(async () => {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true }),
+      );
+    });
+    await settle();
+    const input = document.querySelector<HTMLInputElement>('input[aria-label="Search commands"]');
+    expect(input).toBeTruthy();
+    await act(async () => {
+      if (!input) return;
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+      setter?.call(input, "Manage versions");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    });
+    await settle();
+    expect(history.location.pathname).toBe("/versions");
   });
 });

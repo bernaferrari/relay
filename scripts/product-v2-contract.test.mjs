@@ -46,13 +46,15 @@ test("ordinary UI copy can be checked for advanced engine vocabulary", () => {
   ]);
 });
 
-test("browser and Electron smoke commands cover Sessions with existing a11y/layout harnesses", async () => {
+test("browser and Electron smoke commands cover Live with existing a11y/layout harnesses", async () => {
   const [browser, electron] = await Promise.all([
     readFile(new URL("./product-v2-browser-smoke.mjs", import.meta.url), "utf8"),
     readFile(new URL("./product-v2-electron-smoke.mjs", import.meta.url), "utf8"),
   ]);
-  assert.match(browser, /clickNav\(page, "Sessions", "\/sessions"\)/u);
-  assert.match(electron, /\["Sessions", "\/sessions"\]/u);
+  assert.match(browser, /clickNav\(page, "Live", "\/sessions"\)/u);
+  assert.match(electron, /\["Live", "\/sessions"\]/u);
+  assert.match(browser, /Devices & browsers/u);
+  assert.match(electron, /Devices & browsers/u);
   for (const source of [browser, electron]) {
     assert.match(source, /AxeBuilder/u);
     assert.match(source, /assertAccessible/u);

@@ -484,6 +484,30 @@
   border-bottom: 0;
 }
 
+.relay-library-row-shell {
+  position: relative;
+}
+
+.relay-library-row-run {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  right: 42px;
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  padding-inline: 10px;
+  border-radius: var(--radius-md);
+  color: var(--text-interactive-base);
+  font-size: 12px;
+  font-weight: 600;
+  transform: translateY(-50%);
+}
+
+.relay-library-row-run:hover {
+  background: var(--surface-raised-base);
+}
+
 .relay-library-row {
   display: grid;
   min-height: 78px;

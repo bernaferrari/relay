@@ -193,6 +193,26 @@ export class RelayClient {
     this.timeoutMs = options.timeoutMs ?? 20_000;
   }
 
+  /** Authenticated binary transport for product artifacts. */
+  async download(path: string, signal?: AbortSignal): Promise<Response> {
+    const deadline = AbortSignal.timeout(180_000);
+    const response = await this.requestResponse(
+      path,
+      { signal: signal ? AbortSignal.any([signal, deadline]) : deadline },
+      "application/gzip",
+      { timeout: false },
+    );
+    if (!response.ok) {
+      const body = await response.text();
+      throw new ApiError(
+        response.status,
+        httpErrorMessage(response.status, response.statusText, body),
+        body,
+      );
+    }
+    return response;
+  }
+
   private async requestResponse(
     path: string,
     init: RequestInit = {},

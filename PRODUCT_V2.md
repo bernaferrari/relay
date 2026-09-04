@@ -33,6 +33,8 @@ Verification: Change → Verification plan → Runs → Evidence → merge decis
 /apps/:appId
 /apps/:appId/versions
 /apps/:appId/accounts
+/versions
+/accounts
 /apps/:appId/map
 /tests
 /tests/new
@@ -63,8 +65,13 @@ Verification: Change → Verification plan → Runs → Evidence → merge decis
 /settings/about
 ```
 
+Versions and Accounts are workspace resources. Their former app-specific URLs redirect to
+`/versions` and `/accounts`; an app selection does not imply ownership of those resources.
+Primary navigation is Home, Tests, Runs, Live, and Changes, with Devices & browsers and Settings
+for workspace setup. Suites belong in Tests, and app management belongs in the app selector.
+
 Selected entities and useful substate belong in the URL. Query state may include `status`, `app`,
-`view`, `step`, `screen`, `session`, and `section`. Every route has one parent, title, primary object, primary
+`view`, `step`, `screen`, `session`, `test`, `result`, and `section`. Every route has one parent, title, primary object, primary
 action, sidebar selection, Back behavior, restorable view state, and explicit loading/error rules.
 
 ## Interaction laws

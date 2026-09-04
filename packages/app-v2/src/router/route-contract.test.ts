@@ -9,6 +9,8 @@ const expectedPaths = {
   "/apps/:appId": "/apps/$appId",
   "/apps/:appId/versions": "/apps/$appId/versions",
   "/apps/:appId/accounts": "/apps/$appId/accounts",
+  "/versions": "/versions",
+  "/accounts": "/accounts",
   "/apps/:appId/map": "/apps/$appId/map",
   "/tests": "/tests",
   "/tests/new": "/tests/new",

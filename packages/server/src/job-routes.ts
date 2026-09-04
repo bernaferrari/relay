@@ -1,4 +1,5 @@
 import http from "node:http";
+import { sendCombineExport } from "./combine-export-download.js";
 import {
   appMapTestExecutionSourceFromJob,
   appMapTestExecutionSourceFromRun,
@@ -12,7 +13,6 @@ import {
   currentOperationContext,
   cleanupScreenshot,
   enqueueJob,
-  exportCombineEvidencePackFromBatchId,
   freezeRecipeExecution,
   getActiveJob,
   getActiveJobs,
@@ -419,16 +419,13 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
 
   const optionExportMatch = matchPath(pathname, "/jobs/combine/:batchId/export");
   if (method === "GET" && optionExportMatch) {
-    try {
-      const exported = await exportCombineEvidencePackFromBatchId(optionExportMatch.batchId!);
-      json(res, 200, {
-        rootDir: exported.rootDir,
-        manifest: exported.manifest,
-        jobIds: exported.jobs.map((job) => job.id),
-      });
-    } catch (error) {
-      throw new HttpError(404, error instanceof Error ? error.message : String(error));
-    }
+    await sendCombineExport({
+      request: req,
+      response: res,
+      scope,
+      batchId: optionExportMatch.batchId!,
+      archive: url.searchParams.get("download") === "archive",
+    });
     return true;
   }
 

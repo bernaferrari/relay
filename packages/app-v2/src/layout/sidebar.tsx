@@ -13,15 +13,11 @@ import {
 } from "@relay/ui-react/components/sidebar";
 import { Link, useLocation } from "@tanstack/react-router";
 import {
-  AppWindow,
-  Bug,
   FlaskConical,
   GitCompareArrows,
   History,
   House,
-  Layers3,
   MonitorSmartphone,
-  Orbit,
   RadioTower,
   Settings,
 } from "lucide-react";
@@ -30,21 +26,18 @@ import { ActiveWork } from "./active-work";
 
 const mainItems = [
   { to: "/home", label: "Home", icon: House },
-  { to: "/apps", label: "Apps", icon: AppWindow },
   { to: "/tests", label: "Tests", icon: FlaskConical },
-  { to: "/suites", label: "Suites", icon: Layers3 },
-  { to: "/sessions", label: "Sessions", icon: RadioTower },
-  { to: "/debug", label: "Agent Debug", icon: Bug },
   { to: "/runs", label: "Runs", icon: History },
+  { to: "/sessions", label: "Live", icon: RadioTower },
   { to: "/changes", label: "Changes", icon: GitCompareArrows },
-  { to: "/environments", label: "Environments", icon: Orbit },
-  { to: "/devices", label: "Devices", icon: MonitorSmartphone },
+  { to: "/devices", label: "Devices & browsers", icon: MonitorSmartphone },
 ] as const;
 
 export function isSidebarItemActive(pathname: string, itemPath: (typeof mainItems)[number]["to"]) {
   if (itemPath === "/home") return pathname === itemPath;
-  if (itemPath === "/suites") return pathname === "/suites" || pathname.includes("/suites/");
-  if (itemPath === "/apps" && pathname.includes("/suites/")) return false;
+  if (itemPath === "/sessions") {
+    return pathname.startsWith("/sessions") || pathname.startsWith("/recordings");
+  }
   return pathname.startsWith(itemPath);
 }
 

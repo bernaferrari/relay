@@ -180,6 +180,7 @@ function service(source: ProductTestEditorDocument = initialDocument) {
 async function render(
   editor: TestEditorProductService,
   path = "/tests/test-checkout/edit?step=step-pay",
+  renderPlatform: Platform = platform,
 ) {
   const history = createMemoryHistory({
     initialEntries: [path],
@@ -191,7 +192,7 @@ async function render(
   await act(async () => {
     root.render(
       <RelayV2App
-        platform={platform}
+        platform={renderPlatform}
         history={history}
         productService={{ listApps: async () => [] } as unknown as RecordingProductService}
         testEditorService={editor}
@@ -227,6 +228,78 @@ async function click(label: string) {
 }
 
 describe("Test editor", () => {
+  it("does not hydrate a late local draft over an edit made during loading", async () => {
+    let resolveStored!: (value: string | null) => void;
+    const stored = new Promise<string | null>((resolve) => {
+      resolveStored = resolve;
+    });
+    const delayedPlatform: Platform = {
+      ...platform,
+      storage: { get: () => stored, set: () => undefined, remove: () => undefined },
+    };
+    const harness = service();
+    await render(harness.editor, undefined, delayedPlatform);
+    await fill(
+      document.querySelector<HTMLInputElement>("#selected-step-intent")!,
+      "Typed before hydration",
+    );
+    resolveStored(
+      JSON.stringify({ "step-pay": { intent: "Stale draft", note: "", capture: true } }),
+    );
+    await settle();
+    expect(document.querySelector<HTMLInputElement>("#selected-step-intent")?.value).toBe(
+      "Typed before hydration",
+    );
+  });
+
+  it("scopes local drafts to the active project connection", async () => {
+    const storage = new Map<string, string>();
+    const projectA: Platform = {
+      ...platform,
+      getServerConnection: () => ({
+        url: "http://relay.test",
+        auth: { type: "none" },
+        organizationId: "org",
+        projectId: "project-a",
+        actorId: "human:test",
+        actorKind: "human",
+      }),
+      storage: {
+        get: (key) => storage.get(key) ?? null,
+        set: (key, value) => void storage.set(key, value),
+        remove: (key) => void storage.delete(key),
+      },
+    };
+    const projectB: Platform = {
+      ...projectA,
+      getServerConnection: () => ({
+        url: "http://relay.test",
+        auth: { type: "none" },
+        organizationId: "org",
+        projectId: "project-b",
+        actorId: "human:test",
+        actorKind: "human",
+      }),
+    };
+    const first = service();
+    await render(first.editor, undefined, projectA);
+    await fill(
+      document.querySelector<HTMLInputElement>("#selected-step-intent")!,
+      "Project A draft",
+    );
+    await settle();
+    expect([...storage.keys()].some((key) => key.includes("project-a"))).toBe(true);
+    const firstRoot = roots.pop();
+    await act(async () => firstRoot?.unmount());
+    document.body.replaceChildren();
+
+    const second = service();
+    await render(second.editor, undefined, projectB);
+    expect(document.querySelector<HTMLInputElement>("#selected-step-intent")?.value).toBe(
+      "Confirm the total",
+    );
+  });
+
   it("opens a route-selected step and saves a stable-ID patch", async () => {
     const harness = service();
     const history = await render(harness.editor);
@@ -333,5 +406,26 @@ describe("Test editor", () => {
       },
     ]);
     expect(document.body.textContent).toContain("Ready");
+  });
+
+  it("keeps an inspector draft while moving between steps", async () => {
+    const harness = service();
+    await render(harness.editor);
+    await fill(
+      document.querySelector<HTMLInputElement>("#selected-step-intent")!,
+      "Drafted final total",
+    );
+    const stepButtons = [...document.querySelectorAll<HTMLButtonElement>("button[aria-pressed]")];
+    const cart = stepButtons.find((button) => button.textContent?.includes("Open the cart"));
+    const pay = stepButtons.find((button) => button.textContent?.includes("Confirm the total"));
+    if (!cart || !pay) throw new Error("Expected both step selectors");
+    await act(async () => cart.click());
+    await settle();
+    await act(async () => pay.click());
+    await settle();
+    expect(document.querySelector<HTMLInputElement>("#selected-step-intent")?.value).toBe(
+      "Drafted final total",
+    );
+    expect(harness.edits).toHaveLength(0);
   });
 });

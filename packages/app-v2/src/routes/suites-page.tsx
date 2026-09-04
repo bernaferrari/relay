@@ -40,14 +40,15 @@ export function SuitesPage() {
   });
   const navigate = useNavigate();
   const search = routeApi.useSearch() as { app?: unknown };
+  const requestedApp = typeof search.app === "string" ? search.app : "";
   const [dialogOpen, setDialogOpen] = useState(false);
   const [appId, setAppId] = useState("");
   const [name, setName] = useState("");
   const [testIds, setTestIds] = useState<Set<string>>(() => new Set());
   const [variableIds, setVariableIds] = useState<Set<string>>(() => new Set());
   const suites = useQuery({
-    queryKey: SUITES_QUERY_KEY,
-    queryFn: () => suiteProfileService.listSuites(),
+    queryKey: [...SUITES_QUERY_KEY, requestedApp || "all"],
+    queryFn: () => suiteProfileService.listSuites(requestedApp || undefined),
     staleTime: 15_000,
   });
   const apps = useQuery({
@@ -286,6 +287,24 @@ export function SuitesPage() {
       ) : null}
       {suites.data?.length ? (
         <>
+          <label className="relay-filter-field">
+            <span>App</span>
+            <select
+              className="relay-native-select"
+              value={requestedApp}
+              aria-label="Filter Suites by App"
+              onChange={(event) =>
+                void navigate({ search: { app: event.currentTarget.value || undefined } as never })
+              }
+            >
+              <option value="">All apps</option>
+              {apps.data?.map((app) => (
+                <option key={app.id} value={app.id}>
+                  {app.name}
+                </option>
+              ))}
+            </select>
+          </label>
           <dl className="relay-suite-facts" aria-label="Suite status">
             <div>
               <dt>Saved</dt>
@@ -322,7 +341,7 @@ export function SuitesPage() {
                           : ""}
                       </small>
                     </span>
-                    <OutcomeMark outcome={needsReview ? "needs-review" : "passed"} />
+                    <OutcomeMark outcome={needsReview ? "needs-review" : "ready"} />
                   </Link>
                 </li>
               );

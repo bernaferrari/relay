@@ -128,7 +128,12 @@ function catalog(overrides: Partial<CatalogProductService> = {}): CatalogProduct
   };
 }
 
-async function render(path: string, service = catalog(), mapService?: MapProductService) {
+async function render(
+  path: string,
+  service = catalog(),
+  mapService?: MapProductService,
+  runService: RunProductService = {} as RunProductService,
+) {
   const history = createMemoryHistory({ initialEntries: [path] });
   const host = document.createElement("div");
   document.body.append(host);
@@ -140,7 +145,7 @@ async function render(path: string, service = catalog(), mapService?: MapProduct
         platform={platform}
         history={history}
         productService={{} as RecordingProductService}
-        runService={{} as RunProductService}
+        runService={runService}
         catalogService={service}
         mapService={mapService}
       />,
@@ -208,6 +213,88 @@ describe("App overview", () => {
   });
 });
 
+describe("Tests library", () => {
+  it("runs a ready Test from the row with an explicit target", async () => {
+    const start = vi.fn(async () => ({ workflow: { workflowId: "workflow-library" } }));
+    let inspectAttempts = 0;
+    const inspect = vi.fn(async () => {
+      inspectAttempts += 1;
+      if (inspectAttempts === 1) throw new Error("temporary inspection failure");
+      return { run: { runId: "run-library" } };
+    });
+    const runService = {
+      listTargets: async () => [
+        {
+          kind: "browser" as const,
+          targetId: "browser-library",
+          name: "Staging browser",
+          detail: "Chrome · staging",
+        },
+      ],
+      start,
+      inspect,
+    } as unknown as RunProductService;
+    const storage = new Map<string, string>();
+    const runPlatform = {
+      ...platform,
+      storage: {
+        get: (key: string) => storage.get(key) ?? null,
+        set: (key: string, value: string) => void storage.set(key, value),
+        remove: (key: string) => void storage.delete(key),
+      },
+    };
+    const history = createMemoryHistory({ initialEntries: ["/tests"] });
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    roots.push(root);
+    await act(async () => {
+      root.render(
+        <RelayV2App
+          platform={runPlatform}
+          history={history}
+          productService={{} as RecordingProductService}
+          runService={runService}
+          catalogService={catalog()}
+        />,
+      );
+    });
+    await settle();
+    expect(
+      document.querySelector('a[href="/tests/test-checkout-internal/edit"]')?.textContent,
+    ).toContain("Review steps");
+    await clickText("Run");
+    expect(document.body.textContent).toContain("Choose a ready device or browser");
+    await clickText("Staging browser");
+    await clickText("Start Run");
+    expect(document.body.textContent).toContain("Relay could not complete this request");
+    expect(document.body.textContent).toContain("Run started. Retry to finish opening it.");
+    expect(
+      document.querySelector<HTMLInputElement>('input[value="browser-library"]')?.disabled,
+    ).toBe(true);
+    await clickText("Try again");
+    await settle();
+    expect(start).toHaveBeenCalledWith({
+      testId: "test-language-internal",
+      appMapId: "app-shop-internal",
+      targetId: "browser-library",
+    });
+    expect(inspect.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(storage.has("activeRunWorkflow")).toBe(true);
+  });
+});
+
+async function clickText(label: string) {
+  const target = [...document.querySelectorAll<HTMLElement>("button, a, label")].find(
+    (item) =>
+      item.textContent?.trim() === label || (label !== "Run" && item.textContent?.includes(label)),
+  );
+  if (!target) throw new Error(`Control not found: ${label}`);
+  await act(async () => target.click());
+  await settle();
+}
+
 async function settle() {
   for (let index = 0; index < 5; index += 1) {
     await act(async () => void (await new Promise((resolve) => setTimeout(resolve, 0))));
@@ -248,7 +335,7 @@ describe("Tests workspace", () => {
     expect(document.body.textContent).not.toContain("app-shop-internal");
     expect(document.body.textContent).not.toContain("test-language-internal");
     expect(document.querySelectorAll("select")).toHaveLength(0);
-    expect(document.querySelectorAll('[data-slot="select-trigger"]')).toHaveLength(2);
+    expect(document.querySelectorAll('[data-slot="select-trigger"]')).toHaveLength(3);
     expect(document.querySelector('[data-slot="library-search-control"] svg')).not.toBeNull();
 
     const search = document.querySelector<HTMLInputElement>("#test-search")!;
@@ -311,7 +398,7 @@ describe("Runs workspace", () => {
     );
 
     expect(listRunsComplete).toHaveBeenCalledOnce();
-    expect(listRuns).not.toHaveBeenCalled();
+    expect(listRuns).not.toHaveBeenCalledWith({ view: "all" });
     expect(document.body.textContent).toContain("Complete history");
     expect(document.body.textContent).toContain("Open account");
   });

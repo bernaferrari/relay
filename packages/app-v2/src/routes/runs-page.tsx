@@ -30,17 +30,23 @@ const runViews: readonly { id: RunView; label: string }[] = [
 
 export function RunsPage() {
   const { catalogService } = useRouteContext({ from: "__root__" });
-  const search = routeApi.useSearch() as { app?: unknown; view?: unknown };
+  const search = routeApi.useSearch() as { app?: unknown; test?: unknown; view?: unknown };
   const navigate = useNavigate({ from: "/runs" });
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query.trim().toLocaleLowerCase());
   const view = runView(search.view);
   const app = typeof search.app === "string" ? search.app : "";
+  const testId = typeof search.test === "string" ? search.test : "";
   const historyComplete = typeof catalogService.listRunsComplete === "function";
   const runs = useQuery({
-    queryKey: [...catalogQueryKeys.runs, historyComplete ? "complete" : "first-page"],
+    queryKey: [...catalogQueryKeys.runs, historyComplete ? "complete" : "first-page", app, testId],
     queryFn: () =>
-      historyComplete ? catalogService.listRunsComplete!() : catalogService.listRuns(),
+      historyComplete
+        ? catalogService.listRunsComplete!({
+            appMapId: app || undefined,
+            testId: testId || undefined,
+          })
+        : catalogService.listRuns({ appMapId: app || undefined, testId: testId || undefined }),
     staleTime: 10_000,
     refetchInterval: (queryState) =>
       queryState.state.data?.some((run) => run.phase === "queued" || run.phase === "running")
@@ -66,6 +72,7 @@ export function RunsPage() {
     const searched = (runs.data ?? []).filter(
       (run) =>
         (!app || run.appMapId === app) &&
+        (!testId || run.testId === testId) &&
         (!deferredQuery ||
           `${run.title} ${run.testName ?? ""} ${run.appName ?? ""} ${run.targetName ?? ""}`
             .toLocaleLowerCase()
@@ -91,7 +98,9 @@ export function RunsPage() {
 
   function clearFilters() {
     setQuery("");
-    void navigate({ search: (previous) => ({ ...previous, app: undefined, view: undefined }) });
+    void navigate({
+      search: (previous) => ({ ...previous, app: undefined, test: undefined, view: undefined }),
+    });
   }
 
   return (

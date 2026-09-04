@@ -37,7 +37,7 @@ const iconForKind: Record<ActiveWorkKind, LucideIcon> = {
   change: GitCompareArrows,
 };
 
-function useActiveWorkItems(full: boolean): readonly ActiveWorkItem[] {
+function useActiveWorkItems(_full: boolean): readonly ActiveWorkItem[] {
   const { platform, productService, catalogService, changeService } = useRouteContext({
     from: "__root__",
   });
@@ -49,14 +49,14 @@ function useActiveWorkItems(full: boolean): readonly ActiveWorkItem[] {
   const recording = useQuery({
     queryKey: recordingQueryKeys.workflow(recordingPointer.data ?? "unselected"),
     queryFn: () => productService.inspect(recordingPointer.data!),
-    enabled: full && Boolean(recordingPointer.data),
+    enabled: _full && Boolean(recordingPointer.data),
     staleTime: 2_000,
     refetchInterval: 3_000,
   });
   const runs = useQuery({
     queryKey: [...catalogQueryKeys.runs, "active"],
     queryFn: () => catalogService.listRuns({ view: "active" }),
-    enabled: full,
+    enabled: _full,
     staleTime: 2_000,
     refetchInterval: 3_000,
   });
@@ -68,7 +68,7 @@ function useActiveWorkItems(full: boolean): readonly ActiveWorkItem[] {
   const changes = useQuery({
     queryKey: ["changes", "active-work"],
     queryFn: () => changeService.list(),
-    enabled: full,
+    enabled: _full,
     staleTime: 2_000,
     refetchInterval: 3_000,
   });
@@ -88,7 +88,8 @@ function useActiveWorkItems(full: boolean): readonly ActiveWorkItem[] {
 
 export function ActivityCenterButton() {
   const [open, setOpen] = useState(false);
-  const items = useActiveWorkItems(open);
+  // Keep the global activity badge current even while the center is closed.
+  const items = useActiveWorkItems(true);
   return (
     <>
       <Button

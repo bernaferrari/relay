@@ -23,8 +23,9 @@ const MAX_DIFFERENT_PIXEL_RATIO = 0.0005;
 
 const fixtures = [
   { id: "home-empty", heading: "Prove one journey that matters" },
-  { id: "home-populated", heading: "Ready when you are" },
+  { id: "home-populated", heading: "Your workspace" },
   { id: "apps-list", heading: "Apps" },
+  { id: "app-overview", heading: "Checkout" },
   { id: "apps-error", heading: "Apps" },
   { id: "app-versions", heading: "Versions" },
   { id: "app-versions-error", heading: "Versions" },
@@ -199,7 +200,7 @@ async function assertLayout(page, fixture, viewport) {
     });
   }
   if (fixture.evidenceMedia) {
-    const preview = page.locator(".relay-evidence-image-frame img");
+    const preview = page.locator(".relay-evidence-image-frame img").first();
     await preview.waitFor();
     const loaded = await preview.evaluate(
       (image) => image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0,

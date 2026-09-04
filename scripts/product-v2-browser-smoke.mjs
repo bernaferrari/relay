@@ -179,6 +179,16 @@ async function clickNav(page, name, route) {
   }
 }
 
+async function openRoute(page, route) {
+  const target = new URL(page.url());
+  target.hash = `#${route}`;
+  await page.goto(target.toString(), {
+    waitUntil: "domcontentloaded",
+    timeout: START_TIMEOUT_MS,
+  });
+  await waitForRoute(page, route);
+}
+
 async function assertMinimumLayout(page) {
   const layout = await page.evaluate(() => ({
     viewport: { width: window.innerWidth, height: window.innerHeight },
@@ -305,14 +315,23 @@ async function runSmoke(options) {
     await assertKeyboardFocus(page);
     await checkAccessibility();
 
-    trace("checking Tests, Sessions, Agent Debug, Devices, Changes, Runs and Settings routes");
+    trace("checking Tests, Live, Agent Debug, Devices, Changes, Runs and Settings routes");
     await clickNav(page, "Tests", "/tests");
     await checkAccessibility();
-    await clickNav(page, "Sessions", "/sessions");
+    await clickNav(page, "Live", "/sessions");
     await checkAccessibility();
-    await clickNav(page, "Agent Debug", "/debug");
+    const debugLink = page.getByRole("link", { name: "Agent Debug", exact: true });
+    if (await debugLink.count()) {
+      await debugLink.first().click();
+      await waitForRoute(page, "/debug");
+    } else {
+      // Agent Debug is contextual to an active Live target, so keep the route
+      // coverage even when this fixture has no target that can expose its link.
+      trace("Agent Debug is not exposed by the current Live fixture; opening its route directly");
+      await openRoute(page, "/debug");
+    }
     await checkAccessibility();
-    await clickNav(page, "Devices", "/devices");
+    await clickNav(page, "Devices & browsers", "/devices");
     await checkAccessibility();
     await clickNav(page, "Changes", "/changes");
     await checkAccessibility();

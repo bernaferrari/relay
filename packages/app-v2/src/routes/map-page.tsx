@@ -1,4 +1,6 @@
 /** @jsxImportSource react */
+import { useState } from "react";
+import { Input } from "@relay/ui-react/components/input";
 import { Button } from "@relay/ui-react/components/button";
 import {
   Collapsible,
@@ -16,6 +18,7 @@ const routeApi = getRouteApi("/apps/$appId/map");
 export function MapPage() {
   const { mapService, queryClient } = useRouteContext({ from: "__root__" });
   const { appId } = routeApi.useParams();
+  const [pathSearch, setPathSearch] = useState("");
   const map = useQuery({
     queryKey: ["map", appId],
     queryFn: () => mapService.get(appId),
@@ -52,6 +55,12 @@ export function MapPage() {
       await queryClient.invalidateQueries({ queryKey: ["map", appId, "proposals"] });
     },
   });
+  const matchingPaths = (map.data?.paths ?? []).filter((path) =>
+    [path.label, path.fromTitle, path.toTitle, ...path.coveringTests.map((test) => test.name)]
+      .join(" ")
+      .toLocaleLowerCase()
+      .includes(pathSearch.trim().toLocaleLowerCase()),
+  );
   const visibleScreens = map.data?.screens.slice(0, 500) ?? [];
   const visiblePaths = map.data?.paths.slice(0, 500) ?? [];
 
@@ -110,7 +119,7 @@ export function MapPage() {
               title="No known screens yet"
               detail="Record a Test to give Relay a starting point for exploration."
               action={
-                <Link className="relay-inline-link" to="/tests/new">
+                <Link className="relay-inline-link" to="/tests/new" search={{ app: appId }}>
                   Record a Test
                 </Link>
               }
@@ -130,8 +139,39 @@ export function MapPage() {
                 Create a Test from a path
               </Link>
             </div>
+            <label className="mb-2 block text-sm font-medium" htmlFor="map-path-search">
+              Search known paths
+            </label>
+            <Input
+              type="search"
+              className="max-w-lg"
+              id="map-path-search"
+              value={pathSearch}
+              onChange={(event) => setPathSearch(event.target.value)}
+              placeholder="Screen, path, or test name"
+            />
+            <p className="my-3 text-xs text-muted-foreground" role="status">
+              {matchingPaths.length} of {map.data.paths.length} known paths
+            </p>
+            {matchingPaths.length === 0 ? (
+              <EmptyState
+                title={pathSearch ? "No matching paths" : "No known paths yet"}
+                detail={
+                  pathSearch
+                    ? "Try another screen or test name."
+                    : "Record a test to add a known path."
+                }
+                action={
+                  pathSearch ? (
+                    <Button variant="outline" onClick={() => setPathSearch("")}>
+                      Clear search
+                    </Button>
+                  ) : undefined
+                }
+              />
+            ) : null}
             <ul>
-              {map.data.paths.slice(0, 24).map((path) => (
+              {matchingPaths.map((path) => (
                 <li key={path.id}>
                   <Link
                     className="relay-inline-link"
@@ -220,8 +260,8 @@ export function MapPage() {
       (map.data.screens.length > visibleScreens.length ||
         map.data.paths.length > visiblePaths.length) ? (
         <p className="relay-action-hint">
-          Showing the first {visibleScreens.length} screens and {visiblePaths.length} paths. Use the
-          list below to review the full set of verified paths.
+          Canvas shows the first {visibleScreens.length} screens and {visiblePaths.length} paths.
+          Use the searchable path list to review all known paths.
         </p>
       ) : null}
     </section>

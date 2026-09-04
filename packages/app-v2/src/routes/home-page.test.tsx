@@ -192,12 +192,48 @@ describe("Home", () => {
       changes: [change],
     });
 
-    expect(document.body.textContent).toContain("Ready when you are");
+    expect(document.body.textContent).toContain("Your workspace");
     expect(document.body.textContent).toContain("Keep Arabic settings readable");
     expect(document.body.textContent).toContain("Continue verification");
     expect(document.body.textContent).toContain("1 target ready");
     expect(document.body.textContent).toContain("Latest results");
     expect(document.body.textContent).toContain("Managed Chromium");
     expect(document.body.textContent).not.toContain("Start with one journey");
+  });
+  it("prioritizes an unsuccessful latest result over a saved test", async () => {
+    const now = Date.now();
+    await renderHome({
+      apps: [{ id: "app", name: "Checkout" }],
+      tests: [
+        {
+          id: "test",
+          name: "Pay",
+          appMapId: "app",
+          appName: "Checkout",
+          stepCount: 2,
+          status: "needs-review",
+          updatedAt: now,
+          href: "/tests/test",
+        },
+      ],
+      runs: [
+        {
+          id: "failed",
+          testId: "test",
+          title: "Payment failed",
+          action: "Inspect",
+          status: "failed",
+          phase: "failed",
+          outcome: "product-failure",
+          appMapId: "app",
+          queuedAt: now,
+          identity: { runId: "failed", testId: "test" },
+          links: { self: "/runs/failed" },
+        },
+      ],
+    });
+    expect(document.querySelector("#home-next-title")?.textContent).toBe("Payment failed");
+    expect(document.body.textContent).toContain("1 result needs attention");
+    expect(document.body.textContent).not.toContain("Ready to run");
   });
 });

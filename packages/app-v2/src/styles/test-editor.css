@@ -884,3 +884,58 @@
     transition: none;
   }
 }
+.relay-test-workbench {
+  display: grid;
+  max-width: 1120px;
+  gap: 24px;
+  margin-top: 28px;
+}
+
+.relay-test-run-config {
+  display: grid;
+  grid-template-columns: minmax(190px, 0.7fr) minmax(260px, 1.6fr) auto;
+  align-items: center;
+  gap: 16px;
+}
+
+.relay-test-run-config-heading {
+  display: grid;
+  gap: 3px;
+}
+
+.relay-test-targets {
+  display: flex;
+  min-width: 0;
+  gap: 8px;
+}
+
+.relay-test-targets > label {
+  min-width: 0;
+  flex: 1 1 0;
+}
+
+.relay-test-run-action {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+}
+
+@media (max-width: 840px) {
+  .relay-test-run-config {
+    grid-template-columns: 1fr;
+  }
+
+  .relay-test-targets {
+    display: grid;
+  }
+}
+.relay-test-header > div:first-child {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.relay-test-header h1 {
+  max-width: none;
+  text-wrap: pretty;
+}

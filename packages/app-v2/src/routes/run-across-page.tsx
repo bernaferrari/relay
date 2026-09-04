@@ -8,7 +8,7 @@ import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react
 import { useMemo, useState } from "react";
 import { Breadcrumbs, EmptyState } from "../components/product-patterns";
 import { runQueryKeys } from "../data/run-queries";
-import { PageLoading, RecordingProblem } from "./recording-shared";
+import { PageLoading, RecordingProblem, errorMessage } from "./recording-shared";
 
 const routeApi = getRouteApi("/tests/$testId/run-across");
 
@@ -32,18 +32,23 @@ export function RunAcrossPage() {
   });
   const [targetId, setTargetId] = useState("");
   const [selected, setSelected] = useState<Record<string, string[]>>({});
+  const [previewAttempt, setPreviewAttempt] = useState(0);
   const target = useMemo(
     () => targets.data?.find((item) => item.targetId === targetId),
     [targetId, targets.data],
   );
-  const preview = useMemo(() => {
-    if (!setup.data || !target) return undefined;
+  const previewResult = useMemo(() => {
+    if (!setup.data || !target) return { preview: undefined, error: undefined };
     try {
-      return runAcrossService.preview({ setup: setup.data, selected, target });
-    } catch {
-      return undefined;
+      return {
+        preview: runAcrossService.preview({ setup: setup.data, selected, target }),
+        error: undefined,
+      };
+    } catch (error) {
+      return { preview: undefined, error: errorMessage(error) };
     }
-  }, [runAcrossService, selected, setup.data, target]);
+  }, [previewAttempt, runAcrossService, selected, setup.data, target]);
+  const preview = previewResult.preview;
   const start = useMutation({
     mutationFn: () => {
       if (!setup.data || !target) {
@@ -84,10 +89,11 @@ export function RunAcrossPage() {
       </header>
       {loading ? <PageLoading label="Loading saved data and available devices…" /> : null}
       <RecordingProblem
-        error={setup.error ?? targets.error ?? start.error}
+        error={setup.error ?? targets.error ?? start.error ?? previewResult.error}
         onRetry={() => {
           void setup.refetch();
           void targets.refetch();
+          setPreviewAttempt((attempt) => attempt + 1);
         }}
         retrying={setup.isFetching || targets.isFetching}
       />
