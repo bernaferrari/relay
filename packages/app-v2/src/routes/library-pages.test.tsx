@@ -393,14 +393,14 @@ describe("Runs workspace", () => {
     expect(filters?.parentElement?.className).toMatch(/gap-5|gap-6/);
   });
 
-  it("defaults to the latest Run per Test and keeps every row durably addressable", async () => {
+  it("defaults to All Runs and keeps every row durably addressable", async () => {
     await render("/runs");
 
-    expect(document.body.textContent?.match(/Change language/g)).toHaveLength(1);
+    expect(document.body.textContent?.match(/Change language/g)).toHaveLength(2);
     expect(document.body.textContent).toContain("Complete checkout");
     expect(document.body.textContent).toContain("Open account");
     expect(document.body.textContent).toContain("Needs review");
-    expect(document.body.textContent).toContain("Running");
+    expect(document.body.textContent).toContain("In progress");
     expect(document.body.textContent?.match(/2\.5 s/g)).toHaveLength(1);
     expect(document.body.textContent).not.toContain("run-passed-internal");
     expect(document.querySelector('a[href="/runs/run-passed-internal"]')).not.toBeNull();
@@ -438,7 +438,7 @@ describe("Runs workspace", () => {
 
     await fill(document.querySelector<HTMLInputElement>("#run-search")!, "missing");
     expect(document.body.textContent).toContain("No problem Runs match");
-    await click("Show latest Runs");
+    await click("Show all Runs");
     expect(history.location.search).toBe("");
     expect(document.body.textContent).toContain("Complete checkout");
   });

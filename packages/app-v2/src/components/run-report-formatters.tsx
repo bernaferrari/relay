@@ -95,7 +95,7 @@ export function nextAction(
     return "Reconnect the device or browser, then run this Test again.";
   }
   if (outcome === "uncertain") {
-    return "Review the captured evidence before deciding whether to run this Test again.";
+    return "Review the evidence before deciding whether to run this Test again.";
   }
   if (outcome === "cancelled") return "Run this Test again when the device or browser is ready.";
   return "Review the Report before taking the next action.";

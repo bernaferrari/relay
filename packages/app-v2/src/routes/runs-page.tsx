@@ -23,11 +23,11 @@ const allAppsValue = "all-apps";
 type RunView = "latest" | "all" | "failed" | "needs-review" | "active";
 
 const runViews: readonly { id: RunView; label: string }[] = [
-  { id: "latest", label: "Latest per Test" },
   { id: "all", label: "All Runs" },
   { id: "failed", label: "Failed" },
   { id: "needs-review", label: "Needs review" },
   { id: "active", label: "Active" },
+  { id: "latest", label: "Latest per Test" },
 ];
 
 export function RunsPage() {
@@ -103,7 +103,7 @@ export function RunsPage() {
   const returnFocus = useCollectionReturnFocus("relay:focus:/runs", visibleRuns, "/runs/");
   function setView(next: RunView) {
     void navigate({
-      search: (previous) => ({ ...previous, view: next === "latest" ? undefined : next }),
+      search: (previous) => ({ ...previous, view: next === "all" ? undefined : next }),
     });
   }
 
@@ -125,11 +125,7 @@ export function RunsPage() {
       className="relay-library-page relay-runs-page mx-auto flex min-h-full w-full max-w-[1040px] flex-col"
       onClickCapture={returnFocus.onClickCapture}
     >
-      <PageHeader
-        context="Runs"
-        title="Run history"
-        description="Active Runs and recent results."
-      />
+      <PageHeader context="Runs" title="Runs" description="See what passed or failed." />
 
       <LibraryToolbar
         label="Filter Runs"
@@ -176,7 +172,7 @@ export function RunsPage() {
                 });
               }}
             />
-            {view !== "latest" || app || testId || query ? (
+            {view !== "all" || app || testId || query ? (
               <Button variant="ghost" size="sm" onClick={clearFilters}>
                 Clear
               </Button>
@@ -220,7 +216,7 @@ export function RunsPage() {
             detail="Choose another view, app, or search. Existing Reports remain unchanged."
             action={
               <Button variant="ghost" size="sm" onClick={clearFilters}>
-                Show latest Runs
+                Show all Runs
               </Button>
             }
           />
@@ -228,7 +224,7 @@ export function RunsPage() {
           <div className="flex flex-1 items-center justify-center">
             <EmptyState
               title="No Runs yet"
-              detail="Open a saved Test and run it on a device or browser. Its Report will appear here."
+              detail="Open a saved Test and run it on a Device or Browser."
               action={
                 <Link
                   className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
@@ -253,7 +249,8 @@ function RunRow({
   interaction?: RunHistoryRowInteraction;
 }) {
   const title = run.testName ?? run.title;
-  const context = [run.appName, run.targetName ?? platformName(run.platform)].filter(Boolean);
+  const device = run.targetName ?? platformName(run.platform);
+  const cause = runCause(run);
   return (
     <Item
       className="relay-library-row relay-run-row grid min-h-[78px] min-w-0 grid-cols-[minmax(0,1fr)_100px_18px] items-center gap-[18px] px-3.5 py-2 text-[var(--text-base)] transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 max-[720px]:grid-cols-[minmax(0,1fr)_auto]"
@@ -266,7 +263,12 @@ function RunRow({
         </strong>
         <span className="relay-run-row-context flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap text-xs text-[var(--text-weak)]">
           <OutcomeMark outcome={run.outcome ?? phaseOutcome(run)} />
-          <span className="truncate">{context.length ? context.join(" · ") : "Saved Run"}</span>
+          <span className="truncate">
+            {[device, cause].filter(Boolean).join(" · ") || "Saved Run"}
+          </span>
+          {run.batchId ? (
+            <span className="shrink-0 font-semibold text-[var(--text-base)]">Run Across</span>
+          ) : null}
         </span>
       </span>
       <span className="relay-library-row-recent grid min-w-0 justify-items-start gap-1">
@@ -298,9 +300,19 @@ function latestRuns(runs: readonly ProductRunSummary[]) {
 }
 
 function runView(value: unknown): RunView {
-  return value === "all" || value === "failed" || value === "needs-review" || value === "active"
+  return value === "latest" || value === "failed" || value === "needs-review" || value === "active"
     ? value
-    : "latest";
+    : "all";
+}
+
+function runCause(run: ProductRunSummary): string | undefined {
+  if (run.phase === "failed" || run.outcome === "product-failure") return "Failed";
+  if (run.outcome === "harness-failure") return "Could not complete";
+  if (run.review?.status === "pending" || run.outcome === "uncertain") return "Needs review";
+  if (run.phase === "queued") return "Waiting to start";
+  if (run.phase === "running") return "In progress";
+  if (run.phase === "cancelled") return "Cancelled";
+  return undefined;
 }
 
 function runViewDescription(view: RunView, historyComplete: boolean) {

@@ -350,33 +350,32 @@ function RunReport({
   return (
     <WorkbenchPage className="max-w-[1280px]">
       <PageHeader
-        crumbs={[{ label: "Runs", to: "/runs" }, { label: report.title }]}
+        crumbs={[
+          { label: "Runs", to: "/runs" },
+          ...(testId
+            ? [{ label: "View test", to: "/tests/$testId" as const, params: { testId } }]
+            : []),
+          { label: report.title },
+        ]}
         title={report.title}
         description={outcomeSentence(report.outcome, target)}
         actions={
           <>
-            {report.video ? (
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setSelectedEvidenceId("video");
-                  selectView("evidence");
-                }}
-              >
-                Watch recording
-              </Button>
-            ) : null}
-            <RunReplayAction report={report} runService={runService} />
-            {report.outcome === "product-failure" ||
-            report.outcome === "harness-failure" ||
-            report.outcome === "uncertain" ? (
+            {report.outcome === "product-failure" || report.outcome === "uncertain" ? (
               <Button
                 nativeButton={false}
                 render={<Link to="/debug" search={{ runId: report.runId }} />}
                 variant="default"
               >
-                Investigate
+                Open Device
               </Button>
+            ) : report.outcome === "harness-failure" ? (
+              <RunReplayAction
+                report={report}
+                runService={runService}
+                variant="default"
+                label="Run again"
+              />
             ) : testId ? (
               <Button
                 nativeButton={false}
@@ -386,15 +385,17 @@ function RunReport({
                 Set up another run
               </Button>
             ) : null}
-            {testId ? (
+            {report.outcome === "harness-failure" ? (
               <Button
                 nativeButton={false}
-                render={<Link to="/tests/$testId" params={{ testId }} />}
+                render={<Link to="/debug" search={{ runId: report.runId }} />}
                 variant="ghost"
               >
-                View test
+                Open Device
               </Button>
-            ) : null}
+            ) : (
+              <RunReplayAction report={report} runService={runService} />
+            )}
           </>
         }
       >
@@ -409,8 +410,14 @@ function RunReport({
       <RunReplayStatus runService={runService} />
 
       {failure ? (
-        <section className="mt-2 max-w-[60ch]" aria-labelledby="causal-failure-title">
-          <h2 id="causal-failure-title" className="text-[15px] font-medium text-foreground">
+        <section
+          className="mt-2 max-w-[60ch] rounded-xl border border-destructive/30 bg-destructive/5 p-5"
+          aria-labelledby="causal-failure-title"
+        >
+          <p className="text-[11px] font-semibold uppercase tracking-[0.04em] text-destructive">
+            Failed
+          </p>
+          <h2 id="causal-failure-title" className="mt-1 text-[15px] font-medium text-foreground">
             {failureTitle(failure, report.category)}
           </h2>
           <p className="mt-1 text-[13px] leading-5 text-muted-foreground">

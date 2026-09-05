@@ -43,6 +43,7 @@ export type BreadcrumbItem =
         | "/home";
     }
   | { label: string; to: "/apps/$appId"; params: { appId: string } }
+  | { label: string; to: "/tests/$testId"; params: { testId: string } }
   | { label: string };
 
 export function Breadcrumbs({ items }: { items: readonly BreadcrumbItem[] }) {
@@ -62,7 +63,7 @@ export function Breadcrumbs({ items }: { items: readonly BreadcrumbItem[] }) {
                   aria-hidden="true"
                 />
               ) : null}
-              {"to" in item && item.to === "/apps/$appId" ? (
+              {"to" in item && (item.to === "/apps/$appId" || item.to === "/tests/$testId") ? (
                 <Link
                   className="inline-flex items-center text-[var(--text-weak)] hover:text-foreground"
                   to={item.to}

@@ -506,6 +506,7 @@ describe("Run and Report", () => {
     expect(document.body.textContent).not.toContain("Draft issue");
     expect(document.body.textContent).toContain("Set up another run");
     expect(document.body.textContent).toContain("View test");
+    expect(document.body.textContent).not.toContain("Investigate");
     expect(document.body.textContent).toContain("1.6 s");
     expect(document.body.textContent).toContain("Language checkpoint passed");
     expect(document.body.textContent).toContain("What Relay verified");

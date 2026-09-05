@@ -22,9 +22,13 @@ type RunReport = ProductRunReportOverview;
 export function RunReplayAction({
   report,
   runService,
+  variant = "outline",
+  label = "Rerun…",
 }: {
   report: RunReport;
   runService: RunProductService;
+  variant?: "default" | "outline" | "ghost";
+  label?: string;
 }) {
   const search = routeApi.useSearch() as { replayJob?: unknown };
   const replayJobId = typeof search.replayJob === "string" ? search.replayJob : "";
@@ -49,7 +53,7 @@ export function RunReplayAction({
         if (!replay.isPending) setOpen(next);
       }}
     >
-      <DialogTrigger render={<Button variant="outline" />}>Rerun…</DialogTrigger>
+      <DialogTrigger render={<Button variant={variant} />}>{label}</DialogTrigger>
       <DialogContent showCloseButton={!replay.isPending}>
         <DialogTitle>Rerun this test execution</DialogTitle>
         <DialogDescription>
