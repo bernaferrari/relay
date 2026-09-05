@@ -204,10 +204,10 @@ async function settle() {
 }
 
 async function clickButton(label: string) {
-  const button = [...document.querySelectorAll("button")].find(
+  const button = [...document.querySelectorAll("button, [role='menuitem']")].find(
     (candidate) => candidate.textContent?.trim() === label,
   );
-  if (!(button instanceof HTMLButtonElement)) throw new Error(`Button not found: ${label}`);
+  if (!(button instanceof HTMLElement)) throw new Error(`Button not found: ${label}`);
   await act(async () => button.click());
   await settle();
 }
@@ -381,6 +381,7 @@ describe("Suite and Environment routes", () => {
     expect(document.body.textContent).not.toContain("Profile storage");
     expect(document.body.textContent).not.toContain("Fresh each time");
     expect(document.body.textContent).not.toContain("cookie");
+    await clickButton("More");
     await clickButton("Open in system browser");
     expect(calls.open).toBe(1);
     expect(openExternal).toHaveBeenCalledWith(space.startUrl);
@@ -403,6 +404,7 @@ describe("Suite and Environment routes", () => {
     await clickButton("Revoke sign-in");
     expect(calls.revoke).toEqual([{ spaceId: "space-1", reference: fixture.reference }]);
 
+    await clickButton("More");
     await clickButton("Remove");
     await clickButton("Remove browser");
     expect(calls.remove).toBe(1);

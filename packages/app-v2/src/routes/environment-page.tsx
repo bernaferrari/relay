@@ -1,12 +1,17 @@
 /** @jsxImportSource react */
 import {
   Dialog,
-  DialogTrigger,
   DialogClose,
   DialogContent,
   DialogTitle,
   DialogDescription,
 } from "@relay/ui-react/components/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@relay/ui-react/components/dropdown-menu";
 import { Field, FieldError, FieldLabel } from "@relay/ui-react/components/field";
 import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
@@ -18,7 +23,7 @@ import {
   useNavigate,
   useRouteContext,
 } from "@tanstack/react-router";
-import { ExternalLink, RotateCcw } from "lucide-react";
+import { RotateCcw } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LibraryPage, PageHeader } from "../components/page-layout";
 import { Breadcrumbs, EmptyState, RecoveryState } from "../components/product-patterns";
@@ -176,25 +181,31 @@ export function EnvironmentPage() {
         <>
           <PageHeader
             title={space.name}
-            description={
-              space.persistent
-                ? displayHost(space.startUrl)
-                : `${displayHost(space.startUrl)} · Fresh each time`
-            }
+            description={displayHost(space.startUrl)}
             actions={
-              <>
+              <div className="flex items-center gap-2">
                 <Button variant="default" onClick={() => open.mutate()} disabled={open.isPending}>
                   {open.isPending ? "Opening…" : "Open"}
                 </Button>
-                <Button
-                  variant="ghost"
-                  onClick={() => openExternal.mutate()}
-                  disabled={openExternal.isPending}
-                >
-                  <ExternalLink aria-hidden="true" />{" "}
-                  {openExternal.isPending ? "Opening…" : "Open in system browser"}
-                </Button>
-              </>
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    render={<Button variant="ghost" disabled={openExternal.isPending} />}
+                  >
+                    More
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" sideOffset={6}>
+                    <DropdownMenuItem
+                      onClick={() => openExternal.mutate()}
+                      disabled={openExternal.isPending}
+                    >
+                      {openExternal.isPending ? "Opening…" : "Open in system browser"}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem variant="destructive" onClick={() => setRemoveOpen(true)}>
+                      Remove
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             }
           />
           {open.error || openExternal.error ? (
@@ -246,19 +257,19 @@ export function EnvironmentPage() {
             />
           ) : null}
 
-          <section className="mt-2 max-w-[60ch]" aria-labelledby="environment-account-title">
+          <section className="mt-2 max-w-md" aria-labelledby="environment-account-title">
             <h2 id="environment-account-title" className="text-[15px] font-medium">
               Sign-ins
             </h2>
             {fixtures.isPending ? <PageLoading label="Loading sign-ins…" /> : null}
             {fixtures.data?.length ? (
-              <ul className="relay-environment-accounts mt-3 grid list-none gap-1 p-0">
+              <ul className="relay-environment-accounts mt-3 grid list-none p-0">
                 {fixtures.data.map((fixture) => (
                   <li
-                    className="flex min-h-11 items-center justify-between gap-3 border-t border-border py-3 first:border-t-0 first:pt-0"
+                    className="flex items-center gap-4 border-t border-border py-3 first:border-t-0 first:pt-0"
                     key={fixture.reference}
                   >
-                    <span className="min-w-0">
+                    <span className="min-w-0 flex-1">
                       <strong className="block text-[13px] font-medium wrap-anywhere">
                         {fixture.name}
                       </strong>
@@ -271,7 +282,7 @@ export function EnvironmentPage() {
                       </small>
                     </span>
                     {!fixture.revokedAt ? (
-                      <span className="flex shrink-0 gap-1">
+                      <span className="flex shrink-0">
                         <Button
                           size="sm"
                           variant="ghost"
@@ -323,8 +334,8 @@ export function EnvironmentPage() {
               </FieldError>
             ) : null}
             <Button
-              className="mt-3"
-              variant="outline"
+              className="mt-1 px-0 text-muted-foreground"
+              variant="ghost"
               size="sm"
               onClick={() => {
                 setAccountName("");
@@ -336,39 +347,31 @@ export function EnvironmentPage() {
             </Button>
           </section>
 
-          <div className="mt-8">
-            <Dialog open={removeOpen} onOpenChange={setRemoveOpen}>
-              <DialogTrigger
-                render={<Button variant="ghost" size="sm" className="text-muted-foreground" />}
-              >
-                Remove
-              </DialogTrigger>
-
-              <DialogContent showCloseButton={false}>
-                <DialogTitle>Remove {space.name}?</DialogTitle>
-                <DialogDescription>
-                  Saved sign-ins for this browser will be removed. Existing reports stay.
-                </DialogDescription>
-                {remove.error ? (
-                  <FieldError>
-                    {remove.error instanceof Error
-                      ? remove.error.message
-                      : "Relay could not remove this browser."}
-                  </FieldError>
-                ) : null}
-                <div className="relay-dialog-actions flex flex-wrap items-center justify-end gap-2.5">
-                  <DialogClose render={<Button variant="ghost">Cancel</Button>} />
-                  <Button
-                    className="text-red-700 dark:text-red-300"
-                    onClick={() => remove.mutate()}
-                    disabled={remove.isPending}
-                  >
-                    {remove.isPending ? "Removing…" : "Remove browser"}
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
-          </div>
+          <Dialog open={removeOpen} onOpenChange={setRemoveOpen}>
+            <DialogContent showCloseButton={false}>
+              <DialogTitle>Remove {space.name}?</DialogTitle>
+              <DialogDescription>
+                Saved sign-ins for this browser will be removed. Existing reports stay.
+              </DialogDescription>
+              {remove.error ? (
+                <FieldError>
+                  {remove.error instanceof Error
+                    ? remove.error.message
+                    : "Relay could not remove this browser."}
+                </FieldError>
+              ) : null}
+              <div className="relay-dialog-actions flex flex-wrap items-center justify-end gap-2.5">
+                <DialogClose render={<Button variant="ghost">Cancel</Button>} />
+                <Button
+                  className="text-red-700 dark:text-red-300"
+                  onClick={() => remove.mutate()}
+                  disabled={remove.isPending}
+                >
+                  {remove.isPending ? "Removing…" : "Remove browser"}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
 
           <Dialog open={accountOpen} onOpenChange={setAccountOpen}>
             <DialogContent showCloseButton={false}>
