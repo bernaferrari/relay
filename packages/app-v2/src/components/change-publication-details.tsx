@@ -39,7 +39,7 @@ export function ChangePublicationStatus({ detail }: { detail: ProductChangeDetai
           title="Not published"
           id="publication-status-title"
         />
-        <p className="text-sm text-muted-foreground">
+        <p className="mt-1 text-sm leading-6 text-muted-foreground">
           Relay has not sent this verification result to GitHub.
         </p>
       </section>

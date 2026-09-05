@@ -202,11 +202,16 @@ export function EnvironmentPage() {
               <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
                 Readiness
               </p>
-              <h2 id="environment-readiness-title">Current checks</h2>
+              <h2
+                id="environment-readiness-title"
+                className="mt-1 text-base font-semibold text-foreground"
+              >
+                Current checks
+              </h2>
               {readiness.isPending ? <PageLoading label="Checking Environment…" /> : null}
               {readiness.data ? (
                 <>
-                  <div className="relay-environment-ready-line flex items-center gap-2 text-sm font-semibold">
+                  <div className="relay-environment-ready-line mt-4 flex flex-wrap items-center gap-2 border-b border-border pb-3 text-sm font-semibold">
                     <Badge
                       variant={readiness.data.target.ok ? "default" : "secondary"}
                       className={
@@ -219,9 +224,12 @@ export function EnvironmentPage() {
                     </Badge>
                     <span>{readiness.data.target.capabilities.length} available capabilities</span>
                   </div>
-                  <ul className="relay-environment-checks grid gap-3 p-0">
+                  <ul className="relay-environment-checks mt-4 grid gap-3 p-0">
                     {readiness.data.target.checks.map((check) => (
-                      <li key={check.id}>
+                      <li
+                        className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-3"
+                        key={check.id}
+                      >
                         <Badge
                           variant={check.status === "fail" ? "destructive" : "secondary"}
                           className={
@@ -238,9 +246,13 @@ export function EnvironmentPage() {
                               ? "Failed"
                               : "Warning"}
                         </Badge>
-                        <span>
-                          <strong>{check.label}</strong>
-                          <small>{check.message}</small>
+                        <span className="grid gap-0.5">
+                          <strong className="text-sm font-medium text-foreground">
+                            {check.label}
+                          </strong>
+                          <small className="text-xs leading-5 text-muted-foreground">
+                            {check.message}
+                          </small>
                         </span>
                       </li>
                     ))}
@@ -262,6 +274,7 @@ export function EnvironmentPage() {
                 </FieldError>
               ) : null}
               <Button
+                className="mt-4"
                 variant="outline"
                 size="sm"
                 onClick={() => void readiness.refetch()}
@@ -279,8 +292,13 @@ export function EnvironmentPage() {
               <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
                 Accounts
               </p>
-              <h2 id="environment-account-title">Reviewed sign-ins</h2>
-              <p>
+              <h2
+                id="environment-account-title"
+                className="mt-1 text-base font-semibold text-foreground"
+              >
+                Reviewed sign-ins
+              </h2>
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">
                 Credentials and cookies remain on the Relay host. This page exposes lifecycle
                 metadata only.
               </p>
@@ -288,20 +306,25 @@ export function EnvironmentPage() {
               {fixtures.data?.length ? (
                 <ul className="relay-environment-accounts grid gap-2 p-0">
                   {fixtures.data.map((fixture) => (
-                    <li key={fixture.reference}>
+                    <li
+                      className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-lg border border-border p-3"
+                      key={fixture.reference}
+                    >
                       <span
                         className="relay-account-shield grid size-8 place-items-center rounded-full bg-muted text-muted-foreground"
                         aria-hidden="true"
                       >
                         <ShieldCheck />
                       </span>
-                      <span>
-                        <strong>{fixture.name}</strong>
-                        <small>
+                      <span className="grid min-w-0 gap-0.5">
+                        <strong className="text-sm font-medium text-foreground wrap-anywhere">
+                          {fixture.name}
+                        </strong>
+                        <small className="text-xs text-muted-foreground">
                           {fixture.cookieCount} {fixture.cookieCount === 1 ? "cookie" : "cookies"} ·
                           revision {fixture.revision}
                         </small>
-                        <small>
+                        <small className="text-xs font-medium text-muted-foreground">
                           {fixture.revokedAt
                             ? "Revoked"
                             : fixture.expiresAt && fixture.expiresAt <= Date.now()
@@ -309,7 +332,7 @@ export function EnvironmentPage() {
                               : "Available"}
                         </small>
                       </span>
-                      <div>
+                      <div className="col-start-2 flex flex-wrap gap-1">
                         {!fixture.revokedAt ? (
                           <>
                             <Button
@@ -364,6 +387,7 @@ export function EnvironmentPage() {
                 </FieldError>
               ) : null}
               <Button
+                className="mt-4"
                 variant="outline"
                 size="sm"
                 onClick={() => {
@@ -378,7 +402,7 @@ export function EnvironmentPage() {
           </div>
 
           <section
-            className="min-w-0 rounded-xl border border-red-500/40 bg-red-500/5 p-[18px]"
+            className="mt-6 flex min-w-0 flex-wrap items-center justify-between gap-4 rounded-xl border border-red-500/40 bg-red-500/5 p-[18px]"
             aria-labelledby="remove-environment-title"
           >
             <div>
@@ -409,7 +433,7 @@ export function EnvironmentPage() {
                 <div className="relay-dialog-actions flex flex-wrap items-center justify-end gap-2.5">
                   <DialogClose render={<Button variant="ghost">Cancel</Button>} />
                   <Button
-                    className="relay-suite-remove-confirm rounded-lg border border-red-500/30 bg-red-500/5 p-4"
+                    className="text-red-700 dark:text-red-300"
                     onClick={() => remove.mutate()}
                     disabled={remove.isPending}
                   >

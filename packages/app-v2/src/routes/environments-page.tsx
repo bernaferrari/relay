@@ -85,7 +85,7 @@ export function EnvironmentsPage() {
   return (
     <section className="relay-page mx-auto w-full px-[clamp(20px,3vw,40px)] pt-7 pb-10 max-w-[1080px]">
       <Breadcrumbs items={[{ label: "Home", to: "/home" }, { label: "Environments" }]} />
-      <header className="relay-page-header flex items-start justify-between gap-4 max-[780px]:flex-col">
+      <header className="relay-page-header mb-6 flex items-start justify-between gap-4 max-[780px]:flex-col">
         <div>
           <p className="relay-eyebrow mb-2 text-[11px] font-semibold tracking-[0.02em] text-[var(--text-weak)]">
             Workspace
@@ -94,8 +94,8 @@ export function EnvironmentsPage() {
             Environments
           </h1>
           <p className="relay-page-description mt-2.5 max-w-[62ch] text-[15px] leading-[1.55] text-[var(--text-weak)]">
-            Reuse isolated browser Spaces, inspect readiness, and keep reviewed sign-ins on the
-            Relay host.
+            Set up browsers for recording and running Tests. Each Browser Space keeps its own
+            website, storage, and sign-in state.
           </p>
         </div>
         <div className="flex flex-none flex-wrap gap-4">
@@ -133,10 +133,10 @@ export function EnvironmentsPage() {
             <DialogContent showCloseButton={false} className="relay-environment-dialog">
               <DialogTitle>New Browser Space</DialogTitle>
               <DialogDescription>
-                Relay keeps each managed browser isolated. Persistent Spaces retain their local
-                profile between Sessions.
+                A Browser Space is an isolated browser for your Tests. Choose its starting website
+                and whether to keep browser data between sessions.
               </DialogDescription>
-              <form onSubmit={submit}>
+              <form onSubmit={submit} className="grid gap-5">
                 <Field>
                   <FieldLabel htmlFor="space-name">Name</FieldLabel>
                   <Input
@@ -166,7 +166,7 @@ export function EnvironmentsPage() {
                       Keep this browser profile
                     </span>
                     <span className="text-xs leading-snug text-muted-foreground">
-                      Retain local storage and reviewed account fixtures between Sessions.
+                      Keep browser data and saved sign-ins between sessions.
                     </span>
                   </span>
                   <Checkbox
@@ -230,10 +230,11 @@ export function EnvironmentsPage() {
         />
       ) : null}
       {spaces.data?.length ? (
-        <ul className="grid list-none gap-2.5 p-0" aria-label="Browser Spaces">
+        <ul className="mb-6 grid list-none gap-3 p-0" aria-label="Browser Spaces">
           {spaces.data.map((space) => (
             <li key={space.id}>
               <Link
+                className="group flex min-w-0 items-center gap-4 rounded-xl border border-border bg-card p-5 transition-colors hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
                 to="/environments/$profileId"
                 params={{ profileId: space.id }}
                 search={continuation ? { returnTo: rawReturnTo } : undefined}
@@ -244,11 +245,13 @@ export function EnvironmentsPage() {
                 >
                   <Globe2 />
                 </span>
-                <span>
-                  <strong>{space.name}</strong>
-                  <small>{displayHost(space.startUrl)}</small>
-                  <small>
-                    {space.persistent ? "Persistent profile" : "Ephemeral profile"}
+                <span className="grid min-w-0 flex-1 gap-1">
+                  <strong className="text-sm font-semibold wrap-anywhere">{space.name}</strong>
+                  <small className="text-sm text-muted-foreground wrap-anywhere">
+                    {displayHost(space.startUrl)}
+                  </small>
+                  <small className="text-xs text-muted-foreground">
+                    {space.persistent ? "Keeps browser data" : "Fresh browser each session"}
                     {space.environment?.locale ? ` · ${space.environment.locale}` : ""}
                   </small>
                 </span>
@@ -280,8 +283,8 @@ export function EnvironmentsPage() {
       ) : null}
       <section className="min-w-0 rounded-xl border border-border bg-card p-[18px] shadow-sm">
         <div>
-          <h2>Physical devices stay live</h2>
-          <p>
+          <h2 className="text-sm font-semibold">Testing on a phone or tablet?</h2>
+          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
             Connected iOS and Android devices are managed separately because their readiness changes
             with cables, locks, and local tooling.
           </p>

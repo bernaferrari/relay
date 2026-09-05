@@ -356,6 +356,7 @@ export function SuitesPage() {
               return (
                 <li key={`${suite.appMapId}:${suite.id}`}>
                   <Link
+                    className="flex min-h-16 items-center gap-3 rounded-lg border border-border bg-card px-3 py-2.5 focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-[-2px]"
                     to="/apps/$appId/suites/$suiteId"
                     params={{ appId: suite.appMapId, suiteId: suite.id }}
                   >
@@ -365,9 +366,11 @@ export function SuitesPage() {
                     >
                       <Layers3 />
                     </span>
-                    <span>
-                      <strong>{suite.name}</strong>
-                      <small>
+                    <span className="grid min-w-0 gap-0.5">
+                      <strong className="truncate text-sm font-semibold text-foreground">
+                        {suite.name}
+                      </strong>
+                      <small className="truncate text-xs text-muted-foreground">
                         {suite.appName} · {suite.tests.length}{" "}
                         {suite.tests.length === 1 ? "Test" : "Tests"}
                         {suite.variableIds.length
@@ -375,7 +378,9 @@ export function SuitesPage() {
                           : ""}
                       </small>
                     </span>
-                    <OutcomeMark outcome={needsReview ? "needs-review" : "ready"} />
+                    <span className="ml-auto shrink-0">
+                      <OutcomeMark outcome={needsReview ? "needs-review" : "ready"} />
+                    </span>
                   </Link>
                 </li>
               );

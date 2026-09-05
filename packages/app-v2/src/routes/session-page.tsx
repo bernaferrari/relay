@@ -361,30 +361,40 @@ export function SessionPage() {
                 At a glance
               </p>
               <h2>Session details</h2>
-              <dl>
-                <div>
-                  <dt>Target</dt>
-                  <dd>{targetLabel(value)}</dd>
+              <dl className="grid gap-3">
+                <div className="grid gap-0.5">
+                  <dt className="text-xs text-muted-foreground">Target</dt>
+                  <dd className="break-words text-sm font-medium">{targetLabel(value)}</dd>
                 </div>
-                <div>
-                  <dt>Profile</dt>
-                  <dd>{sessionProfileContext(value)}</dd>
+                <div className="grid gap-0.5">
+                  <dt className="text-xs text-muted-foreground">Profile</dt>
+                  <dd className="break-words text-sm font-medium">
+                    {sessionProfileContext(value)}
+                  </dd>
                 </div>
-                <div>
-                  <dt>App</dt>
-                  <dd>{value.appName ?? "Saved app"}</dd>
+                <div className="grid gap-0.5">
+                  <dt className="text-xs text-muted-foreground">App</dt>
+                  <dd className="break-words text-sm font-medium">
+                    {value.appName ?? "Saved app"}
+                  </dd>
                 </div>
-                <div>
-                  <dt>Owner</dt>
-                  <dd>{value.actorKind === "agent" ? "Agent" : "Human"}</dd>
+                <div className="grid gap-0.5">
+                  <dt className="text-xs text-muted-foreground">Owner</dt>
+                  <dd className="break-words text-sm font-medium">
+                    {value.actorKind === "agent" ? "Agent" : "Human"}
+                  </dd>
                 </div>
-                <div>
-                  <dt>Actions</dt>
-                  <dd>{value.take?.actionCount ?? 0}</dd>
+                <div className="grid gap-0.5">
+                  <dt className="text-xs text-muted-foreground">Actions</dt>
+                  <dd className="break-words text-sm font-medium">
+                    {value.take?.actionCount ?? 0}
+                  </dd>
                 </div>
-                <div>
-                  <dt>Evidence</dt>
-                  <dd>{value.take?.evidenceCount ?? 0}</dd>
+                <div className="grid gap-0.5">
+                  <dt className="text-xs text-muted-foreground">Evidence</dt>
+                  <dd className="break-words text-sm font-medium">
+                    {value.take?.evidenceCount ?? 0}
+                  </dd>
                 </div>
               </dl>
               <Collapsible className="mt-[18px]">
@@ -392,18 +402,20 @@ export function SessionPage() {
                   Audit details
                 </CollapsibleTrigger>
                 <CollapsibleContent className="space-y-3 border-t pt-3 text-sm">
-                  <dl>
-                    <div>
-                      <dt>Map ID</dt>
-                      <dd>{value.appMapId}</dd>
+                  <dl className="grid gap-3">
+                    <div className="grid gap-0.5">
+                      <dt className="text-xs text-muted-foreground">Map ID</dt>
+                      <dd className="break-words text-sm font-medium">{value.appMapId}</dd>
                     </div>
-                    <div>
-                      <dt>Actor ID</dt>
-                      <dd>{value.actorId}</dd>
+                    <div className="grid gap-0.5">
+                      <dt className="text-xs text-muted-foreground">Actor ID</dt>
+                      <dd className="break-words text-sm font-medium">{value.actorId}</dd>
                     </div>
-                    <div>
-                      <dt>Device reservation status</dt>
-                      <dd>{value.lease?.status ?? "Unavailable"}</dd>
+                    <div className="grid gap-0.5">
+                      <dt className="text-xs text-muted-foreground">Device reservation status</dt>
+                      <dd className="break-words text-sm font-medium">
+                        {value.lease?.status ?? "Unavailable"}
+                      </dd>
                     </div>
                   </dl>
                 </CollapsibleContent>
@@ -415,16 +427,26 @@ export function SessionPage() {
               </p>
               <h2 id="session-activity-title">Recent operations</h2>
               {value.activity.length ? (
-                <ol>
+                <ol className="mt-4 grid list-none gap-3 p-0">
                   {[...value.activity]
                     .reverse()
                     .slice(0, 12)
                     .map((item) => (
-                      <li key={item.activityId}>
-                        <span aria-hidden="true" />
-                        <div>
-                          <strong>{item.summary}</strong>
-                          <small>{new Date(item.timestamp).toLocaleString()}</small>
+                      <li
+                        className="grid grid-cols-[8px_minmax(0,1fr)] items-start gap-3"
+                        key={item.activityId}
+                      >
+                        <span
+                          className="mt-1.5 size-2 rounded-full bg-primary"
+                          aria-hidden="true"
+                        />
+                        <div className="grid min-w-0 gap-0.5">
+                          <strong className="break-words text-sm font-medium">
+                            {item.summary}
+                          </strong>
+                          <small className="text-xs text-muted-foreground">
+                            {new Date(item.timestamp).toLocaleString()}
+                          </small>
                         </div>
                       </li>
                     ))}

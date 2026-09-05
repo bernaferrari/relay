@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ProductBatchCase } from "@relay/product/run-across";
 import { buildBatchMatrix, selectedClusterCaseIds } from "./batch-triage";
+import { sortBatchCasesForDisplay } from "./batch-triage-panels";
 
 const cases: ProductBatchCase[] = [
   {
@@ -34,6 +35,12 @@ const cases: ProductBatchCase[] = [
 ];
 
 describe("Batch triage presentation", () => {
+  it("sorts individual matrix cases before passed cases without tinting the whole cell", () => {
+    const ordered = sortBatchCasesForDisplay([cases[0]!, { ...cases[1]!, status: "failed" }], true);
+    expect(ordered.map((item) => item.status)).toEqual(["failed", "passed"]);
+    expect(sortBatchCasesForDisplay(ordered, false)).toBe(ordered);
+  });
+
   it("builds a failure-first Test by Environment matrix", () => {
     const matrix = buildBatchMatrix(cases);
     expect(matrix.completeIdentity).toBe(true);

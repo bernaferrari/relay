@@ -27,7 +27,7 @@ export function BatchFailureClusters({
   if (!clusters.length) return null;
   return (
     <section className="relay-batch-clusters mt-8" aria-labelledby="batch-clusters-title">
-      <div className="flex items-end justify-between gap-5 max-[620px]:items-start max-[620px]:gap-3">
+      <div className="flex items-end justify-between gap-5 max-[620px]:flex-col max-[620px]:items-start max-[620px]:gap-2">
         <div>
           <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
             Failure clusters
@@ -89,25 +89,27 @@ export function BatchResultMatrix({
     : matrix.rows;
   return (
     <section className="relay-batch-matrix mt-8" aria-labelledby="batch-matrix-title">
-      <div className="flex items-end justify-between gap-5 max-[620px]:items-start max-[620px]:gap-3">
+      <div className="flex items-end justify-between gap-5 max-[620px]:flex-col max-[620px]:items-start max-[620px]:gap-2">
         <div>
           <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
             Test × Environment
           </p>
-          <h2 id="batch-matrix-title">Execution matrix</h2>
+          <h2 id="batch-matrix-title" className="text-sm font-semibold">
+            Execution matrix
+          </h2>
         </div>
-        <span>
+        <span className="max-w-[48ch] text-xs leading-relaxed text-muted-foreground">
           {matrix.completeIdentity
             ? `${matrix.rows.length} Tests · ${matrix.columns.length} Environments`
-            : "Legacy Batch · partial identity"}
+            : "Some cases have no saved Test or environment identity"}
         </span>
       </div>
       <div className="relay-batch-matrix-scroll mt-3 overflow-auto rounded-xl border border-border bg-card">
-        <table className="min-w-[680px] w-full border-separate border-spacing-0">
+        <table className="min-w-[560px] w-full border-separate border-spacing-0">
           <thead>
             <tr>
               <th
-                className="sticky left-0 z-[1] min-w-[190px] border-r border-b border-border bg-background p-3 text-left text-xs"
+                className="sticky left-0 z-[1] w-[190px] min-w-[140px] max-[620px]:w-[140px] border-r border-b border-border bg-background p-3 text-left text-xs"
                 scope="col"
               >
                 Test
@@ -132,7 +134,7 @@ export function BatchResultMatrix({
             {rows.map((row) => (
               <tr key={row.id}>
                 <th
-                  className="sticky left-0 z-[1] min-w-[190px] border-r border-b border-border bg-background p-3 text-left align-top"
+                  className="sticky left-0 z-[1] w-[190px] min-w-[140px] max-[620px]:w-[140px] border-r border-b border-border bg-background p-3 text-left align-top"
                   scope="row"
                 >
                   <strong className="block truncate font-semibold text-foreground">
@@ -147,15 +149,11 @@ export function BatchResultMatrix({
                   return (
                     <td
                       key={column.id}
-                      className={`min-w-[184px] border-r border-b border-border p-3 align-top ${
-                        cell?.cases.some(isBatchCaseProblem)
-                          ? "relay-batch-matrix-cell--problem bg-red-500/5"
-                          : ""
-                      }`}
+                      className="min-w-[184px] border-r border-b border-border p-3 align-top"
                     >
                       {cell ? (
                         <div className="relay-batch-matrix-cell grid gap-2">
-                          {cell.cases.map((item) => (
+                          {sortBatchCasesForDisplay(cell.cases, failuresOnly).map((item) => (
                             <BatchCaseResult
                               key={item.id}
                               item={item}
@@ -190,7 +188,9 @@ function BatchCaseResult({
 }) {
   const rerunnable = isBatchCaseRerunnable(item);
   return (
-    <div className="relay-batch-result grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2">
+    <div
+      className={`relay-batch-result grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-md p-1 ${isBatchCaseProblem(item) ? "bg-red-500/5" : ""}`}
+    >
       {rerunnable ? (
         <Checkbox
           className="size-6 after:inset-0"
@@ -223,6 +223,16 @@ function BatchCaseResult({
         </Link>
       ) : null}
     </div>
+  );
+}
+
+export function sortBatchCasesForDisplay(
+  cases: readonly ProductBatchCase[],
+  failuresFirst: boolean,
+): readonly ProductBatchCase[] {
+  if (!failuresFirst) return cases;
+  return [...cases].sort(
+    (left, right) => Number(isBatchCaseProblem(right)) - Number(isBatchCaseProblem(left)),
   );
 }
 

@@ -4,6 +4,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { Breadcrumbs } from "../components/product-patterns";
+import { PageHeader } from "../components/page-layout";
 import { RunConfigurationComposer } from "../components/run-configuration-composer";
 import { useRunConfigurationKey } from "../data/use-persisted-run-configuration";
 import { usePersistedRunConfiguration } from "../data/use-persisted-run-configuration";
@@ -57,30 +58,44 @@ export function RunAcrossPage() {
       ]),
     );
   }, [configuration.selection.dataSetIds, setup.data]);
+  const missingDimensions = useMemo(
+    () =>
+      (setup.data?.dataSet.dimensions ?? []).filter(
+        (dimension) => (selected[dimension.id] ?? []).length === 0,
+      ),
+    [selected, setup.data],
+  );
+  const selectionReady = Boolean(
+    setup.data && !valuesUnavailable && missingDimensions.length === 0,
+  );
   const [previewAttempt, setPreviewAttempt] = useState(0);
   const target = useMemo(
     () => targets.data?.find((item) => item.targetId === targetId),
     [targetId, targets.data],
   );
+  const runTarget = useMemo(
+    () => (target ? { ...target, label: target.name } : undefined),
+    [target],
+  );
   const previewResult = useMemo(() => {
-    if (!setup.data || !target || valuesUnavailable)
+    if (!setup.data || !runTarget || !selectionReady)
       return { preview: undefined, error: undefined };
     try {
       return {
-        preview: runAcrossService.preview({ setup: setup.data, selected, target }),
+        preview: runAcrossService.preview({ setup: setup.data, selected, target: runTarget }),
         error: undefined,
       };
     } catch (error) {
       return { preview: undefined, error: errorMessage(error) };
     }
-  }, [previewAttempt, runAcrossService, selected, setup.data, target, valuesUnavailable]);
+  }, [previewAttempt, runAcrossService, selected, setup.data, runTarget, selectionReady]);
   const preview = previewResult.preview;
   const start = useMutation({
     mutationFn: () => {
-      if (!setup.data || !target || configuration.loading || !preview) {
+      if (!setup.data || !runTarget || configuration.loading || !preview) {
         throw new TypeError("Choose a ready device or browser and at least one data value.");
       }
-      return runAcrossService.startPilot({ setup: setup.data, selected, target });
+      return runAcrossService.startPilot({ setup: setup.data, selected, target: runTarget });
     },
     onSuccess: async (batch) => {
       await navigate({ to: "/batches/$batchId", params: { batchId: batch.id } });
@@ -97,17 +112,11 @@ export function RunAcrossPage() {
           { label: "Run with data" },
         ]}
       />
-      <header className="relay-page-header mb-7 flex min-w-0 flex-wrap items-start justify-between gap-5">
-        <p className="relay-eyebrow mb-2 text-[11px] font-semibold tracking-[0.02em] text-[var(--text-weak)]">
-          Run with data
-        </p>
-        <h1 className="text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance] text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance]">
-          Choose cases and a device
-        </h1>
-        <p className="relay-page-description mt-2.5 max-w-[62ch] text-[15px] leading-[1.55] text-[var(--text-weak)]">
-          Run one representative case first. Continue only after you have reviewed its Report.
-        </p>
-      </header>
+      <PageHeader
+        context="Run with data"
+        title="Choose data and where to run"
+        description="Run one selected case first, then review its Report before continuing with the rest."
+      />
       {loading ? <PageLoading label="Loading saved data and available devices…" /> : null}
       <RecordingProblem
         error={setup.error ?? targets.error ?? start.error ?? previewResult.error}
@@ -119,7 +128,7 @@ export function RunAcrossPage() {
         retrying={setup.isFetching || targets.isFetching}
       />
       {!loading && setup.data && !setup.error ? (
-        <div className="mt-[34px] grid gap-6">
+        <div className="grid gap-6">
           <RunConfigurationComposer
             configuration={{
               values: {
@@ -153,7 +162,17 @@ export function RunAcrossPage() {
                       ]
                     : !target
                       ? [{ id: "target", label: "Choose a ready device or browser" }]
-                      : [],
+                      : !selectionReady
+                        ? [
+                            {
+                              id: "values",
+                              label: "Choose values for the remaining data groups",
+                              detail: missingDimensions
+                                .map((dimension) => dimension.name)
+                                .join(", "),
+                            },
+                          ]
+                        : [],
               validated: Boolean(preview),
             }}
             targetOptions={targets.data?.map((item) => ({
@@ -203,7 +222,9 @@ export function RunAcrossPage() {
               </div>
             ) : (
               <p className="relay-action-hint mt-3 text-sm leading-relaxed text-muted-foreground">
-                Choose at least one value and one ready device or browser.
+                {target && missingDimensions.length
+                  ? "Choose at least one value in each data group."
+                  : "Choose at least one value and one ready device or browser."}
               </p>
             )}
             <Button

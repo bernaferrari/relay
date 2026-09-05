@@ -151,15 +151,21 @@ export function AppPage() {
               ) : tests.data?.length ? (
                 <ul className="mt-3 list-none overflow-hidden rounded-lg border border-border bg-card p-0">
                   {tests.data.slice(0, 4).map((test) => (
-                    <li key={test.id}>
-                      <Link to="/tests/$testId" params={{ testId: test.id }}>
-                        <span>
-                          <strong>{test.name}</strong>
-                          <small>
+                    <li key={test.id} className="border-b border-border last:border-b-0">
+                      <Link
+                        className="flex min-h-14 items-center justify-between gap-4 px-3 py-2.5 focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-[-2px]"
+                        to="/tests/$testId"
+                        params={{ testId: test.id }}
+                      >
+                        <span className="grid min-w-0 gap-0.5">
+                          <strong className="truncate text-sm font-semibold text-foreground">
+                            {test.name}
+                          </strong>
+                          <small className="truncate text-xs text-muted-foreground">
                             {test.stepCount} {test.stepCount === 1 ? "step" : "steps"}
                           </small>
                         </span>
-                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary">
+                        <span className="inline-flex shrink-0 items-center gap-1.5 text-xs font-semibold text-primary">
                           Open <span aria-hidden="true">→</span>
                         </span>
                       </Link>
@@ -220,16 +226,24 @@ export function AppPage() {
               ) : recentRuns.length ? (
                 <ul className="mt-3 list-none overflow-hidden rounded-lg border border-border bg-card p-0">
                   {recentRuns.map((run) => (
-                    <li key={run.id}>
-                      <Link to="/runs/$runId" params={{ runId: run.id }}>
-                        <span>
-                          <strong>{run.testName ?? run.title}</strong>
-                          <small>
+                    <li key={run.id} className="border-b border-border last:border-b-0">
+                      <Link
+                        className="flex min-h-14 items-center justify-between gap-3 px-3 py-2.5 focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-[-2px]"
+                        to="/runs/$runId"
+                        params={{ runId: run.id }}
+                      >
+                        <span className="grid min-w-0 gap-0.5">
+                          <strong className="truncate text-sm font-semibold text-foreground">
+                            {run.testName ?? run.title}
+                          </strong>
+                          <small className="truncate text-xs text-muted-foreground">
                             {run.targetName ?? "Device or browser recorded in Report"} ·{" "}
                             {relativeTime(runTime(run))}
                           </small>
                         </span>
-                        <OutcomeMark outcome={run.outcome ?? run.phase} />
+                        <span className="shrink-0">
+                          <OutcomeMark outcome={run.outcome ?? run.phase} />
+                        </span>
                       </Link>
                     </li>
                   ))}
@@ -252,17 +266,27 @@ export function AppPage() {
               </div>
             </header>
             <div className="mt-3 grid grid-cols-2 gap-2.5 max-[780px]:grid-cols-1">
-              <Link to="/versions">
-                <span>
-                  <strong>Versions</strong>
-                  <small>Registered builds and web deployments</small>
+              <Link
+                className="flex min-h-16 items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5 focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)]"
+                to="/versions"
+              >
+                <span className="grid min-w-0 gap-0.5">
+                  <strong className="text-sm font-semibold text-foreground">Versions</strong>
+                  <small className="truncate text-xs text-muted-foreground">
+                    Registered builds and web deployments
+                  </small>
                 </span>
                 <ArrowRight aria-hidden="true" />
               </Link>
-              <Link to="/accounts">
-                <span>
-                  <strong>Accounts</strong>
-                  <small>Reviewed browser sign-ins</small>
+              <Link
+                className="flex min-h-16 items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5 focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)]"
+                to="/accounts"
+              >
+                <span className="grid min-w-0 gap-0.5">
+                  <strong className="text-sm font-semibold text-foreground">Accounts</strong>
+                  <small className="truncate text-xs text-muted-foreground">
+                    Reviewed browser sign-ins
+                  </small>
                 </span>
                 <ArrowRight aria-hidden="true" />
               </Link>

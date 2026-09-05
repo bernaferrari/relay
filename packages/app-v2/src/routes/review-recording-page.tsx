@@ -280,7 +280,42 @@ export function ReviewRecordingPage() {
         description={reviewInstruction(review?.replayRequired, canApprove)}
         actions={
           reviewReady ? (
-            <>
+            <div className="flex max-w-full min-w-0 flex-wrap items-center justify-end gap-2">
+              <div
+                className="grid min-w-0 max-w-full gap-0.5 rounded-lg border border-border bg-muted/40 px-3 py-2"
+                role="status"
+                aria-label="Verification status"
+              >
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Verification
+                </span>
+                <strong className="max-w-[22ch] truncate text-xs">
+                  {replayTitle(review?.latestReplay?.outcome, review?.replayRequired, canApprove)}
+                </strong>
+              </div>
+              {canApprove ? (
+                <Button
+                  variant="default"
+                  onClick={() =>
+                    transition.mutate({ action: "approve", testName: testName.trim() })
+                  }
+                  disabled={transition.isPending || !testName.trim()}
+                >
+                  <Save aria-hidden="true" />
+                  {transition.isPending && transition.variables?.action === "approve"
+                    ? "Saving…"
+                    : "Save Test"}
+                </Button>
+              ) : allowed.has("replay") ? (
+                <Button
+                  variant="default"
+                  onClick={() => transition.mutate({ action: "replay" })}
+                  disabled={transition.isPending}
+                >
+                  <RotateCcw aria-hidden="true" />
+                  {transition.isPending ? "Replaying…" : "Replay recording"}
+                </Button>
+              ) : null}
               <Button
                 variant="outline"
                 disabled={
@@ -312,7 +347,7 @@ export function ReviewRecordingPage() {
                       : undefined
                 }
               />
-            </>
+            </div>
           ) : undefined
         }
       />
@@ -597,49 +632,9 @@ export function ReviewRecordingPage() {
                       </Button>
                     ) : null}
                   </Field>
-                  <div className="grid gap-1 rounded-lg border border-border bg-muted/40 p-3">
-                    <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
-                      Verification
-                    </p>
-                    <h2>
-                      {replayTitle(
-                        review?.latestReplay?.outcome,
-                        review?.replayRequired,
-                        canApprove,
-                      )}
-                    </h2>
-                    <p className="text-xs leading-normal text-muted-foreground">
-                      {replayDetail(review?.latestReplay?.outcome, canApprove)}
-                    </p>
-                  </div>
-
-                  {canApprove ? (
-                    <Button
-                      variant="default"
-                      onClick={() =>
-                        transition.mutate({ action: "approve", testName: testName.trim() })
-                      }
-                      disabled={transition.isPending || !testName.trim()}
-                    >
-                      <Save aria-hidden="true" />
-                      {transition.isPending && transition.variables?.action === "approve"
-                        ? "Saving…"
-                        : "Save Test"}
-                    </Button>
-                  ) : allowed.has("replay") ? (
-                    <Button
-                      variant="default"
-                      onClick={() => transition.mutate({ action: "replay" })}
-                      disabled={transition.isPending}
-                    >
-                      <RotateCcw aria-hidden="true" />
-                      {transition.isPending ? "Replaying…" : "Replay recording"}
-                    </Button>
-                  ) : (
-                    <p className="text-xs text-muted-foreground" role="status">
-                      Waiting for Relay to make the next review action available.
-                    </p>
-                  )}
+                  <p className="text-xs leading-normal text-muted-foreground">
+                    {replayDetail(review?.latestReplay?.outcome, canApprove)}
+                  </p>
                   {allowed.has("replay") && review?.replayRequired ? (
                     <p className="text-xs text-muted-foreground">
                       A passing replay is required before saving.

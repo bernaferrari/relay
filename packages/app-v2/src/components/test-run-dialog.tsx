@@ -100,16 +100,16 @@ export function TestRunDialog({ test }: { test: ProductTestSummary }) {
               return (
                 <FieldLabel
                   key={`${target.kind}:${target.targetId}`}
-                  className="flex min-h-14 items-center gap-3 rounded-lg border border-border bg-card px-3 py-2"
+                  className="flex min-h-14 w-full min-w-0 items-center gap-3 rounded-lg border border-border bg-card px-3 py-2"
                 >
+                  <span className="min-w-0 flex-1 wrap-anywhere">
+                    <strong className="block">{label.title}</strong>
+                    <small className="block text-muted-foreground">{label.detail}</small>
+                  </span>
                   <RadioGroupItem
                     value={target.targetId}
                     disabled={start.isPending || Boolean(recoveryRun)}
                   />
-                  <span>
-                    <strong>{label.title}</strong>
-                    <small className="block text-muted-foreground">{label.detail}</small>
-                  </span>
                 </FieldLabel>
               );
             })}

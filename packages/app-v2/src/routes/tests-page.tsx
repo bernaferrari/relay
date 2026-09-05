@@ -346,7 +346,7 @@ export function TestsPage() {
       </Dialog>
 
       <div
-        className="mt-6 grid gap-3 md:grid-cols-2 md:items-end min-[1100px]:grid-cols-[minmax(12rem,1fr)_9rem_9rem_10rem]"
+        className="mt-6 grid gap-3 md:grid-cols-2 md:items-end min-[1280px]:grid-cols-[minmax(16rem,2fr)_minmax(9rem,1fr)_minmax(9rem,1fr)_minmax(10rem,1fr)]"
         aria-label="Filter Tests"
       >
         <div className="grid min-w-0 gap-1.5">

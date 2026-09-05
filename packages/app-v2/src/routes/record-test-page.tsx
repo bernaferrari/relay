@@ -287,7 +287,7 @@ function RecordingWorkspace({
           />
           <div>
             <p>{captureReady ? "Recording" : "Restoring recording"}</p>
-            <h1 className="text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance] text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance]">
+            <h1 className="text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance]">
               {snapshot?.title ?? "Preparing Test"}
             </h1>
           </div>
@@ -339,23 +339,30 @@ function RecordingWorkspace({
               </div>
               {recordedActions.length ? (
                 <ScrollArea className="min-h-0">
-                  <ol>
+                  <ol className="grid list-none gap-1.5 p-3">
                     {recordedActions.map((recorded, index) => (
-                      <li key={recorded.id}>
+                      <li
+                        className="grid grid-cols-[18px_minmax(0,1fr)_auto] items-start gap-2 rounded-md px-1 py-1.5"
+                        key={recorded.id}
+                      >
                         {recorded.stepCount === 0 ? (
                           <CheckCircle2 aria-hidden="true" />
                         ) : (
                           <Circle aria-hidden="true" />
                         )}
-                        <span>
-                          <strong>{recorded.label ?? recorded.intent}</strong>
-                          <small>
+                        <span className="grid min-w-0 gap-0.5">
+                          <strong className="break-words text-sm font-medium leading-snug">
+                            {recorded.label ?? recorded.intent}
+                          </strong>
+                          <small className="text-xs text-muted-foreground">
                             {recorded.stepCount === 0
                               ? "Checkpoint"
                               : `${recorded.stepCount} ${recorded.stepCount === 1 ? "interaction" : "interactions"}`}
                           </small>
                         </span>
-                        <span>{index + 1}</span>
+                        <span className="pt-0.5 text-xs tabular-nums text-muted-foreground">
+                          {index + 1}
+                        </span>
                       </li>
                     ))}
                   </ol>

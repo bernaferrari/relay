@@ -314,18 +314,20 @@ export function DevicePage() {
                 <h2 id="device-details-title">Device details</h2>
               </div>
             </div>
-            <dl>
-              <div>
-                <dt>Platform</dt>
-                <dd>{productPlatform(device.data)}</dd>
+            <dl className="grid gap-3 max-[560px]:grid-cols-2">
+              <div className="grid gap-0.5">
+                <dt className="text-xs text-muted-foreground">Platform</dt>
+                <dd className="break-words text-sm font-medium">{productPlatform(device.data)}</dd>
               </div>
-              <div>
-                <dt>Software</dt>
-                <dd>{device.data.osVersion ?? "Reported by the device when available"}</dd>
+              <div className="grid gap-0.5">
+                <dt className="text-xs text-muted-foreground">Software</dt>
+                <dd className="break-words text-sm font-medium">
+                  {device.data.osVersion ?? "Reported by the device when available"}
+                </dd>
               </div>
-              <div>
-                <dt>Type</dt>
-                <dd>{device.data.kind ?? "Device"}</dd>
+              <div className="grid gap-0.5">
+                <dt className="text-xs text-muted-foreground">Type</dt>
+                <dd className="break-words text-sm font-medium">{device.data.kind ?? "Device"}</dd>
               </div>
             </dl>
           </section>

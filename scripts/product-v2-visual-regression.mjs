@@ -76,7 +76,7 @@ const fixtures = [
   { id: "device-detail", heading: "Pixel 9 Pro XL" },
   { id: "changes-list", heading: "Change verification" },
   { id: "change-detail", heading: "Keep Arabic settings readable" },
-  { id: "run-across", heading: "Choose cases and a device" },
+  { id: "run-across", heading: "Choose data and where to run" },
   { id: "settings-general", heading: "General" },
   { id: "settings-evidence", heading: "Evidence & privacy" },
   { id: "settings-integrations", heading: "Integrations" },

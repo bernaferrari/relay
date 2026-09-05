@@ -52,6 +52,35 @@ const previewTarget = {
   platform: "browser" as const,
   targetId: "checkout-browser",
 };
+
+function paintPrerecordCanvas(canvas: HTMLCanvasElement): void {
+  canvas.width = 768;
+  canvas.height = 512;
+  const context = canvas.getContext("2d");
+  if (!context) return;
+  context.fillStyle = "#f5f6f8";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.fillStyle = "#ffffff";
+  context.fillRect(92, 46, 584, 420);
+  context.fillStyle = "#171719";
+  context.font = "600 28px system-ui";
+  context.fillText("Checkout", 132, 104);
+  context.fillStyle = "#62636a";
+  context.font = "18px system-ui";
+  context.fillText("Order summary", 132, 150);
+  context.fillStyle = "#e5e7eb";
+  context.fillRect(132, 184, 504, 2);
+  context.fillStyle = "#171719";
+  context.font = "600 22px system-ui";
+  context.fillText("Total", 132, 240);
+  context.fillText("$84.00", 548, 240);
+  context.fillStyle = "#171719";
+  context.fillRect(132, 322, 504, 64);
+  context.fillStyle = "#ffffff";
+  context.font = "600 20px system-ui";
+  context.fillText("Place order", 330, 362);
+}
+
 const defaultRecordingService = {
   listApps: async () => {
     if (fixture === "apps-error") throw new Error("Relay is offline");
@@ -175,8 +204,9 @@ const defaultRecordingService = {
         listener(current);
         return () => listeners.delete(listener);
       },
-      mount() {
+      mount(canvas: HTMLCanvasElement) {
         if (fixture === "prerecord-ready") {
+          paintPrerecordCanvas(canvas);
           current = { status: "streaming", target: previewTarget };
           for (const listener of listeners) listener(current);
         }

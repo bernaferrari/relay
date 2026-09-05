@@ -2,14 +2,6 @@
 import { ScrollArea } from "@relay/ui-react/components/scroll-area";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@relay/ui-react/components/alert";
 import { Button } from "@relay/ui-react/components/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@relay/ui-react/components/card";
 import { Field, FieldDescription, FieldLabel, FieldTitle } from "@relay/ui-react/components/field";
 import { RadioGroup, RadioGroupItem } from "@relay/ui-react/components/radio-group";
 import { Skeleton } from "@relay/ui-react/components/skeleton";
@@ -29,7 +21,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { LiveTargetSession, LiveTargetStatus } from "../data/live-target-session";
 import { recordingQueryKeys } from "../data/recording-queries";
 import { newTestSetupContinuation } from "../data/setup-continuation";
-import { FormPage } from "../components/page-layout";
+import { LibraryPage } from "../components/page-layout";
 import {
   clearWorkflowPointerIfCurrent,
   readWorkflowPointer,
@@ -236,9 +228,8 @@ export function NewTestPage() {
       {apps.data?.map((app) => (
         <FieldLabel
           key={app.id}
-          className="flex min-h-14 min-w-0 cursor-pointer items-center gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50"
+          className="flex min-h-14 w-full min-w-0 cursor-pointer items-center gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50"
         >
-          <RadioGroupItem value={app.id} />
           <span
             className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground [&_svg]:size-4 [&_svg]:shrink-0"
             aria-hidden="true"
@@ -249,13 +240,14 @@ export function NewTestPage() {
             <span className="truncate text-sm font-medium text-foreground">{app.name}</span>
             <span className="truncate text-xs leading-snug text-muted-foreground">Saved App</span>
           </span>
+          <RadioGroupItem value={app.id} />
         </FieldLabel>
       ))}
     </RadioGroup>
   );
 
   return (
-    <FormPage className="relay-new-test-page">
+    <LibraryPage className="relay-new-test-page">
       <Link
         className="relay-back-link mb-3 mt-[-10px] inline-flex min-h-11 items-center gap-2 text-[13px] font-semibold text-[var(--text-weak)] focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2"
         to="/tests"
@@ -268,8 +260,7 @@ export function NewTestPage() {
             Record a Test
           </h1>
           <p className="relay-page-description mt-2.5 max-w-[62ch] text-[15px] leading-[1.55] text-[var(--text-weak)]">
-            Choose one recognizable journey and where to record it. Relay handles the technical
-            setup.
+            Interact with your app to capture a Test. Review and name it when you are done.
           </p>
         </div>
       </header>
@@ -325,16 +316,10 @@ export function NewTestPage() {
       !targets.isError &&
       !targets.data?.recovery &&
       !activePointer.data ? (
-        <div className="relay-new-test-layout mt-[34px] grid grid-cols-[minmax(0,900px)] items-start">
+        <div className="relay-new-test-layout mt-7">
           <form className="relay-recording-form m-0 max-w-none gap-0" onSubmit={submit}>
-            <Card className="relay-new-test-card overflow-hidden">
-              <CardHeader className="px-[22px] pb-0 pt-[22px]">
-                <CardTitle>Choose where to record</CardTitle>
-                <CardDescription>
-                  Position the app first. You will name the Test after recording.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="relay-new-test-fields grid grid-cols-[minmax(280px,360px)_minmax(0,1fr)] items-start gap-x-8 gap-y-5 px-[22px] pb-[26px] pt-6">
+            <div className="relay-new-test-card">
+              <div className="relay-new-test-fields grid grid-cols-[260px_minmax(0,1fr)] items-start gap-6 min-[620px]:max-[1100px]:grid-cols-2 max-[619px]:grid-cols-1">
                 {startsFromPath ? (
                   <Alert variant="default">
                     <Check />
@@ -437,9 +422,8 @@ export function NewTestPage() {
                         return (
                           <FieldLabel
                             key={`${target.kind}:${target.targetId}`}
-                            className="flex min-h-14 min-w-0 cursor-pointer items-center gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50"
+                            className="flex min-h-14 w-full min-w-0 cursor-pointer items-center gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50"
                           >
-                            <RadioGroupItem value={target.targetId} />
                             <span
                               className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground [&_svg]:size-4 [&_svg]:shrink-0"
                               aria-hidden="true"
@@ -454,6 +438,7 @@ export function NewTestPage() {
                                 {label.detail}
                               </span>
                             </span>
+                            <RadioGroupItem value={target.targetId} />
                           </FieldLabel>
                         );
                       })}
@@ -463,18 +448,23 @@ export function NewTestPage() {
 
                 {selectedTarget ? (
                   <section
-                    className="relay-prerecord-workspace col-start-2 row-span-3 row-start-1 grid gap-3 border-l border-border pl-7"
+                    className="relay-prerecord-workspace min-[1101px]:col-start-2 min-[1101px]:row-span-3 min-[1101px]:row-start-1 grid min-w-0 gap-4 rounded-xl border border-border bg-card p-5 max-[1100px]:col-span-full max-[520px]:p-3"
                     aria-labelledby="prerecord-title"
                   >
-                    <div className="relay-prerecord-heading grid items-start gap-2.5">
+                    <div className="relay-prerecord-heading flex flex-wrap items-start justify-between gap-4">
                       <div>
                         <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
-                          Starting point
+                          Live preview
                         </p>
-                        <h2 id="prerecord-title">Put the app where recording should begin</h2>
+                        <h2 id="prerecord-title" className="mt-1 text-base font-semibold">
+                          Position your app
+                        </h2>
+                        <p className="mt-1 max-w-[45ch] text-sm leading-relaxed text-muted-foreground">
+                          Nothing is recorded yet. Go to your starting screen, then start recording.
+                        </p>
                       </div>
                       <div className="relay-prerecord-actions flex shrink-0 items-center gap-2">
-                        <Button type="submit" variant="default" size="sm" disabled={!formReady}>
+                        <Button type="submit" variant="default" disabled={!formReady}>
                           <Play aria-hidden="true" />
                           {begin.isPending ? "Starting…" : "Start recording"}
                         </Button>
@@ -500,8 +490,8 @@ export function NewTestPage() {
                     />
                   </section>
                 ) : null}
-              </CardContent>
-              <CardFooter className="relay-form-actions flex flex-wrap items-center gap-2.5 min-h-[70px] justify-start gap-2">
+              </div>
+              <div className="relay-form-actions mt-5 flex min-h-11 flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
                 <Button nativeButton={false} render={<Link to="/tests" />} variant="ghost">
                   Cancel
                 </Button>
@@ -519,12 +509,12 @@ export function NewTestPage() {
                     "Choose an app and target"
                   )}
                 </span>
-              </CardFooter>
-            </Card>
+              </div>
+            </div>
           </form>
         </div>
       ) : null}
-    </FormPage>
+    </LibraryPage>
   );
 }
 

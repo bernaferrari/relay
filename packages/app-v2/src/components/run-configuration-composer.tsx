@@ -148,8 +148,8 @@ export function RunConfigurationComposer({
                   key={option.id}
                   className="relay-config-option flex min-h-12 w-full min-w-0 cursor-pointer items-center gap-3 rounded-lg border border-border p-3 has-data-checked:border-ring has-data-checked:bg-accent"
                 >
-                  <RadioGroupItem value={option.id} />
                   {optionCopy(option)}
+                  <RadioGroupItem value={option.id} />
                 </FieldLabel>
               ))}
             </RadioGroup>

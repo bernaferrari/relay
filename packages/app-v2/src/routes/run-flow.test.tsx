@@ -6,6 +6,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RelayV2App } from "../app";
 import type { RecordingProductService } from "../data/recording-product-service";
+import type { RunAcrossProductService } from "../data/run-across-product-service";
 import type { ProductRunReportOverview, RunProductService } from "../data/run-product-service";
 import type { Platform } from "../platform/types";
 
@@ -274,7 +275,12 @@ function platformWithStorage(initial: Record<string, string> = {}) {
   return { platform, values };
 }
 
-async function renderRun(path: string, runService: RunProductService, platform: Platform) {
+async function renderRun(
+  path: string,
+  runService: RunProductService,
+  platform: Platform,
+  runAcrossService?: RunAcrossProductService,
+) {
   const history = createMemoryHistory({ initialEntries: [path] });
   const host = document.createElement("div");
   document.body.append(host);
@@ -287,6 +293,7 @@ async function renderRun(path: string, runService: RunProductService, platform: 
         history={history}
         productService={recordingService}
         runService={runService}
+        runAcrossService={runAcrossService}
       />,
     );
   });
@@ -314,6 +321,66 @@ async function click(element: HTMLElement) {
 }
 
 describe("Run and Report", () => {
+  it("waits for every data dimension before previewing and labels the selected target", async () => {
+    const fake = fakeRunService();
+    const preview = vi.fn((input) => ({
+      selected: input.selected,
+      target: input.target,
+      caseCount: 1,
+      pilot: {},
+      scopeLabel: `1 case on ${input.target.label}`,
+    }));
+    const runAcross = {
+      getSetup: vi.fn(async () => ({
+        appMapId: "settings-language-proof",
+        appMapRevision: 1,
+        testId: "test-1",
+        testName: "Change the app language",
+        appName: "Settings Language Proof",
+        dataSet: {
+          name: "Locale matrix",
+          dimensions: [
+            {
+              id: "language",
+              name: "Language",
+              values: [{ id: "en", label: "English" }],
+            },
+            {
+              id: "region",
+              name: "Region",
+              values: [{ id: "us", label: "United States" }],
+            },
+          ],
+        },
+      })),
+      preview,
+    } as unknown as RunAcrossProductService;
+    await renderRun(
+      "/tests/test-1/run-across",
+      fake.service,
+      platformWithStorage().platform,
+      runAcross,
+    );
+
+    const target = document.querySelector<HTMLInputElement>('input[value="browser-golden"]');
+    if (!target) throw new Error("Browser target option not found");
+    await click(target);
+    expect(preview).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain("Choose values for the remaining data groups");
+
+    const values = [...document.querySelectorAll<HTMLElement>('[role="checkbox"]')];
+    expect(values).toHaveLength(2);
+    await click(values[0]!.closest("label") ?? values[0]!);
+    expect(preview).not.toHaveBeenCalled();
+    expect(values[0]?.getAttribute("aria-checked")).toBe("true");
+
+    await click(values[1]!.closest("label") ?? values[1]!);
+    expect(values[1]?.getAttribute("aria-checked")).toBe("true");
+    expect(preview).toHaveBeenCalledTimes(1);
+    expect(preview.mock.calls[0]?.[0].target.label).toBe("Checkout browser");
+    expect(document.body.textContent).toContain("1 case on Checkout browser");
+  });
+
   it("selects the only ready target so a Test can run immediately", async () => {
     const fake = fakeRunService();
     fake.service.listTargets = async () => [

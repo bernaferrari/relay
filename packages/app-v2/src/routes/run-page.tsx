@@ -393,50 +393,9 @@ function RunReport({
           role={views.length > 1 ? "tabpanel" : undefined}
           aria-labelledby={views.length > 1 ? "report-tab-overview" : undefined}
         >
-          <RunContextFacts
-            report={report}
-            duration={
-              report.durationMs === undefined ? "Not recorded" : formatDuration(report.durationMs)
-            }
-          />
-          <RunConfigurationComposer
-            configuration={{
-              frozen: true,
-              validated: true,
-              values: {
-                sourceRevision: report.executionContext?.sourceRevision,
-                buildId: report.executionContext?.buildId,
-                targetProfileId: report.executionContext?.targetProfileId,
-                targetName: report.targetName,
-                browserProfile: report.executionContext?.browser,
-              },
-            }}
-          />
-
-          {report.timeline.length || report.evidence.length ? (
-            <RunWorkbench
-              report={report}
-              selectedStepIndex={selectedStepIndex}
-              renderEvidence={(section) => <EvidencePreview section={section} />}
-              onSelectStep={(index) => {
-                const selected = report.timeline[index];
-                void navigate({
-                  search: (previous) => ({
-                    ...previous,
-                    step: String(index + 1),
-                    at: selected?.startedAt === undefined ? undefined : String(selected.startedAt),
-                    attempt: selected?.attempt === undefined ? undefined : String(selected.attempt),
-                  }),
-                });
-              }}
-            />
-          ) : null}
-
-          <RunReviewControls runId={report.runId} service={runService} />
-
           {failure ? (
             <Alert
-              className="mt-7 grid max-w-[760px] grid-cols-[20px_minmax(0,1fr)_auto]"
+              className="grid max-w-[760px] grid-cols-[20px_minmax(0,1fr)_auto] max-[620px]:grid-cols-[20px_minmax(0,1fr)]"
               variant="destructive"
               aria-labelledby="causal-failure-title"
             >
@@ -460,18 +419,69 @@ function RunReport({
                   ) : null}
                 </AlertAction>
               ) : null}
-              <Collapsible className="col-start-2 col-end-[-1]">
+              <Collapsible className="col-start-2 col-end-[-1] max-[620px]:col-end-[-1]">
                 <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 py-2 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
                   Technical details
                 </CollapsibleTrigger>
                 <CollapsibleContent className="border-t pt-3">
-                  <ScrollArea className="col-start-2 col-end-[-1] max-h-[180px] overflow-auto">
+                  <ScrollArea className="max-h-[180px] overflow-auto">
                     <pre>{failure}</pre>
                   </ScrollArea>
                 </CollapsibleContent>
               </Collapsible>
             </Alert>
           ) : null}
+          <RunContextFacts
+            report={report}
+            duration={
+              report.durationMs === undefined ? "Not recorded" : formatDuration(report.durationMs)
+            }
+          />
+          <Collapsible className="grid gap-3">
+            <CollapsibleTrigger className="group flex w-full items-center justify-between gap-3 rounded-lg border border-border bg-muted/30 px-4 py-3 text-left text-sm font-semibold text-foreground transition-colors hover:bg-muted/60">
+              Recorded configuration
+              <ChevronRight
+                aria-hidden="true"
+                className="size-4 shrink-0 group-aria-expanded:rotate-90"
+              />
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <RunConfigurationComposer
+                configuration={{
+                  frozen: true,
+                  validated: true,
+                  values: {
+                    sourceRevision: report.executionContext?.sourceRevision,
+                    buildId: report.executionContext?.buildId,
+                    targetProfileId: report.executionContext?.targetProfileId,
+                    targetName: report.targetName,
+                    browserProfile: report.executionContext?.browser,
+                  },
+                }}
+              />
+            </CollapsibleContent>
+          </Collapsible>
+
+          {report.timeline.length || report.evidence.length ? (
+            <RunWorkbench
+              report={report}
+              selectedStepIndex={selectedStepIndex}
+              renderEvidence={(section) => <EvidencePreview section={section} />}
+              onSelectStep={(index) => {
+                const selected = report.timeline[index];
+                void navigate({
+                  search: (previous) => ({
+                    ...previous,
+                    step: String(index + 1),
+                    at: selected?.startedAt === undefined ? undefined : String(selected.startedAt),
+                    attempt: selected?.attempt === undefined ? undefined : String(selected.attempt),
+                  }),
+                });
+              }}
+            />
+          ) : null}
+
+          <RunReviewControls runId={report.runId} service={runService} />
 
           {firstEvidenceIsDistinct && report.firstEvidence ? (
             <section

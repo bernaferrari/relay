@@ -64,9 +64,15 @@ export function RecordingEvidencePanel({
           After
         </button>
       </div>
-      <div className="mt-2.5 grid aspect-[4/5] place-items-center overflow-hidden rounded-lg border border-border bg-[oklch(0.19_0.008_255)] bg-[image:radial-gradient(circle_at_50%_20%,color-mix(in_srgb,white_7%,transparent),transparent_42%)]">
+      <div
+        className={`mt-2.5 grid place-items-center overflow-hidden rounded-lg border border-border bg-[oklch(0.19_0.008_255)] bg-[image:radial-gradient(circle_at_50%_20%,color-mix(in_srgb,white_7%,transparent),transparent_42%)] ${previewUrl ? "aspect-[4/5] max-h-[420px]" : "min-h-[180px] max-h-[220px]"}`}
+      >
         {previewUrl ? (
-          <img src={previewUrl} alt={`${evidenceRole} evidence for ${action?.intent}`} />
+          <img
+            className="max-h-full w-full object-contain"
+            src={previewUrl}
+            alt={`${evidenceRole} evidence for ${action?.intent}`}
+          />
         ) : (
           <div className="grid max-w-[22ch] justify-items-center gap-2 p-6 text-center text-[oklch(0.8_0.008_255)]">
             <Target aria-hidden="true" />
@@ -133,15 +139,15 @@ export function RecordingActionsPanel({
       className="min-w-0 overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-sm"
       aria-labelledby="recording-actions-title"
     >
-      <div className="flex min-h-[72px] flex-wrap items-center justify-between gap-3.5 border-b border-border px-4 py-3">
-        <div>
+      <div className="flex min-h-[72px] min-w-0 flex-wrap items-center justify-between gap-3.5 border-b border-border px-4 py-3">
+        <div className="min-w-0">
           <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
             Journey
           </p>
           <h2 id="recording-actions-title">{recordedMomentCount(actions.length)}</h2>
         </div>
-        <div className="flex items-center justify-end gap-2">
-          <span className="whitespace-nowrap text-[11px] text-muted-foreground">
+        <div className="flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2">
+          <span className="max-w-full truncate text-[11px] text-muted-foreground">
             {captureSummary(actions)}
           </span>
           <Button
