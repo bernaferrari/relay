@@ -6,7 +6,6 @@ import {
   DialogDescription,
 } from "@relay/ui-react/components/dialog";
 import { ScrollArea } from "@relay/ui-react/components/scroll-area";
-import { Input } from "@relay/ui-react/components/input";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter, useRouteContext } from "@tanstack/react-router";
 import {
@@ -231,15 +230,15 @@ export function CommandPalette({
       <DialogContent
         finalFocus={returnFocus}
         showCloseButton={false}
-        className="relay-command-palette w-[min(620px,calc(100vw-32px))] max-h-[min(620px,calc(100dvh-48px))] overflow-hidden rounded-[var(--radius-xl)] p-0 shadow-[var(--shadow-lg)]"
+        className="relay-command-palette w-[min(560px,calc(100vw-32px))] max-h-[min(620px,calc(100dvh-48px))] gap-0 overflow-hidden rounded-[var(--radius-xl)] p-0 shadow-[var(--shadow-lg)]"
       >
         <DialogTitle className="relay-visually-hidden sr-only">Relay commands</DialogTitle>
         <DialogDescription className="relay-visually-hidden sr-only">
           Search destinations and common product actions.
         </DialogDescription>
-        <div className="relay-command-search grid min-h-[58px] grid-cols-[20px_minmax(0,1fr)_auto] items-center gap-[9px] border-b border-[var(--border-weak-base)] px-4 py-2">
-          <Search aria-hidden="true" />
-          <Input
+        <div className="relay-command-search flex min-h-14 items-center gap-3 border-b border-[var(--border-weak-base)] px-4">
+          <Search className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <input
             autoFocus
             aria-label="Search commands"
             role="combobox"
@@ -253,13 +252,13 @@ export function CommandPalette({
             aria-activedescendant={
               commands[activeIndex] ? `relay-command-${commands[activeIndex].id}` : undefined
             }
-            className="relay-input min-h-9 w-full rounded-[var(--radius-md)] border border-[var(--border-base)] bg-[var(--background-strong)] px-3 text-base text-[var(--text-strong)] shadow-[0_1px_2px_color-mix(in_srgb,black_5%,transparent)] placeholder:text-[var(--text-weaker)] focus-visible:border-[var(--relay-focus-ring)] focus-visible:outline-3 focus-visible:outline-[color-mix(in_srgb,var(--relay-focus-ring)_24%,transparent)] focus-visible:outline-offset-1 min-h-[42px] border-0 bg-transparent p-0 text-base shadow-none focus-visible:outline-0"
+            className="relay-command-search-input h-14 min-w-0 flex-1 bg-transparent text-[15px] leading-5 text-foreground outline-none placeholder:text-muted-foreground"
           />
-          <kbd className="min-w-7 rounded-[var(--radius-sm)] border border-[var(--border-weak-base)] bg-[var(--background-weak)] px-[5px] py-0.5 text-center text-[10px] leading-[1.4] text-[var(--text-weaker)]">
+          <kbd className="rounded-[var(--radius-sm)] border border-[var(--border-weak-base)] px-1.5 py-0.5 text-[10px] leading-[1.4] text-muted-foreground">
             Esc
           </kbd>
         </div>
-        <ScrollArea className="relay-command-results max-h-[min(480px,calc(100dvh-150px))] p-1.5">
+        <ScrollArea className="relay-command-results max-h-[min(480px,calc(100dvh-150px))] p-2">
           <div
             id="relay-command-results"
             role="listbox"
@@ -288,14 +287,17 @@ export function CommandPalette({
                 <button
                   role="option"
                   type="button"
-                  className={`relay-command-item flex min-h-11 w-full items-center gap-2.5 rounded-[var(--radius-md)] px-2.5 py-1.5 text-left text-sm${index === activeIndex ? " relay-command-item--active bg-[var(--surface-base-active)]" : ""}`}
+                  className={`relay-command-item flex min-h-11 w-full items-center gap-3 rounded-[var(--radius-md)] px-2.5 py-2 text-left text-[13px]${index === activeIndex ? " relay-command-item--active bg-[var(--surface-base-active)]" : ""}`}
                   key={command.id}
                   id={`relay-command-${command.id}`}
                   aria-selected={index === activeIndex}
                   onMouseEnter={() => setActiveIndex(index)}
                   onClick={() => choose(command)}
                 >
-                  <command.icon className="h-[17px] w-[17px] shrink-0" aria-hidden="true" />
+                  <command.icon
+                    className="size-4 shrink-0 text-muted-foreground"
+                    aria-hidden="true"
+                  />
                   <span className="flex min-w-0 flex-1 flex-col">
                     <strong className="overflow-hidden text-ellipsis whitespace-nowrap font-medium">
                       {command.label}

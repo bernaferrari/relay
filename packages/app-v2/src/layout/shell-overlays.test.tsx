@@ -273,6 +273,8 @@ describe("shell overlays", () => {
 
     const input = document.querySelector<HTMLInputElement>('input[aria-label="Search commands"]');
     expect(input).toBeTruthy();
+    expect(input?.className).toContain("bg-transparent");
+    expect(input?.className).not.toContain("border-input");
     expect(input?.getAttribute("role")).toBe("combobox");
     expect(input?.getAttribute("aria-controls")).toBe("relay-command-results");
     expect(input?.getAttribute("aria-autocomplete")).toBe("list");
