@@ -633,6 +633,21 @@ const browserSpacesService = {
     },
   ],
   listAuthenticationFixtures: async () => fixtureProfile.authenticationOptions,
+  createSpace: async (input: { name: string; startUrl: string; profileRetention?: "retain" | "ephemeral" }) => ({
+    id: "checkout-new-browser",
+    name: input.name,
+    startUrl: input.startUrl,
+    createdAt: FIXTURE_TIME,
+    updatedAt: FIXTURE_TIME,
+    profileRetention: input.profileRetention ?? "ephemeral",
+    persistent: input.profileRetention === "retain",
+    source: { kind: "managed-browser-target" as const, id: "checkout-new-browser" },
+  }),
+  openSpace: async (spaceId: string) => ({
+    targetId: spaceId,
+    name: spaceId === "checkout-guest" ? "Guest checkout" : "Checkout staging",
+    url: "https://checkout.example",
+  }),
 } as unknown as BrowserSpacesProductService;
 const fixtureSession = {
   id: "session-checkout",

@@ -398,15 +398,18 @@ describe("record, review, replay, and save", () => {
     await renderJourney("/tests/new?app=app-1", fake.service, platformWithStorage().platform);
 
     expect(document.querySelector('[aria-label="App"]')?.textContent).toContain("Grok");
-    expect(document.querySelector('[aria-label="Record on"]')?.textContent).toContain(
-      "Choose a device",
-    );
+    expect(document.querySelector('[aria-label="Record on"]')).toBeNull();
     expect(document.body.textContent).toContain("Start a browser to record");
     expect(document.body.textContent).toContain("Start a browser");
     expect(document.body.textContent).not.toContain("Open devices");
     expect(document.body.textContent).not.toContain("Manage browser Spaces");
     expect(document.body.textContent).not.toContain("Where this Test belongs");
-    expect(button("Start recording").disabled).toBe(true);
+    expect(document.body.textContent).not.toContain("Stay on this page");
+    expect(
+      [...document.querySelectorAll("button")].some(
+        (item) => item.textContent?.trim() === "Start recording",
+      ),
+    ).toBe(false);
   });
 
   it("starts a browser on this page instead of sending the user away", async () => {
@@ -482,6 +485,80 @@ describe("record, review, replay, and save", () => {
       "checkout.example",
     );
     expect(button("Start recording").disabled).toBe(false);
+  });
+
+  it("opens a saved browser without leaking host errors", async () => {
+    const fake = fakeService();
+    const ready = {
+      kind: "browser" as const,
+      platform: "browser" as const,
+      targetId: "checkout-staging",
+    };
+    fake.service.connect = async () =>
+      fake.calls.includes("open-browser")
+        ? { status: "target-selection", targets: [ready], selectedTarget: ready }
+        : { status: "target-selection", targets: [] };
+    fake.service.presentTargets = async (selected) =>
+      selected.map((item) => ({
+        ...item,
+        name: "Checkout staging",
+        detail: "Managed browser · Ready",
+      }));
+    await renderJourney(
+      "/tests/new?app=app-1",
+      fake.service,
+      platformWithStorage().platform,
+      undefined,
+      {
+        listSpaces: async () => [
+          {
+            id: "checkout-staging",
+            name: "Checkout staging",
+            startUrl: "https://checkout.example",
+            createdAt: 1,
+            updatedAt: 1,
+            profileRetention: "retain",
+            persistent: true,
+            source: { kind: "managed-browser-target", id: "checkout-staging" },
+          },
+        ],
+        createSpace: async () => {
+          throw new Error("unused");
+        },
+        openSpace: undefined as never,
+        removeSpace: async () => undefined,
+        listAuthenticationFixtures: async () => [],
+        saveAuthenticationFixture: async () => {
+          throw new Error("unused");
+        },
+        refreshAuthenticationFixture: async () => {
+          throw new Error("unused");
+        },
+        revokeAuthenticationFixture: async () => {
+          throw new Error("unused");
+        },
+        listCompareSets: async () => [],
+        saveCompareSet: async () => {
+          throw new Error("unused");
+        },
+        removeCompareSet: async () => undefined,
+      },
+    );
+
+    expect(document.body.textContent).toContain("Choose a browser");
+    expect(document.body.textContent).toContain("Checkout staging");
+    expect(document.body.textContent).toContain("checkout.example");
+    expect(document.body.textContent).not.toContain("Start a browser to record");
+    const row = [...document.querySelectorAll("button")].find((item) =>
+      item.textContent?.includes("Checkout staging"),
+    );
+    if (!row) throw new Error("Saved browser row not found");
+    fake.calls.push("open-browser");
+    await click(row);
+    expect(document.body.textContent).not.toContain("openSpace is not a function");
+    expect(document.querySelector('[aria-label="Record on"]')?.textContent).toContain(
+      "Checkout staging",
+    );
   });
 
   it("follows the full server-owned progression with one dominant review action", async () => {
