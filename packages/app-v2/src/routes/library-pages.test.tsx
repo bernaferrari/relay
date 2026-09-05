@@ -497,6 +497,16 @@ describe("Runs workspace", () => {
     expect(document.body.textContent).toContain("Open account");
   });
 
+  it("keeps the Run view tabs on their own rail above the filters", async () => {
+    await render("/runs");
+
+    const tabs = document.querySelector('[data-slot="tabs"]');
+    const filters = document.querySelector('[aria-label="Filter Runs"]');
+    expect(tabs?.className).toContain("border-b");
+    expect(filters?.className).not.toContain("mt-3");
+    expect(filters?.parentElement?.className).toMatch(/gap-5|gap-6/);
+  });
+
   it("defaults to the latest Run per Test and keeps every row durably addressable", async () => {
     await render("/runs");
 

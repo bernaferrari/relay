@@ -131,9 +131,13 @@ export function RunsPage() {
         description="Active Runs and recent results."
       />
 
-      <div className="mt-4 border-b border-border pb-5">
-        <Tabs value={view} onValueChange={(next) => setView(next as RunView)}>
-          <TabsList variant="line" aria-label="Run view">
+      <div className="grid gap-5 border-b border-border pb-6">
+        <Tabs
+          className="border-b border-border pb-1.5"
+          value={view}
+          onValueChange={(next) => setView(next as RunView)}
+        >
+          <TabsList variant="line" className="h-9 justify-start" aria-label="Run view">
             {runViews.map((item) => (
               <TabsTrigger key={item.id} value={item.id}>
                 {item.label}
@@ -143,7 +147,7 @@ export function RunsPage() {
         </Tabs>
 
         <div
-          className="mt-3 grid gap-3 md:grid-cols-[minmax(16rem,1fr)_10rem] md:items-end"
+          className="grid gap-3 md:grid-cols-[minmax(16rem,1fr)_10rem] md:items-end"
           aria-label="Filter Runs"
         >
           <div className="grid min-w-0 gap-1.5">
