@@ -16,6 +16,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { Layers3, Plus, RotateCcw } from "lucide-react";
 import { useMemo, useState, type FormEvent } from "react";
+import { LibraryPage, PageHeader } from "../components/page-layout";
 import { EmptyState, ReadinessMark, RecoveryState } from "../components/product-patterns";
 import { recordingQueryKeys } from "../data/recording-queries";
 import { PageLoading } from "./recording-shared";
@@ -124,182 +125,175 @@ export function SuitesPage() {
   }
 
   return (
-    <section className="relay-page mx-auto w-full px-[clamp(20px,3vw,40px)] pt-7 pb-10 max-w-[1080px]">
-      <header className="relay-page-header flex items-start justify-between gap-4 max-[780px]:flex-col">
-        <div>
-          <p className="relay-eyebrow mb-2 text-[11px] font-semibold tracking-[0.02em] text-[var(--text-weak)]">
-            Library
-          </p>
-          <h1 className="text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance] text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance]">
-            Suites
-          </h1>
-          <p className="relay-page-description mt-2.5 max-w-[62ch] text-[15px] leading-[1.55] text-[var(--text-weak)]">
-            Save groups of Tests and Data sets, check their scope, and run them again with intent.
-          </p>
-        </div>
-        <div className="flex flex-none flex-wrap gap-4">
-          <Button nativeButton={false} render={<Link to="/environments" />} variant="outline">
-            Environments
-          </Button>
-          <Dialog
-            open={dialogOpen}
-            onOpenChange={(open) => {
-              if (!open && createSuite.isPending) return;
-              setDialogOpen(open);
-              if (open) resetCreate();
-            }}
-          >
-            <DialogTrigger render={<Button variant="default" disabled={!apps.data?.length} />}>
-              <Plus aria-hidden="true" /> New Suite
-            </DialogTrigger>
-
-            <DialogContent
-              showCloseButton={false}
-              className="max-h-[min(760px,calc(100vh-32px))] w-[min(720px,calc(100vw-32px))] overflow-auto"
+    <LibraryPage className="max-w-[1080px]">
+      <PageHeader
+        context="Tests"
+        title="Suites"
+        description="Groups of Tests you can run together."
+        actions={
+          <>
+            <Button nativeButton={false} render={<Link to="/environments" />} variant="outline">
+              Browsers
+            </Button>
+            <Dialog
+              open={dialogOpen}
+              onOpenChange={(open) => {
+                if (!open && createSuite.isPending) return;
+                setDialogOpen(open);
+                if (open) resetCreate();
+              }}
             >
-              <DialogTitle>New Suite</DialogTitle>
-              <DialogDescription>
-                Choose one App, then group the reviewed Tests and optional Data sets that belong
-                together.
-              </DialogDescription>
-              <form onSubmit={submit}>
-                <Field>
-                  <FieldLabel htmlFor="suite-app">App</FieldLabel>
-                  <select
-                    id="suite-app"
-                    className="relay-native-select min-h-9 w-full rounded-[var(--radius-md)] border border-[var(--border-base)] bg-[var(--background-strong)] px-3 text-base text-[var(--text-strong)]"
-                    value={appId}
-                    onChange={(event) => {
-                      setAppId(event.currentTarget.value);
-                      setTestIds(new Set());
-                      setVariableIds(new Set());
-                    }}
-                  >
-                    <option value="">Choose an App</option>
-                    {apps.data?.map((app) => (
-                      <option key={app.id} value={app.id}>
-                        {app.name}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="suite-name">Suite name</FieldLabel>
-                  <Input
-                    id="suite-name"
-                    value={name}
-                    onChange={(event) => setName(event.currentTarget.value)}
-                    placeholder="For example, Release smoke"
-                    autoComplete="off"
-                  />
-                </Field>
-                {editor.isPending && appId ? <PageLoading label="Loading App Tests…" /> : null}
-                {editor.error ? (
-                  <FieldError>
-                    Relay could not load this App’s Suite editor.{" "}
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => void editor.refetch()}
-                      disabled={editor.isFetching}
+              <DialogTrigger render={<Button variant="default" disabled={!apps.data?.length} />}>
+                <Plus aria-hidden="true" /> New Suite
+              </DialogTrigger>
+
+              <DialogContent
+                showCloseButton={false}
+                className="max-h-[min(760px,calc(100vh-32px))] w-[min(720px,calc(100vw-32px))] overflow-auto"
+              >
+                <DialogTitle>New Suite</DialogTitle>
+                <DialogDescription>
+                  Choose an App, then pick the Tests to run together.
+                </DialogDescription>
+                <form onSubmit={submit}>
+                  <Field>
+                    <FieldLabel htmlFor="suite-app">App</FieldLabel>
+                    <select
+                      id="suite-app"
+                      className="relay-native-select min-h-9 w-full rounded-[var(--radius-md)] border border-[var(--border-base)] bg-[var(--background-strong)] px-3 text-base text-[var(--text-strong)]"
+                      value={appId}
+                      onChange={(event) => {
+                        setAppId(event.currentTarget.value);
+                        setTestIds(new Set());
+                        setVariableIds(new Set());
+                      }}
                     >
-                      {editor.isFetching ? "Retrying…" : "Try again"}
-                    </Button>
-                  </FieldError>
-                ) : null}
-                {editor.data ? (
-                  <div className="max-h-[min(760px,calc(100vh-32px))] w-[min(720px,calc(100vw-32px))] overflow-auto p-1">
-                    <fieldset>
-                      <legend>Tests</legend>
-                      {editor.data.tests.map((test) => (
-                        <ChoiceLabel
-                          key={test.id}
-                          className="flex min-h-14 min-w-0 cursor-pointer items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50"
-                        >
-                          <span className="grid min-w-0 flex-1 gap-0.5">
-                            <span className="truncate text-sm font-medium text-foreground">
-                              {test.name}
-                            </span>
-                            <span className="truncate text-xs leading-snug text-muted-foreground">
-                              {test.status === "ready" ? "Ready" : "Needs review"}
-                            </span>
-                          </span>
-                          <Checkbox
-                            checked={testIds.has(test.id)}
-                            onCheckedChange={(checked) =>
-                              toggle(setTestIds, test.id, checked === true)
-                            }
-                          />
-                        </ChoiceLabel>
+                      <option value="">Choose an App</option>
+                      {apps.data?.map((app) => (
+                        <option key={app.id} value={app.id}>
+                          {app.name}
+                        </option>
                       ))}
-                    </fieldset>
-                    {editor.data.dataSets.length ? (
+                    </select>
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="suite-name">Suite name</FieldLabel>
+                    <Input
+                      id="suite-name"
+                      value={name}
+                      onChange={(event) => setName(event.currentTarget.value)}
+                      placeholder="For example, Release smoke"
+                      autoComplete="off"
+                    />
+                  </Field>
+                  {editor.isPending && appId ? <PageLoading label="Loading App Tests…" /> : null}
+                  {editor.error ? (
+                    <FieldError>
+                      Relay could not load this App’s Suite editor.{" "}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => void editor.refetch()}
+                        disabled={editor.isFetching}
+                      >
+                        {editor.isFetching ? "Retrying…" : "Try again"}
+                      </Button>
+                    </FieldError>
+                  ) : null}
+                  {editor.data ? (
+                    <div className="max-h-[min(760px,calc(100vh-32px))] w-[min(720px,calc(100vw-32px))] overflow-auto p-1">
                       <fieldset>
-                        <legend>Data sets</legend>
-                        {editor.data.dataSets.map((dataSet) => (
+                        <legend>Tests</legend>
+                        {editor.data.tests.map((test) => (
                           <ChoiceLabel
-                            key={dataSet.id}
+                            key={test.id}
                             className="flex min-h-14 min-w-0 cursor-pointer items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50"
                           >
                             <span className="grid min-w-0 flex-1 gap-0.5">
                               <span className="truncate text-sm font-medium text-foreground">
-                                {dataSet.name}
+                                {test.name}
                               </span>
                               <span className="truncate text-xs leading-snug text-muted-foreground">
-                                {dataSet.optionCount} saved{" "}
-                                {dataSet.optionCount === 1 ? "value" : "values"}
+                                {test.status === "ready" ? "Ready" : "Needs review"}
                               </span>
                             </span>
                             <Checkbox
-                              checked={variableIds.has(dataSet.id)}
+                              checked={testIds.has(test.id)}
                               onCheckedChange={(checked) =>
-                                toggle(setVariableIds, dataSet.id, checked === true)
+                                toggle(setTestIds, test.id, checked === true)
                               }
                             />
                           </ChoiceLabel>
                         ))}
                       </fieldset>
-                    ) : null}
+                      {editor.data.dataSets.length ? (
+                        <fieldset>
+                          <legend>Data sets</legend>
+                          {editor.data.dataSets.map((dataSet) => (
+                            <ChoiceLabel
+                              key={dataSet.id}
+                              className="flex min-h-14 min-w-0 cursor-pointer items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50"
+                            >
+                              <span className="grid min-w-0 flex-1 gap-0.5">
+                                <span className="truncate text-sm font-medium text-foreground">
+                                  {dataSet.name}
+                                </span>
+                                <span className="truncate text-xs leading-snug text-muted-foreground">
+                                  {dataSet.optionCount} saved{" "}
+                                  {dataSet.optionCount === 1 ? "value" : "values"}
+                                </span>
+                              </span>
+                              <Checkbox
+                                checked={variableIds.has(dataSet.id)}
+                                onCheckedChange={(checked) =>
+                                  toggle(setVariableIds, dataSet.id, checked === true)
+                                }
+                              />
+                            </ChoiceLabel>
+                          ))}
+                        </fieldset>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  {createSuite.error ? (
+                    <FieldError>
+                      {createSuite.error instanceof Error
+                        ? createSuite.error.message
+                        : "Relay could not save this Suite."}
+                    </FieldError>
+                  ) : null}
+                  <div className="relay-dialog-actions flex flex-wrap items-center justify-end gap-2.5">
+                    <DialogClose
+                      render={
+                        <Button variant="ghost" disabled={createSuite.isPending}>
+                          Cancel
+                        </Button>
+                      }
+                    />
+                    <Button
+                      type="submit"
+                      variant="default"
+                      disabled={
+                        !editor.data || !name.trim() || !testIds.size || createSuite.isPending
+                      }
+                    >
+                      {createSuite.isPending ? "Saving…" : "Save Suite"}
+                    </Button>
                   </div>
-                ) : null}
-                {createSuite.error ? (
-                  <FieldError>
-                    {createSuite.error instanceof Error
-                      ? createSuite.error.message
-                      : "Relay could not save this Suite."}
-                  </FieldError>
-                ) : null}
-                <div className="relay-dialog-actions flex flex-wrap items-center justify-end gap-2.5">
-                  <DialogClose
-                    render={
-                      <Button variant="ghost" disabled={createSuite.isPending}>
-                        Cancel
-                      </Button>
-                    }
-                  />
-                  <Button
-                    type="submit"
-                    variant="default"
-                    disabled={
-                      !editor.data || !name.trim() || !testIds.size || createSuite.isPending
-                    }
-                  >
-                    {createSuite.isPending ? "Saving…" : "Save Suite"}
-                  </Button>
-                </div>
-              </form>
-            </DialogContent>
-          </Dialog>
-        </div>
-      </header>
+                </form>
+              </DialogContent>
+            </Dialog>
+          </>
+        }
+      />
 
       {suites.isPending || apps.isPending ? <PageLoading label="Loading Suites…" /> : null}
       {suites.error || apps.error ? (
         <RecoveryState
           layout="centered"
           title="Suites are unavailable"
-          detail="Reconnect Relay, then load the saved coverage plans again."
+          detail="Reconnect Relay, then try again."
           action={
             <Button
               variant="outline"
@@ -395,7 +389,7 @@ export function SuitesPage() {
           detail={
             requestedApp
               ? "Clear the App filter or create a Suite for this App."
-              : "Group related Tests into a reusable release, regression, or smoke plan."
+              : "Group related Tests so you can run them together."
           }
           action={
             requestedApp ? (
@@ -420,6 +414,6 @@ export function SuitesPage() {
           }
         />
       ) : null}
-    </section>
+    </LibraryPage>
   );
 }

@@ -189,7 +189,7 @@ export function createBrowserSpacesProductService(platform: Platform): BrowserSp
   async function getSpace(spaceId: string): Promise<ProductBrowserSpace> {
     const { targets } = await (await client()).invoke("target.list", {});
     const space = targets.map(projectSpace).find((candidate) => candidate?.id === spaceId);
-    if (!space) throw new TypeError(`Browser Space ${spaceId} is not available.`);
+    if (!space) throw new TypeError("This browser is not available.");
     return space;
   }
 
@@ -198,7 +198,7 @@ export function createBrowserSpacesProductService(platform: Platform): BrowserSp
     target: TargetDefinition,
   ): Promise<ProductBrowserAuthResult> {
     const space = projectSpace(target);
-    if (!space) throw new TypeError("Relay returned a non-browser target for an auth fixture.");
+    if (!space) throw new TypeError("Relay returned something that is not a browser.");
     return { fixture: projectFixture(fixture), space: { id: space.id, name: space.name } };
   }
 
@@ -210,7 +210,7 @@ export function createBrowserSpacesProductService(platform: Platform): BrowserSp
   }): Promise<ProductBrowserAuthResult> {
     await getSpace(input.spaceId);
     const name = input.name.trim();
-    if (!name) throw new TypeError("Enter an account fixture name.");
+    if (!name) throw new TypeError("Enter a sign-in name.");
     const { fixture, target } = await (
       await client()
     ).invoke("target.browser-auth.save", {
@@ -235,7 +235,7 @@ export function createBrowserSpacesProductService(platform: Platform): BrowserSp
     },
     async createSpace(input) {
       const name = input.name.trim();
-      if (!name) throw new TypeError("Enter a Browser Space name.");
+      if (!name) throw new TypeError("Enter a browser name.");
       const { target } = await (
         await client()
       ).invoke("target.create", {
@@ -246,7 +246,7 @@ export function createBrowserSpacesProductService(platform: Platform): BrowserSp
         profileRetention: input.profileRetention ?? "retain",
       });
       const space = projectSpace(target);
-      if (!space) throw new TypeError("Relay created a non-browser target for a Browser Space.");
+      if (!space) throw new TypeError("Relay created something that is not a browser.");
       return space;
     },
     async openSpace(spaceId) {

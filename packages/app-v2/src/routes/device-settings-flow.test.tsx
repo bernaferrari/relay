@@ -447,13 +447,13 @@ describe("Devices", () => {
     expect(document.body.textContent).toContain("Relay launched com.example.shop on Design iPad.");
   });
 
-  it("keeps app launch unavailable for managed browsers", async () => {
+  it("hides app launch on managed browsers", async () => {
     await renderPath("/devices/browser");
 
     expect(document.querySelector(".relay-device-launch-form")).toBeNull();
-    expect(document.querySelector(".relay-device-launch-unavailable")?.textContent).toContain(
-      "not available for managed browsers",
-    );
+    expect(document.querySelector("#device-launch-title")).toBeNull();
+    expect(document.body.textContent).not.toContain("Launch an app");
+    expect(document.body.textContent).not.toContain("cannot launch");
   });
 
   it("keeps launch failures visible without hiding the device context", async () => {

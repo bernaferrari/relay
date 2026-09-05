@@ -172,7 +172,7 @@ export function SessionPage() {
           }
           description={
             <>
-              {targetLabel(value)} · {value.actorKind === "agent" ? "Agent-controlled" : "Manual"}
+              {targetLabel(value)} · {value.actorKind === "agent" ? "Agent" : "Manual"}
             </>
           }
           actions={

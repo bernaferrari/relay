@@ -471,7 +471,7 @@ const batchReport: ProductBatchReport = {
   navigation: { route: "/batches/:batchId", href: "/batches/batch-checkout" },
   report: {
     headline: "5 of 6 cases passed",
-    detail: "One saved account needs review. Every completed case has its own durable Report.",
+    detail: "Member · Portuguese failed.",
   },
 };
 const runAcrossService = {
@@ -633,7 +633,11 @@ const browserSpacesService = {
     },
   ],
   listAuthenticationFixtures: async () => fixtureProfile.authenticationOptions,
-  createSpace: async (input: { name: string; startUrl: string; profileRetention?: "retain" | "ephemeral" }) => ({
+  createSpace: async (input: {
+    name: string;
+    startUrl: string;
+    profileRetention?: "retain" | "ephemeral";
+  }) => ({
     id: "checkout-new-browser",
     name: input.name,
     startUrl: input.startUrl,

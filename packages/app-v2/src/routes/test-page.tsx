@@ -221,18 +221,10 @@ export function TestPage() {
             <Button
               nativeButton={false}
               render={<Link to="/tests/$testId/edit" params={{ testId }} />}
-              variant="outline"
-              size="sm"
-            >
-              Edit Test
-            </Button>
-            <Button
-              nativeButton={false}
-              render={<Link to="/tests/$testId/run-across" params={{ testId }} />}
               variant="ghost"
               size="sm"
             >
-              Run with data
+              Edit
             </Button>
           </>
         }

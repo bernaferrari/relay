@@ -204,7 +204,8 @@ describe("App overview", () => {
     expect(filters).toContain("runs:app-shop-internal");
     expect(document.body.textContent).toContain("Saved tests");
     expect(document.body.textContent).toContain("Recent results");
-    expect(document.body.textContent).toContain("2 of 3");
+    expect(document.body.textContent).not.toContain("Not mapped");
+    expect(document.body.textContent).not.toContain("Workspace resources");
     expect(document.querySelector("[data-page-pattern]")).toHaveProperty(
       "dataset.pagePattern",
       "library",
@@ -218,12 +219,6 @@ describe("App overview", () => {
     const resultsSection = document.querySelector("#app-runs-title")?.closest("section");
     expect(resultsSection?.textContent).toContain("Pixel 9");
     expect(document.querySelector('a[href="/tests/new?app=app-shop-internal"]')).not.toBeNull();
-    const advanced = [...document.querySelectorAll("button")].find(
-      (item) => item.textContent?.trim() === "Advanced",
-    );
-    if (!advanced) throw new Error("Advanced disclosure not found");
-    await act(async () => advanced.click());
-    await settle();
     expect(document.querySelector('a[href="/apps/app-shop-internal/map"]')).not.toBeNull();
   });
 });

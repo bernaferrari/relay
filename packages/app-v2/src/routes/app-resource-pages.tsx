@@ -52,7 +52,7 @@ export function AppVersionsPage() {
   return (
     <AppResourceFrame
       title="Versions"
-      description="Review registered builds and deployments before choosing what Relay should verify."
+      description="Builds Relay can run against."
       action={
         canWriteVersions ? (
           <Button variant="default" onClick={() => setEditor("create")}>
@@ -75,9 +75,9 @@ export function AppVersionsPage() {
         <section className="mt-[30px]" aria-labelledby="registered-versions-title">
           <ResourceHeading
             id="registered-versions-title"
-            label="Workspace registry"
-            title="Registered versions"
-            detail="Builds are workspace-scoped and available when configuring verification."
+            label="Workspace"
+            title="Builds"
+            detail="Available when you choose what to run."
           />
           {versions.data?.length ? (
             <ul className="mt-[18px] list-none overflow-hidden rounded-lg border border-border bg-card p-0">
@@ -192,8 +192,8 @@ export function AppAccountsPage() {
 
   return (
     <AppResourceFrame
-      title="Accounts"
-      description="Review saved browser sign-ins attached to managed browsers in this workspace."
+      title="Sign-ins"
+      description="Saved browser sign-ins you can reuse when running a Test."
       action={
         <span className="inline-flex items-center justify-end gap-1.5 max-[780px]:flex-wrap max-[780px]:justify-start">
           <Button
@@ -202,17 +202,19 @@ export function AppAccountsPage() {
             disabled={!canSaveAccount}
             title={
               !appResourcesService.saveBrowserAccount
-                ? "Saving browser sign-ins is unavailable in this Relay connection."
+                ? "Saving sign-ins is unavailable in this Relay connection."
                 : targets.length === 0
-                  ? "Open Devices and create a managed browser before saving a sign-in."
+                  ? "Start a browser first, then save its sign-in."
                   : undefined
             }
           >
-            <Plus aria-hidden="true" /> Save account
+            <Plus aria-hidden="true" /> Save sign-in
           </Button>
-          <Button nativeButton={false} render={<Link to="/devices" />} variant="outline">
-            Open Devices
-          </Button>
+          {!canSaveAccount ? (
+            <Button nativeButton={false} render={<Link to="/environments" />} variant="outline">
+              New browser
+            </Button>
+          ) : null}
         </span>
       }
     >
@@ -231,9 +233,9 @@ export function AppAccountsPage() {
         <section className="mt-[30px]" aria-labelledby="browser-signins-title">
           <ResourceHeading
             id="browser-signins-title"
-            label="Managed browsers"
-            title="Saved browser sign-ins"
-            detail="Sign-ins belong to an exact managed browser, not directly to an App."
+            label="Browsers"
+            title="Saved sign-ins"
+            detail="Each sign-in stays with the browser it was saved from."
           />
           {accounts.data?.length ? (
             <ul className="mt-[18px] list-none overflow-hidden rounded-lg border border-border bg-card p-0">
@@ -251,14 +253,14 @@ export function AppAccountsPage() {
           ) : (
             <EmptyState
               icon={KeyRound}
-              title="No saved browser sign-ins"
-              detail="Open a managed browser from Devices, sign in, and save its reviewed state when you need an authenticated Test."
+              title="No saved sign-ins"
+              detail="Open a browser, sign in, then save it here."
               action={
                 <Link
                   className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
-                  to="/devices"
+                  to="/environments"
                 >
-                  Open Devices
+                  Open browsers
                 </Link>
               }
             />

@@ -156,8 +156,8 @@ export function RunAcrossPage() {
                     ? [
                         {
                           id: "target",
-                          label: "Saved environment is unavailable",
-                          detail: "Choose another environment to continue.",
+                          label: "Saved device is unavailable",
+                          detail: "Choose another device or browser to continue.",
                         },
                       ]
                     : !target

@@ -46,7 +46,7 @@ export function IssueDraftButton({ source }: { source: ProductIssueSource }) {
         }
       }}
     >
-      <DialogTrigger render={<Button variant="outline" />}>
+      <DialogTrigger render={<Button variant="ghost" />}>
         <FileWarning aria-hidden="true" /> Draft issue
       </DialogTrigger>
 

@@ -136,7 +136,7 @@ export function HomePage() {
         description={
           hasWorkspaceData
             ? `${scopedTests.length} saved ${scopedTests.length === 1 ? "test" : "tests"} · ${runs.isError ? "Results unavailable" : attentionRuns.length ? `${attentionRuns.length} ${attentionRuns.length === 1 ? "result needs" : "results need"} attention` : "No results need attention"}`
-            : "Record a real path through your app. Relay will replay it and keep the evidence with every result."
+            : "Record a path through your app. Replay it and keep the evidence."
         }
         actions={
           <>
@@ -153,10 +153,10 @@ export function HomePage() {
               >
                 <MonitorCheck className="size-4" aria-hidden="true" />
                 {targets.isPending
-                  ? "Checking targets…"
+                  ? "Checking devices…"
                   : targets.data?.length
-                    ? `${targets.data.length} ${targets.data.length === 1 ? "target" : "targets"} ready`
-                    : "Check targets"}
+                    ? `${targets.data.length} ${targets.data.length === 1 ? "device" : "devices"} ready`
+                    : "Check devices"}
               </Button>
             ) : null}
             {hasTests ? (
@@ -465,8 +465,8 @@ function HomeNextAction({
       title={test.name}
       detail={
         test.status === "ready"
-          ? `${test.stepCount} saved steps. Choose where to run and inspect the result.`
-          : "Review the unfinished steps before running this test."
+          ? `${test.stepCount} ${test.stepCount === 1 ? "step" : "steps"}. Run it when you are ready.`
+          : "Review the steps, then run it."
       }
       action="Open Test"
       to="test"

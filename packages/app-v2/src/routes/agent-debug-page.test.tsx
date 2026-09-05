@@ -171,7 +171,7 @@ describe("Agent Debug route", () => {
     await render();
 
     expect(document.body.textContent).toContain(
-      "Capture a reproducible path and review the evidence with your team.",
+      "Name the problem, pick a device, and start capturing.",
     );
     expect(document.body.textContent).not.toContain(
       "Relay keeps the Session, target owner, evidence, and human review boundary visible",
@@ -202,7 +202,7 @@ describe("Agent Debug route", () => {
   it("explains how to recover when no runnable target is available", async () => {
     await render({ devices: [productDevice("offline", "Offline iPad", false, "ios")] });
 
-    expect(document.body.textContent).toContain("No runnable targets are available.");
+    expect(document.body.textContent).toContain("No ready device is available.");
     expect(document.querySelector<HTMLAnchorElement>('a[href="/devices"]')).not.toBeNull();
   });
 
@@ -329,7 +329,7 @@ describe("Agent Debug route", () => {
 
     expect(getReport).toHaveBeenCalledWith("run-failed");
     expect(document.body.textContent).toContain("Button stayed disabled");
-    expect(document.body.textContent).toContain("1 evidence references available");
+    expect(document.body.textContent).toContain("1 item");
     expect(document.getElementById("agent-debug-target")?.textContent).toContain("Ready Pixel");
     expect(document.body.textContent).not.toContain("serial-");
     await fillTitle("Checkout investigation");

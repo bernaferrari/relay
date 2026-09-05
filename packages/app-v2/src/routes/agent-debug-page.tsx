@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { Field, FieldDescription, FieldError, FieldLabel } from "@relay/ui-react/components/field";
+import { Field, FieldError, FieldLabel } from "@relay/ui-react/components/field";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@relay/ui-react/components/alert";
 import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
@@ -15,6 +15,8 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { ShieldCheck } from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { FormPage, PageHeader } from "../components/page-layout";
+import { Breadcrumbs } from "../components/product-patterns";
 import type { AgentDebugProductService } from "../data/agent-debug-product-service";
 import { deviceQueryKeys } from "../data/device-product-service";
 import { runQueryKeys } from "../data/run-queries";
@@ -116,184 +118,156 @@ export function AgentDebugPage() {
   }
 
   return (
-    <section className="mx-auto flex w-full max-w-3xl min-w-0 flex-col gap-8 px-5 py-8 md:px-8 md:py-12">
-      <header className="max-w-2xl space-y-2">
-        <p className="text-xs font-medium uppercase tracking-wide text-text-weak">Agent Debug</p>
-        <h1 className="text-3xl font-semibold tracking-tight text-text-strong text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance]">
-          Investigate a bug
-        </h1>
-        <p className="max-w-prose text-base leading-7 text-text-weak">
-          Capture a reproducible path and review the evidence with your team.
-        </p>
-      </header>
+    <FormPage>
+      <Breadcrumbs items={[{ label: "Live", to: "/sessions" }, { label: "Investigate" }]} />
+      <PageHeader
+        context="Live"
+        title="Investigate"
+        description="Name the problem, pick a device, and start capturing."
+      />
 
       {contextualRunId ? (
         <section
-          className="grid w-full max-w-2xl gap-3 rounded-xl border border-border-weak-base bg-surface-raised-strong p-5"
-          aria-label="Failed Report context"
+          className="mb-6 grid w-full max-w-2xl gap-3 rounded-xl border border-border bg-card p-5"
+          aria-label="Failed result"
         >
           <div className="flex items-center justify-between gap-3">
-            <h2 className="text-base font-semibold text-text-strong">From this failed Report</h2>
+            <h2 className="text-sm font-semibold">From this failed result</h2>
             <Link
-              className="text-sm text-text-weak underline"
+              className="text-sm text-muted-foreground underline-offset-4 hover:underline"
               to="/runs/$runId"
               params={{ runId: contextualRunId }}
             >
-              Open Report
+              Open result
             </Link>
           </div>
           {report.isPending ? (
-            <p className="text-sm text-text-weak" role="status">
-              Loading Report context…
+            <p className="text-sm text-muted-foreground" role="status">
+              Loading result…
             </p>
           ) : null}
           {report.error ? (
-            <p className="text-sm text-text-weak" role="alert">
-              The Report context could not be loaded. You can still start a new investigation.
+            <p className="text-sm text-muted-foreground" role="alert">
+              The result could not be loaded. You can still start a new investigation.
             </p>
           ) : null}
           {report.data ? (
             <dl className="grid gap-2 text-sm">
               <div>
-                <dt className="font-medium text-text-weak">Target</dt>
-                <dd className="text-text-strong">
-                  {report.data.targetName ?? "Target from Report"}
+                <dt className="font-medium text-muted-foreground">Device</dt>
+                <dd className="text-foreground">
+                  {report.data.targetName ?? "Device from this result"}
                 </dd>
               </div>
               <div>
-                <dt className="font-medium text-text-weak">Expected</dt>
-                <dd className="text-text-strong">
-                  {failureStep?.expected ?? "Expected result recorded in the Report"}
+                <dt className="font-medium text-muted-foreground">Expected</dt>
+                <dd className="text-foreground">
+                  {failureStep?.expected ?? "Expected result from the report"}
                 </dd>
               </div>
               <div>
-                <dt className="font-medium text-text-weak">Observed</dt>
-                <dd className="text-text-strong">
-                  {failureStep?.observed ??
-                    report.data.cause ??
-                    "Observed result recorded in the Report"}
+                <dt className="font-medium text-muted-foreground">Observed</dt>
+                <dd className="text-foreground">
+                  {failureStep?.observed ?? report.data.cause ?? "Observed result from the report"}
                 </dd>
               </div>
               <div>
-                <dt className="font-medium text-text-weak">Evidence</dt>
-                <dd className="text-text-strong">
+                <dt className="font-medium text-muted-foreground">Evidence</dt>
+                <dd className="text-foreground">
                   {report.data.evidence.length
-                    ? `${report.data.evidence.length} evidence references available`
-                    : "No evidence reference available"}
+                    ? `${report.data.evidence.length} ${report.data.evidence.length === 1 ? "item" : "items"}`
+                    : "No evidence attached"}
                 </dd>
               </div>
             </dl>
           ) : null}
         </section>
       ) : null}
-      <section className="w-full max-w-2xl overflow-hidden rounded-xl border border-border-weak-base bg-surface-raised-strong">
-        <div className="border-b border-border-weak-base px-6 py-5">
-          <h2 className="text-base font-semibold text-text-strong">Investigation details</h2>
+      <form onSubmit={submit} className="grid max-w-2xl gap-6">
+        <Field className="gap-2">
+          <FieldLabel htmlFor="agent-debug-title">Name</FieldLabel>
+          <Input
+            id="agent-debug-title"
+            value={title}
+            onChange={(event) => setTitle(event.currentTarget.value)}
+            placeholder="Checkout button is unreachable"
+            maxLength={160}
+            required
+          />
+        </Field>
+        <Field className="gap-2">
+          <FieldLabel htmlFor="agent-debug-target">Device or browser</FieldLabel>
+          {devices.isPending ? (
+            <p className="text-sm text-muted-foreground" role="status">
+              Loading devices…
+            </p>
+          ) : null}
+          <Select
+            items={readyDevices.map((device) => ({
+              value: device.serial,
+              label: `${device.name} · ${device.platform}`,
+            }))}
+            value={targetReady ? targetId : ""}
+            onValueChange={(nextValue) => setTargetId(nextValue ?? "")}
+          >
+            <SelectTrigger id="agent-debug-target" className="w-full">
+              <SelectValue placeholder="Choose a ready device" />
+            </SelectTrigger>
+            <SelectContent alignItemWithTrigger={false}>
+              {readyDevices.map((device) => (
+                <SelectItem key={device.id} value={device.serial} data-value={device.serial}>
+                  {device.name} · {device.platform}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {!devices.isPending && contextualTargetId === targetId && !targetReady ? (
+            <p className="text-sm text-muted-foreground" role="status">
+              The original device is unavailable. Choose another ready device or browser.
+            </p>
+          ) : null}
+          {devices.data && !devices.data.some((device) => device.runnable) ? (
+            <FieldError>
+              No ready device is available. <Link to="/devices">Open devices</Link> to reconnect
+              one, then try again.
+            </FieldError>
+          ) : null}
+        </Field>
+        {devices.isError ? (
+          <FieldError>
+            Devices could not be loaded.{" "}
+            <Button variant="ghost" size="sm" onClick={() => void devices.refetch()}>
+              Try again
+            </Button>
+          </FieldError>
+        ) : null}
+        {start.error ? (
+          <FieldError>
+            {start.error instanceof Error
+              ? start.error.message
+              : "The investigation could not start."}
+          </FieldError>
+        ) : null}
+        <div className="flex justify-end pt-1">
+          <Button
+            type="submit"
+            variant="default"
+            disabled={start.isPending || !title.trim() || !targetReady}
+            className="w-full sm:w-auto"
+          >
+            {start.isPending ? "Starting…" : "Start investigation"}
+          </Button>
         </div>
-        <div className="px-6 py-6">
-          <form onSubmit={submit} className="grid gap-6">
-            <Field className="gap-2">
-              <FieldLabel
-                htmlFor="agent-debug-title"
-                className="text-sm font-medium text-text-strong"
-              >
-                Bug or investigation name
-              </FieldLabel>
-              <Input
-                id="agent-debug-title"
-                value={title}
-                onChange={(event) => setTitle(event.currentTarget.value)}
-                placeholder="Checkout button is unreachable"
-                maxLength={160}
-                required
-              />
-              <FieldDescription className="text-sm leading-5 text-text-weak">
-                A short name for this investigation.
-              </FieldDescription>
-            </Field>
-            <Field className="gap-2">
-              <FieldLabel
-                htmlFor="agent-debug-target"
-                className="text-sm font-medium text-text-strong"
-              >
-                Target
-              </FieldLabel>
-              {devices.isPending ? (
-                <p className="text-sm text-text-weak" role="status">
-                  Loading targets…
-                </p>
-              ) : null}
-              <Select
-                items={readyDevices.map((device) => ({
-                  value: device.serial,
-                  label: `${device.name} · ${device.platform}`,
-                }))}
-                value={targetReady ? targetId : ""}
-                onValueChange={(nextValue) => setTargetId(nextValue ?? "")}
-              >
-                <SelectTrigger id="agent-debug-target" className="w-full">
-                  <SelectValue placeholder="Choose a ready target" />
-                </SelectTrigger>
-                <SelectContent alignItemWithTrigger={false}>
-                  {readyDevices.map((device) => (
-                    <SelectItem key={device.id} value={device.serial} data-value={device.serial}>
-                      {device.name} · {device.platform}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {!devices.isPending && contextualTargetId === targetId && !targetReady ? (
-                <p className="text-sm text-text-weak" role="status">
-                  The original target is unavailable. Choose a ready device or browser to continue.
-                </p>
-              ) : null}
-              <FieldDescription className="text-sm leading-5 text-text-weak">
-                Choose a ready device or browser.
-              </FieldDescription>
-              {devices.data && !devices.data.some((device) => device.runnable) ? (
-                <FieldError>
-                  No runnable targets are available. <Link to="/devices">Open Devices</Link> to
-                  reconnect a target, then try again.
-                </FieldError>
-              ) : null}
-            </Field>
-            {devices.isError ? (
-              <FieldError>
-                Targets could not be loaded.{" "}
-                <Button variant="ghost" size="sm" onClick={() => void devices.refetch()}>
-                  Try again
-                </Button>
-              </FieldError>
-            ) : null}
-            {start.error ? (
-              <FieldError>
-                {start.error instanceof Error
-                  ? start.error.message
-                  : "The investigation could not start."}
-              </FieldError>
-            ) : null}
-            <div className="flex justify-end pt-1">
-              <Button
-                type="submit"
-                variant="default"
-                disabled={start.isPending || !title.trim() || !targetReady}
-                className="w-full sm:w-auto"
-              >
-                {start.isPending ? "Starting Session…" : "Start investigation"}
-              </Button>
-            </div>
-          </form>
-        </div>
-      </section>
+      </form>
 
       {start.data && isStartOutcome(start.data)
         ? (() => {
             const outcome = start.data;
             return (
-              <Alert role="status" variant="default" className="w-full max-w-2xl">
+              <Alert role="status" variant="default" className="mt-6 w-full max-w-2xl">
                 <ShieldCheck aria-hidden="true" />
-                <AlertTitle>Session ready for review</AlertTitle>
-                <AlertDescription>Your investigation is ready to review.</AlertDescription>
+                <AlertTitle>Ready to review</AlertTitle>
+                <AlertDescription>Your investigation is ready.</AlertDescription>
                 {outcome.recording.authoring?.sessionId ? (
                   <AlertAction>
                     <Button
@@ -314,6 +288,6 @@ export function AgentDebugPage() {
             );
           })()
         : null}
-    </section>
+    </FormPage>
   );
 }

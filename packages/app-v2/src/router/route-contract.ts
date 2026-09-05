@@ -93,12 +93,12 @@ const routePresentations = {
   "/environments": {
     path: "/environments",
     eyebrow: "Workspace",
-    description: "Manage reusable browser Spaces and inspect available execution resources.",
+    description: "Saved browsers you can open, record on, and sign into.",
   },
   "/environments/:profileId": {
     path: "/environments/$profileId",
-    eyebrow: "Environment",
-    description: "Inspect readiness, browser settings, and reviewed account fixtures.",
+    eyebrow: "Browser",
+    description: "Open this browser, check readiness, and save a sign-in.",
   },
   "/sessions": {
     path: "/sessions",
@@ -134,7 +134,7 @@ const routePresentations = {
   "/batches/:batchId": {
     path: "/batches/$batchId",
     eyebrow: "Runs",
-    description: "Compare the reports created from one reviewed data set.",
+    description: "Open a failed case, or rerun the ones you select.",
   },
   "/changes": {
     path: "/changes",
@@ -158,8 +158,8 @@ const routePresentations = {
   },
   "/debug": {
     path: "/debug",
-    eyebrow: "Agent Debug",
-    description: "Investigate a failure with bounded exploration, human review, and durable proof.",
+    eyebrow: "Live",
+    description: "Name the problem, pick a device, and start capturing.",
   },
   "/settings/general": {
     path: "/settings/general",

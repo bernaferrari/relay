@@ -271,28 +271,11 @@ export function ReviewRecordingPage() {
       <Breadcrumbs items={[{ label: "Tests", to: "/tests" }, { label: "Review" }]} />
       <PageHeader
         title={testName || snapshot?.title || "Review your recording"}
-        context={
-          <>
-            <span>Review recording</span>
-            {currentRevision ? <span>Revision {currentRevision}</span> : null}
-          </>
-        }
+        context="Review"
         description={reviewInstruction(review?.replayRequired, canApprove)}
         actions={
           reviewReady ? (
-            <div className="flex max-w-full min-w-0 flex-wrap items-center justify-end gap-2">
-              <div
-                className="grid min-w-0 max-w-full gap-0.5 rounded-lg border border-border bg-muted/40 px-3 py-2"
-                role="status"
-                aria-label="Verification status"
-              >
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  Verification
-                </span>
-                <strong className="max-w-[22ch] truncate text-xs">
-                  {replayTitle(review?.latestReplay?.outcome, review?.replayRequired, canApprove)}
-                </strong>
-              </div>
+            <>
               {canApprove ? (
                 <Button
                   variant="default"
@@ -317,7 +300,7 @@ export function ReviewRecordingPage() {
                 </Button>
               ) : null}
               <Button
-                variant="outline"
+                variant="ghost"
                 disabled={
                   transition.isPending ||
                   leaveDraft.isPending ||
@@ -347,10 +330,20 @@ export function ReviewRecordingPage() {
                       : undefined
                 }
               />
-            </div>
+            </>
           ) : undefined
         }
-      />
+      >
+        {reviewReady ? (
+          <p
+            className="text-xs text-muted-foreground"
+            role="status"
+            aria-label="Verification status"
+          >
+            {replayTitle(review?.latestReplay?.outcome, review?.replayRequired, canApprove)}
+          </p>
+        ) : null}
+      </PageHeader>
 
       {recording.isPending ? <PageLoading label="Loading the reviewed recording…" /> : null}
       <RecordingProblem

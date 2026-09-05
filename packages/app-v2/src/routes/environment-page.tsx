@@ -21,6 +21,7 @@ import {
 } from "@tanstack/react-router";
 import { ExternalLink, RotateCcw, ShieldCheck, Trash2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
+import { LibraryPage, PageHeader } from "../components/page-layout";
 import { Breadcrumbs, EmptyState, RecoveryState } from "../components/product-patterns";
 import { readSetupContinuation } from "../data/setup-continuation";
 import { PageLoading } from "./recording-shared";
@@ -129,12 +130,9 @@ export function EnvironmentPage() {
     readiness.data?.target.checks.filter((check) => check.status === "warning") ?? [];
 
   return (
-    <section className="relay-page mx-auto w-full px-[clamp(20px,3vw,40px)] pt-7 pb-10 max-w-[1080px]">
+    <LibraryPage className="max-w-[1040px]">
       <Breadcrumbs
-        items={[
-          { label: "Environments", to: "/environments" },
-          { label: space?.name ?? "Environment" },
-        ]}
+        items={[{ label: "Browsers", to: "/environments" }, { label: space?.name ?? "Browser" }]}
       />
       {continuation ? (
         <Link
@@ -145,15 +143,15 @@ export function EnvironmentPage() {
             ...(continuation.targetId ? { target: continuation.targetId } : {}),
           }}
         >
-          ← Back to Test setup
+          ← Back to recording
         </Link>
       ) : null}
-      {spaces.isPending ? <PageLoading label="Loading Environment…" /> : null}
+      {spaces.isPending ? <PageLoading label="Loading browser…" /> : null}
       {spaces.error ? (
         <RecoveryState
           layout="centered"
-          title="This Environment is unavailable"
-          detail="Reconnect Relay, then load the managed browser Space again."
+          title="This browser is unavailable"
+          detail="Reconnect Relay, then try again."
           action={
             <Button variant="outline" onClick={() => void spaces.refetch()}>
               <RotateCcw aria-hidden="true" /> Try again
@@ -163,52 +161,45 @@ export function EnvironmentPage() {
       ) : null}
       {!spaces.isPending && !spaces.error && !space ? (
         <EmptyState
-          title="Environment not found"
+          title="Browser not found"
           detail="It may have been removed from this workspace."
           action={
             <Link
               className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
               to="/environments"
             >
-              Back to Environments
+              Back to browsers
             </Link>
           }
         />
       ) : null}
       {space ? (
         <>
-          <header className="relay-page-header flex items-start justify-between gap-4 max-[780px]:flex-col">
-            <div>
-              <p className="relay-eyebrow mb-2 text-[11px] font-semibold tracking-[0.02em] text-[var(--text-weak)]">
-                Browser Space
-              </p>
-              <h1 className="text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance] text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance]">
-                {space.name}
-              </h1>
-              <p className="relay-page-description mt-2.5 max-w-[62ch] text-[15px] leading-[1.55] text-[var(--text-weak)]">
-                {displayHost(space.startUrl)} ·{" "}
-                {space.persistent ? "Persistent profile" : "Ephemeral profile"}
-              </p>
-            </div>
-            <div className="flex flex-wrap justify-end gap-2">
-              <Button variant="default" onClick={() => open.mutate()} disabled={open.isPending}>
-                {open.isPending ? "Opening Live…" : "Open Live workspace"}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => openExternal.mutate()}
-                disabled={openExternal.isPending}
-              >
-                <ExternalLink aria-hidden="true" />{" "}
-                {openExternal.isPending ? "Opening…" : "Open externally"}
-              </Button>
-            </div>
-          </header>
+          <PageHeader
+            context="Browser"
+            title={space.name}
+            description={`${displayHost(space.startUrl)} · ${space.persistent ? "Keeps sign-in" : "Fresh each time"}`}
+            actions={
+              <>
+                <Button variant="default" onClick={() => open.mutate()} disabled={open.isPending}>
+                  {open.isPending ? "Opening…" : "Open"}
+                </Button>
+                <Button
+                  variant="ghost"
+                  onClick={() => openExternal.mutate()}
+                  disabled={openExternal.isPending}
+                >
+                  <ExternalLink aria-hidden="true" />{" "}
+                  {openExternal.isPending ? "Opening…" : "Open in system browser"}
+                </Button>
+              </>
+            }
+          />
           {open.error || openExternal.error ? (
             <FieldError>
               {(open.error ?? openExternal.error) instanceof Error
                 ? (open.error ?? openExternal.error)?.message
-                : "Relay could not open this Space."}
+                : "Relay could not open this browser."}
             </FieldError>
           ) : null}
 
@@ -226,7 +217,7 @@ export function EnvironmentPage() {
               >
                 Current checks
               </h2>
-              {readiness.isPending ? <PageLoading label="Checking Environment…" /> : null}
+              {readiness.isPending ? <PageLoading label="Checking browser…" /> : null}
               {readiness.data ? (
                 <>
                   <div className="relay-environment-ready-line mt-4 flex flex-wrap items-center gap-2 border-b border-border pb-3 text-sm font-semibold">
@@ -240,7 +231,13 @@ export function EnvironmentPage() {
                     >
                       {readiness.data.target.ok ? "Ready" : "Needs attention"}
                     </Badge>
-                    <span>{readiness.data.target.capabilities.length} available capabilities</span>
+                    {readiness.data.target.capabilities.length ? (
+                      <span className="text-sm font-normal text-muted-foreground">
+                        {readiness.data.target.ok
+                          ? "Can record and run Tests"
+                          : "Some checks failed"}
+                      </span>
+                    ) : null}
                   </div>
                   <ul className="relay-environment-checks mt-4 grid gap-3 p-0">
                     {readiness.data.target.checks.map((check) => (
@@ -259,9 +256,9 @@ export function EnvironmentPage() {
                           }
                         >
                           {check.status === "pass"
-                            ? "Passed"
+                            ? "Ready"
                             : check.status === "fail"
-                              ? "Failed"
+                              ? "Needs work"
                               : "Warning"}
                         </Badge>
                         <span className="grid gap-0.5">
@@ -279,7 +276,7 @@ export function EnvironmentPage() {
                   !warningChecks.length &&
                   !readiness.data.target.checks.length ? (
                     <p className="relay-action-hint mt-3 text-sm leading-relaxed text-muted-foreground">
-                      Relay reported this Space ready without additional checks.
+                      This browser is ready.
                     </p>
                   ) : null}
                 </>
@@ -288,7 +285,7 @@ export function EnvironmentPage() {
                 <FieldError>
                   {readiness.error instanceof Error
                     ? readiness.error.message
-                    : "Relay could not check this Environment."}
+                    : "Relay could not check this browser."}
                 </FieldError>
               ) : null}
               <Button
@@ -308,23 +305,18 @@ export function EnvironmentPage() {
               aria-labelledby="environment-account-title"
             >
               <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
-                Accounts
+                Sign-ins
               </p>
               <h2
                 id="environment-account-title"
                 className="mt-1 text-base font-semibold text-foreground"
               >
-                Reviewed sign-ins
+                Saved sign-ins
               </h2>
               <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                Credentials and cookies remain on the Relay host. This page exposes lifecycle
-                metadata only.
+                Reuse a signed-in session when you run a Test.
               </p>
-              {fixtures.isPending ? <PageLoading label="Loading reviewed accounts…" /> : null}
-              <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-                Revoking a named sign-in keeps existing Run evidence and only blocks that sign-in
-                from future authenticated Tests.
-              </p>
+              {fixtures.isPending ? <PageLoading label="Loading sign-ins…" /> : null}
               {fixtures.data?.length ? (
                 <ul className="relay-environment-accounts grid gap-2 p-0">
                   {fixtures.data.map((fixture) => (
@@ -386,7 +378,7 @@ export function EnvironmentPage() {
                 </ul>
               ) : !fixtures.isPending ? (
                 <p className="relay-action-hint mt-3 text-sm leading-relaxed text-muted-foreground">
-                  No reviewed sign-in has been saved for this Space.
+                  No sign-in saved yet.
                 </p>
               ) : null}
               {fixtures.error ||
@@ -408,7 +400,7 @@ export function EnvironmentPage() {
                           revokeAccount.error,
                         ].find(Boolean) as Error
                       ).message
-                    : "Relay could not update this account fixture."}
+                    : "Relay could not update this sign-in."}
                 </FieldError>
               ) : null}
               <Button
@@ -431,11 +423,8 @@ export function EnvironmentPage() {
             aria-labelledby="remove-environment-title"
           >
             <div>
-              <h2 id="remove-environment-title">Remove Browser Space</h2>
-              <p>
-                The local browser profile and its saved sign-ins will no longer be available to
-                Relay.
-              </p>
+              <h2 id="remove-environment-title">Remove browser</h2>
+              <p>Saved sign-ins for this browser will be removed. Existing reports stay.</p>
             </div>
             <Dialog open={removeOpen} onOpenChange={setRemoveOpen}>
               <DialogTrigger render={<Button variant="outline" />}>
@@ -445,14 +434,13 @@ export function EnvironmentPage() {
               <DialogContent showCloseButton={false}>
                 <DialogTitle>Remove {space.name}?</DialogTitle>
                 <DialogDescription>
-                  This removes the managed target from Relay. Reports already created from it remain
-                  durable.
+                  Saved sign-ins for this browser will be removed. Existing reports stay.
                 </DialogDescription>
                 {remove.error ? (
                   <FieldError>
                     {remove.error instanceof Error
                       ? remove.error.message
-                      : "Relay could not remove this Space."}
+                      : "Relay could not remove this browser."}
                   </FieldError>
                 ) : null}
                 <div className="relay-dialog-actions flex flex-wrap items-center justify-end gap-2.5">
@@ -462,7 +450,7 @@ export function EnvironmentPage() {
                     onClick={() => remove.mutate()}
                     disabled={remove.isPending}
                   >
-                    {remove.isPending ? "Removing…" : "Remove Space"}
+                    {remove.isPending ? "Removing…" : "Remove browser"}
                   </Button>
                 </div>
               </DialogContent>
@@ -473,8 +461,7 @@ export function EnvironmentPage() {
             <DialogContent showCloseButton={false}>
               <DialogTitle>Save current sign-in</DialogTitle>
               <DialogDescription>
-                Open this Space, sign in yourself, then save the current reviewed browser state
-                under a reusable name.
+                Open the browser, sign in, then save that sign-in under a name.
               </DialogDescription>
               <form onSubmit={submitAccount}>
                 <Field>
@@ -544,6 +531,6 @@ export function EnvironmentPage() {
           </Dialog>
         </>
       ) : null}
-    </section>
+    </LibraryPage>
   );
 }

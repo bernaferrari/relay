@@ -88,7 +88,7 @@ export function SessionsPage() {
       <PageHeader
         context="Workspace"
         title="Live"
-        description="Open a device to explore your app, or continue a recording below."
+        description="Open a device, or continue something already running."
       />
       {devices.isPending ? <PageLoading label="Finding devices…" /> : null}
       <RecordingProblem
@@ -233,7 +233,7 @@ function SessionRow({
           </Badge>
         </span>
         <span className="truncate text-xs text-text-weak">
-          {targetName ?? session.target.targetId} ·{" "}
+          {targetName ?? (session.target.platform === "browser" ? "Browser" : "Device")} ·{" "}
           {session.actorKind === "agent" ? "Agent" : "Manual"}
         </span>
       </span>

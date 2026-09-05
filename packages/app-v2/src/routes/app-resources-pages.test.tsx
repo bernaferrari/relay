@@ -180,8 +180,8 @@ describe("App routes", () => {
       }),
     );
 
-    expect(document.body.textContent).toContain("Registered versions");
-    expect(document.body.textContent).toContain("Builds are workspace-scoped");
+    expect(document.body.textContent).toContain("Builds");
+    expect(document.body.textContent).toContain("Available when you choose what to run.");
     expect(document.body.textContent).toContain("Checkout 3.4.0");
     expect(document.body.textContent).toContain("iOS · release · com.example.checkout");
     expect(document.body.textContent).not.toContain("build-private");
@@ -268,8 +268,8 @@ describe("App routes", () => {
         },
       }),
     );
-    expect(button("Save account").disabled).toBe(false);
-    await click(button("Save account"));
+    expect(button("Save sign-in").disabled).toBe(false);
+    await click(button("Save sign-in"));
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain("First browser");
   });
 
@@ -298,8 +298,10 @@ describe("App routes", () => {
       }),
     );
 
-    expect(document.body.textContent).toContain("Saved browser sign-ins");
-    expect(document.body.textContent).toContain("Sign-ins belong to an exact managed browser");
+    expect(document.body.textContent).toContain("Saved sign-ins");
+    expect(document.body.textContent).toContain(
+      "Each sign-in stays with the browser it was saved from.",
+    );
     expect(document.body.textContent).toContain("Staging buyer");
     expect(document.body.textContent).toContain("Checkout browser · https://checkout.example");
     expect(document.body.textContent).not.toContain("authfx:");
@@ -351,7 +353,7 @@ describe("App routes", () => {
       }),
     );
 
-    await click(button("Save account"));
+    await click(button("Save sign-in"));
     await fill(document.querySelector<HTMLInputElement>("#account-name")!, "Reviewed buyer");
     await click(button("Save sign-in", document.querySelector('[role="dialog"]')!));
     expect(saved).toEqual([{ targetId: "browser-private", name: "Reviewed buyer" }]);
@@ -398,7 +400,7 @@ describe("App routes", () => {
       }),
     );
 
-    expect(button("Save account").disabled).toBe(true);
+    expect(button("Save sign-in").disabled).toBe(true);
     expect(document.querySelector('button[aria-label="Refresh Staging buyer"]')).toBeNull();
     expect(document.querySelector('button[aria-label="Revoke Staging buyer"]')).toBeNull();
   });

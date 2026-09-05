@@ -16,6 +16,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { Play, RotateCcw, Trash2 } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
+import { LibraryPage, PageHeader } from "../components/page-layout";
 import {
   Breadcrumbs,
   EmptyState,
@@ -153,7 +154,7 @@ export function SuitePage() {
   }
 
   return (
-    <section className="relay-page mx-auto w-full px-[clamp(20px,3vw,40px)] pt-7 pb-10 max-w-5xl">
+    <LibraryPage className="max-w-5xl">
       <Breadcrumbs
         items={[{ label: "Suites", to: "/suites" }, { label: value?.name ?? "Suite" }]}
       />
@@ -192,42 +193,36 @@ export function SuitePage() {
       ) : null}
       {value ? (
         <>
-          <header className="relay-page-header flex items-start justify-between gap-8 max-lg:flex-col">
-            <div className="min-w-0 max-w-3xl">
-              <p className="relay-eyebrow mb-2 text-[11px] font-semibold tracking-[0.02em] text-[var(--text-weak)]">
-                {value.appName} · Suite
-              </p>
-              <h1 className="text-balance text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance]">
-                {value.name}
-              </h1>
-              <p className="relay-page-description mt-2.5 max-w-[62ch] text-[15px] leading-[1.55] text-[var(--text-weak)] max-w-2xl">
-                Choose an environment and run a representative case.
-              </p>
-            </div>
-            <div className="flex shrink-0 flex-wrap items-center gap-2">
-              <Button variant="outline" onClick={beginEdit}>
-                Edit Suite
-              </Button>
-              <Button
-                variant="default"
-                onClick={() => start.mutate()}
-                disabled={
-                  !selectedProfileIds.length ||
-                  !preview.data ||
-                  Boolean(preview.data?.blockers.length) ||
-                  preview.data?.execution?.capacity === "unavailable" ||
-                  start.isPending
-                }
-              >
-                <Play aria-hidden="true" />
-                {start.isPending
-                  ? "Starting…"
-                  : executionMode === "all"
-                    ? "Run all cases"
-                    : "Start pilot"}
-              </Button>
-            </div>
-          </header>
+          <PageHeader
+            context={`${value.appName} · Suite`}
+            title={value.name}
+            description="Choose where to run, then start a representative case."
+            actions={
+              <>
+                <Button variant="ghost" onClick={beginEdit}>
+                  Edit
+                </Button>
+                <Button
+                  variant="default"
+                  onClick={() => start.mutate()}
+                  disabled={
+                    !selectedProfileIds.length ||
+                    !preview.data ||
+                    Boolean(preview.data?.blockers.length) ||
+                    preview.data?.execution?.capacity === "unavailable" ||
+                    start.isPending
+                  }
+                >
+                  <Play aria-hidden="true" />
+                  {start.isPending
+                    ? "Starting…"
+                    : executionMode === "all"
+                      ? "Run all cases"
+                      : "Run"}
+                </Button>
+              </>
+            }
+          />
 
           <dl
             className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-3 border-y border-border-weak-base py-3"
@@ -307,12 +302,12 @@ export function SuitePage() {
                       ? [
                           {
                             id: "target",
-                            label: "Saved environment is unavailable",
-                            detail: "Choose another environment to continue.",
+                            label: "Saved browser is unavailable",
+                            detail: "Choose another browser to continue.",
                           },
                         ]
                       : []
-                    : [{ id: "target", label: "Choose an environment before starting" }],
+                    : [{ id: "target", label: "Choose where to run before starting" }],
                   validated: Boolean(
                     preview.data &&
                     !preview.data.blockers.length &&
@@ -332,13 +327,13 @@ export function SuitePage() {
                 onSelectionChange={configuration.setSelection}
               />
               <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-                Choose one to four environments.
+                Choose one to four browsers.
               </p>
               <p className="mt-5 border-t border-border pt-4 text-sm font-medium">
                 How much should run?
               </p>
               <p className="mt-1 mb-3 text-xs leading-relaxed text-muted-foreground">
-                Start with one representative case, or run every case on the selected environments.
+                Start with one case, or run every case.
               </p>
               <div className="flex items-center gap-2" role="group" aria-label="Execution scope">
                 <Button
@@ -467,7 +462,7 @@ export function SuitePage() {
             >
               <DialogTitle>Edit Suite</DialogTitle>
               <DialogDescription>
-                Keep the scope deliberate. Removing a Test from this Suite does not delete it.
+                Removing a Test from this Suite does not delete it.
               </DialogDescription>
               <form onSubmit={submit}>
                 <Field>
@@ -553,16 +548,16 @@ export function SuitePage() {
           </Dialog>
         </>
       ) : null}
-    </section>
+    </LibraryPage>
   );
 }
 
 function friendlySuiteIssue(message: string): string {
   if (/ERR_CONNECTION_REFUSED|connection refused/i.test(message)) {
-    return "The selected environment could not reach the app. Check its URL or start the app, then try again.";
+    return "The selected browser could not reach the app. Check its URL or start the app, then try again.";
   }
   if (/runtime profile/i.test(message)) {
-    return "This environment needs a runtime profile before it can run the Suite.";
+    return "This browser needs a saved profile before it can run the Suite.";
   }
-  return "This environment is not ready yet. Review its configuration and try again.";
+  return "This browser is not ready yet. Review its setup and try again.";
 }

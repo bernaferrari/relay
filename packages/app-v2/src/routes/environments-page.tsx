@@ -16,6 +16,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { Globe2, Plus, RotateCcw } from "lucide-react";
 import { useState, type FormEvent } from "react";
+import { LibraryPage, PageHeader } from "../components/page-layout";
 import { Breadcrumbs, EmptyState, RecoveryState } from "../components/product-patterns";
 import { readSetupContinuation } from "../data/setup-continuation";
 import { PageLoading } from "./recording-shared";
@@ -83,145 +84,137 @@ export function EnvironmentsPage() {
   }
 
   return (
-    <section className="relay-page mx-auto w-full px-[clamp(20px,3vw,40px)] pt-7 pb-10 max-w-[1080px]">
-      <Breadcrumbs items={[{ label: "Home", to: "/home" }, { label: "Environments" }]} />
-      <header className="relay-page-header mb-6 flex items-start justify-between gap-4 max-[780px]:flex-col">
-        <div>
-          <p className="relay-eyebrow mb-2 text-[11px] font-semibold tracking-[0.02em] text-[var(--text-weak)]">
-            Workspace
-          </p>
-          <h1 className="text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance] text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance]">
-            Environments
-          </h1>
-          <p className="relay-page-description mt-2.5 max-w-[62ch] text-[15px] leading-[1.55] text-[var(--text-weak)]">
-            Set up browsers for recording and running Tests. Each Browser Space keeps its own
-            website, storage, and sign-in state.
-          </p>
-        </div>
-        <div className="flex flex-none flex-wrap gap-4">
-          {continuation ? (
-            <Button
-              variant="ghost"
-              nativeButton={false}
-              render={
-                <Link
-                  to="/tests/new"
-                  search={{
-                    ...(continuation.appId ? { app: continuation.appId } : {}),
-                    ...(continuation.targetId ? { target: continuation.targetId } : {}),
-                  }}
-                />
-              }
+    <LibraryPage className="max-w-[1040px]">
+      <Breadcrumbs items={[{ label: "Devices", to: "/devices" }, { label: "Browsers" }]} />
+      <PageHeader
+        context="Devices & browsers"
+        title="Browsers"
+        description="Saved browsers you can open, record on, and sign into."
+        actions={
+          <>
+            {continuation ? (
+              <Button
+                variant="ghost"
+                nativeButton={false}
+                render={
+                  <Link
+                    to="/tests/new"
+                    search={{
+                      ...(continuation.appId ? { app: continuation.appId } : {}),
+                      ...(continuation.targetId ? { target: continuation.targetId } : {}),
+                    }}
+                  />
+                }
+              >
+                Back to recording
+              </Button>
+            ) : null}
+            <Dialog
+              open={open}
+              onOpenChange={(next) => {
+                setOpen(next);
+                if (next) reset();
+              }}
             >
-              Back to Test setup
-            </Button>
-          ) : null}
-          <Button nativeButton={false} render={<Link to="/devices" />} variant="outline">
-            Devices
-          </Button>
-          <Dialog
-            open={open}
-            onOpenChange={(next) => {
-              setOpen(next);
-              if (next) reset();
-            }}
-          >
-            <DialogTrigger render={<Button variant="default" />}>
-              <Plus aria-hidden="true" /> New Browser Space
-            </DialogTrigger>
+              <DialogTrigger render={<Button variant="default" />}>
+                <Plus aria-hidden="true" /> New browser
+              </DialogTrigger>
 
-            <DialogContent showCloseButton={false} className="relay-environment-dialog">
-              <DialogTitle>New Browser Space</DialogTitle>
-              <DialogDescription>
-                A Browser Space is an isolated browser for your Tests. Choose its starting website
-                and whether to keep browser data between sessions.
-              </DialogDescription>
-              <form onSubmit={submit} className="grid gap-5">
-                <Field>
-                  <FieldLabel htmlFor="space-name">Name</FieldLabel>
-                  <Input
-                    id="space-name"
-                    value={name}
-                    onChange={(event) => setName(event.currentTarget.value)}
-                    placeholder="For example, Staging member"
-                    autoComplete="off"
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="space-url">Start URL</FieldLabel>
-                  <Input
-                    id="space-url"
-                    type="url"
-                    inputMode="url"
-                    value={startUrl}
-                    onChange={(event) => setStartUrl(event.currentTarget.value)}
-                    placeholder="https://staging.example.com"
-                    autoCapitalize="none"
-                    autoCorrect="off"
-                  />
-                </Field>
-                <ChoiceLabel className="flex min-h-14 min-w-0 cursor-pointer items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50">
-                  <span className="grid min-w-0 flex-1 gap-0.5">
-                    <span className="text-sm font-medium text-foreground">
-                      Keep this browser profile
+              <DialogContent showCloseButton={false} className="relay-environment-dialog">
+                <DialogTitle>New browser</DialogTitle>
+                <DialogDescription>
+                  Opens an isolated browser for this workspace. Keep data if you need the same
+                  sign-in next time.
+                </DialogDescription>
+                <form onSubmit={submit} className="grid gap-5">
+                  <Field>
+                    <FieldLabel htmlFor="space-name">Name</FieldLabel>
+                    <Input
+                      id="space-name"
+                      value={name}
+                      onChange={(event) => setName(event.currentTarget.value)}
+                      placeholder="For example, Staging member"
+                      autoComplete="off"
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="space-url">Website</FieldLabel>
+                    <Input
+                      id="space-url"
+                      type="url"
+                      inputMode="url"
+                      value={startUrl}
+                      onChange={(event) => setStartUrl(event.currentTarget.value)}
+                      placeholder="https://staging.example.com"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                    />
+                  </Field>
+                  <ChoiceLabel className="flex min-h-14 min-w-0 cursor-pointer items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50">
+                    <span className="grid min-w-0 flex-1 gap-0.5">
+                      <span className="text-sm font-medium text-foreground">
+                        Keep this browser profile
+                      </span>
+                      <span className="text-xs leading-snug text-muted-foreground">
+                        Keep browser data and saved sign-ins between sessions.
+                      </span>
                     </span>
-                    <span className="text-xs leading-snug text-muted-foreground">
-                      Keep browser data and saved sign-ins between sessions.
-                    </span>
-                  </span>
-                  <Checkbox
-                    checked={persistent}
-                    onCheckedChange={(checked) => setPersistent(checked === true)}
-                  />
-                </ChoiceLabel>
-                {create.error ? (
-                  <FieldError>
-                    {create.error instanceof Error
-                      ? create.error.message
-                      : "Relay could not create this Browser Space."}
-                  </FieldError>
-                ) : null}
-                <div className="relay-dialog-actions flex flex-wrap items-center justify-end gap-2.5">
-                  <DialogClose
-                    render={
-                      <Button
-                        variant="ghost"
-                        onClick={() => {
-                          if (continuation) {
-                            void navigate({
-                              to: "/tests/new",
-                              search: {
-                                ...(continuation.appId ? { app: continuation.appId } : {}),
-                                ...(continuation.targetId ? { target: continuation.targetId } : {}),
-                              },
-                            });
-                          }
-                        }}
-                      />
-                    }
-                  >
-                    Cancel
-                  </DialogClose>
-                  <Button
-                    type="submit"
-                    variant="default"
-                    disabled={!name.trim() || !startUrl.trim() || create.isPending}
-                  >
-                    {create.isPending ? "Creating…" : "Create Space"}
-                  </Button>
-                </div>
-              </form>
-            </DialogContent>
-          </Dialog>
-        </div>
-      </header>
+                    <Checkbox
+                      checked={persistent}
+                      onCheckedChange={(checked) => setPersistent(checked === true)}
+                    />
+                  </ChoiceLabel>
+                  {create.error ? (
+                    <FieldError>
+                      {create.error instanceof Error
+                        ? create.error.message
+                        : "Relay could not create this browser."}
+                    </FieldError>
+                  ) : null}
+                  <div className="relay-dialog-actions flex flex-wrap items-center justify-end gap-2.5">
+                    <DialogClose
+                      render={
+                        <Button
+                          variant="ghost"
+                          onClick={() => {
+                            if (continuation) {
+                              void navigate({
+                                to: "/tests/new",
+                                search: {
+                                  ...(continuation.appId ? { app: continuation.appId } : {}),
+                                  ...(continuation.targetId
+                                    ? { target: continuation.targetId }
+                                    : {}),
+                                },
+                              });
+                            }
+                          }}
+                        />
+                      }
+                    >
+                      Cancel
+                    </DialogClose>
+                    <Button
+                      type="submit"
+                      variant="default"
+                      disabled={!name.trim() || !startUrl.trim() || create.isPending}
+                    >
+                      {create.isPending ? "Creating…" : "Create browser"}
+                    </Button>
+                  </div>
+                </form>
+              </DialogContent>
+            </Dialog>
+          </>
+        }
+      />
 
-      {spaces.isPending ? <PageLoading label="Loading Environments…" /> : null}
+      {spaces.isPending ? <PageLoading label="Loading browsers…" /> : null}
       {spaces.error ? (
         <RecoveryState
           layout="centered"
-          title="Environments are unavailable"
-          detail="Reconnect Relay, then load managed browser Spaces again."
+          title="Browsers are unavailable"
+          detail="Reconnect Relay, then try again."
           action={
             <Button variant="outline" onClick={() => void spaces.refetch()}>
               <RotateCcw aria-hidden="true" /> Try again
@@ -230,7 +223,7 @@ export function EnvironmentsPage() {
         />
       ) : null}
       {spaces.data?.length ? (
-        <ul className="mb-6 grid list-none gap-3 p-0" aria-label="Browser Spaces">
+        <ul className="mb-6 grid list-none gap-3 p-0" aria-label="Browsers">
           {spaces.data.map((space) => (
             <li key={space.id}>
               <Link
@@ -266,8 +259,8 @@ export function EnvironmentsPage() {
       {!spaces.isPending && !spaces.error && spaces.data?.length === 0 ? (
         <EmptyState
           icon={Globe2}
-          title="No browser Spaces yet"
-          detail="Create one reusable, isolated browser environment for recording and running Tests."
+          title="No browsers yet"
+          detail="Start one to record or run a Test."
           action={
             <Button
               variant="default"
@@ -276,26 +269,11 @@ export function EnvironmentsPage() {
                 setOpen(true);
               }}
             >
-              New Browser Space
+              New browser
             </Button>
           }
         />
       ) : null}
-      <section className="min-w-0 rounded-xl border border-border bg-card p-[18px] shadow-sm">
-        <div>
-          <h2 className="text-sm font-semibold">Testing on a phone or tablet?</h2>
-          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-            Connected iOS and Android devices are managed separately because their readiness changes
-            with cables, locks, and local tooling.
-          </p>
-        </div>
-        <Link
-          className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
-          to="/devices"
-        >
-          View Devices
-        </Link>
-      </section>
-    </section>
+    </LibraryPage>
   );
 }

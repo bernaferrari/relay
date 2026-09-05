@@ -70,7 +70,7 @@ export function AppsPage() {
       <PageHeader
         context="Workspace"
         title="Apps"
-        description="Keep each app’s Tests, Reports, and known behavior together."
+        description="Tests and results for each app."
         actions={
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger render={<Button variant="default" />}>

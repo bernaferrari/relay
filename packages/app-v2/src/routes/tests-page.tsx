@@ -125,7 +125,6 @@ export function TestsPage() {
         ),
     [app, deferredQuery, result, status, tests.data],
   );
-  const readyVisibleIds = visibleReadyIdsFor(visibleTests);
   const returnFocus = useCollectionReturnFocus("relay:focus:/tests", visibleTests, "/tests/");
   const resultLabel = resultContext(status, app, apps);
   const statusOptions = [
@@ -182,10 +181,6 @@ export function TestsPage() {
     });
   }
 
-  function selectAllReady() {
-    setSelectedIds((current) => new Set([...current, ...readyVisibleIds]));
-  }
-
   function clearSelection() {
     setSelectedIds(new Set());
   }
@@ -205,7 +200,7 @@ export function TestsPage() {
       <PageHeader
         context="Tests"
         title="Saved Tests"
-        description="Reviewed journeys you can run again on a device or browser."
+        description="Run a saved journey, or record a new one."
         actions={
           <Button
             nativeButton={false}
@@ -228,10 +223,9 @@ export function TestsPage() {
           showCloseButton={false}
           className="max-h-[min(760px,calc(100vh-32px))] w-[min(720px,calc(100vw-32px))] overflow-auto"
         >
-          <DialogTitle>Create Suite from selected Tests</DialogTitle>
+          <DialogTitle>Create Suite</DialogTitle>
           <DialogDescription>
-            A Suite belongs to one App and runs its selected Tests together. This only creates the
-            Suite; it does not start a Run.
+            Group the selected Tests so you can run them together.
           </DialogDescription>
           <form
             onSubmit={(event) => {
@@ -366,36 +360,22 @@ export function TestsPage() {
         />
       </div>
 
-      <div
-        className={`relay-test-selection-toolbar mt-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-2 text-xs text-muted-foreground ${selectedIds.size ? "rounded-lg bg-muted px-3" : ""}`}
-        aria-label="Test selection actions"
-      >
-        <span>
-          {selectedIds.size
-            ? `${selectedIds.size} selected`
-            : "Select ready Tests to build a Suite"}
-        </span>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={selectAllReady}
-            disabled={!readyVisibleIds.length}
-          >
-            Select all ready
-          </Button>
-          {selectedIds.size ? (
-            <>
-              <Button variant="ghost" size="sm" onClick={clearSelection}>
-                Clear selection
-              </Button>
-              <Button variant="default" size="sm" onClick={openSuiteDialog}>
-                Create Suite
-              </Button>
-            </>
-          ) : null}
+      {selectedIds.size ? (
+        <div
+          className="relay-test-selection-toolbar mt-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground"
+          aria-label="Test selection actions"
+        >
+          <span>{selectedIds.size} selected</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={clearSelection}>
+              Clear
+            </Button>
+            <Button variant="default" size="sm" onClick={openSuiteDialog}>
+              Create Suite
+            </Button>
+          </div>
         </div>
-      </div>
+      ) : null}
 
       {tests.isPending ? <PageLoading label="Loading saved Tests…" /> : null}
       <RecordingProblem
@@ -444,7 +424,7 @@ export function TestsPage() {
         ) : (
           <EmptyState
             title="No saved Tests yet"
-            detail="Record one focused journey, review it, and Relay will keep it here for future Runs."
+            detail="Record a journey to run it again later."
             action={
               <Link
                 className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
@@ -566,10 +546,6 @@ function resultContext(status: TestFilter, app: string, apps: readonly [string, 
 
 function runTime(run: NonNullable<ProductTestSummary["recentRun"]>): number {
   return run.finishedAt ?? run.startedAt ?? run.queuedAt;
-}
-
-function visibleReadyIdsFor(tests: readonly ProductTestSummary[]): string[] {
-  return tests.filter((test) => test.status === "ready").map(testSelectionKey);
 }
 
 function testSelectionKey(test: Pick<ProductTestSummary, "appMapId" | "id">): string {

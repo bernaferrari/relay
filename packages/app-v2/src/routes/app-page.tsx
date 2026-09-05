@@ -1,10 +1,5 @@
 /** @jsxImportSource react */
 import { Button } from "@relay/ui-react/components/button";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@relay/ui-react/components/collapsible";
 import { useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useRouteContext } from "@tanstack/react-router";
 import { ArrowRight } from "lucide-react";
@@ -67,7 +62,7 @@ export function AppPage() {
           <PageHeader
             context="App"
             title={app.data.appName}
-            description={app.data.description ?? "Saved tests and recent results for your app."}
+            description={app.data.description ?? "Tests and recent results."}
             actions={
               <Button
                 nativeButton={false}
@@ -79,7 +74,7 @@ export function AppPage() {
           />
 
           <dl
-            className="my-6 grid grid-cols-3 gap-4 border-y border-border py-5 [&_dt]:text-xs [&_dt]:text-muted-foreground [&_dd]:mt-2 [&_dd]:text-xl [&_dd]:font-semibold [&_dd]:tabular-nums max-[560px]:grid-cols-1"
+            className="my-6 grid grid-cols-2 gap-4 border-y border-border py-5 [&_dt]:text-xs [&_dt]:text-muted-foreground [&_dd]:mt-2 [&_dd]:text-xl [&_dd]:font-semibold [&_dd]:tabular-nums max-[560px]:grid-cols-1"
             aria-label={`${app.data.appName} overview`}
           >
             <div>
@@ -91,16 +86,8 @@ export function AppPage() {
               </dd>
             </div>
             <div>
-              <dt>Reports</dt>
+              <dt>Results</dt>
               <dd>{runs.isError ? "Unavailable" : (runs.data?.length ?? 0)}</dd>
-            </div>
-            <div>
-              <dt>Known screen coverage</dt>
-              <dd>
-                {app.data.coverage.screenCount
-                  ? `${app.data.coverage.coveredScreenCount} of ${app.data.coverage.screenCount}`
-                  : "Not mapped"}
-              </dd>
             </div>
           </dl>
 
@@ -272,61 +259,15 @@ export function AppPage() {
               )}
             </section>
           </div>
-          <section className="mt-[34px]" aria-labelledby="app-resources-title">
-            <header className="flex items-end justify-between gap-5 max-[620px]:items-start max-[620px]:gap-3">
-              <div>
-                <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
-                  Configuration
-                </p>
-                <h2 id="app-resources-title" className="text-base font-semibold">
-                  Workspace resources
-                </h2>
-              </div>
-            </header>
-            <div className="mt-3 grid grid-cols-2 gap-2.5 max-[780px]:grid-cols-1">
-              <Link
-                className="flex min-h-16 items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5 focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)]"
-                to="/versions"
-              >
-                <span className="grid min-w-0 gap-0.5">
-                  <strong className="text-sm font-semibold text-foreground">Versions</strong>
-                  <small className="truncate text-xs text-muted-foreground">
-                    Registered builds and web deployments
-                  </small>
-                </span>
-                <ArrowRight className="size-4" aria-hidden="true" />
-              </Link>
-              <Link
-                className="flex min-h-16 items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5 focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)]"
-                to="/accounts"
-              >
-                <span className="grid min-w-0 gap-0.5">
-                  <strong className="text-sm font-semibold text-foreground">Accounts</strong>
-                  <small className="truncate text-xs text-muted-foreground">
-                    Reviewed browser sign-ins
-                  </small>
-                </span>
-                <ArrowRight className="size-4" aria-hidden="true" />
-              </Link>
-            </div>
-          </section>
-          <Collapsible className="mt-[34px] max-w-[620px] border-t border-border">
-            <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 py-2 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
-              Advanced
-            </CollapsibleTrigger>
-            <CollapsibleContent className="space-y-3 border-t pt-3 text-sm">
-              <div>
-                <p>Inspect Relay’s known screens, verified paths, and coverage for this app.</p>
-                <Link
-                  className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
-                  to="/apps/$appId/map"
-                  params={{ appId }}
-                >
-                  Open Map
-                </Link>
-              </div>
-            </CollapsibleContent>
-          </Collapsible>
+          <p className="mt-8 text-sm text-muted-foreground">
+            <Link
+              className="underline-offset-4 hover:underline"
+              to="/apps/$appId/map"
+              params={{ appId }}
+            >
+              Coverage map
+            </Link>
+          </p>
         </>
       ) : null}
     </LibraryPage>

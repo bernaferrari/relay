@@ -68,9 +68,7 @@ export function buildBatchMatrix(
       columns.set(environmentId, {
         id: environmentId,
         label:
-          environmentId === fallbackEnvironment
-            ? "Selected environment"
-            : humanizeBatchIdentity(environmentId),
+          environmentId === fallbackEnvironment ? "Device" : humanizeBatchIdentity(environmentId),
         ...(item.identity?.environmentPlatform
           ? { platform: item.identity.environmentPlatform }
           : {}),
@@ -112,6 +110,28 @@ export function buildBatchMatrix(
     rows,
     completeIdentity,
   };
+}
+
+export function shouldShowBatchMatrix(matrix: BatchMatrix): boolean {
+  return matrix.completeIdentity && (matrix.rows.length > 1 || matrix.columns.length > 1);
+}
+
+export function visibleBatchCases(
+  cases: readonly ProductBatchCase[],
+  failuresOnly: boolean,
+): readonly ProductBatchCase[] {
+  const visible = failuresOnly ? cases.filter(isBatchCaseProblem) : cases;
+  return sortBatchCases(visible, true);
+}
+
+export function sortBatchCases(
+  cases: readonly ProductBatchCase[],
+  failuresFirst: boolean,
+): readonly ProductBatchCase[] {
+  if (!failuresFirst) return cases;
+  return [...cases].sort(
+    (left, right) => Number(isBatchCaseProblem(right)) - Number(isBatchCaseProblem(left)),
+  );
 }
 
 export function selectedClusterCaseIds(

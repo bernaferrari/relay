@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { ProductBatchCase } from "@relay/product/run-across";
-import { buildBatchMatrix, selectedClusterCaseIds } from "./batch-triage";
+import {
+  buildBatchMatrix,
+  selectedClusterCaseIds,
+  shouldShowBatchMatrix,
+  visibleBatchCases,
+} from "./batch-triage";
 import { sortBatchCasesForDisplay } from "./batch-triage-panels";
 
 const cases: ProductBatchCase[] = [
@@ -47,12 +52,23 @@ describe("Batch triage presentation", () => {
     expect(matrix.rows.map(({ id }) => id)).toEqual(["login", "checkout"]);
     expect(matrix.columns.map(({ id }) => id)).toEqual(["chrome-desktop", "iphone-15"]);
     expect(matrix.rows[0]?.cells.get("iphone-15")?.cases[0]?.id).toBe("login-ios");
+    expect(shouldShowBatchMatrix(matrix)).toBe(true);
   });
 
   it("keeps legacy batches useful without fabricating durable identities", () => {
     const matrix = buildBatchMatrix([{ ...cases[0]!, identity: undefined }]);
     expect(matrix.completeIdentity).toBe(false);
-    expect(matrix.columns[0]?.label).toBe("Selected environment");
+    expect(matrix.columns[0]?.label).toBe("Device");
+    expect(shouldShowBatchMatrix(matrix)).toBe(false);
+    expect(
+      visibleBatchCases(
+        [
+          { ...cases[0]!, identity: undefined, status: "failed" },
+          { ...cases[0]!, id: "ok", identity: undefined, status: "passed" },
+        ],
+        true,
+      ).map((item) => item.status),
+    ).toEqual(["failed"]);
   });
 
   it("expands selected failure clusters into exact case ids", () => {

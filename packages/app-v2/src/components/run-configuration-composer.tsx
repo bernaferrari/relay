@@ -122,7 +122,7 @@ export function RunConfigurationComposer({
               disabled={loading}
               className="relay-config-options grid min-w-0 gap-2 border-0 p-0 [&_legend]:mb-2.5 [&_legend]:text-[13px] [&_legend]:font-semibold"
             >
-              <legend>Environments</legend>
+              <legend>Where to run</legend>
               {targetOptions.map((option) => (
                 <FieldLabel
                   key={option.id}

@@ -4,15 +4,17 @@ import type {
   ProductBatchFailureCluster,
   ProductBatchReport,
 } from "@relay/product/run-across";
-import { Badge } from "@relay/ui-react/components/badge";
 import { Checkbox } from "@relay/ui-react/components/checkbox";
 import { Link } from "@tanstack/react-router";
-import { ExternalLink } from "lucide-react";
+import { ChevronRight, ExternalLink } from "lucide-react";
 import {
   buildBatchMatrix,
   humanizeBatchIdentity,
   isBatchCaseProblem,
   isBatchCaseRerunnable,
+  shouldShowBatchMatrix,
+  sortBatchCases,
+  visibleBatchCases,
 } from "./batch-triage";
 
 export function BatchFailureClusters({
@@ -32,7 +34,7 @@ export function BatchFailureClusters({
           <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
             Failure clusters
           </p>
-          <h2 id="batch-clusters-title">Review one cause, rerun every matching case</h2>
+          <h2 id="batch-clusters-title">Same failure</h2>
         </div>
         <span>{clusters.length} groups</span>
       </div>
@@ -84,95 +86,102 @@ export function BatchResultMatrix({
   onToggleCase(item: ProductBatchCase, checked: boolean): void;
 }) {
   const matrix = buildBatchMatrix(report.cases, report.setup);
-  const rows = failuresOnly
-    ? [...matrix.rows].sort((left, right) => Number(right.hasProblems) - Number(left.hasProblems))
-    : matrix.rows;
+  const cases = visibleBatchCases(report.cases, failuresOnly);
+  const showMatrix = shouldShowBatchMatrix(matrix);
+  const rows = showMatrix
+    ? matrix.rows
+        .map((row) => ({
+          ...row,
+          visibleCells: matrix.columns.map((column) => {
+            const cell = row.cells.get(column.id);
+            const visible = cell ? visibleBatchCases(cell.cases, failuresOnly) : [];
+            return { column, cell, visible };
+          }),
+        }))
+        .filter((row) => row.visibleCells.some((entry) => entry.visible.length))
+    : [];
   return (
-    <section className="relay-batch-matrix mt-8" aria-labelledby="batch-matrix-title">
-      <div className="flex items-end justify-between gap-5 max-[620px]:flex-col max-[620px]:items-start max-[620px]:gap-2">
-        <div>
-          <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
-            Test × Environment
-          </p>
-          <h2 id="batch-matrix-title" className="text-sm font-semibold">
-            Execution matrix
-          </h2>
-        </div>
-        <span className="max-w-[48ch] text-xs leading-relaxed text-muted-foreground">
-          {matrix.completeIdentity
-            ? `${matrix.rows.length} Tests · ${matrix.columns.length} Environments`
-            : "Some cases have no saved Test or environment identity"}
-        </span>
-      </div>
-      <div className="relay-batch-matrix-scroll mt-3 overflow-auto rounded-xl border border-border bg-card">
-        <table className="min-w-[560px] w-full border-separate border-spacing-0">
-          <thead>
-            <tr>
-              <th
-                className="sticky left-0 z-[1] w-[190px] min-w-[140px] max-[620px]:w-[140px] border-r border-b border-border bg-background p-3 text-left text-xs"
-                scope="col"
-              >
-                Test
-              </th>
-              {matrix.columns.map((column) => (
+    <section className="relay-batch-matrix" aria-label={failuresOnly ? "Failed cases" : "Results"}>
+      {showMatrix ? (
+        <div className="relay-batch-matrix-scroll overflow-auto rounded-xl border border-border bg-card">
+          <table className="min-w-[560px] w-full border-separate border-spacing-0">
+            <thead>
+              <tr>
                 <th
-                  className="min-w-[184px] border-r border-b border-border bg-muted p-3 text-left text-xs"
+                  className="sticky left-0 z-[1] w-[190px] min-w-[140px] border-r border-b border-border bg-background p-3 text-left text-xs"
                   scope="col"
-                  key={column.id}
                 >
-                  <strong className="block truncate font-semibold text-foreground">
-                    {column.label}
-                  </strong>
-                  <small className="mt-1 block text-[10px] text-muted-foreground">
-                    {column.platform ? platformLabel(column.platform) : "Environment"}
-                  </small>
+                  Test
                 </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row.id}>
-                <th
-                  className="sticky left-0 z-[1] w-[190px] min-w-[140px] max-[620px]:w-[140px] border-r border-b border-border bg-background p-3 text-left align-top"
-                  scope="row"
-                >
-                  <strong className="block truncate font-semibold text-foreground">
-                    {row.label}
-                  </strong>
-                  <small className="mt-1 block text-[10px] text-muted-foreground">
-                    {row.hasProblems ? "Needs triage" : "Complete"}
-                  </small>
-                </th>
-                {matrix.columns.map((column) => {
-                  const cell = row.cells.get(column.id);
-                  return (
+                {matrix.columns.map((column) => (
+                  <th
+                    className="min-w-[184px] border-r border-b border-border bg-muted p-3 text-left text-xs"
+                    scope="col"
+                    key={column.id}
+                  >
+                    <strong className="block truncate font-semibold text-foreground">
+                      {column.label}
+                    </strong>
+                    {column.platform ? (
+                      <small className="mt-1 block text-[10px] text-muted-foreground">
+                        {platformLabel(column.platform)}
+                      </small>
+                    ) : null}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.id}>
+                  <th
+                    className="sticky left-0 z-[1] w-[190px] min-w-[140px] border-r border-b border-border bg-background p-3 text-left align-top"
+                    scope="row"
+                  >
+                    <strong className="block truncate font-semibold text-foreground">
+                      {row.label}
+                    </strong>
+                  </th>
+                  {row.visibleCells.map(({ column, visible }) => (
                     <td
                       key={column.id}
                       className="min-w-[184px] border-r border-b border-border p-3 align-top"
                     >
-                      {cell ? (
+                      {visible.length ? (
                         <div className="relay-batch-matrix-cell grid gap-2">
-                          {sortBatchCasesForDisplay(cell.cases, failuresOnly).map((item) => (
+                          {visible.map((item) => (
                             <BatchCaseResult
                               key={item.id}
                               item={item}
                               selected={selected.has(item.id)}
+                              compact
                               onToggle={(checked) => onToggleCase(item, checked)}
                             />
                           ))}
                         </div>
                       ) : (
-                        <span className="relay-batch-matrix-empty">—</span>
+                        <span className="text-xs text-muted-foreground">—</span>
                       )}
                     </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <ul className="m-0 list-none divide-y divide-border border-y border-border p-0">
+          {cases.map((item) => (
+            <li key={item.id}>
+              <BatchCaseResult
+                item={item}
+                selected={selected.has(item.id)}
+                onToggle={(checked) => onToggleCase(item, checked)}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   );
 }
@@ -181,47 +190,71 @@ function BatchCaseResult({
   item,
   selected,
   onToggle,
+  compact = false,
 }: {
   item: ProductBatchCase;
   selected: boolean;
   onToggle(checked: boolean): void;
+  compact?: boolean;
 }) {
   const rerunnable = isBatchCaseRerunnable(item);
+  const label = caseValues(item);
+  const problem = isBatchCaseProblem(item);
   return (
     <div
-      className={`relay-batch-result grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-md p-1 ${isBatchCaseProblem(item) ? "bg-red-500/5" : ""}`}
+      className={`relay-batch-result group grid items-center gap-2 ${
+        compact
+          ? "grid-cols-[minmax(0,1fr)_auto] rounded-md px-1 py-1"
+          : "grid-cols-[minmax(0,1fr)_auto] px-3 py-3 transition-colors hover:bg-muted/40"
+      }`}
     >
-      {rerunnable ? (
-        <Checkbox
-          className="size-6 after:inset-0"
-          checked={selected}
-          onCheckedChange={(checked) => onToggle(checked === true)}
-          aria-label={`Select ${item.world ?? `case ${item.index + 1}`}`}
-        />
-      ) : (
-        <span className="relay-batch-result-spacer" />
-      )}
-      <span className="grid min-w-0 justify-items-start gap-1">
-        <Badge
-          variant={caseVariant(item.status).variant}
-          className={caseVariant(item.status).className}
-        >
-          {caseStatus(item.status)}
-        </Badge>
-        <small className="max-w-[22ch] overflow-hidden text-[10px] text-muted-foreground text-ellipsis whitespace-nowrap">
-          {caseValues(item)}
-        </small>
-      </span>
       {item.runId ? (
         <Link
           to="/runs/$runId"
           params={{ runId: item.runId }}
-          aria-label={`Open Report for ${item.world ?? `case ${item.index + 1}`}`}
-          className="inline-flex size-11 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring [&>svg]:size-4"
+          className="grid min-w-0 gap-0.5 rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         >
-          <ExternalLink aria-hidden="true" />
+          <span className="flex min-w-0 items-baseline gap-2">
+            <span
+              className={`shrink-0 text-xs font-medium ${
+                item.status === "failed"
+                  ? "text-red-600 dark:text-red-400"
+                  : item.status === "passed"
+                    ? "text-emerald-700 dark:text-emerald-400"
+                    : "text-muted-foreground"
+              }`}
+            >
+              {caseStatus(item.status)}
+            </span>
+            <strong className="truncate text-sm font-medium text-foreground">{label}</strong>
+          </span>
+          {item.error && problem ? (
+            <small className="truncate text-xs text-muted-foreground">{item.error}</small>
+          ) : null}
         </Link>
-      ) : null}
+      ) : (
+        <span className="grid min-w-0 gap-0.5">
+          <span className="flex min-w-0 items-baseline gap-2">
+            <span className="shrink-0 text-xs font-medium text-muted-foreground">
+              {caseStatus(item.status)}
+            </span>
+            <strong className="truncate text-sm font-medium text-foreground">{label}</strong>
+          </span>
+        </span>
+      )}
+      <span className="flex shrink-0 items-center gap-1">
+        {rerunnable ? (
+          <Checkbox
+            className="size-5 after:inset-0"
+            checked={selected}
+            onCheckedChange={(checked) => onToggle(checked === true)}
+            aria-label={`Select ${label}`}
+          />
+        ) : null}
+        {item.runId ? (
+          <ChevronRight className="size-4 text-muted-foreground" aria-hidden="true" />
+        ) : null}
+      </span>
     </div>
   );
 }
@@ -230,10 +263,7 @@ export function sortBatchCasesForDisplay(
   cases: readonly ProductBatchCase[],
   failuresFirst: boolean,
 ): readonly ProductBatchCase[] {
-  if (!failuresFirst) return cases;
-  return [...cases].sort(
-    (left, right) => Number(isBatchCaseProblem(right)) - Number(isBatchCaseProblem(left)),
-  );
+  return sortBatchCases(cases, failuresFirst);
 }
 
 function caseValues(item: ProductBatchCase): string {
@@ -250,26 +280,6 @@ function caseStatus(status: ProductBatchCase["status"]): string {
   if (status === "running") return "Running";
   if (status === "queued") return "Queued";
   return "Pending";
-}
-
-function caseVariant(status: ProductBatchCase["status"]): {
-  variant: "default" | "destructive" | "secondary";
-  className?: string;
-} {
-  if (status === "passed") {
-    return {
-      variant: "default",
-      className: "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300",
-    };
-  }
-  if (status === "failed") return { variant: "destructive" };
-  if (status === "blocked") {
-    return {
-      variant: "secondary",
-      className: "bg-amber-500/15 text-amber-800 dark:text-amber-300",
-    };
-  }
-  return { variant: "secondary" };
 }
 
 function failureKind(kind: ProductBatchFailureCluster["kind"]): string {

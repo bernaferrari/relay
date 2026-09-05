@@ -404,7 +404,7 @@ describe("Home", () => {
     expect(document.body.textContent).toContain("Your workspace");
     expect(document.body.textContent).toContain("Keep Arabic settings readable");
     expect(document.body.textContent).toContain("Continue verification");
-    expect(document.body.textContent).toContain("1 target ready");
+    expect(document.body.textContent).toContain("1 device ready");
     expect(document.body.textContent).toContain("Latest results");
     expect(document.body.textContent).toContain("Managed Chromium");
     expect(document.body.textContent).not.toContain("Start with one journey");

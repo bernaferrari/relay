@@ -53,7 +53,7 @@ export function ChangesPage() {
       <PageHeader
         context="Changes"
         title="Change verification"
-        description="See which code changes are ready to merge, what Relay verified, and what still needs attention."
+        description="What Relay verified, and what still needs attention."
         actions={
           !changes.isError ? (
             <Button variant="default" onClick={() => prepare.mutate()} disabled={prepare.isPending}>

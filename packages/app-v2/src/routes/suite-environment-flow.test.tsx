@@ -280,14 +280,14 @@ describe("Suite and Environment routes", () => {
       },
     });
     const { history } = await render("/apps/app-1/suites/suite-1", { suiteService: service });
-    const pilot = [...document.querySelectorAll("button")].find((candidate) =>
-      candidate.textContent?.includes("Start pilot"),
+    const run = [...document.querySelectorAll("button")].find((candidate) =>
+      candidate.textContent?.includes("Run"),
     );
-    expect(pilot).toBeInstanceOf(HTMLButtonElement);
-    expect((pilot as HTMLButtonElement).disabled).toBe(true);
+    expect(run).toBeInstanceOf(HTMLButtonElement);
+    expect((run as HTMLButtonElement).disabled).toBe(true);
     expect(document.body.textContent).toContain("Needs attention");
 
-    await clickButton("Edit Suite");
+    await clickButton("Edit");
     expect(document.querySelector("#edit-suite-name")).not.toBeNull();
     await fill("edit-suite-name", "Release smoke updated");
     await clickButton("Save changes");
@@ -328,20 +328,20 @@ describe("Suite and Environment routes", () => {
     expect(document.body.textContent).toContain("Multi-environment execution is unavailable.");
   });
 
-  it("creates a Browser Space with labeled fields and opens its canonical detail route", async () => {
+  it("creates a browser with labeled fields and opens its canonical detail route", async () => {
     const created = { ...space, id: "space-2", name: "New staging" };
     const create = vi.fn(async () => created);
     const { history } = await render("/environments", {
       browserService: browserService({ createSpace: create }),
     });
-    expect(document.querySelector("h1")?.textContent).toBe("Environments");
+    expect(document.querySelector("h1")?.textContent).toBe("Browsers");
     expect(document.body.textContent).toContain("Staging browser");
-    await clickButton("New Browser Space");
+    await clickButton("New browser");
     await fill("space-name", "New staging");
     await fill("space-url", "https://new.example.test");
     expect(document.querySelector('label[for="space-name"]')?.textContent).toBe("Name");
-    expect(document.querySelector('label[for="space-url"]')?.textContent).toBe("Start URL");
-    await clickButton("Create Space");
+    expect(document.querySelector('label[for="space-url"]')?.textContent).toBe("Website");
+    await clickButton("Create browser");
     expect(create).toHaveBeenCalledWith({
       name: "New staging",
       startUrl: "https://new.example.test",
@@ -375,11 +375,11 @@ describe("Suite and Environment routes", () => {
     });
     expect(document.body.textContent).toContain("Current checks");
     expect(document.body.textContent).toContain("Staging account");
-    await clickButton("Open externally");
+    await clickButton("Open in system browser");
     expect(calls.open).toBe(1);
     expect(openExternal).toHaveBeenCalledWith(space.startUrl);
 
-    await clickButton("Open Live workspace");
+    await clickButton("Open");
     expect(calls.open).toBe(2);
     expect(history.location.pathname).toBe(`/devices/${space.id}`);
     history.push(`/environments/${space.id}`);
@@ -398,7 +398,7 @@ describe("Suite and Environment routes", () => {
     expect(calls.revoke).toEqual([{ spaceId: "space-1", reference: fixture.reference }]);
 
     await clickButton("Remove");
-    await clickButton("Remove Space");
+    await clickButton("Remove browser");
     expect(calls.remove).toBe(1);
     expect(history.location.pathname).toBe("/environments");
   });

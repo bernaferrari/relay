@@ -6,7 +6,7 @@ import { getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-route
 import { RotateCcw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { LibraryPage, PageHeader } from "../components/page-layout";
-import { Breadcrumbs, EmptyState, OutcomeMark } from "../components/product-patterns";
+import { Breadcrumbs, EmptyState } from "../components/product-patterns";
 import { IssueDraftButton } from "../components/issue-draft-button";
 import { isBatchCaseRerunnable, selectedClusterCaseIds } from "./batch-triage";
 import { BatchFailureClusters, BatchResultMatrix } from "./batch-triage-panels";
@@ -40,8 +40,6 @@ export function BatchPage() {
     ),
   );
   const hasFailedCases = Boolean(report?.cases.some((item) => item.status === "failed"));
-  const hasBlockedCases = Boolean(report?.cases.some((item) => item.status === "blocked"));
-  const hasCancelledCases = Boolean(report?.cases.some((item) => item.status === "cancelled"));
   const clusters = useQuery({
     queryKey: ["run-across", "batch", batchId, "failure-clusters"],
     queryFn: () => runAcrossService.getFailureClusters(batchId),
@@ -138,20 +136,34 @@ export function BatchPage() {
     <LibraryPage className="relay-batch-page">
       <Breadcrumbs items={[{ label: "Runs", to: "/runs" }, { label: report?.title ?? "Batch" }]} />
       <PageHeader
-        context="Run Across"
+        context="Results"
         title={report?.title ?? "Batch"}
-        description="Triage failures across Tests and Environments, then rerun only the evidence-backed cases you select."
+        description={
+          report
+            ? [
+                report.cases.filter((item) => item.status === "failed").length
+                  ? `${report.cases.filter((item) => item.status === "failed").length} failed`
+                  : undefined,
+                report.passedCases ? `${report.passedCases} passed` : undefined,
+                report.cases.filter((item) => item.status === "blocked").length
+                  ? `${report.cases.filter((item) => item.status === "blocked").length} blocked`
+                  : undefined,
+              ]
+                .filter(Boolean)
+                .join(" · ")
+            : undefined
+        }
         actions={
           report ? (
             <>
               {hasFailedCases ? <IssueDraftButton source={{ kind: "batch", report }} /> : null}
               {!active && report.status !== "cancelled" && !report.export ? (
                 <Button
-                  variant="outline"
+                  variant="ghost"
                   onClick={() => exportReport.mutate()}
                   disabled={exportReport.isPending}
                 >
-                  {exportReport.isPending ? "Preparing…" : "Prepare export"}
+                  {exportReport.isPending ? "Preparing…" : "Export"}
                 </Button>
               ) : null}
             </>
@@ -175,55 +187,6 @@ export function BatchPage() {
 
       {report ? (
         <>
-          <section
-            className="relay-batch-summary mt-8 grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-4 rounded-xl border border-border bg-card p-5 max-[780px]:grid-cols-1"
-            aria-labelledby="batch-summary-title"
-          >
-            <OutcomeMark
-              outcome={
-                hasFailedCases
-                  ? "failed"
-                  : hasBlockedCases
-                    ? "harness-failure"
-                    : hasCancelledCases
-                      ? "cancelled"
-                      : report.status === "completed"
-                        ? "passed"
-                        : active
-                          ? "running"
-                          : "unknown"
-              }
-            />
-            <div>
-              <h2 id="batch-summary-title">{report.report.headline}</h2>
-              <p>{report.report.detail}</p>
-            </div>
-            <dl className="flex gap-6 max-[620px]:flex-wrap">
-              <div>
-                <dt>Passed</dt>
-                <dd>{report.passedCases}</dd>
-              </div>
-              <div>
-                <dt>Failed</dt>
-                <dd>{report.cases.filter((item) => item.status === "failed").length}</dd>
-              </div>
-              <div>
-                <dt>Blocked</dt>
-                <dd>{report.cases.filter((item) => item.status === "blocked").length}</dd>
-              </div>
-              <div>
-                <dt>Cancelled</dt>
-                <dd>{report.cases.filter((item) => item.status === "cancelled").length}</dd>
-              </div>
-              <div>
-                <dt>Complete</dt>
-                <dd>
-                  {report.completedCases} / {report.totalCases}
-                </dd>
-              </div>
-            </dl>
-          </section>
-
           {active ? (
             <div
               className="relay-batch-active mt-3.5 flex items-center gap-2.5 text-sm text-muted-foreground"
@@ -278,47 +241,49 @@ export function BatchPage() {
               className="relay-batch-cluster-notice my-4 rounded-lg border border-border bg-muted/50 px-4 py-3 text-sm text-muted-foreground"
               role="status"
             >
-              Failure grouping is unavailable, but every case and Report remains available below.
+              Failure grouping is unavailable. Cases are still listed below.
             </p>
           ) : null}
 
           {report.cases.length ? (
             <>
-              <div className="relay-batch-matrix-toolbar mt-6 flex flex-wrap items-center justify-between gap-4">
-                <Tabs
-                  value={view}
-                  onValueChange={(next) =>
-                    void navigate({
-                      search: (previous) => ({
-                        ...previous,
-                        view: next === "problems" ? undefined : next,
-                      }),
-                    })
-                  }
-                >
-                  <TabsList variant="line" aria-label="Matrix results">
-                    <TabsTrigger value="problems">Problems first</TabsTrigger>
-                    <TabsTrigger value="all">All results</TabsTrigger>
-                  </TabsList>
-                </Tabs>
-                {rerunnableCases.length ? (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() =>
-                      setSelectedCases(
-                        selectedCases.size === rerunnableCases.length
-                          ? new Set()
-                          : new Set(rerunnableCases.map((item) => item.id)),
-                      )
+              {hasProblems && report.passedCases ? (
+                <div className="relay-batch-matrix-toolbar mt-2 mb-3 flex flex-wrap items-center justify-between gap-4">
+                  <Tabs
+                    value={view}
+                    onValueChange={(next) =>
+                      void navigate({
+                        search: (previous) => ({
+                          ...previous,
+                          view: next === "problems" ? undefined : next,
+                        }),
+                      })
                     }
                   >
-                    {selectedCases.size === rerunnableCases.length
-                      ? "Clear selection"
-                      : "Select all problems"}
-                  </Button>
-                ) : null}
-              </div>
+                    <TabsList variant="line" aria-label="Filter cases">
+                      <TabsTrigger value="problems">Failed</TabsTrigger>
+                      <TabsTrigger value="all">All</TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+                  {rerunnableCases.length > 1 ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() =>
+                        setSelectedCases(
+                          selectedCases.size === rerunnableCases.length
+                            ? new Set()
+                            : new Set(rerunnableCases.map((item) => item.id)),
+                        )
+                      }
+                    >
+                      {selectedCases.size === rerunnableCases.length
+                        ? "Clear"
+                        : "Select all failed"}
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
               <BatchResultMatrix
                 report={report}
                 failuresOnly={view === "problems" && hasProblems}
@@ -330,16 +295,11 @@ export function BatchPage() {
 
           {totalSelected ? (
             <div
-              className="relay-batch-selection mt-5 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-primary/30 bg-primary/5 p-4"
+              className="relay-batch-selection mt-4 flex flex-wrap items-center justify-between gap-3"
               role="region"
               aria-label="Selected Batch cases"
             >
-              <div className="grid gap-1">
-                <strong>{totalSelected} selected</strong>
-                <span>
-                  Only failed, blocked, or cancelled cases with durable Run evidence can be rerun.
-                </span>
-              </div>
+              <strong className="text-sm">{totalSelected} selected</strong>
               <Button variant="default" onClick={() => rerun.mutate()} disabled={rerun.isPending}>
                 <RotateCcw aria-hidden="true" />
                 {rerun.isPending ? "Starting rerun…" : `Rerun ${totalSelected}`}

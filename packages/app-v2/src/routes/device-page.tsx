@@ -343,14 +343,14 @@ export function DevicePage() {
               </dl>
             </section>
 
-            <section className="grid gap-4" aria-labelledby="device-launch-title">
-              <div className="grid gap-2 text-sm leading-relaxed text-text-weak">
-                <h2 className="font-semibold text-text-strong" id="device-launch-title">
-                  Launch an app
-                </h2>
-                <p>Open an installed app on this device by name, package, or bundle identifier.</p>
-              </div>
-              {appLaunchSupported ? (
+            {appLaunchSupported ? (
+              <section className="grid gap-4" aria-labelledby="device-launch-title">
+                <div className="grid gap-2 text-sm leading-relaxed text-text-weak">
+                  <h2 className="font-semibold text-text-strong" id="device-launch-title">
+                    Launch an app
+                  </h2>
+                  <p>Open an installed app by name, package, or bundle identifier.</p>
+                </div>
                 <form
                   className="relay-device-launch-form grid gap-4"
                   onSubmit={submitAppLaunch}
@@ -379,10 +379,7 @@ export function DevicePage() {
                         if (appLaunch.error || appLaunch.data) appLaunch.reset();
                       }}
                     />
-                    <p id="device-app-identifier-help">
-                      Relay sends this exact identifier to the attached {device.data.platform}{" "}
-                      device.
-                    </p>
+                    <p id="device-app-identifier-help">Use the package or bundle identifier.</p>
                     {appIdentifierError ? (
                       <p
                         id="device-app-identifier-error"
@@ -425,21 +422,8 @@ export function DevicePage() {
                     </div>
                   ) : null}
                 </form>
-              ) : (
-                <p
-                  className="relay-device-launch-unavailable text-sm leading-relaxed text-text-weak"
-                  role="note"
-                >
-                  {device.data.platform === "browser"
-                    ? "App launch is not available for managed browsers. Use the live preview to interact with the browser."
-                    : device.data.status !== "ready"
-                      ? "Reconnect this device and wait until Relay reports it ready before launching an app."
-                      : deviceService.launchApp
-                        ? "App launch is available only for attached Android and iOS devices."
-                        : "This Relay host cannot launch apps yet."}
-                </p>
-              )}
-            </section>
+              </section>
+            ) : null}
           </aside>
         </div>
       ) : null}
