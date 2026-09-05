@@ -1,25 +1,13 @@
 /** @jsxImportSource react */
 import { Badge } from "@relay/ui-react/components/badge";
 import { Button } from "@relay/ui-react/components/button";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@relay/ui-react/components/collapsible";
-import { Input } from "@relay/ui-react/components/input";
-import {
-  Item,
-  ItemActions,
-  ItemContent,
-  ItemDescription,
-  ItemMedia,
-  ItemTitle,
-} from "@relay/ui-react/components/item";
+import { Item } from "@relay/ui-react/components/item";
 import { Tabs, TabsList, TabsTrigger } from "@relay/ui-react/components/tabs";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate, useRouteContext } from "@tanstack/react-router";
-import { ChevronDown, ChevronRight, Monitor, Smartphone, Tablet } from "lucide-react";
+import { ChevronRight, CircleHelp, ListChecks } from "lucide-react";
 import { useDeferredValue, useEffect, useState } from "react";
+import { LibrarySearch, LibraryToolbar } from "../components/library-toolbar";
 import { LibraryPage, PageHeader } from "../components/page-layout";
 import { EmptyState, RecoveryState } from "../components/product-patterns";
 import { deviceSummaryLine } from "../data/device-label";
@@ -28,41 +16,30 @@ import {
   type ProductDevice,
   type ProductDeviceStatus,
 } from "../data/device-product-service";
-import { PageLoading } from "./recording-shared";
 import { readSetupContinuation } from "../data/setup-continuation";
 import { useCollectionReturnFocus } from "../hooks/use-collection-return-focus";
+import { PageLoading } from "./recording-shared";
 
 type DeviceFilter = "all" | Exclude<ProductDeviceStatus, "virtual">;
-type DeviceTypeFilter = "all" | "devices" | "browsers";
 
 const FILTERS: readonly { id: DeviceFilter; label: string }[] = [
   { id: "all", label: "All" },
   { id: "ready", label: "Ready" },
   { id: "needs-attention", label: "Needs attention" },
 ];
-const TYPE_FILTERS: readonly { id: DeviceTypeFilter; label: string }[] = [
-  { id: "all", label: "All" },
-  { id: "devices", label: "Devices" },
-  { id: "browsers", label: "Browsers" },
-];
 
 function searchState(value: unknown): {
   status?: string;
-  type?: string;
   returnTo?: string;
   q?: string;
 } {
   return value && typeof value === "object"
-    ? (value as { status?: string; type?: string; returnTo?: string })
+    ? (value as { status?: string; returnTo?: string; q?: string })
     : {};
 }
 
 function deviceFilter(value: string | undefined): DeviceFilter {
   return value === "ready" || value === "needs-attention" ? value : "all";
-}
-
-function deviceTypeFilter(value: string | undefined): DeviceTypeFilter {
-  return value === "devices" || value === "browsers" ? value : "all";
 }
 
 function isBrowser(device: ProductDevice): boolean {
@@ -71,42 +48,14 @@ function isBrowser(device: ProductDevice): boolean {
 
 function statusLabel(device: ProductDevice): string {
   if (device.status === "needs-attention") return "Needs attention";
-  if (device.status === "virtual") return "Available";
   return "Ready";
-}
-
-function deviceMetadata(device: ProductDevice): string {
-  return deviceSummaryLine(device);
-}
-
-function DeviceIcon({ device }: { device: ProductDevice }) {
-  const className = "grid size-9 place-items-center rounded-md border border-border bg-background";
-  if (device.platform === "browser")
-    return (
-      <span className={className}>
-        <Monitor className="size-5" aria-hidden="true" />
-      </span>
-    );
-  if (/ipad|tablet/iu.test(`${device.name} ${device.kind ?? ""}`)) {
-    return (
-      <span className={className}>
-        <Tablet className="size-5" aria-hidden="true" />
-      </span>
-    );
-  }
-  return (
-    <span className={className}>
-      <Smartphone className="size-5" aria-hidden="true" />
-    </span>
-  );
 }
 
 function DeviceRow({ device, returnTo }: { device: ProductDevice; returnTo?: string }) {
   return (
-    <li className="border-b border-border last:border-b-0">
+    <li>
       <Item
-        className="relay-device-row flex min-h-20 w-full items-center gap-4 rounded-none px-4 py-3 transition-colors hover:bg-muted/50"
-        size="sm"
+        className="relay-library-row relay-device-row grid min-h-[78px] min-w-0 grid-cols-[minmax(0,1fr)_minmax(94px,auto)_18px] items-center gap-[18px] px-3.5 py-2 text-[var(--text-base)] transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2"
         render={
           isBrowser(device) ? (
             <Link
@@ -123,29 +72,35 @@ function DeviceRow({ device, returnTo }: { device: ProductDevice; returnTo?: str
           )
         }
       >
-        <ItemMedia>
-          <DeviceIcon device={device} />
-        </ItemMedia>
-        <ItemContent>
-          <ItemTitle>{device.name}</ItemTitle>
-          <ItemDescription>{deviceMetadata(device)}</ItemDescription>
-        </ItemContent>
-        <ItemActions className="flex shrink-0 items-center gap-3">
+        <span className="relay-library-row-main grid min-w-0 gap-1">
+          <strong className="overflow-hidden text-ellipsis whitespace-nowrap text-sm font-semibold text-[var(--text-strong)]">
+            {device.name}
+          </strong>
+          <span className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-[var(--text-weak)]">
+            {deviceSummaryLine(device)}
+          </span>
+        </span>
+        <span className="relay-library-row-status flex justify-start">
           <Badge
-            variant={device.status === "needs-attention" ? "destructive" : "default"}
             className={
               device.status === "needs-attention"
                 ? "bg-amber-500/15 text-amber-800 dark:text-amber-300"
-                : "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300"
+                : undefined
             }
+            variant="secondary"
           >
+            {device.status === "needs-attention" ? (
+              <CircleHelp aria-hidden="true" />
+            ) : (
+              <ListChecks aria-hidden="true" />
+            )}
             {statusLabel(device)}
           </Badge>
-          <ChevronRight
-            className="relay-device-row-chevron size-4 text-muted-foreground"
-            aria-hidden="true"
-          />
-        </ItemActions>
+        </span>
+        <ChevronRight
+          className="relay-library-row-arrow relay-device-row-chevron text-sm text-[var(--text-weaker)]"
+          aria-hidden="true"
+        />
       </Item>
     </li>
   );
@@ -153,70 +108,29 @@ function DeviceRow({ device, returnTo }: { device: ProductDevice; returnTo?: str
 
 function DeviceSection({
   title,
-  description,
   devices,
   returnTo,
-  collapsed = false,
 }: {
   title: string;
-  description: string;
   devices: readonly ProductDevice[];
   returnTo?: string;
-  collapsed?: boolean;
 }) {
-  const headingId = `device-section-${title.toLowerCase().replaceAll(" ", "-")}`;
-  const content = (
-    <ul className="list-none overflow-hidden rounded-lg border border-border bg-card p-0">
-      {devices.map((device) => (
-        <DeviceRow key={device.id} device={device} returnTo={returnTo} />
-      ))}
-    </ul>
-  );
-  if (collapsed) {
-    return (
-      <Collapsible className="overflow-hidden rounded-xl border bg-card">
-        <CollapsibleTrigger className="group flex min-h-14 w-full items-center justify-between gap-4 px-4 py-3 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
-          <span className="grid min-w-0 gap-0.5">
-            <strong id={headingId} className="text-sm font-medium text-foreground">
-              {title}
-            </strong>
-            <small className="truncate text-xs font-normal text-muted-foreground">
-              {description}
-            </small>
-          </span>
-          <span className="flex shrink-0 items-center gap-2">
-            <Badge variant="secondary" className="tabular-nums">
-              {devices.length} available
-            </Badge>
-            <ChevronDown
-              className="size-4 text-muted-foreground transition-transform group-data-[panel-open]:rotate-180"
-              aria-hidden="true"
-            />
-          </span>
-        </CollapsibleTrigger>
-        <CollapsibleContent className="border-t p-3">{content}</CollapsibleContent>
-      </Collapsible>
-    );
-  }
+  const headingId = `device-section-${title.toLowerCase()}`;
   return (
-    <section className="grid gap-3" aria-labelledby={headingId}>
-      <header>
-        <div>
-          <div className="flex items-center gap-2">
-            <h2 id={headingId} className="text-sm font-semibold">
-              {title}
-            </h2>
-            <span
-              className="text-xs text-muted-foreground"
-              aria-label={`${devices.length} devices`}
-            >
-              {devices.length}
-            </span>
-          </div>
-          <p className="mt-1 text-sm text-muted-foreground">{description}</p>
-        </div>
-      </header>
-      {content}
+    <section className="relay-library-results" aria-labelledby={headingId}>
+      <div className="relay-library-results-heading flex min-h-8 items-center justify-between gap-5 px-0.5 pb-2.5">
+        <h2 id={headingId} className="text-[13px] font-semibold">
+          {title}
+        </h2>
+        <span className="text-xs text-[var(--text-weak)]" aria-label={`${devices.length} ${title}`}>
+          {devices.length}
+        </span>
+      </div>
+      <ul className="relay-library-list m-0 list-none overflow-hidden rounded-[var(--radius-xl)] border border-[var(--border-weak-base)] bg-[var(--surface-raised-strong)] p-0 [&>li]:border-b [&>li]:border-[var(--border-weak-base)] [&>li:last-child]:border-b-0">
+        {devices.map((device) => (
+          <DeviceRow key={device.id} device={device} returnTo={returnTo} />
+        ))}
+      </ul>
     </section>
   );
 }
@@ -228,7 +142,6 @@ export function DevicesPage() {
   const search = searchState(rawSearch);
   const continuation = readSetupContinuation(search.returnTo);
   const activeFilter = deviceFilter(search.status);
-  const activeTypeFilter = deviceTypeFilter(search.type);
   const [query, setQuery] = useState(search.q ?? "");
   const deferredQuery = useDeferredValue(query.trim().toLocaleLowerCase());
   const devices = useQuery({
@@ -242,8 +155,6 @@ export function DevicesPage() {
       (device) =>
         (activeFilter === "all" ||
           (activeFilter === "ready" ? device.runnable : device.status === activeFilter)) &&
-        (activeTypeFilter === "all" ||
-          (activeTypeFilter === "browsers" ? isBrowser(device) : !isBrowser(device))) &&
         (!deferredQuery ||
           `${device.name} ${device.platform} ${device.osVersion ?? ""} ${device.kind ?? ""}`
             .toLocaleLowerCase()
@@ -262,21 +173,18 @@ export function DevicesPage() {
       to: "/devices",
       search: {
         ...(activeFilter === "all" ? {} : { status: activeFilter }),
-        ...(activeTypeFilter === "all" ? {} : { type: activeTypeFilter }),
         ...(query.trim() ? { q: query.trim() } : {}),
         ...(search.returnTo ? { returnTo: search.returnTo } : {}),
       },
     });
-  }, [activeFilter, activeTypeFilter, navigate, query, search.q, search.returnTo]);
+  }, [activeFilter, navigate, query, search.q, search.returnTo]);
 
-  function updateSearch(next: { status?: DeviceFilter; type?: DeviceTypeFilter }) {
+  function updateSearch(next: { status?: DeviceFilter }) {
     const status = next.status ?? activeFilter;
-    const type = next.type ?? activeTypeFilter;
     void navigate({
       to: "/devices",
       search: {
         ...(status === "all" ? {} : { status }),
-        ...(type === "all" ? {} : { type }),
         ...(query.trim() ? { q: query.trim() } : {}),
         ...(search.returnTo ? { returnTo: search.returnTo } : {}),
       },
@@ -284,7 +192,10 @@ export function DevicesPage() {
   }
 
   return (
-    <LibraryPage onClickCapture={returnFocus.onClickCapture}>
+    <LibraryPage
+      className="relay-library-page relay-devices-page mx-auto flex min-h-full w-full max-w-[1040px] flex-col"
+      onClickCapture={returnFocus.onClickCapture}
+    >
       <PageHeader
         context="Devices"
         title="Devices"
@@ -292,7 +203,6 @@ export function DevicesPage() {
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Button
-              size="sm"
               nativeButton={false}
               render={
                 <Link
@@ -306,7 +216,6 @@ export function DevicesPage() {
             {!devices.isError ? (
               <Button
                 variant="ghost"
-                size="sm"
                 onClick={() => void devices.refetch()}
                 disabled={devices.isFetching}
               >
@@ -317,42 +226,33 @@ export function DevicesPage() {
         }
       />
 
-      <div className="mb-6 grid min-w-0 grid-cols-1 gap-4 border-b border-border pb-4 min-[780px]:grid-cols-[minmax(0,1fr)_auto]">
-        <Tabs
-          className="order-3 min-w-0 min-[780px]:col-span-full"
-          value={activeFilter}
-          onValueChange={(value) => updateSearch({ status: value as DeviceFilter })}
-        >
-          <TabsList className="max-w-full justify-start" variant="line" aria-label="Filter devices">
-            {FILTERS.map((filter) => (
-              <TabsTrigger key={filter.id} value={filter.id}>
-                {filter.label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
-        <Tabs
-          className="order-2 min-w-0"
-          value={activeTypeFilter}
-          onValueChange={(value) => updateSearch({ type: value as DeviceTypeFilter })}
-        >
-          <TabsList className="max-w-full justify-start" aria-label="Filter device type">
-            {TYPE_FILTERS.map((filter) => (
-              <TabsTrigger key={filter.id} value={filter.id}>
-                {filter.label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
-        <Input
-          className="order-1 w-full min-w-0 max-w-lg"
-          type="search"
-          value={query}
-          onChange={(event) => setQuery(event.currentTarget.value)}
-          placeholder="Search Devices and Browsers"
-          aria-label="Search Devices and Browsers"
-        />
-      </div>
+      <LibraryToolbar
+        label="Filter Devices"
+        tabs={
+          <Tabs
+            className="border-b border-border pb-1.5"
+            value={activeFilter}
+            onValueChange={(value) => updateSearch({ status: value as DeviceFilter })}
+          >
+            <TabsList className="h-9 justify-start" variant="line" aria-label="Filter devices">
+              {FILTERS.map((filter) => (
+                <TabsTrigger key={filter.id} value={filter.id}>
+                  {filter.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+        }
+        search={
+          <LibrarySearch
+            id="device-search"
+            label="Search Devices and Browsers"
+            value={query}
+            placeholder="Search by name or platform"
+            onChange={setQuery}
+          />
+        }
+      />
 
       {devices.isPending ? <PageLoading label="Checking Devices and Browsers…" /> : null}
 
@@ -371,23 +271,25 @@ export function DevicesPage() {
       ) : null}
 
       {!devices.isPending && !devices.isError && devices.data?.length === 0 ? (
-        <EmptyState
-          title="No Devices yet"
-          detail="Connect a phone or tablet, or start a Browser."
-          action={
-            <Button
-              nativeButton={false}
-              render={
-                <Link
-                  to="/environments"
-                  search={continuation ? { returnTo: search.returnTo } : undefined}
-                />
-              }
-            >
-              New browser
-            </Button>
-          }
-        />
+        <div className="flex flex-1 items-center justify-center">
+          <EmptyState
+            title="No Devices yet"
+            detail="Connect a phone or tablet, or start a Browser."
+            action={
+              <Button
+                nativeButton={false}
+                render={
+                  <Link
+                    to="/environments"
+                    search={continuation ? { returnTo: search.returnTo } : undefined}
+                  />
+                }
+              >
+                New browser
+              </Button>
+            }
+          />
+        </div>
       ) : null}
 
       {!devices.isPending && !devices.isError && devices.data?.length && visibleCount === 0 ? (
@@ -396,7 +298,8 @@ export function DevicesPage() {
           detail="Choose another filter to see the devices Relay found."
           action={
             <Button
-              variant="outline"
+              variant="ghost"
+              size="sm"
               onClick={() => {
                 setQuery("");
                 void navigate({
@@ -412,7 +315,7 @@ export function DevicesPage() {
       ) : null}
 
       {!devices.isPending && !devices.isError && visibleCount > 0 ? (
-        <div className="grid gap-7" aria-live="polite">
+        <div className="mt-3 grid gap-7" aria-live="polite">
           {(["Devices", "Browsers"] as const).map((title) => {
             const devicesInSection = visibleDevices.filter((device) =>
               title === "Browsers" ? isBrowser(device) : !isBrowser(device),
@@ -422,7 +325,6 @@ export function DevicesPage() {
               <DeviceSection
                 key={title}
                 title={title}
-                description=""
                 devices={devicesInSection}
                 returnTo={continuation ? search.returnTo : undefined}
               />

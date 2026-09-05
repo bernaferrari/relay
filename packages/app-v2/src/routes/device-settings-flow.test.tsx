@@ -323,11 +323,8 @@ describe("Devices", () => {
       'a.relay-device-row[href="/devices/ipad"]',
     );
     expect(row).not.toBeNull();
-    expect(row?.querySelector('[data-slot="item-media"]')).not.toBeNull();
-    expect(row?.querySelector('[data-slot="item-content"]')?.textContent).toContain("Design iPad");
-    expect(row?.querySelector('[data-slot="item-description"]')?.textContent).toBe(
-      "Apple device · Physical device",
-    );
+    expect(row?.textContent).toContain("Design iPad");
+    expect(row?.textContent).toContain("Apple device · Physical device");
     expect(row?.querySelector('[data-slot="badge"]')?.textContent).toContain("Ready");
     expect(row?.querySelector(".relay-device-row-chevron")).not.toBeNull();
 
@@ -396,7 +393,6 @@ describe("Devices", () => {
   it("clears search and type filters from the empty state while preserving setup return context", async () => {
     const history = await renderPath("/devices?returnTo=%2Ftests%2Fnew");
 
-    await click(button("Devices"));
     const searchInput = input("Search Devices and Browsers");
     if (!(searchInput instanceof HTMLInputElement)) throw new Error("Search input not found");
     await fillInput(searchInput, "does-not-exist");

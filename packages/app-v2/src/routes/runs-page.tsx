@@ -192,7 +192,7 @@ export function RunsPage() {
       {!runs.isPending && !runs.isError && visibleRuns.length ? (
         <section
           id="run-history-results"
-          className="relay-library-results mt-7"
+          className="relay-library-results mt-3"
           aria-labelledby="run-history-title"
         >
           <div className="relay-library-results-heading flex min-h-8 items-center justify-between gap-5 px-0.5 pb-2.5">
