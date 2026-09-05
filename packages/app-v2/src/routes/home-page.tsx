@@ -114,17 +114,11 @@ export function HomePage() {
     <LibraryPage className="flex min-h-full max-w-[1040px] flex-col">
       <PageHeader
         context="Overview"
-        title={
-          selectedApp
-            ? selectedApp.name
-            : hasWorkspaceData
-              ? "Your workspace"
-              : "Prove one journey that matters"
-        }
+        title={selectedApp ? selectedApp.name : "Your workspace"}
         description={
           hasWorkspaceData
             ? `${scopedTests.length} saved ${scopedTests.length === 1 ? "test" : "tests"} · ${runs.isError ? "Results unavailable" : attentionRuns.length ? `${attentionRuns.length} ${attentionRuns.length === 1 ? "result needs" : "results need"} attention` : "No results need attention"}`
-            : "Record a path through your app. Replay it and keep the evidence."
+            : undefined
         }
         actions={
           hasTests ? (
@@ -194,7 +188,7 @@ export function HomePage() {
         <div className="flex flex-1 items-center justify-center">
           <EmptyState
             title="Record a Test"
-            detail="Pick one path a person depends on. Replay it and keep the evidence."
+            detail="Record a journey through the app, then run it again."
             action={
               <Button
                 nativeButton={false}

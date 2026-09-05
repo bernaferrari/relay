@@ -338,7 +338,9 @@ describe("Home", () => {
   it("teaches one direct first action only for a truly empty workspace", async () => {
     await renderHome({});
 
-    expect(document.body.textContent).toContain("Prove one journey that matters");
+    expect(document.body.textContent).toContain("Your workspace");
+    expect(document.body.textContent).not.toContain("Pick one path a person depends on");
+    expect(document.body.textContent).not.toContain("Prove one journey that matters");
     expect(document.body.textContent).toContain("Add an App");
     expect(
       [...document.querySelectorAll('a[href="/apps"]')].some((link) =>
