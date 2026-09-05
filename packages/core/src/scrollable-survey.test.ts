@@ -79,11 +79,38 @@ test("finds a vertical overlap and detects an unchanged terminal viewport", () =
   assert.ok(Math.abs(seam!.shiftY - 40) <= 2);
 });
 
+test("identical pixels stop a survey even when the tree looks like it moved", () => {
+  const png = image(0);
+  const previous: SnapshotPayload = {
+    capturedAt: 1,
+    inspectable: true,
+    source: "sdk",
+    interactive: [],
+    screenIdentity: { fingerprint: "same", nodes: [], volatileSignals: [] },
+    bounds: { width: 64, height: 160 },
+    nodes: [
+      { label: "Row A", type: "TextView", rect: { x: 10, y: 200, width: 100, height: 40 } },
+      { label: "Row B", type: "TextView", rect: { x: 10, y: 280, width: 100, height: 40 } },
+      { label: "Row C", type: "TextView", rect: { x: 10, y: 360, width: 100, height: 40 } },
+    ],
+  };
+  const current: SnapshotPayload = {
+    ...previous,
+    capturedAt: 2,
+    nodes: [
+      { label: "Row A", type: "TextView", rect: { x: 10, y: 140, width: 100, height: 40 } },
+      { label: "Row B", type: "TextView", rect: { x: 10, y: 220, width: 100, height: 40 } },
+      { label: "Row C", type: "TextView", rect: { x: 10, y: 300, width: 100, height: 40 } },
+    ],
+  };
+  assert.equal(verticalScrollSeam(png, png, previous, current)?.shiftY, 0);
+});
+
 test("uses a reversible overlap-heavy Android survey drag without changing iOS", () => {
   const bounds = { width: 1080, height: 2340 };
   const androidDown = scrollSurveyGesture("android", bounds, "down");
   const androidUp = scrollSurveyGesture("android", bounds, "up");
-  assert.equal(androidDown.durationMs, 800);
+  assert.equal(androidDown.durationMs, 480);
   const travel = androidDown.from.y - androidDown.to.y;
   assert.ok(travel >= bounds.height * 0.44);
   assert.ok(travel <= bounds.height * 0.48);
@@ -218,6 +245,19 @@ function superGrokScrolledFrame(phase: number, capturedAt: number) {
   };
   return frame;
 }
+
+test("identical pixels beat a tree that looks like it scrolled", () => {
+  const first = superGrokTerminalFrame(0, 1);
+  const second = superGrokScrolledFrame(0, 2);
+  assert.equal(first.screenshot.base64, second.screenshot.base64);
+  const seam = verticalScrollSeam(
+    Buffer.from(first.screenshot.base64, "base64"),
+    Buffer.from(second.screenshot.base64, "base64"),
+    first.snapshot,
+    second.snapshot,
+  );
+  assert.equal(seam?.shiftY, 0);
+});
 
 test("keeps a dynamic one-viewport SuperGrok surface review-only when pixels cannot prove no movement", async () => {
   const frames = [superGrokTerminalFrame(0, 1), superGrokTerminalFrame(1, 2)];
@@ -426,6 +466,45 @@ function androidScrollableFrame(shiftY: number, capturedAt: number) {
     },
   };
 }
+
+test("does not fling a one-viewport sheet whose last feature is already on screen", async () => {
+  const initial = androidScrollableFrame(0, 1);
+  initial.snapshot.nodes = initial.snapshot.nodes.map((node) =>
+    node.type === "ScrollView"
+      ? { ...node, rect: { x: 0, y: 280, width: 1080, height: 1925 } }
+      : node.label?.startsWith("Product row")
+        ? {
+            ...node,
+            rect: node.rect
+              ? { ...node.rect, y: Math.min(node.rect.y, 1700), height: 60 }
+              : node.rect,
+          }
+        : node,
+  );
+  // Keep only rows that sit well above the fold and drop the hidden-below hint.
+  initial.snapshot.nodes = initial.snapshot.nodes.filter((node) => {
+    if (node.label?.startsWith("Product row") && node.rect && node.rect.y > 1800) return false;
+    return true;
+  });
+  let downs = 0;
+  const survey = await captureScrollableSurvey(
+    {
+      capture: async () => ({
+        screenshot: initial.frame.screenshot,
+        snapshot: initial.snapshot,
+      }),
+      scrollDown: async () => {
+        downs += 1;
+      },
+      scrollUp: async () => {},
+      settle: async () => {},
+    },
+    { maxScrolls: 3, initialCapture: { screenshot: initial.frame.screenshot, snapshot: initial.snapshot } },
+  );
+  assert.equal(downs, 0);
+  assert.equal(survey.frames.length, 1);
+  assert.equal(survey.reason, "end-of-content");
+});
 
 test("uses a verified initial PNG/tree pair without recapturing the first viewport", async () => {
   const initial = androidScrollableFrame(0, 1);

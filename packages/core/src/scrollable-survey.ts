@@ -21,6 +21,12 @@ import {
   verticalScrollSeam,
 } from "./scrollable-survey-seams.js";
 import {
+  surveyHasHiddenContentBelow,
+  surveyShouldAttemptScroll,
+  surveyShouldKeepScrolledFrame,
+  surveyStitchCutY,
+} from "./scrollable-survey-advance.js";
+import {
   documentOriginIssuanceFor,
   recordValidatedDocumentOriginIssuance,
   type ValidatedDocumentOriginIssuance,
@@ -303,12 +309,18 @@ function stitchSurveyFrames(
   }
   const pieces = frames.map((frame, index) => {
     const bottomChrome = bottomSystemChromeTop(frame) ?? frame.screenshot.height;
+    const cutY =
+      index === frames.length - 1
+        ? frame.screenshot.height
+        : surveyStitchCutY(frame.snapshot, bottomChrome);
     if (index === 0) {
-      return { sourceY: 0, height: frames.length === 1 ? frame.screenshot.height : bottomChrome };
+      return { sourceY: 0, height: frames.length === 1 ? frame.screenshot.height : cutY };
     }
-    const sourceY = Math.max(0, bottomChrome - frame.appendedHeight);
-    const end = index === frames.length - 1 ? frame.screenshot.height : bottomChrome;
-    return { sourceY, height: Math.max(0, end - sourceY) };
+    const previous = frames[index - 1]!;
+    const previousChrome = bottomSystemChromeTop(previous) ?? previous.screenshot.height;
+    const previousCut = surveyStitchCutY(previous.snapshot, previousChrome);
+    const sourceY = Math.max(0, previousCut - frame.appendedHeight);
+    return { sourceY, height: Math.max(0, cutY - sourceY) };
   });
   const height = pieces.reduce((total, piece) => total + piece.height, 0);
   if (first.width * height > 28_000_000) return undefined;
@@ -403,7 +415,7 @@ export async function captureScrollableSurvey(
   driver: ScrollSurveyDriver,
   options: ScrollSurveyOptions = {},
 ): Promise<ScrollSurveyResult> {
-  const maxScrolls = Math.max(1, Math.min(12, options.maxScrolls ?? 4));
+  const maxScrolls = Math.max(1, Math.min(12, options.maxScrolls ?? 3));
   const shouldRestore = options.restore !== false;
 
   // Type assertions do not survive JavaScript callers. Only the evidence
@@ -557,7 +569,14 @@ export async function captureScrollableSurvey(
   let unexpected: unknown;
   let hasUnexpected = false;
   try {
-    for (let index = 0; index < maxScrolls; index += 1) {
+    if (!surveyShouldAttemptScroll(first.snapshot)) {
+      decision = {
+        status: "completed",
+        reason: "end-of-content",
+        message: "Captured the complete visible list and restored the original viewport.",
+      };
+    }
+    for (let index = 0; index < maxScrolls && decision.reason === "limit-reached"; index += 1) {
       try {
         attemptedScroll = true;
         await driver.scrollDown();
@@ -637,10 +656,6 @@ export async function captureScrollableSurvey(
         break;
       }
       if (seam.shiftY === 0) {
-        // The matching viewport proves this scrollDown resolved without moving
-        // the target. Discharge its provisional inverse so restoration stops
-        // exactly at the starting viewport, including when capture began
-        // partway through a list.
         owedMovements -= 1;
         decision = {
           status: "completed",
@@ -648,6 +663,20 @@ export async function captureScrollableSurvey(
           message: "Captured the complete visible list and restored the original viewport.",
         };
         break;
+      }
+      if (!surveyShouldKeepScrolledFrame(previous.snapshot, next.snapshot)) {
+        // Chrome-only motion is not a new viewport. Stop only when the helper
+        // also agrees nothing remains; otherwise keep flinging from here.
+        if (!surveyHasHiddenContentBelow(next.snapshot)) {
+          owedMovements -= 1;
+          decision = {
+            status: "completed",
+            reason: "end-of-content",
+            message: "Captured the complete visible list and restored the original viewport.",
+          };
+          break;
+        }
+        continue;
       }
       const offsetY = previous.offsetY + seam.shiftY;
       frames.push({

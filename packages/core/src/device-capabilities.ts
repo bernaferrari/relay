@@ -91,4 +91,6 @@ export type SnapshotNode = {
   parentIndex?: number;
   /** Owning Android package when the provider exposes multi-window nodes. */
   bundleId?: string;
+  /** Scroll container can still move forward. Persist only when true. */
+  hiddenContentBelow?: true;
 };

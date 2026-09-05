@@ -58,10 +58,8 @@ export function scrollSurveyGesture(
   direction: "down" | "up",
 ) {
   // Android flings a *fast* half-screen swipe (Settings once skipped 1857px).
-  // Keep the drag slow (800ms) so it stays a drag, but travel ~45% of the
-  // viewport — a quarter-screen move wasted four scrolls on SuperGrok-length
-  // pages and still left >70% overlap unused. Seam matching needs overlap,
-  // not a crawl. iOS XCTest does not share the fling, so it can travel more.
+  // Keep the drag slower than a fling (480ms) with ~45% travel so seam
+  // matching still has overlap. iOS XCTest does not share the fling.
   const lower = platform === "android" ? 0.8 : 0.78;
   const upper = platform === "android" ? 0.34 : 0.28;
   const fromY = bounds.height * (direction === "down" ? lower : upper);
@@ -70,7 +68,7 @@ export function scrollSurveyGesture(
     kind: "swipe" as const,
     from: { x: bounds.width * 0.5, y: fromY },
     to: { x: bounds.width * 0.5, y: toY },
-    durationMs: platform === "android" ? 800 : 360,
+    durationMs: platform === "android" ? 480 : 360,
   };
 }
 
@@ -107,7 +105,7 @@ export function createScrollableSurveyTargetCaptureAdapter(algorithm: ScrollSurv
     const sleep =
       dependencies.sleep ??
       ((durationMs: number) => new Promise<void>((resolve) => setTimeout(resolve, durationMs)));
-    const settle = () => sleep(platform === "ios" ? 700 : 350);
+    const settle = () => sleep(platform === "ios" ? 700 : 200);
     const disposeScreenshot = dependencies.cleanupScreenshot ?? cleanupScreenshot;
     return algorithm(
       {
