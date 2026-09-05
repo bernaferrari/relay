@@ -38,7 +38,7 @@ export function DeviceDestinationButton() {
     <DropdownMenu>
       <DropdownMenuTrigger
         className="relay-destination-trigger relay-electron-no-drag [-webkit-app-region:no-drag] inline-flex h-7 max-w-[12.5rem] items-center gap-1 rounded-[min(var(--radius-md),12px)] px-2.5 text-[0.8rem] text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2"
-        aria-label={`Run destination: ${summary.label}`}
+        aria-label={`Device or browser: ${summary.label}`}
       >
         <MonitorSmartphone className="size-3.5 shrink-0" aria-hidden="true" />
         <span className="min-w-0 truncate">{summary.label}</span>
@@ -47,14 +47,20 @@ export function DeviceDestinationButton() {
       <DropdownMenuContent align="end" sideOffset={6} className="min-w-64 w-72">
         <DropdownMenuGroup>
           <DropdownMenuLabel className="relay-menu-label block px-2.5 pb-1.5 pt-[7px] text-[10px] font-semibold uppercase leading-[1.2] tracking-[0.06em] text-[var(--text-weaker)]">
-            Run destination
+            Device or browser
           </DropdownMenuLabel>
           {items.length ? (
             items.map((item) => (
               <DropdownMenuItem
                 key={item.id}
                 className="relay-menu-item focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 flex min-h-10 items-start justify-between gap-4"
-                onClick={() => router.history.push(`/devices/${item.id}`)}
+                onClick={() =>
+                  router.history.push(
+                    item.platform === "browser"
+                      ? `/environments/${item.id}`
+                      : `/devices/${item.id}`,
+                  )
+                }
               >
                 <span className="min-w-0">
                   <span className="block truncate">{item.name}</span>
@@ -77,7 +83,7 @@ export function DeviceDestinationButton() {
             className="relay-menu-item focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2"
             onClick={() => router.history.push("/devices")}
           >
-            All devices
+            All Devices
           </DropdownMenuItem>
         </DropdownMenuGroup>
       </DropdownMenuContent>

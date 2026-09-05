@@ -81,8 +81,7 @@ export function EnvironmentPage() {
   });
   const open = useMutation({
     mutationFn: () => browserSpacesService.openSpace(profileId),
-    onSuccess: (session) =>
-      navigate({ to: "/devices/$deviceId", params: { deviceId: session.targetId } }),
+    onSuccess: () => undefined,
   });
   const openExternal = useMutation({
     mutationFn: () => browserSpacesService.openSpace(profileId),

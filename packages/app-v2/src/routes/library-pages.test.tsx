@@ -353,10 +353,10 @@ describe("Tests workspace", () => {
   it("lists human Test summaries, recent outcomes, and a dominant creation action", async () => {
     const { history } = await render("/tests");
 
-    const changes = document.querySelector<HTMLAnchorElement>('a[href="/changes"]');
-    expect(changes?.className).not.toContain("relay-nav-link--quiet");
-    expect(changes?.textContent?.trim()).toBe("Changes");
-    expect(changes?.hasAttribute("aria-disabled")).toBe(false);
+    const devices = document.querySelector<HTMLAnchorElement>('a[href="/devices"]');
+    expect(devices?.className).not.toContain("relay-nav-link--quiet");
+    expect(devices?.textContent?.trim()).toBe("Devices");
+    expect(devices?.hasAttribute("aria-disabled")).toBe(false);
     expect(document.querySelector('a[href="/tests/new"]')?.textContent).toBe("New Test");
     expect(document.body.textContent).toContain("Change language");
     expect(document.body.textContent).toContain("Complete checkout");

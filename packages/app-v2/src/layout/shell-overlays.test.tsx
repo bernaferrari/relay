@@ -441,8 +441,8 @@ describe("shell overlays", () => {
       ],
     });
 
-    expect(document.querySelector('nav[aria-label="Primary"] a[href="/devices"]')).toBeNull();
-    const trigger = document.querySelector<HTMLButtonElement>('[aria-label^="Run destination"]');
+    expect(document.querySelector('nav[aria-label="Primary"] a[href="/devices"]')).not.toBeNull();
+    const trigger = document.querySelector<HTMLButtonElement>('[aria-label^="Device or browser"]');
     expect(trigger?.textContent).toContain("2 ready");
     await act(async () => trigger?.click());
     await settle();
@@ -450,7 +450,7 @@ describe("shell overlays", () => {
     expect(document.body.textContent).toContain("Design iPad");
     expect(document.body.textContent).toContain("Checkout browser");
     const allDevices = [...document.querySelectorAll('[role="menuitem"]')].find((item) =>
-      item.textContent?.includes("All devices"),
+      item.textContent?.includes("All Devices"),
     );
     expect(allDevices).toBeTruthy();
     await act(async () => allDevices?.dispatchEvent(new MouseEvent("click", { bubbles: true })));

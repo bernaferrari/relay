@@ -33,7 +33,7 @@ import { readSetupContinuation } from "../data/setup-continuation";
 import { useCollectionReturnFocus } from "../hooks/use-collection-return-focus";
 
 type DeviceFilter = "all" | Exclude<ProductDeviceStatus, "virtual">;
-type DeviceTypeFilter = "all" | "physical" | "virtual";
+type DeviceTypeFilter = "all" | "devices" | "browsers";
 
 const FILTERS: readonly { id: DeviceFilter; label: string }[] = [
   { id: "all", label: "All" },
@@ -41,31 +41,9 @@ const FILTERS: readonly { id: DeviceFilter; label: string }[] = [
   { id: "needs-attention", label: "Needs attention" },
 ];
 const TYPE_FILTERS: readonly { id: DeviceTypeFilter; label: string }[] = [
-  { id: "all", label: "All types" },
-  { id: "physical", label: "Physical" },
-  { id: "virtual", label: "Virtual" },
-];
-
-const SECTIONS: readonly {
-  id: ProductDeviceStatus;
-  title: string;
-  description: string;
-}[] = [
-  {
-    id: "ready",
-    title: "Ready",
-    description: "Connected devices Relay can use now.",
-  },
-  {
-    id: "needs-attention",
-    title: "Needs attention",
-    description: "Devices waiting for one clear recovery step.",
-  },
-  {
-    id: "virtual",
-    title: "Virtual devices",
-    description: "Managed browsers, simulators, and emulators.",
-  },
+  { id: "all", label: "All" },
+  { id: "devices", label: "Devices" },
+  { id: "browsers", label: "Browsers" },
 ];
 
 function searchState(value: unknown): {
@@ -84,7 +62,11 @@ function deviceFilter(value: string | undefined): DeviceFilter {
 }
 
 function deviceTypeFilter(value: string | undefined): DeviceTypeFilter {
-  return value === "physical" || value === "virtual" ? value : "all";
+  return value === "devices" || value === "browsers" ? value : "all";
+}
+
+function isBrowser(device: ProductDevice): boolean {
+  return device.platform === "browser";
 }
 
 function statusLabel(device: ProductDevice): string {
@@ -126,11 +108,19 @@ function DeviceRow({ device, returnTo }: { device: ProductDevice; returnTo?: str
         className="relay-device-row flex min-h-20 w-full items-center gap-4 rounded-none px-4 py-3 transition-colors hover:bg-muted/50"
         size="sm"
         render={
-          <Link
-            to="/devices/$deviceId"
-            params={{ deviceId: device.id }}
-            search={returnTo ? { returnTo } : undefined}
-          />
+          isBrowser(device) ? (
+            <Link
+              to="/environments/$profileId"
+              params={{ profileId: device.id }}
+              search={returnTo ? { returnTo } : undefined}
+            />
+          ) : (
+            <Link
+              to="/devices/$deviceId"
+              params={{ deviceId: device.id }}
+              search={returnTo ? { returnTo } : undefined}
+            />
+          )
         }
       >
         <ItemMedia>
@@ -238,7 +228,7 @@ export function DevicesPage() {
   const search = searchState(rawSearch);
   const continuation = readSetupContinuation(search.returnTo);
   const activeFilter = deviceFilter(search.status);
-  const activeTypeFilter = search.status === "virtual" ? "virtual" : deviceTypeFilter(search.type);
+  const activeTypeFilter = deviceTypeFilter(search.type);
   const [query, setQuery] = useState(search.q ?? "");
   const deferredQuery = useDeferredValue(query.trim().toLocaleLowerCase());
   const devices = useQuery({
@@ -247,18 +237,13 @@ export function DevicesPage() {
     staleTime: 5_000,
   });
 
-  const shownSections = SECTIONS.filter(
-    (section) => activeFilter === "all" || section.id === activeFilter,
-  );
   const visibleDevices =
     devices.data?.filter(
       (device) =>
         (activeFilter === "all" ||
           (activeFilter === "ready" ? device.runnable : device.status === activeFilter)) &&
         (activeTypeFilter === "all" ||
-          (activeTypeFilter === "virtual"
-            ? device.status === "virtual"
-            : device.status !== "virtual")) &&
+          (activeTypeFilter === "browsers" ? isBrowser(device) : !isBrowser(device))) &&
         (!deferredQuery ||
           `${device.name} ${device.platform} ${device.osVersion ?? ""} ${device.kind ?? ""}`
             .toLocaleLowerCase()
@@ -301,14 +286,13 @@ export function DevicesPage() {
   return (
     <LibraryPage onClickCapture={returnFocus.onClickCapture}>
       <PageHeader
-        context="Workspace"
+        context="Devices"
         title="Devices"
-        description="Choose a device or browser, then inspect or record."
+        description="Choose a Device or Browser, then inspect or record."
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Button
               size="sm"
-              variant="outline"
               nativeButton={false}
               render={
                 <Link
@@ -317,7 +301,7 @@ export function DevicesPage() {
                 />
               }
             >
-              Manage browsers
+              New browser
             </Button>
             {!devices.isError ? (
               <Button
@@ -365,12 +349,12 @@ export function DevicesPage() {
           type="search"
           value={query}
           onChange={(event) => setQuery(event.currentTarget.value)}
-          placeholder="Search devices"
-          aria-label="Search devices"
+          placeholder="Search Devices and Browsers"
+          aria-label="Search Devices and Browsers"
         />
       </div>
 
-      {devices.isPending ? <PageLoading label="Checking connected and virtual devices…" /> : null}
+      {devices.isPending ? <PageLoading label="Checking Devices and Browsers…" /> : null}
 
       {devices.isError ? (
         <RecoveryState
@@ -388,11 +372,19 @@ export function DevicesPage() {
 
       {!devices.isPending && !devices.isError && devices.data?.length === 0 ? (
         <EmptyState
-          title="No devices found yet"
-          detail="Connect an iPhone, iPad, or Android device, or configure a managed browser. Relay will keep checking when you return."
+          title="No Devices yet"
+          detail="Connect a phone or tablet, or start a Browser."
           action={
-            <Button variant="default" onClick={() => void devices.refetch()}>
-              Check for devices
+            <Button
+              nativeButton={false}
+              render={
+                <Link
+                  to="/environments"
+                  search={continuation ? { returnTo: search.returnTo } : undefined}
+                />
+              }
+            >
+              New browser
             </Button>
           }
         />
@@ -421,28 +413,21 @@ export function DevicesPage() {
 
       {!devices.isPending && !devices.isError && visibleCount > 0 ? (
         <div className="grid gap-7" aria-live="polite">
-          {shownSections
-            .filter((section) =>
-              visibleDevices.some((device) =>
-                activeFilter === "ready" && section.id === "ready"
-                  ? device.runnable
-                  : device.status === section.id,
-              ),
-            )
-            .map((section) => (
+          {(["Devices", "Browsers"] as const).map((title) => {
+            const devicesInSection = visibleDevices.filter((device) =>
+              title === "Browsers" ? isBrowser(device) : !isBrowser(device),
+            );
+            if (!devicesInSection.length) return null;
+            return (
               <DeviceSection
-                key={section.id}
-                title={section.title}
-                description={section.description}
-                devices={visibleDevices.filter((device) =>
-                  activeFilter === "ready" && section.id === "ready"
-                    ? device.runnable
-                    : device.status === section.id,
-                )}
+                key={title}
+                title={title}
+                description=""
+                devices={devicesInSection}
                 returnTo={continuation ? search.returnTo : undefined}
-                collapsed={activeFilter === "all" && section.id === "virtual"}
               />
-            ))}
+            );
+          })}
         </div>
       ) : null}
     </LibraryPage>

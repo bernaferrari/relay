@@ -94,7 +94,7 @@ export function AppSwitcher() {
     <DropdownMenu>
       <DropdownMenuTrigger
         className="relay-app-switcher focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 grid min-h-[50px] w-full grid-cols-[30px_minmax(0,1fr)_18px] items-center gap-[9px] rounded-[var(--radius-lg)] border border-[var(--border-weak-base)] bg-[var(--surface-raised-strong)] px-[9px] py-1.5 text-left text-[var(--text-strong)] shadow-[0_1px_2px_color-mix(in_srgb,black_4%,transparent)]"
-        aria-label={`App context: ${contextName}`}
+        aria-label={`App: ${contextName}`}
       >
         <span
           className="relay-app-avatar grid h-[30px] w-[30px] place-items-center rounded-[var(--radius-lg)] bg-[var(--button-primary-base)] text-xs font-semibold text-[var(--button-primary-foreground)]"
@@ -104,7 +104,7 @@ export function AppSwitcher() {
         </span>
         <span className="relay-app-switcher-copy flex min-w-0 flex-col">
           <span className="relay-app-switcher-label text-[10px] font-semibold uppercase leading-[1.2] tracking-[0.06em] text-[var(--text-weaker)]">
-            App context
+            App
           </span>
           <span className="relay-app-switcher-name overflow-hidden text-xs leading-[1.35] text-ellipsis whitespace-nowrap">
             {contextName}

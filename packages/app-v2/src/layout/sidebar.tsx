@@ -13,7 +13,7 @@ import {
   useSidebar,
 } from "@relay/ui-react/components/sidebar";
 import { Link, useLocation } from "@tanstack/react-router";
-import { FlaskConical, GitCompareArrows, History, House, RadioTower, Settings } from "lucide-react";
+import { FlaskConical, History, House, MonitorSmartphone, Settings } from "lucide-react";
 import { AppSwitcher } from "./app-switcher";
 import { ActiveWork } from "./active-work";
 
@@ -21,12 +21,13 @@ const mainItems = [
   { to: "/home", label: "Home", icon: House },
   { to: "/tests", label: "Tests", icon: FlaskConical },
   { to: "/runs", label: "Runs", icon: History },
-  { to: "/sessions", label: "Live", icon: RadioTower },
-  { to: "/changes", label: "Changes", icon: GitCompareArrows },
+  { to: "/devices", label: "Devices", icon: MonitorSmartphone },
 ] as const;
 
 export function isSidebarItemActive(pathname: string, itemPath: `/${string}`) {
-  return routeContractForPath(pathname)?.sidebar === itemPath.slice(1);
+  const sidebar = routeContractForPath(pathname)?.sidebar;
+  if (itemPath === "/devices") return sidebar === "devices" || sidebar === "sessions";
+  return sidebar === itemPath.slice(1);
 }
 
 export function SidebarContent({ label = "Primary" }: { label?: string }) {
@@ -42,7 +43,7 @@ export function SidebarContent({ label = "Primary" }: { label?: string }) {
       <AppSwitcher />
       <SidebarGroup className="relay-sidebar-group flex-none pt-1.5">
         <SidebarGroupLabel className="relay-sidebar-section-label min-h-7 px-2.5 pb-1 pt-2 text-[11px] font-semibold text-[var(--text-weaker)]">
-          Workspace
+          Relay
         </SidebarGroupLabel>
         <nav className="relay-nav flex flex-col gap-0.5" aria-label={label}>
           <SidebarMenu className="relay-sidebar-menu m-0 grid list-none gap-0.5 p-0">

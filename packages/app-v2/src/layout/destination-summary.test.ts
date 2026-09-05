@@ -73,7 +73,7 @@ describe("destination summary", () => {
     });
     expect(summarizeDestinations({ status: "success", devices: [] })).toEqual({
       label: "No device",
-      detail: "Connect a device or open a browser",
+      detail: "Connect a Device or start a Browser",
       tone: "empty",
     });
   });

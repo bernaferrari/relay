@@ -14,6 +14,7 @@ export type DestinationListItem = {
   name: string;
   detail: string;
   status: ProductDeviceStatus;
+  platform: ProductDevice["platform"];
 };
 
 type DestinationDevice = Pick<
@@ -71,7 +72,7 @@ export function summarizeDestinations(input: {
   }
   return {
     label: "No device",
-    detail: "Connect a device or open a browser",
+    detail: "Connect a Device or start a Browser",
     tone: "empty",
   };
 }
@@ -95,5 +96,6 @@ export function destinationItems(devices: readonly DestinationDevice[]): Destina
       name: device.name,
       detail: destinationDetail(device),
       status: device.status,
+      platform: device.platform,
     }));
 }

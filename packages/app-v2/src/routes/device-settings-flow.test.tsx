@@ -389,20 +389,15 @@ describe("Devices", () => {
     await click(button("All"));
     expect(history.location.search).toBe("");
     expect(document.body.textContent).toContain("Design iPad");
-    const virtualDevices = [
-      ...document.querySelectorAll<HTMLButtonElement>("button[aria-expanded]"),
-    ].find((candidate) => candidate.textContent?.includes("Virtual devices"));
-    if (!virtualDevices) throw new Error("Virtual devices disclosure not found");
-    await click(virtualDevices);
     expect(document.body.textContent).toContain("Checkout browser");
-    expect(virtualDevices.getAttribute("aria-expanded")).toBe("true");
+    expect(document.body.textContent).toContain("Browsers");
   });
 
   it("clears search and type filters from the empty state while preserving setup return context", async () => {
     const history = await renderPath("/devices?returnTo=%2Ftests%2Fnew");
 
-    await click(button("Physical"));
-    const searchInput = input("Search devices");
+    await click(button("Devices"));
+    const searchInput = input("Search Devices and Browsers");
     if (!(searchInput instanceof HTMLInputElement)) throw new Error("Search input not found");
     await fillInput(searchInput, "does-not-exist");
 
@@ -411,11 +406,6 @@ describe("Devices", () => {
 
     expect(document.body.textContent).toContain("Design iPad");
     expect(document.body.textContent).toContain("QA phone");
-    const virtualDevices = [
-      ...document.querySelectorAll<HTMLButtonElement>("button[aria-expanded]"),
-    ].find((candidate) => candidate.textContent?.includes("Virtual devices"));
-    if (!virtualDevices) throw new Error("Virtual devices disclosure not found after reset");
-    await click(virtualDevices);
     expect(document.body.textContent).toContain("Checkout browser");
     const search = new URLSearchParams(history.location.search);
     expect(search.get("returnTo")).toBe("/tests/new");
