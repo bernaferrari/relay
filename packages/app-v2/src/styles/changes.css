@@ -724,3 +724,41 @@
     flex: 1 1 180px;
   }
 }
+
+/* Migrated from recovery-overrides: filtered collection recovery. */
+.relay-changes-page .relay-empty-state--filtered {
+  display: flex;
+  width: 100%;
+  max-width: none;
+  min-height: 168px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  margin-top: 26px;
+  padding: 24px;
+  border: 0;
+  background: transparent;
+  text-align: center;
+}
+
+.relay-changes-page .relay-empty-state--filtered [data-slot="empty-header"] {
+  max-width: 420px;
+}
+
+.relay-changes-page .relay-empty-state--filtered [data-slot="empty-icon"] {
+  width: 34px;
+  height: 34px;
+  margin-bottom: 4px;
+  border-radius: var(--radius-md);
+  box-shadow: none;
+}
+
+.relay-changes-page .relay-empty-state--filtered [data-slot="empty-icon"] > svg {
+  width: 16px;
+  height: 16px;
+}
+
+.relay-changes-page .relay-empty-state--filtered .relay-empty-state-action {
+  justify-content: center;
+  margin-top: 12px;
+}

@@ -1,4 +1,5 @@
 /** @jsxImportSource react */
+import { WorkbenchPage, PageHeader, WorkbenchPanes } from "../components/page-layout";
 import { Badge } from "@relay/ui-react/components/badge";
 import { Button } from "@relay/ui-react/components/button";
 import { FieldLabel } from "@relay/ui-react/components/field";
@@ -104,37 +105,14 @@ export function TestPage() {
     : undefined;
 
   return (
-    <section className="relay-page relay-test-page">
+    <WorkbenchPage className="relay-test-page">
       <Breadcrumbs
         items={[{ label: "Tests", to: "/tests" }, { label: test.data?.name ?? "Test" }]}
       />
-      <header className="relay-page-header relay-test-header">
-        <div>
-          {test.data ? (
-            <div className="relay-entity-context">
-              <Badge
-                variant="default"
-                className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-              >
-                Saved Test
-              </Badge>
-              <span>{test.data.appName}</span>
-            </div>
-          ) : (
-            <p className="relay-eyebrow">Test</p>
-          )}
-          <h1>{test.data?.name ?? "Test"}</h1>
-          {test.data ? (
-            <p className="relay-page-description">
-              {(test.data.steps ?? []).some((step) => step.status === "needs-review")
-                ? "Review the highlighted steps before running this Test."
-                : recentRuns.data?.length
-                  ? "Run the saved journey again or inspect its latest evidence."
-                  : "Choose a device or browser to run this Test for the first time."}
-            </p>
-          ) : null}
-        </div>
-        <div className="relay-test-header-actions">
+      <PageHeader
+        title={test.data?.name ?? "Test"}
+        context={<><span>{test.data?.appName}</span><span>Saved Test</span></>}
+        actions={<>
           <Button
             nativeButton={false}
             render={<Link to="/tests/$testId/edit" params={{ testId }} />}
@@ -151,8 +129,8 @@ export function TestPage() {
           >
             Run with data
           </Button>
-        </div>
-      </header>
+        </>}
+      />
 
       {loading ? <PageLoading label="Loading the Test and available devices…" /> : null}
       <RecordingProblem
@@ -194,8 +172,46 @@ export function TestPage() {
         </div>
       ) : null}
 
-      {!loading && test.data && !activeRun && !targets.isError ? (
-        <div className="relay-test-workbench">
+      {!test.isPending && test.data ? (
+        <WorkbenchPanes
+          outline={
+          <section className="relay-test-overview" aria-labelledby="test-overview-title">
+            <div className="relay-section-heading">
+              <div>
+                <p className="relay-section-label">Journey</p>
+                <h2 id="test-overview-title">Saved steps</h2>
+              </div>
+              <span>{test.data.stepCount === 1 ? "1 step" : `${test.data.stepCount} steps`}</span>
+            </div>
+            {test.data.steps?.length ? (
+              <ol className="relay-test-readable-steps">
+                {test.data.steps.map((step, index) => (
+                  <ReadableStep
+                    key={step.id}
+                    step={step}
+                    number={String(index + 1)}
+                    selectedId={selectedEvidenceStep?.id}
+                    onSelect={setEvidenceStepId}
+                  />
+                ))}
+              </ol>
+            ) : (
+              <p className="relay-test-no-steps">This Test has no reviewed steps yet.</p>
+            )}
+
+          </section>
+          }
+          stage={<>
+            {selectedEvidenceStep ? (
+              <TestStepEvidencePreview
+                step={selectedEvidenceStep}
+                report={latestReport.data}
+                hasRuns={Boolean(recentRuns.data?.length)}
+                loading={reportLoading}
+              />
+            ) : null}
+          </>}
+          inspector={!activeRun && !targets.isError ? (
           <section
             className="relay-test-run-config rounded-xl border border-border-weak-base bg-surface-raised-strong p-4 text-text-strong"
             aria-labelledby="run-target-title"
@@ -265,40 +281,8 @@ export function TestPage() {
               ) : null}
             </div>
           </section>
-
-          <section className="relay-test-overview" aria-labelledby="test-overview-title">
-            <div className="relay-section-heading">
-              <div>
-                <p className="relay-section-label">Journey</p>
-                <h2 id="test-overview-title">Saved steps</h2>
-              </div>
-              <span>{test.data.stepCount === 1 ? "1 step" : `${test.data.stepCount} steps`}</span>
-            </div>
-            {test.data.steps?.length ? (
-              <ol className="relay-test-readable-steps">
-                {test.data.steps.map((step, index) => (
-                  <ReadableStep
-                    key={step.id}
-                    step={step}
-                    number={String(index + 1)}
-                    selectedId={selectedEvidenceStep?.id}
-                    onSelect={setEvidenceStepId}
-                  />
-                ))}
-              </ol>
-            ) : (
-              <p className="relay-test-no-steps">This Test has no reviewed steps yet.</p>
-            )}
-            {selectedEvidenceStep ? (
-              <TestStepEvidencePreview
-                step={selectedEvidenceStep}
-                report={latestReport.data}
-                hasRuns={Boolean(recentRuns.data?.length)}
-                loading={reportLoading}
-              />
-            ) : null}
-          </section>
-        </div>
+          ) : undefined}
+        />
       ) : null}
 
       {!loading && test.data && recentRuns.data?.length ? (
@@ -381,7 +365,7 @@ export function TestPage() {
           </section>
         </div>
       ) : null}
-    </section>
+    </WorkbenchPage>
   );
 }
 

@@ -12,10 +12,17 @@ import { Field, FieldError, FieldLabel } from "@relay/ui-react/components/field"
 import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
+import {
+  Link,
+  getRouteApi,
+  useLocation,
+  useNavigate,
+  useRouteContext,
+} from "@tanstack/react-router";
 import { ExternalLink, RotateCcw, ShieldCheck, Trash2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { Breadcrumbs, EmptyState, RecoveryState } from "../components/product-patterns";
+import { readSetupContinuation } from "../data/setup-continuation";
 import { PageLoading } from "./recording-shared";
 
 const routeApi = getRouteApi("/environments/$profileId");
@@ -34,6 +41,11 @@ export function EnvironmentPage() {
   });
   const { profileId } = routeApi.useParams();
   const navigate = useNavigate();
+  const rawSearch = useLocation({ select: (state) => state.search });
+  const continuation =
+    rawSearch && typeof rawSearch === "object" && "returnTo" in rawSearch
+      ? readSetupContinuation(rawSearch.returnTo)
+      : undefined;
   const [accountOpen, setAccountOpen] = useState(false);
   const [removeOpen, setRemoveOpen] = useState(false);
   const [accountName, setAccountName] = useState("");
@@ -84,7 +96,17 @@ export function EnvironmentPage() {
     mutationFn: () => browserSpacesService.removeSpace(profileId),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["browser-spaces"] });
-      await navigate({ to: "/environments" });
+      if (continuation) {
+        await navigate({
+          to: "/tests/new",
+          search: {
+            ...(continuation.appId ? { app: continuation.appId } : {}),
+            ...(continuation.targetId ? { target: continuation.targetId } : {}),
+          },
+        });
+      } else {
+        await navigate({ to: "/environments" });
+      }
     },
   });
 
@@ -106,6 +128,18 @@ export function EnvironmentPage() {
           { label: space?.name ?? "Environment" },
         ]}
       />
+      {continuation ? (
+        <Link
+          className="relay-inline-link"
+          to="/tests/new"
+          search={{
+            ...(continuation.appId ? { app: continuation.appId } : {}),
+            ...(continuation.targetId ? { target: continuation.targetId } : {}),
+          }}
+        >
+          ← Back to Test setup
+        </Link>
+      ) : null}
       {spaces.isPending ? <PageLoading label="Loading Environment…" /> : null}
       {spaces.error ? (
         <RecoveryState

@@ -37,7 +37,10 @@ const iconForKind: Record<ActiveWorkKind, LucideIcon> = {
   change: GitCompareArrows,
 };
 
-function useActiveWorkItems(_full: boolean): readonly ActiveWorkItem[] {
+function useActiveWorkItems(_full: boolean): {
+  items: readonly ActiveWorkItem[];
+  unavailable: boolean;
+} {
   const { platform, productService, catalogService, changeService } = useRouteContext({
     from: "__root__",
   });
@@ -73,7 +76,7 @@ function useActiveWorkItems(_full: boolean): readonly ActiveWorkItem[] {
     refetchInterval: 3_000,
   });
 
-  return useMemo(
+  const items = useMemo(
     () =>
       collectActiveWork({
         recordingId: recordingPointer.data,
@@ -84,12 +87,16 @@ function useActiveWorkItems(_full: boolean): readonly ActiveWorkItem[] {
       }),
     [changes.data, recording.data, recordingPointer.data, runPointer.data, runs.data],
   );
+  const unavailable = Boolean(
+    recordingPointer.error || recording.error || runs.error || changes.error,
+  );
+  return { items, unavailable };
 }
 
 export function ActivityCenterButton() {
   const [open, setOpen] = useState(false);
   // Keep the global activity badge current even while the center is closed.
-  const items = useActiveWorkItems(true);
+  const { items, unavailable } = useActiveWorkItems(true);
   return (
     <>
       <Button
@@ -97,17 +104,21 @@ export function ActivityCenterButton() {
         size="sm"
         className="relay-electron-no-drag ml-auto text-muted-foreground"
         onClick={() => setOpen(true)}
-        aria-label={`Open Activity Center${items.length ? `, ${items.length} active` : ""}`}
+        aria-label={`Open Activity Center${unavailable ? ", unavailable" : items.length ? `, ${items.length} active` : ""}`}
       >
         <Activity className="size-4" aria-hidden="true" />
         <span>Activity</span>
-        {items.length ? (
+        {unavailable ? (
+          <Badge variant="destructive" className="min-w-5 px-1.5">
+            !
+          </Badge>
+        ) : items.length ? (
           <Badge variant="secondary" className="min-w-5 px-1.5 tabular-nums">
             {items.length}
           </Badge>
         ) : null}
       </Button>
-      <ActivityCenter open={open} onOpenChange={setOpen} items={items} />
+      <ActivityCenter open={open} onOpenChange={setOpen} items={items} unavailable={unavailable} />
     </>
   );
 }
@@ -115,7 +126,7 @@ export function ActivityCenterButton() {
 export function ActiveWork() {
   const [open, setOpen] = useState(false);
   const router = useRouter();
-  const items = useActiveWorkItems(open);
+  const { items } = useActiveWorkItems(open);
   const primary = items[0];
   if (!primary) return null;
   const Icon = iconForKind[primary.kind];
@@ -155,10 +166,12 @@ function ActivityCenter({
   open,
   onOpenChange,
   items,
+  unavailable,
 }: {
   open: boolean;
   onOpenChange(open: boolean): void;
   items: readonly ActiveWorkItem[];
+  unavailable?: boolean;
 }) {
   const router = useRouter();
   function openItem(item: ActiveWorkItem) {
@@ -191,7 +204,17 @@ function ActivityCenter({
           />
         </header>
         <ScrollArea className="min-h-0 max-h-[min(28rem,calc(100vh-12rem))]">
-          {items.length ? (
+          {unavailable ? (
+            <div className="grid gap-3 p-6" role="alert">
+              <strong>Activity is unavailable</strong>
+              <p className="text-sm text-muted-foreground">
+                Relay could not refresh active work from the workspace.
+              </p>
+              <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
+                Try again
+              </Button>
+            </div>
+          ) : items.length ? (
             <div className="grid gap-1 p-2">
               {items.map((item) => {
                 const Icon = iconForKind[item.kind];

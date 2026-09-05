@@ -1635,3 +1635,52 @@
   color: var(--text-weaker);
   font-size: 11px;
 }
+
+/* Migrated from final-polish: recording recovery/loading refinements. */
+.relay-resume-recording,
+.relay-recording-problem {
+  max-width: 640px;
+  margin-top: 28px;
+}
+
+.relay-run-page > .relay-run-recovery[data-slot="empty"] {
+  margin-top: 10px;
+}
+
+.relay-recording-loading {
+  display: grid;
+  max-width: 848px;
+  gap: 18px;
+  margin-top: 34px;
+}
+
+.relay-recording-loading-copy {
+  display: grid;
+  max-width: 400px;
+  gap: 8px;
+}
+
+.relay-recording-loading-title {
+  width: 34%;
+  height: 16px;
+}
+
+.relay-recording-loading-line {
+  width: 78%;
+  height: 12px;
+}
+
+.relay-recording-loading-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.relay-recording-loading-grid > * {
+  min-height: 110px;
+  border-radius: var(--radius-xl);
+}
+
+.relay-recording-recovery {
+  color: var(--text-base) !important;
+}

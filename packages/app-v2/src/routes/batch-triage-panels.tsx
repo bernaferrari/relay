@@ -74,7 +74,9 @@ export function BatchResultMatrix({
   onToggleCase(item: ProductBatchCase, checked: boolean): void;
 }) {
   const matrix = buildBatchMatrix(report.cases, report.setup);
-  const rows = failuresOnly ? matrix.rows.filter((row) => row.hasProblems) : matrix.rows;
+  const rows = failuresOnly
+    ? [...matrix.rows].sort((left, right) => Number(right.hasProblems) - Number(left.hasProblems))
+    : matrix.rows;
   return (
     <section className="relay-batch-matrix" aria-labelledby="batch-matrix-title">
       <div className="relay-section-heading">

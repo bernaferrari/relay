@@ -15,22 +15,34 @@ import { FieldLabel as ChoiceLabel } from "@relay/ui-react/components/field";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { Play, RotateCcw, Trash2 } from "lucide-react";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   Breadcrumbs,
   EmptyState,
   OutcomeMark,
   RecoveryState,
 } from "../components/product-patterns";
+import { RunConfigurationComposer } from "../components/run-configuration-composer";
+import { runConfigurationStorageKey } from "../data/use-persisted-run-configuration";
+import { usePersistedRunConfiguration } from "../data/use-persisted-run-configuration";
 import { PageLoading } from "./recording-shared";
 
 const routeApi = getRouteApi("/apps/$appId/suites/$suiteId");
 
 export function SuitePage() {
-  const { suiteProfileService, queryClient } = useRouteContext({ from: "__root__" });
+  const { suiteProfileService, queryClient, platform } = useRouteContext({ from: "__root__" });
   const { appId, suiteId } = routeApi.useParams();
   const navigate = useNavigate();
   const [profileIds, setProfileIds] = useState<Set<string>>(() => new Set());
+  const profileSelectionTouched = useRef(false);
+  const [configurationKey, setConfigurationKey] = useState(`suite:${appId}:${suiteId}`);
+  useEffect(() => {
+    void Promise.resolve(platform.getServerUrl()).then((server) =>
+      setConfigurationKey(
+        runConfigurationStorageKey({ server, appId, entity: `suite:${suiteId}` }),
+      ),
+    );
+  }, [appId, platform, suiteId]);
   const [editOpen, setEditOpen] = useState(false);
   const [removeOpen, setRemoveOpen] = useState(false);
   const [name, setName] = useState("");
@@ -51,12 +63,31 @@ export function SuitePage() {
     queryFn: () => suiteProfileService.listEnvironmentProfiles(),
     staleTime: 10_000,
   });
+  const configuration = usePersistedRunConfiguration({
+    storage: platform.storage,
+    key: configurationKey,
+    targetOptions: environments.data?.map((item) => ({ id: item.id, label: item.name })),
+  });
   useEffect(() => {
-    if (!profileIds.size && environments.data?.[0]) {
+    if (
+      !configuration.loading &&
+      configuration.selection.targetProfileId &&
+      !profileSelectionTouched.current
+    ) {
+      setProfileIds(new Set([configuration.selection.targetProfileId]));
+    }
+  }, [configuration.loading, configuration.selection.targetProfileId]);
+  const selectedProfileIds = [...profileIds];
+  useEffect(() => {
+    if (
+      !configuration.loading &&
+      !profileSelectionTouched.current &&
+      !profileIds.size &&
+      environments.data?.[0]
+    ) {
       setProfileIds(new Set([environments.data[0].id]));
     }
-  }, [environments.data, profileIds]);
-  const selectedProfileIds = [...profileIds];
+  }, [configuration.loading, environments.data, profileIds.size]);
   const preview = useQuery({
     queryKey: ["suites", appId, suiteId, "preview", selectedProfileIds],
     queryFn: () =>
@@ -65,7 +96,7 @@ export function SuitePage() {
         suiteId,
         profileIds: selectedProfileIds,
       }),
-    enabled: Boolean(suite.data && selectedProfileIds.length),
+    enabled: Boolean(suite.data && selectedProfileIds.length && !configuration.targetUnavailable),
     retry: false,
   });
   const save = useMutation({
@@ -126,6 +157,16 @@ export function SuitePage() {
 
   function toggle(setter: typeof setTestIds, id: string, checked: boolean) {
     setter((current) => {
+      const next = new Set(current);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
+  function toggleProfile(id: string, checked: boolean) {
+    profileSelectionTouched.current = true;
+    setProfileIds((current) => {
       const next = new Set(current);
       if (checked) next.add(id);
       else next.delete(id);
@@ -223,10 +264,51 @@ export function SuitePage() {
             <div className="flex items-center gap-2">
               <dt className="text-xs text-text-weaker">Status</dt>
               <dd>
-                <OutcomeMark outcome={needsReview ? "needs-review" : "passed"} />
+                <OutcomeMark outcome={needsReview ? "needs-review" : "ready"} />
               </dd>
             </div>
           </dl>
+
+          <RunConfigurationComposer
+            configuration={{
+              frozen: true,
+              values: {
+                targetProfileId: selectedProfileIds[0],
+                targetName: environments.data?.find((item) => item.id === selectedProfileIds[0])
+                  ?.name,
+                dataSetName: value.variableIds.length
+                  ? `${value.variableIds.length} saved data sets`
+                  : undefined,
+              },
+              blockers: selectedProfileIds.length
+                ? configuration.targetUnavailable
+                  ? [
+                      {
+                        id: "target",
+                        label: "Saved environment is unavailable",
+                        detail: "Choose another environment to continue.",
+                      },
+                    ]
+                  : []
+                : [{ id: "target", label: "Choose an environment before starting" }],
+              validated: Boolean(
+                preview.data &&
+                !preview.data.blockers.length &&
+                preview.data.execution?.capacity !== "unavailable",
+              ),
+            }}
+            targetOptions={environments.data?.map((item) => ({
+              id: item.id,
+              label: item.name,
+              detail: `${item.platform} · ${item.target.name}`,
+            }))}
+            selection={{ targetProfileId: selectedProfileIds[0] }}
+            onSelectionChange={(next) => {
+              profileSelectionTouched.current = true;
+              setProfileIds(next.targetProfileId ? new Set([next.targetProfileId]) : new Set());
+              configuration.setSelection(next);
+            }}
+          />
 
           <div className="mt-6 grid items-start gap-4 lg:grid-cols-2">
             <section
@@ -248,7 +330,7 @@ export function SuitePage() {
                       <span className="truncate text-sm font-medium text-text-strong">
                         {test.name}
                       </span>
-                      <OutcomeMark outcome={test.status === "ready" ? "passed" : "needs-review"} />
+                      <OutcomeMark outcome={test.status === "ready" ? "ready" : "needs-review"} />
                     </Link>
                   </li>
                 ))}
@@ -277,7 +359,8 @@ export function SuitePage() {
                 <Field className="mt-3">
                   <FieldLabel>Environment</FieldLabel>
                   <p className="text-xs leading-5 text-text-weak">
-                    Choose one to run a pilot, or select more to compare readiness.
+                    A pilot runs on one environment. You can select more to compare readiness;
+                    multi-environment execution is preview-only until Run Across is available.
                   </p>
                   <fieldset className="mt-3 grid min-w-0 gap-2 border-0 p-0">
                     <legend className="sr-only">Environments</legend>
@@ -296,14 +379,7 @@ export function SuitePage() {
                         </span>
                         <Checkbox
                           checked={profileIds.has(profile.id)}
-                          onCheckedChange={(checked) =>
-                            setProfileIds((current) => {
-                              const next = new Set(current);
-                              if (checked === true && next.size < 4) next.add(profile.id);
-                              if (checked !== true) next.delete(profile.id);
-                              return next;
-                            })
-                          }
+                          onCheckedChange={(checked) => toggleProfile(profile.id, checked === true)}
                         />
                       </ChoiceLabel>
                     ))}

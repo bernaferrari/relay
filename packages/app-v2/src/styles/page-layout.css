@@ -1,0 +1,36 @@
+.relay-page-layout {
+  --page-gutter: clamp(20px, 3vw, 40px);
+  width: 100%;
+  margin-inline: auto;
+  padding: 28px var(--page-gutter) 40px;
+}
+.relay-page-layout[data-page-pattern="library"] { max-width: 1440px; }
+.relay-page-layout[data-page-pattern="form"] { max-width: 1040px; }
+.relay-page-layout[data-page-pattern="workbench"] { max-width: none; }
+.relay-workspace-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px 24px;
+  margin-block: 12px 24px;
+}
+.relay-workspace-heading { min-width: 0; flex: 1 1 280px; }
+.relay-workspace-heading h1 { margin: 6px 0 0; font-size: clamp(24px, 2.2vw, 30px); line-height: 1.2; overflow-wrap: anywhere; }
+.relay-workspace-context { display: flex; flex-wrap: wrap; gap: 8px 12px; color: var(--text-weak); font-size: 12px; }
+.relay-workspace-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-top: 6px; }
+.relay-workspace-header-footer { flex-basis: 100%; min-width: 0; }
+.relay-editor-save-status { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-weak); }
+.relay-editor-save-status[data-state="failed"], .relay-editor-save-status[data-state="conflicted"] { color: var(--text-critical-base); }
+.relay-workspace-panes { display: grid; grid-template-columns: minmax(210px, 0.65fr) minmax(0, 1.6fr); gap: 16px; align-items: start; }
+.relay-workspace-panes[data-inspector="true"] { grid-template-columns: minmax(200px, .7fr) minmax(0, 1.6fr) minmax(240px, .85fr); }
+.relay-workspace-outline, .relay-workspace-stage, .relay-workspace-inspector { min-width: 0; }
+@media (max-width: 1100px) {
+  .relay-workspace-panes[data-inspector="true"] { grid-template-columns: minmax(200px, .7fr) minmax(0, 1.6fr); }
+  .relay-workspace-inspector { grid-column: 1 / -1; }
+}
+@media (max-width: 720px) {
+  .relay-workspace-panes, .relay-workspace-panes[data-inspector="true"] { grid-template-columns: minmax(0, 1fr); }
+  .relay-workspace-header { gap: 12px; }
+  .relay-workspace-actions { width: 100%; }
+}

@@ -5,15 +5,18 @@ import { FieldLabel } from "@relay/ui-react/components/field";
 import { RadioGroup, RadioGroupItem } from "@relay/ui-react/components/radio-group";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Breadcrumbs, EmptyState } from "../components/product-patterns";
+import { RunConfigurationComposer } from "../components/run-configuration-composer";
+import { runConfigurationStorageKey } from "../data/use-persisted-run-configuration";
+import { usePersistedRunConfiguration } from "../data/use-persisted-run-configuration";
 import { runQueryKeys } from "../data/run-queries";
 import { PageLoading, RecordingProblem, errorMessage } from "./recording-shared";
 
 const routeApi = getRouteApi("/tests/$testId/run-across");
 
 export function RunAcrossPage() {
-  const { runAcrossService, runService } = useRouteContext({ from: "__root__" });
+  const { runAcrossService, runService, platform } = useRouteContext({ from: "__root__" });
   const { testId } = routeApi.useParams();
   const navigate = useNavigate();
   const setup = useQuery({
@@ -32,11 +35,40 @@ export function RunAcrossPage() {
   });
   const [targetId, setTargetId] = useState("");
   const [selected, setSelected] = useState<Record<string, string[]>>({});
+  const [configurationKey, setConfigurationKey] = useState(`run-across:${testId}`);
+  useEffect(() => {
+    void Promise.resolve(platform.getServerUrl()).then((server) =>
+      setConfigurationKey(
+        runConfigurationStorageKey({ server, appId: "workspace", entity: `test:${testId}` }),
+      ),
+    );
+  }, [platform, testId]);
+  const configuration = usePersistedRunConfiguration({
+    storage: platform.storage,
+    key: configurationKey,
+    targetOptions: targets.data?.map((item) => ({ id: item.targetId, label: item.name })),
+  });
   const [previewAttempt, setPreviewAttempt] = useState(0);
   const target = useMemo(
     () => targets.data?.find((item) => item.targetId === targetId),
     [targetId, targets.data],
   );
+  useEffect(() => {
+    if (configuration.loading) return;
+    if (configuration.selection.targetProfileId && !targetId)
+      setTargetId(configuration.selection.targetProfileId);
+    if (configuration.selection.dataSetIds) {
+      const chosen = new Set(configuration.selection.dataSetIds);
+      setSelected(
+        Object.fromEntries(
+          (setup.data?.dataSet.dimensions ?? []).map((dimension) => [
+            dimension.id,
+            dimension.values.filter((value) => chosen.has(value.id)).map((value) => value.id),
+          ]),
+        ),
+      );
+    }
+  }, [configuration.loading, configuration.selection, setup.data, targetId]);
   const previewResult = useMemo(() => {
     if (!setup.data || !target) return { preview: undefined, error: undefined };
     try {
@@ -99,6 +131,63 @@ export function RunAcrossPage() {
       />
       {!loading && setup.data && !setup.error ? (
         <div className="relay-run-across-workspace">
+          <RunConfigurationComposer
+            configuration={{
+              values: {
+                targetProfileId: target?.targetId,
+                targetName: target?.name,
+                dataSetName: setup.data.dataSet.name,
+              },
+              blockers: previewResult.error
+                ? [
+                    {
+                      id: "preview",
+                      label: "Configuration unavailable",
+                      detail: previewResult.error,
+                    },
+                  ]
+                : configuration.targetUnavailable
+                  ? [
+                      {
+                        id: "target",
+                        label: "Saved environment is unavailable",
+                        detail: "Choose another environment to continue.",
+                      },
+                    ]
+                  : !target
+                    ? [{ id: "target", label: "Choose a ready device or browser" }]
+                    : [],
+              validated: Boolean(preview),
+            }}
+            targetOptions={targets.data?.map((item) => ({
+              id: item.targetId,
+              label: item.name,
+              detail: item.detail,
+            }))}
+            dataSetOptions={setup.data.dataSet.dimensions.flatMap((dimension) =>
+              dimension.values.map((value) => ({
+                id: value.id,
+                label: `${dimension.name}: ${value.label}`,
+                detail: value.detail,
+              })),
+            )}
+            selection={{ targetProfileId: targetId, dataSetIds: Object.values(selected).flat() }}
+            onSelectionChange={(next) => {
+              setTargetId(next.targetProfileId ?? "");
+              const chosen = new Set(next.dataSetIds ?? []);
+              setSelected(
+                Object.fromEntries(
+                  setup.data.dataSet.dimensions.map((dimension) => [
+                    dimension.id,
+                    dimension.values
+                      .filter((value) => chosen.has(value.id))
+                      .map((value) => value.id),
+                  ]),
+                ),
+              );
+              configuration.setSelection(next);
+            }}
+          />
           <section className="relay-run-across-card" aria-labelledby="data-set-title">
             <p className="relay-section-label">Data set</p>
             <h2 id="data-set-title">{setup.data.dataSet.name}</h2>

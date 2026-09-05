@@ -2,11 +2,12 @@
 import { Badge } from "@relay/ui-react/components/badge";
 import { Button } from "@relay/ui-react/components/button";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Link, getRouteApi, useRouteContext } from "@tanstack/react-router";
+import { Link, getRouteApi, useLocation, useRouteContext } from "@tanstack/react-router";
 import { RotateCcw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Breadcrumbs, EmptyState } from "../components/product-patterns";
 import { deviceQueryKeys, type ProductDevice } from "../data/device-product-service";
+import { readSetupContinuation } from "../data/setup-continuation";
 import type { LiveTargetSession, LiveTargetStatus } from "../data/live-target-session";
 import { LiveTargetCanvas } from "./live-target-canvas";
 import { PageLoading, errorMessage } from "./recording-shared";
@@ -45,6 +46,11 @@ function statusCopy(device: ProductDevice): { label: string; title: string; deta
 
 export function DevicePage() {
   const { deviceId } = routeApi.useParams();
+  const rawSearch = useLocation({ select: (state) => state.search });
+  const returnTo =
+    rawSearch && typeof rawSearch === "object" && "returnTo" in rawSearch
+      ? readSetupContinuation(rawSearch.returnTo)
+      : undefined;
   const { deviceService, productService, queryClient } = useRouteContext({ from: "__root__" });
   const canvas = useRef<HTMLCanvasElement>(null);
   const session = useRef<LiveTargetSession | undefined>(undefined);
@@ -166,6 +172,18 @@ export function DevicePage() {
       <Breadcrumbs
         items={[{ label: "Devices", to: "/devices" }, { label: device.data?.name ?? "Device" }]}
       />
+      {returnTo ? (
+        <Link
+          className="relay-inline-link"
+          to="/tests/new"
+          search={{
+            ...(returnTo.appId ? { app: returnTo.appId } : {}),
+            ...(returnTo.targetId ? { target: returnTo.targetId } : {}),
+          }}
+        >
+          ← Back to Test setup
+        </Link>
+      ) : null}
       <header className="relay-page-header relay-device-detail-header">
         <div>
           <p className="relay-eyebrow">Device</p>
@@ -189,7 +207,10 @@ export function DevicePage() {
             render={
               <Link
                 to="/tests/new"
-                search={{ target: target.data?.targetId ?? device.data.serial }}
+                search={{
+                  ...(returnTo?.appId ? { app: returnTo.appId } : {}),
+                  target: target.data?.targetId ?? device.data.serial,
+                }}
               />
             }
           >

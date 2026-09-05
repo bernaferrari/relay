@@ -17,11 +17,12 @@ import { Field, FieldError, FieldLabel } from "@relay/ui-react/components/field"
 import { useQuery } from "@tanstack/react-query";
 import { useMutation } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
-import { useDeferredValue, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { ChevronRight, Search } from "lucide-react";
 import { FilterSelect } from "../components/filter-select";
 import { EmptyState, OutcomeMark } from "../components/product-patterns";
 import { TestRunDialog } from "../components/test-run-dialog";
+import { LibraryPage, PageHeader } from "../components/page-layout";
 import { catalogQueryKeys } from "../data/catalog-queries";
 import { PageLoading, RecordingProblem } from "./recording-shared";
 import type { ProductSuiteEditor } from "../data/suite-profile-product-service";
@@ -36,9 +37,14 @@ export function TestsPage() {
   const { catalogService, suiteProfileService, queryClient } = useRouteContext({
     from: "__root__",
   });
-  const search = routeApi.useSearch() as { app?: unknown; status?: unknown; result?: unknown };
+  const search = routeApi.useSearch() as {
+    app?: unknown;
+    status?: unknown;
+    result?: unknown;
+    q?: unknown;
+  };
   const navigate = useNavigate({ from: "/tests" });
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(() => (typeof search.q === "string" ? search.q : ""));
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [suiteDialogOpen, setSuiteDialogOpen] = useState(false);
   const [suiteName, setSuiteName] = useState("");
@@ -47,6 +53,9 @@ export function TestsPage() {
   const status = testFilter(search.status);
   const result = resultFilter(search.result);
   const app = typeof search.app === "string" ? search.app : "";
+  useEffect(() => {
+    setQuery(typeof search.q === "string" ? search.q : "");
+  }, [search.q]);
   const tests = useQuery({
     queryKey: catalogQueryKeys.tests,
     queryFn: () => catalogService.listTests(),
@@ -118,6 +127,20 @@ export function TestsPage() {
   );
   const readyVisibleIds = visibleReadyIdsFor(visibleTests);
   const resultLabel = resultContext(status, app, apps);
+  useEffect(() => {
+    let href: string | null = null;
+    try {
+      href = window.sessionStorage.getItem("relay:focus:/tests");
+      if (href) window.sessionStorage.removeItem("relay:focus:/tests");
+    } catch {
+      href = null;
+    }
+    if (!href) return;
+    const frame = window.requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>(`a[href="${CSS.escape(href!)}"]`)?.focus();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [visibleTests]);
   const statusOptions = [
     { value: "all", label: "All statuses" },
     { value: "ready", label: "Ready" },
@@ -152,7 +175,13 @@ export function TestsPage() {
   function clearFilters() {
     setQuery("");
     void navigate({
-      search: (previous) => ({ ...previous, app: undefined, status: undefined, result: undefined }),
+      search: (previous) => ({
+        ...previous,
+        app: undefined,
+        status: undefined,
+        result: undefined,
+        q: undefined,
+      }),
     });
   }
 
@@ -182,19 +211,30 @@ export function TestsPage() {
   }
 
   return (
-    <section className="relay-page relay-library-page relay-tests-page">
-      <header className="relay-library-header">
-        <div>
-          <p className="relay-eyebrow">Tests</p>
-          <h1>Saved Tests</h1>
-          <p className="relay-page-description">
-            Reviewed journeys you can run again on a device or browser.
-          </p>
-        </div>
-        <Button nativeButton={false} variant="default" render={<Link to="/tests/new" />}>
-          New Test
-        </Button>
-      </header>
+    <LibraryPage
+      className="relay-library-page relay-tests-page"
+      onClickCapture={(event) => {
+        const anchor = (event.target as HTMLElement).closest<HTMLAnchorElement>(
+          'a[href^="/tests/"]',
+        );
+        if (!anchor) return;
+        try {
+          window.sessionStorage.setItem("relay:focus:/tests", anchor.getAttribute("href") ?? "");
+        } catch {
+          // Focus restoration is an enhancement when session storage is unavailable.
+        }
+      }}
+    >
+      <PageHeader
+        context="Tests"
+        title="Saved Tests"
+        description="Reviewed journeys you can run again on a device or browser."
+        actions={
+          <Button nativeButton={false} variant="default" render={<Link to="/tests/new" />}>
+            New Test
+          </Button>
+        }
+      />
 
       <div className="relay-test-selection-toolbar" aria-label="Test selection actions">
         <span>
@@ -339,7 +379,11 @@ export function TestsPage() {
               id="test-search"
               type="search"
               value={query}
-              onChange={(event) => setQuery(event.currentTarget.value)}
+              onChange={(event) => {
+                const next = event.currentTarget.value;
+                setQuery(next);
+                void navigate({ search: (previous) => ({ ...previous, q: next || undefined }) });
+              }}
               placeholder="Search by Test or app"
               autoComplete="off"
               spellCheck="false"
@@ -418,7 +462,7 @@ export function TestsPage() {
           />
         )
       ) : null}
-    </section>
+    </LibraryPage>
   );
 }
 

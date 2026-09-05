@@ -96,12 +96,16 @@ export type RouteDefinition = {
     | "app"
     | "view"
     | "step"
+    | "at"
+    | "attempt"
     | "screen"
     | "path"
     | "target"
     | "session"
     | "section"
     | "replayJob"
+    | "q"
+    | "returnTo"
   )[];
   primaryAction: ContextualAction | null;
 };
@@ -135,7 +139,7 @@ export const ROUTE_DEFINITIONS = [
   d("/versions", "/home", "Versions", null, "apps", null, ["status", "view"]),
   d("/accounts", "/home", "Accounts", null, "apps", null, ["status", "view"]),
   d("/apps/:appId/map", "/apps/:appId", "Map", "Map", "apps", "explore-app", ["view", "screen"]),
-  d("/tests", "/home", "Tests", "Test", "tests", "record-test", ["status", "app", "view"]),
+  d("/tests", "/home", "Tests", "Test", "tests", "record-test", ["status", "app", "view", "q"]),
   d("/tests/new", "/tests", "New Test", "Test", "tests", "record-test", [
     "app",
     "view",
@@ -163,6 +167,7 @@ export const ROUTE_DEFINITIONS = [
   d("/environments", "/home", "Environments", "Environment", "suites", "add-environment", [
     "status",
     "view",
+    "returnTo",
   ]),
   d(
     "/environments/:profileId",
@@ -171,7 +176,7 @@ export const ROUTE_DEFINITIONS = [
     "Environment",
     "suites",
     "inspect-environment",
-    ["view"],
+    ["view", "returnTo"],
   ),
   d("/sessions", "/home", "Sessions", "Session", "sessions", "inspect-session", [
     "status",
@@ -193,10 +198,12 @@ export const ROUTE_DEFINITIONS = [
     "review-recording",
     ["view", "step", "screen"],
   ),
-  d("/runs", "/home", "Runs", "Run", "runs", "review-run", ["status", "app", "view"]),
+  d("/runs", "/home", "Runs", "Run", "runs", "review-run", ["status", "app", "view", "q"]),
   d("/runs/:runId", "/runs", "Run", "Run", "runs", "inspect-run", [
     "view",
     "step",
+    "at",
+    "attempt",
     "screen",
     "replayJob",
   ]),
@@ -207,7 +214,11 @@ export const ROUTE_DEFINITIONS = [
     "view",
   ]),
   d("/changes/:changeId", "/changes", "Change", "Change", "changes", "inspect-change", ["view"]),
-  d("/devices", "/home", "Devices", "Device", "devices", "connect-device", ["status", "view"]),
+  d("/devices", "/home", "Devices", "Device", "devices", "connect-device", [
+    "status",
+    "view",
+    "returnTo",
+  ]),
   d("/devices/:deviceId", "/devices", "Device", "Device", "devices", "inspect-device", ["view"]),
   d("/debug", "/sessions", "Agent Debug", "Session", "sessions", null, ["target"]),
   ...(["general", "evidence", "integrations", "appearance", "advanced", "about"] as const).map(

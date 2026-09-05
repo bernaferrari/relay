@@ -30,8 +30,9 @@ export function SessionsPage() {
   const sessions = useQuery({
     queryKey: sessionQueryKeys.sessionList({ includeHistory: true }),
     queryFn: () => sessionService.list({ includeHistory: true }),
-    staleTime: Infinity,
-    refetchOnReconnect: false,
+    staleTime: 2_000,
+    refetchInterval: 3_000,
+    refetchOnReconnect: true,
     refetchOnWindowFocus: false,
   });
 

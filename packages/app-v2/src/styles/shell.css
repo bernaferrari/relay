@@ -846,3 +846,57 @@ select {
     grid-template-columns: 1fr;
   }
 }
+
+/* Migrated from final-polish: shell navigation refinements. */
+.relay-sidebar-body {
+  gap: 2px;
+  padding: 0 12px 12px;
+  scrollbar-gutter: auto;
+}
+
+.relay-sidebar-head {
+  padding-inline: 12px;
+}
+
+.relay-sidebar-group {
+  padding-top: 6px;
+}
+
+.relay-sidebar-section-label {
+  padding-inline: 10px;
+}
+
+.relay-sidebar-footer {
+  padding-top: 10px;
+}
+
+.relay-app-switcher {
+  min-height: 50px;
+  padding: 6px 9px;
+  border-radius: var(--radius-lg);
+  box-shadow: 0 1px 2px color-mix(in srgb, black 4%, transparent);
+}
+
+.relay-nav-link--active {
+  background: var(--surface-base-active);
+  box-shadow: none;
+  font-weight: 600;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .relay-nav-link--active:hover {
+    background: var(--surface-base-active);
+  }
+}
+
+.relay-breadcrumbs li + li::before {
+  content: none;
+}
+
+.relay-breadcrumb-separator {
+  width: 13px;
+  height: 13px;
+  flex: none;
+  color: var(--text-weaker);
+  stroke-width: 1.75;
+}

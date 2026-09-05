@@ -13,10 +13,11 @@ import { Input } from "@relay/ui-react/components/input";
 import { Checkbox } from "@relay/ui-react/components/checkbox";
 import { FieldLabel as ChoiceLabel } from "@relay/ui-react/components/field";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Link, useNavigate, useRouteContext } from "@tanstack/react-router";
+import { Link, useLocation, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { Globe2, Plus, RotateCcw } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { Breadcrumbs, EmptyState, RecoveryState } from "../components/product-patterns";
+import { readSetupContinuation } from "../data/setup-continuation";
 import { PageLoading } from "./recording-shared";
 
 function displayHost(url: string): string {
@@ -30,6 +31,12 @@ function displayHost(url: string): string {
 export function EnvironmentsPage() {
   const { browserSpacesService, queryClient } = useRouteContext({ from: "__root__" });
   const navigate = useNavigate();
+  const rawSearch = useLocation({ select: (state) => state.search });
+  const rawReturnTo =
+    rawSearch && typeof rawSearch === "object" && "returnTo" in rawSearch
+      ? String(rawSearch.returnTo)
+      : undefined;
+  const continuation = rawReturnTo ? readSetupContinuation(rawReturnTo) : undefined;
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [startUrl, setStartUrl] = useState("");
@@ -49,7 +56,17 @@ export function EnvironmentsPage() {
     onSuccess: async (space) => {
       await queryClient.invalidateQueries({ queryKey: ["browser-spaces"] });
       setOpen(false);
-      await navigate({ to: "/environments/$profileId", params: { profileId: space.id } });
+      if (continuation) {
+        await navigate({
+          to: "/tests/new",
+          search: {
+            ...(continuation.appId ? { app: continuation.appId } : {}),
+            target: space.id,
+          },
+        });
+      } else {
+        await navigate({ to: "/environments/$profileId", params: { profileId: space.id } });
+      }
     },
   });
 
@@ -78,6 +95,23 @@ export function EnvironmentsPage() {
           </p>
         </div>
         <div className="relay-environment-actions">
+          {continuation ? (
+            <Button
+              variant="ghost"
+              nativeButton={false}
+              render={
+                <Link
+                  to="/tests/new"
+                  search={{
+                    ...(continuation.appId ? { app: continuation.appId } : {}),
+                    ...(continuation.targetId ? { target: continuation.targetId } : {}),
+                  }}
+                />
+              }
+            >
+              Back to Test setup
+            </Button>
+          ) : null}
           <Button nativeButton={false} render={<Link to="/devices" />} variant="outline">
             Devices
           </Button>
@@ -144,7 +178,26 @@ export function EnvironmentsPage() {
                   </FieldError>
                 ) : null}
                 <div className="relay-dialog-actions">
-                  <DialogClose render={<Button variant="ghost">Cancel</Button>} />
+                  <DialogClose
+                    render={
+                      <Button
+                        variant="ghost"
+                        onClick={() => {
+                          if (continuation) {
+                            void navigate({
+                              to: "/tests/new",
+                              search: {
+                                ...(continuation.appId ? { app: continuation.appId } : {}),
+                                ...(continuation.targetId ? { target: continuation.targetId } : {}),
+                              },
+                            });
+                          }
+                        }}
+                      />
+                    }
+                  >
+                    Cancel
+                  </DialogClose>
                   <Button
                     type="submit"
                     variant="default"
@@ -176,7 +229,11 @@ export function EnvironmentsPage() {
         <ul className="relay-environment-grid" aria-label="Browser Spaces">
           {spaces.data.map((space) => (
             <li key={space.id}>
-              <Link to="/environments/$profileId" params={{ profileId: space.id }}>
+              <Link
+                to="/environments/$profileId"
+                params={{ profileId: space.id }}
+                search={continuation ? { returnTo: rawReturnTo } : undefined}
+              >
                 <span className="relay-environment-mark" aria-hidden="true">
                   <Globe2 />
                 </span>

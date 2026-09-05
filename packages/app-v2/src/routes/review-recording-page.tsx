@@ -1,4 +1,6 @@
 /** @jsxImportSource react */
+import { EditorSaveStatus, type EditorSaveState } from "../components/editor-save-status";
+import { WorkbenchPage, PageHeader, WorkbenchPanes } from "../components/page-layout";
 import {
   Dialog,
   DialogTrigger,
@@ -12,11 +14,10 @@ import { Field, FieldDescription, FieldLabel } from "@relay/ui-react/components/
 import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Link, getRouteApi, useRouteContext } from "@tanstack/react-router";
+import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import {
   ArrowDown,
   ArrowUp,
-  Check,
   Clock3,
   Combine,
   Redo2,
@@ -55,6 +56,7 @@ type ReviewTransitionIntent =
 export function ReviewRecordingPage() {
   const { productService, platform, queryClient } = useRouteContext({ from: "__root__" });
   const { recordingId } = routeApi.useParams();
+  const navigate = useNavigate();
   const workflowId = recordingId;
   const nameDraftKey = `recordingName:${workflowId}`;
   const [testName, setTestName] = useState("");
@@ -68,18 +70,30 @@ export function ReviewRecordingPage() {
   const [redoStack, setRedoStack] = useState<readonly number[]>([]);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [nameDraftLoaded, setNameDraftLoaded] = useState(false);
+  const [nameSaveState, setNameSaveState] = useState<EditorSaveState>("saved");
+  const [nameSaveError, setNameSaveError] = useState<string>();
+  const [nameSaveAttempt, setNameSaveAttempt] = useState(0);
+  const nameEdits = useRef(0);
+  const nameWrites = useRef(Promise.resolve());
   const suggestionApplied = useRef(false);
   const historyInitialized = useRef(false);
 
   useEffect(() => {
     let disposed = false;
-    void Promise.resolve(platform.storage.get(nameDraftKey)).then((stored) => {
+    const version = nameEdits.current;
+    void Promise.resolve().then(() => platform.storage.get(nameDraftKey)).then((stored) => {
       if (disposed) return;
-      if (stored) {
+      if (stored && nameEdits.current === version) {
         setTestName(stored);
         suggestionApplied.current = true;
       }
       setNameDraftLoaded(true);
+    }).catch(() => {
+      if (!disposed) {
+        setNameDraftLoaded(true);
+        setNameSaveState("failed");
+        setNameSaveError("Could not load the saved name. Keep this page open until you save the Test.");
+      }
     });
     return () => {
       disposed = true;
@@ -173,10 +187,24 @@ export function ReviewRecordingPage() {
   }, [nameDraftLoaded, snapshot]);
 
   useEffect(() => {
-    if (saved || !nameDraftLoaded) return;
-    if (testName) void Promise.resolve(platform.storage.set(nameDraftKey, testName));
-    else void Promise.resolve(platform.storage.remove?.(nameDraftKey));
-  }, [nameDraftKey, nameDraftLoaded, platform, saved, testName]);
+    if (saved || !nameDraftLoaded || nameEdits.current === 0) return;
+    let disposed = false;
+    setNameSaveState("saving");
+    const write = nameWrites.current.catch(() => undefined).then(async () => {
+      if (testName) await platform.storage.set(nameDraftKey, testName);
+      else await platform.storage.remove?.(nameDraftKey);
+    });
+    nameWrites.current = write;
+    void write.then(() => {
+      if (!disposed) { setNameSaveState("saved"); setNameSaveError(undefined); }
+    }).catch(() => {
+      if (!disposed) {
+        setNameSaveState("failed");
+        setNameSaveError("Could not save the name on this computer. Your captured steps remain saved; keep this page open to retry.");
+      }
+    });
+    return () => { disposed = true; };
+  }, [nameDraftKey, nameDraftLoaded, platform, saved, testName, nameSaveAttempt]);
 
   useEffect(() => {
     if (!saved) return;
@@ -260,42 +288,25 @@ export function ReviewRecordingPage() {
     );
   }
 
+  useEffect(() => {
+    if (saved && committedTestId) {
+      void navigate({ to: "/tests/$testId", params: { testId: committedTestId }, replace: true });
+    }
+  }, [saved, committedTestId, navigate]);
+
   if (saved) {
-    return (
-      <section className="relay-review-page relay-review-complete">
-        <div className="relay-review-complete-mark" aria-hidden="true">
-          <Check />
-        </div>
-        <p className="relay-eyebrow">Test saved</p>
-        <h1>{snapshot.title}</h1>
-        <p>Relay verified the reviewed recording. This Test is ready to run.</p>
-        <div className="relay-review-complete-actions">
-          {committedTestId ? (
-            <Button
-              nativeButton={false}
-              render={<Link to="/tests/$testId" params={{ testId: committedTestId }} />}
-              variant="default"
-            >
-              Open Test
-            </Button>
-          ) : null}
-          <Button nativeButton={false} render={<Link to="/tests" />} variant="outline">
-            All Tests
-          </Button>
-        </div>
-      </section>
-    );
+    return <PageLoading label="Opening the saved Test…" />;
   }
 
   return (
-    <section className="relay-review-page relay-recording-review-page">
+    <WorkbenchPage className="relay-review-page relay-recording-review-page">
       <Breadcrumbs items={[{ label: "Tests", to: "/tests" }, { label: "Review" }]} />
-      <header className="relay-review-header relay-electron-drag">
-        <div>
-          <h1>Review your recording</h1>
-          <p>{reviewInstruction(review?.replayRequired, canApprove)}</p>
-        </div>
-      </header>
+      <PageHeader
+        title={testName || snapshot?.title || "Review your recording"}
+        context={<><span>Review recording</span>{currentRevision ? <span>Revision {currentRevision}</span> : null}</>}
+        description={reviewInstruction(review?.replayRequired, canApprove)}
+        actions={reviewReady ? <EditorSaveStatus state={transition.isPending ? "saving" : transition.error ? "failed" : nameSaveState} detail={!transition.isPending && !transition.error && nameSaveState === "saved" ? "Recording draft saved" : undefined} /> : undefined}
+      />
 
       {recording.isPending ? <PageLoading label="Loading the reviewed recording…" /> : null}
       <RecordingProblem
@@ -306,13 +317,9 @@ export function ReviewRecordingPage() {
       />
 
       {!recording.isPending && snapshot && reviewReady ? (
-        <div className="relay-recording-review-workspace">
-          <RecordingEvidencePanel
-            action={selectedAction}
-            evidenceRole={evidenceRole}
-            previewUrl={evidenceUrl}
-            onEvidenceRoleChange={setEvidenceRole}
-          />
+        <>
+          <WorkbenchPanes
+            outline={
           <RecordingActionsPanel
             actions={actions}
             selectedActionIds={selectedActionIds}
@@ -327,6 +334,18 @@ export function ReviewRecordingPage() {
             onToggle={toggleAction}
           />
 
+
+            }
+            stage={
+          <RecordingEvidencePanel
+            action={selectedAction}
+            evidenceRole={evidenceRole}
+            previewUrl={evidenceUrl}
+            onEvidenceRoleChange={setEvidenceRole}
+          />
+
+            }
+            inspector={
           <aside className="relay-recording-inspector" aria-label="Edit, replay, and save">
             <section className="relay-review-editor" aria-labelledby="review-editor-title">
               <div className="relay-recording-panel-heading">
@@ -521,7 +540,7 @@ export function ReviewRecordingPage() {
                 <Input
                   id="review-test-name"
                   value={testName}
-                  onChange={(event) => setTestName(event.currentTarget.value)}
+                  onChange={(event) => { nameEdits.current += 1; setNameSaveState("dirty"); setTestName(event.currentTarget.value); }}
                   placeholder="For example, Change the app language"
                   maxLength={160}
                   autoComplete="off"
@@ -529,10 +548,9 @@ export function ReviewRecordingPage() {
                   required
                 />
                 <FieldDescription>
-                  {testName
-                    ? "Draft saved locally until verification passes."
-                    : "Name the outcome a teammate should recognize."}
+                  {nameSaveError ?? (nameSaveState === "saving" ? "Saving the name…" : testName ? "Captured steps are saved on the server. The name is kept on this computer until you save the Test." : "Name the outcome a teammate should recognize.")}
                 </FieldDescription>
+                {nameSaveError && nameEdits.current > 0 ? <Button variant="outline" size="sm" disabled={nameSaveState === "saving"} onClick={() => setNameSaveAttempt((value) => value + 1)}>Retry saving name</Button> : null}
               </Field>
               <div className="relay-replay-status">
                 <p className="relay-section-label">Verification</p>
@@ -576,6 +594,9 @@ export function ReviewRecordingPage() {
               ) : null}
             </div>
           </aside>
+            }
+          />
+
 
           {review?.timeline ? (
             <section className="relay-recording-trim" aria-labelledby="recording-trim-title">
@@ -630,8 +651,8 @@ export function ReviewRecordingPage() {
               </Button>
             </section>
           ) : null}
-        </div>
+        </>
       ) : null}
-    </section>
+    </WorkbenchPage>
   );
 }

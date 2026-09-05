@@ -574,12 +574,16 @@ function reportTimeline(rawRun: unknown): ReportTimelineItem[] {
         title,
         state,
         ...(finite(step.durationMs) === undefined ? {} : { durationMs: finite(step.durationMs) }),
+        ...(finite(step.attempt) === undefined ? {} : { attempt: finite(step.attempt) }),
+        ...(finite(step.startedAt) === undefined ? {} : { startedAt: finite(step.startedAt) }),
+        ...(finite(step.finishedAt) === undefined ? {} : { finishedAt: finite(step.finishedAt) }),
         evidenceCount: array(step.frames).length,
         framePaths: array(step.frames).flatMap((frame) => {
           const path = text(record(frame)?.path);
           return path ? [path] : [];
         }),
         ...(text(step.log) ? { observed: text(step.log) } : {}),
+        ...(text(step.log) ? { log: text(step.log) } : {}),
         ...(expected ? { expected } : {}),
       },
     ];

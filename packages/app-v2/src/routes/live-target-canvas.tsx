@@ -8,6 +8,7 @@ import {
   useState,
   useId,
   type KeyboardEvent,
+  type ClipboardEvent,
   type PointerEvent,
   type RefObject,
   type WheelEvent,
@@ -42,6 +43,7 @@ export function LiveTargetCanvas({
   const pointerStart = useRef<Point | undefined>(undefined);
   const wheel = useRef<{ point: Point; x: number; y: number } | undefined>(undefined);
   const wheelTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const composing = useRef(false);
   const streaming = status === "streaming";
 
   useEffect(
@@ -106,7 +108,7 @@ export function LiveTargetCanvas({
   }
 
   function keyTarget(event: KeyboardEvent<HTMLCanvasElement>) {
-    if (!streaming || event.metaKey || event.ctrlKey || event.altKey) return;
+    if (!streaming || composing.current || event.metaKey || event.ctrlKey || event.altKey) return;
     if (event.key === "Enter") {
       event.preventDefault();
       void send({ kind: "key", key: "enter" });
@@ -121,6 +123,14 @@ export function LiveTargetCanvas({
       event.preventDefault();
       void send({ kind: "key", key: "enter", text: event.key });
     }
+  }
+
+  function pasteTarget(event: ClipboardEvent<HTMLCanvasElement>) {
+    if (!streaming || busy) return;
+    const value = event.clipboardData.getData("text");
+    if (!value) return;
+    event.preventDefault();
+    void send({ kind: "key", key: "enter", text: value });
   }
 
   function typeText() {
@@ -150,6 +160,15 @@ export function LiveTargetCanvas({
           }}
           onWheel={wheelTarget}
           onKeyDown={keyTarget}
+          onPaste={pasteTarget}
+          onCompositionStart={() => {
+            composing.current = true;
+          }}
+          onCompositionEnd={(event) => {
+            composing.current = false;
+            if (!streaming || busy || !event.data) return;
+            void send({ kind: "key", key: "enter", text: event.data });
+          }}
         />
         {!streaming ? (
           <div className="relay-capture-presence" role="status">

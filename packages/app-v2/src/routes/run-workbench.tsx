@@ -26,6 +26,12 @@ export function RunWorkbench({
     step?.index ?? selectedStepIndex,
   );
   const framePaths = new Set(authoredFrames.length ? authoredFrames : (step?.framePaths ?? []));
+  const failureIndexes = report.timeline.flatMap((item, index) =>
+    item.state === "failed" ? [index] : [],
+  );
+  const failurePosition = failureIndexes.indexOf(selectedStepIndex);
+  const previousFailure = failureIndexes.filter((index) => index < selectedStepIndex).at(-1);
+  const nextFailure = failureIndexes.find((index) => index > selectedStepIndex);
   const frames =
     report.evidence
       .find((section) => section.id === "screenshot")
@@ -81,6 +87,30 @@ export function RunWorkbench({
             <h2 className="mt-1 text-base font-semibold">{step.title}</h2>
           </div>
           <span className="text-xs text-muted-foreground">{timelineStateLabel(step.state)}</span>
+          <div className="flex items-center gap-1">
+            <Button
+              size="sm"
+              variant="ghost"
+              aria-label="Previous failure"
+              disabled={previousFailure === undefined}
+              onClick={() => {
+                if (previousFailure !== undefined) onSelectStep(previousFailure);
+              }}
+            >
+              Previous failure
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              aria-label="Next failure"
+              disabled={nextFailure === undefined}
+              onClick={() => {
+                if (nextFailure !== undefined) onSelectStep(nextFailure);
+              }}
+            >
+              Next failure
+            </Button>
+          </div>
         </header>
         <StepMedia key={`${report.runId}:${step.id}`} frames={frames} />
         <dl className="grid gap-5 border-t border-border px-5 py-4 sm:grid-cols-2">
@@ -97,10 +127,29 @@ export function RunWorkbench({
               {step.durationMs === undefined ? "" : ` · ${(step.durationMs / 1000).toFixed(1)}s`}
             </dd>
           </div>
+          <div>
+            <dt className="text-xs font-medium text-muted-foreground">Trace interval</dt>
+            <dd className="mt-1 text-sm leading-6">
+              {formatTraceInterval(step.startedAt, step.finishedAt)}
+            </dd>
+          </div>
+          {step.log ? (
+            <div>
+              <dt className="text-xs font-medium text-muted-foreground">Run log</dt>
+              <dd className="mt-1 whitespace-pre-wrap text-sm leading-6">{step.log}</dd>
+            </div>
+          ) : null}
         </dl>
       </div>
     </section>
   );
+}
+
+function formatTraceInterval(startedAt?: number, finishedAt?: number): string {
+  if (startedAt === undefined && finishedAt === undefined) return "Not recorded";
+  const start = startedAt === undefined ? "Unknown start" : new Date(startedAt).toISOString();
+  const end = finishedAt === undefined ? "Unknown end" : new Date(finishedAt).toISOString();
+  return `${start} → ${end}`;
 }
 
 function StepMedia({ frames }: { frames: readonly ReportEvidenceItem[] }) {

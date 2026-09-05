@@ -28,6 +28,7 @@ import {
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { LiveTargetSession, LiveTargetStatus } from "../data/live-target-session";
 import { recordingQueryKeys } from "../data/recording-queries";
+import { newTestSetupContinuation } from "../data/setup-continuation";
 import {
   clearWorkflowPointerIfCurrent,
   readWorkflowPointer,
@@ -393,8 +394,19 @@ export function NewTestPage() {
                     <div className="relay-choice-empty">
                       <strong>Nothing is ready to record</strong>
                       <p>Connect a device or start a managed browser, then try again.</p>
-                      <Link className="relay-inline-link" to="/devices">
+                      <Link
+                        className="relay-inline-link"
+                        to="/devices"
+                        search={{ returnTo: newTestSetupContinuation(appId, targetId) }}
+                      >
                         View devices
+                      </Link>
+                      <Link
+                        className="relay-inline-link"
+                        to="/environments"
+                        search={{ returnTo: newTestSetupContinuation(appId, targetId) }}
+                      >
+                        Manage browser Spaces
                       </Link>
                     </div>
                   ) : (

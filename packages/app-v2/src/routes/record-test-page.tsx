@@ -55,6 +55,7 @@ function RecordingWorkspace({
   const [liveStatus, setLiveStatus] = useState<LiveTargetStatus>("idle");
   const [liveIssue, setLiveIssue] = useState<string>();
   const [liveInputBusy, setLiveInputBusy] = useState(false);
+  const [stopWaitingForInput, setStopWaitingForInput] = useState(false);
   const liveSession = useRef<LiveTargetSession | undefined>(undefined);
   const liveInputQueue = useRef<Promise<boolean>>(Promise.resolve(true));
 
@@ -205,6 +206,29 @@ function RecordingWorkspace({
     return queued;
   }
 
+  async function stopAfterInputDrain() {
+    if (!allowed.has("stop") || action.isPending || stopWaitingForInput) return;
+    setStopWaitingForInput(true);
+    try {
+      const delivered = await liveInputQueue.current.catch(() => false);
+      if (!delivered) {
+        setLiveIssue("The last interaction was not confirmed. Try it again before stopping.");
+        return;
+      }
+      const latest = await refreshRecording(queryClient, productService, workflowId);
+      const latestAllowed = new Set(latest.snapshot?.allowedNextActions ?? []);
+      if (latest.recovery || latest.status !== "recording" || !latestAllowed.has("stop")) {
+        setLiveIssue(
+          "The recording changed while the interaction was finishing. Refresh before stopping.",
+        );
+        return;
+      }
+      action.mutate({ action: "stop" });
+    } finally {
+      setStopWaitingForInput(false);
+    }
+  }
+
   return (
     <section className="relay-capture-stage">
       <header className="relay-capture-header relay-electron-drag">
@@ -234,7 +258,7 @@ function RecordingWorkspace({
                 nativeButton={false}
                 render={
                   exitDestination.kind === "new" ? (
-                    <Link to="/tests/new" />
+                    <Link to="/sessions" />
                   ) : (
                     <Link to="/tests/$testId" params={{ testId: exitDestination.testId }} />
                   )
@@ -247,11 +271,11 @@ function RecordingWorkspace({
                 variant="default"
                 onClick={() => {
                   setExitOpen(false);
-                  action.mutate({ action: "stop" });
+                  void stopAfterInputDrain();
                 }}
-                disabled={!allowed.has("stop") || action.isPending}
+                disabled={!allowed.has("stop") || action.isPending || stopWaitingForInput}
               >
-                Stop and review
+                {stopWaitingForInput ? "Finishing interaction…" : "Stop and review"}
               </Button>
             </div>
           </DialogContent>
@@ -383,11 +407,15 @@ function RecordingWorkspace({
           <Button
             variant="default"
             aria-label="Stop recording and review"
-            onClick={() => action.mutate({ action: "stop" })}
-            disabled={!allowed.has("stop") || action.isPending}
+            onClick={() => void stopAfterInputDrain()}
+            disabled={!allowed.has("stop") || action.isPending || stopWaitingForInput}
           >
             <Square aria-hidden="true" />
-            {action.isPending && action.variables?.action === "stop" ? "Stopping…" : "Stop"}
+            {stopWaitingForInput
+              ? "Finishing interaction…"
+              : action.isPending && action.variables?.action === "stop"
+                ? "Stopping…"
+                : "Stop"}
           </Button>
         </div>
       </footer>

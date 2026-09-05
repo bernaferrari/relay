@@ -17,6 +17,7 @@ import { useState, type FormEvent } from "react";
 import { EmptyState, RecoveryState } from "../components/product-patterns";
 import { recordingQueryKeys } from "../data/recording-queries";
 import { PageLoading } from "./recording-shared";
+import { LibraryPage, PageHeader } from "../components/page-layout";
 
 export function AppsPage() {
   const { productService, catalogService, appResourcesService } = useRouteContext({
@@ -65,15 +66,12 @@ export function AppsPage() {
   }
 
   return (
-    <section className="relay-page relay-apps-page">
-      <header className="relay-page-header relay-apps-header">
-        <div>
-          <p className="relay-eyebrow">Workspace</p>
-          <h1>Apps</h1>
-          <p className="relay-page-description">
-            Keep each app’s Tests, Reports, and known behavior together.
-          </p>
-        </div>
+    <LibraryPage className="relay-apps-page">
+      <PageHeader
+        context="Workspace"
+        title="Apps"
+        description="Keep each app’s Tests, Reports, and known behavior together."
+      >
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger render={<Button variant="default" />}>
             <Plus aria-hidden="true" /> Add App
@@ -123,7 +121,7 @@ export function AppsPage() {
             </form>
           </DialogContent>
         </Dialog>
-      </header>
+      </PageHeader>
 
       {loading ? <PageLoading label="Loading apps…" /> : null}
       {error ? (
@@ -211,7 +209,7 @@ export function AppsPage() {
           })}
         </ul>
       ) : null}
-    </section>
+    </LibraryPage>
   );
 }
 

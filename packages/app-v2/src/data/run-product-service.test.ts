@@ -148,6 +148,8 @@ describe("run report projection", () => {
             index: 3,
             title: "Verify checkout",
             status: "ok",
+            startedAt: 1_000,
+            finishedAt: 2_500,
             log: "Checkout confirmation was visible",
             frames: [{ path: "frames/checkout.png" }],
           },
@@ -158,6 +160,9 @@ describe("run report projection", () => {
     expect(report.timeline[0]).toMatchObject({
       index: 3,
       framePaths: ["frames/checkout.png"],
+      startedAt: 1_000,
+      finishedAt: 2_500,
+      log: "Checkout confirmation was visible",
       observed: "Checkout confirmation was visible",
     });
   });

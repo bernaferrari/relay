@@ -1,10 +1,12 @@
 /** @jsxImportSource react */
+import { EditorSaveStatus } from "../components/editor-save-status";
+import { WorkbenchPage, PageHeader, WorkbenchPanes } from "../components/page-layout";
 import type { AppMapScenarioTestStep, AppMapTestStepPlacement } from "@relay/protocol";
 import { Badge } from "@relay/ui-react/components/badge";
 import { Button } from "@relay/ui-react/components/button";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
-import { ArrowDown, ArrowUp, Check, ChevronRight, GripVertical, Redo2, Undo2 } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronRight, GripVertical, Redo2, Undo2 } from "lucide-react";
 import { useMemo, useRef, useState, type CSSProperties } from "react";
 import { Breadcrumbs, EmptyState } from "../components/product-patterns";
 import { TestEditorEvidencePanel } from "../components/test-editor-evidence-panel";
@@ -340,8 +342,8 @@ function TestEditorDocument() {
     Boolean(editorDocument?.history.some((item) => item.eventType !== "test.redone"));
 
   return (
-    <section
-      className="relay-page relay-test-editor-page"
+    <WorkbenchPage
+      className="relay-test-editor-page"
       onKeyDown={(event) => {
         const target = event.target as HTMLElement;
         const typing =
@@ -364,34 +366,14 @@ function TestEditorDocument() {
           { label: "Edit" },
         ]}
       />
-      <header className="relay-page-header relay-test-editor-header">
-        <div>
-          <div className="relay-entity-context">
-            <Badge
-              variant="default"
-              className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-            >
-              Saved Test
-            </Badge>
-            {editorDocument ? <span>{editorDocument.appName}</span> : null}
-            {sessionId ? <Badge variant="secondary">Live Session</Badge> : null}
-          </div>
-          <h1>{editorDocument?.test.name ?? "Edit Test"}</h1>
-          <p className="relay-page-description">
-            Refine what Relay does and checks, one step at a time.
-          </p>
-        </div>
-        <div className="relay-editor-header-actions">
-          <span
-            className="relay-save-state"
-            data-state={
-              saveNotice.includes("failed") || saveNotice === "Could not save" ? "error" : "saved"
-            }
-            aria-live="polite"
-          >
-            {saveNotice === "Saved" && !hasUnsavedDrafts ? <Check aria-hidden="true" /> : null}
-            {hasUnsavedDrafts && saveNotice === "Saved" ? "Unsaved draft" : saveNotice}
-          </span>
+      <PageHeader
+        title={editorDocument?.test.name ?? "Edit Test"}
+        context={<><span>{editorDocument?.appName}</span><span>Editing Test</span>{editorDocument ? <span>Revision {editorDocument.revision}</span> : null}</>}
+        actions={<>
+          <EditorSaveStatus
+            state={edit.isPending || historyAction.isPending ? "saving" : saveNotice === "Could not save" || saveNotice.toLowerCase().includes("failed") || saveNotice.includes("unavailable") ? "failed" : hasUnsavedDrafts ? "dirty" : "saved"}
+            detail={hasUnsavedDrafts && saveNotice === "Saved" ? "Unsaved draft" : saveNotice}
+          />
           <Button
             nativeButton={false}
             variant="default"
@@ -399,8 +381,8 @@ function TestEditorDocument() {
           >
             Done editing
           </Button>
-        </div>
-      </header>
+        </>}
+      />
 
       {(sessionId ? liveEditor.isPending : document.isPending) ? (
         <PageLoading label="Loading Test steps…" />
@@ -454,7 +436,7 @@ function TestEditorDocument() {
             ) : null}
           </div>
 
-          <div className="relay-test-editor-layout">
+          <WorkbenchPanes outline={
             <section className="relay-editor-outline" aria-labelledby="test-steps-title">
               <div className="relay-section-heading">
                 <div>
@@ -565,6 +547,23 @@ function TestEditorDocument() {
               )}
             </section>
 
+} stage={
+            <div className="relay-editor-stage-evidence">
+              {sessionId ? (
+                <LiveTestEditorPane
+                  session={liveEditor.data}
+                  loading={liveEditor.isPending}
+                  error={liveEditor.error}
+                />
+              ) : null}
+              <TestEditorEvidencePanel
+                step={selected?.step}
+                report={latestReport.data}
+                hasRuns={Boolean(recentRuns.data?.length)}
+                loading={reportLoading}
+              />
+            </div>
+} inspector={
             <aside className="relay-editor-inspector" aria-label="Selected step editor">
               {selected ? (
                 <SelectedStepEditor
@@ -586,22 +585,7 @@ function TestEditorDocument() {
               )}
             </aside>
 
-            <div className="relay-editor-stage-evidence">
-              {sessionId ? (
-                <LiveTestEditorPane
-                  session={liveEditor.data}
-                  loading={liveEditor.isPending}
-                  error={liveEditor.error}
-                />
-              ) : null}
-              <TestEditorEvidencePanel
-                step={selected?.step}
-                report={latestReport.data}
-                hasRuns={Boolean(recentRuns.data?.length)}
-                loading={reportLoading}
-              />
-            </div>
-          </div>
+} />
 
           {editorDocument.repairs.length || editorDocument.history.length ? (
             <div className="relay-test-editor-context">
@@ -619,6 +603,6 @@ function TestEditorDocument() {
           ) : null}
         </>
       ) : null}
-    </section>
+    </WorkbenchPage>
   );
 }

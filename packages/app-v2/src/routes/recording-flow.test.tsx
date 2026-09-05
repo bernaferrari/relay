@@ -309,6 +309,17 @@ async function interactWithLiveTarget() {
     await new Promise((resolve) => setTimeout(resolve, 160));
   });
   await settle();
+  await act(async () => {
+    canvas.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true }),
+    );
+    const paste = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(paste, "clipboardData", {
+      value: { getData: () => "pasted العربية" },
+    });
+    canvas.dispatchEvent(paste);
+  });
+  await settle();
 }
 
 describe("record, review, replay, and save", () => {
@@ -432,9 +443,8 @@ describe("record, review, replay, and save", () => {
       "Change the app language",
     );
     await click(button("Save Test"));
-    expect(document.body.textContent).toContain("Test saved");
-    expect(document.body.textContent).toContain("Open Test");
-    expect(document.body.textContent).toContain("Relay verified the reviewed recording");
+    expect(history.location.pathname).toBe("/tests/test-1");
+    expect(document.body.textContent).not.toContain("Open Test");
     expect(storage.values.has("activeRecordingWorkflowId")).toBe(false);
     expect(fake.calls).toEqual(
       expect.arrayContaining([
@@ -442,12 +452,14 @@ describe("record, review, replay, and save", () => {
         "input:touch",
         "input:scroll",
         "input:key",
+        "input:key",
         "checkpoint:Language screen",
         "stop",
         "replay",
         "approve",
       ]),
     );
+    expect(fake.calls.filter((call) => call === "input:key").length).toBeGreaterThanOrEqual(3);
   });
 
   it("renames a recorded action through the canonical edit transition", async () => {
@@ -783,9 +795,13 @@ describe("record, review, replay, and save", () => {
   it("clears a matching recovery pointer after refreshing a committed workflow", async () => {
     const fake = fakeService(state("committed", [], { committed: true }));
     const storage = platformWithStorage({ activeRecordingWorkflowId: "workflow-1" });
-    await renderJourney("/recordings/workflow-1/review", fake.service, storage.platform);
+    const { history } = await renderJourney(
+      "/recordings/workflow-1/review",
+      fake.service,
+      storage.platform,
+    );
 
-    expect(document.body.textContent).toContain("Test saved");
+    expect(history.location.pathname).toBe("/tests/test-1");
     expect(storage.values.has("activeRecordingWorkflowId")).toBe(false);
   });
 

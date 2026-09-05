@@ -29,12 +29,23 @@ describe("device product projection", () => {
         booted: null,
         platform: "browser",
       },
+      {
+        id: "simulator",
+        serial: "simulator",
+        name: "Pixel simulator",
+        kind: "Android emulator",
+        booted: true,
+        platform: "android",
+        connectionState: "connected",
+      },
     ]);
     expect(Object.fromEntries(devices.map((device) => [device.id, device.status]))).toEqual({
       browser: "virtual",
       offline: "needs-attention",
       ready: "ready",
+      simulator: "virtual",
     });
+    expect(devices.find((device) => device.id === "simulator")?.runnable).toBe(true);
     expect(devices.find((device) => device.id === "offline")?.recovery).toMatch(/reconnect/i);
   });
 });

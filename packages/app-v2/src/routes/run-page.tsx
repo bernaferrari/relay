@@ -16,6 +16,7 @@ import { ArrowLeft, ChevronRight, CircleAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Breadcrumbs, OutcomeMark } from "../components/product-patterns";
 import { IssueDraftButton } from "../components/issue-draft-button";
+import { RunConfigurationComposer } from "../components/run-configuration-composer";
 import {
   firstSentence,
   failureTitle,
@@ -251,7 +252,12 @@ function RunReport({
       firstSentence(report.firstEvidence.label).toLocaleLowerCase() !==
         firstSentence(failure).toLocaleLowerCase()),
   );
-  const search = routeApi.useSearch() as { view?: unknown; step?: unknown };
+  const search = routeApi.useSearch() as {
+    view?: unknown;
+    step?: unknown;
+    at?: unknown;
+    attempt?: unknown;
+  };
   const navigate = useNavigate({ from: "/runs/$runId" });
   const requestedView = reportView(search.view);
   const requestedStep = typeof search.step === "string" ? Number.parseInt(search.step, 10) : 0;
@@ -353,6 +359,19 @@ function RunReport({
               report.durationMs === undefined ? "Not recorded" : formatDuration(report.durationMs)
             }
           />
+          <RunConfigurationComposer
+            configuration={{
+              frozen: true,
+              validated: true,
+              values: {
+                sourceRevision: report.executionContext?.sourceRevision,
+                buildId: report.executionContext?.buildId,
+                targetProfileId: report.executionContext?.targetProfileId,
+                targetName: report.targetName,
+                browserProfile: report.executionContext?.browser,
+              },
+            }}
+          />
 
           {report.timeline.length || report.evidence.length ? (
             <RunWorkbench
@@ -360,7 +379,15 @@ function RunReport({
               selectedStepIndex={selectedStepIndex}
               renderEvidence={(section) => <EvidencePreview section={section} />}
               onSelectStep={(index) => {
-                void navigate({ search: (previous) => ({ ...previous, step: String(index + 1) }) });
+                const selected = report.timeline[index];
+                void navigate({
+                  search: (previous) => ({
+                    ...previous,
+                    step: String(index + 1),
+                    at: selected?.startedAt === undefined ? undefined : String(selected.startedAt),
+                    attempt: selected?.attempt === undefined ? undefined : String(selected.attempt),
+                  }),
+                });
               }}
             />
           ) : null}

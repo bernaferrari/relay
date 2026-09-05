@@ -406,6 +406,8 @@ function AdvancedSettings() {
     setConnectionError(undefined);
     try {
       await Promise.resolve(platform.setServerUrl(url.trim()));
+      await queryClient.cancelQueries();
+      queryClient.clear();
       queryClient.setQueryData(CONNECTION_QUERY_KEY, { url: url.trim() });
       setSavedNotice(true);
       setSaveState("saved");

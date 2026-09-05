@@ -8,10 +8,11 @@ import { Label } from "@relay/ui-react/components/label";
 import { useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { ChevronRight } from "lucide-react";
-import { useDeferredValue, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { FilterSelect } from "../components/filter-select";
 import { EmptyState, OutcomeMark } from "../components/product-patterns";
 import { RunHistoryList, type RunHistoryRowInteraction } from "../components/run-history-list";
+import { LibraryPage, PageHeader } from "../components/page-layout";
 import { catalogQueryKeys } from "../data/catalog-queries";
 import { PageLoading, RecordingProblem } from "./recording-shared";
 
@@ -30,13 +31,21 @@ const runViews: readonly { id: RunView; label: string }[] = [
 
 export function RunsPage() {
   const { catalogService } = useRouteContext({ from: "__root__" });
-  const search = routeApi.useSearch() as { app?: unknown; test?: unknown; view?: unknown };
+  const search = routeApi.useSearch() as {
+    app?: unknown;
+    test?: unknown;
+    view?: unknown;
+    q?: unknown;
+  };
   const navigate = useNavigate({ from: "/runs" });
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(() => (typeof search.q === "string" ? search.q : ""));
   const deferredQuery = useDeferredValue(query.trim().toLocaleLowerCase());
   const view = runView(search.view);
   const app = typeof search.app === "string" ? search.app : "";
   const testId = typeof search.test === "string" ? search.test : "";
+  useEffect(() => {
+    setQuery(typeof search.q === "string" ? search.q : "");
+  }, [search.q]);
   const historyComplete = typeof catalogService.listRunsComplete === "function";
   const runs = useQuery({
     queryKey: [...catalogQueryKeys.runs, historyComplete ? "complete" : "first-page", app, testId],
@@ -90,6 +99,20 @@ export function RunsPage() {
     }
     return searched;
   }, [app, deferredQuery, runs.data, view]);
+  useEffect(() => {
+    let href: string | null = null;
+    try {
+      href = window.sessionStorage.getItem("relay:focus:/runs");
+      if (href) window.sessionStorage.removeItem("relay:focus:/runs");
+    } catch {
+      href = null;
+    }
+    if (!href) return;
+    const frame = window.requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>(`a[href="${CSS.escape(href!)}"]`)?.focus();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [visibleRuns]);
   function setView(next: RunView) {
     void navigate({
       search: (previous) => ({ ...previous, view: next === "latest" ? undefined : next }),
@@ -99,21 +122,36 @@ export function RunsPage() {
   function clearFilters() {
     setQuery("");
     void navigate({
-      search: (previous) => ({ ...previous, app: undefined, test: undefined, view: undefined }),
+      search: (previous) => ({
+        ...previous,
+        app: undefined,
+        test: undefined,
+        view: undefined,
+        q: undefined,
+      }),
     });
   }
 
   return (
-    <section className="relay-page relay-library-page relay-runs-page">
-      <header className="relay-library-header">
-        <div>
-          <p className="relay-eyebrow">Runs</p>
-          <h1>Run history</h1>
-          <p className="relay-page-description">
-            Current work and durable Reports from every saved Test.
-          </p>
-        </div>
-      </header>
+    <LibraryPage
+      className="relay-library-page relay-runs-page"
+      onClickCapture={(event) => {
+        const anchor = (event.target as HTMLElement).closest<HTMLAnchorElement>(
+          'a[href^="/runs/"]',
+        );
+        if (!anchor) return;
+        try {
+          window.sessionStorage.setItem("relay:focus:/runs", anchor.getAttribute("href") ?? "");
+        } catch {
+          // Focus restoration is an enhancement when session storage is unavailable.
+        }
+      }}
+    >
+      <PageHeader
+        context="Runs"
+        title="Run history"
+        description="Current work and durable Reports from every saved Test."
+      />
 
       <Tabs value={view} onValueChange={(next) => setView(next as RunView)}>
         <TabsList variant="line" aria-label="Run view">
@@ -137,7 +175,11 @@ export function RunsPage() {
             id="run-search"
             type="search"
             value={query}
-            onChange={(event) => setQuery(event.currentTarget.value)}
+            onChange={(event) => {
+              const next = event.currentTarget.value;
+              setQuery(next);
+              void navigate({ search: (previous) => ({ ...previous, q: next || undefined }) });
+            }}
             placeholder="Search by Test, app, or device"
             autoComplete="off"
             spellCheck="false"
@@ -207,7 +249,7 @@ export function RunsPage() {
           />
         )
       ) : null}
-    </section>
+    </LibraryPage>
   );
 }
 

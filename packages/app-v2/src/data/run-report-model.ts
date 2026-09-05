@@ -30,6 +30,10 @@ export type ReportTimelineItem = {
   title: string;
   state: "passed" | "failed" | "running" | "recovered" | "pending";
   durationMs?: number;
+  attempt?: number;
+  startedAt?: number;
+  finishedAt?: number;
+  log?: string;
   evidenceCount: number;
   /** Screenshot paths retained directly on the persisted trace step. */
   framePaths?: readonly string[];

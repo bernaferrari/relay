@@ -41,8 +41,9 @@ export function SessionPage() {
     queryKey: sessionQueryKeys.session(sessionId),
     queryFn: () => sessionService.get(sessionId),
     retry: false,
-    staleTime: Infinity,
-    refetchOnReconnect: false,
+    staleTime: 2_000,
+    refetchInterval: 3_000,
+    refetchOnReconnect: true,
     refetchOnWindowFocus: false,
   });
   const refresh = useMutation({
@@ -157,7 +158,7 @@ export function SessionPage() {
             >
               {sessionStateLabel(value.state)}
             </Badge>
-            {canControl ? (
+            {value && isActiveSession(value) ? (
               <Button
                 variant="outline"
                 onClick={() => refresh.mutate()}
@@ -182,7 +183,7 @@ export function SessionPage() {
                 <Pencil aria-hidden="true" /> Edit Test live
               </Button>
             ) : null}
-            {canControl ? (
+            {value && isActiveSession(value) ? (
               <Button
                 variant="ghost"
                 nativeButton={false}
@@ -302,7 +303,7 @@ export function SessionPage() {
                 </Button>
               ) : null}
             </div>
-            {canControl ? (
+            {value && isActiveSession(value) ? (
               <LiveTargetCanvas
                 canvasRef={canvas}
                 status={liveStatus}

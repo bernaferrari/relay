@@ -68,6 +68,9 @@ const report: ProductRunReportOverview = {
       evidenceCount: 1,
       expected: "Cart is visible",
       observed: "Cart is visible",
+      startedAt: 1_000,
+      finishedAt: 2_500,
+      log: "opened cart",
     },
     {
       id: "submit-order",
@@ -170,6 +173,37 @@ describe("RunWorkbench", () => {
     expect(secondFrame).toBeDefined();
     act(() => secondFrame!.click());
     expect(host.querySelector('img[alt="Confirmation error"]')).not.toBeNull();
+  });
+
+  it("shows persisted trace interval and navigates between failures", () => {
+    const failureReport = {
+      ...report,
+      timeline: [
+        ...report.timeline,
+        { ...report.timeline[1], id: "second-failure", index: 3, state: "failed" as const },
+      ],
+    };
+    const selected: number[] = [];
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    roots.push(root);
+    act(() =>
+      root.render(
+        <RunWorkbench
+          report={failureReport}
+          selectedStepIndex={2}
+          onSelectStep={(index) => selected.push(index)}
+        />,
+      ),
+    );
+    expect(host.textContent).toContain("Trace interval");
+    expect(host.textContent).toContain("1970-01-01T00:00:01.000Z");
+    expect(host.textContent).toContain("opened cart");
+    act(() => host.querySelector<HTMLButtonElement>('[aria-label="Next failure"]')?.click());
+    expect(selected).toEqual([3]);
+    act(() => host.querySelector<HTMLButtonElement>('[aria-label="Previous failure"]')?.click());
+    expect(selected).toEqual([3, 0]);
   });
 
   it("explains missing joined media and retained media failures", () => {
