@@ -11,6 +11,11 @@ import { LibrarySearch, LibraryToolbar } from "../components/library-toolbar";
 import { EmptyState, OutcomeMark, ReadinessMark } from "../components/product-patterns";
 import { LibraryPage, PageHeader } from "../components/page-layout";
 import { catalogQueryKeys } from "../data/catalog-queries";
+import { homeAttentionRuns } from "../data/home-run-attention";
+import { recordingQueryKeys } from "../data/recording-queries";
+import { runQueryKeys } from "../data/run-queries";
+import { readRunPointer } from "../data/run-pointer";
+import { readWorkflowPointer } from "../data/workflow-pointer";
 import { PageLoading, RecordingProblem } from "./recording-shared";
 import { useCollectionReturnFocus } from "../hooks/use-collection-return-focus";
 
@@ -21,7 +26,7 @@ type TestFilter = "all" | "ready" | "needs-review";
 type ResultFilter = "all" | "passed" | "failed" | "running" | "never";
 
 export function TestsPage() {
-  const { catalogService } = useRouteContext({
+  const { catalogService, platform } = useRouteContext({
     from: "__root__",
   });
   const search = routeApi.useSearch() as {
@@ -44,6 +49,28 @@ export function TestsPage() {
     queryFn: () => catalogService.listTests(),
     staleTime: 15_000,
   });
+  const runs = useQuery({
+    queryKey: catalogQueryKeys.runs,
+    queryFn: () => catalogService.listRuns(),
+    staleTime: 15_000,
+    retry: false,
+  });
+  const recording = useQuery({
+    queryKey: recordingQueryKeys.pointer,
+    queryFn: async () => (await readWorkflowPointer(platform)) ?? null,
+    staleTime: Infinity,
+  });
+  const runPointer = useQuery({
+    queryKey: runQueryKeys.pointer,
+    queryFn: async () => (await readRunPointer(platform)) ?? null,
+    staleTime: Infinity,
+  });
+  const scopedRuns = (runs.data ?? []).filter((item) => !app || item.appMapId === app);
+  const resumeRecordingId = app ? undefined : recording.data;
+  const resumeRunId =
+    !app || scopedRuns.some((item) => item.id === runPointer.data?.runId)
+      ? runPointer.data?.runId
+      : undefined;
   const apps = useMemo(
     () =>
       [...new Map((tests.data ?? []).map((test) => [test.appMapId, test.appName])).entries()].sort(
@@ -70,6 +97,11 @@ export function TestsPage() {
         ),
     [app, deferredQuery, result, status, tests.data],
   );
+  const visibleTestIds = new Set(visibleTests.map((test) => test.id));
+  const attentionRuns = homeAttentionRuns(scopedRuns).filter(
+    (item) => !item.testId || visibleTestIds.has(item.testId),
+  );
+  const resumeAttention = attentionRuns[0];
   const returnFocus = useCollectionReturnFocus("relay:focus:/tests", visibleTests, "/tests/");
   const resultLabel = resultContext(status, app, apps);
   const statusOptions = [
@@ -135,6 +167,66 @@ export function TestsPage() {
           </Button>
         }
       />
+
+      {resumeRecordingId || resumeRunId || resumeAttention ? (
+        <div
+          className="mt-2 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card px-4 py-3"
+          aria-label="Resume work"
+        >
+          <div className="min-w-0">
+            <strong id="tests-resume-title" className="block text-sm font-semibold">
+              {resumeRecordingId
+                ? "Finish the Test you started"
+                : resumeRunId
+                  ? "A Run is in progress"
+                  : (resumeAttention?.testName ?? resumeAttention?.title)}
+            </strong>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {resumeRecordingId
+                ? "Continue recording."
+                : resumeRunId
+                  ? "See how the current Run is going."
+                  : `Failed on ${resumeAttention?.targetName ?? "the Device"}.`}
+            </p>
+          </div>
+          {resumeRecordingId ? (
+            <Link
+              className="text-sm font-semibold text-[var(--text-interactive-base)]"
+              to="/recordings/$recordingId"
+              params={{ recordingId: resumeRecordingId }}
+            >
+              Continue recording
+            </Link>
+          ) : resumeRunId ? (
+            <Link
+              className="text-sm font-semibold text-[var(--text-interactive-base)]"
+              to="/runs/$runId"
+              params={{ runId: resumeRunId }}
+            >
+              Open Run
+            </Link>
+          ) : resumeAttention ? (
+            <Link
+              className="text-sm font-semibold text-[var(--text-interactive-base)]"
+              to="/runs/$runId"
+              params={{ runId: resumeAttention.id }}
+            >
+              Open result
+            </Link>
+          ) : null}
+        </div>
+      ) : null}
+
+      {attentionRuns.length > 1 ? (
+        <p className="mt-2 text-xs text-muted-foreground" aria-label="Results that need attention">
+          {attentionRuns
+            .map(
+              (item) =>
+                `${item.testName ?? item.title}${item.targetName ? ` · ${item.targetName}` : ""}`,
+            )
+            .join(" · ")}
+        </p>
+      ) : null}
 
       <LibraryToolbar
         label="Filter Tests"
@@ -219,14 +311,14 @@ export function TestsPage() {
         ) : (
           <div className="flex flex-1 items-center justify-center">
             <EmptyState
-              title="No saved Tests yet"
-              detail="Record a Test to run it again later."
+              title="Create your first test"
+              detail="Open your app and record the steps you want to repeat."
               action={
                 <Link
                   className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
                   to="/tests/new"
                 >
-                  Record your first Test
+                  New test
                 </Link>
               }
             />

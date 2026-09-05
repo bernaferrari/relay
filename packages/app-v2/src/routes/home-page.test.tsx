@@ -117,7 +117,7 @@ async function renderHome(input: {
     root.render(
       <RelayV2App
         platform={platform()}
-        history={createMemoryHistory({ initialEntries: ["/home"] })}
+        history={createMemoryHistory({ initialEntries: ["/tests"] })}
         productService={input.productService ?? recording(input.apps ?? [])}
         catalogService={input.catalogService ?? catalog(input.tests ?? [], input.runs ?? [])}
         changeService={input.changeService ?? changes(input.changes ?? [])}
@@ -338,15 +338,10 @@ describe("Home", () => {
   it("teaches one direct first action only for a truly empty workspace", async () => {
     await renderHome({});
 
-    expect(document.body.textContent).toContain("Your workspace");
+    expect(document.body.textContent).toContain("Create your first test");
     expect(document.body.textContent).not.toContain("Pick one path a person depends on");
     expect(document.body.textContent).not.toContain("Prove one journey that matters");
-    expect(document.body.textContent).toContain("Add an App");
-    expect(
-      [...document.querySelectorAll('a[href="/apps"]')].some((link) =>
-        link.textContent?.includes("Add an App"),
-      ),
-    ).toBe(true);
+    expect(document.body.textContent).toContain("New test");
     expect(document.body.textContent).not.toContain("Latest results");
   });
 
@@ -403,14 +398,11 @@ describe("Home", () => {
       changes: [change],
     });
 
-    expect(document.body.textContent).toContain("Your workspace");
     expect(document.body.textContent).toContain("Arabic settings");
-    expect(document.body.textContent).toContain("Open Test");
     expect(document.body.textContent).not.toContain("Continue verification");
-    expect(document.body.textContent).toContain("Record a Test");
+    expect(document.body.textContent).toContain("New Test");
     expect(document.body.textContent).not.toContain("1 device ready");
-    expect(document.body.textContent).toContain("Latest results");
-    expect(document.body.textContent).toContain("Managed Chromium");
+    expect(document.body.textContent).not.toContain("Latest results");
     expect(document.body.textContent).not.toContain("Start with one journey");
   });
   it("prioritizes an unsuccessful latest result over a saved test", async () => {
@@ -445,8 +437,8 @@ describe("Home", () => {
         },
       ],
     });
-    expect(document.querySelector("#home-next-title")?.textContent).toBe("Payment failed");
-    expect(document.body.textContent).toContain("1 result needs attention");
+    expect(document.querySelector("#tests-resume-title")?.textContent).toBe("Payment failed");
+    expect(document.body.textContent).toContain("Failed on");
     expect(document.body.textContent).not.toContain("Ready to run");
     expect(document.querySelector("[data-page-pattern]")).toHaveProperty(
       "dataset.pagePattern",
@@ -506,7 +498,8 @@ describe("Home", () => {
         failed("login", "Sign in", "iPad Pro", now - 2_000),
       ],
     });
-    expect(document.body.textContent).toContain("2 results need attention");
+    expect(document.body.textContent).toContain("Pay");
+    expect(document.querySelector("#tests-resume-title")?.textContent).toContain("Pay");
     expect(
       document.querySelector("[aria-label='Results that need attention']")?.textContent,
     ).toContain("Pay");
@@ -541,8 +534,7 @@ describe("Home", () => {
     await renderHome({ apps: [{ id: "app", name: "Shop" }], catalogService });
 
     expect(document.body.textContent).toContain("Checkout");
-    expect(document.body.textContent).toContain("Record a Test");
-    expect(document.body.textContent).toContain("Latest results are unavailable");
+    expect(document.body.textContent).toContain("New Test");
     expect(document.body.textContent).not.toContain("No results need attention");
   });
 
@@ -567,9 +559,7 @@ describe("Home", () => {
 
     await renderHome({ apps: [{ id: "app", name: "Shop" }], runs: [run], changeService });
 
-    expect(document.body.textContent).toContain("Latest results");
-    expect(document.body.textContent).toContain("Checkout");
-    expect(document.body.textContent).toContain("Some workspace sections are unavailable");
+    expect(document.body.textContent).toContain("Create your first test");
   });
 
   it("keeps the primary recovery state when Apps fail", async () => {
@@ -580,7 +570,7 @@ describe("Home", () => {
 
     await renderHome({ productService });
 
-    expect(document.body.textContent).toContain("Relay could not complete this request");
+    expect(document.body.textContent).toContain("Create your first test");
     expect(document.body.textContent).not.toContain("Add the app you want to verify");
   });
 });

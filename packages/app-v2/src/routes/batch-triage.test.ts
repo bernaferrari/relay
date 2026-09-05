@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ProductBatchCase } from "@relay/product/run-across";
 import {
+  batchRerunRequest,
   buildBatchMatrix,
   selectedClusterCaseIds,
   shouldShowBatchMatrix,
@@ -93,5 +94,21 @@ describe("Batch triage presentation", () => {
         new Set(["cluster-1"]),
       ),
     ).toEqual(["checkout-ios", "login-ios"]);
+  });
+
+  it("keeps an explicit row rerun free of selected cluster ids", () => {
+    expect(
+      batchRerunRequest({
+        explicitCaseIds: ["checkout-chrome"],
+        selectedCaseIds: ["login-ios"],
+        selectedClusterIds: ["cluster-1"],
+      }),
+    ).toEqual({ caseIds: ["checkout-chrome"] });
+    expect(
+      batchRerunRequest({
+        selectedCaseIds: ["login-ios"],
+        selectedClusterIds: ["cluster-1"],
+      }),
+    ).toEqual({ caseIds: ["login-ios"], clusterIds: ["cluster-1"] });
   });
 });

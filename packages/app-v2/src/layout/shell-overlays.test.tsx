@@ -346,7 +346,7 @@ describe("shell overlays", () => {
     await settle();
     expect(document.body.textContent).toContain("Test search is unavailable");
     expect(document.body.textContent).not.toContain("No matching commands");
-    expect(document.body.textContent).toContain("Open Home");
+    expect(document.body.textContent).toContain("Open Tests");
     expect(document.querySelector('button[type="button"]')?.textContent).not.toBeUndefined();
   });
 
@@ -403,7 +403,7 @@ describe("shell overlays", () => {
   });
 
   it.each([
-    ["Home", ["/home", "/runs/run-1"], "/home", ""],
+    ["Tests", ["/tests", "/runs/run-1"], "/tests", ""],
     [
       "filtered history",
       ["/runs?view=failed&q=checkout", "/runs/run-1"],
@@ -423,7 +423,7 @@ describe("shell overlays", () => {
   });
 
   it("View test opens the Test without substituting browser Back", async () => {
-    const history = await renderShell({ initialEntries: ["/home", "/runs/run-1"] });
+    const history = await renderShell({ initialEntries: ["/tests", "/runs/run-1"] });
     const link = [...document.querySelectorAll<HTMLAnchorElement>("a")].find((item) =>
       item.textContent?.includes("View test"),
     );
@@ -449,11 +449,20 @@ describe("shell overlays", () => {
 
     expect(document.body.textContent).toContain("Design iPad");
     expect(document.body.textContent).toContain("Checkout browser");
-    const allDevices = [...document.querySelectorAll('[role="menuitem"]')].find((item) =>
-      item.textContent?.includes("All Devices"),
+    const deviceItem = [...document.querySelectorAll('[role="menuitem"]')].find((item) =>
+      item.textContent?.includes("Design iPad"),
     );
-    expect(allDevices).toBeTruthy();
-    await act(async () => allDevices?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    await act(async () => deviceItem?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    await settle();
+    expect(history.location.pathname).not.toBe("/devices/ipad");
+    expect(history.location.pathname).not.toBe("/environments/ipad");
+    await act(async () => trigger?.click());
+    await settle();
+    const manage = [...document.querySelectorAll('[role="menuitem"]')].find((item) =>
+      item.textContent?.includes("Manage devices"),
+    );
+    expect(manage).toBeTruthy();
+    await act(async () => manage?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
     await settle();
     expect(history.location.pathname).toBe("/devices");
   });

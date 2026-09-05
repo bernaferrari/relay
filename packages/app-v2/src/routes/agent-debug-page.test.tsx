@@ -321,7 +321,7 @@ describe("Agent Debug route", () => {
         },
       ],
     }));
-    await render({
+    const history = await render({
       path: "/debug?runId=run-failed",
       runService: { getReport } as unknown as RunProductService,
       agentDebugService: debugService(debugBug),
@@ -330,13 +330,13 @@ describe("Agent Debug route", () => {
     expect(getReport).toHaveBeenCalledWith("run-failed");
     expect(document.body.textContent).toContain("Button stayed disabled");
     expect(document.body.textContent).toContain("1 item");
-    expect(document.getElementById("agent-debug-target")?.textContent).toContain("Ready Pixel");
+    expect(document.body.textContent).toContain("Investigating Checkout validation");
+    expect(document.getElementById("agent-debug-title")).toBeNull();
     expect(document.body.textContent).not.toContain("serial-");
-    await fillTitle("Checkout investigation");
-    await selectTarget("serial-ready");
-    await clickStart();
     expect(debugBug).toHaveBeenCalledWith(
       expect.objectContaining({
+        title: "Investigate Checkout validation",
+        targetId: "serial-ready",
         debugOrigin: {
           schemaVersion: 1,
           source: { runId: "run-failed", attempt: 1, stepId: "step-1" },
@@ -345,6 +345,43 @@ describe("Agent Debug route", () => {
         },
       }),
     );
+    expect(history.location.pathname).toBe("/debug");
+  });
+
+  it("keeps start and retry visible when a bound investigation fails to start", async () => {
+    const debugBug = vi.fn(async () => {
+      throw new Error("Target is owned by another actor.");
+    });
+    const getReport = vi.fn(async () => ({
+      runId: "run-failed",
+      title: "Checkout validation",
+      outcome: "product-failure" as const,
+      targetName: "Ready Pixel",
+      cause: "Button was not reachable",
+      timeline: [
+        {
+          id: "step-1",
+          index: 0,
+          title: "Press checkout",
+          state: "failed" as const,
+          evidenceCount: 1,
+          expected: "Checkout opens",
+          observed: "Button stayed disabled",
+        },
+      ],
+      evidence: [],
+    }));
+    await render({
+      path: "/debug?runId=run-failed",
+      runService: { getReport } as unknown as RunProductService,
+      agentDebugService: debugService(debugBug),
+    });
+
+    expect(document.body.textContent).toContain("Target is owned by another actor.");
+    expect(document.body.textContent).toContain("Start investigation");
+    expect(document.body.textContent).toContain("Open result");
+    await clickStart();
+    expect(debugBug).toHaveBeenCalledTimes(2);
   });
 
   it("opens the live Session after a successful start", async () => {

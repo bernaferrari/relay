@@ -1,4 +1,3 @@
-import { ReportVideoInspector } from "../components/report-video-inspector";
 import { PageHeader, WorkbenchPage } from "../components/page-layout";
 import { RawEvidenceDisclosure } from "./raw-evidence-disclosure";
 /** @jsxImportSource react */
@@ -10,9 +9,14 @@ import {
 } from "@relay/ui-react/components/collapsible";
 import { Progress, ProgressLabel, ProgressValue } from "@relay/ui-react/components/progress";
 import { ScrollArea } from "@relay/ui-react/components/scroll-area";
-import { Tabs, TabsList, TabsTrigger } from "@relay/ui-react/components/tabs";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
+import {
+  Link,
+  getRouteApi,
+  useLocation,
+  useNavigate,
+  useRouteContext,
+} from "@tanstack/react-router";
 import { ChevronRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
@@ -31,14 +35,26 @@ import { clearRunPointerIfCurrent, readRunPointer } from "../data/run-pointer";
 import { PageLoading, RecordingProblem, targetLabel } from "./recording-shared";
 import { RunReviewControls } from "./run-review-controls";
 import { RunWorkbench, RunContextFacts } from "./run-workbench";
-import { ReportTimeline, EvidencePreview } from "./run-report-panels";
+import { EvidencePreview } from "./run-report-panels";
 import { RunReplayAction, RunReplayStatus } from "./run-replay";
 
 const routeApi = getRouteApi("/runs/$runId");
 
 export function RunPage() {
-  const { runService, platform, queryClient } = useRouteContext({ from: "__root__" });
   const { runId } = routeApi.useParams();
+  return <RunInspection runId={runId} />;
+}
+
+export function RunInspection({
+  runId,
+  testId: testIdProp,
+  embedded = false,
+}: {
+  runId: string;
+  testId?: string;
+  embedded?: boolean;
+}) {
+  const { runService, platform, queryClient } = useRouteContext({ from: "__root__" });
   const pointer = useQuery({
     queryKey: runQueryKeys.pointer,
     queryFn: async () => (await readRunPointer(platform)) ?? null,
@@ -76,8 +92,9 @@ export function RunPage() {
         ? { workflowId: restoredState.workflow.workflowId, runId, testId: "" }
         : undefined;
   const activeWorkflowId = activePointer?.workflowId;
-  const originTest = useRef<{ runId: string; testId?: string }>({ runId });
-  if (originTest.current.runId !== runId) originTest.current = { runId };
+  const originTest = useRef<{ runId: string; testId?: string }>({ runId, testId: testIdProp });
+  if (originTest.current.runId !== runId) originTest.current = { runId, testId: testIdProp };
+  if (testIdProp) originTest.current.testId = testIdProp;
   if (activePointer?.testId) originTest.current.testId = activePointer.testId;
   const run = useQuery({
     queryKey: runQueryKeys.workflow(activePointer?.workflowId ?? "inactive"),
@@ -163,6 +180,7 @@ export function RunPage() {
         report={report.data}
         testId={originTest.current.testId ?? report.data.testId}
         runService={runService}
+        embedded={embedded}
       />
     );
   }
@@ -291,10 +309,12 @@ function RunReport({
   report,
   testId,
   runService,
+  embedded = false,
 }: {
   report: Awaited<ReturnType<RunProductService["getReport"]>>;
   testId?: string;
   runService: RunProductService;
+  embedded?: boolean;
 }) {
   const target = report.targetName ?? "the selected device or browser";
   const failure = report.outcome && report.outcome !== "passed" ? report.cause : undefined;
@@ -304,30 +324,22 @@ function RunReport({
       firstSentence(report.firstEvidence.label).toLocaleLowerCase() !==
         firstSentence(failure).toLocaleLowerCase()),
   );
-  const search = routeApi.useSearch() as {
+  const search = useLocation({ select: (state) => state.search }) as {
     view?: unknown;
     step?: unknown;
     at?: unknown;
     attempt?: unknown;
   };
-  const navigate = useNavigate({ from: "/runs/$runId" });
-  const requestedView = reportView(search.view);
+  const navigate = useNavigate();
   const requestedStep = typeof search.step === "string" ? Number.parseInt(search.step, 10) : 0;
   const requestedAt = typeof search.at === "string" ? Number(search.at) : Number.NaN;
   const requestedAttempt = typeof search.attempt === "string" ? Number(search.attempt) : Number.NaN;
-  const views = [
-    { id: "overview" as const, label: "Overview", available: true },
-    { id: "timeline" as const, label: "Timeline", available: report.timeline.length > 0 },
-    { id: "evidence" as const, label: "Evidence", available: report.evidence.length > 0 },
-  ].filter((view) => view.available);
-  const view = views.some((item) => item.id === requestedView) ? requestedView : "overview";
-  const [selectedEvidenceId, setSelectedEvidenceId] = useState(report.evidence[0]?.id);
   const contextStepIndex = report.timeline.findIndex(
     (item) =>
       (Number.isFinite(requestedAt) && item.startedAt === requestedAt) ||
       (Number.isFinite(requestedAttempt) && item.attempt === requestedAttempt),
   );
-  const selectedStepIndex =
+  const urlStepIndex =
     Number.isFinite(requestedStep) && requestedStep > 0
       ? Math.min(requestedStep - 1, Math.max(0, report.timeline.length - 1))
       : contextStepIndex >= 0
@@ -336,64 +348,66 @@ function RunReport({
             0,
             report.timeline.findIndex((item) => item.state === "failed"),
           );
+  const [localStepIndex, setLocalStepIndex] = useState(urlStepIndex);
+  const selectedStepIndex = embedded ? localStepIndex : urlStepIndex;
   const [rawEvidenceOpen, setRawEvidenceOpen] = useState(false);
-  const selectedEvidence =
-    report.evidence.find((section) => section.id === selectedEvidenceId) ?? report.evidence[0];
-  function selectView(nextView: ReportView) {
-    void navigate({
-      search: (previous) => ({
-        ...previous,
-        view: nextView === "overview" ? undefined : nextView,
-      }),
-    });
-  }
+  const canInvestigate =
+    report.outcome === "product-failure" ||
+    report.outcome === "uncertain" ||
+    report.outcome === "harness-failure";
   return (
     <WorkbenchPage className="max-w-[1280px]">
       <PageHeader
-        crumbs={[
-          { label: "Runs", to: "/runs" },
-          ...(testId
-            ? [{ label: "View test", to: "/tests/$testId" as const, params: { testId } }]
-            : []),
-          { label: report.title },
-        ]}
+        crumbs={
+          embedded
+            ? [{ label: report.title }]
+            : [
+                { label: "Runs", to: "/runs" },
+                ...(testId
+                  ? [{ label: "View test", to: "/tests/$testId" as const, params: { testId } }]
+                  : []),
+                { label: report.title },
+              ]
+        }
         title={report.title}
         description={outcomeSentence(report.outcome, target)}
         actions={
           <>
-            {report.outcome === "product-failure" || report.outcome === "uncertain" ? (
+            {embedded ? (
+              <Button
+                nativeButton={false}
+                render={<Link to="/runs/$runId" params={{ runId: report.runId }} />}
+                variant="ghost"
+                size="sm"
+              >
+                Open full report
+              </Button>
+            ) : null}
+            {canInvestigate ? (
               <Button
                 nativeButton={false}
                 render={<Link to="/debug" search={{ runId: report.runId }} />}
                 variant="default"
               >
-                Open Device
+                Investigate this failure
               </Button>
-            ) : report.outcome === "harness-failure" ? (
+            ) : null}
+            {!embedded && report.outcome === "harness-failure" ? (
               <RunReplayAction
                 report={report}
                 runService={runService}
-                variant="default"
+                variant={canInvestigate ? "ghost" : "default"}
                 label="Run again"
               />
-            ) : testId ? (
+            ) : testId && !embedded ? (
               <Button
                 nativeButton={false}
                 render={<Link to="/tests/$testId" params={{ testId }} />}
-                variant="default"
+                variant={canInvestigate ? "ghost" : "default"}
               >
                 Set up another run
               </Button>
-            ) : null}
-            {report.outcome === "harness-failure" ? (
-              <Button
-                nativeButton={false}
-                render={<Link to="/debug" search={{ runId: report.runId }} />}
-                variant="ghost"
-              >
-                Open Device
-              </Button>
-            ) : (
+            ) : embedded ? null : (
               <RunReplayAction report={report} runService={runService} />
             )}
           </>
@@ -407,7 +421,7 @@ function RunReport({
           compact
         />
       </PageHeader>
-      <RunReplayStatus runService={runService} />
+      {embedded ? null : <RunReplayStatus runService={runService} />}
 
       {failure ? (
         <section
@@ -438,142 +452,90 @@ function RunReport({
         </section>
       ) : null}
 
-      {views.length > 1 ? (
-        <Tabs
-          className="mt-4"
-          value={view}
-          onValueChange={(next) => selectView(next as ReportView)}
-        >
-          <TabsList className="flex items-center gap-2" variant="line" aria-label="Report view">
-            {views.map((item) => (
-              <TabsTrigger
-                key={item.id}
-                id={`report-tab-${item.id}`}
-                value={item.id}
-                aria-controls={`report-panel-${item.id}`}
-              >
-                {item.label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
-      ) : null}
+      <section className="mt-4 grid gap-6" aria-label="Run evidence">
+        {report.timeline.length || report.evidence.length ? (
+          <RunWorkbench
+            report={report}
+            selectedStepIndex={selectedStepIndex}
+            renderEvidence={(section) => <EvidencePreview section={section} />}
+            onSelectStep={(index) => {
+              const selected = report.timeline[index];
+              if (embedded) {
+                setLocalStepIndex(index);
+                return;
+              }
+              void navigate({
+                to: "/runs/$runId",
+                params: { runId: report.runId },
+                replace: true,
+                search: (previous) => ({
+                  ...previous,
+                  view: undefined,
+                  step: String(index + 1),
+                  at: selected?.startedAt === undefined ? undefined : String(selected.startedAt),
+                  attempt: selected?.attempt === undefined ? undefined : String(selected.attempt),
+                }),
+              });
+            }}
+          />
+        ) : null}
 
-      {view === "overview" ? (
-        <section
-          id="report-panel-overview"
-          className="mt-4 grid gap-6"
-          role={views.length > 1 ? "tabpanel" : undefined}
-          aria-labelledby={views.length > 1 ? "report-tab-overview" : undefined}
-        >
-          {report.timeline.length || report.evidence.length ? (
-            <RunWorkbench
-              report={report}
-              selectedStepIndex={selectedStepIndex}
-              renderEvidence={(section) => <EvidencePreview section={section} />}
-              onSelectStep={(index) => {
-                const selected = report.timeline[index];
-                void navigate({
-                  search: (previous) => ({
-                    ...previous,
-                    step: String(index + 1),
-                    at: selected?.startedAt === undefined ? undefined : String(selected.startedAt),
-                    attempt: selected?.attempt === undefined ? undefined : String(selected.attempt),
-                  }),
-                });
+        <Collapsible className="grid gap-3">
+          <CollapsibleTrigger className="group flex w-full items-center justify-between gap-3 rounded-lg border border-border bg-muted/30 px-4 py-3 text-left text-sm font-semibold text-foreground transition-colors hover:bg-muted/60">
+            Recorded configuration
+            <ChevronRight
+              aria-hidden="true"
+              className="size-4 shrink-0 group-aria-expanded:rotate-90"
+            />
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <RunConfigurationComposer
+              configuration={{
+                frozen: true,
+                validated: true,
+                values: {
+                  sourceRevision: report.executionContext?.sourceRevision,
+                  buildId: report.executionContext?.buildId,
+                  targetProfileId: report.executionContext?.targetProfileId,
+                  targetName: report.targetName,
+                  browserProfile: report.executionContext?.browser,
+                },
               }}
             />
-          ) : null}
+          </CollapsibleContent>
+        </Collapsible>
 
-          <Collapsible className="grid gap-3">
-            <CollapsibleTrigger className="group flex w-full items-center justify-between gap-3 rounded-lg border border-border bg-muted/30 px-4 py-3 text-left text-sm font-semibold text-foreground transition-colors hover:bg-muted/60">
-              Recorded configuration
-              <ChevronRight
-                aria-hidden="true"
-                className="size-4 shrink-0 group-aria-expanded:rotate-90"
-              />
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <RunConfigurationComposer
-                configuration={{
-                  frozen: true,
-                  validated: true,
-                  values: {
-                    sourceRevision: report.executionContext?.sourceRevision,
-                    buildId: report.executionContext?.buildId,
-                    targetProfileId: report.executionContext?.targetProfileId,
-                    targetName: report.targetName,
-                    browserProfile: report.executionContext?.browser,
-                  },
-                }}
-              />
-            </CollapsibleContent>
-          </Collapsible>
+        <RunReviewControls runId={report.runId} service={runService} />
 
-          <RunReviewControls runId={report.runId} service={runService} />
-
-          {firstEvidenceIsDistinct && report.firstEvidence ? (
-            <section
-              className="mt-5 rounded-xl border border-border bg-card p-5"
-              aria-labelledby="first-evidence-title"
-            >
-              <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
-                {report.outcome === "passed" ? "What Relay verified" : "Evidence at this point"}
-              </p>
-              <h2 id="first-evidence-title">{report.firstEvidence.label}</h2>
-              {report.firstEvidence.detail ? <p>{report.firstEvidence.detail}</p> : null}
-            </section>
-          ) : null}
-
-          {report.evidenceUnavailable ? (
-            <p
-              className="rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground"
-              role="status"
-            >
-              Evidence details are temporarily unavailable. The saved outcome above is unchanged.
+        {firstEvidenceIsDistinct && report.firstEvidence ? (
+          <section
+            className="mt-5 rounded-xl border border-border bg-card p-5"
+            aria-labelledby="first-evidence-title"
+          >
+            <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+              {report.outcome === "passed" ? "What Relay verified" : "Evidence at this point"}
             </p>
-          ) : null}
-        </section>
-      ) : null}
+            <h2 id="first-evidence-title">{report.firstEvidence.label}</h2>
+            {report.firstEvidence.detail ? <p>{report.firstEvidence.detail}</p> : null}
+          </section>
+        ) : null}
 
-      {view === "timeline" ? (
-        <ReportTimeline items={report.timeline} tabbed={views.length > 1} />
-      ) : null}
+        {report.evidenceUnavailable ? (
+          <p
+            className="rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground"
+            role="status"
+          >
+            Evidence details are temporarily unavailable. The saved outcome above is unchanged.
+          </p>
+        ) : null}
 
-      {view === "evidence" && selectedEvidence ? (
-        <section
-          id="report-panel-evidence"
-          className="mt-5"
-          role="tabpanel"
-          aria-labelledby="report-tab-evidence"
-        >
-          <div className="grid gap-4">
-            <Tabs value={selectedEvidence.id} onValueChange={(next) => setSelectedEvidenceId(next)}>
-              <TabsList
-                className="h-auto max-w-full flex-wrap justify-start gap-1"
-                aria-label="Evidence type"
-              >
-                {report.evidence.map((section) => (
-                  <TabsTrigger key={section.id} value={section.id}>
-                    {section.label}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-            </Tabs>
-            {selectedEvidence.id === "video" && report.video ? (
-              <ReportVideoInspector video={report.video} diagnostics={report.diagnostics} />
-            ) : (
-              <EvidencePreview section={selectedEvidence} />
-            )}
-          </div>
-          <RawEvidenceDisclosure
-            runId={report.runId}
-            runService={runService}
-            open={rawEvidenceOpen}
-            onOpenChange={setRawEvidenceOpen}
-          />
-        </section>
-      ) : null}
+        <RawEvidenceDisclosure
+          runId={report.runId}
+          runService={runService}
+          open={rawEvidenceOpen}
+          onOpenChange={setRawEvidenceOpen}
+        />
+      </section>
       {report.outcome === "product-failure" ||
       report.outcome === "harness-failure" ||
       report.outcome === "uncertain" ? (
@@ -583,10 +545,4 @@ function RunReport({
       ) : null}
     </WorkbenchPage>
   );
-}
-
-type ReportView = "overview" | "timeline" | "evidence";
-
-function reportView(value: unknown): ReportView {
-  return value === "timeline" || value === "evidence" ? value : "overview";
 }

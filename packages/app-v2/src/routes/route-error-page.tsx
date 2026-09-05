@@ -9,12 +9,16 @@ export function RouteErrorPage({ reset }: ErrorComponentProps) {
       <PageHeader
         context="Page unavailable"
         title="This page could not load"
-        description="Try again, or return Home to find your work."
+        description="Try again, or return to Tests to find your work."
         actions={
           <>
             <Button onClick={reset}>Try again</Button>
-            <Button variant="outline" nativeButton={false} render={<Link to="/home" search={{}} />}>
-              Go to Home
+            <Button
+              variant="outline"
+              nativeButton={false}
+              render={<Link to="/tests" search={{}} />}
+            >
+              Go to Tests
             </Button>
           </>
         }

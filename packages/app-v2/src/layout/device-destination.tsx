@@ -13,14 +13,18 @@ import { useRouter, useRouteContext } from "@tanstack/react-router";
 import { ChevronDown, MonitorSmartphone } from "lucide-react";
 import { deviceQueryKeys } from "../data/device-product-service";
 import {
+  WORKSPACE_DESTINATION_KEY,
+  destinationItemAction,
   destinationItems,
+  destinationManageAction,
   destinationStatusLabel,
   summarizeDestinations,
+  workspaceDestinationQueryKey,
 } from "./destination-summary";
 
 export function DeviceDestinationButton() {
   const router = useRouter();
-  const { deviceService } = useRouteContext({ from: "__root__" });
+  const { deviceService, platform, queryClient } = useRouteContext({ from: "__root__" });
   const devices = useQuery({
     queryKey: deviceQueryKeys.devices,
     queryFn: () => deviceService.list(),
@@ -54,13 +58,13 @@ export function DeviceDestinationButton() {
               <DropdownMenuItem
                 key={item.id}
                 className="relay-menu-item focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 flex min-h-10 items-start justify-between gap-4"
-                onClick={() =>
-                  router.history.push(
-                    item.platform === "browser"
-                      ? `/environments/${item.id}`
-                      : `/devices/${item.id}`,
-                  )
-                }
+                onClick={() => {
+                  const action = destinationItemAction(item);
+                  if (action.kind !== "select") return;
+                  const next = { targetId: action.targetId };
+                  queryClient.setQueryData(workspaceDestinationQueryKey, next);
+                  void platform.storage.set(WORKSPACE_DESTINATION_KEY, JSON.stringify(next));
+                }}
               >
                 <span className="min-w-0">
                   <span className="block truncate">{item.name}</span>
@@ -81,9 +85,12 @@ export function DeviceDestinationButton() {
           <DropdownMenuSeparator className="relay-menu-separator my-2 ml-1.5 mr-1.5 h-px bg-[var(--border-weak-base)]" />
           <DropdownMenuItem
             className="relay-menu-item focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2"
-            onClick={() => router.history.push("/devices")}
+            onClick={() => {
+              const action = destinationManageAction();
+              if (action.kind === "manage") router.history.push(action.href);
+            }}
           >
-            All Devices
+            Manage devices
           </DropdownMenuItem>
         </DropdownMenuGroup>
       </DropdownMenuContent>

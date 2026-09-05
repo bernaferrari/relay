@@ -262,8 +262,8 @@ export function SessionPage() {
             {canControl ? (
               <p className="max-w-[52ch] text-sm leading-6 text-muted-foreground">
                 {value.state === "recording"
-                  ? "Recording session active · inspecting only"
-                  : "Inspecting live state"}
+                  ? "Recording · captured actions are saved"
+                  : "Live · Not recording"}
               </p>
             ) : null}
             <section className="rounded-xl border border-border bg-card p-5">
@@ -275,7 +275,9 @@ export function SessionPage() {
                 </div>
                 <div className="grid gap-0.5">
                   <dt className="text-xs text-muted-foreground">Workspace mode</dt>
-                  <dd className="break-words text-sm font-medium">Inspect only</dd>
+                  <dd className="break-words text-sm font-medium">
+                    {value.state === "recording" ? "Recording" : "Not recording"}
+                  </dd>
                 </div>
                 <div className="grid gap-0.5">
                   <dt className="text-xs text-muted-foreground">App</dt>

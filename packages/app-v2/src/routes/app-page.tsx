@@ -2,256 +2,50 @@
 import { Button } from "@relay/ui-react/components/button";
 import { useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useRouteContext } from "@tanstack/react-router";
-import { ArrowRight } from "lucide-react";
 import { LibraryPage, PageHeader } from "../components/page-layout";
-import { EmptyState, OutcomeMark, ReadinessMark } from "../components/product-patterns";
 import { PageLoading, RecordingProblem } from "./recording-shared";
 
 const routeApi = getRouteApi("/apps/$appId");
 
 export function AppPage() {
-  const { mapService, catalogService } = useRouteContext({ from: "__root__" });
+  const { mapService } = useRouteContext({ from: "__root__" });
   const { appId } = routeApi.useParams();
   const app = useQuery({
     queryKey: ["app", appId],
     queryFn: () => mapService.get(appId),
     staleTime: 15_000,
   });
-  const tests = useQuery({
-    queryKey: ["catalog", "tests", { appMapId: appId }],
-    queryFn: () => catalogService.listTests({ appMapId: appId }),
-    staleTime: 15_000,
-  });
-  const runs = useQuery({
-    queryKey: ["catalog", "runs", { appMapId: appId }],
-    queryFn: () => catalogService.listRuns({ appMapId: appId }),
-    staleTime: 10_000,
-  });
-  // The app identity is the shell for this page. Secondary panels should be
-  // independently recoverable so a transient Runs or Tests failure does not
-  // erase the rest of the working context.
   const loading = app.isPending;
   const error = app.error;
   const retry = () => {
     void app.refetch();
-    void tests.refetch();
-    void runs.refetch();
   };
-  const recentRuns = [...(runs.data ?? [])]
-    .sort((left, right) => runTime(right) - runTime(left))
-    .slice(0, 3);
 
   return (
     <LibraryPage className="max-w-[1040px]">
       {loading ? <PageLoading label="Loading app overview…" /> : null}
-      <RecordingProblem
-        error={error}
-        onRetry={retry}
-        retrying={app.isFetching || tests.isFetching || runs.isFetching}
-      />
+      <RecordingProblem error={error} onRetry={retry} retrying={app.isFetching} />
       {app.data && !error ? (
         <>
           <PageHeader
-            crumbs={[{ label: "Home", to: "/home" }, { label: app.data.appName }]}
+            crumbs={[{ label: "Tests", to: "/tests" }, { label: app.data.appName }]}
             title={app.data.appName}
-            description={app.data.description ?? "Tests and recent results."}
+            description={app.data.description ?? "App settings and coverage."}
             actions={
-              <Button
-                nativeButton={false}
-                render={<Link to="/tests/new" search={{ app: appId }} />}
-              >
-                Record a Test
+              <Button nativeButton={false} render={<Link to="/tests" search={{ app: appId }} />}>
+                Open tests
               </Button>
             }
           />
 
-          <dl
-            className="my-6 grid grid-cols-2 gap-4 border-y border-border py-5 [&_dt]:text-xs [&_dt]:text-muted-foreground [&_dd]:mt-2 [&_dd]:text-xl [&_dd]:font-semibold [&_dd]:tabular-nums max-[560px]:grid-cols-1"
-            aria-label={`${app.data.appName} overview`}
-          >
-            <div>
-              <dt>Saved Tests</dt>
-              <dd>
-                {tests.isError
-                  ? "Unavailable"
-                  : (tests.data?.length ?? app.data.coverage.testCount)}
-              </dd>
-            </div>
-            <div>
-              <dt>Results</dt>
-              <dd>{runs.isError ? "Unavailable" : (runs.data?.length ?? 0)}</dd>
-            </div>
-          </dl>
-
-          <div className="mt-[38px] grid grid-cols-2 gap-9 max-[780px]:grid-cols-1">
-            <section className="min-w-0" aria-labelledby="app-tests-title">
-              <header className="flex items-end justify-between gap-5 max-[620px]:items-start max-[620px]:gap-3">
-                <div>
-                  <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
-                    Tests
-                  </p>
-                  <h2 id="app-tests-title" className="text-base font-semibold">
-                    Saved tests
-                  </h2>
-                </div>
-                <div className="flex items-center gap-4">
-                  {tests.data?.length ? (
-                    <Link
-                      className="relay-inline-action inline-flex min-h-11 items-center gap-1.5 text-xs font-semibold text-[var(--text-interactive-base)]"
-                      to="/tests"
-                      search={{ app: appId }}
-                    >
-                      View all <ArrowRight className="size-4" aria-hidden="true" />
-                    </Link>
-                  ) : null}
-                  <Link
-                    className="relay-inline-action inline-flex min-h-11 items-center gap-1.5 text-xs font-semibold text-[var(--text-interactive-base)]"
-                    to="/suites"
-                    search={{ app: appId }}
-                  >
-                    Suites <ArrowRight className="size-4" aria-hidden="true" />
-                  </Link>
-                </div>
-              </header>
-              {tests.isPending ? (
-                <p className="text-sm text-muted-foreground">Loading Tests…</p>
-              ) : tests.isError ? (
-                <EmptyState
-                  title="Tests are temporarily unavailable"
-                  detail="The app overview is still available. Open the Tests library when the service responds."
-                  action={
-                    <Link
-                      className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
-                      to="/tests"
-                      search={{ app: appId }}
-                    >
-                      Open Tests
-                    </Link>
-                  }
-                />
-              ) : tests.data?.length ? (
-                <ul className="mt-3 list-none overflow-hidden rounded-lg border border-border bg-card p-0">
-                  {tests.data.slice(0, 4).map((test) => (
-                    <li key={test.id} className="border-b border-border last:border-b-0">
-                      <Link
-                        className="flex min-h-14 items-center justify-between gap-4 px-3 py-2.5 focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-[-2px]"
-                        to="/tests/$testId"
-                        params={{ testId: test.id }}
-                      >
-                        <span className="grid min-w-0 gap-0.5">
-                          <strong className="truncate text-sm font-semibold text-foreground">
-                            {test.name}
-                          </strong>
-                          <small className="truncate text-xs text-muted-foreground">
-                            {test.stepCount} {test.stepCount === 1 ? "step" : "steps"}
-                          </small>
-                        </span>
-                        <span className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
-                          <ReadinessMark status={test.status} />
-                          {test.recentRun ? (
-                            <OutcomeMark outcome={test.recentRun.outcome ?? test.recentRun.phase} />
-                          ) : (
-                            <span className="text-xs font-medium text-muted-foreground">
-                              Not run yet
-                            </span>
-                          )}
-                        </span>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <EmptyState
-                  title="No saved Tests yet"
-                  detail="Record one focused journey through this app."
-                  action={
-                    <Link
-                      className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
-                      to="/tests/new"
-                      search={{ app: appId }}
-                    >
-                      Record a Test
-                    </Link>
-                  }
-                />
-              )}
-            </section>
-
-            <section className="min-w-0" aria-labelledby="app-runs-title">
-              <header className="flex items-end justify-between gap-5 max-[620px]:items-start max-[620px]:gap-3">
-                <div>
-                  <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
-                    Reports
-                  </p>
-                  <h2 id="app-runs-title" className="text-base font-semibold">
-                    Recent results
-                  </h2>
-                </div>
-                {recentRuns.length ? (
-                  <Link
-                    className="relay-inline-action inline-flex min-h-11 items-center gap-1.5 text-xs font-semibold text-[var(--text-interactive-base)]"
-                    to="/runs"
-                    search={{ app: appId }}
-                  >
-                    View all <ArrowRight className="size-4" aria-hidden="true" />
-                  </Link>
-                ) : null}
-              </header>
-              {runs.isPending ? (
-                <p className="text-sm text-muted-foreground">Loading recent results…</p>
-              ) : runs.isError ? (
-                <EmptyState
-                  title="Recent results are temporarily unavailable"
-                  detail="You can keep working in this app while Run history reconnects."
-                  action={
-                    <Link
-                      className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
-                      to="/runs"
-                      search={{ app: appId }}
-                    >
-                      Open Runs
-                    </Link>
-                  }
-                />
-              ) : recentRuns.length ? (
-                <ul className="mt-3 list-none overflow-hidden rounded-lg border border-border bg-card p-0">
-                  {recentRuns.map((run) => (
-                    <li key={run.id} className="border-b border-border last:border-b-0">
-                      <Link
-                        className="flex min-h-14 items-center justify-between gap-3 px-3 py-2.5 transition-colors hover:bg-muted/60 focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-[-2px]"
-                        to="/runs/$runId"
-                        params={{ runId: run.id }}
-                      >
-                        <span className="grid min-w-0 gap-0.5">
-                          <strong className="truncate text-sm font-semibold text-foreground">
-                            {run.testName ?? run.title}
-                          </strong>
-                          <small className="truncate text-xs text-muted-foreground">
-                            {[
-                              run.targetName ?? run.executionIdentity?.deviceId,
-                              run.executionIdentity?.buildId,
-                              relativeTime(runTime(run)),
-                            ]
-                              .filter(Boolean)
-                              .join(" · ")}
-                          </small>
-                        </span>
-                        <span className="shrink-0">
-                          <OutcomeMark outcome={run.outcome ?? run.phase} />
-                        </span>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <EmptyState
-                  title="No Reports yet"
-                  detail="Run a saved Test to keep its result and evidence here."
-                />
-              )}
-            </section>
-          </div>
-          <p className="mt-8 text-sm text-muted-foreground">
+          <div className="mt-6 flex flex-wrap gap-4 text-sm">
+            <Link
+              className="underline-offset-4 hover:underline"
+              to="/tests"
+              search={{ app: appId }}
+            >
+              Tests for this app
+            </Link>
             <Link
               className="underline-offset-4 hover:underline"
               to="/apps/$appId/map"
@@ -259,21 +53,9 @@ export function AppPage() {
             >
               Coverage map
             </Link>
-          </p>
+          </div>
         </>
       ) : null}
     </LibraryPage>
   );
-}
-
-function runTime(run: { finishedAt?: number; startedAt?: number; queuedAt: number }): number {
-  return run.finishedAt ?? run.startedAt ?? run.queuedAt;
-}
-
-function relativeTime(timestamp: number): string {
-  const elapsed = Math.max(0, Date.now() - timestamp);
-  if (elapsed < 60_000) return "Just now";
-  if (elapsed < 3_600_000) return `${Math.floor(elapsed / 60_000)}m ago`;
-  if (elapsed < 86_400_000) return `${Math.floor(elapsed / 3_600_000)}h ago`;
-  return `${Math.floor(elapsed / 86_400_000)}d ago`;
 }

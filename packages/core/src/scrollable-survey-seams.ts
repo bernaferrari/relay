@@ -267,16 +267,18 @@ export function verticalScrollSeam(
   )
     return undefined;
   const unchanged = sampleDifference(left, right, 0);
+  // Status-bar clocks are cropped, but sticky headers and Compose shimmer still
+  // live in the sampled band. A mean per-channel delta under 8/255 is bounce or
+  // chrome noise, not a new viewport — treating it as motion made Settings
+  // inverse-swipe off the page when the first fling rubber-banded.
+  // Pixel identity must beat semantic shift: sticky SuperGrok tabs can report a
+  // fake translation while rubber-band pixels stay put.
+  if (unchanged < 8) return { shiftY: 0, confidence: 1 };
   const semantic =
     previousSnapshot && currentSnapshot
       ? semanticScrollShift(previousSnapshot, currentSnapshot)
       : undefined;
   if (semantic) return { shiftY: semantic.shiftY, confidence: semantic.confidence };
-  // Status-bar clocks are cropped, but sticky headers and Compose shimmer still
-  // live in the sampled band. A mean per-channel delta under 8/255 is bounce or
-  // chrome noise, not a new viewport — treating it as motion made Settings
-  // inverse-swipe off the page when the first fling rubber-banded.
-  if (unchanged < 8) return { shiftY: 0, confidence: 1 };
   const minimum = Math.max(24, Math.round(left.height * 0.07));
   const maximum = Math.floor(left.height * 0.82);
   const stride = Math.max(8, Math.round(left.height * 0.009));

@@ -11,6 +11,8 @@ export type DestinationSummary = {
 
 export type DestinationListItem = {
   id: string;
+  /** Identity `listTargets()` / `start()` accept — serial for devices. */
+  targetId: string;
   name: string;
   detail: string;
   status: ProductDeviceStatus;
@@ -19,7 +21,7 @@ export type DestinationListItem = {
 
 type DestinationDevice = Pick<
   ProductDevice,
-  "id" | "name" | "status" | "platform" | "osVersion" | "kind"
+  "id" | "serial" | "name" | "status" | "platform" | "osVersion" | "kind"
 >;
 
 const STATUS_ORDER: Record<ProductDeviceStatus, number> = {
@@ -93,9 +95,80 @@ export function destinationItems(devices: readonly DestinationDevice[]): Destina
     )
     .map((device) => ({
       id: device.id,
+      targetId: destinationRunTargetId(device),
       name: device.name,
       detail: destinationDetail(device),
       status: device.status,
       platform: device.platform,
     }));
+}
+
+export const WORKSPACE_DESTINATION_KEY = "relay:workspace-destination";
+export const workspaceDestinationQueryKey = ["workspace-destination"] as const;
+
+export type DestinationAction =
+  | { kind: "select"; targetId: string }
+  | { kind: "manage"; href: "/devices" };
+
+export function destinationRunTargetId(device: { id: string; serial?: string }): string {
+  const serial = device.serial?.trim();
+  return serial || device.id;
+}
+
+export function destinationItemAction(
+  item: Pick<DestinationListItem, "id"> & { targetId?: string; serial?: string },
+): DestinationAction {
+  return { kind: "select", targetId: item.targetId ?? destinationRunTargetId(item) };
+}
+
+export function matchRunTargetId(
+  stored: string | undefined,
+  targets: readonly { targetId: string }[],
+): string | undefined {
+  const wanted = stored?.trim();
+  if (!wanted) return undefined;
+  return targets.find((target) => target.targetId === wanted)?.targetId;
+}
+
+export function workspaceDestinationDecision(input: {
+  storedTargetId?: string;
+  lastAppliedTargetId?: string;
+  currentTargetId?: string;
+  availableTargetIds: readonly string[];
+}):
+  | { kind: "skip" }
+  | { kind: "remember"; targetId: string }
+  | { kind: "apply"; targetId: string } {
+  const stored = input.storedTargetId?.trim();
+  if (!stored) return { kind: "skip" };
+  if (input.lastAppliedTargetId === stored) return { kind: "skip" };
+  const resolved = matchRunTargetId(
+    stored,
+    input.availableTargetIds.map((targetId) => ({ targetId })),
+  );
+  if (!resolved) return { kind: "skip" };
+  if (input.currentTargetId === resolved) return { kind: "remember", targetId: stored };
+  return { kind: "apply", targetId: resolved };
+}
+
+export function destinationManageAction(): DestinationAction {
+  return { kind: "manage", href: "/devices" };
+}
+
+export function parseWorkspaceDestination(raw: string | null): { targetId: string } | undefined {
+  if (!raw) return undefined;
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (
+      value &&
+      typeof value === "object" &&
+      typeof (value as { targetId?: unknown }).targetId === "string" &&
+      (value as { targetId: string }).targetId.trim()
+    ) {
+      return { targetId: (value as { targetId: string }).targetId.trim() };
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
 }

@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { ProductDevice } from "../data/device-product-service";
-import { destinationItems, summarizeDestinations } from "./destination-summary";
+import {
+  destinationItemAction,
+  destinationItems,
+  destinationManageAction,
+  destinationRunTargetId,
+  matchRunTargetId,
+  summarizeDestinations,
+  workspaceDestinationDecision,
+} from "./destination-summary";
 
 function device(
   id: string,
@@ -86,5 +94,64 @@ describe("destination summary", () => {
         device("ipad", "Design iPad", "ready"),
       ]).map((item) => item.id),
     ).toEqual(["ipad", "browser", "phone"]);
+  });
+
+  it("selects a run destination instead of navigating to device management", () => {
+    expect(destinationItemAction({ id: "ipad" })).toEqual({ kind: "select", targetId: "ipad" });
+    expect(destinationItemAction({ id: "chrome-staging" })).toEqual({
+      kind: "select",
+      targetId: "chrome-staging",
+    });
+    expect(destinationManageAction()).toEqual({ kind: "manage", href: "/devices" });
+    expect(destinationItemAction({ id: "ipad" })).not.toHaveProperty("href");
+  });
+
+  it("selects the run target identity, not the catalog device id", () => {
+    expect(destinationRunTargetId({ id: "ios-id", serial: "ios-serial" })).toBe("ios-serial");
+    expect(destinationItemAction({ id: "ios-id", serial: "ios-serial" })).toEqual({
+      kind: "select",
+      targetId: "ios-serial",
+    });
+    expect(
+      destinationItems([
+        {
+          id: "ios-id",
+          serial: "ios-serial",
+          name: "QA iPhone",
+          status: "ready",
+          platform: "ios",
+          kind: "Physical device",
+          osVersion: "18.5",
+        },
+      ]).map((item) => ({ id: item.id, targetId: item.targetId })),
+    ).toEqual([{ id: "ios-id", targetId: "ios-serial" }]);
+    expect(
+      matchRunTargetId("ios-serial", [{ targetId: "ios-serial" }, { targetId: "browser-id" }]),
+    ).toBe("ios-serial");
+    expect(matchRunTargetId("ios-id", [{ targetId: "ios-serial" }])).toBeUndefined();
+  });
+
+  it("applies a toolbar destination once and then leaves in-page target changes alone", () => {
+    const available = ["ios-serial", "browser-golden"];
+    expect(
+      workspaceDestinationDecision({
+        storedTargetId: "ios-serial",
+        availableTargetIds: available,
+      }),
+    ).toEqual({ kind: "apply", targetId: "ios-serial" });
+    expect(
+      workspaceDestinationDecision({
+        storedTargetId: "ios-serial",
+        lastAppliedTargetId: "ios-serial",
+        currentTargetId: "browser-golden",
+        availableTargetIds: available,
+      }),
+    ).toEqual({ kind: "skip" });
+    expect(
+      workspaceDestinationDecision({
+        storedTargetId: "ios-id",
+        availableTargetIds: available,
+      }),
+    ).toEqual({ kind: "skip" });
   });
 });

@@ -83,7 +83,6 @@ function lazyNamedRoute<TModule extends Record<string, unknown>, TName extends k
 }
 
 const NotFoundPage = lazyNamedRoute(() => import("../routes/not-found-page"), "NotFoundPage");
-const HomePage = lazyNamedRoute(() => import("../routes/home-page"), "HomePage");
 const AppsPage = lazyNamedRoute(() => import("../routes/apps-page"), "AppsPage");
 const AppPage = lazyNamedRoute(() => import("../routes/app-page"), "AppPage");
 const AppVersionsPage = lazyNamedRoute(
@@ -190,14 +189,21 @@ const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
   beforeLoad: () => {
-    throw redirect({ to: "/home", replace: true });
+    throw redirect({ to: "/tests", replace: true });
   },
 });
 
 const homeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/home",
-  component: HomePage,
+  beforeLoad: ({ search }) => {
+    const app =
+      typeof (search as { app?: unknown }).app === "string"
+        ? (search as { app: string }).app
+        : undefined;
+    throw redirect({ to: "/tests", search: app ? { app } : {}, replace: true });
+  },
+  component: TestsPage,
 });
 const appsRoute = createRoute({
   getParentRoute: () => rootRoute,

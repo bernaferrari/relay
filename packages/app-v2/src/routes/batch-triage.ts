@@ -146,3 +146,19 @@ export function selectedClusterCaseIds(
     ),
   ].sort();
 }
+
+export function batchRerunRequest(input: {
+  explicitCaseIds?: readonly string[];
+  selectedCaseIds?: readonly string[];
+  selectedClusterIds?: readonly string[];
+}): { caseIds?: string[]; clusterIds?: string[] } {
+  if (input.explicitCaseIds?.length) {
+    return { caseIds: [...input.explicitCaseIds] };
+  }
+  const caseIds = [...(input.selectedCaseIds ?? [])];
+  const clusterIds = [...(input.selectedClusterIds ?? [])];
+  return {
+    ...(caseIds.length ? { caseIds } : {}),
+    ...(clusterIds.length ? { clusterIds } : {}),
+  };
+}

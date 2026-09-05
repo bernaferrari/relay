@@ -10,14 +10,18 @@ import {
   DialogTrigger,
 } from "@relay/ui-react/components/dialog";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { getRouteApi, useNavigate } from "@tanstack/react-router";
+import { useLocation, useNavigate } from "@tanstack/react-router";
 import { CircleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { ProductRunReportOverview, RunProductService } from "../data/run-product-service";
 
-const routeApi = getRouteApi("/runs/$runId");
-
 type RunReport = ProductRunReportOverview;
+
+function replayJobFromSearch(search: unknown): string {
+  return typeof (search as { replayJob?: unknown }).replayJob === "string"
+    ? (search as { replayJob: string }).replayJob
+    : "";
+}
 
 export function RunReplayAction({
   report,
@@ -30,18 +34,22 @@ export function RunReplayAction({
   variant?: "default" | "outline" | "ghost";
   label?: string;
 }) {
-  const search = routeApi.useSearch() as { replayJob?: unknown };
-  const replayJobId = typeof search.replayJob === "string" ? search.replayJob : "";
+  const search = useLocation({ select: (state) => state.search });
+  const replayJobId = replayJobFromSearch(search);
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<"saved-steps" | "same-configuration">("saved-steps");
-  const navigate = useNavigate({ from: "/runs/$runId" });
+  const navigate = useNavigate();
   const replay = useMutation({
     mutationFn: async () => {
       if (!runService.replay) throw new Error("Exact replay is unavailable in this Relay host.");
       return runService.replay(report.runId, mode);
     },
     onSuccess: async (result) => {
-      await navigate({ search: (previous) => ({ ...previous, replayJob: result.jobId }) });
+      await navigate({
+        to: "/runs/$runId",
+        params: { runId: report.runId },
+        search: (previous) => ({ ...previous, replayJob: result.jobId }),
+      });
       setOpen(false);
     },
   });
@@ -132,9 +140,10 @@ export function RunReplayAction({
 }
 
 export function RunReplayStatus({ runService }: { runService: RunProductService }) {
-  const search = routeApi.useSearch() as { replayJob?: unknown };
-  const replayJobId = typeof search.replayJob === "string" ? search.replayJob : "";
-  const navigate = useNavigate({ from: "/runs/$runId" });
+  const location = useLocation();
+  const replayJobId = replayJobFromSearch(location.search);
+  const navigate = useNavigate();
+  const runId = /\/runs\/([^/]+)$/u.exec(location.pathname)?.[1];
   const replayJob = useQuery({
     queryKey: ["run-replay-job", replayJobId],
     queryFn: () => {
@@ -211,9 +220,14 @@ export function RunReplayStatus({ runService }: { runService: RunProductService 
           <Button
             size="sm"
             variant="outline"
-            onClick={() =>
-              void navigate({ search: (previous) => ({ ...previous, replayJob: undefined }) })
-            }
+            onClick={() => {
+              if (!runId) return;
+              void navigate({
+                to: "/runs/$runId",
+                params: { runId },
+                search: {},
+              });
+            }}
           >
             Dismiss
           </Button>

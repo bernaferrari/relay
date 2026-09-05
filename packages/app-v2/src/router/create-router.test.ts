@@ -11,7 +11,6 @@ const platform: Platform = {
 };
 
 const deepLinks = [
-  "/home",
   "/apps",
   "/apps/app-1",
   "/versions",
@@ -63,10 +62,16 @@ describe("React router", () => {
     expect(router.state.matches).toHaveLength(2);
   });
 
-  it("redirects the root to Home", async () => {
+  it("redirects the root to Tests", async () => {
     const router = testRouter(["/"]);
     await router.load();
-    expect(router.state.location.pathname).toBe("/home");
+    expect(router.state.location.pathname).toBe("/tests");
+  });
+
+  it("redirects Home to Tests", async () => {
+    const router = testRouter(["/home"]);
+    await router.load();
+    expect(router.state.location.pathname).toBe("/tests");
   });
 
   it.each([
@@ -79,13 +84,13 @@ describe("React router", () => {
   });
 
   it("uses the injected history for navigation and Back", async () => {
-    const router = testRouter(["/home"]);
+    const router = testRouter(["/tests"]);
     await router.load();
     await router.navigate({ to: "/runs/$runId", params: { runId: "run-1" } });
     expect(router.state.location.pathname).toBe("/runs/run-1");
     router.history.back();
     await router.load();
-    expect(router.state.location.pathname).toBe("/home");
+    expect(router.state.location.pathname).toBe("/tests");
   });
 
   it("uses hash history by default", async () => {

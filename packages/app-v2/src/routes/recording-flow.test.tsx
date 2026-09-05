@@ -1033,7 +1033,7 @@ describe("record, review, replay, and save", () => {
       storage.platform,
     );
     await click(button("Save draft"));
-    expect(history.location.pathname).toBe("/home");
+    expect(history.location.pathname).toBe("/tests");
     expect(storage.values.get("activeRecordingWorkflowId")).toBe("workflow-1");
     expect(fake.calls).not.toContain("approve");
   });

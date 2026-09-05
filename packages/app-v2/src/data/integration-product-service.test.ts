@@ -16,12 +16,8 @@ describe("integration and issue handoff product service", () => {
       state: "connected",
       capabilities: ["workspace"],
     });
-    expect(integrations.find(({ provider }) => provider === "github")).toMatchObject({
-      state: "server-managed",
-    });
-    expect(integrations.find(({ provider }) => provider === "slack")).toMatchObject({
-      state: "unsupported",
-    });
+    expect(integrations.some(({ provider }) => provider === "github")).toBe(false);
+    expect(integrations.some(({ provider }) => provider === "slack")).toBe(false);
     expect(JSON.stringify(integrations)).not.toMatch(/token|secret|credential/iu);
   });
 

@@ -119,7 +119,7 @@ export function ReviewRecordingPage() {
       return persisted;
     },
     onSuccess: async () => {
-      await navigate({ to: "/home" });
+      await navigate({ to: "/tests" });
     },
   });
 

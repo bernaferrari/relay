@@ -9,6 +9,7 @@ import type { RecordingProductService } from "../data/recording-product-service"
 import type { RunAcrossProductService } from "../data/run-across-product-service";
 import type { ProductRunReportOverview, RunProductService } from "../data/run-product-service";
 import type { Platform } from "../platform/types";
+import { WORKSPACE_DESTINATION_KEY } from "../layout/destination-summary";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -470,6 +471,29 @@ describe("Run and Report", () => {
     expect(fake.startInputs[0]).not.toHaveProperty("targetProfileId");
   });
 
+  it("applies a toolbar destination serial once and keeps a later in-page target", async () => {
+    const fake = fakeRunService();
+    const storage = platformWithStorage({
+      [WORKSPACE_DESTINATION_KEY]: JSON.stringify({ targetId: "emulator-5554" }),
+    });
+    await renderRun("/tests/test-1", fake.service, storage.platform);
+
+    expect(document.querySelector<HTMLInputElement>('input[value="emulator-5554"]')?.checked).toBe(
+      true,
+    );
+    await click(document.querySelector<HTMLInputElement>('input[value="browser-golden"]')!);
+    expect(document.querySelector<HTMLInputElement>('input[value="browser-golden"]')?.checked).toBe(
+      true,
+    );
+    await settle();
+    expect(document.querySelector<HTMLInputElement>('input[value="browser-golden"]')?.checked).toBe(
+      true,
+    );
+    expect(document.querySelector<HTMLInputElement>('input[value="emulator-5554"]')?.checked).toBe(
+      false,
+    );
+  });
+
   it("starts one canonical Run, follows progress, and renders only real evidence", async () => {
     const fake = fakeRunService();
     const storage = platformWithStorage();
@@ -494,7 +518,7 @@ describe("Run and Report", () => {
     await click(button("Run Test"));
 
     expect(fake.calls).toContain("start:test-1:settings-language-proof:browser-golden");
-    expect(history.location.pathname).toBe("/runs/run-1");
+    expect(history.location.pathname).toBe("/tests/test-1");
     expect(document.body.textContent).toContain("Checking Language");
     expect(button("Cancel Run").disabled).toBe(false);
     expect(storage.values.has("activeRunWorkflow")).toBe(true);
@@ -502,25 +526,26 @@ describe("Run and Report", () => {
     await act(async () => fake.complete());
     await settle();
 
+    expect(history.location.pathname).toBe("/tests/test-1");
     expect(document.body.textContent).toContain("This Test passed on Pixel 9.");
     expect(document.body.textContent).not.toContain("Draft issue");
-    expect(document.body.textContent).toContain("Set up another run");
-    expect(document.body.textContent).toContain("View test");
-    expect(document.body.textContent).not.toContain("Investigate");
+    expect(document.body.textContent).toContain("Open full report");
+    expect(document.body.textContent).not.toContain("Investigate this failure");
     expect(document.body.textContent).toContain("1.6 s");
     expect(document.body.textContent).toContain("Language checkpoint passed");
     expect(document.body.textContent).toContain("What Relay verified");
     expect(document.body.textContent).toContain("Passed");
-    expect(document.body.textContent).toContain("Timeline");
-    expect(document.body.textContent).toContain("Evidence");
-    expect(document.body.textContent).not.toContain("Network");
-    expect(document.body.textContent?.match(/1\.6 s/g)).toHaveLength(1);
-    expect(document.querySelectorAll('[role="tab"]')).toHaveLength(3);
+    expect(document.body.textContent).not.toContain("Timeline");
+    expect(document.querySelectorAll('[role="tab"]')).toHaveLength(0);
     expect(storage.values.has("activeRunWorkflow")).toBe(false);
 
-    await click(button("Evidence"));
-    expect(document.body.textContent).toContain("Screenshots");
-    expect(document.body.textContent).toContain("Interface snapshots");
+    const fullReport = [...document.querySelectorAll("a")].find((item) =>
+      item.textContent?.includes("Open full report"),
+    );
+    if (!fullReport) throw new Error("Open full report not found");
+    await click(fullReport);
+    expect(history.location.pathname).toBe("/runs/run-1");
+    expect(document.body.textContent).toContain("This Test passed on Pixel 9.");
     expect(document.body.textContent).toContain("Language settings");
     expect(document.querySelector<HTMLImageElement>(".relay-evidence-image-frame img")?.src).toBe(
       "data:image/png;base64,iVBORw0KGgo=",
@@ -546,13 +571,7 @@ describe("Run and Report", () => {
 
     await act(async () => history.back());
     await settle();
-    expect(history.location.pathname).toBe("/runs/run-1");
-    expect(history.location.search).toBe("");
-    await act(async () => history.back());
-    await settle();
     expect(history.location.pathname).toBe("/tests/test-1");
-    // Returning to the document restores the explicitly chosen compatible target.
-    expect(button("Run Test").disabled).toBe(false);
   });
 
   it("keeps a queued saved-step replay on the source report until a real run id exists", async () => {
@@ -680,15 +699,16 @@ describe("Run and Report", () => {
     });
     const { history } = await renderRun("/tests/test-1", fake.service, storage.platform);
 
-    expect(document.body.textContent).toContain("Resume Run");
+    expect(document.body.textContent).toContain("Checking Language");
+    expect(document.body.textContent).toContain("Open full report");
     history.push("/tests/test-2");
     await settle();
-    expect(document.body.textContent).not.toContain("Resume Run");
+    expect(document.body.textContent).not.toContain("Checking Language");
     expect(document.body.textContent).toContain("Run Test");
 
     history.push("/tests/test-1");
     await settle();
-    expect(document.body.textContent).toContain("Resume Run");
+    expect(document.body.textContent).toContain("Checking Language");
   });
 
   it("restores the URL Run when local storage points at a different Run", async () => {
@@ -792,7 +812,7 @@ describe("Run and Report", () => {
     expect(button("Try again")).not.toBeNull();
   });
 
-  it("offers only Resume Run while a durable Run is active", async () => {
+  it("attaches an active Run to the Test instead of starting another", async () => {
     const fake = fakeRunService();
     const storage = platformWithStorage({
       activeRunWorkflow: JSON.stringify({
@@ -803,16 +823,31 @@ describe("Run and Report", () => {
     });
     const { history } = await renderRun("/tests/test-1", fake.service, storage.platform);
 
-    expect(document.body.textContent).toContain("A Run is already in progress");
+    expect(document.body.textContent).toContain("Checking Language");
     expect(
       [...document.querySelectorAll("button")].some((item) => item.textContent === "Run Test"),
     ).toBe(false);
-    const resume = [...document.querySelectorAll("a")].find(
-      (item) => item.textContent?.trim() === "Resume Run",
-    );
-    expect(resume?.textContent).toContain("Resume Run");
+    expect(
+      [...document.querySelectorAll("a")].some((item) =>
+        item.textContent?.includes("Open full report"),
+      ),
+    ).toBe(true);
     expect(history.location.pathname).toBe("/tests/test-1");
     expect(fake.calls.some((call) => call.startsWith("start:"))).toBe(false);
+
+    await act(async () => fake.complete());
+    await settle();
+    expect(history.location.pathname).toBe("/tests/test-1");
+    expect(storage.values.has("activeRunWorkflow")).toBe(false);
+    expect(document.body.textContent).toContain("This Test passed on Pixel 9.");
+    expect(
+      [...document.querySelectorAll("a")].some((item) =>
+        item.textContent?.includes("Open full report"),
+      ),
+    ).toBe(true);
+    expect(
+      [...document.querySelectorAll("button")].some((item) => item.textContent === "Run Test"),
+    ).toBe(true);
   });
 
   it("shows Cancel only while canonical state allows it", async () => {
@@ -862,10 +897,10 @@ describe("Run and Report", () => {
     const fake = fakeRunService();
     await renderRun("/runs/run-1?view=evidence", fake.service, platformWithStorage().platform);
 
-    expect(document.body.textContent).toContain("Screenshots");
     expect(document.body.textContent).toContain("Language settings");
-    expect(document.body.textContent).not.toContain("What Relay verified");
-    expect(document.querySelector('#report-tab-evidence[aria-selected="true"]')).not.toBeNull();
+    expect(document.body.textContent).toContain("This Test passed on Pixel 9.");
+    expect(document.querySelector('[aria-label="Run evidence"]')).not.toBeNull();
+    expect(document.querySelectorAll('[role="tab"]')).toHaveLength(0);
   });
 
   it("routes durable Run review decisions with the canonical Run identity", async () => {

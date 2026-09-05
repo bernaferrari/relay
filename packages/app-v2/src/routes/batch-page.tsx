@@ -7,7 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import { LibraryPage, PageHeader } from "../components/page-layout";
 import { EmptyState } from "../components/product-patterns";
 import { IssueDraftButton } from "../components/issue-draft-button";
-import { isBatchCaseRerunnable, selectedClusterCaseIds } from "./batch-triage";
+import { batchRerunRequest, isBatchCaseRerunnable, selectedClusterCaseIds } from "./batch-triage";
 import { BatchFailureClusters, BatchResultMatrix } from "./batch-triage-panels";
 import { PageLoading, RecordingProblem } from "./recording-shared";
 
@@ -66,12 +66,14 @@ export function BatchPage() {
   });
   const rerun = useMutation({
     mutationFn: (caseIds?: readonly string[]) =>
-      runAcrossService.rerun(batchId, {
-        ...((caseIds ?? [...selectedCases]).length
-          ? { caseIds: [...(caseIds ?? selectedCases)] }
-          : {}),
-        ...(selectedClusters.size ? { clusterIds: [...selectedClusters] } : {}),
-      }),
+      runAcrossService.rerun(
+        batchId,
+        batchRerunRequest({
+          explicitCaseIds: caseIds,
+          selectedCaseIds: [...selectedCases],
+          selectedClusterIds: [...selectedClusters],
+        }),
+      ),
     onSuccess: async () => {
       setSelectedCases(new Set());
       setSelectedClusters(new Set());

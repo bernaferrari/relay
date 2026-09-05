@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   appContextDestination,
   appScopeDetailsForLocation,
+  appScopeDisplayName,
   appScopeForLocation,
   safeDecodeURIComponent,
 } from "./app-scope";
@@ -15,7 +16,7 @@ describe("App scope", () => {
         pathname: "/apps/%E0%A4%A",
         search: { app: "stale-app" },
       }),
-    ).toEqual({ kind: "all" });
+    ).toEqual({ kind: "unavailable" });
   });
 
   it("resolves scope from list filters and owned detail records", () => {
@@ -121,12 +122,62 @@ describe("App scope", () => {
 
   it("does not let workspace-only resources inherit a stale app filter", () => {
     expect(appScopeDetailsForLocation({ pathname: "/accounts", search: { app: "app-1" } })).toEqual(
-      { kind: "all" },
+      { kind: "workspace" },
     );
     expect(appScopeDetailsForLocation({ pathname: "/suites", search: { app: "app-1" } })).toEqual({
       kind: "single",
       appId: "app-1",
     });
+  });
+
+  it("resolves session ownership and never labels unresolved ownership as All apps", () => {
+    expect(
+      appScopeDetailsForLocation({
+        pathname: "/sessions/session-1",
+        search: {},
+        sessions: [{ id: "session-1", appMapId: "app-9" }],
+      }),
+    ).toEqual({ kind: "single", appId: "app-9" });
+    expect(
+      appScopeDetailsForLocation({
+        pathname: "/sessions/session-1",
+        search: {},
+      }),
+    ).toEqual({ kind: "loading" });
+    expect(
+      appScopeDetailsForLocation({
+        pathname: "/sessions/session-1",
+        search: {},
+        sessions: [],
+      }),
+    ).toEqual({ kind: "unavailable" });
+    expect(appScopeDetailsForLocation({ pathname: "/devices", search: {} })).toEqual({
+      kind: "workspace",
+    });
+    expect(
+      appScopeDetailsForLocation({
+        pathname: "/tests/missing",
+        search: {},
+        tests: [],
+      }),
+    ).toEqual({ kind: "unavailable" });
+  });
+
+  it("does not call a missing app id All apps after the catalog has loaded", () => {
+    expect(appScopeDisplayName({ kind: "single", appId: "missing-app" }, undefined, false)).toBe(
+      "Loading app",
+    );
+    expect(appScopeDisplayName({ kind: "single", appId: "missing-app" }, [], true)).toBe(
+      "Unknown app",
+    );
+    expect(
+      appScopeDisplayName(
+        { kind: "single", appId: "app-1" },
+        [{ id: "app-1", name: "Acme" }],
+        true,
+      ),
+    ).toBe("Acme");
+    expect(appScopeDisplayName({ kind: "all" })).toBe("All apps");
   });
 
   it("returns detail screens to the matching scoped collection", () => {

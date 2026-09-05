@@ -14,7 +14,7 @@ import type { DebugBugOutcome } from "@relay/product/agent-debug";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { ShieldCheck } from "lucide-react";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { FormPage, PageHeader } from "../components/page-layout";
 
 import type { AgentDebugProductService } from "../data/agent-debug-product-service";
@@ -74,6 +74,7 @@ export function AgentDebugPage() {
     mutationFn: (input: Parameters<AgentDebugProductService["debugBug"]>[0]) =>
       agentDebugService.debugBug(input),
     onSuccess: async (outcome) => {
+      if (contextualRunId) return;
       if (isStartOutcome(outcome) && outcome.recording.authoring?.sessionId) {
         await navigate({
           to: "/sessions/$sessionId",
@@ -82,12 +83,21 @@ export function AgentDebugPage() {
       }
     },
   });
+  const defaultTitle = report.data
+    ? `Investigate ${report.data.title}`
+    : contextualRunId
+      ? "Investigate this failure"
+      : "";
+  const resolvedTitle = title.trim() || defaultTitle;
+  const originReady = Boolean(contextualRunId && report.data && targetReady && resolvedTitle);
+  const startSucceeded = Boolean(start.data && isStartOutcome(start.data));
+  const hideStartForm = startSucceeded || (start.isPending && !start.error);
+  const startedFromOrigin = useRef(false);
 
-  function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!title.trim() || !targetReady) return;
+  function startInvestigation(nextTitle: string, nextTargetId: string) {
+    if (!nextTitle.trim() || !readyDevices.some((device) => device.serial === nextTargetId)) return;
     const origin =
-      contextualRunId && report.data && failureStep
+      contextualRunId && report.data && failureStep?.id
         ? {
             schemaVersion: 1 as const,
             source: {
@@ -110,19 +120,40 @@ export function AgentDebugPage() {
     start.mutate({
       kind: "debug-bug",
       action: "start",
-      title: title.trim(),
-      targetId,
+      title: nextTitle.trim(),
+      targetId: nextTargetId,
       confirmControl: true,
       ...(origin ? { debugOrigin: origin } : {}),
     });
+  }
+
+  useEffect(() => {
+    startedFromOrigin.current = false;
+  }, [contextualRunId]);
+  useEffect(() => {
+    if (!originReady || startedFromOrigin.current || start.isPending || start.data || start.error)
+      return;
+    startedFromOrigin.current = true;
+    startInvestigation(resolvedTitle, targetId);
+  }, [originReady, resolvedTitle, start.data, start.error, start.isPending, targetId]);
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    startInvestigation(resolvedTitle, targetId);
   }
 
   return (
     <FormPage>
       <PageHeader
         crumbs={[{ label: "Live", to: "/sessions" }, { label: "Investigate" }]}
-        title="Investigate"
-        description="Name the problem, pick a device, and start capturing."
+        title={
+          contextualRunId && report.data ? `Investigating ${report.data.title}` : "Investigate"
+        }
+        description={
+          contextualRunId
+            ? "This investigation stays bound to the original result."
+            : "Name the problem, pick a device, and start capturing."
+        }
       />
 
       {contextualRunId ? (
@@ -182,82 +213,91 @@ export function AgentDebugPage() {
           ) : null}
         </section>
       ) : null}
-      <form onSubmit={submit} className="grid max-w-2xl gap-6">
-        <Field className="gap-2">
-          <FieldLabel htmlFor="agent-debug-title">Name</FieldLabel>
-          <Input
-            id="agent-debug-title"
-            value={title}
-            onChange={(event) => setTitle(event.currentTarget.value)}
-            placeholder="Checkout button is unreachable"
-            maxLength={160}
-            required
-          />
-        </Field>
-        <Field className="gap-2">
-          <FieldLabel htmlFor="agent-debug-target">Device or browser</FieldLabel>
-          {devices.isPending ? (
-            <p className="text-sm text-muted-foreground" role="status">
-              Loading devices…
-            </p>
-          ) : null}
-          <Select
-            items={readyDevices.map((device) => ({
-              value: device.serial,
-              label: `${device.name} · ${device.platform}`,
-            }))}
-            value={targetReady ? targetId : ""}
-            onValueChange={(nextValue) => setTargetId(nextValue ?? "")}
-          >
-            <SelectTrigger id="agent-debug-target" className="w-full">
-              <SelectValue placeholder="Choose a ready device" />
-            </SelectTrigger>
-            <SelectContent alignItemWithTrigger={false}>
-              {readyDevices.map((device) => (
-                <SelectItem key={device.id} value={device.serial} data-value={device.serial}>
-                  {device.name} · {device.platform}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {!devices.isPending && contextualTargetId === targetId && !targetReady ? (
-            <p className="text-sm text-muted-foreground" role="status">
-              The original device is unavailable. Choose another ready device or browser.
-            </p>
-          ) : null}
-          {devices.data && !devices.data.some((device) => device.runnable) ? (
+      {start.isPending && !startSucceeded ? (
+        <p className="mb-4 text-sm text-muted-foreground" role="status">
+          Starting investigation…
+        </p>
+      ) : null}
+      {hideStartForm ? null : (
+        <form onSubmit={submit} className="grid max-w-2xl gap-6">
+          {contextualRunId && report.data ? null : (
+            <Field className="gap-2">
+              <FieldLabel htmlFor="agent-debug-title">Name</FieldLabel>
+              <Input
+                id="agent-debug-title"
+                value={title}
+                onChange={(event) => setTitle(event.currentTarget.value)}
+                placeholder={defaultTitle || "Checkout button is unreachable"}
+                maxLength={160}
+                required={!resolvedTitle}
+              />
+            </Field>
+          )}
+          <Field className="gap-2">
+            <FieldLabel htmlFor="agent-debug-target">Device or browser</FieldLabel>
+            {devices.isPending ? (
+              <p className="text-sm text-muted-foreground" role="status">
+                Loading devices…
+              </p>
+            ) : null}
+            <Select
+              items={readyDevices.map((device) => ({
+                value: device.serial,
+                label: `${device.name} · ${device.platform}`,
+              }))}
+              value={targetReady ? targetId : ""}
+              onValueChange={(nextValue) => setTargetId(nextValue ?? "")}
+            >
+              <SelectTrigger id="agent-debug-target" className="w-full">
+                <SelectValue placeholder="Choose a ready device" />
+              </SelectTrigger>
+              <SelectContent alignItemWithTrigger={false}>
+                {readyDevices.map((device) => (
+                  <SelectItem key={device.id} value={device.serial} data-value={device.serial}>
+                    {device.name} · {device.platform}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {!devices.isPending && contextualTargetId === targetId && !targetReady ? (
+              <p className="text-sm text-muted-foreground" role="status">
+                The original device is unavailable. Choose another ready device or browser.
+              </p>
+            ) : null}
+            {devices.data && !devices.data.some((device) => device.runnable) ? (
+              <FieldError>
+                No ready device is available. <Link to="/devices">Open devices</Link> to reconnect
+                one, then try again.
+              </FieldError>
+            ) : null}
+          </Field>
+          {devices.isError ? (
             <FieldError>
-              No ready device is available. <Link to="/devices">Open devices</Link> to reconnect
-              one, then try again.
+              Devices could not be loaded.{" "}
+              <Button variant="ghost" size="sm" onClick={() => void devices.refetch()}>
+                Try again
+              </Button>
             </FieldError>
           ) : null}
-        </Field>
-        {devices.isError ? (
-          <FieldError>
-            Devices could not be loaded.{" "}
-            <Button variant="ghost" size="sm" onClick={() => void devices.refetch()}>
-              Try again
+          {start.error ? (
+            <FieldError>
+              {start.error instanceof Error
+                ? start.error.message
+                : "The investigation could not start."}
+            </FieldError>
+          ) : null}
+          <div className="flex justify-end pt-1">
+            <Button
+              type="submit"
+              variant="default"
+              disabled={start.isPending || !resolvedTitle || !targetReady}
+              className="w-full sm:w-auto"
+            >
+              {start.isPending ? "Starting…" : "Start investigation"}
             </Button>
-          </FieldError>
-        ) : null}
-        {start.error ? (
-          <FieldError>
-            {start.error instanceof Error
-              ? start.error.message
-              : "The investigation could not start."}
-          </FieldError>
-        ) : null}
-        <div className="flex justify-end pt-1">
-          <Button
-            type="submit"
-            variant="default"
-            disabled={start.isPending || !title.trim() || !targetReady}
-            className="w-full sm:w-auto"
-          >
-            {start.isPending ? "Starting…" : "Start investigation"}
-          </Button>
-        </div>
-      </form>
+          </div>
+        </form>
+      )}
 
       {start.data && isStartOutcome(start.data)
         ? (() => {

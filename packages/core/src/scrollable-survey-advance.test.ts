@@ -54,6 +54,16 @@ test("scrolls when the Android helper marks hidden content below", () => {
   assert.equal(surveyShouldAttemptScroll(first), true);
 });
 
+test("does not fling when hiddenContentBelow is a bounce hint and the last row is fully on screen", () => {
+  const first = snapshot([
+    { type: "ScrollView", rect: { x: 51, y: 0, width: 978, height: 2137 }, hiddenContentBelow: true },
+    { label: "Earliest access to new products", rect: { x: 80, y: 1884, width: 800, height: 60 } },
+    { label: "Access to Grok Bot", rect: { x: 80, y: 1995, width: 800, height: 60 } },
+    { label: "Terms | Privacy Policy", rect: { x: 300, y: 2137, width: 480, height: 45 } },
+  ]);
+  assert.equal(surveyShouldAttemptScroll(first), false);
+});
+
 test("keeps a frame that unclips the faded last row or adds Grok Bot", () => {
   const clipped = snapshot([
     { type: "ScrollView", rect: { x: 51, y: 0, width: 978, height: 2121 }, hiddenContentBelow: true },

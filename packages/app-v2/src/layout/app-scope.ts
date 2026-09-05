@@ -4,11 +4,15 @@ export type AppScopeTest = { id: string; appMapId: string };
 export type AppScopeRun = { id: string; appMapId?: string; batchId?: string };
 export type AppScopeChange = { id: string; appIds?: readonly string[] };
 export type AppScopeRecording = { id: string; appMapId?: string };
+export type AppScopeSession = { id: string; appMapId?: string };
 
 export type AppScope =
   | { kind: "all" }
   | { kind: "single"; appId: string }
-  | { kind: "multiple"; appIds: readonly string[] };
+  | { kind: "multiple"; appIds: readonly string[] }
+  | { kind: "workspace" }
+  | { kind: "loading" }
+  | { kind: "unavailable" };
 
 export function appScopeForLocation(input: {
   pathname: string;
@@ -17,13 +21,30 @@ export function appScopeForLocation(input: {
   runs?: readonly AppScopeRun[];
   changes?: readonly AppScopeChange[];
   recordings?: readonly AppScopeRecording[];
+  sessions?: readonly AppScopeSession[];
 }): string | undefined {
   const scope = appScopeDetailsForLocation(input);
   return scope.kind === "single" ? scope.appId : undefined;
 }
 
+export function appScopeDisplayName(
+  scope: AppScope,
+  apps?: readonly { id: string; name: string }[],
+  appsReady = apps !== undefined,
+): string {
+  if (scope.kind === "single") {
+    if (!appsReady) return "Loading app";
+    return apps?.find((app) => app.id === scope.appId)?.name ?? "Unknown app";
+  }
+  if (scope.kind === "multiple") return "Multiple apps";
+  if (scope.kind === "workspace") return "Workspace";
+  if (scope.kind === "loading") return "Loading app";
+  if (scope.kind === "unavailable") return "Unknown app";
+  return "All apps";
+}
+
 /** Resolve App ownership from the resource first and collection filters second.
- * A stale `?app=` value must never relabel a Test, Run, Recording, or Change. */
+ * A stale `?app=` value must never relabel a Test, Run, Recording, Change, or Session. */
 export function appScopeDetailsForLocation(input: {
   pathname: string;
   search: Readonly<Record<string, unknown>>;
@@ -31,10 +52,14 @@ export function appScopeDetailsForLocation(input: {
   runs?: readonly AppScopeRun[];
   changes?: readonly AppScopeChange[];
   recordings?: readonly AppScopeRecording[];
+  sessions?: readonly AppScopeSession[];
 }): AppScope {
   const route = routeContractForPath(input.pathname);
   const routeApp = /^\/apps\/([^/]+)/u.exec(input.pathname)?.[1];
-  if (routeApp) return single(decode(routeApp));
+  if (routeApp) {
+    const appId = decode(routeApp);
+    return appId ? { kind: "single", appId } : { kind: "unavailable" };
+  }
 
   // `/tests/new` is a creation route, not a test detail route. Resolve its
   // optional app selector from the query string instead of treating `new` as
@@ -44,33 +69,62 @@ export function appScopeDetailsForLocation(input: {
   }
 
   const testId = /^\/tests\/([^/]+)/u.exec(input.pathname)?.[1];
-  if (testId) return single(input.tests?.find((test) => test.id === decode(testId))?.appMapId);
+  if (testId) {
+    return owned(
+      input.tests,
+      (test) => test.id === decode(testId),
+      (test) => test.appMapId,
+    );
+  }
 
   const runId = /^\/runs\/([^/]+)$/u.exec(input.pathname)?.[1];
-  if (runId) return single(input.runs?.find((run) => run.id === decode(runId))?.appMapId);
+  if (runId) {
+    return owned(
+      input.runs,
+      (run) => run.id === decode(runId),
+      (run) => run.appMapId,
+    );
+  }
 
   const batchId = /^\/batches\/([^/]+)$/u.exec(input.pathname)?.[1];
   if (batchId) {
+    if (input.runs === undefined) return { kind: "loading" };
     const appIds = uniqueAppIds(
-      input.runs?.filter((run) => run.batchId === decode(batchId)).map((run) => run.appMapId),
+      input.runs.filter((run) => run.batchId === decode(batchId)).map((run) => run.appMapId),
     );
     return fromAppIds(appIds);
   }
 
   const changeId = /^\/changes\/([^/]+)$/u.exec(input.pathname)?.[1];
   if (changeId) {
-    const appIds = input.changes?.find((change) => change.id === decode(changeId))?.appIds;
-    return fromAppIds(uniqueAppIds(appIds));
+    if (input.changes === undefined) return { kind: "loading" };
+    const change = input.changes.find((item) => item.id === decode(changeId));
+    if (!change) return { kind: "unavailable" };
+    return fromAppIds(uniqueAppIds(change.appIds));
   }
 
   const recordingId = /^\/recordings\/([^/]+)(?:\/review)?$/u.exec(input.pathname)?.[1];
   if (recordingId) {
-    return single(
-      input.recordings?.find((recording) => recording.id === decode(recordingId))?.appMapId,
+    return owned(
+      input.recordings,
+      (recording) => recording.id === decode(recordingId),
+      (recording) => recording.appMapId,
     );
   }
 
-  return route?.allowedSearchKeys.includes("app") ? fromSearchApp(input.search) : { kind: "all" };
+  const sessionId = /^\/sessions\/([^/]+)$/u.exec(input.pathname)?.[1];
+  if (sessionId) {
+    return owned(
+      input.sessions,
+      (session) => session.id === decode(sessionId),
+      (session) => session.appMapId,
+    );
+  }
+
+  if (isWorkspaceRoute(input.pathname)) return { kind: "workspace" };
+  return route?.allowedSearchKeys.includes("app")
+    ? fromSearchApp(input.search)
+    : { kind: "workspace" };
 }
 
 function fromSearchApp(search: Readonly<Record<string, unknown>>): AppScope {
@@ -79,8 +133,16 @@ function fromSearchApp(search: Readonly<Record<string, unknown>>): AppScope {
     : { kind: "all" };
 }
 
-function single(appId: string | undefined): AppScope {
-  return appId ? { kind: "single", appId } : { kind: "all" };
+function owned<T>(
+  items: readonly T[] | undefined,
+  match: (item: T) => boolean,
+  appId: (item: T) => string | undefined,
+): AppScope {
+  if (items === undefined) return { kind: "loading" };
+  const item = items.find(match);
+  if (!item) return { kind: "unavailable" };
+  const id = appId(item)?.trim();
+  return id ? { kind: "single", appId: id } : { kind: "unavailable" };
 }
 
 function uniqueAppIds(appIds: readonly (string | undefined)[] | undefined): readonly string[] {
@@ -88,9 +150,23 @@ function uniqueAppIds(appIds: readonly (string | undefined)[] | undefined): read
 }
 
 function fromAppIds(appIds: readonly string[]): AppScope {
-  if (appIds.length === 0) return { kind: "all" };
+  if (appIds.length === 0) return { kind: "unavailable" };
   if (appIds.length === 1) return { kind: "single", appId: appIds[0]! };
   return { kind: "multiple", appIds };
+}
+
+function isWorkspaceRoute(pathname: string): boolean {
+  return (
+    pathname === "/devices" ||
+    pathname.startsWith("/devices/") ||
+    pathname === "/accounts" ||
+    pathname === "/versions" ||
+    pathname === "/environments" ||
+    pathname.startsWith("/environments/") ||
+    pathname === "/sessions" ||
+    pathname === "/debug" ||
+    pathname.startsWith("/settings/")
+  );
 }
 
 export function appContextDestination(input: {

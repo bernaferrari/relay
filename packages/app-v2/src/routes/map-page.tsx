@@ -69,7 +69,7 @@ export function MapPage() {
     <section className="relay-page mx-auto w-full px-[clamp(20px,3vw,40px)] pt-7 pb-10 h-full min-h-0">
       <PageHeader
         crumbs={[
-          { label: "Home", to: "/home" },
+          { label: "Tests", to: "/tests" },
           { label: map.data?.appName ?? "App", to: "/apps/$appId", params: { appId } },
         ]}
         title="Explore"

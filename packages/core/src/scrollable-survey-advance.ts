@@ -80,15 +80,16 @@ export function surveyLastUnclippedFeature(snapshot: SnapshotPayload): SurveyFea
  * fade, or the last row sits too close to the fold to be sure.
  */
 export function surveyShouldAttemptScroll(snapshot: SnapshotPayload): boolean {
-  if (surveyHasHiddenContentBelow(snapshot)) return true;
   const scroll = scrollViewport(snapshot);
   if (!scroll) return true;
   const rows = surveyFeatureRows(snapshot);
   if (rows.some((row) => surveyRowFlushWithScroll(row, snapshot))) return true;
   const last = surveyLastUnclippedFeature(snapshot) ?? rows.at(-1);
   if (!last) return true;
-  const emptyTail = Math.max(96, Math.round(scroll.height * 0.07));
-  return last.bottom > scroll.y + scroll.height - emptyTail;
+  // hiddenContentBelow is a bounce/title hint on Compose sheets. A fully
+  // visible last row with room under it is already complete.
+  if (last.bottom <= scroll.y + scroll.height - 8) return false;
+  return surveyHasHiddenContentBelow(snapshot);
 }
 
 function contentLabels(snapshot: SnapshotPayload): Set<string> {

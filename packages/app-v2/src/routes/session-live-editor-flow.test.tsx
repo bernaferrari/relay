@@ -251,7 +251,7 @@ describe("live Session to Test editor", () => {
     expect(document.body.textContent).toContain("Human");
     expect(document.body.textContent).toContain("Browser");
     expect(document.body.textContent).not.toContain("Browser profile unavailable");
-    expect(document.body.textContent).toContain("Recording session active · inspecting only");
+    expect(document.body.textContent).toContain("Recording · captured actions are saved");
     expect(document.body.textContent).toContain("Tap, type, or scroll. Not recorded.");
     expect(document.querySelector('[data-slot="live-device-rail"]')).not.toBeNull();
     await click("Audit details");

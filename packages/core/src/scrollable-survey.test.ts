@@ -397,6 +397,7 @@ function androidScrollableFrame(shiftY: number, capturedAt: number) {
       rect: { x: 0, y: bodyTop, width, height: navigationTop - bodyTop },
       index: 1,
       parentIndex: 0,
+      hiddenContentBelow: true,
     },
     {
       label: "Data Controls",
@@ -410,15 +411,23 @@ function androidScrollableFrame(shiftY: number, capturedAt: number) {
     const documentY = 330 + index * 190;
     const viewportY = documentY - shiftY;
     if (viewportY + 70 <= bodyTop || viewportY >= navigationTop) continue;
-    paint(viewportY, viewportY + 70, 70 + index * 8, 90 + index * 5, 110 + index * 3);
+    const clippedHeight = Math.min(70, navigationTop - viewportY);
+    paint(viewportY, viewportY + clippedHeight, 70 + index * 8, 90 + index * 5, 110 + index * 3);
     nodes.push({
       label: `Product row ${index}`,
       type: "TextView",
-      rect: { x: 45, y: viewportY, width: 760, height: 70 },
+      rect: { x: 45, y: viewportY, width: 760, height: clippedHeight },
       index: index + 3,
       parentIndex: 1,
     });
   }
+  nodes.push({
+    label: "Product row clipped",
+    type: "TextView",
+    rect: { x: 45, y: navigationTop - 24, width: 760, height: 24 },
+    index: 15,
+    parentIndex: 1,
+  });
   paint(navigationTop, height, 8, 8, 8);
   nodes.push(
     {

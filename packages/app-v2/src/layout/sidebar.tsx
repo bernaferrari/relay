@@ -13,12 +13,11 @@ import {
   useSidebar,
 } from "@relay/ui-react/components/sidebar";
 import { Link, useLocation } from "@tanstack/react-router";
-import { FlaskConical, History, House, MonitorSmartphone, Settings } from "lucide-react";
+import { FlaskConical, History, MonitorSmartphone, Settings } from "lucide-react";
 import { AppSwitcher } from "./app-switcher";
 import { ActiveWork } from "./active-work";
 
 const mainItems = [
-  { to: "/home", label: "Home", icon: House },
   { to: "/tests", label: "Tests", icon: FlaskConical },
   { to: "/runs", label: "Runs", icon: History },
   { to: "/devices", label: "Devices", icon: MonitorSmartphone },

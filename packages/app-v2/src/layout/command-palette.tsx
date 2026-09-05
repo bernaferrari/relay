@@ -15,7 +15,6 @@ import {
   FlaskConical,
   GitCompareArrows,
   History,
-  House,
   MonitorSmartphone,
   Plus,
   KeyRound,
@@ -36,7 +35,6 @@ type Command = {
 };
 
 const workspaceCommands: readonly Command[] = [
-  { id: "home", label: "Open Home", detail: "Workspace overview", href: "/home", icon: House },
   {
     id: "apps",
     label: "Manage apps",

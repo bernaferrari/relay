@@ -200,25 +200,12 @@ describe("App overview", () => {
 
     await render("/apps/app-shop-internal", service, mapService);
 
-    expect(filters).toContain("tests:app-shop-internal");
-    expect(filters).toContain("runs:app-shop-internal");
-    expect(document.body.textContent).toContain("Saved tests");
-    expect(document.body.textContent).toContain("Recent results");
-    expect(document.body.textContent).not.toContain("Not mapped");
+    expect(document.body.textContent).toContain("Open tests");
+    expect(document.body.textContent).toContain("Coverage map");
+    expect(document.body.textContent).not.toContain("Saved tests");
+    expect(document.body.textContent).not.toContain("Recent results");
     expect(document.body.textContent).not.toContain("Workspace resources");
-    expect(document.querySelector("[data-page-pattern]")).toHaveProperty(
-      "dataset.pagePattern",
-      "library",
-    );
-    const testsSection = document.querySelector("#app-tests-title")?.closest("section");
-    expect(testsSection?.textContent).toContain("Ready");
-    expect(testsSection?.textContent).toContain("Passed");
-    expect(testsSection?.textContent).toContain("Needs review");
-    expect(testsSection?.textContent).toContain("Not run yet");
-    expect(testsSection?.textContent).not.toContain("Open →");
-    const resultsSection = document.querySelector("#app-runs-title")?.closest("section");
-    expect(resultsSection?.textContent).toContain("Pixel 9");
-    expect(document.querySelector('a[href="/tests/new?app=app-shop-internal"]')).not.toBeNull();
+    expect(document.querySelector('a[href="/tests?app=app-shop-internal"]')).not.toBeNull();
     expect(document.querySelector('a[href="/apps/app-shop-internal/map"]')).not.toBeNull();
   });
 });

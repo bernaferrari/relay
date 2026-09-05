@@ -9,10 +9,10 @@ export function NotFoundPage() {
       <PageHeader
         context="Not found"
         title="This page is not available"
-        description="Check the address, or return Home."
+        description="Check the address, or return to Tests."
         actions={
-          <Button nativeButton={false} render={<Link to="/home" search={{}} />}>
-            Go to Home
+          <Button nativeButton={false} render={<Link to="/tests" search={{}} />}>
+            Go to Tests
           </Button>
         }
       />

@@ -13,7 +13,7 @@ import {
   CollapsibleTrigger,
 } from "@relay/ui-react/components/collapsible";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
+import { Link, getRouteApi, useRouteContext } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import type { ProductTestStep } from "@relay/product/catalog";
 import { EmptyState, OutcomeMark } from "../components/product-patterns";
@@ -26,16 +26,26 @@ import {
 } from "../data/stability-product-service";
 import { useLatestTestReport } from "../hooks/use-latest-test-report";
 import { PageLoading, RecordingProblem, targetLabel } from "./recording-shared";
+import { RunInspection } from "./run-page";
+import {
+  WORKSPACE_DESTINATION_KEY,
+  parseWorkspaceDestination,
+  workspaceDestinationDecision,
+  workspaceDestinationQueryKey,
+} from "../layout/destination-summary";
 
 const routeApi = getRouteApi("/tests/$testId");
 
 export function TestPage() {
   const { runService, platform, queryClient } = useRouteContext({ from: "__root__" });
   const { testId } = routeApi.useParams();
-  const navigate = useNavigate();
   const runSetupRef = useRef<HTMLElement>(null);
 
   const [evidenceStepId, setEvidenceStepId] = useState("");
+  const [pinnedRunId, setPinnedRunId] = useState<string | undefined>();
+  const startedForTestId = useRef<string | undefined>(undefined);
+  const testIdRef = useRef(testId);
+  testIdRef.current = testId;
   const test = useQuery({
     queryKey: runQueryKeys.test(testId),
     queryFn: () => runService.getTest(testId),
@@ -142,17 +152,55 @@ export function TestPage() {
       await writeRunPointer(platform, { workflowId, runId, testId });
       queryClient.setQueryData(runQueryKeys.pointer, { workflowId, runId, testId });
       queryClient.setQueryData(runQueryKeys.workflow(workflowId), durable);
+      startedForTestId.current = testId;
       return durable;
     },
-    onSuccess: async (state) => {
-      if (!state.run?.runId) return;
-      await navigate({ to: "/runs/$runId", params: { runId: state.run.runId } });
+    onSuccess: (state) => {
+      if (state.run?.runId && startedForTestId.current === testIdRef.current) {
+        setPinnedRunId(state.run.runId);
+      }
     },
   });
+  const workspaceDestination = useQuery({
+    queryKey: workspaceDestinationQueryKey,
+    queryFn: async () =>
+      parseWorkspaceDestination((await platform.storage.get(WORKSPACE_DESTINATION_KEY)) ?? null) ??
+      null,
+    staleTime: Infinity,
+  });
+  const appliedDestination = useRef<string | undefined>(undefined);
+  const selectionRef = useRef(configuration.selection);
+  selectionRef.current = configuration.selection;
+  useEffect(() => {
+    if (configuration.loading || !targets.data?.length) return;
+    const decision = workspaceDestinationDecision({
+      storedTargetId: workspaceDestination.data?.targetId,
+      lastAppliedTargetId: appliedDestination.current,
+      currentTargetId: selectionRef.current.targetId,
+      availableTargetIds: targets.data.map((target) => target.targetId),
+    });
+    if (decision.kind === "skip") return;
+    appliedDestination.current = workspaceDestination.data?.targetId;
+    if (decision.kind === "remember") return;
+    configuration.setSelection({ ...selectionRef.current, targetId: decision.targetId });
+  }, [
+    configuration.loading,
+    configuration.setSelection,
+    targets.data,
+    workspaceDestination.data?.targetId,
+  ]);
+
+  useEffect(() => {
+    setPinnedRunId(undefined);
+  }, [testId]);
+  useEffect(() => {
+    if (pointer.data?.testId === testId) setPinnedRunId(pointer.data.runId);
+  }, [pointer.data?.testId, pointer.data?.runId, testId]);
 
   // The run pointer is workspace-wide. It should only interrupt the document
   // that owns the run; a run for another Test belongs in Activity, not here.
   const activeRun = pointer.data?.testId === testId ? pointer.data : undefined;
+  const attachedRunId = pinnedRunId;
   const loading = test.isPending || targets.isPending || pointer.isPending;
   const evidenceSteps = flattenSteps(test.data?.steps ?? []);
   const selectedEvidenceStep =
@@ -188,16 +236,7 @@ export function TestPage() {
         description={test.data?.appName}
         actions={
           <>
-            {activeRun ? (
-              <Button
-                nativeButton={false}
-                render={<Link to="/runs/$runId" params={{ runId: activeRun.runId }} />}
-                variant="default"
-                size="sm"
-              >
-                Resume Run
-              </Button>
-            ) : (
+            {activeRun ? null : (
               <Button
                 variant="default"
                 size="sm"
@@ -211,6 +250,16 @@ export function TestPage() {
                     : "Set up Run"}
               </Button>
             )}
+            {attachedRunId ? (
+              <Button
+                nativeButton={false}
+                render={<Link to="/runs/$runId" params={{ runId: attachedRunId }} />}
+                variant={activeRun ? "default" : "ghost"}
+                size="sm"
+              >
+                Open full report
+              </Button>
+            ) : null}
             <Button
               nativeButton={false}
               render={<Link to="/tests/$testId/edit" params={{ testId }} />}
@@ -249,20 +298,9 @@ export function TestPage() {
         />
       ) : null}
 
-      {activeRun ? (
-        <div className="relay-resume-recording relay-resume-run mt-7 flex max-w-3xl flex-wrap items-center justify-between gap-5 rounded-lg border border-border bg-card px-4 py-3.5 [&_p]:mt-1 [&_p]:text-muted-foreground">
-          <div>
-            <strong>A Run is already in progress</strong>
-            <p>Resume it before starting this Test again.</p>
-          </div>
-          <Button
-            variant="default"
-            size="sm"
-            nativeButton={false}
-            render={<Link to="/runs/$runId" params={{ runId: activeRun.runId }} />}
-          >
-            Resume Run
-          </Button>
+      {attachedRunId ? (
+        <div className="mt-6">
+          <RunInspection runId={attachedRunId} testId={testId} embedded />
         </div>
       ) : null}
 

@@ -79,10 +79,12 @@ describe("React route contract", () => {
     expect(parentPathForPath("/home")).toBeUndefined();
   });
 
-  it("keeps active recording immersive but restores global navigation for review", () => {
+  it("keeps recording chrome standard so sidebar and Activity stay available", () => {
     const recording = routeContracts.find((route) => route.id === "/recordings/:recordingId");
+    const recordTest = routeContracts.find((route) => route.id === "/tests/:testId/record");
     const review = routeContracts.find((route) => route.id === "/recordings/:recordingId/review");
-    expect(recording && "chrome" in recording ? recording.chrome : undefined).toBe("immersive");
+    expect(recording && "chrome" in recording ? recording.chrome : undefined).toBeUndefined();
+    expect(recordTest && "chrome" in recordTest ? recordTest.chrome : undefined).toBeUndefined();
     expect(review && "chrome" in review ? review.chrome : undefined).toBeUndefined();
   });
 });

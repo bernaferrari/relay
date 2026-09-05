@@ -73,7 +73,6 @@ const routePresentations = {
     path: "/tests/$testId/record",
     eyebrow: "Test",
     description: "Record a focused, repeatable journey.",
-    chrome: "immersive",
   },
   "/tests/:testId/run-across": {
     path: "/tests/$testId/run-across",
@@ -114,7 +113,6 @@ const routePresentations = {
     path: "/recordings/$recordingId",
     eyebrow: "Recording",
     description: "Continue capturing a focused, repeatable journey.",
-    chrome: "immersive",
   },
   "/recordings/:recordingId/review": {
     path: "/recordings/$recordingId/review",

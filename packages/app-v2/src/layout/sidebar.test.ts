@@ -3,7 +3,7 @@ import { isSidebarItemActive } from "./sidebar";
 
 describe("sidebar route ownership", () => {
   it("gives Apps an explicit stable destination", () => {
-    const primaryItems = ["/home", "/tests", "/runs", "/devices"] as const;
+    const primaryItems = ["/tests", "/runs", "/devices"] as const;
     const activeItems = primaryItems.filter((item) => isSidebarItemActive("/apps/app-1", item));
 
     expect(activeItems).toEqual([]);

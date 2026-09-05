@@ -15,13 +15,16 @@ import { recordingQueryKeys } from "../data/recording-queries";
 import {
   appContextDestination,
   appScopeDetailsForLocation,
+  appScopeDisplayName,
   safeDecodeURIComponent,
 } from "./app-scope";
 
 export function AppSwitcher() {
   const router = useRouter();
   const location = useLocation();
-  const { productService, catalogService, changeService } = useRouteContext({ from: "__root__" });
+  const { productService, catalogService, changeService, sessionService } = useRouteContext({
+    from: "__root__",
+  });
   const canListApps = typeof productService.listApps === "function";
   const apps = useQuery({
     queryKey: recordingQueryKeys.apps,
@@ -60,6 +63,22 @@ export function AppSwitcher() {
     enabled: Boolean(recordingId),
     staleTime: 5_000,
   });
+  const sessionId = safeDecodeURIComponent(
+    /^\/sessions\/([^/]+)$/u.exec(location.pathname)?.[1] ?? "",
+  );
+  const session = useQuery({
+    queryKey: ["app-scope", "session", sessionId ?? "unselected"],
+    queryFn: async () => {
+      try {
+        return (await sessionService.get(sessionId!)) ?? null;
+      } catch {
+        return null;
+      }
+    },
+    enabled: Boolean(sessionId),
+    staleTime: 15_000,
+    retry: false,
+  });
   const scope = appScopeDetailsForLocation({
     pathname: location.pathname,
     search: location.search,
@@ -73,16 +92,30 @@ export function AppSwitcher() {
             appMapId: recording.data.snapshot.frozen.appMapId,
           },
         ]
-      : undefined,
+      : recordingId
+        ? recording.isFetched
+          ? []
+          : undefined
+        : undefined,
+    sessions: session.data
+      ? [{ id: session.data.id, appMapId: session.data.appMapId }]
+      : sessionId
+        ? session.isFetched
+          ? []
+          : undefined
+        : undefined,
   });
   const selectedAppId = scope.kind === "single" ? scope.appId : undefined;
   const selectedApp = apps.data?.find((app) => app.id === selectedAppId);
-  const contextName =
-    scope.kind === "multiple" ? "Multiple apps" : (selectedApp?.name ?? "All apps");
+  const contextName = appScopeDisplayName(scope, apps.data, apps.isSuccess || apps.isError);
   const avatar =
     scope.kind === "multiple"
       ? String(scope.appIds.length)
-      : (selectedApp?.name.trim().slice(0, 1).toLocaleUpperCase() ?? "R");
+      : scope.kind === "single"
+        ? (selectedApp?.name.trim().slice(0, 1).toLocaleUpperCase() ?? "A")
+        : scope.kind === "all"
+          ? "A"
+          : "R";
 
   function switchApp(appId?: string) {
     router.history.push(
