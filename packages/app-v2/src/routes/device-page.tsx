@@ -4,11 +4,15 @@ import { Button } from "@relay/ui-react/components/button";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useLocation, useRouteContext } from "@tanstack/react-router";
 import { RotateCcw } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { Breadcrumbs, EmptyState } from "../components/product-patterns";
 import { deviceQueryKeys, type ProductDevice } from "../data/device-product-service";
 import { readSetupContinuation } from "../data/setup-continuation";
-import type { LiveTargetSession, LiveTargetStatus } from "../data/live-target-session";
+import type {
+  LiveTargetInput,
+  LiveTargetSession,
+  LiveTargetStatus,
+} from "../data/live-target-session";
 import { LiveTargetCanvas } from "./live-target-canvas";
 import { PageLoading, errorMessage } from "./recording-shared";
 
@@ -248,6 +252,18 @@ export function DevicePage() {
 
       {device.data && presentation ? (
         <div className="relay-device-detail-grid">
+          {device.data.status !== "needs-attention" ? (
+            <DeviceLivePreview
+              canvas={canvas}
+              target={target.data}
+              status={liveStatus}
+              issue={liveIssue}
+              busy={liveBusy}
+              reconnect={() => setLiveAttempt((value) => value + 1)}
+              send={send}
+              pending={target.isPending}
+            />
+          ) : null}
           <section className="relay-device-health" aria-labelledby="device-health-title">
             <Badge
               variant={device.data.status === "needs-attention" ? "secondary" : "default"}
@@ -380,47 +396,63 @@ export function DevicePage() {
               </p>
             )}
           </section>
-
-          {device.data.status !== "needs-attention" ? (
-            <section className="relay-device-live" aria-labelledby="device-live-title">
-              <div className="relay-device-live-heading">
-                <div>
-                  <p className="relay-section-label">Live preview</p>
-                  <h2 id="device-live-title">Position the device before recording</h2>
-                  <p>
-                    Interact freely here. This preview closes when you leave; start a Test to create
-                    a durable Session with saved evidence and history.
-                  </p>
-                </div>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setLiveAttempt((value) => value + 1)}
-                >
-                  <RotateCcw aria-hidden="true" /> Reconnect
-                </Button>
-              </div>
-              {target.isPending ? <PageLoading label="Opening the live device…" /> : null}
-              {target.data ? (
-                <LiveTargetCanvas
-                  canvasRef={canvas}
-                  status={liveStatus}
-                  issue={liveIssue}
-                  busy={liveBusy}
-                  targetTitle={target.data.name}
-                  targetDetail={target.data.detail}
-                  send={send}
-                  recording={false}
-                />
-              ) : !target.isPending ? (
-                <EmptyState
-                  title="Live control is not available yet"
-                  detail="Keep the device awake and connected, then reconnect. You can still use it when Relay reports it ready."
-                />
-              ) : null}
-            </section>
-          ) : null}
         </div>
+      ) : null}
+    </section>
+  );
+}
+
+function DeviceLivePreview({
+  canvas,
+  target,
+  status,
+  issue,
+  busy,
+  reconnect,
+  send,
+  pending,
+}: {
+  canvas: RefObject<HTMLCanvasElement | null>;
+  target?: { name: string; detail: string };
+  status: LiveTargetStatus;
+  issue?: string;
+  busy: boolean;
+  reconnect: () => void;
+  send: (input: LiveTargetInput) => Promise<boolean | void>;
+  pending: boolean;
+}) {
+  return (
+    <section className="relay-device-live" aria-labelledby="device-live-title">
+      <div className="relay-device-live-heading">
+        <div>
+          <p className="relay-section-label">Live preview</p>
+          <h2 id="device-live-title">Position the device before recording</h2>
+          <p>
+            Interact freely here. This preview closes when you leave; start a Test to create a
+            durable Session with saved evidence and history.
+          </p>
+        </div>
+        <Button size="sm" variant="ghost" onClick={reconnect}>
+          <RotateCcw aria-hidden="true" /> Reconnect
+        </Button>
+      </div>
+      {pending ? <PageLoading label="Opening the live device…" /> : null}
+      {target ? (
+        <LiveTargetCanvas
+          canvasRef={canvas}
+          status={status}
+          issue={issue}
+          busy={busy}
+          targetTitle={target.name}
+          targetDetail={target.detail}
+          send={send}
+          recording={false}
+        />
+      ) : !pending ? (
+        <EmptyState
+          title="Live control is not available yet"
+          detail="Keep the device awake and connected, then reconnect. You can still use it when Relay reports it ready."
+        />
       ) : null}
     </section>
   );

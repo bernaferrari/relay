@@ -638,7 +638,10 @@ type SpecificOperationMap = {
     };
     output: { job: OperationRecord };
   };
-  "run.replay": { input: { runId: string }; output: { job: OperationRecord } };
+  "run.replay": {
+    input: { runId: string; mode?: "saved-steps" | "same-configuration" };
+    output: { job: OperationRecord };
+  };
   "job.cancel": { input: { jobId: string }; output: { job: OperationRecord } };
   "job.pause": { input: { jobId: string }; output: { job: OperationRecord } };
   "job.resume": { input: { jobId: string }; output: { job: OperationRecord } };

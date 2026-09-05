@@ -324,6 +324,29 @@ test("persisted browser runs retain browser identity instead of becoming Android
   }
 });
 
+test("same-configuration replay fails closed without an immutable build", () => {
+  const frozen = {
+    ...job("/tmp/replay-mode"),
+    recipeSnapshot: { id: "evidence-test", title: "Evidence test", steps: [] } as never,
+    recipeGraph: {
+      "evidence-test": { id: "evidence-test", title: "Evidence test", steps: [] },
+    } as never,
+  };
+  assert.doesNotThrow(() => replayInputFromPersistedRun(frozen, "saved-steps"));
+  assert.throws(
+    () => replayInputFromPersistedRun(frozen, "same-configuration"),
+    /immutable build identity/u,
+  );
+  const withBuild = {
+    ...frozen,
+    sourceRevision: { vcs: "git" as const, sha: "abcdef1", buildId: "build-recorded" },
+  };
+  assert.equal(
+    replayInputFromPersistedRun(withBuild, "same-configuration").sourceRevision?.buildId,
+    "build-recorded",
+  );
+});
+
 test("persisted runs retain a provider-scoped target for replay", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-provider-target-run-"));
   const run = job(join(root, "run"));

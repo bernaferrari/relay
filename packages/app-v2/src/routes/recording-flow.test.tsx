@@ -414,9 +414,17 @@ describe("record, review, replay, and save", () => {
     expect(document.body.textContent).toContain("Relay records each supported interaction");
     expect(document.body.textContent).toContain("Pixel 9 Pro");
     expect(document.body.textContent).not.toContain("emulator-5554");
+    const liveTextInput = document.querySelector<HTMLInputElement>(
+      'input[placeholder="Type into the target"]',
+    );
+    expect(liveTextInput?.id).toMatch(/^live-target-text-/);
+    expect(document.querySelector(`label[for="${liveTextInput?.id}"]`)).not.toBeNull();
 
     await interactWithLiveTarget();
-    await fill(document.querySelector<HTMLInputElement>("#live-target-text")!, "Arabic");
+    await fill(
+      document.querySelector<HTMLInputElement>('input[placeholder="Type into the target"]')!,
+      "Arabic",
+    );
     await click(button("Type"));
     await click(button("Checkpoint"));
     const checkpoint = document.querySelector<HTMLInputElement>("#checkpoint-label")!;

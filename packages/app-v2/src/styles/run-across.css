@@ -7,7 +7,7 @@
 
 .relay-run-across-workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(300px, 0.85fr);
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
   gap: 24px;
   margin-top: 34px;

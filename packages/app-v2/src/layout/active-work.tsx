@@ -9,7 +9,7 @@ import {
 import { ScrollArea } from "@relay/ui-react/components/scroll-area";
 import { Badge } from "@relay/ui-react/components/badge";
 import { Button } from "@relay/ui-react/components/button";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter, useRouteContext } from "@tanstack/react-router";
 import {
   Activity,
@@ -40,7 +40,9 @@ const iconForKind: Record<ActiveWorkKind, LucideIcon> = {
 function useActiveWorkItems(_full: boolean): {
   items: readonly ActiveWorkItem[];
   unavailable: boolean;
+  retry(): Promise<void>;
 } {
+  const queryClient = useQueryClient();
   const { platform, productService, catalogService, changeService } = useRouteContext({
     from: "__root__",
   });
@@ -60,6 +62,7 @@ function useActiveWorkItems(_full: boolean): {
     queryKey: [...catalogQueryKeys.runs, "active"],
     queryFn: () => catalogService.listRuns({ view: "active" }),
     enabled: _full,
+    retry: false,
     staleTime: 2_000,
     refetchInterval: 3_000,
   });
@@ -90,13 +93,21 @@ function useActiveWorkItems(_full: boolean): {
   const unavailable = Boolean(
     recordingPointer.error || recording.error || runs.error || changes.error,
   );
-  return { items, unavailable };
+  async function retry() {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["recording"] }),
+      queryClient.invalidateQueries({ queryKey: ["run"] }),
+      queryClient.invalidateQueries({ queryKey: catalogQueryKeys.runs }),
+      queryClient.invalidateQueries({ queryKey: ["changes", "active-work"] }),
+    ]);
+  }
+  return { items, unavailable, retry };
 }
 
 export function ActivityCenterButton() {
   const [open, setOpen] = useState(false);
   // Keep the global activity badge current even while the center is closed.
-  const { items, unavailable } = useActiveWorkItems(true);
+  const { items, unavailable, retry } = useActiveWorkItems(true);
   return (
     <>
       <Button
@@ -118,7 +129,13 @@ export function ActivityCenterButton() {
           </Badge>
         ) : null}
       </Button>
-      <ActivityCenter open={open} onOpenChange={setOpen} items={items} unavailable={unavailable} />
+      <ActivityCenter
+        open={open}
+        onOpenChange={setOpen}
+        items={items}
+        unavailable={unavailable}
+        onRetry={retry}
+      />
     </>
   );
 }
@@ -126,7 +143,7 @@ export function ActivityCenterButton() {
 export function ActiveWork() {
   const [open, setOpen] = useState(false);
   const router = useRouter();
-  const { items } = useActiveWorkItems(open);
+  const { items, retry } = useActiveWorkItems(open);
   const primary = items[0];
   if (!primary) return null;
   const Icon = iconForKind[primary.kind];
@@ -157,7 +174,7 @@ export function ActiveWork() {
           </button>
         ) : null}
       </section>
-      <ActivityCenter open={open} onOpenChange={setOpen} items={items} />
+      <ActivityCenter open={open} onOpenChange={setOpen} items={items} onRetry={retry} />
     </>
   );
 }
@@ -167,13 +184,16 @@ function ActivityCenter({
   onOpenChange,
   items,
   unavailable,
+  onRetry,
 }: {
   open: boolean;
   onOpenChange(open: boolean): void;
   items: readonly ActiveWorkItem[];
   unavailable?: boolean;
+  onRetry?(): Promise<void>;
 }) {
   const router = useRouter();
+  const [retrying, setRetrying] = useState(false);
   function openItem(item: ActiveWorkItem) {
     onOpenChange(false);
     router.history.push(item.href);
@@ -210,8 +230,17 @@ function ActivityCenter({
               <p className="text-sm text-muted-foreground">
                 Relay could not refresh active work from the workspace.
               </p>
-              <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
-                Try again
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={retrying || !onRetry}
+                onClick={() => {
+                  if (!onRetry) return;
+                  setRetrying(true);
+                  void onRetry().finally(() => setRetrying(false));
+                }}
+              >
+                {retrying ? "Refreshing…" : "Try again"}
               </Button>
             </div>
           ) : items.length ? (

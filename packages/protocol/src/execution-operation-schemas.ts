@@ -8,6 +8,12 @@ import {
 } from "./operation-schema-primitives.js";
 
 const runRef = z.object({ runId: identifier("Persisted Run identifier") }).strict();
+const replayRunRef = z
+  .object({
+    runId: identifier("Persisted Run identifier"),
+    mode: z.enum(["saved-steps", "same-configuration"]).optional(),
+  })
+  .strict();
 const batchRef = z.object({ batchId: identifier("Batch identifier") }).strict();
 const durationCohort = z
   .object({
@@ -100,7 +106,7 @@ export const executionOperationSchemas = {
     })
     .strict(),
   "run.get": runRef,
-  "run.replay": runRef,
+  "run.replay": replayRunRef,
   "run.review": z
     .object({
       runId: identifier("Persisted Run identifier"),

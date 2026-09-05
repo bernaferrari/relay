@@ -89,6 +89,9 @@ const report: ProductRunReportOverview = {
       evidenceCount: 2,
       expected: "Confirmation text and order number are visible",
       observed: "Confirmation text was not visible",
+      startedAt: 3_000,
+      finishedAt: 4_000,
+      log: "Confirmation text was not visible",
     },
   ],
   stepEvidence,
@@ -198,12 +201,21 @@ describe("RunWorkbench", () => {
       ),
     );
     expect(host.textContent).toContain("Trace interval");
-    expect(host.textContent).toContain("1970-01-01T00:00:01.000Z");
-    expect(host.textContent).toContain("opened cart");
+    expect(host.textContent).toContain("1970-01-01T00:00:03.000Z");
+    expect(host.textContent).toContain("Confirmation text was not visible");
     act(() => host.querySelector<HTMLButtonElement>('[aria-label="Next failure"]')?.click());
     expect(selected).toEqual([3]);
+    act(() =>
+      root.render(
+        <RunWorkbench
+          report={failureReport}
+          selectedStepIndex={3}
+          onSelectStep={(index) => selected.push(index)}
+        />,
+      ),
+    );
     act(() => host.querySelector<HTMLButtonElement>('[aria-label="Previous failure"]')?.click());
-    expect(selected).toEqual([3, 0]);
+    expect(selected).toEqual([3, 2]);
   });
 
   it("explains missing joined media and retained media failures", () => {

@@ -40,6 +40,7 @@ export function LiveTargetCanvas({
 }) {
   const [text, setText] = useState("");
   const helpId = `${useId()}-help`;
+  const textInputId = `live-target-text-${useId().replaceAll(":", "")}`;
   const pointerStart = useRef<Point | undefined>(undefined);
   const wheel = useRef<{ point: Point; x: number; y: number } | undefined>(undefined);
   const wheelTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -192,11 +193,11 @@ export function LiveTargetCanvas({
           <span>{targetDetail}</span>
         </div>
         <div className="relay-live-target-type">
-          <label className="relay-visually-hidden" htmlFor="live-target-text">
+          <label className="relay-visually-hidden" htmlFor={textInputId}>
             Text to type into the focused target field
           </label>
           <Input
-            id="live-target-text"
+            id={textInputId}
             value={text}
             onChange={(event) => setText(event.currentTarget.value)}
             onKeyDown={(event) => {

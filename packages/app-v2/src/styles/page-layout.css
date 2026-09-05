@@ -34,3 +34,17 @@
   .relay-workspace-header { gap: 12px; }
   .relay-workspace-actions { width: 100%; }
 }
+.relay-run-configuration { min-width: 0; display: grid; gap: 18px; padding: 20px; border: 1px solid var(--border-weak-base); border-radius: var(--radius-xl); background: var(--surface-raised-strong); }
+.relay-run-configuration h2 { font-size: 16px; margin: 0; }
+.relay-config-options { display: grid; min-width: 0; gap: 8px; padding: 0; border: 0; }
+.relay-config-options legend { margin-bottom: 10px; font-size: 13px; font-weight: 600; }
+.relay-config-option { display: flex; width: 100%; min-height: 48px; min-width: 0; align-items: center; gap: 12px; padding: 12px; border: 1px solid var(--border-weak-base); border-radius: var(--radius-lg); cursor: pointer; }
+.relay-config-option:has([data-checked]) { border-color: var(--border-focus); background: var(--surface-base-active); }
+.relay-config-option-copy { display: grid; min-width: 0; flex: 1; gap: 3px; overflow-wrap: anywhere; }
+.relay-config-option-copy strong { font-size: 13px; font-weight: 500; }
+.relay-config-option-copy small { font-size: 12px; color: var(--text-weak); }
+.relay-config-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 16px; margin: 0; }
+.relay-config-facts dt { color: var(--text-weak); font-size: 12px; }
+.relay-config-facts dd { margin: 4px 0 0; font-size: 13px; overflow-wrap: anywhere; }
+.relay-config-problem { margin: 0; padding: 12px; border: 1px solid var(--border-weak-base); border-radius: var(--radius-lg); font-size: 13px; }
+.relay-config-problem p { margin: 4px 0 8px; }

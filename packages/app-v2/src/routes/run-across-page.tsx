@@ -1,14 +1,11 @@
 /** @jsxImportSource react */
 import { Button } from "@relay/ui-react/components/button";
-import { Checkbox } from "@relay/ui-react/components/checkbox";
-import { FieldLabel } from "@relay/ui-react/components/field";
-import { RadioGroup, RadioGroupItem } from "@relay/ui-react/components/radio-group";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Breadcrumbs, EmptyState } from "../components/product-patterns";
 import { RunConfigurationComposer } from "../components/run-configuration-composer";
-import { runConfigurationStorageKey } from "../data/use-persisted-run-configuration";
+import { useRunConfigurationKey } from "../data/use-persisted-run-configuration";
 import { usePersistedRunConfiguration } from "../data/use-persisted-run-configuration";
 import { runQueryKeys } from "../data/run-queries";
 import { PageLoading, RecordingProblem, errorMessage } from "./recording-shared";
@@ -33,42 +30,22 @@ export function RunAcrossPage() {
     queryFn: () => runService.listTargets(),
     staleTime: 5_000,
   });
-  const [targetId, setTargetId] = useState("");
-  const [selected, setSelected] = useState<Record<string, string[]>>({});
-  const [configurationKey, setConfigurationKey] = useState(`run-across:${testId}`);
-  useEffect(() => {
-    void Promise.resolve(platform.getServerUrl()).then((server) =>
-      setConfigurationKey(
-        runConfigurationStorageKey({ server, appId: "workspace", entity: `test:${testId}` }),
-      ),
-    );
-  }, [platform, testId]);
+  const scope = useRunConfigurationKey(platform, `test:${testId}`, setup.data?.appMapId);
   const configuration = usePersistedRunConfiguration({
     storage: platform.storage,
-    key: configurationKey,
+    key: scope.key,
     targetOptions: targets.data?.map((item) => ({ id: item.targetId, label: item.name })),
   });
+  const targetId = configuration.selection.targetProfileId ?? "";
+  const selected = useMemo(() => {
+    const chosen = new Set(configuration.selection.dataSetIds ?? []);
+    return Object.fromEntries((setup.data?.dataSet.dimensions ?? []).map((dimension) => [dimension.id, dimension.values.filter((value) => chosen.has(JSON.stringify([dimension.id, value.id]))).map((value) => value.id)]));
+  }, [configuration.selection.dataSetIds, setup.data]);
   const [previewAttempt, setPreviewAttempt] = useState(0);
   const target = useMemo(
     () => targets.data?.find((item) => item.targetId === targetId),
     [targetId, targets.data],
   );
-  useEffect(() => {
-    if (configuration.loading) return;
-    if (configuration.selection.targetProfileId && !targetId)
-      setTargetId(configuration.selection.targetProfileId);
-    if (configuration.selection.dataSetIds) {
-      const chosen = new Set(configuration.selection.dataSetIds);
-      setSelected(
-        Object.fromEntries(
-          (setup.data?.dataSet.dimensions ?? []).map((dimension) => [
-            dimension.id,
-            dimension.values.filter((value) => chosen.has(value.id)).map((value) => value.id),
-          ]),
-        ),
-      );
-    }
-  }, [configuration.loading, configuration.selection, setup.data, targetId]);
   const previewResult = useMemo(() => {
     if (!setup.data || !target) return { preview: undefined, error: undefined };
     try {
@@ -92,15 +69,6 @@ export function RunAcrossPage() {
       await navigate({ to: "/batches/$batchId", params: { batchId: batch.id } });
     },
   });
-
-  function toggleValue(dimensionId: string, valueId: string) {
-    setSelected((current) => {
-      const values = new Set(current[dimensionId] ?? []);
-      if (values.has(valueId)) values.delete(valueId);
-      else values.add(valueId);
-      return { ...current, [dimensionId]: [...values] };
-    });
-  }
 
   const loading = setup.isPending || targets.isPending;
   return (
@@ -166,104 +134,18 @@ export function RunAcrossPage() {
             }))}
             dataSetOptions={setup.data.dataSet.dimensions.flatMap((dimension) =>
               dimension.values.map((value) => ({
-                id: value.id,
+                id: JSON.stringify([dimension.id, value.id]),
                 label: `${dimension.name}: ${value.label}`,
                 detail: value.detail,
               })),
             )}
-            selection={{ targetProfileId: targetId, dataSetIds: Object.values(selected).flat() }}
-            onSelectionChange={(next) => {
-              setTargetId(next.targetProfileId ?? "");
-              const chosen = new Set(next.dataSetIds ?? []);
-              setSelected(
-                Object.fromEntries(
-                  setup.data.dataSet.dimensions.map((dimension) => [
-                    dimension.id,
-                    dimension.values
-                      .filter((value) => chosen.has(value.id))
-                      .map((value) => value.id),
-                  ]),
-                ),
-              );
-              configuration.setSelection(next);
-            }}
-          />
-          <section className="relay-run-across-card" aria-labelledby="data-set-title">
-            <p className="relay-section-label">Data set</p>
-            <h2 id="data-set-title">{setup.data.dataSet.name}</h2>
-            <p>Select the saved values Relay should apply while repeating this Test.</p>
-            {setup.data.dataSet.dimensions.map((dimension) => (
-              <fieldset className="relay-run-across-options" key={dimension.id}>
-                <legend>{dimension.name}</legend>
-                {dimension.values.map((value) => (
-                  <FieldLabel
-                    key={value.id}
-                    className="flex min-h-14 min-w-0 cursor-pointer items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50"
-                  >
-                    <span className="grid min-w-0 flex-1 gap-0.5">
-                      <span className="break-words text-sm font-medium text-foreground">
-                        {value.label}
-                      </span>
-                      <span className="break-words text-xs leading-snug text-muted-foreground">
-                        {value.detail}
-                      </span>
-                    </span>
-                    <Checkbox
-                      name={dimension.id}
-                      value={value.id}
-                      checked={selected[dimension.id]?.includes(value.id) ?? false}
-                      onCheckedChange={() => toggleValue(dimension.id, value.id)}
-                    />
-                  </FieldLabel>
-                ))}
-              </fieldset>
-            ))}
-            {!setup.data.dataSet.dimensions.length ? (
-              <EmptyState
-                title="No saved data yet"
-                detail="Add a data value to this app before running across cases."
-              />
-            ) : null}
-          </section>
-          <section className="relay-run-across-card" aria-labelledby="target-title">
-            <p className="relay-section-label">Device or browser</p>
-            <h2 id="target-title">Where should Relay run?</h2>
-            {targets.data?.length ? (
-              <RadioGroup
-                className="relay-run-across-options"
-                name="run-across-target"
-                value={targetId}
-                onValueChange={setTargetId}
-                aria-labelledby="target-title"
-              >
-                {targets.data.map((option) => (
-                  <FieldLabel
-                    key={`${option.kind}:${option.targetId}`}
-                    className="flex min-h-14 min-w-0 cursor-pointer items-center gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50"
-                  >
-                    <RadioGroupItem value={option.targetId} />
-                    <span className="grid min-w-0 flex-1 gap-0.5">
-                      <span className="break-words text-sm font-medium text-foreground">
-                        {option.name}
-                      </span>
-                      <span className="break-words text-xs leading-snug text-muted-foreground">
-                        {option.detail}
-                      </span>
-                    </span>
-                  </FieldLabel>
-                ))}
-              </RadioGroup>
-            ) : (
-              <EmptyState
-                title="No device or browser is ready"
-                detail="Connect a device or managed browser, then return here."
-                action={
-                  <Link className="relay-inline-link" to="/devices">
-                    View devices
-                  </Link>
-                }
-              />
-            )}
+            selection={configuration.selection}
+            onSelectionChange={configuration.setSelection}
+            loading={configuration.loading}
+            error={scope.error ?? configuration.error}
+            onRetry={configuration.retry}
+            targetGroupName="run-across-target"
+          >
             {preview ? (
               <div className="relay-run-across-preview" role="status">
                 <strong>Ready to start</strong>
@@ -280,11 +162,11 @@ export function RunAcrossPage() {
             <Button
               variant="default"
               onClick={() => start.mutate()}
-              disabled={!preview || start.isPending}
+              disabled={!preview || start.isPending || configuration.loading}
             >
               {start.isPending ? "Starting first case…" : "Run first case"}
             </Button>
-          </section>
+          </RunConfigurationComposer>
         </div>
       ) : null}
     </section>

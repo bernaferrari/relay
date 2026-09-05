@@ -29,14 +29,13 @@ import {
 import { PageLoading } from "./recording-shared";
 import { readSetupContinuation } from "../data/setup-continuation";
 
-type DeviceFilter = "all" | ProductDeviceStatus;
+type DeviceFilter = "all" | Exclude<ProductDeviceStatus, "virtual">;
 type DeviceTypeFilter = "all" | "physical" | "virtual";
 
 const FILTERS: readonly { id: DeviceFilter; label: string }[] = [
   { id: "all", label: "All" },
   { id: "ready", label: "Ready" },
   { id: "needs-attention", label: "Needs attention" },
-  { id: "virtual", label: "Virtual" },
 ];
 const TYPE_FILTERS: readonly { id: DeviceTypeFilter; label: string }[] = [
   { id: "all", label: "All types" },
@@ -73,7 +72,7 @@ function searchState(value: unknown): { status?: string; type?: string; returnTo
 }
 
 function deviceFilter(value: string | undefined): DeviceFilter {
-  return value === "ready" || value === "needs-attention" || value === "virtual" ? value : "all";
+  return value === "ready" || value === "needs-attention" ? value : "all";
 }
 
 function deviceTypeFilter(value: string | undefined): DeviceTypeFilter {
@@ -218,7 +217,7 @@ export function DevicesPage() {
   const search = searchState(rawSearch);
   const continuation = readSetupContinuation(search.returnTo);
   const activeFilter = deviceFilter(search.status);
-  const activeTypeFilter = deviceTypeFilter(search.type);
+  const activeTypeFilter = search.status === "virtual" ? "virtual" : deviceTypeFilter(search.type);
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query.trim().toLocaleLowerCase());
   const devices = useQuery({

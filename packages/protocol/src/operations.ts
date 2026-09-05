@@ -358,6 +358,20 @@ const runIdInputParser = objectParser<{ runId: string }>("run input", (input) =>
   string(input.runId, "run id");
 });
 
+const replayRunInputParser = objectParser<{
+  runId: string;
+  mode?: "saved-steps" | "same-configuration";
+}>("replay run input", (input) => {
+  string(input.runId, "run id");
+  if (
+    input.mode !== undefined &&
+    input.mode !== "saved-steps" &&
+    input.mode !== "same-configuration"
+  ) {
+    fail("replay mode", "must be saved-steps or same-configuration");
+  }
+});
+
 const offlineRunReplayOutputParser = objectParser<OperationOutput<"run.replay.offline">>(
   "offline run replay response",
   (input) => {
@@ -1511,7 +1525,7 @@ export const operationDefinitions = [
   }),
   command("run.replay", "Replay recorded run", "POST", "/runs/:runId/replay", {
     category: "execution",
-    input: runIdInputParser,
+    input: replayRunInputParser,
     progress: true,
     cancellable: true,
   }),

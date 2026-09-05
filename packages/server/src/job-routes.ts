@@ -232,8 +232,13 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
       run,
       assertLocalTargetControl: runtime.assertTargetControl,
     });
+    const body = (await parseJsonBody(request)) as { mode?: unknown };
+    const mode = body.mode === undefined ? "saved-steps" : body.mode;
+    if (mode !== "saved-steps" && mode !== "same-configuration") {
+      throw new HttpError(400, "Replay mode must be saved-steps or same-configuration");
+    }
     try {
-      const job = runtime.replayPersistedRun(run);
+      const job = runtime.replayPersistedRun(run, mode);
       json(res, 202, { job });
     } catch (error) {
       throw new HttpError(409, error instanceof Error ? error.message : String(error));

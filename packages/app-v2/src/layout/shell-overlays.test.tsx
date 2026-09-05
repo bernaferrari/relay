@@ -51,11 +51,15 @@ function recording(): RecordingProductService {
 function catalog(
   runs: readonly ProductRunSummary[],
   tests: readonly ProductTestSummary[] = [],
+  runsUnavailable = false,
 ): CatalogProductService {
   return {
     listTests: async () => tests,
     getTest: async () => undefined,
-    listRuns: async () => runs,
+    listRuns: async () => {
+      if (runsUnavailable) throw new Error("workspace unavailable");
+      return runs;
+    },
     getRun: async () => undefined,
   };
 }
@@ -81,6 +85,7 @@ function changes(items: readonly ProductChange[]): ChangeProductService {
 async function renderShell(input: {
   runs?: readonly ProductRunSummary[];
   tests?: readonly ProductTestSummary[];
+  runsUnavailable?: boolean;
   changes?: readonly ProductChange[];
 }) {
   const host = document.createElement("div");
@@ -94,7 +99,7 @@ async function renderShell(input: {
         platform={platform()}
         history={history}
         productService={recording()}
-        catalogService={catalog(input.runs ?? [], input.tests ?? [])}
+        catalogService={catalog(input.runs ?? [], input.tests ?? [], input.runsUnavailable)}
         changeService={changes(input.changes ?? [])}
       />,
     );
@@ -156,6 +161,25 @@ describe("shell overlays", () => {
     expect(document.body.textContent).toContain("Checkout");
     expect(document.body.textContent).toContain("Verify checkout change");
     expect(document.body.textContent).toContain("Verifying");
+  });
+
+  it("marks closed Activity unavailable and offers an in-place retry", async () => {
+    await renderShell({ runsUnavailable: true });
+
+    const trigger = document.querySelector<HTMLButtonElement>(
+      'button[aria-label^="Open Activity Center"]',
+    );
+    expect(trigger?.getAttribute("aria-label")).toContain("unavailable");
+    await act(async () => trigger?.click());
+    await settle();
+
+    expect(document.body.textContent).toContain("Activity is unavailable");
+    const retry = [...document.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Try again"),
+    );
+    expect(retry).toBeTruthy();
+    await act(async () => retry?.click());
+    expect(retry?.textContent).toContain("Refreshing");
   });
 
   it("opens the command palette with the keyboard, searches, and navigates", async () => {

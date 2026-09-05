@@ -38,6 +38,7 @@ import { requireOperationContext, runWithOperationContext } from "./operation-co
 import { redactText, visualEvidenceAllowed } from "./redaction.js";
 import { projectPersistedAppMapRun } from "./app-map-run-history.js";
 import { JobRegistry } from "./job-registry.js";
+import { replayInputFromPersistedRun, type PersistedReplayMode } from "./session-job-factory.js";
 import { releaseTargetControl, reserveTargetControl } from "./target-control.js";
 import {
   classifySessionError,
@@ -153,9 +154,12 @@ function setOutcome(job: TestJob): void {
 }
 
 /** Re-run an immutable persisted execution and preserve its source lineage. */
-export function replayPersistedRun(run: PersistedRun): TestJob {
+export function replayPersistedRun(
+  run: PersistedRun,
+  mode: PersistedReplayMode = "saved-steps",
+): TestJob {
   requireScopedAppMapTestExecutionSource(appMapTestExecutionSourceFromRun(run));
-  return enqueueJob({ ...replayInputFromPersistedRun(run), retryOf: run.id });
+  return enqueueJob({ ...replayInputFromPersistedRun(run, mode), retryOf: run.id });
 }
 
 function makeJob(input: EnqueueJobInput, attemptSeed = 1): TestJob {

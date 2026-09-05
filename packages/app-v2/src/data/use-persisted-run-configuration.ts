@@ -23,7 +23,7 @@ export function useRunConfigurationKey(platform: Platform, entity: string, appId
     });
     return () => { active = false; };
   }, [platform, entity, appId, identity]);
-  return scope?.identity === identity ? scope : { key: undefined };
+  return scope?.identity === identity ? scope : { key: undefined, error: undefined };
 }
 
 function parseSelection(raw: string | null): RunConfigurationSelection {

@@ -51,7 +51,10 @@ export type RunProductService = {
   presentTargets(targets: readonly AuthoringTarget[]): Promise<readonly ProductTargetOption[]>;
   start(input: ProductRunStartInput): Promise<ProductRunState>;
   /** Replay the persisted frozen Run configuration after server-side prerequisite checks. */
-  replay?(runId: string): Promise<{ jobId: string; runId?: string }>;
+  replay?(
+    runId: string,
+    mode?: "saved-steps" | "same-configuration",
+  ): Promise<{ jobId: string; runId?: string }>;
   getReplayJob?(jobId: string): Promise<{ status: string; runId?: string; error?: string }>;
   cancelReplay?(jobId: string): Promise<void>;
   inspect(workflowId: string): Promise<ProductRunState>;
@@ -165,8 +168,13 @@ export function createRunProductService(platform: Platform): RunProductService {
     async start(input) {
       return (await runtime()).journey.start(input);
     },
-    async replay(runId) {
-      const { job } = await (await runtime()).client.invoke("run.replay", { runId });
+    async replay(runId, mode) {
+      const { job } = await (
+        await runtime()
+      ).client.invoke("run.replay", {
+        runId,
+        ...(mode ? { mode } : {}),
+      });
       return {
         jobId: job.id,
         ...(typeof job.runId === "string" ? { runId: job.runId } : {}),

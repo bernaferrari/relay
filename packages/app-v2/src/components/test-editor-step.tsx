@@ -35,7 +35,21 @@ export type EditTransaction = {
   reverse: readonly AppMapScenarioTestEdit[];
 };
 
-export type StepDraft = { intent: string; note: string; capture: boolean };
+export type ValidationDraft =
+  | { kind: "screen"; screenId: string }
+  | {
+      kind: "content";
+      input: string;
+      expected: string;
+      match: "exact" | "contains" | "not-contains";
+    };
+
+export type StepDraft = {
+  intent: string;
+  note: string;
+  capture: boolean;
+  expected?: ValidationDraft;
+};
 
 export function SelectedStepEditor({
   entry,
@@ -59,11 +73,15 @@ export function SelectedStepEditor({
   const [intent, setIntent] = useState(draft?.intent ?? entry.step.intent);
   const [note, setNote] = useState(draft?.note ?? entry.step.note ?? "");
   const [capture, setCapture] = useState(draft?.capture ?? entry.step.capture === true);
+  const [expected, setExpected] = useState<ValidationDraft | undefined>(
+    draft?.expected ?? validationDraft(entry.step),
+  );
   const [removeArmed, setRemoveArmed] = useState(false);
   useEffect(() => {
     setIntent(draft?.intent ?? entry.step.intent);
     setNote(draft?.note ?? entry.step.note ?? "");
     setCapture(draft?.capture ?? entry.step.capture === true);
+    setExpected(draft?.expected ?? validationDraft(entry.step));
     setRemoveArmed(false);
   }, [draft, entry.step]);
   function updateDraft(next: Partial<StepDraft>) {
@@ -71,6 +89,7 @@ export function SelectedStepEditor({
       intent,
       note,
       capture,
+      ...(expected ? { expected } : {}),
       ...next,
     };
     onDraftChange?.(value);
@@ -79,7 +98,14 @@ export function SelectedStepEditor({
   const changed =
     cleanIntent !== entry.step.intent ||
     note.trim() !== (entry.step.note ?? "") ||
-    capture !== (entry.step.capture === true);
+    capture !== (entry.step.capture === true) ||
+    !sameValidationDraft(expected, validationDraft(entry.step));
+  const expectedReady =
+    entry.step.kind !== "validation" ||
+    !expected ||
+    (expected.kind === "screen"
+      ? Boolean(expected.screenId.trim())
+      : Boolean(expected.input.trim() && expected.expected.trim()));
 
   return (
     <form
@@ -93,7 +119,20 @@ export function SelectedStepEditor({
             {
               kind: "step.patch",
               stepId: entry.step.id,
-              patch: { intent: cleanIntent, note: note.trim() || null, capture },
+              patch: {
+                intent: cleanIntent,
+                note: note.trim() || null,
+                capture,
+                ...(entry.step.kind === "validation" && expected
+                  ? {
+                      binding: {
+                        status: "resolved" as const,
+                        kind: "assertion" as const,
+                        assertion: expected,
+                      },
+                    }
+                  : {}),
+              },
             },
           ],
           reverse: [
@@ -104,6 +143,9 @@ export function SelectedStepEditor({
                 intent: entry.step.intent,
                 note: entry.step.note ?? null,
                 capture: entry.step.capture === true,
+                ...(entry.step.kind === "validation"
+                  ? { binding: structuredClone(entry.step.binding) }
+                  : {}),
               },
             },
           ],
@@ -169,6 +211,18 @@ export function SelectedStepEditor({
           maxLength={2_000}
         />
       </label>
+      {entry.step.kind === "validation" ? (
+        <ValidationExpectationEditor
+          value={expected}
+          original={validationDraft(entry.step)}
+          canAdd={entry.step.binding.status === "unresolved"}
+          busy={busy}
+          onChange={(value) => {
+            setExpected(value);
+            updateDraft({ expected: value });
+          }}
+        />
+      ) : null}
       <label className="relay-editor-field" htmlFor="selected-step-note">
         <span>
           Note <small>Optional</small>
@@ -236,7 +290,11 @@ export function SelectedStepEditor({
         </CollapsibleContent>
       </Collapsible>
       <div className="relay-form-actions">
-        <Button variant="default" type="submit" disabled={!changed || !cleanIntent || busy}>
+        <Button
+          variant="default"
+          type="submit"
+          disabled={!changed || !cleanIntent || !expectedReady || busy}
+        >
           {busy ? "Saving…" : "Save step"}
         </Button>
         {removeArmed ? (
@@ -275,6 +333,142 @@ export function SelectedStepEditor({
         {!changed ? <span className="relay-action-hint">No unsaved changes</span> : null}
       </div>
     </form>
+  );
+}
+
+function validationDraft(step: AppMapScenarioTestStep): ValidationDraft | undefined {
+  if (step.kind !== "validation" || step.binding.status !== "resolved") return undefined;
+  if (step.binding.kind !== "assertion") return undefined;
+  const assertion = step.binding.assertion;
+  if (assertion.kind === "screen") return { kind: "screen", screenId: assertion.screenId };
+  if (assertion.kind === "content") {
+    return {
+      kind: "content",
+      input: assertion.input,
+      expected: assertion.expected,
+      match: assertion.match,
+    };
+  }
+  return undefined;
+}
+
+function sameValidationDraft(left?: ValidationDraft, right?: ValidationDraft): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function ValidationExpectationEditor({
+  value,
+  original,
+  canAdd,
+  busy,
+  onChange,
+}: {
+  value?: ValidationDraft;
+  original?: ValidationDraft;
+  canAdd: boolean;
+  busy: boolean;
+  onChange(value: ValidationDraft | undefined): void;
+}) {
+  if (!value) {
+    return (
+      <div className="relay-editor-field relay-editor-expectation">
+        <span>Expected result</span>
+        <p className="relay-editor-binding-help">
+          This checkpoint has no directly editable assertion yet. Bind a reviewed assertion to make
+          the expected result explicit.
+        </p>
+        {original === undefined ? null : (
+          <p className="relay-editor-binding-help">
+            The saved assertion uses an advanced structure and remains available under Advanced.
+          </p>
+        )}
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={busy || !canAdd}
+          onClick={() => onChange({ kind: "content", input: "", expected: "", match: "contains" })}
+        >
+          Add content assertion
+        </Button>
+      </div>
+    );
+  }
+  return (
+    <fieldset className="relay-editor-expectation relay-editor-field" disabled={busy}>
+      <legend>Expected result</legend>
+      <p className="relay-editor-binding-help">
+        This is the value Relay validates after the action. It is separate from the human step
+        wording above.
+      </p>
+      <label htmlFor="selected-step-expected-kind">
+        Assertion type
+        <select
+          id="selected-step-expected-kind"
+          value={value.kind}
+          onChange={(event) => {
+            const kind = event.currentTarget.value;
+            onChange(
+              kind === "screen"
+                ? { kind: "screen", screenId: "" }
+                : { kind: "content", input: "", expected: "", match: "contains" },
+            );
+          }}
+        >
+          <option value="screen">Screen</option>
+          <option value="content">Content</option>
+        </select>
+      </label>
+      {value.kind === "screen" ? (
+        <label htmlFor="selected-step-expected-screen">
+          Screen ID
+          <Input
+            id="selected-step-expected-screen"
+            value={value.screenId}
+            onChange={(event) => onChange({ ...value, screenId: event.currentTarget.value })}
+            placeholder="checkout-confirmation"
+          />
+        </label>
+      ) : (
+        <>
+          <label htmlFor="selected-step-expected-input">
+            Read from
+            <Input
+              id="selected-step-expected-input"
+              value={value.input}
+              onChange={(event) => onChange({ ...value, input: event.currentTarget.value })}
+              placeholder="Order total"
+            />
+          </label>
+          <label htmlFor="selected-step-expected-value">
+            Expected value
+            <Input
+              id="selected-step-expected-value"
+              value={value.expected}
+              onChange={(event) => onChange({ ...value, expected: event.currentTarget.value })}
+              placeholder="$42.00"
+            />
+          </label>
+          <label htmlFor="selected-step-expected-match">
+            Match
+            <select
+              id="selected-step-expected-match"
+              value={value.match}
+              onChange={(event) =>
+                onChange({
+                  ...value,
+                  match: event.currentTarget.value as "exact" | "contains" | "not-contains",
+                })
+              }
+            >
+              <option value="exact">Exactly</option>
+              <option value="contains">Contains</option>
+              <option value="not-contains">Does not contain</option>
+            </select>
+          </label>
+        </>
+      )}
+    </fieldset>
   );
 }
 

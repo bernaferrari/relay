@@ -347,6 +347,40 @@ describe("Test editor", () => {
     expect(harness.historyCalls).toEqual(["undo", "redo"]);
   });
 
+  it("edits a validation expected result through the canonical assertion binding", async () => {
+    const source = structuredClone(initialDocument);
+    const validation = source.test.steps[1];
+    if (!validation || validation.kind !== "validation") throw new Error("Expected validation step");
+    validation.binding = {
+      status: "resolved",
+      kind: "assertion",
+      assertion: { kind: "content", input: "Order total", expected: "$40.00", match: "exact" },
+    };
+    const harness = service(source);
+    await render(harness.editor);
+
+    expect(document.body.textContent).toContain("Expected result");
+    expect(document.querySelector<HTMLInputElement>("#selected-step-expected-value")?.value).toBe(
+      "$40.00",
+    );
+    await fill(document.querySelector<HTMLInputElement>("#selected-step-expected-value")!, "$42.00");
+    await click("Save step");
+
+    expect(harness.edits.at(-1)).toEqual([
+      expect.objectContaining({
+        kind: "step.patch",
+        stepId: "step-pay",
+        patch: expect.objectContaining({
+          binding: {
+            status: "resolved",
+            kind: "assertion",
+            assertion: { kind: "content", input: "Order total", expected: "$42.00", match: "exact" },
+          },
+        }),
+      }),
+    ]);
+  });
+
   it("reviews a production-backed repair proposal", async () => {
     const harness = service();
     await render(harness.editor);

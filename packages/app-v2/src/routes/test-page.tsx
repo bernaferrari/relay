@@ -1,12 +1,12 @@
 /** @jsxImportSource react */
+import { RunConfigurationComposer } from "../components/run-configuration-composer";
+import { usePersistedRunConfiguration, useRunConfigurationKey } from "../data/use-persisted-run-configuration";
 import { WorkbenchPage, PageHeader, WorkbenchPanes } from "../components/page-layout";
 import { Badge } from "@relay/ui-react/components/badge";
 import { Button } from "@relay/ui-react/components/button";
-import { FieldLabel } from "@relay/ui-react/components/field";
-import { RadioGroup, RadioGroupItem } from "@relay/ui-react/components/radio-group";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { ProductTestStep } from "@relay/product/catalog";
 import { Breadcrumbs, EmptyState, OutcomeMark } from "../components/product-patterns";
 import { TestStepEvidencePreview } from "../components/test-step-evidence-preview";
@@ -25,7 +25,7 @@ export function TestPage() {
   const { runService, platform, queryClient } = useRouteContext({ from: "__root__" });
   const { testId } = routeApi.useParams();
   const navigate = useNavigate();
-  const [targetId, setTargetId] = useState("");
+
   const [evidenceStepId, setEvidenceStepId] = useState("");
   const test = useQuery({
     queryKey: runQueryKeys.test(testId),
@@ -51,12 +51,13 @@ export function TestPage() {
     queryFn: () => runService.listTargets(),
     staleTime: 5_000,
   });
-  useEffect(() => {
-    if (!targetId && targets.data?.length === 1) setTargetId(targets.data[0]!.targetId);
-  }, [targetId, targets.data]);
+  const scope = useRunConfigurationKey(platform, `test:${testId}`, test.data?.appMapId);
+  const configuration = usePersistedRunConfiguration({ storage: platform.storage, key: scope.key, targetOptions: targets.data?.map((target) => ({ id: target.targetId, label: target.name })), initial: targets.data?.length === 1 ? { targetProfileId: targets.data[0]!.targetId } : {} });
+  const targetId = configuration.selection.targetProfileId ?? "";
+  const targetReady = Boolean(targets.data?.some((target) => target.targetId === targetId));
   const start = useMutation({
     mutationFn: async () => {
-      if (!test.data || !targetId) {
+      if (!test.data || !targetReady || configuration.loading) {
         throw new TypeError("Choose a ready device or browser for this Run.");
       }
       const started = await runService.start({
@@ -212,67 +213,21 @@ export function TestPage() {
             ) : null}
           </>}
           inspector={!activeRun && !targets.isError ? (
-          <section
-            className="relay-test-run-config rounded-xl border border-border-weak-base bg-surface-raised-strong p-4 text-text-strong"
-            aria-labelledby="run-target-title"
+          <RunConfigurationComposer
+            configuration={{ values: { targetName: targets.data?.find((target) => target.targetId === targetId)?.name }, validated: targetReady && !configuration.loading, blockers: configuration.targetUnavailable ? [{ id: "target", label: "Saved target is unavailable", detail: "Choose a ready device or browser to continue." }] : [] }}
+            targetOptions={targets.data?.map((target) => ({ id: target.targetId, label: targetLabel(target).title, detail: targetLabel(target).detail }))}
+            selection={configuration.selection}
+            onSelectionChange={configuration.setSelection}
+            loading={configuration.loading}
+            error={scope.error ?? configuration.error}
+            onRetry={configuration.retry}
           >
-            <header className="relay-test-run-config-heading">
-              <h2 id="run-target-title" className="text-lg font-semibold tracking-tight">
-                Run this Test
-              </h2>
-              <p className="text-sm leading-5 text-text-weak">
-                Choose where to run the saved steps.
-              </p>
-            </header>
-            {targets.data?.length ? (
-              <RadioGroup
-                className="relay-test-targets"
-                name="run-target"
-                value={targetId}
-                onValueChange={setTargetId}
-                aria-labelledby="run-target-title"
-              >
-                {targets.data.map((target) => {
-                  const label = targetLabel(target);
-                  return (
-                    <FieldLabel
-                      key={`${target.kind}:${target.targetId}`}
-                      className="flex min-h-14 w-full min-w-0 cursor-pointer items-center gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50"
-                    >
-                      <RadioGroupItem value={target.targetId} />
-                      <span className="grid min-w-0 flex-1 gap-0.5">
-                        <span
-                          data-slot="run-target-title"
-                          className="text-sm font-medium break-words whitespace-normal text-foreground"
-                        >
-                          {label.title}
-                        </span>
-                        <span className="text-xs leading-snug break-words whitespace-normal text-muted-foreground">
-                          {label.detail}
-                        </span>
-                      </span>
-                    </FieldLabel>
-                  );
-                })}
-              </RadioGroup>
-            ) : (
-              <div className="mt-5">
-                <EmptyState
-                  title="No device or browser is ready"
-                  detail="Connect a device or managed browser, then return here to run this Test."
-                  action={
-                    <Link className="relay-inline-link" to="/devices">
-                      View devices
-                    </Link>
-                  }
-                />
-              </div>
-            )}
+            {!targets.data?.length ? <EmptyState title="No device or browser is ready" detail="Connect a target to continue with this Test." action={<Link className="relay-inline-link" to="/devices">View devices</Link>} /> : null}
             <div className="relay-test-run-action">
               <Button
                 variant="default"
                 onClick={() => start.mutate()}
-                disabled={!targetId || start.isPending}
+                disabled={!targetReady || configuration.loading || start.isPending}
               >
                 {start.isPending ? "Starting…" : "Run Test"}
               </Button>
@@ -280,7 +235,7 @@ export function TestPage() {
                 <span className="text-xs text-text-weaker">Choose where to run</span>
               ) : null}
             </div>
-          </section>
+          </RunConfigurationComposer>
           ) : undefined}
         />
       ) : null}

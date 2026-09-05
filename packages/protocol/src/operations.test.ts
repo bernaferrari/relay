@@ -1804,6 +1804,19 @@ test("offline run replay is a frozen-evidence response, not a live run job", () 
   );
 });
 
+test("live replay mode is explicit and validated", () => {
+  const definition = operationDefinition("run.replay");
+  assert.deepEqual(definition.input.parse({ runId: "run-1" }), { runId: "run-1" });
+  assert.deepEqual(definition.input.parse({ runId: "run-1", mode: "same-configuration" }), {
+    runId: "run-1",
+    mode: "same-configuration",
+  });
+  assert.throws(
+    () => definition.input.parse({ runId: "run-1", mode: "current-build" }),
+    /replay mode/u,
+  );
+});
+
 test("TracePack export is a persisted-run evidence query with a strict response", () => {
   const definition = operationDefinition("run.trace-pack.get");
   assert.deepEqual(definition.input.parse({ runId: "run-1" }), { runId: "run-1" });

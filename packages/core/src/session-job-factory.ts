@@ -130,6 +130,8 @@ function legacyTargetContext(input: EnqueueJobInput, parent: TestJob | undefined
       });
 }
 
+export type PersistedReplayMode = "saved-steps" | "same-configuration";
+
 export function replayInputFromPersistedRun(
   run: Pick<
     PersistedRun,
@@ -148,9 +150,15 @@ export function replayInputFromPersistedRun(
     | "executionTarget"
     | "sourceRevision"
   > & { artifacts?: PersistedRun["artifacts"] },
+  mode: PersistedReplayMode = "saved-steps",
 ): EnqueueJobInput {
   if (!run.recipeSnapshot || !run.recipeGraph) {
     throw new Error("This run predates frozen replay data and cannot be replayed safely");
+  }
+  if (mode === "same-configuration" && !run.sourceRevision?.buildId) {
+    throw new Error(
+      "This run has no immutable build identity; same-configuration replay is unavailable. Use saved-steps replay or install the recorded build first.",
+    );
   }
   const unavailableInput = Object.entries(run.resolvedInputs).find(
     ([, value]) => value === PRIVATE_INPUT || value === REDACTED,

@@ -15,7 +15,7 @@ import { FieldLabel as ChoiceLabel } from "@relay/ui-react/components/field";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { Play, RotateCcw, Trash2 } from "lucide-react";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import {
   Breadcrumbs,
   EmptyState,
@@ -23,7 +23,7 @@ import {
   RecoveryState,
 } from "../components/product-patterns";
 import { RunConfigurationComposer } from "../components/run-configuration-composer";
-import { runConfigurationStorageKey } from "../data/use-persisted-run-configuration";
+import { useRunConfigurationKey } from "../data/use-persisted-run-configuration";
 import { usePersistedRunConfiguration } from "../data/use-persisted-run-configuration";
 import { PageLoading } from "./recording-shared";
 
@@ -33,16 +33,7 @@ export function SuitePage() {
   const { suiteProfileService, queryClient, platform } = useRouteContext({ from: "__root__" });
   const { appId, suiteId } = routeApi.useParams();
   const navigate = useNavigate();
-  const [profileIds, setProfileIds] = useState<Set<string>>(() => new Set());
-  const profileSelectionTouched = useRef(false);
-  const [configurationKey, setConfigurationKey] = useState(`suite:${appId}:${suiteId}`);
-  useEffect(() => {
-    void Promise.resolve(platform.getServerUrl()).then((server) =>
-      setConfigurationKey(
-        runConfigurationStorageKey({ server, appId, entity: `suite:${suiteId}` }),
-      ),
-    );
-  }, [appId, platform, suiteId]);
+  const scope = useRunConfigurationKey(platform, `suite:${suiteId}`, appId);
   const [editOpen, setEditOpen] = useState(false);
   const [removeOpen, setRemoveOpen] = useState(false);
   const [name, setName] = useState("");
@@ -65,29 +56,10 @@ export function SuitePage() {
   });
   const configuration = usePersistedRunConfiguration({
     storage: platform.storage,
-    key: configurationKey,
+    key: scope.key,
     targetOptions: environments.data?.map((item) => ({ id: item.id, label: item.name })),
   });
-  useEffect(() => {
-    if (
-      !configuration.loading &&
-      configuration.selection.targetProfileId &&
-      !profileSelectionTouched.current
-    ) {
-      setProfileIds(new Set([configuration.selection.targetProfileId]));
-    }
-  }, [configuration.loading, configuration.selection.targetProfileId]);
-  const selectedProfileIds = [...profileIds];
-  useEffect(() => {
-    if (
-      !configuration.loading &&
-      !profileSelectionTouched.current &&
-      !profileIds.size &&
-      environments.data?.[0]
-    ) {
-      setProfileIds(new Set([environments.data[0].id]));
-    }
-  }, [configuration.loading, environments.data, profileIds.size]);
+  const selectedProfileIds = [...(configuration.selection.targetProfileIds ?? (configuration.selection.targetProfileId ? [configuration.selection.targetProfileId] : []))];
   const preview = useQuery({
     queryKey: ["suites", appId, suiteId, "preview", selectedProfileIds],
     queryFn: () =>
@@ -164,15 +136,6 @@ export function SuitePage() {
     });
   }
 
-  function toggleProfile(id: string, checked: boolean) {
-    profileSelectionTouched.current = true;
-    setProfileIds((current) => {
-      const next = new Set(current);
-      if (checked) next.add(id);
-      else next.delete(id);
-      return next;
-    });
-  }
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -269,46 +232,7 @@ export function SuitePage() {
             </div>
           </dl>
 
-          <RunConfigurationComposer
-            configuration={{
-              frozen: true,
-              values: {
-                targetProfileId: selectedProfileIds[0],
-                targetName: environments.data?.find((item) => item.id === selectedProfileIds[0])
-                  ?.name,
-                dataSetName: value.variableIds.length
-                  ? `${value.variableIds.length} saved data sets`
-                  : undefined,
-              },
-              blockers: selectedProfileIds.length
-                ? configuration.targetUnavailable
-                  ? [
-                      {
-                        id: "target",
-                        label: "Saved environment is unavailable",
-                        detail: "Choose another environment to continue.",
-                      },
-                    ]
-                  : []
-                : [{ id: "target", label: "Choose an environment before starting" }],
-              validated: Boolean(
-                preview.data &&
-                !preview.data.blockers.length &&
-                preview.data.execution?.capacity !== "unavailable",
-              ),
-            }}
-            targetOptions={environments.data?.map((item) => ({
-              id: item.id,
-              label: item.name,
-              detail: `${item.platform} · ${item.target.name}`,
-            }))}
-            selection={{ targetProfileId: selectedProfileIds[0] }}
-            onSelectionChange={(next) => {
-              profileSelectionTouched.current = true;
-              setProfileIds(next.targetProfileId ? new Set([next.targetProfileId]) : new Set());
-              configuration.setSelection(next);
-            }}
-          />
+
 
           <div className="mt-6 grid items-start gap-4 lg:grid-cols-2">
             <section
@@ -355,49 +279,47 @@ export function SuitePage() {
               >
                 Where should Relay run?
               </h2>
-              {environments.data?.length ? (
-                <Field className="mt-3">
-                  <FieldLabel>Environment</FieldLabel>
-                  <p className="text-xs leading-5 text-text-weak">
-                    A pilot runs on one environment. You can select more to compare readiness;
-                    multi-environment execution is preview-only until Run Across is available.
-                  </p>
-                  <fieldset className="mt-3 grid min-w-0 gap-2 border-0 p-0">
-                    <legend className="sr-only">Environments</legend>
-                    {environments.data.map((profile) => (
-                      <ChoiceLabel
-                        key={profile.id}
-                        className="flex min-h-14 min-w-0 cursor-pointer items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50"
-                      >
-                        <span className="grid min-w-0 flex-1 gap-0.5">
-                          <span className="truncate text-sm font-medium text-foreground">
-                            {profile.name}
-                          </span>
-                          <span className="truncate text-xs leading-snug text-muted-foreground">
-                            {profile.platform} · {profile.target.name}
-                          </span>
-                        </span>
-                        <Checkbox
-                          checked={profileIds.has(profile.id)}
-                          onCheckedChange={(checked) => toggleProfile(profile.id, checked === true)}
-                        />
-                      </ChoiceLabel>
-                    ))}
-                  </fieldset>
-                </Field>
-              ) : environments.isPending ? (
-                <PageLoading label="Loading Environments…" />
-              ) : (
-                <EmptyState
-                  title="No Environment is ready"
-                  detail="Add a managed browser Space or connect a supported target before running this Suite."
-                  action={
-                    <Link className="relay-inline-link" to="/environments">
-                      Open Environments
-                    </Link>
-                  }
-                />
-              )}
+          <RunConfigurationComposer
+            configuration={{
+              frozen: false,
+              values: {
+                targetProfileId: selectedProfileIds[0],
+                targetName: environments.data?.find((item) => item.id === selectedProfileIds[0])
+                  ?.name,
+                dataSetName: value.variableIds.length
+                  ? `${value.variableIds.length} saved data sets`
+                  : undefined,
+              },
+              blockers: selectedProfileIds.length
+                ? configuration.targetUnavailable
+                  ? [
+                      {
+                        id: "target",
+                        label: "Saved environment is unavailable",
+                        detail: "Choose another environment to continue.",
+                      },
+                    ]
+                  : []
+                : [{ id: "target", label: "Choose an environment before starting" }],
+              validated: Boolean(
+                preview.data &&
+                !preview.data.blockers.length &&
+                preview.data.execution?.capacity !== "unavailable",
+              ),
+            }}
+            targetOptions={environments.data?.map((item) => ({
+              id: item.id,
+              label: item.name,
+              detail: `${item.platform} · ${item.target.name}`,
+            }))}
+            multipleTargets
+            loading={configuration.loading}
+            error={scope.error ?? configuration.error}
+            onRetry={configuration.retry}
+            selection={configuration.selection}
+            onSelectionChange={configuration.setSelection}
+          />
+              <p className="text-sm text-text-weak">One environment runs a first case. Additional environments can be compared in preview; multi-environment execution is unavailable.</p>
               {preview.data ? (
                 <div
                   className={`mt-4 grid gap-1 rounded-lg border p-3 text-xs ${
