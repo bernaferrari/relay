@@ -128,10 +128,10 @@ export function RunsPage() {
       <PageHeader
         context="Runs"
         title="Run history"
-        description="Current work and durable Reports from every saved Test."
+        description="Track active Runs and review results from your saved Tests."
       />
 
-      <div className="mt-4 rounded-xl border border-border bg-card p-3">
+      <div className="mt-4 border-b border-border pb-5">
         <Tabs value={view} onValueChange={(next) => setView(next as RunView)}>
           <TabsList variant="line" aria-label="Run view">
             {runViews.map((item) => (
@@ -256,7 +256,7 @@ function RunRow({
   const context = [run.appName, run.targetName ?? platformName(run.platform)].filter(Boolean);
   return (
     <Item
-      className="relay-library-row relay-run-row grid min-h-[78px] min-w-0 grid-cols-[minmax(180px,1fr)_minmax(94px,auto)_minmax(150px,.48fr)_18px] items-center gap-[18px] px-3.5 py-2 text-[var(--text-base)] transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 max-[720px]:grid-cols-[minmax(0,1fr)_auto]"
+      className="relay-library-row relay-run-row grid min-h-[78px] min-w-0 grid-cols-[minmax(0,1fr)_100px_18px] items-center gap-[18px] px-3.5 py-2 text-[var(--text-base)] transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 max-[720px]:grid-cols-[minmax(0,1fr)_auto]"
       render={<Link to="/runs/$runId" params={{ runId: run.id }} />}
       {...interaction}
     >
@@ -264,9 +264,9 @@ function RunRow({
         <strong className="overflow-hidden text-ellipsis whitespace-nowrap text-sm font-semibold text-[var(--text-strong)]">
           {title}
         </strong>
-        <span className="relay-run-row-context overflow-hidden text-ellipsis whitespace-nowrap text-xs text-[var(--text-weak)]">
+        <span className="relay-run-row-context flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap text-xs text-[var(--text-weak)]">
           <OutcomeMark outcome={run.outcome ?? phaseOutcome(run)} />
-          <span>{context.length ? context.join(" · ") : "Saved Run"}</span>
+          <span className="truncate">{context.length ? context.join(" · ") : "Saved Run"}</span>
         </span>
       </span>
       <span className="relay-library-row-recent grid min-w-0 justify-items-start gap-1">

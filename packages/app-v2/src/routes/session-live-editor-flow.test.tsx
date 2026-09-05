@@ -257,6 +257,17 @@ describe("live Session to Test editor", () => {
     expect(document.body.textContent).not.toContain("Edit Test live");
   });
 
+  it("shows a recovery explanation instead of a connecting canvas for an expired reservation", async () => {
+    const expired = {
+      ...session,
+      lease: { ...session.lease, expiresAt: 1 },
+    } as ProductSessionDetail;
+    await render("/sessions/session-live", { session: expired });
+    expect(document.body.textContent).toContain("The device reservation expired");
+    expect(document.body.textContent).not.toContain("Connecting to the target");
+    expect(document.querySelector("canvas")).toBeNull();
+  });
+
   it("adopts an external Session end after the canonical refresh", async () => {
     const ended = {
       ...session,

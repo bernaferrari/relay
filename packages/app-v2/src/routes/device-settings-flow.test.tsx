@@ -178,6 +178,7 @@ async function renderPath(
   path: string,
   options: {
     deviceService?: DeviceProductService;
+    productService?: RecordingProductService;
     settingsService?: SettingsProductService;
     platform?: Platform;
   } = {},
@@ -192,7 +193,7 @@ async function renderPath(
       <RelayV2App
         platform={options.platform ?? testPlatform()}
         history={history}
-        productService={{} as RecordingProductService}
+        productService={options.productService ?? ({} as RecordingProductService)}
         deviceService={options.deviceService ?? fakeDeviceService()}
         settingsService={options.settingsService ?? fakeSettingsService()}
       />,
@@ -242,6 +243,22 @@ function input(label: string): HTMLElement {
 }
 
 describe("Devices", () => {
+  it("rediscovers the live target when reconnecting an unavailable preview", async () => {
+    let connections = 0;
+    const productService = {
+      connect: async () => {
+        connections++;
+        return { targets: [] };
+      },
+      presentTargets: async () => [],
+    } as unknown as RecordingProductService;
+    await renderPath("/devices/ipad", { productService });
+    expect(connections).toBe(1);
+    expect(document.body.textContent).toContain("Live control is not available yet");
+    await click(button("Reconnect"));
+    expect(connections).toBe(2);
+  });
+
   it("presents each device as one compact, cohesive navigation target", async () => {
     const history = await renderPath("/devices");
 

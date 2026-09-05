@@ -107,6 +107,16 @@ export function AppShell({ platform }: { platform: Platform }) {
             className="relay-mobile-menu relay-electron-no-drag [-webkit-app-region:no-drag]"
             aria-label="Open navigation"
           />
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            className="relay-electron-no-drag [-webkit-app-region:no-drag] size-9"
+            aria-label="Go back"
+            onClick={goBack}
+            disabled={!canGoBack}
+          >
+            <ArrowLeft aria-hidden="true" />
+          </Button>
           <span className="relay-mobile-title text-sm font-semibold">Relay</span>
         </header>
         <main

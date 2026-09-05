@@ -1,12 +1,17 @@
 /** @jsxImportSource react */
 import {
   Dialog,
-  DialogTrigger,
   DialogClose,
   DialogContent,
   DialogTitle,
   DialogDescription,
 } from "@relay/ui-react/components/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@relay/ui-react/components/dropdown-menu";
 import { Badge } from "@relay/ui-react/components/badge";
 import { Button } from "@relay/ui-react/components/button";
 import {
@@ -16,7 +21,7 @@ import {
 } from "@relay/ui-react/components/collapsible";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useRouteContext } from "@tanstack/react-router";
-import { CircleAlert, Pencil, RefreshCcw, Square } from "lucide-react";
+import { CircleAlert, Pencil, RefreshCcw, Square, MoreHorizontal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Breadcrumbs, EmptyState } from "../components/product-patterns";
 import { sessionQueryKeys, type ProductSessionDetail } from "../data/session-product-service";
@@ -131,38 +136,38 @@ export function SessionPage() {
         ]}
       />
       {value ? (
-        <header className="relay-page-header flex items-start justify-between gap-4 max-[620px]:grid">
+        <header className="relay-page-header relative grid grid-cols-[minmax(0,1fr)_auto] items-start gap-4">
           <div>
-            <p className="relay-eyebrow mb-2 text-[11px] font-semibold tracking-[0.02em] text-[var(--text-weak)]">
-              Session
-            </p>
-            <h1 className="text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance] text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance]">
+            <div className="mb-3 flex items-center gap-3 text-xs text-text-weak">
+              <span>Session</span>
+              <Badge
+                variant={sessionBadgeVariant(
+                  value.state === "failed"
+                    ? "warning"
+                    : isActiveSession(value)
+                      ? "success"
+                      : "secondary",
+                )}
+                className={sessionBadgeClass(
+                  value.state === "failed"
+                    ? "warning"
+                    : isActiveSession(value)
+                      ? "success"
+                      : "secondary",
+                )}
+              >
+                {sessionStateLabel(value.state)}
+              </Badge>
+            </div>
+            <h1 className="text-[clamp(24px,2.4vw,28px)] font-semibold leading-[1.2] tracking-tight text-text-strong wrap-anywhere">
               {value.title}
             </h1>
             <p className="relay-page-description mt-2.5 max-w-[62ch] text-[15px] leading-[1.55] text-[var(--text-weak)]">
               {targetLabel(value)} · {value.actorKind === "agent" ? "Agent-owned" : "Human-owned"}
             </p>
           </div>
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <Badge
-              variant={sessionBadgeVariant(
-                value.state === "failed"
-                  ? "warning"
-                  : isActiveSession(value)
-                    ? "success"
-                    : "secondary",
-              )}
-              className={sessionBadgeClass(
-                value.state === "failed"
-                  ? "warning"
-                  : isActiveSession(value)
-                    ? "success"
-                    : "secondary",
-              )}
-            >
-              {sessionStateLabel(value.state)}
-            </Badge>
-            {value && isActiveSession(value) ? (
+          <div className="flex flex-wrap items-center justify-end gap-2 max-[620px]:col-span-full">
+            {canControl ? (
               <Button
                 variant="outline"
                 onClick={() => refresh.mutate()}
@@ -187,21 +192,29 @@ export function SessionPage() {
                 <Pencil aria-hidden="true" /> Edit Test live
               </Button>
             ) : null}
-            {value && isActiveSession(value) ? (
-              <Button
-                variant="ghost"
-                nativeButton={false}
-                render={<Link to="/debug" search={{ target: value.target.targetId }} />}
-              >
-                Investigate
-              </Button>
+            {isActiveSession(value) ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <Button variant="outline" aria-label="Session actions">
+                      <MoreHorizontal aria-hidden="true" /> More
+                    </Button>
+                  }
+                />
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    render={<Link to="/debug" search={{ target: value.target.targetId }} />}
+                  >
+                    Investigate
+                  </DropdownMenuItem>
+                  <DropdownMenuItem variant="destructive" onClick={() => setEndOpen(true)}>
+                    <Square aria-hidden="true" /> End Session
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             ) : null}
             {isActiveSession(value) ? (
               <Dialog open={endOpen} onOpenChange={setEndOpen}>
-                <DialogTrigger render={<Button variant="ghost" />}>
-                  <Square aria-hidden="true" /> End Session
-                </DialogTrigger>
-
                 <DialogContent showCloseButton={false}>
                   <DialogTitle>End this Session?</DialogTitle>
                   <DialogDescription>
@@ -293,7 +306,7 @@ export function SessionPage() {
                 <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
                   Live target
                 </p>
-                <h2 id="session-stage-title">
+                <h2 className="text-sm font-semibold" id="session-stage-title">
                   {canControl ? "Continue where you left off" : "Target unavailable for control"}
                 </h2>
                 {canControl ? (
@@ -314,7 +327,7 @@ export function SessionPage() {
                 </Button>
               ) : null}
             </div>
-            {value && isActiveSession(value) ? (
+            {canControl ? (
               <LiveTargetCanvas
                 canvasRef={canvas}
                 status={liveStatus}
@@ -327,41 +340,48 @@ export function SessionPage() {
                 helpText="Inspecting live state. These controls do not add Test steps. Open the Test editor or recording workspace to capture steps. Enter and Backspace are supported keys."
               />
             ) : (
-              <div className="mt-3.5 grid min-h-[280px] place-items-center content-center gap-4 rounded-lg border border-dashed border-border p-[30px] text-center text-muted-foreground">
-                <p>{sessionAvailability(value)}</p>
-                {value.state === "reviewing" ? (
-                  <Button
-                    variant="default"
-                    nativeButton={false}
-                    render={
-                      <Link
-                        to="/recordings/$recordingId/review"
-                        params={{ recordingId: value.id }}
-                      />
-                    }
-                  >
-                    Review recording
-                  </Button>
-                ) : value.committedTestId ? (
-                  <Button
-                    variant="default"
-                    nativeButton={false}
-                    render={<Link to="/tests/$testId" params={{ testId: value.committedTestId }} />}
-                  >
-                    Open saved Test
-                  </Button>
-                ) : null}
+              <div className="mt-4 grid min-h-[220px] place-items-center content-center gap-4 px-5 py-8 text-center text-sm leading-relaxed text-muted-foreground">
+                <p className="max-w-[46ch]">{sessionAvailability(value)}</p>
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  {isActiveSession(value) ? (
+                    <Button onClick={() => refresh.mutate()} disabled={refresh.isPending}>
+                      <RefreshCcw aria-hidden="true" />
+                      {refresh.isPending ? "Refreshing…" : "Refresh target"}
+                    </Button>
+                  ) : null}
+                  {value.state === "reviewing" ? (
+                    <Button
+                      variant="default"
+                      nativeButton={false}
+                      render={
+                        <Link
+                          to="/recordings/$recordingId/review"
+                          params={{ recordingId: value.id }}
+                        />
+                      }
+                    >
+                      Review recording
+                    </Button>
+                  ) : value.committedTestId ? (
+                    <Button
+                      variant="outline"
+                      nativeButton={false}
+                      render={
+                        <Link to="/tests/$testId" params={{ testId: value.committedTestId }} />
+                      }
+                    >
+                      Open saved Test
+                    </Button>
+                  ) : null}
+                </div>
               </div>
             )}
           </section>
 
-          <aside className="grid gap-3.5" aria-label="Session context">
-            <section>
-              <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
-                At a glance
-              </p>
-              <h2>Session details</h2>
-              <dl className="grid gap-3">
+          <aside className="grid gap-4" aria-label="Session context">
+            <section className="rounded-xl border border-border bg-card p-5">
+              <h2 className="mb-4 text-sm font-semibold">Session details</h2>
+              <dl className="grid grid-cols-2 gap-4 min-[881px]:grid-cols-1">
                 <div className="grid gap-0.5">
                   <dt className="text-xs text-muted-foreground">Target</dt>
                   <dd className="break-words text-sm font-medium">{targetLabel(value)}</dd>
@@ -421,7 +441,10 @@ export function SessionPage() {
                 </CollapsibleContent>
               </Collapsible>
             </section>
-            <section className="" aria-labelledby="session-activity-title">
+            <section
+              className="rounded-xl border border-border bg-card p-5"
+              aria-labelledby="session-activity-title"
+            >
               <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
                 Activity
               </p>
@@ -482,11 +505,11 @@ function sessionAvailability(session: ProductSessionDetail): string {
   if (!isActiveSession(session))
     return "This Session has ended. Its evidence and operation history remain available.";
   if (!session.lease)
-    return "Relay cannot prove the original target lease. Live control stays disabled.";
+    return "The device reservation is unavailable. Refresh the target to check whether you can reconnect.";
   if (session.lease.status !== "leased")
-    return `The target lease is ${session.lease.status}. Live control stays disabled.`;
+    return "The device is no longer reserved for this Session. Refresh the target to check its availability.";
   if (session.lease.expiresAt <= Date.now())
-    return "The target lease has expired. Live control stays disabled.";
+    return "The device reservation expired. Refresh the target to check whether you can reconnect.";
   return "The target is not available for live control.";
 }
 

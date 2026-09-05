@@ -35,7 +35,7 @@ export function RunHistoryList({
 }) {
   if (runs.length <= RUN_HISTORY_VIRTUAL_THRESHOLD) {
     return (
-      <ul className="relay-library-list relay-run-list m-0 overflow-hidden rounded-[var(--radius-xl)] border border-[var(--border-weak-base)] bg-[var(--surface-raised-strong)] p-0 list-none [&>li]:border-b [&>li]:border-[var(--border-weak-base)] [&>li:last-child]:border-b-0">
+      <ul className="relay-library-list relay-run-list relative m-0 overflow-hidden rounded-[var(--radius-xl)] border border-[var(--border-weak-base)] bg-[var(--surface-raised-strong)] p-0 list-none [&>li]:border-b [&>li]:border-[var(--border-weak-base)] [&>li:last-child]:border-b-0">
         {runs.map((run, index) => (
           <li key={run.id}>{children(run, index)}</li>
         ))}
@@ -161,7 +161,7 @@ function WindowedRunHistory({
         className="overflow-auto h-[calc(100dvh-20rem)] min-h-64 max-h-[64rem] min-w-0 md:h-[calc(100dvh-22rem)] md:min-h-[30rem]"
       >
         <ul
-          className="relay-library-list relay-run-list m-0 overflow-hidden rounded-[var(--radius-xl)] border border-[var(--border-weak-base)] bg-[var(--surface-raised-strong)] p-0 list-none [&>li]:border-b [&>li]:border-[var(--border-weak-base)] [&>li:last-child]:border-b-0"
+          className="relay-library-list relay-run-list relative m-0 overflow-hidden rounded-[var(--radius-xl)] border border-[var(--border-weak-base)] bg-[var(--surface-raised-strong)] p-0 list-none [&>li]:border-b [&>li]:border-[var(--border-weak-base)] [&>li:last-child]:border-b-0"
           style={
             {
               height: runs.length * rowHeight,
@@ -175,6 +175,7 @@ function WindowedRunHistory({
             return (
               <li
                 key={run.id}
+                className="absolute inset-x-0 top-0 h-[var(--relay-windowed-run-row-height)] [&>a]:h-full"
                 aria-posinset={index + 1}
                 aria-setsize={runs.length}
                 style={{ transform: `translateY(${index * rowHeight}px)` }}

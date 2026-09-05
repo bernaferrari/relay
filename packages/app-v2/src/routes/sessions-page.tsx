@@ -7,6 +7,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { ChevronRight, Monitor, Smartphone } from "lucide-react";
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { LiveDevices } from "./live-devices";
+import { deviceQueryKeys } from "../data/device-product-service";
 import { EmptyState } from "../components/product-patterns";
 import { LibraryPage, PageHeader } from "../components/page-layout";
 import { sessionQueryKeys, type ProductSessionSummary } from "../data/session-product-service";
@@ -20,7 +22,7 @@ export function isActiveSession(session: ProductSessionSummary): boolean {
 }
 
 export function SessionsPage() {
-  const { sessionService } = useRouteContext({ from: "__root__" });
+  const { sessionService, deviceService } = useRouteContext({ from: "__root__" });
   const navigate = useNavigate({ from: "/sessions" });
   const search = routeApi.useSearch() as { status?: unknown; target?: unknown; q?: unknown };
   const view: SessionView =
@@ -28,6 +30,11 @@ export function SessionsPage() {
   const [query, setQuery] = useState(typeof search.q === "string" ? search.q : "");
   const deferredQuery = useDeferredValue(query.trim().toLocaleLowerCase());
   const referenceTime = Date.now();
+  const devices = useQuery({
+    queryKey: deviceQueryKeys.devices,
+    queryFn: () => deviceService.list(),
+    staleTime: 5_000,
+  });
   const sessions = useQuery({
     queryKey: sessionQueryKeys.sessionList({ includeHistory: true }),
     queryFn: () => sessionService.list({ includeHistory: true }),
@@ -87,19 +94,16 @@ export function SessionsPage() {
       <PageHeader
         context="Workspace"
         title="Live"
-        description="Continue active device work, or open durable session history when you need to review it."
-        actions={
-          <>
-            <Button nativeButton={false} variant="default" render={<Link to="/tests/new" />}>
-              Start a Test
-            </Button>
-            <Button nativeButton={false} variant="outline" render={<Link to="/devices" />}>
-              Start Live from a device
-            </Button>
-          </>
-        }
+        description="Open a device to explore your app, or continue a recording below."
       />
-
+      {devices.isPending ? <PageLoading label="Finding devices…" /> : null}
+      <RecordingProblem
+        error={devices.error}
+        onRetry={() => void devices.refetch()}
+        retrying={devices.isFetching}
+      />
+      {devices.data ? <LiveDevices devices={devices.data} /> : null}
+      <h2 className="mb-3 text-sm font-semibold">Sessions</h2>
       <Tabs value={view} onValueChange={(value) => setView(value as SessionView)}>
         <TabsList variant="line" aria-label="Session view">
           <TabsTrigger value="active">Active</TabsTrigger>
@@ -135,16 +139,26 @@ export function SessionsPage() {
         <section className="mt-7" aria-labelledby="session-results-title">
           <div className="flex min-h-8 items-center justify-between gap-5 px-0.5 pb-2.5">
             <h2 className="text-[13px] font-semibold" id="session-results-title">
-              {visible.length === 1 ? "1 live session" : `${visible.length} live sessions`}
+              {visible.length === 1 ? "1 session" : `${visible.length} sessions`}
             </h2>
             <span className="text-xs text-text-weak" aria-live="polite">
-              {view === "active" ? "Ready to continue" : "Durable history"}
+              {view === "active" ? "Continue where you left off" : "Session history"}
             </span>
           </div>
           <ul className="m-0 list-none overflow-hidden rounded-xl border border-border-weak-base bg-surface-raised-strong p-0">
             {visible.map((session) => (
               <li className="border-b border-border-weak-base last:border-b-0" key={session.id}>
-                <SessionRow session={session} referenceTime={referenceTime} />
+                <SessionRow
+                  session={session}
+                  referenceTime={referenceTime}
+                  targetName={
+                    devices.data?.find(
+                      (device) =>
+                        device.id === session.target.targetId ||
+                        device.serial === session.target.targetId,
+                    )?.name
+                  }
+                />
               </li>
             ))}
           </ul>
@@ -187,15 +201,17 @@ export function SessionsPage() {
 function SessionRow({
   session,
   referenceTime,
+  targetName,
 }: {
   session: ProductSessionSummary;
   referenceTime: number;
+  targetName?: string;
 }) {
   const active = isActiveSession(session);
   const Icon = session.target.platform === "browser" ? Monitor : Smartphone;
   return (
     <Link
-      className="grid min-h-16 cursor-pointer grid-cols-[28px_minmax(0,1fr)_18px] items-center gap-x-3 gap-y-1 px-3 py-2 text-text-base transition-colors hover:bg-surface-raised-strong-hover focus-visible:relative focus-visible:z-[1] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-text-strong md:grid-cols-[28px_minmax(190px,1fr)_minmax(112px,auto)_minmax(112px,0.34fr)_18px] md:gap-4"
+      className="grid min-h-16 cursor-pointer grid-cols-[28px_minmax(0,1fr)_18px] items-center gap-x-3 gap-y-1 px-3 py-2 text-text-base transition-colors hover:bg-surface-raised-strong-hover focus-visible:relative focus-visible:z-[1] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-text-strong md:grid-cols-[28px_minmax(0,1fr)_auto_18px] md:gap-4"
       to="/sessions/$sessionId"
       params={{ sessionId: session.id }}
     >
@@ -203,18 +219,21 @@ function SessionRow({
         <Icon className="size-3.5" aria-hidden="true" />
       </span>
       <span className="grid min-w-0 gap-1">
-        <strong className="truncate text-sm font-semibold text-text-strong">{session.title}</strong>
-        <span className="truncate text-xs text-text-weak">
-          {session.target.targetId} · {session.actorKind === "agent" ? "Agent" : "Human"}
+        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <strong className="truncate text-sm font-semibold text-text-strong">
+            {session.title}
+          </strong>
+          <Badge
+            variant={sessionBadgeVariant(sessionVariant(session))}
+            className={sessionBadgeClass(sessionVariant(session))}
+          >
+            {sessionStateLabel(session.state)}
+          </Badge>
         </span>
-      </span>
-      <span className="col-start-2 justify-self-start md:col-auto">
-        <Badge
-          variant={sessionBadgeVariant(sessionVariant(session))}
-          className={sessionBadgeClass(sessionVariant(session))}
-        >
-          {sessionStateLabel(session.state)}
-        </Badge>
+        <span className="truncate text-xs text-text-weak">
+          {targetName ?? session.target.targetId} ·{" "}
+          {session.actorKind === "agent" ? "Agent" : "Manual"}
+        </span>
       </span>
       <span className="col-start-2 grid min-w-0 justify-items-start gap-1 md:col-auto">
         <strong className="truncate text-xs font-semibold tabular-nums text-text-base">
@@ -229,7 +248,7 @@ function SessionRow({
         </small>
       </span>
       <ChevronRight
-        className="col-start-3 row-start-1 size-4 text-text-weaker md:col-start-5"
+        className="col-start-3 row-start-1 size-4 text-text-weaker md:col-start-4"
         aria-hidden="true"
       />
     </Link>
