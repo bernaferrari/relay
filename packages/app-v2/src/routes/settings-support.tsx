@@ -77,6 +77,12 @@ export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Relay could not complete this change.";
 }
 
+function statusClass(kind: "ready" | "attention" | "checking"): string {
+  if (kind === "ready") return "text-emerald-800 dark:text-emerald-300";
+  if (kind === "attention") return "text-amber-800 dark:text-amber-300";
+  return "text-muted-foreground";
+}
+
 export function SetupRow({
   title,
   checks,
@@ -100,64 +106,54 @@ export function SetupRow({
 
   return (
     <div className="border-b border-border py-3.5">
-      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-6 gap-y-0.5">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-8 gap-y-0.5">
         <h3 className="text-[13px] font-medium leading-5 text-foreground">{title}</h3>
         <span
-          className={`pt-px text-right text-[12px] leading-5 ${
-            attention && !loading
-              ? "text-amber-800 dark:text-amber-300"
-              : ready
-                ? "text-emerald-800 dark:text-emerald-300"
-                : "text-muted-foreground"
-          }`}
+          className={`pt-px text-right text-[12px] leading-5 ${statusClass(
+            loading ? "checking" : ready ? "ready" : "attention",
+          )}`}
         >
           {status}
         </span>
         {detail ? (
-          <p className="max-w-[48ch] text-[13px] leading-5 text-muted-foreground">{detail}</p>
+          <p className="max-w-[44ch] text-[13px] leading-5 text-muted-foreground">{detail}</p>
         ) : (
           <span />
         )}
         {!loading && attention ? (
-          <div className="justify-self-end text-right [&_button]:h-auto [&_button]:px-0 [&_button]:text-[12px] [&_button]:text-muted-foreground [&_button]:hover:bg-transparent [&_button]:hover:text-foreground">
+          <div className="justify-self-end text-right [&_button]:h-auto [&_button]:px-0 [&_button]:text-[12px] [&_button]:text-foreground [&_button]:underline [&_button]:underline-offset-4 [&_button]:hover:bg-transparent">
             {action}
           </div>
         ) : null}
       </div>
       {showChecks ? (
-        <Collapsible className="group/setup mt-2.5">
-          <CollapsibleTrigger className="flex items-center gap-1 text-[12px] text-muted-foreground transition-colors hover:text-foreground">
+        <Collapsible className="group/setup mt-2">
+          <CollapsibleTrigger className="flex items-center gap-1 text-[12px] leading-4 text-muted-foreground transition-colors hover:text-foreground">
             <ChevronRight
               className="size-3 transition-transform group-data-open/setup:rotate-90"
               aria-hidden="true"
             />
             Diagnostic checks ({checks.length})
           </CollapsibleTrigger>
-          <CollapsibleContent className="pt-2">
-            <ul className="grid list-none gap-2 p-0">
+          <CollapsibleContent className="mt-2 border-l border-border pl-3">
+            <ul className="grid list-none gap-1.5 p-0">
               {checks.map((check) => {
                 const checkReady = check.status === "ready";
-                const extra = check.detail && check.detail !== detail ? check.detail : undefined;
                 return (
                   <li
-                    className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-6 pl-4"
+                    className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-8"
                     key={check.id}
                   >
-                    <span className="text-[13px] font-medium text-foreground">{check.label}</span>
+                    <span className="text-[12px] leading-5 text-muted-foreground">
+                      {check.label}
+                    </span>
                     <span
-                      className={`text-[12px] ${
-                        checkReady
-                          ? "text-emerald-800 dark:text-emerald-300"
-                          : "text-amber-800 dark:text-amber-300"
-                      }`}
+                      className={`text-[12px] leading-5 ${statusClass(
+                        checkReady ? "ready" : "attention",
+                      )}`}
                     >
                       {checkReady ? "Ready" : "Needs attention"}
                     </span>
-                    {extra ? (
-                      <p className="col-span-2 text-[12px] leading-5 text-muted-foreground">
-                        {extra}
-                      </p>
-                    ) : null}
                   </li>
                 );
               })}

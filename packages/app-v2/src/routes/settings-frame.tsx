@@ -130,7 +130,7 @@ export function SettingsFrame({
           ))}
         </nav>
         <section
-          className="grid min-w-0 max-w-[36rem] gap-7 pb-6"
+          className="grid min-w-0 max-w-[36rem] gap-6 pb-6"
           aria-label={`${copy.title} settings`}
         >
           {children}
