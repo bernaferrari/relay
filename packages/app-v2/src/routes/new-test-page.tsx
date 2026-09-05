@@ -2,6 +2,8 @@
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@relay/ui-react/components/alert";
 import { Button } from "@relay/ui-react/components/button";
 import { Card, CardContent } from "@relay/ui-react/components/card";
+import { Input } from "@relay/ui-react/components/input";
+import { Label } from "@relay/ui-react/components/label";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { CircleDot, Play, RotateCcw } from "lucide-react";
@@ -12,7 +14,6 @@ import type {
   LiveTargetStatus,
 } from "../data/live-target-session";
 import { recordingQueryKeys } from "../data/recording-queries";
-import { newTestSetupContinuation } from "../data/setup-continuation";
 import { SelectField } from "../components/filter-select";
 import { PageHeader, WorkbenchPage } from "../components/page-layout";
 import { EmptyState } from "../components/product-patterns";
@@ -27,9 +28,10 @@ import { LiveTargetCanvas } from "./live-target-canvas";
 const NEW_TEST_DRAFT_KEY = "newTestDraft";
 
 export function NewTestPage() {
-  const { mapService, platform, productService, queryClient } = useRouteContext({
-    from: "__root__",
-  });
+  const { mapService, platform, productService, browserSpacesService, queryClient } =
+    useRouteContext({
+      from: "__root__",
+    });
   const rawSearch = useLocation({ select: (state) => state.search });
   const search = rawSearch as Readonly<Record<string, unknown>>;
   const requestedAppId = typeof search.app === "string" ? search.app : undefined;
@@ -47,6 +49,7 @@ export function NewTestPage() {
   const [previewIssue, setPreviewIssue] = useState<string>();
   const [previewBusy, setPreviewBusy] = useState(false);
   const [previewAttempt, setPreviewAttempt] = useState(0);
+  const [browserUrl, setBrowserUrl] = useState("");
 
   const apps = useQuery({
     queryKey: recordingQueryKeys.apps,
@@ -64,6 +67,43 @@ export function NewTestPage() {
       return { ...state, targetOptions: await productService.presentTargets(state.targets) };
     },
     staleTime: 5_000,
+  });
+  const savedBrowsers = useQuery({
+    queryKey: ["browser-spaces"],
+    queryFn: async () => {
+      try {
+        return await browserSpacesService.listSpaces();
+      } catch {
+        return [];
+      }
+    },
+    staleTime: 10_000,
+    retry: false,
+  });
+  async function adoptBrowser(targetId: string) {
+    setTargetId(targetId);
+    await queryClient.invalidateQueries({ queryKey: recordingQueryKeys.targets });
+    await targets.refetch();
+  }
+  const startBrowser = useMutation({
+    mutationFn: async (spaceId?: string) => {
+      if (spaceId) {
+        const opened = await browserSpacesService.openSpace(spaceId);
+        return opened.targetId;
+      }
+      const startUrl = normalizeWebsite(browserUrl);
+      const created = await browserSpacesService.createSpace({
+        name: websiteName(startUrl),
+        startUrl,
+        profileRetention: "ephemeral",
+      });
+      const opened = await browserSpacesService.openSpace(created.id);
+      return opened.targetId;
+    },
+    onSuccess: async (nextTargetId) => {
+      await queryClient.invalidateQueries({ queryKey: ["browser-spaces"] });
+      await adoptBrowser(nextTargetId);
+    },
   });
   useEffect(() => {
     if (!appId && apps.data?.length === 1) setAppId(apps.data[0]!.id);
@@ -398,23 +438,81 @@ export function NewTestPage() {
                     }
                   />
                 ) : noTargets ? (
-                  <EmptyState
-                    title="Connect a device to record"
-                    detail="Plug in a phone or start a browser. You will come back here and start recording."
-                    action={
-                      <Button
-                        nativeButton={false}
-                        render={
-                          <Link
-                            to="/devices"
-                            search={{ returnTo: newTestSetupContinuation(appId, targetId) }}
-                          />
-                        }
-                      >
-                        Open devices
-                      </Button>
-                    }
-                  />
+                  <div className="grid flex-1 place-items-center">
+                    <div className="grid w-full max-w-md gap-4">
+                      <div className="grid gap-1">
+                        <h2 className="text-base font-semibold">Start a browser to record</h2>
+                        <p className="text-sm text-muted-foreground">
+                          Stay on this page. Relay will open a browser here, then you can start
+                          recording.
+                        </p>
+                      </div>
+                      {savedBrowsers.data?.length ? (
+                        <div className="grid gap-2">
+                          {savedBrowsers.data.map((space) => (
+                            <Button
+                              key={space.id}
+                              type="button"
+                              variant="outline"
+                              className="justify-start"
+                              disabled={startBrowser.isPending}
+                              onClick={() => startBrowser.mutate(space.id)}
+                            >
+                              Open {space.name}
+                            </Button>
+                          ))}
+                        </div>
+                      ) : null}
+                      <div className="grid gap-2">
+                        <Label htmlFor="record-browser-url">Website</Label>
+                        <Input
+                          id="record-browser-url"
+                          type="url"
+                          inputMode="url"
+                          autoCapitalize="none"
+                          autoCorrect="off"
+                          spellCheck={false}
+                          autoComplete="off"
+                          placeholder="https://app.example.com"
+                          value={browserUrl}
+                          onChange={(event) => setBrowserUrl(event.currentTarget.value)}
+                          onKeyDown={(event) => {
+                            if (event.key !== "Enter") return;
+                            event.preventDefault();
+                            if (normalizeWebsite(browserUrl)) startBrowser.mutate(undefined);
+                          }}
+                        />
+                        <Button
+                          type="button"
+                          disabled={!normalizeWebsite(browserUrl) || startBrowser.isPending}
+                          onClick={() => startBrowser.mutate(undefined)}
+                        >
+                          {startBrowser.isPending ? "Starting…" : "Start a browser"}
+                        </Button>
+                      </div>
+                      {startBrowser.error ? (
+                        <p className="text-sm text-destructive" role="alert">
+                          {startBrowser.error instanceof Error
+                            ? startBrowser.error.message
+                            : "Relay could not start a browser."}
+                        </p>
+                      ) : null}
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-sm text-muted-foreground">
+                          Have a phone? Plug it in, then check again.
+                        </p>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => void targets.refetch()}
+                          disabled={targets.isFetching}
+                        >
+                          {targets.isFetching ? "Checking…" : "Check again"}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
                 ) : (
                   <EmptyState
                     title="Choose where to record"
@@ -428,6 +526,27 @@ export function NewTestPage() {
       </form>
     </WorkbenchPage>
   );
+}
+
+function normalizeWebsite(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  try {
+    const url = new URL(trimmed.includes("://") ? trimmed : `https://${trimmed}`);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return "";
+    if (!url.hostname) return "";
+    return url.toString();
+  } catch {
+    return "";
+  }
+}
+
+function websiteName(url: string): string {
+  try {
+    return new URL(url).hostname || "Browser";
+  } catch {
+    return "Browser";
+  }
 }
 
 function friendlyPreviewIssue(message: string): string {
