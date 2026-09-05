@@ -96,7 +96,7 @@ export function AppShell({ platform }: { platform: Platform }) {
               onClick={() => changeCommandOpen(true)}
               aria-label="Open command palette"
             >
-              <Search aria-hidden="true" />
+              <Search className="size-3.5" aria-hidden="true" />
               <span>Search or run a command</span>
               <kbd className="min-w-7 rounded-[var(--radius-sm)] border border-[var(--border-weak-base)] bg-[var(--background-weak)] px-[5px] py-0.5 text-center text-[10px] leading-[1.4] text-[var(--text-weaker)]">
                 {modifierKey()} K
