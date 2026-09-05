@@ -47,24 +47,24 @@ type BreadcrumbItem =
 
 export function Breadcrumbs({ items }: { items: readonly BreadcrumbItem[] }) {
   return (
-    <nav className="relay-breadcrumbs mb-3 text-xs text-muted-foreground" aria-label="Breadcrumb">
-      <ol className="m-0 flex min-w-0 list-none items-center gap-[7px] p-0">
+    <nav
+      className="relay-breadcrumbs mb-2 text-[11px] leading-4 text-muted-foreground"
+      aria-label="Breadcrumb"
+    >
+      <ol className="m-0 flex min-w-0 list-none items-center gap-1.5 p-0">
         {items.map((item, index) => {
           const current = index === items.length - 1;
           return (
-            <li
-              className="inline-flex min-w-0 items-center gap-[7px]"
-              key={`${item.label}:${index}`}
-            >
+            <li className="inline-flex min-w-0 items-center gap-1.5" key={`${item.label}:${index}`}>
               {index ? (
                 <ChevronRight
-                  className="relay-breadcrumb-separator h-[13px] w-[13px] shrink-0 text-[var(--text-weaker)]"
+                  className="relay-breadcrumb-separator size-3 shrink-0 text-[var(--text-weaker)]"
                   aria-hidden="true"
                 />
               ) : null}
               {"to" in item && item.to === "/apps/$appId" ? (
                 <Link
-                  className="inline-flex min-h-11 min-w-11 items-center text-[var(--text-weak)]"
+                  className="inline-flex items-center text-[var(--text-weak)] hover:text-foreground"
                   to={item.to}
                   params={item.params}
                 >
@@ -72,7 +72,7 @@ export function Breadcrumbs({ items }: { items: readonly BreadcrumbItem[] }) {
                 </Link>
               ) : "to" in item ? (
                 <Link
-                  className="inline-flex min-h-11 min-w-11 items-center text-[var(--text-weak)]"
+                  className="inline-flex items-center text-[var(--text-weak)] hover:text-foreground"
                   to={item.to}
                 >
                   {item.label}

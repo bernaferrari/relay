@@ -255,7 +255,7 @@ describe("Devices", () => {
     } as unknown as RecordingProductService;
     await renderPath("/devices/ipad", { productService });
     expect(connections).toBe(1);
-    expect(document.body.textContent).toContain("Live control is not available yet");
+    expect(document.body.textContent).toContain("Live view is not connected");
     await click(button("Reconnect"));
     expect(connections).toBe(2);
   });
@@ -303,7 +303,7 @@ describe("Devices", () => {
       const initialConnections = connections;
       expect(initialConnections).toBeGreaterThanOrEqual(1);
       expect(mounted).toBe(0);
-      expect(document.body.textContent).toContain("Live control is not available yet");
+      expect(document.body.textContent).toContain("Live view is not connected");
 
       discoveryAvailable = true;
       await click(button("Reconnect"));
@@ -333,6 +333,21 @@ describe("Devices", () => {
 
     await click(row!);
     expect(history.location.pathname).toBe("/devices/ipad");
+  });
+
+  it("shows the device once without a lecture or oversized crumbs", async () => {
+    await renderPath("/devices/ipad");
+
+    const crumbs = document.querySelector(".relay-breadcrumbs");
+    expect(crumbs?.className).toContain("text-[11px]");
+    expect(crumbs?.className).not.toContain("mb-3");
+    expect(crumbs?.querySelector("a")?.className).not.toContain("min-h-11");
+    expect(document.querySelector("h1")?.textContent).toBe("Design iPad");
+    expect(document.body.textContent).toContain("Apple device");
+    expect(document.body.textContent).not.toContain("Available for Tests");
+    expect(document.body.textContent).not.toContain("Device details");
+    expect(document.body.textContent).not.toContain("Connection is checked again");
+    expect(document.body.textContent).not.toContain("Explore your app here");
   });
 
   it("centers a clear recovery state when the local service cannot check devices", async () => {
@@ -470,7 +485,7 @@ describe("Devices", () => {
     expect(document.querySelector('[role="alert"]')?.textContent).toContain(
       "Keep the device connected and try again",
     );
-    expect(document.body.textContent).toContain("Device details");
+    expect(document.body.textContent).toContain("Design iPad");
   });
 
   it("validates an empty app identifier before making an operation call", async () => {

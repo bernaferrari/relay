@@ -1,12 +1,11 @@
 /** @jsxImportSource react */
-import { Badge } from "@relay/ui-react/components/badge";
 import { Button } from "@relay/ui-react/components/button";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useLocation, useRouteContext } from "@tanstack/react-router";
 import { RotateCcw } from "lucide-react";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { LibraryPage, PageHeader } from "../components/page-layout";
-import { Breadcrumbs, EmptyState } from "../components/product-patterns";
+import { Breadcrumbs, EmptyState, RecoveryState } from "../components/product-patterns";
 import { deviceQueryKeys, type ProductDevice } from "../data/device-product-service";
 import { readSetupContinuation } from "../data/setup-continuation";
 import type {
@@ -26,27 +25,11 @@ function productPlatform(device: ProductDevice): string {
   return "Managed browser";
 }
 
-function statusCopy(device: ProductDevice): { label: string; title: string; detail: string } {
+function deviceDescription(device: ProductDevice): string {
   if (device.status === "needs-attention") {
-    return {
-      label: "Needs attention",
-      title: "One step before this device is ready",
-      detail: device.recovery ?? "Reconnect this device, then ask Relay to check it again.",
-    };
+    return "One step before this device is ready";
   }
-  if (device.status === "virtual") {
-    return {
-      label: "Virtual device",
-      title: "Available when a Test needs it",
-      detail:
-        "Relay checks this virtual device again when you start a Test, so the final Run uses current availability.",
-    };
-  }
-  return {
-    label: "Available for Tests",
-    title: "Ready for a Test",
-    detail: "Connection is checked again when you start recording or run a Test.",
-  };
+  return [productPlatform(device), device.osVersion, device.kind].filter(Boolean).join(" · ");
 }
 
 export function DevicePage() {
@@ -107,7 +90,6 @@ export function DevicePage() {
     enabled: Boolean(device.data && device.data.status !== "needs-attention"),
     staleTime: 5_000,
   });
-  const presentation = device.data ? statusCopy(device.data) : undefined;
   const appLaunchSupported = Boolean(
     device.data?.status === "ready" &&
     (device.data.platform === "android" || device.data.platform === "ios") &&
@@ -198,15 +180,8 @@ export function DevicePage() {
         </Link>
       ) : null}
       <PageHeader
-        context="Device"
         title={device.data?.name ?? "Device"}
-        description={
-          device.data
-            ? [productPlatform(device.data), device.data.osVersion, device.data.kind]
-                .filter(Boolean)
-                .join(" · ")
-            : undefined
-        }
+        description={device.data ? deviceDescription(device.data) : undefined}
         actions={
           device.data?.status === "needs-attention" ? (
             <Button variant="default" onClick={() => recover.mutate()} disabled={recover.isPending}>
@@ -259,8 +234,24 @@ export function DevicePage() {
         />
       ) : null}
 
-      {device.data && presentation ? (
-        <div className="grid items-start gap-6 min-[1000px]:grid-cols-[minmax(0,1fr)_280px]">
+      {device.data ? (
+        <div className="grid gap-8">
+          {recover.error ? (
+            <p
+              className="relay-settings-error max-w-[60ch] text-[13px] leading-5 text-destructive"
+              role="alert"
+            >
+              Reconnection did not finish. Keep the device awake and connected, then try again.
+            </p>
+          ) : null}
+          {recover.data ? (
+            <p className="max-w-[60ch] text-[13px] leading-5" aria-live="polite">
+              <strong className="font-medium">
+                {recover.data.ready ? "Device is ready. " : "Device still needs attention. "}
+              </strong>
+              {recover.data.summary}
+            </p>
+          ) : null}
           {device.data.status !== "needs-attention" ? (
             <DeviceLivePreview
               canvas={canvas}
@@ -277,154 +268,88 @@ export function DevicePage() {
               pending={target.isPending}
             />
           ) : null}
-          <aside className="grid gap-6">
-            <section
-              className="grid gap-2 border-b border-border pb-5 text-sm leading-relaxed"
-              aria-labelledby="device-health-title"
-            >
-              <Badge
-                variant={device.data.status === "needs-attention" ? "secondary" : "default"}
-                className={
-                  device.data.status === "needs-attention"
-                    ? "bg-amber-500/15 text-amber-800 dark:text-amber-300"
-                    : "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300"
-                }
+
+          {appLaunchSupported ? (
+            <section className="grid gap-4" aria-labelledby="device-launch-title">
+              <div className="grid gap-2 text-sm leading-relaxed text-text-weak">
+                <h2 className="font-semibold text-text-strong" id="device-launch-title">
+                  Launch an app
+                </h2>
+                <p>Open an installed app by name, package, or bundle identifier.</p>
+              </div>
+              <form
+                className="relay-device-launch-form grid gap-4"
+                onSubmit={submitAppLaunch}
+                noValidate
               >
-                {presentation.label}
-              </Badge>
-              <h2 className="sr-only" id="device-health-title">
-                {presentation.title}
-              </h2>
-              <p>{presentation.detail}</p>
-              {recover.error ? (
-                <p
-                  className="relay-settings-error mt-3 text-sm leading-relaxed text-destructive"
-                  role="alert"
-                >
-                  Reconnection did not finish. Keep the device awake and connected, then try again.
-                </p>
-              ) : null}
-              {recover.data ? (
-                <div className="mt-4 rounded-lg border border-border p-4" aria-live="polite">
-                  <strong>
-                    {recover.data.ready ? "Device is ready" : "Device still needs attention"}
-                  </strong>
-                  <p>{recover.data.summary}</p>
-                </div>
-              ) : null}
-            </section>
-
-            <section
-              className="grid gap-4 border-b border-border pb-5"
-              aria-labelledby="device-details-title"
-            >
-              <h2 className="text-sm font-semibold" id="device-details-title">
-                Device details
-              </h2>
-              <dl className="grid grid-cols-3 gap-3 min-[1000px]:grid-cols-1">
-                <div className="grid gap-0.5">
-                  <dt className="text-xs text-muted-foreground">Platform</dt>
-                  <dd className="break-words text-sm font-medium">
-                    {productPlatform(device.data)}
-                  </dd>
-                </div>
-                <div className="grid gap-0.5">
-                  <dt className="text-xs text-muted-foreground">Software</dt>
-                  <dd className="break-words text-sm font-medium">
-                    {device.data.osVersion ?? "Reported by the device when available"}
-                  </dd>
-                </div>
-                <div className="grid gap-0.5">
-                  <dt className="text-xs text-muted-foreground">Type</dt>
-                  <dd className="break-words text-sm font-medium">
-                    {device.data.kind ?? "Device"}
-                  </dd>
-                </div>
-              </dl>
-            </section>
-
-            {appLaunchSupported ? (
-              <section className="grid gap-4" aria-labelledby="device-launch-title">
-                <div className="grid gap-2 text-sm leading-relaxed text-text-weak">
-                  <h2 className="font-semibold text-text-strong" id="device-launch-title">
-                    Launch an app
-                  </h2>
-                  <p>Open an installed app by name, package, or bundle identifier.</p>
-                </div>
-                <form
-                  className="relay-device-launch-form grid gap-4"
-                  onSubmit={submitAppLaunch}
-                  noValidate
-                >
-                  <div className="relay-form-field grid min-w-0 gap-2 text-sm [&>label]:font-medium">
-                    <label htmlFor="device-app-identifier">App/package/bundle identifier</label>
-                    <input
-                      id="device-app-identifier"
-                      className="relay-input min-h-9 w-full rounded-[var(--radius-md)] border border-[var(--border-base)] bg-[var(--background-strong)] px-3 text-base text-[var(--text-strong)] shadow-[0_1px_2px_color-mix(in_srgb,black_5%,transparent)] placeholder:text-[var(--text-weaker)] focus-visible:border-[var(--relay-focus-ring)] focus-visible:outline-3 focus-visible:outline-[color-mix(in_srgb,var(--relay-focus-ring)_24%,transparent)] focus-visible:outline-offset-1"
-                      type="text"
-                      value={appIdentifier}
-                      placeholder="com.example.app"
-                      autoComplete="off"
-                      spellCheck={false}
-                      required
-                      aria-invalid={appIdentifierError ? true : undefined}
-                      aria-describedby={
-                        appIdentifierError
-                          ? "device-app-identifier-error"
-                          : "device-app-identifier-help"
-                      }
-                      onChange={(event) => {
-                        setAppIdentifier(event.target.value);
-                        if (appIdentifierError) setAppIdentifierError(undefined);
-                        if (appLaunch.error || appLaunch.data) appLaunch.reset();
-                      }}
-                    />
-                    <p id="device-app-identifier-help">Use the package or bundle identifier.</p>
-                    {appIdentifierError ? (
-                      <p
-                        id="device-app-identifier-error"
-                        className="relay-settings-error mt-3 text-sm leading-relaxed text-destructive"
-                        role="alert"
-                      >
-                        {appIdentifierError}
-                      </p>
-                    ) : null}
-                  </div>
-                  <label className="relay-device-launch-relaunch flex min-h-11 items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={relaunchApp}
-                      onChange={(event) => setRelaunchApp(event.target.checked)}
-                    />
-                    <span>Relaunch if the app is already open</span>
-                  </label>
-                  <Button type="submit" variant="default" disabled={appLaunch.isPending}>
-                    {appLaunch.isPending ? "Launching…" : "Launch app"}
-                  </Button>
-                  {appLaunch.error ? (
+                <div className="relay-form-field grid min-w-0 gap-2 text-sm [&>label]:font-medium">
+                  <label htmlFor="device-app-identifier">App/package/bundle identifier</label>
+                  <input
+                    id="device-app-identifier"
+                    className="relay-input min-h-9 w-full rounded-[var(--radius-md)] border border-[var(--border-base)] bg-[var(--background-strong)] px-3 text-base text-[var(--text-strong)] shadow-[0_1px_2px_color-mix(in_srgb,black_5%,transparent)] placeholder:text-[var(--text-weaker)] focus-visible:border-[var(--relay-focus-ring)] focus-visible:outline-3 focus-visible:outline-[color-mix(in_srgb,var(--relay-focus-ring)_24%,transparent)] focus-visible:outline-offset-1"
+                    type="text"
+                    value={appIdentifier}
+                    placeholder="com.example.app"
+                    autoComplete="off"
+                    spellCheck={false}
+                    required
+                    aria-invalid={appIdentifierError ? true : undefined}
+                    aria-describedby={
+                      appIdentifierError
+                        ? "device-app-identifier-error"
+                        : "device-app-identifier-help"
+                    }
+                    onChange={(event) => {
+                      setAppIdentifier(event.target.value);
+                      if (appIdentifierError) setAppIdentifierError(undefined);
+                      if (appLaunch.error || appLaunch.data) appLaunch.reset();
+                    }}
+                  />
+                  <p id="device-app-identifier-help">Use the package or bundle identifier.</p>
+                  {appIdentifierError ? (
                     <p
+                      id="device-app-identifier-error"
                       className="relay-settings-error mt-3 text-sm leading-relaxed text-destructive"
                       role="alert"
                     >
-                      {friendlyAppLaunchIssue(appLaunch.error)}
+                      {appIdentifierError}
                     </p>
                   ) : null}
-                  {appLaunch.data ? (
-                    <div
-                      className="relay-device-launch-result rounded-xl border border-border bg-card p-5"
-                      role="status"
-                      aria-live="polite"
-                    >
-                      <strong>Launch requested</strong>
-                      <p>
-                        Relay launched {appLaunch.data.app} on {device.data.name}.
-                      </p>
-                    </div>
-                  ) : null}
-                </form>
-              </section>
-            ) : null}
-          </aside>
+                </div>
+                <label className="relay-device-launch-relaunch flex min-h-11 items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={relaunchApp}
+                    onChange={(event) => setRelaunchApp(event.target.checked)}
+                  />
+                  <span>Relaunch if the app is already open</span>
+                </label>
+                <Button type="submit" variant="default" disabled={appLaunch.isPending}>
+                  {appLaunch.isPending ? "Launching…" : "Launch app"}
+                </Button>
+                {appLaunch.error ? (
+                  <p
+                    className="relay-settings-error mt-3 text-sm leading-relaxed text-destructive"
+                    role="alert"
+                  >
+                    {friendlyAppLaunchIssue(appLaunch.error)}
+                  </p>
+                ) : null}
+                {appLaunch.data ? (
+                  <div
+                    className="relay-device-launch-result rounded-xl border border-border bg-card p-5"
+                    role="status"
+                    aria-live="polite"
+                  >
+                    <strong>Launch requested</strong>
+                    <p>
+                      Relay launched {appLaunch.data.app} on {device.data.name}.
+                    </p>
+                  </div>
+                ) : null}
+              </form>
+            </section>
+          ) : null}
         </div>
       ) : null}
     </LibraryPage>
@@ -452,43 +377,44 @@ function DeviceLivePreview({
   send: (input: LiveTargetInput) => Promise<boolean>;
   pending: boolean;
 }) {
+  if (pending) return <PageLoading label="Opening the live device…" />;
+  if (!target) {
+    return (
+      <RecoveryState
+        title="Live view is not connected"
+        detail="Keep the device awake and connected, then reconnect."
+        action={
+          <Button size="sm" variant="ghost" onClick={reconnect}>
+            <RotateCcw aria-hidden="true" /> Reconnect
+          </Button>
+        }
+      />
+    );
+  }
   return (
     <section
       className="min-w-0 overflow-hidden rounded-xl border border-border bg-card"
       aria-labelledby="device-live-title"
     >
-      <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
-        <div className="grid gap-1">
-          <h2 className="text-sm font-semibold" id="device-live-title">
-            Live preview
-          </h2>
-          <p className="text-xs leading-relaxed text-text-weak">
-            Explore your app here. Record a Test to save your actions.
-          </p>
-        </div>
-        <Button size="sm" variant="ghost" onClick={reconnect} disabled={pending}>
+      <div className="flex items-center justify-between gap-4 px-4 py-3">
+        <h2 className="text-[13px] font-medium" id="device-live-title">
+          Live
+        </h2>
+        <Button size="sm" variant="ghost" onClick={reconnect}>
           <RotateCcw aria-hidden="true" /> Reconnect
         </Button>
       </div>
-      {pending ? <PageLoading label="Opening the live device…" /> : null}
-      {target ? (
-        <LiveTargetCanvas
-          canvasRef={canvas}
-          status={status}
-          issue={issue}
-          busy={busy}
-          targetTitle={target.name}
-          targetDetail={target.detail}
-          browserContext={browserContext}
-          send={send}
-          recording={false}
-        />
-      ) : !pending ? (
-        <EmptyState
-          title="Live control is not available yet"
-          detail="Keep the device awake and connected, then select Reconnect to check the live connection again."
-        />
-      ) : null}
+      <LiveTargetCanvas
+        canvasRef={canvas}
+        status={status}
+        issue={issue}
+        busy={busy}
+        targetTitle={target.name}
+        targetDetail={target.detail}
+        browserContext={browserContext}
+        send={send}
+        recording={false}
+      />
     </section>
   );
 }

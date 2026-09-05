@@ -142,7 +142,6 @@ export function ChangePage() {
       {current && details ? (
         <>
           <PageHeader
-            context="Change"
             title={current.title}
             description={[
               current.repository,
