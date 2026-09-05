@@ -28,35 +28,17 @@ export function ChangePublicationStatus({ detail }: { detail: ProductChangeDetai
       if (next.state.change) queryClient.setQueryData(changeQueryKey(next.state.change.id), next);
     },
   });
-  if (!publication) {
-    return (
-      <section
-        className="relay-change-publication rounded-lg border border-border bg-card p-5"
-        aria-labelledby="publication-status-title"
-      >
-        <ChangeSectionHeader
-          eyebrow="GitHub delivery"
-          title="Not published"
-          id="publication-status-title"
-        />
-        <p className="mt-1 text-sm leading-6 text-muted-foreground">
-          Relay has not sent this verification result to GitHub.
-        </p>
-      </section>
-    );
-  }
+  if (!publication) return null;
   const presentation = publicationPresentation(publication.status);
   return (
     <section
-      className="relay-change-publication rounded-lg border border-border bg-card p-5"
+      className="relay-change-publication mt-6 max-w-[60ch]"
       aria-labelledby="publication-status-title"
     >
-      <ChangeSectionHeader
-        eyebrow="GitHub delivery"
-        title={presentation.title}
-        id="publication-status-title"
-      />
-      <p>{presentation.detail}</p>
+      <h2 id="publication-status-title" className="text-[15px] font-medium">
+        {presentation.title}
+      </h2>
+      <p className="mt-1 text-[13px] leading-5 text-muted-foreground">{presentation.detail}</p>
       <div className="relay-publication-status mt-2 flex min-h-11 flex-wrap items-center gap-x-3.5 gap-y-2.5">
         {publication.detailsUrl ? (
           <a href={publication.detailsUrl} target="_blank" rel="noreferrer">
