@@ -81,8 +81,8 @@ export function RecordingEvidencePanel({
             </strong>
             <span className="text-[11px] leading-normal">
               {action
-                ? "The captured proof is still listed below."
-                : "Its before and after proof will appear here."}
+                ? "The proof is still listed below."
+                : "Its before and after frames will appear here."}
             </span>
           </div>
         )}
@@ -118,6 +118,7 @@ export function RecordingActionsPanel({
   selectedActionIds,
   optimization,
   canOptimize,
+  editing,
   onOptimize,
   onSelect,
   onToggle,
@@ -130,6 +131,7 @@ export function RecordingActionsPanel({
     suggestions: readonly OptimizationSuggestion[];
   };
   canOptimize: boolean;
+  editing: boolean;
   onOptimize(): void;
   onSelect(actionId: string): void;
   onToggle(actionId: string, checked: boolean): void;
@@ -141,28 +143,27 @@ export function RecordingActionsPanel({
     >
       <div className="flex min-h-[72px] min-w-0 flex-wrap items-center justify-between gap-3.5 border-b border-border px-4 py-3">
         <div className="min-w-0">
-          <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
-            Journey
-          </p>
           <h2 id="recording-actions-title">{recordedMomentCount(actions.length)}</h2>
         </div>
         <div className="flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2">
           <span className="max-w-full truncate text-[11px] text-muted-foreground">
             {captureSummary(actions)}
           </span>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={onOptimize}
-            disabled={!canOptimize || optimization.isFetching}
-          >
-            <Sparkles aria-hidden="true" />
-            {optimization.isFetching ? "Checking…" : "Find cleanup"}
-          </Button>
+          {editing ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={onOptimize}
+              disabled={!canOptimize || optimization.isFetching}
+            >
+              <Sparkles aria-hidden="true" />
+              {optimization.isFetching ? "Checking…" : "Find cleanup"}
+            </Button>
+          ) : null}
         </div>
       </div>
 
-      {optimization.suggestions.length ? (
+      {editing && optimization.suggestions.length ? (
         <div
           className="grid gap-1.5 border-b border-border bg-muted p-3"
           aria-label="Cleanup suggestions"
@@ -186,7 +187,7 @@ export function RecordingActionsPanel({
             </button>
           ))}
         </div>
-      ) : optimization.isFetched ? (
+      ) : editing && optimization.isFetched ? (
         <p className="border-b border-border p-3 text-[11px] text-muted-foreground" role="status">
           No safe cleanup suggestions for this revision.
         </p>
@@ -232,8 +233,8 @@ export function RecordingActionsPanel({
         </ScrollArea>
       ) : (
         <EmptyState
-          title="No recorded moments are available"
-          detail="Return to recording and interact with the app before saving this Test."
+          title="No steps yet"
+          detail="Go back to recording and interact with the app before saving this Test."
         />
       )}
     </section>

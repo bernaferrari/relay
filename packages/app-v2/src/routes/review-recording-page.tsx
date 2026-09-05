@@ -69,6 +69,7 @@ export function ReviewRecordingPage() {
   const [undoStack, setUndoStack] = useState<readonly number[]>([]);
   const [redoStack, setRedoStack] = useState<readonly number[]>([]);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
   const historyInitialized = useRef(false);
 
   const recording = useQuery({
@@ -298,6 +299,9 @@ export function ReviewRecordingPage() {
                   {transition.isPending ? "Replaying…" : "Replay recording"}
                 </Button>
               ) : null}
+              <Button variant="ghost" onClick={() => setEditing((open) => !open)}>
+                {editing ? "Done" : "Edit"}
+              </Button>
               <Button
                 variant="ghost"
                 disabled={
@@ -334,13 +338,54 @@ export function ReviewRecordingPage() {
         }
       >
         {reviewReady ? (
-          <p
-            className="text-xs text-muted-foreground"
-            role="status"
-            aria-label="Verification status"
-          >
-            {replayTitle(review?.latestReplay?.outcome, review?.replayRequired, canApprove)}
-          </p>
+          <div className="grid max-w-xl gap-3">
+            <Field>
+              <FieldLabel htmlFor="review-test-name">Test name</FieldLabel>
+              <Input
+                id="review-test-name"
+                value={testName}
+                disabled={leaveDraft.isPending || transition.isPending}
+                onChange={(event) => {
+                  nameEdits.current += 1;
+                  setNameSaveState("dirty");
+                  setTestName(event.currentTarget.value);
+                }}
+                placeholder="For example, Change the app language"
+                maxLength={160}
+                autoComplete="off"
+                spellCheck
+                required
+              />
+              <FieldDescription>
+                {nameSaveError ??
+                  (nameSaveState === "saving"
+                    ? "Saving the name…"
+                    : testName
+                      ? "The name is kept on this computer until you save the Test."
+                      : "Name the outcome a teammate should recognize.")}
+              </FieldDescription>
+              {nameSaveError && nameEdits.current > 0 ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={nameSaveState === "saving"}
+                  onClick={() => setNameSaveAttempt((value) => value + 1)}
+                >
+                  Retry saving name
+                </Button>
+              ) : null}
+            </Field>
+            <p
+              className="text-xs text-muted-foreground"
+              role="status"
+              aria-label="Verification status"
+            >
+              {replayTitle(review?.latestReplay?.outcome, review?.replayRequired, canApprove)}
+            </p>
+            <p className="text-xs leading-normal text-muted-foreground">
+              {replayDetail(review?.latestReplay?.outcome, canApprove)}
+            </p>
+          </div>
         ) : null}
       </PageHeader>
 
@@ -372,6 +417,7 @@ export function ReviewRecordingPage() {
                   suggestions: optimization.data?.proposal?.suggestions ?? [],
                 }}
                 canOptimize={Boolean(sessionId)}
+                editing={editing}
                 onOptimize={() => void optimization.refetch()}
                 onSelect={(actionId) => setSelectedActionIds([actionId])}
                 onToggle={toggleAction}
@@ -386,258 +432,225 @@ export function ReviewRecordingPage() {
               />
             }
             inspector={
-              <aside
-                className="flex min-w-0 flex-col gap-[18px] self-start rounded-xl border border-border bg-card p-[18px] text-card-foreground shadow-sm"
-                aria-label="Edit, replay, and save"
-              >
-                <section className="grid gap-3.5" aria-labelledby="review-editor-title">
-                  <div className="flex flex-wrap items-center justify-between gap-3.5">
-                    <div>
-                      <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
-                        Inspector
-                      </p>
-                      <h2 id="review-editor-title">
-                        {selectedActions.length === 0
-                          ? "Select an action"
-                          : selectedActions.length === 1
-                            ? "Action details"
-                            : `${selectedActions.length} actions selected`}
-                      </h2>
+              editing ? (
+                <aside
+                  className="flex min-w-0 flex-col gap-[18px] self-start rounded-xl border border-border bg-card p-[18px] text-card-foreground shadow-sm"
+                  aria-label="Edit steps"
+                >
+                  <section className="grid gap-3.5" aria-labelledby="review-editor-title">
+                    <div className="flex flex-wrap items-center justify-between gap-3.5">
+                      <div>
+                        <h2 id="review-editor-title">
+                          {selectedActions.length === 0
+                            ? "Select a step"
+                            : selectedActions.length === 1
+                              ? "Step details"
+                              : `${selectedActions.length} steps selected`}
+                        </h2>
+                      </div>
+                      <div className="flex items-center gap-2" aria-label="Edit history">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => restore("undo")}
+                          disabled={!canEdit || undoStack.length === 0}
+                        >
+                          <Undo2 aria-hidden="true" /> Undo
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => restore("redo")}
+                          disabled={!canEdit || redoStack.length === 0}
+                        >
+                          <Redo2 aria-hidden="true" /> Redo
+                        </Button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2" aria-label="Edit history">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => restore("undo")}
-                        disabled={!canEdit || undoStack.length === 0}
-                      >
-                        <Undo2 aria-hidden="true" /> Undo
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => restore("redo")}
-                        disabled={!canEdit || redoStack.length === 0}
-                      >
-                        <Redo2 aria-hidden="true" /> Redo
-                      </Button>
-                    </div>
-                  </div>
 
-                  {selectedAction ? (
-                    <>
-                      <Field>
-                        <FieldLabel htmlFor="review-action-intent">Instruction</FieldLabel>
-                        <Input
-                          id="review-action-intent"
-                          value={actionIntent}
-                          onChange={(event) => setActionIntent(event.currentTarget.value)}
-                          maxLength={240}
-                          disabled={!canEdit}
-                        />
-                        <FieldDescription>Describe the outcome in plain language.</FieldDescription>
-                      </Field>
+                    {selectedAction ? (
+                      <>
+                        <Field>
+                          <FieldLabel htmlFor="review-action-intent">Instruction</FieldLabel>
+                          <Input
+                            id="review-action-intent"
+                            value={actionIntent}
+                            onChange={(event) => setActionIntent(event.currentTarget.value)}
+                            maxLength={240}
+                            disabled={!canEdit}
+                          />
+                          <FieldDescription>
+                            Describe the outcome in plain language.
+                          </FieldDescription>
+                        </Field>
+                        <Button
+                          size="sm"
+                          onClick={() =>
+                            edit({
+                              kind: "rename",
+                              actionId: selectedAction.id,
+                              intent: actionIntent.trim(),
+                            })
+                          }
+                          disabled={
+                            !canEdit ||
+                            !actionIntent.trim() ||
+                            actionIntent.trim() === selectedAction.intent
+                          }
+                        >
+                          Save instruction
+                        </Button>
+                        {selectedAction.kind === "tap" ? (
+                          <Field>
+                            <FieldLabel htmlFor="review-replacement-label">
+                              Replace label
+                            </FieldLabel>
+                            <Input
+                              id="review-replacement-label"
+                              value={replacementLabel}
+                              onChange={(event) => setReplacementLabel(event.currentTarget.value)}
+                              placeholder="Accessible name"
+                              maxLength={160}
+                              disabled={!canEdit}
+                            />
+                            <FieldDescription>
+                              Use the control’s stable accessible name.
+                            </FieldDescription>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() =>
+                                edit({
+                                  kind: "replace",
+                                  actionId: selectedAction.id,
+                                  interaction: {
+                                    kind: "tap",
+                                    target: { label: replacementLabel.trim() },
+                                  },
+                                })
+                              }
+                              disabled={!canEdit || !replacementLabel.trim()}
+                            >
+                              <Target aria-hidden="true" /> Replace label
+                            </Button>
+                          </Field>
+                        ) : null}
+                        <div
+                          className="flex flex-wrap items-center gap-2"
+                          aria-label="Reorder action"
+                        >
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => moveSelected(-1)}
+                            disabled={!canEdit || selectedIndex <= 0}
+                          >
+                            <ArrowUp aria-hidden="true" /> Move up
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => moveSelected(1)}
+                            disabled={!canEdit || selectedIndex === actions.length - 1}
+                          >
+                            <ArrowDown aria-hidden="true" /> Move down
+                          </Button>
+                        </div>
+                        {selectedAction.stepCount > 1 ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() =>
+                              edit({
+                                kind: "split",
+                                actionId: selectedAction.id,
+                                atStep: Math.ceil(selectedAction.stepCount / 2),
+                              })
+                            }
+                            disabled={!canEdit}
+                          >
+                            <Scissors aria-hidden="true" /> Split action
+                          </Button>
+                        ) : null}
+                      </>
+                    ) : selectedActions.length > 1 ? (
                       <Button
                         size="sm"
                         onClick={() =>
                           edit({
-                            kind: "rename",
-                            actionId: selectedAction.id,
-                            intent: actionIntent.trim(),
+                            kind: "merge",
+                            actionIds: selectedActions.map((action) => action.id),
                           })
                         }
-                        disabled={
-                          !canEdit ||
-                          !actionIntent.trim() ||
-                          actionIntent.trim() === selectedAction.intent
-                        }
+                        disabled={!canEdit || !selectionIsContiguous}
                       >
-                        Save instruction
+                        <Combine aria-hidden="true" /> Merge actions
                       </Button>
-                      {selectedAction.kind === "tap" ? (
-                        <Field>
-                          <FieldLabel htmlFor="review-replacement-label">Replace target</FieldLabel>
-                          <Input
-                            id="review-replacement-label"
-                            value={replacementLabel}
-                            onChange={(event) => setReplacementLabel(event.currentTarget.value)}
-                            placeholder="Accessible label"
-                            maxLength={160}
-                            disabled={!canEdit}
-                          />
-                          <FieldDescription>
-                            Use the target’s stable accessible name.
-                          </FieldDescription>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() =>
-                              edit({
-                                kind: "replace",
-                                actionId: selectedAction.id,
-                                interaction: {
-                                  kind: "tap",
-                                  target: { label: replacementLabel.trim() },
-                                },
-                              })
-                            }
-                            disabled={!canEdit || !replacementLabel.trim()}
-                          >
-                            <Target aria-hidden="true" /> Replace target
-                          </Button>
-                        </Field>
-                      ) : null}
-                      <div
-                        className="flex flex-wrap items-center gap-2"
-                        aria-label="Reorder action"
-                      >
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => moveSelected(-1)}
-                          disabled={!canEdit || selectedIndex <= 0}
-                        >
-                          <ArrowUp aria-hidden="true" /> Move up
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => moveSelected(1)}
-                          disabled={!canEdit || selectedIndex === actions.length - 1}
-                        >
-                          <ArrowDown aria-hidden="true" /> Move down
-                        </Button>
-                      </div>
-                      {selectedAction.stepCount > 1 ? (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() =>
-                            edit({
-                              kind: "split",
-                              actionId: selectedAction.id,
-                              atStep: Math.ceil(selectedAction.stepCount / 2),
-                            })
+                    ) : (
+                      <p className="text-xs leading-normal text-muted-foreground">
+                        Choose a step to rename, reorder, replace, split, or remove it.
+                      </p>
+                    )}
+
+                    {selectedActions.length ? (
+                      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+                        <DialogTrigger
+                          render={
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-destructive"
+                              disabled={!canEdit}
+                            />
                           }
-                          disabled={!canEdit}
                         >
-                          <Scissors aria-hidden="true" /> Split action
-                        </Button>
-                      ) : null}
-                    </>
-                  ) : selectedActions.length > 1 ? (
-                    <Button
-                      size="sm"
-                      onClick={() =>
-                        edit({
-                          kind: "merge",
-                          actionIds: selectedActions.map((action) => action.id),
-                        })
-                      }
-                      disabled={!canEdit || !selectionIsContiguous}
-                    >
-                      <Combine aria-hidden="true" /> Merge actions
-                    </Button>
-                  ) : (
-                    <p className="text-xs leading-normal text-muted-foreground">
-                      Choose an action to rename, reorder, replace, split, or remove it.
-                    </p>
-                  )}
+                          <Trash2 aria-hidden="true" /> Remove{" "}
+                          {selectedActions.length === 1 ? "action" : "actions"}
+                        </DialogTrigger>
 
-                  {selectedActions.length ? (
-                    <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-                      <DialogTrigger
-                        render={
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="text-destructive"
-                            disabled={!canEdit}
-                          />
-                        }
-                      >
-                        <Trash2 aria-hidden="true" /> Remove{" "}
-                        {selectedActions.length === 1 ? "action" : "actions"}
-                      </DialogTrigger>
-
-                      <DialogContent showCloseButton={false}>
-                        <DialogTitle>
-                          Remove selected {selectedActions.length === 1 ? "action" : "actions"}?
-                        </DialogTitle>
-                        <DialogDescription>
-                          This changes the journey and requires a new replay before saving.
-                        </DialogDescription>
-                        <div className="relay-dialog-actions flex flex-wrap items-center justify-end gap-2.5">
-                          <DialogClose render={<Button variant="ghost">Cancel</Button>} />
-                          <Button
-                            className="grid gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3"
-                            onClick={() => {
-                              setDeleteOpen(false);
-                              edit({
-                                kind: "remove",
-                                actionIds: selectedActions.map((action) => action.id),
-                              });
-                            }}
-                          >
-                            Remove
-                          </Button>
-                        </div>
-                      </DialogContent>
-                    </Dialog>
-                  ) : null}
-                </section>
-
-                <div className="grid gap-3.5">
-                  <Field>
-                    <FieldLabel htmlFor="review-test-name">Test name</FieldLabel>
-                    <Input
-                      id="review-test-name"
-                      value={testName}
-                      disabled={leaveDraft.isPending || transition.isPending}
-                      onChange={(event) => {
-                        nameEdits.current += 1;
-                        setNameSaveState("dirty");
-                        setTestName(event.currentTarget.value);
-                      }}
-                      placeholder="For example, Change the app language"
-                      maxLength={160}
-                      autoComplete="off"
-                      spellCheck
-                      required
-                    />
-                    <FieldDescription>
-                      {nameSaveError ??
-                        (nameSaveState === "saving"
-                          ? "Saving the name…"
-                          : testName
-                            ? "Captured steps are saved on the server. The name is kept on this computer until you save the Test."
-                            : "Name the outcome a teammate should recognize.")}
-                    </FieldDescription>
-                    {nameSaveError && nameEdits.current > 0 ? (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={nameSaveState === "saving"}
-                        onClick={() => setNameSaveAttempt((value) => value + 1)}
-                      >
-                        Retry saving name
-                      </Button>
+                        <DialogContent showCloseButton={false}>
+                          <DialogTitle>
+                            Remove selected {selectedActions.length === 1 ? "action" : "actions"}?
+                          </DialogTitle>
+                          <DialogDescription>
+                            This changes the steps and requires a new replay before saving.
+                          </DialogDescription>
+                          <div className="relay-dialog-actions flex flex-wrap items-center justify-end gap-2.5">
+                            <DialogClose render={<Button variant="ghost">Cancel</Button>} />
+                            <Button
+                              className="grid gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3"
+                              onClick={() => {
+                                setDeleteOpen(false);
+                                edit({
+                                  kind: "remove",
+                                  actionIds: selectedActions.map((action) => action.id),
+                                });
+                              }}
+                            >
+                              Remove
+                            </Button>
+                          </div>
+                        </DialogContent>
+                      </Dialog>
                     ) : null}
-                  </Field>
-                  <p className="text-xs leading-normal text-muted-foreground">
-                    {replayDetail(review?.latestReplay?.outcome, canApprove)}
-                  </p>
-                  {allowed.has("replay") && review?.replayRequired ? (
-                    <p className="text-xs text-muted-foreground">
-                      A passing replay is required before saving.
+                  </section>
+
+                  <div className="grid gap-3.5">
+                    <p className="text-xs leading-normal text-muted-foreground">
+                      {replayDetail(review?.latestReplay?.outcome, canApprove)}
                     </p>
-                  ) : null}
-                </div>
-              </aside>
+                    {allowed.has("replay") && review?.replayRequired ? (
+                      <p className="text-xs text-muted-foreground">
+                        A passing replay is required before saving.
+                      </p>
+                    ) : null}
+                  </div>
+                </aside>
+              ) : undefined
             }
           />
 
-          {review?.timeline ? (
+          {editing && review?.timeline ? (
             <RecordingTrimPanel
               durationMs={review.timeline.durationMs}
               savedStartMs={review.videoClip?.startMs}

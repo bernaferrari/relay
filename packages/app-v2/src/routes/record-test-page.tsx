@@ -195,7 +195,7 @@ function RecordingWorkspace({
         }
         const session = liveSession.current;
         if (!session) {
-          setLiveIssue("The live target is still connecting.");
+          setLiveIssue("The live view is still connecting.");
           return false;
         }
         setLiveInputBusy(true);
@@ -245,8 +245,8 @@ function RecordingWorkspace({
           <DialogContent showCloseButton={false}>
             <DialogTitle>Leave this recording?</DialogTitle>
             <DialogDescription>
-              Keep the recording running and return later, or stop it now to review the captured
-              journey. Leaving does not discard captured work.
+              Keep recording and come back later, or stop now to review the steps. Leaving does not
+              discard your work.
             </DialogDescription>
             <div className="relay-dialog-actions flex flex-wrap items-center justify-end gap-2.5">
               <DialogClose render={<Button variant="ghost">Keep recording</Button>} />
@@ -452,7 +452,7 @@ function liveIssueMessage(message: string): string {
       message,
     )
   ) {
-    return "Relay could not show the live view. Reconnect the target, then try again.";
+    return "Relay could not show the live view. Reconnect, then try again.";
   }
   return message;
 }

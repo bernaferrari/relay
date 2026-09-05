@@ -1,7 +1,6 @@
 /** @jsxImportSource react */
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@relay/ui-react/components/alert";
 import { Button } from "@relay/ui-react/components/button";
-import { Card, CardContent } from "@relay/ui-react/components/card";
 import { Input } from "@relay/ui-react/components/input";
 import { Label } from "@relay/ui-react/components/label";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -170,7 +169,7 @@ export function NewTestPage() {
       .catch(() => {
         if (!disposed) {
           setPreviewStatus("degraded");
-          setPreviewIssue("Relay could not open the live view. Check the target, then reconnect.");
+          setPreviewIssue("Relay could not open the live view. Reconnect, then try again.");
         }
       });
     return () => {
@@ -238,7 +237,7 @@ export function NewTestPage() {
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!appId || !targetId || previewStatus !== "streaming" || begin.isPending) return;
+    if (!appId || !targetId || begin.isPending) return;
     begin.mutate();
   }
 
@@ -247,16 +246,14 @@ export function NewTestPage() {
   const noTargets = Boolean(targets.data && targets.data.targetOptions.length === 0);
   const setupOpen =
     !loading && !apps.isError && !targets.isError && !targets.data?.recovery && !activePointer.data;
-  const formReady = Boolean(appId && targetId && previewStatus === "streaming" && !begin.isPending);
+  const formReady = Boolean(appId && targetId && !begin.isPending);
   const startHint = !appId
     ? "Choose an app"
     : !targetId
-      ? "Connect a device"
-      : previewStatus !== "streaming"
-        ? "Wait for the live view"
-        : begin.isPending
-          ? "Starting…"
-          : "Start recording";
+      ? "Choose a Device or Browser"
+      : begin.isPending
+        ? "Starting…"
+        : "Start recording";
 
   function chooseApp(nextAppId: string) {
     setAppId(nextAppId);
@@ -342,23 +339,25 @@ export function NewTestPage() {
         !targets.isError &&
         !targets.data?.recovery &&
         !activePointer.data ? (
-          <div className="flex min-h-0 flex-1 flex-col gap-4">
-            {startsFromPath ? (
-              <p className="text-sm text-muted-foreground">
-                Starting from{" "}
-                <strong className="font-medium text-foreground">
-                  {pathContext.data
-                    ? `${pathContext.data.fromTitle} → ${pathContext.data.toTitle ?? "Finish"}`
-                    : "the selected path"}
-                </strong>
-              </p>
-            ) : null}
-            <div className="flex flex-wrap items-end gap-3">
+          <div className="grid h-full min-h-[360px] w-full flex-1 grid-cols-[minmax(240px,280px)_minmax(0,1fr)] gap-3.5 max-[980px]:grid-cols-1">
+            <aside
+              className="grid min-h-0 min-w-0 content-start gap-3 rounded-xl border border-border bg-card p-3.5 max-[980px]:order-last"
+              aria-label="Record setup"
+            >
+              {startsFromPath ? (
+                <p className="text-sm text-muted-foreground">
+                  Starting from{" "}
+                  <strong className="font-medium text-foreground">
+                    {pathContext.data
+                      ? `${pathContext.data.fromTitle} → ${pathContext.data.toTitle ?? "Finish"}`
+                      : "the selected path"}
+                  </strong>
+                </p>
+              ) : null}
               <SelectField
                 label="App"
                 value={appId}
                 placeholder="Choose an app"
-                className="min-w-[200px] max-w-xs flex-1"
                 options={(apps.data ?? []).map((app) => ({ value: app.id, label: app.name }))}
                 onValueChange={chooseApp}
               />
@@ -366,8 +365,9 @@ export function NewTestPage() {
                 <SelectField
                   label="Record on"
                   value={targetId}
-                  placeholder={targets.isPending ? "Finding devices…" : "Choose a device"}
-                  className="min-w-[220px] max-w-sm flex-1"
+                  placeholder={
+                    targets.isPending ? "Finding devices…" : "Choose a Device or Browser"
+                  }
                   options={(targets.data?.targetOptions ?? []).map((target) => {
                     const label = targetLabel(target);
                     return {
@@ -378,43 +378,41 @@ export function NewTestPage() {
                   onValueChange={setTargetId}
                 />
               )}
-            </div>
-
-            <Card className="relay-prerecord-workspace flex min-h-[360px] flex-1">
-              <CardContent className="flex flex-1 flex-col p-4">
-                {selectedTarget ? (
-                  <section className="grid min-h-0 flex-1 gap-3" aria-labelledby="prerecord-title">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div>
-                        <h2 id="prerecord-title" className="text-sm font-semibold">
-                          Live preview
-                        </h2>
-                        <p className="text-sm text-muted-foreground">
-                          Nothing is recorded yet. Get to the starting screen, then start.
-                        </p>
-                      </div>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setPreviewAttempt((value) => value + 1)}
-                      >
-                        <RotateCcw aria-hidden="true" /> Reconnect
-                      </Button>
-                    </div>
-                    <LiveTargetCanvas
-                      canvasRef={previewCanvas}
-                      status={previewStatus}
-                      issue={previewIssue}
-                      busy={previewBusy}
-                      targetTitle={targetLabel(selectedTarget).title}
-                      targetDetail={targetLabel(selectedTarget).detail}
-                      browserContext={browserContext}
-                      send={sendPreview}
-                      recording={false}
-                    />
-                  </section>
-                ) : noApps ? (
+            </aside>
+            <div
+              className="relay-prerecord-workspace block min-h-[360px] w-full overflow-hidden rounded-xl border border-border bg-muted"
+              aria-label="Recording stage"
+            >
+              {selectedTarget ? (
+                <section className="grid min-h-[360px] flex-1" aria-labelledby="prerecord-title">
+                  <div className="flex items-center justify-between gap-3 border-b border-border px-3.5 py-2.5">
+                    <h2 id="prerecord-title" className="text-[13px] font-medium">
+                      {targetLabel(selectedTarget).title}
+                    </h2>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setPreviewAttempt((value) => value + 1)}
+                    >
+                      <RotateCcw aria-hidden="true" /> Reconnect
+                    </Button>
+                  </div>
+                  <LiveTargetCanvas
+                    canvasRef={previewCanvas}
+                    status={previewStatus}
+                    issue={previewIssue}
+                    busy={previewBusy}
+                    targetTitle={targetLabel(selectedTarget).title}
+                    targetDetail={targetLabel(selectedTarget).detail}
+                    browserContext={browserContext}
+                    send={sendPreview}
+                    recording={false}
+                    helpText=""
+                  />
+                </section>
+              ) : noApps ? (
+                <div className="grid min-h-[360px] place-items-center p-6">
                   <EmptyState
                     title="Add an app first"
                     detail="Relay needs an app so this Test has a home."
@@ -424,27 +422,29 @@ export function NewTestPage() {
                       </Button>
                     }
                   />
-                ) : noTargets ? (
-                  <BrowserSetup
-                    browsers={savedBrowsers.data ?? []}
-                    browserUrl={browserUrl}
-                    newBrowserOpen={newBrowserOpen || !(savedBrowsers.data?.length ?? 0)}
-                    pending={startBrowser.isPending}
-                    checking={targets.isFetching}
-                    error={startBrowser.error}
-                    onBrowserUrlChange={setBrowserUrl}
-                    onToggleNewBrowser={() => setNewBrowserOpen((open) => !open)}
-                    onStart={(spaceId) => startBrowser.mutate(spaceId)}
-                    onCheckAgain={() => void targets.refetch()}
-                  />
-                ) : (
+                </div>
+              ) : noTargets ? (
+                <BrowserSetup
+                  browsers={savedBrowsers.data ?? []}
+                  browserUrl={browserUrl}
+                  newBrowserOpen={newBrowserOpen || !(savedBrowsers.data?.length ?? 0)}
+                  pending={startBrowser.isPending}
+                  checking={targets.isFetching}
+                  error={startBrowser.error}
+                  onBrowserUrlChange={setBrowserUrl}
+                  onToggleNewBrowser={() => setNewBrowserOpen((open) => !open)}
+                  onStart={(spaceId) => startBrowser.mutate(spaceId)}
+                  onCheckAgain={() => void targets.refetch()}
+                />
+              ) : (
+                <div className="grid min-h-[360px] place-items-center p-6">
                   <EmptyState
                     title="Choose where to record"
-                    detail="Pick a device or browser above. The live view will open here."
+                    detail="Pick a Device or Browser. The live view opens here."
                   />
-                )}
-              </CardContent>
-            </Card>
+                </div>
+              )}
+            </div>
           </div>
         ) : null}
       </form>
@@ -644,10 +644,10 @@ function websiteName(url: string): string {
 
 function friendlyPreviewIssue(message: string): string {
   if (/view only|locked|unlock/iu.test(message)) {
-    return "Keep the target connected and unlocked, then reconnect.";
+    return "Keep the Device connected and unlocked, then reconnect.";
   }
   if (/packet|transport|codec|decode|base64|operation|targetid/iu.test(message)) {
-    return "Relay could not show the live view. Check the target, then reconnect.";
+    return "Relay could not show the live view. Reconnect, then try again.";
   }
   return message;
 }

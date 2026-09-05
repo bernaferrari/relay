@@ -54,6 +54,13 @@ export function LiveTargetCanvas({
   const wheelTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const composing = useRef(false);
   const streaming = status === "streaming";
+  const help =
+    helpText !== ""
+      ? (helpText ??
+        (recording
+          ? "Click, drag, scroll, or type here. Relay records each supported interaction in this Test. Enter and Backspace are supported keys."
+          : "Click, drag, scroll, or type. Enter and Backspace are supported keys."))
+      : undefined;
 
   useEffect(
     () => () => {
@@ -177,8 +184,8 @@ export function LiveTargetCanvas({
         <canvas
           ref={canvasRef}
           className="relay-capture-live-target h-full max-h-full max-w-full min-h-0 min-w-0 object-contain"
-          aria-label={`Interactive live target: ${targetTitle}`}
-          aria-describedby={helpId}
+          aria-label={`Interactive Device: ${targetTitle}`}
+          aria-describedby={help ? helpId : undefined}
           tabIndex={streaming ? 0 : -1}
           onPointerDown={pointerDown}
           onPointerUp={pointerUp}
@@ -208,8 +215,8 @@ export function LiveTargetCanvas({
             >
               <MonitorSmartphone />
             </span>
-            <h2>{issue ? "The live view needs attention" : "Connecting to the target"}</h2>
-            <p>{issue ?? "The app will appear here as soon as the target is ready."}</p>
+            <h2>{issue ? "The live view needs attention" : "Connecting"}</h2>
+            <p>{issue ?? "The app will appear here when the Device is ready."}</p>
           </div>
         ) : null}
         {busy ? (
@@ -245,7 +252,7 @@ export function LiveTargetCanvas({
         </div>
         <div className="flex items-center gap-2">
           <label className="relay-visually-hidden sr-only" htmlFor={textInputId}>
-            Text to type into the focused target field
+            Text to type into the focused field
           </label>
           <Input
             id={textInputId}
@@ -257,7 +264,7 @@ export function LiveTargetCanvas({
                 typeText();
               }
             }}
-            placeholder="Type into the target"
+            placeholder="Type into the app"
             disabled={!streaming || busy}
             autoComplete="off"
             maxLength={16_384}
@@ -272,12 +279,11 @@ export function LiveTargetCanvas({
           </Button>
         </div>
       </div>
-      <p id={helpId} className="px-3 pb-3 text-xs text-muted-foreground">
-        {helpText ??
-          (recording
-            ? "Click, drag, scroll, or type here. Relay records each supported interaction in this Test. Enter and Backspace are supported keys."
-            : "Inspect the target with click, drag, scroll, or type. Enter and Backspace are supported keys; other keyboard shortcuts stay local.")}
-      </p>
+      {help ? (
+        <p id={helpId} className="px-3 pb-3 text-xs text-muted-foreground">
+          {help}
+        </p>
+      ) : null}
     </div>
   );
 }

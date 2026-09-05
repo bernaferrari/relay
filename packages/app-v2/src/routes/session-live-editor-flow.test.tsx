@@ -357,10 +357,9 @@ describe("live Session to Test editor", () => {
 
     expect(open).toHaveBeenCalledWith({ testId: "test-live", sessionId: "session-live" });
     expect(harness.editor.get).toHaveBeenCalledWith("test-live");
-    expect(document.body.textContent).toContain("Live target");
-    expect(document.body.textContent).toContain(
-      "Interactions here do not add or replace Test steps.",
-    );
+    expect(document.body.textContent).not.toContain("Open Session");
+    expect(document.body.textContent).not.toContain("Live target");
+    expect(document.querySelector("#live-editor-title")?.textContent).toBeTruthy();
     expect(document.querySelector('[data-slot="live-device-rail"]')).not.toBeNull();
     expect(document.querySelector('[data-inspector-kind="device"]')).not.toBeNull();
     expect(history.location.search).toBe("?session=session-live");

@@ -492,9 +492,6 @@ function TestEditorDocument() {
               <section className="min-w-0" aria-labelledby="test-steps-title">
                 <div className="flex items-end justify-between gap-5 max-[620px]:items-start max-[620px]:gap-3">
                   <div>
-                    <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
-                      Journey
-                    </p>
                     <h2 id="test-steps-title">Steps</h2>
                   </div>
                   <div className="flex items-center gap-2.5">
@@ -511,9 +508,6 @@ function TestEditorDocument() {
                     </Button>
                   </div>
                 </div>
-                <p className="mt-1.5 max-w-[65ch] text-[11px] text-muted-foreground">
-                  Drag within a group, use the arrow buttons, or press Alt + ↑/↓ on a step.
-                </p>
                 {entries.length ? (
                   <ol className="mt-4 grid list-none gap-1.5 p-0">
                     {entries.map((entry) => (
@@ -612,7 +606,7 @@ function TestEditorDocument() {
                 ) : (
                   <EmptyState
                     title="This Test has no steps"
-                    detail="Record this journey again to give Relay a reviewed path to repeat."
+                    detail="Record this Test again to give Relay steps to repeat."
                   />
                 )}
               </section>
@@ -620,12 +614,14 @@ function TestEditorDocument() {
             stage={
               <div className="grid min-w-0 gap-3.5">
                 {sessionId ? stepEditor : null}
-                <TestEditorEvidencePanel
-                  step={selected?.step}
-                  report={latestReport.data}
-                  hasRuns={Boolean(recentRuns.data?.length)}
-                  loading={reportLoading}
-                />
+                {sessionId ? null : (
+                  <TestEditorEvidencePanel
+                    step={selected?.step}
+                    report={latestReport.data}
+                    hasRuns={Boolean(recentRuns.data?.length)}
+                    loading={reportLoading}
+                  />
+                )}
               </div>
             }
             inspector={

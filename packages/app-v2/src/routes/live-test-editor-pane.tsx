@@ -1,8 +1,5 @@
 /** @jsxImportSource react */
 import { Badge } from "@relay/ui-react/components/badge";
-import { Button } from "@relay/ui-react/components/button";
-import { Link } from "@tanstack/react-router";
-import { RadioTower } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { LiveTestEditorSession } from "../data/live-test-editor-product-service";
 import type { LiveTargetBrowserContext, LiveTargetStatus } from "../data/live-target-session";
@@ -71,8 +68,8 @@ export function LiveTestEditorPane({
     >
       <div className="flex items-center justify-between gap-3 border-b border-border px-3.5 py-2.5">
         <div className="flex min-w-0 items-center gap-2">
-          <h2 id="live-editor-title" className="text-[13px] font-medium">
-            Live target
+          <h2 id="live-editor-title" className="truncate text-[13px] font-medium">
+            {session?.authoring.title ?? "Device"}
           </h2>
           {session ? (
             <Badge
@@ -89,18 +86,8 @@ export function LiveTestEditorPane({
             </Badge>
           ) : null}
         </div>
-        {session ? (
-          <Button
-            size="sm"
-            variant="ghost"
-            nativeButton={false}
-            render={<Link to="/sessions/$sessionId" params={{ sessionId: session.authoring.id }} />}
-          >
-            <RadioTower aria-hidden="true" /> Open Session
-          </Button>
-        ) : null}
       </div>
-      {loading ? <PageLoading label="Opening live Session…" /> : null}
+      {loading ? <PageLoading label="Opening the Device…" /> : null}
       {error ? (
         <p
           className="m-3 rounded-md border border-red-500/30 bg-red-500/5 p-3 text-sm"
@@ -117,18 +104,12 @@ export function LiveTestEditorPane({
             issue={issue}
             busy={busy}
             targetTitle={session.authoring.title}
-            targetDetail={`Owned by ${session.authoring.actorKind === "agent" ? "Agent" : "Human"} · ${
-              session.authoring.target.kind === "browser" ? "Managed browser" : "Managed device"
-            }`}
+            targetDetail={session.authoring.target.kind === "browser" ? "Browser" : "Device"}
             browserContext={browserContext}
             send={send}
             recording={session.capabilities.record}
             layout="rail"
-            helpText={
-              session.capabilities.record
-                ? "Live interactions are attached to this active Recording."
-                : "Use the target to inspect state while editing. Interactions here do not add or replace Test steps."
-            }
+            helpText=""
           />
         </div>
       ) : null}

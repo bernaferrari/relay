@@ -159,9 +159,9 @@ describe("LiveTargetCanvas", () => {
     expect(inputs).toHaveLength(3);
     expect(new Set(inputs.map((input) => input.id)).size).toBe(3);
     expect(canvases.map((canvas) => canvas.getAttribute("aria-label"))).toEqual([
-      "Interactive live target: Checkout browser",
-      "Interactive live target: Checkout browser",
-      "Interactive live target: Checkout browser",
+      "Interactive Device: Checkout browser",
+      "Interactive Device: Checkout browser",
+      "Interactive Device: Checkout browser",
     ]);
     expect(host.textContent).toContain("Account A");
     expect(host.textContent).toContain("Account B");

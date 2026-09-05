@@ -41,7 +41,7 @@ export function formatDuration(durationMs: number): string {
 }
 
 export function recordedMomentCount(count: number): string {
-  return count === 1 ? "1 recorded moment" : `${count} recorded moments`;
+  return count === 1 ? "1 step" : `${count} steps`;
 }
 
 export function reviewActionCopy(action: ReviewAction): {
@@ -51,29 +51,29 @@ export function reviewActionCopy(action: ReviewAction): {
 } {
   const proof = action.proofStatus ? proofLabel(action.proofStatus) : undefined;
   if (isPauseAction(action)) {
-    return { title: "Pause", detail: "Relay waited before the next capture.", kind: "pause" };
+    return { title: "Pause", detail: "Relay waited before the next step.", kind: "pause" };
   }
   if (
     action.stepCount === 0 &&
     (/^0 recorded steps$/iu.test(action.intent) || /^0 recorded steps$/iu.test(action.label ?? ""))
   ) {
     return {
-      title: "Screen captured",
-      detail: proof ?? "Current state captured",
+      title: "Marked screen",
+      detail: proof ?? "Current screen",
       kind: "observation",
     };
   }
   if (action.stepCount === 0 && action.label) {
     return {
       title: action.label,
-      detail: proof ? `Checkpoint · ${proof}` : "Checkpoint",
+      detail: proof ? `Marked screen · ${proof}` : "Marked screen",
       kind: "checkpoint",
     };
   }
   if (action.stepCount === 0 || /^0 recorded steps$/i.test(action.intent)) {
     return {
-      title: "Screen captured",
-      detail: proof ?? "Current state captured",
+      title: "Marked screen",
+      detail: proof ?? "Current screen",
       kind: "observation",
     };
   }
@@ -92,7 +92,7 @@ function isPauseAction(action: ReviewAction): boolean {
 function humanActionTitle(intent: string): string {
   const value = intent.trim();
   if (/^(?:tap|click)(?: (?:the|a))? (?:target|captured target)$/iu.test(value)) {
-    return "Tap the highlighted target";
+    return "Tap the highlighted control";
   }
   const namedTarget = /^(?:tap|click)\s+[“'"](.+)[”'"]$/iu.exec(value)?.[1]?.trim();
   if (namedTarget) return `Tap ${namedTarget}`;
@@ -108,7 +108,7 @@ function humanActionTitle(intent: string): string {
 }
 
 export function captureSummary(actions: readonly ReviewAction[]): string {
-  if (actions.length === 0) return "Nothing captured";
+  if (actions.length === 0) return "No steps yet";
   if (actions.every((action) => action.captureProof === "replay-proved")) {
     return "Verified by Relay";
   }
@@ -121,16 +121,16 @@ export function captureSummary(actions: readonly ReviewAction[]): string {
   ) {
     return "Replay needed";
   }
-  return "Captured by Relay";
+  return "Recorded by Relay";
 }
 
 export function reviewInstruction(
   replayRequired: boolean | undefined,
   canApprove: boolean,
 ): string {
-  if (canApprove) return "Review what Relay captured, then save the Test when it looks right.";
-  if (replayRequired) return "Review what Relay captured, then replay it before saving the Test.";
-  return "Review what Relay captured while Relay prepares the next action.";
+  if (canApprove) return "Review the steps, then save the Test.";
+  if (replayRequired) return "Review the steps, then replay before saving the Test.";
+  return "Review the steps while Relay prepares the next action.";
 }
 
 export function replayTitle(
@@ -154,8 +154,8 @@ export function replayDetail(
   }
   if (outcome === "passed") return "Relay verified this exact reviewed version.";
   if (outcome === "failed") {
-    return "Relay could not verify the recorded journey. Check the target, then replay it again.";
+    return "Relay could not verify the recorded steps. Check the Device, then replay it again.";
   }
-  if (outcome === "cancelled") return "Run the replay again when the target is ready.";
-  return "Replay the reviewed steps on the selected target.";
+  if (outcome === "cancelled") return "Run the replay again when the Device is ready.";
+  return "Replay the reviewed steps on the selected Device.";
 }
