@@ -7,7 +7,6 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@relay/ui-react/components/dialog";
-import { Badge } from "@relay/ui-react/components/badge";
 import { Field, FieldError, FieldLabel } from "@relay/ui-react/components/field";
 import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
@@ -19,7 +18,7 @@ import {
   useNavigate,
   useRouteContext,
 } from "@tanstack/react-router";
-import { ExternalLink, RotateCcw, ShieldCheck, Trash2 } from "lucide-react";
+import { ExternalLink, RotateCcw } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LibraryPage, PageHeader } from "../components/page-layout";
 import { Breadcrumbs, EmptyState, RecoveryState } from "../components/product-patterns";
@@ -176,9 +175,12 @@ export function EnvironmentPage() {
       {space ? (
         <>
           <PageHeader
-            context="Browser"
             title={space.name}
-            description={`${displayHost(space.startUrl)} · ${space.persistent ? "Keeps sign-in" : "Fresh each time"}`}
+            description={
+              space.persistent
+                ? displayHost(space.startUrl)
+                : `${displayHost(space.startUrl)} · Fresh each time`
+            }
             actions={
               <>
                 <Button variant="default" onClick={() => open.mutate()} disabled={open.isPending}>
@@ -203,232 +205,143 @@ export function EnvironmentPage() {
             </FieldError>
           ) : null}
 
-          <div className="mt-6 grid grid-cols-2 items-start gap-4 max-[780px]:grid-cols-1">
-            <section
-              className="min-w-0 rounded-xl border border-border bg-card p-[18px] shadow-sm"
-              aria-labelledby="environment-readiness-title"
-            >
-              <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
-                Readiness
-              </p>
-              <h2
-                id="environment-readiness-title"
-                className="mt-1 text-base font-semibold text-foreground"
-              >
-                Current checks
-              </h2>
-              {readiness.isPending ? <PageLoading label="Checking browser…" /> : null}
-              {readiness.data ? (
-                <>
-                  <div className="relay-environment-ready-line mt-4 flex flex-wrap items-center gap-2 border-b border-border pb-3 text-sm font-semibold">
-                    <Badge
-                      variant={readiness.data.target.ok ? "default" : "secondary"}
-                      className={
-                        readiness.data.target.ok
-                          ? "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300"
-                          : "bg-amber-500/15 text-amber-800 dark:text-amber-300"
-                      }
-                    >
-                      {readiness.data.target.ok ? "Ready" : "Needs attention"}
-                    </Badge>
-                    {readiness.data.target.capabilities.length ? (
-                      <span className="text-sm font-normal text-muted-foreground">
-                        {readiness.data.target.ok
-                          ? "Can record and run Tests"
-                          : "Some checks failed"}
+          {readiness.error ? (
+            <RecoveryState
+              className="mt-2"
+              title="Relay could not check this browser"
+              detail="Open it anyway, or check again."
+              action={
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => void readiness.refetch()}
+                  disabled={readiness.isFetching}
+                >
+                  <RotateCcw aria-hidden="true" />{" "}
+                  {readiness.isFetching ? "Checking…" : "Check again"}
+                </Button>
+              }
+            />
+          ) : null}
+          {readiness.data && !readiness.data.target.ok ? (
+            <RecoveryState
+              className="mt-2"
+              title="This browser needs attention"
+              detail={
+                failedChecks[0]?.message ??
+                warningChecks[0]?.message ??
+                "Some checks failed. Open it and try again."
+              }
+              action={
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => void readiness.refetch()}
+                  disabled={readiness.isFetching}
+                >
+                  <RotateCcw aria-hidden="true" />{" "}
+                  {readiness.isFetching ? "Checking…" : "Check again"}
+                </Button>
+              }
+            />
+          ) : null}
+
+          <section className="mt-2 max-w-[60ch]" aria-labelledby="environment-account-title">
+            <h2 id="environment-account-title" className="text-[15px] font-medium">
+              Sign-ins
+            </h2>
+            {fixtures.isPending ? <PageLoading label="Loading sign-ins…" /> : null}
+            {fixtures.data?.length ? (
+              <ul className="relay-environment-accounts mt-3 grid list-none gap-1 p-0">
+                {fixtures.data.map((fixture) => (
+                  <li
+                    className="flex min-h-11 items-center justify-between gap-3 border-t border-border py-3 first:border-t-0 first:pt-0"
+                    key={fixture.reference}
+                  >
+                    <span className="min-w-0">
+                      <strong className="block text-[13px] font-medium wrap-anywhere">
+                        {fixture.name}
+                      </strong>
+                      <small className="text-[12px] text-muted-foreground">
+                        {fixture.revokedAt
+                          ? "Revoked"
+                          : fixture.expiresAt && fixture.expiresAt <= Date.now()
+                            ? "Expired"
+                            : "Available"}
+                      </small>
+                    </span>
+                    {!fixture.revokedAt ? (
+                      <span className="flex shrink-0 gap-1">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() =>
+                            refreshAccount.mutate({ fixtureId: fixture.id, name: fixture.name })
+                          }
+                          disabled={refreshAccount.isPending}
+                        >
+                          Refresh
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            revokeAccount.reset();
+                            setRevokeFixture(fixture);
+                          }}
+                          disabled={revokeAccount.isPending}
+                        >
+                          Revoke
+                        </Button>
                       </span>
                     ) : null}
-                  </div>
-                  <ul className="relay-environment-checks mt-4 grid gap-3 p-0">
-                    {readiness.data.target.checks.map((check) => (
-                      <li
-                        className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-3"
-                        key={check.id}
-                      >
-                        <Badge
-                          variant={check.status === "fail" ? "destructive" : "secondary"}
-                          className={
-                            check.status === "pass"
-                              ? "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300"
-                              : check.status === "warning"
-                                ? "bg-amber-500/15 text-amber-800 dark:text-amber-300"
-                                : undefined
-                          }
-                        >
-                          {check.status === "pass"
-                            ? "Ready"
-                            : check.status === "fail"
-                              ? "Needs work"
-                              : "Warning"}
-                        </Badge>
-                        <span className="grid gap-0.5">
-                          <strong className="text-sm font-medium text-foreground">
-                            {check.label}
-                          </strong>
-                          <small className="text-xs leading-5 text-muted-foreground">
-                            {check.message}
-                          </small>
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                  {!failedChecks.length &&
-                  !warningChecks.length &&
-                  !readiness.data.target.checks.length ? (
-                    <p className="relay-action-hint mt-3 text-sm leading-relaxed text-muted-foreground">
-                      This browser is ready.
-                    </p>
-                  ) : null}
-                </>
-              ) : null}
-              {readiness.error ? (
-                <FieldError>
-                  {readiness.error instanceof Error
-                    ? readiness.error.message
-                    : "Relay could not check this browser."}
-                </FieldError>
-              ) : null}
-              <Button
-                className="mt-4"
-                variant="outline"
-                size="sm"
-                onClick={() => void readiness.refetch()}
-                disabled={readiness.isFetching}
-              >
-                <RotateCcw aria-hidden="true" />{" "}
-                {readiness.isFetching ? "Checking…" : "Check again"}
-              </Button>
-            </section>
-
-            <section
-              className="min-w-0 rounded-xl border border-border bg-card p-[18px] shadow-sm"
-              aria-labelledby="environment-account-title"
+                  </li>
+                ))}
+              </ul>
+            ) : !fixtures.isPending ? (
+              <p className="mt-2 text-[13px] leading-5 text-muted-foreground">
+                No sign-in saved yet.
+              </p>
+            ) : null}
+            {fixtures.error || saveAccount.error || refreshAccount.error || revokeAccount.error ? (
+              <FieldError>
+                {[
+                  fixtures.error,
+                  saveAccount.error,
+                  refreshAccount.error,
+                  revokeAccount.error,
+                ].find(Boolean) instanceof Error
+                  ? (
+                      [
+                        fixtures.error,
+                        saveAccount.error,
+                        refreshAccount.error,
+                        revokeAccount.error,
+                      ].find(Boolean) as Error
+                    ).message
+                  : "Relay could not update this sign-in."}
+              </FieldError>
+            ) : null}
+            <Button
+              className="mt-3"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setAccountName("");
+                saveAccount.reset();
+                setAccountOpen(true);
+              }}
             >
-              <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
-                Sign-ins
-              </p>
-              <h2
-                id="environment-account-title"
-                className="mt-1 text-base font-semibold text-foreground"
-              >
-                Saved sign-ins
-              </h2>
-              <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                Reuse a signed-in session when you run a Test.
-              </p>
-              {fixtures.isPending ? <PageLoading label="Loading sign-ins…" /> : null}
-              {fixtures.data?.length ? (
-                <ul className="relay-environment-accounts grid gap-2 p-0">
-                  {fixtures.data.map((fixture) => (
-                    <li
-                      className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-lg border border-border p-3"
-                      key={fixture.reference}
-                    >
-                      <span
-                        className="relay-account-shield grid size-8 place-items-center rounded-full bg-muted text-muted-foreground"
-                        aria-hidden="true"
-                      >
-                        <ShieldCheck />
-                      </span>
-                      <span className="grid min-w-0 gap-0.5">
-                        <strong className="text-sm font-medium text-foreground wrap-anywhere">
-                          {fixture.name}
-                        </strong>
-                        <small className="text-xs text-muted-foreground">
-                          {fixture.cookieCount} {fixture.cookieCount === 1 ? "cookie" : "cookies"} ·
-                          revision {fixture.revision}
-                        </small>
-                        <small className="text-xs font-medium text-muted-foreground">
-                          {fixture.revokedAt
-                            ? "Revoked"
-                            : fixture.expiresAt && fixture.expiresAt <= Date.now()
-                              ? "Expired"
-                              : "Available"}
-                        </small>
-                      </span>
-                      <div className="col-start-2 flex flex-wrap gap-1">
-                        {!fixture.revokedAt ? (
-                          <>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() =>
-                                refreshAccount.mutate({ fixtureId: fixture.id, name: fixture.name })
-                              }
-                              disabled={refreshAccount.isPending}
-                            >
-                              Refresh
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => {
-                                revokeAccount.reset();
-                                setRevokeFixture(fixture);
-                              }}
-                              disabled={revokeAccount.isPending}
-                            >
-                              Revoke
-                            </Button>
-                          </>
-                        ) : null}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              ) : !fixtures.isPending ? (
-                <p className="relay-action-hint mt-3 text-sm leading-relaxed text-muted-foreground">
-                  No sign-in saved yet.
-                </p>
-              ) : null}
-              {fixtures.error ||
-              saveAccount.error ||
-              refreshAccount.error ||
-              revokeAccount.error ? (
-                <FieldError>
-                  {[
-                    fixtures.error,
-                    saveAccount.error,
-                    refreshAccount.error,
-                    revokeAccount.error,
-                  ].find(Boolean) instanceof Error
-                    ? (
-                        [
-                          fixtures.error,
-                          saveAccount.error,
-                          refreshAccount.error,
-                          revokeAccount.error,
-                        ].find(Boolean) as Error
-                      ).message
-                    : "Relay could not update this sign-in."}
-                </FieldError>
-              ) : null}
-              <Button
-                className="mt-4"
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setAccountName("");
-                  saveAccount.reset();
-                  setAccountOpen(true);
-                }}
-              >
-                Save current sign-in
-              </Button>
-            </section>
-          </div>
+              Save current sign-in
+            </Button>
+          </section>
 
-          <section
-            className="mt-6 flex min-w-0 flex-wrap items-center justify-between gap-4 rounded-xl border border-red-500/40 bg-red-500/5 p-[18px]"
-            aria-labelledby="remove-environment-title"
-          >
-            <div>
-              <h2 id="remove-environment-title">Remove browser</h2>
-              <p>Saved sign-ins for this browser will be removed. Existing reports stay.</p>
-            </div>
+          <div className="mt-8">
             <Dialog open={removeOpen} onOpenChange={setRemoveOpen}>
-              <DialogTrigger render={<Button variant="outline" />}>
-                <Trash2 aria-hidden="true" /> Remove
+              <DialogTrigger
+                render={<Button variant="ghost" size="sm" className="text-muted-foreground" />}
+              >
+                Remove
               </DialogTrigger>
 
               <DialogContent showCloseButton={false}>
@@ -455,7 +368,7 @@ export function EnvironmentPage() {
                 </div>
               </DialogContent>
             </Dialog>
-          </section>
+          </div>
 
           <Dialog open={accountOpen} onOpenChange={setAccountOpen}>
             <DialogContent showCloseButton={false}>

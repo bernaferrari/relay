@@ -375,8 +375,12 @@ describe("Suite and Environment routes", () => {
         },
       }),
     });
-    expect(document.body.textContent).toContain("Current checks");
+    expect(document.querySelector("h1")?.textContent).toBe("Staging browser");
     expect(document.body.textContent).toContain("Staging account");
+    expect(document.body.textContent).not.toContain("Current checks");
+    expect(document.body.textContent).not.toContain("Profile storage");
+    expect(document.body.textContent).not.toContain("Fresh each time");
+    expect(document.body.textContent).not.toContain("cookie");
     await clickButton("Open in system browser");
     expect(calls.open).toBe(1);
     expect(openExternal).toHaveBeenCalledWith(space.startUrl);
