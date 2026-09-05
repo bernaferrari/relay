@@ -76,22 +76,11 @@ export function RunConfigurationComposer({
   return (
     <section
       aria-label="Run configuration"
-      className={`relay-run-configuration grid min-w-0 gap-4 ${variant === "panel" ? "rounded-xl border border-border bg-card p-5" : ""}`}
+      className={`relay-run-configuration grid min-w-0 gap-3 ${variant === "panel" ? "rounded-xl border border-border bg-card p-5" : ""}`}
     >
-      <div className="flex items-end justify-between gap-5 max-[620px]:items-start max-[620px]:gap-3">
-        <h2 id={titleId} className="text-base font-semibold">
-          {title ?? (configuration.frozen ? "Recorded configuration" : "Run configuration")}
-        </h2>
-        {!configuration.frozen ? (
-          <span role="status" className="text-xs text-muted-foreground">
-            {loading
-              ? "Restoring choices…"
-              : runConfigurationReady(configuration)
-                ? "Ready"
-                : "Needs setup"}
-          </span>
-        ) : null}
-      </div>
+      <h2 id={titleId} className="text-[13px] font-medium text-muted-foreground">
+        {title ?? (configuration.frozen ? "Recorded configuration" : "Where to run")}
+      </h2>
       {configuration.frozen ? (
         <dl className="relay-config-facts m-0 grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-4 [&_dt]:text-xs [&_dt]:text-muted-foreground [&_dd]:mt-1 [&_dd]:text-[13px] [&_dd]:wrap-anywhere">
           {facts.map(([label, value]) => (
@@ -126,7 +115,7 @@ export function RunConfigurationComposer({
               {targetOptions.map((option) => (
                 <FieldLabel
                   key={option.id}
-                  className="relay-config-option flex min-h-12 w-full min-w-0 cursor-pointer items-center gap-3 rounded-lg border border-border p-3 has-data-checked:border-ring has-data-checked:bg-accent"
+                  className="relay-config-option flex min-h-11 w-full min-w-0 cursor-pointer items-center gap-3 border-b border-border py-2.5 has-data-checked:[&_[data-slot=run-target-title]]:text-foreground last:border-b-0"
                 >
                   {optionCopy(option)}
                   <Checkbox
@@ -150,7 +139,7 @@ export function RunConfigurationComposer({
               {targetOptions.map((option) => (
                 <FieldLabel
                   key={option.id}
-                  className="relay-config-option flex min-h-12 w-full min-w-0 cursor-pointer items-center gap-3 rounded-lg border border-border p-3 has-data-checked:border-ring has-data-checked:bg-accent"
+                  className="relay-config-option flex min-h-11 w-full min-w-0 cursor-pointer items-center gap-3 border-b border-border py-2.5 has-data-checked:[&_[data-slot=run-target-title]]:text-foreground last:border-b-0"
                 >
                   {optionCopy(option)}
                   <RadioGroupItem value={option.id} />

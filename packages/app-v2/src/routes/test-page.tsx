@@ -273,15 +273,12 @@ export function TestPage() {
               className="relay-test-overview min-w-0 pt-1"
               aria-labelledby="test-overview-title"
             >
-              <div className="flex items-end justify-between gap-5 max-[620px]:items-start max-[620px]:gap-3">
-                <div>
-                  <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
-                    Journey
-                  </p>
-                  <h2 id="test-overview-title">Saved steps</h2>
-                </div>
-                <span>{test.data.stepCount === 1 ? "1 step" : `${test.data.stepCount} steps`}</span>
-              </div>
+              <h2
+                id="test-overview-title"
+                className="mb-2 text-[13px] font-medium text-muted-foreground"
+              >
+                {test.data.stepCount === 1 ? "1 step" : `${test.data.stepCount} steps`}
+              </h2>
               {test.data.steps?.length ? (
                 <ol className="relay-test-readable-steps mt-4 grid list-none gap-0 p-0">
                   {test.data.steps.map((step, index) => (
@@ -326,6 +323,7 @@ export function TestPage() {
                   Run setup
                 </h2>
                 <RunConfigurationComposer
+                  variant="plain"
                   configuration={{
                     values: {
                       targetName: targets.data?.find((target) => target.targetId === targetId)
@@ -441,9 +439,6 @@ export function TestPage() {
                       >
                         {start.isPending ? "Starting…" : "Run Test"}
                       </Button>
-                      {!targetId && targets.data?.length ? (
-                        <span className="text-xs text-text-weaker">Choose where to run</span>
-                      ) : null}
                     </div>
                   ) : null}
                 </RunConfigurationComposer>

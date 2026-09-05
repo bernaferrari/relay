@@ -386,28 +386,25 @@ function RunReport({
                 Set up another run
               </Button>
             ) : null}
+            {testId ? (
+              <Button
+                nativeButton={false}
+                render={<Link to="/tests/$testId" params={{ testId }} />}
+                variant="ghost"
+              >
+                View test
+              </Button>
+            ) : null}
           </>
         }
       >
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <RunContextFacts
-            report={report}
-            duration={
-              report.durationMs === undefined ? "Not recorded" : formatDuration(report.durationMs)
-            }
-            compact
-          />
-          {testId ? (
-            <Link
-              className="inline-flex min-h-9 items-center gap-1 rounded-md px-3 text-sm font-medium transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
-              to="/tests/$testId"
-              params={{ testId }}
-            >
-              View test
-              <ChevronRight className="size-4" aria-hidden="true" />
-            </Link>
-          ) : null}
-        </div>
+        <RunContextFacts
+          report={report}
+          duration={
+            report.durationMs === undefined ? "Not recorded" : formatDuration(report.durationMs)
+          }
+          compact
+        />
       </PageHeader>
       <RunReplayStatus runService={runService} />
 
@@ -551,8 +548,7 @@ function RunReport({
               >
                 {report.evidence.map((section) => (
                   <TabsTrigger key={section.id} value={section.id}>
-                    <span className="font-medium">{section.label}</span>
-                    <span className="ml-2 text-xs text-muted-foreground">{section.detail}</span>
+                    {section.label}
                   </TabsTrigger>
                 ))}
               </TabsList>
@@ -574,8 +570,7 @@ function RunReport({
       {report.outcome === "product-failure" ||
       report.outcome === "harness-failure" ||
       report.outcome === "uncertain" ? (
-        <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
-          <p className="text-sm text-muted-foreground">Share the findings with your team.</p>
+        <div className="mt-6 flex justify-end border-t border-border pt-4">
           <IssueDraftButton source={{ kind: "run", report }} />
         </div>
       ) : null}

@@ -23,14 +23,9 @@ export function TestStepEvidencePreview({
   return (
     <section className="mt-4 min-w-0 border-t border-border pt-4" aria-labelledby={titleId}>
       <header className="flex items-start justify-between gap-3">
-        <div>
-          <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
-            Latest Run
-          </p>
-          <h3 id={titleId} className="mt-0.5 text-sm font-semibold">
-            Evidence for this step
-          </h3>
-        </div>
+        <h3 id={titleId} className="text-[13px] font-medium text-muted-foreground">
+          Evidence for this step
+        </h3>
         {report ? (
           <Link
             className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
