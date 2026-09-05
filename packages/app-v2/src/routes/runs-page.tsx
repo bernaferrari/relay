@@ -128,7 +128,7 @@ export function RunsPage() {
       <PageHeader
         context="Runs"
         title="Run history"
-        description="Track active Runs and review results from your saved Tests."
+        description="Active Runs and recent results."
       />
 
       <div className="mt-4 border-b border-border pb-5">

@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useRouteContext } from "@tanstack/react-router";
 import { Box, KeyRound, Plus, RotateCcw } from "lucide-react";
 import { useMemo, useState } from "react";
+import { LibraryPage, PageHeader } from "../components/page-layout";
 import { Breadcrumbs, EmptyState, RecoveryState } from "../components/product-patterns";
 import type {
   ProductAppVersion,
@@ -319,24 +320,11 @@ function AppResourceFrame({
   children: React.ReactNode;
 }) {
   return (
-    <section className="relay-page mx-auto w-full px-[clamp(20px,3vw,40px)] pt-7 pb-10 max-w-[1040px]">
+    <LibraryPage className="max-w-[1040px]">
       <Breadcrumbs items={[{ label: "Workspace", to: "/home" }, { label: title }]} />
-      <header className="relay-page-header flex items-start justify-between gap-7 max-[780px]:flex-col">
-        <div>
-          <p className="relay-eyebrow mb-2 text-[11px] font-semibold tracking-[0.02em] text-[var(--text-weak)]">
-            Workspace
-          </p>
-          <h1 className="text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance] text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance]">
-            {title}
-          </h1>
-          <p className="relay-page-description mt-2.5 max-w-[62ch] text-[15px] leading-[1.55] text-[var(--text-weak)]">
-            {description}
-          </p>
-        </div>
-        {action}
-      </header>
+      <PageHeader context="Workspace" title={title} description={description} actions={action} />
       {children}
-    </section>
+    </LibraryPage>
   );
 }
 

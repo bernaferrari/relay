@@ -27,6 +27,7 @@ import {
   ChangePublicationStatus,
   ChangeSectionHeader,
 } from "../components/change-publication-details";
+import { PageHeader } from "../components/page-layout";
 import { Breadcrumbs, EmptyState } from "../components/product-patterns";
 import { IssueDraftButton } from "../components/issue-draft-button";
 import { PageLoading, RecordingProblem } from "./recording-shared";
@@ -143,57 +144,55 @@ export function ChangePage() {
 
       {current && details && status ? (
         <>
-          <header className="flex items-start justify-between gap-7 max-[780px]:flex-col">
-            <div className="min-w-0">
-              <p className="relay-eyebrow mb-2 text-[11px] font-semibold tracking-[0.02em] text-[var(--text-weak)]">
-                Change verification
-              </p>
-              <h1 className="text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance] text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance]">
-                {current.title}
-              </h1>
-              <p className="mt-2.5 text-sm text-muted-foreground">
-                {current.repository}
-                {current.pullRequest ? ` · Pull request #${current.pullRequest}` : ""}
-                {current.targetBranch ? ` · ${current.targetBranch}` : ""}
-              </p>
-            </div>
-            <div className="flex flex-none items-center gap-2">
-              {details.firstFailure ? (
-                <IssueDraftButton source={{ kind: "change", details }} />
-              ) : null}
-              {action ? (
-                <Button
-                  variant="default"
-                  onClick={() => mutation.mutate(action.kind)}
-                  disabled={mutation.isPending}
-                >
-                  {mutation.isPending && mutation.variables === action.kind
-                    ? action.pendingLabel
-                    : action.label}
-                </Button>
-              ) : null}
-              {canCancel(current.status) ? (
-                <DropdownMenu>
-                  <DropdownMenuTrigger
-                    render={
-                      <Button variant="ghost" disabled={mutation.isPending}>
-                        More
-                      </Button>
-                    }
-                  />
+          <PageHeader
+            context="Change"
+            title={current.title}
+            description={[
+              current.repository,
+              current.pullRequest ? `PR #${current.pullRequest}` : undefined,
+              current.targetBranch,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+            actions={
+              <div className="flex flex-none items-center gap-2">
+                {details.firstFailure ? (
+                  <IssueDraftButton source={{ kind: "change", details }} />
+                ) : null}
+                {action ? (
+                  <Button
+                    variant="default"
+                    onClick={() => mutation.mutate(action.kind)}
+                    disabled={mutation.isPending}
+                  >
+                    {mutation.isPending && mutation.variables === action.kind
+                      ? action.pendingLabel
+                      : action.label}
+                  </Button>
+                ) : null}
+                {canCancel(current.status) ? (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      render={
+                        <Button variant="ghost" disabled={mutation.isPending}>
+                          More
+                        </Button>
+                      }
+                    />
 
-                  <DropdownMenuContent sideOffset={6} align="end">
-                    <DropdownMenuItem
-                      variant="destructive"
-                      onClick={() => mutation.mutate("cancel")}
-                    >
-                      Cancel verification
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              ) : null}
-            </div>
-          </header>
+                    <DropdownMenuContent sideOffset={6} align="end">
+                      <DropdownMenuItem
+                        variant="destructive"
+                        onClick={() => mutation.mutate("cancel")}
+                      >
+                        Cancel verification
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                ) : null}
+              </div>
+            }
+          />
 
           <RecordingProblem recovery={detail.state.recovery} error={mutation.error} />
 

@@ -39,24 +39,24 @@ export function PageHeader({
   children?: ReactNode;
 }) {
   return (
-    <header className="relay-workspace-header mt-3 mb-6 flex flex-wrap items-start justify-between gap-x-6 gap-y-4 max-[720px]:gap-3">
+    <header className="relay-workspace-header mb-6 flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
       <div className="relay-workspace-heading min-w-0 flex-[1_1_280px]">
         {context ? (
-          <div className="relay-workspace-context flex flex-wrap gap-x-3 gap-y-2 text-xs text-muted-foreground">
+          <div className="relay-workspace-context flex flex-wrap gap-x-3 gap-y-1 text-[11px] leading-4 text-muted-foreground">
             {context}
           </div>
         ) : null}
-        <h1 className="mt-1.5 text-[clamp(24px,2.2vw,30px)] leading-[1.2] font-semibold tracking-tight wrap-anywhere">
+        <h1 className="mt-1 text-[28px] leading-8 font-semibold tracking-tight wrap-anywhere">
           {title}
         </h1>
         {description ? (
-          <p className="relay-page-description mt-2 max-w-[68ch] text-sm leading-relaxed text-muted-foreground">
+          <p className="relay-page-description mt-1.5 max-w-[60ch] text-[13px] leading-5 text-muted-foreground">
             {description}
           </p>
         ) : null}
       </div>
       {actions ? (
-        <div className="relay-workspace-actions flex flex-wrap items-center gap-2 pt-1.5 max-[960px]:w-full">
+        <div className="relay-workspace-actions flex flex-wrap items-center gap-2 pt-5 max-[960px]:w-full max-[960px]:pt-0">
           {actions}
         </div>
       ) : null}

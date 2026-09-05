@@ -2,7 +2,6 @@ import { ReportVideoInspector } from "../components/report-video-inspector";
 import { PageHeader, WorkbenchPage } from "../components/page-layout";
 import { RawEvidenceDisclosure } from "./raw-evidence-disclosure";
 /** @jsxImportSource react */
-import { Alert, AlertAction, AlertDescription, AlertTitle } from "@relay/ui-react/components/alert";
 import { Button } from "@relay/ui-react/components/button";
 import {
   Collapsible,
@@ -14,7 +13,7 @@ import { ScrollArea } from "@relay/ui-react/components/scroll-area";
 import { Tabs, TabsList, TabsTrigger } from "@relay/ui-react/components/tabs";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
-import { ChevronRight, CircleAlert } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Breadcrumbs, OutcomeMark } from "../components/product-patterns";
 import { IssueDraftButton } from "../components/issue-draft-button";
@@ -218,14 +217,7 @@ export function RunPage() {
     return (
       <WorkbenchPage className="max-w-[1120px]">
         <Breadcrumbs items={[{ label: "Runs", to: "/runs" }, { label: "In progress" }]} />
-        <header className="rounded-lg border border-border bg-muted/40 p-4">
-          <p className="relay-eyebrow mb-2 text-[11px] font-semibold tracking-[0.02em] text-[var(--text-weak)]">
-            Run
-          </p>
-          <h1 className="text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance]">
-            {snapshot?.title ?? "Loading Run"}
-          </h1>
-        </header>
+        <PageHeader context="Run" title={snapshot?.title ?? "Loading Run"} />
         <PageLoading label="Loading the Run…" />
       </WorkbenchPage>
     );
@@ -426,43 +418,26 @@ function RunReport({
       <RunReplayStatus runService={runService} />
 
       {failure ? (
-        <Alert
-          className="mt-5 grid grid-cols-[20px_minmax(0,1fr)_auto] max-[620px]:grid-cols-[20px_minmax(0,1fr)]"
-          variant="destructive"
-          aria-labelledby="causal-failure-title"
-        >
-          <CircleAlert />
-          <AlertTitle id="causal-failure-title">
+        <section className="mt-2 max-w-[60ch]" aria-labelledby="causal-failure-title">
+          <h2 id="causal-failure-title" className="text-[15px] font-medium text-foreground">
             {failureTitle(failure, report.category)}
-          </AlertTitle>
-          <AlertDescription>{nextAction(report.outcome)}</AlertDescription>
-          {testId ? (
-            <AlertAction>
-              {testId ? (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  nativeButton={false}
-                  render={<Link to="/tests/$testId" params={{ testId }} />}
-                >
-                  Run current test
-                </Button>
-              ) : null}
-            </AlertAction>
-          ) : null}
-          <Collapsible className="col-start-2 col-end-[-1] max-[620px]:col-end-[-1]">
-            <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 py-2 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
+          </h2>
+          <p className="mt-1 text-[13px] leading-5 text-muted-foreground">
+            {nextAction(report.outcome)}
+          </p>
+          <Collapsible className="mt-3">
+            <CollapsibleTrigger className="text-[13px] text-muted-foreground hover:text-foreground">
               Technical details
             </CollapsibleTrigger>
-            <CollapsibleContent className="border-t pt-3">
-              <ScrollArea className="max-h-[180px] overflow-auto">
-                <pre className="whitespace-pre-wrap break-words text-xs leading-relaxed">
+            <CollapsibleContent>
+              <ScrollArea className="mt-2 max-h-[180px] overflow-auto">
+                <pre className="whitespace-pre-wrap break-words text-[12px] leading-5 text-muted-foreground">
                   {failure}
                 </pre>
               </ScrollArea>
             </CollapsibleContent>
           </Collapsible>
-        </Alert>
+        </section>
       ) : null}
 
       {views.length > 1 ? (

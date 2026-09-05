@@ -378,13 +378,7 @@ function TestEditorDocument() {
       />
       <PageHeader
         title={editorDocument?.test.name ?? "Edit Test"}
-        context={
-          <>
-            <span>{editorDocument?.appName}</span>
-            <span>Editing Test</span>
-            {editorDocument ? <span>Revision {editorDocument.revision}</span> : null}
-          </>
-        }
+        context={editorDocument?.appName ?? "Tests"}
         actions={
           <>
             <EditorSaveStatus

@@ -52,12 +52,12 @@ const routePresentations = {
   "/tests": {
     path: "/tests",
     eyebrow: "Library",
-    description: "Reviewed journeys that can be run again with confidence.",
+    description: "Run a saved journey, or record a new one.",
   },
   "/tests/new": {
     path: "/tests/new",
     eyebrow: "Tests",
-    description: "Open the starting screen, then start recording.",
+    description: "Choose an app and a device, then start.",
   },
   "/tests/:testId": {
     path: "/tests/$testId",

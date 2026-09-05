@@ -1,8 +1,7 @@
 /** @jsxImportSource react */
 import { Button } from "@relay/ui-react/components/button";
-import { Tabs, TabsList, TabsTrigger } from "@relay/ui-react/components/tabs";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
+import { getRouteApi, useRouteContext } from "@tanstack/react-router";
 import { RotateCcw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { LibraryPage, PageHeader } from "../components/page-layout";
@@ -13,14 +12,10 @@ import { BatchFailureClusters, BatchResultMatrix } from "./batch-triage-panels";
 import { PageLoading, RecordingProblem } from "./recording-shared";
 
 const routeApi = getRouteApi("/batches/$batchId");
-type MatrixView = "problems" | "all";
 
 export function BatchPage() {
   const { runAcrossService, queryClient } = useRouteContext({ from: "__root__" });
   const { batchId } = routeApi.useParams();
-  const search = routeApi.useSearch() as { view?: unknown };
-  const navigate = useNavigate({ from: "/batches/$batchId" });
-  const view: MatrixView = search.view === "all" ? "all" : "problems";
   const [selectedCases, setSelectedCases] = useState<Set<string>>(() => new Set());
   const [selectedClusters, setSelectedClusters] = useState<Set<string>>(() => new Set());
   const [downloadUrl, setDownloadUrl] = useState<string>();
@@ -70,9 +65,11 @@ export function BatchPage() {
     },
   });
   const rerun = useMutation({
-    mutationFn: () =>
+    mutationFn: (caseIds?: readonly string[]) =>
       runAcrossService.rerun(batchId, {
-        ...(selectedCases.size ? { caseIds: [...selectedCases] } : {}),
+        ...((caseIds ?? [...selectedCases]).length
+          ? { caseIds: [...(caseIds ?? selectedCases)] }
+          : {}),
         ...(selectedClusters.size ? { clusterIds: [...selectedClusters] } : {}),
       }),
     onSuccess: async () => {
@@ -89,8 +86,6 @@ export function BatchPage() {
     () => new Set([...selectedCases, ...selectedClusterCases]).size,
     [selectedCases, selectedClusterCases],
   );
-  const rerunnableCases = report?.cases.filter(isBatchCaseRerunnable) ?? [];
-
   useEffect(() => {
     setDownloadUrl(undefined);
     if (!report) return;
@@ -138,21 +133,6 @@ export function BatchPage() {
       <PageHeader
         context="Results"
         title={report?.title ?? "Batch"}
-        description={
-          report
-            ? [
-                report.cases.filter((item) => item.status === "failed").length
-                  ? `${report.cases.filter((item) => item.status === "failed").length} failed`
-                  : undefined,
-                report.passedCases ? `${report.passedCases} passed` : undefined,
-                report.cases.filter((item) => item.status === "blocked").length
-                  ? `${report.cases.filter((item) => item.status === "blocked").length} blocked`
-                  : undefined,
-              ]
-                .filter(Boolean)
-                .join(" · ")
-            : undefined
-        }
         actions={
           report ? (
             <>
@@ -246,51 +226,13 @@ export function BatchPage() {
           ) : null}
 
           {report.cases.length ? (
-            <>
-              {hasProblems && report.passedCases ? (
-                <div className="relay-batch-matrix-toolbar mt-2 mb-3 flex flex-wrap items-center justify-between gap-4">
-                  <Tabs
-                    value={view}
-                    onValueChange={(next) =>
-                      void navigate({
-                        search: (previous) => ({
-                          ...previous,
-                          view: next === "problems" ? undefined : next,
-                        }),
-                      })
-                    }
-                  >
-                    <TabsList variant="line" aria-label="Filter cases">
-                      <TabsTrigger value="problems">Failed</TabsTrigger>
-                      <TabsTrigger value="all">All</TabsTrigger>
-                    </TabsList>
-                  </Tabs>
-                  {rerunnableCases.length > 1 ? (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() =>
-                        setSelectedCases(
-                          selectedCases.size === rerunnableCases.length
-                            ? new Set()
-                            : new Set(rerunnableCases.map((item) => item.id)),
-                        )
-                      }
-                    >
-                      {selectedCases.size === rerunnableCases.length
-                        ? "Clear"
-                        : "Select all failed"}
-                    </Button>
-                  ) : null}
-                </div>
-              ) : null}
-              <BatchResultMatrix
-                report={report}
-                failuresOnly={view === "problems" && hasProblems}
-                selected={selectedCases}
-                onToggleCase={(item, checked) => toggleCase(item.id, checked)}
-              />
-            </>
+            <BatchResultMatrix
+              report={report}
+              selected={selectedCases}
+              onToggleCase={(item, checked) => toggleCase(item.id, checked)}
+              onRerun={(item) => rerun.mutate([item.id])}
+              rerunning={rerun.isPending}
+            />
           ) : null}
 
           {totalSelected ? (

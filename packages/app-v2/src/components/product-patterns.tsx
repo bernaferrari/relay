@@ -8,7 +8,6 @@ import {
   EmptyTitle,
 } from "@relay/ui-react/components/empty";
 import { Badge } from "@relay/ui-react/components/badge";
-import { Alert, AlertAction, AlertDescription, AlertTitle } from "@relay/ui-react/components/alert";
 import { Link } from "@tanstack/react-router";
 import {
   AlertTriangle,
@@ -48,10 +47,7 @@ type BreadcrumbItem =
 
 export function Breadcrumbs({ items }: { items: readonly BreadcrumbItem[] }) {
   return (
-    <nav
-      className="relay-breadcrumbs mb-[22px] text-xs text-[var(--text-weaker)]"
-      aria-label="Breadcrumb"
-    >
+    <nav className="relay-breadcrumbs mb-3 text-xs text-muted-foreground" aria-label="Breadcrumb">
       <ol className="m-0 flex min-w-0 list-none items-center gap-[7px] p-0">
         {items.map((item, index) => {
           const current = index === items.length - 1;
@@ -162,20 +158,16 @@ export function RecoveryState({
   }
 
   return (
-    <Alert
-      className={`relay-recovery-state relay-recovery-state--compact${className ? ` ${className}` : ""}`}
-      variant="destructive"
+    <section
+      className={`relay-recovery-state relay-recovery-state--compact max-w-[60ch]${className ? ` ${className}` : ""}`}
       role="alert"
     >
-      <CircleAlert />
-      <AlertTitle>{title}</AlertTitle>
+      <h2 className="text-[15px] font-medium text-foreground">{title}</h2>
       {supportingText ? (
-        <AlertDescription>
-          <p>{supportingText}</p>
-        </AlertDescription>
+        <p className="mt-1 text-[13px] leading-5 text-muted-foreground">{supportingText}</p>
       ) : null}
-      {action ? <AlertAction>{action}</AlertAction> : null}
-    </Alert>
+      {action ? <div className="mt-3">{action}</div> : null}
+    </section>
   );
 }
 

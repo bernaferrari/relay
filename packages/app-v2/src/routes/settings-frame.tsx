@@ -4,6 +4,7 @@ import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState, type ReactNode } from "react";
 import { settingsCategories, type SettingsCategory } from "../data/settings-product-service";
 import { SelectField } from "../components/filter-select";
+import { LibraryPage, PageHeader } from "../components/page-layout";
 
 export type SaveState = "saved" | "saving" | "failed" | "unavailable";
 
@@ -90,21 +91,13 @@ export function SettingsFrame({
   }, [category, section]);
 
   return (
-    <section className="relay-page mx-auto w-full px-[clamp(20px,3vw,40px)] pt-7 pb-10 max-w-[1080px]">
-      <header className="flex items-start justify-between gap-4">
-        <div>
-          <p className="relay-eyebrow mb-2 text-[11px] font-semibold tracking-[0.02em] text-[var(--text-weak)]">
-            Settings
-          </p>
-          <h1 className="text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance] text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance]">
-            {copy.title}
-          </h1>
-          <p className="relay-page-description mt-2.5 max-w-[62ch] text-[15px] leading-[1.55] text-[var(--text-weak)]">
-            {copy.description}
-          </p>
-        </div>
-        {visibleSaveState ? <SaveStatus state={visibleSaveState} /> : null}
-      </header>
+    <LibraryPage className="max-w-[1080px]">
+      <PageHeader
+        context="Settings"
+        title={copy.title}
+        description={copy.description}
+        actions={visibleSaveState ? <SaveStatus state={visibleSaveState} /> : null}
+      />
       <div className="hidden max-[780px]:block">
         <SelectField
           className="w-full"
@@ -140,7 +133,7 @@ export function SettingsFrame({
           {children}
         </section>
       </div>
-    </section>
+    </LibraryPage>
   );
 }
 

@@ -6,7 +6,8 @@ import type {
 } from "@relay/product/run-across";
 import { Checkbox } from "@relay/ui-react/components/checkbox";
 import { Link } from "@tanstack/react-router";
-import { ChevronRight, ExternalLink } from "lucide-react";
+import { ChevronDown, ChevronRight, ExternalLink } from "lucide-react";
+import { useState } from "react";
 import {
   buildBatchMatrix,
   humanizeBatchIdentity,
@@ -76,17 +77,22 @@ export function BatchFailureClusters({
 
 export function BatchResultMatrix({
   report,
-  failuresOnly,
   selected,
   onToggleCase,
+  onRerun,
+  rerunning,
 }: {
   report: ProductBatchReport;
-  failuresOnly: boolean;
   selected: ReadonlySet<string>;
   onToggleCase(item: ProductBatchCase, checked: boolean): void;
+  onRerun(item: ProductBatchCase): void;
+  rerunning: boolean;
 }) {
+  const [showPassed, setShowPassed] = useState(false);
   const matrix = buildBatchMatrix(report.cases, report.setup);
-  const cases = visibleBatchCases(report.cases, failuresOnly);
+  const problems = visibleBatchCases(report.cases, true);
+  const passed = report.cases.filter((item) => item.status === "passed");
+  const allowSelect = problems.filter(isBatchCaseRerunnable).length > 1;
   const showMatrix = shouldShowBatchMatrix(matrix);
   const rows = showMatrix
     ? matrix.rows
@@ -94,16 +100,17 @@ export function BatchResultMatrix({
           ...row,
           visibleCells: matrix.columns.map((column) => {
             const cell = row.cells.get(column.id);
-            const visible = cell ? visibleBatchCases(cell.cases, failuresOnly) : [];
-            return { column, cell, visible };
+            const visible = cell ? visibleBatchCases(cell.cases, !showPassed) : [];
+            return { column, visible };
           }),
         }))
         .filter((row) => row.visibleCells.some((entry) => entry.visible.length))
     : [];
+
   return (
-    <section className="relay-batch-matrix" aria-label={failuresOnly ? "Failed cases" : "Results"}>
+    <section className="relay-batch-matrix grid gap-1" aria-label="Results">
       {showMatrix ? (
-        <div className="relay-batch-matrix-scroll overflow-auto rounded-xl border border-border bg-card">
+        <div className="relay-batch-matrix-scroll overflow-auto rounded-xl border border-border">
           <table className="min-w-[560px] w-full border-separate border-spacing-0">
             <thead>
               <tr>
@@ -115,7 +122,7 @@ export function BatchResultMatrix({
                 </th>
                 {matrix.columns.map((column) => (
                   <th
-                    className="min-w-[184px] border-r border-b border-border bg-muted p-3 text-left text-xs"
+                    className="min-w-[184px] border-r border-b border-border p-3 text-left text-xs"
                     scope="col"
                     key={column.id}
                   >
@@ -148,14 +155,17 @@ export function BatchResultMatrix({
                       className="min-w-[184px] border-r border-b border-border p-3 align-top"
                     >
                       {visible.length ? (
-                        <div className="relay-batch-matrix-cell grid gap-2">
+                        <div className="grid gap-2">
                           {visible.map((item) => (
                             <BatchCaseResult
                               key={item.id}
                               item={item}
                               selected={selected.has(item.id)}
+                              allowSelect={allowSelect}
                               compact
                               onToggle={(checked) => onToggleCase(item, checked)}
+                              onRerun={() => onRerun(item)}
+                              rerunning={rerunning}
                             />
                           ))}
                         </div>
@@ -170,86 +180,147 @@ export function BatchResultMatrix({
           </table>
         </div>
       ) : (
-        <ul className="m-0 list-none divide-y divide-border border-y border-border p-0">
-          {cases.map((item) => (
-            <li key={item.id}>
-              <BatchCaseResult
-                item={item}
-                selected={selected.has(item.id)}
-                onToggle={(checked) => onToggleCase(item, checked)}
-              />
-            </li>
-          ))}
-        </ul>
+        <>
+          {problems.length ? (
+            <ul className="m-0 list-none p-0">
+              {problems.map((item) => (
+                <li key={item.id}>
+                  <BatchCaseResult
+                    item={item}
+                    selected={selected.has(item.id)}
+                    allowSelect={allowSelect}
+                    onToggle={(checked) => onToggleCase(item, checked)}
+                    onRerun={() => onRerun(item)}
+                    rerunning={rerunning}
+                  />
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          <PassedCases cases={passed} open={showPassed} onOpen={() => setShowPassed(true)} />
+        </>
       )}
+      {showMatrix && !showPassed ? (
+        <PassedCases cases={passed} open={false} onOpen={() => setShowPassed(true)} />
+      ) : null}
     </section>
+  );
+}
+
+function PassedCases({
+  cases,
+  open,
+  onOpen,
+}: {
+  cases: readonly ProductBatchCase[];
+  open: boolean;
+  onOpen(): void;
+}) {
+  if (!cases.length) return null;
+  if (!open) {
+    return (
+      <button
+        type="button"
+        className="flex w-max items-center gap-1.5 border-t border-border pt-3 text-left text-[13px] text-muted-foreground hover:text-foreground"
+        onClick={onOpen}
+      >
+        {cases.length} passed
+        <ChevronDown className="size-3.5" aria-hidden="true" />
+      </button>
+    );
+  }
+  return (
+    <div className="grid gap-1">
+      <p className="text-[11px] text-muted-foreground">{cases.length} passed</p>
+      <ul className="m-0 list-none p-0">
+        {cases.map((item) => (
+          <li key={item.id}>
+            <BatchCaseResult
+              item={item}
+              selected={false}
+              allowSelect={false}
+              quiet
+              onToggle={() => undefined}
+              onRerun={() => undefined}
+              rerunning={false}
+            />
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
 function BatchCaseResult({
   item,
   selected,
+  allowSelect,
   onToggle,
+  onRerun,
+  rerunning,
   compact = false,
+  quiet = false,
 }: {
   item: ProductBatchCase;
   selected: boolean;
+  allowSelect: boolean;
   onToggle(checked: boolean): void;
+  onRerun(): void;
+  rerunning: boolean;
   compact?: boolean;
+  quiet?: boolean;
 }) {
   const rerunnable = isBatchCaseRerunnable(item);
   const label = caseValues(item);
   const problem = isBatchCaseProblem(item);
   return (
     <div
-      className={`relay-batch-result group grid items-center gap-2 ${
+      className={`relay-batch-result grid items-center gap-3 ${
         compact
-          ? "grid-cols-[minmax(0,1fr)_auto] rounded-md px-1 py-1"
-          : "grid-cols-[minmax(0,1fr)_auto] px-3 py-3 transition-colors hover:bg-muted/40"
+          ? "grid-cols-[minmax(0,1fr)_auto] px-1 py-1"
+          : quiet
+            ? "grid-cols-[minmax(0,1fr)_auto] py-2"
+            : "grid-cols-[minmax(0,1fr)_auto] py-4"
       }`}
     >
+      {allowSelect ? (
+        <Checkbox
+          className="col-start-1 row-start-1 size-5 after:inset-0"
+          checked={selected}
+          onCheckedChange={(checked) => onToggle(checked === true)}
+          aria-label={`Select ${label}`}
+        />
+      ) : null}
       {item.runId ? (
         <Link
           to="/runs/$runId"
           params={{ runId: item.runId }}
-          className="grid min-w-0 gap-0.5 rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          className={`grid min-w-0 gap-1 rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring ${allowSelect ? "col-start-1 ml-8" : ""}`}
         >
-          <span className="flex min-w-0 items-baseline gap-2">
-            <span
-              className={`shrink-0 text-xs font-medium ${
-                item.status === "failed"
-                  ? "text-red-600 dark:text-red-400"
-                  : item.status === "passed"
-                    ? "text-emerald-700 dark:text-emerald-400"
-                    : "text-muted-foreground"
-              }`}
-            >
-              {caseStatus(item.status)}
-            </span>
-            <strong className="truncate text-sm font-medium text-foreground">{label}</strong>
-          </span>
+          <strong
+            className={`truncate font-medium text-foreground ${quiet ? "text-[13px]" : "text-[15px]"}`}
+          >
+            {label}
+          </strong>
           {item.error && problem ? (
-            <small className="truncate text-xs text-muted-foreground">{item.error}</small>
+            <small className="text-[13px] leading-5 text-muted-foreground">{item.error}</small>
           ) : null}
         </Link>
       ) : (
-        <span className="grid min-w-0 gap-0.5">
-          <span className="flex min-w-0 items-baseline gap-2">
-            <span className="shrink-0 text-xs font-medium text-muted-foreground">
-              {caseStatus(item.status)}
-            </span>
-            <strong className="truncate text-sm font-medium text-foreground">{label}</strong>
-          </span>
+        <span className="grid min-w-0 gap-1">
+          <strong className="truncate text-[15px] font-medium text-foreground">{label}</strong>
         </span>
       )}
       <span className="flex shrink-0 items-center gap-1">
-        {rerunnable ? (
-          <Checkbox
-            className="size-5 after:inset-0"
-            checked={selected}
-            onCheckedChange={(checked) => onToggle(checked === true)}
-            aria-label={`Select ${label}`}
-          />
+        {rerunnable && !allowSelect ? (
+          <button
+            type="button"
+            className="px-2 text-[13px] text-muted-foreground hover:text-foreground"
+            disabled={rerunning}
+            onClick={onRerun}
+          >
+            {rerunning ? "Rerunning…" : "Rerun"}
+          </button>
         ) : null}
         {item.runId ? (
           <ChevronRight className="size-4 text-muted-foreground" aria-hidden="true" />
@@ -270,16 +341,6 @@ function caseValues(item: ProductBatchCase): string {
   if (item.world?.trim()) return item.world;
   const values = Object.values(item.values).map(humanizeBatchIdentity);
   return values.length ? values.join(" · ") : item.phase === "pilot" ? "Pilot" : "Default data";
-}
-
-function caseStatus(status: ProductBatchCase["status"]): string {
-  if (status === "passed") return "Passed";
-  if (status === "failed") return "Failed";
-  if (status === "blocked") return "Blocked";
-  if (status === "cancelled") return "Cancelled";
-  if (status === "running") return "Running";
-  if (status === "queued") return "Queued";
-  return "Pending";
 }
 
 function failureKind(kind: ProductBatchFailureCluster["kind"]): string {

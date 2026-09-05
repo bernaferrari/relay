@@ -310,7 +310,7 @@ export function DevicesPage() {
       <PageHeader
         context="Workspace"
         title="Devices"
-        description="Choose a device or browser to inspect, record, or run a Test."
+        description="Choose a device or browser, then inspect or record."
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Button

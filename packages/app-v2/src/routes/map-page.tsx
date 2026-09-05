@@ -10,6 +10,7 @@ import {
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useRouteContext } from "@tanstack/react-router";
 import { InfiniteMapCanvas } from "../components/infinite-map-canvas";
+import { PageHeader } from "../components/page-layout";
 import { Breadcrumbs, EmptyState } from "../components/product-patterns";
 import { PageLoading, RecordingProblem } from "./recording-shared";
 
@@ -73,17 +74,11 @@ export function MapPage() {
           { label: "Explore" },
         ]}
       />
-      <header className="relay-page-header mb-7 flex min-w-0 flex-wrap items-start justify-between gap-5">
-        <p className="relay-eyebrow mb-2 text-[11px] font-semibold tracking-[0.02em] text-[var(--text-weak)]">
-          Explore
-        </p>
-        <h1 className="text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance] text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance]">
-          {map.data?.appName ?? "App"}
-        </h1>
-        <p className="relay-page-description mt-2.5 max-w-[62ch] text-[15px] leading-[1.55] text-[var(--text-weak)]">
-          Known screens and verified paths for this app.
-        </p>
-      </header>
+      <PageHeader
+        context="Explore"
+        title={map.data?.appName ?? "App"}
+        description="Known screens and verified paths."
+      />
       {map.isPending ? <PageLoading label="Loading known screens…" /> : null}
       <RecordingProblem
         error={map.error ?? proposals.error ?? decideProposal.error}
