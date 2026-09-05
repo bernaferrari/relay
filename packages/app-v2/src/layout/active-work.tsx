@@ -13,9 +13,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter, useRouteContext } from "@tanstack/react-router";
 import {
   Activity,
-  ArrowRight,
   CircleDot,
-  FlaskConical,
   GitCompareArrows,
   Layers3,
   Play,
@@ -219,14 +217,11 @@ function ActivityCenter({
         showCloseButton={false}
         className="max-h-[min(38rem,calc(100vh-2rem))] gap-0 overflow-hidden p-0 sm:max-w-md"
       >
-        <header className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-4 border-b px-4 py-4">
+        <header className="flex items-center justify-between gap-3 px-4 pt-4 pb-2">
           <div className="min-w-0">
-            <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              Workspace
-            </p>
-            <DialogTitle className="mt-1.5">Activity</DialogTitle>
-            <DialogDescription className="mt-1.5 max-w-[42ch] leading-5">
-              Recording, Runs, batches, and verification continue while you move around Relay.
+            <DialogTitle>Activity</DialogTitle>
+            <DialogDescription className="sr-only">
+              In-progress recordings and Runs.
             </DialogDescription>
           </div>
           <DialogClose
@@ -239,14 +234,12 @@ function ActivityCenter({
         </header>
         <ScrollArea className="min-h-0 max-h-[min(28rem,calc(100vh-12rem))]">
           {unavailable ? (
-            <div className="grid gap-3 p-6" role="alert">
-              <strong>Activity is unavailable</strong>
-              <p className="text-sm text-muted-foreground">
-                Relay could not refresh active work from the workspace.
-              </p>
+            <div className="grid gap-3 px-4 py-5" role="alert">
+              <p className="text-sm text-muted-foreground">Activity is unavailable</p>
               <Button
                 variant="outline"
                 size="sm"
+                className="w-fit"
                 disabled={retrying || !onRetry}
                 onClick={() => {
                   if (!onRetry) return;
@@ -258,58 +251,36 @@ function ActivityCenter({
               </Button>
             </div>
           ) : items.length ? (
-            <div className="grid gap-1 p-2">
+            <div className="grid gap-0.5 px-2 pb-2">
               {items.map((item) => {
                 const Icon = iconForKind[item.kind];
                 return (
                   <Button
                     type="button"
                     variant="ghost"
-                    className="grid h-auto min-h-16 w-full grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-3 px-2.5 py-2 text-left whitespace-normal"
+                    className="grid h-auto min-h-12 w-full grid-cols-[1rem_minmax(0,1fr)] items-center gap-3 px-2.5 py-2 text-left whitespace-normal"
                     key={item.id}
                     onClick={() => openItem(item)}
                   >
-                    <span className="grid size-8 place-items-center rounded-lg bg-muted text-foreground">
-                      <Icon className="size-4" aria-hidden="true" />
-                    </span>
-                    <span className="grid min-w-0 gap-1.5">
-                      <span className="flex min-w-0 items-center gap-2">
-                        <Badge variant="secondary">{item.status}</Badge>
-                        <small className="truncate text-xs font-normal text-muted-foreground">
-                          {item.detail}
-                        </small>
-                      </span>
+                    <Icon className="size-4 text-muted-foreground" aria-hidden="true" />
+                    <span className="grid min-w-0">
                       <strong className="truncate text-sm font-medium text-foreground">
                         {item.title}
                       </strong>
+                      <small className="truncate text-xs font-normal text-muted-foreground">
+                        {item.status}
+                      </small>
                     </span>
-                    <ArrowRight className="size-4 text-muted-foreground" aria-hidden="true" />
                   </Button>
                 );
               })}
             </div>
           ) : (
-            <div className="grid min-h-52 place-items-center content-center gap-2 px-6 py-8 text-center">
-              <FlaskConical className="size-5 text-muted-foreground" aria-hidden="true" />
-              <strong className="text-sm font-medium text-foreground">No active work</strong>
-              <p className="max-w-[34ch] text-sm leading-5 text-muted-foreground">
-                Start a recording, Run, or Change verification and it will stay visible here.
-              </p>
+            <div className="px-4 py-6">
+              <p className="text-sm text-muted-foreground">Nothing running</p>
             </div>
           )}
         </ScrollArea>
-        <footer className="flex justify-end border-t p-3">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              onOpenChange(false);
-              router.history.push("/runs");
-            }}
-          >
-            View Run history
-          </Button>
-        </footer>
       </DialogContent>
     </Dialog>
   );
