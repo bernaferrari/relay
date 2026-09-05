@@ -232,6 +232,14 @@ describe("live Session to Test editor", () => {
     await render("/sessions/session-live", { sessionService: service });
 
     expect(document.body.textContent).toContain("Edit Test live");
+    expect(document.body.textContent).toContain("End session");
+    expect(document.body.textContent).not.toContain("Investigate");
+    expect(
+      [...document.querySelectorAll("button")].some(
+        (button) => button.textContent?.trim() === "More",
+      ),
+    ).toBe(false);
+    expect(document.querySelector('a[href^="/debug"]')).toBeNull();
     expect(
       document.querySelector<HTMLAnchorElement>(
         'a[href="/tests/test-live/edit?session=session-live"]',
@@ -257,6 +265,7 @@ describe("live Session to Test editor", () => {
     } as unknown as ProductSessionDetail;
     const endedHistory = await render("/sessions/session-live", { session: ended });
     expect(document.body.textContent).not.toContain("Edit Test live");
+    expect(document.body.textContent).not.toContain("End session");
     expect(document.body.textContent).toContain("Open saved Test");
     expect(endedHistory.location.pathname).toBe("/sessions/session-live");
 
@@ -276,8 +285,37 @@ describe("live Session to Test editor", () => {
     } as ProductSessionDetail;
     await render("/sessions/session-live", { session: expired });
     expect(document.body.textContent).toContain("The device reservation expired");
+    expect(document.body.textContent).toContain("End session");
+    expect(document.body.textContent).not.toContain("Investigate");
     expect(document.body.textContent).not.toContain("Connecting to the target");
     expect(document.querySelector("canvas")).toBeNull();
+  });
+
+  it("ends an active Session from the visible header action", async () => {
+    const ended = {
+      ...session,
+      state: "cancelled",
+      lease: { ...session.lease, status: "released" },
+    } as unknown as ProductSessionDetail;
+    const service = sessionService();
+    service.end = vi.fn(async () => {
+      service.get = vi.fn(async () => ended);
+      return ended;
+    });
+
+    await render("/sessions/session-live", { sessionService: service });
+    await click("End session");
+    expect(document.body.textContent).toContain("End this Live session?");
+    expect(document.body.textContent).toContain("The device is released. Saved evidence stays.");
+
+    const confirm = document.querySelector<HTMLButtonElement>(".relay-session-end-button");
+    expect(confirm).not.toBeNull();
+    await act(async () => confirm!.click());
+    await settle();
+
+    expect(service.end).toHaveBeenCalledWith("session-live");
+    expect(document.body.textContent).toContain("This Session has ended");
+    expect(document.body.textContent).not.toContain("End session");
   });
 
   it("adopts an external Session end after the canonical refresh", async () => {

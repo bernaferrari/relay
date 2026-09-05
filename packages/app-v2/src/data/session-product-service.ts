@@ -104,6 +104,7 @@ export type SessionProductService = {
 
 export const sessionQueryKeys = {
   sessions: ["sessions"] as const,
+  sessionLists: ["sessions", "list"] as const,
   sessionList: (options: SessionListOptions) => ["sessions", "list", options] as const,
   session: (sessionId: string) => ["sessions", sessionId] as const,
 };

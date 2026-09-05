@@ -47,7 +47,10 @@ export type BreadcrumbItem =
 
 export function Breadcrumbs({ items }: { items: readonly BreadcrumbItem[] }) {
   return (
-    <nav className="relay-breadcrumbs text-[11px] leading-4 text-muted-foreground" aria-label="Breadcrumb">
+    <nav
+      className="relay-breadcrumbs text-[11px] leading-4 text-muted-foreground"
+      aria-label="Breadcrumb"
+    >
       <ol className="m-0 flex min-w-0 list-none items-center gap-1.5 p-0">
         {items.map((item, index) => {
           const current = index === items.length - 1;

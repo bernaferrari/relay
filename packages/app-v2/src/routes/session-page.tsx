@@ -6,12 +6,6 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@relay/ui-react/components/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-} from "@relay/ui-react/components/dropdown-menu";
 
 import { Button } from "@relay/ui-react/components/button";
 import {
@@ -21,7 +15,7 @@ import {
 } from "@relay/ui-react/components/collapsible";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useRouteContext } from "@tanstack/react-router";
-import { CircleAlert, Pencil, RefreshCcw, Square, MoreHorizontal } from "lucide-react";
+import { CircleAlert, Pencil, RefreshCcw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { LibraryPage, PageHeader } from "../components/page-layout";
 import { EmptyState } from "../components/product-patterns";
@@ -65,7 +59,7 @@ export function SessionPage() {
     mutationFn: () => sessionService.end(sessionId),
     onSuccess: async (value) => {
       queryClient.setQueryData(sessionQueryKeys.session(sessionId), value);
-      await queryClient.invalidateQueries({ queryKey: sessionQueryKeys.sessions });
+      await queryClient.invalidateQueries({ queryKey: sessionQueryKeys.sessionLists });
       setEndOpen(false);
     },
   });
@@ -170,47 +164,33 @@ export function SessionPage() {
                 </Button>
               ) : null}
               {isActiveSession(value) ? (
-                <DropdownMenu>
-                  <DropdownMenuTrigger
-                    render={
-                      <Button variant="outline" aria-label="Session actions">
-                        <MoreHorizontal aria-hidden="true" /> More
-                      </Button>
-                    }
-                  />
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem
-                      render={<Link to="/debug" search={{ target: value.target.targetId }} />}
-                    >
-                      Investigate
-                    </DropdownMenuItem>
-                    <DropdownMenuItem variant="destructive" onClick={() => setEndOpen(true)}>
-                      <Square aria-hidden="true" /> End Session
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              ) : null}
-              {isActiveSession(value) ? (
-                <Dialog open={endOpen} onOpenChange={setEndOpen}>
-                  <DialogContent showCloseButton={false}>
-                    <DialogTitle>End this Session?</DialogTitle>
-                    <DialogDescription>
-                      Relay will stop this active authoring Session. Saved evidence and its history
-                      remain available.
-                    </DialogDescription>
-                    <div className="relay-form-actions flex flex-wrap items-center gap-2.5 relay-form-actions--end">
-                      <DialogClose render={<Button variant="ghost">Keep Session</Button>} />
-                      <Button
-                        className="relay-session-end-button"
-                        variant="outline"
-                        onClick={() => end.mutate()}
-                        disabled={end.isPending}
-                      >
-                        {end.isPending ? "Ending…" : "End Session"}
-                      </Button>
-                    </div>
-                  </DialogContent>
-                </Dialog>
+                <>
+                  <Button
+                    variant={canControl ? "ghost" : "outline"}
+                    onClick={() => setEndOpen(true)}
+                  >
+                    End session
+                  </Button>
+                  <Dialog open={endOpen} onOpenChange={setEndOpen}>
+                    <DialogContent showCloseButton={false}>
+                      <DialogTitle>End this Live session?</DialogTitle>
+                      <DialogDescription>
+                        The device is released. Saved evidence stays.
+                      </DialogDescription>
+                      <div className="relay-form-actions flex flex-wrap items-center gap-2.5 relay-form-actions--end">
+                        <DialogClose render={<Button variant="ghost">Keep session</Button>} />
+                        <Button
+                          className="relay-session-end-button"
+                          variant="outline"
+                          onClick={() => end.mutate()}
+                          disabled={end.isPending}
+                        >
+                          {end.isPending ? "Ending…" : "End session"}
+                        </Button>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                </>
               ) : null}
             </>
           }
