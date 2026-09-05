@@ -339,7 +339,7 @@ describe("Home", () => {
     await renderHome({});
 
     expect(document.body.textContent).toContain("Prove one journey that matters");
-    expect(document.body.textContent).toContain("Add the app you want to verify");
+    expect(document.body.textContent).toContain("Add an App");
     expect(
       [...document.querySelectorAll('a[href="/apps"]')].some((link) =>
         link.textContent?.includes("Add an App"),

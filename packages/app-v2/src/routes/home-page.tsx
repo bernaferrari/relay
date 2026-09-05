@@ -111,7 +111,7 @@ export function HomePage() {
   };
 
   return (
-    <LibraryPage className="flex max-w-6xl flex-col gap-8">
+    <LibraryPage className="flex min-h-full max-w-[1040px] flex-col">
       <PageHeader
         context="Overview"
         title={
@@ -177,33 +177,35 @@ export function HomePage() {
       runs.isFetched &&
       changes.isFetched &&
       !hasWorkspaceData ? (
-        <EmptyState
-          title="Add the app you want to verify"
-          detail="Relay needs an app before it can keep Tests, Runs, and proof in one trustworthy place."
-          icon={Plus}
-          action={
-            <Button nativeButton={false} render={<Link to="/apps" />} variant="default">
-              Add an App
-            </Button>
-          }
-        />
+        <div className="flex flex-1 items-center justify-center">
+          <EmptyState
+            title="Add an App"
+            detail="Relay keeps Tests and Reports for each app in this workspace."
+            action={
+              <Button nativeButton={false} render={<Link to="/apps" />} variant="default">
+                Add an App
+              </Button>
+            }
+          />
+        </div>
       ) : null}
 
       {!loading && !error && tests.isFetched && hasApps && !hasTests ? (
-        <EmptyState
-          title="Record your first Test"
-          detail="Choose one path a person depends on. You can add broader coverage after the first clean replay."
-          icon={FlaskConical}
-          action={
-            <Button
-              nativeButton={false}
-              render={<Link to="/tests/new" search={{ app: appScope || undefined }} />}
-              variant="default"
-            >
-              Record a Test
-            </Button>
-          }
-        />
+        <div className="flex flex-1 items-center justify-center">
+          <EmptyState
+            title="Record a Test"
+            detail="Pick one path a person depends on. Replay it and keep the evidence."
+            action={
+              <Button
+                nativeButton={false}
+                render={<Link to="/tests/new" search={{ app: appScope || undefined }} />}
+                variant="default"
+              >
+                Record a Test
+              </Button>
+            }
+          />
+        </div>
       ) : null}
 
       {!loading && !error && (hasTests || runs.data?.length || changes.data?.length) ? (

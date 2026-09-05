@@ -3,13 +3,13 @@ import type { ProductRunPhase, ProductRunSummary } from "@relay/product/catalog"
 import { Item } from "@relay/ui-react/components/item";
 import { Tabs, TabsList, TabsTrigger } from "@relay/ui-react/components/tabs";
 import { Button } from "@relay/ui-react/components/button";
-import { Input } from "@relay/ui-react/components/input";
-import { Label } from "@relay/ui-react/components/label";
+
 import { useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { ChevronRight } from "lucide-react";
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { FilterSelect } from "../components/filter-select";
+import { LibrarySearch, LibraryToolbar } from "../components/library-toolbar";
 import { EmptyState, OutcomeMark } from "../components/product-patterns";
 import { RunHistoryList, type RunHistoryRowInteraction } from "../components/run-history-list";
 import { LibraryPage, PageHeader } from "../components/page-layout";
@@ -131,65 +131,59 @@ export function RunsPage() {
         description="Active Runs and recent results."
       />
 
-      <div className="grid gap-5 border-b border-border pb-6">
-        <Tabs
-          className="border-b border-border pb-1.5"
-          value={view}
-          onValueChange={(next) => setView(next as RunView)}
-        >
-          <TabsList variant="line" className="h-9 justify-start" aria-label="Run view">
-            {runViews.map((item) => (
-              <TabsTrigger key={item.id} value={item.id}>
-                {item.label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
-
-        <div
-          className="grid gap-3 md:grid-cols-[minmax(16rem,1fr)_10rem] md:items-end"
-          aria-label="Filter Runs"
-        >
-          <div className="grid min-w-0 gap-1.5">
-            <Label htmlFor="run-search" className="text-xs font-medium text-foreground">
-              Search Runs
-            </Label>
-            <Input
-              id="run-search"
-              type="search"
-              value={query}
-              onChange={(event) => {
-                const next = event.currentTarget.value;
-                setQuery(next);
-                void navigate({ search: (previous) => ({ ...previous, q: next || undefined }) });
-              }}
-              placeholder="Search by Test, app, or device"
-              autoComplete="off"
-              spellCheck="false"
-            />
-          </div>
-          <FilterSelect
-            label="App"
-            value={app || allAppsValue}
-            options={appOptions}
-            onValueChange={(nextApp) => {
-              void navigate({
-                search: (previous) => ({
-                  ...previous,
-                  app: nextApp === allAppsValue ? undefined : nextApp,
-                }),
-              });
+      <LibraryToolbar
+        label="Filter Runs"
+        tabs={
+          <Tabs
+            className="border-b border-border pb-1.5"
+            value={view}
+            onValueChange={(next) => setView(next as RunView)}
+          >
+            <TabsList variant="line" className="h-9 justify-start" aria-label="Run view">
+              {runViews.map((item) => (
+                <TabsTrigger key={item.id} value={item.id}>
+                  {item.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+        }
+        search={
+          <LibrarySearch
+            id="run-search"
+            label="Search Runs"
+            value={query}
+            placeholder="Search by Test, app, or device"
+            onChange={(next) => {
+              setQuery(next);
+              void navigate({ search: (previous) => ({ ...previous, q: next || undefined }) });
             }}
           />
-          {view !== "latest" || app || testId || query ? (
-            <div className="md:col-span-2 flex justify-end">
+        }
+        filters={
+          <>
+            <FilterSelect
+              compact
+              label="App"
+              value={app || allAppsValue}
+              options={appOptions}
+              onValueChange={(nextApp) => {
+                void navigate({
+                  search: (previous) => ({
+                    ...previous,
+                    app: nextApp === allAppsValue ? undefined : nextApp,
+                  }),
+                });
+              }}
+            />
+            {view !== "latest" || app || testId || query ? (
               <Button variant="ghost" size="sm" onClick={clearFilters}>
-                Clear filters
+                Clear
               </Button>
-            </div>
-          ) : null}
-        </div>
-      </div>
+            ) : null}
+          </>
+        }
+      />
 
       {runs.isPending ? <PageLoading label="Loading Runs…" /> : null}
       <RecordingProblem

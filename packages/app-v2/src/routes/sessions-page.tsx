@@ -1,7 +1,6 @@
 /** @jsxImportSource react */
 import { Badge } from "@relay/ui-react/components/badge";
 import { Button } from "@relay/ui-react/components/button";
-import { Input } from "@relay/ui-react/components/input";
 import { Tabs, TabsList, TabsTrigger } from "@relay/ui-react/components/tabs";
 import { useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
@@ -10,6 +9,7 @@ import { useDeferredValue, useMemo } from "react";
 import { LiveDevices } from "./live-devices";
 import { deviceQueryKeys } from "../data/device-product-service";
 import { EmptyState } from "../components/product-patterns";
+import { LibrarySearch, LibraryToolbar } from "../components/library-toolbar";
 import { LibraryPage, PageHeader } from "../components/page-layout";
 import { sessionQueryKeys, type ProductSessionSummary } from "../data/session-product-service";
 import { PageLoading, RecordingProblem } from "./recording-shared";
@@ -84,7 +84,7 @@ export function SessionsPage() {
   }
 
   return (
-    <LibraryPage className="relay-sessions-page max-w-[1120px]">
+    <LibraryPage className="relay-sessions-page flex min-h-full max-w-[1040px] flex-col">
       <PageHeader
         context="Workspace"
         title="Live"
@@ -97,29 +97,31 @@ export function SessionsPage() {
         retrying={devices.isFetching}
       />
       {devices.data ? <LiveDevices devices={devices.data} /> : null}
-      <h2 className="mb-3 text-sm font-semibold">Sessions</h2>
-      <Tabs value={view} onValueChange={(value) => setView(value as SessionView)}>
-        <TabsList variant="line" aria-label="Session view">
-          <TabsTrigger value="active">Active</TabsTrigger>
-          <TabsTrigger value="history">History</TabsTrigger>
-          <TabsTrigger value="all">All</TabsTrigger>
-        </TabsList>
-      </Tabs>
-
-      <div className="mt-3.5 grid max-w-[440px] gap-1.5">
-        <label className="text-[11px] font-semibold text-text-weak" htmlFor="session-search">
-          Search Sessions
-        </label>
-        <Input
-          id="session-search"
-          type="search"
-          value={query}
-          onChange={(event) => setQuery(event.currentTarget.value)}
-          placeholder="Search by name, target, or owner"
-          autoComplete="off"
-          spellCheck="false"
-        />
-      </div>
+      <LibraryToolbar
+        label="Filter Sessions"
+        tabs={
+          <Tabs
+            className="border-b border-border pb-1.5"
+            value={view}
+            onValueChange={(value) => setView(value as SessionView)}
+          >
+            <TabsList variant="line" className="h-9 justify-start" aria-label="Session view">
+              <TabsTrigger value="active">Active</TabsTrigger>
+              <TabsTrigger value="history">History</TabsTrigger>
+              <TabsTrigger value="all">All</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        }
+        search={
+          <LibrarySearch
+            id="session-search"
+            label="Search Sessions"
+            value={query}
+            placeholder="Search by name, target, or owner"
+            onChange={setQuery}
+          />
+        }
+      />
 
       {sessions.isPending ? <PageLoading label="Loading Sessions…" /> : null}
       <RecordingProblem
@@ -160,41 +162,45 @@ export function SessionsPage() {
       ) : null}
 
       {!sessions.isPending && !sessions.isError && !visible.length ? (
-        <EmptyState
-          title={
-            sessions.data?.length ? "No live sessions match this view" : "No live sessions yet"
-          }
-          detail={
-            sessions.data?.length
-              ? "Choose another view or clear the search. Existing sessions remain unchanged."
-              : "Start recording a Test or open a live target. Relay will keep that work available here."
-          }
-          action={
-            sessions.data?.length ? (
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setQuery("");
-                  void navigate({
-                    replace: true,
-                    search: (previous) => ({
-                      ...previous,
-                      status: undefined,
-                      target: undefined,
-                      q: undefined,
-                    }),
-                  });
-                }}
-              >
-                Show active live work
-              </Button>
-            ) : (
-              <Button nativeButton={false} variant="default" render={<Link to="/tests/new" />}>
-                Start a new Test
-              </Button>
-            )
-          }
-        />
+        <div
+          className={sessions.data?.length ? undefined : "flex flex-1 items-center justify-center"}
+        >
+          <EmptyState
+            title={
+              sessions.data?.length ? "No live sessions match this view" : "No live sessions yet"
+            }
+            detail={
+              sessions.data?.length
+                ? "Choose another view or clear the search. Existing sessions remain unchanged."
+                : "Start recording a Test or open a live target. Relay will keep that work available here."
+            }
+            action={
+              sessions.data?.length ? (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setQuery("");
+                    void navigate({
+                      replace: true,
+                      search: (previous) => ({
+                        ...previous,
+                        status: undefined,
+                        target: undefined,
+                        q: undefined,
+                      }),
+                    });
+                  }}
+                >
+                  Show active live work
+                </Button>
+              ) : (
+                <Button nativeButton={false} variant="default" render={<Link to="/tests/new" />}>
+                  Start a new Test
+                </Button>
+              )
+            }
+          />
+        </div>
       ) : null}
     </LibraryPage>
   );

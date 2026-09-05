@@ -20,6 +20,7 @@ export function SelectField({
   onValueChange,
   className,
   placeholder,
+  compact = false,
 }: {
   label: string;
   value: string;
@@ -27,13 +28,14 @@ export function SelectField({
   onValueChange: (value: string) => void;
   className?: string;
   placeholder?: string;
+  compact?: boolean;
 }) {
   if (!options.length) {
     return (
-      <div className={`grid min-w-0 gap-1.5 ${className ?? ""}`}>
-        <Label className="text-xs font-medium text-foreground">{label}</Label>
+      <div className={compact ? className : `grid min-w-0 gap-1.5 ${className ?? ""}`}>
+        {compact ? null : <Label className="text-xs font-medium text-foreground">{label}</Label>}
         <div
-          className="flex h-8 items-center rounded-lg border border-dashed border-input px-2.5 text-sm text-muted-foreground"
+          className="flex h-9 items-center rounded-lg border border-dashed border-input px-2.5 text-sm text-muted-foreground"
           aria-label={label}
         >
           {placeholder ?? "None available"}
@@ -49,9 +51,12 @@ export function SelectField({
         if (nextValue !== null) onValueChange(nextValue);
       }}
     >
-      <div className={`grid min-w-0 gap-1.5 ${className ?? ""}`}>
-        <Label className="text-xs font-medium text-foreground">{label}</Label>
-        <SelectTrigger className="w-full" aria-label={label}>
+      <div className={compact ? className : `grid min-w-0 gap-1.5 ${className ?? ""}`}>
+        {compact ? null : <Label className="text-xs font-medium text-foreground">{label}</Label>}
+        <SelectTrigger
+          className={compact ? "h-9 w-auto min-w-[8.75rem]" : "w-full"}
+          aria-label={label}
+        >
           <SelectValue placeholder={placeholder} />
         </SelectTrigger>
       </div>
@@ -66,6 +71,8 @@ export function SelectField({
   );
 }
 
-export function FilterSelect(props: Omit<Parameters<typeof SelectField>[0], "className">) {
+export function FilterSelect(
+  props: Omit<Parameters<typeof SelectField>[0], "className"> & { className?: string },
+) {
   return <SelectField {...props} />;
 }

@@ -3,7 +3,6 @@ import type { ProductTestSummary } from "@relay/product/catalog";
 import { Item } from "@relay/ui-react/components/item";
 import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
-import { Label } from "@relay/ui-react/components/label";
 import { Checkbox } from "@relay/ui-react/components/checkbox";
 import {
   Dialog,
@@ -17,8 +16,9 @@ import { useQuery } from "@tanstack/react-query";
 import { useMutation } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
-import { ChevronRight, Search } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { FilterSelect } from "../components/filter-select";
+import { LibrarySearch, LibraryToolbar } from "../components/library-toolbar";
 import { EmptyState, OutcomeMark, ReadinessMark } from "../components/product-patterns";
 import { TestRunDialog } from "../components/test-run-dialog";
 import { LibraryPage, PageHeader } from "../components/page-layout";
@@ -194,7 +194,7 @@ export function TestsPage() {
 
   return (
     <LibraryPage
-      className="relay-library-page relay-tests-page mx-auto w-full max-w-[1040px]"
+      className="relay-library-page relay-tests-page mx-auto flex min-h-full w-full max-w-[1040px] flex-col"
       onClickCapture={returnFocus.onClickCapture}
     >
       <PageHeader
@@ -311,54 +311,46 @@ export function TestsPage() {
         </DialogContent>
       </Dialog>
 
-      <div
-        className="mt-4 grid gap-3 border-b border-border pb-5 md:grid-cols-2 md:items-end min-[1280px]:grid-cols-[minmax(16rem,2fr)_minmax(9rem,1fr)_minmax(9rem,1fr)_minmax(10rem,1fr)]"
-        aria-label="Filter Tests"
-      >
-        <div className="grid min-w-0 gap-1.5">
-          <Label htmlFor="test-search" className="text-xs font-medium text-foreground">
-            Search Tests
-          </Label>
-          <div data-slot="library-search-control" className="relative">
-            <Search
-              className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
-              aria-hidden="true"
+      <LibraryToolbar
+        label="Filter Tests"
+        search={
+          <LibrarySearch
+            id="test-search"
+            label="Search Tests"
+            value={query}
+            placeholder="Search by Test or app"
+            onChange={(next) => {
+              setQuery(next);
+              void navigate({ search: (previous) => ({ ...previous, q: next || undefined }) });
+            }}
+          />
+        }
+        filters={
+          <>
+            <FilterSelect
+              compact
+              label="Readiness"
+              value={status}
+              options={statusOptions}
+              onValueChange={(value) => updateFilter({ status: testFilter(value) })}
             />
-            <Input
-              className="pl-8"
-              id="test-search"
-              type="search"
-              value={query}
-              onChange={(event) => {
-                const next = event.currentTarget.value;
-                setQuery(next);
-                void navigate({ search: (previous) => ({ ...previous, q: next || undefined }) });
-              }}
-              placeholder="Search by Test or app"
-              autoComplete="off"
-              spellCheck="false"
+            <FilterSelect
+              compact
+              label="Last result"
+              value={result}
+              options={resultOptions}
+              onValueChange={(value) => updateFilter({ result: resultFilter(value) })}
             />
-          </div>
-        </div>
-        <FilterSelect
-          label="Readiness"
-          value={status}
-          options={statusOptions}
-          onValueChange={(value) => updateFilter({ status: testFilter(value) })}
-        />
-        <FilterSelect
-          label="Last result"
-          value={result}
-          options={resultOptions}
-          onValueChange={(value) => updateFilter({ result: resultFilter(value) })}
-        />
-        <FilterSelect
-          label="App"
-          value={app || allAppsValue}
-          options={appOptions}
-          onValueChange={(value) => updateFilter({ app: value === allAppsValue ? "" : value })}
-        />
-      </div>
+            <FilterSelect
+              compact
+              label="App"
+              value={app || allAppsValue}
+              options={appOptions}
+              onValueChange={(value) => updateFilter({ app: value === allAppsValue ? "" : value })}
+            />
+          </>
+        }
+      />
 
       {selectedIds.size ? (
         <div
@@ -422,18 +414,20 @@ export function TestsPage() {
             }
           />
         ) : (
-          <EmptyState
-            title="No saved Tests yet"
-            detail="Record a journey to run it again later."
-            action={
-              <Link
-                className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
-                to="/tests/new"
-              >
-                Record your first Test
-              </Link>
-            }
-          />
+          <div className="flex flex-1 items-center justify-center">
+            <EmptyState
+              title="No saved Tests yet"
+              detail="Record a journey to run it again later."
+              action={
+                <Link
+                  className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
+                  to="/tests/new"
+                >
+                  Record your first Test
+                </Link>
+              }
+            />
+          </div>
         )
       ) : null}
     </LibraryPage>
