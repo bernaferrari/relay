@@ -341,6 +341,8 @@ describe("Suite and Environment routes", () => {
     await fill("space-url", "https://new.example.test");
     expect(document.querySelector('label[for="space-name"]')?.textContent).toBe("Name");
     expect(document.querySelector('label[for="space-url"]')?.textContent).toBe("Website");
+    expect(document.body.textContent).not.toContain("Keep this browser profile");
+    expect(document.body.textContent).not.toContain("Keep data if you need");
     await clickButton("Create browser");
     expect(create).toHaveBeenCalledWith({
       name: "New staging",

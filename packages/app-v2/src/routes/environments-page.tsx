@@ -10,8 +10,7 @@ import {
 import { Field, FieldError, FieldLabel } from "@relay/ui-react/components/field";
 import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
-import { Checkbox } from "@relay/ui-react/components/checkbox";
-import { FieldLabel as ChoiceLabel } from "@relay/ui-react/components/field";
+
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { Globe2, Plus, RotateCcw } from "lucide-react";
@@ -41,7 +40,6 @@ export function EnvironmentsPage() {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [startUrl, setStartUrl] = useState("");
-  const [persistent, setPersistent] = useState(true);
   const spaces = useQuery({
     queryKey: ["browser-spaces"],
     queryFn: () => browserSpacesService.listSpaces(),
@@ -52,7 +50,7 @@ export function EnvironmentsPage() {
       browserSpacesService.createSpace({
         name,
         startUrl,
-        profileRetention: persistent ? "retain" : "ephemeral",
+        profileRetention: "retain",
       }),
     onSuccess: async (space) => {
       await queryClient.invalidateQueries({ queryKey: ["browser-spaces"] });
@@ -74,7 +72,6 @@ export function EnvironmentsPage() {
   function reset() {
     setName("");
     setStartUrl("");
-    setPersistent(true);
     create.reset();
   }
 
@@ -123,8 +120,7 @@ export function EnvironmentsPage() {
               <DialogContent showCloseButton={false} className="relay-environment-dialog">
                 <DialogTitle>New browser</DialogTitle>
                 <DialogDescription>
-                  Opens an isolated browser for this workspace. Keep data if you need the same
-                  sign-in next time.
+                  Opens a browser you can record on and sign into.
                 </DialogDescription>
                 <form onSubmit={submit} className="grid gap-5">
                   <Field>
@@ -150,20 +146,6 @@ export function EnvironmentsPage() {
                       autoCorrect="off"
                     />
                   </Field>
-                  <ChoiceLabel className="flex min-h-14 min-w-0 cursor-pointer items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50">
-                    <span className="grid min-w-0 flex-1 gap-0.5">
-                      <span className="text-sm font-medium text-foreground">
-                        Keep this browser profile
-                      </span>
-                      <span className="text-xs leading-snug text-muted-foreground">
-                        Keep browser data and saved sign-ins between sessions.
-                      </span>
-                    </span>
-                    <Checkbox
-                      checked={persistent}
-                      onCheckedChange={(checked) => setPersistent(checked === true)}
-                    />
-                  </ChoiceLabel>
                   {create.error ? (
                     <FieldError>
                       {create.error instanceof Error
@@ -243,10 +225,15 @@ export function EnvironmentsPage() {
                   <small className="text-sm text-muted-foreground wrap-anywhere">
                     {displayHost(space.startUrl)}
                   </small>
-                  <small className="text-xs text-muted-foreground">
-                    {space.persistent ? "Keeps browser data" : "Fresh browser each session"}
-                    {space.environment?.locale ? ` · ${space.environment.locale}` : ""}
-                  </small>
+                  {space.environment?.locale ? (
+                    <small className="text-xs text-muted-foreground">
+                      {space.environment.locale}
+                    </small>
+                  ) : !space.persistent ? (
+                    <small className="text-xs text-muted-foreground">
+                      Fresh browser each session
+                    </small>
+                  ) : null}
                 </span>
                 <span className="inline-flex flex-none items-center gap-1.5 text-xs font-semibold text-primary">
                   Open <span aria-hidden="true">→</span>
