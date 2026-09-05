@@ -1,22 +1,10 @@
 /** @jsxImportSource react */
-import { ScrollArea } from "@relay/ui-react/components/scroll-area";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@relay/ui-react/components/alert";
 import { Button } from "@relay/ui-react/components/button";
-import { Field, FieldDescription, FieldLabel, FieldTitle } from "@relay/ui-react/components/field";
-import { RadioGroup, RadioGroupItem } from "@relay/ui-react/components/radio-group";
-import { Skeleton } from "@relay/ui-react/components/skeleton";
+import { Card, CardContent } from "@relay/ui-react/components/card";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate, useRouteContext } from "@tanstack/react-router";
-import {
-  AppWindow,
-  ArrowLeft,
-  Check,
-  CircleDot,
-  Monitor,
-  Play,
-  RotateCcw,
-  Smartphone,
-} from "lucide-react";
+import { CircleDot, Play, RotateCcw } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import type {
   LiveTargetBrowserContext,
@@ -25,7 +13,9 @@ import type {
 } from "../data/live-target-session";
 import { recordingQueryKeys } from "../data/recording-queries";
 import { newTestSetupContinuation } from "../data/setup-continuation";
-import { LibraryPage } from "../components/page-layout";
+import { SelectField } from "../components/filter-select";
+import { PageHeader, WorkbenchPage } from "../components/page-layout";
+import { EmptyState } from "../components/product-patterns";
 import {
   clearWorkflowPointerIfCurrent,
   readWorkflowPointer,
@@ -224,276 +214,166 @@ export function NewTestPage() {
 
   const loading = apps.isPending || activePointer.isPending;
   const noApps = apps.data?.length === 0;
-  const noTargets = targets.data?.targetOptions.length === 0;
+  const noTargets = Boolean(targets.data && targets.data.targetOptions.length === 0);
+  const setupOpen =
+    !loading && !apps.isError && !targets.isError && !targets.data?.recovery && !activePointer.data;
   const formReady = Boolean(appId && targetId && previewStatus === "streaming" && !begin.isPending);
-  const appChoices = (
-    <RadioGroup
-      className="relay-choice-group relay-choice-group--apps grid gap-2"
-      name="app"
-      value={appId}
-      onValueChange={(app) => {
-        setAppId(app);
-        void navigate({
-          to: "/tests/new",
-          replace: true,
-          search: { app, ...(targetId ? { target: targetId } : {}) },
-        });
-      }}
-      aria-labelledby="test-app-title"
-      required
-    >
-      {apps.data?.map((app) => (
-        <FieldLabel
-          key={app.id}
-          className="flex min-h-14 w-full min-w-0 cursor-pointer items-center gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50"
-        >
-          <span
-            className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground [&_svg]:size-4 [&_svg]:shrink-0"
-            aria-hidden="true"
-          >
-            <AppWindow />
-          </span>
-          <span className="grid min-w-0 flex-1 gap-0.5">
-            <span className="truncate text-sm font-medium text-foreground">{app.name}</span>
-            <span className="truncate text-xs leading-snug text-muted-foreground">Saved App</span>
-          </span>
-          <RadioGroupItem value={app.id} />
-        </FieldLabel>
-      ))}
-    </RadioGroup>
-  );
+  const startHint = !appId
+    ? "Choose an app"
+    : !targetId
+      ? "Connect a device"
+      : previewStatus !== "streaming"
+        ? "Wait for the live view"
+        : begin.isPending
+          ? "Starting…"
+          : "Start recording";
+
+  function chooseApp(nextAppId: string) {
+    setAppId(nextAppId);
+    void navigate({
+      to: "/tests/new",
+      replace: true,
+      search: { app: nextAppId, ...(targetId ? { target: targetId } : {}) },
+    });
+  }
 
   return (
-    <LibraryPage className="relay-new-test-page">
-      <Link
-        className="relay-back-link mb-3 mt-[-10px] inline-flex min-h-11 items-center gap-2 text-[13px] font-semibold text-[var(--text-weak)] focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2"
-        to="/tests"
-      >
-        <ArrowLeft aria-hidden="true" /> Tests
-      </Link>
-      <header className="relay-page-header relay-new-test-header max-w-[650px]">
-        <div>
-          <h1 className="text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance] text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance]">
-            Record a Test
-          </h1>
-          <p className="relay-page-description mt-2.5 max-w-[62ch] text-[15px] leading-[1.55] text-[var(--text-weak)]">
-            Interact with your app to capture a Test. Review and name it when you are done.
-          </p>
-        </div>
-      </header>
-
-      {activePointer.data ? (
-        <Alert className="relay-resume-recording mt-7 max-w-3xl" variant="default">
-          <CircleDot />
-          <AlertTitle>
-            {begin.data?.recovery
-              ? "Recording status needs review"
-              : "A recording is already in progress"}
-          </AlertTitle>
-          <AlertDescription>
-            <p>
-              {begin.data?.recovery
-                ? "Open the saved recording to inspect its latest server state."
-                : "Continue the recording you started before creating another Test."}
-            </p>
-          </AlertDescription>
-          <AlertAction>
-            <Button
-              size="sm"
-              onClick={() =>
-                void navigate({
-                  to: "/recordings/$recordingId",
-                  params: { recordingId: activePointer.data! },
-                })
-              }
+    <WorkbenchPage className="relay-new-test-page flex min-h-0 flex-col">
+      <form id="new-test-form" className="flex min-h-0 flex-1 flex-col" onSubmit={submit}>
+        <PageHeader
+          context={
+            <Link
+              className="inline-flex min-h-8 items-center text-muted-foreground hover:text-foreground"
+              to="/tests"
             >
-              Open recording
-            </Button>
-          </AlertAction>
-        </Alert>
-      ) : null}
+              Tests
+            </Link>
+          }
+          title="Record a Test"
+          description="Open the starting screen, then start recording. Name the Test when you stop."
+          actions={
+            setupOpen ? (
+              <>
+                <Button nativeButton={false} render={<Link to="/tests" />} variant="ghost">
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={!formReady} title={startHint}>
+                  <Play aria-hidden="true" />
+                  {begin.isPending ? "Starting…" : "Start recording"}
+                </Button>
+              </>
+            ) : null
+          }
+        />
 
-      {loading ? <PageLoading label="Finding your apps and ready devices…" /> : null}
-      <RecordingProblem
-        error={apps.error ?? targets.error ?? pathContext.error ?? begin.error}
-        recovery={begin.data?.recovery ?? targets.data?.recovery}
-        onRetry={
-          begin.data?.recovery && activePointer.data
-            ? undefined
-            : () => {
-                void apps.refetch();
-                void targets.refetch();
-              }
-        }
-        retrying={apps.isFetching || targets.isFetching}
-      />
+        {activePointer.data ? (
+          <Alert className="relay-resume-recording max-w-3xl" variant="default">
+            <CircleDot />
+            <AlertTitle>
+              {begin.data?.recovery
+                ? "Recording status needs review"
+                : "A recording is already in progress"}
+            </AlertTitle>
+            <AlertDescription>
+              <p>
+                {begin.data?.recovery
+                  ? "Open the saved recording to inspect its latest server state."
+                  : "Continue the recording you started before creating another Test."}
+              </p>
+            </AlertDescription>
+            <AlertAction>
+              <Button
+                size="sm"
+                onClick={() =>
+                  void navigate({
+                    to: "/recordings/$recordingId",
+                    params: { recordingId: activePointer.data! },
+                  })
+                }
+              >
+                Open recording
+              </Button>
+            </AlertAction>
+          </Alert>
+        ) : null}
 
-      {!loading &&
-      !apps.isError &&
-      !targets.isError &&
-      !targets.data?.recovery &&
-      !activePointer.data ? (
-        <div className="relay-new-test-layout mt-7">
-          <form className="relay-recording-form m-0 max-w-none gap-0" onSubmit={submit}>
-            <div className="relay-new-test-card">
-              <div className="relay-new-test-fields grid grid-cols-[260px_minmax(0,1fr)] items-start gap-6 min-[620px]:max-[1100px]:grid-cols-2 max-[619px]:grid-cols-1">
-                {startsFromPath ? (
-                  <Alert variant="default">
-                    <Check />
-                    <AlertTitle>
-                      {pathContext.data
-                        ? `${pathContext.data.fromTitle} → ${pathContext.data.toTitle ?? "Finish"}`
-                        : "Verified path selected"}
-                    </AlertTitle>
-                    <AlertDescription>
-                      Relay will use this known path as the starting context for the recording.
-                    </AlertDescription>
-                  </Alert>
-                ) : null}
-                <Field>
-                  <div className="relay-choice-heading grid gap-0.5 px-px">
-                    <FieldTitle
-                      className="text-[13px] font-semibold text-foreground"
-                      id="test-app-title"
-                    >
-                      App
-                    </FieldTitle>
-                    <FieldDescription className="mt-0">Where this Test belongs</FieldDescription>
-                  </div>
-                  {noApps ? (
-                    <div className="relay-choice-empty grid gap-1.5 rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
-                      <strong>No apps are available</strong>
-                      <p>Add an app before recording a Test.</p>
-                      <Link
-                        className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
-                        to="/apps"
-                      >
-                        Manage apps
-                      </Link>
-                    </div>
-                  ) : (apps.data?.length ?? 0) > 4 ? (
-                    <ScrollArea className="relay-choice-scroll h-[196px] mr-[-7px]">
-                      {appChoices}
-                    </ScrollArea>
-                  ) : (
-                    appChoices
-                  )}
-                </Field>
+        {loading ? <PageLoading label="Finding your apps and ready devices…" /> : null}
+        <RecordingProblem
+          error={apps.error ?? targets.error ?? pathContext.error ?? begin.error}
+          recovery={begin.data?.recovery ?? targets.data?.recovery}
+          onRetry={
+            begin.data?.recovery && activePointer.data
+              ? undefined
+              : () => {
+                  void apps.refetch();
+                  void targets.refetch();
+                }
+          }
+          retrying={apps.isFetching || targets.isFetching}
+        />
 
-                <Field>
-                  <div className="relay-choice-heading grid gap-0.5 px-px">
-                    <FieldTitle
-                      className="text-[13px] font-semibold text-foreground"
-                      id="test-target-title"
-                    >
-                      Device or browser
-                    </FieldTitle>
-                    <FieldDescription className="mt-0">Where Relay will record</FieldDescription>
-                  </div>
-                  {targets.isPending ? (
-                    <div
-                      className="relay-choice-group relay-choice-group--loading grid gap-2"
-                      role="status"
-                    >
-                      <span className="relay-visually-hidden sr-only">
-                        Finding ready devices and browsers…
-                      </span>
-                      <Skeleton className="min-h-[68px] rounded-[var(--radius-lg)]" />
-                      <Skeleton className="min-h-[68px] rounded-[var(--radius-lg)]" />
-                    </div>
-                  ) : targets.isError ? (
-                    <div className="relay-choice-empty grid gap-1.5 rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
-                      <strong>Targets are not available yet</strong>
-                      <p>Use Try again above after the local Relay service is running.</p>
-                    </div>
-                  ) : noTargets ? (
-                    <div className="relay-choice-empty grid gap-1.5 rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
-                      <strong>Nothing is ready to record</strong>
-                      <p>Connect a device or start a managed browser, then try again.</p>
-                      <Link
-                        className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
-                        to="/devices"
-                        search={{ returnTo: newTestSetupContinuation(appId, targetId) }}
-                      >
-                        View devices
-                      </Link>
-                      <Link
-                        className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
-                        to="/environments"
-                        search={{ returnTo: newTestSetupContinuation(appId, targetId) }}
-                      >
-                        Manage browser Spaces
-                      </Link>
-                    </div>
-                  ) : (
-                    <RadioGroup
-                      className="relay-choice-group grid gap-2"
-                      name="target"
-                      value={targetId}
-                      onValueChange={setTargetId}
-                      aria-labelledby="test-target-title"
-                      required
-                    >
-                      {targets.data?.targetOptions.map((target) => {
-                        const label = targetLabel(target);
-                        return (
-                          <FieldLabel
-                            key={`${target.kind}:${target.targetId}`}
-                            className="flex min-h-14 w-full min-w-0 cursor-pointer items-center gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50"
-                          >
-                            <span
-                              className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground [&_svg]:size-4 [&_svg]:shrink-0"
-                              aria-hidden="true"
-                            >
-                              {target.kind === "browser" ? <Monitor /> : <Smartphone />}
-                            </span>
-                            <span className="grid min-w-0 flex-1 gap-0.5">
-                              <span className="truncate text-sm font-medium text-foreground">
-                                {label.title}
-                              </span>
-                              <span className="truncate text-xs leading-snug text-muted-foreground">
-                                {label.detail}
-                              </span>
-                            </span>
-                            <RadioGroupItem value={target.targetId} />
-                          </FieldLabel>
-                        );
-                      })}
-                    </RadioGroup>
-                  )}
-                </Field>
+        {!loading &&
+        !apps.isError &&
+        !targets.isError &&
+        !targets.data?.recovery &&
+        !activePointer.data ? (
+          <div className="flex min-h-0 flex-1 flex-col gap-4">
+            {startsFromPath ? (
+              <p className="text-sm text-muted-foreground">
+                Starting from{" "}
+                <strong className="font-medium text-foreground">
+                  {pathContext.data
+                    ? `${pathContext.data.fromTitle} → ${pathContext.data.toTitle ?? "Finish"}`
+                    : "the selected path"}
+                </strong>
+              </p>
+            ) : null}
+            <div className="flex flex-wrap items-end gap-3">
+              <SelectField
+                label="App"
+                value={appId}
+                placeholder="Choose an app"
+                className="min-w-[200px] max-w-xs flex-1"
+                options={(apps.data ?? []).map((app) => ({ value: app.id, label: app.name }))}
+                onValueChange={chooseApp}
+              />
+              <SelectField
+                label="Record on"
+                value={targetId}
+                placeholder={targets.isPending ? "Finding devices…" : "Choose a device"}
+                className="min-w-[220px] max-w-sm flex-1"
+                options={(targets.data?.targetOptions ?? []).map((target) => {
+                  const label = targetLabel(target);
+                  return {
+                    value: target.targetId,
+                    label: label.detail ? `${label.title} · ${label.detail}` : label.title,
+                  };
+                })}
+                onValueChange={setTargetId}
+              />
+            </div>
 
+            <Card className="relay-prerecord-workspace flex min-h-[360px] flex-1">
+              <CardContent className="flex flex-1 flex-col p-4">
                 {selectedTarget ? (
-                  <section
-                    className="relay-prerecord-workspace min-[1101px]:col-start-2 min-[1101px]:row-span-3 min-[1101px]:row-start-1 grid min-w-0 gap-4 rounded-xl border border-border bg-card p-5 max-[1100px]:col-span-full max-[520px]:p-3"
-                    aria-labelledby="prerecord-title"
-                  >
-                    <div className="relay-prerecord-heading flex flex-wrap items-start justify-between gap-4">
+                  <section className="grid min-h-0 flex-1 gap-3" aria-labelledby="prerecord-title">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
                       <div>
-                        <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+                        <h2 id="prerecord-title" className="text-sm font-semibold">
                           Live preview
-                        </p>
-                        <h2 id="prerecord-title" className="mt-1 text-base font-semibold">
-                          Position your app
                         </h2>
-                        <p className="mt-1 max-w-[45ch] text-sm leading-relaxed text-muted-foreground">
-                          Nothing is recorded yet. Go to your starting screen, then start recording.
+                        <p className="text-sm text-muted-foreground">
+                          Nothing is recorded yet. Get to the starting screen, then start.
                         </p>
                       </div>
-                      <div className="relay-prerecord-actions flex shrink-0 items-center gap-2">
-                        <Button type="submit" variant="default" disabled={!formReady}>
-                          <Play aria-hidden="true" />
-                          {begin.isPending ? "Starting…" : "Start recording"}
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setPreviewAttempt((value) => value + 1)}
-                        >
-                          <RotateCcw aria-hidden="true" /> Reconnect
-                        </Button>
-                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setPreviewAttempt((value) => value + 1)}
+                      >
+                        <RotateCcw aria-hidden="true" /> Reconnect
+                      </Button>
                     </div>
                     <LiveTargetCanvas
                       canvasRef={previewCanvas}
@@ -507,32 +387,46 @@ export function NewTestPage() {
                       recording={false}
                     />
                   </section>
-                ) : null}
-              </div>
-              <div className="relay-form-actions mt-5 flex min-h-11 flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
-                <Button nativeButton={false} render={<Link to="/tests" />} variant="ghost">
-                  Cancel
-                </Button>
-                <span
-                  className="relay-form-readiness ml-auto inline-flex min-w-0 items-center gap-1.5 text-[11px] text-[var(--text-weaker)]"
-                  aria-live="polite"
-                >
-                  {formReady ? (
-                    <>
-                      <Check aria-hidden="true" /> Ready to record
-                    </>
-                  ) : targetId && previewStatus !== "streaming" ? (
-                    "Wait for the live view"
-                  ) : (
-                    "Choose an app and target"
-                  )}
-                </span>
-              </div>
-            </div>
-          </form>
-        </div>
-      ) : null}
-    </LibraryPage>
+                ) : noApps ? (
+                  <EmptyState
+                    title="Add an app first"
+                    detail="Relay needs an app so this Test has a home."
+                    action={
+                      <Button nativeButton={false} render={<Link to="/apps" />}>
+                        Add an app
+                      </Button>
+                    }
+                  />
+                ) : noTargets ? (
+                  <EmptyState
+                    title="Connect a device to record"
+                    detail="Plug in a phone or start a browser. You will come back here and start recording."
+                    action={
+                      <Button
+                        nativeButton={false}
+                        render={
+                          <Link
+                            to="/devices"
+                            search={{ returnTo: newTestSetupContinuation(appId, targetId) }}
+                          />
+                        }
+                      >
+                        Open devices
+                      </Button>
+                    }
+                  />
+                ) : (
+                  <EmptyState
+                    title="Choose where to record"
+                    detail="Pick a device or browser above. The live view will open here."
+                  />
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        ) : null}
+      </form>
+    </WorkbenchPage>
   );
 }
 

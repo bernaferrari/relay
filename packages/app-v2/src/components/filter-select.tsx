@@ -19,17 +19,32 @@ export function SelectField({
   options,
   onValueChange,
   className,
+  placeholder,
 }: {
   label: string;
   value: string;
   options: readonly FilterSelectOption[];
   onValueChange: (value: string) => void;
   className?: string;
+  placeholder?: string;
 }) {
+  if (!options.length) {
+    return (
+      <div className={`grid min-w-0 gap-1.5 ${className ?? ""}`}>
+        <Label className="text-xs font-medium text-foreground">{label}</Label>
+        <div
+          className="flex h-8 items-center rounded-lg border border-dashed border-input px-2.5 text-sm text-muted-foreground"
+          aria-label={label}
+        >
+          {placeholder ?? "None available"}
+        </div>
+      </div>
+    );
+  }
   return (
     <Select
       items={options}
-      value={value}
+      value={value || null}
       onValueChange={(nextValue) => {
         if (nextValue !== null) onValueChange(nextValue);
       }}
@@ -37,7 +52,7 @@ export function SelectField({
       <div className={`grid min-w-0 gap-1.5 ${className ?? ""}`}>
         <Label className="text-xs font-medium text-foreground">{label}</Label>
         <SelectTrigger className="w-full" aria-label={label}>
-          <SelectValue />
+          <SelectValue placeholder={placeholder} />
         </SelectTrigger>
       </div>
       <SelectContent sideOffset={6} alignItemWithTrigger={false}>

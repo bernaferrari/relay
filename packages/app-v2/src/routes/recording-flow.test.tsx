@@ -275,8 +275,6 @@ async function fill(input: HTMLInputElement, value: string) {
 }
 
 async function beginRecording() {
-  await click(document.querySelector<HTMLInputElement>('input[name="app"]')!);
-  await click(document.querySelector<HTMLInputElement>('input[name="target"]')!);
   await click(button("Start recording"));
 }
 
@@ -363,7 +361,7 @@ describe("record, review, replay, and save", () => {
       mapService,
     );
 
-    expect(document.querySelector<HTMLInputElement>('input[name="app"]')?.checked).toBe(true);
+    expect(document.querySelector('[aria-label="App"]')?.textContent).toContain("Grok");
     expect(document.body.textContent).toContain("Settings → Language");
     expect(document.querySelector("#test-name")).toBeNull();
   });
@@ -383,49 +381,29 @@ describe("record, review, replay, and save", () => {
       history.push("/tests/new?app=app-2");
     });
     await settle();
-    const choices = [...document.querySelectorAll<HTMLInputElement>('input[name="app"]')];
-    expect(choices[1]?.checked).toBe(true);
-    await click(document.querySelector<HTMLInputElement>('input[name="target"]')!);
+    expect(document.querySelector('[aria-label="App"]')?.textContent).toContain("Relay Demo");
     await click(button("Start recording"));
     expect(fake.calls.some((call) => call.startsWith("begin:") && call.includes(":app-2:"))).toBe(
       true,
     );
   });
 
-  it("selects app cards with one click and supports arrow-key radio navigation", async () => {
+  it("keeps app and device in a compact toolbar instead of a setup form", async () => {
     const fake = fakeService();
-    fake.service.listApps = async () => [
-      { id: "app-1", name: "Grok" },
-      { id: "app-2", name: "Relay Demo" },
-    ];
-    await renderJourney("/tests/new", fake.service, platformWithStorage().platform);
+    fake.service.connect = async () => ({ status: "target-selection", targets: [] });
+    fake.service.presentTargets = async () => [];
+    await renderJourney("/tests/new?app=app-1", fake.service, platformWithStorage().platform);
 
-    const cards = [
-      ...document.querySelectorAll<HTMLElement>(
-        ".relay-choice-group--apps [data-slot=field-label]",
-      ),
-    ];
-    expect(cards).toHaveLength(2);
-    await click(cards[1]!);
-
-    const appInputs = [...document.querySelectorAll<HTMLInputElement>('input[name="app"]')];
-    expect(appInputs[1]?.checked).toBe(true);
-    expect(cards[1]?.querySelector('[role="radio"]')?.getAttribute("aria-checked")).toBe("true");
-
-    const selectedRadio = cards[1]?.querySelector<HTMLElement>('[role="radio"]');
-    await act(async () => {
-      selectedRadio?.focus();
-    });
-    await settle();
-    await act(async () => {
-      selectedRadio?.dispatchEvent(
-        new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true, cancelable: true }),
-      );
-    });
-    await settle();
-
-    expect(appInputs[0]?.checked).toBe(true);
-    expect(cards[0]?.querySelector('[role="radio"]')?.getAttribute("aria-checked")).toBe("true");
+    expect(document.querySelector('[aria-label="App"]')?.textContent).toContain("Grok");
+    expect(document.querySelector('[aria-label="Record on"]')?.textContent).toContain(
+      "Choose a device",
+    );
+    expect(document.body.textContent).toContain("Connect a device to record");
+    expect(document.body.textContent).toContain("Open devices");
+    expect(document.body.textContent).not.toContain("Manage browser Spaces");
+    expect(document.body.textContent).not.toContain("Where this Test belongs");
+    expect(button("Start recording").disabled).toBe(true);
+    expect(document.querySelector('a[href^="/devices"]')).not.toBeNull();
   });
 
   it("follows the full server-owned progression with one dominant review action", async () => {
@@ -671,11 +649,8 @@ describe("record, review, replay, and save", () => {
       fake.service,
       platformWithStorage().platform,
     );
-    await click(document.querySelector<HTMLInputElement>('input[name="app"]')!);
-    await click(document.querySelector<HTMLInputElement>('input[name="target"]')!);
-
     expect(document.body.textContent).toContain(
-      "Nothing is recorded yet. Go to your starting screen, then start recording.",
+      "Nothing is recorded yet. Get to the starting screen, then start.",
     );
     expect(button("Start recording").disabled).toBe(false);
     await interactWithLiveTarget();
@@ -693,8 +668,10 @@ describe("record, review, replay, and save", () => {
     });
     await renderJourney("/tests/new", fake.service, storage.platform);
 
-    expect(document.querySelector<HTMLInputElement>('input[name="app"]')?.checked).toBe(true);
-    expect(document.querySelector<HTMLInputElement>('input[name="target"]')?.checked).toBe(true);
+    expect(document.querySelector('[aria-label="App"]')?.textContent).toContain("Grok");
+    expect(document.querySelector('[aria-label="Record on"]')?.textContent).toContain(
+      "Pixel 9 Pro",
+    );
     expect(button("Start recording").disabled).toBe(false);
   });
 

@@ -57,7 +57,7 @@ const routePresentations = {
   "/tests/new": {
     path: "/tests/new",
     eyebrow: "Tests",
-    description: "Choose an app and device to record a repeatable journey.",
+    description: "Open the starting screen, then start recording.",
   },
   "/tests/:testId": {
     path: "/tests/$testId",
