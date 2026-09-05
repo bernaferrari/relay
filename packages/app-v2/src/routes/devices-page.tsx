@@ -22,6 +22,7 @@ import { ChevronDown, ChevronRight, Monitor, Smartphone, Tablet } from "lucide-r
 import { useDeferredValue, useEffect, useState } from "react";
 import { LibraryPage, PageHeader } from "../components/page-layout";
 import { EmptyState, RecoveryState } from "../components/product-patterns";
+import { deviceSummaryLine } from "../data/device-label";
 import {
   deviceQueryKeys,
   type ProductDevice,
@@ -86,12 +87,6 @@ function deviceTypeFilter(value: string | undefined): DeviceTypeFilter {
   return value === "physical" || value === "virtual" ? value : "all";
 }
 
-function platformLabel(device: ProductDevice): string {
-  if (device.platform === "ios") return "Apple device";
-  if (device.platform === "android") return "Android device";
-  return "Managed browser";
-}
-
 function statusLabel(device: ProductDevice): string {
   if (device.status === "needs-attention") return "Needs attention";
   if (device.status === "virtual") return "Available";
@@ -99,9 +94,7 @@ function statusLabel(device: ProductDevice): string {
 }
 
 function deviceMetadata(device: ProductDevice): string {
-  return [...new Set([platformLabel(device), device.osVersion, device.kind].filter(Boolean))].join(
-    " · ",
-  );
+  return deviceSummaryLine(device);
 }
 
 function DeviceIcon({ device }: { device: ProductDevice }) {

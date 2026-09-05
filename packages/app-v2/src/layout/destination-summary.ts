@@ -1,3 +1,4 @@
+import { devicePlatformLabel } from "../data/device-label";
 import type { ProductDevice, ProductDeviceStatus } from "../data/device-product-service";
 
 export type DestinationTone = "ready" | "attention" | "empty" | "unavailable" | "loading";
@@ -27,12 +28,7 @@ const STATUS_ORDER: Record<ProductDeviceStatus, number> = {
 };
 
 export function destinationDetail(device: DestinationDevice): string {
-  if (device.platform === "ios")
-    return device.osVersion ? `Apple · ${device.osVersion}` : "Apple device";
-  if (device.platform === "android") {
-    return device.osVersion ? `Android · ${device.osVersion}` : "Android device";
-  }
-  return "Managed browser";
+  return devicePlatformLabel(device);
 }
 
 function isAvailable(device: DestinationDevice): boolean {

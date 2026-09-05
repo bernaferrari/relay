@@ -27,7 +27,7 @@ describe("destination summary", () => {
       }),
     ).toEqual({
       label: "Design iPad",
-      detail: "Apple · 18.5",
+      detail: "iOS 18.5",
       tone: "ready",
     });
   });

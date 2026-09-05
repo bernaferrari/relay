@@ -25,7 +25,7 @@ import {
   ChangeAuditDetails,
   ChangePublicationStatus,
 } from "../components/change-publication-details";
-import { PageHeader } from "../components/page-layout";
+import { FormPage, PageHeader } from "../components/page-layout";
 import { Breadcrumbs, EmptyState } from "../components/product-patterns";
 import { IssueDraftButton } from "../components/issue-draft-button";
 import { PageLoading, RecordingProblem } from "./recording-shared";
@@ -110,7 +110,7 @@ export function ChangePage() {
   const action = current && details ? primaryAction(detail.state, details) : undefined;
 
   return (
-    <section className="relay-page mx-auto w-full px-[clamp(20px,3vw,40px)] pt-7 pb-10 max-w-[1040px]">
+    <FormPage>
       <Breadcrumbs
         items={[{ label: "Changes", to: "/changes" }, { label: current?.title ?? "Change" }]}
       />
@@ -196,7 +196,7 @@ export function ChangePage() {
             className="relay-change-verdict max-w-[60ch]"
             aria-labelledby="change-verdict-title"
           >
-            <h2 id="change-verdict-title" className="text-[15px] font-medium">
+            <h2 id="change-verdict-title" className="text-[13px] font-medium leading-5">
               {verdictTitle(current.status)}
             </h2>
             {verdictDetail(detail.state, details) ? (
@@ -314,7 +314,7 @@ export function ChangePage() {
           <ChangeAuditDetails detail={detail} />
         </>
       ) : null}
-    </section>
+    </FormPage>
   );
 }
 

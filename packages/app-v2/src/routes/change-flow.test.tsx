@@ -471,7 +471,7 @@ describe("Change verification", () => {
     const fake = fakeChangeService("proved");
     await renderChange("/changes/change-proof-private-id", fake.service);
 
-    const audit = document.querySelector(".mt-3")!;
+    const audit = document.querySelector(".relay-change-audit")!;
     expect(audit.querySelector("button")?.getAttribute("aria-expanded")).toBe("false");
     await click(button("Audit details"));
     expect(audit.textContent).toContain("change-proof-private-id");
@@ -532,7 +532,7 @@ describe("Change verification", () => {
       "Provider failure",
     );
     await click(button("Audit details"));
-    const audit = document.querySelector(".mt-3")!;
+    const audit = document.querySelector(".relay-change-audit")!;
     expect(audit.textContent).toContain("Provider failureProvider rejected delivery");
     expect(audit.textContent).toContain("Next retry2023-11-14T22:13:20.000Z");
     expect(audit.textContent).toContain("Attempts3 of 3");

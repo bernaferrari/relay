@@ -6,6 +6,7 @@ import { RotateCcw } from "lucide-react";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { LibraryPage, PageHeader } from "../components/page-layout";
 import { Breadcrumbs, EmptyState, RecoveryState } from "../components/product-patterns";
+import { deviceSummaryLine } from "../data/device-label";
 import { deviceQueryKeys, type ProductDevice } from "../data/device-product-service";
 import { readSetupContinuation } from "../data/setup-continuation";
 import type {
@@ -19,17 +20,11 @@ import { PageLoading, errorMessage } from "./recording-shared";
 
 const routeApi = getRouteApi("/devices/$deviceId");
 
-function productPlatform(device: ProductDevice): string {
-  if (device.platform === "ios") return "Apple device";
-  if (device.platform === "android") return "Android device";
-  return "Managed browser";
-}
-
 function deviceDescription(device: ProductDevice): string {
   if (device.status === "needs-attention") {
     return "One step before this device is ready";
   }
-  return [productPlatform(device), device.osVersion, device.kind].filter(Boolean).join(" · ");
+  return deviceSummaryLine(device);
 }
 
 export function DevicePage() {

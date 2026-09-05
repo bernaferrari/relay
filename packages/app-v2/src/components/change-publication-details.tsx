@@ -7,6 +7,7 @@ import {
 } from "@relay/ui-react/components/collapsible";
 import { useMutation } from "@tanstack/react-query";
 import { useRouteContext } from "@tanstack/react-router";
+import { ChevronDown } from "lucide-react";
 import type { ProductChangePublication } from "@relay/product/change-journey";
 import type { ProductChangeDetail } from "../data/change-product-service";
 
@@ -59,50 +60,31 @@ export function ChangePublicationStatus({ detail }: { detail: ProductChangeDetai
 export function ChangeAuditDetails({ detail }: { detail: ProductChangeDetail }) {
   const details = detail.state.details!;
   const change = details.change;
+  const facts: readonly [string, string][] = [
+    ["Proof ID", change.id],
+    ["Version", String(details.audit.proofVersion)],
+    ["Base revision", change.baseRevision],
+    ["Tested revision", change.requestedRevision],
+    ["Policy", details.audit.policy],
+    ["Plan digest", details.audit.planDigest ?? "Not available"],
+    ["Decision digest", details.audit.decisionDigest ?? "Not available"],
+    ["Requested by", details.audit.requestedBy],
+    ["Builds", details.audit.buildIds.length ? details.audit.buildIds.join(", ") : "None"],
+  ];
   return (
-    <Collapsible className="mt-3">
-      <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 py-2 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
+    <Collapsible className="relay-change-audit mt-8">
+      <CollapsibleTrigger className="group flex items-center gap-1.5 text-[13px] text-muted-foreground transition-colors hover:text-foreground">
         Audit details
+        <ChevronDown className="size-3.5 opacity-70 transition-transform group-aria-expanded:rotate-180" />
       </CollapsibleTrigger>
-      <CollapsibleContent className="space-y-3 border-t pt-3 text-sm">
-        <p>Exact identities and receipts for operators and agents.</p>
-        <dl>
-          <div>
-            <dt>Proof ID</dt>
-            <dd>{change.id}</dd>
-          </div>
-          <div>
-            <dt>Version</dt>
-            <dd>{details.audit.proofVersion}</dd>
-          </div>
-          <div>
-            <dt>Base revision</dt>
-            <dd>{change.baseRevision}</dd>
-          </div>
-          <div>
-            <dt>Tested revision</dt>
-            <dd>{change.requestedRevision}</dd>
-          </div>
-          <div>
-            <dt>Policy</dt>
-            <dd>{details.audit.policy}</dd>
-          </div>
-          <div>
-            <dt>Plan digest</dt>
-            <dd>{details.audit.planDigest ?? "Not available"}</dd>
-          </div>
-          <div>
-            <dt>Decision digest</dt>
-            <dd>{details.audit.decisionDigest ?? "Not available"}</dd>
-          </div>
-          <div>
-            <dt>Requested by</dt>
-            <dd>{details.audit.requestedBy}</dd>
-          </div>
-          <div>
-            <dt>Builds</dt>
-            <dd>{details.audit.buildIds.length ? details.audit.buildIds.join(", ") : "None"}</dd>
-          </div>
+      <CollapsibleContent className="mt-3">
+        <dl className="grid gap-x-6 gap-y-2.5 sm:grid-cols-[7.5rem_minmax(0,1fr)]">
+          {facts.map(([label, value]) => (
+            <div key={label} className="grid gap-0.5 sm:contents">
+              <dt className="text-[11px] leading-5 text-muted-foreground">{label}</dt>
+              <dd className="min-w-0 break-all font-mono text-[12px] leading-5">{value}</dd>
+            </div>
+          ))}
         </dl>
         {details.publications.length ? (
           <section className="mt-3 space-y-2" aria-labelledby="publication-history-title">

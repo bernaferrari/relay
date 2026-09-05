@@ -2,6 +2,7 @@
 import { Button } from "@relay/ui-react/components/button";
 import { Link } from "@tanstack/react-router";
 import { ChevronRight, Monitor, Smartphone } from "lucide-react";
+import { devicePlatformLabel } from "../data/device-label";
 import type { ProductDevice } from "../data/device-product-service";
 
 export function LiveDevices({ devices }: { devices: readonly ProductDevice[] }) {
@@ -47,7 +48,7 @@ export function LiveDevices({ devices }: { devices: readonly ProductDevice[] }) 
                         : device.status === "needs-attention"
                           ? "Needs attention"
                           : "Virtual device"}
-                      {device.osVersion ? ` · ${device.osVersion}` : ""}
+                      {device.osVersion ? ` · ${devicePlatformLabel(device)}` : ""}
                     </span>
                   </span>
                   <ChevronRight className="size-4 shrink-0 text-text-weaker" aria-hidden="true" />
