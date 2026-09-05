@@ -13,6 +13,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Platform } from "../platform/types";
 import { parentPathForPath, routeContractForPath } from "../router/route-contract";
 import { ActivityCenterButton } from "./active-work";
+import { DeviceDestinationButton } from "./device-destination";
 import { RouteAnnouncer } from "./route-announcer";
 import { CommandPalette } from "./command-palette";
 import { Sidebar } from "./sidebar";
@@ -89,7 +90,6 @@ export function AppShell({ platform }: { platform: Platform }) {
                 <ArrowRight aria-hidden="true" />
               </Button>
             </div>
-            <ActivityCenterButton />
             <button
               type="button"
               className="relay-command-trigger relay-electron-no-drag [-webkit-app-region:no-drag] ml-0 inline-flex min-h-9 min-w-[220px] items-center gap-2 rounded-[var(--radius-md)] border border-[var(--border-weak-base)] bg-[var(--surface-raised-strong)] px-2 py-0 pl-2.5 text-left text-xs text-[var(--text-weaker)]"
@@ -102,6 +102,10 @@ export function AppShell({ platform }: { platform: Platform }) {
                 {modifierKey()} K
               </kbd>
             </button>
+            <div className="ml-auto inline-flex items-center gap-0.5">
+              <DeviceDestinationButton />
+              <ActivityCenterButton />
+            </div>
           </header>
         ) : null}
         <header
@@ -125,6 +129,9 @@ export function AppShell({ platform }: { platform: Platform }) {
             <ArrowLeft aria-hidden="true" />
           </Button>
           <span className="relay-mobile-title text-sm font-semibold">Relay</span>
+          <div className="ml-auto inline-flex items-center">
+            <DeviceDestinationButton />
+          </div>
         </header>
         <main
           id="main-content"

@@ -113,7 +113,7 @@ export function ActivityCenterButton() {
       <Button
         variant="ghost"
         size="sm"
-        className="relay-electron-no-drag [-webkit-app-region:no-drag] ml-auto text-muted-foreground"
+        className="relay-electron-no-drag [-webkit-app-region:no-drag] text-muted-foreground"
         onClick={() => setOpen(true)}
         aria-label={`Open Activity Center${unavailable ? ", unavailable" : items.length ? `, ${items.length} active` : ""}`}
       >

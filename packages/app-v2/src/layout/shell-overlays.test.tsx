@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { RelayV2App } from "../app";
 import type { CatalogProductService } from "../data/catalog-product-service";
 import type { ChangeProductService } from "../data/change-product-service";
+import type { DeviceProductService, ProductDevice } from "../data/device-product-service";
 import type { RecordingProductService } from "../data/recording-product-service";
 import type { RunProductService } from "../data/run-product-service";
 import type { Platform } from "../platform/types";
@@ -89,12 +90,49 @@ function changes(items: readonly ProductChange[]): ChangeProductService {
   };
 }
 
+function productDevice(
+  id: string,
+  name: string,
+  status: ProductDevice["status"],
+  platform: ProductDevice["platform"],
+): ProductDevice {
+  return {
+    id,
+    name,
+    serial: id,
+    status,
+    platform,
+    kind: platform === "browser" ? "Managed browser" : "Physical device",
+    runnable: status === "ready",
+    device: {
+      id,
+      serial: id,
+      name,
+      platform,
+      kind: platform === "browser" ? "Managed browser" : "Physical device",
+      booted: true,
+    },
+  };
+}
+
+function devices(items: readonly ProductDevice[] = []): DeviceProductService {
+  return {
+    list: async () => items,
+    get: async (deviceId) => items.find((device) => device.id === deviceId),
+    actions: async () => [],
+    recover: async () => {
+      throw new Error("not used in shell overlay tests");
+    },
+  };
+}
+
 async function renderShell(input: {
   runs?: readonly ProductRunSummary[];
   tests?: readonly ProductTestSummary[];
   runsUnavailable?: boolean;
   testsUnavailable?: boolean;
   changes?: readonly ProductChange[];
+  devices?: readonly ProductDevice[];
   onRunsRead?: () => void;
   initialEntries?: string[];
 }) {
@@ -132,6 +170,7 @@ async function renderShell(input: {
           input.onRunsRead,
         )}
         changeService={changes(input.changes ?? [])}
+        deviceService={devices(input.devices ?? [])}
       />,
     );
   });
@@ -390,5 +429,30 @@ describe("shell overlays", () => {
     await act(async () => link!.click());
     await settle();
     expect(history.location.pathname).toBe("/tests/test-1");
+  });
+
+  it("keeps the run destination in the toolbar instead of the workspace sidebar", async () => {
+    const history = await renderShell({
+      devices: [
+        productDevice("ipad", "Design iPad", "ready", "ios"),
+        productDevice("browser", "Checkout browser", "virtual", "browser"),
+      ],
+    });
+
+    expect(document.querySelector('nav[aria-label="Primary"] a[href="/devices"]')).toBeNull();
+    const trigger = document.querySelector<HTMLButtonElement>('[aria-label^="Run destination"]');
+    expect(trigger?.textContent).toContain("2 ready");
+    await act(async () => trigger?.click());
+    await settle();
+
+    expect(document.body.textContent).toContain("Design iPad");
+    expect(document.body.textContent).toContain("Checkout browser");
+    const allDevices = [...document.querySelectorAll('[role="menuitem"]')].find((item) =>
+      item.textContent?.includes("All devices"),
+    );
+    expect(allDevices).toBeTruthy();
+    await act(async () => allDevices?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    await settle();
+    expect(history.location.pathname).toBe("/devices");
   });
 });

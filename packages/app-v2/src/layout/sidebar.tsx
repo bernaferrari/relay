@@ -13,15 +13,7 @@ import {
   useSidebar,
 } from "@relay/ui-react/components/sidebar";
 import { Link, useLocation } from "@tanstack/react-router";
-import {
-  FlaskConical,
-  GitCompareArrows,
-  History,
-  House,
-  MonitorSmartphone,
-  RadioTower,
-  Settings,
-} from "lucide-react";
+import { FlaskConical, GitCompareArrows, History, House, RadioTower, Settings } from "lucide-react";
 import { AppSwitcher } from "./app-switcher";
 import { ActiveWork } from "./active-work";
 
@@ -31,10 +23,9 @@ const mainItems = [
   { to: "/runs", label: "Runs", icon: History },
   { to: "/sessions", label: "Live", icon: RadioTower },
   { to: "/changes", label: "Changes", icon: GitCompareArrows },
-  { to: "/devices", label: "Devices & browsers", icon: MonitorSmartphone },
 ] as const;
 
-export function isSidebarItemActive(pathname: string, itemPath: (typeof mainItems)[number]["to"]) {
+export function isSidebarItemActive(pathname: string, itemPath: `/${string}`) {
   return routeContractForPath(pathname)?.sidebar === itemPath.slice(1);
 }
 
