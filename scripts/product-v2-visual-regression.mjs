@@ -476,7 +476,15 @@ async function run(options) {
             ),
         );
         await assertAccessible(page, fixture, viewport);
+        const heading = page.getByRole("heading", { level: 1, name: fixture.heading });
+        await heading.waitFor();
+        await page.locator(".relay-route-pending").waitFor({ state: "hidden" });
         const actual = await page.screenshot({ animations: "disabled", type: "png" });
+        if (!(await heading.isVisible())) {
+          throw new Error(
+            `${fixture.id}/${viewport.id} reloaded during capture; retry after the source is stable`,
+          );
+        }
         await assertZoomedKeyboardReachability(page, fixture, viewport);
         const filename = `${fixture.id}-${viewport.id}.png`;
         const baselinePath = resolve(BASELINE_DIR, filename);
