@@ -5,6 +5,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { RotateCcw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { LibraryPage, PageHeader } from "../components/page-layout";
 import { Breadcrumbs, EmptyState, OutcomeMark } from "../components/product-patterns";
 import { IssueDraftButton } from "../components/issue-draft-button";
 import { isBatchCaseRerunnable, selectedClusterCaseIds } from "./batch-triage";
@@ -134,36 +135,29 @@ export function BatchPage() {
   }
 
   return (
-    <section className="relay-page mx-auto w-full px-[clamp(20px,3vw,40px)] pt-7 pb-10 relay-batch-page">
+    <LibraryPage className="relay-batch-page">
       <Breadcrumbs items={[{ label: "Runs", to: "/runs" }, { label: report?.title ?? "Batch" }]} />
-      <header className="relay-page-header relay-batch-header flex flex-wrap items-start justify-between gap-6">
-        <div>
-          <p className="relay-eyebrow mb-2 text-[11px] font-semibold tracking-[0.02em] text-[var(--text-weak)]">
-            Run Across
-          </p>
-          <h1 className="text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance] text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance]">
-            {report?.title ?? "Batch"}
-          </h1>
-          <p className="relay-page-description mt-2.5 max-w-[62ch] text-[15px] leading-[1.55] text-[var(--text-weak)]">
-            Triage failures across Tests and Environments, then rerun only the evidence-backed cases
-            you select.
-          </p>
-        </div>
-        {report ? (
-          <div className="relay-batch-header-actions flex flex-wrap items-center gap-2">
-            <IssueDraftButton source={{ kind: "batch", report }} />
-            {!active && report.status !== "cancelled" && !report.export ? (
-              <Button
-                variant="outline"
-                onClick={() => exportReport.mutate()}
-                disabled={exportReport.isPending}
-              >
-                {exportReport.isPending ? "Preparing…" : "Prepare export"}
-              </Button>
-            ) : null}
-          </div>
-        ) : null}
-      </header>
+      <PageHeader
+        context="Run Across"
+        title={report?.title ?? "Batch"}
+        description="Triage failures across Tests and Environments, then rerun only the evidence-backed cases you select."
+        actions={
+          report ? (
+            <>
+              {hasFailedCases ? <IssueDraftButton source={{ kind: "batch", report }} /> : null}
+              {!active && report.status !== "cancelled" && !report.export ? (
+                <Button
+                  variant="outline"
+                  onClick={() => exportReport.mutate()}
+                  disabled={exportReport.isPending}
+                >
+                  {exportReport.isPending ? "Preparing…" : "Prepare export"}
+                </Button>
+              ) : null}
+            </>
+          ) : null
+        }
+      />
 
       {batch.isPending ? <PageLoading label="Loading Batch…" /> : null}
       <RecordingProblem
@@ -195,7 +189,9 @@ export function BatchPage() {
                       ? "cancelled"
                       : report.status === "completed"
                         ? "passed"
-                        : undefined
+                        : active
+                          ? "running"
+                          : "unknown"
               }
             />
             <div>
@@ -208,14 +204,16 @@ export function BatchPage() {
                 <dd>{report.passedCases}</dd>
               </div>
               <div>
-                <dt>Problems</dt>
-                <dd>
-                  {
-                    report.cases.filter((item) =>
-                      ["failed", "blocked", "cancelled"].includes(item.status),
-                    ).length
-                  }
-                </dd>
+                <dt>Failed</dt>
+                <dd>{report.cases.filter((item) => item.status === "failed").length}</dd>
+              </div>
+              <div>
+                <dt>Blocked</dt>
+                <dd>{report.cases.filter((item) => item.status === "blocked").length}</dd>
+              </div>
+              <div>
+                <dt>Cancelled</dt>
+                <dd>{report.cases.filter((item) => item.status === "cancelled").length}</dd>
               </div>
               <div>
                 <dt>Complete</dt>
@@ -382,6 +380,6 @@ export function BatchPage() {
           ) : null}
         </>
       ) : null}
-    </section>
+    </LibraryPage>
   );
 }

@@ -1,5 +1,5 @@
 import { ReportVideoInspector } from "../components/report-video-inspector";
-import { LibraryPage, PageHeader } from "../components/page-layout";
+import { PageHeader, WorkbenchPage } from "../components/page-layout";
 import { RawEvidenceDisclosure } from "./raw-evidence-disclosure";
 /** @jsxImportSource react */
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@relay/ui-react/components/alert";
@@ -197,7 +197,7 @@ export function RunPage() {
 
   if (problem || recovery) {
     return (
-      <section className="relay-page mx-auto w-full px-[clamp(20px,3vw,40px)] pt-7 pb-10 max-w-[1120px]">
+      <WorkbenchPage className="max-w-[1120px]">
         <Breadcrumbs items={[{ label: "Runs", to: "/runs" }, { label: "Run" }]} />
         <h1 className="relay-visually-hidden sr-only text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance]">
           {snapshot?.title ?? "Run unavailable"}
@@ -210,29 +210,29 @@ export function RunPage() {
           retrying={retrying}
           layout="centered"
         />
-      </section>
+      </WorkbenchPage>
     );
   }
 
   if (loading) {
     return (
-      <section className="relay-page mx-auto w-full px-[clamp(20px,3vw,40px)] pt-7 pb-10 max-w-[1120px]">
+      <WorkbenchPage className="max-w-[1120px]">
         <Breadcrumbs items={[{ label: "Runs", to: "/runs" }, { label: "In progress" }]} />
         <header className="rounded-lg border border-border bg-muted/40 p-4">
           <p className="relay-eyebrow mb-2 text-[11px] font-semibold tracking-[0.02em] text-[var(--text-weak)]">
             Run
           </p>
-          <h1 className="text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance] text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance]">
+          <h1 className="text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance]">
             {snapshot?.title ?? "Loading Run"}
           </h1>
         </header>
         <PageLoading label="Loading the Run…" />
-      </section>
+      </WorkbenchPage>
     );
   }
 
   return (
-    <section className="relay-page mx-auto w-full px-[clamp(20px,3vw,40px)] pt-7 pb-10 max-w-[1120px]">
+    <WorkbenchPage className="max-w-[1120px]">
       <Breadcrumbs
         items={[
           { label: "Runs", to: "/runs" },
@@ -287,7 +287,7 @@ export function RunPage() {
           ) : null}
         </section>
       ) : null}
-    </section>
+    </WorkbenchPage>
   );
 }
 
@@ -356,7 +356,7 @@ function RunReport({
     });
   }
   return (
-    <LibraryPage className="max-w-[1280px]">
+    <WorkbenchPage className="max-w-[1280px]">
       <Breadcrumbs items={[{ label: "Runs", to: "/runs" }, { label: report.title }]} />
       <PageHeader
         context={
@@ -610,7 +610,7 @@ function RunReport({
           <IssueDraftButton source={{ kind: "run", report }} />
         </div>
       ) : null}
-    </LibraryPage>
+    </WorkbenchPage>
   );
 }
 

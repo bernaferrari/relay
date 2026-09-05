@@ -1,6 +1,5 @@
 /** @jsxImportSource react */
 import type { ProductTestSummary } from "@relay/product/catalog";
-import { Badge } from "@relay/ui-react/components/badge";
 import { Item } from "@relay/ui-react/components/item";
 import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
@@ -20,7 +19,7 @@ import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { ChevronRight, Search } from "lucide-react";
 import { FilterSelect } from "../components/filter-select";
-import { EmptyState, OutcomeMark } from "../components/product-patterns";
+import { EmptyState, OutcomeMark, ReadinessMark } from "../components/product-patterns";
 import { TestRunDialog } from "../components/test-run-dialog";
 import { LibraryPage, PageHeader } from "../components/page-layout";
 import { catalogQueryKeys } from "../data/catalog-queries";
@@ -495,21 +494,7 @@ function TestRow({
             </span>
           </span>
           <span className="relay-library-row-status flex justify-start">
-            {test.status === "needs-review" ? (
-              <Badge
-                variant="secondary"
-                className="bg-amber-500/15 text-amber-800 dark:text-amber-300"
-              >
-                Needs review
-              </Badge>
-            ) : (
-              <Badge
-                variant="secondary"
-                className="bg-emerald-500/10 text-emerald-800 dark:text-emerald-300"
-              >
-                Ready
-              </Badge>
-            )}
+            <ReadinessMark status={test.status} />
           </span>
           <span className="relay-library-row-recent grid min-w-0 justify-items-start gap-1">
             {recent ? (

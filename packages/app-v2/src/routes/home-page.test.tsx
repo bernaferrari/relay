@@ -444,6 +444,77 @@ describe("Home", () => {
     expect(document.querySelector("#home-next-title")?.textContent).toBe("Payment failed");
     expect(document.body.textContent).toContain("1 result needs attention");
     expect(document.body.textContent).not.toContain("Ready to run");
+    expect(document.querySelector("[data-page-pattern]")).toHaveProperty(
+      "dataset.pagePattern",
+      "library",
+    );
+  });
+
+  it("lists every result that still needs attention", async () => {
+    const now = Date.now();
+    const failed = (
+      id: string,
+      title: string,
+      targetName: string,
+      at: number,
+    ): ProductRunSummary => ({
+      id,
+      title,
+      testName: title,
+      action: "Inspect",
+      status: "failed",
+      phase: "failed",
+      outcome: "product-failure",
+      appMapId: "app",
+      testId: id,
+      targetName,
+      queuedAt: at,
+      identity: { runId: id, testId: id, appMapId: "app" },
+      executionIdentity: { appMapId: "app", testId: id, deviceId: targetName },
+      links: { self: `/runs/${id}` },
+    });
+    await renderHome({
+      apps: [{ id: "app", name: "Checkout" }],
+      tests: [
+        {
+          id: "pay",
+          name: "Pay",
+          appMapId: "app",
+          appName: "Checkout",
+          stepCount: 2,
+          status: "ready",
+          updatedAt: now,
+          href: "/tests/pay",
+        },
+        {
+          id: "login",
+          name: "Sign in",
+          appMapId: "app",
+          appName: "Checkout",
+          stepCount: 3,
+          status: "ready",
+          updatedAt: now - 1_000,
+          href: "/tests/login",
+        },
+      ],
+      runs: [
+        failed("pay", "Pay", "Pixel 9", now),
+        failed("login", "Sign in", "iPad Pro", now - 2_000),
+      ],
+    });
+    expect(document.body.textContent).toContain("2 results need attention");
+    expect(
+      document.querySelector("[aria-label='Results that need attention']")?.textContent,
+    ).toContain("Pay");
+    expect(
+      document.querySelector("[aria-label='Results that need attention']")?.textContent,
+    ).toContain("Sign in");
+    expect(
+      document.querySelector("[aria-label='Results that need attention']")?.textContent,
+    ).toContain("Pixel 9");
+    expect(
+      document.querySelector("[aria-label='Results that need attention']")?.textContent,
+    ).toContain("iPad Pro");
   });
 
   it("keeps saved Tests and their action visible when Runs fail", async () => {

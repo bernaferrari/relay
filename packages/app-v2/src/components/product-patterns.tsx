@@ -26,7 +26,8 @@ import type { ReactNode } from "react";
 import type { RunOutcome } from "@relay/protocol";
 import type { ProductRunPhase } from "@relay/product/catalog";
 
-type OutcomeValue = RunOutcome | ProductRunPhase | "ready" | "needs-review" | undefined;
+type OutcomeValue = RunOutcome | ProductRunPhase | undefined;
+type ReadinessValue = "ready" | "needs-review";
 
 type BreadcrumbItem =
   | {
@@ -191,6 +192,22 @@ export function OutcomeMark({ outcome }: { outcome: OutcomeValue }) {
   );
 }
 
+export function ReadinessMark({ status }: { status: ReadinessValue }) {
+  const presentation =
+    status === "needs-review"
+      ? { label: "Needs review", icon: CircleHelp, tone: "notice" as const }
+      : { label: "Ready", icon: ListChecks, tone: "quiet" as const };
+  return (
+    <Badge
+      className={`relay-readiness-mark ${outcomeBadgeClass(presentation.tone)}`}
+      variant={outcomeBadgeVariant(presentation.tone)}
+    >
+      <presentation.icon aria-hidden="true" />
+      {presentation.label}
+    </Badge>
+  );
+}
+
 function outcomeBadgeVariant(
   tone: ReturnType<typeof outcomePresentation>["tone"],
 ): "default" | "secondary" | "destructive" {
@@ -211,7 +228,6 @@ function outcomePresentation(outcome: OutcomeValue): {
   tone: "success" | "danger" | "notice" | "quiet";
 } {
   if (outcome === "passed") return { label: "Passed", icon: Check, tone: "success" };
-  if (outcome === "ready") return { label: "Ready", icon: Check, tone: "success" };
   if (outcome === "product-failure") {
     return { label: "Product issue", icon: X, tone: "danger" };
   }
@@ -223,12 +239,8 @@ function outcomePresentation(outcome: OutcomeValue): {
   }
   if (outcome === "cancelled") return { label: "Cancelled", icon: Minus, tone: "quiet" };
   if (outcome === "failed") return { label: "Failed", icon: X, tone: "danger" };
-  if (outcome === "needs-review") {
-    return { label: "Needs review", icon: CircleHelp, tone: "notice" };
-  }
   if (outcome === "queued") return { label: "Queued", icon: CircleDashed, tone: "quiet" };
   if (outcome === "running") return { label: "Running", icon: CircleDashed, tone: "quiet" };
   if (outcome === "completed") return { label: "Completed", icon: Check, tone: "success" };
-  if (outcome === undefined) return { label: "In progress", icon: CircleDashed, tone: "quiet" };
   return { label: "Unknown result", icon: CircleHelp, tone: "notice" };
 }

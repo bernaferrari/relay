@@ -17,7 +17,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { homeAttentionRuns } from "../data/home-run-attention";
-import { PageHeader } from "../components/page-layout";
+import { LibraryPage, PageHeader } from "../components/page-layout";
 import { EmptyState, OutcomeMark } from "../components/product-patterns";
 import { catalogQueryKeys } from "../data/catalog-queries";
 import { recordingQueryKeys } from "../data/recording-queries";
@@ -123,7 +123,7 @@ export function HomePage() {
   };
 
   return (
-    <section className="relay-page mx-auto w-full px-[clamp(20px,3vw,40px)] pt-7 pb-10 flex max-w-6xl flex-col gap-8">
+    <LibraryPage className="flex max-w-6xl flex-col gap-8">
       <PageHeader
         context="Overview"
         title={
@@ -263,6 +263,21 @@ export function HomePage() {
               attentionRun={attentionRuns[0]}
               test={latestTest}
             />
+            {attentionRuns.length ? (
+              <div className="mt-7">
+                <h2 className="text-base font-semibold">Needs attention</h2>
+                <ul
+                  className="mt-3 divide-y divide-border/60 overflow-hidden rounded-xl border border-border/70 bg-card"
+                  aria-label="Results that need attention"
+                >
+                  {attentionRuns.map((item) => (
+                    <li key={item.id}>
+                      <RecentRun run={item} />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
             <div className="mt-7 flex items-center justify-between gap-4">
               <h2 className="text-base font-semibold">Recent tests</h2>
               <Link
@@ -364,7 +379,7 @@ export function HomePage() {
           </section>
         </div>
       ) : null}
-    </section>
+    </LibraryPage>
   );
 }
 

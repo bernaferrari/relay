@@ -205,6 +205,18 @@ describe("App overview", () => {
     expect(document.body.textContent).toContain("Saved tests");
     expect(document.body.textContent).toContain("Recent results");
     expect(document.body.textContent).toContain("2 of 3");
+    expect(document.querySelector("[data-page-pattern]")).toHaveProperty(
+      "dataset.pagePattern",
+      "library",
+    );
+    const testsSection = document.querySelector("#app-tests-title")?.closest("section");
+    expect(testsSection?.textContent).toContain("Ready");
+    expect(testsSection?.textContent).toContain("Passed");
+    expect(testsSection?.textContent).toContain("Needs review");
+    expect(testsSection?.textContent).toContain("Not run yet");
+    expect(testsSection?.textContent).not.toContain("Open →");
+    const resultsSection = document.querySelector("#app-runs-title")?.closest("section");
+    expect(resultsSection?.textContent).toContain("Pixel 9");
     expect(document.querySelector('a[href="/tests/new?app=app-shop-internal"]')).not.toBeNull();
     const advanced = [...document.querySelectorAll("button")].find(
       (item) => item.textContent?.trim() === "Advanced",

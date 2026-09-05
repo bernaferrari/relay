@@ -8,8 +8,13 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useRouteContext } from "@tanstack/react-router";
 import { ArrowRight } from "lucide-react";
-import { PageHeader } from "../components/page-layout";
-import { Breadcrumbs, EmptyState, OutcomeMark } from "../components/product-patterns";
+import { LibraryPage, PageHeader } from "../components/page-layout";
+import {
+  Breadcrumbs,
+  EmptyState,
+  OutcomeMark,
+  ReadinessMark,
+} from "../components/product-patterns";
 import { PageLoading, RecordingProblem } from "./recording-shared";
 
 const routeApi = getRouteApi("/apps/$appId");
@@ -47,7 +52,7 @@ export function AppPage() {
     .slice(0, 3);
 
   return (
-    <section className="relay-page mx-auto w-full px-[clamp(20px,3vw,40px)] pt-7 pb-10 max-w-[1040px]">
+    <LibraryPage className="max-w-[1040px]">
       <Breadcrumbs
         items={[{ label: "Home", to: "/home" }, { label: app.data?.appName ?? "App" }]}
       />
@@ -162,8 +167,15 @@ export function AppPage() {
                             {test.stepCount} {test.stepCount === 1 ? "step" : "steps"}
                           </small>
                         </span>
-                        <span className="inline-flex shrink-0 items-center gap-1.5 text-xs font-semibold text-primary">
-                          Open <span aria-hidden="true">→</span>
+                        <span className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+                          <ReadinessMark status={test.status} />
+                          {test.recentRun ? (
+                            <OutcomeMark outcome={test.recentRun.outcome ?? test.recentRun.phase} />
+                          ) : (
+                            <span className="text-xs font-medium text-muted-foreground">
+                              Not run yet
+                            </span>
+                          )}
                         </span>
                       </Link>
                     </li>
@@ -236,8 +248,13 @@ export function AppPage() {
                             {run.testName ?? run.title}
                           </strong>
                           <small className="truncate text-xs text-muted-foreground">
-                            {run.targetName ?? "Device or browser recorded in Report"} ·{" "}
-                            {relativeTime(runTime(run))}
+                            {[
+                              run.targetName ?? run.executionIdentity?.deviceId,
+                              run.executionIdentity?.buildId,
+                              relativeTime(runTime(run)),
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")}
                           </small>
                         </span>
                         <span className="shrink-0">
@@ -312,7 +329,7 @@ export function AppPage() {
           </Collapsible>
         </>
       ) : null}
-    </section>
+    </LibraryPage>
   );
 }
 

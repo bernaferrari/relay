@@ -16,7 +16,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { Layers3, Plus, RotateCcw } from "lucide-react";
 import { useMemo, useState, type FormEvent } from "react";
-import { EmptyState, OutcomeMark, RecoveryState } from "../components/product-patterns";
+import { EmptyState, ReadinessMark, RecoveryState } from "../components/product-patterns";
 import { recordingQueryKeys } from "../data/recording-queries";
 import { PageLoading } from "./recording-shared";
 
@@ -379,7 +379,7 @@ export function SuitesPage() {
                       </small>
                     </span>
                     <span className="ml-auto shrink-0">
-                      <OutcomeMark outcome={needsReview ? "needs-review" : "ready"} />
+                      <ReadinessMark status={needsReview ? "needs-review" : "ready"} />
                     </span>
                   </Link>
                 </li>

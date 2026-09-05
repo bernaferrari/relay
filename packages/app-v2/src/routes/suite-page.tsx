@@ -19,7 +19,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import {
   Breadcrumbs,
   EmptyState,
-  OutcomeMark,
+  ReadinessMark,
   RecoveryState,
 } from "../components/product-patterns";
 import { RunConfigurationComposer } from "../components/run-configuration-composer";
@@ -244,7 +244,7 @@ export function SuitePage() {
             <div className="flex items-center gap-2">
               <dt className="text-xs text-text-weaker">Status</dt>
               <dd>
-                <OutcomeMark outcome={needsReview ? "needs-review" : "ready"} />
+                <ReadinessMark status={needsReview ? "needs-review" : "ready"} />
               </dd>
             </div>
           </dl>
@@ -271,7 +271,7 @@ export function SuitePage() {
                       <span className="truncate text-sm font-medium text-text-strong">
                         {test.name}
                       </span>
-                      <OutcomeMark outcome={test.status === "ready" ? "ready" : "needs-review"} />
+                      <ReadinessMark status={test.status === "ready" ? "ready" : "needs-review"} />
                     </Link>
                   </li>
                 ))}

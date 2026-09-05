@@ -318,8 +318,8 @@ function emptyRunTitle(view: RunView) {
   return "No Runs match these filters";
 }
 
-function phaseOutcome(run: ProductRunSummary): ProductRunPhase | "needs-review" {
-  if (run.review?.status === "pending") return "needs-review";
+function phaseOutcome(run: ProductRunSummary): ProductRunPhase | "uncertain" {
+  if (run.review?.status === "pending") return "uncertain";
   return run.phase;
 }
 
