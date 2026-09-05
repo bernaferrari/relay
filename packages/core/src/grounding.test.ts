@@ -33,6 +33,30 @@ const askImagineMenu: SnapshotNode[] = [
   },
 ];
 
+test("a unique label with a shared android:id/title taps the label", async () => {
+  const result = await groundTarget({
+    serial: "fake",
+    target: "Network & internet",
+    nodes: [
+      {
+        label: "Network & internet",
+        identifier: "android:id/title",
+        visibleToUser: true,
+        rect: { x: 80, y: 605, width: 800, height: 50 },
+      },
+      {
+        label: "Connected devices",
+        identifier: "android:id/title",
+        visibleToUser: true,
+        rect: { x: 80, y: 811, width: 800, height: 50 },
+      },
+    ],
+    grounder: new StubVisionGrounder(),
+  });
+  assert.equal(result.method, "a11y");
+  assert.deepEqual(result.interaction, { kind: "label", label: "Network & internet" });
+});
+
 test("unique a11y label resolves with method a11y", async () => {
   const result = await groundTarget({
     serial: "fake",

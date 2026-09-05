@@ -54,6 +54,23 @@ test("scrolls when the Android helper marks hidden content below", () => {
   assert.equal(surveyShouldAttemptScroll(first), true);
 });
 
+test("scrolls a nested Settings list when the inner scroller can still move", () => {
+  const first = snapshot([
+    { type: "ScrollView", identifier: "homepage", rect: { x: 0, y: 0, width: 1080, height: 2337 } },
+    {
+      type: "ScrollView",
+      identifier: "main_content_scrollable_container",
+      rect: { x: 0, y: 315, width: 1080, height: 2022 },
+      hiddenContentBelow: true,
+    },
+    { type: "androidx.recyclerview.widget.RecyclerView", rect: { x: 0, y: 315, width: 1080, height: 2022 } },
+    { label: "Network & internet", rect: { x: 80, y: 605, width: 800, height: 50 } },
+    { label: "Wallpaper & style", rect: { x: 80, y: 2089, width: 800, height: 50 } },
+    { label: "Colors, themed icons, app grid", rect: { x: 80, y: 2160, width: 800, height: 40 } },
+  ]);
+  assert.equal(surveyShouldAttemptScroll(first), true);
+});
+
 test("does not fling when hiddenContentBelow is a bounce hint and the last row is fully on screen", () => {
   const first = snapshot([
     { type: "ScrollView", rect: { x: 51, y: 0, width: 978, height: 2137 }, hiddenContentBelow: true },

@@ -255,7 +255,14 @@ function matchUniqueA11y(nodes: SnapshotNode[], query: string): InteractInput | 
   if (byLabel.length === 1) {
     const hit = byLabel[0]!;
     const identifier = hit.identifier?.trim();
-    if (identifier) return { kind: "identifier", identifier };
+    if (
+      identifier &&
+      nodes.filter(
+        (node) => node.visibleToUser !== false && node.identifier?.trim() === identifier,
+      ).length === 1
+    ) {
+      return { kind: "identifier", identifier };
+    }
     return { kind: "label", label: needle };
   }
   return undefined;

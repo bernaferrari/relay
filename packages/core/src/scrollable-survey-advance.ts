@@ -9,14 +9,24 @@ export type SurveyFeatureRow = {
   bottom: number;
 };
 
+function isScrollContainer(node: SnapshotNode): boolean {
+  return /scrollview|scrollarea|recycler.?view|listview/i.test(`${node.type ?? ""} ${node.role ?? ""}`);
+}
+
 function scrollViewport(snapshot: SnapshotPayload): { y: number; height: number } | undefined {
-  const views = snapshot.nodes.filter((node) =>
-    /scrollview|scrollarea|recycler.?view|listview/i.test(`${node.type ?? ""} ${node.role ?? ""}`),
+  const views = snapshot.nodes.filter(
+    (node) => isScrollContainer(node) && node.rect && node.rect.height >= 120,
   );
-  const withRect = views.find((node) => node.rect && node.rect.height >= 120);
-  return withRect?.rect
-    ? { y: withRect.rect.y, height: withRect.rect.height }
-    : undefined;
+  const hinted = views.find((node) => node.hiddenContentBelow === true);
+  const recycler = views.find((node) => /recycler.?view|listview/i.test(`${node.type ?? ""} ${node.role ?? ""}`));
+  const chosen = hinted ?? recycler ?? views[0];
+  return chosen?.rect ? { y: chosen.rect.y, height: chosen.rect.height } : undefined;
+}
+
+function hasStickyLegalFooter(snapshot: SnapshotPayload): boolean {
+  const scroll = scrollViewport(snapshot);
+  const scrollBottom = scroll ? scroll.y + scroll.height : (snapshot.bounds?.height ?? 0) * 0.92;
+  return snapshot.nodes.some((node) => isStickyFooter(node, scrollBottom));
 }
 
 function isStickyFooter(node: SnapshotNode, scrollBottom: number): boolean {
@@ -86,9 +96,12 @@ export function surveyShouldAttemptScroll(snapshot: SnapshotPayload): boolean {
   if (rows.some((row) => surveyRowFlushWithScroll(row, snapshot))) return true;
   const last = surveyLastUnclippedFeature(snapshot) ?? rows.at(-1);
   if (!last) return true;
-  // hiddenContentBelow is a bounce/title hint on Compose sheets. A fully
-  // visible last row with room under it is already complete.
-  if (last.bottom <= scroll.y + scroll.height - 8) return false;
+  const fullyOnScreen = last.bottom <= scroll.y + scroll.height - 8;
+  // Compose paywalls keep can-scroll-forward after the last feature while a
+  // legal footer is already flush. Nested Settings lists have the same hint
+  // because more rows exist — trust the hint when there is no footer.
+  if (surveyHasHiddenContentBelow(snapshot) && !hasStickyLegalFooter(snapshot)) return true;
+  if (fullyOnScreen) return false;
   return surveyHasHiddenContentBelow(snapshot);
 }
 
