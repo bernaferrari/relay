@@ -122,7 +122,7 @@ export function RunsPage() {
 
   return (
     <LibraryPage
-      className="relay-library-page relay-runs-page mx-auto w-full max-w-[1040px]"
+      className="relay-library-page relay-runs-page mx-auto flex min-h-full w-full max-w-[1040px] flex-col"
       onClickCapture={returnFocus.onClickCapture}
     >
       <PageHeader
@@ -231,18 +231,20 @@ export function RunsPage() {
             }
           />
         ) : (
-          <EmptyState
-            title="No Runs yet"
-            detail="Open a saved Test and run it on a device or browser. Its Report will appear here."
-            action={
-              <Link
-                className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
-                to="/tests"
-              >
-                Browse saved Tests
-              </Link>
-            }
-          />
+          <div className="flex flex-1 items-center justify-center">
+            <EmptyState
+              title="No Runs yet"
+              detail="Open a saved Test and run it on a device or browser. Its Report will appear here."
+              action={
+                <Link
+                  className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
+                  to="/tests"
+                >
+                  Browse saved Tests
+                </Link>
+              }
+            />
+          </div>
         )
       ) : null}
     </LibraryPage>
