@@ -2,29 +2,16 @@
 import type { ProductTestSummary } from "@relay/product/catalog";
 import { Item } from "@relay/ui-react/components/item";
 import { Button } from "@relay/ui-react/components/button";
-import { Input } from "@relay/ui-react/components/input";
-import { Checkbox } from "@relay/ui-react/components/checkbox";
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogTitle,
-} from "@relay/ui-react/components/dialog";
-import { Field, FieldError, FieldLabel } from "@relay/ui-react/components/field";
 import { useQuery } from "@tanstack/react-query";
-import { useMutation } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import { FilterSelect } from "../components/filter-select";
 import { LibrarySearch, LibraryToolbar } from "../components/library-toolbar";
 import { EmptyState, OutcomeMark, ReadinessMark } from "../components/product-patterns";
-import { TestRunDialog } from "../components/test-run-dialog";
 import { LibraryPage, PageHeader } from "../components/page-layout";
 import { catalogQueryKeys } from "../data/catalog-queries";
 import { PageLoading, RecordingProblem } from "./recording-shared";
-import type { ProductSuiteEditor } from "../data/suite-profile-product-service";
 import { useCollectionReturnFocus } from "../hooks/use-collection-return-focus";
 
 const routeApi = getRouteApi("/tests");
@@ -34,7 +21,7 @@ type TestFilter = "all" | "ready" | "needs-review";
 type ResultFilter = "all" | "passed" | "failed" | "running" | "never";
 
 export function TestsPage() {
-  const { catalogService, suiteProfileService, queryClient } = useRouteContext({
+  const { catalogService } = useRouteContext({
     from: "__root__",
   });
   const search = routeApi.useSearch() as {
@@ -45,10 +32,6 @@ export function TestsPage() {
   };
   const navigate = useNavigate({ from: "/tests" });
   const [query, setQuery] = useState(() => (typeof search.q === "string" ? search.q : ""));
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
-  const [suiteDialogOpen, setSuiteDialogOpen] = useState(false);
-  const [suiteName, setSuiteName] = useState("");
-  const [suiteAppId, setSuiteAppId] = useState("");
   const deferredQuery = useDeferredValue(query.trim().toLocaleLowerCase());
   const status = testFilter(search.status);
   const result = resultFilter(search.result);
@@ -60,44 +43,6 @@ export function TestsPage() {
     queryKey: catalogQueryKeys.tests,
     queryFn: () => catalogService.listTests(),
     staleTime: 15_000,
-  });
-  const suiteEditor = useQuery<ProductSuiteEditor>({
-    queryKey: ["suites", "editor", suiteAppId],
-    queryFn: () => suiteProfileService.getSuiteEditor(suiteAppId),
-    enabled: suiteDialogOpen && Boolean(suiteAppId),
-    staleTime: 15_000,
-  });
-  const selectedTests = (tests.data ?? []).filter((test) =>
-    selectedIds.has(testSelectionKey(test)),
-  );
-  const selectedApps = [...new Map(selectedTests.map((test) => [test.appMapId, test.appName]))];
-  const createSuite = useMutation({
-    mutationFn: async () => {
-      if (!suiteEditor.data || !suiteName.trim() || !suiteAppId) {
-        throw new TypeError("Choose one App, name the Suite, and select a ready Test.");
-      }
-      const testIds = selectedTests
-        .filter((test) => test.appMapId === suiteAppId && test.status === "ready")
-        .map((test) => test.id);
-      if (!testIds.length) throw new TypeError("Select at least one ready Test from this App.");
-      return suiteProfileService.saveSuite({
-        appMapId: suiteAppId,
-        suiteId: suiteIdFor(suiteName),
-        expectedRevision: suiteEditor.data.revision,
-        name: suiteName.trim(),
-        testIds,
-        variableIds: [],
-        strategy: "cartesian",
-      });
-    },
-    onSuccess: async (suite) => {
-      await queryClient.invalidateQueries({ queryKey: ["suites"] });
-      setSuiteDialogOpen(false);
-      await navigate({
-        to: "/apps/$appId/suites/$suiteId",
-        params: { appId: suite.appMapId, suiteId: suite.id },
-      });
-    },
   });
   const apps = useMemo(
     () =>
@@ -171,27 +116,6 @@ export function TestsPage() {
     });
   }
 
-  function toggleSelected(test: ProductTestSummary, checked: boolean) {
-    const selectionKey = testSelectionKey(test);
-    setSelectedIds((current) => {
-      const next = new Set(current);
-      if (checked) next.add(selectionKey);
-      else next.delete(selectionKey);
-      return next;
-    });
-  }
-
-  function clearSelection() {
-    setSelectedIds(new Set());
-  }
-
-  function openSuiteDialog() {
-    setSuiteName("");
-    setSuiteAppId(selectedApps.length === 1 ? selectedApps[0]![0] : "");
-    createSuite.reset();
-    setSuiteDialogOpen(true);
-  }
-
   return (
     <LibraryPage
       className="relay-library-page relay-tests-page mx-auto flex min-h-full w-full max-w-[1040px] flex-col"
@@ -199,8 +123,8 @@ export function TestsPage() {
     >
       <PageHeader
         context="Tests"
-        title="Saved Tests"
-        description="Run a saved journey, or record a new one."
+        title="Tests"
+        description="Run a saved Test, or record a new one."
         actions={
           <Button
             nativeButton={false}
@@ -211,105 +135,6 @@ export function TestsPage() {
           </Button>
         }
       />
-
-      <Dialog
-        open={suiteDialogOpen}
-        onOpenChange={(open) => {
-          if (!open && createSuite.isPending) return;
-          setSuiteDialogOpen(open);
-        }}
-      >
-        <DialogContent
-          showCloseButton={false}
-          className="max-h-[min(760px,calc(100vh-32px))] w-[min(720px,calc(100vw-32px))] overflow-auto"
-        >
-          <DialogTitle>Create Suite</DialogTitle>
-          <DialogDescription>
-            Group the selected Tests so you can run them together.
-          </DialogDescription>
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              createSuite.mutate();
-            }}
-          >
-            <Field>
-              <FieldLabel htmlFor="selected-suite-app">App scope</FieldLabel>
-              <select
-                id="selected-suite-app"
-                className="relay-native-select min-h-9 w-full rounded-[var(--radius-md)] border border-[var(--border-base)] bg-[var(--background-strong)] px-3 text-base text-[var(--text-strong)]"
-                value={suiteAppId}
-                disabled={createSuite.isPending}
-                onChange={(event) => setSuiteAppId(event.currentTarget.value)}
-              >
-                <option value="">Choose one App</option>
-                {selectedApps.map(([id, label]) => (
-                  <option key={id} value={id}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-              {selectedApps.length > 1 ? (
-                <p className="text-xs leading-5 text-muted-foreground">
-                  Your selection spans Apps. Choose the App whose Tests should be included.
-                </p>
-              ) : null}
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="selected-suite-name">Suite name</FieldLabel>
-              <Input
-                id="selected-suite-name"
-                value={suiteName}
-                disabled={createSuite.isPending}
-                onChange={(event) => setSuiteName(event.currentTarget.value)}
-                placeholder="For example, Release smoke"
-                autoFocus
-              />
-            </Field>
-            {suiteEditor.isPending && suiteAppId ? (
-              <PageLoading label="Loading App Tests…" />
-            ) : null}
-            {suiteEditor.error ? (
-              <FieldError>
-                Relay could not load this App’s Suite editor.{" "}
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => void suiteEditor.refetch()}
-                  disabled={suiteEditor.isFetching}
-                >
-                  {suiteEditor.isFetching ? "Retrying…" : "Try again"}
-                </Button>
-              </FieldError>
-            ) : null}
-            {createSuite.error ? (
-              <FieldError>
-                {createSuite.error instanceof Error
-                  ? createSuite.error.message
-                  : "Relay could not save this Suite."}
-              </FieldError>
-            ) : null}
-            <div className="relay-dialog-actions flex flex-wrap items-center justify-end gap-2.5">
-              <DialogClose
-                render={
-                  <Button variant="ghost" disabled={createSuite.isPending}>
-                    Cancel
-                  </Button>
-                }
-              />
-              <Button
-                type="submit"
-                disabled={
-                  !suiteAppId || !suiteName.trim() || !suiteEditor.data || createSuite.isPending
-                }
-              >
-                {createSuite.isPending ? "Saving…" : "Save Suite"}
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
 
       <LibraryToolbar
         label="Filter Tests"
@@ -352,23 +177,6 @@ export function TestsPage() {
         }
       />
 
-      {selectedIds.size ? (
-        <div
-          className="relay-test-selection-toolbar mt-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground"
-          aria-label="Test selection actions"
-        >
-          <span>{selectedIds.size} selected</span>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={clearSelection}>
-              Clear
-            </Button>
-            <Button variant="default" size="sm" onClick={openSuiteDialog}>
-              Create Suite
-            </Button>
-          </div>
-        </div>
-      ) : null}
-
       {tests.isPending ? <PageLoading label="Loading saved Tests…" /> : null}
       <RecordingProblem
         error={tests.error}
@@ -391,12 +199,7 @@ export function TestsPage() {
           </div>
           <ul className="relay-library-list m-0 overflow-hidden rounded-[var(--radius-xl)] border border-[var(--border-weak-base)] bg-[var(--surface-raised-strong)] p-0 [&>li]:border-b [&>li]:border-[var(--border-weak-base)] [&>li:last-child]:border-b-0">
             {visibleTests.map((test) => (
-              <TestRow
-                key={`${test.appMapId}:${test.id}`}
-                test={test}
-                selected={selectedIds.has(testSelectionKey(test))}
-                onSelectedChange={(checked) => toggleSelected(test, checked)}
-              />
+              <TestRow key={`${test.appMapId}:${test.id}`} test={test} />
             ))}
           </ul>
         </section>
@@ -417,7 +220,7 @@ export function TestsPage() {
           <div className="flex flex-1 items-center justify-center">
             <EmptyState
               title="No saved Tests yet"
-              detail="Record a journey to run it again later."
+              detail="Record a Test to run it again later."
               action={
                 <Link
                   className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
@@ -434,27 +237,11 @@ export function TestsPage() {
   );
 }
 
-function TestRow({
-  test,
-  selected,
-  onSelectedChange,
-}: {
-  test: ProductTestSummary;
-  selected: boolean;
-  onSelectedChange(checked: boolean): void;
-}) {
+function TestRow({ test }: { test: ProductTestSummary }) {
   const recent = test.recentRun;
   return (
     <li>
-      <div className="relay-library-row-shell relative grid grid-cols-[44px_minmax(0,1fr)_auto] items-center pr-3">
-        <label className="relay-library-row-select grid min-h-11 w-11 shrink-0 cursor-pointer place-items-center">
-          <Checkbox
-            checked={selected}
-            disabled={test.status !== "ready"}
-            aria-label={`Select ${test.name} for a Suite`}
-            onCheckedChange={(checked) => onSelectedChange(checked === true)}
-          />
-        </label>
+      <div className="relay-library-row-shell relative grid grid-cols-[minmax(0,1fr)_auto] items-center pr-3">
         <Item
           className="relay-library-row grid min-h-[78px] min-w-0 grid-cols-[minmax(180px,1fr)_minmax(94px,auto)_minmax(150px,.48fr)_18px] items-center gap-[18px] px-3.5 py-2 text-[var(--text-base)] transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 max-[720px]:grid-cols-[minmax(0,1fr)_auto]"
           render={<Link to="/tests/$testId" params={{ testId: test.id }} />}
@@ -503,7 +290,14 @@ function TestRow({
             Review steps
           </Link>
         ) : (
-          <TestRunDialog test={test} />
+          <Link
+            className="relay-library-row-run inline-flex min-h-10 items-center rounded-[var(--radius-md)] px-2.5 text-xs font-semibold text-[var(--text-interactive-base)] hover:bg-[var(--surface-raised-base)]"
+            to="/tests/$testId"
+            params={{ testId: test.id }}
+            hash="test-run-setup"
+          >
+            Run
+          </Link>
         )}
       </div>
     </li>
@@ -540,21 +334,6 @@ function resultContext(status: TestFilter, app: string, apps: readonly [string, 
 
 function runTime(run: NonNullable<ProductTestSummary["recentRun"]>): number {
   return run.finishedAt ?? run.startedAt ?? run.queuedAt;
-}
-
-function testSelectionKey(test: Pick<ProductTestSummary, "appMapId" | "id">): string {
-  return `${test.appMapId}:${test.id}`;
-}
-
-function suiteIdFor(name: string): string {
-  const stem = name
-    .toLocaleLowerCase()
-    .normalize("NFKD")
-    .replace(/[^a-z0-9]+/gu, "-")
-    .replace(/^-|-$/gu, "")
-    .slice(0, 32);
-  const suffix = globalThis.crypto?.randomUUID?.().slice(0, 8) ?? Date.now().toString(36);
-  return `suite-${stem || "coverage"}-${suffix}`;
 }
 
 function relativeTime(value: number): string {

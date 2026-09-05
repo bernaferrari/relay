@@ -244,74 +244,15 @@ describe("Tests library", () => {
     );
   });
 
-  it("runs a ready Test from the row with an explicit target", async () => {
-    const start = vi.fn(async () => ({ workflow: { workflowId: "workflow-library" } }));
-    let inspectAttempts = 0;
-    const inspect = vi.fn(async () => {
-      inspectAttempts += 1;
-      if (inspectAttempts === 1) throw new Error("temporary inspection failure");
-      return { run: { runId: "run-library" } };
-    });
-    const runService = {
-      listTargets: async () => [
-        {
-          kind: "browser" as const,
-          targetId: "browser-library",
-          name: "Staging browser",
-          detail: "Chrome · staging",
-        },
-      ],
-      start,
-      inspect,
-    } as unknown as RunProductService;
-    const storage = new Map<string, string>();
-    const runPlatform = {
-      ...platform,
-      storage: {
-        get: (key: string) => storage.get(key) ?? null,
-        set: (key: string, value: string) => void storage.set(key, value),
-        remove: (key: string) => void storage.delete(key),
-      },
-    };
-    const history = createMemoryHistory({ initialEntries: ["/tests"] });
-    const host = document.createElement("div");
-    document.body.append(host);
-    const root = createRoot(host);
-    roots.push(root);
-    await act(async () => {
-      root.render(
-        <RelayV2App
-          platform={runPlatform}
-          history={history}
-          productService={{} as RecordingProductService}
-          runService={runService}
-          catalogService={catalog()}
-        />,
-      );
-    });
-    await settle();
+  it("opens a ready Test at the Run composer instead of a second dialog", async () => {
+    const { history } = await render("/tests");
     expect(
       document.querySelector('a[href="/tests/test-checkout-internal/edit"]')?.textContent,
     ).toContain("Review steps");
     await clickText("Run");
-    expect(document.body.textContent).toContain("Choose a ready device or browser");
-    await clickText("Staging browser");
-    await clickText("Start Run");
-    expect(document.body.textContent).toContain("Relay could not complete this request");
-    expect(document.body.textContent).toContain("Run started. Retry to finish opening it.");
-    expect(
-      document.querySelector<HTMLInputElement>('input[value="browser-library"]')?.disabled,
-    ).toBe(true);
-    await clickText("Try again");
-    await settle();
-    expect(start).toHaveBeenCalledWith({
-      testId: "test-language-internal",
-      appMapId: "app-shop-internal",
-      targetId: "browser-library",
-    });
-    expect(inspect.mock.calls.length).toBeGreaterThanOrEqual(2);
-    expect(start).toHaveBeenCalledTimes(1);
-    expect(storage.has("activeRunWorkflow")).toBe(true);
+    expect(history.location.pathname).toBe("/tests/test-language-internal");
+    expect(history.location.hash).toBe("#test-run-setup");
+    expect(document.querySelector(".relay-test-run-dialog")).toBeNull();
   });
 });
 
@@ -414,68 +355,13 @@ describe("Tests workspace", () => {
     expect(document.body.textContent).toContain("Change language");
   });
 
-  it("creates a one-App Suite from explicitly selected ready Tests", async () => {
-    const extra = {
-      ...tests[0]!,
-      id: "test-billing-internal",
-      name: "Review billing",
-      appMapId: "app-bank-internal",
-      appName: "Billing",
-    };
-    const saved = vi.fn(async (input: { appMapId: string; testIds: readonly string[] }) => ({
-      id: "suite-selected",
-      appMapId: input.appMapId,
-      appMapRevision: 4,
-      appName: "Shopping",
-      name: "Selected smoke",
-      testIds: input.testIds,
-      tests: [],
-      variableIds: [],
-      strategy: "cartesian" as const,
-      source: { kind: "app-map-combine" as const, id: "suite-selected" },
-    }));
-    const suiteProfileService = {
-      getSuiteEditor: async (appMapId: string) => ({
-        appMapId,
-        appName: appMapId === "app-shop-internal" ? "Shopping" : "Billing",
-        revision: 4,
-        tests: [],
-        dataSets: [],
-      }),
-      saveSuite: saved,
-    } as unknown as SuiteProfileProductService;
-    await render(
-      "/tests",
-      catalog({ listTests: async () => [...tests, extra] }),
-      undefined,
-      {} as RunProductService,
-      suiteProfileService,
-    );
-    await act(async () => {
-      document
-        .querySelectorAll<HTMLElement>(".relay-library-row-select")
-        .forEach((checkbox) => checkbox.click());
-    });
-    await settle();
-    await click("Create Suite");
-    expect(document.body.textContent).toContain("Your selection spans Apps");
-    await fill(document.querySelector<HTMLInputElement>("#selected-suite-name")!, "Selected smoke");
-    const appSelect = document.querySelector<HTMLSelectElement>("#selected-suite-app")!;
-    await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set?.call(
-        appSelect,
-        "app-shop-internal",
-      );
-      appSelect.dispatchEvent(new Event("change", { bubbles: true }));
-    });
-    await settle();
-    await click("Save Suite");
-    expect(saved).toHaveBeenCalledWith(
-      expect.objectContaining({
-        appMapId: "app-shop-internal",
-        testIds: ["test-language-internal"],
-      }),
-    );
+  it("does not invent Suites from Test checkboxes", async () => {
+    await render("/tests");
+    expect(document.body.textContent).toContain("Run a saved Test, or record a new one.");
+    expect(document.querySelectorAll(".relay-library-row-select")).toHaveLength(0);
+    expect(document.body.textContent).not.toContain("Create Suite");
+    expect(document.body.textContent).not.toContain("Save Suite");
+    expect(document.body.textContent).not.toContain("Your selection spans Apps");
   });
 });
 
