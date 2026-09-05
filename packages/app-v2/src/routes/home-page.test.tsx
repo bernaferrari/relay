@@ -10,6 +10,7 @@ import type { CatalogProductService } from "../data/catalog-product-service";
 import type { ChangeProductService } from "../data/change-product-service";
 import type { RecordingProductService } from "../data/recording-product-service";
 import type { Platform } from "../platform/types";
+import { homeAttentionRuns } from "../data/home-run-attention";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -104,6 +105,9 @@ async function renderHome(input: {
   tests?: readonly ProductTestSummary[];
   runs?: readonly ProductRunSummary[];
   changes?: readonly ProductChange[];
+  productService?: RecordingProductService;
+  catalogService?: CatalogProductService;
+  changeService?: ChangeProductService;
 }) {
   const host = document.createElement("div");
   document.body.append(host);
@@ -114,9 +118,9 @@ async function renderHome(input: {
       <RelayV2App
         platform={platform()}
         history={createMemoryHistory({ initialEntries: ["/home"] })}
-        productService={recording(input.apps ?? [])}
-        catalogService={catalog(input.tests ?? [], input.runs ?? [])}
-        changeService={changes(input.changes ?? [])}
+        productService={input.productService ?? recording(input.apps ?? [])}
+        catalogService={input.catalogService ?? catalog(input.tests ?? [], input.runs ?? [])}
+        changeService={input.changeService ?? changes(input.changes ?? [])}
       />,
     );
   });
@@ -126,6 +130,211 @@ async function renderHome(input: {
 }
 
 describe("Home", () => {
+  it("keeps a failed device result when a later pass used another execution configuration", () => {
+    const base = {
+      title: "Pay",
+      action: "test",
+      appMapId: "app",
+      testId: "test",
+      identity: { runId: "x", appMapId: "app", testId: "test" },
+      links: { self: "/runs/x" },
+    } as const;
+    const failed: ProductRunSummary = {
+      ...base,
+      id: "android-failed",
+      status: "failed",
+      phase: "failed",
+      outcome: "product-failure",
+      queuedAt: 10,
+      executionIdentity: {
+        appMapId: "app",
+        testId: "test",
+        appMapRevision: 4,
+        buildId: "build-1",
+        platform: "android",
+        deviceId: "pixel-1",
+      },
+    };
+    const passed: ProductRunSummary = {
+      ...base,
+      id: "ios-passed",
+      status: "completed",
+      phase: "completed",
+      outcome: "passed",
+      queuedAt: 20,
+      executionIdentity: {
+        appMapId: "app",
+        testId: "test",
+        appMapRevision: 4,
+        buildId: "build-1",
+        platform: "ios",
+        deviceId: "ipad-1",
+      },
+    };
+
+    expect(homeAttentionRuns([failed, passed]).map((run) => run.id)).toEqual(["android-failed"]);
+  });
+
+  it("does not let queued, cancelled, or unknown runs erase an actionable failure", () => {
+    const identity = {
+      appMapId: "app",
+      testId: "test",
+      appMapRevision: 4,
+      buildId: "build-1",
+      platform: "android",
+      deviceId: "pixel-1",
+    } as const;
+    const run = (id: string, phase: ProductRunSummary["phase"], at: number): ProductRunSummary => ({
+      id,
+      title: "Pay",
+      action: "test",
+      status: phase,
+      phase,
+      ...(phase === "failed" ? { outcome: "harness-failure" as const } : {}),
+      queuedAt: at,
+      testId: "test",
+      appMapId: "app",
+      identity: { runId: id, appMapId: "app", testId: "test" },
+      executionIdentity: phase === "cancelled" ? undefined : identity,
+      links: { self: `/runs/${id}` },
+    });
+
+    expect(
+      homeAttentionRuns([run("failed", "failed", 10), run("queued", "queued", 20)]),
+    ).toHaveLength(1);
+    expect(
+      homeAttentionRuns([run("failed", "failed", 10), run("cancelled", "cancelled", 20)]),
+    ).toHaveLength(1);
+    expect(
+      homeAttentionRuns([
+        run("failed", "failed", 10),
+        { ...run("passed", "completed", 20), outcome: "passed", executionIdentity: undefined },
+      ]),
+    ).toHaveLength(1);
+  });
+
+  it("resolves a failure only after a later pass of the same frozen execution", () => {
+    const identity = {
+      appMapId: "app",
+      testId: "test",
+      appMapRevision: 4,
+      buildId: "build-1",
+      targetProfileId: "profile-1",
+      platform: "android",
+      deviceId: "pixel-1",
+    } as const;
+    const run = (id: string, phase: ProductRunSummary["phase"], at: number): ProductRunSummary => ({
+      id,
+      title: "Pay",
+      action: "test",
+      status: phase,
+      phase,
+      ...(phase === "failed"
+        ? { outcome: "harness-failure" as const }
+        : { outcome: "passed" as const }),
+      queuedAt: at,
+      testId: "test",
+      appMapId: "app",
+      identity: { runId: id, appMapId: "app", testId: "test" },
+      executionIdentity: identity,
+      links: { self: `/runs/${id}` },
+    });
+
+    expect(
+      homeAttentionRuns([run("failed", "failed", 10), run("passed", "completed", 20)]),
+    ).toEqual([]);
+  });
+
+  it("keeps failures when target or ordering evidence is unresolved", () => {
+    const base: ProductRunSummary = {
+      id: "failed",
+      title: "Pay",
+      action: "test",
+      status: "failed",
+      phase: "failed",
+      outcome: "product-failure",
+      queuedAt: 10,
+      appMapId: "app",
+      testId: "test",
+      identity: { runId: "failed", appMapId: "app", testId: "test" },
+      executionIdentity: {
+        appMapId: "app",
+        testId: "test",
+        appMapRevision: 4,
+        platform: "android",
+        deviceId: "pixel-1",
+      },
+      links: { self: "/runs/failed" },
+    };
+    const samePlatformUnknownTarget: ProductRunSummary = {
+      ...base,
+      id: "passed",
+      status: "completed",
+      phase: "completed",
+      outcome: "passed",
+      queuedAt: 20,
+      executionIdentity: {
+        appMapId: "app",
+        testId: "test",
+        appMapRevision: 4,
+        platform: "android",
+      },
+    };
+    expect(homeAttentionRuns([base, samePlatformUnknownTarget])).toHaveLength(1);
+
+    const equalTimestampPass = {
+      ...samePlatformUnknownTarget,
+      queuedAt: 10,
+      executionIdentity: base.executionIdentity,
+    };
+    expect(homeAttentionRuns([base, equalTimestampPass])).toHaveLength(1);
+  });
+
+  it("keeps failures when a later pass omits saved data or account identity", () => {
+    const failed: ProductRunSummary = {
+      id: "failed-config",
+      title: "Pay",
+      action: "test",
+      status: "failed",
+      phase: "failed",
+      outcome: "product-failure",
+      queuedAt: 10,
+      appMapId: "app",
+      testId: "test",
+      identity: { runId: "failed-config", appMapId: "app", testId: "test" },
+      executionIdentity: {
+        appMapId: "app",
+        testId: "test",
+        appMapRevision: 4,
+        platform: "browser",
+        targetProfileId: "checkout",
+        dataSetId: "member",
+        accountId: "signed-in",
+      },
+      links: { self: "/runs/failed-config" },
+    };
+    const passWithoutConfig: ProductRunSummary = {
+      ...failed,
+      id: "passed-unknown-config",
+      status: "completed",
+      phase: "completed",
+      outcome: "passed",
+      queuedAt: 20,
+      identity: { runId: "passed-unknown-config", appMapId: "app", testId: "test" },
+      executionIdentity: {
+        appMapId: "app",
+        testId: "test",
+        appMapRevision: 4,
+        platform: "browser",
+        targetProfileId: "checkout",
+      },
+      links: { self: "/runs/passed-unknown-config" },
+    };
+    expect(homeAttentionRuns([failed, passWithoutConfig]).map((run) => run.id)).toEqual([
+      "failed-config",
+    ]);
+  });
+
   it("teaches one direct first action only for a truly empty workspace", async () => {
     await renderHome({});
 
@@ -235,5 +444,68 @@ describe("Home", () => {
     expect(document.querySelector("#home-next-title")?.textContent).toBe("Payment failed");
     expect(document.body.textContent).toContain("1 result needs attention");
     expect(document.body.textContent).not.toContain("Ready to run");
+  });
+
+  it("keeps saved Tests and their action visible when Runs fail", async () => {
+    const now = Date.now();
+    const test: ProductTestSummary = {
+      id: "test-runs-down",
+      name: "Checkout",
+      appMapId: "app",
+      appName: "Shop",
+      stepCount: 2,
+      status: "ready",
+      updatedAt: now,
+      href: "/tests/test-runs-down",
+    };
+    const catalogService = catalog([test], []);
+    catalogService.listRuns = async () => {
+      throw new Error("runs unavailable");
+    };
+
+    await renderHome({ apps: [{ id: "app", name: "Shop" }], catalogService });
+
+    expect(document.body.textContent).toContain("Checkout");
+    expect(document.body.textContent).toContain("Record a Test");
+    expect(document.body.textContent).toContain("Latest results are unavailable");
+    expect(document.body.textContent).not.toContain("No results need attention");
+  });
+
+  it("keeps Runs visible when Changes fail", async () => {
+    const now = Date.now();
+    const run: ProductRunSummary = {
+      id: "run-changes-down",
+      title: "Checkout",
+      action: "Inspect",
+      status: "completed",
+      phase: "completed",
+      outcome: "passed",
+      appMapId: "app",
+      queuedAt: now,
+      identity: { runId: "run-changes-down", appMapId: "app" },
+      links: { self: "/runs/run-changes-down" },
+    };
+    const changeService = changes([]);
+    changeService.list = async () => {
+      throw new Error("changes unavailable");
+    };
+
+    await renderHome({ apps: [{ id: "app", name: "Shop" }], runs: [run], changeService });
+
+    expect(document.body.textContent).toContain("Latest results");
+    expect(document.body.textContent).toContain("Checkout");
+    expect(document.body.textContent).toContain("Some workspace sections are unavailable");
+  });
+
+  it("keeps the primary recovery state when Apps fail", async () => {
+    const productService = recording([]);
+    productService.listApps = async () => {
+      throw new Error("apps unavailable");
+    };
+
+    await renderHome({ productService });
+
+    expect(document.body.textContent).toContain("Relay could not complete this request");
+    expect(document.body.textContent).not.toContain("Add the app you want to verify");
   });
 });

@@ -18,6 +18,8 @@ import {
   activeReviewedDocumentOriginsForAppMap,
   applyFullSurfaceDestinationBindings,
   combineCampaignCaseFromPreparedCell,
+  combineExecutionCaseId,
+  savedAppMapTargetProfileIdsForTarget,
   buildTargetProfiles,
   createCombineCampaign,
   currentOperationContext,
@@ -58,6 +60,16 @@ type CombineStartRequest = {
   cellRuntimeProfiles?: AppMapCombineCellRuntimeProfile[];
   /** Explicit local execution target for every selected Test × world cell. */
   cellTargetBindings?: AppMapCombineCellTargetBinding[];
+  profileTargets?: {
+    profileId: string;
+    targetProfileId?: string;
+    target: {
+      targetKind?: "device" | "browser";
+      serial?: string;
+      platform?: "android" | "ios" | "browser";
+      browserTargetId?: string;
+    };
+  }[];
   /** Required whenever a Combine uses explicit per-cell target bindings. */
   localAdmission?: LocalCombineCampaignAdmissionRequest;
   strategy?: "zip" | "cartesian" | "pairwise";
@@ -191,7 +203,7 @@ async function executeCombineStartUnlocked(
   }
   const hasExplicitCellTargets = body.cellTargetBindings !== undefined;
   const targetId = body.browserTargetId ?? body.serial;
-  if (!targetId && !hasExplicitCellTargets) {
+  if (!targetId && !hasExplicitCellTargets && !body.profileTargets?.length) {
     throw new HttpError(400, "serial or browserTargetId is required");
   }
   const loaded = await readAppMap(scope.projectId, body.appMapId.trim());
@@ -237,7 +249,12 @@ async function executeCombineStartUnlocked(
   }
   const targetKind = body.targetKind ?? (body.browserTargetId ? "browser" : "device");
   const requestedPlatform = body.browserTargetId ? ("browser" as const) : body.platform;
-  if (!hasExplicitCellTargets && targetKind === "device" && !requestedPlatform) {
+  if (
+    !hasExplicitCellTargets &&
+    !body.profileTargets?.length &&
+    targetKind === "device" &&
+    !requestedPlatform
+  ) {
     throw new HttpError(400, "platform is required so Relay can bind each cell before discovery.");
   }
   const scopedCombine = combine
@@ -269,31 +286,99 @@ async function executeCombineStartUnlocked(
   let persistedCampaignId: string | undefined;
   try {
     const reviewedDocumentOrigins = await activeReviewedDocumentOriginsForAppMap(map);
-    const prepared = assertPreparedCombineCells(
-      await prepareAppMapCombineCells({
-        map,
-        combine: scopedCombine,
-        selected: body.selected ?? scopedCombine.selected,
-        strategy: body.strategy ?? scopedCombine.strategy,
-        cellRuntimeProfiles: body.cellRuntimeProfiles ?? scopedCombine.cellRuntimeProfiles,
-        cellTargetBindings: body.cellTargetBindings,
-        selectedCellIds: body.selectedCellIds,
-        defaultTargetProfileId: body.defaultTargetProfileId,
-        ...(targetId
-          ? {
-              target: {
-                targetId,
-                platform: requestedPlatform ?? "browser",
-              },
-            }
+    const prepareInput = {
+      map,
+      combine: scopedCombine,
+      selected: body.selected ?? scopedCombine.selected,
+      strategy: body.strategy ?? scopedCombine.strategy,
+      cellRuntimeProfiles: body.cellRuntimeProfiles ?? scopedCombine.cellRuntimeProfiles,
+      cellTargetBindings: body.cellTargetBindings,
+      selectedCellIds: body.selectedCellIds,
+      defaultTargetProfileId: body.defaultTargetProfileId,
+      ...(targetId && !body.profileTargets?.length
+        ? {
+            target: {
+              targetId,
+              platform: requestedPlatform ?? "browser",
+            },
+          }
+        : {}),
+      compileOptions: {
+        reviewedDocumentOrigins,
+        ...(forceRecaptureScreenIds.length
+          ? { forceRecaptureSurfaceScreenIds: forceRecaptureScreenIds }
           : {}),
-        compileOptions: {
-          reviewedDocumentOrigins,
-          ...(forceRecaptureScreenIds.length
-            ? { forceRecaptureSurfaceScreenIds: forceRecaptureScreenIds }
-            : {}),
-        },
-      }),
+      },
+    };
+    const prepared = assertPreparedCombineCells(
+      await (body.profileTargets?.length
+        ? (() => {
+            const profilePrepared = body.profileTargets!.map(async (profileTarget) => {
+              const target = profileTarget.target;
+              const profileTargetId = target.browserTargetId ?? target.serial;
+              if (!profileTargetId) throw new HttpError(400, "Each profile target needs an id");
+              const runtimeProfileIds = savedAppMapTargetProfileIdsForTarget(map, {
+                targetId: profileTargetId,
+                platform: target.platform ?? "browser",
+              });
+              const targetProfileId =
+                profileTarget.targetProfileId ??
+                (runtimeProfileIds.length === 1 ? runtimeProfileIds[0] : undefined);
+              if (!targetProfileId) {
+                throw new HttpError(
+                  409,
+                  `Environment profile ${profileTarget.profileId} has no unique saved runtime profile for ${profileTargetId}.`,
+                  {
+                    code: "APP_MAP_COMBINE_RUNTIME_PROFILE_REQUIRED",
+                    targetProfileIds: runtimeProfileIds,
+                    recovery:
+                      "Capture or explicitly bind one saved runtime profile for this target.",
+                  },
+                );
+              }
+              return prepareAppMapCombineCells({
+                ...prepareInput,
+                cellRuntimeProfiles: prepareInput.cellRuntimeProfiles?.map((profile) => ({
+                  ...profile,
+                  targetProfileId,
+                })),
+                defaultTargetProfileId: targetProfileId,
+                target: {
+                  targetId: profileTargetId,
+                  platform: target.platform ?? "browser",
+                },
+              }).then((result) => ({ result, profileId: profileTarget.profileId }));
+            });
+            return Promise.all(profilePrepared).then((groups) => {
+              const first = groups[0]!.result;
+              const cells = groups.flatMap(({ result, profileId }) =>
+                result.cells.map((cell) => ({
+                  ...cell,
+                  executionCaseId: combineExecutionCaseId({
+                    cellId: cell.cellId,
+                    targetProfileId: profileId,
+                  }),
+                })),
+              );
+              const selectedCells = groups.flatMap(({ result, profileId }) =>
+                result.selectedCells.map((cell) => ({
+                  ...cell,
+                  executionCaseId: combineExecutionCaseId({
+                    cellId: cell.cellId,
+                    targetProfileId: profileId,
+                  }),
+                })),
+              );
+              return {
+                ...first,
+                cells,
+                selectedCells,
+                selectedCellIds: selectedCells.map((cell) => cell.cellId),
+                cellStates: groups.flatMap(({ result }) => result.cellStates),
+              };
+            });
+          })()
+        : prepareAppMapCombineCells(prepareInput)),
     );
     let selectedCells = prepared.selectedCells;
     if (body.cell?.trim()) {
@@ -416,9 +501,20 @@ async function executeCombineStartUnlocked(
       admission = admitted.admission;
       staged = admitted.staged;
     } else {
-      if (!targetId) throw new HttpError(400, "serial or browserTargetId is required");
-      await runtime.assertTargetControl(scope, targetId);
-      if (targetKind === "device") {
+      const targetIds = body.profileTargets?.length
+        ? body.profileTargets
+            .map((item) => item.target.browserTargetId ?? item.target.serial)
+            .filter(Boolean)
+        : targetId
+          ? [targetId]
+          : [];
+      if (!targetIds.length) throw new HttpError(400, "serial or browserTargetId is required");
+      for (const selectedTargetId of targetIds)
+        await runtime.assertTargetControl(scope, selectedTargetId!);
+      if (
+        targetKind === "device" ||
+        body.profileTargets?.some((item) => item.target.targetKind !== "browser")
+      ) {
         try {
           await runtime.listDevices();
         } catch (error) {
@@ -434,11 +530,17 @@ async function executeCombineStartUnlocked(
     let campaign;
     if (combine) {
       const jobByCell = new Map(
-        staged.jobs.map((job, index) => [selectedToQueue[index]?.cellId, job]),
+        staged.jobs.map((job, index) => [
+          selectedToQueue[index]?.executionCaseId ?? selectedToQueue[index]?.cellId,
+          job,
+        ]),
       );
       const cases = prepared.cells.map((cell, index) => {
-        const job = jobByCell.get(cell.cellId);
-        const isPilot = isPilotRun && cell.cellId === selectedToQueue[0]?.cellId;
+        const executionId = cell.executionCaseId ?? cell.cellId;
+        const job = jobByCell.get(executionId);
+        const isPilot =
+          isPilotRun &&
+          executionId === (selectedToQueue[0]?.executionCaseId ?? selectedToQueue[0]?.cellId);
         return combineCampaignCaseFromPreparedCell(cell, {
           index,
           phase: isPilot ? "pilot" : "coverage",
@@ -456,7 +558,9 @@ async function executeCombineStartUnlocked(
             executionAppMapRevision: map.revision,
             rootRecipeId: selectedToQueue[0]!.plan.rootRecipeId,
             pilotJobId: staged.jobs[0]!.id,
-            selectedCaseIds: [...prepared.selectedCellIds],
+            selectedCaseIds: prepared.selectedCells.map(
+              (cell) => cell.executionCaseId ?? cell.cellId,
+            ),
           }
         : undefined;
       campaign = {
@@ -502,6 +606,13 @@ async function executeCombineStartUnlocked(
           selectedCellIds: isPilotRun
             ? prepared.selectedCellIds
             : selectedToQueue.map((cell) => cell.cellId),
+          ...(body.profileTargets?.length
+            ? {
+                selectedExecutionCaseIds: isPilotRun
+                  ? prepared.selectedCells.map((cell) => cell.executionCaseId ?? cell.cellId)
+                  : selectedToQueue.map((cell) => cell.executionCaseId ?? cell.cellId),
+              }
+            : {}),
           strategy: body.strategy ?? combine.strategy,
           seed: prepared.matrix.seed,
           title: body.title?.trim() || combine.name,

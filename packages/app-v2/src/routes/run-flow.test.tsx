@@ -142,10 +142,19 @@ function report(outcome: ProductRunReportOverview["outcome"] = "passed"): Produc
   };
 }
 
+function workflowless(state: ProductRunState): ProductRunState {
+  return {
+    ...state,
+    workflow: undefined,
+    snapshot: { ...state.snapshot, workflow: undefined },
+  } as ProductRunState;
+}
+
 function fakeRunService(initial: ProductRunState = runState("running")) {
   let current = initial;
   let finish: ((state: ProductRunState) => void) | undefined;
   const calls: string[] = [];
+  const startInputs: unknown[] = [];
   const service: RunProductService = {
     async getTest(testId) {
       calls.push(`test:${testId}`);
@@ -199,6 +208,17 @@ function fakeRunService(initial: ProductRunState = runState("running")) {
         },
       ];
     },
+    async listBuilds() {
+      return [
+        {
+          id: "build-android-1",
+          name: "Android QA",
+          platform: "android",
+          status: "ready",
+          sourceSha: "abcdef1234567",
+        },
+      ];
+    },
     async presentTargets(selected) {
       return selected.map((item) => ({
         ...item,
@@ -207,6 +227,7 @@ function fakeRunService(initial: ProductRunState = runState("running")) {
       }));
     },
     async start(input) {
+      startInputs.push(input);
       calls.push(`start:${input.testId}:${input.appMapId}:${input.targetId}`);
       current = runState("queued", ["inspect", "cancel"]);
       return current;
@@ -253,6 +274,7 @@ function fakeRunService(initial: ProductRunState = runState("running")) {
   return {
     service,
     calls,
+    startInputs,
     complete(phase: "succeeded" | "failed" = "succeeded") {
       const next = runState(phase);
       current = next;
@@ -322,7 +344,7 @@ async function click(element: HTMLElement) {
 
 describe("Run and Report", () => {
   it("waits for every data dimension before previewing and labels the selected target", async () => {
-    const fake = fakeRunService();
+    const fake = fakeRunService(runState("running", ["inspect"]));
     const preview = vi.fn((input) => ({
       selected: input.selected,
       target: input.target,
@@ -398,6 +420,54 @@ describe("Run and Report", () => {
       true,
     );
     expect(button("Run Test").disabled).toBe(false);
+  });
+
+  it("submits the visible build and cold-start choices", async () => {
+    const fake = fakeRunService();
+    await renderRun("/tests/test-1", fake.service, platformWithStorage().platform);
+    const build = document.querySelector<HTMLSelectElement>("select");
+    if (!build) throw new Error("Build selector not found");
+    await act(async () => {
+      build.value = "build-android-1";
+      build.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await click(document.querySelector<HTMLInputElement>('input[value="browser-golden"]')!);
+    const cold = [...document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].find(
+      (input) => input.parentElement?.textContent?.includes("cold app launch"),
+    );
+    if (!cold) throw new Error("Cold-start selector not found");
+    await click(cold);
+    await click(button("Run Test"));
+    expect(fake.startInputs[0]).toMatchObject({
+      sourceRevision: { vcs: "git", sha: "abcdef1234567", buildId: "build-android-1" },
+      startup: { mode: "cold" },
+    });
+  });
+
+  it("clears a saved profile when its bound target is changed", async () => {
+    const fake = fakeRunService();
+    fake.service.listProfiles = async () => [
+      {
+        id: "profile-android",
+        name: "Pixel 9 reviewed",
+        targetId: "emulator-5554",
+        platform: "android",
+      },
+    ];
+    await renderRun("/tests/test-1", fake.service, platformWithStorage().platform);
+
+    await click(document.querySelector<HTMLInputElement>('input[value="emulator-5554"]')!);
+    const profile = document.querySelector<HTMLSelectElement>("select");
+    if (!profile) throw new Error("Saved profile selector not found");
+    await act(async () => {
+      profile.value = "profile-android";
+      profile.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await click(document.querySelector<HTMLInputElement>('input[value="browser-golden"]')!);
+    await click(button("Run Test"));
+
+    expect(fake.startInputs[0]).toMatchObject({ targetId: "browser-golden" });
+    expect(fake.startInputs[0]).not.toHaveProperty("targetProfileId");
   });
 
   it("starts one canonical Run, follows progress, and renders only real evidence", async () => {
@@ -504,8 +574,8 @@ describe("Run and Report", () => {
       fake.service,
       platformWithStorage().platform,
     );
-    await click(button("Replay saved steps"));
-    await click(button("Start replay"));
+    await click(button("Rerun…"));
+    await click(button("Start run"));
 
     expect(replayCalls).toBe(1);
     expect(history.location.search).toContain("replayJob=job-replay");
@@ -527,8 +597,8 @@ describe("Run and Report", () => {
     };
 
     await renderRun("/runs/run-1", fake.service, platformWithStorage().platform);
-    await click(button("Replay saved steps"));
-    await click(button("Start replay"));
+    await click(button("Rerun…"));
+    await click(button("Start run"));
     await settle();
 
     expect(document.querySelector('[role="alert"]')).not.toBeNull();
@@ -545,8 +615,8 @@ describe("Run and Report", () => {
       fake.service,
       platformWithStorage().platform,
     );
-    await click(button("Replay saved steps"));
-    await click(button("Start replay"));
+    await click(button("Rerun…"));
+    await click(button("Start run"));
     await settle();
 
     expect(history.location.pathname).toBe("/runs/run-1");
@@ -558,9 +628,9 @@ describe("Run and Report", () => {
     fake.service.replay = async () => ({ jobId: "job-replay" });
     fake.service.getReplayJob = async () => ({ status: "ok" });
 
-    await renderRun("/runs/run-1", fake.service, platformWithStorage().platform);
-    await click(button("Replay saved steps"));
-    await click(button("Start replay"));
+    await renderRun("/runs/run-raw-1", fake.service, platformWithStorage().platform);
+    await click(button("Rerun…"));
+    await click(button("Start run"));
     await settle();
 
     expect(document.querySelector('[role="alert"]')).not.toBeNull();
@@ -581,6 +651,117 @@ describe("Run and Report", () => {
     expect(fake.calls).toContain("inspect:workflow-run-1");
     expect(document.body.textContent).toContain("Checking Language");
     expect(document.body.textContent).not.toContain("emulator-5554");
+  });
+
+  it("restores an active Run from canonical server state without local storage", async () => {
+    const fake = fakeRunService();
+    fake.service.restore = async (runId) => {
+      fake.calls.push(`restore:${runId}`);
+      return runState("running", ["inspect", "cancel"]);
+    };
+
+    await renderRun("/runs/run-1", fake.service, platformWithStorage().platform);
+
+    expect(fake.calls).toContain("restore:run-1");
+    expect(document.body.textContent).toContain("Checking Language");
+    expect(document.body.textContent).toContain("Cancel Run");
+    expect(document.body.textContent).not.toContain("Run unavailable");
+  });
+
+  it("keeps an active run scoped while moving Test A to Test B and back", async () => {
+    const fake = fakeRunService();
+    const storage = platformWithStorage({
+      activeRunWorkflow: JSON.stringify({
+        workflowId: "workflow-run-1",
+        runId: "run-1",
+        testId: "test-1",
+      }),
+    });
+    const { history } = await renderRun("/tests/test-1", fake.service, storage.platform);
+
+    expect(document.body.textContent).toContain("Resume Run");
+    history.push("/tests/test-2");
+    await settle();
+    expect(document.body.textContent).not.toContain("Resume Run");
+    expect(document.body.textContent).toContain("Run Test");
+
+    history.push("/tests/test-1");
+    await settle();
+    expect(document.body.textContent).toContain("Resume Run");
+  });
+
+  it("restores the URL Run when local storage points at a different Run", async () => {
+    const fake = fakeRunService(runState("running", ["inspect"]));
+    fake.service.restore = async (runId) => {
+      fake.calls.push(`restore:${runId}`);
+      return runState("running", ["inspect"]);
+    };
+    await renderRun(
+      "/runs/run-2",
+      fake.service,
+      platformWithStorage({
+        activeRunWorkflow: JSON.stringify({
+          workflowId: "workflow-run-1",
+          runId: "run-1",
+          testId: "test-1",
+        }),
+      }).platform,
+    );
+    expect(fake.calls).toContain("restore:run-2");
+    expect(document.body.textContent).toContain("Checking Language");
+    expect(document.body.textContent).not.toContain("Cancel Run");
+  });
+
+  it("falls back to the canonical terminal report when restore finds no workflow", async () => {
+    const fake = fakeRunService(runState("succeeded"));
+    fake.service.restore = async (runId) => {
+      fake.calls.push(`restore:${runId}`);
+      return undefined;
+    };
+    await renderRun("/runs/run-1", fake.service, platformWithStorage().platform);
+    expect(fake.calls).toContain("restore:run-1");
+    expect(fake.calls).toContain("report:run-1");
+    expect(document.body.textContent).toContain("This Test passed on Pixel 9.");
+  });
+
+  it("restores a workflow-less active job with progress and explicit cancellation", async () => {
+    const fake = fakeRunService();
+    fake.service.restore = async () => undefined;
+    let executionPhase: "running" | "cancelled" = "running";
+    fake.service.inspectExecution = async () => {
+      const current = runState(
+        executionPhase,
+        executionPhase === "running" ? ["inspect", "cancel"] : ["inspect"],
+      );
+      return workflowless(current);
+    };
+    fake.service.cancelExecution = async (runId) => {
+      fake.calls.push(`cancel-execution:${runId}`);
+      executionPhase = "cancelled";
+      const current = runState("cancelled", ["inspect"]);
+      return workflowless(current);
+    };
+
+    await renderRun("/runs/run-raw-1", fake.service, platformWithStorage().platform);
+    expect(document.body.textContent).toContain("Checking Language");
+    expect(button("Cancel Run").disabled).toBe(false);
+    await click(button("Cancel Run"));
+    expect(fake.calls).toContain("cancel-execution:run-raw-1");
+    expect(document.body.textContent).not.toContain("Cancel Run");
+  });
+
+  it("renders the terminal report after a workflow-less job completes", async () => {
+    const fake = fakeRunService();
+    fake.service.restore = async () => undefined;
+    fake.service.inspectExecution = async () => {
+      const current = runState("succeeded");
+      return workflowless(current);
+    };
+
+    await renderRun("/runs/run-raw-terminal", fake.service, platformWithStorage().platform);
+
+    expect(fake.calls).toContain("report:run-raw-terminal");
+    expect(document.body.textContent).toContain("This Test passed on Pixel 9.");
   });
 
   it("shows only one centered recovery state when an in-progress Run disconnects", async () => {
@@ -680,7 +861,7 @@ describe("Run and Report", () => {
     const fake = fakeRunService();
     await renderRun("/runs/run-1?view=evidence", fake.service, platformWithStorage().platform);
 
-    expect(document.body.textContent).toContain("Captured during this Run");
+    expect(document.body.textContent).toContain("Screenshots");
     expect(document.body.textContent).toContain("Language settings");
     expect(document.body.textContent).not.toContain("What Relay verified");
     expect(document.querySelector('#report-tab-evidence[aria-selected="true"]')).not.toBeNull();
@@ -851,7 +1032,6 @@ describe("Run and Report", () => {
     await renderRun("/runs/run-1", fake.service, platformWithStorage().platform);
 
     expect(document.body.textContent).toContain("Browser could not open the app");
-    expect(document.body.textContent).toContain("Browser connection");
     expect(document.body.textContent).toContain("Reconnect the device or browser");
     expect(document.body.textContent).toContain("Technical details");
     expect(

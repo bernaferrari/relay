@@ -9,7 +9,7 @@ import {
   type RouterHistory,
 } from "@tanstack/react-router";
 import { ArrowLeft, ArrowRight, Search } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Platform } from "../platform/types";
 import { parentPathForPath, routeContractForPath } from "../router/route-contract";
 import { ActivityCenterButton } from "./active-work";
@@ -24,6 +24,13 @@ import {
 
 export function AppShell({ platform }: { platform: Platform }) {
   const [commandOpen, setCommandOpen] = useState(false);
+  const commandReturnFocus = useRef<HTMLElement | null>(null);
+  const changeCommandOpen = useCallback((open: boolean) => {
+    if (open)
+      commandReturnFocus.current =
+        document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setCommandOpen(open);
+  }, []);
   const location = useLocation();
   const navigate = useNavigate();
   const router = useRouter();
@@ -86,7 +93,7 @@ export function AppShell({ platform }: { platform: Platform }) {
             <button
               type="button"
               className="relay-command-trigger relay-electron-no-drag [-webkit-app-region:no-drag] ml-0 inline-flex min-h-9 min-w-[220px] items-center gap-2 rounded-[var(--radius-md)] border border-[var(--border-weak-base)] bg-[var(--surface-raised-strong)] px-2 py-0 pl-2.5 text-left text-xs text-[var(--text-weaker)]"
-              onClick={() => setCommandOpen(true)}
+              onClick={() => changeCommandOpen(true)}
               aria-label="Open command palette"
             >
               <Search aria-hidden="true" />
@@ -128,7 +135,11 @@ export function AppShell({ platform }: { platform: Platform }) {
         </main>
       </div>
       <RouteAnnouncer />
-      <CommandPalette open={commandOpen} onOpenChange={setCommandOpen} />
+      <CommandPalette
+        open={commandOpen}
+        onOpenChange={changeCommandOpen}
+        returnFocus={commandReturnFocus}
+      />
     </SidebarProvider>
   );
 }

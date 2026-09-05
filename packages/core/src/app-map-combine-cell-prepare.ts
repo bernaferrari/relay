@@ -67,6 +67,9 @@ export class AppMapCombineCellContractError extends Error {
 
 export type PreparedAppMapCombineCell = {
   cellId: string;
+  /** Profile-scoped identity for expanded execution; authored cellId remains
+   * the source lineage key. */
+  executionCaseId?: string;
   testId: string;
   testName: string;
   values: Record<string, string>;

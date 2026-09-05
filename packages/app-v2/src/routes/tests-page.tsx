@@ -208,7 +208,11 @@ export function TestsPage() {
         title="Saved Tests"
         description="Reviewed journeys you can run again on a device or browser."
         actions={
-          <Button nativeButton={false} variant="default" render={<Link to="/tests/new" />}>
+          <Button
+            nativeButton={false}
+            variant="default"
+            render={<Link to="/tests/new" search={app ? { app } : {}} />}
+          >
             New Test
           </Button>
         }

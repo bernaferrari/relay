@@ -1,6 +1,7 @@
+import { ReportVideoInspector } from "../components/report-video-inspector";
+import { LibraryPage, PageHeader } from "../components/page-layout";
 import { RawEvidenceDisclosure } from "./raw-evidence-disclosure";
 /** @jsxImportSource react */
-import { Badge } from "@relay/ui-react/components/badge";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@relay/ui-react/components/alert";
 import { Button } from "@relay/ui-react/components/button";
 import {
@@ -13,15 +14,15 @@ import { ScrollArea } from "@relay/ui-react/components/scroll-area";
 import { Tabs, TabsList, TabsTrigger } from "@relay/ui-react/components/tabs";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
-import { ArrowLeft, ChevronRight, CircleAlert } from "lucide-react";
+import { ChevronRight, CircleAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Breadcrumbs, OutcomeMark } from "../components/product-patterns";
 import { IssueDraftButton } from "../components/issue-draft-button";
 import { RunConfigurationComposer } from "../components/run-configuration-composer";
 import {
   firstSentence,
-  failureTitle,
   formatDuration,
+  failureTitle,
   nextAction,
   outcomeSentence,
 } from "../components/run-report-formatters";
@@ -31,6 +32,7 @@ import { clearRunPointerIfCurrent, readRunPointer } from "../data/run-pointer";
 import { PageLoading, RecordingProblem, targetLabel } from "./recording-shared";
 import { RunReviewControls } from "./run-review-controls";
 import { RunWorkbench, RunContextFacts } from "./run-workbench";
+import { ReportTimeline, EvidencePreview } from "./run-report-panels";
 import { RunReplayAction, RunReplayStatus } from "./run-replay";
 
 const routeApi = getRouteApi("/runs/$runId");
@@ -43,18 +45,53 @@ export function RunPage() {
     queryFn: async () => (await readRunPointer(platform)) ?? null,
     staleTime: Infinity,
   });
-  const activePointer = pointer.data?.runId === runId ? pointer.data : undefined;
-  const originTestId = useRef<string | undefined>(undefined);
-  if (activePointer?.testId) originTestId.current = activePointer.testId;
+  const restoreEnabled =
+    !pointer.isPending && pointer.data?.runId !== runId && typeof runService.restore === "function";
+  const restore = useQuery({
+    queryKey: runQueryKeys.restore(runId),
+    queryFn: async () => (await runService.restore?.(runId)) ?? null,
+    enabled: restoreEnabled,
+    staleTime: 0,
+    retry: false,
+  });
+  const restoredState = restore.data ?? undefined;
+  const restoreSettled = !restoreEnabled || restore.isFetched;
+  const executionEnabled =
+    !pointer.isPending &&
+    restoreSettled &&
+    pointer.data?.runId !== runId &&
+    !restoredState &&
+    typeof runService.inspectExecution === "function";
+  const execution = useQuery({
+    queryKey: ["run", "execution", runId],
+    queryFn: () => runService.inspectExecution?.(runId) ?? Promise.resolve(null),
+    enabled: executionEnabled,
+    staleTime: 0,
+    retry: false,
+    refetchInterval: (query) => (isTerminal(query.state.data?.status) ? false : 3_000),
+  });
+  const activePointer =
+    pointer.data?.runId === runId
+      ? pointer.data
+      : restoredState?.workflow
+        ? { workflowId: restoredState.workflow.workflowId, runId, testId: "" }
+        : undefined;
+  const activeWorkflowId = activePointer?.workflowId;
+  const originTest = useRef<{ runId: string; testId?: string }>({ runId });
+  if (originTest.current.runId !== runId) originTest.current = { runId };
+  if (activePointer?.testId) originTest.current.testId = activePointer.testId;
   const run = useQuery({
     queryKey: runQueryKeys.workflow(activePointer?.workflowId ?? "inactive"),
     queryFn: () => runService.inspect(activePointer!.workflowId),
     enabled: Boolean(activePointer),
+    initialData: restoredState,
     staleTime: 0,
     retry: false,
   });
-  const terminal = isTerminal(run.data?.status);
-  const target = run.data?.snapshot?.target;
+  const state = run.data ?? restoredState ?? execution.data;
+  const restorePending = restoreEnabled && !restore.isFetched;
+  const terminal = isTerminal(state?.status);
+  const target = state?.snapshot?.target;
   const targetPresentation = useQuery({
     queryKey: runQueryKeys.targetPresentation(target?.targetId ?? "unselected"),
     queryFn: () => runService.presentTargets([target!]),
@@ -63,17 +100,27 @@ export function RunPage() {
   });
   const report = useQuery({
     queryKey: runQueryKeys.report(runId),
-    queryFn: () => runService.getReport(runId, run.data?.report),
-    enabled: !pointer.isPending && (!activePointer || terminal),
+    queryFn: () => runService.getReport(runId, state?.report),
+    enabled:
+      !pointer.isPending &&
+      restoreSettled &&
+      (!activePointer || terminal) &&
+      (!executionEnabled ||
+        (execution.isFetched && (!execution.data || isTerminal(execution.data.status)))),
     retry: false,
   });
-  const shouldWatch = Boolean(
-    activePointer && run.data?.snapshot && !run.data.recovery && !terminal,
-  );
+  const shouldWatch = Boolean(activePointer && state?.snapshot && !state.recovery && !terminal);
   const cancel = useMutation({
-    mutationFn: () => runService.cancel(),
+    mutationFn: async () =>
+      activePointer
+        ? runService.cancel()
+        : ((await runService.cancelExecution?.(runId)) ?? undefined),
     onSuccess: async (state) => {
-      if (state.recovery || !activePointer) return;
+      if (!state) return;
+      if (state.recovery || !activePointer) {
+        await execution.refetch();
+        return;
+      }
       await queryClient.invalidateQueries({
         queryKey: runQueryKeys.workflow(activePointer.workflowId),
       });
@@ -86,23 +133,23 @@ export function RunPage() {
   });
 
   useEffect(() => {
-    if (!activePointer || !shouldWatch) return;
+    if (!activeWorkflowId || !shouldWatch) return;
     const controller = new AbortController();
     void runService
       .watch({
         signal: controller.signal,
         onState(next) {
-          queryClient.setQueryData(runQueryKeys.workflow(activePointer.workflowId), next);
+          queryClient.setQueryData(runQueryKeys.workflow(activeWorkflowId), next);
         },
       })
       .then((next) => {
-        queryClient.setQueryData(runQueryKeys.workflow(activePointer.workflowId), next);
+        queryClient.setQueryData(runQueryKeys.workflow(activeWorkflowId), next);
         if (isTerminal(next.status)) {
           void queryClient.invalidateQueries({ queryKey: runQueryKeys.report(runId) });
         }
       });
     return () => controller.abort();
-  }, [activePointer, queryClient, runId, runService, shouldWatch]);
+  }, [activeWorkflowId, queryClient, runId, runService, shouldWatch]);
 
   useEffect(() => {
     if (!report.data) return;
@@ -115,23 +162,35 @@ export function RunPage() {
     return (
       <RunReport
         report={report.data}
-        testId={originTestId.current ?? report.data.testId}
+        testId={originTest.current.testId ?? report.data.testId}
         runService={runService}
       />
     );
   }
 
-  const state = run.data;
   const snapshot = state?.snapshot;
   const canCancel = Boolean(
     snapshot?.allowedNextActions.includes("cancel") && !state?.recovery && !cancel.data?.recovery,
   );
-  const loading = pointer.isPending || run.isPending || (terminal && report.isPending);
-  const problem = pointer.error ?? run.error ?? report.error ?? cancel.error;
+  const loading =
+    pointer.isPending ||
+    restorePending ||
+    (Boolean(activePointer) && run.isPending) ||
+    (executionEnabled && execution.isPending) ||
+    (terminal && report.isPending);
+  const problem = pointer.error ?? restore.error ?? run.error ?? report.error ?? cancel.error;
   const recovery = cancel.data?.recovery ?? state?.recovery;
-  const retrying = pointer.isFetching || run.isFetching || report.isFetching;
+  const retrying =
+    pointer.isFetching ||
+    restore.isFetching ||
+    execution.isFetching ||
+    run.isFetching ||
+    report.isFetching;
   const retry = () => {
     void pointer.refetch();
+    if (typeof runService.restore === "function") void restore.refetch();
+    if (!activePointer && typeof runService.inspectExecution === "function")
+      void execution.refetch();
     if (activePointer) void run.refetch();
     if (!activePointer || terminal) void report.refetch();
   };
@@ -181,62 +240,52 @@ export function RunPage() {
           { label: "In progress" },
         ]}
       />
-      <header className="relay-page-header flex min-w-0 flex-wrap items-start justify-between gap-5">
-        <div>
-          <p className="relay-eyebrow mb-2 text-[11px] font-semibold tracking-[0.02em] text-[var(--text-weak)]">
-            Run
-          </p>
-          <h1 className="text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance] text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance]">
-            {snapshot?.title ?? "Running Test"}
-          </h1>
-          <p className="relay-page-description mt-2.5 max-w-[62ch] text-[15px] leading-[1.55] text-[var(--text-weak)]">
-            {snapshot?.progress.label ?? "Restoring progress…"}
-          </p>
-        </div>
-        <div className="flex min-w-0 flex-wrap items-start justify-between gap-5">
-          {activePointer ? (
-            <Link
-              className="relay-text-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 mt-[18px] inline-flex min-h-11 items-center font-semibold text-[var(--text-interactive-base)] relay-header-link inline-flex min-h-11 items-center gap-2"
-              to="/tests/$testId"
-              params={{ testId: activePointer.testId }}
-            >
-              View test
-            </Link>
-          ) : null}
-          {canCancel ? (
-            <Button variant="outline" onClick={() => cancel.mutate()} disabled={cancel.isPending}>
-              {cancel.isPending ? "Cancelling…" : "Cancel Run"}
-            </Button>
-          ) : null}
-        </div>
-      </header>
+      <PageHeader
+        context="Run in progress"
+        title={snapshot?.title ?? "Running Test"}
+        description={
+          snapshot?.target
+            ? targetLabel(targetPresentation.data?.[0] ?? snapshot.target).title
+            : undefined
+        }
+        actions={
+          <>
+            {activePointer?.testId ? (
+              <Button
+                nativeButton={false}
+                render={<Link to="/tests/$testId" params={{ testId: activePointer.testId }} />}
+                variant="ghost"
+              >
+                View test
+              </Button>
+            ) : null}
+            {canCancel ? (
+              <Button variant="outline" onClick={() => cancel.mutate()} disabled={cancel.isPending}>
+                {cancel.isPending ? "Cancelling…" : "Cancel Run"}
+              </Button>
+            ) : null}
+          </>
+        }
+      />
 
       {snapshot ? (
-        <div className="rounded-xl border border-border bg-card p-5" role="status">
-          <div className="rounded-xl border border-border bg-card p-5">
-            <div>
-              <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
-                Progress
-              </p>
-              <h2>{snapshot.progress.label}</h2>
-            </div>
-            {snapshot.target ? (
-              <span>{targetLabel(targetPresentation.data?.[0] ?? snapshot.target).title}</span>
-            ) : null}
-          </div>
+        <section className="rounded-xl border border-border bg-card p-5" aria-label="Run progress">
+          <h2 className="text-base font-semibold" role="status">
+            {snapshot.progress.label}
+          </h2>
           {snapshot.progress.total !== undefined ? (
             <Progress
-              className="rounded-xl border border-border bg-card p-5"
+              className="mt-4"
               value={snapshot.progress.completed ?? 0}
               max={snapshot.progress.total}
             >
-              <ProgressLabel>{snapshot.progress.label}</ProgressLabel>
+              <ProgressLabel>Completed steps</ProgressLabel>
               <ProgressValue>
                 {() => `${snapshot.progress.completed ?? 0} of ${snapshot.progress.total}`}
               </ProgressValue>
             </Progress>
           ) : null}
-        </div>
+        </section>
       ) : null}
     </section>
   );
@@ -307,30 +356,54 @@ function RunReport({
     });
   }
   return (
-    <section className="relay-page mx-auto w-full px-[clamp(20px,3vw,40px)] pt-7 pb-10 max-w-[1120px]">
-      {testId ? (
-        <Link
-          className="relay-back-link mb-3 mt-[-10px] inline-flex min-h-11 items-center gap-2 text-[13px] font-semibold text-[var(--text-weak)] focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2"
-          to="/tests/$testId"
-          params={{ testId }}
-        >
-          <ArrowLeft aria-hidden="true" /> View test
-        </Link>
-      ) : (
-        <Breadcrumbs items={[{ label: "Runs", to: "/runs" }, { label: "Report" }]} />
-      )}
-      <header className="flex min-w-0 flex-wrap items-start justify-between gap-5">
-        <div className="min-w-0 flex-[1_1_340px]">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <OutcomeMark outcome={report.outcome} />
+    <LibraryPage className="max-w-[1280px]">
+      <Breadcrumbs items={[{ label: "Runs", to: "/runs" }, { label: report.title }]} />
+      <PageHeader
+        context={
+          <>
             <span>Run Report</span>
-          </div>
-          <h1 className="text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance] text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance]">
-            {report.title}
-          </h1>
-          <p className="mt-3 max-w-[62ch] text-sm leading-6 text-muted-foreground">
-            {outcomeSentence(report.outcome, target)}
-          </p>
+            <OutcomeMark outcome={report.outcome} />
+          </>
+        }
+        title={report.title}
+        description={outcomeSentence(report.outcome, target)}
+        actions={
+          <>
+            {report.video ? (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setSelectedEvidenceId("video");
+                  selectView("evidence");
+                }}
+              >
+                Watch recording
+              </Button>
+            ) : null}
+            <RunReplayAction report={report} runService={runService} />
+            {report.outcome === "product-failure" ||
+            report.outcome === "harness-failure" ||
+            report.outcome === "uncertain" ? (
+              <Button
+                nativeButton={false}
+                render={<Link to="/debug" search={{ runId: report.runId }} />}
+                variant="default"
+              >
+                Investigate
+              </Button>
+            ) : testId ? (
+              <Button
+                nativeButton={false}
+                render={<Link to="/tests/$testId" params={{ testId }} />}
+                variant="default"
+              >
+                Set up another run
+              </Button>
+            ) : null}
+          </>
+        }
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <RunContextFacts
             report={report}
             duration={
@@ -338,47 +411,23 @@ function RunReport({
             }
             compact
           />
-        </div>
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <RunReplayAction report={report} runService={runService} />
-          {report.outcome === "product-failure" ||
-          report.outcome === "harness-failure" ||
-          report.outcome === "uncertain" ? (
-            <>
-              <Button
-                nativeButton={false}
-                render={<Link to="/debug" search={{ runId: report.runId }} />}
-                variant="outline"
-              >
-                Investigate
-              </Button>
-              <IssueDraftButton source={{ kind: "run", report }} />
-            </>
-          ) : null}
           {testId ? (
-            <Button
-              nativeButton={false}
-              render={<Link to="/tests/$testId" params={{ testId }} />}
-              variant={report.outcome === "passed" ? "default" : "outline"}
-            >
-              Set up another run
-            </Button>
-          ) : null}
-          {!testId ? (
             <Link
-              className="relay-text-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 mt-[18px] inline-flex min-h-11 items-center font-semibold text-[var(--text-interactive-base)] relay-header-link inline-flex min-h-11 items-center gap-2"
-              to="/runs"
+              className="inline-flex min-h-9 items-center gap-1 rounded-md px-3 text-sm font-medium transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
+              to="/tests/$testId"
+              params={{ testId }}
             >
-              All Runs
+              View test
+              <ChevronRight className="size-4" aria-hidden="true" />
             </Link>
           ) : null}
         </div>
-      </header>
+      </PageHeader>
       <RunReplayStatus runService={runService} />
 
       {failure ? (
         <Alert
-          className="mt-5 grid max-w-[920px] grid-cols-[20px_minmax(0,1fr)_auto] max-[620px]:grid-cols-[20px_minmax(0,1fr)]"
+          className="mt-5 grid grid-cols-[20px_minmax(0,1fr)_auto] max-[620px]:grid-cols-[20px_minmax(0,1fr)]"
           variant="destructive"
           aria-labelledby="causal-failure-title"
         >
@@ -387,9 +436,8 @@ function RunReport({
             {failureTitle(failure, report.category)}
           </AlertTitle>
           <AlertDescription>{nextAction(report.outcome)}</AlertDescription>
-          {report.category || testId ? (
+          {testId ? (
             <AlertAction>
-              {report.category ? <Badge variant="destructive">{report.category}</Badge> : null}
               {testId ? (
                 <Button
                   size="sm"
@@ -397,7 +445,7 @@ function RunReport({
                   nativeButton={false}
                   render={<Link to="/tests/$testId" params={{ testId }} />}
                 >
-                  Open Test to run again
+                  Run current test
                 </Button>
               ) : null}
             </AlertAction>
@@ -408,7 +456,9 @@ function RunReport({
             </CollapsibleTrigger>
             <CollapsibleContent className="border-t pt-3">
               <ScrollArea className="max-h-[180px] overflow-auto">
-                <pre>{failure}</pre>
+                <pre className="whitespace-pre-wrap break-words text-xs leading-relaxed">
+                  {failure}
+                </pre>
               </ScrollArea>
             </CollapsibleContent>
           </Collapsible>
@@ -520,38 +570,29 @@ function RunReport({
       {view === "evidence" && selectedEvidence ? (
         <section
           id="report-panel-evidence"
-          className="rounded-xl border border-border bg-card p-5 mt-5 rounded-xl border border-border bg-card p-5"
+          className="mt-5"
           role="tabpanel"
           aria-labelledby="report-tab-evidence"
         >
-          <header className="flex items-center justify-between gap-3">
-            <div>
-              <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
-                Evidence
-              </p>
-              <h2>Captured during this Run</h2>
-            </div>
-            <p>Only evidence Relay actually saved is shown here.</p>
-          </header>
           <div className="grid gap-4">
-            <Tabs
-              value={selectedEvidence.id}
-              onValueChange={(next) => setSelectedEvidenceId(next)}
-              orientation="vertical"
-            >
-              <TabsList className="flex flex-wrap gap-2" aria-label="Evidence type">
+            <Tabs value={selectedEvidence.id} onValueChange={(next) => setSelectedEvidenceId(next)}>
+              <TabsList
+                className="h-auto max-w-full flex-wrap justify-start gap-1"
+                aria-label="Evidence type"
+              >
                 {report.evidence.map((section) => (
                   <TabsTrigger key={section.id} value={section.id}>
-                    <span>
-                      <strong>{section.label}</strong>
-                      <small>{section.detail}</small>
-                    </span>
-                    <ChevronRight aria-hidden="true" />
+                    <span className="font-medium">{section.label}</span>
+                    <span className="ml-2 text-xs text-muted-foreground">{section.detail}</span>
                   </TabsTrigger>
                 ))}
               </TabsList>
             </Tabs>
-            <EvidencePreview section={selectedEvidence} />
+            {selectedEvidence.id === "video" && report.video ? (
+              <ReportVideoInspector video={report.video} diagnostics={report.diagnostics} />
+            ) : (
+              <EvidencePreview section={selectedEvidence} />
+            )}
           </div>
           <RawEvidenceDisclosure
             runId={report.runId}
@@ -561,7 +602,15 @@ function RunReport({
           />
         </section>
       ) : null}
-    </section>
+      {report.outcome === "product-failure" ||
+      report.outcome === "harness-failure" ||
+      report.outcome === "uncertain" ? (
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
+          <p className="text-sm text-muted-foreground">Share the findings with your team.</p>
+          <IssueDraftButton source={{ kind: "run", report }} />
+        </div>
+      ) : null}
+    </LibraryPage>
   );
 }
 
@@ -569,126 +618,4 @@ type ReportView = "overview" | "timeline" | "evidence";
 
 function reportView(value: unknown): ReportView {
   return value === "timeline" || value === "evidence" ? value : "overview";
-}
-
-function ReportTimeline({
-  items,
-  tabbed,
-}: {
-  items: Awaited<ReturnType<RunProductService["getReport"]>>["timeline"];
-  tabbed: boolean;
-}) {
-  return (
-    <section
-      id="report-panel-timeline"
-      className="rounded-xl border border-border bg-card p-5 mt-5"
-      role={tabbed ? "tabpanel" : undefined}
-      aria-labelledby={tabbed ? "report-tab-timeline" : undefined}
-    >
-      <header className="flex items-center justify-between gap-3">
-        <div>
-          <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
-            Timeline
-          </p>
-          <h2>What happened</h2>
-        </div>
-        <p>{items.length === 1 ? "1 recorded step" : `${items.length} recorded steps`}</p>
-      </header>
-      <ol className="mt-5 list-none space-y-2 p-0">
-        {items.map((item, index) => (
-          <li
-            key={item.id}
-            className={`grid grid-cols-[28px_minmax(0,1fr)_auto] items-start gap-3 rounded-md border border-border p-3`}
-          >
-            <span
-              className="grid size-7 place-items-center rounded-full bg-muted text-xs font-medium"
-              aria-hidden="true"
-            >
-              {index + 1}
-            </span>
-            <span className="grid min-w-0 gap-1">
-              <strong>{item.title}</strong>
-              <small>
-                {timelineStateLabel(item.state)}
-                {item.evidenceCount
-                  ? ` · ${item.evidenceCount} ${item.evidenceCount === 1 ? "screenshot" : "screenshots"}`
-                  : ""}
-              </small>
-            </span>
-            {item.durationMs !== undefined ? (
-              <span className="text-xs text-muted-foreground">
-                {formatDuration(item.durationMs)}
-              </span>
-            ) : null}
-          </li>
-        ))}
-      </ol>
-    </section>
-  );
-}
-
-function timelineStateLabel(
-  state: Awaited<ReturnType<RunProductService["getReport"]>>["timeline"][number]["state"],
-): string {
-  if (state === "passed") return "Passed";
-  if (state === "failed") return "Failed";
-  if (state === "recovered") return "Recovered";
-  if (state === "running") return "In progress";
-  return "Not reached";
-}
-
-function EvidencePreview({
-  section,
-}: {
-  section: Awaited<ReturnType<RunProductService["getReport"]>>["evidence"][number];
-}) {
-  return (
-    <section className="rounded-xl border border-border bg-card p-4" aria-live="polite">
-      <header>
-        <div>
-          <h3>{section.label}</h3>
-          <p>{section.summary}</p>
-        </div>
-        <span>{section.detail}</span>
-      </header>
-      {section.items.length ? (
-        <ScrollArea className="max-h-[420px] overflow-auto">
-          <ol className={`list-none space-y-2 p-0`}>
-            {section.items.map((item) => (
-              <li
-                key={item.id}
-                className={`grid grid-cols-[96px_minmax(0,1fr)] gap-3 rounded-md border border-border p-2`}
-              >
-                {item.media ? (
-                  <span
-                    className="relay-evidence-image-frame overflow-hidden rounded-md bg-muted"
-                    aria-hidden="true"
-                  >
-                    <img
-                      src={item.media.src}
-                      alt=""
-                      width={item.media.width}
-                      height={item.media.height}
-                      loading="lazy"
-                      decoding="async"
-                    />
-                  </span>
-                ) : null}
-                <span className="grid min-w-0 gap-1">
-                  <strong>{item.title}</strong>
-                  {item.detail ? <span>{item.detail}</span> : null}
-                </span>
-                {item.meta ? <small>{item.meta}</small> : null}
-              </li>
-            ))}
-          </ol>
-        </ScrollArea>
-      ) : (
-        <div className="grid min-h-[220px] place-items-center gap-2 rounded-xl border border-border bg-card p-4 text-center">
-          <p>This evidence was saved, but it does not have a readable preview.</p>
-          <span>Audit details remain available below.</span>
-        </div>
-      )}
-    </section>
-  );
 }

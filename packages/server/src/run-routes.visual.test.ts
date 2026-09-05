@@ -6,7 +6,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import test from "node:test";
-import { getVisualBaseline, type PersistedRun } from "@relay/core";
+import {
+  createDurableWorkflow,
+  getVisualBaseline,
+  resetControlDatabaseCache,
+  type PersistedRun,
+} from "@relay/core";
 import { HttpError } from "./http.js";
 import { handleRunRoute } from "./run-routes.js";
 import type { RequestContext } from "./security.js";
@@ -306,6 +311,43 @@ test("run list exposes every persisted run through bounded keyset pages", async 
     if (previous === undefined) delete process.env.RELAY_RUNS_DIR;
     else process.env.RELAY_RUNS_DIR = previous;
     await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("run list exposes the persisted workflow id bound to a real run resource", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-run-route-workflow-"));
+  const stateRoot = await mkdtemp(join(tmpdir(), "relay-control-workflow-"));
+  const previousRuns = process.env.RELAY_RUNS_DIR;
+  const previousState = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_RUNS_DIR = root;
+  process.env.RELAY_STATE_DIR = stateRoot;
+  try {
+    await persistFixture(root, "workflow-run-1", "changed-image");
+    await createDurableWorkflow({
+      organizationId: scope.organizationId,
+      projectId: scope.projectId,
+      workflowId: "workflow-for-run-1",
+      kind: "run-test",
+      frozenIdentity: { appMapId: "map", testId: "test" },
+      resource: { kind: "job", id: "workflow-run-1" },
+      actorId: "agent:server-test",
+      at: 1,
+      expiresAt: 10_000,
+    });
+    const response = await requestRoute("GET", "/runs?limit=10");
+    assert.equal(response.status, 200);
+    const run = (response.value.runs as Array<{ id: string; workflowId?: string }>).find(
+      (candidate) => candidate.id === "workflow-run-1",
+    );
+    assert.equal(run?.workflowId, "workflow-for-run-1");
+  } finally {
+    resetControlDatabaseCache();
+    if (previousRuns === undefined) delete process.env.RELAY_RUNS_DIR;
+    else process.env.RELAY_RUNS_DIR = previousRuns;
+    if (previousState === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previousState;
+    await rm(root, { recursive: true, force: true });
+    await rm(stateRoot, { recursive: true, force: true });
   }
 });
 

@@ -67,6 +67,7 @@ function persistedSummary(run: PersistedRun): RunSummary {
     ...(run.durationMs === undefined ? {} : { durationMs: run.durationMs }),
     ...(run.platform ? { platform: run.platform } : {}),
     ...(run.serial ? { serial: run.serial } : {}),
+    ...(run.targetProfile?.id ? { targetProfileId: run.targetProfile.id } : {}),
     ...(run.outcome ? { outcome: run.outcome } : {}),
     ...(run.sourceRevision ? { sourceRevision: run.sourceRevision } : {}),
     ...(run.review ? { review: run.review } : {}),

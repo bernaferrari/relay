@@ -31,6 +31,7 @@ import {
   readAppMap,
   readVisualBaselineFrame,
   readPersistedRun,
+  findDurableWorkflowsByResources,
   replayPersistedRunOffline,
   analyzeTracePack,
   exportTracePack,
@@ -76,6 +77,24 @@ export type RunRouteRuntime = {
 };
 
 const defaultRunRouteRuntime: RunRouteRuntime = { assertTargetControl, enqueueJob, readTarget };
+
+async function attachDurableWorkflowIds<T extends { runs: readonly { id: string }[] }>(
+  page: T,
+  scope: RequestContext,
+): Promise<T & { runs: Array<T["runs"][number] & { workflowId?: string }> }> {
+  const workflows = await findDurableWorkflowsByResources({
+    organizationId: scope.organizationId,
+    projectId: scope.projectId,
+    workflowKind: "run-test",
+    resourceKind: "job",
+    resourceIds: page.runs.map((run) => run.id),
+  });
+  const runs = page.runs.map((run) => {
+    const workflow = workflows.get(run.id);
+    return workflow ? { ...run, workflowId: workflow.record.workflowId } : { ...run };
+  });
+  return { ...page, runs };
+}
 
 export type RunRouteContext = {
   method: string;
@@ -269,7 +288,7 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
           cursor,
           projectId: scope.projectId,
         });
-        json(response, 200, { ...page, root: runsRoot() });
+        json(response, 200, { ...(await attachDurableWorkflowIds(page, scope)), root: runsRoot() });
       } catch (error) {
         if (error instanceof Error && error.name === "RunListCursorError") {
           throw new HttpError(400, error.message);
@@ -286,7 +305,7 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
         projectId: scope.projectId,
         ownerId: scope.subject,
       });
-      json(response, 200, page);
+      json(response, 200, await attachDurableWorkflowIds(page, scope));
     } catch (error) {
       if (error instanceof Error && error.name === "RunListCursorError") {
         throw new HttpError(400, error.message);

@@ -13,9 +13,14 @@ export type RunConfigurationValue = {
 export type RunConfigurationBlocker = { id: string; label: string; detail?: string };
 export type RunConfigurationOption = { id: string; label: string; detail?: string };
 export type RunConfigurationSelection = {
+  /** Runtime target id; distinct from a saved evidence profile id. */
+  targetId?: string;
+  savedProfileId?: string;
   targetProfileIds?: readonly string[];
   targetProfileId?: string;
   dataSetIds?: readonly string[];
+  buildId?: string;
+  startupMode?: "cold";
 };
 export type RunConfigurationState = {
   values: RunConfigurationValue;

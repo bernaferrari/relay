@@ -107,6 +107,9 @@ export type JobSummaryDto = {
   status: string;
   queuedAt: number;
   frameCount: number;
+  /** Durable continuation identity, when the job was started through a workflow. */
+  workflowId?: string;
+  workflowRequestId?: string;
   review?: RunReview;
   [key: string]: unknown;
 };

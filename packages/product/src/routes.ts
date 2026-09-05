@@ -161,12 +161,12 @@ export const ROUTE_DEFINITIONS = [
     "app",
     "view",
   ]),
-  d("/suites", "/home", "Suites", "Suite", "suites", "create-suite", ["app", "status"]),
-  d("/apps/:appId/suites/:suiteId", "/suites", "Suite", "Suite", "suites", "run-suite", [
+  d("/suites", "/home", "Suites", "Suite", "tests", "create-suite", ["app", "status"]),
+  d("/apps/:appId/suites/:suiteId", "/suites", "Suite", "Suite", "tests", "run-suite", [
     "view",
     "target",
   ]),
-  d("/environments", "/home", "Environments", "Environment", "suites", "add-environment", [
+  d("/environments", "/home", "Environments", "Environment", "devices", "add-environment", [
     "status",
     "view",
     "returnTo",
@@ -176,7 +176,7 @@ export const ROUTE_DEFINITIONS = [
     "/environments",
     "Environment",
     "Environment",
-    "suites",
+    "devices",
     "inspect-environment",
     ["view", "returnTo"],
   ),

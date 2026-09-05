@@ -1,3 +1,4 @@
+import { routeContractForPath } from "../router/route-contract";
 /** @jsxImportSource react */
 import {
   Sidebar as SharedSidebar,
@@ -34,11 +35,7 @@ const mainItems = [
 ] as const;
 
 export function isSidebarItemActive(pathname: string, itemPath: (typeof mainItems)[number]["to"]) {
-  if (itemPath === "/home") return pathname === itemPath;
-  if (itemPath === "/sessions") {
-    return pathname.startsWith("/sessions") || pathname.startsWith("/recordings");
-  }
-  return pathname.startsWith(itemPath);
+  return routeContractForPath(pathname)?.sidebar === itemPath.slice(1);
 }
 
 export function SidebarContent({ label = "Primary" }: { label?: string }) {

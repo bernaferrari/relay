@@ -16,6 +16,8 @@ import {
   Plus,
   type LucideIcon,
 } from "lucide-react";
+import { homeAttentionRuns } from "../data/home-run-attention";
+import { PageHeader } from "../components/page-layout";
 import { EmptyState, OutcomeMark } from "../components/product-patterns";
 import { catalogQueryKeys } from "../data/catalog-queries";
 import { recordingQueryKeys } from "../data/recording-queries";
@@ -47,21 +49,28 @@ export function HomePage() {
     queryFn: async () => (await readRunPointer(platform)) ?? null,
     staleTime: Infinity,
   });
-  const apps = useQuery({ queryKey: homeQueryKeys.apps, queryFn: () => productService.listApps() });
+  const apps = useQuery({
+    queryKey: homeQueryKeys.apps,
+    queryFn: () => productService.listApps(),
+    retry: false,
+  });
   const tests = useQuery({
     queryKey: catalogQueryKeys.tests,
     queryFn: () => catalogService.listTests(),
     staleTime: 15_000,
+    retry: false,
   });
   const runs = useQuery({
     queryKey: catalogQueryKeys.runs,
     queryFn: () => catalogService.listRuns(),
     staleTime: 15_000,
+    retry: false,
   });
   const changes = useQuery({
     queryKey: homeQueryKeys.changes,
     queryFn: () => changeService.list(),
     staleTime: 15_000,
+    retry: false,
   });
   const targets = useQuery({
     queryKey: homeQueryKeys.targets,
@@ -70,11 +79,14 @@ export function HomePage() {
       return productService.presentTargets(state.targets);
     },
     staleTime: 15_000,
+    retry: false,
   });
 
-  const queries = [recording, run, apps, tests, runs, changes] as const;
-  const loading = queries.some((query) => query.isPending);
-  const error = queries.find((query) => query.error)?.error;
+  const pointerQueries = [recording, run] as const;
+  const optionalQueries = [tests, runs, changes, targets] as const;
+  const loading = apps.isPending;
+  const error = apps.error;
+  const optionalErrors = optionalQueries.filter((query) => query.error);
   const scopedTests = (tests.data ?? []).filter((test) => !appScope || test.appMapId === appScope);
   const scopedRuns = (runs.data ?? []).filter((run) => !appScope || run.appMapId === appScope);
   const scopedChanges = (changes.data ?? []).filter(
@@ -85,17 +97,7 @@ export function HomePage() {
   const recentTests = [...scopedTests]
     .sort((left, right) => right.updatedAt - left.updatedAt)
     .slice(0, 5);
-  // A later successful run resolves an earlier failure of the same test.
-  const latestByTest = new Map<string, ProductRunSummary>();
-  for (const item of [...scopedRuns].sort((left, right) => runTime(right) - runTime(left))) {
-    const key = item.testId ?? item.id;
-    if (!latestByTest.has(key)) latestByTest.set(key, item);
-  }
-  const attentionRuns = [...latestByTest.values()].filter((item) =>
-    ["product-failure", "harness-failure", "uncertain", "needs-review"].includes(
-      item.outcome ?? item.phase,
-    ),
-  );
+  const attentionRuns = homeAttentionRuns(scopedRuns);
   const visibleChanges = scopedChanges.filter((change) => change.status !== "superseded");
   const currentChange = newest(
     visibleChanges.filter((change) =>
@@ -115,71 +117,99 @@ export function HomePage() {
   const hasWorkspaceData =
     hasApps || hasTests || Boolean(scopedRuns.length) || Boolean(scopedChanges.length);
 
-  const retry = () => {
-    for (const query of [...queries, targets]) void query.refetch();
+  const retry = () => void apps.refetch();
+  const retryOptional = () => {
+    for (const query of [...pointerQueries, ...optionalQueries]) void query.refetch();
   };
 
   return (
-    <section className="relay-page mx-auto w-full px-[clamp(20px,3vw,40px)] pt-7 pb-10 flex w-full max-w-6xl flex-col gap-8">
-      <header className="flex max-w-none flex-col gap-4 border-b border-border/60 pb-6 lg:flex-row lg:items-end lg:justify-between">
-        <div className="max-w-2xl">
-          <p className="text-sm font-medium text-muted-foreground">Overview</p>
-          <h1 className="mt-1 text-3xl font-semibold tracking-tight text-foreground text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance]">
-            {selectedApp
-              ? selectedApp.name
-              : hasWorkspaceData
-                ? "Your workspace"
-                : "Prove one journey that matters"}
-          </h1>
-          <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
-            {hasWorkspaceData
-              ? `${scopedTests.length} saved ${scopedTests.length === 1 ? "test" : "tests"} · ${attentionRuns.length ? `${attentionRuns.length} ${attentionRuns.length === 1 ? "result needs" : "results need"} attention` : "No results need attention"}`
-              : "Record a real path through your app. Relay will replay it and keep the evidence with every result."}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {hasWorkspaceData ? (
-            <Button
-              nativeButton={false}
-              render={<Link to="/devices" />}
-              variant="ghost"
-              size="sm"
-              className="gap-2 text-muted-foreground"
-              data-status={
-                targets.isPending ? "loading" : targets.data?.length ? "ready" : "missing"
-              }
-            >
-              <MonitorCheck className="size-4" aria-hidden="true" />
-              {targets.isPending
-                ? "Checking targets…"
-                : targets.data?.length
-                  ? `${targets.data.length} ${targets.data.length === 1 ? "target" : "targets"} ready`
-                  : "Check targets"}
-            </Button>
-          ) : null}
-          {hasTests ? (
-            <Button
-              nativeButton={false}
-              render={<Link to="/tests/new" search={{ app: appScope || undefined }} />}
-              variant="default"
-              size="sm"
-            >
-              <Plus className="size-4" aria-hidden="true" />
-              Record a Test
-            </Button>
-          ) : null}
-        </div>
-      </header>
+    <section className="relay-page mx-auto w-full px-[clamp(20px,3vw,40px)] pt-7 pb-10 flex max-w-6xl flex-col gap-8">
+      <PageHeader
+        context="Overview"
+        title={
+          selectedApp
+            ? selectedApp.name
+            : hasWorkspaceData
+              ? "Your workspace"
+              : "Prove one journey that matters"
+        }
+        description={
+          hasWorkspaceData
+            ? `${scopedTests.length} saved ${scopedTests.length === 1 ? "test" : "tests"} · ${runs.isError ? "Results unavailable" : attentionRuns.length ? `${attentionRuns.length} ${attentionRuns.length === 1 ? "result needs" : "results need"} attention` : "No results need attention"}`
+            : "Record a real path through your app. Relay will replay it and keep the evidence with every result."
+        }
+        actions={
+          <>
+            {hasWorkspaceData ? (
+              <Button
+                nativeButton={false}
+                render={<Link to="/devices" />}
+                variant="ghost"
+                size="sm"
+                className="gap-2 text-muted-foreground"
+                data-status={
+                  targets.isPending ? "loading" : targets.data?.length ? "ready" : "missing"
+                }
+              >
+                <MonitorCheck className="size-4" aria-hidden="true" />
+                {targets.isPending
+                  ? "Checking targets…"
+                  : targets.data?.length
+                    ? `${targets.data.length} ${targets.data.length === 1 ? "target" : "targets"} ready`
+                    : "Check targets"}
+              </Button>
+            ) : null}
+            {hasTests ? (
+              <Button
+                nativeButton={false}
+                render={<Link to="/tests/new" search={{ app: appScope || undefined }} />}
+                variant="default"
+                size="sm"
+              >
+                <Plus className="size-4" aria-hidden="true" />
+                Record a Test
+              </Button>
+            ) : null}
+          </>
+        }
+      />
 
       {loading ? <PageLoading label="Loading your Relay workspace…" /> : null}
       <RecordingProblem
         error={error}
         onRetry={retry}
-        retrying={[...queries, targets].some((query) => query.isFetching)}
+        retrying={apps.isFetching}
         layout="centered"
       />
+      {!loading && !error && optionalErrors.length ? (
+        <div
+          className="rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground"
+          role="status"
+        >
+          <p className="font-medium text-foreground">Some workspace sections are unavailable.</p>
+          <p className="mt-1">
+            Relay kept the sections it could load. Retry the unavailable sections when ready.
+          </p>
+          <Button
+            className="mt-3"
+            variant="outline"
+            size="sm"
+            onClick={retryOptional}
+            disabled={optionalErrors.some((query) => query.isFetching)}
+          >
+            {optionalErrors.some((query) => query.isFetching)
+              ? "Retrying…"
+              : "Retry unavailable sections"}
+          </Button>
+        </div>
+      ) : null}
 
-      {!loading && !error && !hasWorkspaceData ? (
+      {!loading &&
+      !error &&
+      tests.isFetched &&
+      runs.isFetched &&
+      changes.isFetched &&
+      !hasWorkspaceData ? (
         <EmptyState
           title="Add the app you want to verify"
           detail="Relay needs an app before it can keep Tests, Runs, and proof in one trustworthy place."
@@ -192,7 +222,7 @@ export function HomePage() {
         />
       ) : null}
 
-      {!loading && !error && hasApps && !hasTests ? (
+      {!loading && !error && tests.isFetched && hasApps && !hasTests ? (
         <EmptyState
           title="Record your first Test"
           detail="Choose one path a person depends on. You can add broader coverage after the first clean replay."
@@ -209,7 +239,7 @@ export function HomePage() {
         />
       ) : null}
 
-      {!loading && !error && hasTests ? (
+      {!loading && !error && (hasTests || runs.data?.length || changes.data?.length) ? (
         <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(20rem,0.85fr)]">
           <section className="min-w-0" aria-labelledby="home-next-title">
             <div className="flex items-end justify-between gap-4">
@@ -243,27 +273,38 @@ export function HomePage() {
                 Browse tests
               </Link>
             </div>
-            <ul className="mt-3 divide-y divide-border/60 border-y border-border/60">
-              {recentTests.map((test) => (
-                <li key={test.id} className="flex min-h-16 items-center justify-between gap-4 py-3">
-                  <div className="min-w-0">
-                    <Link
-                      to="/tests/$testId"
-                      params={{ testId: test.id }}
-                      className="block truncate text-sm font-medium hover:underline"
-                    >
-                      {test.name}
-                    </Link>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {test.appName} · {test.stepCount} steps
-                    </p>
-                  </div>
-                  <span className="shrink-0 text-xs text-muted-foreground">
-                    {test.status === "ready" ? "Ready" : "Needs review"}
-                  </span>
-                </li>
-              ))}
-            </ul>
+            {tests.isError ? (
+              <Card className="mt-4" size="sm">
+                <CardContent className="text-sm text-muted-foreground">
+                  Saved Tests are unavailable right now.
+                </CardContent>
+              </Card>
+            ) : (
+              <ul className="mt-3 divide-y divide-border/60 border-y border-border/60">
+                {recentTests.map((test) => (
+                  <li
+                    key={test.id}
+                    className="flex min-h-16 items-center justify-between gap-4 py-3"
+                  >
+                    <div className="min-w-0">
+                      <Link
+                        to="/tests/$testId"
+                        params={{ testId: test.id }}
+                        className="block truncate text-sm font-medium hover:underline"
+                      >
+                        {test.name}
+                      </Link>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {test.appName} · {test.stepCount} steps
+                      </p>
+                    </div>
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {test.status === "ready" ? "Ready" : "Needs review"}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </section>
 
           <section className="min-w-0" aria-labelledby="home-recent-title">
@@ -289,7 +330,13 @@ export function HomePage() {
                 View all <ArrowRight className="size-4" aria-hidden="true" />
               </Button>
             </div>
-            {scopedRuns.length ? (
+            {runs.isError ? (
+              <Card className="mt-4" size="sm">
+                <CardContent className="text-sm text-muted-foreground">
+                  Latest results are unavailable right now.
+                </CardContent>
+              </Card>
+            ) : scopedRuns.length ? (
               <Card className="mt-4 gap-0 py-0">
                 {[...scopedRuns]
                   .sort((left, right) => runTime(right) - runTime(left))

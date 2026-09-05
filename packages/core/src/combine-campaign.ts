@@ -6,6 +6,7 @@ import { findWorkspaceRoot } from "./workspace-root.js";
 import { getJob } from "./session.js";
 import { readPersistedRun } from "./runs.js";
 import { durableWorkerAssignmentStore } from "./durable-worker-assignments.js";
+import { combineCampaignCaseIdentity } from "./combine-campaign-case-identity.js";
 
 export type StoredCombineCampaign = CombineCampaign & {
   execution: NonNullable<CombineCampaign["execution"]>;
@@ -108,60 +109,85 @@ function retryableTerminalStatus(
   return false;
 }
 
+function usesExpandedExecutionIdentity(campaign: StoredCombineCampaign): boolean {
+  return Boolean(campaign.cases.some((item) => item.executionCaseId));
+}
+
 /** Select exact frozen cases for one continuation. Every mode continues
  * untouched work; failed/all additionally reopen reviewed terminal outcomes.
  * Passed and active cases are never eligible. */
 /** An explicit cellIds scope is the reviewed selective-rerun path. */
 export function prepareSelectedCombineCampaignResume(
   campaign: StoredCombineCampaign,
-  options: { cellIds?: readonly string[] } = {},
+  options: { cellIds?: readonly string[]; executionCaseIds?: readonly string[] } = {},
 ): {
   campaign: StoredCombineCampaign;
   selectedCellIds: string[];
+  selectedExecutionCaseIds: string[];
   retriedTerminalCellIds: string[];
 } {
+  if (options.cellIds !== undefined && options.executionCaseIds !== undefined) {
+    throw new Error("Choose either cell ids or execution case ids for a Repeat rerun scope.");
+  }
+  if (options.cellIds !== undefined && usesExpandedExecutionIdentity(campaign)) {
+    throw new Error("Expanded campaigns require execution case ids for a selective retry.");
+  }
   const explicitCellIds = options.cellIds;
+  const explicitExecutionCaseIds = options.executionCaseIds;
+  const explicitIds = explicitExecutionCaseIds ?? explicitCellIds;
   const selected = new Set(
-    explicitCellIds === undefined
-      ? (campaign.execution.selectedCellIds ?? [])
-      : explicitCellIds.map((id) => id.trim()).filter(Boolean),
+    explicitIds === undefined
+      ? usesExpandedExecutionIdentity(campaign)
+        ? (campaign.execution.selectedExecutionCaseIds ?? campaign.execution.selectedCellIds ?? [])
+        : (campaign.execution.selectedCellIds ?? [])
+      : explicitIds.map((id) => id.trim()).filter(Boolean),
   );
-  if (explicitCellIds !== undefined) {
-    if (!selected.size || selected.size !== explicitCellIds.length) {
-      throw new Error("An explicit Repeat rerun scope must contain unique non-empty cell ids.");
+  if (explicitIds !== undefined) {
+    if (!selected.size || selected.size !== explicitIds.length) {
+      throw new Error("An explicit Repeat rerun scope must contain unique non-empty ids.");
     }
-    const known = new Set(campaign.cases.map((item) => item.cellId));
+    const known = new Set(
+      campaign.cases.map((item) =>
+        explicitExecutionCaseIds === undefined ? item.cellId : combineCampaignCaseIdentity(item),
+      ),
+    );
     const unknown = [...selected].filter((id) => !known.has(id));
     if (unknown.length) {
-      throw new Error(`Repeat rerun scope names unknown campaign cell ${unknown[0]}.`);
+      throw new Error(`Repeat rerun scope names unknown campaign case ${unknown[0]}.`);
     }
   }
   const mode = repeatResumeMode(campaign);
+  const expanded = usesExpandedExecutionIdentity(campaign);
   const selectedCellIds: string[] = [];
+  const selectedExecutionCaseIds: string[] = [];
   const retriedTerminalCellIds: string[] = [];
   const cases = campaign.cases.map((item) => {
-    if (!selected.has(item.cellId)) return item;
+    const executionId = combineCampaignCaseIdentity(item);
+    const selectedById =
+      explicitExecutionCaseIds !== undefined || expanded ? executionId : item.cellId;
+    if (!selected.has(selectedById)) return item;
     const terminalRetry = retryableTerminalStatus(
-      explicitCellIds === undefined ? mode : "all",
+      explicitIds === undefined ? mode : "all",
       item.status,
     );
-    if (explicitCellIds !== undefined) {
+    if (explicitIds !== undefined) {
       if (!retryableTerminalStatus("all", item.status)) {
         throw new Error(
-          `Repeat rerun scope may include only failed, blocked, or cancelled cells; ${item.cellId} is ${item.status}.`,
+          `Repeat rerun scope may include only failed, blocked, or cancelled cases; ${selectedById} is ${item.status}.`,
         );
       }
       if (!item.jobId || !item.runId) {
         throw new Error(
-          `Campaign cell ${item.cellId} cannot retry without immutable Run evidence.`,
+          `Campaign case ${selectedById} cannot retry without immutable Run evidence.`,
         );
       }
     }
     if (item.status !== "pending" && !terminalRetry) return item;
     if (terminalRetry && (!item.jobId || !item.runId)) {
-      throw new Error(`Campaign cell ${item.cellId} cannot retry without immutable Run evidence.`);
+      throw new Error(`Campaign case ${selectedById} cannot retry without immutable Run evidence.`);
     }
     selectedCellIds.push(item.cellId);
+    selectedExecutionCaseIds.push(executionId);
     if (terminalRetry) retriedTerminalCellIds.push(item.cellId);
     const priorRunIds = item.runId
       ? [...new Set([...(item.priorRunIds ?? []), item.runId])]
@@ -182,6 +208,7 @@ export function prepareSelectedCombineCampaignResume(
   return {
     campaign: { ...campaign, cases },
     selectedCellIds,
+    selectedExecutionCaseIds,
     retriedTerminalCellIds,
   };
 }
@@ -190,10 +217,14 @@ function hasReviewableRepeatResume(campaign: StoredCombineCampaign): boolean {
   if (!campaign.execution.repeat || campaign.status === "cancelled") return false;
   const mode = repeatResumeMode(campaign);
   if (mode === "untouched") return false;
-  const selected = new Set(campaign.execution.selectedCellIds);
+  const selected = new Set(
+    usesExpandedExecutionIdentity(campaign)
+      ? (campaign.execution.selectedExecutionCaseIds ?? campaign.execution.selectedCellIds)
+      : campaign.execution.selectedCellIds,
+  );
   return campaign.cases.some(
     (item) =>
-      selected.has(item.cellId) &&
+      selected.has(combineCampaignCaseIdentity(item)) &&
       retryableTerminalStatus(mode, item.status) &&
       Boolean(item.jobId && item.runId),
   );
@@ -388,9 +419,16 @@ export async function projectCombineCampaign(
       };
     }),
   );
-  const selectedCellIds = new Set(campaign.execution.selectedCellIds ?? []);
+  const selectedExecutionCaseIds = new Set(
+    usesExpandedExecutionIdentity(campaign)
+      ? (campaign.execution.selectedExecutionCaseIds ?? campaign.execution.selectedCellIds ?? [])
+      : (campaign.execution.selectedCellIds ?? []),
+  );
+  const expanded = usesExpandedExecutionIdentity(campaign);
   const pendingSelected = cases.filter(
-    (item) => item.status === "pending" && selectedCellIds.has(item.cellId),
+    (item) =>
+      item.status === "pending" &&
+      selectedExecutionCaseIds.has(expanded ? combineCampaignCaseIdentity(item) : item.cellId),
   );
   const active = cases.some((item) => item.status === "queued" || item.status === "running");
   const problems = cases.some(
@@ -417,6 +455,15 @@ export async function projectCombineCampaign(
 export function pendingSelectedCombineCampaignCells(
   campaign: StoredCombineCampaign,
 ): StoredCombineCampaign["cases"] {
-  const selected = new Set(campaign.execution.selectedCellIds ?? []);
-  return campaign.cases.filter((item) => item.status === "pending" && selected.has(item.cellId));
+  const selected = new Set(
+    usesExpandedExecutionIdentity(campaign)
+      ? (campaign.execution.selectedExecutionCaseIds ?? campaign.execution.selectedCellIds ?? [])
+      : (campaign.execution.selectedCellIds ?? []),
+  );
+  const expanded = usesExpandedExecutionIdentity(campaign);
+  return campaign.cases.filter(
+    (item) =>
+      item.status === "pending" &&
+      selected.has(expanded ? combineCampaignCaseIdentity(item) : item.cellId),
+  );
 }

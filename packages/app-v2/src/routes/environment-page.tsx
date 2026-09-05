@@ -48,6 +48,7 @@ export function EnvironmentPage() {
       : undefined;
   const [accountOpen, setAccountOpen] = useState(false);
   const [removeOpen, setRemoveOpen] = useState(false);
+  const [revokeFixture, setRevokeFixture] = useState<{ reference: string; name: string }>();
   const [accountName, setAccountName] = useState("");
   const spaces = useQuery({
     queryKey: ["browser-spaces"],
@@ -69,6 +70,11 @@ export function EnvironmentPage() {
   });
   const open = useMutation({
     mutationFn: () => browserSpacesService.openSpace(profileId),
+    onSuccess: (session) =>
+      navigate({ to: "/devices/$deviceId", params: { deviceId: session.targetId } }),
+  });
+  const openExternal = useMutation({
+    mutationFn: () => browserSpacesService.openSpace(profileId),
     onSuccess: (session) => platform.openExternal?.(session.url),
   });
   const saveAccount = useMutation({
@@ -89,8 +95,10 @@ export function EnvironmentPage() {
   const revokeAccount = useMutation({
     mutationFn: (reference: string) =>
       browserSpacesService.revokeAuthenticationFixture({ spaceId: profileId, reference }),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: ["browser-spaces", profileId, "accounts"] }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["browser-spaces", profileId, "accounts"] });
+      setRevokeFixture(undefined);
+    },
   });
   const remove = useMutation({
     mutationFn: () => browserSpacesService.removeSpace(profileId),
@@ -182,14 +190,24 @@ export function EnvironmentPage() {
                 {space.persistent ? "Persistent profile" : "Ephemeral profile"}
               </p>
             </div>
-            <Button variant="default" onClick={() => open.mutate()} disabled={open.isPending}>
-              <ExternalLink aria-hidden="true" /> {open.isPending ? "Opening…" : "Open Space"}
-            </Button>
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button variant="default" onClick={() => open.mutate()} disabled={open.isPending}>
+                {open.isPending ? "Opening Live…" : "Open Live workspace"}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => openExternal.mutate()}
+                disabled={openExternal.isPending}
+              >
+                <ExternalLink aria-hidden="true" />{" "}
+                {openExternal.isPending ? "Opening…" : "Open externally"}
+              </Button>
+            </div>
           </header>
-          {open.error ? (
+          {open.error || openExternal.error ? (
             <FieldError>
-              {open.error instanceof Error
-                ? open.error.message
+              {(open.error ?? openExternal.error) instanceof Error
+                ? (open.error ?? openExternal.error)?.message
                 : "Relay could not open this Space."}
             </FieldError>
           ) : null}
@@ -303,6 +321,10 @@ export function EnvironmentPage() {
                 metadata only.
               </p>
               {fixtures.isPending ? <PageLoading label="Loading reviewed accounts…" /> : null}
+              <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+                Revoking a named sign-in keeps existing Run evidence and only blocks that sign-in
+                from future authenticated Tests.
+              </p>
               {fixtures.data?.length ? (
                 <ul className="relay-environment-accounts grid gap-2 p-0">
                   {fixtures.data.map((fixture) => (
@@ -348,7 +370,10 @@ export function EnvironmentPage() {
                             <Button
                               size="sm"
                               variant="ghost"
-                              onClick={() => revokeAccount.mutate(fixture.reference)}
+                              onClick={() => {
+                                revokeAccount.reset();
+                                setRevokeFixture(fixture);
+                              }}
                               disabled={revokeAccount.isPending}
                             >
                               Revoke
@@ -481,6 +506,40 @@ export function EnvironmentPage() {
                   </Button>
                 </div>
               </form>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog
+            open={Boolean(revokeFixture)}
+            onOpenChange={(open) => {
+              if (!open) setRevokeFixture(undefined);
+            }}
+          >
+            <DialogContent showCloseButton={false}>
+              <DialogTitle>Revoke {revokeFixture?.name}?</DialogTitle>
+              <DialogDescription>
+                Relay will keep the audit record and existing Run evidence. This named sign-in will
+                no longer be valid for future authenticated Tests.
+              </DialogDescription>
+              {revokeAccount.error ? (
+                <FieldError>
+                  {revokeAccount.error instanceof Error
+                    ? revokeAccount.error.message
+                    : "Relay could not revoke this sign-in."}
+                </FieldError>
+              ) : null}
+              <div className="relay-dialog-actions flex flex-wrap items-center justify-end gap-2.5">
+                <DialogClose render={<Button variant="ghost">Cancel</Button>} />
+                <Button
+                  className="text-red-700 dark:text-red-300"
+                  onClick={() => {
+                    if (revokeFixture) revokeAccount.mutate(revokeFixture.reference);
+                  }}
+                  disabled={!revokeFixture || revokeAccount.isPending}
+                >
+                  {revokeAccount.isPending ? "Revoking…" : "Revoke sign-in"}
+                </Button>
+              </div>
             </DialogContent>
           </Dialog>
         </>

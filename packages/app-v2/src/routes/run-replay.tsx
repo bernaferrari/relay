@@ -49,54 +49,62 @@ export function RunReplayAction({
         if (!replay.isPending) setOpen(next);
       }}
     >
-      <DialogTrigger render={<Button variant="outline" />}>Replay saved steps</DialogTrigger>
+      <DialogTrigger render={<Button variant="outline" />}>Rerun…</DialogTrigger>
       <DialogContent showCloseButton={!replay.isPending}>
-        <DialogTitle>Replay saved steps</DialogTitle>
+        <DialogTitle>Rerun this test execution</DialogTitle>
         <DialogDescription>
           Run the recorded steps and saved inputs on {report.targetName ?? "the original target"}.
           Relay checks the saved target and browser profile before starting.
         </DialogDescription>
         <p className="text-sm text-muted-foreground">
           {mode === "same-configuration"
-            ? "Relay will verify and install the recorded immutable build before replaying. If that build is unavailable, no replay is started."
-            : "The installed app or build stays as it is now. Replay does not restore an older build."}{" "}
-          Unavailable private inputs must be supplied through a new run setup.
+            ? "Relay restores the saved build before starting. If that build is unavailable, the run will not start."
+            : "Uses the app currently installed on this target."}
         </p>
-        <fieldset className="grid gap-2 text-sm">
-          <legend className="font-medium">Replay mode</legend>
-          <label className="flex items-start gap-2">
-            <input
-              type="radio"
-              name="replay-mode"
-              value="saved-steps"
-              checked={mode === "saved-steps"}
-              onChange={() => setMode("saved-steps")}
-            />
-            <span>
-              <strong className="font-medium">Saved steps</strong>
-              <span className="block text-muted-foreground">
-                Use the recorded recipe and current installed build.
-              </span>
-            </span>
-          </label>
-          {report.executionContext?.buildId ? (
-            <label className="flex items-start gap-2">
+        {report.executionContext?.buildId ? (
+          <fieldset className="grid gap-2 text-sm">
+            <legend className="mb-3 font-medium">Choose the build to use</legend>
+            <label className="flex cursor-pointer flex-row-reverse items-center justify-between gap-4 rounded-lg border border-border p-4 has-[:checked]:border-foreground/50 has-[:checked]:bg-muted/50">
               <input
                 type="radio"
+                className="size-4 shrink-0 accent-foreground"
                 name="replay-mode"
-                value="same-configuration"
-                checked={mode === "same-configuration"}
-                onChange={() => setMode("same-configuration")}
+                value="saved-steps"
+                checked={mode === "saved-steps"}
+                onChange={() => setMode("saved-steps")}
               />
               <span>
-                <strong className="font-medium">Same configuration</strong>
+                <strong className="font-medium">Current installed build</strong>
                 <span className="block text-muted-foreground">
-                  Restore recorded build <code>{report.executionContext.buildId}</code> first.
+                  Run the saved steps against the app installed now.
                 </span>
               </span>
             </label>
-          ) : null}
-        </fieldset>
+            {report.executionContext?.buildId ? (
+              <label className="flex cursor-pointer flex-row-reverse items-center justify-between gap-4 rounded-lg border border-border p-4 has-[:checked]:border-foreground/50 has-[:checked]:bg-muted/50">
+                <input
+                  type="radio"
+                  className="size-4 shrink-0 accent-foreground"
+                  name="replay-mode"
+                  value="same-configuration"
+                  checked={mode === "same-configuration"}
+                  onChange={() => setMode("same-configuration")}
+                />
+                <span>
+                  <strong className="font-medium">Original build and configuration</strong>
+                  <span className="block text-muted-foreground">
+                    Restore recorded build <code>{report.executionContext.buildId}</code> first.
+                  </span>
+                </span>
+              </label>
+            ) : null}
+          </fieldset>
+        ) : (
+          <p className="rounded-lg bg-muted/50 p-3 text-xs leading-relaxed text-muted-foreground">
+            No original build was saved with this run. To choose another build or supply private
+            inputs, open the test’s run setup.
+          </p>
+        )}
         {replay.error ? (
           <p role="alert">
             {replay.error instanceof Error ? replay.error.message : "Replay could not start."}
@@ -111,7 +119,7 @@ export function RunReplayAction({
             }
           />
           <Button onClick={() => replay.mutate()} disabled={replay.isPending}>
-            {replay.isPending ? "Starting replay…" : "Start replay"}
+            {replay.isPending ? "Starting run…" : "Start run"}
           </Button>
         </div>
       </DialogContent>

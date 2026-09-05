@@ -3,6 +3,7 @@ import type { Platform } from "../platform/types";
 export type ProductClientContext = {
   client: InstanceType<(typeof import("@relay/client"))["RelayClient"]>;
   actorId: string;
+  serverUrl?: string;
 };
 
 const clients = new WeakMap<Platform, Promise<ProductClientContext>>();
@@ -28,6 +29,7 @@ export function productClientForPlatform(platform: Platform): Promise<ProductCli
     return {
       client: new RelayClient(connection, { fetch: platform.fetch ?? fetch }),
       actorId: connection.actorId,
+      serverUrl: connection.url,
     };
   });
   clients.set(platform, created);

@@ -85,6 +85,7 @@ const executionTargetSchema = z.discriminatedUnion("kind", [
 const executionJobSchema = z
   .object({
     id: z.string(),
+    workflowId: z.string().optional(),
     action: z.string(),
     status: z.string(),
     queuedAt: z.number(),
@@ -126,6 +127,7 @@ const campaignCheckSchema = z
 const jobSummarySchema = z
   .object({
     id: z.string(),
+    workflowId: z.string().optional(),
     action: z.string(),
     title: z.string().optional(),
     status: z.string(),
@@ -135,6 +137,7 @@ const jobSummarySchema = z
     durationMs: z.number().optional(),
     platform: z.string().optional(),
     serial: z.string().optional(),
+    targetProfileId: z.string().optional(),
     outcome: z.string().optional(),
     review: runReviewSchema.optional(),
     batchId: z.string().optional(),
@@ -463,6 +466,7 @@ export const combineCampaignSchema = z
         .object({
           index: z.number(),
           cellId: z.string(),
+          executionCaseId: z.string().optional(),
           testId: z.string(),
           world: z.string(),
           values: z.record(z.string(), z.string()),
@@ -506,6 +510,7 @@ export const combineCampaignSchema = z
       .object({
         selected: z.record(z.string(), z.array(z.string())).optional(),
         selectedCellIds: z.array(z.string()),
+        selectedExecutionCaseIds: z.array(z.string()).optional(),
         strategy: z.enum(["zip", "cartesian", "pairwise"]).optional(),
         seed: z.number(),
         title: z.string().optional(),

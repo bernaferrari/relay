@@ -28,6 +28,8 @@ export function RunConfigurationComposer({
   onRetry,
   children,
   targetGroupName = "run-target",
+  variant = "panel",
+  title,
 }: {
   configuration: RunConfigurationState;
   onResolveBlocker?: (blocker: RunConfigurationBlocker) => void;
@@ -41,6 +43,8 @@ export function RunConfigurationComposer({
   onRetry?: () => void;
   children?: ReactNode;
   targetGroupName?: string;
+  variant?: "panel" | "plain";
+  title?: ReactNode;
 }) {
   const titleId = useId();
   const selectedTargets =
@@ -72,14 +76,14 @@ export function RunConfigurationComposer({
   return (
     <section
       aria-label="Run configuration"
-      className="relay-run-configuration grid min-w-0 gap-[18px] rounded-xl border border-border bg-card p-5 [&_h2]:m-0 [&_h2]:text-base"
+      className={`relay-run-configuration grid min-w-0 gap-4 ${variant === "panel" ? "rounded-xl border border-border bg-card p-5" : ""}`}
     >
       <div className="flex items-end justify-between gap-5 max-[620px]:items-start max-[620px]:gap-3">
-        <h2 id={titleId}>
-          {configuration.frozen ? "Recorded configuration" : "Run configuration"}
+        <h2 id={titleId} className="text-base font-semibold">
+          {title ?? (configuration.frozen ? "Recorded configuration" : "Run configuration")}
         </h2>
         {!configuration.frozen ? (
-          <span role="status">
+          <span role="status" className="text-xs text-muted-foreground">
             {loading
               ? "Restoring choices…"
               : runConfigurationReady(configuration)

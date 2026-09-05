@@ -78,3 +78,31 @@ export const failedReport: ProductRunReportOverview = {
     },
   ],
 };
+
+// A small, silent, generated test pattern exercises real browser video decoding and seeking.
+const videoUrl = new URL("./assets/report-video.webm", import.meta.url).href;
+export const videoReport: ProductRunReportOverview = {
+  ...failedReport,
+  timeline: [],
+  video: {
+    kind: "video",
+    mime: "video/webm",
+    clock: { startedAt: 10_000, finishedAt: 14_000 },
+    load: async (signal) => (await fetch(videoUrl, { signal })).blob(),
+  },
+  diagnostics: [
+    { id: "confirmation-timeout", title: "Confirmation timeout", at: 12_000, videoTimeMs: 2_000 },
+  ],
+  evidence: [
+    {
+      id: "video",
+      count: 1,
+      inspectable: true,
+      label: "Video",
+      summary: "Recorded execution",
+      detail: "4 seconds",
+      items: [],
+    },
+    ...failedReport.evidence,
+  ],
+};

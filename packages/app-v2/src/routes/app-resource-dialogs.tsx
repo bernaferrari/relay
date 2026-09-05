@@ -348,7 +348,8 @@ export function RevokeAccountDialog({
         <DialogTitle>Revoke browser sign-in?</DialogTitle>
         <DialogDescription>
           This revokes “{account.fixture.name}” on {account.target.name}. Relay will keep the audit
-          record, but it cannot be used for future authenticated Tests.
+          record and existing Runs keep their saved evidence. This sign-in will no longer be valid
+          for future authenticated Tests.
         </DialogDescription>
         {error ? <FieldError>{error.message}</FieldError> : null}
         <div className="flex items-center justify-end gap-2">

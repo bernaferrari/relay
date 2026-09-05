@@ -197,6 +197,17 @@ afterEach(async () => {
 });
 
 describe("live Session to Test editor", () => {
+  it("clears status, target, and search constraints when showing active work", async () => {
+    const history = await render("/sessions?status=history&target=other&q=missing", {
+      sessionService: sessionService(),
+    });
+
+    await click("Show active live work");
+
+    expect(history.location.search).toBe("");
+    expect(document.body.textContent).toContain("Checkout Session");
+  });
+
   it("shows a compact recovery state when the Session cannot be loaded", async () => {
     const unavailable = sessionService();
     unavailable.get = vi.fn(async () => {
@@ -230,7 +241,8 @@ describe("live Session to Test editor", () => {
     expect(service.live).toHaveBeenCalledWith("session-live");
     expect(document.body.textContent).toContain("Checkout");
     expect(document.body.textContent).toContain("Human");
-    expect(document.body.textContent).toContain("Browser profile unavailable");
+    expect(document.body.textContent).toContain("Managed browser");
+    expect(document.body.textContent).not.toContain("Browser profile unavailable");
     expect(document.body.textContent).toContain("Recording session active · inspecting only");
     expect(document.body.textContent).toContain("These controls do not add Test steps");
     await click("Audit details");

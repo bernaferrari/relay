@@ -24,6 +24,24 @@ export type ReportEvidenceItem = {
   };
 };
 
+export type ReportVideoMedia = {
+  kind: "video";
+  src?: string;
+  mime: "video/mp4" | "video/webm";
+  load?: (signal?: AbortSignal) => Promise<Blob>;
+  clock: {
+    startedAt?: number;
+    finishedAt?: number;
+  };
+};
+
+export type ReportDiagnosticEvent = {
+  id: string;
+  title: string;
+  at?: number;
+  videoTimeMs?: number;
+};
+
 export type ReportTimelineItem = {
   id: string;
   index: number;
@@ -54,6 +72,8 @@ export type ProductRunReportOverview = {
   firstEvidence?: { label: string; detail?: string };
   timeline: readonly ReportTimelineItem[];
   evidence: readonly ReportEvidenceSection[];
+  video?: ReportVideoMedia;
+  diagnostics?: readonly ReportDiagnosticEvent[];
   /** Undefined for legacy Runs that predate authored-step provenance. */
   stepEvidence?: readonly RunTestStepEvidence[];
   evidenceUnavailable?: true;

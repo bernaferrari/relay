@@ -6,7 +6,7 @@ import { Tabs, TabsList, TabsTrigger } from "@relay/ui-react/components/tabs";
 import { useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { ChevronRight, Monitor, Smartphone } from "lucide-react";
-import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useMemo } from "react";
 import { LiveDevices } from "./live-devices";
 import { deviceQueryKeys } from "../data/device-product-service";
 import { EmptyState } from "../components/product-patterns";
@@ -27,7 +27,13 @@ export function SessionsPage() {
   const search = routeApi.useSearch() as { status?: unknown; target?: unknown; q?: unknown };
   const view: SessionView =
     search.status === "history" || search.status === "all" ? search.status : "active";
-  const [query, setQuery] = useState(typeof search.q === "string" ? search.q : "");
+  const query = typeof search.q === "string" ? search.q : "";
+  function setQuery(value: string) {
+    void navigate({
+      replace: true,
+      search: (previous) => ({ ...previous, q: value || undefined }),
+    });
+  }
   const deferredQuery = useDeferredValue(query.trim().toLocaleLowerCase());
   const referenceTime = Date.now();
   const devices = useQuery({
@@ -43,18 +49,6 @@ export function SessionsPage() {
     refetchOnReconnect: true,
     refetchOnWindowFocus: false,
   });
-
-  useEffect(() => {
-    if (typeof search.q === "string" && search.q !== query) setQuery(search.q);
-  }, [query, search.q]);
-
-  useEffect(() => {
-    const current = typeof search.q === "string" ? search.q : "";
-    if (current === query) return;
-    void navigate({
-      search: (previous) => ({ ...previous, q: query.trim() || undefined }),
-    });
-  }, [navigate, query, search.q]);
 
   const visible = useMemo(
     () =>
@@ -181,7 +175,15 @@ export function SessionsPage() {
                 variant="outline"
                 onClick={() => {
                   setQuery("");
-                  setView("active");
+                  void navigate({
+                    replace: true,
+                    search: (previous) => ({
+                      ...previous,
+                      status: undefined,
+                      target: undefined,
+                      q: undefined,
+                    }),
+                  });
                 }}
               >
                 Show active live work

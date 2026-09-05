@@ -1,4 +1,7 @@
 /** @jsxImportSource react */
+import { traceVideoInterval } from "../data/run-report-media";
+import { EvidenceImageViewer } from "../components/evidence-image-viewer";
+import { ReportVideoInspector } from "../components/report-video-inspector";
 import { Button } from "@relay/ui-react/components/button";
 import { Check, Circle, CircleAlert, ImageOff } from "lucide-react";
 import { useState, type ReactNode } from "react";
@@ -35,7 +38,52 @@ export function RunWorkbench({
     report.evidence
       .find((section) => section.id === "screenshot")
       ?.items.filter((item) => framePaths.has(item.id) && item.media) ?? [];
-  if (!step) return null;
+  if (!step)
+    return (
+      <section
+        className="overflow-hidden rounded-xl border border-border bg-card"
+        aria-label="Run workbench"
+      >
+        <header className="border-b border-border px-5 py-4">
+          <h2 className="text-sm font-semibold">Available evidence</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            This Run has no saved step timeline. These artifacts belong to the Run; they cannot be
+            attributed to a specific step.
+          </p>
+        </header>
+        <StepMedia
+          key={report.runId}
+          frames={
+            report.evidence
+              .find((section) => section.id === "screenshot")
+              ?.items.filter((item) => item.media) ?? []
+          }
+          unlinked
+        />
+        {report.video ? (
+          <div className="border-t border-border p-5">
+            <ReportVideoInspector video={report.video} diagnostics={report.diagnostics} />
+          </div>
+        ) : null}
+        {report.evidence
+          .filter((section) => section.id !== "screenshot" && section.items.length)
+          .map((section) => (
+            <section className="border-t border-border p-5" key={section.id}>
+              <h3 className="text-sm font-semibold">{section.label}</h3>
+              <ul className="mt-3 grid gap-3">
+                {section.items.map((item) => (
+                  <li key={item.id} className="text-sm">
+                    <p>{item.title}</p>
+                    {item.detail ? (
+                      <p className="mt-1 text-muted-foreground">{item.detail}</p>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))}
+      </section>
+    );
   return (
     <section
       className="grid min-w-0 overflow-hidden rounded-xl border border-border bg-card min-[721px]:grid-cols-[12rem_minmax(0,1fr)] min-[1280px]:grid-cols-[16rem_minmax(0,1fr)]"
@@ -83,36 +131,48 @@ export function RunWorkbench({
       <div className="min-w-0">
         <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
           <div className="min-w-0">
-            <p className="text-xs text-muted-foreground">Step {selectedStepIndex + 1}</p>
+            <p className="text-xs text-muted-foreground">
+              Step {selectedStepIndex + 1} · {timelineStateLabel(step.state)}
+            </p>
             <h2 className="mt-1 text-base font-semibold">{step.title}</h2>
           </div>
-          <span className="text-xs text-muted-foreground">{timelineStateLabel(step.state)}</span>
-          <div className="flex items-center gap-1">
-            <Button
-              size="sm"
-              variant="ghost"
-              aria-label="Previous failure"
-              disabled={previousFailure === undefined}
-              onClick={() => {
-                if (previousFailure !== undefined) onSelectStep(previousFailure);
-              }}
-            >
-              Previous failure
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              aria-label="Next failure"
-              disabled={nextFailure === undefined}
-              onClick={() => {
-                if (nextFailure !== undefined) onSelectStep(nextFailure);
-              }}
-            >
-              Next failure
-            </Button>
-          </div>
+          {previousFailure !== undefined || nextFailure !== undefined ? (
+            <div className="flex items-center gap-1">
+              <Button
+                size="sm"
+                variant="ghost"
+                aria-label="Previous failure"
+                disabled={previousFailure === undefined}
+                onClick={() => {
+                  if (previousFailure !== undefined) onSelectStep(previousFailure);
+                }}
+              >
+                Previous failure
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                aria-label="Next failure"
+                disabled={nextFailure === undefined}
+                onClick={() => {
+                  if (nextFailure !== undefined) onSelectStep(nextFailure);
+                }}
+              >
+                Next failure
+              </Button>
+            </div>
+          ) : null}
         </header>
         <StepMedia key={`${report.runId}:${step.id}`} frames={frames} />
+        {report.video ? (
+          <div className="border-t border-border p-5">
+            <ReportVideoInspector
+              video={report.video}
+              diagnostics={report.diagnostics}
+              interval={traceVideoInterval(step, report.video.clock)}
+            />
+          </div>
+        ) : null}
         <dl className="grid gap-5 border-t border-border px-5 py-4 sm:grid-cols-2">
           <div>
             <dt className="text-xs font-medium text-muted-foreground">Expected</dt>
@@ -152,32 +212,37 @@ function formatTraceInterval(startedAt?: number, finishedAt?: number): string {
   return `${start} → ${end}`;
 }
 
-function StepMedia({ frames }: { frames: readonly ReportEvidenceItem[] }) {
+function StepMedia({
+  frames,
+  unlinked = false,
+}: {
+  frames: readonly ReportEvidenceItem[];
+  unlinked?: boolean;
+}) {
   const [selected, setSelected] = useState(0);
   const [failed, setFailed] = useState(false);
   const frame = frames[selected] ?? frames[0];
   return (
-    <div className="relay-evidence-image-frame overflow-hidden rounded-lg border border-border bg-card">
-      <div className="flex min-h-64 items-center justify-center bg-muted/30 p-5">
+    <div className="relay-evidence-image-frame overflow-hidden bg-card">
+      <div className="relative flex min-h-64 items-center justify-center bg-muted/30 p-5">
         {frame?.media && !failed ? (
-          <img
-            src={frame.media.src}
-            alt={frame.title}
-            width={frame.media.width}
-            height={frame.media.height}
-            className="max-h-72 w-full max-w-full rounded-md border border-border bg-background object-contain shadow-sm"
-            onError={() => setFailed(true)}
-          />
+          <EvidenceImageViewer key={frame.id} frame={frame} onError={() => setFailed(true)} />
         ) : (
           <div className="max-w-sm py-10 text-center">
             <ImageOff className="mx-auto mb-3 size-6 text-muted-foreground" aria-hidden="true" />
             <p className="text-sm font-medium">
-              {failed ? "Screenshot unavailable" : "No screenshot for this step"}
+              {failed
+                ? "Screenshot unavailable"
+                : unlinked
+                  ? "No saved screenshots"
+                  : "No screenshot for this step"}
             </p>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
               {failed
                 ? "The saved image could not be loaded. The step result remains available."
-                : "This run did not retain a screenshot linked to this step."}
+                : unlinked
+                  ? "Review the other available evidence below."
+                  : "This run did not retain a screenshot linked to this step."}
             </p>
             {failed ? (
               <Button size="sm" variant="outline" className="mt-4" onClick={() => setFailed(false)}>
@@ -241,7 +306,9 @@ export function RunContextFacts({
     ["Target profile", context?.targetProfileId],
   ].filter((entry): entry is [string, string] => typeof entry[1] === "string");
   return (
-    <dl className="mt-4 flex flex-wrap gap-x-6 gap-y-3 border-y border-border py-3">
+    <dl
+      className={`flex flex-wrap gap-x-6 gap-y-3 ${compact ? "" : "mt-4 border-y border-border py-3"}`}
+    >
       {(compact ? facts.slice(0, 2) : facts).map(([label, value]) => (
         <div key={label} className="min-w-0 max-w-full">
           <dt className="text-xs text-muted-foreground">{label}</dt>

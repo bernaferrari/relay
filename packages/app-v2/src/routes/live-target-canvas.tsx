@@ -13,7 +13,11 @@ import {
   type RefObject,
   type WheelEvent,
 } from "react";
-import type { LiveTargetInput, LiveTargetStatus } from "../data/live-target-session";
+import type {
+  LiveTargetBrowserContext,
+  LiveTargetInput,
+  LiveTargetStatus,
+} from "../data/live-target-session";
 
 type Point = { x: number; y: number };
 
@@ -24,6 +28,7 @@ export function LiveTargetCanvas({
   busy,
   targetTitle,
   targetDetail,
+  browserContext,
   send,
   recording = true,
   helpText,
@@ -34,7 +39,8 @@ export function LiveTargetCanvas({
   busy: boolean;
   targetTitle: string;
   targetDetail: string;
-  send(input: LiveTargetInput): Promise<boolean | void>;
+  browserContext?: LiveTargetBrowserContext;
+  send(input: LiveTargetInput): Promise<boolean>;
   recording?: boolean;
   helpText?: string;
 }) {
@@ -137,12 +143,16 @@ export function LiveTargetCanvas({
   function typeText() {
     const value = text;
     if (!value || busy || !streaming) return;
-    void send({ kind: "key", key: "enter", text: value }).then((delivered) => {
-      // Keep the draft visible when the transport rejects or recording cannot
-      // accept the interaction. Clearing on an attempted send made text look
-      // successfully recorded when it had actually been lost.
-      if (delivered !== false) setText("");
-    });
+    void send({ kind: "key", key: "enter", text: value })
+      .then((delivered) => {
+        // Keep the draft visible when the transport rejects or recording cannot
+        // accept the interaction. Clearing on an attempted send made text look
+        // successfully recorded when it had actually been lost.
+        if (delivered === true) setText((current) => (current === value ? "" : current));
+      })
+      .catch(() => {
+        /* The caller presents the delivery error; keep the draft. */
+      });
   }
 
   return (
@@ -197,6 +207,19 @@ export function LiveTargetCanvas({
         <div className="grid min-w-0 gap-0.5">
           <strong className="text-sm font-semibold">{targetTitle}</strong>
           <span className="text-xs text-muted-foreground">{targetDetail}</span>
+          {browserContext ? (
+            <span
+              aria-label="Current browser configuration"
+              className="break-words text-xs text-muted-foreground"
+            >
+              {browserContext.engine[0]?.toUpperCase()}
+              {browserContext.engine.slice(1)} · {browserContext.viewport.width}×
+              {browserContext.viewport.height} · {browserContext.locale}
+              {browserContext.authenticationFixtureId
+                ? ` · Account reference ${browserContext.authenticationFixtureId}`
+                : ""}
+            </span>
+          ) : null}
         </div>
         <div className="flex items-center gap-2">
           <label className="relay-visually-hidden sr-only" htmlFor={textInputId}>

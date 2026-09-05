@@ -10,13 +10,14 @@ import type {
   DevicePool,
   DurableWorkflowAuditEvent,
   DurableWorkflowRecord,
+  DurableWorkflowResourceRef,
   Project,
   ReviewedDocumentOriginLedger,
   ReviewedDocumentOriginProjection,
   Revisioned,
   TestData,
 } from "@relay/protocol";
-import { loadStoredAppMap, type StoredAppMapDisposition } from "./app-map/stored-map-repair.js";
+import { loadStoredAppMap } from "./app-map/stored-map-repair.js";
 import { notifyControlWrite, runControlWrite, type DeviceEvent } from "./events.js";
 import { findWorkspaceRoot } from "./workspace-root.js";
 import { join } from "node:path";
@@ -78,71 +79,26 @@ import {
   type ChangeProofConfirmationRecord,
 } from "./change-proof-confirmation-db.js";
 import type { ChangeProofExecutionRecord } from "./change-proof-execution.js";
+import { workflowRecordsByResources } from "./workflow-resource-queries.js";
+import {
+  degradedFromRaw,
+  documents,
+  parseAppMapDocument,
+  persistedDisposition,
+  storedDisposition,
+  type DegradedAppMap,
+} from "./app-map-store-helpers.js";
 
-export type DegradedAppMap = {
-  key: string;
-  id?: string;
-  error: string;
-  disposition: Extract<StoredAppMapDisposition, "read-only" | "quarantined">;
-};
+export type { DegradedAppMap } from "./app-map-store-helpers.js";
 
 /** Opaque source bytes retained before a map was normalized or quarantined. */
 export type AppMapRecoveryDocument = {
   document: string;
-  disposition: StoredAppMapDisposition;
+  disposition: import("./app-map/stored-map-repair.js").StoredAppMapDisposition;
 };
 
 export function collaborationStateRoot(): string {
   return process.env.RELAY_STATE_DIR?.trim() || join(findWorkspaceRoot(), ".relay");
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function documents<T>(rows: Array<{ document?: string }>): T[] {
-  return rows
-    .map((row) => parseRowDocument<T>(row))
-    .filter((item): item is T => item !== undefined);
-}
-
-function degradedFromRaw(
-  key: string,
-  error: string,
-  raw: unknown,
-  disposition: Extract<StoredAppMapDisposition, "read-only" | "quarantined"> = "quarantined",
-): DegradedAppMap {
-  return {
-    key,
-    error,
-    disposition,
-    id: isRecord(raw) && typeof raw.id === "string" ? raw.id : undefined,
-  };
-}
-
-function persistedDisposition(
-  value: string | null | undefined,
-): Extract<StoredAppMapDisposition, "read-only" | "quarantined"> {
-  return value === "read-only" ? "read-only" : "quarantined";
-}
-
-function storedDisposition(value: string | null | undefined): StoredAppMapDisposition {
-  switch (value) {
-    case "migrated":
-    case "read-only":
-    case "quarantined":
-      return value;
-    default:
-      return "ready";
-  }
-}
-
-function parseAppMapDocument(source: string): unknown | undefined {
-  try {
-    return JSON.parse(source) as unknown;
-  } catch {
-    return undefined;
-  }
 }
 
 export type ControlStore = AppMapTestHistoryStore & {
@@ -164,6 +120,20 @@ export type ControlStore = AppMapTestHistoryStore & {
   idempotency(key: string): number | string | undefined;
   upsertIdempotency(key: string, value: number | string): void;
   workflowRecord(workflowId: string): DurableWorkflowRecord | undefined;
+  workflowRecordsByResource(
+    organizationId: string,
+    projectId: string,
+    workflowKind: DurableWorkflowRecord["kind"],
+    resourceKind: DurableWorkflowResourceRef["kind"],
+    resourceId: string,
+  ): DurableWorkflowRecord[];
+  workflowRecordsByResources(
+    organizationId: string,
+    projectId: string,
+    workflowKind: DurableWorkflowRecord["kind"],
+    resourceKind: DurableWorkflowResourceRef["kind"],
+    resourceIds: readonly string[],
+  ): DurableWorkflowRecord[];
   workflowRecordEvents(workflowId: string): DurableWorkflowAuditEvent[];
   insertWorkflowRecord(record: DurableWorkflowRecord, event: DurableWorkflowAuditEvent): boolean;
   compareAndSetWorkflowRecord(
@@ -371,6 +341,25 @@ function createStore(db: DatabaseSync): ControlStore {
         db
           .prepare("SELECT document FROM workflow_records WHERE workflow_id = ?")
           .get(workflowId) as { document?: string } | undefined,
+      );
+    },
+    workflowRecordsByResource(organizationId, projectId, workflowKind, resourceKind, resourceId) {
+      return this.workflowRecordsByResources(
+        organizationId,
+        projectId,
+        workflowKind,
+        resourceKind,
+        [resourceId],
+      );
+    },
+    workflowRecordsByResources(organizationId, projectId, workflowKind, resourceKind, resourceIds) {
+      return workflowRecordsByResources(
+        db,
+        organizationId,
+        projectId,
+        workflowKind,
+        resourceKind,
+        resourceIds,
       );
     },
     workflowRecordEvents(workflowId) {

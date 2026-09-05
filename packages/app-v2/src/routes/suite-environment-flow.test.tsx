@@ -231,6 +231,25 @@ afterEach(async () => {
 });
 
 describe("Suite and Environment routes", () => {
+  it("passes the displayed App scope to the Suite collection", async () => {
+    const scopedSuite = { ...suite, appMapId: "app-2", appName: "Billing" };
+    const listSuites = vi.fn(async (appMapId?: string) =>
+      appMapId === "app-2" ? [scopedSuite] : [],
+    );
+    await render("/suites?app=app-2", {
+      apps: [
+        { id: "app-1", name: "Checkout" },
+        { id: "app-2", name: "Billing" },
+      ],
+      suiteService: suiteService({ listSuites }),
+    });
+
+    expect(listSuites).toHaveBeenCalledWith("app-2");
+    expect(document.body.textContent).toContain("Billing");
+    expect(document.querySelector('a[href="/apps/app-2/suites/suite-1"]')).not.toBeNull();
+    expect(document.querySelector('a[href="/apps/app-1/suites/suite-1"]')).toBeNull();
+  });
+
   it("renders Suites and navigates to the canonical Suite detail route", async () => {
     const { history } = await render("/suites");
     expect(document.querySelector("h1")?.textContent).toBe("Suites");
@@ -306,7 +325,7 @@ describe("Suite and Environment routes", () => {
 
     expect(document.body.textContent).toContain("2 cases previewed");
     expect(document.body.textContent).not.toContain("2 cases ready");
-    expect(document.body.textContent).toContain("Select one environment to start a pilot.");
+    expect(document.body.textContent).toContain("Multi-environment execution is unavailable.");
   });
 
   it("creates a Browser Space with labeled fields and opens its canonical detail route", async () => {
@@ -356,9 +375,15 @@ describe("Suite and Environment routes", () => {
     });
     expect(document.body.textContent).toContain("Current checks");
     expect(document.body.textContent).toContain("Staging account");
-    await clickButton("Open Space");
+    await clickButton("Open externally");
     expect(calls.open).toBe(1);
     expect(openExternal).toHaveBeenCalledWith(space.startUrl);
+
+    await clickButton("Open Live workspace");
+    expect(calls.open).toBe(2);
+    expect(history.location.pathname).toBe(`/devices/${space.id}`);
+    history.push(`/environments/${space.id}`);
+    await settle();
 
     await clickButton("Save current sign-in");
     await fill("account-fixture-name", "QA member");
@@ -366,6 +391,10 @@ describe("Suite and Environment routes", () => {
     expect(calls.save).toEqual([{ spaceId: "space-1", name: "QA member" }]);
 
     await clickButton("Revoke");
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
+      "existing Run evidence",
+    );
+    await clickButton("Revoke sign-in");
     expect(calls.revoke).toEqual([{ spaceId: "space-1", reference: fixture.reference }]);
 
     await clickButton("Remove");

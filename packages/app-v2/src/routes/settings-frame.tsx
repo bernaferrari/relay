@@ -14,7 +14,7 @@ const SETTINGS_COPY: Record<SettingsCategory, { title: string; description: stri
   },
   evidence: {
     title: "Evidence & privacy",
-    description: "Control what future Runs may capture before evidence is saved.",
+    description: "Workspace policy for what future Runs may capture.",
   },
   integrations: {
     title: "Integrations",
@@ -30,7 +30,7 @@ const SETTINGS_COPY: Record<SettingsCategory, { title: string; description: stri
   },
   about: {
     title: "About",
-    description: "Version, update, and support information for Relay.",
+    description: "Version, updates, and support for this Relay installation.",
   },
 };
 

@@ -193,6 +193,8 @@ export type EvidenceManifest = {
 
 export type JobSummary = {
   id: string;
+  /** Durable continuation identity, when the job was started through a workflow. */
+  workflowId?: string;
   action: string;
   title?: string;
   status: string;
@@ -202,6 +204,8 @@ export type JobSummary = {
   durationMs?: number;
   platform?: string;
   serial?: string;
+  /** Safe frozen target identity; credentials and provider payloads stay out. */
+  targetProfileId?: string;
   outcome?: string;
   review?: import("./run-review.js").RunReview;
   batchId?: string;

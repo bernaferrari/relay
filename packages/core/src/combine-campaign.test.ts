@@ -18,6 +18,7 @@ import {
   durableWorkerAssignmentStore,
   resetDurableWorkerAssignmentStoreForTests,
 } from "./durable-worker-assignments.js";
+import { combineExecutionCaseId } from "./combine-campaign-case-identity.js";
 
 function fixture(status: "passed" | "failed" = "passed"): StoredCombineCampaign {
   return {
@@ -292,6 +293,104 @@ test("explicit Repeat rerun scope retries only reviewed failure cells and preser
   );
 });
 
+test("expanded profile cases keep authored cell lineage while resuming by execution identity", () => {
+  const campaign = fixture("passed");
+  const authoredCell = campaign.cases[0]!.cellId;
+  const first = combineExecutionCaseId({ cellId: authoredCell, targetProfileId: "profile-a" });
+  const second = combineExecutionCaseId({ cellId: authoredCell, targetProfileId: "profile-b" });
+  campaign.cases = [
+    {
+      ...campaign.cases[0]!,
+      executionCaseId: first,
+      status: "failed",
+      jobId: "job-a",
+      runId: "run-a",
+    },
+    {
+      ...campaign.cases[0]!,
+      index: 2,
+      executionCaseId: second,
+      status: "failed",
+      jobId: "job-b",
+      runId: "run-b",
+    },
+    campaign.cases[1]!,
+  ];
+  campaign.execution.selectedCellIds = [authoredCell, campaign.cases[2]!.cellId];
+  campaign.execution.selectedExecutionCaseIds = [first, second];
+
+  const resumed = prepareSelectedCombineCampaignResume(campaign, {
+    executionCaseIds: [second],
+  });
+  assert.deepEqual(resumed.selectedExecutionCaseIds, [second]);
+  assert.deepEqual(resumed.selectedCellIds, [authoredCell]);
+  assert.equal(resumed.campaign.cases[0]?.status, "failed");
+  assert.equal(resumed.campaign.cases[1]?.status, "pending");
+  assert.equal(resumed.campaign.cases[1]?.cellId, authoredCell);
+  assert.deepEqual(resumed.campaign.cases[1]?.priorRunIds, ["run-b"]);
+});
+
+test("expanded profile resume defaults to all selected execution cases and supports one-case retry", () => {
+  const campaign = fixture("passed");
+  const authoredCell = campaign.cases[0]!.cellId;
+  const first = combineExecutionCaseId({ cellId: authoredCell, targetProfileId: "profile-a" });
+  const second = combineExecutionCaseId({ cellId: authoredCell, targetProfileId: "profile-b" });
+  campaign.cases = [
+    { ...campaign.cases[0]!, executionCaseId: first, status: "pending" },
+    { ...campaign.cases[0]!, index: 2, executionCaseId: second, status: "pending" },
+  ];
+  campaign.execution.selectedCellIds = [authoredCell];
+  campaign.execution.selectedExecutionCaseIds = [first, second];
+  const all = prepareSelectedCombineCampaignResume(campaign);
+  assert.deepEqual(all.selectedExecutionCaseIds, [first, second]);
+  assert.equal(
+    all.campaign.cases.every((item) => item.status === "pending"),
+    true,
+  );
+
+  const retryable = all.campaign.cases.map((item) => ({
+    ...item,
+    status: "failed" as const,
+    jobId: `${item.executionCaseId}-job`,
+    runId: `${item.executionCaseId}-run`,
+  }));
+  const one = prepareSelectedCombineCampaignResume(
+    { ...all.campaign, cases: retryable },
+    { executionCaseIds: [second] },
+  );
+  assert.deepEqual(one.selectedExecutionCaseIds, [second]);
+  assert.equal(one.campaign.cases[0]?.status, "failed");
+  assert.equal(one.campaign.cases[1]?.status, "pending");
+});
+
+test("one explicitly expanded profile keeps execution identity even without a collision", () => {
+  const campaign = fixture("passed");
+  const executionCaseId = combineExecutionCaseId({
+    cellId: campaign.cases[0]!.cellId,
+    targetProfileId: "profile-a",
+  });
+  campaign.cases[0] = { ...campaign.cases[0]!, executionCaseId, status: "pending" };
+  campaign.execution.selectedExecutionCaseIds = [executionCaseId];
+  const resumed = prepareSelectedCombineCampaignResume(campaign);
+  assert.deepEqual(resumed.selectedExecutionCaseIds, [executionCaseId]);
+  assert.deepEqual(resumed.selectedCellIds, [campaign.cases[0]!.cellId]);
+});
+
+test("legacy cases remain cell-selectable even if a persisted projection has execution selections", () => {
+  const campaign = fixture("passed");
+  campaign.execution.selectedExecutionCaseIds = [campaign.cases[0]!.cellId];
+  campaign.cases[0] = {
+    ...campaign.cases[0]!,
+    status: "failed",
+    jobId: "legacy-job",
+    runId: "legacy-run",
+  };
+  const resumed = prepareSelectedCombineCampaignResume(campaign, {
+    cellIds: [campaign.cases[0]!.cellId],
+  });
+  assert.deepEqual(resumed.selectedCellIds, [campaign.cases[0]!.cellId]);
+});
+
 async function withDurableCampaignState(operation: () => Promise<void> | void): Promise<void> {
   const directory = await mkdtemp(join(tmpdir(), "relay-combine-campaign-recovery-"));
   const previous = process.env.RELAY_STATE_DIR;
@@ -369,4 +468,14 @@ test("restart recovery blocks a Combine cell that had already begun execution", 
       assert.equal(projected.status, "needs-review");
     });
   });
+});
+
+test("expanded selective retries reject ambiguous authored cell scope", () => {
+  const campaign = fixture("passed");
+  campaign.cases[0] = { ...campaign.cases[0]!, executionCaseId: "case:profile-a" };
+  campaign.execution.selectedExecutionCaseIds = ["case:profile-a"];
+  assert.throws(
+    () => prepareSelectedCombineCampaignResume(campaign, { cellIds: [campaign.cases[0]!.cellId] }),
+    /execution case ids/u,
+  );
 });

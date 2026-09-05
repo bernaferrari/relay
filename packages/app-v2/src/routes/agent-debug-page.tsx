@@ -84,12 +84,34 @@ export function AgentDebugPage() {
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!title.trim() || !targetReady) return;
+    const origin =
+      contextualRunId && report.data && failureStep
+        ? {
+            schemaVersion: 1 as const,
+            source: {
+              runId: contextualRunId,
+              attempt: failureStep.attempt ?? 1,
+              stepId: failureStep.id,
+            },
+            evidenceRefs: report.data.evidence
+              .flatMap((section) => section.items.map((item) => item.id))
+              .slice(0, 64),
+            configRefs: Object.entries(report.data.executionContext ?? {})
+              .filter(
+                (entry): entry is [string, string] =>
+                  typeof entry[1] === "string" && entry[1].length > 0,
+              )
+              .map(([key, value]) => `${key}:${value}`)
+              .slice(0, 64),
+          }
+        : undefined;
     start.mutate({
       kind: "debug-bug",
       action: "start",
       title: title.trim(),
       targetId,
       confirmControl: true,
+      ...(origin ? { debugOrigin: origin } : {}),
     });
   }
 

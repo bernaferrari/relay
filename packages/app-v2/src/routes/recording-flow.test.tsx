@@ -368,6 +368,30 @@ describe("record, review, replay, and save", () => {
     expect(document.querySelector("#test-name")).toBeNull();
   });
 
+  it("uses the changed URL app in both the selection and recording submission", async () => {
+    const fake = fakeService();
+    fake.service.listApps = async () => [
+      { id: "app-1", name: "Grok" },
+      { id: "app-2", name: "Relay Demo" },
+    ];
+    const { history } = await renderJourney(
+      "/tests/new?app=app-1",
+      fake.service,
+      platformWithStorage().platform,
+    );
+    await act(async () => {
+      history.push("/tests/new?app=app-2");
+    });
+    await settle();
+    const choices = [...document.querySelectorAll<HTMLInputElement>('input[name="app"]')];
+    expect(choices[1]?.checked).toBe(true);
+    await click(document.querySelector<HTMLInputElement>('input[name="target"]')!);
+    await click(button("Start recording"));
+    expect(fake.calls.some((call) => call.startsWith("begin:") && call.includes(":app-2:"))).toBe(
+      true,
+    );
+  });
+
   it("selects app cards with one click and supports arrow-key radio navigation", async () => {
     const fake = fakeService();
     fake.service.listApps = async () => [
@@ -468,6 +492,57 @@ describe("record, review, replay, and save", () => {
       ]),
     );
     expect(fake.calls.filter((call) => call === "input:key").length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("drains a delayed live input before Stop and review", async () => {
+    const fake = fakeService();
+    const originalLiveTarget = fake.service.liveTarget!;
+    let releaseInput!: () => void;
+    let inputStarted = false;
+    const inputGate = new Promise<void>((resolve) => {
+      releaseInput = resolve;
+    });
+    fake.service.liveTarget = async (selected) => {
+      const session = await originalLiveTarget(selected);
+      return {
+        ...session,
+        async input(input) {
+          if (input.kind === "key") {
+            inputStarted = true;
+            await inputGate;
+          }
+          await session.input(input);
+        },
+      };
+    };
+
+    const { history } = await renderJourney(
+      "/tests/new",
+      fake.service,
+      platformWithStorage().platform,
+    );
+    await beginRecording();
+    await fill(
+      document.querySelector<HTMLInputElement>('input[placeholder="Type into the target"]')!,
+      "Arabic",
+    );
+    await click(button("Type"));
+    expect(inputStarted).toBe(true);
+
+    await act(async () => {
+      button("Stop").click();
+    });
+    await settle();
+    expect(fake.calls).not.toContain("stop");
+    expect(document.body.textContent).toContain("Finishing interaction…");
+    expect(history.location.pathname).toBe("/recordings/workflow-1");
+
+    releaseInput();
+    await settle();
+    await settle();
+    expect(history.location.pathname).toBe("/recordings/workflow-1/review");
+    expect(document.body.textContent).toContain("2 recorded moments");
+    expect(fake.calls.indexOf("input:key")).toBeLessThan(fake.calls.indexOf("stop"));
   });
 
   it("renames a recorded action through the canonical edit transition", async () => {
@@ -609,6 +684,18 @@ describe("record, review, replay, and save", () => {
 
     await click(button("Start recording"));
     expect(history.location.pathname).toBe("/recordings/workflow-1");
+  });
+
+  it("restores a compatible returning-user app and target default", async () => {
+    const fake = fakeService();
+    const storage = platformWithStorage({
+      newTestDraft: JSON.stringify({ appId: "app-1", targetId: "emulator-5554" }),
+    });
+    await renderJourney("/tests/new", fake.service, storage.platform);
+
+    expect(document.querySelector<HTMLInputElement>('input[name="app"]')?.checked).toBe(true);
+    expect(document.querySelector<HTMLInputElement>('input[name="target"]')?.checked).toBe(true);
+    expect(button("Start recording").disabled).toBe(false);
   });
 
   it("uses the route parameter to adopt a recording after refresh", async () => {

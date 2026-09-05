@@ -10,12 +10,18 @@ import {
 import { ScrollArea } from "@relay/ui-react/components/scroll-area";
 import { Field, FieldDescription, FieldLabel } from "@relay/ui-react/components/field";
 import { Button } from "@relay/ui-react/components/button";
+import { PageHeader } from "../components/page-layout";
+import { Breadcrumbs } from "../components/product-patterns";
 import { Input } from "@relay/ui-react/components/input";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ArrowLeft, BookmarkPlus, CheckCircle2, Circle, Square } from "lucide-react";
-import type { LiveTargetSession, LiveTargetStatus } from "../data/live-target-session";
+import type {
+  LiveTargetBrowserContext,
+  LiveTargetSession,
+  LiveTargetStatus,
+} from "../data/live-target-session";
 import { recordingQueryKeys, refreshRecording } from "../data/recording-queries";
 import { clearWorkflowPointerIfCurrent, writeWorkflowPointer } from "../data/workflow-pointer";
 import { LiveTargetCanvas } from "./live-target-canvas";
@@ -53,6 +59,7 @@ function RecordingWorkspace({
   const [checkpointLabel, setCheckpointLabel] = useState("");
   const liveCanvas = useRef<HTMLCanvasElement>(null);
   const [liveStatus, setLiveStatus] = useState<LiveTargetStatus>("idle");
+  const [browserContext, setBrowserContext] = useState<LiveTargetBrowserContext>();
   const [liveIssue, setLiveIssue] = useState<string>();
   const [liveInputBusy, setLiveInputBusy] = useState(false);
   const [stopWaitingForInput, setStopWaitingForInput] = useState(false);
@@ -147,6 +154,7 @@ function RecordingWorkspace({
     let stop: (() => void) | undefined;
     let unsubscribe: (() => void) | undefined;
     let mountedSession: LiveTargetSession | undefined;
+    setBrowserContext(undefined);
     void createLiveTarget(selectedTarget)
       .then((session) => {
         if (disposed || !liveCanvas.current) {
@@ -158,6 +166,7 @@ function RecordingWorkspace({
         unsubscribe = session.subscribe((next) => {
           setLiveStatus(next.status);
           setLiveIssue(next.issue ? liveIssueMessage(next.issue) : undefined);
+          setBrowserContext(next.browserContext);
         });
         stop = session.mount(liveCanvas.current);
       })
@@ -231,20 +240,8 @@ function RecordingWorkspace({
 
   return (
     <section className="grid h-dvh w-full grid-rows-[auto_minmax(0,1fr)_auto] bg-background">
-      <header className="grid min-h-[68px] grid-cols-[minmax(120px,1fr)_auto_minmax(120px,1fr)] items-center gap-5 border-b border-border px-5 py-2 relay-electron-drag [-webkit-app-region:drag]">
+      <div className="border-b border-border px-5 py-2 relay-electron-drag [-webkit-app-region:drag] [&_.relay-workspace-header]:mb-0 [&_.relay-workspace-header]:mt-0">
         <Dialog open={exitOpen} onOpenChange={setExitOpen}>
-          <DialogTrigger
-            render={
-              <Button
-                className="inline-flex min-h-11 w-fit items-center text-muted-foreground relay-electron-no-drag [-webkit-app-region:no-drag]"
-                variant="ghost"
-                size="sm"
-              />
-            }
-          >
-            <ArrowLeft aria-hidden="true" />
-            Leave recording
-          </DialogTrigger>
           <DialogContent showCloseButton={false}>
             <DialogTitle>Leave this recording?</DialogTitle>
             <DialogDescription>
@@ -279,23 +276,57 @@ function RecordingWorkspace({
               </Button>
             </div>
           </DialogContent>
-        </Dialog>
-        <div className="flex items-center justify-self-center gap-2.5">
-          <span
-            className={captureReady ? "relay-recording-dot" : "relay-recording-idle-dot"}
-            aria-hidden="true"
+          <Breadcrumbs
+            items={[
+              { label: "Tests", to: "/tests" },
+              {
+                label: snapshot?.title ?? (exitDestination.kind === "new" ? "Record Test" : "Test"),
+              },
+              { label: "Record" },
+            ]}
           />
-          <div>
-            <p>{captureReady ? "Recording" : "Restoring recording"}</p>
-            <h1 className="text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance]">
-              {snapshot?.title ?? "Preparing Test"}
-            </h1>
-          </div>
-        </div>
-        <span className="justify-self-end text-xs text-muted-foreground" role="status">
-          {snapshot?.progress.label ?? "Connecting…"}
-        </span>
-      </header>
+          <PageHeader
+            title={snapshot?.title ?? "Preparing Test"}
+            context={
+              <>
+                <span className="inline-flex items-center gap-1.5">
+                  <span
+                    className={captureReady ? "relay-recording-dot" : "relay-recording-idle-dot"}
+                    aria-hidden="true"
+                  />
+                  {captureReady ? "Recording" : "Restoring recording"}
+                </span>
+                <span>{snapshot?.progress.label ?? "Connecting…"}</span>
+              </>
+            }
+            actions={
+              <>
+                <DialogTrigger
+                  render={
+                    <Button
+                      className="inline-flex min-h-11 w-fit text-muted-foreground relay-electron-no-drag [-webkit-app-region:no-drag]"
+                      variant="ghost"
+                      size="sm"
+                    />
+                  }
+                >
+                  <ArrowLeft aria-hidden="true" />
+                  Leave recording
+                </DialogTrigger>
+                <Button
+                  className="relay-electron-no-drag [-webkit-app-region:no-drag]"
+                  variant="default"
+                  size="sm"
+                  onClick={() => void stopAfterInputDrain()}
+                  disabled={!allowed.has("stop") || action.isPending || stopWaitingForInput}
+                >
+                  {stopWaitingForInput ? "Finishing interaction…" : "Stop and review"}
+                </Button>
+              </>
+            }
+          />
+        </Dialog>
+      </div>
 
       <div className="min-h-0 overflow-auto p-[clamp(20px,4vw,44px)]">
         {recording.isPending ? <PageLoading label="Restoring the recording…" /> : null}
@@ -320,6 +351,7 @@ function RecordingWorkspace({
                   busy={liveInputBusy}
                   targetTitle={targetLabel(targetPresentation.data?.[0] ?? selectedTarget).title}
                   targetDetail={targetLabel(targetPresentation.data?.[0] ?? selectedTarget).detail}
+                  browserContext={browserContext}
                   send={sendLiveInput}
                 />
               ) : null}

@@ -437,3 +437,27 @@ test("failure clusters and selective rerun stay bounded and evidence-gated", asy
     /cannot be rerun/u,
   );
 });
+
+test("expanded Batch identities rerun only the selected profile case", () => {
+  const batch = {
+    id: "batch-expanded",
+    cases: [
+      {
+        id: "case-profile-a",
+        executionCaseId: "case-profile-a",
+        values: { language: "en" },
+        status: "failed" as const,
+        runId: "run-a",
+      },
+      {
+        id: "case-profile-b",
+        executionCaseId: "case-profile-b",
+        values: { language: "en" },
+        status: "failed" as const,
+        runId: "run-b",
+      },
+    ],
+  } as never;
+  const selected = selectProductBatchCases(batch, { executionCaseIds: ["case-profile-b"] });
+  assert.deepEqual(selected.caseIds, ["case-profile-b"]);
+});

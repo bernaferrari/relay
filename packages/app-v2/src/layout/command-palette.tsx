@@ -23,7 +23,7 @@ import {
   Search,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type RefObject } from "react";
 import { recordingQueryKeys } from "../data/recording-queries";
 import { readWorkflowPointer } from "../data/workflow-pointer";
 
@@ -111,9 +111,11 @@ export function commandMatches(
 export function CommandPalette({
   open,
   onOpenChange,
+  returnFocus,
 }: {
   open: boolean;
   onOpenChange(open: boolean): void;
+  returnFocus?: RefObject<HTMLElement | null>;
 }) {
   const router = useRouter();
   const { platform, productService, catalogService } = useRouteContext({ from: "__root__" });
@@ -227,6 +229,7 @@ export function CommandPalette({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
+        finalFocus={returnFocus}
         showCloseButton={false}
         className="relay-command-palette w-[min(620px,calc(100vw-32px))] max-h-[min(620px,calc(100dvh-48px))] overflow-hidden rounded-[var(--radius-xl)] p-0 shadow-[var(--shadow-lg)]"
       >

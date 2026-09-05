@@ -9,6 +9,7 @@ import { RelayV2App } from "../app";
 import type { CatalogProductService } from "../data/catalog-product-service";
 import type { ChangeProductService } from "../data/change-product-service";
 import type { RecordingProductService } from "../data/recording-product-service";
+import type { RunProductService } from "../data/run-product-service";
 import type { Platform } from "../platform/types";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -53,6 +54,7 @@ function catalog(
   tests: readonly ProductTestSummary[] = [],
   runsUnavailable = false,
   testsUnavailable = false,
+  onRunsRead?: () => void,
 ): CatalogProductService {
   return {
     listTests: async () => {
@@ -61,6 +63,7 @@ function catalog(
     },
     getTest: async () => undefined,
     listRuns: async () => {
+      onRunsRead?.();
       if (runsUnavailable) throw new Error("workspace unavailable");
       return runs;
     },
@@ -92,10 +95,12 @@ async function renderShell(input: {
   runsUnavailable?: boolean;
   testsUnavailable?: boolean;
   changes?: readonly ProductChange[];
+  onRunsRead?: () => void;
+  initialEntries?: string[];
 }) {
   const host = document.createElement("div");
   document.body.append(host);
-  const history = createMemoryHistory({ initialEntries: ["/home"] });
+  const history = createMemoryHistory({ initialEntries: input.initialEntries ?? ["/home"] });
   const root = createRoot(host);
   roots.push(root);
   await act(async () => {
@@ -104,11 +109,27 @@ async function renderShell(input: {
         platform={platform()}
         history={history}
         productService={recording()}
+        runService={
+          {
+            getTest: async () => undefined,
+            listTargets: async () => [],
+            restore: async () => undefined,
+            inspectExecution: async () => null,
+            getReport: async (runId: string) => ({
+              runId,
+              testId: "test-1",
+              title: "Checkout result",
+              timeline: [],
+              evidence: [],
+            }),
+          } as unknown as RunProductService
+        }
         catalogService={catalog(
           input.runs ?? [],
           input.tests ?? [],
           input.runsUnavailable,
           input.testsUnavailable,
+          input.onRunsRead,
         )}
         changeService={changes(input.changes ?? [])}
       />,
@@ -174,7 +195,13 @@ describe("shell overlays", () => {
   });
 
   it("marks closed Activity unavailable and offers an in-place retry", async () => {
-    await renderShell({ runsUnavailable: true });
+    let reads = 0;
+    await renderShell({
+      runsUnavailable: true,
+      onRunsRead: () => {
+        reads += 1;
+      },
+    });
 
     const trigger = document.querySelector<HTMLButtonElement>(
       'button[aria-label^="Open Activity Center"]',
@@ -188,8 +215,11 @@ describe("shell overlays", () => {
       button.textContent?.includes("Try again"),
     );
     expect(retry).toBeTruthy();
+    const before = reads;
     await act(async () => retry?.click());
-    expect(retry?.textContent).toContain("Refreshing");
+    await settle();
+    expect(reads).toBeGreaterThan(before);
+    expect(document.body.textContent).toContain("Activity is unavailable");
   });
 
   it("opens the command palette with the keyboard, searches, and navigates", async () => {
@@ -298,5 +328,67 @@ describe("shell overlays", () => {
     });
     await settle();
     expect(history.location.pathname).toBe("/versions");
+  });
+  it("wraps keyboard selection and returns focus when Escape closes the palette", async () => {
+    await renderShell({});
+    const trigger = document.querySelector<HTMLButtonElement>(
+      '[aria-label="Open command palette"]',
+    );
+    expect(trigger).toBeTruthy();
+    trigger!.focus();
+    await act(async () => {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true }),
+      );
+    });
+    await settle();
+    const input = document.querySelector<HTMLInputElement>('input[aria-label="Search commands"]')!;
+    const options = [...document.querySelectorAll('[role="option"]')];
+    expect(options.length).toBeGreaterThan(1);
+    await act(async () => {
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }));
+    });
+    expect(input.getAttribute("aria-activedescendant")).toBe(options.at(-1)!.id);
+    await act(async () => {
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+    });
+    expect(input.getAttribute("aria-activedescendant")).toBe(options[0]!.id);
+    await act(async () => {
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    await settle();
+    expect(document.querySelector('input[aria-label="Search commands"]')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it.each([
+    ["Home", ["/home", "/runs/run-1"], "/home", ""],
+    [
+      "filtered history",
+      ["/runs?view=failed&q=checkout", "/runs/run-1"],
+      "/runs",
+      "?view=failed&q=checkout",
+    ],
+    ["Test", ["/tests/test-1", "/runs/run-1"], "/tests/test-1", ""],
+    ["fresh deep link", ["/runs/run-1"], "/runs", ""],
+  ])("returns from a Report through %s with global Back", async (_label, entries, path, search) => {
+    const history = await renderShell({ initialEntries: entries as string[] });
+    const back = document.querySelector<HTMLButtonElement>('[aria-label="Go back"]');
+    expect(back?.disabled).toBe(false);
+    await act(async () => back!.click());
+    await settle();
+    expect(history.location.pathname).toBe(path);
+    expect(history.location.search).toBe(search);
+  });
+
+  it("View test opens the Test without substituting browser Back", async () => {
+    const history = await renderShell({ initialEntries: ["/home", "/runs/run-1"] });
+    const link = [...document.querySelectorAll<HTMLAnchorElement>("a")].find((item) =>
+      item.textContent?.includes("View test"),
+    );
+    expect(link?.getAttribute("href")).toBe("/tests/test-1");
+    await act(async () => link!.click());
+    await settle();
+    expect(history.location.pathname).toBe("/tests/test-1");
   });
 });

@@ -17,7 +17,7 @@ import type { RunProductService } from "../data/run-product-service";
 import { definitions, type FixtureName } from "./fixture-routes";
 import { fixtureSettingsService } from "./settings-fixture";
 import { fixtureChangeService } from "./change-fixture";
-import { failedReport } from "./report-fixture";
+import { failedReport, videoReport } from "./report-fixture";
 import { activeRecordingState, createActiveRecordingTarget } from "./active-recording-fixture";
 import { createWorkflowFixture } from "./workflow-fixture";
 import type { LiveTargetSnapshot } from "../data/live-target-session";
@@ -424,7 +424,7 @@ const defaultRunService = {
       detail: "Android emulator · Ready",
     },
   ],
-  getReport: async () => failedReport,
+  getReport: async () => (fixture === "report-video" ? videoReport : failedReport),
   replay: async () => ({ jobId: "replay-checkout" }),
   getReplayJob: async () => ({ status: "running" }),
   cancelReplay: async () => undefined,

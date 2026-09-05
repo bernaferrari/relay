@@ -42,6 +42,7 @@ export * from "./control.js";
 export * from "./retry.js";
 export * from "./collaboration.js";
 export * from "./combine-campaign.js";
+export * from "./combine-campaign-case-identity.js";
 export * from "./combine-causal-rerun.js";
 export * from "./repeat-failure-clusters.js";
 export * from "./presence.js";

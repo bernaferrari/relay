@@ -64,11 +64,15 @@ function parseSelection(raw: string | null): RunConfigurationSelection {
   const ids = (value: unknown): string[] | undefined =>
     Array.isArray(value) && value.every((id) => typeof id === "string") ? value : undefined;
   return {
+    ...(typeof record.targetId === "string" ? { targetId: record.targetId } : {}),
+    ...(typeof record.savedProfileId === "string" ? { savedProfileId: record.savedProfileId } : {}),
     ...(typeof record.targetProfileId === "string"
       ? { targetProfileId: record.targetProfileId }
       : {}),
     ...(ids(record.targetProfileIds) ? { targetProfileIds: ids(record.targetProfileIds) } : {}),
     ...(ids(record.dataSetIds) ? { dataSetIds: ids(record.dataSetIds) } : {}),
+    ...(typeof record.buildId === "string" ? { buildId: record.buildId } : {}),
+    ...(record.startupMode === "cold" ? { startupMode: "cold" as const } : {}),
   };
 }
 
@@ -176,7 +180,12 @@ export function usePersistedRunConfiguration({
     };
   }, [key, storage, selection, loaded, edited, attempt]);
   const selectedIds =
-    selection.targetProfileIds ?? (selection.targetProfileId ? [selection.targetProfileId] : []);
+    selection.targetProfileIds ??
+    (selection.targetId
+      ? [selection.targetId]
+      : selection.targetProfileId
+        ? [selection.targetProfileId]
+        : []);
   const targetUnavailable = Boolean(
     targetOptions && selectedIds.some((id) => !targetOptions.some((item) => item.id === id)),
   );

@@ -23,9 +23,14 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useRouteContext } from "@tanstack/react-router";
 import { CircleAlert, Pencil, RefreshCcw, Square, MoreHorizontal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { PageHeader } from "../components/page-layout";
 import { Breadcrumbs, EmptyState } from "../components/product-patterns";
 import { sessionQueryKeys, type ProductSessionDetail } from "../data/session-product-service";
-import type { LiveTargetSession, LiveTargetStatus } from "../data/live-target-session";
+import type {
+  LiveTargetBrowserContext,
+  LiveTargetSession,
+  LiveTargetStatus,
+} from "../data/live-target-session";
 import { LiveTargetCanvas } from "./live-target-canvas";
 import { PageLoading, RecordingProblem, errorMessage } from "./recording-shared";
 import { isActiveSession, sessionStateLabel } from "./sessions-page";
@@ -38,6 +43,7 @@ export function SessionPage() {
   const canvas = useRef<HTMLCanvasElement>(null);
   const live = useRef<LiveTargetSession | undefined>(undefined);
   const [liveStatus, setLiveStatus] = useState<LiveTargetStatus>("idle");
+  const [browserContext, setBrowserContext] = useState<LiveTargetBrowserContext>();
   const [liveIssue, setLiveIssue] = useState<string>();
   const [liveBusy, setLiveBusy] = useState(false);
   const [liveAttempt, setLiveAttempt] = useState(0);
@@ -79,6 +85,7 @@ export function SessionPage() {
     let mounted: LiveTargetSession | undefined;
     setLiveStatus("connecting");
     setLiveIssue(undefined);
+    setBrowserContext(undefined);
     void sessionService
       .live(sessionId)
       .then((next) => {
@@ -91,6 +98,7 @@ export function SessionPage() {
         unsubscribe = next.subscribe((snapshot) => {
           setLiveStatus(snapshot.status);
           setLiveIssue(snapshot.issue);
+          setBrowserContext(snapshot.browserContext);
         });
         unmount = next.mount(canvas.current);
       })
@@ -136,20 +144,21 @@ export function SessionPage() {
         ]}
       />
       {value ? (
-        <header className="relay-page-header relative grid grid-cols-[minmax(0,1fr)_auto] items-start gap-4">
-          <div>
-            <div className="mb-3 flex items-center gap-3 text-xs text-text-weak">
+        <PageHeader
+          title={value.title}
+          context={
+            <>
               <span>Session</span>
               <Badge
                 variant={sessionBadgeVariant(
-                  value.state === "failed"
+                  value.state === "failed" || (isActiveSession(value) && !canControl)
                     ? "warning"
                     : isActiveSession(value)
                       ? "success"
                       : "secondary",
                 )}
                 className={sessionBadgeClass(
-                  value.state === "failed"
+                  value.state === "failed" || (isActiveSession(value) && !canControl)
                     ? "warning"
                     : isActiveSession(value)
                       ? "success"
@@ -157,86 +166,88 @@ export function SessionPage() {
                 )}
               >
                 {sessionStateLabel(value.state)}
+                {isActiveSession(value) && !canControl ? " · Reconnect needed" : ""}
               </Badge>
-            </div>
-            <h1 className="text-[clamp(24px,2.4vw,28px)] font-semibold leading-[1.2] tracking-tight text-text-strong wrap-anywhere">
-              {value.title}
-            </h1>
-            <p className="relay-page-description mt-2.5 max-w-[62ch] text-[15px] leading-[1.55] text-[var(--text-weak)]">
-              {targetLabel(value)} · {value.actorKind === "agent" ? "Agent-owned" : "Human-owned"}
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center justify-end gap-2 max-[620px]:col-span-full">
-            {canControl ? (
-              <Button
-                variant="outline"
-                onClick={() => refresh.mutate()}
-                disabled={refresh.isPending}
-              >
-                <RefreshCcw aria-hidden="true" />
-                {refresh.isPending ? "Refreshing…" : "Refresh target"}
-              </Button>
-            ) : null}
-            {canControl && value.committedTestId ? (
-              <Button
-                variant="default"
-                nativeButton={false}
-                render={
-                  <Link
-                    to="/tests/$testId/edit"
-                    params={{ testId: value.committedTestId }}
-                    search={{ session: value.id }}
-                  />
-                }
-              >
-                <Pencil aria-hidden="true" /> Edit Test live
-              </Button>
-            ) : null}
-            {isActiveSession(value) ? (
-              <DropdownMenu>
-                <DropdownMenuTrigger
+            </>
+          }
+          description={
+            <>
+              {targetLabel(value)} · {value.actorKind === "agent" ? "Agent-controlled" : "Manual"}
+            </>
+          }
+          actions={
+            <>
+              {canControl ? (
+                <Button
+                  variant="outline"
+                  onClick={() => refresh.mutate()}
+                  disabled={refresh.isPending}
+                >
+                  <RefreshCcw aria-hidden="true" />
+                  {refresh.isPending ? "Refreshing…" : "Refresh target"}
+                </Button>
+              ) : null}
+              {canControl && value.committedTestId ? (
+                <Button
+                  variant="default"
+                  nativeButton={false}
                   render={
-                    <Button variant="outline" aria-label="Session actions">
-                      <MoreHorizontal aria-hidden="true" /> More
-                    </Button>
+                    <Link
+                      to="/tests/$testId/edit"
+                      params={{ testId: value.committedTestId }}
+                      search={{ session: value.id }}
+                    />
                   }
-                />
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem
-                    render={<Link to="/debug" search={{ target: value.target.targetId }} />}
-                  >
-                    Investigate
-                  </DropdownMenuItem>
-                  <DropdownMenuItem variant="destructive" onClick={() => setEndOpen(true)}>
-                    <Square aria-hidden="true" /> End Session
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            ) : null}
-            {isActiveSession(value) ? (
-              <Dialog open={endOpen} onOpenChange={setEndOpen}>
-                <DialogContent showCloseButton={false}>
-                  <DialogTitle>End this Session?</DialogTitle>
-                  <DialogDescription>
-                    Relay will stop this active authoring Session. Saved evidence and its history
-                    remain available.
-                  </DialogDescription>
-                  <div className="relay-form-actions flex flex-wrap items-center gap-2.5 relay-form-actions--end">
-                    <DialogClose render={<Button variant="ghost">Keep Session</Button>} />
-                    <Button
-                      className="relay-session-end-button"
-                      variant="outline"
-                      onClick={() => end.mutate()}
-                      disabled={end.isPending}
+                >
+                  <Pencil aria-hidden="true" /> Edit Test live
+                </Button>
+              ) : null}
+              {isActiveSession(value) ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    render={
+                      <Button variant="outline" aria-label="Session actions">
+                        <MoreHorizontal aria-hidden="true" /> More
+                      </Button>
+                    }
+                  />
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      render={<Link to="/debug" search={{ target: value.target.targetId }} />}
                     >
-                      {end.isPending ? "Ending…" : "End Session"}
-                    </Button>
-                  </div>
-                </DialogContent>
-              </Dialog>
-            ) : null}
-          </div>
-        </header>
+                      Investigate
+                    </DropdownMenuItem>
+                    <DropdownMenuItem variant="destructive" onClick={() => setEndOpen(true)}>
+                      <Square aria-hidden="true" /> End Session
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : null}
+              {isActiveSession(value) ? (
+                <Dialog open={endOpen} onOpenChange={setEndOpen}>
+                  <DialogContent showCloseButton={false}>
+                    <DialogTitle>End this Session?</DialogTitle>
+                    <DialogDescription>
+                      Relay will stop this active authoring Session. Saved evidence and its history
+                      remain available.
+                    </DialogDescription>
+                    <div className="relay-form-actions flex flex-wrap items-center gap-2.5 relay-form-actions--end">
+                      <DialogClose render={<Button variant="ghost">Keep Session</Button>} />
+                      <Button
+                        className="relay-session-end-button"
+                        variant="outline"
+                        onClick={() => end.mutate()}
+                        disabled={end.isPending}
+                      >
+                        {end.isPending ? "Ending…" : "End Session"}
+                      </Button>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              ) : null}
+            </>
+          }
+        />
       ) : null}
 
       {session.isPending ? <PageLoading label="Loading Session…" /> : null}
@@ -334,7 +345,8 @@ export function SessionPage() {
                 issue={liveIssue}
                 busy={liveBusy}
                 targetTitle={targetLabel(value)}
-                targetDetail={`Owned by ${value.actorId} · ${sessionProfileContext(value)}`}
+                targetDetail={`${value.target.kind === "browser" ? "Managed browser" : "Managed device"} · ${value.actorKind === "agent" ? "Agent-owned session" : "Human-owned session"}`}
+                browserContext={browserContext}
                 send={send}
                 recording={false}
                 helpText="Inspecting live state. These controls do not add Test steps. Open the Test editor or recording workspace to capture steps. Enter and Backspace are supported keys."
@@ -387,10 +399,8 @@ export function SessionPage() {
                   <dd className="break-words text-sm font-medium">{targetLabel(value)}</dd>
                 </div>
                 <div className="grid gap-0.5">
-                  <dt className="text-xs text-muted-foreground">Profile</dt>
-                  <dd className="break-words text-sm font-medium">
-                    {sessionProfileContext(value)}
-                  </dd>
+                  <dt className="text-xs text-muted-foreground">Workspace mode</dt>
+                  <dd className="break-words text-sm font-medium">Inspect only</dd>
                 </div>
                 <div className="grid gap-0.5">
                   <dt className="text-xs text-muted-foreground">App</dt>
@@ -493,12 +503,6 @@ function targetLabel(session: ProductSessionDetail): string {
         ? "iOS"
         : "Android";
   return `${platform} · ${session.target.targetId}`;
-}
-
-function sessionProfileContext(session: ProductSessionDetail): string {
-  return session.target.kind === "browser"
-    ? "Browser profile unavailable"
-    : "Device profile unavailable";
 }
 
 function sessionAvailability(session: ProductSessionDetail): string {

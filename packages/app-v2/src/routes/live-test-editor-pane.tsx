@@ -5,7 +5,7 @@ import { Link } from "@tanstack/react-router";
 import { RadioTower } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { LiveTestEditorSession } from "../data/live-test-editor-product-service";
-import type { LiveTargetStatus } from "../data/live-target-session";
+import type { LiveTargetBrowserContext, LiveTargetStatus } from "../data/live-target-session";
 import { LiveTargetCanvas } from "./live-target-canvas";
 import { PageLoading, errorMessage } from "./recording-shared";
 
@@ -20,15 +20,22 @@ export function LiveTestEditorPane({
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [status, setStatus] = useState<LiveTargetStatus>("idle");
+  const [browserContext, setBrowserContext] = useState<LiveTargetBrowserContext>();
   const [issue, setIssue] = useState<string>();
   const [busy, setBusy] = useState(false);
   const target = session?.liveTarget;
 
   useEffect(() => {
-    if (!target || !canvas.current) return;
-    setStatus(target.snapshot().status);
+    if (!target || !canvas.current) {
+      setBrowserContext(undefined);
+      return;
+    }
+    const initial = target.snapshot();
+    setStatus(initial.status);
+    setBrowserContext(initial.browserContext);
     const unsubscribe = target.subscribe((snapshot) => {
       setStatus(snapshot.status);
+      setBrowserContext(snapshot.browserContext);
       setIssue(snapshot.issue);
     });
     const unmount = target.mount(canvas.current);
@@ -84,7 +91,7 @@ export function LiveTestEditorPane({
       ) : null}
       {session ? (
         <>
-          <div className="text-sm text-muted-foreground">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Badge
               variant="secondary"
               className={
@@ -97,7 +104,10 @@ export function LiveTestEditorPane({
             >
               {status === "streaming" ? "Live" : status}
             </Badge>
-            <span>{session.authoring.target.targetId}</span>
+            <span>
+              {session.authoring.target.kind === "browser" ? "Managed browser" : "Managed device"} ·{" "}
+              {session.authoring.target.targetId}
+            </span>
           </div>
           <LiveTargetCanvas
             canvasRef={canvas}
@@ -105,11 +115,10 @@ export function LiveTestEditorPane({
             issue={issue}
             busy={busy}
             targetTitle={session.authoring.title}
-            targetDetail={`Owned by ${session.authoring.actorId} · ${
-              session.authoring.target.kind === "browser"
-                ? "Browser profile unavailable"
-                : "Device profile unavailable"
+            targetDetail={`Owned by ${session.authoring.actorKind === "agent" ? "Agent" : "Human"} · ${
+              session.authoring.target.kind === "browser" ? "Managed browser" : "Managed device"
             }`}
+            browserContext={browserContext}
             send={send}
             recording={session.capabilities.record}
             helpText={

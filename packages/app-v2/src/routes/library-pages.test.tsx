@@ -202,7 +202,7 @@ describe("App overview", () => {
 
     expect(filters).toContain("tests:app-shop-internal");
     expect(filters).toContain("runs:app-shop-internal");
-    expect(document.body.textContent).toContain("Saved journeys");
+    expect(document.body.textContent).toContain("Saved tests");
     expect(document.body.textContent).toContain("Recent results");
     expect(document.body.textContent).toContain("2 of 3");
     expect(document.querySelector('a[href="/tests/new?app=app-shop-internal"]')).not.toBeNull();

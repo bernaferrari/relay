@@ -2,7 +2,11 @@ import { randomUUID } from "node:crypto";
 import { mkdir, open, readFile, readdir, rename, rm, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import type { AuthoringSession } from "@relay/protocol";
-import { authoringCaptureProvenance, serializeAuthoringSession } from "@relay/protocol";
+import {
+  authoringCaptureProvenance,
+  parseAuthoringDebugOrigin,
+  serializeAuthoringSession,
+} from "@relay/protocol";
 import { findWorkspaceRoot } from "./workspace-root.js";
 
 function sessionsRoot(): string {
@@ -61,6 +65,7 @@ function parseAuthoringSession(value: unknown): AuthoringSession | null {
   return {
     ...(input as AuthoringSession),
     captureProvenance: authoringCaptureProvenance(input.captureProvenance),
+    ...(input.debugOrigin ? { debugOrigin: parseAuthoringDebugOrigin(input.debugOrigin) } : {}),
   };
 }
 

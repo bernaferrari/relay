@@ -59,6 +59,7 @@ const fixtures = [
   { id: "runs-large", heading: "Run history" },
   { id: "report-replay", heading: "Complete checkout" },
   { id: "report-failed", heading: "Complete checkout" },
+  { id: "report-video", heading: "Complete checkout", video: true },
   { id: "report-evidence", heading: "Complete checkout", evidenceMedia: true },
   { id: "batch-completed", heading: "Checkout across saved accounts", batch: true },
   { id: "sessions-list", heading: "Live" },
@@ -320,6 +321,17 @@ async function assertLayout(page, fixture, viewport) {
         `Run history rendered ${renderedCount} of 240 rows instead of a bounded window`,
       );
     }
+    const rowGeometry = await renderedReports.evaluateAll((rows) =>
+      rows.slice(0, 3).map((row) => {
+        const rect = row.getBoundingClientRect();
+        return { top: rect.top, bottom: rect.bottom };
+      }),
+    );
+    for (let index = 1; index < rowGeometry.length; index++) {
+      if (Math.abs(rowGeometry[index].top - rowGeometry[index - 1].bottom) > 2) {
+        throw new Error(`Run history rows overlap or leave gaps: ${JSON.stringify(rowGeometry)}`);
+      }
+    }
     await renderedReports.first().focus();
     await page.keyboard.press("End");
     await page.waitForFunction(
@@ -339,6 +351,23 @@ async function assertLayout(page, fixture, viewport) {
         ".relay-windowed-run-scroll [data-slot='scroll-area-viewport']",
       );
       if (viewport) viewport.scrollTop = 0;
+      const main = document.querySelector("#main-content");
+      if (main) main.scrollTop = 0;
+    });
+  }
+  if (fixture.video) {
+    await page.waitForFunction(() => {
+      const video = document.querySelector("video");
+      return video instanceof HTMLVideoElement && video.readyState >= 2 && video.duration > 0;
+    });
+    await page.getByRole("button", { name: "Confirmation timeout", exact: true }).click();
+    await page.waitForFunction(() => {
+      const video = document.querySelector("video");
+      return (
+        video instanceof HTMLVideoElement && !video.seeking && Math.abs(video.currentTime - 2) < 0.1
+      );
+    });
+    await page.evaluate(() => {
       const main = document.querySelector("#main-content");
       if (main) main.scrollTop = 0;
     });
@@ -435,6 +464,10 @@ async function run(options) {
       });
       const page = await context.newPage();
       await page.addInitScript(() => {
+        // Every fixture owns its starting state, including when run alone.
+        // Navigation keeps the context, but previous recordings must not leak.
+        localStorage.clear();
+        sessionStorage.clear();
         const fixedNow = 1_788_390_000_000;
         const NativeDate = Date;
         class FixedDate extends NativeDate {

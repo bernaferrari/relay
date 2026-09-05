@@ -693,6 +693,10 @@ export const operationInputSchemas = {
       reviewed: z.boolean().optional(),
       expectedAppMapRevision: z.number().int().nonnegative().optional(),
       cellIds: z.array(identifier("Repeat rerun cell identifier")).max(1_000).optional(),
+      executionCaseIds: z
+        .array(identifier("Repeat rerun execution case identifier"))
+        .max(1_000)
+        .optional(),
       clusterIds: z.array(identifier("Repeat failure cluster identifier")).max(1_000).optional(),
       workflowMutation: repeatWorkflowMutationSchema.optional(),
     })

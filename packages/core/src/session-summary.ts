@@ -94,6 +94,7 @@ export function summarizeJob(job: TestJob): JobSummary {
         : undefined,
     platform: job.targetKind === "browser" ? "browser" : job.platform,
     serial: job.browserTargetId ?? job.serial,
+    ...(job.targetProfile?.id ? { targetProfileId: job.targetProfile.id } : {}),
     outcome: job.outcome,
     review: job.review,
     batchId: job.batchId,

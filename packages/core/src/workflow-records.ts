@@ -304,6 +304,61 @@ export async function readDurableWorkflow(
   return readControlStore((store) => readFromStore(store, scope, scope.workflowId));
 }
 
+/** Resolve a durable workflow from its server-owned resource reference. This
+ * supports restoring persisted runs whose summaries predate workflowId. */
+export async function findDurableWorkflowByResource(input: {
+  organizationId: string;
+  projectId: string;
+  workflowKind: DurableWorkflowRecord["kind"];
+  resourceKind: DurableWorkflowResourceRef["kind"];
+  resourceId: string;
+}): Promise<DurableWorkflowRead | undefined> {
+  validateScope(input);
+  if (!validId(input.resourceId)) throw new TypeError("Workflow resource id is invalid");
+  return readControlStore((store) => {
+    const record = store
+      .workflowRecordsByResource(
+        input.organizationId,
+        input.projectId,
+        input.workflowKind,
+        input.resourceKind,
+        input.resourceId,
+      )
+      .sort((left, right) => right.updatedAt - left.updatedAt)[0];
+    return record ? { record, audit: store.workflowRecordEvents(record.workflowId) } : undefined;
+  });
+}
+
+export async function findDurableWorkflowsByResources(input: {
+  organizationId: string;
+  projectId: string;
+  workflowKind: DurableWorkflowRecord["kind"];
+  resourceKind: DurableWorkflowResourceRef["kind"];
+  resourceIds: readonly string[];
+}): Promise<ReadonlyMap<string, DurableWorkflowRead>> {
+  validateScope(input);
+  const resourceIds = [...new Set(input.resourceIds.filter((id) => validId(id)))];
+  if (!resourceIds.length) return new Map();
+  return readControlStore((store) => {
+    const result = new Map<string, DurableWorkflowRead>();
+    for (const record of store.workflowRecordsByResources(
+      input.organizationId,
+      input.projectId,
+      input.workflowKind,
+      input.resourceKind,
+      resourceIds,
+    )) {
+      const resourceId = record.resource?.id;
+      if (!resourceId) continue;
+      const current = result.get(resourceId);
+      if (!current || current.record.updatedAt < record.updatedAt) {
+        result.set(resourceId, { record, audit: store.workflowRecordEvents(record.workflowId) });
+      }
+    }
+    return result;
+  });
+}
+
 export async function transitionDurableWorkflow(
   input: TransitionDurableWorkflowInput,
 ): Promise<DurableWorkflowTransitionResult> {

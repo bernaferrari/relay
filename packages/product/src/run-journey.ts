@@ -1,5 +1,5 @@
 import { createRelayRunOutcomeJobs } from "@relay/workflows/run-outcomes";
-import type { AuthoringTarget } from "@relay/protocol";
+import type { AppMapTestStartup, AuthoringTarget, SourceRevision } from "@relay/protocol";
 import type { RelayInvokeClient } from "@relay/workflows/operation-port";
 import type {
   DurableWorkflowHandle,
@@ -81,7 +81,27 @@ export type ProductRunStartInput = {
   appMapId?: string;
   /** A selected ready target. Relay rejects targets that are not runnable. */
   targetId?: string;
+  /** Optional saved evidence profile; distinct from the runtime target id. */
+  targetProfileId?: string;
+  sourceRevision?: SourceRevision;
+  startup?: AppMapTestStartup;
   confirmRisk?: true;
+};
+
+export type ProductRunBuildOption = {
+  id: string;
+  name: string;
+  platform: "android" | "ios" | "web";
+  status: "uploaded" | "ready" | "failed" | "archived";
+  sourceSha?: string;
+};
+
+export type ProductRunProfileOption = {
+  id: string;
+  name: string;
+  targetId: string;
+  platform: "android" | "ios" | "browser";
+  account?: { id: string; name: string };
 };
 
 export type ProductRunWatchInput = {
@@ -308,6 +328,9 @@ export function createProductRunJourney(input: { jobs: RunJobs }): ProductRunJou
         testId: input.testId,
         ...(input.appMapId ? { appMapId: input.appMapId } : {}),
         ...(input.targetId ? { targetId: input.targetId } : {}),
+        ...(input.targetProfileId ? { targetProfileId: input.targetProfileId } : {}),
+        ...(input.sourceRevision ? { sourceRevision: structuredClone(input.sourceRevision) } : {}),
+        ...(input.startup ? { startup: structuredClone(input.startup) } : {}),
         ...(input.confirmRisk ? { confirmRisk: true } : {}),
       });
       return publish(snapshot);

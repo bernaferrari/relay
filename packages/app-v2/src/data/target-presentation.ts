@@ -80,7 +80,7 @@ function fallbackName(target: AuthoringTarget): string {
 }
 
 function targetDetail(target: AuthoringTarget, device?: DeviceSummary): string {
-  if (target.kind === "browser") return "Managed browser · Browser profile unavailable";
+  if (target.kind === "browser") return "Managed browser";
   const kind =
     target.platform === "ios"
       ? "iOS"

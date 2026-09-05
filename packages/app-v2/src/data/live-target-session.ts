@@ -41,6 +41,15 @@ export type LiveTargetSnapshot = {
   readonly issue?: string;
   readonly lastFrameAt?: number;
   readonly frameSequence?: number;
+  /** Safe metadata from the current live browser session. Credentials are never included. */
+  readonly browserContext?: LiveTargetBrowserContext;
+};
+
+export type LiveTargetBrowserContext = {
+  readonly engine: string;
+  readonly viewport: { readonly width: number; readonly height: number };
+  readonly locale: string;
+  readonly authenticationFixtureId?: string;
 };
 
 export type LiveTargetMount = HTMLCanvasElement;
@@ -242,14 +251,42 @@ export function createLiveTargetSession(input: {
   let streamTask: Promise<void> | undefined;
   let closed = false;
 
+  function browserContext(session: BrowserDeviceSession): LiveTargetBrowserContext {
+    const previous = current.browserContext;
+    const profile = session.profile;
+    if (
+      previous?.engine === profile.engine &&
+      previous.locale === profile.locale &&
+      previous.authenticationFixtureId === profile.authenticationFixtureId &&
+      previous.viewport.width === profile.viewport.width &&
+      previous.viewport.height === profile.viewport.height
+    )
+      return previous;
+    return {
+      engine: profile.engine,
+      viewport: { ...profile.viewport },
+      locale: session.profile.locale,
+      ...(session.profile.authenticationFixtureId
+        ? { authenticationFixtureId: session.profile.authenticationFixtureId }
+        : {}),
+    };
+  }
+
   function publish(next: Omit<LiveTargetSnapshot, "target">): void {
     const previous = current;
     current = { target, ...next };
+    const previousContext = previous.browserContext;
+    const nextContext = current.browserContext;
     if (
       previous.status === current.status &&
       previous.issue === current.issue &&
       previous.frameSequence === current.frameSequence &&
-      previous.lastFrameAt === current.lastFrameAt
+      previous.lastFrameAt === current.lastFrameAt &&
+      previousContext?.engine === nextContext?.engine &&
+      previousContext?.locale === nextContext?.locale &&
+      previousContext?.authenticationFixtureId === nextContext?.authenticationFixtureId &&
+      previousContext?.viewport.width === nextContext?.viewport.width &&
+      previousContext?.viewport.height === nextContext?.viewport.height
     )
       return;
     for (const listener of listeners) listener(current);
@@ -266,7 +303,11 @@ export function createLiveTargetSession(input: {
       browserSession ??
       (await input.client.invoke("target.browser-device.open", { targetId })).session;
     browserSession = opened;
-    publish({ status: "connecting", issue: opened.issue });
+    publish({
+      status: "connecting",
+      issue: opened.issue,
+      browserContext: browserContext(opened),
+    });
     while (!closed && controller && !controller.signal.aborted) {
       const afterSequence = browserFrame?.sequence;
       try {
@@ -301,6 +342,7 @@ export function createLiveTargetSession(input: {
           issue: session.issue,
           lastFrameAt: frame.capturedAt,
           frameSequence: frame.sequence,
+          browserContext: browserContext(session),
         });
         // The binary endpoint normally waits for a newer sequence. Keep the
         // compatibility JSON path bounded as well when an older server returns

@@ -410,7 +410,13 @@ function AccountRow({
       <span className="grid min-w-0 gap-1">
         <strong>{account.fixture.name}</strong>
         <small>
-          {account.target.name}
+          <Link
+            to="/devices/$deviceId"
+            params={{ deviceId: account.target.id }}
+            className="relay-inline-link"
+          >
+            {account.target.name}
+          </Link>
           {account.fixture.origins.length
             ? ` · ${account.fixture.origins.slice(0, 2).join(", ")}`
             : ""}

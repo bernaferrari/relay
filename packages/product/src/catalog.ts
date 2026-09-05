@@ -96,7 +96,23 @@ export type ProductRunSummary = {
   caseCount?: number;
   review?: RunReview;
   identity: ProductRunIdentity;
+  /** Safe, non-secret execution facts used to decide whether a later result
+   * can supersede an earlier attention result. Missing facts stay unknown. */
+  executionIdentity?: ProductRunExecutionIdentity;
   links: { self: string; test?: string; app?: string; batch?: string };
+};
+
+export type ProductRunExecutionIdentity = {
+  appMapId?: string;
+  testId?: string;
+  appMapRevision?: number;
+  sourceRevision?: string;
+  buildId?: string;
+  targetProfileId?: string;
+  platform?: string;
+  deviceId?: string;
+  dataSetId?: string;
+  accountId?: string;
 };
 
 export type ProductRunDetail = ProductRunSummary & {
@@ -293,8 +309,65 @@ function projectRun(run: RunSummary, maps: readonly AppMap[]): ProductRunSummary
     ...(run.caseCount === undefined ? {} : { caseCount: run.caseCount }),
     ...(run.review ? { review: structuredClone(run.review) } : {}),
     identity,
+    ...(executionIdentityFromRun(run, identity)
+      ? { executionIdentity: executionIdentityFromRun(run, identity) }
+      : {}),
     links,
   };
+}
+
+function executionIdentityFromRun(
+  run: RunSummary,
+  identity: ProductRunIdentity,
+): ProductRunExecutionIdentity | undefined {
+  const candidate = run as RunSummary & {
+    appMapRevision?: unknown;
+    targetProfileId?: unknown;
+    dataSetId?: unknown;
+    accountId?: unknown;
+    artifacts?: unknown;
+  };
+  let appMapRevision = Number.isSafeInteger(candidate.appMapRevision)
+    ? (candidate.appMapRevision as number)
+    : undefined;
+  if (appMapRevision === undefined && Array.isArray(candidate.artifacts)) {
+    for (const artifact of candidate.artifacts) {
+      if (!artifact || typeof artifact !== "object") continue;
+      const value = artifact as { kind?: unknown; data?: unknown };
+      if (value.kind !== "app-map-test-execution-intent" || !value.data) continue;
+      const sourcePlan =
+        typeof value.data === "object" && !Array.isArray(value.data)
+          ? (value.data as { sourcePlan?: unknown }).sourcePlan
+          : undefined;
+      const revision =
+        typeof sourcePlan === "object" && sourcePlan !== null && !Array.isArray(sourcePlan)
+          ? (sourcePlan as { appMapRevision?: unknown }).appMapRevision
+          : undefined;
+      if (Number.isSafeInteger(revision)) {
+        appMapRevision = revision as number;
+        break;
+      }
+    }
+  }
+  const executionIdentity: ProductRunExecutionIdentity = {
+    ...(identity.appMapId ? { appMapId: identity.appMapId } : {}),
+    ...(identity.testId ? { testId: identity.testId } : {}),
+    ...(appMapRevision === undefined ? {} : { appMapRevision }),
+    ...(run.sourceRevision?.sha ? { sourceRevision: run.sourceRevision.sha } : {}),
+    ...(run.sourceRevision?.buildId ? { buildId: run.sourceRevision.buildId } : {}),
+    ...(typeof candidate.targetProfileId === "string" && candidate.targetProfileId
+      ? { targetProfileId: candidate.targetProfileId }
+      : {}),
+    ...(run.platform ? { platform: run.platform } : {}),
+    ...(run.serial ? { deviceId: run.serial } : {}),
+    ...(typeof candidate.dataSetId === "string" && candidate.dataSetId
+      ? { dataSetId: candidate.dataSetId }
+      : {}),
+    ...(typeof candidate.accountId === "string" && candidate.accountId
+      ? { accountId: candidate.accountId }
+      : {}),
+  };
+  return Object.keys(executionIdentity).length ? executionIdentity : undefined;
 }
 
 function matchesTest(summary: ProductTestSummary, filter: ProductTestFilter): boolean {

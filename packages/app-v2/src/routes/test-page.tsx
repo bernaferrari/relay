@@ -60,7 +60,19 @@ export function TestPage() {
     queryFn: () => runService.listTargets(),
     staleTime: 5_000,
   });
-  const scope = useRunConfigurationKey(platform, `test:${testId}`, test.data?.appMapId);
+  const builds = useQuery({
+    queryKey: ["run-config", "builds"],
+    queryFn: () => runService.listBuilds?.() ?? Promise.resolve([]),
+    enabled: typeof runService.listBuilds === "function",
+    staleTime: 15_000,
+  });
+  const profiles = useQuery({
+    queryKey: ["run-config", "profiles", test.data?.appMapId],
+    queryFn: () => runService.listProfiles?.(test.data!.appMapId) ?? Promise.resolve([]),
+    enabled: Boolean(test.data?.appMapId && runService.listProfiles),
+    staleTime: 15_000,
+  });
+  const scope = useRunConfigurationKey(platform, `test-run:${testId}`, test.data?.appMapId);
   const configuration = usePersistedRunConfiguration({
     storage: platform.storage,
     key: scope.key,
@@ -68,10 +80,28 @@ export function TestPage() {
   });
   useEffect(() => {
     if (configuration.pristine && targets.data?.length === 1)
-      configuration.setSelection({ targetProfileId: targets.data[0]!.targetId });
+      configuration.setSelection({ targetId: targets.data[0]!.targetId });
   }, [configuration.pristine, configuration.setSelection, targets.data]);
-  const targetId = configuration.selection.targetProfileId ?? "";
+  const targetId = configuration.selection.targetId ?? "";
   const targetReady = Boolean(targets.data?.some((target) => target.targetId === targetId));
+  useEffect(() => {
+    // A saved profile is bound to one concrete runtime target. Clear a stale
+    // persisted profile before start when the user changes targets; otherwise
+    // the visible target and frozen targetProfileId would describe different
+    // executions and the server would reject the request late.
+    if (profiles.data === undefined || !configuration.selection.savedProfileId) return;
+    const selectedProfile = profiles.data.find(
+      (profile) => profile.id === configuration.selection.savedProfileId,
+    );
+    if (selectedProfile?.targetId === targetId) return;
+    configuration.setSelection({
+      ...configuration.selection,
+      savedProfileId: undefined,
+    });
+  }, [configuration.selection, configuration.setSelection, profiles.data, targetId]);
+  const selectedBuild = builds.data?.find(
+    (build) => build.id === configuration.selection.buildId && build.status === "ready",
+  );
   const start = useMutation({
     mutationFn: async () => {
       if (!test.data || !targetReady || configuration.loading) {
@@ -81,6 +111,21 @@ export function TestPage() {
         testId,
         appMapId: test.data.appMapId,
         targetId,
+        ...(configuration.selection.savedProfileId
+          ? { targetProfileId: configuration.selection.savedProfileId }
+          : {}),
+        ...(selectedBuild?.sourceSha && /^[0-9a-f]{7,40}$/u.test(selectedBuild.sourceSha)
+          ? {
+              sourceRevision: {
+                vcs: "git",
+                sha: selectedBuild.sourceSha,
+                buildId: selectedBuild.id,
+              },
+            }
+          : {}),
+        ...(configuration.selection.startupMode === "cold"
+          ? { startup: { mode: "cold" as const } }
+          : {}),
       });
       const workflowId = started.workflow?.workflowId;
       if (!workflowId) {
@@ -317,12 +362,77 @@ export function TestPage() {
                     label: targetLabel(target).title,
                     detail: targetLabel(target).detail,
                   }))}
-                  selection={configuration.selection}
-                  onSelectionChange={configuration.setSelection}
+                  selection={{ ...configuration.selection, targetProfileId: targetId }}
+                  onSelectionChange={(selection) => {
+                    const { targetProfileId: selectedTargetId, ...rest } = selection;
+                    configuration.setSelection({ ...rest, targetId: selectedTargetId });
+                  }}
                   loading={configuration.loading}
                   error={scope.error ?? configuration.error}
                   onRetry={scope.error ? scope.retry : configuration.retry}
                 >
+                  {profiles.data?.filter((profile) => profile.targetId === targetId).length ? (
+                    <label className="grid gap-1 text-sm">
+                      <span className="text-xs text-muted-foreground">Saved profile</span>
+                      <select
+                        className="min-h-11 rounded-md border border-border bg-background px-3"
+                        value={configuration.selection.savedProfileId ?? ""}
+                        onChange={(event) =>
+                          configuration.setSelection({
+                            ...configuration.selection,
+                            savedProfileId: event.target.value || undefined,
+                          })
+                        }
+                      >
+                        <option value="">Let Relay select the reviewed profile</option>
+                        {profiles.data
+                          ?.filter((profile) => profile.targetId === targetId)
+                          .map((profile) => (
+                            <option key={profile.id} value={profile.id}>
+                              {profile.name}
+                              {profile.account ? ` · ${profile.account.name}` : ""}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+                  ) : null}
+                  {builds.data?.length ? (
+                    <label className="grid gap-1 text-sm">
+                      <span className="text-xs text-muted-foreground">Build</span>
+                      <select
+                        className="min-h-11 rounded-md border border-border bg-background px-3"
+                        value={configuration.selection.buildId ?? ""}
+                        onChange={(event) =>
+                          configuration.setSelection({
+                            ...configuration.selection,
+                            buildId: event.target.value || undefined,
+                          })
+                        }
+                      >
+                        <option value="">Use current target build</option>
+                        {builds.data
+                          .filter((build) => build.status === "ready" && build.sourceSha)
+                          .map((build) => (
+                            <option key={build.id} value={build.id}>
+                              {build.name} · {build.sourceSha?.slice(0, 12)}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+                  ) : null}
+                  <label className="flex min-h-11 items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={configuration.selection.startupMode === "cold"}
+                      onChange={(event) =>
+                        configuration.setSelection({
+                          ...configuration.selection,
+                          startupMode: event.target.checked ? "cold" : undefined,
+                        })
+                      }
+                    />
+                    Start from a cold app launch
+                  </label>
                   {!targets.data?.length ? (
                     <EmptyState
                       title="No device or browser is ready"

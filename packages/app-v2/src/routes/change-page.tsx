@@ -22,7 +22,6 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { AlertTriangle, Check, CircleDot, Minus } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
-import type { ProductChangeDetail } from "../data/change-product-service";
 import {
   ChangeAuditDetails,
   ChangePublicationStatus,
@@ -602,12 +601,4 @@ function planCount(details: ProductChangeDetails): string {
   const required = details.change.requiredVerificationCount;
   const advisory = details.change.advisoryVerificationCount;
   return `${required} required${advisory ? ` · ${advisory} advisory` : ""}`;
-}
-
-function humanize(value: string): string {
-  const spaced = value
-    .replaceAll(/[-_.]+/g, " ")
-    .replaceAll(/\s+/g, " ")
-    .trim();
-  return spaced ? spaced[0]!.toUpperCase() + spaced.slice(1) : "Unnamed";
 }

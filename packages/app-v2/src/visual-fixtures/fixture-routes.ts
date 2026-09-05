@@ -18,6 +18,7 @@ export const definitions = {
   "runs-large": { path: "/runs?view=all" },
   "report-failed": { path: "/runs/run-checkout" },
   "report-replay": { path: "/runs/run-checkout?replayJob=replay-checkout" },
+  "report-video": { path: "/runs/run-checkout?view=evidence" },
   "report-evidence": { path: "/runs/run-checkout?view=evidence" },
   "batch-completed": { path: "/batches/batch-checkout" },
   "sessions-list": { path: "/sessions" },

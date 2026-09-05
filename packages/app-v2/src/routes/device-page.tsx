@@ -10,6 +10,7 @@ import { Breadcrumbs, EmptyState } from "../components/product-patterns";
 import { deviceQueryKeys, type ProductDevice } from "../data/device-product-service";
 import { readSetupContinuation } from "../data/setup-continuation";
 import type {
+  LiveTargetBrowserContext,
   LiveTargetInput,
   LiveTargetSession,
   LiveTargetStatus,
@@ -59,6 +60,7 @@ export function DevicePage() {
   const canvas = useRef<HTMLCanvasElement>(null);
   const session = useRef<LiveTargetSession | undefined>(undefined);
   const [liveStatus, setLiveStatus] = useState<LiveTargetStatus>("idle");
+  const [browserContext, setBrowserContext] = useState<LiveTargetBrowserContext>();
   const [liveIssue, setLiveIssue] = useState<string>();
   const [liveBusy, setLiveBusy] = useState(false);
   const [liveAttempt, setLiveAttempt] = useState(0);
@@ -132,6 +134,7 @@ export function DevicePage() {
     let mounted: LiveTargetSession | undefined;
     setLiveIssue(undefined);
     setLiveStatus("connecting");
+    setBrowserContext(undefined);
     void createPreview(target.data)
       .then((next) => {
         if (disposed || !canvas.current) return next.close();
@@ -140,6 +143,7 @@ export function DevicePage() {
         unsubscribe = next.subscribe((state) => {
           setLiveStatus(state.status);
           setLiveIssue(state.issue ? friendlyLiveIssue(state.issue) : undefined);
+          setBrowserContext(state.browserContext);
         });
         unmount = next.mount(canvas.current);
       })
@@ -161,14 +165,16 @@ export function DevicePage() {
   async function send(input: Parameters<LiveTargetSession["input"]>[0]) {
     if (!session.current) {
       setLiveIssue("The live view is still connecting.");
-      return;
+      return false;
     }
     setLiveBusy(true);
     setLiveIssue(undefined);
     try {
       await session.current.input(input);
+      return true;
     } catch (error) {
       setLiveIssue(friendlyLiveIssue(errorMessage(error)));
+      return false;
     } finally {
       setLiveBusy(false);
     }
@@ -259,6 +265,7 @@ export function DevicePage() {
             <DeviceLivePreview
               canvas={canvas}
               target={target.data ?? undefined}
+              browserContext={browserContext}
               status={liveStatus}
               issue={liveIssue}
               busy={liveBusy}
@@ -443,6 +450,7 @@ export function DevicePage() {
 function DeviceLivePreview({
   canvas,
   target,
+  browserContext,
   status,
   issue,
   busy,
@@ -452,11 +460,12 @@ function DeviceLivePreview({
 }: {
   canvas: RefObject<HTMLCanvasElement | null>;
   target?: { name: string; detail: string };
+  browserContext?: LiveTargetBrowserContext;
   status: LiveTargetStatus;
   issue?: string;
   busy: boolean;
   reconnect: () => void;
-  send: (input: LiveTargetInput) => Promise<boolean | void>;
+  send: (input: LiveTargetInput) => Promise<boolean>;
   pending: boolean;
 }) {
   return (
@@ -486,6 +495,7 @@ function DeviceLivePreview({
           busy={busy}
           targetTitle={target.name}
           targetDetail={target.detail}
+          browserContext={browserContext}
           send={send}
           recording={false}
         />

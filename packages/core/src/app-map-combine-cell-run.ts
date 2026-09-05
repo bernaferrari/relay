@@ -220,6 +220,7 @@ export function combineCampaignCaseFromPreparedCell(
   return {
     index: input.index,
     cellId: cell.cellId,
+    ...(cell.executionCaseId ? { executionCaseId: cell.executionCaseId } : {}),
     testId: cell.testId,
     world: cell.worldLabel,
     values: cell.values,

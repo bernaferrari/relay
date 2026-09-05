@@ -1,7 +1,61 @@
 import { describe, expect, it, vi } from "vitest";
-import { framePathsForTraceStep, projectRunReport, runOutcome } from "./run-product-service";
+import {
+  findPersistedRunWorkflowId,
+  framePathsForTraceStep,
+  projectWorkflowlessExecution,
+  projectRunReport,
+  runOutcome,
+} from "./run-product-service";
 
 describe("run report projection", () => {
+  it("projects workflow-less active jobs without inventing workflow identity", () => {
+    const state = projectWorkflowlessExecution(
+      {
+        id: "run-live",
+        status: "running",
+        title: "CLI Test",
+        progress: { label: "Tap", completed: 2, total: 4 },
+      },
+      "run-live",
+    );
+    expect(state.workflow).toBeUndefined();
+    expect(state.snapshot).toMatchObject({
+      phase: "running",
+      progress: { label: "Tap", completed: 2, total: 4 },
+      allowedNextActions: ["inspect", "cancel"],
+    });
+  });
+
+  it("projects workflow-less terminal and cancelled jobs as terminal state", () => {
+    expect(
+      projectWorkflowlessExecution({ id: "run-ok", status: "ok" }, "run-ok").snapshot?.phase,
+    ).toBe("succeeded");
+    expect(
+      projectWorkflowlessExecution({ id: "run-cancelled", status: "cancelled" }, "run-cancelled")
+        .snapshot?.allowedNextActions,
+    ).toEqual(["inspect"]);
+  });
+
+  it("follows run.list continuation pages and uses only the canonical workflowId", async () => {
+    const calls: unknown[] = [];
+    const client = {
+      invoke: vi.fn(async (_id: string, input: unknown) => {
+        calls.push(input);
+        if (calls.length === 1) {
+          return {
+            runs: [{ id: "other", workflowRequestId: "request-only" }],
+            nextCursor: "page-2",
+          };
+        }
+        return { runs: [{ id: "run-target", workflowId: "workflow-canonical" }] };
+      }),
+    } as never;
+    await expect(findPersistedRunWorkflowId(client, "run-target")).resolves.toBe(
+      "workflow-canonical",
+    );
+    expect(calls).toEqual([{}, { cursor: "page-2" }]);
+  });
+
   it("reports unknown transport outcome categories once without exposing the raw value", () => {
     const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     expect(runOutcome("unsupported-status")).toBeUndefined();

@@ -65,6 +65,7 @@ function frozenIdentity(intent: AuthorTestIntent, revision: number): FrozenAutho
     ...(intent.sourceScreenId ? { sourceScreenId: intent.sourceScreenId } : {}),
     ...(intent.pendingConnectionId ? { pendingConnectionId: intent.pendingConnectionId } : {}),
     ...(intent.group?.trim() ? { group: intent.group.trim() } : {}),
+    ...(intent.debugOrigin ? { debugOrigin: structuredClone(intent.debugOrigin) } : {}),
     ...(intent.workflowRequestId ? { workflowRequestId: intent.workflowRequestId } : {}),
   };
 }
@@ -79,6 +80,7 @@ function frozenIdentityFromSession(session: AuthoringSession): FrozenAuthorTestI
     ...(session.sourceScreenId ? { sourceScreenId: session.sourceScreenId } : {}),
     ...(session.pendingConnectionId ? { pendingConnectionId: session.pendingConnectionId } : {}),
     ...(session.group?.trim() ? { group: session.group.trim() } : {}),
+    ...(session.debugOrigin ? { debugOrigin: structuredClone(session.debugOrigin) } : {}),
     ...(session.workflowRequestId ? { workflowRequestId: session.workflowRequestId } : {}),
   };
 }
@@ -403,6 +405,7 @@ export class CanonicalAuthoringWorkflow {
         ...(intent.sourceScreenId ? { sourceScreenId: intent.sourceScreenId } : {}),
         ...(intent.pendingConnectionId ? { pendingConnectionId: intent.pendingConnectionId } : {}),
         ...(intent.group?.trim() ? { group: intent.group.trim() } : {}),
+        ...(intent.debugOrigin ? { debugOrigin: structuredClone(intent.debugOrigin) } : {}),
       });
     } catch (error) {
       const reconciled = await this.reconcileStartedSession(intent, revision);

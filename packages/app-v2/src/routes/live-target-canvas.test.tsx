@@ -2,7 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { LiveTargetInput } from "../data/live-target-session";
+import type { LiveTargetInput, LiveTargetBrowserContext } from "../data/live-target-session";
 import { LiveTargetCanvas } from "./live-target-canvas";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -20,6 +20,7 @@ function mountCanvas(
   entries: Array<{
     title: string;
     detail: string;
+    browserContext?: LiveTargetBrowserContext;
     send: (input: LiveTargetInput) => Promise<boolean>;
   }>,
 ) {
@@ -39,6 +40,7 @@ function mountCanvas(
             busy={false}
             targetTitle={entry.title}
             targetDetail={entry.detail}
+            browserContext={entry.browserContext}
             send={entry.send}
             recording={false}
           />
@@ -50,6 +52,28 @@ function mountCanvas(
 }
 
 describe("LiveTargetCanvas", () => {
+  it("shows only known current browser facts beside the correct live target", () => {
+    const host = mountCanvas([
+      {
+        title: "Checkout browser",
+        detail: "Manual session",
+        send: async () => true,
+        browserContext: {
+          engine: "chromium",
+          viewport: { width: 1280, height: 720 },
+          locale: "en-US",
+          authenticationFixtureId: "checkout-qa",
+        },
+      },
+      { title: "Connected iPad", detail: "Manual session", send: async () => true },
+    ]);
+    const context = host.querySelector('[aria-label="Current browser configuration"]');
+    expect(context?.textContent).toContain("Chromium · 1280×720 · en-US");
+    expect(context?.textContent).toContain("Account reference checkout-qa");
+    expect(host.querySelectorAll('[aria-label="Current browser configuration"]')).toHaveLength(1);
+    expect(host.textContent).not.toContain("profile unavailable");
+  });
+
   it("keeps unsupported navigation keys local while forwarding supported text input", async () => {
     const send = vi.fn(async () => true);
     const host = mountCanvas([{ title: "Checkout browser", detail: "Account A", send }]);
@@ -73,6 +97,53 @@ describe("LiveTargetCanvas", () => {
       canvas.dispatchEvent(clipboardEvent);
     });
     expect(send).toHaveBeenCalledWith({ kind: "key", key: "enter", text: "مرحبا Relay" });
+  });
+
+  it("retains text on failed delivery and preserves newer typing while awaiting acknowledgement", async () => {
+    let acknowledge: (value: boolean) => void = () => {};
+    const send = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          acknowledge = resolve;
+        }),
+    );
+    const host = mountCanvas([{ title: "Checkout browser", detail: "Account A", send }]);
+    const input = host.querySelector("input")!;
+    async function fill(value: string) {
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+          input,
+          value,
+        );
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    }
+    const button = [...host.querySelectorAll("button")].find(
+      (item) => item.textContent === "Type",
+    )!;
+    await fill("first draft");
+    await act(async () => {
+      button.click();
+    });
+    await act(async () => {
+      acknowledge(false);
+    });
+    expect(input.value).toBe("first draft");
+    await act(async () => {
+      button.click();
+    });
+    await fill("newer draft");
+    await act(async () => {
+      acknowledge(true);
+    });
+    expect(input.value).toBe("newer draft");
+    await act(async () => {
+      button.click();
+    });
+    await act(async () => {
+      acknowledge(true);
+    });
+    expect(input.value).toBe("");
   });
 
   it("keeps three target views independently addressable", async () => {

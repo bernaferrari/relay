@@ -8,6 +8,7 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useRouteContext } from "@tanstack/react-router";
 import { ArrowRight } from "lucide-react";
+import { PageHeader } from "../components/page-layout";
 import { Breadcrumbs, EmptyState, OutcomeMark } from "../components/product-patterns";
 import { PageLoading, RecordingProblem } from "./recording-shared";
 
@@ -58,32 +59,22 @@ export function AppPage() {
       />
       {app.data && !error ? (
         <>
-          <header className="relay-page-header flex items-start justify-between gap-7 max-[780px]:flex-col">
-            <div>
-              <p className="relay-eyebrow mb-2 text-[11px] font-semibold tracking-[0.02em] text-[var(--text-weak)]">
-                App
-              </p>
-              <h1 className="text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance] text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance]">
-                {app.data.appName}
-              </h1>
-              <p className="relay-page-description mt-2.5 max-w-[62ch] text-[15px] leading-[1.55] text-[var(--text-weak)]">
-                {app.data.description ??
-                  "Saved Tests, recent Reports, and known behavior in one place."}
-              </p>
-            </div>
-            <div className="flex flex-none flex-wrap gap-2">
+          <PageHeader
+            context="App"
+            title={app.data.appName}
+            description={app.data.description ?? "Saved tests and recent results for your app."}
+            actions={
               <Button
                 nativeButton={false}
                 render={<Link to="/tests/new" search={{ app: appId }} />}
-                variant="default"
               >
                 Record a Test
               </Button>
-            </div>
-          </header>
+            }
+          />
 
           <dl
-            className="my-7.5 grid grid-cols-3 border-y border-border py-[18px] max-[560px]:grid-cols-1 max-[560px]:gap-3.5"
+            className="my-6 grid grid-cols-3 gap-4 border-y border-border py-5 [&_dt]:text-xs [&_dt]:text-muted-foreground [&_dd]:mt-2 [&_dd]:text-xl [&_dd]:font-semibold [&_dd]:tabular-nums max-[560px]:grid-cols-1"
             aria-label={`${app.data.appName} overview`}
           >
             <div>
@@ -101,7 +92,9 @@ export function AppPage() {
             <div>
               <dt>Known screen coverage</dt>
               <dd>
-                {app.data.coverage.coveredScreenCount} of {app.data.coverage.screenCount}
+                {app.data.coverage.screenCount
+                  ? `${app.data.coverage.coveredScreenCount} of ${app.data.coverage.screenCount}`
+                  : "Not mapped"}
               </dd>
             </div>
           </dl>
@@ -113,24 +106,28 @@ export function AppPage() {
                   <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
                     Tests
                   </p>
-                  <h2 id="app-tests-title">Saved journeys</h2>
+                  <h2 id="app-tests-title" className="text-base font-semibold">
+                    Saved tests
+                  </h2>
                 </div>
-                {tests.data?.length ? (
+                <div className="flex items-center gap-4">
+                  {tests.data?.length ? (
+                    <Link
+                      className="relay-inline-action inline-flex min-h-11 items-center gap-1.5 text-xs font-semibold text-[var(--text-interactive-base)]"
+                      to="/tests"
+                      search={{ app: appId }}
+                    >
+                      View all <ArrowRight className="size-4" aria-hidden="true" />
+                    </Link>
+                  ) : null}
                   <Link
                     className="relay-inline-action inline-flex min-h-11 items-center gap-1.5 text-xs font-semibold text-[var(--text-interactive-base)]"
-                    to="/tests"
+                    to="/suites"
                     search={{ app: appId }}
                   >
-                    View all <ArrowRight aria-hidden="true" />
+                    Suites <ArrowRight className="size-4" aria-hidden="true" />
                   </Link>
-                ) : null}
-                <Link
-                  className="relay-inline-action inline-flex min-h-11 items-center gap-1.5 text-xs font-semibold text-[var(--text-interactive-base)]"
-                  to="/suites"
-                  search={{ app: appId }}
-                >
-                  Suites <ArrowRight aria-hidden="true" />
-                </Link>
+                </div>
               </header>
               {tests.isPending ? (
                 <p className="text-sm text-muted-foreground">Loading Tests…</p>
@@ -195,7 +192,9 @@ export function AppPage() {
                   <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
                     Reports
                   </p>
-                  <h2 id="app-runs-title">Recent results</h2>
+                  <h2 id="app-runs-title" className="text-base font-semibold">
+                    Recent results
+                  </h2>
                 </div>
                 {recentRuns.length ? (
                   <Link
@@ -203,7 +202,7 @@ export function AppPage() {
                     to="/runs"
                     search={{ app: appId }}
                   >
-                    View all <ArrowRight aria-hidden="true" />
+                    View all <ArrowRight className="size-4" aria-hidden="true" />
                   </Link>
                 ) : null}
               </header>
@@ -228,7 +227,7 @@ export function AppPage() {
                   {recentRuns.map((run) => (
                     <li key={run.id} className="border-b border-border last:border-b-0">
                       <Link
-                        className="flex min-h-14 items-center justify-between gap-3 px-3 py-2.5 focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-[-2px]"
+                        className="flex min-h-14 items-center justify-between gap-3 px-3 py-2.5 transition-colors hover:bg-muted/60 focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-[-2px]"
                         to="/runs/$runId"
                         params={{ runId: run.id }}
                       >
@@ -262,7 +261,9 @@ export function AppPage() {
                 <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
                   Configuration
                 </p>
-                <h2 id="app-resources-title">Workspace resources</h2>
+                <h2 id="app-resources-title" className="text-base font-semibold">
+                  Workspace resources
+                </h2>
               </div>
             </header>
             <div className="mt-3 grid grid-cols-2 gap-2.5 max-[780px]:grid-cols-1">
@@ -276,7 +277,7 @@ export function AppPage() {
                     Registered builds and web deployments
                   </small>
                 </span>
-                <ArrowRight aria-hidden="true" />
+                <ArrowRight className="size-4" aria-hidden="true" />
               </Link>
               <Link
                 className="flex min-h-16 items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5 focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)]"
@@ -288,7 +289,7 @@ export function AppPage() {
                     Reviewed browser sign-ins
                   </small>
                 </span>
-                <ArrowRight aria-hidden="true" />
+                <ArrowRight className="size-4" aria-hidden="true" />
               </Link>
             </div>
           </section>

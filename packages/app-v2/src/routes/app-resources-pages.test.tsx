@@ -274,7 +274,7 @@ describe("App routes", () => {
   });
 
   it("shows reviewed browser sign-ins with their true target ownership", async () => {
-    await render(
+    const history = await render(
       "/apps/checkout-app/accounts",
       resources({
         listBrowserAccounts: async () => [
@@ -304,6 +304,12 @@ describe("App routes", () => {
     expect(document.body.textContent).toContain("Checkout browser · https://checkout.example");
     expect(document.body.textContent).not.toContain("authfx:");
     expect(document.body.textContent).not.toContain("browser-private");
+    const browserLink = document.querySelector<HTMLAnchorElement>(
+      'a[href="/devices/browser-private"]',
+    );
+    expect(browserLink).not.toBeNull();
+    await click(browserLink!);
+    expect(history.location.pathname).toBe("/devices/browser-private");
   });
 
   it("saves, refreshes, and revokes accounts with exact target identity without rendering secrets", async () => {
@@ -357,6 +363,12 @@ describe("App routes", () => {
     ]);
 
     await click(button("Revoke"));
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
+      "existing Runs keep their saved evidence",
+    );
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
+      "future authenticated Tests",
+    );
     await click(button("Revoke sign-in", document.querySelector('[role="dialog"]')!));
     expect(revoked).toEqual([{ targetId: "browser-private", reference: "authfx:fixture-1:1" }]);
     expect(document.body.textContent).not.toContain("authfx:fixture-1:1");

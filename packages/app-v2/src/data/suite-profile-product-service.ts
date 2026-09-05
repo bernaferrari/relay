@@ -594,10 +594,10 @@ export function createSuiteProfileProductService(platform: Platform): SuiteProfi
         execution: {
           profileCount: selectedEnvironments.length,
           selectedProfileIds: selectedEnvironments.map((item) => item.id),
-          capacity: "unavailable" as const,
+          capacity: "multi-target" as const,
           duration: "unavailable" as const,
           detail:
-            "Relay can preview each selected environment, but cannot yet run every Suite case in every selected environment.",
+            "Each selected Suite case can run against every selected environment; final duration depends on target capacity.",
         },
       };
     },
@@ -642,11 +642,6 @@ export function createSuiteProfileProductService(platform: Platform): SuiteProfi
       });
       if (selectedProfiles.length > 4)
         throw new TypeError("Select no more than four Environment Profiles.");
-      if (selectedProfiles.length > 1) {
-        throw new TypeError(
-          "Relay cannot yet run every Suite case in every selected environment. Choose one Environment Profile to start.",
-        );
-      }
       const profile = selectedProfiles[0]!;
       const result = await (
         await client()
@@ -654,6 +649,17 @@ export function createSuiteProfileProductService(platform: Platform): SuiteProfi
         appMapId: input.appMapId,
         combineId: input.suiteId,
         executionMode: input.executionMode ?? "pilot",
+        profileTargets: selectedProfiles.map((selected) => ({
+          profileId: selected.id,
+          target:
+            selected.platform === "browser"
+              ? { targetKind: "browser" as const, browserTargetId: selected.targetId }
+              : {
+                  targetKind: "device" as const,
+                  serial: selected.targetId,
+                  platform: selected.platform,
+                },
+        })),
         ...(profile.platform === "browser"
           ? { targetKind: "browser" as const, browserTargetId: profile.targetId }
           : {

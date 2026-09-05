@@ -62,6 +62,7 @@ export type ProductBatchStatus =
 
 export type ProductBatchCase = {
   readonly id: string;
+  readonly executionCaseId?: string;
   readonly index: number;
   readonly phase: "pilot" | "coverage";
   readonly status: "pending" | "queued" | "running" | "passed" | "failed" | "blocked" | "cancelled";
@@ -115,6 +116,7 @@ export type ProductBatchFailureClusterReport = {
 
 export type ProductBatchSelectionInput = {
   readonly caseIds?: readonly string[];
+  readonly executionCaseIds?: readonly string[];
   readonly clusterIds?: readonly string[];
 };
 
@@ -184,6 +186,7 @@ export type ProductRunAcrossService = {
 type CampaignCase = {
   index?: number;
   cellId?: string;
+  executionCaseId?: string;
   values?: Record<string, string>;
   world?: string;
   phase?: "pilot" | "coverage";
@@ -359,7 +362,8 @@ function batchFromCampaign(
       const target = item.target ?? campaign.target;
       const platform = targetPlatform(target?.platform);
       return {
-        id: item.cellId ?? `case-${index + 1}`,
+        id: item.executionCaseId ?? item.cellId ?? `case-${index + 1}`,
+        ...(item.executionCaseId ? { executionCaseId: item.executionCaseId } : {}),
         index: item.index ?? index,
         phase: item.phase ?? (index === 0 ? "pilot" : "coverage"),
         status: productCaseStatus(item.status),
@@ -405,7 +409,9 @@ function productFailureClusters(
       environmentId: cluster.cohort,
       representativeCaseId: cluster.representativeCellId,
       representativeRunId: cluster.representativeRunId,
-      caseIds: cluster.cases.map((item) => item.cellId),
+      caseIds: cluster.cases.map(
+        (item) => (item as { executionCaseId?: string }).executionCaseId ?? item.cellId,
+      ),
     })),
   };
 }
@@ -428,8 +434,13 @@ export function selectProductBatchCases(
   clusters?: ProductBatchFailureClusterReport,
 ): ProductBatchSelection {
   const requestedCaseIds = uniqueIds(input.caseIds, "caseIds");
+  const requestedExecutionCaseIds = uniqueIds(input.executionCaseIds, "executionCaseIds");
   const requestedClusterIds = uniqueIds(input.clusterIds, "clusterIds");
-  if (!requestedCaseIds.length && !requestedClusterIds.length) {
+  if (
+    !requestedCaseIds.length &&
+    !requestedExecutionCaseIds.length &&
+    !requestedClusterIds.length
+  ) {
     throw new TypeError("Choose at least one failed Batch case or failure cluster.");
   }
   if (requestedClusterIds.length) {
@@ -440,7 +451,7 @@ export function selectProductBatchCases(
     const unknown = requestedClusterIds.find((id) => !known.has(id));
     if (unknown) throw new TypeError(`Failure cluster ${unknown} is not in this Batch.`);
   }
-  const selected = new Set(requestedCaseIds);
+  const selected = new Set([...requestedCaseIds, ...requestedExecutionCaseIds]);
   for (const cluster of clusters?.clusters ?? []) {
     if (requestedClusterIds.includes(cluster.id)) {
       for (const caseId of cluster.caseIds) selected.add(caseId);
@@ -616,10 +627,13 @@ export function createProductRunAcrossService(
       const batch = await campaign(batchId);
       const clusters = clusterIds.length ? await failureClusters(batchId) : undefined;
       const selection = selectProductBatchCases(batch, input, clusters);
+      const selectedCases = batch.cases.filter((item) => selection.caseIds.includes(item.id));
       await operations.invoke("job.combine.campaign.resume", {
         batchId,
         reviewed: true,
-        cellIds: [...selection.caseIds],
+        ...(selectedCases.some((item) => item.executionCaseId)
+          ? { executionCaseIds: [...selection.caseIds] }
+          : { cellIds: [...selection.caseIds] }),
       });
       return campaign(batchId);
     },

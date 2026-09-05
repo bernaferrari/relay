@@ -63,9 +63,17 @@ describe("live target session", () => {
       height: 240,
     };
     let binaryRequests = 0;
+    let frameRequests = 0;
     const invoke = vi.fn(async (id: string) => {
       if (id === "target.browser-device.open") return { session: currentSession };
-      if (id === "target.browser-device.frame") return { session: currentSession, frame };
+      if (id === "target.browser-device.frame") {
+        frameRequests++;
+        if (frameRequests === 3) {
+          currentSession.profile.locale = "pt-BR";
+          currentSession.profile.authenticationFixtureId = "account-checkout";
+        }
+        return { session: currentSession, frame: { ...frame, sequence: frameRequests } };
+      }
       throw new Error(`unexpected operation ${id}`);
     });
     const client = {
@@ -92,16 +100,29 @@ describe("live target session", () => {
     const snapshots: ReturnType<typeof sessionController.snapshot>[] = [];
     const unsubscribe = sessionController.subscribe((snapshot) => {
       snapshots.push(snapshot);
-      if (snapshot.status === "streaming") sessionController.close();
+      if (snapshot.status === "streaming" && snapshot.frameSequence === 3)
+        sessionController.close();
     });
     sessionController.mount(canvas);
     await vi.waitFor(() => expect(sessionController.snapshot().status).toBe("closed"));
     unsubscribe();
 
-    expect(binaryRequests).toBe(1);
-    expect(context.drawImage).toHaveBeenCalledTimes(1);
+    expect(binaryRequests).toBe(3);
+    expect(context.drawImage).toHaveBeenCalledTimes(3);
     expect(sessionController.snapshot()).not.toHaveProperty("frame");
     expect(snapshots.some((snapshot) => snapshot.status === "streaming")).toBe(true);
+    expect(snapshots.find((snapshot) => snapshot.status === "streaming")?.browserContext).toEqual({
+      engine: "chromium",
+      viewport: { width: 320, height: 240 },
+      locale: "en-US",
+    });
+    const streaming = snapshots.filter((snapshot) => snapshot.status === "streaming");
+    expect(streaming[0]?.browserContext).toBe(streaming[1]?.browserContext);
+    expect(streaming[2]?.browserContext).not.toBe(streaming[1]?.browserContext);
+    expect(streaming[2]?.browserContext?.locale).toBe("pt-BR");
+    expect(streaming[2]?.browserContext?.authenticationFixtureId).toBe("account-checkout");
+    expect(streaming[0]?.browserContext?.locale).toBe("en-US");
+    expect(sessionController.snapshot().browserContext).toBeUndefined();
     expect(invoke).toHaveBeenCalledWith("target.browser-device.frame", {
       targetId: target.targetId,
     });

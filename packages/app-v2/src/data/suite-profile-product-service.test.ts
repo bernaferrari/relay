@@ -393,7 +393,7 @@ describe("suite and environment product projections", () => {
     expect(preview.warnings).toEqual([{ code: "target-runner", message: "Warm-up required." }]);
   });
 
-  it("previews up to four independently selected environments without claiming multi-target execution", async () => {
+  it("previews up to four independently selected environments with a runnable multi-target plan", async () => {
     const browserMap = { ...map, combines: { [combine.id]: combine } } as unknown as AppMap;
     const environments = [target("browser-a", "browser"), target("browser-b", "browser")];
     relay.invoke.mockReset().mockImplementation(async (operation: string) => {
@@ -431,14 +431,14 @@ describe("suite and environment product projections", () => {
     expect(preview.execution).toMatchObject({
       profileCount: 2,
       selectedProfileIds: ["browser-a", "browser-b"],
-      capacity: "unavailable",
+      capacity: "multi-target",
       duration: "unavailable",
       detail:
-        "Relay can preview each selected environment, but cannot yet run every Suite case in every selected environment.",
+        "Each selected Suite case can run against every selected environment; final duration depends on target capacity.",
     });
   });
 
-  it("fails closed when starting more than one environment because canonical admission is absent", async () => {
+  it("starts every selected environment through the canonical profile expansion payload", async () => {
     relay.invoke.mockReset().mockImplementation(async (operation: string) => {
       if (operation === "app-map.get")
         return { appMap: { ...map, combines: { [combine.id]: combine } } };
@@ -447,6 +447,8 @@ describe("suite and environment product projections", () => {
       }
       if (operation === "build.list") return { builds: [] };
       if (operation === "target.browser-auth.list") return { fixtures: [] };
+      if (operation === "job.combine.start")
+        return { campaign: { id: "campaign-multi" }, batch: { id: "batch-multi" } };
       throw new Error(`Unexpected operation ${operation}`);
     });
     await expect(
@@ -455,16 +457,18 @@ describe("suite and environment product projections", () => {
         suiteId: combine.id,
         profileIds: ["browser-a", "browser-b"],
       }),
-    ).rejects.toThrow(/every Suite case in every selected environment/u);
-    expect(relay.invoke).not.toHaveBeenCalledWith("job.combine.start", expect.anything());
+    ).resolves.toEqual({ batchId: "campaign-multi" });
   });
 
-  it("fails closed for multiple environments instead of dropping cells on a round-robin target", async () => {
+  it("preserves platform and target isolation for multiple environments", async () => {
     relay.invoke.mockReset().mockImplementation(async (operation: string) => {
       if (operation === "target.list") {
         return { targets: [target("ios-a", "ios"), target("android-b", "android")] };
       }
       if (operation === "build.list") return { builds: [] };
+      if (operation === "app-map.get")
+        return { appMap: { ...map, combines: { [combine.id]: combine } } };
+      if (operation === "job.combine.start") return { batch: { id: "batch-multi" } };
       throw new Error(`Unexpected operation ${operation}`);
     });
     await expect(
@@ -473,8 +477,7 @@ describe("suite and environment product projections", () => {
         suiteId: combine.id,
         profileIds: ["ios-a", "android-b"],
       }),
-    ).rejects.toThrow(/every Suite case in every selected environment/u);
-    expect(relay.invoke).not.toHaveBeenCalledWith("job.combine.start", expect.anything());
+    ).resolves.toEqual({ batchId: "batch-multi" });
   });
 
   it("starts a browser Suite with an exact managed target and returns campaign identity", async () => {
@@ -490,6 +493,12 @@ describe("suite and environment product projections", () => {
           executionMode: "all",
           targetKind: "browser",
           browserTargetId: "browser-1",
+          profileTargets: [
+            {
+              profileId: "browser-1",
+              target: { targetKind: "browser", browserTargetId: "browser-1" },
+            },
+          ],
         });
         return { campaign: { id: "campaign-browser" }, batch: { id: "batch-browser" } };
       }
@@ -517,6 +526,12 @@ describe("suite and environment product projections", () => {
           targetKind: "device",
           serial: "ios-1",
           platform: "ios",
+          profileTargets: [
+            {
+              profileId: "ios-1",
+              target: { targetKind: "device", serial: "ios-1", platform: "ios" },
+            },
+          ],
         });
         return { batch: { id: "batch-device" } };
       }

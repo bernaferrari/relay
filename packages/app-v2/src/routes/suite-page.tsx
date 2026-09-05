@@ -35,6 +35,7 @@ export function SuitePage() {
   const navigate = useNavigate();
   const scope = useRunConfigurationKey(platform, `suite:${suiteId}`, appId);
   const [editOpen, setEditOpen] = useState(false);
+  const [executionMode, setExecutionMode] = useState<"pilot" | "all">("pilot");
   const [removeOpen, setRemoveOpen] = useState(false);
   const [name, setName] = useState("");
   const [testIds, setTestIds] = useState<Set<string>>(() => new Set());
@@ -121,7 +122,7 @@ export function SuitePage() {
         appMapId: appId,
         suiteId,
         profileIds: selectedProfileIds,
-        executionMode: "pilot",
+        executionMode,
       }),
     onSuccess: ({ batchId }) => navigate({ to: "/batches/$batchId", params: { batchId } }),
   });
@@ -221,8 +222,8 @@ export function SuitePage() {
                 <Play aria-hidden="true" />
                 {start.isPending
                   ? "Starting…"
-                  : selectedProfileIds.length > 1
-                    ? "Run Across unavailable"
+                  : executionMode === "all"
+                    ? "Run all cases"
                     : "Start pilot"}
               </Button>
             </div>
@@ -288,16 +289,9 @@ export function SuitePage() {
               className="min-w-0 rounded-xl border border-border-weak-base bg-surface-raised-strong p-4"
               aria-labelledby="suite-environment-title"
             >
-              <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
-                Environment
-              </p>
-              <h2
-                id="suite-environment-title"
-                className="mt-1 text-base font-semibold text-text-strong"
-              >
-                Where should Relay run?
-              </h2>
               <RunConfigurationComposer
+                variant="plain"
+                title={<span id="suite-environment-title">Run setup</span>}
                 configuration={{
                   frozen: false,
                   values: {
@@ -337,23 +331,46 @@ export function SuitePage() {
                 selection={configuration.selection}
                 onSelectionChange={configuration.setSelection}
               />
-              <p className="text-sm text-text-weak">
-                One environment runs a first case. Additional environments can be compared in
-                preview; multi-environment execution is unavailable.
+              <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                Choose one to four environments.
               </p>
+              <p className="mt-5 border-t border-border pt-4 text-sm font-medium">
+                How much should run?
+              </p>
+              <p className="mt-1 mb-3 text-xs leading-relaxed text-muted-foreground">
+                Start with one representative case, or run every case on the selected environments.
+              </p>
+              <div className="flex items-center gap-2" role="group" aria-label="Execution scope">
+                <Button
+                  aria-pressed={executionMode === "pilot"}
+                  variant={executionMode === "pilot" ? "secondary" : "outline"}
+                  size="sm"
+                  onClick={() => setExecutionMode("pilot")}
+                >
+                  Pilot
+                </Button>
+                <Button
+                  aria-pressed={executionMode === "all"}
+                  variant={executionMode === "all" ? "secondary" : "outline"}
+                  size="sm"
+                  onClick={() => setExecutionMode("all")}
+                >
+                  All cases
+                </Button>
+              </div>
               {preview.data ? (
                 <div
                   className={`mt-4 grid gap-1 rounded-lg border p-3 text-xs ${
                     preview.data.blockers.length
                       ? "border-border-critical-base bg-surface-critical-weak"
-                      : "border-border-success-base bg-surface-success-weak"
+                      : "border-border bg-muted/30"
                   }`}
                   role="status"
                 >
                   <strong className="font-semibold text-text-strong">
                     {preview.data.blockers.length
                       ? "Needs attention"
-                      : `${preview.data.caseCount} ${
+                      : `Full suite: ${preview.data.caseCount} ${
                           preview.data.caseCount === 1 ? "case" : "cases"
                         } ${
                           preview.data.execution?.capacity === "unavailable" ? "previewed" : "ready"
@@ -365,10 +382,13 @@ export function SuitePage() {
                       ? ""
                       : ` · about ${preview.data.expectedScreenshots} screenshots`}
                   </span>
-                  {preview.data.execution?.capacity === "unavailable" ? (
-                    <small className="text-text-weak">
-                      Select one environment to start a pilot.
-                    </small>
+                  {!preview.data.blockers.length && executionMode === "pilot" ? (
+                    <span className="mt-1 font-medium text-foreground">
+                      This pilot runs one representative case.
+                    </span>
+                  ) : null}
+                  {preview.data.execution?.detail ? (
+                    <small className="text-text-weak">{preview.data.execution.detail}</small>
                   ) : null}
                   {preview.data.blockers.slice(0, 1).map((blocker) => (
                     <small

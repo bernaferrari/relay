@@ -33,6 +33,63 @@ export type AuthoringCaptureProof =
   | "instrumented-unproved"
   | "replay-proved";
 
+/** Immutable context that caused an Agent Debug recording to be opened.
+ * This identifies the original observation without making later recording
+ * observations part of, or mutable through, that original failure. */
+export type AuthoringDebugOrigin = {
+  schemaVersion: 1;
+  source: {
+    runId: string;
+    attempt: number;
+    stepId: string;
+  };
+  evidenceRefs: string[];
+  configRefs: string[];
+};
+
+const MAX_DEBUG_ORIGIN_REFS = 64;
+const MAX_DEBUG_ORIGIN_REF_LENGTH = 256;
+
+export function parseAuthoringDebugOrigin(value: unknown): AuthoringDebugOrigin {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new TypeError("authoring debug origin must be an object");
+  }
+  const input = value as Record<string, unknown>;
+  if (input.schemaVersion !== 1)
+    throw new TypeError("authoring debug origin schemaVersion must be 1");
+  if (!input.source || typeof input.source !== "object" || Array.isArray(input.source)) {
+    throw new TypeError("authoring debug origin source must be an object");
+  }
+  const source = input.source as Record<string, unknown>;
+  if (
+    typeof source.runId !== "string" ||
+    !source.runId ||
+    typeof source.stepId !== "string" ||
+    !source.stepId ||
+    typeof source.attempt !== "number" ||
+    !Number.isSafeInteger(source.attempt) ||
+    source.attempt < 1
+  )
+    throw new TypeError("authoring debug origin source is invalid");
+  for (const field of ["evidenceRefs", "configRefs"] as const) {
+    if (
+      !Array.isArray(input[field]) ||
+      input[field].length > MAX_DEBUG_ORIGIN_REFS ||
+      input[field].some(
+        (item) => typeof item !== "string" || !item || item.length > MAX_DEBUG_ORIGIN_REF_LENGTH,
+      )
+    ) {
+      throw new TypeError(`authoring debug origin ${field} must contain non-empty strings`);
+    }
+  }
+  return {
+    schemaVersion: 1,
+    source: { runId: source.runId, attempt: source.attempt, stepId: source.stepId },
+    evidenceRefs: [...(input.evidenceRefs as string[])],
+    configRefs: [...(input.configRefs as string[])],
+  };
+}
+
 /** Reviewed origin/proof metadata. This is descriptive evidence provenance,
  * never executable Test intent or authority to approve a recording. */
 export type AuthoringCaptureReview = {

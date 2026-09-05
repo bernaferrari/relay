@@ -49,12 +49,22 @@ import {
 function repeatRerunCellIds(
   body: {
     cellIds?: string[];
+    executionCaseIds?: string[];
     clusterIds?: string[];
   },
   report: ReturnType<typeof buildRepeatFailureClusters>,
 ): string[] | undefined {
-  if (body.cellIds === undefined && body.clusterIds === undefined) return undefined;
-  const requested = new Set((body.cellIds ?? []).map((id) => id.trim()).filter(Boolean));
+  if (
+    body.cellIds === undefined &&
+    body.executionCaseIds === undefined &&
+    body.clusterIds === undefined
+  )
+    return undefined;
+  const requested = new Set(
+    [...(body.cellIds ?? []), ...(body.executionCaseIds ?? [])]
+      .map((id) => id.trim())
+      .filter(Boolean),
+  );
   if (body.cellIds && requested.size !== body.cellIds.length) {
     throw new HttpError(400, "cellIds must contain unique non-empty ids", {
       code: "REPEAT_RERUN_SCOPE_INVALID",
@@ -188,6 +198,7 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
       reviewed?: boolean;
       expectedAppMapRevision?: number;
       cellIds?: string[];
+      executionCaseIds?: string[];
       clusterIds?: string[];
       workflowMutation?: NonNullable<
         NonNullable<CombineCampaign["execution"]>["repeat"]
@@ -207,7 +218,10 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
         });
       }
       const projected = await projectCombineCampaign(existing);
-      const hasExplicitRerunScope = body.cellIds !== undefined || body.clusterIds !== undefined;
+      const hasExplicitRerunScope =
+        body.cellIds !== undefined ||
+        body.executionCaseIds !== undefined ||
+        body.clusterIds !== undefined;
       let explicitRerunCellIds: string[] | undefined;
       if (hasExplicitRerunScope) {
         const runs = (
@@ -222,7 +236,8 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
         if (body.reviewed !== true) {
           throw new HttpError(409, "Selective Repeat reruns require explicit evidence review.", {
             code: "REPEAT_TERMINAL_REVIEW_REQUIRED",
-            cellIds: explicitRerunCellIds,
+            cellIds: body.executionCaseIds ? undefined : explicitRerunCellIds,
+            executionCaseIds: body.executionCaseIds,
             recovery:
               "Inspect the immutable representative and member Runs, then resume with reviewed=true.",
           });
@@ -288,7 +303,17 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
           cellTargetBindings: targetBindingsForCampaign(projected),
           compileOptions: { reviewedDocumentOrigins },
         });
-        const preparedById = new Map(prepared.cells.map((cell) => [cell.cellId, cell]));
+        const preparedById = new Map(
+          prepared.cells.map((cell) => [
+            cell.executionCaseId ??
+              projected.cases.find(
+                (item) =>
+                  item.cellId === cell.cellId && item.targetProfileId === cell.targetProfileId,
+              )?.executionCaseId ??
+              cell.cellId,
+            cell,
+          ]),
+        );
         const causalRerun = reconcileCausalCombineRerun(
           projected,
           map,
@@ -304,7 +329,11 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
         );
         const resumePlan = prepareSelectedCombineCampaignResume(
           causalRerun.campaign,
-          explicitRerunCellIds ? { cellIds: explicitRerunCellIds } : {},
+          body.executionCaseIds
+            ? { executionCaseIds: body.executionCaseIds }
+            : explicitRerunCellIds
+              ? { cellIds: explicitRerunCellIds }
+              : {},
         );
         if (resumePlan.retriedTerminalCellIds.length && body.reviewed !== true) {
           throw new HttpError(
@@ -320,7 +349,8 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
         }
         const resumeCampaign = resumePlan.campaign;
         for (const item of resumeCampaign.cases) {
-          const preparedCell = preparedById.get(item.cellId);
+          const preparedCell =
+            preparedById.get(item.executionCaseId ?? item.cellId) ?? preparedById.get(item.cellId);
           if (!preparedCell) {
             throw new HttpError(409, `Campaign cell ${item.cellId} is no longer on this Combine.`, {
               code: "APP_MAP_COMBINE_CELL_CONTRACT",
@@ -355,9 +385,10 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
             );
           }
         }
-        const pendingIds = new Set(resumePlan.selectedCellIds);
+        const pendingIds = new Set(resumePlan.selectedExecutionCaseIds);
         const pending = resumeCampaign.cases.filter(
-          (item) => item.status === "pending" && pendingIds.has(item.cellId),
+          (item) =>
+            item.status === "pending" && pendingIds.has(item.executionCaseId ?? item.cellId),
         );
         if (!pending.length) {
           const noOp = body.workflowMutation
@@ -379,8 +410,11 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
           });
           return true;
         }
-        const toQueue = pending.map((item) => preparedById.get(item.cellId)!);
-        resumedCellIds = new Set(toQueue.map((cell) => cell.cellId));
+        const toQueue = pending.map(
+          (item) =>
+            preparedById.get(item.executionCaseId ?? item.cellId) ?? preparedById.get(item.cellId)!,
+        );
+        resumedCellIds = new Set(pending.map((item) => item.executionCaseId ?? item.cellId));
         const observedTargetProfiles = buildTargetProfiles({
           devices: await (runtime.listDevices ?? listDevices)().catch(() => []),
           targets: await listTargets(),
@@ -459,7 +493,12 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
           await (runtime.assertTargetControl ?? assertTargetControl)(scope, target.targetId);
           staged = stageCells();
         }
-        const jobByCell = new Map(staged.jobs.map((job, index) => [toQueue[index]?.cellId, job]));
+        const jobByCell = new Map(
+          staged.jobs.map((job, index) => [
+            toQueue[index]?.executionCaseId ?? toQueue[index]?.cellId,
+            job,
+          ]),
+        );
         const at = Date.now();
         const updated = await updateCombineCampaign(scope.projectId, campaignId, (current) => ({
           ...current,
@@ -467,7 +506,7 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
           updatedAt: at,
           status: "running",
           cases: resumeCampaign.cases.map((item) => {
-            const job = jobByCell.get(item.cellId);
+            const job = jobByCell.get(item.executionCaseId ?? item.cellId);
             return job ? { ...item, status: "queued" as const, jobId: job.id } : item;
           }),
           lineage: [
@@ -535,14 +574,17 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
         }
         if (resumePersisted) {
           try {
-            const priorById = new Map(projected.cases.map((item) => [item.cellId, item]));
+            const priorById = new Map(
+              projected.cases.map((item) => [item.executionCaseId ?? item.cellId, item]),
+            );
             await updateCombineCampaign(scope.projectId, campaignId, (current) => ({
               ...current,
               status: projected.status,
               updatedAt: Date.now(),
               cases: current.cases.map((item) => {
-                if (!resumedCellIds.has(item.cellId)) return item;
-                return priorById.get(item.cellId) ?? item;
+                const executionId = item.executionCaseId ?? item.cellId;
+                if (!resumedCellIds.has(executionId)) return item;
+                return priorById.get(executionId) ?? item;
               }),
             }));
           } catch (cleanupError) {

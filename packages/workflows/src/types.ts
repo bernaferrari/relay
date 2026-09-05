@@ -5,6 +5,7 @@ import type {
   AuthoringCaptureProof,
   AuthoringEvidence,
   AuthoringCaptureProvenance,
+  AuthoringDebugOrigin,
   AuthoringRecordingEdit,
   AuthoringTarget,
   AppMapCompiledTest,
@@ -60,6 +61,7 @@ export type RecordingPathContext = {
   sourceScreenId?: string;
   pendingConnectionId?: string;
   group?: string;
+  debugOrigin?: AuthoringDebugOrigin;
 };
 
 /** Start one canonical recording session and leave it ready to accept recorded
@@ -435,6 +437,9 @@ export type RunTestOutcomeIntent = OutcomeTargetSelection & {
   kind: "run-test";
   appMapId?: string;
   testId: string;
+  targetProfileId?: string;
+  sourceRevision?: SourceRevision;
+  startup?: AppMapTestStartup;
   confirmRisk?: true;
 };
 

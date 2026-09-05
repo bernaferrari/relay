@@ -291,6 +291,7 @@ describe("Agent Debug route", () => {
   });
 
   it("loads contextual Report details from a canonical runId without serializing evidence", async () => {
+    const debugBug = vi.fn(async () => startOutcome());
     const getReport = vi.fn(async () => ({
       runId: "run-failed",
       title: "Checkout validation",
@@ -323,6 +324,7 @@ describe("Agent Debug route", () => {
     await render({
       path: "/debug?runId=run-failed",
       runService: { getReport } as unknown as RunProductService,
+      agentDebugService: debugService(debugBug),
     });
 
     expect(getReport).toHaveBeenCalledWith("run-failed");
@@ -330,6 +332,19 @@ describe("Agent Debug route", () => {
     expect(document.body.textContent).toContain("1 evidence references available");
     expect(document.getElementById("agent-debug-target")?.textContent).toContain("Ready Pixel");
     expect(document.body.textContent).not.toContain("serial-");
+    await fillTitle("Checkout investigation");
+    await selectTarget("serial-ready");
+    await clickStart();
+    expect(debugBug).toHaveBeenCalledWith(
+      expect.objectContaining({
+        debugOrigin: {
+          schemaVersion: 1,
+          source: { runId: "run-failed", attempt: 1, stepId: "step-1" },
+          evidenceRefs: [],
+          configRefs: [],
+        },
+      }),
+    );
   });
 
   it("opens the live Session after a successful start", async () => {

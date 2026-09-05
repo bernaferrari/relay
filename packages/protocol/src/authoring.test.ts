@@ -78,6 +78,28 @@ test("canonical Test names remain distinct from optional App Map grouping", () =
   );
 });
 
+test("Agent Debug origin survives canonical session serialization as immutable source context", () => {
+  const value = {
+    ...session("recording"),
+    debugOrigin: {
+      schemaVersion: 1 as const,
+      source: { runId: "run-failed", attempt: 2, stepId: "step-submit" },
+      evidenceRefs: ["frame-1", "tree-1"],
+      configRefs: ["build:build-7", "profile:pixel"],
+    },
+  };
+  const restored = parseAuthoringSession(JSON.parse(serializeAuthoringSession(value)));
+  assert.deepEqual(restored.debugOrigin, value.debugOrigin);
+  assert.throws(
+    () =>
+      parseAuthoringSession({
+        ...value,
+        debugOrigin: { ...value.debugOrigin, source: { ...value.debugOrigin.source, attempt: 0 } },
+      }),
+    /authoring debug origin source is invalid/u,
+  );
+});
+
 test("legacy Takes without raw capture remain wire-compatible", () => {
   const legacy: AuthoringSession = {
     ...session("reviewing"),

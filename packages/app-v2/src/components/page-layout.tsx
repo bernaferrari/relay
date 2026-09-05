@@ -56,7 +56,7 @@ export function PageHeader({
         ) : null}
       </div>
       {actions ? (
-        <div className="relay-workspace-actions flex flex-wrap items-center gap-2 pt-1.5 max-[720px]:w-full">
+        <div className="relay-workspace-actions flex flex-wrap items-center gap-2 pt-1.5 max-[960px]:w-full">
           {actions}
         </div>
       ) : null}

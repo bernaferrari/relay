@@ -59,6 +59,25 @@ export const combineStartOperationInputSchemas = {
         .strict()
         .optional(),
       defaultTargetProfileId: identifier("Default target profile identifier").optional(),
+      profileTargets: z
+        .array(
+          z
+            .object({
+              profileId: identifier("Environment profile identifier"),
+              targetProfileId: identifier("Saved runtime profile identifier").optional(),
+              target: z
+                .object({
+                  targetKind: z.enum(["device", "browser"]).optional(),
+                  serial: identifier("Connected device serial").optional(),
+                  platform: z.enum(["android", "ios", "browser"]).optional(),
+                  browserTargetId: identifier("Managed browser target identifier").optional(),
+                })
+                .strict(),
+            })
+            .strict(),
+        )
+        .max(4)
+        .optional(),
     })
     .strict()
     .superRefine((input, context) => {
@@ -76,7 +95,12 @@ export const combineStartOperationInputSchemas = {
           path: ["testId"],
         });
       }
-      if (!input.serial && !input.browserTargetId && !input.cellTargetBindings?.length) {
+      if (
+        !input.serial &&
+        !input.browserTargetId &&
+        !input.cellTargetBindings?.length &&
+        !input.profileTargets?.length
+      ) {
         context.addIssue({
           code: "custom",
           message: "Choose serial, browserTargetId, or explicit cell target bindings",

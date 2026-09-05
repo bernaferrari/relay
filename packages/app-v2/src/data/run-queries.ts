@@ -5,6 +5,7 @@ export const runQueryKeys = {
   targetPresentation: (targetId: string) => ["run", "target-presentation", targetId] as const,
   pointer: ["run", "active-pointer"] as const,
   workflow: (workflowId: string) => ["run", "workflow", workflowId] as const,
+  restore: (runId: string) => ["run", "restore", runId] as const,
   report: (runId: string) => ["run", "report", runId] as const,
   rawEvidence: (runId: string) => ["run", "report", runId, "raw-evidence"] as const,
 };

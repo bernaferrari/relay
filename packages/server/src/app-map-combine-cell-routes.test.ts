@@ -651,7 +651,11 @@ test("Combine admission reuses a caller-controlled local lease during initial qu
       actorId: "human:designer",
       actorKind: "human",
     });
-    await saveLocaleCombine(client);
+    await saveLocaleCombine(client, {
+      en: { targetId: "pixel-1", platform: "android" },
+      it: { targetId: "ipad-b", platform: "ios" },
+      fr: { targetId: "pixel-1", platform: "android" },
+    });
     const result = await client.invoke("job.combine.start", {
       appMapId: "store",
       combineId: "locales",
@@ -1926,6 +1930,69 @@ test("a named cell persists only that selection; an unnamed pilot keeps the full
         await waitForJobCompletion(job.id);
       }
     }
+  } finally {
+    await server.close();
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("profileTargets expand one authored cell into distinct execution cases", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-combine-profile-expansion-"));
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = root;
+  const server = await startServer({
+    host: "127.0.0.1",
+    port: 0,
+    jobRouteRuntime: {
+      async listDevices() {
+        return [listedMobileTarget("pixel-1", "android"), listedMobileTarget("ipad-b", "ios")];
+      },
+    },
+  });
+  try {
+    const client = new RelayClient({
+      url: `http://127.0.0.1:${server.port}`,
+      auth: { type: "none" },
+      organizationId: "acme",
+      projectId: "mobile",
+      actorId: "human:designer",
+      actorKind: "human",
+    });
+    await saveLocaleCombine(client, {
+      en: { targetId: "pixel-1", platform: "android" },
+      it: { targetId: "ipad-b", platform: "ios" },
+      fr: { targetId: "pixel-1", platform: "android" },
+    });
+    const result = await client.invoke("job.combine.start", {
+      appMapId: "store",
+      combineId: "locales",
+      selected: { language: ["en"] },
+      executionMode: "all",
+      profileTargets: [
+        {
+          profileId: "environment-a",
+          targetProfileId: "pixel-en",
+          target: { targetKind: "device", serial: "pixel-1", platform: "android" },
+        },
+        {
+          profileId: "environment-b",
+          targetProfileId: "pixel-it",
+          target: { targetKind: "device", serial: "ipad-b", platform: "ios" },
+        },
+      ],
+    });
+    const campaign = result.campaign as CombineCampaign;
+    const cases = campaign.cases;
+    assert.equal(cases.length, 2);
+    assert.equal(new Set(cases.map((item) => item.executionCaseId)).size, 2);
+    assert.equal(new Set(cases.map((item) => item.cellId)).size, 1);
+    assert.deepEqual(cases.map((item) => [item.target?.targetId, item.targetProfileId]).sort(), [
+      ["ipad-b", "pixel-it"],
+      ["pixel-1", "pixel-en"],
+    ]);
+    assert.equal(campaign.execution?.selectedExecutionCaseIds?.length, 2);
   } finally {
     await server.close();
     if (previous === undefined) delete process.env.RELAY_STATE_DIR;

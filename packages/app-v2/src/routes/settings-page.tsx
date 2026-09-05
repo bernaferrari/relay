@@ -61,6 +61,9 @@ function GeneralSettings() {
             Workspace behavior
           </p>
           <h2 id="general-behavior-title">Your workspace</h2>
+          <p className="text-xs text-text-weaker">
+            Server access and notifications apply to this computer.
+          </p>
         </header>
         <SettingRow
           title="Active work"
@@ -210,7 +213,7 @@ function EvidenceSettings() {
                 Privacy
               </p>
               <h2 id="privacy-title">Protect evidence before it is saved</h2>
-              <p>Changes apply to future collection. Finished Reports stay unchanged.</p>
+              <p>Applies to future runs in this workspace. Finished Reports stay unchanged.</p>
             </header>
             <ToggleRow
               id="redact-sensitive-evidence"
@@ -473,7 +476,9 @@ function AdvancedSettings() {
             Server
           </p>
           <h2 id="connection-title">Relay address</h2>
-          <p>Change this only when your workspace runs on a different Relay server.</p>
+          <p>
+            Applies to this computer. Change this address to connect to a different Relay server.
+          </p>
         </header>
         {connection.isPending ? <PageLoading label="Loading the Relay address…" /> : null}
         {connection.isError ? (

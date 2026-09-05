@@ -18,7 +18,11 @@ import {
   Smartphone,
 } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import type { LiveTargetSession, LiveTargetStatus } from "../data/live-target-session";
+import type {
+  LiveTargetBrowserContext,
+  LiveTargetSession,
+  LiveTargetStatus,
+} from "../data/live-target-session";
 import { recordingQueryKeys } from "../data/recording-queries";
 import { newTestSetupContinuation } from "../data/setup-continuation";
 import { LibraryPage } from "../components/page-layout";
@@ -43,11 +47,13 @@ export function NewTestPage() {
   const requestedTargetId = typeof search.target === "string" ? search.target : undefined;
   const startsFromPath = search.view === "path" && Boolean(requestedAppId && requestedPathId);
   const navigate = useNavigate();
-  const [appId, setAppId] = useState(requestedAppId ?? "");
+  const [fallbackAppId, setAppId] = useState(requestedAppId ?? "");
+  const appId = requestedAppId ?? fallbackAppId;
   const [targetId, setTargetId] = useState(requestedTargetId ?? "");
   const previewCanvas = useRef<HTMLCanvasElement>(null);
   const previewSession = useRef<LiveTargetSession | undefined>(undefined);
   const [previewStatus, setPreviewStatus] = useState<LiveTargetStatus>("idle");
+  const [browserContext, setBrowserContext] = useState<LiveTargetBrowserContext>();
   const [previewIssue, setPreviewIssue] = useState<string>();
   const [previewBusy, setPreviewBusy] = useState(false);
   const [previewAttempt, setPreviewAttempt] = useState(0);
@@ -127,6 +133,7 @@ export function NewTestPage() {
     let session: LiveTargetSession | undefined;
     setPreviewIssue(undefined);
     setPreviewStatus("connecting");
+    setBrowserContext(undefined);
     void productService
       .previewTarget(selectedTarget)
       .then((next) => {
@@ -136,6 +143,7 @@ export function NewTestPage() {
         unsubscribe = next.subscribe((state) => {
           setPreviewStatus(state.status);
           setPreviewIssue(state.issue ? friendlyPreviewIssue(state.issue) : undefined);
+          setBrowserContext(state.browserContext);
         });
         unmount = next.mount(previewCanvas.current);
       })
@@ -158,14 +166,16 @@ export function NewTestPage() {
     const session = previewSession.current;
     if (!session) {
       setPreviewIssue("The live view is still connecting.");
-      return;
+      return false;
     }
     setPreviewBusy(true);
     setPreviewIssue(undefined);
     try {
       await session.input(input);
+      return true;
     } catch {
       setPreviewIssue("Relay could not send that interaction. Reconnect, then try again.");
+      return false;
     } finally {
       setPreviewBusy(false);
     }
@@ -221,7 +231,14 @@ export function NewTestPage() {
       className="relay-choice-group relay-choice-group--apps grid gap-2"
       name="app"
       value={appId}
-      onValueChange={setAppId}
+      onValueChange={(app) => {
+        setAppId(app);
+        void navigate({
+          to: "/tests/new",
+          replace: true,
+          search: { app, ...(targetId ? { target: targetId } : {}) },
+        });
+      }}
       aria-labelledby="test-app-title"
       required
     >
@@ -485,6 +502,7 @@ export function NewTestPage() {
                       busy={previewBusy}
                       targetTitle={targetLabel(selectedTarget).title}
                       targetDetail={targetLabel(selectedTarget).detail}
+                      browserContext={browserContext}
                       send={sendPreview}
                       recording={false}
                     />

@@ -63,6 +63,9 @@ export type CombineCampaignStatus =
 export type CombineCampaignCase = {
   index: number;
   cellId: string;
+  /** Stable identity for one authored cell under one execution profile. Old
+   * campaigns omit this and use cellId as their execution identity. */
+  executionCaseId?: string;
   testId: string;
   world: string;
   values: Record<string, string>;
@@ -153,6 +156,9 @@ export type CombineCampaign = {
   execution?: {
     selected?: Record<string, string[]>;
     selectedCellIds: string[];
+    /** Execution identities for expanded profile cases. Kept optional for
+     * schema-v1 campaigns whose cell ids were already unique. */
+    selectedExecutionCaseIds?: string[];
     strategy?: "zip" | "cartesian" | "pairwise";
     seed: number;
     title?: string;

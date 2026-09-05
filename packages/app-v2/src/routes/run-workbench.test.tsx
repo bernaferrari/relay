@@ -152,6 +152,46 @@ function render(selectedStepIndex = 0) {
 }
 
 describe("RunWorkbench", () => {
+  it("shows unlinked artifacts for a legacy Run with no timeline", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    roots.push(root);
+    act(() =>
+      root.render(
+        <RunWorkbench
+          report={{ ...report, timeline: [], stepEvidence: undefined }}
+          selectedStepIndex={0}
+          onSelectStep={() => {}}
+        />,
+      ),
+    );
+    expect(host.textContent).toContain("Available evidence");
+    expect(host.textContent).toContain("cannot be attributed to a specific step");
+    expect(host.querySelector("img")?.getAttribute("src")).toBe(
+      report.evidence[0]?.items[0]?.media?.src,
+    );
+  });
+
+  it("opens the selected frame for inspection and zooms without substituting media", async () => {
+    const host = render(2);
+    const selectedSource = host.querySelector("img")?.getAttribute("src");
+    const inspect = [...host.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Inspect screenshot"),
+    )!;
+    await act(async () => {
+      inspect.click();
+    });
+    const dialog = document.querySelector('[role="dialog"]')!;
+    expect(dialog.querySelector("img")?.getAttribute("src")).toBe(selectedSource);
+    const zoom = dialog.querySelector<HTMLButtonElement>('[aria-label="Zoom in"]')!;
+    await act(async () => {
+      zoom.click();
+    });
+    expect(dialog.textContent).toContain("100%");
+    expect(dialog.querySelector("img")?.style.width).toBe("320px");
+  });
+
   it("selects the first persisted step and its joined media", () => {
     const host = render();
     expect(host.querySelector('[aria-current="step"]')?.textContent).toContain("Open the cart");

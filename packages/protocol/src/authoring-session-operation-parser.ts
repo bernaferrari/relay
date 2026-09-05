@@ -1,5 +1,6 @@
 import type { CreateAuthoringSessionInput } from "./authoring.js";
 import { fail, number, objectParser, record, string } from "./operation-parser-primitives.js";
+import { parseAuthoringDebugOrigin } from "./authoring-capture.js";
 
 /** Canonical runtime parser shared by low-level and durable Authoring begin. */
 export const createAuthoringSessionParser = objectParser<CreateAuthoringSessionInput>(
@@ -31,5 +32,6 @@ export const createAuthoringSessionParser = objectParser<CreateAuthoringSessionI
       string(input.pendingConnectionId, "pendingConnectionId");
     }
     if (input.group !== undefined) string(input.group, "group");
+    if (input.debugOrigin !== undefined) parseAuthoringDebugOrigin(input.debugOrigin);
   },
 );

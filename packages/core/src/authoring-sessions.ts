@@ -153,6 +153,7 @@ export class AuthoringSessionStore {
       state: "preparing",
       target: clone(input.target),
       captureProvenance: { ...CONTROL_AND_RECORD_PROVENANCE },
+      ...(input.debugOrigin ? { debugOrigin: structuredClone(input.debugOrigin) } : {}),
       leaseId: input.leaseId,
       expectedAppMapRevision: input.expectedAppMapRevision,
       ...(input.sourceScreenId ? { sourceScreenId: input.sourceScreenId } : {}),

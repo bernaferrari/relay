@@ -90,6 +90,45 @@ test("start adopts canonical inspection and keeps the durable Run identity", asy
   assert.equal(current.snapshot?.target?.targetId, "pixel-9");
 });
 
+test("forwards selected target profile, build provenance, and cold startup as one frozen request", async () => {
+  let received: unknown;
+  const journey = createProductRunJourney({
+    jobs: {
+      ...jobsFor({}),
+      async run(input) {
+        received = input;
+        return snapshot("queued", 4, {
+          frozen: {
+            ...snapshot("queued").frozen!,
+            targetProfileId: "profile-1",
+            sourceRevision: { vcs: "git", sha: "abcdef1", buildId: "build-1" },
+            startup: { mode: "cold" },
+          },
+        });
+      },
+    },
+  });
+
+  const state = await journey.start({
+    testId: "test-1",
+    appMapId: "app-1",
+    targetId: "pixel-9",
+    targetProfileId: "profile-1",
+    sourceRevision: { vcs: "git", sha: "abcdef1", buildId: "build-1" },
+    startup: { mode: "cold" },
+  });
+  assert.deepEqual(received, {
+    kind: "run-test",
+    testId: "test-1",
+    appMapId: "app-1",
+    targetId: "pixel-9",
+    targetProfileId: "profile-1",
+    sourceRevision: { vcs: "git", sha: "abcdef1", buildId: "build-1" },
+    startup: { mode: "cold" },
+  });
+  assert.equal(state.snapshot?.phase, "queued");
+});
+
 test("reconstructed UI and CLI journeys inspect one server workflow and resume it without duplication", async () => {
   let starts = 0;
   let cancels = 0;

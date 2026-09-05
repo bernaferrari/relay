@@ -7,6 +7,7 @@ import { resetControlDatabaseCache } from "./collaboration-db.js";
 import { subscribe, type DeviceEvent } from "./events.js";
 import {
   createDurableWorkflow,
+  findDurableWorkflowByResource,
   parseLegacyWorkflowAdoption,
   readDurableWorkflow,
   transitionDurableWorkflow,
@@ -27,6 +28,38 @@ async function withStateRoot(operation: () => Promise<void>): Promise<void> {
 }
 
 const scope = { organizationId: "acme", projectId: "mobile" };
+
+test("finds a persisted run workflow by its scoped job resource", async () => {
+  await withStateRoot(async () => {
+    await createDurableWorkflow({
+      ...scope,
+      workflowId: "workflow-resource",
+      kind: "run-test",
+      frozenIdentity: { appMapId: "map", testId: "settings" },
+      resource: { kind: "job", id: "run-resource" },
+      actorId: "agent:author",
+      at: 100,
+      expiresAt: 10_000,
+    });
+    resetControlDatabaseCache();
+    const found = await findDurableWorkflowByResource({
+      ...scope,
+      workflowKind: "run-test",
+      resourceKind: "job",
+      resourceId: "run-resource",
+    });
+    assert.equal(found?.record.workflowId, "workflow-resource");
+    assert.equal(
+      await findDurableWorkflowByResource({
+        ...scope,
+        workflowKind: "run-test",
+        resourceKind: "job",
+        resourceId: "other-run",
+      }),
+      undefined,
+    );
+  });
+});
 
 test("server-owned workflow state survives restart with append-only audit", async () => {
   await withStateRoot(async () => {

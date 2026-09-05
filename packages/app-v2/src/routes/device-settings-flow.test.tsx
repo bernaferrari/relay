@@ -6,6 +6,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
 import { RelayV2App } from "../app";
 import type { DeviceProductService, ProductDevice } from "../data/device-product-service";
+import type { LiveTargetSession } from "../data/live-target-session";
 import type { RecordingProductService } from "../data/recording-product-service";
 import type { SettingsProductService } from "../data/settings-product-service";
 import type { Platform } from "../platform/types";
@@ -258,6 +259,62 @@ describe("Devices", () => {
     await click(button("Reconnect"));
     expect(connections).toBe(2);
   });
+
+  it.each(["empty", "failed"] as const)(
+    "opens the live stream after reconnect recovers %s discovery",
+    async (initialDiscovery) => {
+      let connections = 0;
+      let mounted = 0;
+      let discoveryAvailable = false;
+      const discovered = { kind: "device", platform: "ios", targetId: "ipad" } as const;
+      const productService = {
+        connect: async () => {
+          connections += 1;
+          if (!discoveryAvailable && initialDiscovery === "failed")
+            throw new Error("Device discovery failed");
+          return { targets: discoveryAvailable ? [discovered] : [] };
+        },
+        presentTargets: async (targets: readonly (typeof discovered)[]) =>
+          targets.map((target) => ({
+            ...target,
+            name: "Design iPad",
+            detail: "Apple device · Ready",
+          })),
+        previewTarget: async (): Promise<LiveTargetSession> => ({
+          snapshot: () => ({ status: "streaming", target: discovered }),
+          subscribe: (listener) => {
+            listener({ status: "streaming", target: discovered });
+            return () => undefined;
+          },
+          mount: () => {
+            mounted += 1;
+            return () => undefined;
+          },
+          input: async () => undefined,
+          close: () => undefined,
+        }),
+      } as unknown as RecordingProductService;
+
+      await renderPath("/devices/ipad", { productService });
+      if (initialDiscovery === "failed") {
+        await act(async () => void (await new Promise((resolve) => setTimeout(resolve, 1_100))));
+        await settle();
+      }
+      const initialConnections = connections;
+      expect(initialConnections).toBeGreaterThanOrEqual(1);
+      expect(mounted).toBe(0);
+      expect(document.body.textContent).toContain("Live control is not available yet");
+
+      discoveryAvailable = true;
+      await click(button("Reconnect"));
+
+      expect(connections).toBe(initialConnections + 1);
+      expect(mounted).toBe(1);
+      expect(
+        document.querySelector<HTMLCanvasElement>(".relay-capture-live-target")?.tabIndex,
+      ).toBe(0);
+    },
+  );
 
   it("presents each device as one compact, cohesive navigation target", async () => {
     const history = await renderPath("/devices");

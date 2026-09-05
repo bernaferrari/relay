@@ -4,6 +4,8 @@ import {
   parseAuthoringCaptureProvenance,
   type AuthoringCaptureProvenance,
   type AuthoringCaptureProof,
+  parseAuthoringDebugOrigin,
+  type AuthoringDebugOrigin,
 } from "./authoring-capture.js";
 import { summarizeAuthoringSession } from "./authoring-summary.js";
 export { summarizeAuthoringSession } from "./authoring-summary.js";
@@ -544,6 +546,8 @@ export type AuthoringSession = {
   /** Immutable origin of this recording. Optional only for legacy sessions,
    * which normalize to the historical Relay control path at read time. */
   captureProvenance?: AuthoringCaptureProvenance;
+  /** Immutable failed-run context that opened this investigation. */
+  debugOrigin?: AuthoringDebugOrigin;
   leaseId: string;
   expectedAppMapRevision: number;
   sourceScreenId?: string;
@@ -585,6 +589,7 @@ export type CreateAuthoringSessionInput = {
   sourceScreenId?: string;
   pendingConnectionId?: string;
   group?: string;
+  debugOrigin?: AuthoringDebugOrigin;
 };
 
 export type AuthoringSessionRef = { sessionId: string };
@@ -732,6 +737,7 @@ export function parseAuthoringSession(value: unknown): AuthoringSession {
   if (input.captureProvenance !== undefined) {
     parseAuthoringCaptureProvenance(input.captureProvenance);
   }
+  if (input.debugOrigin !== undefined) parseAuthoringDebugOrigin(input.debugOrigin);
   return input as AuthoringSession;
 }
 
