@@ -162,6 +162,56 @@ describe("run report projection", () => {
     });
   });
 
+  it("joins expectations only from the frozen recipe snapshot", () => {
+    const report = projectRunReport(
+      "run-recipe",
+      {
+        title: "Assert checkout",
+        outcome: "passed",
+        recipeSnapshot: {
+          steps: [
+            {
+              id: "recipe-assert",
+              kind: "assert-content",
+              input: "screen",
+              expected: "Order confirmed",
+              match: "contains",
+            },
+          ],
+        },
+        steps: [
+          {
+            id: "trace-assert",
+            recipeStepId: "recipe-assert",
+            index: 0,
+            title: "Verify checkout",
+            status: "ok",
+            log: "Order confirmed",
+            frames: [],
+          },
+        ],
+      },
+      { channels: {} },
+    );
+    expect(report.timeline[0]).toMatchObject({
+      expected: "Order confirmed",
+      observed: "Order confirmed",
+    });
+  });
+
+  it("does not join a recipe expectation when the trace step has no recipe identity", () => {
+    const report = projectRunReport(
+      "run-unjoined",
+      {
+        title: "Unjoined trace",
+        recipeSnapshot: { steps: [{ kind: "assert-content", expected: "Do not infer" }] },
+        steps: [{ index: 0, title: "Verify", status: "ok", frames: [] }],
+      },
+      { channels: {} },
+    );
+    expect(report.timeline[0]?.expected).toBeUndefined();
+  });
+
   it("does not turn a harness failure into a product verdict", () => {
     const report = projectRunReport(
       "run-2",

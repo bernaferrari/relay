@@ -405,6 +405,89 @@ describe("Run and Report", () => {
     expect(button("Run Test").disabled).toBe(true);
   });
 
+  it("keeps a queued saved-step replay on the source report until a real run id exists", async () => {
+    const fake = fakeRunService(runState("succeeded"));
+    let replayCalls = 0;
+    let jobReads = 0;
+    fake.service.replay = async (runId) => {
+      expect(runId).toBe("run-1");
+      replayCalls += 1;
+      return { jobId: "job-replay" };
+    };
+    fake.service.getReplayJob = async (jobId) => {
+      expect(jobId).toBe("job-replay");
+      jobReads += 1;
+      return jobReads === 1 ? { status: "queued" } : { status: "ok", runId: "run-2" };
+    };
+
+    const { history } = await renderRun(
+      "/runs/run-1",
+      fake.service,
+      platformWithStorage().platform,
+    );
+    await click(button("Replay saved steps"));
+    await click(button("Start replay"));
+
+    expect(replayCalls).toBe(1);
+    expect(history.location.search).toContain("replayJob=job-replay");
+    expect(history.location.pathname).toBe("/runs/run-1");
+    expect(document.body.textContent).toContain("Replay queued on the saved target");
+
+    await act(async () => void (await new Promise((resolve) => setTimeout(resolve, 1_650))));
+    await settle();
+    expect(history.location.pathname).toBe("/runs/run-2");
+    expect(history.location.search).toBe("");
+    expect(replayCalls).toBe(1);
+  });
+
+  it("reports replay polling failures instead of leaving a false in-progress state", async () => {
+    const fake = fakeRunService(runState("succeeded"));
+    fake.service.replay = async () => ({ jobId: "job-replay" });
+    fake.service.getReplayJob = async () => {
+      throw new Error("workspace unavailable");
+    };
+
+    await renderRun("/runs/run-1", fake.service, platformWithStorage().platform);
+    await click(button("Replay saved steps"));
+    await click(button("Start replay"));
+    await settle();
+
+    expect(document.querySelector('[role="alert"]')).not.toBeNull();
+    expect(document.body.textContent).not.toContain("Replaying saved steps on the saved target");
+  });
+
+  it("does not navigate from a running replay even if a provisional run id is present", async () => {
+    const fake = fakeRunService(runState("succeeded"));
+    fake.service.replay = async () => ({ jobId: "job-replay" });
+    fake.service.getReplayJob = async () => ({ status: "running", runId: "run-provisional" });
+
+    const { history } = await renderRun(
+      "/runs/run-1",
+      fake.service,
+      platformWithStorage().platform,
+    );
+    await click(button("Replay saved steps"));
+    await click(button("Start replay"));
+    await settle();
+
+    expect(history.location.pathname).toBe("/runs/run-1");
+    expect(document.body.textContent).toContain("Replaying saved steps");
+  });
+
+  it("surfaces a terminal replay with no report id as an unavailable result", async () => {
+    const fake = fakeRunService(runState("succeeded"));
+    fake.service.replay = async () => ({ jobId: "job-replay" });
+    fake.service.getReplayJob = async () => ({ status: "ok" });
+
+    await renderRun("/runs/run-1", fake.service, platformWithStorage().platform);
+    await click(button("Replay saved steps"));
+    await click(button("Start replay"));
+    await settle();
+
+    expect(document.querySelector('[role="alert"]')).not.toBeNull();
+    expect(document.body.textContent).not.toContain("Replaying saved steps on the saved target");
+  });
+
   it("adopts the durable workflow pointer after reload", async () => {
     const fake = fakeRunService();
     const storage = platformWithStorage({

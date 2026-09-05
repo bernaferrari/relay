@@ -9,6 +9,7 @@ import type { CatalogProductService } from "../data/catalog-product-service";
 import type { MapProductService } from "../data/map-product-service";
 import type { RecordingProductService } from "../data/recording-product-service";
 import type { RunProductService } from "../data/run-product-service";
+import type { SuiteProfileProductService } from "../data/suite-profile-product-service";
 import type { Platform } from "../platform/types";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -133,6 +134,7 @@ async function render(
   service = catalog(),
   mapService?: MapProductService,
   runService: RunProductService = {} as RunProductService,
+  suiteProfileService: SuiteProfileProductService = {} as SuiteProfileProductService,
 ) {
   const history = createMemoryHistory({ initialEntries: [path] });
   const host = document.createElement("div");
@@ -146,6 +148,7 @@ async function render(
         history={history}
         productService={{} as RecordingProductService}
         runService={runService}
+        suiteProfileService={suiteProfileService}
         catalogService={service}
         mapService={mapService}
       />,
@@ -382,6 +385,70 @@ describe("Tests workspace", () => {
     await click("Clear filters");
     expect(history.location.search).toBe("");
     expect(document.body.textContent).toContain("Change language");
+  });
+
+  it("creates a one-App Suite from explicitly selected ready Tests", async () => {
+    const extra = {
+      ...tests[0]!,
+      id: "test-billing-internal",
+      name: "Review billing",
+      appMapId: "app-bank-internal",
+      appName: "Billing",
+    };
+    const saved = vi.fn(async (input: { appMapId: string; testIds: readonly string[] }) => ({
+      id: "suite-selected",
+      appMapId: input.appMapId,
+      appMapRevision: 4,
+      appName: "Shopping",
+      name: "Selected smoke",
+      testIds: input.testIds,
+      tests: [],
+      variableIds: [],
+      strategy: "cartesian" as const,
+      source: { kind: "app-map-combine" as const, id: "suite-selected" },
+    }));
+    const suiteProfileService = {
+      getSuiteEditor: async (appMapId: string) => ({
+        appMapId,
+        appName: appMapId === "app-shop-internal" ? "Shopping" : "Billing",
+        revision: 4,
+        tests: [],
+        dataSets: [],
+      }),
+      saveSuite: saved,
+    } as unknown as SuiteProfileProductService;
+    await render(
+      "/tests",
+      catalog({ listTests: async () => [...tests, extra] }),
+      undefined,
+      {} as RunProductService,
+      suiteProfileService,
+    );
+    await act(async () => {
+      document
+        .querySelectorAll<HTMLElement>(".relay-library-row-select")
+        .forEach((checkbox) => checkbox.click());
+    });
+    await settle();
+    await click("Create Suite");
+    expect(document.body.textContent).toContain("Your selection spans Apps");
+    await fill(document.querySelector<HTMLInputElement>("#selected-suite-name")!, "Selected smoke");
+    const appSelect = document.querySelector<HTMLSelectElement>("#selected-suite-app")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set?.call(
+        appSelect,
+        "app-shop-internal",
+      );
+      appSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await settle();
+    await click("Save Suite");
+    expect(saved).toHaveBeenCalledWith(
+      expect.objectContaining({
+        appMapId: "app-shop-internal",
+        testIds: ["test-language-internal"],
+      }),
+    );
   });
 });
 

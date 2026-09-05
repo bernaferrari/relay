@@ -6,6 +6,7 @@ import {
   useEffect,
   useRef,
   useState,
+  useId,
   type KeyboardEvent,
   type PointerEvent,
   type RefObject,
@@ -37,6 +38,7 @@ export function LiveTargetCanvas({
   helpText?: string;
 }) {
   const [text, setText] = useState("");
+  const helpId = `${useId()}-help`;
   const pointerStart = useRef<Point | undefined>(undefined);
   const wheel = useRef<{ point: Point; x: number; y: number } | undefined>(undefined);
   const wheelTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -110,6 +112,11 @@ export function LiveTargetCanvas({
       void send({ kind: "key", key: "enter" });
       return;
     }
+    if (event.key === "Backspace") {
+      event.preventDefault();
+      void send({ kind: "key", key: "backspace" });
+      return;
+    }
     if (event.key.length === 1) {
       event.preventDefault();
       void send({ kind: "key", key: "enter", text: event.key });
@@ -134,7 +141,7 @@ export function LiveTargetCanvas({
           ref={canvasRef}
           className="relay-capture-live-target"
           aria-label={`Interactive live target: ${targetTitle}`}
-          aria-describedby="live-target-help"
+          aria-describedby={helpId}
           tabIndex={streaming ? 0 : -1}
           onPointerDown={pointerDown}
           onPointerUp={pointerUp}
@@ -194,11 +201,11 @@ export function LiveTargetCanvas({
           </Button>
         </div>
       </div>
-      <p id="live-target-help" className="relay-live-target-help">
+      <p id={helpId} className="relay-live-target-help">
         {helpText ??
           (recording
-            ? "Click, drag, scroll, or type here. Relay records each supported interaction in this Test."
-            : "Click, drag, scroll, or type here to put the app on the screen where recording should begin.")}
+            ? "Click, drag, scroll, or type here. Relay records each supported interaction in this Test. Enter and Backspace are supported keys."
+            : "Inspect the target with click, drag, scroll, or type. Enter and Backspace are supported keys; other keyboard shortcuts stay local.")}
       </p>
     </div>
   );

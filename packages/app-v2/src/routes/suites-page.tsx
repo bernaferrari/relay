@@ -140,6 +140,7 @@ export function SuitesPage() {
           <Dialog
             open={dialogOpen}
             onOpenChange={(open) => {
+              if (!open && createSuite.isPending) return;
               setDialogOpen(open);
               if (open) resetCreate();
             }}
@@ -186,6 +187,20 @@ export function SuitesPage() {
                   />
                 </Field>
                 {editor.isPending && appId ? <PageLoading label="Loading App Tests…" /> : null}
+                {editor.error ? (
+                  <FieldError>
+                    Relay could not load this App’s Suite editor.{" "}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => void editor.refetch()}
+                      disabled={editor.isFetching}
+                    >
+                      {editor.isFetching ? "Retrying…" : "Try again"}
+                    </Button>
+                  </FieldError>
+                ) : null}
                 {editor.data ? (
                   <div className="relay-suite-dialog-scopes">
                     <fieldset>
@@ -249,7 +264,13 @@ export function SuitesPage() {
                   </FieldError>
                 ) : null}
                 <div className="relay-dialog-actions">
-                  <DialogClose render={<Button variant="ghost">Cancel</Button>} />
+                  <DialogClose
+                    render={
+                      <Button variant="ghost" disabled={createSuite.isPending}>
+                        Cancel
+                      </Button>
+                    }
+                  />
                   <Button
                     type="submit"
                     variant="default"
@@ -285,7 +306,7 @@ export function SuitesPage() {
           }
         />
       ) : null}
-      {suites.data?.length ? (
+      {!suites.isPending && !suites.error && suites.data ? (
         <>
           <label className="relay-filter-field">
             <span>App</span>
@@ -352,10 +373,21 @@ export function SuitesPage() {
       {!suites.isPending && !suites.error && suites.data?.length === 0 ? (
         <EmptyState
           icon={Layers3}
-          title="No Suites yet"
-          detail="Group related Tests into a reusable release, regression, or smoke plan."
+          title={requestedApp ? "No Suites for this App" : "No Suites yet"}
+          detail={
+            requestedApp
+              ? "Clear the App filter or create a Suite for this App."
+              : "Group related Tests into a reusable release, regression, or smoke plan."
+          }
           action={
-            apps.data?.length ? (
+            requestedApp ? (
+              <Button
+                variant="outline"
+                onClick={() => void navigate({ search: { app: undefined } as never })}
+              >
+                Clear App filter
+              </Button>
+            ) : apps.data?.length ? (
               <Button variant="default" onClick={() => setDialogOpen(true)}>
                 New Suite
               </Button>

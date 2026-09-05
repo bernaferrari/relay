@@ -50,6 +50,10 @@ export type RunProductService = {
   listTargets(): Promise<readonly ProductTargetOption[]>;
   presentTargets(targets: readonly AuthoringTarget[]): Promise<readonly ProductTargetOption[]>;
   start(input: ProductRunStartInput): Promise<ProductRunState>;
+  /** Replay the persisted frozen Run configuration after server-side prerequisite checks. */
+  replay?(runId: string): Promise<{ jobId: string; runId?: string }>;
+  getReplayJob?(jobId: string): Promise<{ status: string; runId?: string; error?: string }>;
+  cancelReplay?(jobId: string): Promise<void>;
   inspect(workflowId: string): Promise<ProductRunState>;
   watch(input?: ProductRunWatchInput): Promise<ProductRunState>;
   cancel(): Promise<ProductRunState>;
@@ -160,6 +164,24 @@ export function createRunProductService(platform: Platform): RunProductService {
     },
     async start(input) {
       return (await runtime()).journey.start(input);
+    },
+    async replay(runId) {
+      const { job } = await (await runtime()).client.invoke("run.replay", { runId });
+      return {
+        jobId: job.id,
+        ...(typeof job.runId === "string" ? { runId: job.runId } : {}),
+      };
+    },
+    async getReplayJob(jobId) {
+      const { job } = await (await runtime()).client.invoke("job.get", { jobId });
+      return {
+        status: String(job.status),
+        ...(typeof job.runId === "string" ? { runId: job.runId } : {}),
+        ...(typeof job.error === "string" ? { error: job.error } : {}),
+      };
+    },
+    async cancelReplay(jobId) {
+      await (await runtime()).client.invoke("job.cancel", { jobId });
     },
     async inspect(workflowId) {
       return (await runtime()).journey.inspect(workflowId);
@@ -513,6 +535,8 @@ function evidenceItems(
 }
 
 function reportTimeline(rawRun: unknown): ReportTimelineItem[] {
+  const recipe = record(record(rawRun)?.recipeSnapshot);
+  const recipeSteps = array(recipe?.steps);
   return array(record(rawRun)?.steps).flatMap((value, fallbackIndex) => {
     const step = record(value);
     if (!step) return [];
@@ -520,6 +544,19 @@ function reportTimeline(rawRun: unknown): ReportTimelineItem[] {
     if (!title) return [];
     const status = text(step.status);
     const tone = text(step.tone);
+    const recipeStep = text(step.recipeStepId)
+      ? recipeSteps.find((candidate) => {
+          const item = record(candidate);
+          return text(item?.id) === text(step.recipeStepId);
+        })
+      : undefined;
+    const recipeStepRecord = record(recipeStep);
+    const expected =
+      recipeStepRecord?.kind === "assert-content"
+        ? text(recipeStepRecord.expected)
+        : recipeStepRecord?.kind === "expect-screen"
+          ? text(recipeStepRecord.screenTitle)
+          : undefined;
     const state: ReportTimelineItem["state"] =
       status === "error" || tone === "fail"
         ? "failed"
@@ -543,6 +580,7 @@ function reportTimeline(rawRun: unknown): ReportTimelineItem[] {
           return path ? [path] : [];
         }),
         ...(text(step.log) ? { observed: text(step.log) } : {}),
+        ...(expected ? { expected } : {}),
       },
     ];
   });

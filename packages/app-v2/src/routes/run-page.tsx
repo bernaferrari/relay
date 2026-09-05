@@ -31,6 +31,7 @@ import { clearRunPointerIfCurrent, readRunPointer } from "../data/run-pointer";
 import { PageLoading, RecordingProblem, targetLabel } from "./recording-shared";
 import { RunReviewControls } from "./run-review-controls";
 import { RunWorkbench, RunContextFacts } from "./run-workbench";
+import { RunReplayAction, RunReplayStatus } from "./run-replay";
 
 const routeApi = getRouteApi("/runs/$runId");
 
@@ -298,6 +299,7 @@ function RunReport({
           <p className="relay-report-outcome">{outcomeSentence(report.outcome, target)}</p>
         </div>
         <div className="relay-report-header-actions">
+          <RunReplayAction report={report} runService={runService} />
           {report.outcome === "product-failure" ||
           report.outcome === "harness-failure" ||
           report.outcome === "uncertain" ? (
@@ -319,6 +321,7 @@ function RunReport({
           ) : null}
         </div>
       </header>
+      <RunReplayStatus runService={runService} />
 
       {views.length > 1 ? (
         <Tabs value={view} onValueChange={(next) => selectView(next as ReportView)}>

@@ -153,7 +153,9 @@ export function ChangePage() {
               </p>
             </div>
             <div className="relay-change-actions">
-              <IssueDraftButton source={{ kind: "change", details }} />
+              {details.firstFailure ? (
+                <IssueDraftButton source={{ kind: "change", details }} />
+              ) : null}
               {action ? (
                 <Button
                   variant="default"
@@ -168,7 +170,11 @@ export function ChangePage() {
               {canCancel(current.status) ? (
                 <DropdownMenu>
                   <DropdownMenuTrigger
-                    render={<Button disabled={mutation.isPending}>More</Button>}
+                    render={
+                      <Button variant="ghost" disabled={mutation.isPending}>
+                        More
+                      </Button>
+                    }
                   />
 
                   <DropdownMenuContent sideOffset={6} align="end">

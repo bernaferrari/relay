@@ -1,5 +1,6 @@
 /** @jsxImportSource react */
 import { Link } from "@tanstack/react-router";
+import { Button } from "@relay/ui-react/components/button";
 
 export function NotFoundPage() {
   return (
@@ -9,9 +10,9 @@ export function NotFoundPage() {
       <p className="relay-page-description">
         Check the address, or return Home to continue in Relay.
       </p>
-      <Link className="relay-text-link" to="/home">
+      <Button className="mt-6" nativeButton={false} render={<Link to="/home" search={{}} />}>
         Go to Home
-      </Link>
+      </Button>
     </section>
   );
 }

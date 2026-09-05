@@ -81,11 +81,15 @@ export function AppPage() {
           <dl className="relay-app-facts" aria-label={`${app.data.appName} overview`}>
             <div>
               <dt>Saved Tests</dt>
-              <dd>{tests.data?.length ?? app.data.coverage.testCount}</dd>
+              <dd>
+                {tests.isError
+                  ? "Unavailable"
+                  : (tests.data?.length ?? app.data.coverage.testCount)}
+              </dd>
             </div>
             <div>
               <dt>Reports</dt>
-              <dd>{runs.data?.length ?? 0}</dd>
+              <dd>{runs.isError ? "Unavailable" : (runs.data?.length ?? 0)}</dd>
             </div>
             <div>
               <dt>Known screen coverage</dt>

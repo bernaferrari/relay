@@ -236,11 +236,21 @@ export function DevicesPage() {
             See what is ready, what needs help, and which virtual devices are available for a Test.
           </p>
         </div>
-        {!devices.isError ? (
-          <Button size="sm" onClick={() => void devices.refetch()} disabled={devices.isFetching}>
-            {devices.isFetching ? "Checking…" : "Check again"}
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            nativeButton={false}
+            render={<Link to="/environments" />}
+          >
+            Manage browsers
           </Button>
-        ) : null}
+          {!devices.isError ? (
+            <Button size="sm" onClick={() => void devices.refetch()} disabled={devices.isFetching}>
+              {devices.isFetching ? "Checking…" : "Check again"}
+            </Button>
+          ) : null}
+        </div>
       </header>
 
       <div className="mt-8 flex min-w-0 flex-col gap-3 border-b border-border/60 pb-4 md:flex-row md:items-center">

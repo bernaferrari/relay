@@ -25,6 +25,9 @@ const { calls, invoke } = vi.hoisted(() => {
         baseline: { id: "baseline-1" },
       };
     }
+    if (id === "run.replay") return { job: { id: "replay-job-1", status: "queued" } };
+    if (id === "job.get") return { job: { id: "replay-job-1", status: "ok", runId: "run-2" } };
+    if (id === "job.cancel") return { job: { id: "replay-job-1", status: "cancelled" } };
     throw new Error(`Unexpected operation ${id}`);
   });
   return { calls, invoke };
@@ -84,5 +87,28 @@ describe("run report product operations", () => {
       "run.visual-policy.update",
       "run.visual-baseline.update",
     ]);
+  });
+
+  it("replays a persisted run and polls its canonical job", async () => {
+    calls.length = 0;
+    const service = createRunProductService({} as Platform);
+
+    await expect(service.replay?.("run-1")).resolves.toEqual({ jobId: "replay-job-1" });
+    await expect(service.getReplayJob?.("replay-job-1")).resolves.toEqual({
+      status: "ok",
+      runId: "run-2",
+    });
+    expect(calls.slice(-2)).toEqual([
+      { id: "run.replay", input: { runId: "run-1" } },
+      { id: "job.get", input: { jobId: "replay-job-1" } },
+    ]);
+  });
+
+  it("cancels a queued replay through the canonical job operation", async () => {
+    calls.length = 0;
+    const service = createRunProductService({} as Platform);
+
+    await expect(service.cancelReplay?.("replay-job-1")).resolves.toBeUndefined();
+    expect(calls).toEqual([{ id: "job.cancel", input: { jobId: "replay-job-1" } }]);
   });
 });

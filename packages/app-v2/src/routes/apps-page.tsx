@@ -50,8 +50,9 @@ export function AppsPage() {
       await navigate({ to: "/tests/new", search: { app: app.id } });
     },
   });
-  const loading = apps.isPending || tests.isPending || runs.isPending;
-  const error = apps.error ?? tests.error ?? runs.error;
+  const loading = apps.isPending;
+  const error = apps.error;
+  const secondaryError = tests.error ?? runs.error;
   const retry = () => {
     void apps.refetch();
     void tests.refetch();
@@ -145,6 +146,23 @@ export function AppsPage() {
           }
         />
       ) : null}
+      {!loading && !error && secondaryError ? (
+        <RecoveryState
+          className="relay-apps-recovery"
+          title="Some App activity is unavailable"
+          detail="The App list is available. Test and Run counts will return when Relay reconnects."
+          action={
+            <Button
+              variant="outline"
+              onClick={retry}
+              disabled={tests.isFetching || runs.isFetching}
+            >
+              <RotateCcw aria-hidden="true" />
+              {tests.isFetching || runs.isFetching ? "Trying again…" : "Retry activity"}
+            </Button>
+          }
+        />
+      ) : null}
       {!loading && !error && apps.data?.length === 0 ? (
         <EmptyState
           icon={Boxes}
@@ -172,8 +190,18 @@ export function AppsPage() {
                   <span className="relay-app-grid-copy">
                     <strong>{app.name}</strong>
                     <small>
-                      {testCount} {testCount === 1 ? "Test" : "Tests"}
-                      {latest ? ` · Last run ${relativeTime(runTime(latest))}` : " · No runs yet"}
+                      {tests.isPending
+                        ? "Loading Test count…"
+                        : tests.error
+                          ? "Test count unavailable"
+                          : `${testCount} ${testCount === 1 ? "Test" : "Tests"}`}
+                      {runs.isPending
+                        ? " · Loading Run history…"
+                        : runs.error
+                          ? " · Run history unavailable"
+                          : latest
+                            ? ` · Last run ${relativeTime(runTime(latest))}`
+                            : " · No runs yet"}
                     </small>
                   </span>
                   <ChevronRight aria-hidden="true" />

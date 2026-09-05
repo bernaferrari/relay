@@ -112,10 +112,10 @@ export function RunAcrossPage() {
                     className="flex min-h-14 min-w-0 cursor-pointer items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50"
                   >
                     <span className="grid min-w-0 flex-1 gap-0.5">
-                      <span className="truncate text-sm font-medium text-foreground">
+                      <span className="break-words text-sm font-medium text-foreground">
                         {value.label}
                       </span>
-                      <span className="truncate text-xs leading-snug text-muted-foreground">
+                      <span className="break-words text-xs leading-snug text-muted-foreground">
                         {value.detail}
                       </span>
                     </span>
@@ -154,10 +154,10 @@ export function RunAcrossPage() {
                   >
                     <RadioGroupItem value={option.targetId} />
                     <span className="grid min-w-0 flex-1 gap-0.5">
-                      <span className="truncate text-sm font-medium text-foreground">
+                      <span className="break-words text-sm font-medium text-foreground">
                         {option.name}
                       </span>
-                      <span className="truncate text-xs leading-snug text-muted-foreground">
+                      <span className="break-words text-xs leading-snug text-muted-foreground">
                         {option.detail}
                       </span>
                     </span>
@@ -193,7 +193,7 @@ export function RunAcrossPage() {
               onClick={() => start.mutate()}
               disabled={!preview || start.isPending}
             >
-              {start.isPending ? "Starting pilot…" : "Start representative pilot"}
+              {start.isPending ? "Starting first case…" : "Run first case"}
             </Button>
           </section>
         </div>

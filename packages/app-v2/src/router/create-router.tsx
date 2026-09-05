@@ -10,6 +10,7 @@ import {
   type RouterHistory,
 } from "@tanstack/react-router";
 import { Skeleton } from "@relay/ui-react/components/skeleton";
+import { RouteErrorPage } from "../routes/route-error-page";
 import {
   createAppResourcesProductService,
   type AppResourcesProductService,
@@ -477,6 +478,7 @@ export function createAppRouter(options: {
     defaultPreload: "intent",
     defaultPreloadStaleTime: 0,
     defaultPendingComponent: RoutePending,
+    defaultErrorComponent: RouteErrorPage,
     defaultPendingMs: 300,
     defaultPendingMinMs: 300,
     scrollRestoration: true,

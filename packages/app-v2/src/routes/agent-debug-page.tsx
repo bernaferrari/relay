@@ -12,9 +12,9 @@ import {
 } from "@relay/ui-react/components/select";
 import type { DebugBugOutcome } from "@relay/product/agent-debug";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Link, useRouteContext } from "@tanstack/react-router";
+import { Link, useLocation, useRouteContext } from "@tanstack/react-router";
 import { ShieldCheck } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import type { AgentDebugProductService } from "../data/agent-debug-product-service";
 import { deviceQueryKeys } from "../data/device-product-service";
 
@@ -26,14 +26,23 @@ function isStartOutcome(
 
 export function AgentDebugPage() {
   const { agentDebugService, deviceService } = useRouteContext({ from: "__root__" });
+  const location = useLocation();
+  const contextualTargetId =
+    typeof (location.search as { target?: unknown }).target === "string"
+      ? (location.search as { target: string }).target
+      : undefined;
   const [title, setTitle] = useState("");
-  const [targetId, setTargetId] = useState("");
+  const [targetId, setTargetId] = useState(contextualTargetId ?? "");
   const devices = useQuery({
     queryKey: deviceQueryKeys.devices,
     queryFn: () => deviceService.list(),
     staleTime: 5_000,
   });
   const readyDevices = (devices.data ?? []).filter((device) => device.runnable);
+  const targetReady = readyDevices.some((device) => device.serial === targetId);
+  useEffect(() => {
+    if (!targetId && contextualTargetId) setTargetId(contextualTargetId);
+  }, [contextualTargetId, targetId]);
   const start = useMutation({
     mutationFn: (input: Parameters<AgentDebugProductService["debugBug"]>[0]) =>
       agentDebugService.debugBug(input),
@@ -41,7 +50,7 @@ export function AgentDebugPage() {
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!title.trim() || !targetId) return;
+    if (!title.trim() || !targetReady) return;
     start.mutate({
       kind: "debug-bug",
       action: "start",
@@ -105,7 +114,7 @@ export function AgentDebugPage() {
                   value: device.serial,
                   label: `${device.name} · ${device.platform}`,
                 }))}
-                value={targetId}
+                value={targetReady ? targetId : ""}
                 onValueChange={(nextValue) => setTargetId(nextValue ?? "")}
               >
                 <SelectTrigger id="agent-debug-target" className="w-full">
@@ -119,6 +128,11 @@ export function AgentDebugPage() {
                   ))}
                 </SelectContent>
               </Select>
+              {!devices.isPending && contextualTargetId === targetId && !targetReady ? (
+                <p className="text-sm text-text-weak" role="status">
+                  The original target is unavailable. Choose a ready device or browser to continue.
+                </p>
+              ) : null}
               <FieldDescription className="text-sm leading-5 text-text-weak">
                 Choose a ready device or browser.
               </FieldDescription>
@@ -130,7 +144,12 @@ export function AgentDebugPage() {
               ) : null}
             </Field>
             {devices.isError ? (
-              <FieldError>Targets could not be loaded. Check Devices and retry.</FieldError>
+              <FieldError>
+                Targets could not be loaded.{" "}
+                <Button variant="ghost" size="sm" onClick={() => void devices.refetch()}>
+                  Try again
+                </Button>
+              </FieldError>
             ) : null}
             {start.error ? (
               <FieldError>
@@ -143,7 +162,7 @@ export function AgentDebugPage() {
               <Button
                 type="submit"
                 variant="default"
-                disabled={start.isPending || !title.trim() || !targetId}
+                disabled={start.isPending || !title.trim() || !targetReady}
                 className="w-full sm:w-auto"
               >
                 {start.isPending ? "Starting Session…" : "Start investigation"}

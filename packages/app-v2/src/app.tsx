@@ -2,7 +2,12 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider, type RouterHistory } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { applyColorScheme, readColorScheme } from "./data/appearance-preference";
+import {
+  applyColorScheme,
+  readColorScheme,
+  colorSchemeVersion,
+  validColorScheme,
+} from "./data/appearance-preference";
 import {
   createAppResourcesProductService,
   type AppResourcesProductService,
@@ -64,17 +69,24 @@ import { createAppRouter } from "./router/create-router";
 function AppearanceSync({ platform }: { platform: Platform }) {
   useEffect(() => {
     let active = true;
-    let preference: "system" | "light" | "dark" = "system";
+    const startingVersion = colorSchemeVersion();
     const media = window.matchMedia("(prefers-color-scheme: dark)");
     const updateSystem = () => {
-      if (active && preference === "system") applyColorScheme("system");
+      if (
+        active &&
+        validColorScheme(document.documentElement.dataset.colorSchemePreference) === "system"
+      )
+        applyColorScheme("system");
     };
     media.addEventListener("change", updateSystem);
-    void readColorScheme(platform).then((next) => {
-      if (!active) return;
-      preference = next;
-      applyColorScheme(next);
-    });
+    void readColorScheme(platform)
+      .then((next) => {
+        if (!active || startingVersion !== colorSchemeVersion()) return;
+        applyColorScheme(next);
+      })
+      .catch(() => {
+        if (active && startingVersion === colorSchemeVersion()) applyColorScheme("system");
+      });
     return () => {
       active = false;
       media.removeEventListener("change", updateSystem);

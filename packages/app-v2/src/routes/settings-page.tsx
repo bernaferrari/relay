@@ -15,7 +15,7 @@ import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useRouteContext } from "@tanstack/react-router";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { settingsQueryKeys, type SettingsCategory } from "../data/settings-product-service";
 import type { DesktopUpdateState } from "../platform/types";
 import { AppearanceSettings } from "./appearance-settings";
@@ -45,14 +45,17 @@ function GeneralSettings() {
       return connection.data?.url;
     }
   }, [connection.data]);
+  const notification = useMutation({
+    mutationFn: async () =>
+      platform.notify?.("Relay notifications are ready", "Important Run updates can appear here."),
+  });
 
   return (
     <SettingsFrame category="general" saveState={connection.isError ? "unavailable" : undefined}>
       <section className="relay-settings-group" aria-labelledby="general-behavior-title">
         <header>
           <p className="relay-section-label">Workspace behavior</p>
-          <h2 id="general-behavior-title">Built to resume safely</h2>
-          <p>These behaviors follow the active workspace and need no manual maintenance.</p>
+          <h2 id="general-behavior-title">Your workspace</h2>
         </header>
         <SettingRow
           title="Active work"
@@ -64,20 +67,25 @@ function GeneralSettings() {
           title="Workspace connection"
           description={
             hostname
-              ? `This app is connected through ${hostname}.`
+              ? `Relay is configured to use ${hostname}.`
               : "Checking the current Relay workspace."
           }
         >
           <Badge
             variant="secondary"
             className={
-              connection.isError
-                ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
-                : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+              connection.isError ? "bg-amber-500/15 text-amber-700 dark:text-amber-300" : undefined
             }
           >
-            {connection.isPending ? "Checking" : connection.isError ? "Unavailable" : "Connected"}
+            {connection.isPending ? "Checking" : connection.isError ? "Unavailable" : "Configured"}
           </Badge>
+          <Link
+            className="relay-inline-link"
+            to="/settings/advanced"
+            search={{ section: "connection" }}
+          >
+            Change address
+          </Link>
         </SettingRow>
         <SettingRow
           title="Desktop notifications"
@@ -90,20 +98,33 @@ function GeneralSettings() {
           {platform.notify ? (
             <Button
               size="sm"
-              onClick={() =>
-                void platform.notify?.(
-                  "Relay notifications are ready",
-                  "Important Run updates can appear here.",
-                )
-              }
+              variant="outline"
+              disabled={notification.isPending}
+              onClick={() => notification.mutate()}
             >
-              Send a test
+              {notification.isPending ? "Sending…" : "Send a test"}
             </Button>
           ) : (
             <span className="relay-settings-value">Web only</span>
           )}
         </SettingRow>
       </section>
+      {notification.error ? (
+        <p role="alert">Could not send the notification. {errorMessage(notification.error)}</p>
+      ) : notification.isSuccess ? (
+        <p role="status">Test notification sent.</p>
+      ) : null}
+      {connection.error ? (
+        <Alert variant="destructive">
+          <AlertTitle>Could not read the workspace address</AlertTitle>
+          <AlertDescription>{errorMessage(connection.error)}</AlertDescription>
+          <AlertAction>
+            <Button variant="outline" onClick={() => void connection.refetch()}>
+              Try again
+            </Button>
+          </AlertAction>
+        </Alert>
+      ) : null}
     </SettingsFrame>
   );
 }
@@ -264,13 +285,19 @@ function IntegrationsSettings() {
         ) : null}
         {connection.isError || (settingsService.integrations && integrations.error) ? (
           <Alert className="relay-settings-alert" variant="destructive" role="alert">
-            <AlertTitle>The workspace connection is unavailable</AlertTitle>
+            <AlertTitle>Could not load connected services</AlertTitle>
             <AlertDescription>
-              Open Advanced to check the Relay address, then try again.
+              {errorMessage(integrations.error ?? connection.error)}
             </AlertDescription>
             <AlertAction>
-              <Button nativeButton={false} size="sm" render={<Link to="/settings/advanced" />}>
-                Open Advanced
+              <Button
+                size="sm"
+                onClick={() => {
+                  void connection.refetch();
+                  void integrations.refetch();
+                }}
+              >
+                Try again
               </Button>
             </AlertAction>
           </Alert>
@@ -318,25 +345,23 @@ function IntegrationsSettings() {
             </ItemMedia>
             <ItemContent>
               <ItemTitle>Relay workspace</ItemTitle>
-              <ItemDescription>
-                Runs and Reports are connected through {serverName}.
-              </ItemDescription>
+              <ItemDescription>Workspace address: {serverName}.</ItemDescription>
             </ItemContent>
             <ItemActions>
               <Badge
                 variant="default"
                 className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
               >
-                Connected
+                Configured
               </Badge>
             </ItemActions>
           </Item>
         ) : null}
         <div className="relay-settings-empty-inline">
-          <h3>No external service is required</h3>
+          <h3>Managed by your workspace</h3>
           <p>
-            Provider credentials remain server-managed. Relay does not claim Slack, webhook, or
-            issue delivery until a canonical operation can prove it.
+            Your workspace administrator manages service credentials on the Relay server. You can
+            run Tests without connecting an external service.
           </p>
           <Link className="relay-inline-link" to="/changes">
             View Changes
@@ -366,9 +391,11 @@ function AdvancedSettings() {
   const [url, setUrl] = useState("");
   const [saveState, setSaveState] = useState<SaveState | undefined>();
   const [savedNotice, setSavedNotice] = useState(false);
+  const [connectionError, setConnectionError] = useState<string>();
+  const edited = useRef(false);
 
   useEffect(() => {
-    if (connection.data) setUrl(connection.data.url);
+    if (connection.data && !edited.current) setUrl(connection.data.url);
   }, [connection.data]);
 
   async function saveConnection(event: FormEvent<HTMLFormElement>) {
@@ -376,13 +403,15 @@ function AdvancedSettings() {
     if (!platform.setServerUrl || !url.trim()) return;
     setSaveState("saving");
     setSavedNotice(false);
+    setConnectionError(undefined);
     try {
       await Promise.resolve(platform.setServerUrl(url.trim()));
       queryClient.setQueryData(CONNECTION_QUERY_KEY, { url: url.trim() });
       setSavedNotice(true);
       setSaveState("saved");
-    } catch {
+    } catch (error) {
       setSaveState("failed");
+      setConnectionError(errorMessage(error));
     }
   }
 
@@ -411,9 +440,12 @@ function AdvancedSettings() {
                   type="url"
                   value={url}
                   required
+                  readOnly={!platform.setServerUrl}
+                  disabled={saveState === "saving"}
                   spellCheck={false}
                   autoComplete="off"
                   onChange={(event) => {
+                    edited.current = true;
                     setUrl(event.currentTarget.value);
                     setSavedNotice(false);
                   }}
@@ -429,6 +461,12 @@ function AdvancedSettings() {
                 ) : null}
               </div>
               <FieldDescription>For example, http://127.0.0.1:8787</FieldDescription>
+              {connectionError ? (
+                <p role="alert">
+                  Could not save this address. {connectionError} Your entered address is preserved;
+                  try saving again.
+                </p>
+              ) : null}
               {savedNotice ? (
                 <p className="relay-settings-saved-notice" role="status">
                   Saved. Reopen Relay to use the new address everywhere.
@@ -523,13 +561,19 @@ function AboutSettings() {
   const { platform } = useRouteContext({ from: "__root__" });
   const [update, setUpdate] = useState<DesktopUpdateState | null>(null);
   const [checking, setChecking] = useState(false);
+  const [updateError, setUpdateError] = useState<string>();
 
   useEffect(() => {
     if (!platform.updates) return;
     let active = true;
-    void platform.updates.getState().then((state) => {
-      if (active) setUpdate(state);
-    });
+    void platform.updates
+      .getState()
+      .then((state) => {
+        if (active) setUpdate(state);
+      })
+      .catch((error: unknown) => {
+        if (active) setUpdateError(errorMessage(error));
+      });
     const unsubscribe = platform.updates.subscribe((state) => {
       if (active) setUpdate(state);
     });
@@ -542,9 +586,12 @@ function AboutSettings() {
   async function checkForUpdates() {
     if (!platform.updates || checking) return;
     setChecking(true);
+    setUpdateError(undefined);
     try {
       await platform.updates.check();
       setUpdate(await platform.updates.getState());
+    } catch (error) {
+      setUpdateError(errorMessage(error));
     } finally {
       setChecking(false);
     }
@@ -571,7 +618,16 @@ function AboutSettings() {
         {platform.updates ? (
           <SettingRow title="Updates" description={updateDescription(update)}>
             {update?.phase === "downloaded" ? (
-              <Button variant="default" size="sm" onClick={() => void platform.updates?.install()}>
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => {
+                  setUpdateError(undefined);
+                  void platform.updates
+                    ?.install()
+                    .catch((error: unknown) => setUpdateError(errorMessage(error)));
+                }}
+              >
                 Install update
               </Button>
             ) : (
@@ -585,6 +641,9 @@ function AboutSettings() {
             )}
           </SettingRow>
         ) : null}
+        {updateError ? (
+          <p role="alert">Could not complete the update action. {updateError}</p>
+        ) : null}
         <SettingRow
           title="Support"
           description="Read the project guide for setup, workflows, and troubleshooting."
@@ -592,9 +651,7 @@ function AboutSettings() {
           {platform.openExternal ? (
             <Button
               size="sm"
-              onClick={() =>
-                void platform.openExternal?.("https://github.com/callstackincubator/agent-device")
-              }
+              onClick={() => void platform.openExternal?.("https://github.com/bernaferrari/relay")}
             >
               Open project guide
             </Button>

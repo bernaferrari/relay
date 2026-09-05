@@ -486,13 +486,44 @@
 
 .relay-library-row-shell {
   position: relative;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  align-items: center;
+  padding-right: 12px;
+}
+
+.relay-library-row-shell .relay-library-row {
+  min-width: 0;
+  grid-template-columns: minmax(120px, 1fr) auto minmax(110px, 0.6fr);
+  gap: 12px;
+  padding-inline: 0 12px;
+}
+
+.relay-library-row-shell .relay-library-row-arrow {
+  display: none;
+}
+
+.relay-test-selection-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin-top: 24px;
+  color: var(--text-weak);
+  font-size: 13px;
+}
+
+.relay-library-row-select {
+  display: grid;
+  width: 44px;
+  min-height: 44px;
+  flex: none;
+  place-items: center;
+  cursor: pointer;
 }
 
 .relay-library-row-run {
-  position: absolute;
-  z-index: 1;
-  top: 50%;
-  right: 42px;
   display: inline-flex;
   min-height: 40px;
   align-items: center;
@@ -501,7 +532,6 @@
   color: var(--text-interactive-base);
   font-size: 12px;
   font-weight: 600;
-  transform: translateY(-50%);
 }
 
 .relay-library-row-run:hover {

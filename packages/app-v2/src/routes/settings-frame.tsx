@@ -10,7 +10,7 @@ export type SaveState = "saved" | "saving" | "failed" | "unavailable";
 const SETTINGS_COPY: Record<SettingsCategory, { title: string; description: string }> = {
   general: {
     title: "General",
-    description: "Understand how Relay behaves on this computer and in this workspace.",
+    description: "Connection and preferences for this computer.",
   },
   evidence: {
     title: "Evidence & privacy",
@@ -18,11 +18,11 @@ const SETTINGS_COPY: Record<SettingsCategory, { title: string; description: stri
   },
   integrations: {
     title: "Integrations",
-    description: "See how this Relay workspace connects to the services around your work.",
+    description: "Services available to your workspace.",
   },
   appearance: {
     title: "Appearance",
-    description: "Choose a calm, readable color scheme for this computer.",
+    description: "Choose how Relay looks on this computer.",
   },
   advanced: {
     title: "Advanced",
@@ -64,7 +64,6 @@ export function SettingsFrame({
 }) {
   const rawSearch = useLocation({ select: (state) => state.search });
   const section = recordValue(rawSearch)?.section;
-  const search = typeof section === "string" && section ? { section } : {};
   const navigate = useNavigate();
   const copy = SETTINGS_COPY[category];
   const [visibleSaveState, setVisibleSaveState] = useState<SaveState | undefined>(saveState);
@@ -98,7 +97,7 @@ export function SettingsFrame({
           value={`/settings/${category}`}
           options={settingsCategories.map((item) => ({ value: item.path, label: item.label }))}
           onValueChange={(value) => {
-            void navigate({ to: value, search });
+            void navigate({ to: value });
           }}
         />
       </div>
@@ -108,7 +107,6 @@ export function SettingsFrame({
             <Link
               key={item.id}
               to={item.path}
-              search={search}
               className={
                 item.id === category
                   ? "relay-settings-nav-link relay-settings-nav-link--active"

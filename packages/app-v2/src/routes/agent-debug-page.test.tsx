@@ -90,11 +90,12 @@ function debugService(
 
 async function render(
   options: {
+    path?: string;
     devices?: readonly ProductDevice[];
     agentDebugService?: AgentDebugProductService;
   } = {},
 ) {
-  const history = createMemoryHistory({ initialEntries: ["/debug"] });
+  const history = createMemoryHistory({ initialEntries: [options.path ?? "/debug"] });
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
@@ -220,6 +221,54 @@ describe("Agent Debug route", () => {
       targetId: "serial-ready",
       confirmControl: true,
     });
+  });
+
+  it("prefills and submits a ready target from contextual Investigate", async () => {
+    const debugBug = vi.fn(async () => startOutcome());
+    await render({
+      path: "/debug?target=serial-ready",
+      agentDebugService: debugService(debugBug),
+      devices: [productDevice("ready", "Ready Pixel", true, "android")],
+    });
+
+    const target = document.getElementById("agent-debug-target");
+    expect(target?.textContent).toContain("Ready Pixel · android");
+    await fillTitle("  Investigate checkout  ");
+    await clickStart();
+
+    expect(debugBug).toHaveBeenCalledWith({
+      kind: "debug-bug",
+      action: "start",
+      title: "Investigate checkout",
+      targetId: "serial-ready",
+      confirmControl: true,
+    });
+  });
+
+  it("does not submit an unavailable contextual target until a ready target is chosen", async () => {
+    const debugBug = vi.fn(async () => startOutcome());
+    await render({
+      path: "/debug?target=serial-offline",
+      agentDebugService: debugService(debugBug),
+      devices: [
+        productDevice("ready", "Ready Pixel", true, "android"),
+        productDevice("offline", "Offline iPad", false, "ios"),
+      ],
+    });
+
+    await fillTitle("Investigate checkout");
+    const start = [...document.querySelectorAll("button")].find(
+      (candidate) => candidate.textContent?.trim() === "Start investigation",
+    );
+    expect(start).toBeInstanceOf(HTMLButtonElement);
+    expect((start as HTMLButtonElement).disabled).toBe(true);
+    await clickStart();
+    expect(debugBug).not.toHaveBeenCalled();
+
+    await selectTarget("serial-ready");
+    expect((start as HTMLButtonElement).disabled).toBe(false);
+    await clickStart();
+    expect(debugBug).toHaveBeenCalledWith(expect.objectContaining({ targetId: "serial-ready" }));
   });
 
   it("keeps a failed start error visible", async () => {

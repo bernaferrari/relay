@@ -73,10 +73,18 @@ export function SessionsPage() {
       <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="relay-eyebrow">Workspace</p>
-          <h1>Sessions</h1>
+          <h1>Live</h1>
           <p className="relay-page-description">
-            Keep active device work and durable session history in one place.
+            Continue active device work, or open durable session history when you need to review it.
           </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button nativeButton={false} variant="default" render={<Link to="/tests/new" />}>
+            Start a Test
+          </Button>
+          <Button nativeButton={false} variant="outline" render={<Link to="/devices" />}>
+            Start Live from a device
+          </Button>
         </div>
       </header>
 
@@ -115,7 +123,7 @@ export function SessionsPage() {
         <section className="mt-7" aria-labelledby="session-results-title">
           <div className="flex min-h-8 items-center justify-between gap-5 px-0.5 pb-2.5">
             <h2 className="text-[13px] font-semibold" id="session-results-title">
-              {visible.length === 1 ? "1 Session" : `${visible.length} Sessions`}
+              {visible.length === 1 ? "1 live session" : `${visible.length} live sessions`}
             </h2>
             <span className="text-xs text-text-weak" aria-live="polite">
               {view === "active" ? "Ready to continue" : "Durable history"}
@@ -133,10 +141,12 @@ export function SessionsPage() {
 
       {!sessions.isPending && !sessions.isError && !visible.length ? (
         <EmptyState
-          title={sessions.data?.length ? "No Sessions match this view" : "No Sessions yet"}
+          title={
+            sessions.data?.length ? "No live sessions match this view" : "No live sessions yet"
+          }
           detail={
             sessions.data?.length
-              ? "Choose another view or clear the search. Existing Sessions remain unchanged."
+              ? "Choose another view or clear the search. Existing sessions remain unchanged."
               : "Start recording a Test or open a live target. Relay will keep that work available here."
           }
           action={
@@ -148,7 +158,7 @@ export function SessionsPage() {
                   setView("active");
                 }}
               >
-                Show active Sessions
+                Show active live work
               </Button>
             ) : (
               <Button nativeButton={false} variant="default" render={<Link to="/tests/new" />}>

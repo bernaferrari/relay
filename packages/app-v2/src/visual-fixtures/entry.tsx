@@ -1,6 +1,7 @@
 /** @jsxImportSource react */
 import type { ProductRunSummary } from "@relay/product/catalog";
 import type { ProductBatchReport } from "@relay/product/run-across";
+import { previewProductRunAcross } from "@relay/product/run-across";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
@@ -13,7 +14,11 @@ import type { MapProductService } from "../data/map-product-service";
 import type { LiveTestEditorProductService } from "../data/live-test-editor-product-service";
 import type { RecordingProductService } from "../data/recording-product-service";
 import type { RunProductService } from "../data/run-product-service";
+import { definitions, type FixtureName } from "./fixture-routes";
+import { fixtureSettingsService } from "./settings-fixture";
+import { fixtureChangeService } from "./change-fixture";
 import { failedReport } from "./report-fixture";
+import { activeRecordingState, createActiveRecordingTarget } from "./active-recording-fixture";
 import type { LiveTargetSnapshot } from "../data/live-target-session";
 import type { RunAcrossProductService } from "../data/run-across-product-service";
 import type { SessionProductService } from "../data/session-product-service";
@@ -23,67 +28,9 @@ import type { AgentDebugProductService } from "../data/agent-debug-product-servi
 import type { Platform } from "../platform/types";
 import "../styles/app.css";
 
-type FixtureName =
-  | "home-empty"
-  | "home-populated"
-  | "apps-list"
-  | "app-overview"
-  | "apps-error"
-  | "app-versions"
-  | "app-versions-error"
-  | "app-accounts"
-  | "app-accounts-error"
-  | "prerecord-ready"
-  | "prerecord-connecting"
-  | "prerecord-failure"
-  | "recording-review"
-  | "test-detail"
-  | "runs-large"
-  | "report-failed"
-  | "report-evidence"
-  | "batch-completed"
-  | "sessions-list"
-  | "session-detail"
-  | "live-test-editor"
-  | "suites-list"
-  | "suite-detail"
-  | "environments-list"
-  | "environment-detail"
-  | "agent-debug"
-  | "devices";
-
 const FIXTURE_TIME = Date.UTC(2026, 8, 4, 12, 0, 0);
 const VISUAL_NOW = 1_788_390_000_000;
 const fixture = new URLSearchParams(window.location.search).get("fixture") as FixtureName | null;
-const definitions: Record<FixtureName, { path: string }> = {
-  "home-empty": { path: "/home" },
-  "home-populated": { path: "/home" },
-  "apps-list": { path: "/apps" },
-  "app-overview": { path: "/apps/checkout-app" },
-  "apps-error": { path: "/apps" },
-  "app-versions": { path: "/apps/checkout-app/versions" },
-  "app-versions-error": { path: "/apps/checkout-app/versions" },
-  "app-accounts": { path: "/apps/checkout-app/accounts" },
-  "app-accounts-error": { path: "/apps/checkout-app/accounts" },
-  "prerecord-ready": { path: "/tests/new?app=checkout-app" },
-  "prerecord-connecting": { path: "/tests/new?app=checkout-app" },
-  "prerecord-failure": { path: "/tests/new?app=checkout-app" },
-  "recording-review": { path: "/recordings/recording-checkout/review" },
-  "test-detail": { path: "/tests/test-checkout" },
-  "runs-large": { path: "/runs?view=all" },
-  "report-failed": { path: "/runs/run-checkout" },
-  "report-evidence": { path: "/runs/run-checkout?view=evidence" },
-  "batch-completed": { path: "/batches/batch-checkout" },
-  "sessions-list": { path: "/sessions" },
-  "session-detail": { path: "/sessions/session-checkout" },
-  "live-test-editor": { path: "/tests/test-checkout/edit?session=session-checkout" },
-  "suites-list": { path: "/suites" },
-  "suite-detail": { path: "/apps/checkout-app/suites/release-smoke" },
-  "environments-list": { path: "/environments" },
-  "environment-detail": { path: "/environments/checkout-browser" },
-  "agent-debug": { path: "/debug" },
-  devices: { path: "/devices" },
-};
 if (!fixture || !definitions[fixture]) throw new TypeError(`Unknown visual fixture: ${fixture}`);
 
 const platform: Platform = {
@@ -118,99 +65,101 @@ const recordingService = {
       ? [{ ...previewTarget, name: "Checkout browser", detail: "Managed browser · Ready" }]
       : [],
   inspect: async () =>
-    fixture === "recording-review"
-      ? {
-          status: "reviewing" as const,
-          targets: [previewTarget],
-          selectedTarget: previewTarget,
-          snapshot: {
-            schemaVersion: 1 as const,
-            kind: "author-test" as const,
-            title: "Complete checkout and confirm the order",
-            phase: "running" as const,
-            stage: "reviewing" as const,
-            version: "review-fixture-v4",
-            workflow: { workflowId: "recording-checkout", expectedVersion: 4 },
-            frozen: {
+    fixture === "recording-active"
+      ? activeRecordingState
+      : fixture === "recording-review"
+        ? {
+            status: "reviewing" as const,
+            targets: [previewTarget],
+            selectedTarget: previewTarget,
+            snapshot: {
+              schemaVersion: 1 as const,
+              kind: "author-test" as const,
               title: "Complete checkout and confirm the order",
-              actorId: "human:fixture",
-              appMapId: "checkout-app",
-              appMapRevision: 4,
-              target: previewTarget,
-            },
-            authoring: { sessionId: "recording-checkout" },
-            review: {
-              actionCount: 4,
-              currentRevision: 4,
-              revisionCount: 4,
-              actions: [
-                {
-                  id: "open-cart",
-                  intent: "Open the shopping cart",
-                  stepCount: 1,
-                  kind: "tap" as const,
-                  startedAt: FIXTURE_TIME,
-                  finishedAt: FIXTURE_TIME + 1_200,
-                  durationMs: 1_200,
-                  evidenceCount: 2,
-                  proofStatus: "verified" as const,
-                  captureProof: "relay-controlled" as const,
-                },
-                {
-                  id: "apply-code",
-                  intent: "Apply the saved discount code",
-                  stepCount: 2,
-                  kind: "mixed" as const,
-                  startedAt: FIXTURE_TIME + 1_200,
-                  finishedAt: FIXTURE_TIME + 4_800,
-                  durationMs: 3_600,
-                  evidenceCount: 3,
-                  proofStatus: "verified" as const,
-                  captureProof: "relay-controlled" as const,
-                },
-                {
-                  id: "review-total",
-                  intent: "Discounted total is visible",
-                  label: "Discounted total is visible",
-                  stepCount: 0,
-                  kind: "screenshot" as const,
-                  startedAt: FIXTURE_TIME + 4_800,
-                  finishedAt: FIXTURE_TIME + 5_100,
-                  durationMs: 300,
-                  evidenceCount: 1,
-                  proofStatus: "pixels-only" as const,
-                  captureProof: "relay-controlled" as const,
-                },
-                {
-                  id: "place-order",
-                  intent: "Place the order",
-                  stepCount: 1,
-                  kind: "tap" as const,
-                  startedAt: FIXTURE_TIME + 5_100,
-                  finishedAt: FIXTURE_TIME + 7_800,
-                  durationMs: 2_700,
-                  evidenceCount: 2,
-                  proofStatus: "verified" as const,
-                  captureProof: "relay-controlled" as const,
-                },
-              ],
-              timeline: {
-                startedAt: FIXTURE_TIME,
-                finishedAt: FIXTURE_TIME + 7_800,
-                durationMs: 7_800,
-                actionCount: 4,
-                evidenceCount: 8,
-                observationCount: 5,
+              phase: "running" as const,
+              stage: "reviewing" as const,
+              version: "review-fixture-v4",
+              workflow: { workflowId: "recording-checkout", expectedVersion: 4 },
+              frozen: {
+                title: "Complete checkout and confirm the order",
+                actorId: "human:fixture",
+                appMapId: "checkout-app",
+                appMapRevision: 4,
+                target: previewTarget,
               },
-              replayRequired: true,
+              authoring: { sessionId: "recording-checkout" },
+              review: {
+                actionCount: 4,
+                currentRevision: 4,
+                revisionCount: 4,
+                actions: [
+                  {
+                    id: "open-cart",
+                    intent: "Open the shopping cart",
+                    stepCount: 1,
+                    kind: "tap" as const,
+                    startedAt: FIXTURE_TIME,
+                    finishedAt: FIXTURE_TIME + 1_200,
+                    durationMs: 1_200,
+                    evidenceCount: 2,
+                    proofStatus: "verified" as const,
+                    captureProof: "relay-controlled" as const,
+                  },
+                  {
+                    id: "apply-code",
+                    intent: "Apply the saved discount code",
+                    stepCount: 2,
+                    kind: "mixed" as const,
+                    startedAt: FIXTURE_TIME + 1_200,
+                    finishedAt: FIXTURE_TIME + 4_800,
+                    durationMs: 3_600,
+                    evidenceCount: 3,
+                    proofStatus: "verified" as const,
+                    captureProof: "relay-controlled" as const,
+                  },
+                  {
+                    id: "review-total",
+                    intent: "Discounted total is visible",
+                    label: "Discounted total is visible",
+                    stepCount: 0,
+                    kind: "screenshot" as const,
+                    startedAt: FIXTURE_TIME + 4_800,
+                    finishedAt: FIXTURE_TIME + 5_100,
+                    durationMs: 300,
+                    evidenceCount: 1,
+                    proofStatus: "pixels-only" as const,
+                    captureProof: "relay-controlled" as const,
+                  },
+                  {
+                    id: "place-order",
+                    intent: "Place the order",
+                    stepCount: 1,
+                    kind: "tap" as const,
+                    startedAt: FIXTURE_TIME + 5_100,
+                    finishedAt: FIXTURE_TIME + 7_800,
+                    durationMs: 2_700,
+                    evidenceCount: 2,
+                    proofStatus: "verified" as const,
+                    captureProof: "relay-controlled" as const,
+                  },
+                ],
+                timeline: {
+                  startedAt: FIXTURE_TIME,
+                  finishedAt: FIXTURE_TIME + 7_800,
+                  durationMs: 7_800,
+                  actionCount: 4,
+                  evidenceCount: 8,
+                  observationCount: 5,
+                },
+                replayRequired: true,
+              },
+              progress: { label: "Ready to review" },
+              allowedNextActions: ["inspect", "edit", "replay"] as const,
+              problems: [],
+              evidenceRefs: [],
             },
-            progress: { label: "Ready to review" },
-            allowedNextActions: ["inspect", "edit", "replay"] as const,
-            problems: [],
-            evidenceRefs: [],
-          },
-        }
-      : { status: "idle" as const, targets: [] },
+          }
+        : { status: "idle" as const, targets: [] },
   previewTarget: async () => {
     if (fixture === "prerecord-failure") throw new Error("offline");
     let current: LiveTargetSnapshot = {
@@ -236,6 +185,7 @@ const recordingService = {
       close: () => undefined,
     };
   },
+  liveTarget: async () => createActiveRecordingTarget(),
 } as unknown as RecordingProductService;
 
 function fixtureRun(index: number): ProductRunSummary {
@@ -265,7 +215,10 @@ function fixtureRun(index: number): ProductRunSummary {
 const largeRuns = Array.from({ length: 240 }, (_, index) => fixtureRun(index));
 const catalogService: CatalogProductService = {
   listTests: async () =>
-    fixture === "apps-list" || fixture === "app-overview" || populatedHome
+    fixture === "apps-list" ||
+    fixture === "app-overview" ||
+    fixture === "tests-library" ||
+    populatedHome
       ? [
           {
             id: "test-checkout",
@@ -283,7 +236,10 @@ const catalogService: CatalogProductService = {
   listRuns: async () =>
     fixture === "runs-large"
       ? largeRuns
-      : fixture === "apps-list" || fixture === "app-overview" || populatedHome
+      : fixture === "apps-list" ||
+          fixture === "app-overview" ||
+          fixture === "tests-library" ||
+          populatedHome
         ? [fixtureRun(0), fixtureRun(1), fixtureRun(2)]
         : [],
   getRun: async () => undefined,
@@ -293,13 +249,48 @@ const mapService: MapProductService = {
     appMapId,
     appName: "Checkout",
     revision: 4,
-    screens: [],
-    paths: [],
+    screens:
+      fixture === "map-overview"
+        ? [
+            {
+              id: "cart",
+              title: "Cart",
+              position: { x: 24, y: 24 },
+              variantCount: 1,
+              coveringTests: [{ id: "test-checkout", name: "Complete checkout" }],
+              recentFailures: [],
+            },
+            {
+              id: "confirmation",
+              title: "Order confirmation",
+              position: { x: 350, y: 24 },
+              variantCount: 1,
+              coveringTests: [],
+              recentFailures: [
+                { id: "failure", outcome: "product-failure", runId: "run-checkout" },
+              ],
+            },
+          ]
+        : [],
+    paths:
+      fixture === "map-overview"
+        ? [
+            {
+              id: "place-order",
+              label: "Place order",
+              fromScreenId: "cart",
+              toScreenId: "confirmation",
+              fromTitle: "Cart",
+              toTitle: "Order confirmation",
+              coveringTests: [{ id: "test-checkout", name: "Complete checkout" }],
+            },
+          ]
+        : [],
     coverage: {
-      screenCount: 0,
-      coveredScreenCount: 0,
-      pathCount: 0,
-      coveredPathCount: 0,
+      screenCount: fixture === "map-overview" ? 2 : 0,
+      coveredScreenCount: fixture === "map-overview" ? 1 : 0,
+      pathCount: fixture === "map-overview" ? 1 : 0,
+      coveredPathCount: fixture === "map-overview" ? 1 : 0,
       testCount: 1,
     },
     pendingProposalCount: 0,
@@ -353,9 +344,9 @@ const appResourcesService: AppResourcesProductService = {
     ];
   },
 };
-const changeService = {
-  list: async () => [],
-} as unknown as ChangeProductService;
+const changeService: ChangeProductService = fixture.startsWith("change")
+  ? fixtureChangeService
+  : { ...fixtureChangeService, list: async () => [] };
 
 const fixtureTest = {
   id: "test-checkout",
@@ -381,28 +372,28 @@ const fixtureTest = {
   ],
 };
 const runService = {
-  getTest: async () => (fixture === "test-detail" ? fixtureTest : undefined),
+  getTest: async () => fixtureTest,
   listTestRuns: async () => (fixture === "test-detail" ? [fixtureRun(0), fixtureRun(1)] : []),
-  listTargets: async () =>
-    fixture === "test-detail"
-      ? [
-          {
-            kind: "browser" as const,
-            platform: "browser" as const,
-            targetId: "checkout-browser",
-            name: "Golden Chromium — Checkout staging",
-            detail: "Managed browser · Ready",
-          },
-          {
-            kind: "device" as const,
-            platform: "android" as const,
-            targetId: "checkout-pixel",
-            name: "Pixel 9 Pro XL API 36",
-            detail: "Android emulator · Ready",
-          },
-        ]
-      : [],
+  listTargets: async () => [
+    {
+      kind: "browser" as const,
+      platform: "browser" as const,
+      targetId: "checkout-browser",
+      name: "Golden Chromium — Checkout staging",
+      detail: "Managed browser · Ready",
+    },
+    {
+      kind: "device" as const,
+      platform: "android" as const,
+      targetId: "checkout-pixel",
+      name: "Pixel 9 Pro XL API 36",
+      detail: "Android emulator · Ready",
+    },
+  ],
   getReport: async () => failedReport,
+  replay: async () => ({ jobId: "replay-checkout" }),
+  getReplayJob: async () => ({ status: "running" }),
+  cancelReplay: async () => undefined,
   getRawEvidence: async () => ({ redacted: true, events: [] }),
 } as unknown as RunProductService;
 
@@ -443,6 +434,28 @@ const batchReport: ProductBatchReport = {
   },
 };
 const runAcrossService = {
+  getSetup: async () => ({
+    appMapId: "checkout-app",
+    appMapRevision: 4,
+    testId: "test-checkout",
+    testName: "Complete checkout",
+    appName: "Checkout",
+    dataSet: {
+      name: "Checkout locales",
+      dimensions: [
+        {
+          id: "locale",
+          name: "Language",
+          kind: "language",
+          values: [
+            { id: "en", label: "English" },
+            { id: "pt", label: "Portuguese" },
+          ],
+        },
+      ],
+    },
+  }),
+  preview: previewProductRunAcross,
   getReport: async () => batchReport,
   getFailureClusters: async () => ({ batchId: batchReport.id, clusters: [] }),
   exportReport: async () => ({
@@ -799,6 +812,18 @@ createRoot(root).render(
       liveTestEditorService={liveTestEditorService}
       deviceService={deviceService}
       agentDebugService={agentDebugService}
+      settingsService={fixtureSettingsService}
+      testEditorService={{
+        get: async () =>
+          (
+            await liveTestEditorService.open({
+              testId: "test-checkout",
+              sessionId: "session-checkout",
+            })
+          ).test,
+        edit: async ({ document }) => document,
+        decideRepair: async ({ document }) => document,
+      }}
     />
   </StrictMode>,
 );

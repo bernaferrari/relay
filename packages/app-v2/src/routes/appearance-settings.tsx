@@ -2,7 +2,8 @@
 import { FieldLabel } from "@relay/ui-react/components/field";
 import { RadioGroup, RadioGroupItem } from "@relay/ui-react/components/radio-group";
 import { useRouteContext } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Button } from "@relay/ui-react/components/button";
 import {
   APPEARANCE_STORAGE_KEY,
   applyColorScheme,
@@ -17,15 +18,25 @@ export function AppearanceSettings() {
     validColorScheme(document.documentElement.dataset.colorSchemePreference ?? null),
   );
   const [saveState, setSaveState] = useState<SaveState | undefined>();
+  const [problem, setProblem] = useState<string>();
+  const chosen = useRef(false);
 
   useEffect(() => {
     let active = true;
-    void Promise.resolve(platform.storage.get(APPEARANCE_STORAGE_KEY)).then((stored) => {
-      if (!active) return;
-      const next = validColorScheme(stored);
-      setPreference(next);
-      applyColorScheme(next);
-    });
+    void Promise.resolve()
+      .then(() => platform.storage.get(APPEARANCE_STORAGE_KEY))
+      .then((stored) => {
+        if (!active || chosen.current) return;
+        const next = validColorScheme(stored);
+        setPreference(next);
+        applyColorScheme(next);
+      })
+      .catch(() => {
+        if (active && !chosen.current)
+          setProblem(
+            "Could not load your saved appearance. Choose a color scheme to save it again.",
+          );
+      });
     return () => {
       active = false;
     };
@@ -40,14 +51,17 @@ export function AppearanceSettings() {
   }, [preference]);
 
   async function choose(next: ColorSchemePreference) {
+    chosen.current = true;
     setPreference(next);
     applyColorScheme(next);
     setSaveState("saving");
+    setProblem(undefined);
     try {
       await Promise.resolve(platform.storage.set(APPEARANCE_STORAGE_KEY, next));
       setSaveState("saved");
     } catch {
       setSaveState("failed");
+      setProblem("Your color scheme is applied here, but could not be saved for next time.");
     }
   }
 
@@ -55,14 +69,14 @@ export function AppearanceSettings() {
     <SettingsFrame category="appearance" saveState={saveState}>
       <section className="relay-settings-group" aria-labelledby="appearance-title">
         <header>
-          <p className="relay-section-label">Color scheme</p>
-          <h2 id="appearance-title">Match the way you work</h2>
+          <h2 id="appearance-title">Color scheme</h2>
           <p>System follows this computer and changes automatically throughout the day.</p>
         </header>
         <RadioGroup
           className="relay-appearance-options"
           name="appearance"
           value={preference}
+          disabled={saveState === "saving"}
           onValueChange={(next) => void choose(next)}
           aria-labelledby="appearance-title"
         >
@@ -96,6 +110,16 @@ export function AppearanceSettings() {
             </FieldLabel>
           ))}
         </RadioGroup>
+        {problem ? (
+          <div role="alert" className="relay-settings-empty-inline">
+            <p>{problem}</p>
+            {saveState === "failed" ? (
+              <Button variant="outline" onClick={() => void choose(preference)}>
+                Retry saving
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
       </section>
     </SettingsFrame>
   );

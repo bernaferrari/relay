@@ -125,7 +125,7 @@ export function SessionPage() {
     <section className="relay-page relay-session-page">
       <Breadcrumbs
         items={[
-          { label: "Sessions", to: "/sessions" },
+          { label: "Live", to: "/sessions" },
           { label: value?.title ?? (session.isError ? "Unavailable" : "Session") },
         ]}
       />
@@ -180,6 +180,15 @@ export function SessionPage() {
                 }
               >
                 <Pencil aria-hidden="true" /> Edit Test live
+              </Button>
+            ) : null}
+            {canControl ? (
+              <Button
+                variant="ghost"
+                nativeButton={false}
+                render={<Link to="/debug" search={{ target: value.target.targetId }} />}
+              >
+                Investigate
               </Button>
             ) : null}
             {isActiveSession(value) ? (
@@ -259,10 +268,10 @@ export function SessionPage() {
       {!session.isPending && !session.isError && !value ? (
         <EmptyState
           title="This Session is not available"
-          detail="It may belong to another project or may have been removed. Return to Sessions to continue available work."
+          detail="It may belong to another project or may have been removed. Return to Live to continue available work."
           action={
             <Button nativeButton={false} variant="default" render={<Link to="/sessions" />}>
-              View Sessions
+              View Live
             </Button>
           }
         />
@@ -277,6 +286,11 @@ export function SessionPage() {
                 <h2 id="session-stage-title">
                   {canControl ? "Continue where you left off" : "Target unavailable for control"}
                 </h2>
+                {canControl ? (
+                  <p className="relay-page-description">
+                    {value.state === "recording" ? "Session is recording" : "Inspecting live state"}
+                  </p>
+                ) : null}
               </div>
               {canControl && liveStatus === "degraded" ? (
                 <Button
@@ -298,7 +312,7 @@ export function SessionPage() {
                 targetDetail={`Owned by ${value.actorId}`}
                 send={send}
                 recording={false}
-                helpText="Click, drag, scroll, or type to inspect this live Session. These controls do not add actions to the recorded Test."
+                helpText="Inspecting live state. These controls do not add Test steps. Open the Test editor or recording workspace to capture steps. Enter and Backspace are supported keys."
               />
             ) : (
               <div className="relay-session-unavailable">

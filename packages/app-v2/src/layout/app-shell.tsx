@@ -50,7 +50,7 @@ export function AppShell({ platform }: { platform: Platform }) {
       <a className="relay-skip-link" href="#main-content">
         Skip to content
       </a>
-      <Sidebar />
+      {!immersive ? <Sidebar /> : null}
       <div className="relay-workspace">
         {!immersive ? (
           <header

@@ -101,6 +101,7 @@ export type RouteDefinition = {
     | "target"
     | "session"
     | "section"
+    | "replayJob"
   )[];
   primaryAction: ContextualAction | null;
 };
@@ -193,7 +194,12 @@ export const ROUTE_DEFINITIONS = [
     ["view", "step", "screen"],
   ),
   d("/runs", "/home", "Runs", "Run", "runs", "review-run", ["status", "app", "view"]),
-  d("/runs/:runId", "/runs", "Run", "Run", "runs", "inspect-run", ["view", "step", "screen"]),
+  d("/runs/:runId", "/runs", "Run", "Run", "runs", "inspect-run", [
+    "view",
+    "step",
+    "screen",
+    "replayJob",
+  ]),
   d("/batches/:batchId", "/runs", "Batch", "Report", "runs", "review-batch", ["status", "view"]),
   d("/changes", "/home", "Changes", "Change", "changes", "verify-change", [
     "status",
@@ -203,7 +209,7 @@ export const ROUTE_DEFINITIONS = [
   d("/changes/:changeId", "/changes", "Change", "Change", "changes", "inspect-change", ["view"]),
   d("/devices", "/home", "Devices", "Device", "devices", "connect-device", ["status", "view"]),
   d("/devices/:deviceId", "/devices", "Device", "Device", "devices", "inspect-device", ["view"]),
-  d("/debug", "/home", "Agent Debug", "Session", "sessions", null),
+  d("/debug", "/sessions", "Agent Debug", "Session", "sessions", null, ["target"]),
   ...(["general", "evidence", "integrations", "appearance", "advanced", "about"] as const).map(
     (name) =>
       d(

@@ -35,12 +35,14 @@ const fixtures = [
   { id: "prerecord-connecting", heading: "Record a Test" },
   { id: "prerecord-failure", heading: "Record a Test" },
   { id: "recording-review", heading: "Review your recording", recordingReview: true },
+  { id: "recording-active", heading: "Complete checkout and confirm the order" },
   { id: "test-detail", heading: "Complete checkout and confirm the order" },
   { id: "runs-large", heading: "Run history" },
+  { id: "report-replay", heading: "Complete checkout" },
   { id: "report-failed", heading: "Complete checkout" },
   { id: "report-evidence", heading: "Complete checkout", evidenceMedia: true },
   { id: "batch-completed", heading: "Checkout across saved accounts", batch: true },
-  { id: "sessions-list", heading: "Sessions" },
+  { id: "sessions-list", heading: "Live" },
   { id: "session-detail", heading: "Complete checkout and confirm the order" },
   { id: "live-test-editor", heading: "Complete checkout and confirm the order" },
   { id: "suites-list", heading: "Suites" },
@@ -49,17 +51,34 @@ const fixtures = [
   { id: "environment-detail", heading: "Checkout staging" },
   { id: "agent-debug", heading: "Investigate a bug" },
   { id: "devices", heading: "Devices" },
+  { id: "tests-library", heading: "Saved Tests" },
+  { id: "test-editor", heading: "Complete checkout and confirm the order" },
+  { id: "map-overview", heading: "Checkout" },
+  { id: "device-detail", heading: "Pixel 9 Pro XL" },
+  { id: "changes-list", heading: "Change verification" },
+  { id: "change-detail", heading: "Keep Arabic settings readable" },
+  { id: "run-across", heading: "Choose cases and a device" },
+  { id: "settings-general", heading: "General" },
+  { id: "settings-evidence", heading: "Evidence & privacy" },
+  { id: "settings-integrations", heading: "Integrations" },
+  { id: "settings-appearance", heading: "Appearance" },
+  { id: "settings-advanced", heading: "Advanced" },
+  { id: "settings-about", heading: "About" },
+  { id: "not-found", heading: "This page is not available" },
+  { id: "route-error", heading: "This page could not load" },
 ];
 const viewports = [
   { id: "compact", width: 800, height: 560 },
   { id: "desktop", width: 1243, height: 838 },
+  { id: "dark", width: 1243, height: 838, colorScheme: "dark" },
 ];
 
 function parseArgs(argv) {
-  const options = { update: false, headed: false };
+  const options = { update: false, headed: false, filter: undefined };
   for (const arg of argv) {
     if (arg === "--update") options.update = true;
     else if (arg === "--headed") options.headed = true;
+    else if (arg.startsWith("--fixture=")) options.filter = arg.slice(10);
     else throw new TypeError(`Unknown option: ${arg}`);
   }
   return options;
@@ -273,6 +292,8 @@ function comparePng(PNG, expectedBytes, actualBytes) {
 
 async function run(options) {
   if (!Number.isInteger(PORT) || PORT < 1) throw new TypeError("Visual fixture port is invalid");
+  if (options.filter && !fixtures.some((fixture) => fixture.id.includes(options.filter)))
+    throw new TypeError(`No visual fixtures match ${options.filter}`);
   const renderer = startRenderer();
   await renderer.ready;
   const { chromium } = coreRequire()("playwright-core");
@@ -284,7 +305,7 @@ async function run(options) {
       const context = await browser.newContext({
         viewport: { width: viewport.width, height: viewport.height },
         deviceScaleFactor: 1,
-        colorScheme: "light",
+        colorScheme: viewport.colorScheme ?? "light",
         reducedMotion: "reduce",
       });
       const page = await context.newPage();
@@ -301,7 +322,9 @@ async function run(options) {
         }
         window.Date = FixedDate;
       });
-      for (const fixture of fixtures) {
+      for (const fixture of fixtures.filter(
+        (item) => !options.filter || item.id.includes(options.filter),
+      )) {
         await page.goto(`http://localhost:${PORT}/visual-fixtures.html?fixture=${fixture.id}`, {
           waitUntil: "domcontentloaded",
           timeout: START_TIMEOUT_MS,

@@ -427,7 +427,7 @@ describe("Settings", () => {
     if (!(appearance instanceof HTMLAnchorElement)) throw new Error("Appearance link not found");
     await click(appearance);
     expect(history.location.pathname).toBe("/settings/appearance");
-    expect(history.location.search).toBe("?section=sensitive");
+    expect(history.location.search).toBe("");
   });
 
   it("applies and persists appearance without waiting for a reload", async () => {
@@ -511,5 +511,133 @@ describe("Settings", () => {
     await click(trigger);
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
     expect(document.body.textContent).toContain("Open Xcode once to finish setup.");
+  });
+
+  it("keeps update read and check failures visible in About", async () => {
+    const platform = testPlatform();
+    let checks = 0;
+    platform.updates = {
+      async getState() {
+        if (checks === 0) throw new Error("update state unavailable");
+        return { phase: "idle" };
+      },
+      async check() {
+        checks += 1;
+        throw new Error("update service offline");
+      },
+      async install() {
+        throw new Error("installer unavailable");
+      },
+      subscribe() {
+        return () => undefined;
+      },
+    };
+
+    await renderPath("/settings/about", { platform });
+    expect(document.body.textContent).toContain("update state unavailable");
+    await click(button("Check now"));
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+      "update service offline",
+    );
+  });
+
+  it("keeps an install failure visible instead of leaving an unhandled rejection", async () => {
+    const platform = testPlatform();
+    platform.updates = {
+      async getState() {
+        return { phase: "downloaded", version: "2.0.0" };
+      },
+      async check() {},
+      async install() {
+        throw new Error("installer unavailable");
+      },
+      subscribe() {
+        return () => undefined;
+      },
+    };
+
+    await renderPath("/settings/about", { platform });
+    await click(button("Install update"));
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+      "installer unavailable",
+    );
+  });
+
+  it("applies appearance immediately and offers a retry after storage rejects", async () => {
+    const platform = testPlatform();
+    let writes = 0;
+    platform.storage = {
+      get: () => null,
+      set: () => {
+        writes += 1;
+        if (writes === 1) return Promise.reject(new Error("storage is locked"));
+        return Promise.resolve();
+      },
+      remove: () => undefined,
+    };
+
+    await renderPath("/settings/appearance", { platform });
+    await click(input("Dark"));
+    expect(document.documentElement.dataset.colorScheme).toBe("dark");
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+      "could not be saved for next time",
+    );
+    await click(button("Retry saving"));
+    expect(writes).toBe(2);
+    expect(document.body.textContent).toContain("Saved");
+  });
+
+  it("does not let a late saved appearance overwrite a choice made while loading", async () => {
+    let resolveStored!: (value: string | null) => void;
+    const stored = new Promise<string | null>((resolve) => {
+      resolveStored = resolve;
+    });
+    const platform = testPlatform();
+    platform.storage = {
+      get: () => stored,
+      set: () => undefined,
+      remove: () => undefined,
+    };
+
+    await renderPath("/settings/appearance", { platform });
+    await click(input("Dark"));
+    expect(document.documentElement.dataset.colorScheme).toBe("dark");
+    resolveStored("light");
+    await settle();
+    expect(document.documentElement.dataset.colorScheme).toBe("dark");
+    expect(input("Dark").getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("labels a configured General address without claiming a live connection", async () => {
+    const platform = testPlatform();
+    platform.getServerConnection = () => ({
+      url: "http://127.0.0.1:9876",
+      auth: { type: "none" },
+      organizationId: "local",
+      projectId: "default",
+      actorId: "human:test",
+      actorKind: "human",
+    });
+
+    await renderPath("/settings/general", { platform });
+    expect(document.body.textContent).toContain("Relay is configured to use 127.0.0.1:9876.");
+    expect(document.body.textContent).toContain("Configured");
+    expect(document.body.textContent).not.toContain("Connected");
+  });
+
+  it("retains the typed Advanced address after a failed save", async () => {
+    const platform = testPlatform();
+    platform.setServerUrl = () => Promise.reject(new Error("workspace unavailable"));
+    await renderPath("/settings/advanced", { platform });
+
+    const url = document.querySelector<HTMLInputElement>("#relay-server-url");
+    if (!url) throw new Error("Server URL input not found");
+    await fillInput(url, "http://new-workspace.example.test:8787");
+    await click(button("Save address"));
+
+    expect(url.value).toBe("http://new-workspace.example.test:8787");
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+      "Your entered address is preserved",
+    );
   });
 });
