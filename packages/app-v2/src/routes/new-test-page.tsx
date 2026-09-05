@@ -17,7 +17,7 @@ import type { BrowserSpacesProductService } from "../data/browser-spaces-product
 import { recordingQueryKeys } from "../data/recording-queries";
 import { SelectField } from "../components/filter-select";
 import { PageHeader, WorkbenchPage } from "../components/page-layout";
-import { Breadcrumbs, EmptyState } from "../components/product-patterns";
+import { EmptyState } from "../components/product-patterns";
 import {
   clearWorkflowPointerIfCurrent,
   readWorkflowPointer,
@@ -270,9 +270,8 @@ export function NewTestPage() {
   return (
     <WorkbenchPage className="relay-new-test-page flex min-h-0 flex-col">
       <form id="new-test-form" className="flex min-h-0 flex-1 flex-col" onSubmit={submit}>
-        <Breadcrumbs items={[{ label: "Tests", to: "/tests" }, { label: "Record" }]} />
         <PageHeader
-          context="Tests"
+          crumbs={[{ label: "Tests", to: "/tests" }, { label: "Record" }]}
           title="Record a Test"
           description="Choose an app and a device, then start."
           actions={

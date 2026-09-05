@@ -5,7 +5,7 @@ import { getRouteApi, useRouteContext } from "@tanstack/react-router";
 import { RotateCcw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { LibraryPage, PageHeader } from "../components/page-layout";
-import { Breadcrumbs, EmptyState } from "../components/product-patterns";
+import { EmptyState } from "../components/product-patterns";
 import { IssueDraftButton } from "../components/issue-draft-button";
 import { isBatchCaseRerunnable, selectedClusterCaseIds } from "./batch-triage";
 import { BatchFailureClusters, BatchResultMatrix } from "./batch-triage-panels";
@@ -129,9 +129,8 @@ export function BatchPage() {
 
   return (
     <LibraryPage className="relay-batch-page">
-      <Breadcrumbs items={[{ label: "Runs", to: "/runs" }, { label: report?.title ?? "Batch" }]} />
       <PageHeader
-        context="Results"
+        crumbs={[{ label: "Runs", to: "/runs" }, { label: report?.title ?? "Batch" }]}
         title={report?.title ?? "Batch"}
         actions={
           report ? (

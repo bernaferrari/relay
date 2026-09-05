@@ -13,10 +13,10 @@ import { Input } from "@relay/ui-react/components/input";
 
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate, useRouteContext } from "@tanstack/react-router";
-import { Globe2, Plus, RotateCcw } from "lucide-react";
+import { ChevronRight, Globe2, Plus, RotateCcw } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LibraryPage, PageHeader } from "../components/page-layout";
-import { Breadcrumbs, EmptyState, RecoveryState } from "../components/product-patterns";
+import { EmptyState, RecoveryState } from "../components/product-patterns";
 import { readSetupContinuation } from "../data/setup-continuation";
 import { PageLoading } from "./recording-shared";
 
@@ -82,9 +82,8 @@ export function EnvironmentsPage() {
 
   return (
     <LibraryPage className="max-w-[1040px]">
-      <Breadcrumbs items={[{ label: "Devices", to: "/devices" }, { label: "Browsers" }]} />
       <PageHeader
-        context="Devices & browsers"
+        context="Workspace"
         title="Browsers"
         description="Saved browsers you can open, record on, and sign into."
         actions={
@@ -205,39 +204,36 @@ export function EnvironmentsPage() {
         />
       ) : null}
       {spaces.data?.length ? (
-        <ul className="mb-6 grid list-none gap-3 p-0" aria-label="Browsers">
+        <ul
+          className="mb-6 list-none overflow-hidden rounded-lg border border-border bg-card p-0"
+          aria-label="Browsers"
+        >
           {spaces.data.map((space) => (
-            <li key={space.id}>
+            <li className="border-b border-border last:border-b-0" key={space.id}>
               <Link
-                className="group flex min-w-0 items-center gap-4 rounded-xl border border-border bg-card p-5 transition-colors hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                className="flex min-h-20 w-full items-center gap-4 px-4 py-3 transition-colors hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
                 to="/environments/$profileId"
                 params={{ profileId: space.id }}
                 search={continuation ? { returnTo: rawReturnTo } : undefined}
               >
                 <span
-                  className="grid size-[38px] place-items-center rounded-md border border-border bg-muted text-muted-foreground"
+                  className="grid size-9 place-items-center rounded-md border border-border bg-muted text-muted-foreground"
                   aria-hidden="true"
                 >
-                  <Globe2 />
+                  <Globe2 className="size-4" />
                 </span>
-                <span className="grid min-w-0 flex-1 gap-1">
-                  <strong className="text-sm font-semibold wrap-anywhere">{space.name}</strong>
-                  <small className="text-sm text-muted-foreground wrap-anywhere">
-                    {displayHost(space.startUrl)}
+                <span className="grid min-w-0 flex-1 gap-0.5">
+                  <strong className="text-sm font-medium wrap-anywhere">{space.name}</strong>
+                  <small className="text-xs text-muted-foreground wrap-anywhere">
+                    {space.environment?.locale
+                      ? `${displayHost(space.startUrl)} · ${space.environment.locale}`
+                      : displayHost(space.startUrl)}
                   </small>
-                  {space.environment?.locale ? (
-                    <small className="text-xs text-muted-foreground">
-                      {space.environment.locale}
-                    </small>
-                  ) : !space.persistent ? (
-                    <small className="text-xs text-muted-foreground">
-                      Fresh browser each session
-                    </small>
-                  ) : null}
                 </span>
-                <span className="inline-flex flex-none items-center gap-1.5 text-xs font-semibold text-primary">
-                  Open <span aria-hidden="true">→</span>
-                </span>
+                <ChevronRight
+                  className="size-4 shrink-0 text-muted-foreground"
+                  aria-hidden="true"
+                />
               </Link>
             </li>
           ))}

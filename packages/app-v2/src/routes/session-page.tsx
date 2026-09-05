@@ -12,7 +12,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from "@relay/ui-react/components/dropdown-menu";
-import { Badge } from "@relay/ui-react/components/badge";
+
 import { Button } from "@relay/ui-react/components/button";
 import {
   Collapsible,
@@ -23,8 +23,8 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useRouteContext } from "@tanstack/react-router";
 import { CircleAlert, Pencil, RefreshCcw, Square, MoreHorizontal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { PageHeader } from "../components/page-layout";
-import { Breadcrumbs, EmptyState } from "../components/product-patterns";
+import { LibraryPage, PageHeader } from "../components/page-layout";
+import { EmptyState } from "../components/product-patterns";
 import { sessionQueryKeys, type ProductSessionDetail } from "../data/session-product-service";
 import type {
   LiveTargetBrowserContext,
@@ -136,45 +136,12 @@ export function SessionPage() {
   }
 
   return (
-    <section className="relay-page mx-auto w-full px-[clamp(20px,3vw,40px)] pt-7 pb-10 max-w-[1120px]">
-      <Breadcrumbs
-        items={[
-          { label: "Live", to: "/sessions" },
-          { label: value?.title ?? (session.isError ? "Unavailable" : "Session") },
-        ]}
-      />
+    <LibraryPage className="max-w-[1120px]">
       {value ? (
         <PageHeader
+          crumbs={[{ label: "Live", to: "/sessions" }, { label: value.title }]}
           title={value.title}
-          context={
-            <>
-              <span>Session</span>
-              <Badge
-                variant={sessionBadgeVariant(
-                  value.state === "failed" || (isActiveSession(value) && !canControl)
-                    ? "warning"
-                    : isActiveSession(value)
-                      ? "success"
-                      : "secondary",
-                )}
-                className={sessionBadgeClass(
-                  value.state === "failed" || (isActiveSession(value) && !canControl)
-                    ? "warning"
-                    : isActiveSession(value)
-                      ? "success"
-                      : "secondary",
-                )}
-              >
-                {sessionStateLabel(value.state)}
-                {isActiveSession(value) && !canControl ? " · Reconnect needed" : ""}
-              </Badge>
-            </>
-          }
-          description={
-            <>
-              {targetLabel(value)} · {value.actorKind === "agent" ? "Agent" : "Manual"}
-            </>
-          }
+          description={`${targetLabel(value)} · ${value.actorKind === "agent" ? "Agent" : "Manual"} · ${sessionStateLabel(value.state)}${isActiveSession(value) && !canControl ? " · Reconnect needed" : ""}`}
           actions={
             <>
               {canControl ? (
@@ -491,7 +458,7 @@ export function SessionPage() {
           </aside>
         </div>
       ) : null}
-    </section>
+    </LibraryPage>
   );
 }
 
@@ -515,16 +482,4 @@ function sessionAvailability(session: ProductSessionDetail): string {
   if (session.lease.expiresAt <= Date.now())
     return "The device reservation expired. Refresh the target to check whether you can reconnect.";
   return "The target is not available for live control.";
-}
-
-type SessionBadgeTone = "success" | "warning" | "secondary";
-
-function sessionBadgeVariant(tone: SessionBadgeTone): "default" | "secondary" {
-  return tone === "success" ? "default" : "secondary";
-}
-
-function sessionBadgeClass(tone: SessionBadgeTone): string | undefined {
-  if (tone === "success") return "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300";
-  if (tone === "warning") return "bg-amber-500/15 text-amber-800 dark:text-amber-300";
-  return undefined;
 }

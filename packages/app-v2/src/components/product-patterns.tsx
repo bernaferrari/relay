@@ -28,7 +28,7 @@ import type { ProductRunPhase } from "@relay/product/catalog";
 type OutcomeValue = RunOutcome | ProductRunPhase | undefined;
 type ReadinessValue = "ready" | "needs-review";
 
-type BreadcrumbItem =
+export type BreadcrumbItem =
   | {
       label: string;
       to:
@@ -47,10 +47,7 @@ type BreadcrumbItem =
 
 export function Breadcrumbs({ items }: { items: readonly BreadcrumbItem[] }) {
   return (
-    <nav
-      className="relay-breadcrumbs mb-2 text-[11px] leading-4 text-muted-foreground"
-      aria-label="Breadcrumb"
-    >
+    <nav className="relay-breadcrumbs text-[11px] leading-4 text-muted-foreground" aria-label="Breadcrumb">
       <ol className="m-0 flex min-w-0 list-none items-center gap-1.5 p-0">
         {items.map((item, index) => {
           const current = index === items.length - 1;

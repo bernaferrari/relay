@@ -16,7 +16,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import type { ProductTestStep } from "@relay/product/catalog";
-import { Breadcrumbs, EmptyState, OutcomeMark } from "../components/product-patterns";
+import { EmptyState, OutcomeMark } from "../components/product-patterns";
 import { TestStepEvidencePreview } from "../components/test-step-evidence-preview";
 import { runQueryKeys } from "../data/run-queries";
 import { readRunPointer, writeRunPointer } from "../data/run-pointer";
@@ -182,17 +182,10 @@ export function TestPage() {
 
   return (
     <WorkbenchPage className="relay-test-page">
-      <Breadcrumbs
-        items={[{ label: "Tests", to: "/tests" }, { label: test.data?.name ?? "Test" }]}
-      />
       <PageHeader
+        crumbs={[{ label: "Tests", to: "/tests" }, { label: test.data?.name ?? "Test" }]}
         title={test.data?.name ?? "Test"}
-        context={
-          <>
-            <span>{test.data?.appName}</span>
-            <span>Saved Test</span>
-          </>
-        }
+        description={test.data?.appName}
         actions={
           <>
             {activeRun ? (

@@ -8,7 +8,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { ArrowDown, ArrowUp, ChevronRight, GripVertical, Redo2, Undo2 } from "lucide-react";
 import { useMemo, useRef, useState, type CSSProperties } from "react";
-import { Breadcrumbs, EmptyState } from "../components/product-patterns";
+import { EmptyState } from "../components/product-patterns";
 import { TestEditorEvidencePanel } from "../components/test-editor-evidence-panel";
 import {
   SelectedStepEditor,
@@ -369,16 +369,14 @@ function TestEditorDocument() {
         }
       }}
     >
-      <Breadcrumbs
-        items={[
+      <PageHeader
+        crumbs={[
           { label: "Tests", to: "/tests" },
           { label: editorDocument?.test.name ?? "Test" },
           { label: "Edit" },
         ]}
-      />
-      <PageHeader
         title={editorDocument?.test.name ?? "Edit Test"}
-        context={editorDocument?.appName ?? "Tests"}
+        description={editorDocument?.appName}
         actions={
           <>
             <EditorSaveStatus

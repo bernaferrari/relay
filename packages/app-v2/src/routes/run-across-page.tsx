@@ -3,8 +3,8 @@ import { Button } from "@relay/ui-react/components/button";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { Breadcrumbs } from "../components/product-patterns";
-import { PageHeader } from "../components/page-layout";
+
+import { FormPage, PageHeader } from "../components/page-layout";
 import { RunConfigurationComposer } from "../components/run-configuration-composer";
 import { useRunConfigurationKey } from "../data/use-persisted-run-configuration";
 import { usePersistedRunConfiguration } from "../data/use-persisted-run-configuration";
@@ -104,16 +104,13 @@ export function RunAcrossPage() {
 
   const loading = setup.isPending || targets.isPending;
   return (
-    <section className="relay-page mx-auto w-full px-[clamp(20px,3vw,40px)] pt-7 pb-10 max-w-[1040px]">
-      <Breadcrumbs
-        items={[
+    <FormPage>
+      <PageHeader
+        crumbs={[
           { label: "Tests", to: "/tests" },
           { label: setup.data?.testName ?? "Test" },
           { label: "Run with data" },
         ]}
-      />
-      <PageHeader
-        context="Run with data"
         title="Choose data and where to run"
         description="Run one selected case first, then review its Report before continuing with the rest."
       />
@@ -237,6 +234,6 @@ export function RunAcrossPage() {
           </RunConfigurationComposer>
         </div>
       ) : null}
-    </section>
+    </FormPage>
   );
 }

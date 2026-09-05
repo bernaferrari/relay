@@ -29,7 +29,7 @@ import {
   Undo2,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Breadcrumbs } from "../components/product-patterns";
+
 import { recordingQueryKeys, refreshRecording } from "../data/recording-queries";
 import { clearWorkflowPointerIfCurrent } from "../data/workflow-pointer";
 import { PageLoading, RecordingProblem } from "./recording-shared";
@@ -268,10 +268,9 @@ export function ReviewRecordingPage() {
 
   return (
     <WorkbenchPage className="w-full max-w-[1480px] px-[clamp(22px,3vw,42px)] py-[clamp(22px,3vw,42px)]">
-      <Breadcrumbs items={[{ label: "Tests", to: "/tests" }, { label: "Review" }]} />
       <PageHeader
+        crumbs={[{ label: "Tests", to: "/tests" }, { label: "Review" }]}
         title={testName || snapshot?.title || "Review your recording"}
-        context="Review"
         description={reviewInstruction(review?.replayRequired, canApprove)}
         actions={
           reviewReady ? (

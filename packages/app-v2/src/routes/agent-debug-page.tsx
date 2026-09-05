@@ -16,7 +16,7 @@ import { Link, useLocation, useNavigate, useRouteContext } from "@tanstack/react
 import { ShieldCheck } from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { FormPage, PageHeader } from "../components/page-layout";
-import { Breadcrumbs } from "../components/product-patterns";
+
 import type { AgentDebugProductService } from "../data/agent-debug-product-service";
 import { deviceQueryKeys } from "../data/device-product-service";
 import { runQueryKeys } from "../data/run-queries";
@@ -119,9 +119,8 @@ export function AgentDebugPage() {
 
   return (
     <FormPage>
-      <Breadcrumbs items={[{ label: "Live", to: "/sessions" }, { label: "Investigate" }]} />
       <PageHeader
-        context="Live"
+        crumbs={[{ label: "Live", to: "/sessions" }, { label: "Investigate" }]}
         title="Investigate"
         description="Name the problem, pick a device, and start capturing."
       />

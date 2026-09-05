@@ -11,7 +11,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useRouteContext } from "@tanstack/react-router";
 import { InfiniteMapCanvas } from "../components/infinite-map-canvas";
 import { PageHeader } from "../components/page-layout";
-import { Breadcrumbs, EmptyState } from "../components/product-patterns";
+import { EmptyState } from "../components/product-patterns";
 import { PageLoading, RecordingProblem } from "./recording-shared";
 
 const routeApi = getRouteApi("/apps/$appId/map");
@@ -67,16 +67,12 @@ export function MapPage() {
 
   return (
     <section className="relay-page mx-auto w-full px-[clamp(20px,3vw,40px)] pt-7 pb-10 h-full min-h-0">
-      <Breadcrumbs
-        items={[
+      <PageHeader
+        crumbs={[
           { label: "Home", to: "/home" },
           { label: map.data?.appName ?? "App", to: "/apps/$appId", params: { appId } },
-          { label: "Explore" },
         ]}
-      />
-      <PageHeader
-        context="Explore"
-        title={map.data?.appName ?? "App"}
+        title="Explore"
         description="Known screens and verified paths."
       />
       {map.isPending ? <PageLoading label="Loading known screens…" /> : null}

@@ -15,7 +15,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { ChevronRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { Breadcrumbs, OutcomeMark } from "../components/product-patterns";
+
 import { IssueDraftButton } from "../components/issue-draft-button";
 import { RunConfigurationComposer } from "../components/run-configuration-composer";
 import {
@@ -197,10 +197,11 @@ export function RunPage() {
   if (problem || recovery) {
     return (
       <WorkbenchPage className="max-w-[1120px]">
-        <Breadcrumbs items={[{ label: "Runs", to: "/runs" }, { label: "Run" }]} />
-        <h1 className="relay-visually-hidden sr-only text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance]">
-          {snapshot?.title ?? "Run unavailable"}
-        </h1>
+        <PageHeader
+          crumbs={[{ label: "Runs", to: "/runs" }, { label: "Run" }]}
+          title={snapshot?.title ?? "Run unavailable"}
+          titleHidden
+        />
         <RecordingProblem
           className="relay-run-recovery mt-4"
           error={problem}
@@ -216,8 +217,10 @@ export function RunPage() {
   if (loading) {
     return (
       <WorkbenchPage className="max-w-[1120px]">
-        <Breadcrumbs items={[{ label: "Runs", to: "/runs" }, { label: "In progress" }]} />
-        <PageHeader context="Run" title={snapshot?.title ?? "Loading Run"} />
+        <PageHeader
+          crumbs={[{ label: "Runs", to: "/runs" }, { label: "In progress" }]}
+          title={snapshot?.title ?? "Loading Run"}
+        />
         <PageLoading label="Loading the Run…" />
       </WorkbenchPage>
     );
@@ -225,15 +228,12 @@ export function RunPage() {
 
   return (
     <WorkbenchPage className="max-w-[1120px]">
-      <Breadcrumbs
-        items={[
+      <PageHeader
+        crumbs={[
           { label: "Runs", to: "/runs" },
           ...(activePointer ? [{ label: snapshot?.title ?? "Test" }] : []),
           { label: "In progress" },
         ]}
-      />
-      <PageHeader
-        context="Run in progress"
         title={snapshot?.title ?? "Running Test"}
         description={
           snapshot?.target
@@ -349,14 +349,8 @@ function RunReport({
   }
   return (
     <WorkbenchPage className="max-w-[1280px]">
-      <Breadcrumbs items={[{ label: "Runs", to: "/runs" }, { label: report.title }]} />
       <PageHeader
-        context={
-          <>
-            <span>Run Report</span>
-            <OutcomeMark outcome={report.outcome} />
-          </>
-        }
+        crumbs={[{ label: "Runs", to: "/runs" }, { label: report.title }]}
         title={report.title}
         description={outcomeSentence(report.outcome, target)}
         actions={

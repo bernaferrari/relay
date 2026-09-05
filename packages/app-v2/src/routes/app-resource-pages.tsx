@@ -5,7 +5,7 @@ import { Link, useRouteContext } from "@tanstack/react-router";
 import { Box, KeyRound, Plus, RotateCcw } from "lucide-react";
 import { useMemo, useState } from "react";
 import { LibraryPage, PageHeader } from "../components/page-layout";
-import { Breadcrumbs, EmptyState, RecoveryState } from "../components/product-patterns";
+import { EmptyState, RecoveryState } from "../components/product-patterns";
 import type {
   ProductAppVersion,
   ProductBrowserAccount,
@@ -73,15 +73,9 @@ export function AppVersionsPage() {
         />
       ) : null}
       {!loading && !error ? (
-        <section className="mt-[30px]" aria-labelledby="registered-versions-title">
-          <ResourceHeading
-            id="registered-versions-title"
-            label="Workspace"
-            title="Builds"
-            detail="Available when you choose what to run."
-          />
+        <section aria-label="Versions">
           {versions.data?.length ? (
-            <ul className="mt-[18px] list-none overflow-hidden rounded-lg border border-border bg-card p-0">
+            <ul className="list-none overflow-hidden rounded-lg border border-border bg-card p-0">
               {versions.data.map((version) => (
                 <VersionRow
                   key={version.id}
@@ -231,15 +225,9 @@ export function AppAccountsPage() {
         />
       ) : null}
       {!loading && !error ? (
-        <section className="mt-[30px]" aria-labelledby="browser-signins-title">
-          <ResourceHeading
-            id="browser-signins-title"
-            label="Browsers"
-            title="Saved sign-ins"
-            detail="Each sign-in stays with the browser it was saved from."
-          />
+        <section aria-label="Sign-ins">
           {accounts.data?.length ? (
-            <ul className="mt-[18px] list-none overflow-hidden rounded-lg border border-border bg-card p-0">
+            <ul className="list-none overflow-hidden rounded-lg border border-border bg-card p-0">
               {accounts.data.map((account) => (
                 <AccountRow
                   key={account.fixture.reference}
@@ -321,7 +309,6 @@ function AppResourceFrame({
 }) {
   return (
     <LibraryPage className="max-w-[1040px]">
-      <Breadcrumbs items={[{ label: "Workspace", to: "/home" }, { label: title }]} />
       <PageHeader context="Workspace" title={title} description={description} actions={action} />
       {children}
     </LibraryPage>
@@ -350,28 +337,6 @@ function ResourceRecovery({
         </Button>
       }
     />
-  );
-}
-
-function ResourceHeading({
-  id,
-  label,
-  title,
-  detail,
-}: {
-  id: string;
-  label: string;
-  title: string;
-  detail: string;
-}) {
-  return (
-    <header className="max-w-[720px]">
-      <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
-        {label}
-      </p>
-      <h2 id={id}>{title}</h2>
-      <p>{detail}</p>
-    </header>
   );
 }
 

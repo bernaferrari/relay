@@ -25,8 +25,8 @@ import {
 } from "@tanstack/react-router";
 import { RotateCcw } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import { LibraryPage, PageHeader } from "../components/page-layout";
-import { Breadcrumbs, EmptyState, RecoveryState } from "../components/product-patterns";
+import { FormPage, PageHeader } from "../components/page-layout";
+import { EmptyState, RecoveryState } from "../components/product-patterns";
 import { readSetupContinuation } from "../data/setup-continuation";
 import { PageLoading } from "./recording-shared";
 
@@ -38,6 +38,12 @@ function displayHost(url: string): string {
   } catch {
     return url;
   }
+}
+
+function signInStatus(fixture: { revokedAt?: number; expiresAt?: number }): string | undefined {
+  if (fixture.revokedAt) return "Revoked";
+  if (fixture.expiresAt && fixture.expiresAt <= Date.now()) return "Expired";
+  return undefined;
 }
 
 export function EnvironmentPage() {
@@ -134,22 +140,7 @@ export function EnvironmentPage() {
     readiness.data?.target.checks.filter((check) => check.status === "warning") ?? [];
 
   return (
-    <LibraryPage className="max-w-[1040px]">
-      <Breadcrumbs
-        items={[{ label: "Browsers", to: "/environments" }, { label: space?.name ?? "Browser" }]}
-      />
-      {continuation ? (
-        <Link
-          className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
-          to="/tests/new"
-          search={{
-            ...(continuation.appId ? { app: continuation.appId } : {}),
-            ...(continuation.targetId ? { target: continuation.targetId } : {}),
-          }}
-        >
-          ← Back to recording
-        </Link>
-      ) : null}
+    <FormPage>
       {spaces.isPending ? <PageLoading label="Loading browser…" /> : null}
       {spaces.error ? (
         <RecoveryState
@@ -180,10 +171,28 @@ export function EnvironmentPage() {
       {space ? (
         <>
           <PageHeader
+            crumbs={[{ label: "Browsers", to: "/environments" }, { label: space.name }]}
             title={space.name}
             description={displayHost(space.startUrl)}
             actions={
               <div className="flex items-center gap-2">
+                {continuation ? (
+                  <Button
+                    variant="ghost"
+                    nativeButton={false}
+                    render={
+                      <Link
+                        to="/tests/new"
+                        search={{
+                          ...(continuation.appId ? { app: continuation.appId } : {}),
+                          ...(continuation.targetId ? { target: continuation.targetId } : {}),
+                        }}
+                      />
+                    }
+                  >
+                    Back to recording
+                  </Button>
+                ) : null}
                 <Button variant="default" onClick={() => open.mutate()} disabled={open.isPending}>
                   {open.isPending ? "Opening…" : "Open"}
                 </Button>
@@ -257,57 +266,60 @@ export function EnvironmentPage() {
             />
           ) : null}
 
-          <section className="mt-2 max-w-md" aria-labelledby="environment-account-title">
-            <h2 id="environment-account-title" className="text-[15px] font-medium">
+          <section className="mt-2" aria-labelledby="environment-account-title">
+            <h2
+              id="environment-account-title"
+              className="text-[13px] font-medium text-muted-foreground"
+            >
               Sign-ins
             </h2>
             {fixtures.isPending ? <PageLoading label="Loading sign-ins…" /> : null}
             {fixtures.data?.length ? (
-              <ul className="relay-environment-accounts mt-3 grid list-none p-0">
-                {fixtures.data.map((fixture) => (
-                  <li
-                    className="flex items-center gap-4 border-t border-border py-3 first:border-t-0 first:pt-0"
-                    key={fixture.reference}
-                  >
-                    <span className="min-w-0 flex-1">
-                      <strong className="block text-[13px] font-medium wrap-anywhere">
-                        {fixture.name}
-                      </strong>
-                      <small className="text-[12px] text-muted-foreground">
-                        {fixture.revokedAt
-                          ? "Revoked"
-                          : fixture.expiresAt && fixture.expiresAt <= Date.now()
-                            ? "Expired"
-                            : "Available"}
-                      </small>
-                    </span>
-                    {!fixture.revokedAt ? (
-                      <span className="flex shrink-0">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() =>
-                            refreshAccount.mutate({ fixtureId: fixture.id, name: fixture.name })
-                          }
-                          disabled={refreshAccount.isPending}
-                        >
-                          Refresh
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => {
-                            revokeAccount.reset();
-                            setRevokeFixture(fixture);
-                          }}
-                          disabled={revokeAccount.isPending}
-                        >
-                          Revoke
-                        </Button>
+              <ul className="relay-environment-accounts mt-2 grid list-none p-0">
+                {fixtures.data.map((fixture) => {
+                  const status = signInStatus(fixture);
+                  return (
+                    <li
+                      className="flex items-center gap-4 border-t border-border py-2.5 first:border-t-0 first:pt-0"
+                      key={fixture.reference}
+                    >
+                      <span className="min-w-0 flex-1">
+                        <strong className="block text-[13px] font-medium wrap-anywhere">
+                          {fixture.name}
+                        </strong>
+                        {status ? (
+                          <small className="text-[12px] text-muted-foreground">{status}</small>
+                        ) : null}
                       </span>
-                    ) : null}
-                  </li>
-                ))}
+                      {!fixture.revokedAt ? (
+                        <span className="flex shrink-0 items-center">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() =>
+                              refreshAccount.mutate({ fixtureId: fixture.id, name: fixture.name })
+                            }
+                            disabled={refreshAccount.isPending}
+                          >
+                            Refresh
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-muted-foreground"
+                            onClick={() => {
+                              revokeAccount.reset();
+                              setRevokeFixture(fixture);
+                            }}
+                            disabled={revokeAccount.isPending}
+                          >
+                            Revoke
+                          </Button>
+                        </span>
+                      ) : null}
+                    </li>
+                  );
+                })}
               </ul>
             ) : !fixtures.isPending ? (
               <p className="mt-2 text-[13px] leading-5 text-muted-foreground">
@@ -343,7 +355,7 @@ export function EnvironmentPage() {
                 setAccountOpen(true);
               }}
             >
-              Save current sign-in
+              Save sign-in
             </Button>
           </section>
 
@@ -375,9 +387,9 @@ export function EnvironmentPage() {
 
           <Dialog open={accountOpen} onOpenChange={setAccountOpen}>
             <DialogContent showCloseButton={false}>
-              <DialogTitle>Save current sign-in</DialogTitle>
+              <DialogTitle>Save sign-in</DialogTitle>
               <DialogDescription>
-                Open the browser, sign in, then save that sign-in under a name.
+                Open the browser, sign in, then save it under a name.
               </DialogDescription>
               <form onSubmit={submitAccount}>
                 <Field>
@@ -405,7 +417,7 @@ export function EnvironmentPage() {
                     variant="default"
                     disabled={!accountName.trim() || saveAccount.isPending}
                   >
-                    {saveAccount.isPending ? "Saving…" : "Save sign-in"}
+                    {saveAccount.isPending ? "Saving…" : "Save"}
                   </Button>
                 </div>
               </form>
@@ -447,6 +459,6 @@ export function EnvironmentPage() {
           </Dialog>
         </>
       ) : null}
-    </LibraryPage>
+    </FormPage>
   );
 }

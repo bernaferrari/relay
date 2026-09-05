@@ -11,7 +11,7 @@ import { ScrollArea } from "@relay/ui-react/components/scroll-area";
 import { Field, FieldDescription, FieldLabel } from "@relay/ui-react/components/field";
 import { Button } from "@relay/ui-react/components/button";
 import { PageHeader } from "../components/page-layout";
-import { Breadcrumbs } from "../components/product-patterns";
+
 import { Input } from "@relay/ui-react/components/input";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
@@ -276,28 +276,24 @@ function RecordingWorkspace({
               </Button>
             </div>
           </DialogContent>
-          <Breadcrumbs
-            items={[
+          <PageHeader
+            crumbs={[
               { label: "Tests", to: "/tests" },
               {
                 label: snapshot?.title ?? (exitDestination.kind === "new" ? "Record Test" : "Test"),
               },
               { label: "Record" },
             ]}
-          />
-          <PageHeader
             title={snapshot?.title ?? "Preparing Test"}
-            context={
-              <>
-                <span className="inline-flex items-center gap-1.5">
-                  <span
-                    className={captureReady ? "relay-recording-dot" : "relay-recording-idle-dot"}
-                    aria-hidden="true"
-                  />
-                  {captureReady ? "Recording" : "Restoring recording"}
-                </span>
-                <span>{snapshot?.progress.label ?? "Connecting…"}</span>
-              </>
+            description={
+              <span className="inline-flex items-center gap-1.5">
+                <span
+                  className={captureReady ? "relay-recording-dot" : "relay-recording-idle-dot"}
+                  aria-hidden="true"
+                />
+                {captureReady ? "Recording" : "Restoring recording"}
+                {snapshot?.progress.label ? ` · ${snapshot.progress.label}` : ""}
+              </span>
             }
             actions={
               <>

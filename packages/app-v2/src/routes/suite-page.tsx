@@ -17,12 +17,7 @@ import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react
 import { Play, RotateCcw, Trash2 } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { LibraryPage, PageHeader } from "../components/page-layout";
-import {
-  Breadcrumbs,
-  EmptyState,
-  ReadinessMark,
-  RecoveryState,
-} from "../components/product-patterns";
+import { EmptyState, ReadinessMark, RecoveryState } from "../components/product-patterns";
 import { RunConfigurationComposer } from "../components/run-configuration-composer";
 import { useRunConfigurationKey } from "../data/use-persisted-run-configuration";
 import { usePersistedRunConfiguration } from "../data/use-persisted-run-configuration";
@@ -155,9 +150,6 @@ export function SuitePage() {
 
   return (
     <LibraryPage className="max-w-5xl">
-      <Breadcrumbs
-        items={[{ label: "Suites", to: "/suites" }, { label: value?.name ?? "Suite" }]}
-      />
       {suite.isPending || editor.isPending ? <PageLoading label="Loading Suite…" /> : null}
       {suite.error || editor.error ? (
         <RecoveryState
@@ -194,9 +186,13 @@ export function SuitePage() {
       {value ? (
         <>
           <PageHeader
-            context={`${value.appName} · Suite`}
+            crumbs={[{ label: "Suites", to: "/suites" }, { label: value.name }]}
             title={value.name}
-            description="Choose where to run, then start a representative case."
+            description={
+              value.appName
+                ? `${value.appName}. Choose where to run, then start a representative case.`
+                : "Choose where to run, then start a representative case."
+            }
             actions={
               <>
                 <Button variant="ghost" onClick={beginEdit}>

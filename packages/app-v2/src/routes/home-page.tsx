@@ -11,7 +11,6 @@ import {
   CircleAlert,
   FlaskConical,
   GitCompareArrows,
-  MonitorCheck,
   Play,
   Plus,
   type LucideIcon,
@@ -29,7 +28,6 @@ import { PageLoading, RecordingProblem } from "./recording-shared";
 const homeQueryKeys = {
   apps: ["home", "apps"] as const,
   changes: ["home", "changes"] as const,
-  targets: ["home", "targets"] as const,
 };
 const routeApi = getRouteApi("/home");
 
@@ -72,18 +70,8 @@ export function HomePage() {
     staleTime: 15_000,
     retry: false,
   });
-  const targets = useQuery({
-    queryKey: homeQueryKeys.targets,
-    queryFn: async () => {
-      const state = await productService.connect();
-      return productService.presentTargets(state.targets);
-    },
-    staleTime: 15_000,
-    retry: false,
-  });
-
   const pointerQueries = [recording, run] as const;
-  const optionalQueries = [tests, runs, changes, targets] as const;
+  const optionalQueries = [tests, runs, changes] as const;
   const loading = apps.isPending;
   const error = apps.error;
   const optionalErrors = optionalQueries.filter((query) => query.error);
@@ -139,38 +127,17 @@ export function HomePage() {
             : "Record a path through your app. Replay it and keep the evidence."
         }
         actions={
-          <>
-            {hasWorkspaceData ? (
-              <Button
-                nativeButton={false}
-                render={<Link to="/devices" />}
-                variant="ghost"
-                size="sm"
-                className="gap-2 text-muted-foreground"
-                data-status={
-                  targets.isPending ? "loading" : targets.data?.length ? "ready" : "missing"
-                }
-              >
-                <MonitorCheck className="size-4" aria-hidden="true" />
-                {targets.isPending
-                  ? "Checking devices…"
-                  : targets.data?.length
-                    ? `${targets.data.length} ${targets.data.length === 1 ? "device" : "devices"} ready`
-                    : "Check devices"}
-              </Button>
-            ) : null}
-            {hasTests ? (
-              <Button
-                nativeButton={false}
-                render={<Link to="/tests/new" search={{ app: appScope || undefined }} />}
-                variant="default"
-                size="sm"
-              >
-                <Plus className="size-4" aria-hidden="true" />
-                Record a Test
-              </Button>
-            ) : null}
-          </>
+          hasTests ? (
+            <Button
+              nativeButton={false}
+              render={<Link to="/tests/new" search={{ app: appScope || undefined }} />}
+              variant="default"
+              size="sm"
+            >
+              <Plus className="size-4" aria-hidden="true" />
+              Record a Test
+            </Button>
+          ) : undefined
         }
       />
 

@@ -5,7 +5,7 @@ import { Link, getRouteApi, useLocation, useRouteContext } from "@tanstack/react
 import { RotateCcw } from "lucide-react";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { LibraryPage, PageHeader } from "../components/page-layout";
-import { Breadcrumbs, EmptyState, RecoveryState } from "../components/product-patterns";
+import { EmptyState, RecoveryState } from "../components/product-patterns";
 import { deviceSummaryLine } from "../data/device-label";
 import { deviceQueryKeys, type ProductDevice } from "../data/device-product-service";
 import { readSetupContinuation } from "../data/setup-continuation";
@@ -159,46 +159,55 @@ export function DevicePage() {
 
   return (
     <LibraryPage className="max-w-[1120px]">
-      <Breadcrumbs
-        items={[{ label: "Devices", to: "/devices" }, { label: device.data?.name ?? "Device" }]}
-      />
-      {returnTo ? (
-        <Link
-          className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
-          to="/tests/new"
-          search={{
-            ...(returnTo.appId ? { app: returnTo.appId } : {}),
-            ...(returnTo.targetId ? { target: returnTo.targetId } : {}),
-          }}
-        >
-          ← Back to Test setup
-        </Link>
-      ) : null}
       <PageHeader
+        crumbs={[{ label: "Devices", to: "/devices" }, { label: device.data?.name ?? "Device" }]}
         title={device.data?.name ?? "Device"}
         description={device.data ? deviceDescription(device.data) : undefined}
         actions={
-          device.data?.status === "needs-attention" ? (
-            <Button variant="default" onClick={() => recover.mutate()} disabled={recover.isPending}>
-              {recover.isPending ? "Reconnecting…" : "Reconnect device"}
-            </Button>
-          ) : device.data ? (
-            <Button
-              variant="default"
-              nativeButton={false}
-              render={
-                <Link
-                  to="/tests/new"
-                  search={{
-                    ...(returnTo?.appId ? { app: returnTo.appId } : {}),
-                    target: target.data?.targetId ?? device.data.serial,
-                  }}
-                />
-              }
-            >
-              Record a Test
-            </Button>
-          ) : null
+          <>
+            {returnTo ? (
+              <Button
+                variant="ghost"
+                nativeButton={false}
+                render={
+                  <Link
+                    to="/tests/new"
+                    search={{
+                      ...(returnTo.appId ? { app: returnTo.appId } : {}),
+                      ...(returnTo.targetId ? { target: returnTo.targetId } : {}),
+                    }}
+                  />
+                }
+              >
+                Back to Test setup
+              </Button>
+            ) : null}
+            {device.data?.status === "needs-attention" ? (
+              <Button
+                variant="default"
+                onClick={() => recover.mutate()}
+                disabled={recover.isPending}
+              >
+                {recover.isPending ? "Reconnecting…" : "Reconnect device"}
+              </Button>
+            ) : device.data ? (
+              <Button
+                variant="default"
+                nativeButton={false}
+                render={
+                  <Link
+                    to="/tests/new"
+                    search={{
+                      ...(returnTo?.appId ? { app: returnTo.appId } : {}),
+                      target: target.data?.targetId ?? device.data.serial,
+                    }}
+                  />
+                }
+              >
+                Record a Test
+              </Button>
+            ) : null}
+          </>
         }
       />
 

@@ -1,5 +1,6 @@
 /** @jsxImportSource react */
 import type { ComponentProps, ReactNode } from "react";
+import { Breadcrumbs, type BreadcrumbItem } from "./product-patterns";
 
 type PageProps = ComponentProps<"section">;
 
@@ -28,40 +29,47 @@ export function WorkbenchPage(props: PageProps) {
 export function PageHeader({
   title,
   context,
+  crumbs,
   description,
   actions,
   children,
+  titleHidden = false,
 }: {
   title: ReactNode;
   context?: ReactNode;
+  crumbs?: readonly BreadcrumbItem[];
   description?: ReactNode;
   actions?: ReactNode;
   children?: ReactNode;
+  titleHidden?: boolean;
 }) {
+  const eyebrow = crumbs?.length ? <Breadcrumbs items={crumbs} /> : context;
   return (
-    <header className="relay-workspace-header mb-6 flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
-      <div className="relay-workspace-heading min-w-0 flex-[1_1_280px]">
-        {context ? (
-          <div className="relay-workspace-context flex flex-wrap gap-x-3 gap-y-1 text-[11px] leading-4 text-muted-foreground">
-            {context}
-          </div>
-        ) : null}
-        <h1 className="mt-1 text-[28px] leading-8 font-semibold tracking-tight wrap-anywhere">
-          {title}
-        </h1>
-        {description ? (
-          <p className="relay-page-description mt-1.5 max-w-[60ch] text-[13px] leading-5 text-muted-foreground">
-            {description}
-          </p>
-        ) : null}
-      </div>
-      {actions ? (
-        <div className="relay-workspace-actions flex flex-wrap items-center gap-2 pt-5 max-[960px]:w-full max-[960px]:pt-0">
-          {actions}
+    <header className="relay-workspace-header mb-6">
+      {eyebrow ? (
+        <div className="relay-workspace-context flex flex-wrap gap-x-3 gap-y-1 text-[11px] leading-4 text-muted-foreground">
+          {eyebrow}
         </div>
       ) : null}
+      <div
+        className={`relay-workspace-title-row flex flex-wrap items-center justify-between gap-x-6 gap-y-3 ${eyebrow ? "mt-1" : ""}`}
+      >
+        <h1
+          className={`${titleHidden ? "relay-visually-hidden sr-only " : ""}min-w-0 flex-[1_1_240px] text-[28px] leading-8 font-semibold tracking-tight wrap-anywhere`}
+        >
+          {title}
+        </h1>
+        {actions ? (
+          <div className="relay-workspace-actions flex flex-wrap items-center gap-2">{actions}</div>
+        ) : null}
+      </div>
+      {description ? (
+        <p className="relay-page-description mt-1.5 max-w-[60ch] text-[13px] leading-5 text-muted-foreground">
+          {description}
+        </p>
+      ) : null}
       {children ? (
-        <div className="relay-workspace-header-footer min-w-0 basis-full">{children}</div>
+        <div className="relay-workspace-header-footer mt-4 min-w-0">{children}</div>
       ) : null}
     </header>
   );

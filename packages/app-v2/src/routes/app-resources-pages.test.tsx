@@ -180,8 +180,8 @@ describe("App routes", () => {
       }),
     );
 
-    expect(document.body.textContent).toContain("Builds");
-    expect(document.body.textContent).toContain("Available when you choose what to run.");
+    expect(document.querySelector("h1")?.textContent).toBe("Versions");
+    expect(document.body.textContent).toContain("Builds Relay can run against.");
     expect(document.body.textContent).toContain("Checkout 3.4.0");
     expect(document.body.textContent).toContain("iOS · release · com.example.checkout");
     expect(document.body.textContent).not.toContain("build-private");
@@ -298,10 +298,8 @@ describe("App routes", () => {
       }),
     );
 
-    expect(document.body.textContent).toContain("Saved sign-ins");
-    expect(document.body.textContent).toContain(
-      "Each sign-in stays with the browser it was saved from.",
-    );
+    expect(document.querySelector("h1")?.textContent).toBe("Sign-ins");
+    expect(document.body.textContent).toContain("Saved browser sign-ins you can reuse");
     expect(document.body.textContent).toContain("Staging buyer");
     expect(document.body.textContent).toContain("Checkout browser · https://checkout.example");
     expect(document.body.textContent).not.toContain("authfx:");

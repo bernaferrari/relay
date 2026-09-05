@@ -26,7 +26,7 @@ import {
   ChangePublicationStatus,
 } from "../components/change-publication-details";
 import { FormPage, PageHeader } from "../components/page-layout";
-import { Breadcrumbs, EmptyState } from "../components/product-patterns";
+import { EmptyState } from "../components/product-patterns";
 import { IssueDraftButton } from "../components/issue-draft-button";
 import { PageLoading, RecordingProblem } from "./recording-shared";
 import { VerificationItem } from "./change-plan-items";
@@ -111,10 +111,12 @@ export function ChangePage() {
 
   return (
     <FormPage>
-      <Breadcrumbs
-        items={[{ label: "Changes", to: "/changes" }, { label: current?.title ?? "Change" }]}
-      />
-
+      {!current ? (
+        <PageHeader
+          crumbs={[{ label: "Changes", to: "/changes" }, { label: "Change" }]}
+          title="Change"
+        />
+      ) : null}
       {change.isPending ? <PageLoading label="Loading Change verification…" /> : null}
       {change.isError ? (
         <EmptyState
@@ -142,6 +144,7 @@ export function ChangePage() {
       {current && details ? (
         <>
           <PageHeader
+            crumbs={[{ label: "Changes", to: "/changes" }, { label: current.title }]}
             title={current.title}
             description={[
               current.repository,

@@ -335,7 +335,10 @@ describe("Suite and Environment routes", () => {
       browserService: browserService({ createSpace: create }),
     });
     expect(document.querySelector("h1")?.textContent).toBe("Browsers");
+    expect(document.querySelector(".relay-workspace-context")?.textContent).toBe("Workspace");
     expect(document.body.textContent).toContain("Staging browser");
+    expect(document.body.textContent).not.toContain("Fresh browser each session");
+    expect(document.body.textContent).not.toContain("Open →");
     await clickButton("New browser");
     await fill("space-name", "New staging");
     await fill("space-url", "https://new.example.test");
@@ -376,11 +379,16 @@ describe("Suite and Environment routes", () => {
       }),
     });
     expect(document.querySelector("h1")?.textContent).toBe("Staging browser");
+    expect(document.querySelector(".relay-breadcrumbs")?.textContent).toContain("Browsers");
     expect(document.body.textContent).toContain("Staging account");
+    expect(document.querySelector(".relay-environment-accounts")?.textContent).not.toContain(
+      "Available",
+    );
     expect(document.body.textContent).not.toContain("Current checks");
     expect(document.body.textContent).not.toContain("Profile storage");
     expect(document.body.textContent).not.toContain("Fresh each time");
     expect(document.body.textContent).not.toContain("cookie");
+    expect(document.body.textContent).not.toContain("← Back to recording");
     await clickButton("More");
     await clickButton("Open in system browser");
     expect(calls.open).toBe(1);
@@ -392,9 +400,9 @@ describe("Suite and Environment routes", () => {
     history.push(`/environments/${space.id}`);
     await settle();
 
-    await clickButton("Save current sign-in");
-    await fill("account-fixture-name", "QA member");
     await clickButton("Save sign-in");
+    await fill("account-fixture-name", "QA member");
+    await clickButton("Save");
     expect(calls.save).toEqual([{ spaceId: "space-1", name: "QA member" }]);
 
     await clickButton("Revoke");

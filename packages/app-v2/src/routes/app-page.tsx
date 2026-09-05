@@ -4,12 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useRouteContext } from "@tanstack/react-router";
 import { ArrowRight } from "lucide-react";
 import { LibraryPage, PageHeader } from "../components/page-layout";
-import {
-  Breadcrumbs,
-  EmptyState,
-  OutcomeMark,
-  ReadinessMark,
-} from "../components/product-patterns";
+import { EmptyState, OutcomeMark, ReadinessMark } from "../components/product-patterns";
 import { PageLoading, RecordingProblem } from "./recording-shared";
 
 const routeApi = getRouteApi("/apps/$appId");
@@ -48,9 +43,6 @@ export function AppPage() {
 
   return (
     <LibraryPage className="max-w-[1040px]">
-      <Breadcrumbs
-        items={[{ label: "Home", to: "/home" }, { label: app.data?.appName ?? "App" }]}
-      />
       {loading ? <PageLoading label="Loading app overview…" /> : null}
       <RecordingProblem
         error={error}
@@ -60,7 +52,7 @@ export function AppPage() {
       {app.data && !error ? (
         <>
           <PageHeader
-            context="App"
+            crumbs={[{ label: "Home", to: "/home" }, { label: app.data.appName }]}
             title={app.data.appName}
             description={app.data.description ?? "Tests and recent results."}
             actions={
