@@ -1,6 +1,5 @@
 /** @jsxImportSource react */
 import type { ProductRunSummary, ProductTestSummary } from "@relay/product/catalog";
-import type { ProductChange } from "@relay/product/change-journey";
 import { Button } from "@relay/ui-react/components/button";
 import { Card, CardContent } from "@relay/ui-react/components/card";
 import { useQuery } from "@tanstack/react-query";
@@ -10,7 +9,6 @@ import {
   CheckCircle2,
   CircleAlert,
   FlaskConical,
-  GitCompareArrows,
   Play,
   Plus,
   type LucideIcon,
@@ -86,20 +84,6 @@ export function HomePage() {
     .sort((left, right) => right.updatedAt - left.updatedAt)
     .slice(0, 5);
   const attentionRuns = homeAttentionRuns(scopedRuns);
-  const visibleChanges = scopedChanges.filter((change) => change.status !== "superseded");
-  const currentChange = newest(
-    visibleChanges.filter((change) =>
-      [
-        "ready",
-        "rejected",
-        "needs-review",
-        "insufficient-evidence",
-        "running",
-        "running-pilot",
-      ].includes(change.status),
-    ),
-    (change) => change.updatedAt,
-  );
   const hasApps = Boolean(apps.data?.length);
   const hasTests = Boolean(scopedTests.length);
   const hasWorkspaceData =
@@ -174,7 +158,7 @@ export function HomePage() {
         <div className="flex flex-1 items-center justify-center">
           <EmptyState
             title="Add an App"
-            detail="Relay keeps Tests and Reports for each app in this workspace."
+            detail="Add the app these Tests will run against."
             action={
               <Button nativeButton={false} render={<Link to="/apps" />} variant="default">
                 Add an App
@@ -184,7 +168,7 @@ export function HomePage() {
         </div>
       ) : null}
 
-      {!loading && !error && tests.isFetched && hasApps && !hasTests ? (
+      {!loading && !error && tests.isFetched && hasApps && !hasTests && !scopedRuns.length ? (
         <div className="flex flex-1 items-center justify-center">
           <EmptyState
             title="Record a Test"
@@ -202,7 +186,7 @@ export function HomePage() {
         </div>
       ) : null}
 
-      {!loading && !error && (hasTests || runs.data?.length || changes.data?.length) ? (
+      {!loading && !error && (hasTests || scopedRuns.length) ? (
         <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(20rem,0.85fr)]">
           <section className="min-w-0" aria-labelledby="home-next-title">
             <div className="flex items-end justify-between gap-4">
@@ -222,7 +206,6 @@ export function HomePage() {
                   ? run.data?.runId
                   : undefined
               }
-              change={currentChange}
               attentionRun={attentionRuns[0]}
               test={latestTest}
             />
@@ -349,13 +332,11 @@ export function HomePage() {
 function HomeNextAction({
   recordingId,
   runId,
-  change,
   attentionRun,
   test,
 }: {
   recordingId: string | null | undefined;
   runId: string | undefined;
-  change: ProductChange | undefined;
   attentionRun: ProductRunSummary | undefined;
   test: ProductTestSummary | undefined;
 }) {
@@ -365,7 +346,7 @@ function HomeNextAction({
         icon={FlaskConical}
         eyebrow="Recording in progress"
         title="Finish the Test you started"
-        detail="Your captured steps are still here. Continue recording, then review the path before saving it."
+        detail="Finish recording."
         action="Continue recording"
         to="recording"
         id={recordingId}
@@ -378,7 +359,7 @@ function HomeNextAction({
         icon={Play}
         eyebrow="Run in progress"
         title="See how the current Run is going"
-        detail="Follow its progress now. The same page becomes the final Report when Relay finishes."
+        detail="This Run is still going."
         action="Open Run"
         to="run"
         id={runId}
@@ -389,35 +370,12 @@ function HomeNextAction({
     return (
       <NextCard
         icon={CircleAlert}
-        eyebrow="Result needs attention"
+        eyebrow="Run needs attention"
         title={attentionRun.testName ?? attentionRun.title}
-        detail={`${attentionRun.targetName ?? "Saved run"} · Inspect the recorded result and evidence.`}
-        action="Inspect result"
+        detail={`Failed on ${attentionRun.targetName ?? "the Device"}.`}
+        action="Open Run"
         to="run"
         id={attentionRun.id}
-      />
-    );
-  }
-  if (change) {
-    const attention = ["rejected", "needs-review", "insufficient-evidence"].includes(change.status);
-    const complete = change.status === "proved";
-    return (
-      <NextCard
-        icon={attention ? CircleAlert : GitCompareArrows}
-        eyebrow={
-          attention ? "Change needs attention" : complete ? "Latest proof" : "Current Change"
-        }
-        title={change.title}
-        detail={
-          attention
-            ? "Review what blocked proof and choose the next safe action."
-            : complete
-              ? "The latest Change is proved. Inspect its result and retained evidence."
-              : "Review the selected Tests and targets, then continue verification."
-        }
-        action={attention ? "Review Change" : complete ? "View proof" : "Continue verification"}
-        to="change"
-        id={change.id}
       />
     );
   }
@@ -428,7 +386,7 @@ function HomeNextAction({
       title={test.name}
       detail={
         test.status === "ready"
-          ? `${test.stepCount} ${test.stepCount === 1 ? "step" : "steps"}. Run it when you are ready.`
+          ? `${test.stepCount} ${test.stepCount === 1 ? "step" : "steps"}.`
           : "Review the steps, then run it."
       }
       action="Open Test"

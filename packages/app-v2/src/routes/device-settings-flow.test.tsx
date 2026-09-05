@@ -513,11 +513,11 @@ describe("Settings", () => {
     });
 
     expect(document.querySelectorAll('[aria-label="Settings sections"] a')).toHaveLength(6);
-    expect(document.body.textContent).toContain("Evidence & privacy");
+    expect(document.body.textContent).toContain("Evidence");
     expect(document.body.textContent).not.toContain("Protect evidence before it is saved");
-    expect(document.body.textContent).toContain("Request and response bodies");
-    expect(document.body.textContent).toContain("Raw network captures");
-    expect(document.body.textContent).toContain(
+    expect(document.body.textContent).toContain("HTTP bodies");
+    expect(document.body.textContent).toContain("Packet captures");
+    expect(document.body.textContent).not.toContain(
       "Android emulator packet metadata is captured temporarily either way.",
     );
     expect(document.querySelector('[aria-live="polite"]:not(.sr-only)')).toBeNull();
@@ -525,10 +525,10 @@ describe("Settings", () => {
 
     await click(input("Redact sensitive evidence"));
     expect(service.privacyCalls).toEqual([false]);
-    expect(document.body.textContent).toContain("Raw values allowed");
+    expect(document.body.textContent).toContain("Runs keep raw values");
     expect(document.body.textContent).toContain("Saved");
 
-    await click(input("Crash details"));
+    await click(input("Crashes"));
     expect(service.evidenceCalls).toEqual([
       {
         channel: "crash",

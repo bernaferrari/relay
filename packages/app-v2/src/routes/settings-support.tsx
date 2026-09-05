@@ -19,29 +19,28 @@ export const CHANNELS: readonly {
 }[] = [
   {
     id: "crash",
-    label: "Crash details",
-    description: "Keep crash reports that help explain why a Test stopped.",
+    label: "Crashes",
+    description: "Keep crash reports.",
   },
   {
     id: "audio",
-    label: "Audio recordings",
-    description: "Keep audio only when a Test needs to verify sound.",
+    label: "Audio",
+    description: "Keep audio when a Test checks sound.",
   },
   {
     id: "network-body",
-    label: "Request and response bodies",
-    description: "Keep HTTP content that may include personal or account data.",
+    label: "HTTP bodies",
+    description: "Keep request and response bodies.",
   },
   {
     id: "network-raw",
-    label: "Raw network captures",
-    description:
-      "Keep PCAP files after a Run. Android emulator packet metadata is captured temporarily either way.",
+    label: "Packet captures",
+    description: "Keep PCAP files after a Run.",
   },
   {
     id: "browser-trace",
-    label: "Browser diagnostics",
-    description: "Keep a detailed browser trace for difficult failures.",
+    label: "Browser traces",
+    description: "Keep a detailed browser trace.",
   },
 ];
 

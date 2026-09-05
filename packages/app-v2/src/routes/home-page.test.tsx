@@ -404,8 +404,9 @@ describe("Home", () => {
     });
 
     expect(document.body.textContent).toContain("Your workspace");
-    expect(document.body.textContent).toContain("Keep Arabic settings readable");
-    expect(document.body.textContent).toContain("Continue verification");
+    expect(document.body.textContent).toContain("Arabic settings");
+    expect(document.body.textContent).toContain("Open Test");
+    expect(document.body.textContent).not.toContain("Continue verification");
     expect(document.body.textContent).toContain("Record a Test");
     expect(document.body.textContent).not.toContain("1 device ready");
     expect(document.body.textContent).toContain("Latest results");

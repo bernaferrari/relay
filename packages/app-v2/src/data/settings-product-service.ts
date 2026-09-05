@@ -18,7 +18,7 @@ export const settingsCategories: readonly {
   label: string;
 }[] = [
   { id: "general", path: "/settings/general", label: "General" },
-  { id: "evidence", path: "/settings/evidence", label: "Evidence & privacy" },
+  { id: "evidence", path: "/settings/evidence", label: "Evidence" },
   { id: "integrations", path: "/settings/integrations", label: "Integrations" },
   { id: "appearance", path: "/settings/appearance", label: "Appearance" },
   { id: "advanced", path: "/settings/advanced", label: "Advanced" },

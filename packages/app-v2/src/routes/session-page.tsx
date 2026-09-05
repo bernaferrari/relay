@@ -394,7 +394,7 @@ export function SessionPage() {
                   send={send}
                   recording={false}
                   layout="rail"
-                  helpText="Inspecting live state. These controls do not add Test steps. Open the Test editor or recording workspace to capture steps. Enter and Backspace are supported keys."
+                  helpText="Tap, type, or scroll. Not recorded."
                 />
               </div>
             ) : (

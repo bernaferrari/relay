@@ -252,7 +252,7 @@ describe("live Session to Test editor", () => {
     expect(document.body.textContent).toContain("Managed browser");
     expect(document.body.textContent).not.toContain("Browser profile unavailable");
     expect(document.body.textContent).toContain("Recording session active · inspecting only");
-    expect(document.body.textContent).toContain("These controls do not add Test steps");
+    expect(document.body.textContent).toContain("Tap, type, or scroll. Not recorded.");
     expect(document.querySelector('[data-slot="live-device-rail"]')).not.toBeNull();
     await click("Audit details");
     expect(document.body.textContent).toContain("Map ID");

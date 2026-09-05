@@ -51,12 +51,6 @@ function GeneralSettings() {
     <SettingsFrame category="general" saveState={connection.isError ? "unavailable" : undefined}>
       <SettingsGroup>
         <SettingRow
-          title="Active work"
-          description="Relay restores a Recording or Run from its last saved state when you return."
-        >
-          Automatic
-        </SettingRow>
-        <SettingRow
           title="Workspace connection"
           description={
             connection.isError
@@ -72,15 +66,8 @@ function GeneralSettings() {
             <span className="text-amber-800 dark:text-amber-300">Unavailable</span>
           ) : null}
         </SettingRow>
-        <SettingRow
-          title="Desktop notifications"
-          description={
-            platform.notify
-              ? "Relay can notify you when work finishes or needs attention."
-              : "Native notifications are available in the desktop app."
-          }
-        >
-          {platform.notify ? (
+        {platform.notify ? (
+          <SettingRow title="Desktop notifications" description="Notify when a Run finishes.">
             <Button
               size="sm"
               variant="ghost"
@@ -89,10 +76,8 @@ function GeneralSettings() {
             >
               {notification.isPending ? "Sending…" : "Send a test"}
             </Button>
-          ) : (
-            "Web only"
-          )}
-        </SettingRow>
+          </SettingRow>
+        ) : null}
       </SettingsGroup>
       {notification.error ? (
         <p role="alert">Could not send the notification. {errorMessage(notification.error)}</p>
@@ -186,8 +171,8 @@ function EvidenceSettings() {
                 privacy.data.locked
                   ? "This policy is controlled outside Relay for this workspace."
                   : privacy.data.enabled
-                    ? "Masks credentials, cookies, typed secrets, clipboard contents, and URL query values."
-                    : "Raw values allowed. Masks credentials, cookies, typed secrets, and URL query values."
+                    ? "Credentials, cookies, secrets, clipboard, and URL queries are masked."
+                    : "Runs keep raw values."
               }
               checked={privacy.data.enabled}
               disabled={privacy.data.locked || privacyMutation.isPending}
@@ -195,7 +180,7 @@ function EvidenceSettings() {
             />
           </SettingsGroup>
 
-          <SettingsGroup title="Collection" id="sensitive">
+          <SettingsGroup id="sensitive">
             {CHANNELS.map((channel) => (
               <ToggleRow
                 key={channel.id}

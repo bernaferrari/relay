@@ -211,39 +211,7 @@ export function createIntegrationsProductService(platform: Platform): Integratio
       const connection = platform.getServerConnection
         ? await platform.getServerConnection()
         : { url: await platform.getServerUrl() };
-      return [
-        workspaceIntegration(connection),
-        {
-          provider: "github",
-          name: "GitHub Checks",
-          state: "server-managed",
-          capabilities: ["checks", "proof-publication"],
-          detail:
-            "GitHub Proof publication is controlled by the Relay server; auth material is not exposed here.",
-        },
-        {
-          provider: "slack",
-          name: "Slack",
-          state: "unsupported",
-          capabilities: [],
-          detail: "No Slack integration operation is available.",
-        },
-        {
-          provider: "webhook",
-          name: "Webhook",
-          state: "unsupported",
-          capabilities: [],
-          detail: "No generic webhook integration operation is available.",
-        },
-        {
-          provider: "ci",
-          name: "CI/build ingestion",
-          state: "server-managed",
-          capabilities: [],
-          detail:
-            "Build ingestion is server-owned; no settings operation exposes its configuration.",
-        },
-      ];
+      return [workspaceIntegration(connection)];
     },
     composeIssue: composeProductIssue,
   };
