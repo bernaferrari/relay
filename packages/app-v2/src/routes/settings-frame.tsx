@@ -11,27 +11,27 @@ export type SaveState = "saved" | "saving" | "failed" | "unavailable";
 const SETTINGS_COPY: Record<SettingsCategory, { title: string; description: string }> = {
   general: {
     title: "General",
-    description: "Server and preferences for this computer.",
+    description: "This computer’s connection and notifications.",
   },
   evidence: {
     title: "Evidence & privacy",
-    description: "Workspace policy for what future Runs may capture.",
+    description: "What future Runs may capture in this workspace.",
   },
   integrations: {
     title: "Integrations",
-    description: "Services available to your workspace.",
+    description: "This workspace and any connected services.",
   },
   appearance: {
     title: "Appearance",
-    description: "Choose how Relay looks on this computer.",
+    description: "How Relay looks on this computer.",
   },
   advanced: {
     title: "Advanced",
-    description: "Review the local connection and device-support checks used by Relay.",
+    description: "Relay address and local device support.",
   },
   about: {
     title: "About",
-    description: "Version, updates, and support for this Relay installation.",
+    description: "Version, updates, and support.",
   },
 };
 
@@ -109,9 +109,9 @@ export function SettingsFrame({
           }}
         />
       </div>
-      <div className="mt-7 grid grid-cols-[180px_minmax(0,1fr)] items-start gap-8 max-[780px]:grid-cols-1">
+      <div className="mt-6 grid grid-cols-[168px_minmax(0,1fr)] items-start gap-12 max-[780px]:mt-5 max-[780px]:grid-cols-1 max-[780px]:gap-6">
         <nav
-          className="sticky top-6 grid content-start gap-1 max-[780px]:static"
+          className="sticky top-6 grid content-start gap-0.5 max-[780px]:static"
           aria-label="Settings sections"
         >
           {settingsCategories.map((item) => (
@@ -120,8 +120,8 @@ export function SettingsFrame({
               to={item.path}
               className={
                 item.id === category
-                  ? "grid min-h-11 content-center rounded-md bg-muted px-2.5 font-medium text-foreground transition-colors"
-                  : "grid min-h-11 content-center rounded-md px-2.5 font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+                  ? "grid min-h-9 content-center rounded-md bg-muted px-2.5 text-[13px] font-medium text-foreground transition-colors"
+                  : "grid min-h-9 content-center rounded-md px-2.5 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
               }
               aria-current={item.id === category ? "page" : undefined}
             >
@@ -129,11 +129,51 @@ export function SettingsFrame({
             </Link>
           ))}
         </nav>
-        <section className="min-w-0" aria-label={`${copy.title} settings`}>
+        <section
+          className="grid min-w-0 max-w-[36rem] gap-7 pb-6"
+          aria-label={`${copy.title} settings`}
+        >
           {children}
         </section>
       </div>
     </LibraryPage>
+  );
+}
+
+export function SettingsGroup({
+  title,
+  id,
+  action,
+  children,
+}: {
+  title?: string;
+  id?: string;
+  action?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <section
+      className="scroll-mt-6"
+      id={id}
+      aria-labelledby={title && id ? `${id}-title` : undefined}
+    >
+      {title || action ? (
+        <div className="mb-2 flex min-h-6 items-center justify-between gap-3">
+          {title ? (
+            <h2
+              className="text-[11px] font-medium tracking-wide text-muted-foreground"
+              id={id ? `${id}-title` : undefined}
+            >
+              {title}
+            </h2>
+          ) : (
+            <span />
+          )}
+          {action}
+        </div>
+      ) : null}
+      <div className="grid">{children}</div>
+    </section>
   );
 }
 
@@ -150,14 +190,18 @@ export function SettingRow({
 }) {
   return (
     <div
-      className="flex min-h-[76px] items-center justify-between gap-6 border-b border-border py-3.5 last:border-b-0 scroll-mt-6"
+      className="flex min-h-14 items-center justify-between gap-6 border-b border-border py-3 last:border-b-0 scroll-mt-6"
       id={id}
     >
       <div className="grid min-w-0 gap-0.5">
-        <h2 className="text-[13px] font-semibold text-foreground">{title}</h2>
-        <p className="max-w-[58ch] text-xs leading-normal text-muted-foreground">{description}</p>
+        <h3 className="text-[13px] font-medium text-foreground">{title}</h3>
+        <p className="max-w-[52ch] text-[13px] leading-5 text-muted-foreground">{description}</p>
       </div>
-      {children ? <div className="flex shrink-0 items-center gap-2.5">{children}</div> : null}
+      {children ? (
+        <div className="flex shrink-0 items-center gap-2 text-[13px] text-muted-foreground">
+          {children}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -179,14 +223,16 @@ export function ToggleRow({
 }) {
   const descriptionId = `${id}-description`;
   return (
-    <label
-      className={`flex min-h-[76px] cursor-pointer items-center justify-between gap-6 border-b border-border py-3.5 last:border-b-0 scroll-mt-6 ${disabled ? "cursor-not-allowed opacity-60" : ""}`}
+    <div
+      className={`flex min-h-14 items-center justify-between gap-6 border-b border-border py-3 last:border-b-0 scroll-mt-6 ${disabled ? "opacity-60" : ""}`}
     >
       <span className="grid min-w-0 gap-0.5">
-        <strong className="text-[13px] font-semibold text-foreground">{title}</strong>
+        <label htmlFor={id} className="text-[13px] font-medium text-foreground">
+          {title}
+        </label>
         <span
           id={descriptionId}
-          className="max-w-[58ch] text-xs leading-normal text-muted-foreground"
+          className="max-w-[52ch] text-[13px] leading-5 text-muted-foreground"
         >
           {description}
         </span>
@@ -195,9 +241,10 @@ export function ToggleRow({
         id={id}
         checked={checked}
         disabled={disabled}
+        aria-label={title}
         aria-describedby={descriptionId}
         onCheckedChange={onChange}
       />
-    </label>
+    </div>
   );
 }

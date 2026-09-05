@@ -514,6 +514,7 @@ describe("Settings", () => {
 
     expect(document.querySelectorAll('[aria-label="Settings sections"] a')).toHaveLength(6);
     expect(document.body.textContent).toContain("Evidence & privacy");
+    expect(document.body.textContent).not.toContain("Protect evidence before it is saved");
     expect(document.body.textContent).toContain("Request and response bodies");
     expect(document.body.textContent).toContain("Raw network captures");
     expect(document.body.textContent).toContain(
@@ -563,8 +564,24 @@ describe("Settings", () => {
     expect(document.body.textContent).toContain("Apple devices");
     expect(document.body.textContent).toContain("Android devices");
     expect(document.body.textContent).toContain("Install Platform Tools, then reopen Relay.");
+    expect(document.body.textContent).not.toContain("Relay has the local support it needs.");
     expect(document.body.textContent).not.toContain("adb");
     expect(document.body.textContent).not.toContain("teamId");
+    expect(document.querySelector('[data-slot="item"]')).toBeNull();
+  });
+
+  it("lists the workspace as a flush settings row", async () => {
+    await renderPath("/settings/integrations");
+
+    expect(document.body.textContent).toContain("Relay workspace");
+    expect(document.body.textContent).not.toContain("Connected services");
+    expect(document.body.textContent).not.toContain("Managed by your workspace");
+    expect(document.querySelector('[data-slot="item"]')).toBeNull();
+    const row = [...document.querySelectorAll("h3")].find(
+      (heading) => heading.textContent === "Relay workspace",
+    );
+    expect(row?.closest("div")?.className).not.toContain("mt-4");
+    expect(row?.closest("section")?.firstElementChild?.className).not.toContain("mt-");
   });
 
   it("keeps the Relay address shape stable after General cached the connection", async () => {
@@ -735,8 +752,9 @@ describe("Settings", () => {
     });
 
     await renderPath("/settings/general", { platform });
-    expect(document.body.textContent).toContain("Relay is configured to use 127.0.0.1:9876.");
-    expect(document.body.textContent).toContain("Configured");
+    expect(document.body.textContent).toContain("Relay is using 127.0.0.1:9876.");
+    expect(document.body.textContent).not.toContain("Change address");
+    expect(document.body.textContent).not.toContain("Configured");
     expect(document.body.textContent).not.toContain("Connected");
   });
 

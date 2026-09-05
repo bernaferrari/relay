@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouteContext } from "@tanstack/react-router";
 import type { DesktopUpdateState } from "../platform/types";
 import { errorMessage } from "./settings-support";
-import { SettingRow, SettingsFrame } from "./settings-frame";
+import { SettingRow, SettingsFrame, SettingsGroup } from "./settings-frame";
 
 function updateDescription(state: DesktopUpdateState | null): string {
   if (!state) return "Relay will report update availability when the desktop app supports it.";
@@ -61,26 +61,14 @@ export function AboutSettings() {
 
   return (
     <SettingsFrame category="about">
-      <section
-        className="grid gap-3 rounded-xl border border-border bg-card p-5"
-        aria-labelledby="about-product-title"
-      >
-        <header>
-          <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
-            Product
-          </p>
-          <h2 id="about-product-title">Relay</h2>
-          <p>Proof that software works on real apps, browsers, and devices.</p>
-        </header>
-        <SettingRow title="Version" description="The build currently running on this computer.">
-          <span className="whitespace-nowrap text-xs font-semibold tabular-nums text-foreground">
+      <SettingsGroup>
+        <SettingRow title="Version" description="The build running on this computer.">
+          <span className="tabular-nums">
             {platform.version ? `v${platform.version}` : "Development build"}
           </span>
         </SettingRow>
         <SettingRow title="Host" description="Where this Relay interface is running.">
-          <span className="whitespace-nowrap text-xs font-semibold text-foreground">
-            {platform.platform === "desktop" ? "Desktop app" : "Web browser"}
-          </span>
+          {platform.platform === "desktop" ? "Desktop app" : "Web browser"}
         </SettingRow>
         {platform.updates ? (
           <SettingRow title="Updates" description={updateDescription(update)}>
@@ -100,6 +88,7 @@ export function AboutSettings() {
             ) : (
               <Button
                 size="sm"
+                variant="ghost"
                 onClick={() => void checkForUpdates()}
                 disabled={checking || update?.phase === "checking"}
               >
@@ -111,24 +100,20 @@ export function AboutSettings() {
         {updateError ? (
           <p role="alert">Could not complete the update action. {updateError}</p>
         ) : null}
-        <SettingRow
-          title="Support"
-          description="Read the project guide for setup, workflows, and troubleshooting."
-        >
+        <SettingRow title="Support" description="Setup, workflows, and troubleshooting.">
           {platform.openExternal ? (
             <Button
               size="sm"
+              variant="ghost"
               onClick={() => void platform.openExternal?.("https://github.com/bernaferrari/relay")}
             >
               Open project guide
             </Button>
           ) : (
-            <span className="whitespace-nowrap text-xs font-semibold text-foreground">
-              Available in the desktop app
-            </span>
+            "Available in the desktop app"
           )}
         </SettingRow>
-      </section>
+      </SettingsGroup>
     </SettingsFrame>
   );
 }

@@ -1,17 +1,10 @@
 /** @jsxImportSource react */
-import { Badge } from "@relay/ui-react/components/badge";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@relay/ui-react/components/collapsible";
-import {
-  Item,
-  ItemActions,
-  ItemContent,
-  ItemDescription,
-  ItemTitle,
-} from "@relay/ui-react/components/item";
+import { ChevronRight } from "lucide-react";
 import { type ReactNode } from "react";
 import type { SensitiveEvidenceChannel } from "@relay/protocol";
 
@@ -97,59 +90,77 @@ export function SetupRow({
 }) {
   const attention = checks.find((check) => check.status !== "ready");
   const ready = checks.length > 0 && !attention;
+  const status = loading ? "Checking" : ready ? "Ready" : "Needs attention";
+  const detail = loading
+    ? "Checking support on this computer…"
+    : attention
+      ? attention.detail
+      : undefined;
+  const showChecks = !loading && Boolean(attention) && checks.length > 1;
+
   return (
-    <div className="grid">
-      <Item className="min-h-[76px] gap-6 border-b border-border py-3.5 last:border-b-0" size="sm">
-        <ItemContent className="grid min-w-0 gap-0.5">
-          <ItemTitle>{title}</ItemTitle>
-          <ItemDescription>
-            {loading
-              ? "Checking support on this computer…"
-              : (attention?.detail ??
-                (ready
-                  ? "Relay has the local support it needs."
-                  : "Relay could not read this support check."))}
-          </ItemDescription>
-        </ItemContent>
-        <ItemActions className="flex shrink-0 items-center gap-2.5">
-          <Badge
-            variant={ready ? "default" : "secondary"}
-            className={
-              ready
-                ? "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300"
-                : "bg-amber-500/15 text-amber-800 dark:text-amber-300"
-            }
-          >
-            {loading ? "Checking" : ready ? "Ready" : "Needs attention"}
-          </Badge>
-          {!loading && attention ? action : null}
-        </ItemActions>
-      </Item>
-      {!loading && attention && checks.length > 1 ? (
-        <Collapsible>
-          <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 py-2 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
+    <div className="border-b border-border py-3.5">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-6 gap-y-0.5">
+        <h3 className="text-[13px] font-medium leading-5 text-foreground">{title}</h3>
+        <span
+          className={`pt-px text-right text-[12px] leading-5 ${
+            attention && !loading
+              ? "text-amber-800 dark:text-amber-300"
+              : ready
+                ? "text-emerald-800 dark:text-emerald-300"
+                : "text-muted-foreground"
+          }`}
+        >
+          {status}
+        </span>
+        {detail ? (
+          <p className="max-w-[48ch] text-[13px] leading-5 text-muted-foreground">{detail}</p>
+        ) : (
+          <span />
+        )}
+        {!loading && attention ? (
+          <div className="justify-self-end text-right [&_button]:h-auto [&_button]:px-0 [&_button]:text-[12px] [&_button]:text-muted-foreground [&_button]:hover:bg-transparent [&_button]:hover:text-foreground">
+            {action}
+          </div>
+        ) : null}
+      </div>
+      {showChecks ? (
+        <Collapsible className="group/setup mt-2.5">
+          <CollapsibleTrigger className="flex items-center gap-1 text-[12px] text-muted-foreground transition-colors hover:text-foreground">
+            <ChevronRight
+              className="size-3 transition-transform group-data-open/setup:rotate-90"
+              aria-hidden="true"
+            />
             Diagnostic checks ({checks.length})
           </CollapsibleTrigger>
-          <CollapsibleContent className="space-y-2 border-t pt-3 text-sm">
-            <ul>
-              {checks.map((check) => (
-                <li key={check.id}>
-                  <Badge
-                    variant={check.status === "ready" ? "default" : "secondary"}
-                    className={
-                      check.status === "ready"
-                        ? "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300"
-                        : "bg-amber-500/15 text-amber-800 dark:text-amber-300"
-                    }
+          <CollapsibleContent className="pt-2">
+            <ul className="grid list-none gap-2 p-0">
+              {checks.map((check) => {
+                const checkReady = check.status === "ready";
+                const extra = check.detail && check.detail !== detail ? check.detail : undefined;
+                return (
+                  <li
+                    className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-6 pl-4"
+                    key={check.id}
                   >
-                    {check.status === "ready" ? "Ready" : "Needs attention"}
-                  </Badge>
-                  <div>
-                    <strong>{check.label}</strong>
-                    <p>{check.detail}</p>
-                  </div>
-                </li>
-              ))}
+                    <span className="text-[13px] font-medium text-foreground">{check.label}</span>
+                    <span
+                      className={`text-[12px] ${
+                        checkReady
+                          ? "text-emerald-800 dark:text-emerald-300"
+                          : "text-amber-800 dark:text-amber-300"
+                      }`}
+                    >
+                      {checkReady ? "Ready" : "Needs attention"}
+                    </span>
+                    {extra ? (
+                      <p className="col-span-2 text-[12px] leading-5 text-muted-foreground">
+                        {extra}
+                      </p>
+                    ) : null}
+                  </li>
+                );
+              })}
             </ul>
           </CollapsibleContent>
         </Collapsible>

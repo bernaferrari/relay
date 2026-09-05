@@ -67,21 +67,14 @@ export function AppearanceSettings() {
 
   return (
     <SettingsFrame category="appearance" saveState={saveState}>
-      <section
-        className="grid gap-3 rounded-xl border border-border bg-card p-5"
-        aria-labelledby="appearance-title"
-      >
-        <header>
-          <h2 id="appearance-title">Color scheme</h2>
-          <p>System follows this computer and changes automatically throughout the day.</p>
-        </header>
+      <div>
         <RadioGroup
-          className="mt-[18px] grid grid-cols-3 gap-3 p-0 max-[620px]:grid-cols-1"
+          className="grid grid-cols-3 gap-3 p-0 max-[620px]:grid-cols-1"
           name="appearance"
           value={preference}
           disabled={saveState === "saving"}
           onValueChange={(next) => void choose(next)}
-          aria-labelledby="appearance-title"
+          aria-label="Color scheme"
         >
           {(["system", "light", "dark"] as const).map((value) => (
             <FieldLabel
@@ -129,19 +122,21 @@ export function AppearanceSettings() {
           ))}
         </RadioGroup>
         {problem ? (
-          <div
-            role="alert"
-            className="rounded-lg border border-dashed border-border p-5 text-sm text-muted-foreground"
-          >
+          <div role="alert" className="mt-4 grid gap-2 text-[13px] text-muted-foreground">
             <p>{problem}</p>
             {saveState === "failed" ? (
-              <Button variant="outline" onClick={() => void choose(preference)}>
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-fit"
+                onClick={() => void choose(preference)}
+              >
                 Retry saving
               </Button>
             ) : null}
           </div>
         ) : null}
-      </section>
+      </div>
     </SettingsFrame>
   );
 }
