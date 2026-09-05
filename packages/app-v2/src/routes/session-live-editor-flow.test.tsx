@@ -253,6 +253,7 @@ describe("live Session to Test editor", () => {
     expect(document.body.textContent).not.toContain("Browser profile unavailable");
     expect(document.body.textContent).toContain("Recording session active · inspecting only");
     expect(document.body.textContent).toContain("These controls do not add Test steps");
+    expect(document.querySelector('[data-slot="live-device-rail"]')).not.toBeNull();
     await click("Audit details");
     expect(document.body.textContent).toContain("Map ID");
     expect(document.body.textContent).toContain("Device reservation status");
@@ -360,6 +361,8 @@ describe("live Session to Test editor", () => {
     expect(document.body.textContent).toContain(
       "Interactions here do not add or replace Test steps.",
     );
+    expect(document.querySelector('[data-slot="live-device-rail"]')).not.toBeNull();
+    expect(document.querySelector('[data-inspector-kind="device"]')).not.toBeNull();
     expect(history.location.search).toBe("?session=session-live");
 
     await fill("selected-step-intent", "Open the updated cart");

@@ -32,6 +32,7 @@ export function LiveTargetCanvas({
   send,
   recording = true,
   helpText,
+  layout = "stage",
 }: {
   canvasRef: RefObject<HTMLCanvasElement | null>;
   status: LiveTargetStatus;
@@ -43,6 +44,7 @@ export function LiveTargetCanvas({
   send(input: LiveTargetInput): Promise<boolean>;
   recording?: boolean;
   helpText?: string;
+  layout?: "stage" | "rail";
 }) {
   const [text, setText] = useState("");
   const helpId = `${useId()}-help`;
@@ -155,9 +157,23 @@ export function LiveTargetCanvas({
       });
   }
 
+  const rail = layout === "rail";
+
   return (
-    <div className="grid h-full min-h-[358px] grid-rows-[minmax(0,1fr)_auto_auto]">
-      <div className="relative flex min-h-[260px] items-center justify-center overflow-hidden">
+    <div
+      className={
+        rail
+          ? "flex h-full min-h-0 flex-col"
+          : "grid h-full min-h-[358px] grid-rows-[minmax(0,1fr)_auto_auto]"
+      }
+    >
+      <div
+        className={
+          rail
+            ? "relative flex min-h-[320px] flex-1 items-center justify-center overflow-hidden bg-muted/40"
+            : "relative flex min-h-[260px] items-center justify-center overflow-hidden"
+        }
+      >
         <canvas
           ref={canvasRef}
           className="relay-capture-live-target h-full max-h-full max-w-full min-h-0 min-w-0 object-contain"
@@ -203,7 +219,13 @@ export function LiveTargetCanvas({
         ) : null}
       </div>
 
-      <div className="flex items-center justify-between gap-4 border-t border-border p-3 max-[700px]:grid">
+      <div
+        className={
+          rail
+            ? "grid gap-2 border-t border-border p-3"
+            : "flex items-center justify-between gap-4 border-t border-border p-3 max-[700px]:grid"
+        }
+      >
         <div className="grid min-w-0 gap-0.5">
           <strong className="text-sm font-semibold">{targetTitle}</strong>
           <span className="text-xs text-muted-foreground">{targetDetail}</span>

@@ -254,90 +254,15 @@ export function SessionPage() {
       ) : null}
 
       {value ? (
-        <div className="mt-[30px] grid grid-cols-[minmax(0,1.45fr)_minmax(280px,.55fr)] items-start gap-[18px] max-[880px]:grid-cols-1">
-          <section
-            className="min-w-0 rounded-xl border border-border bg-card p-[18px] shadow-sm"
-            aria-labelledby="session-stage-title"
-          >
-            <div className="flex items-end justify-between gap-5 max-[620px]:items-start max-[620px]:gap-3">
-              <div>
-                <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
-                  Live target
-                </p>
-                <h2 className="text-sm font-semibold" id="session-stage-title">
-                  {canControl ? "Continue where you left off" : "Target unavailable for control"}
-                </h2>
-                {canControl ? (
-                  <p className="relay-page-description mt-2.5 max-w-[62ch] text-[15px] leading-[1.55] text-[var(--text-weak)]">
-                    {value.state === "recording"
-                      ? "Recording session active · inspecting only"
-                      : "Inspecting live state"}
-                  </p>
-                ) : null}
-              </div>
-              {canControl && liveStatus === "degraded" ? (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setLiveAttempt((attempt) => attempt + 1)}
-                >
-                  Reconnect view
-                </Button>
-              ) : null}
-            </div>
+        <div className="mt-6 grid items-start gap-6 max-[879px]:grid-cols-1 min-[880px]:grid-cols-[minmax(0,1fr)_360px]">
+          <aside className="grid min-w-0 gap-6" aria-label="Session context">
             {canControl ? (
-              <LiveTargetCanvas
-                canvasRef={canvas}
-                status={liveStatus}
-                issue={liveIssue}
-                busy={liveBusy}
-                targetTitle={targetLabel(value)}
-                targetDetail={`${value.target.kind === "browser" ? "Managed browser" : "Managed device"} · ${value.actorKind === "agent" ? "Agent-owned session" : "Human-owned session"}`}
-                browserContext={browserContext}
-                send={send}
-                recording={false}
-                helpText="Inspecting live state. These controls do not add Test steps. Open the Test editor or recording workspace to capture steps. Enter and Backspace are supported keys."
-              />
-            ) : (
-              <div className="mt-4 grid min-h-[220px] place-items-center content-center gap-4 px-5 py-8 text-center text-sm leading-relaxed text-muted-foreground">
-                <p className="max-w-[46ch]">{sessionAvailability(value)}</p>
-                <div className="flex flex-wrap items-center justify-center gap-2">
-                  {isActiveSession(value) ? (
-                    <Button onClick={() => refresh.mutate()} disabled={refresh.isPending}>
-                      <RefreshCcw aria-hidden="true" />
-                      {refresh.isPending ? "Refreshing…" : "Refresh target"}
-                    </Button>
-                  ) : null}
-                  {value.state === "reviewing" ? (
-                    <Button
-                      variant="default"
-                      nativeButton={false}
-                      render={
-                        <Link
-                          to="/recordings/$recordingId/review"
-                          params={{ recordingId: value.id }}
-                        />
-                      }
-                    >
-                      Review recording
-                    </Button>
-                  ) : value.committedTestId ? (
-                    <Button
-                      variant="outline"
-                      nativeButton={false}
-                      render={
-                        <Link to="/tests/$testId" params={{ testId: value.committedTestId }} />
-                      }
-                    >
-                      Open saved Test
-                    </Button>
-                  ) : null}
-                </div>
-              </div>
-            )}
-          </section>
-
-          <aside className="grid gap-4" aria-label="Session context">
+              <p className="max-w-[52ch] text-sm leading-6 text-muted-foreground">
+                {value.state === "recording"
+                  ? "Recording session active · inspecting only"
+                  : "Inspecting live state"}
+              </p>
+            ) : null}
             <section className="rounded-xl border border-border bg-card p-5">
               <h2 className="mb-4 text-sm font-semibold">Session details</h2>
               <dl className="grid grid-cols-2 gap-4 min-[881px]:grid-cols-1">
@@ -436,6 +361,80 @@ export function SessionPage() {
               )}
             </section>
           </aside>
+
+          <section
+            className="order-first flex min-h-[min(72dvh,760px)] min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-card min-[880px]:sticky min-[880px]:top-4 min-[880px]:order-none"
+            aria-labelledby="session-stage-title"
+            data-slot="live-device-rail"
+          >
+            <div className="flex items-center justify-between gap-3 border-b border-border px-3.5 py-2.5">
+              <h2 id="session-stage-title" className="text-[13px] font-medium">
+                {canControl ? "Live target" : "Target unavailable for control"}
+              </h2>
+              {canControl && liveStatus === "degraded" ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setLiveAttempt((attempt) => attempt + 1)}
+                >
+                  Reconnect view
+                </Button>
+              ) : null}
+            </div>
+            {canControl ? (
+              <div className="flex min-h-0 flex-1 flex-col">
+                <LiveTargetCanvas
+                  canvasRef={canvas}
+                  status={liveStatus}
+                  issue={liveIssue}
+                  busy={liveBusy}
+                  targetTitle={targetLabel(value)}
+                  targetDetail={`${value.target.kind === "browser" ? "Managed browser" : "Managed device"} · ${value.actorKind === "agent" ? "Agent-owned session" : "Human-owned session"}`}
+                  browserContext={browserContext}
+                  send={send}
+                  recording={false}
+                  layout="rail"
+                  helpText="Inspecting live state. These controls do not add Test steps. Open the Test editor or recording workspace to capture steps. Enter and Backspace are supported keys."
+                />
+              </div>
+            ) : (
+              <div className="grid min-h-[280px] flex-1 place-items-center content-center gap-4 px-5 py-8 text-center text-sm leading-relaxed text-muted-foreground">
+                <p className="max-w-[46ch]">{sessionAvailability(value)}</p>
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  {isActiveSession(value) ? (
+                    <Button onClick={() => refresh.mutate()} disabled={refresh.isPending}>
+                      <RefreshCcw aria-hidden="true" />
+                      {refresh.isPending ? "Refreshing…" : "Refresh target"}
+                    </Button>
+                  ) : null}
+                  {value.state === "reviewing" ? (
+                    <Button
+                      variant="default"
+                      nativeButton={false}
+                      render={
+                        <Link
+                          to="/recordings/$recordingId/review"
+                          params={{ recordingId: value.id }}
+                        />
+                      }
+                    >
+                      Review recording
+                    </Button>
+                  ) : value.committedTestId ? (
+                    <Button
+                      variant="outline"
+                      nativeButton={false}
+                      render={
+                        <Link to="/tests/$testId" params={{ testId: value.committedTestId }} />
+                      }
+                    >
+                      Open saved Test
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+            )}
+          </section>
         </div>
       ) : null}
     </LibraryPage>

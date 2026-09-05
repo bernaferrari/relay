@@ -79,20 +79,36 @@ export function WorkbenchPanes({
   outline,
   stage,
   inspector,
+  inspectorKind = "form",
 }: {
   outline: ReactNode;
   stage: ReactNode;
   inspector?: ReactNode;
+  inspectorKind?: "form" | "device";
 }) {
+  const device = inspectorKind === "device";
   return (
     <div
-      className={`relay-workspace-panes grid items-start gap-4 max-[720px]:grid-cols-1 ${inspector ? "min-[1101px]:grid-cols-[minmax(230px,0.85fr)_minmax(0,1.25fr)_minmax(280px,1fr)] min-[721px]:max-[1100px]:grid-cols-[minmax(200px,0.7fr)_minmax(0,1.6fr)]" : "min-[721px]:grid-cols-[minmax(210px,0.65fr)_minmax(0,1.6fr)]"}`}
+      className={`relay-workspace-panes grid items-start gap-4 max-[720px]:grid-cols-1 ${
+        inspector
+          ? device
+            ? "min-[900px]:grid-cols-[minmax(210px,0.7fr)_minmax(0,1fr)_360px]"
+            : "min-[1101px]:grid-cols-[minmax(230px,0.85fr)_minmax(0,1.25fr)_minmax(280px,1fr)] min-[721px]:max-[1100px]:grid-cols-[minmax(200px,0.7fr)_minmax(0,1.6fr)]"
+          : "min-[721px]:grid-cols-[minmax(210px,0.65fr)_minmax(0,1.6fr)]"
+      }`}
       data-inspector={Boolean(inspector)}
+      data-inspector-kind={inspector ? inspectorKind : undefined}
     >
       <div className="relay-workspace-outline min-w-0">{outline}</div>
       <div className="relay-workspace-stage min-w-0">{stage}</div>
       {inspector ? (
-        <div className="relay-workspace-inspector min-w-0 max-[1100px]:col-span-full">
+        <div
+          className={`relay-workspace-inspector min-w-0 ${
+            device
+              ? "max-[899px]:order-first min-[900px]:sticky min-[900px]:top-4"
+              : "max-[1100px]:col-span-full"
+          }`}
+        >
           {inspector}
         </div>
       ) : null}

@@ -64,13 +64,30 @@ export function LiveTestEditorPane({
   }
 
   return (
-    <section className="grid gap-3" aria-labelledby="live-editor-title">
-      <div className="flex items-end justify-between gap-5 max-[620px]:items-start max-[620px]:gap-3">
-        <div>
-          <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
-            Live Session
-          </p>
-          <h2 id="live-editor-title">Live target</h2>
+    <section
+      className="flex min-h-[min(72dvh,760px)] flex-col overflow-hidden rounded-xl border border-border bg-card"
+      aria-labelledby="live-editor-title"
+      data-slot="live-device-rail"
+    >
+      <div className="flex items-center justify-between gap-3 border-b border-border px-3.5 py-2.5">
+        <div className="flex min-w-0 items-center gap-2">
+          <h2 id="live-editor-title" className="text-[13px] font-medium">
+            Live target
+          </h2>
+          {session ? (
+            <Badge
+              variant="secondary"
+              className={
+                status === "streaming"
+                  ? "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300"
+                  : status === "degraded"
+                    ? "bg-amber-500/15 text-amber-800 dark:text-amber-300"
+                    : undefined
+              }
+            >
+              {status === "streaming" ? "Live" : status}
+            </Badge>
+          ) : null}
         </div>
         {session ? (
           <Button
@@ -85,30 +102,15 @@ export function LiveTestEditorPane({
       </div>
       {loading ? <PageLoading label="Opening live Session…" /> : null}
       {error ? (
-        <p className="rounded-md border border-red-500/30 bg-red-500/5 p-3 text-sm" role="alert">
+        <p
+          className="m-3 rounded-md border border-red-500/30 bg-red-500/5 p-3 text-sm"
+          role="alert"
+        >
           {errorMessage(error)}
         </p>
       ) : null}
       {session ? (
-        <>
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Badge
-              variant="secondary"
-              className={
-                status === "streaming"
-                  ? "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300"
-                  : status === "degraded"
-                    ? "bg-amber-500/15 text-amber-800 dark:text-amber-300"
-                    : undefined
-              }
-            >
-              {status === "streaming" ? "Live" : status}
-            </Badge>
-            <span>
-              {session.authoring.target.kind === "browser" ? "Managed browser" : "Managed device"} ·{" "}
-              {session.authoring.target.targetId}
-            </span>
-          </div>
+        <div className="flex min-h-0 flex-1 flex-col">
           <LiveTargetCanvas
             canvasRef={canvas}
             status={status}
@@ -121,13 +123,14 @@ export function LiveTestEditorPane({
             browserContext={browserContext}
             send={send}
             recording={session.capabilities.record}
+            layout="rail"
             helpText={
               session.capabilities.record
                 ? "Live interactions are attached to this active Recording."
                 : "Use the target to inspect state while editing. Interactions here do not add or replace Test steps."
             }
           />
-        </>
+        </div>
       ) : null}
     </section>
   );

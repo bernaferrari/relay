@@ -350,6 +350,31 @@ function TestEditorDocument() {
   const canUndo =
     Boolean(testEditorService.undo) &&
     Boolean(editorDocument?.history.some((item) => item.eventType !== "test.redone"));
+  const stepEditor = editorDocument ? (
+    <aside
+      className={`${sessionId ? "" : "sticky top-0 "}min-w-0 rounded-xl border border-border bg-card shadow-sm`}
+      aria-label="Selected step editor"
+    >
+      {selected ? (
+        <SelectedStepEditor
+          key={`${selected.step.id}:${editorDocument.revision}`}
+          entry={selected}
+          draft={stepDrafts[selected.step.id]}
+          onDraftChange={(draft) => updateStepDraft(selected.step.id, draft)}
+          busy={edit.isPending}
+          onSave={apply}
+          onBind={(transaction) => apply(transaction)}
+          onRemove={() => removeStep(selected)}
+          onAddChild={(branch) => addChildStep(selected, branch)}
+        />
+      ) : (
+        <EmptyState
+          title="Choose a step"
+          detail="Select a step to edit its instruction, note, and evidence capture."
+        />
+      )}
+    </aside>
+  ) : null;
 
   return (
     <WorkbenchPage
@@ -462,6 +487,7 @@ function TestEditorDocument() {
           </div>
 
           <WorkbenchPanes
+            inspectorKind={sessionId ? "device" : "form"}
             outline={
               <section className="min-w-0" aria-labelledby="test-steps-title">
                 <div className="flex items-end justify-between gap-5 max-[620px]:items-start max-[620px]:gap-3">
@@ -593,13 +619,7 @@ function TestEditorDocument() {
             }
             stage={
               <div className="grid min-w-0 gap-3.5">
-                {sessionId ? (
-                  <LiveTestEditorPane
-                    session={liveEditor.data}
-                    loading={liveEditor.isPending}
-                    error={liveEditor.error}
-                  />
-                ) : null}
+                {sessionId ? stepEditor : null}
                 <TestEditorEvidencePanel
                   step={selected?.step}
                   report={latestReport.data}
@@ -609,29 +629,15 @@ function TestEditorDocument() {
               </div>
             }
             inspector={
-              <aside
-                className="sticky top-0 min-w-0 rounded-xl border border-border bg-card shadow-sm"
-                aria-label="Selected step editor"
-              >
-                {selected ? (
-                  <SelectedStepEditor
-                    key={`${selected.step.id}:${editorDocument.revision}`}
-                    entry={selected}
-                    draft={stepDrafts[selected.step.id]}
-                    onDraftChange={(draft) => updateStepDraft(selected.step.id, draft)}
-                    busy={edit.isPending}
-                    onSave={apply}
-                    onBind={(transaction) => apply(transaction)}
-                    onRemove={() => removeStep(selected)}
-                    onAddChild={(branch) => addChildStep(selected, branch)}
-                  />
-                ) : (
-                  <EmptyState
-                    title="Choose a step"
-                    detail="Select a step to edit its instruction, note, and evidence capture."
-                  />
-                )}
-              </aside>
+              sessionId ? (
+                <LiveTestEditorPane
+                  session={liveEditor.data}
+                  loading={liveEditor.isPending}
+                  error={liveEditor.error}
+                />
+              ) : (
+                stepEditor
+              )
             }
           />
 
