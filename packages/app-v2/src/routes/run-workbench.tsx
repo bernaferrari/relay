@@ -48,7 +48,7 @@ export function RunWorkbench({
             {report.timeline.length}
           </span>
         </div>
-        <ol className="max-h-56 overflow-y-auto p-2 lg:max-h-[36rem]">
+        <ol className="relay-test-readable-steps max-h-56 overflow-y-auto p-2 lg:max-h-[36rem]">
           {report.timeline.map((item, index) => {
             const Icon =
               item.state === "passed" || item.state === "recovered"
@@ -61,6 +61,7 @@ export function RunWorkbench({
                 <button
                   type="button"
                   aria-current={index === selectedStepIndex ? "step" : undefined}
+                  aria-pressed={index === selectedStepIndex}
                   className={`grid min-h-16 w-full grid-cols-[1rem_minmax(0,1fr)_1rem] items-start gap-2 rounded-lg px-3 py-3 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring ${index === selectedStepIndex ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/60"}`}
                   onClick={() => onSelectStep(index)}
                 >
@@ -156,7 +157,7 @@ function StepMedia({ frames }: { frames: readonly ReportEvidenceItem[] }) {
   const [failed, setFailed] = useState(false);
   const frame = frames[selected] ?? frames[0];
   return (
-    <div>
+    <div className="relay-evidence-image-frame">
       <div className="flex min-h-64 items-center justify-center bg-muted/30 p-5">
         {frame?.media && !failed ? (
           <img

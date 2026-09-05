@@ -71,57 +71,58 @@ export function AppsPage() {
         context="Workspace"
         title="Apps"
         description="Keep each app’s Tests, Reports, and known behavior together."
-      >
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger render={<Button variant="default" />}>
-            <Plus aria-hidden="true" /> Add App
-          </DialogTrigger>
+        actions={
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger render={<Button variant="default" />}>
+              <Plus aria-hidden="true" /> Add App
+            </DialogTrigger>
 
-          <DialogContent showCloseButton={false} className="">
-            <DialogTitle>Add an App</DialogTitle>
-            <DialogDescription>
-              Give the app a clear name. Relay will create its saved Map, then take you directly to
-              target selection so you can record the first Test.
-            </DialogDescription>
-            <form onSubmit={submit}>
-              <Field>
-                <FieldLabel htmlFor="new-app-name">App name</FieldLabel>
-                <Input
-                  id="new-app-name"
-                  value={name}
-                  onChange={(event) => setName(event.currentTarget.value)}
-                  placeholder="For example, Checkout"
-                  autoComplete="off"
-                  autoFocus
-                />
-                {createApp.error ? (
-                  <FieldError>
-                    {createApp.error instanceof Error
-                      ? createApp.error.message
-                      : "Relay could not add this app."}
-                  </FieldError>
-                ) : null}
-              </Field>
-              <div className="flex items-center justify-end gap-2">
-                <DialogClose
-                  render={
-                    <Button variant="ghost" disabled={createApp.isPending}>
-                      Cancel
-                    </Button>
-                  }
-                />
-                <Button
-                  type="submit"
-                  variant="default"
-                  disabled={!name.trim() || createApp.isPending}
-                >
-                  {createApp.isPending ? "Adding…" : "Add App"}
-                </Button>
-              </div>
-            </form>
-          </DialogContent>
-        </Dialog>
-      </PageHeader>
+            <DialogContent showCloseButton={false} className="">
+              <DialogTitle>Add an App</DialogTitle>
+              <DialogDescription>
+                Give the app a clear name. Relay will create its saved Map, then take you directly
+                to target selection so you can record the first Test.
+              </DialogDescription>
+              <form onSubmit={submit}>
+                <Field>
+                  <FieldLabel htmlFor="new-app-name">App name</FieldLabel>
+                  <Input
+                    id="new-app-name"
+                    value={name}
+                    onChange={(event) => setName(event.currentTarget.value)}
+                    placeholder="For example, Checkout"
+                    autoComplete="off"
+                    autoFocus
+                  />
+                  {createApp.error ? (
+                    <FieldError>
+                      {createApp.error instanceof Error
+                        ? createApp.error.message
+                        : "Relay could not add this app."}
+                    </FieldError>
+                  ) : null}
+                </Field>
+                <div className="flex items-center justify-end gap-2">
+                  <DialogClose
+                    render={
+                      <Button variant="ghost" disabled={createApp.isPending}>
+                        Cancel
+                      </Button>
+                    }
+                  />
+                  <Button
+                    type="submit"
+                    variant="default"
+                    disabled={!name.trim() || createApp.isPending}
+                  >
+                    {createApp.isPending ? "Adding…" : "Add App"}
+                  </Button>
+                </div>
+              </form>
+            </DialogContent>
+          </Dialog>
+        }
+      />
 
       {loading ? <PageLoading label="Loading apps…" /> : null}
       {error ? (
@@ -174,20 +175,30 @@ export function AppsPage() {
         />
       ) : null}
       {!error && apps.data?.length ? (
-        <ul className="mt-7.5 grid list-none grid-cols-2 gap-3 p-0 max-[780px]:grid-cols-1" aria-label="Apps">
+        <ul
+          className="mt-7.5 grid list-none grid-cols-2 gap-3 p-0 max-[780px]:grid-cols-1"
+          aria-label="Apps"
+        >
           {apps.data.map((app) => {
             const testCount = tests.data?.filter((test) => test.appMapId === app.id).length ?? 0;
             const appRuns = runs.data?.filter((run) => run.appMapId === app.id) ?? [];
             const latest = [...appRuns].sort((left, right) => runTime(right) - runTime(left))[0];
             return (
               <li key={app.id}>
-                <Link to="/apps/$appId" params={{ appId: app.id }}>
-                  <span className="mt-7.5 grid list-none grid-cols-2 gap-3 p-0 max-[780px]:grid-cols-1-icon" aria-hidden="true">
+                <Link
+                  to="/apps/$appId"
+                  params={{ appId: app.id }}
+                  className="group flex min-h-24 items-center gap-4 rounded-xl border border-border bg-card p-5 text-foreground transition-colors hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
+                >
+                  <span
+                    className="grid size-[38px] place-items-center rounded-md border border-border bg-background text-[13px] font-semibold text-foreground"
+                    aria-hidden="true"
+                  >
                     {app.name.slice(0, 1).toLocaleUpperCase()}
                   </span>
-                  <span className="mt-7.5 grid list-none grid-cols-2 gap-3 p-0 max-[780px]:grid-cols-1-copy">
+                  <span className="grid min-w-0 gap-1">
                     <strong>{app.name}</strong>
-                    <small>
+                    <small className="text-xs text-muted-foreground">
                       {tests.isPending
                         ? "Loading Test count…"
                         : tests.error
@@ -202,7 +213,10 @@ export function AppsPage() {
                             : " · No runs yet"}
                     </small>
                   </span>
-                  <ChevronRight aria-hidden="true" />
+                  <ChevronRight
+                    className="ml-auto size-4 shrink-0 text-muted-foreground"
+                    aria-hidden="true"
+                  />
                 </Link>
               </li>
             );

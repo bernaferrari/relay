@@ -24,6 +24,7 @@ describe("target presentation", () => {
       "Pixel 9 Pro",
     ]);
     expect(options[2]?.detail).toBe("Android emulator · 15 · Ready");
+    expect(options[0]?.detail).toBe("Managed browser · Browser profile unavailable");
     expect(options.some(({ targetId }) => targetId === "not-ready")).toBe(false);
   });
 

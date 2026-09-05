@@ -431,7 +431,10 @@ function TestEditorDocument() {
           title="This Test is not available"
           detail="It may have been removed or may belong to another app. Choose a saved Test to continue."
           action={
-            <Link className="relay-inline-link" to="/tests">
+            <Link
+              className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
+              to="/tests"
+            >
               Browse saved Tests
             </Link>
           }
@@ -440,7 +443,7 @@ function TestEditorDocument() {
 
       {editorDocument ? (
         <>
-          <div className="relay-editor-toolbar" aria-label="Editing history">
+          <div className="flex flex-wrap items-center gap-2" aria-label="Editing history">
             <Button
               variant="ghost"
               size="sm"
@@ -460,7 +463,7 @@ function TestEditorDocument() {
               <Redo2 aria-hidden="true" /> Redo
             </Button>
             {latestHistory ? (
-              <span className="relay-editor-last-change">
+              <span className="text-xs text-muted-foreground">
                 Last saved change: {latestHistory.summary}
               </span>
             ) : null}
@@ -471,11 +474,15 @@ function TestEditorDocument() {
               <section className="min-w-0" aria-labelledby="test-steps-title">
                 <div className="relay-section-heading">
                   <div>
-                    <p className="relay-section-label">Journey</p>
+                    <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+                      Journey
+                    </p>
                     <h2 id="test-steps-title">Steps</h2>
                   </div>
                   <div className="flex items-center gap-2.5">
-                    <span className="text-[11px] tabular-nums text-muted-foreground">{entries.length === 1 ? "1 step" : `${entries.length} steps`}</span>
+                    <span className="text-[11px] tabular-nums text-muted-foreground">
+                      {entries.length === 1 ? "1 step" : `${entries.length} steps`}
+                    </span>
                     <Button
                       size="sm"
                       variant="outline"
@@ -534,10 +541,17 @@ function TestEditorDocument() {
                             onClick={() => selectStep(entry.step.id)}
                             aria-pressed={selected?.step.id === entry.step.id}
                           >
-                            <GripVertical className="size-4 cursor-grab text-muted-foreground" aria-hidden="true" />
-                            <span className="grid size-7 place-items-center rounded-full border border-border bg-background text-[10px] tabular-nums text-muted-foreground">{entry.number}</span>
+                            <GripVertical
+                              className="size-4 cursor-grab text-muted-foreground"
+                              aria-hidden="true"
+                            />
+                            <span className="grid size-7 place-items-center rounded-full border border-border bg-background text-[10px] tabular-nums text-muted-foreground">
+                              {entry.number}
+                            </span>
                             <span className="min-w-0">
-                              <strong className="block overflow-hidden text-xs font-semibold break-words">{entry.step.intent}</strong>
+                              <strong className="block overflow-hidden text-xs font-semibold break-words">
+                                {entry.step.intent}
+                              </strong>
                               <small className="mt-0.5 block overflow-hidden text-[10px] text-muted-foreground break-words">
                                 {entry.placement ? `${branchLabel(entry.placement)} · ` : ""}
                                 {stepKindLabel(entry.step)} ·{" "}
@@ -546,7 +560,10 @@ function TestEditorDocument() {
                                   : "Needs review"}
                               </small>
                             </span>
-                            <ChevronRight className="size-3.5 text-muted-foreground" aria-hidden="true" />
+                            <ChevronRight
+                              className="size-3.5 text-muted-foreground"
+                              aria-hidden="true"
+                            />
                           </button>
                           <span className="grid grid-cols-1 border-l border-border">
                             <Button
@@ -583,7 +600,7 @@ function TestEditorDocument() {
               </section>
             }
             stage={
-              <div className="relay-editor-stage-evidence">
+              <div className="grid min-w-0 gap-3.5">
                 {sessionId ? (
                   <LiveTestEditorPane
                     session={liveEditor.data}
@@ -624,7 +641,7 @@ function TestEditorDocument() {
           />
 
           {editorDocument.repairs.length || editorDocument.history.length ? (
-            <div className="relay-test-editor-context">
+            <div className="mt-10 grid gap-7 border-t border-border pt-6 md:grid-cols-2">
               {editorDocument.repairs.length ? (
                 <RepairSection
                   repairs={editorDocument.repairs}

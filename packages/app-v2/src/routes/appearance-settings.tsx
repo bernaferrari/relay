@@ -67,7 +67,10 @@ export function AppearanceSettings() {
 
   return (
     <SettingsFrame category="appearance" saveState={saveState}>
-      <section className="grid gap-3 rounded-xl border border-border bg-card p-5" aria-labelledby="appearance-title">
+      <section
+        className="grid gap-3 rounded-xl border border-border bg-card p-5"
+        aria-labelledby="appearance-title"
+      >
         <header>
           <h2 id="appearance-title">Color scheme</h2>
           <p>System follows this computer and changes automatically throughout the day.</p>
@@ -111,7 +114,10 @@ export function AppearanceSettings() {
           ))}
         </RadioGroup>
         {problem ? (
-          <div role="alert" className="rounded-lg border border-dashed border-border p-5 text-sm text-muted-foreground">
+          <div
+            role="alert"
+            className="rounded-lg border border-dashed border-border p-5 text-sm text-muted-foreground"
+          >
             <p>{problem}</p>
             {saveState === "failed" ? (
               <Button variant="outline" onClick={() => void choose(preference)}>

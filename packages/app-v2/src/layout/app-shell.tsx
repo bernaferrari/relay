@@ -98,7 +98,10 @@ export function AppShell({ platform }: { platform: Platform }) {
           </header>
         ) : null}
         <header
-          className={`relay-mobile-header relay-electron-drag flex min-h-12 items-center gap-2 border-b border-[var(--border-weak-base)] bg-[var(--background-base)] px-2 min-[861px]:hidden${platform.platform === "desktop" ? " min-h-[60px] pl-[82px]" : ""}`}
+          className={[
+            "relay-mobile-header relay-electron-drag flex min-h-12 items-center gap-2 border-b border-[var(--border-weak-base)] bg-[var(--background-base)] px-2 min-[861px]:hidden",
+            platform.platform === "desktop" ? "min-h-[60px] pl-[82px]" : "",
+          ].join(" ")}
         >
           <SidebarTrigger
             className="relay-mobile-menu relay-electron-no-drag"

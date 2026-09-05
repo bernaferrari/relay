@@ -146,8 +146,8 @@ function WindowedRunHistory({
   }
 
   return (
-    <div className="relay-windowed-run-history">
-      <p className="relay-visually-hidden" id="run-history-keyboard-help">
+    <div className="relay-windowed-run-history relay-windowed-run-scroll">
+      <p className="relay-visually-hidden sr-only" id="run-history-keyboard-help">
         This long history is windowed for performance. Use Up and Down to move one Report, Page Up
         and Page Down to move by a screen, and Home or End to jump to the first or last Report.
       </p>

@@ -29,7 +29,7 @@ try {
   await click(/start recording/i);
   await page.getByText(/captured actions/i).waitFor();
   await click(/stop/i);
-  await page.getByRole("heading", { name: /review/i }).waitFor();
+  await page.getByText("Review recording", { exact: true }).waitFor();
   await click(/replay recording/i);
   if (
     !(await page.evaluate(
@@ -57,7 +57,7 @@ try {
     throw new Error("first run did not persist its retry state");
   await click(/run test/i);
   await page.getByText(/run report/i).waitFor();
-  await click(/view test/i);
+  await page.getByRole("link", { name: /view test/i }).click();
   await click(/edit test/i);
   await page.getByRole("heading", { name: /edit/i }).waitFor();
   console.log(

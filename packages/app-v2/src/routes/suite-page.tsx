@@ -152,7 +152,7 @@ export function SuitePage() {
   }
 
   return (
-    <section className="relay-page max-w-5xl">
+    <section className="relay-page mx-auto w-full px-[clamp(20px,3vw,40px)] pt-7 pb-10 max-w-5xl">
       <Breadcrumbs
         items={[{ label: "Suites", to: "/suites" }, { label: value?.name ?? "Suite" }]}
       />
@@ -180,7 +180,10 @@ export function SuitePage() {
           title="Suite not found"
           detail="It may have been removed from this App."
           action={
-            <Link className="relay-inline-link" to="/suites">
+            <Link
+              className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
+              to="/suites"
+            >
               Back to Suites
             </Link>
           }
@@ -190,9 +193,13 @@ export function SuitePage() {
         <>
           <header className="relay-page-header flex items-start justify-between gap-8 max-lg:flex-col">
             <div className="min-w-0 max-w-3xl">
-              <p className="relay-eyebrow">{value.appName} · Suite</p>
-              <h1 className="text-balance">{value.name}</h1>
-              <p className="relay-page-description max-w-2xl">
+              <p className="relay-eyebrow mb-2 text-[11px] font-semibold tracking-[0.02em] text-[var(--text-weak)]">
+                {value.appName} · Suite
+              </p>
+              <h1 className="text-balance text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance]">
+                {value.name}
+              </h1>
+              <p className="relay-page-description mt-2.5 max-w-[62ch] text-[15px] leading-[1.55] text-[var(--text-weak)] max-w-2xl">
                 Choose an environment and run a representative case.
               </p>
             </div>
@@ -246,7 +253,9 @@ export function SuitePage() {
               className="min-w-0 rounded-xl border border-border-weak-base bg-surface-raised-strong p-4"
               aria-labelledby="suite-tests-title"
             >
-              <p className="relay-section-label">Coverage</p>
+              <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+                Coverage
+              </p>
               <h2 id="suite-tests-title" className="mt-1 text-base font-semibold text-text-strong">
                 Saved Tests
               </h2>
@@ -279,7 +288,9 @@ export function SuitePage() {
               className="min-w-0 rounded-xl border border-border-weak-base bg-surface-raised-strong p-4"
               aria-labelledby="suite-environment-title"
             >
-              <p className="relay-section-label">Environment</p>
+              <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+                Environment
+              </p>
               <h2
                 id="suite-environment-title"
                 className="mt-1 text-base font-semibold text-text-strong"
@@ -415,7 +426,7 @@ export function SuitePage() {
                       : "Relay could not remove this Suite."}
                   </FieldError>
                 ) : null}
-                <div className="relay-dialog-actions">
+                <div className="relay-dialog-actions flex flex-wrap items-center justify-end gap-2.5">
                   <DialogClose render={<Button variant="ghost">Cancel</Button>} />
                   <Button
                     className="relay-suite-remove-confirm"
@@ -430,7 +441,10 @@ export function SuitePage() {
           </section>
 
           <Dialog open={editOpen} onOpenChange={setEditOpen}>
-            <DialogContent showCloseButton={false} className="max-h-[min(760px,calc(100vh-32px))] w-[min(720px,calc(100vw-32px))] overflow-auto">
+            <DialogContent
+              showCloseButton={false}
+              className="max-h-[min(760px,calc(100vh-32px))] w-[min(720px,calc(100vw-32px))] overflow-auto"
+            >
               <DialogTitle>Edit Suite</DialogTitle>
               <DialogDescription>
                 Keep the scope deliberate. Removing a Test from this Suite does not delete it.
@@ -444,7 +458,7 @@ export function SuitePage() {
                     onChange={(event) => setName(event.currentTarget.value)}
                   />
                 </Field>
-                <div className="max-h-[min(760px,calc(100vh-32px))] w-[min(720px,calc(100vw-32px))] overflow-auto-scopes">
+                <div className="max-h-[min(760px,calc(100vh-32px))] w-[min(720px,calc(100vw-32px))] overflow-auto p-1">
                   <fieldset>
                     <legend>Tests</legend>
                     {editor.data?.tests.map((test) => (
@@ -504,7 +518,7 @@ export function SuitePage() {
                       : "Relay could not save this Suite."}
                   </FieldError>
                 ) : null}
-                <div className="relay-dialog-actions">
+                <div className="relay-dialog-actions flex flex-wrap items-center justify-end gap-2.5">
                   <DialogClose render={<Button variant="ghost">Cancel</Button>} />
                   <Button
                     type="submit"

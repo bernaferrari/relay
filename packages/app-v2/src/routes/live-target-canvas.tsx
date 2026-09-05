@@ -147,10 +147,10 @@ export function LiveTargetCanvas({
 
   return (
     <div className="grid h-full min-h-[358px] grid-rows-[minmax(0,1fr)_auto_auto]">
-      <div className="grid h-full min-h-[358px] grid-rows-[minmax(0,1fr)_auto_auto]-frame">
+      <div className="relative flex min-h-[260px] items-center justify-center overflow-hidden">
         <canvas
           ref={canvasRef}
-          className="h-full max-h-full max-w-full min-h-0 min-w-0 object-contain"
+          className="relay-capture-live-target h-full max-h-full max-w-full min-h-0 min-w-0 object-contain"
           aria-label={`Interactive live target: ${targetTitle}`}
           aria-describedby={helpId}
           tabIndex={streaming ? 0 : -1}
@@ -172,8 +172,14 @@ export function LiveTargetCanvas({
           }}
         />
         {!streaming ? (
-          <div className="absolute inset-0 grid place-items-center content-center gap-3 bg-muted/60 p-6 text-center" role="status">
-            <span className="absolute inset-0 grid place-items-center content-center gap-3 bg-muted/60 p-6 text-center-mark" aria-hidden="true">
+          <div
+            className="absolute inset-0 grid place-items-center content-center gap-3 bg-muted/60 p-6 text-center"
+            role="status"
+          >
+            <span
+              className="absolute inset-0 grid place-items-center content-center gap-3 bg-muted/60 p-6 text-center"
+              aria-hidden="true"
+            >
               <MonitorSmartphone />
             </span>
             <h2>{issue ? "The live view needs attention" : "Connecting to the target"}</h2>
@@ -181,19 +187,19 @@ export function LiveTargetCanvas({
           </div>
         ) : null}
         {busy ? (
-          <span className="grid h-full min-h-[358px] grid-rows-[minmax(0,1fr)_auto_auto]-busy">
+          <span className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-background/90 px-3 py-1 text-xs text-muted-foreground shadow-sm">
             {recording ? "Recording interaction…" : "Sending interaction…"}
           </span>
         ) : null}
       </div>
 
-      <div className="grid h-full min-h-[358px] grid-rows-[minmax(0,1fr)_auto_auto]-tools">
+      <div className="flex items-center justify-between gap-4 border-t border-border p-3 max-[700px]:grid">
         <div>
           <strong>{targetTitle}</strong>
           <span>{targetDetail}</span>
         </div>
-        <div className="grid h-full min-h-[358px] grid-rows-[minmax(0,1fr)_auto_auto]-type">
-          <label className="relay-visually-hidden" htmlFor={textInputId}>
+        <div className="flex items-center gap-2">
+          <label className="relay-visually-hidden sr-only" htmlFor={textInputId}>
             Text to type into the focused target field
           </label>
           <Input
@@ -221,7 +227,7 @@ export function LiveTargetCanvas({
           </Button>
         </div>
       </div>
-      <p id={helpId} className="grid h-full min-h-[358px] grid-rows-[minmax(0,1fr)_auto_auto]-help">
+      <p id={helpId} className="px-3 pb-3 text-xs text-muted-foreground">
         {helpText ??
           (recording
             ? "Click, drag, scroll, or type here. Relay records each supported interaction in this Test. Enter and Backspace are supported keys."

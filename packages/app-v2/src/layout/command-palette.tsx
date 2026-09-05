@@ -230,8 +230,8 @@ export function CommandPalette({
         showCloseButton={false}
         className="relay-command-palette w-[min(620px,calc(100vw-32px))] max-h-[min(620px,calc(100dvh-48px))] overflow-hidden rounded-[var(--radius-xl)] p-0 shadow-[var(--shadow-lg)]"
       >
-        <DialogTitle className="relay-visually-hidden">Relay commands</DialogTitle>
-        <DialogDescription className="relay-visually-hidden">
+        <DialogTitle className="relay-visually-hidden sr-only">Relay commands</DialogTitle>
+        <DialogDescription className="relay-visually-hidden sr-only">
           Search destinations and common product actions.
         </DialogDescription>
         <div className="relay-command-search grid min-h-[58px] grid-cols-[20px_minmax(0,1fr)_auto] items-center gap-[9px] border-b border-[var(--border-weak-base)] px-4 py-2">
@@ -250,7 +250,7 @@ export function CommandPalette({
             aria-activedescendant={
               commands[activeIndex] ? `relay-command-${commands[activeIndex].id}` : undefined
             }
-            className="relay-input min-h-[42px] border-0 bg-transparent p-0 text-base shadow-none focus-visible:outline-0"
+            className="relay-input min-h-9 w-full rounded-[var(--radius-md)] border border-[var(--border-base)] bg-[var(--background-strong)] px-3 text-base text-[var(--text-strong)] shadow-[0_1px_2px_color-mix(in_srgb,black_5%,transparent)] placeholder:text-[var(--text-weaker)] focus-visible:border-[var(--relay-focus-ring)] focus-visible:outline-3 focus-visible:outline-[color-mix(in_srgb,var(--relay-focus-ring)_24%,transparent)] focus-visible:outline-offset-1 min-h-[42px] border-0 bg-transparent p-0 text-base shadow-none focus-visible:outline-0"
           />
           <kbd className="min-w-7 rounded-[var(--radius-sm)] border border-[var(--border-weak-base)] bg-[var(--background-weak)] px-[5px] py-0.5 text-center text-[10px] leading-[1.4] text-[var(--text-weaker)]">
             Esc

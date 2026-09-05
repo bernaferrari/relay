@@ -85,6 +85,7 @@ function report(outcome: ProductRunReportOverview["outcome"] = "passed"): Produc
         state: "passed",
         durationMs: 650,
         evidenceCount: 1,
+        framePaths: ["screen-1"],
       },
       {
         id: "step-check",
@@ -93,6 +94,7 @@ function report(outcome: ProductRunReportOverview["outcome"] = "passed"): Produc
         state: outcome === "passed" ? "passed" : "failed",
         durationMs: 900,
         evidenceCount: 1,
+        framePaths: ["screen-2"],
       },
     ],
     evidence: [
@@ -114,7 +116,16 @@ function report(outcome: ProductRunReportOverview["outcome"] = "passed"): Produc
               height: 640,
             },
           },
-          { id: "screen-2", title: "Language checkpoint" },
+          {
+            id: "screen-2",
+            title: "Language checkpoint",
+            media: {
+              kind: "image",
+              src: "data:image/png;base64,iVBORw0KGgo=",
+              width: 320,
+              height: 640,
+            },
+          },
         ],
       },
       {
@@ -526,7 +537,9 @@ describe("Run and Report", () => {
     expect(document.body.textContent).not.toContain("Loading the Run");
     expect(document.querySelector('[data-slot="skeleton"]')).toBeNull();
     expect(document.querySelector(".relay-run-progress")).toBeNull();
-    expect(document.querySelector("h1")?.classList.contains("relay-visually-hidden")).toBe(true);
+    const recoveryHeading = document.querySelector("h1");
+    expect(recoveryHeading?.classList.contains("relay-visually-hidden")).toBe(true);
+    expect(recoveryHeading?.classList.contains("sr-only")).toBe(true);
     expect(button("Try again")).not.toBeNull();
   });
 
@@ -774,6 +787,9 @@ describe("Run and Report", () => {
     expect(document.body.textContent).toContain("Browser connection");
     expect(document.body.textContent).toContain("Reconnect the device or browser");
     expect(document.body.textContent).toContain("Technical details");
+    expect(
+      document.querySelector<HTMLAnchorElement>('a[href="/debug?runId=run-1"]'),
+    ).not.toBeNull();
     expect(document.body.textContent).not.toContain("ERR_CONNECTION_REFUSED");
     expect(document.body.textContent).not.toContain("Evidence at this point");
     expect(document.querySelector('[role="tab"]')).toBeNull();

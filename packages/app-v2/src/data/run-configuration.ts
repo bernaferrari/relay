@@ -24,45 +24,6 @@ export type RunConfigurationState = {
   validated?: boolean;
 };
 
-export type RunConfigurationStorage = Pick<Storage, "getItem" | "setItem">;
-
-export function readSavedRunConfiguration(
-  storage: RunConfigurationStorage | undefined,
-  key: string,
-): RunConfigurationSelection {
-  if (!storage) return {};
-  try {
-    const raw = storage.getItem(key);
-    if (!raw) return {};
-    const value = JSON.parse(raw) as { targetProfileId?: unknown; dataSetIds?: unknown };
-    return {
-      ...(typeof value.targetProfileId === "string"
-        ? { targetProfileId: value.targetProfileId }
-        : {}),
-      ...(Array.isArray(value.dataSetIds)
-        ? { dataSetIds: value.dataSetIds.filter((id): id is string => typeof id === "string") }
-        : {}),
-    };
-  } catch {
-    return {};
-  }
-}
-
-export function saveRunConfiguration(
-  storage: RunConfigurationStorage | undefined,
-  key: string,
-  selection: RunConfigurationSelection,
-): void {
-  if (!storage) return;
-  storage.setItem(
-    key,
-    JSON.stringify({
-      ...(selection.targetProfileId ? { targetProfileId: selection.targetProfileId } : {}),
-      ...(selection.dataSetIds?.length ? { dataSetIds: [...selection.dataSetIds] } : {}),
-    }),
-  );
-}
-
 export type PersistedRunConfiguration = {
   sourceRevision?: { sha?: string };
   buildId?: string;

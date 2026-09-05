@@ -44,7 +44,10 @@ export function VersionRow({
 }) {
   return (
     <li className="grid min-h-[66px] grid-cols-[36px_minmax(0,1fr)_auto_minmax(110px,auto)] items-center gap-3 px-3.5 py-[11px] max-[780px]:grid-cols-[36px_minmax(0,1fr)_auto]">
-      <span className="grid size-9 place-items-center rounded-md border border-border bg-background text-foreground" aria-hidden="true">
+      <span
+        className="grid size-9 place-items-center rounded-md border border-border bg-background text-foreground"
+        aria-hidden="true"
+      >
         {version.platform === "web" ? <Globe2 /> : <Box />}
       </span>
       <span className="grid min-w-0 gap-1">
@@ -55,14 +58,16 @@ export function VersionRow({
           {version.applicationId ? ` · ${version.applicationId}` : ""}
         </small>
       </span>
-      <span className={`inline-flex min-h-6 items-center rounded-full bg-background px-2.5 text-[11px] font-semibold capitalize text-muted-foreground inline-flex min-h-6 items-center rounded-full bg-background px-2.5 text-[11px] font-semibold capitalize text-muted-foreground--${version.status}`}>
+      <span
+        className={`inline-flex min-h-6 items-center rounded-full bg-background px-2.5 text-[11px] font-semibold capitalize text-muted-foreground`}
+      >
         {statusLabel(version.status)}
       </span>
       <time dateTime={new Date(version.updatedAt).toISOString()}>
         Updated {shortDate(version.updatedAt)}
       </time>
       {canEdit ? (
-        <span className="grid min-h-[66px] grid-cols-[36px_minmax(0,1fr)_auto_minmax(110px,auto)] items-center gap-3 px-3.5 py-[11px] max-[780px]:grid-cols-[36px_minmax(0,1fr)_auto]-actions">
+        <span className="grid min-h-[66px] grid-cols-[36px_minmax(0,1fr)_auto_minmax(110px,auto)] items-center gap-3 px-3.5 py-[11px] max-[780px]:col-start-2 max-[780px]:col-end-[-1]">
           <Button size="sm" variant="ghost" onClick={onEdit} aria-label={`Edit ${version.name}`}>
             Edit
           </Button>
@@ -106,7 +111,10 @@ export function VersionEditorDialog({
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent showCloseButton={false} className="max-h-[min(720px,calc(100dvh-32px))] overflow-auto">
+      <DialogContent
+        showCloseButton={false}
+        className="max-h-[min(720px,calc(100dvh-32px))] overflow-auto"
+      >
         <DialogTitle>{editing ? "Edit version" : "Add version"}</DialogTitle>
         <DialogDescription>
           Register the exact build identity Relay can use. This does not associate a build with an
@@ -254,7 +262,10 @@ export function BrowserAccountDialog({
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent showCloseButton={false} className="max-h-[min(720px,calc(100dvh-32px))] overflow-auto">
+      <DialogContent
+        showCloseButton={false}
+        className="max-h-[min(720px,calc(100dvh-32px))] overflow-auto"
+      >
         <DialogTitle>{editing ? "Refresh browser sign-in" : "Save browser sign-in"}</DialogTitle>
         <DialogDescription>
           {editing
@@ -330,7 +341,10 @@ export function RevokeAccountDialog({
 }) {
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent showCloseButton={false} className="max-h-[min(720px,calc(100dvh-32px))] overflow-auto">
+      <DialogContent
+        showCloseButton={false}
+        className="max-h-[min(720px,calc(100dvh-32px))] overflow-auto"
+      >
         <DialogTitle>Revoke browser sign-in?</DialogTitle>
         <DialogDescription>
           This revokes “{account.fixture.name}” on {account.target.name}. Relay will keep the audit

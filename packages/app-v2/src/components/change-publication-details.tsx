@@ -30,19 +30,27 @@ export function ChangePublicationStatus({ detail }: { detail: ProductChangeDetai
   });
   if (!publication) {
     return (
-      <section className="rounded-lg border border-border bg-card p-5" aria-labelledby="publication-status-title">
+      <section
+        className="relay-change-publication rounded-lg border border-border bg-card p-5"
+        aria-labelledby="publication-status-title"
+      >
         <ChangeSectionHeader
           eyebrow="GitHub delivery"
           title="Not published"
           id="publication-status-title"
         />
-        <p className="text-sm text-muted-foreground">Relay has not sent this verification result to GitHub.</p>
+        <p className="text-sm text-muted-foreground">
+          Relay has not sent this verification result to GitHub.
+        </p>
       </section>
     );
   }
   const presentation = publicationPresentation(publication.status);
   return (
-    <section className="rounded-lg border border-border bg-card p-5" aria-labelledby="publication-status-title">
+    <section
+      className="relay-change-publication rounded-lg border border-border bg-card p-5"
+      aria-labelledby="publication-status-title"
+    >
       <ChangeSectionHeader
         eyebrow="GitHub delivery"
         title={presentation.title}
@@ -115,10 +123,7 @@ export function ChangeAuditDetails({ detail }: { detail: ProductChangeDetail }) 
           </div>
         </dl>
         {details.publications.length ? (
-          <section
-            className="mt-3 space-y-2"
-            aria-labelledby="publication-history-title"
-          >
+          <section className="mt-3 space-y-2" aria-labelledby="publication-history-title">
             <h3 id="publication-history-title">Publication history</h3>
             <ul>
               {details.publications.map((publication) => (
@@ -244,9 +249,11 @@ export function ChangeSectionHeader({
   aside?: string;
 }) {
   return (
-    <header className="rounded-lg border border-border bg-card p-5-header">
+    <header className="flex items-start justify-between gap-3">
       <div>
-        <p className="relay-section-label">{eyebrow}</p>
+        <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+          {eyebrow}
+        </p>
         <h2 id={id}>{title}</h2>
       </div>
       {aside ? <span>{aside}</span> : null}

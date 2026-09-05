@@ -18,7 +18,7 @@ export function RouteAnnouncer() {
   }, [pathname, title]);
 
   return (
-    <div className="relay-visually-hidden" aria-live="polite" aria-atomic="true">
+    <div className="relay-visually-hidden sr-only" aria-live="polite" aria-atomic="true">
       {title}
     </div>
   );

@@ -41,12 +41,12 @@ export function errorMessage(error: unknown): string {
 export function PageLoading({ label }: { label: string }) {
   return (
     <div className="mt-[34px] grid max-w-[848px] gap-[18px]" role="status" aria-live="polite">
-      <span className="relay-visually-hidden">{label}</span>
-      <div className="mt-[34px] grid max-w-[848px] gap-[18px]-copy" aria-hidden="true">
-        <Skeleton className="mt-[34px] grid max-w-[848px] gap-[18px]-title" />
-        <Skeleton className="mt-[34px] grid max-w-[848px] gap-[18px]-line" />
+      <span className="relay-visually-hidden sr-only">{label}</span>
+      <div className="grid max-w-[400px] gap-2" aria-hidden="true">
+        <Skeleton className="h-4 w-[34%]" />
+        <Skeleton className="h-3 w-[78%]" />
       </div>
-      <div className="mt-[34px] grid max-w-[848px] gap-[18px]-grid" aria-hidden="true">
+      <div className="grid grid-cols-2 gap-2.5" aria-hidden="true">
         <Skeleton />
         <Skeleton />
       </div>
@@ -78,7 +78,7 @@ export function RecordingProblem({
       : undefined;
   return (
     <RecoveryState
-      className={`mt-7 max-w-[640px]${className ? ` ${className}` : ""}`}
+      className={`relay-recording-problem mt-7 max-w-[640px]${className ? ` ${className}` : ""}`}
       title={publicRecovery?.title ?? "Relay could not complete this request"}
       detail={publicRecovery?.detail ?? errorMessage(error)}
       recovery={publicRecovery?.recovery}
@@ -133,7 +133,7 @@ export function targetLabel(target: {
     return { title: target.name.trim(), detail: target.detail?.trim() || "Ready" };
   }
   if (target.kind === "browser") {
-    return { title: "Managed browser", detail: "Ready to record" };
+    return { title: "Managed browser", detail: "Browser profile unavailable" };
   }
   if (target.platform === "ios") return { title: "iOS device", detail: "Ready to record" };
   return {

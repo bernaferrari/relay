@@ -138,11 +138,13 @@ export function RunPage() {
 
   if (problem || recovery) {
     return (
-      <section className="relay-page max-w-[1120px]">
+      <section className="relay-page mx-auto w-full px-[clamp(20px,3vw,40px)] pt-7 pb-10 max-w-[1120px]">
         <Breadcrumbs items={[{ label: "Runs", to: "/runs" }, { label: "Run" }]} />
-        <h1 className="relay-visually-hidden">{snapshot?.title ?? "Run unavailable"}</h1>
+        <h1 className="relay-visually-hidden sr-only text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance]">
+          {snapshot?.title ?? "Run unavailable"}
+        </h1>
         <RecordingProblem
-          className="mt-4"
+          className="relay-run-recovery mt-4"
           error={problem}
           recovery={recovery}
           onRetry={retry}
@@ -155,11 +157,15 @@ export function RunPage() {
 
   if (loading) {
     return (
-      <section className="relay-page max-w-[1120px]">
+      <section className="relay-page mx-auto w-full px-[clamp(20px,3vw,40px)] pt-7 pb-10 max-w-[1120px]">
         <Breadcrumbs items={[{ label: "Runs", to: "/runs" }, { label: "In progress" }]} />
         <header className="rounded-lg border border-border bg-muted/40 p-4">
-          <p className="relay-eyebrow">Run</p>
-          <h1>{snapshot?.title ?? "Loading Run"}</h1>
+          <p className="relay-eyebrow mb-2 text-[11px] font-semibold tracking-[0.02em] text-[var(--text-weak)]">
+            Run
+          </p>
+          <h1 className="text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance] text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance]">
+            {snapshot?.title ?? "Loading Run"}
+          </h1>
         </header>
         <PageLoading label="Loading the Run…" />
       </section>
@@ -167,7 +173,7 @@ export function RunPage() {
   }
 
   return (
-    <section className="relay-page max-w-[1120px]">
+    <section className="relay-page mx-auto w-full px-[clamp(20px,3vw,40px)] pt-7 pb-10 max-w-[1120px]">
       <Breadcrumbs
         items={[
           { label: "Runs", to: "/runs" },
@@ -175,18 +181,22 @@ export function RunPage() {
           { label: "In progress" },
         ]}
       />
-      <header className="relay-page-header flex items-start justify-between gap-5">
+      <header className="relay-page-header flex min-w-0 flex-wrap items-start justify-between gap-5">
         <div>
-          <p className="relay-eyebrow">Run</p>
-          <h1>{snapshot?.title ?? "Running Test"}</h1>
-          <p className="relay-page-description">
+          <p className="relay-eyebrow mb-2 text-[11px] font-semibold tracking-[0.02em] text-[var(--text-weak)]">
+            Run
+          </p>
+          <h1 className="text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance] text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance]">
+            {snapshot?.title ?? "Running Test"}
+          </h1>
+          <p className="relay-page-description mt-2.5 max-w-[62ch] text-[15px] leading-[1.55] text-[var(--text-weak)]">
             {snapshot?.progress.label ?? "Restoring progress…"}
           </p>
         </div>
-        <div className="flex items-start justify-between gap-5-actions">
+        <div className="flex min-w-0 flex-wrap items-start justify-between gap-5">
           {activePointer ? (
             <Link
-              className="relay-text-link relay-header-link"
+              className="relay-text-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 mt-[18px] inline-flex min-h-11 items-center font-semibold text-[var(--text-interactive-base)] relay-header-link inline-flex min-h-11 items-center gap-2"
               to="/tests/$testId"
               params={{ testId: activePointer.testId }}
             >
@@ -203,9 +213,11 @@ export function RunPage() {
 
       {snapshot ? (
         <div className="rounded-xl border border-border bg-card p-5" role="status">
-          <div className="rounded-xl border border-border bg-card p-5-heading">
+          <div className="rounded-xl border border-border bg-card p-5">
             <div>
-              <p className="relay-section-label">Progress</p>
+              <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+                Progress
+              </p>
               <h2>{snapshot.progress.label}</h2>
             </div>
             {snapshot.target ? (
@@ -214,7 +226,7 @@ export function RunPage() {
           </div>
           {snapshot.progress.total !== undefined ? (
             <Progress
-              className="rounded-xl border border-border bg-card p-5-meter"
+              className="rounded-xl border border-border bg-card p-5"
               value={snapshot.progress.completed ?? 0}
               max={snapshot.progress.total}
             >
@@ -295,29 +307,46 @@ function RunReport({
     });
   }
   return (
-    <section className="relay-page max-w-[1120px]">
+    <section className="relay-page mx-auto w-full px-[clamp(20px,3vw,40px)] pt-7 pb-10 max-w-[1120px]">
       {testId ? (
-        <Link className="relay-back-link" to="/tests/$testId" params={{ testId }}>
+        <Link
+          className="relay-back-link mb-3 mt-[-10px] inline-flex min-h-11 items-center gap-2 text-[13px] font-semibold text-[var(--text-weak)] focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2"
+          to="/tests/$testId"
+          params={{ testId }}
+        >
           <ArrowLeft aria-hidden="true" /> View test
         </Link>
       ) : (
         <Breadcrumbs items={[{ label: "Runs", to: "/runs" }, { label: "Report" }]} />
       )}
-      <header className="flex items-start justify-between gap-5">
-        <div>
+      <header className="flex min-w-0 flex-wrap items-start justify-between gap-5">
+        <div className="min-w-0 flex-[1_1_340px]">
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <OutcomeMark outcome={report.outcome} />
             <span>Run Report</span>
           </div>
-          <h1>{report.title}</h1>
-          <p className="mt-5 rounded-xl border border-border bg-card p-5">{outcomeSentence(report.outcome, target)}</p>
+          <h1 className="text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance] text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance]">
+            {report.title}
+          </h1>
+          <p className="mt-5 rounded-xl border border-border bg-card p-5">
+            {outcomeSentence(report.outcome, target)}
+          </p>
         </div>
-        <div className="flex items-start justify-between gap-5-actions">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <RunReplayAction report={report} runService={runService} />
           {report.outcome === "product-failure" ||
           report.outcome === "harness-failure" ||
           report.outcome === "uncertain" ? (
-            <IssueDraftButton source={{ kind: "run", report }} />
+            <>
+              <Button
+                nativeButton={false}
+                render={<Link to="/debug" search={{ runId: report.runId }} />}
+                variant="outline"
+              >
+                Investigate
+              </Button>
+              <IssueDraftButton source={{ kind: "run", report }} />
+            </>
           ) : null}
           {testId ? (
             <Button
@@ -329,7 +358,10 @@ function RunReport({
             </Button>
           ) : null}
           {!testId ? (
-            <Link className="relay-text-link relay-header-link" to="/runs">
+            <Link
+              className="relay-text-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 mt-[18px] inline-flex min-h-11 items-center font-semibold text-[var(--text-interactive-base)] relay-header-link inline-flex min-h-11 items-center gap-2"
+              to="/runs"
+            >
               All Runs
             </Link>
           ) : null}
@@ -433,7 +465,7 @@ function RunReport({
                   Technical details
                 </CollapsibleTrigger>
                 <CollapsibleContent className="border-t pt-3">
-                  <ScrollArea className="col-start-2 col-end-[-1]-scroll">
+                  <ScrollArea className="col-start-2 col-end-[-1] max-h-[180px] overflow-auto">
                     <pre>{failure}</pre>
                   </ScrollArea>
                 </CollapsibleContent>
@@ -442,8 +474,11 @@ function RunReport({
           ) : null}
 
           {firstEvidenceIsDistinct && report.firstEvidence ? (
-            <section className="mt-5 rounded-xl border border-border bg-card p-5" aria-labelledby="first-evidence-title">
-              <p className="relay-section-label">
+            <section
+              className="mt-5 rounded-xl border border-border bg-card p-5"
+              aria-labelledby="first-evidence-title"
+            >
+              <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
                 {report.outcome === "passed" ? "What Relay verified" : "Evidence at this point"}
               </p>
               <h2 id="first-evidence-title">{report.firstEvidence.label}</h2>
@@ -452,7 +487,10 @@ function RunReport({
           ) : null}
 
           {report.evidenceUnavailable ? (
-            <p className="rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground" role="status">
+            <p
+              className="rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground"
+              role="status"
+            >
               Evidence details are temporarily unavailable. The saved outcome above is unchanged.
             </p>
           ) : null}
@@ -472,7 +510,9 @@ function RunReport({
         >
           <header className="flex items-center justify-between gap-3">
             <div>
-              <p className="relay-section-label">Evidence</p>
+              <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+                Evidence
+              </p>
               <h2>Captured during this Run</h2>
             </div>
             <p>Only evidence Relay actually saved is shown here.</p>
@@ -531,21 +571,26 @@ function ReportTimeline({
     >
       <header className="flex items-center justify-between gap-3">
         <div>
-          <p className="relay-section-label">Timeline</p>
+          <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+            Timeline
+          </p>
           <h2>What happened</h2>
         </div>
         <p>{items.length === 1 ? "1 recorded step" : `${items.length} recorded steps`}</p>
       </header>
-      <ol className="mt-5-list">
+      <ol className="mt-5 list-none space-y-2 p-0">
         {items.map((item, index) => (
           <li
             key={item.id}
-            className={`mt-5-item mt-5-item--${item.state}`}
+            className={`grid grid-cols-[28px_minmax(0,1fr)_auto] items-start gap-3 rounded-md border border-border p-3`}
           >
-            <span className="mt-5-index" aria-hidden="true">
+            <span
+              className="grid size-7 place-items-center rounded-full bg-muted text-xs font-medium"
+              aria-hidden="true"
+            >
               {index + 1}
             </span>
-            <span className="mt-5-copy">
+            <span className="grid min-w-0 gap-1">
               <strong>{item.title}</strong>
               <small>
                 {timelineStateLabel(item.state)}
@@ -555,7 +600,7 @@ function ReportTimeline({
               </small>
             </span>
             {item.durationMs !== undefined ? (
-              <span className="mt-5-duration">
+              <span className="text-xs text-muted-foreground">
                 {formatDuration(item.durationMs)}
               </span>
             ) : null}
@@ -591,15 +636,18 @@ function EvidencePreview({
         <span>{section.detail}</span>
       </header>
       {section.items.length ? (
-        <ScrollArea className="list-none space-y-2 p-0-scroll">
-          <ol className={`list-none space-y-2 p-0 list-none space-y-2 p-0--${section.id}`}>
+        <ScrollArea className="max-h-[420px] overflow-auto">
+          <ol className={`list-none space-y-2 p-0`}>
             {section.items.map((item) => (
               <li
                 key={item.id}
-                className={`grid grid-cols-[96px_minmax(0,1fr)] gap-3 rounded-md border border-border p-2 grid grid-cols-[96px_minmax(0,1fr)] gap-3 rounded-md border border-border p-2--${item.tone ?? "neutral"}${item.media ? " grid grid-cols-[96px_minmax(0,1fr)] gap-3 rounded-md border border-border p-2--media" : ""}`}
+                className={`grid grid-cols-[96px_minmax(0,1fr)] gap-3 rounded-md border border-border p-2`}
               >
                 {item.media ? (
-                  <span className="overflow-hidden rounded-md bg-muted" aria-hidden="true">
+                  <span
+                    className="relay-evidence-image-frame overflow-hidden rounded-md bg-muted"
+                    aria-hidden="true"
+                  >
                     <img
                       src={item.media.src}
                       alt=""
@@ -610,7 +658,7 @@ function EvidencePreview({
                     />
                   </span>
                 ) : null}
-                <span className="grid grid-cols-[96px_minmax(0,1fr)] gap-3 rounded-md border border-border p-2-copy">
+                <span className="grid min-w-0 gap-1">
                   <strong>{item.title}</strong>
                   {item.detail ? <span>{item.detail}</span> : null}
                 </span>
@@ -620,7 +668,7 @@ function EvidencePreview({
           </ol>
         </ScrollArea>
       ) : (
-        <div className="rounded-xl border border-border bg-card p-4-empty">
+        <div className="grid min-h-[220px] place-items-center gap-2 rounded-xl border border-border bg-card p-4 text-center">
           <p>This evidence was saved, but it does not have a readable preview.</p>
           <span>Audit details remain available below.</span>
         </div>

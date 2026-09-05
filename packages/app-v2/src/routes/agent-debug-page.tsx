@@ -12,11 +12,12 @@ import {
 } from "@relay/ui-react/components/select";
 import type { DebugBugOutcome } from "@relay/product/agent-debug";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Link, useLocation, useRouteContext } from "@tanstack/react-router";
+import { Link, useLocation, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { ShieldCheck } from "lucide-react";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import type { AgentDebugProductService } from "../data/agent-debug-product-service";
 import { deviceQueryKeys } from "../data/device-product-service";
+import { runQueryKeys } from "../data/run-queries";
 
 function isStartOutcome(
   value: DebugBugOutcome | undefined,
@@ -25,14 +26,29 @@ function isStartOutcome(
 }
 
 export function AgentDebugPage() {
-  const { agentDebugService, deviceService } = useRouteContext({ from: "__root__" });
+  const { agentDebugService, deviceService, runService } = useRouteContext({ from: "__root__" });
   const location = useLocation();
+  const navigate = useNavigate();
   const contextualTargetId =
     typeof (location.search as { target?: unknown }).target === "string"
       ? (location.search as { target: string }).target
       : undefined;
+  const contextualRunId =
+    typeof (location.search as { runId?: unknown }).runId === "string"
+      ? (location.search as { runId: string }).runId
+      : undefined;
   const [title, setTitle] = useState("");
   const [targetId, setTargetId] = useState(contextualTargetId ?? "");
+  const report = useQuery({
+    queryKey: runQueryKeys.report(contextualRunId ?? "unselected"),
+    queryFn: () => runService.getReport(contextualRunId!),
+    enabled: Boolean(contextualRunId),
+    retry: false,
+  });
+  const failureStep = useMemo(
+    () => report.data?.timeline.find((step) => step.state === "failed"),
+    [report.data?.timeline],
+  );
   const devices = useQuery({
     queryKey: deviceQueryKeys.devices,
     queryFn: () => deviceService.list(),
@@ -43,9 +59,26 @@ export function AgentDebugPage() {
   useEffect(() => {
     if (!targetId && contextualTargetId) setTargetId(contextualTargetId);
   }, [contextualTargetId, targetId]);
+  useEffect(() => {
+    if (!report.data || title) return;
+    setTitle(`Investigate ${report.data.title}`);
+  }, [report.data, title]);
+  useEffect(() => {
+    if (!report.data?.targetName || targetId) return;
+    const matchingTarget = readyDevices.find((device) => device.name === report.data.targetName);
+    if (matchingTarget) setTargetId(matchingTarget.serial);
+  }, [readyDevices, report.data?.targetName, targetId]);
   const start = useMutation({
     mutationFn: (input: Parameters<AgentDebugProductService["debugBug"]>[0]) =>
       agentDebugService.debugBug(input),
+    onSuccess: async (outcome) => {
+      if (isStartOutcome(outcome) && outcome.recording.authoring?.sessionId) {
+        await navigate({
+          to: "/sessions/$sessionId",
+          params: { sessionId: outcome.recording.authoring.sessionId },
+        });
+      }
+    },
   });
 
   function submit(event: FormEvent<HTMLFormElement>) {
@@ -64,7 +97,7 @@ export function AgentDebugPage() {
     <section className="mx-auto flex w-full max-w-3xl min-w-0 flex-col gap-8 px-5 py-8 md:px-8 md:py-12">
       <header className="max-w-2xl space-y-2">
         <p className="text-xs font-medium uppercase tracking-wide text-text-weak">Agent Debug</p>
-        <h1 className="text-3xl font-semibold tracking-tight text-text-strong">
+        <h1 className="text-3xl font-semibold tracking-tight text-text-strong text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance]">
           Investigate a bug
         </h1>
         <p className="max-w-prose text-base leading-7 text-text-weak">
@@ -72,6 +105,65 @@ export function AgentDebugPage() {
         </p>
       </header>
 
+      {contextualRunId ? (
+        <section
+          className="grid w-full max-w-2xl gap-3 rounded-xl border border-border-weak-base bg-surface-raised-strong p-5"
+          aria-label="Failed Report context"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-base font-semibold text-text-strong">From this failed Report</h2>
+            <Link
+              className="text-sm text-text-weak underline"
+              to="/runs/$runId"
+              params={{ runId: contextualRunId }}
+            >
+              Open Report
+            </Link>
+          </div>
+          {report.isPending ? (
+            <p className="text-sm text-text-weak" role="status">
+              Loading Report context…
+            </p>
+          ) : null}
+          {report.error ? (
+            <p className="text-sm text-text-weak" role="alert">
+              The Report context could not be loaded. You can still start a new investigation.
+            </p>
+          ) : null}
+          {report.data ? (
+            <dl className="grid gap-2 text-sm">
+              <div>
+                <dt className="font-medium text-text-weak">Target</dt>
+                <dd className="text-text-strong">
+                  {report.data.targetName ?? "Target from Report"}
+                </dd>
+              </div>
+              <div>
+                <dt className="font-medium text-text-weak">Expected</dt>
+                <dd className="text-text-strong">
+                  {failureStep?.expected ?? "Expected result recorded in the Report"}
+                </dd>
+              </div>
+              <div>
+                <dt className="font-medium text-text-weak">Observed</dt>
+                <dd className="text-text-strong">
+                  {failureStep?.observed ??
+                    report.data.cause ??
+                    "Observed result recorded in the Report"}
+                </dd>
+              </div>
+              <div>
+                <dt className="font-medium text-text-weak">Evidence</dt>
+                <dd className="text-text-strong">
+                  {report.data.evidence.length
+                    ? `${report.data.evidence.length} evidence references available`
+                    : "No evidence reference available"}
+                </dd>
+              </div>
+            </dl>
+          ) : null}
+        </section>
+      ) : null}
       <section className="w-full max-w-2xl overflow-hidden rounded-xl border border-border-weak-base bg-surface-raised-strong">
         <div className="border-b border-border-weak-base px-6 py-5">
           <h2 className="text-base font-semibold text-text-strong">Investigation details</h2>

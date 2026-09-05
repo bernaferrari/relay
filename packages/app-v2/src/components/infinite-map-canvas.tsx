@@ -287,23 +287,41 @@ export function InfiniteMapCanvas({
   }
 
   return (
-    <section className="relative flex min-h-[560px] flex-1 overflow-hidden rounded-xl border border-border bg-muted" aria-label="App Map explorer">
+    <section
+      className="relative flex min-h-[560px] flex-1 overflow-hidden rounded-xl border border-border bg-muted"
+      aria-label="App Map explorer"
+      tabIndex={0}
+      onKeyDown={handleKeyDown}
+    >
       <div className="relative h-full min-h-[560px] overflow-hidden">
-        <div className="absolute left-4 top-4 z-10 flex items-center gap-1 rounded-lg border border-border bg-card/95 p-1 shadow-sm" aria-label="Map controls">
+        <div
+          className="absolute left-4 top-4 z-10 flex items-center gap-1 rounded-lg border border-border bg-card/95 p-1 shadow-sm"
+          aria-label="Map controls"
+        >
           <MapControl label="Zoom out" icon={Minus} onClick={() => zoomBy(1 / 1.18)} />
-          <span className="flex items-center gap-1" ref={zoomLabelRef} aria-live="polite">
+          <span
+            className="relay-map-zoom flex items-center gap-1"
+            ref={zoomLabelRef}
+            aria-live="polite"
+          >
             100%
           </span>
           <MapControl label="Zoom in" icon={Plus} onClick={() => zoomBy(1.18)} />
-          <span className="absolute left-4 top-4 z-10 flex items-center gap-1 rounded-lg border border-border bg-card/95 p-1 shadow-sm-divider" aria-hidden="true" />
+          <span
+            className="absolute left-4 top-4 z-10 flex items-center gap-1 rounded-lg border border-border bg-card/95 p-1 shadow-sm"
+            aria-hidden="true"
+          />
           <MapControl label="Fit map" icon={Focus} onClick={fitContent} />
           <MapControl label="Reset view" icon={RotateCcw} onClick={resetView} />
         </div>
-        <p className="absolute bottom-4 left-1/2 z-10 -translate-x-1/2 rounded-full bg-card/90 px-3 py-1.5 text-xs text-muted-foreground shadow-sm" id="map-interaction-help">
+        <p
+          className="absolute bottom-4 left-1/2 z-10 -translate-x-1/2 rounded-full bg-card/90 px-3 py-1.5 text-xs text-muted-foreground shadow-sm"
+          id="map-interaction-help"
+        >
           <Hand aria-hidden="true" /> Drag to move · Scroll to zoom
         </p>
         <section
-          className="relative min-h-[560px] flex-1 overflow-hidden"
+          className="relay-map-canvas relative min-h-[560px] flex-1 overflow-hidden"
           aria-label="Known screens and verified paths"
           aria-describedby="map-interaction-help map-keyboard-help"
           tabIndex={0}
@@ -315,12 +333,12 @@ export function InfiniteMapCanvas({
           onWheel={handleWheel}
           onKeyDown={handleKeyDown}
         >
-          <span className="relay-visually-hidden" id="map-keyboard-help">
+          <span className="relay-visually-hidden sr-only" id="map-keyboard-help">
             Use arrow keys to move, plus and minus to zoom, F to fit the map, or 0 to reset the
             view. Tab to visit each screen.
           </span>
           <div
-            className="absolute inset-0"
+            className="relay-map-world absolute inset-0"
             ref={worldRef}
             style={{ transform: "translate3d(48px, 64px, 0) scale(1)" }}
           >
@@ -331,21 +349,23 @@ export function InfiniteMapCanvas({
               return (
                 <button
                   type="button"
-                  className={`absolute rounded-lg border border-border bg-card p-3 shadow-sm${selectedNode ? " absolute rounded-lg border border-border bg-card p-3 shadow-sm--selected" : ""}`}
+                  className={`relay-map-screen absolute rounded-lg border border-border bg-card p-3 shadow-sm${selectedNode ? " ring-2 ring-primary" : ""}`}
                   key={screen.id}
                   aria-pressed={selectedNode}
                   onClick={() => setSelectedScreenId(screen.id)}
                   onFocus={() => revealScreen(screen.id)}
                   style={{ left: position.x, top: position.y }}
                 >
-                  <span className="absolute rounded-lg border border-border bg-card p-3 shadow-sm-title">{screen.title}</span>
-                  <span className="absolute rounded-lg border border-border bg-card p-3 shadow-sm-meta">
+                  <span className="absolute rounded-lg border border-border bg-card p-3 text-sm font-semibold">
+                    {screen.title}
+                  </span>
+                  <span className="absolute rounded-lg border border-border bg-card p-3 text-xs text-muted-foreground">
                     {screen.coveringTests.length
                       ? `${screen.coveringTests.length} covering ${screen.coveringTests.length === 1 ? "Test" : "Tests"}`
                       : "Not covered yet"}
                   </span>
                   <span
-                    className={`absolute rounded-lg border border-border bg-card p-3 shadow-sm-state${screen.coveringTests.length ? " absolute rounded-lg border border-border bg-card p-3 shadow-sm-state--covered" : ""}`}
+                    className={`absolute rounded-lg border border-border bg-card p-3 text-xs text-muted-foreground${screen.coveringTests.length ? " absolute rounded-lg border border-border bg-card p-3 text-xs text-emerald-600" : ""}`}
                     aria-hidden="true"
                   />
                 </button>
@@ -383,7 +403,10 @@ function MapControl({
         <Icon aria-hidden="true" />
       </TooltipTrigger>
 
-      <TooltipContent sideOffset={7} className="rounded-md border border-border bg-card px-2 py-1 text-xs shadow-md">
+      <TooltipContent
+        sideOffset={7}
+        className="rounded-md border border-border bg-card px-2 py-1 text-xs shadow-md"
+      >
         {label}
       </TooltipContent>
     </Tooltip>
@@ -473,7 +496,7 @@ function MapEdges({
   );
   return (
     <svg
-      className="s"
+      className="relay-map-edges"
       aria-hidden="true"
       viewBox={`${edgeBounds.minX} ${edgeBounds.minY} ${edgeBounds.maxX - edgeBounds.minX} ${edgeBounds.maxY - edgeBounds.minY}`}
       style={{
@@ -497,7 +520,7 @@ function MapEdges({
         </marker>
       </defs>
       {geometries.map((geometry) => (
-        <g key={geometry.path.id} className="">
+        <g key={geometry.path.id} className="relay-map-edge">
           <path id={geometry.id} d={geometry.d} markerEnd={`url(#${markerId})`} />
           <rect
             x={geometry.label.x - geometry.label.width / 2}
@@ -525,12 +548,18 @@ function ScreenInspector({
   onClose: () => void;
 }) {
   return (
-    <aside className="absolute right-4 top-4 z-10 w-[280px] max-w-[calc(100%-32px)] rounded-xl border border-border bg-card p-4 shadow-lg" aria-label="Screen details" aria-live="polite">
+    <aside
+      className="absolute right-4 top-4 z-10 w-[280px] max-w-[calc(100%-32px)] rounded-xl border border-border bg-card p-4 shadow-lg"
+      aria-label="Screen details"
+      aria-live="polite"
+    >
       {screen ? (
         <>
           <header>
             <div>
-              <p className="relay-section-label">Known screen</p>
+              <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+                Known screen
+              </p>
               <h2>{screen.title}</h2>
             </div>
             <Button
@@ -543,9 +572,11 @@ function ScreenInspector({
             </Button>
           </header>
           {screen.description ? (
-            <p className="absolute right-4 top-4 z-10 w-[280px] max-w-[calc(100%-32px)] rounded-xl border border-border bg-card p-4 shadow-lg-description">{screen.description}</p>
+            <p className="absolute right-4 top-4 z-10 w-[280px] max-w-[calc(100%-32px)] rounded-xl border border-border bg-card p-4 shadow-lg text-sm text-muted-foreground">
+              {screen.description}
+            </p>
           ) : null}
-          <dl className="absolute right-4 top-4 z-10 w-[280px] max-w-[calc(100%-32px)] rounded-xl border border-border bg-card p-4 shadow-lg-facts">
+          <dl className="absolute right-4 top-4 z-10 w-[280px] max-w-[calc(100%-32px)] rounded-xl border border-border bg-card p-4 shadow-lg">
             <div>
               <dt>Saved variants</dt>
               <dd>{screen.variantCount}</dd>
@@ -555,7 +586,7 @@ function ScreenInspector({
               <dd>{screen.coveringTests.length}</dd>
             </div>
           </dl>
-          <section className="absolute right-4 top-4 z-10 w-[280px] max-w-[calc(100%-32px)] rounded-xl border border-border bg-card p-4 shadow-lg-section">
+          <section className="absolute right-4 top-4 z-10 w-[280px] max-w-[calc(100%-32px)] rounded-xl border border-border bg-card p-4 shadow-lg">
             <h3>Covering Tests</h3>
             {screen.coveringTests.length ? (
               <ul>
@@ -572,7 +603,7 @@ function ScreenInspector({
             )}
           </section>
           {screen.recentFailures.length ? (
-            <section className="absolute right-4 top-4 z-10 w-[280px] max-w-[calc(100%-32px)] rounded-xl border border-border bg-card p-4 shadow-lg-section">
+            <section className="absolute right-4 top-4 z-10 w-[280px] max-w-[calc(100%-32px)] rounded-xl border border-border bg-card p-4 shadow-lg">
               <h3>Recent failures</h3>
               <ul>
                 {screen.recentFailures.map((failure) => (
@@ -586,7 +617,7 @@ function ScreenInspector({
             </section>
           ) : null}
           <Button
-            className="absolute right-4 top-4 z-10 w-[280px] max-w-[calc(100%-32px)] rounded-xl border border-border bg-card p-4 shadow-lg-action"
+            className="absolute right-4 top-4 z-10 w-[280px] max-w-[calc(100%-32px)] rounded-xl border border-border bg-card p-4 shadow-lg"
             size="sm"
             nativeButton={false}
             render={<Link to="/tests/new" search={{ app: appId }} />}
@@ -595,7 +626,7 @@ function ScreenInspector({
           </Button>
         </>
       ) : (
-        <div className="absolute right-4 top-4 z-10 w-[280px] max-w-[calc(100%-32px)] rounded-xl border border-border bg-card p-4 shadow-lg-empty">
+        <div className="absolute right-4 top-4 z-10 w-[280px] max-w-[calc(100%-32px)] rounded-xl border border-border bg-card p-4 shadow-lg">
           <span aria-hidden="true">
             <LocateFixed />
           </span>

@@ -120,11 +120,11 @@ export function HomePage() {
   };
 
   return (
-    <section className="relay-page flex w-full max-w-6xl flex-col gap-8">
+    <section className="relay-page mx-auto w-full px-[clamp(20px,3vw,40px)] pt-7 pb-10 flex w-full max-w-6xl flex-col gap-8">
       <header className="flex max-w-none flex-col gap-4 border-b border-border/60 pb-6 lg:flex-row lg:items-end lg:justify-between">
         <div className="max-w-2xl">
           <p className="text-sm font-medium text-muted-foreground">Overview</p>
-          <h1 className="mt-1 text-3xl font-semibold tracking-tight text-foreground">
+          <h1 className="mt-1 text-3xl font-semibold tracking-tight text-foreground text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance]">
             {selectedApp
               ? selectedApp.name
               : hasWorkspaceData

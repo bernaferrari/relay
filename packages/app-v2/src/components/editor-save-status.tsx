@@ -20,7 +20,12 @@ export function EditorSaveStatus({ state, detail }: { state: EditorSaveState; de
     conflicted: "Revision changed",
   }[state];
   return (
-    <span className={`relay-editor-save-status inline-flex items-center gap-1.5 text-xs ${state === "failed" || state === "conflicted" ? "text-destructive" : "text-muted-foreground"}`} data-state={state} role="status" aria-live="polite">
+    <span
+      className={`relay-editor-save-status inline-flex items-center gap-1.5 text-xs ${state === "failed" || state === "conflicted" ? "text-destructive" : "text-muted-foreground"}`}
+      data-state={state}
+      role="status"
+      aria-live="polite"
+    >
       <Icon size={14} aria-hidden="true" />
       {detail ?? label}
     </span>

@@ -40,7 +40,7 @@ function recordValue(value: unknown): Record<string, unknown> | undefined {
 
 function SaveStatus({ state }: { state: SaveState }) {
   return (
-    <span className={`mt-4 flex items-center gap-2 mt-4 flex items-center gap-2--${state}`} aria-live="polite">
+    <span className={`mt-4 flex items-center gap-2`} aria-live="polite">
       <span aria-hidden="true" />
       {state === "saving"
         ? "Saving…"
@@ -81,12 +81,18 @@ export function SettingsFrame({
   }, [category, section]);
 
   return (
-    <section className="relay-page max-w-[1080px]">
+    <section className="relay-page mx-auto w-full px-[clamp(20px,3vw,40px)] pt-7 pb-10 max-w-[1080px]">
       <header className="flex items-start justify-between gap-4">
         <div>
-          <p className="relay-eyebrow">Settings</p>
-          <h1>{copy.title}</h1>
-          <p className="relay-page-description">{copy.description}</p>
+          <p className="relay-eyebrow mb-2 text-[11px] font-semibold tracking-[0.02em] text-[var(--text-weak)]">
+            Settings
+          </p>
+          <h1 className="text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance] text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance]">
+            {copy.title}
+          </h1>
+          <p className="relay-page-description mt-2.5 max-w-[62ch] text-[15px] leading-[1.55] text-[var(--text-weak)]">
+            {copy.description}
+          </p>
         </div>
         {visibleSaveState ? <SaveStatus state={visibleSaveState} /> : null}
       </header>
@@ -109,8 +115,8 @@ export function SettingsFrame({
               to={item.path}
               className={
                 item.id === category
-                  ? "grid content-start gap-1-link grid content-start gap-1-link--active"
-                  : "grid content-start gap-1-link"
+                  ? "relay-settings-nav-link grid content-start gap-1 bg-muted text-foreground"
+                  : "relay-settings-nav-link grid content-start gap-1"
               }
               aria-current={item.id === category ? "page" : undefined}
             >

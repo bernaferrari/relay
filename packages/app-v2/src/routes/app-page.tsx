@@ -46,7 +46,7 @@ export function AppPage() {
     .slice(0, 3);
 
   return (
-    <section className="relay-page max-w-[1040px]">
+    <section className="relay-page mx-auto w-full px-[clamp(20px,3vw,40px)] pt-7 pb-10 max-w-[1040px]">
       <Breadcrumbs
         items={[{ label: "Home", to: "/home" }, { label: app.data?.appName ?? "App" }]}
       />
@@ -60,9 +60,13 @@ export function AppPage() {
         <>
           <header className="relay-page-header flex items-start justify-between gap-7 max-[780px]:flex-col">
             <div>
-              <p className="relay-eyebrow">App</p>
-              <h1>{app.data.appName}</h1>
-              <p className="relay-page-description">
+              <p className="relay-eyebrow mb-2 text-[11px] font-semibold tracking-[0.02em] text-[var(--text-weak)]">
+                App
+              </p>
+              <h1 className="text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance] text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance]">
+                {app.data.appName}
+              </h1>
+              <p className="relay-page-description mt-2.5 max-w-[62ch] text-[15px] leading-[1.55] text-[var(--text-weak)]">
                 {app.data.description ??
                   "Saved Tests, recent Reports, and known behavior in one place."}
               </p>
@@ -78,7 +82,10 @@ export function AppPage() {
             </div>
           </header>
 
-          <dl className="my-7.5 grid grid-cols-3 border-y border-border py-[18px] max-[560px]:grid-cols-1 max-[560px]:gap-3.5" aria-label={`${app.data.appName} overview`}>
+          <dl
+            className="my-7.5 grid grid-cols-3 border-y border-border py-[18px] max-[560px]:grid-cols-1 max-[560px]:gap-3.5"
+            aria-label={`${app.data.appName} overview`}
+          >
             <div>
               <dt>Saved Tests</dt>
               <dd>
@@ -103,7 +110,9 @@ export function AppPage() {
             <section className="min-w-0" aria-labelledby="app-tests-title">
               <header className="relay-section-heading">
                 <div>
-                  <p className="relay-section-label">Tests</p>
+                  <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+                    Tests
+                  </p>
                   <h2 id="app-tests-title">Saved journeys</h2>
                 </div>
                 {tests.data?.length ? (
@@ -122,7 +131,11 @@ export function AppPage() {
                   title="Tests are temporarily unavailable"
                   detail="The app overview is still available. Open the Tests library when the service responds."
                   action={
-                    <Link className="relay-inline-link" to="/tests" search={{ app: appId }}>
+                    <Link
+                      className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
+                      to="/tests"
+                      search={{ app: appId }}
+                    >
                       Open Tests
                     </Link>
                   }
@@ -138,7 +151,7 @@ export function AppPage() {
                             {test.stepCount} {test.stepCount === 1 ? "step" : "steps"}
                           </small>
                         </span>
-                        <span className="mt-3 list-none overflow-hidden rounded-lg border border-border bg-card p-0-action">
+                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary">
                           Open <span aria-hidden="true">→</span>
                         </span>
                       </Link>
@@ -150,7 +163,11 @@ export function AppPage() {
                   title="No saved Tests yet"
                   detail="Record one focused journey through this app."
                   action={
-                    <Link className="relay-inline-link" to="/tests/new" search={{ app: appId }}>
+                    <Link
+                      className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
+                      to="/tests/new"
+                      search={{ app: appId }}
+                    >
                       Record a Test
                     </Link>
                   }
@@ -161,7 +178,9 @@ export function AppPage() {
             <section className="min-w-0" aria-labelledby="app-runs-title">
               <header className="relay-section-heading">
                 <div>
-                  <p className="relay-section-label">Reports</p>
+                  <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+                    Reports
+                  </p>
                   <h2 id="app-runs-title">Recent results</h2>
                 </div>
                 {recentRuns.length ? (
@@ -177,7 +196,11 @@ export function AppPage() {
                   title="Recent results are temporarily unavailable"
                   detail="You can keep working in this app while Run history reconnects."
                   action={
-                    <Link className="relay-inline-link" to="/runs" search={{ app: appId }}>
+                    <Link
+                      className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
+                      to="/runs"
+                      search={{ app: appId }}
+                    >
                       Open Runs
                     </Link>
                   }
@@ -210,7 +233,9 @@ export function AppPage() {
           <section className="mt-[34px]" aria-labelledby="app-resources-title">
             <header className="relay-section-heading">
               <div>
-                <p className="relay-section-label">Configuration</p>
+                <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+                  Configuration
+                </p>
                 <h2 id="app-resources-title">Workspace resources</h2>
               </div>
             </header>
@@ -238,7 +263,11 @@ export function AppPage() {
             <CollapsibleContent className="space-y-3 border-t pt-3 text-sm">
               <div>
                 <p>Inspect Relay’s known screens, verified paths, and coverage for this app.</p>
-                <Link className="relay-inline-link" to="/apps/$appId/map" params={{ appId }}>
+                <Link
+                  className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
+                  to="/apps/$appId/map"
+                  params={{ appId }}
+                >
                   Open Map
                 </Link>
               </div>

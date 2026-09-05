@@ -271,7 +271,7 @@ export function TestsPage() {
               <FieldLabel htmlFor="selected-suite-app">App scope</FieldLabel>
               <select
                 id="selected-suite-app"
-                className="relay-native-select"
+                className="relay-native-select min-h-9 w-full rounded-[var(--radius-md)] border border-[var(--border-base)] bg-[var(--background-strong)] px-3 text-base text-[var(--text-strong)]"
                 value={suiteAppId}
                 disabled={createSuite.isPending}
                 onChange={(event) => setSuiteAppId(event.currentTarget.value)}
@@ -324,7 +324,7 @@ export function TestsPage() {
                   : "Relay could not save this Suite."}
               </FieldError>
             ) : null}
-            <div className="relay-dialog-actions">
+            <div className="relay-dialog-actions flex flex-wrap items-center justify-end gap-2.5">
               <DialogClose
                 render={
                   <Button variant="ghost" disabled={createSuite.isPending}>
@@ -439,7 +439,10 @@ export function TestsPage() {
             title="No saved Tests yet"
             detail="Record one focused journey, review it, and Relay will keep it here for future Runs."
             action={
-              <Link className="relay-inline-link" to="/tests/new">
+              <Link
+                className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
+                to="/tests/new"
+              >
                 Record your first Test
               </Link>
             }

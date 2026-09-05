@@ -123,7 +123,7 @@ export function SessionPage() {
   }
 
   return (
-    <section className="relay-page max-w-[1120px]">
+    <section className="relay-page mx-auto w-full px-[clamp(20px,3vw,40px)] pt-7 pb-10 max-w-[1120px]">
       <Breadcrumbs
         items={[
           { label: "Live", to: "/sessions" },
@@ -133,9 +133,13 @@ export function SessionPage() {
       {value ? (
         <header className="relay-page-header flex items-start justify-between gap-4 max-[620px]:grid">
           <div>
-            <p className="relay-eyebrow">Session</p>
-            <h1>{value.title}</h1>
-            <p className="relay-page-description">
+            <p className="relay-eyebrow mb-2 text-[11px] font-semibold tracking-[0.02em] text-[var(--text-weak)]">
+              Session
+            </p>
+            <h1 className="text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance] text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance]">
+              {value.title}
+            </h1>
+            <p className="relay-page-description mt-2.5 max-w-[62ch] text-[15px] leading-[1.55] text-[var(--text-weak)]">
               {targetLabel(value)} · {value.actorKind === "agent" ? "Agent-owned" : "Human-owned"}
             </p>
           </div>
@@ -204,7 +208,7 @@ export function SessionPage() {
                     Relay will stop this active authoring Session. Saved evidence and its history
                     remain available.
                   </DialogDescription>
-                  <div className="relay-form-actions relay-form-actions--end">
+                  <div className="relay-form-actions flex flex-wrap items-center gap-2.5 relay-form-actions--end">
                     <DialogClose render={<Button variant="ghost">Keep Session</Button>} />
                     <Button
                       className="relay-session-end-button"
@@ -280,16 +284,23 @@ export function SessionPage() {
 
       {value ? (
         <div className="mt-[30px] grid grid-cols-[minmax(0,1.45fr)_minmax(280px,.55fr)] items-start gap-[18px] max-[880px]:grid-cols-1">
-          <section className="min-w-0 rounded-xl border border-border bg-card p-[18px] shadow-sm" aria-labelledby="session-stage-title">
+          <section
+            className="min-w-0 rounded-xl border border-border bg-card p-[18px] shadow-sm"
+            aria-labelledby="session-stage-title"
+          >
             <div className="relay-section-heading">
               <div>
-                <p className="relay-section-label">Live target</p>
+                <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+                  Live target
+                </p>
                 <h2 id="session-stage-title">
                   {canControl ? "Continue where you left off" : "Target unavailable for control"}
                 </h2>
                 {canControl ? (
-                  <p className="relay-page-description">
-                    {value.state === "recording" ? "Session is recording" : "Inspecting live state"}
+                  <p className="relay-page-description mt-2.5 max-w-[62ch] text-[15px] leading-[1.55] text-[var(--text-weak)]">
+                    {value.state === "recording"
+                      ? "Recording session active · inspecting only"
+                      : "Inspecting live state"}
                   </p>
                 ) : null}
               </div>
@@ -310,7 +321,7 @@ export function SessionPage() {
                 issue={liveIssue}
                 busy={liveBusy}
                 targetTitle={targetLabel(value)}
-                targetDetail={`Owned by ${value.actorId}`}
+                targetDetail={`Owned by ${value.actorId} · ${sessionProfileContext(value)}`}
                 send={send}
                 recording={false}
                 helpText="Inspecting live state. These controls do not add Test steps. Open the Test editor or recording workspace to capture steps. Enter and Backspace are supported keys."
@@ -346,12 +357,18 @@ export function SessionPage() {
 
           <aside className="grid gap-3.5" aria-label="Session context">
             <section>
-              <p className="relay-section-label">At a glance</p>
+              <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+                At a glance
+              </p>
               <h2>Session details</h2>
               <dl>
                 <div>
                   <dt>Target</dt>
                   <dd>{targetLabel(value)}</dd>
+                </div>
+                <div>
+                  <dt>Profile</dt>
+                  <dd>{sessionProfileContext(value)}</dd>
                 </div>
                 <div>
                   <dt>App</dt>
@@ -393,7 +410,9 @@ export function SessionPage() {
               </Collapsible>
             </section>
             <section className="" aria-labelledby="session-activity-title">
-              <p className="relay-section-label">Activity</p>
+              <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+                Activity
+              </p>
               <h2 id="session-activity-title">Recent operations</h2>
               {value.activity.length ? (
                 <ol>
@@ -411,9 +430,7 @@ export function SessionPage() {
                     ))}
                 </ol>
               ) : (
-                <p className="-empty">
-                  No project activity is available to this role.
-                </p>
+                <p className="-empty">No project activity is available to this role.</p>
               )}
             </section>
           </aside>
@@ -431,6 +448,12 @@ function targetLabel(session: ProductSessionDetail): string {
         ? "iOS"
         : "Android";
   return `${platform} · ${session.target.targetId}`;
+}
+
+function sessionProfileContext(session: ProductSessionDetail): string {
+  return session.target.kind === "browser"
+    ? "Browser profile unavailable"
+    : "Device profile unavailable";
 }
 
 function sessionAvailability(session: ProductSessionDetail): string {

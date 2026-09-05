@@ -134,13 +134,17 @@ export function BatchPage() {
   }
 
   return (
-    <section className="relay-page relay-batch-page">
+    <section className="relay-page mx-auto w-full px-[clamp(20px,3vw,40px)] pt-7 pb-10 relay-batch-page">
       <Breadcrumbs items={[{ label: "Runs", to: "/runs" }, { label: report?.title ?? "Batch" }]} />
       <header className="relay-page-header relay-batch-header">
         <div>
-          <p className="relay-eyebrow">Run Across</p>
-          <h1>{report?.title ?? "Batch"}</h1>
-          <p className="relay-page-description">
+          <p className="relay-eyebrow mb-2 text-[11px] font-semibold tracking-[0.02em] text-[var(--text-weak)]">
+            Run Across
+          </p>
+          <h1 className="text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance] text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance]">
+            {report?.title ?? "Batch"}
+          </h1>
+          <p className="relay-page-description mt-2.5 max-w-[62ch] text-[15px] leading-[1.55] text-[var(--text-weak)]">
             Triage failures across Tests and Environments, then rerun only the evidence-backed cases
             you select.
           </p>
@@ -238,7 +242,7 @@ export function BatchPage() {
             <section className="relay-batch-next-step">
               <h2>Review the pilot before continuing</h2>
               <p>Check the representative Run before Relay starts the remaining cases.</p>
-              <div className="relay-form-actions">
+              <div className="relay-form-actions flex flex-wrap items-center gap-2.5">
                 <Button
                   variant="default"
                   onClick={() => continueRun.mutate()}
@@ -345,7 +349,7 @@ export function BatchPage() {
               </Button>
               {downloadUrl ? (
                 <a
-                  className="relay-inline-link"
+                  className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
                   href={downloadUrl}
                   download={`relay-${batchId}.tar.gz`}
                 >

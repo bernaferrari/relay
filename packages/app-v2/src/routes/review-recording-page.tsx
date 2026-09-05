@@ -1,3 +1,4 @@
+import { RecordingTrimPanel } from "./recording-trim-panel";
 /** @jsxImportSource react */
 import { EditorSaveStatus } from "../components/editor-save-status";
 import { WorkbenchPage, PageHeader, WorkbenchPanes } from "../components/page-layout";
@@ -18,7 +19,6 @@ import { getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-route
 import {
   ArrowDown,
   ArrowUp,
-  Clock3,
   Combine,
   Redo2,
   RotateCcw,
@@ -35,7 +35,6 @@ import { clearWorkflowPointerIfCurrent } from "../data/workflow-pointer";
 import { PageLoading, RecordingProblem } from "./recording-shared";
 import { RecordingActionsPanel, RecordingEvidencePanel } from "./recording-review-panels";
 import {
-  formatDuration,
   replayDetail,
   replayTitle,
   reviewInstruction,
@@ -268,7 +267,7 @@ export function ReviewRecordingPage() {
   }
 
   return (
-    <WorkbenchPage className="relay-review-page relay-recording-review-page">
+    <WorkbenchPage className="w-full max-w-[1480px] px-[clamp(22px,3vw,42px)] py-[clamp(22px,3vw,42px)]">
       <Breadcrumbs items={[{ label: "Tests", to: "/tests" }, { label: "Review" }]} />
       <PageHeader
         title={testName || snapshot?.title || "Review your recording"}
@@ -360,11 +359,16 @@ export function ReviewRecordingPage() {
               />
             }
             inspector={
-              <aside className="flex min-w-0 flex-col gap-[18px] self-start rounded-xl border border-border bg-card p-[18px] text-card-foreground shadow-sm" aria-label="Edit, replay, and save">
-                <section className="relay-review-editor" aria-labelledby="review-editor-title">
+              <aside
+                className="flex min-w-0 flex-col gap-[18px] self-start rounded-xl border border-border bg-card p-[18px] text-card-foreground shadow-sm"
+                aria-label="Edit, replay, and save"
+              >
+                <section className="grid gap-3.5" aria-labelledby="review-editor-title">
                   <div className="flex flex-wrap items-center justify-between gap-3.5">
                     <div>
-                      <p className="relay-section-label">Inspector</p>
+                      <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+                        Inspector
+                      </p>
                       <h2 id="review-editor-title">
                         {selectedActions.length === 0
                           ? "Select an action"
@@ -456,7 +460,10 @@ export function ReviewRecordingPage() {
                           </Button>
                         </Field>
                       ) : null}
-                      <div className="relay-review-edit-row" aria-label="Reorder action">
+                      <div
+                        className="flex flex-wrap items-center gap-2"
+                        aria-label="Reorder action"
+                      >
                         <Button
                           size="sm"
                           variant="ghost"
@@ -505,7 +512,7 @@ export function ReviewRecordingPage() {
                       <Combine aria-hidden="true" /> Merge actions
                     </Button>
                   ) : (
-                    <p className="relay-review-editor-help">
+                    <p className="text-xs leading-normal text-muted-foreground">
                       Choose an action to rename, reorder, replace, split, or remove it.
                     </p>
                   )}
@@ -517,7 +524,7 @@ export function ReviewRecordingPage() {
                           <Button
                             size="sm"
                             variant="ghost"
-                            className="relay-review-delete"
+                            className="text-destructive"
                             disabled={!canEdit}
                           />
                         }
@@ -533,10 +540,10 @@ export function ReviewRecordingPage() {
                         <DialogDescription>
                           This changes the journey and requires a new replay before saving.
                         </DialogDescription>
-                        <div className="relay-dialog-actions">
+                        <div className="relay-dialog-actions flex flex-wrap items-center justify-end gap-2.5">
                           <DialogClose render={<Button variant="ghost">Cancel</Button>} />
                           <Button
-                            className="relay-review-delete-confirm"
+                            className="grid gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3"
                             onClick={() => {
                               setDeleteOpen(false);
                               edit({
@@ -591,7 +598,9 @@ export function ReviewRecordingPage() {
                     ) : null}
                   </Field>
                   <div className="grid gap-1 rounded-lg border border-border bg-muted/40 p-3">
-                    <p className="relay-section-label">Verification</p>
+                    <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+                      Verification
+                    </p>
                     <h2>
                       {replayTitle(
                         review?.latestReplay?.outcome,
@@ -599,7 +608,9 @@ export function ReviewRecordingPage() {
                         canApprove,
                       )}
                     </h2>
-                    <p className="text-xs leading-normal text-muted-foreground">{replayDetail(review?.latestReplay?.outcome, canApprove)}</p>
+                    <p className="text-xs leading-normal text-muted-foreground">
+                      {replayDetail(review?.latestReplay?.outcome, canApprove)}
+                    </p>
                   </div>
 
                   {canApprove ? (
@@ -625,12 +636,12 @@ export function ReviewRecordingPage() {
                       {transition.isPending ? "Replaying…" : "Replay recording"}
                     </Button>
                   ) : (
-                    <p className="relay-review-waiting" role="status">
+                    <p className="text-xs text-muted-foreground" role="status">
                       Waiting for Relay to make the next review action available.
                     </p>
                   )}
                   {allowed.has("replay") && review?.replayRequired ? (
-                    <p className="relay-save-requirement">
+                    <p className="text-xs text-muted-foreground">
                       A passing replay is required before saving.
                     </p>
                   ) : null}
@@ -640,57 +651,17 @@ export function ReviewRecordingPage() {
           />
 
           {review?.timeline ? (
-            <section className="grid min-w-0 grid-cols-1 items-center gap-5 rounded-xl border border-border bg-card px-4 py-3 text-card-foreground shadow-sm md:grid-cols-[auto_minmax(240px,1fr)_auto]" aria-labelledby="recording-trim-title">
-              <div className="flex items-center gap-2">
-                <Clock3 aria-hidden="true" />
-                <div>
-                  <p className="relay-section-label">Time range</p>
-                  <h2 id="recording-trim-title">
-                    {formatDuration(trimStartMs)} – {formatDuration(trimEndMs)}
-                  </h2>
-                </div>
-              </div>
-              <div className="relay-recording-range-fields">
-                <label>
-                  Start
-                  <input
-                    type="range"
-                    min={0}
-                    max={Math.max(1, review.timeline.durationMs)}
-                    value={trimStartMs}
-                    onChange={(event) =>
-                      setTrimStartMs(Math.min(Number(event.currentTarget.value), trimEndMs))
-                    }
-                    disabled={!canEdit}
-                  />
-                </label>
-                <label>
-                  End
-                  <input
-                    type="range"
-                    min={0}
-                    max={Math.max(1, review.timeline.durationMs)}
-                    value={trimEndMs}
-                    onChange={(event) =>
-                      setTrimEndMs(Math.max(Number(event.currentTarget.value), trimStartMs))
-                    }
-                    disabled={!canEdit}
-                  />
-                </label>
-              </div>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => edit({ kind: "clip", fromMs: trimStartMs, toMs: trimEndMs })}
-                disabled={
-                  !canEdit ||
-                  (trimStartMs === (review.videoClip?.startMs ?? 0) &&
-                    trimEndMs === (review.videoClip?.endMs ?? review.timeline.durationMs))
-                }
-              >
-                Apply trim
-              </Button>
-            </section>
+            <RecordingTrimPanel
+              durationMs={review.timeline.durationMs}
+              savedStartMs={review.videoClip?.startMs}
+              savedEndMs={review.videoClip?.endMs}
+              trimStartMs={trimStartMs}
+              trimEndMs={trimEndMs}
+              setTrimStartMs={setTrimStartMs}
+              setTrimEndMs={setTrimEndMs}
+              canEdit={canEdit}
+              onApply={(fromMs, toMs) => edit({ kind: "clip", fromMs, toMs })}
+            />
           ) : null}
         </>
       ) : null}

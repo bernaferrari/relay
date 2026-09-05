@@ -397,7 +397,7 @@ describe("Change verification", () => {
     });
     await renderChange("/changes/change-proof-private-id", fake.service);
 
-    const repair = document.querySelector(".mt-5 grid max-w-[820px] gap-[18px] rounded-xl border border-border bg-card p-5 shadow-sm");
+    const repair = document.querySelector(".relay-change-repair-context");
     expect(repair?.textContent).toContain("Smallest useful fix");
     expect(repair?.textContent).toContain("The heading remains inside its layout bounds.");
     expect(repair?.textContent).toContain("The heading overlaps the action.");
@@ -445,7 +445,7 @@ describe("Change verification", () => {
 
     expect(document.body.textContent).toContain("Human evidence is required");
     expect(document.body.textContent).toContain("Confirm the final layout");
-    const attention = document.querySelector(".mt-5 rounded-lg border border-red-500/40 bg-red-500/5 p-5");
+    const attention = document.querySelector(".relay-change-attention");
     const plan = document.querySelector(".relay-verification-plan");
     expect(
       attention && plan
@@ -476,7 +476,7 @@ describe("Change verification", () => {
     await click(button("Audit details"));
     expect(audit.textContent).toContain("change-proof-private-id");
     expect(audit.textContent).toContain("sha256:");
-    expect(document.querySelector(".mt-7 flex items-center justify-between gap-6 border-b border-border pb-5")?.textContent).not.toContain("sha256:");
+    expect(document.querySelector(".relay-change-verdict")?.textContent).not.toContain("sha256:");
   });
 
   it("shows bounded provider delivery diagnostics only inside Audit details", async () => {
@@ -528,7 +528,7 @@ describe("Change verification", () => {
     });
     await renderChange("/changes/change-proof-private-id", fake.service);
 
-    expect(document.querySelector(".rounded-lg border border-border bg-card p-5")?.textContent).not.toContain(
+    expect(document.querySelector(".relay-change-publication")?.textContent).not.toContain(
       "Provider failure",
     );
     await click(button("Audit details"));
@@ -566,7 +566,7 @@ describe("Change verification", () => {
     });
     await renderChange("/changes/change-proof-private-id", fake.service);
 
-    const verdict = document.querySelector(".mt-7 flex items-center justify-between gap-6 border-b border-border pb-5");
+    const verdict = document.querySelector(".relay-change-verdict");
     expect(verdict?.textContent).toContain("Ready to merge");
     expect(verdict?.textContent).toContain("2 of 2 checks complete");
     expect(verdict?.textContent).not.toContain("Verdict");

@@ -70,7 +70,10 @@ export function RunConfigurationComposer({
     </span>
   );
   return (
-    <section aria-label="Run configuration" className="relay-run-configuration grid min-w-0 gap-[18px] rounded-xl border border-border bg-card p-5 [&_h2]:m-0 [&_h2]:text-base">
+    <section
+      aria-label="Run configuration"
+      className="relay-run-configuration grid min-w-0 gap-[18px] rounded-xl border border-border bg-card p-5 [&_h2]:m-0 [&_h2]:text-base"
+    >
       <div className="relay-section-heading">
         <h2 id={titleId}>
           {configuration.frozen ? "Recorded configuration" : "Run configuration"}
@@ -96,7 +99,10 @@ export function RunConfigurationComposer({
         </dl>
       ) : null}
       {error ? (
-        <div role="alert" className="relay-config-problem m-0 rounded-lg border border-border p-3 text-[13px] [&_p]:mt-1 [&_p]:mb-2">
+        <div
+          role="alert"
+          className="relay-config-problem m-0 rounded-lg border border-border p-3 text-[13px] [&_p]:mt-1 [&_p]:mb-2"
+        >
           <p>{error}</p>
           {onRetry ? (
             <Button variant="outline" size="sm" onClick={onRetry}>
@@ -108,10 +114,16 @@ export function RunConfigurationComposer({
       {targetOptions && onSelectionChange ? (
         <>
           {multipleTargets ? (
-            <fieldset disabled={loading} className="relay-config-options grid min-w-0 gap-2 border-0 p-0 [&_legend]:mb-2.5 [&_legend]:text-[13px] [&_legend]:font-semibold">
+            <fieldset
+              disabled={loading}
+              className="relay-config-options grid min-w-0 gap-2 border-0 p-0 [&_legend]:mb-2.5 [&_legend]:text-[13px] [&_legend]:font-semibold"
+            >
               <legend>Environments</legend>
               {targetOptions.map((option) => (
-                <FieldLabel key={option.id} className="relay-config-option flex min-h-12 w-full min-w-0 cursor-pointer items-center gap-3 rounded-lg border border-border p-3 has-data-checked:border-ring has-data-checked:bg-accent">
+                <FieldLabel
+                  key={option.id}
+                  className="relay-config-option flex min-h-12 w-full min-w-0 cursor-pointer items-center gap-3 rounded-lg border border-border p-3 has-data-checked:border-ring has-data-checked:bg-accent"
+                >
                   {optionCopy(option)}
                   <Checkbox
                     checked={selectedTargets.includes(option.id)}
@@ -132,7 +144,10 @@ export function RunConfigurationComposer({
               aria-label="Device or browser"
             >
               {targetOptions.map((option) => (
-                <FieldLabel key={option.id} className="relay-config-option flex min-h-12 w-full min-w-0 cursor-pointer items-center gap-3 rounded-lg border border-border p-3 has-data-checked:border-ring has-data-checked:bg-accent">
+                <FieldLabel
+                  key={option.id}
+                  className="relay-config-option flex min-h-12 w-full min-w-0 cursor-pointer items-center gap-3 rounded-lg border border-border p-3 has-data-checked:border-ring has-data-checked:bg-accent"
+                >
                   <RadioGroupItem value={option.id} />
                   {optionCopy(option)}
                 </FieldLabel>
@@ -142,10 +157,16 @@ export function RunConfigurationComposer({
         </>
       ) : null}
       {dataSetOptions && onSelectionChange ? (
-        <fieldset disabled={loading} className="relay-config-options grid min-w-0 gap-2 border-0 p-0 [&_legend]:mb-2.5 [&_legend]:text-[13px] [&_legend]:font-semibold">
+        <fieldset
+          disabled={loading}
+          className="relay-config-options grid min-w-0 gap-2 border-0 p-0 [&_legend]:mb-2.5 [&_legend]:text-[13px] [&_legend]:font-semibold"
+        >
           <legend>Data set values</legend>
           {dataSetOptions.map((option) => (
-            <FieldLabel key={option.id} className="relay-config-option flex min-h-12 w-full min-w-0 cursor-pointer items-center gap-3 rounded-lg border border-border p-3 has-data-checked:border-ring has-data-checked:bg-accent">
+            <FieldLabel
+              key={option.id}
+              className="relay-config-option flex min-h-12 w-full min-w-0 cursor-pointer items-center gap-3 rounded-lg border border-border p-3 has-data-checked:border-ring has-data-checked:bg-accent"
+            >
               {optionCopy(option)}
               <Checkbox
                 checked={selection?.dataSetIds?.includes(option.id) ?? false}
@@ -161,7 +182,10 @@ export function RunConfigurationComposer({
         </fieldset>
       ) : null}
       {configuration.blockers?.length ? (
-        <div className="relay-config-problem m-0 rounded-lg border border-border p-3 text-[13px] [&_p]:mt-1 [&_p]:mb-2" role="alert">
+        <div
+          className="relay-config-problem m-0 rounded-lg border border-border p-3 text-[13px] [&_p]:mt-1 [&_p]:mb-2"
+          role="alert"
+        >
           <ul>
             {configuration.blockers.map((blocker) => (
               <li key={blocker.id}>

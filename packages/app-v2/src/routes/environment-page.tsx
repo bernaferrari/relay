@@ -121,7 +121,7 @@ export function EnvironmentPage() {
     readiness.data?.target.checks.filter((check) => check.status === "warning") ?? [];
 
   return (
-    <section className="relay-page max-w-[1080px]">
+    <section className="relay-page mx-auto w-full px-[clamp(20px,3vw,40px)] pt-7 pb-10 max-w-[1080px]">
       <Breadcrumbs
         items={[
           { label: "Environments", to: "/environments" },
@@ -130,7 +130,7 @@ export function EnvironmentPage() {
       />
       {continuation ? (
         <Link
-          className="relay-inline-link"
+          className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
           to="/tests/new"
           search={{
             ...(continuation.appId ? { app: continuation.appId } : {}),
@@ -158,7 +158,10 @@ export function EnvironmentPage() {
           title="Environment not found"
           detail="It may have been removed from this workspace."
           action={
-            <Link className="relay-inline-link" to="/environments">
+            <Link
+              className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
+              to="/environments"
+            >
               Back to Environments
             </Link>
           }
@@ -168,9 +171,13 @@ export function EnvironmentPage() {
         <>
           <header className="relay-page-header flex items-start justify-between gap-4 max-[780px]:flex-col">
             <div>
-              <p className="relay-eyebrow">Browser Space</p>
-              <h1>{space.name}</h1>
-              <p className="relay-page-description">
+              <p className="relay-eyebrow mb-2 text-[11px] font-semibold tracking-[0.02em] text-[var(--text-weak)]">
+                Browser Space
+              </p>
+              <h1 className="text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance] text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance]">
+                {space.name}
+              </h1>
+              <p className="relay-page-description mt-2.5 max-w-[62ch] text-[15px] leading-[1.55] text-[var(--text-weak)]">
                 {displayHost(space.startUrl)} ·{" "}
                 {space.persistent ? "Persistent profile" : "Ephemeral profile"}
               </p>
@@ -192,7 +199,9 @@ export function EnvironmentPage() {
               className="min-w-0 rounded-xl border border-border bg-card p-[18px] shadow-sm"
               aria-labelledby="environment-readiness-title"
             >
-              <p className="relay-section-label">Readiness</p>
+              <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+                Readiness
+              </p>
               <h2 id="environment-readiness-title">Current checks</h2>
               {readiness.isPending ? <PageLoading label="Checking Environment…" /> : null}
               {readiness.data ? (
@@ -263,8 +272,13 @@ export function EnvironmentPage() {
               </Button>
             </section>
 
-            <section className="min-w-0 rounded-xl border border-border bg-card p-[18px] shadow-sm" aria-labelledby="environment-account-title">
-              <p className="relay-section-label">Accounts</p>
+            <section
+              className="min-w-0 rounded-xl border border-border bg-card p-[18px] shadow-sm"
+              aria-labelledby="environment-account-title"
+            >
+              <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+                Accounts
+              </p>
               <h2 id="environment-account-title">Reviewed sign-ins</h2>
               <p>
                 Credentials and cookies remain on the Relay host. This page exposes lifecycle
@@ -360,7 +374,10 @@ export function EnvironmentPage() {
             </section>
           </div>
 
-          <section className="min-w-0 rounded-xl border border-red-500/40 bg-red-500/5 p-[18px]" aria-labelledby="remove-environment-title">
+          <section
+            className="min-w-0 rounded-xl border border-red-500/40 bg-red-500/5 p-[18px]"
+            aria-labelledby="remove-environment-title"
+          >
             <div>
               <h2 id="remove-environment-title">Remove Browser Space</h2>
               <p>
@@ -386,7 +403,7 @@ export function EnvironmentPage() {
                       : "Relay could not remove this Space."}
                   </FieldError>
                 ) : null}
-                <div className="relay-dialog-actions">
+                <div className="relay-dialog-actions flex flex-wrap items-center justify-end gap-2.5">
                   <DialogClose render={<Button variant="ghost">Cancel</Button>} />
                   <Button
                     className="relay-suite-remove-confirm"
@@ -426,7 +443,7 @@ export function EnvironmentPage() {
                       : "Relay could not save this sign-in."}
                   </FieldError>
                 ) : null}
-                <div className="relay-dialog-actions">
+                <div className="relay-dialog-actions flex flex-wrap items-center justify-end gap-2.5">
                   <DialogClose render={<Button variant="ghost">Cancel</Button>} />
                   <Button
                     type="submit"

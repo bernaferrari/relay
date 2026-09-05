@@ -21,6 +21,7 @@ import type { DesktopUpdateState } from "../platform/types";
 import { AppearanceSettings } from "./appearance-settings";
 import { PageLoading } from "./recording-shared";
 import { SettingRow, SettingsFrame, ToggleRow, type SaveState } from "./settings-frame";
+import { AboutSettings } from "./settings-about";
 import {
   CHANNELS,
   CONNECTION_QUERY_KEY,
@@ -52,9 +53,14 @@ function GeneralSettings() {
 
   return (
     <SettingsFrame category="general" saveState={connection.isError ? "unavailable" : undefined}>
-      <section className="grid gap-3 rounded-xl border border-border bg-card p-5" aria-labelledby="general-behavior-title">
+      <section
+        className="grid gap-3 rounded-xl border border-border bg-card p-5"
+        aria-labelledby="general-behavior-title"
+      >
         <header>
-          <p className="relay-section-label">Workspace behavior</p>
+          <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+            Workspace behavior
+          </p>
           <h2 id="general-behavior-title">Your workspace</h2>
         </header>
         <SettingRow
@@ -74,13 +80,13 @@ function GeneralSettings() {
           <Badge
             variant="secondary"
             className={
-              connection.isError ? "bg-amber-500/15 text-amber-700 dark:text-amber-300" : undefined
+              connection.isError ? "bg-amber-500/15 text-amber-800 dark:text-amber-300" : undefined
             }
           >
             {connection.isPending ? "Checking" : connection.isError ? "Unavailable" : "Configured"}
           </Badge>
           <Link
-            className="relay-inline-link"
+            className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
             to="/settings/advanced"
             search={{ section: "connection" }}
           >
@@ -169,7 +175,11 @@ function EvidenceSettings() {
         <PageLoading label="Loading evidence and privacy settings…" />
       ) : null}
       {error ? (
-        <Alert className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm" variant="destructive" role="alert">
+        <Alert
+          className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm"
+          variant="destructive"
+          role="alert"
+        >
           <AlertTitle>Relay could not load or save this setting</AlertTitle>
           <AlertDescription>{errorMessage(error)}</AlertDescription>
           <AlertAction>
@@ -189,9 +199,15 @@ function EvidenceSettings() {
       ) : null}
       {privacy.data && evidence.data ? (
         <>
-          <section className="grid gap-3 rounded-xl border border-border bg-card p-5" id="privacy" aria-labelledby="privacy-title">
+          <section
+            className="grid gap-3 rounded-xl border border-border bg-card p-5"
+            id="privacy"
+            aria-labelledby="privacy-title"
+          >
             <header>
-              <p className="relay-section-label">Privacy</p>
+              <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+                Privacy
+              </p>
               <h2 id="privacy-title">Protect evidence before it is saved</h2>
               <p>Changes apply to future collection. Finished Reports stay unchanged.</p>
             </header>
@@ -225,7 +241,9 @@ function EvidenceSettings() {
             aria-labelledby="sensitive-title"
           >
             <header>
-              <p className="relay-section-label">Optional collection</p>
+              <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+                Optional collection
+              </p>
               <h2 id="sensitive-title">Sensitive evidence</h2>
               <p>Each source stays off until a person explicitly enables it.</p>
             </header>
@@ -274,9 +292,14 @@ function IntegrationsSettings() {
       category="integrations"
       saveState={connection.isError ? "unavailable" : undefined}
     >
-      <section className="grid gap-3 rounded-xl border border-border bg-card p-5" aria-labelledby="integration-title">
+      <section
+        className="grid gap-3 rounded-xl border border-border bg-card p-5"
+        aria-labelledby="integration-title"
+      >
         <header>
-          <p className="relay-section-label">Current workspace</p>
+          <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+            Current workspace
+          </p>
           <h2 id="integration-title">Connected services</h2>
           <p>Relay works locally without requiring an external account.</p>
         </header>
@@ -284,7 +307,11 @@ function IntegrationsSettings() {
           <PageLoading label="Checking workspace integrations…" />
         ) : null}
         {connection.isError || (settingsService.integrations && integrations.error) ? (
-          <Alert className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm" variant="destructive" role="alert">
+          <Alert
+            className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm"
+            variant="destructive"
+            role="alert"
+          >
             <AlertTitle>Could not load connected services</AlertTitle>
             <AlertDescription>
               {errorMessage(integrations.error ?? connection.error)}
@@ -327,7 +354,7 @@ function IntegrationsSettings() {
                         ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
                         : integration.state === "unsupported"
                           ? undefined
-                          : "bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                          : "bg-amber-500/15 text-amber-800 dark:text-amber-300"
                     }
                   >
                     {integration.state
@@ -363,7 +390,10 @@ function IntegrationsSettings() {
             Your workspace administrator manages service credentials on the Relay server. You can
             run Tests without connecting an external service.
           </p>
-          <Link className="relay-inline-link" to="/changes">
+          <Link
+            className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
+            to="/changes"
+          >
             View Changes
           </Link>
         </div>
@@ -419,21 +449,31 @@ function AdvancedSettings() {
 
   return (
     <SettingsFrame category="advanced" saveState={connection.isError ? "unavailable" : saveState}>
-      <section className="grid gap-3 rounded-xl border border-border bg-card p-5" id="connection" aria-labelledby="connection-title">
+      <section
+        className="grid gap-3 rounded-xl border border-border bg-card p-5"
+        id="connection"
+        aria-labelledby="connection-title"
+      >
         <header>
-          <p className="relay-section-label">Server</p>
+          <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+            Server
+          </p>
           <h2 id="connection-title">Relay address</h2>
           <p>Change this only when your workspace runs on a different Relay server.</p>
         </header>
         {connection.isPending ? <PageLoading label="Loading the Relay address…" /> : null}
         {connection.isError ? (
-          <Alert className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm" variant="destructive" role="alert">
+          <Alert
+            className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm"
+            variant="destructive"
+            role="alert"
+          >
             <AlertTitle>The Relay address is unavailable</AlertTitle>
             <AlertDescription>{errorMessage(connection.error)}</AlertDescription>
           </Alert>
         ) : null}
         {connection.data ? (
-          <form className="grid gap-6" onSubmit={saveConnection}>
+          <form className="relay-settings-address-control grid gap-6" onSubmit={saveConnection}>
             <Field className="grid gap-2">
               <FieldLabel htmlFor="relay-server-url">Server URL</FieldLabel>
               <div className="flex items-center gap-2">
@@ -470,7 +510,7 @@ function AdvancedSettings() {
                 </p>
               ) : null}
               {savedNotice ? (
-                <p className="mt-4 flex items-center gap-2d-notice" role="status">
+                <p className="mt-4 flex items-center gap-2" role="status">
                   Saved. Reopen Relay to use the new address everywhere.
                 </p>
               ) : null}
@@ -486,7 +526,9 @@ function AdvancedSettings() {
       >
         <header className="flex items-start justify-between gap-3">
           <div>
-            <p className="relay-section-label">Device support</p>
+            <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+              Device support
+            </p>
             <h2 id="device-support-title">Local readiness</h2>
             <p>
               These checks explain what to install or open when a mobile device needs attention.
@@ -541,126 +583,6 @@ function AdvancedSettings() {
             </Button>
           }
         />
-      </section>
-    </SettingsFrame>
-  );
-}
-
-function updateDescription(state: DesktopUpdateState | null): string {
-  if (!state) return "Relay will report update availability when the desktop app supports it.";
-  if (state.phase === "checking") return "Checking for a signed update…";
-  if (state.phase === "available")
-    return `${state.releaseName ?? state.version ?? "An update"} is available.`;
-  if (state.phase === "downloaded")
-    return `${state.releaseName ?? state.version ?? "An update"} is ready to install.`;
-  if (state.phase === "error") return state.error ?? "Relay could not check for updates right now.";
-  if (state.phase === "disabled") return "Automatic updates are disabled for this build.";
-  if (state.phase === "unsupported") return "Updates are managed outside this app.";
-  return "Relay checks for signed updates while the desktop app is running.";
-}
-
-function AboutSettings() {
-  const { platform } = useRouteContext({ from: "__root__" });
-  const [update, setUpdate] = useState<DesktopUpdateState | null>(null);
-  const [checking, setChecking] = useState(false);
-  const [updateError, setUpdateError] = useState<string>();
-
-  useEffect(() => {
-    if (!platform.updates) return;
-    let active = true;
-    void platform.updates
-      .getState()
-      .then((state) => {
-        if (active) setUpdate(state);
-      })
-      .catch((error: unknown) => {
-        if (active) setUpdateError(errorMessage(error));
-      });
-    const unsubscribe = platform.updates.subscribe((state) => {
-      if (active) setUpdate(state);
-    });
-    return () => {
-      active = false;
-      unsubscribe();
-    };
-  }, [platform]);
-
-  async function checkForUpdates() {
-    if (!platform.updates || checking) return;
-    setChecking(true);
-    setUpdateError(undefined);
-    try {
-      await platform.updates.check();
-      setUpdate(await platform.updates.getState());
-    } catch (error) {
-      setUpdateError(errorMessage(error));
-    } finally {
-      setChecking(false);
-    }
-  }
-
-  return (
-    <SettingsFrame category="about">
-      <section className="grid gap-3 rounded-xl border border-border bg-card p-5" aria-labelledby="about-product-title">
-        <header>
-          <p className="relay-section-label">Product</p>
-          <h2 id="about-product-title">Relay</h2>
-          <p>Proof that software works on real apps, browsers, and devices.</p>
-        </header>
-        <SettingRow title="Version" description="The build currently running on this computer.">
-          <span className="relay-settings-value relay-settings-value--numeric">
-            {platform.version ? `v${platform.version}` : "Development build"}
-          </span>
-        </SettingRow>
-        <SettingRow title="Host" description="Where this Relay interface is running.">
-          <span className="relay-settings-value">
-            {platform.platform === "desktop" ? "Desktop app" : "Web browser"}
-          </span>
-        </SettingRow>
-        {platform.updates ? (
-          <SettingRow title="Updates" description={updateDescription(update)}>
-            {update?.phase === "downloaded" ? (
-              <Button
-                variant="default"
-                size="sm"
-                onClick={() => {
-                  setUpdateError(undefined);
-                  void platform.updates
-                    ?.install()
-                    .catch((error: unknown) => setUpdateError(errorMessage(error)));
-                }}
-              >
-                Install update
-              </Button>
-            ) : (
-              <Button
-                size="sm"
-                onClick={() => void checkForUpdates()}
-                disabled={checking || update?.phase === "checking"}
-              >
-                {checking || update?.phase === "checking" ? "Checking…" : "Check now"}
-              </Button>
-            )}
-          </SettingRow>
-        ) : null}
-        {updateError ? (
-          <p role="alert">Could not complete the update action. {updateError}</p>
-        ) : null}
-        <SettingRow
-          title="Support"
-          description="Read the project guide for setup, workflows, and troubleshooting."
-        >
-          {platform.openExternal ? (
-            <Button
-              size="sm"
-              onClick={() => void platform.openExternal?.("https://github.com/bernaferrari/relay")}
-            >
-              Open project guide
-            </Button>
-          ) : (
-            <span className="relay-settings-value">Available in the desktop app</span>
-          )}
-        </SettingRow>
       </section>
     </SettingsFrame>
   );

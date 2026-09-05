@@ -230,9 +230,12 @@ describe("live Session to Test editor", () => {
     expect(service.live).toHaveBeenCalledWith("session-live");
     expect(document.body.textContent).toContain("Checkout");
     expect(document.body.textContent).toContain("Human");
+    expect(document.body.textContent).toContain("Browser profile unavailable");
+    expect(document.body.textContent).toContain("Recording session active · inspecting only");
+    expect(document.body.textContent).toContain("These controls do not add Test steps");
     await click("Audit details");
-    expect(document.body.textContent).toContain("App Map ID");
-    expect(document.body.textContent).toContain("Lease status");
+    expect(document.body.textContent).toContain("Map ID");
+    expect(document.body.textContent).toContain("Device reservation status");
 
     await clearMountedApp();
     const ended = {

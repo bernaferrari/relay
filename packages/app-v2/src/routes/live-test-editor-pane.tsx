@@ -60,7 +60,9 @@ export function LiveTestEditorPane({
     <section className="grid gap-3" aria-labelledby="live-editor-title">
       <div className="relay-section-heading">
         <div>
-          <p className="relay-section-label">Live Session</p>
+          <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+            Live Session
+          </p>
           <h2 id="live-editor-title">Live target</h2>
         </div>
         {session ? (
@@ -103,7 +105,11 @@ export function LiveTestEditorPane({
             issue={issue}
             busy={busy}
             targetTitle={session.authoring.title}
-            targetDetail={`Owned by ${session.authoring.actorId}`}
+            targetDetail={`Owned by ${session.authoring.actorId} · ${
+              session.authoring.target.kind === "browser"
+                ? "Browser profile unavailable"
+                : "Device profile unavailable"
+            }`}
             send={send}
             recording={session.capabilities.record}
             helpText={

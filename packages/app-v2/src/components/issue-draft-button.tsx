@@ -81,7 +81,7 @@ export function IssueDraftButton({ source }: { source: ProductIssueSource }) {
         />
         <p className="relay-issue-draft-note">{draft.delivery.detail}</p>
         {copyError ? <p role="alert">{copyError}</p> : null}
-        <div className="relay-dialog-actions">
+        <div className="relay-dialog-actions flex flex-wrap items-center justify-end gap-2.5">
           <DialogClose render={<Button variant="ghost">Close</Button>} />
           <Button variant="default" onClick={() => void copyDraft()}>
             <Copy aria-hidden="true" /> {copied ? "Copied" : "Copy draft"}

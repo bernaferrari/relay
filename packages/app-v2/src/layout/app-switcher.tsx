@@ -93,7 +93,7 @@ export function AppSwitcher() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        className="relay-app-switcher grid min-h-[50px] w-full grid-cols-[30px_minmax(0,1fr)_18px] items-center gap-[9px] rounded-[var(--radius-lg)] border border-[var(--border-weak-base)] bg-[var(--surface-raised-strong)] px-[9px] py-1.5 text-left text-[var(--text-strong)] shadow-[0_1px_2px_color-mix(in_srgb,black_4%,transparent)]"
+        className="relay-app-switcher focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 grid min-h-[50px] w-full grid-cols-[30px_minmax(0,1fr)_18px] items-center gap-[9px] rounded-[var(--radius-lg)] border border-[var(--border-weak-base)] bg-[var(--surface-raised-strong)] px-[9px] py-1.5 text-left text-[var(--text-strong)] shadow-[0_1px_2px_color-mix(in_srgb,black_4%,transparent)]"
         aria-label={`App context: ${contextName}`}
       >
         <span
@@ -124,7 +124,7 @@ export function AppSwitcher() {
             Apps
           </DropdownMenuLabel>
           <DropdownMenuItem
-            className="relay-menu-item flex justify-between gap-4"
+            className="relay-menu-item focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 flex justify-between gap-4"
             onClick={() => switchApp()}
           >
             <span>All apps</span>
@@ -133,7 +133,7 @@ export function AppSwitcher() {
           {apps.data?.map((app) => (
             <DropdownMenuItem
               key={app.id}
-              className="relay-menu-item flex justify-between gap-4"
+              className="relay-menu-item focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 flex justify-between gap-4"
               onClick={() => switchApp(app.id)}
             >
               <span>{app.name}</span>
@@ -150,7 +150,7 @@ export function AppSwitcher() {
           ) : null}
           <DropdownMenuSeparator className="relay-menu-separator my-2 ml-1.5 mr-1.5 mt-2 h-px bg-[var(--border-weak-base)]" />
           <DropdownMenuItem
-            className="relay-menu-item flex justify-between gap-4"
+            className="relay-menu-item focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 flex justify-between gap-4"
             onClick={() => router.history.push("/apps")}
           >
             Manage apps

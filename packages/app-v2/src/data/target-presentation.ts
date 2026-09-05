@@ -80,14 +80,13 @@ function fallbackName(target: AuthoringTarget): string {
 }
 
 function targetDetail(target: AuthoringTarget, device?: DeviceSummary): string {
+  if (target.kind === "browser") return "Managed browser · Browser profile unavailable";
   const kind =
-    target.kind === "browser"
-      ? "Managed browser"
-      : target.platform === "ios"
-        ? "iOS"
-        : /^emulator(?:-|$)/iu.test(target.targetId) || /emulator/iu.test(device?.kind ?? "")
-          ? "Android emulator"
-          : "Android";
+    target.platform === "ios"
+      ? "iOS"
+      : /^emulator(?:-|$)/iu.test(target.targetId) || /emulator/iu.test(device?.kind ?? "")
+        ? "Android emulator"
+        : "Android";
   const version = device?.osVersion?.trim();
   return [kind, version, "Ready"].filter(Boolean).join(" · ");
 }

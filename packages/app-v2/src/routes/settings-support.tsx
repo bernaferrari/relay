@@ -117,7 +117,7 @@ export function SetupRow({
             className={
               ready
                 ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-                : "bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                : "bg-amber-500/15 text-amber-800 dark:text-amber-300"
             }
           >
             {loading ? "Checking" : ready ? "Ready" : "Needs attention"}
@@ -139,7 +139,7 @@ export function SetupRow({
                     className={
                       check.status === "ready"
                         ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-                        : "bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                        : "bg-amber-500/15 text-amber-800 dark:text-amber-300"
                     }
                   >
                     {check.status === "ready" ? "Ready" : "Needs attention"}

@@ -66,7 +66,7 @@ export function SidebarContent({ label = "Primary" }: { label?: string }) {
                     render={<Link to={item.to} onClick={closeMobileNavigation} />}
                     isActive={active}
                     aria-current={active ? "page" : undefined}
-                    className={`relay-nav-link flex min-h-9 cursor-pointer items-center gap-2.5 rounded-[var(--radius-md)] px-[11px] text-[13px] font-medium text-[var(--text-base)]${active ? " relay-nav-link--active bg-[var(--surface-base-active)] font-semibold text-[var(--text-strong)] shadow-none" : ""}`}
+                    className={`relay-nav-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 flex min-h-9 cursor-pointer items-center gap-2.5 rounded-[var(--radius-md)] px-[11px] text-[13px] font-medium text-[var(--text-base)]${active ? " relay-nav-link--active bg-[var(--surface-base-active)] font-semibold text-[var(--text-strong)] shadow-none" : ""}`}
                   >
                     <item.icon
                       className={`h-[17px] w-[17px] shrink-0 text-[var(--text-weaker)]${active ? " text-[var(--text-strong)]" : ""}`}
@@ -91,7 +91,7 @@ export function SidebarContent({ label = "Primary" }: { label?: string }) {
           <SidebarMenuButton
             render={<Link to="/settings/general" onClick={closeMobileNavigation} />}
             isActive={settingsActive}
-            className={`relay-nav-link flex min-h-9 cursor-pointer items-center gap-2.5 rounded-[var(--radius-md)] px-[11px] text-[13px] font-medium text-[var(--text-base)]${settingsActive ? " relay-nav-link--active bg-[var(--surface-base-active)] font-semibold text-[var(--text-strong)] shadow-none" : ""}`}
+            className={`relay-nav-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 flex min-h-9 cursor-pointer items-center gap-2.5 rounded-[var(--radius-md)] px-[11px] text-[13px] font-medium text-[var(--text-base)]${settingsActive ? " relay-nav-link--active bg-[var(--surface-base-active)] font-semibold text-[var(--text-strong)] shadow-none" : ""}`}
           >
             <Settings
               className={`h-[17px] w-[17px] shrink-0 text-[var(--text-weaker)]${settingsActive ? " text-[var(--text-strong)]" : ""}`}
@@ -121,7 +121,7 @@ export function Sidebar({ desktop = false }: { desktop?: boolean }) {
           aria-label="Relay"
         >
           <span
-            className="relay-brand-mark h-[18px] w-[18px] rounded-[var(--radius-md)] bg-[linear-gradient(135deg,transparent_42%,var(--button-primary-foreground)_43%_55%,transparent_56%),var(--button-primary-base)] shadow-[var(--shadow-xs)]"
+            className="relay-brand-mark h-[18px] w-[18px] rounded-[var(--radius-md)] bg-[var(--button-primary-base)] bg-[image:linear-gradient(135deg,transparent_42%,var(--button-primary-foreground)_43%_55%,transparent_56%)] shadow-[var(--shadow-xs)]"
             aria-hidden="true"
           />
           <span>Relay</span>

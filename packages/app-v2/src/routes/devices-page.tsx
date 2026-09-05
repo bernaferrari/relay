@@ -114,9 +114,9 @@ function DeviceIcon({ device }: { device: ProductDevice }) {
 
 function DeviceRow({ device, returnTo }: { device: ProductDevice; returnTo?: string }) {
   return (
-    <li className="flex min-h-[68px] items-center gap-3 px-3.5 py-3-item">
+    <li className="flex min-h-[68px] items-center gap-3 px-3.5 py-3">
       <Item
-        className="flex min-h-[68px] items-center gap-3 px-3.5 py-3"
+        className="relay-device-row flex min-h-[68px] items-center gap-3 px-3.5 py-3"
         size="sm"
         render={
           <Link
@@ -133,7 +133,7 @@ function DeviceRow({ device, returnTo }: { device: ProductDevice; returnTo?: str
           <ItemTitle>{device.name}</ItemTitle>
           <ItemDescription>{deviceMetadata(device)}</ItemDescription>
         </ItemContent>
-        <ItemActions className="flex min-h-[68px] items-center gap-3 px-3.5 py-3-end">
+        <ItemActions className="flex min-h-[68px] items-center gap-3 px-3.5 py-3">
           <Badge
             variant={device.status === "needs-attention" ? "destructive" : "default"}
             className={
@@ -144,7 +144,10 @@ function DeviceRow({ device, returnTo }: { device: ProductDevice; returnTo?: str
           >
             {statusLabel(device)}
           </Badge>
-          <ChevronRight className="flex min-h-[68px] items-center gap-3 px-3.5 py-3-chevron" aria-hidden="true" />
+          <ChevronRight
+            className="relay-device-row-chevron size-4 text-muted-foreground"
+            aria-hidden="true"
+          />
         </ItemActions>
       </Item>
     </li>
@@ -202,9 +205,12 @@ function DeviceSection({
     <section className="grid gap-3" aria-labelledby={headingId}>
       <header>
         <div>
-          <div className="grid gap-3-title">
+          <div className="grid gap-3">
             <h2 id={headingId}>{title}</h2>
-            <span className="text-xs text-muted-foreground" aria-label={`${devices.length} devices`}>
+            <span
+              className="text-xs text-muted-foreground"
+              aria-label={`${devices.length} devices`}
+            >
               {devices.length}
             </span>
           </div>
@@ -284,12 +290,19 @@ export function DevicesPage() {
   }
 
   return (
-    <section className="relay-page max-w-[1080px]" onClickCapture={returnFocus.onClickCapture}>
+    <section
+      className="relay-page mx-auto w-full px-[clamp(20px,3vw,40px)] pt-7 pb-10 max-w-[1080px]"
+      onClickCapture={returnFocus.onClickCapture}
+    >
       <header className="relay-page-header flex items-start justify-between gap-7 max-[780px]:flex-col">
         <div>
-          <p className="relay-eyebrow">Workspace</p>
-          <h1>Devices</h1>
-          <p className="relay-page-description">
+          <p className="relay-eyebrow mb-2 text-[11px] font-semibold tracking-[0.02em] text-[var(--text-weak)]">
+            Workspace
+          </p>
+          <h1 className="text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance] text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance]">
+            Devices
+          </h1>
+          <p className="relay-page-description mt-2.5 max-w-[62ch] text-[15px] leading-[1.55] text-[var(--text-weak)]">
             See what is ready, what needs help, and which virtual devices are available for a Test.
           </p>
         </div>

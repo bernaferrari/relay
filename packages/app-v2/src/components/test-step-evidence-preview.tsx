@@ -24,12 +24,16 @@ export function TestStepEvidencePreview({
     <section className="mt-4 min-w-0 border-t border-border pt-4" aria-labelledby={titleId}>
       <header className="flex items-start justify-between gap-3">
         <div>
-          <p className="relay-section-label">Latest Run</p>
-          <h3 id={titleId} className="mt-0.5 text-sm font-semibold">Evidence for this step</h3>
+          <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+            Latest Run
+          </p>
+          <h3 id={titleId} className="mt-0.5 text-sm font-semibold">
+            Evidence for this step
+          </h3>
         </div>
         {report ? (
           <Link
-            className="relay-inline-link"
+            className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
             to="/runs/$runId"
             params={{ runId: report.runId }}
             search={{ view: "evidence" }}
@@ -39,14 +43,18 @@ export function TestStepEvidencePreview({
         ) : null}
       </header>
 
-      {loading ? <p className="mt-2 text-xs leading-normal text-muted-foreground">Loading the latest Run…</p> : null}
+      {loading ? (
+        <p className="mt-2 text-xs leading-normal text-muted-foreground">Loading the latest Run…</p>
+      ) : null}
       {!loading && !hasRuns ? (
         <p className="mt-2 text-xs leading-normal text-muted-foreground">
           No Run evidence yet. Run this Test to capture evidence for this step.
         </p>
       ) : null}
       {!loading && hasRuns && !report ? (
-        <p className="mt-2 text-xs leading-normal text-muted-foreground">The latest Run has not produced a report yet.</p>
+        <p className="mt-2 text-xs leading-normal text-muted-foreground">
+          The latest Run has not produced a report yet.
+        </p>
       ) : null}
       {!loading && report?.stepEvidence && matches.length === 0 ? (
         <p className="mt-2 text-xs leading-normal text-muted-foreground">
@@ -62,7 +70,10 @@ export function TestStepEvidencePreview({
       {matches.length ? (
         <ol className="mt-3 grid gap-2 p-0" aria-label={`Evidence for ${step.intent}`}>
           {matches.map((item) => (
-            <li className="grid gap-1 border-t border-border pt-2 text-xs" key={`${item.traceStepId}:${item.occurrence}`}>
+            <li
+              className="grid gap-1 border-t border-border pt-2 text-xs"
+              key={`${item.traceStepId}:${item.occurrence}`}
+            >
               <strong>Occurrence {item.occurrence}</strong>
               <span className="text-muted-foreground">{evidenceSummary(item.evidence)}</span>
               {item.evidence.framePaths.length ? (

@@ -101,6 +101,7 @@ export type RouteDefinition = {
     | "screen"
     | "path"
     | "target"
+    | "runId"
     | "session"
     | "section"
     | "replayJob"
@@ -222,7 +223,7 @@ export const ROUTE_DEFINITIONS = [
     "q",
   ]),
   d("/devices/:deviceId", "/devices", "Device", "Device", "devices", "inspect-device", ["view"]),
-  d("/debug", "/sessions", "Agent Debug", "Session", "sessions", null, ["target"]),
+  d("/debug", "/sessions", "Agent Debug", "Session", "sessions", null, ["target", "runId"]),
   ...(["general", "evidence", "integrations", "appearance", "advanced", "about"] as const).map(
     (name) =>
       d(

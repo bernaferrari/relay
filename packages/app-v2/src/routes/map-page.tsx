@@ -65,7 +65,7 @@ export function MapPage() {
   const visiblePaths = map.data?.paths.slice(0, 500) ?? [];
 
   return (
-    <section className="relay-page h-full min-h-0">
+    <section className="relay-page mx-auto w-full px-[clamp(20px,3vw,40px)] pt-7 pb-10 h-full min-h-0">
       <Breadcrumbs
         items={[
           { label: "Home", to: "/home" },
@@ -74,9 +74,15 @@ export function MapPage() {
         ]}
       />
       <header className="relay-page-header">
-        <p className="relay-eyebrow">Explore</p>
-        <h1>{map.data?.appName ?? "App"}</h1>
-        <p className="relay-page-description">Known screens and verified paths for this app.</p>
+        <p className="relay-eyebrow mb-2 text-[11px] font-semibold tracking-[0.02em] text-[var(--text-weak)]">
+          Explore
+        </p>
+        <h1 className="text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance] text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance]">
+          {map.data?.appName ?? "App"}
+        </h1>
+        <p className="relay-page-description mt-2.5 max-w-[62ch] text-[15px] leading-[1.55] text-[var(--text-weak)]">
+          Known screens and verified paths for this app.
+        </p>
       </header>
       {map.isPending ? <PageLoading label="Loading known screens…" /> : null}
       <RecordingProblem
@@ -89,9 +95,14 @@ export function MapPage() {
       />
       {map.data ? (
         <>
-          <section className="flex items-center justify-between gap-4" aria-labelledby="map-summary-title">
+          <section
+            className="flex items-center justify-between gap-4"
+            aria-labelledby="map-summary-title"
+          >
             <div>
-              <p className="relay-section-label">Coverage</p>
+              <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+                Coverage
+              </p>
               <h2 id="map-summary-title">
                 {map.data.coverage.coveredScreenCount} of {map.data.coverage.screenCount} screens
                 covered
@@ -119,7 +130,11 @@ export function MapPage() {
               title="No known screens yet"
               detail="Record a Test to give Relay a starting point for exploration."
               action={
-                <Link className="relay-inline-link" to="/tests/new" search={{ app: appId }}>
+                <Link
+                  className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
+                  to="/tests/new"
+                  search={{ app: appId }}
+                >
                   Record a Test
                 </Link>
               }
@@ -128,11 +143,13 @@ export function MapPage() {
           <section className="" aria-labelledby="paths-title">
             <div className="relay-section-heading">
               <div>
-                <p className="relay-section-label">Journeys</p>
+                <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+                  Journeys
+                </p>
                 <h2 id="paths-title">Verified paths</h2>
               </div>
               <Link
-                className="relay-inline-link"
+                className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
                 to="/tests/new"
                 search={{ app: appId, view: "path" }}
               >
@@ -174,7 +191,7 @@ export function MapPage() {
               {matchingPaths.map((path) => (
                 <li key={path.id}>
                   <Link
-                    className="relay-inline-link"
+                    className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
                     to="/tests/new"
                     search={{
                       app: appId,
@@ -197,7 +214,7 @@ export function MapPage() {
             <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 py-2 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
               Edit Map · Developer Mode
             </CollapsibleTrigger>
-            <CollapsibleContent className="mt-4-panel space-y-3 border-t pt-3 text-sm">
+            <CollapsibleContent className="space-y-3 border-t pt-3 text-sm">
               <p>
                 Editing known screens and paths changes the saved verification source. Open this
                 mode only when you intend to review a proposal.

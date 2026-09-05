@@ -25,32 +25,31 @@ Via `var(--…)` or the matching Tailwind utilities (`text-text-strong`, `bg-bac
 
 ### App Map surface
 
-Product V2's map surface (`packages/app-v2/src/styles/map.css`) uses the same semantic surface,
+Product V2's map components use the same semantic surface,
 border, text, and focus tokens as the rest of the product. It must not introduce a second map-token
-family; geometry and canvas-only layout belong in the map stylesheet.
+family; geometry and canvas layout belong in the components as Tailwind utilities and computed SVG attributes.
 
 ### What is banned
 
-The Product V2 stylesheet is the source of truth for product selectors. Theme JSON may still emit
+Product components own their Tailwind styling. Theme JSON may still emit
 v2 ramps internally; product code must not mention them.
 
 ## 2. Styling ownership
 
 - **`@relay/ui-react` primitives** own shared React controls: `Button`, `Card`, `IconButton`, fields,
-  disclosures, and related primitive CSS. Prefer them before hand-rolling an equivalent control.
+  disclosures, and their Tailwind styles. Prefer them before hand-rolling an equivalent control.
 - **`@relay/ui`** supplies the shared semantic token and theme CSS consumed by the React primitives.
 - **Tailwind utilities in product TSX** own ordinary layout, spacing, typography, borders, colors
   (including `text-[var(--text-strong)]` / `bg-[var(--surface-base)]` patterns), hover,
   focus-visible, selected, disabled, and responsive behavior.
-- **Authored CSS** stays limited to:
-  - global reset, fonts, and theme wiring;
-  - Electron drag / no-drag regions;
-  - canvas node/edge geometry and transforms;
-  - device viewport and media rendering;
-  - animation keyframes shared by more than one component;
-  - a reusable primitive whose states cannot be expressed clearly at the call site.
+- **Only `globals.css` may contain authored CSS.** Keep it for global resets, fonts, semantic
+  tokens, theme wiring, and shared animation keyframes. Page and component styles belong in
+  Tailwind classes, including responsive, interaction, media, and Electron drag states.
+- Runtime canvas coordinates and measured dimensions may use computed SVG attributes or inline
+  values; static presentation remains in Tailwind.
 
-Do not add a late override block to repair an earlier rule. Change or remove the owning rule.
+Do not move page selectors into `globals.css` or add override blocks. Update the owning component.
+The architecture check rejects other authored stylesheet filenames.
 
 ## 3. Compact, consistent rhythm
 

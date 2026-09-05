@@ -70,7 +70,11 @@ test(
         name: "Map",
       });
       const saved = await mutateStoredAppMap("project", "map", (map) => {
-        return { ...map, tests: { ...map.tests, checkout: testEntity() }, revision: map.revision + 1 };
+        return {
+          ...map,
+          tests: { ...map.tests, checkout: testEntity() },
+          revision: map.revision + 1,
+        };
       });
       const before = saved.revision;
       assert.equal(await projectPersistedAppMapRun(run(before)), true);
@@ -105,7 +109,11 @@ test(
         name: "Map",
       });
       const saved = await mutateStoredAppMap("project", "map", (map) => {
-        return { ...map, tests: { ...map.tests, checkout: testEntity() }, revision: map.revision + 1 };
+        return {
+          ...map,
+          tests: { ...map.tests, checkout: testEntity() },
+          revision: map.revision + 1,
+        };
       });
       assert.equal(await projectPersistedAppMapRun(run(saved.revision)), true);
       const edited = await mutateStoredAppMap("project", "map", (map) => {

@@ -89,7 +89,7 @@ export function RunAcrossPage() {
 
   const loading = setup.isPending || targets.isPending;
   return (
-    <section className="relay-page max-w-[1040px]">
+    <section className="relay-page mx-auto w-full px-[clamp(20px,3vw,40px)] pt-7 pb-10 max-w-[1040px]">
       <Breadcrumbs
         items={[
           { label: "Tests", to: "/tests" },
@@ -98,9 +98,13 @@ export function RunAcrossPage() {
         ]}
       />
       <header className="relay-page-header">
-        <p className="relay-eyebrow">Run with data</p>
-        <h1>Choose cases and a device</h1>
-        <p className="relay-page-description">
+        <p className="relay-eyebrow mb-2 text-[11px] font-semibold tracking-[0.02em] text-[var(--text-weak)]">
+          Run with data
+        </p>
+        <h1 className="text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance] text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance]">
+          Choose cases and a device
+        </h1>
+        <p className="relay-page-description mt-2.5 max-w-[62ch] text-[15px] leading-[1.55] text-[var(--text-weak)]">
           Run one representative case first. Continue only after you have reviewed its Report.
         </p>
       </header>
@@ -187,7 +191,10 @@ export function RunAcrossPage() {
               </Button>
             ) : null}
             {preview ? (
-              <div className="my-5 grid gap-1 rounded-lg border border-border bg-background p-3.5" role="status">
+              <div
+                className="my-5 grid gap-1 rounded-lg border border-border bg-background p-3.5"
+                role="status"
+              >
                 <strong>Ready to start</strong>
                 <span>{preview.scopeLabel}</span>
                 <small>

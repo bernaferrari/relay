@@ -25,17 +25,21 @@ function toDataSize(size: ButtonSize | undefined): "small" | "normal" | "large" 
   }
 }
 
-
 const variantClasses = {
-  "primary": "border-transparent bg-[var(--button-primary-base)] text-[var(--button-primary-foreground)] shadow-sm enabled:hover:bg-[var(--button-primary-hover)] enabled:active:bg-[var(--button-primary-active)] enabled:active:scale-[0.98]",
-  "secondary": "border-[var(--border-weak-base)] bg-[var(--button-secondary-base)] text-[var(--text-strong)] shadow-xs enabled:hover:bg-[var(--button-secondary-hover)] enabled:active:scale-[0.98]",
-  "ghost": "border-transparent bg-transparent text-[var(--text-strong)] enabled:hover:bg-[var(--surface-base-hover)] enabled:active:bg-[var(--surface-base-active)] data-[selected=true]:bg-[var(--surface-base-hover)] aria-expanded:bg-[var(--surface-base-active)] aria-current-page:bg-[var(--surface-base-active)]",
-  "danger": "border-[color-mix(in_srgb,var(--icon-critical-base)_30%,transparent)] bg-[var(--surface-critical-weak)] text-[var(--text-critical-base)] enabled:hover:bg-[color-mix(in_srgb,var(--icon-critical-base)_14%,transparent)]"
+  primary:
+    "border-transparent bg-[var(--button-primary-base)] text-[var(--button-primary-foreground)] shadow-sm enabled:hover:bg-[var(--button-primary-hover)] enabled:active:bg-[var(--button-primary-active)] enabled:active:scale-[0.98]",
+  secondary:
+    "border-[var(--border-weak-base)] bg-[var(--button-secondary-base)] text-[var(--text-strong)] shadow-xs enabled:hover:bg-[var(--button-secondary-hover)] enabled:active:scale-[0.98]",
+  ghost:
+    "border-transparent bg-transparent text-[var(--text-strong)] enabled:hover:bg-[var(--surface-base-hover)] enabled:active:bg-[var(--surface-base-active)] data-[selected=true]:bg-[var(--surface-base-hover)] aria-expanded:bg-[var(--surface-base-active)] aria-[current=page]:bg-[var(--surface-base-active)]",
+  danger:
+    "border-[color-mix(in_srgb,var(--icon-critical-base)_30%,transparent)] bg-[var(--surface-critical-weak)] text-[var(--text-critical-base)] enabled:hover:bg-[color-mix(in_srgb,var(--icon-critical-base)_14%,transparent)]",
 };
 const sizeClasses = {
-  "small": "min-h-7 gap-2 px-[9px] before:absolute before:-inset-x-1 before:-inset-y-2 before:content-['']",
-  "normal": "min-h-9 gap-2 px-3 before:absolute before:-inset-1 before:content-['']",
-  "large": "min-h-11 gap-2 px-4 text-sm"
+  small:
+    "min-h-7 gap-2 px-[9px] before:absolute before:-inset-x-1 before:-inset-y-2 before:content-['']",
+  normal: "min-h-9 gap-2 px-3 before:absolute before:-inset-1 before:content-['']",
+  large: "min-h-11 gap-2 px-4 text-sm",
 };
 
 export function Button(props: ButtonProps) {

@@ -29,7 +29,9 @@ export function BatchFailureClusters({
     <section className="relay-batch-clusters" aria-labelledby="batch-clusters-title">
       <div className="relay-section-heading">
         <div>
-          <p className="relay-section-label">Failure clusters</p>
+          <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+            Failure clusters
+          </p>
           <h2 id="batch-clusters-title">Review one cause, rerun every matching case</h2>
         </div>
         <span>{clusters.length} groups</span>
@@ -81,7 +83,9 @@ export function BatchResultMatrix({
     <section className="relay-batch-matrix" aria-labelledby="batch-matrix-title">
       <div className="relay-section-heading">
         <div>
-          <p className="relay-section-label">Test × Environment</p>
+          <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+            Test × Environment
+          </p>
           <h2 id="batch-matrix-title">Execution matrix</h2>
         </div>
         <span>

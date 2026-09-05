@@ -153,9 +153,13 @@ export function SelectedStepEditor({
       }}
     >
       <div className="flex items-center gap-2.5">
-        <span className="grid size-7 shrink-0 place-items-center rounded-full border border-border bg-background text-[10px] tabular-nums text-muted-foreground">{entry.number}</span>
+        <span className="grid size-7 shrink-0 place-items-center rounded-full border border-border bg-background text-[10px] tabular-nums text-muted-foreground">
+          {entry.number}
+        </span>
         <div className="min-w-0">
-          <p className="relay-section-label">Selected step</p>
+          <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+            Selected step
+          </p>
           <h2>{stepKindLabel(entry.step)}</h2>
         </div>
       </div>
@@ -330,7 +334,9 @@ export function SelectedStepEditor({
             Remove step
           </Button>
         )}
-        {!changed ? <span className="text-xs text-muted-foreground">No unsaved changes</span> : null}
+        {!changed ? (
+          <span className="text-xs text-muted-foreground">No unsaved changes</span>
+        ) : null}
       </div>
     </form>
   );
@@ -398,7 +404,7 @@ function ValidationExpectationEditor({
   return (
     <fieldset className="grid gap-1.5 text-xs font-semibold" disabled={busy}>
       <legend>Expected result</legend>
-    <p className="text-xs font-normal leading-normal text-muted-foreground">
+      <p className="text-xs font-normal leading-normal text-muted-foreground">
         This is the value Relay validates after the action. It is separate from the human step
         wording above.
       </p>
@@ -500,7 +506,9 @@ function BindingRepair({
     <div className="grid gap-2.5 rounded-md border border-border bg-muted/40 p-3">
       <div>
         <strong>Choose a saved target</strong>
-        <p className="mt-0.5 text-xs leading-normal text-muted-foreground">These reviewed targets can repair this step without changing its wording.</p>
+        <p className="mt-0.5 text-xs leading-normal text-muted-foreground">
+          These reviewed targets can repair this step without changing its wording.
+        </p>
       </div>
       <div className="flex flex-wrap gap-1.5">
         {bindable.map(({ candidate, binding }) => (

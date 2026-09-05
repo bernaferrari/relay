@@ -172,13 +172,13 @@ export function DevicePage() {
   }
 
   return (
-    <section className="relay-page max-w-[1080px]">
+    <section className="relay-page mx-auto w-full px-[clamp(20px,3vw,40px)] pt-7 pb-10 max-w-[1080px]">
       <Breadcrumbs
         items={[{ label: "Devices", to: "/devices" }, { label: device.data?.name ?? "Device" }]}
       />
       {returnTo ? (
         <Link
-          className="relay-inline-link"
+          className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
           to="/tests/new"
           search={{
             ...(returnTo.appId ? { app: returnTo.appId } : {}),
@@ -190,10 +190,14 @@ export function DevicePage() {
       ) : null}
       <header className="relay-page-header flex items-start justify-between gap-7 max-[780px]:flex-col">
         <div>
-          <p className="relay-eyebrow">Device</p>
-          <h1>{device.data?.name ?? "Device"}</h1>
+          <p className="relay-eyebrow mb-2 text-[11px] font-semibold tracking-[0.02em] text-[var(--text-weak)]">
+            Device
+          </p>
+          <h1 className="text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance] text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance]">
+            {device.data?.name ?? "Device"}
+          </h1>
           {device.data ? (
-            <p className="relay-page-description">
+            <p className="relay-page-description mt-2.5 max-w-[62ch] text-[15px] leading-[1.55] text-[var(--text-weak)]">
               {[productPlatform(device.data), device.data.osVersion, device.data.kind]
                 .filter(Boolean)
                 .join(" · ")}
@@ -264,7 +268,10 @@ export function DevicePage() {
               pending={target.isPending}
             />
           ) : null}
-          <section className="rounded-lg border border-border bg-card p-5" aria-labelledby="device-health-title">
+          <section
+            className="rounded-lg border border-border bg-card p-5"
+            aria-labelledby="device-health-title"
+          >
             <Badge
               variant={device.data.status === "needs-attention" ? "secondary" : "default"}
               className={
@@ -292,10 +299,15 @@ export function DevicePage() {
             ) : null}
           </section>
 
-          <section className="my-7 grid grid-cols-3 border-y border-border py-4 max-[560px]:grid-cols-1" aria-labelledby="device-details-title">
+          <section
+            className="my-7 grid grid-cols-3 border-y border-border py-4 max-[560px]:grid-cols-1"
+            aria-labelledby="device-details-title"
+          >
             <div className="relay-section-heading">
               <div>
-                <p className="relay-section-label">At a glance</p>
+                <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+                  At a glance
+                </p>
                 <h2 id="device-details-title">Device details</h2>
               </div>
             </div>
@@ -315,19 +327,28 @@ export function DevicePage() {
             </dl>
           </section>
 
-          <section className="rounded-xl border border-border bg-card p-5" aria-labelledby="device-launch-title">
-            <div className="rounded-xl border border-border bg-card p-5-copy">
-              <p className="relay-section-label">App control</p>
+          <section
+            className="rounded-xl border border-border bg-card p-5"
+            aria-labelledby="device-launch-title"
+          >
+            <div className="rounded-xl border border-border bg-card p-5">
+              <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+                App control
+              </p>
               <h2 id="device-launch-title">Launch an app</h2>
               <p>Open an installed app on this device by name, package, or bundle identifier.</p>
             </div>
             {appLaunchSupported ? (
-              <form className="rounded-xl border border-border bg-card p-5-form" onSubmit={submitAppLaunch} noValidate>
+              <form
+                className="relay-device-launch-form rounded-xl border border-border bg-card p-5"
+                onSubmit={submitAppLaunch}
+                noValidate
+              >
                 <div className="relay-form-field">
                   <label htmlFor="device-app-identifier">App/package/bundle identifier</label>
                   <input
                     id="device-app-identifier"
-                    className="relay-input"
+                    className="relay-input min-h-9 w-full rounded-[var(--radius-md)] border border-[var(--border-base)] bg-[var(--background-strong)] px-3 text-base text-[var(--text-strong)] shadow-[0_1px_2px_color-mix(in_srgb,black_5%,transparent)] placeholder:text-[var(--text-weaker)] focus-visible:border-[var(--relay-focus-ring)] focus-visible:outline-3 focus-visible:outline-[color-mix(in_srgb,var(--relay-focus-ring)_24%,transparent)] focus-visible:outline-offset-1"
                     type="text"
                     value={appIdentifier}
                     placeholder="com.example.app"
@@ -359,7 +380,7 @@ export function DevicePage() {
                     </p>
                   ) : null}
                 </div>
-                <label className="rounded-xl border border-border bg-card p-5-relaunch">
+                <label className="relay-device-launch-relaunch rounded-xl border border-border bg-card p-5">
                   <input
                     type="checkbox"
                     checked={relaunchApp}
@@ -376,7 +397,11 @@ export function DevicePage() {
                   </p>
                 ) : null}
                 {appLaunch.data ? (
-                  <div className="rounded-xl border border-border bg-card p-5-result" role="status" aria-live="polite">
+                  <div
+                    className="relay-device-launch-result rounded-xl border border-border bg-card p-5"
+                    role="status"
+                    aria-live="polite"
+                  >
                     <strong>Launch requested</strong>
                     <p>
                       Relay launched {appLaunch.data.app} on {device.data.name}.
@@ -385,7 +410,10 @@ export function DevicePage() {
                 ) : null}
               </form>
             ) : (
-              <p className="rounded-xl border border-border bg-card p-5-unavailable" role="note">
+              <p
+                className="relay-device-launch-unavailable rounded-xl border border-border bg-card p-5"
+                role="note"
+              >
                 {device.data.platform === "browser"
                   ? "App launch is not available for managed browsers. Use the live session below instead."
                   : device.data.status !== "ready"
@@ -422,10 +450,15 @@ function DeviceLivePreview({
   pending: boolean;
 }) {
   return (
-    <section className="rounded-xl border border-border bg-card p-5" aria-labelledby="device-live-title">
-      <div className="rounded-xl border border-border bg-card p-5-heading">
+    <section
+      className="rounded-xl border border-border bg-card p-5"
+      aria-labelledby="device-live-title"
+    >
+      <div className="rounded-xl border border-border bg-card p-5">
         <div>
-          <p className="relay-section-label">Live preview</p>
+          <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+            Live preview
+          </p>
           <h2 id="device-live-title">Position the device before recording</h2>
           <p>
             Interact freely here. This preview closes when you leave; start a Test to create a

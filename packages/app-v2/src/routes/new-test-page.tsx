@@ -256,13 +256,18 @@ export function NewTestPage() {
 
   return (
     <FormPage className="relay-new-test-page">
-      <Link className="relay-back-link" to="/tests">
+      <Link
+        className="relay-back-link mb-3 mt-[-10px] inline-flex min-h-11 items-center gap-2 text-[13px] font-semibold text-[var(--text-weak)] focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2"
+        to="/tests"
+      >
         <ArrowLeft aria-hidden="true" /> Tests
       </Link>
       <header className="relay-page-header relay-new-test-header max-w-[650px]">
         <div>
-          <h1>Record a Test</h1>
-          <p className="relay-page-description">
+          <h1 className="text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance] text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance]">
+            Record a Test
+          </h1>
+          <p className="relay-page-description mt-2.5 max-w-[62ch] text-[15px] leading-[1.55] text-[var(--text-weak)]">
             Choose one recognizable journey and where to record it. Relay handles the technical
             setup.
           </p>
@@ -357,7 +362,10 @@ export function NewTestPage() {
                     <div className="relay-choice-empty grid gap-1.5 rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
                       <strong>No apps are available</strong>
                       <p>Add an app before recording a Test.</p>
-                      <Link className="relay-inline-link" to="/apps">
+                      <Link
+                        className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
+                        to="/apps"
+                      >
                         Manage apps
                       </Link>
                     </div>
@@ -385,7 +393,7 @@ export function NewTestPage() {
                       className="relay-choice-group relay-choice-group--loading grid gap-2"
                       role="status"
                     >
-                      <span className="relay-visually-hidden">
+                      <span className="relay-visually-hidden sr-only">
                         Finding ready devices and browsers…
                       </span>
                       <Skeleton className="min-h-[68px] rounded-[var(--radius-lg)]" />
@@ -401,14 +409,14 @@ export function NewTestPage() {
                       <strong>Nothing is ready to record</strong>
                       <p>Connect a device or start a managed browser, then try again.</p>
                       <Link
-                        className="relay-inline-link"
+                        className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
                         to="/devices"
                         search={{ returnTo: newTestSetupContinuation(appId, targetId) }}
                       >
                         View devices
                       </Link>
                       <Link
-                        className="relay-inline-link"
+                        className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
                         to="/environments"
                         search={{ returnTo: newTestSetupContinuation(appId, targetId) }}
                       >
@@ -460,7 +468,9 @@ export function NewTestPage() {
                   >
                     <div className="relay-prerecord-heading grid items-start gap-2.5">
                       <div>
-                        <p className="relay-section-label">Starting point</p>
+                        <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+                          Starting point
+                        </p>
                         <h2 id="prerecord-title">Put the app where recording should begin</h2>
                       </div>
                       <div className="relay-prerecord-actions flex shrink-0 items-center gap-2">
@@ -491,7 +501,7 @@ export function NewTestPage() {
                   </section>
                 ) : null}
               </CardContent>
-              <CardFooter className="relay-form-actions min-h-[70px] justify-start gap-2">
+              <CardFooter className="relay-form-actions flex flex-wrap items-center gap-2.5 min-h-[70px] justify-start gap-2">
                 <Button nativeButton={false} render={<Link to="/tests" />} variant="ghost">
                   Cancel
                 </Button>

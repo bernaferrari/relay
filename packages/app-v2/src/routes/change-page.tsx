@@ -114,7 +114,7 @@ export function ChangePage() {
   const action = current && details ? primaryAction(detail.state, details) : undefined;
 
   return (
-    <section className="relay-page max-w-[1040px]">
+    <section className="relay-page mx-auto w-full px-[clamp(20px,3vw,40px)] pt-7 pb-10 max-w-[1040px]">
       <Breadcrumbs
         items={[{ label: "Changes", to: "/changes" }, { label: current?.title ?? "Change" }]}
       />
@@ -133,7 +133,10 @@ export function ChangePage() {
           title="This Change is not available"
           detail="It may have been replaced or removed. Return to Changes to see the current history."
           action={
-            <Link className="relay-inline-link" to="/changes">
+            <Link
+              className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
+              to="/changes"
+            >
               View Changes
             </Link>
           }
@@ -144,8 +147,12 @@ export function ChangePage() {
         <>
           <header className="flex items-start justify-between gap-7 max-[780px]:flex-col">
             <div className="min-w-0">
-              <p className="relay-eyebrow">Change verification</p>
-              <h1>{current.title}</h1>
+              <p className="relay-eyebrow mb-2 text-[11px] font-semibold tracking-[0.02em] text-[var(--text-weak)]">
+                Change verification
+              </p>
+              <h1 className="text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance] text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance]">
+                {current.title}
+              </h1>
               <p className="mt-2.5 text-sm text-muted-foreground">
                 {current.repository}
                 {current.pullRequest ? ` · Pull request #${current.pullRequest}` : ""}
@@ -193,11 +200,14 @@ export function ChangePage() {
           <RecordingProblem recovery={detail.state.recovery} error={mutation.error} />
 
           <section
-            className={`mt-7 flex items-center justify-between gap-6 border-b border-border pb-5 mt-7 flex items-center justify-between gap-6 border-b border-border pb-5--${status.tone}`}
+            className={`relay-change-verdict mt-7 flex items-center justify-between gap-6 border-b border-border pb-5`}
             aria-labelledby="change-verdict-title"
           >
-            <div className="mt-7 flex items-center justify-between gap-6 border-b border-border pb-5-main">
-              <span className="mt-7 flex items-center justify-between gap-6 border-b border-border pb-5-mark" aria-hidden="true">
+            <div className="flex min-w-0 items-center gap-3">
+              <span
+                className="grid size-7 place-items-center rounded-full bg-background"
+                aria-hidden="true"
+              >
                 <VerdictIcon tone={status.tone} />
               </span>
               <div>
@@ -209,8 +219,13 @@ export function ChangePage() {
           </section>
 
           {details.firstFailure ? (
-            <section className="mt-5 rounded-lg border border-red-500/40 bg-red-500/5 p-5" aria-labelledby="first-failure-title">
-              <p className="relay-section-label">First problem</p>
+            <section
+              className="relay-change-first-failure mt-5 rounded-lg border border-red-500/40 bg-red-500/5 p-5"
+              aria-labelledby="first-failure-title"
+            >
+              <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+                First problem
+              </p>
               <h2 id="first-failure-title">Why verification stopped</h2>
               <p>{details.firstFailure.summary}</p>
               <Link to="/runs/$runId" params={{ runId: details.firstFailure.runId }}>
@@ -229,10 +244,12 @@ export function ChangePage() {
 
           {details.execution?.attention ? (
             <section
-              className={`mt-5 rounded-lg border border-red-500/40 bg-red-500/5 p-5 mt-5 rounded-lg border border-red-500/40 bg-red-500/5 p-5--${details.execution.attention.kind}`}
+              className="relay-change-attention mt-5 rounded-lg border border-red-500/40 bg-red-500/5 p-5"
               aria-labelledby="verification-paused-title"
             >
-              <p className="relay-section-label">Verification paused safely</p>
+              <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+                Verification paused safely
+              </p>
               <h2 id="verification-paused-title">
                 {details.execution.attention.kind === "human-evidence"
                   ? "Human evidence is required"
@@ -287,7 +304,10 @@ export function ChangePage() {
           ) : null}
 
           <div className="grid gap-5 md:grid-cols-2">
-            <section className="rounded-lg border border-border bg-card p-5" aria-labelledby="change-summary-title">
+            <section
+              className="rounded-lg border border-border bg-card p-5"
+              aria-labelledby="change-summary-title"
+            >
               <ChangeSectionHeader eyebrow="Claim" title="What changed" id="change-summary-title" />
               {current.agentClaim ? (
                 <>
@@ -328,7 +348,9 @@ export function ChangePage() {
                 ))}
               </ul>
             ) : (
-              <p className="text-sm text-muted-foreground">Relay has not selected any affected Tests yet.</p>
+              <p className="text-sm text-muted-foreground">
+                Relay has not selected any affected Tests yet.
+              </p>
             )}
           </section>
 
@@ -366,7 +388,9 @@ export function ChangePage() {
               ) : null}
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground">No known coverage gaps or remaining risk.</p>
+            <p className="text-sm text-muted-foreground">
+              No known coverage gaps or remaining risk.
+            </p>
           )}
 
           <ChangeAuditDetails detail={detail} />
@@ -378,9 +402,14 @@ export function ChangePage() {
 
 function RepairContext({ packet }: { packet: ProductChangeRepairPacket }) {
   return (
-    <section className="mt-5 grid max-w-[820px] gap-[18px] rounded-xl border border-border bg-card p-5 shadow-sm" aria-labelledby="repair-context-title">
+    <section
+      className="relay-change-repair-context mt-5 grid max-w-[820px] gap-[18px] rounded-xl border border-border bg-card p-5 shadow-sm"
+      aria-labelledby="repair-context-title"
+    >
       <header>
-        <p className="relay-section-label">Repair context</p>
+        <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+          Repair context
+        </p>
         <h2 id="repair-context-title">Smallest useful fix</h2>
         <p>{packet.firstCausalFailure}</p>
       </header>
@@ -469,7 +498,7 @@ function ExecutionProgress({ details }: { details: ProductChangeDetails }) {
   const complete = execution.total > 0 && execution.completed >= execution.total;
   if (complete) {
     return (
-      <p className="grid gap-2-complete" role="status">
+      <p className="grid gap-2" role="status">
         {execution.completed} of {execution.total} checks complete
       </p>
     );
@@ -509,7 +538,7 @@ function AffectedTest({
         <span>{app}</span>
       </div>
       <p>{test.reason}</p>
-      <span className={`text-xs font-medium text-xs font-medium--${test.confidence}`}>
+      <span className={`text-xs font-medium text-xs font-medium`}>
         {confidenceLabel(test.confidence)}
       </span>
     </li>

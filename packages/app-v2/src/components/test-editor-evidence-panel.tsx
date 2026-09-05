@@ -15,9 +15,14 @@ export function TestEditorEvidencePanel({
   loading: boolean;
 }) {
   return (
-    <aside className="sticky top-0 min-w-0 rounded-xl border border-border bg-card p-5 text-card-foreground shadow-sm" aria-label="Selected step evidence">
+    <aside
+      className="sticky top-0 min-w-0 rounded-xl border border-border bg-card p-5 text-card-foreground shadow-sm"
+      aria-label="Selected step evidence"
+    >
       <div className="grid gap-1">
-        <p className="relay-section-label">Evidence</p>
+        <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+          Evidence
+        </p>
         <h2>{step ? "Latest proof for this step" : "Choose a step"}</h2>
         <p className="mt-1.5 text-xs leading-normal text-muted-foreground">
           {step

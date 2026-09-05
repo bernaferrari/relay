@@ -35,7 +35,10 @@ export function CardTitle(props: ComponentProps<"h3">) {
 
 export function CardDescription(props: { children?: JSX.Element; class?: string }) {
   return (
-    <p data-slot="card-description" class={`mt-1 font-sans text-xs leading-5 text-[var(--text-weak)] ${props.class ?? ""}`}>
+    <p
+      data-slot="card-description"
+      class={`mt-1 font-sans text-xs leading-5 text-[var(--text-weak)] ${props.class ?? ""}`}
+    >
       {props.children}
     </p>
   );

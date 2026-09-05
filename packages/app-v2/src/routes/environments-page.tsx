@@ -83,13 +83,17 @@ export function EnvironmentsPage() {
   }
 
   return (
-    <section className="relay-page max-w-[1080px]">
+    <section className="relay-page mx-auto w-full px-[clamp(20px,3vw,40px)] pt-7 pb-10 max-w-[1080px]">
       <Breadcrumbs items={[{ label: "Home", to: "/home" }, { label: "Environments" }]} />
       <header className="relay-page-header flex items-start justify-between gap-4 max-[780px]:flex-col">
         <div>
-          <p className="relay-eyebrow">Workspace</p>
-          <h1>Environments</h1>
-          <p className="relay-page-description">
+          <p className="relay-eyebrow mb-2 text-[11px] font-semibold tracking-[0.02em] text-[var(--text-weak)]">
+            Workspace
+          </p>
+          <h1 className="text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance] text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance]">
+            Environments
+          </h1>
+          <p className="relay-page-description mt-2.5 max-w-[62ch] text-[15px] leading-[1.55] text-[var(--text-weak)]">
             Reuse isolated browser Spaces, inspect readiness, and keep reviewed sign-ins on the
             Relay host.
           </p>
@@ -177,7 +181,7 @@ export function EnvironmentsPage() {
                       : "Relay could not create this Browser Space."}
                   </FieldError>
                 ) : null}
-                <div className="relay-dialog-actions">
+                <div className="relay-dialog-actions flex flex-wrap items-center justify-end gap-2.5">
                   <DialogClose
                     render={
                       <Button
@@ -234,7 +238,10 @@ export function EnvironmentsPage() {
                 params={{ profileId: space.id }}
                 search={continuation ? { returnTo: rawReturnTo } : undefined}
               >
-                <span className="grid size-[38px] place-items-center rounded-md border border-border bg-muted text-muted-foreground" aria-hidden="true">
+                <span
+                  className="grid size-[38px] place-items-center rounded-md border border-border bg-muted text-muted-foreground"
+                  aria-hidden="true"
+                >
                   <Globe2 />
                 </span>
                 <span>
@@ -279,7 +286,10 @@ export function EnvironmentsPage() {
             with cables, locks, and local tooling.
           </p>
         </div>
-        <Link className="relay-inline-link" to="/devices">
+        <Link
+          className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
+          to="/devices"
+        >
           View Devices
         </Link>
       </section>

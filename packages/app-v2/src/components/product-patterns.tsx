@@ -47,23 +47,46 @@ type BreadcrumbItem =
 
 export function Breadcrumbs({ items }: { items: readonly BreadcrumbItem[] }) {
   return (
-    <nav className="relay-breadcrumbs" aria-label="Breadcrumb">
-      <ol>
+    <nav
+      className="relay-breadcrumbs mb-[22px] text-xs text-[var(--text-weaker)]"
+      aria-label="Breadcrumb"
+    >
+      <ol className="m-0 flex min-w-0 list-none items-center gap-[7px] p-0">
         {items.map((item, index) => {
           const current = index === items.length - 1;
           return (
-            <li key={`${item.label}:${index}`}>
+            <li
+              className="inline-flex min-w-0 items-center gap-[7px]"
+              key={`${item.label}:${index}`}
+            >
               {index ? (
-                <ChevronRight className="relay-breadcrumb-separator" aria-hidden="true" />
+                <ChevronRight
+                  className="relay-breadcrumb-separator h-[13px] w-[13px] shrink-0 text-[var(--text-weaker)]"
+                  aria-hidden="true"
+                />
               ) : null}
               {"to" in item && item.to === "/apps/$appId" ? (
-                <Link to={item.to} params={item.params}>
+                <Link
+                  className="inline-flex min-h-11 min-w-11 items-center text-[var(--text-weak)]"
+                  to={item.to}
+                  params={item.params}
+                >
                   {item.label}
                 </Link>
               ) : "to" in item ? (
-                <Link to={item.to}>{item.label}</Link>
+                <Link
+                  className="inline-flex min-h-11 min-w-11 items-center text-[var(--text-weak)]"
+                  to={item.to}
+                >
+                  {item.label}
+                </Link>
               ) : (
-                <span aria-current={current ? "page" : undefined}>{item.label}</span>
+                <span
+                  className="overflow-hidden text-ellipsis whitespace-nowrap"
+                  aria-current={current ? "page" : undefined}
+                >
+                  {item.label}
+                </span>
               )}
             </li>
           );
@@ -178,7 +201,7 @@ function outcomeBadgeVariant(
 
 function outcomeBadgeClass(tone: ReturnType<typeof outcomePresentation>["tone"]): string {
   if (tone === "success") return "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300";
-  if (tone === "notice") return "bg-amber-500/15 text-amber-700 dark:text-amber-300";
+  if (tone === "notice") return "bg-amber-500/15 text-amber-800 dark:text-amber-300";
   return "";
 }
 

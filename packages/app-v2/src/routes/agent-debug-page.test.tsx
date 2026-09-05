@@ -7,6 +7,7 @@ import { RelayV2App } from "../app";
 import type { AgentDebugProductService } from "../data/agent-debug-product-service";
 import type { DeviceProductService, ProductDevice } from "../data/device-product-service";
 import type { RecordingProductService } from "../data/recording-product-service";
+import type { RunProductService } from "../data/run-product-service";
 import type { Platform } from "../platform/types";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -93,6 +94,7 @@ async function render(
     path?: string;
     devices?: readonly ProductDevice[];
     agentDebugService?: AgentDebugProductService;
+    runService?: RunProductService;
   } = {},
 ) {
   const history = createMemoryHistory({ initialEntries: [options.path ?? "/debug"] });
@@ -110,6 +112,7 @@ async function render(
           options.devices ?? [productDevice("ready", "Ready Pixel", true, "android")],
         )}
         agentDebugService={options.agentDebugService ?? debugService()}
+        runService={options.runService}
       />,
     );
   });
@@ -287,8 +290,50 @@ describe("Agent Debug route", () => {
     expect(document.body.textContent).toContain("Target is owned by another actor.");
   });
 
-  it("links a successful start to its durable Session", async () => {
+  it("loads contextual Report details from a canonical runId without serializing evidence", async () => {
+    const getReport = vi.fn(async () => ({
+      runId: "run-failed",
+      title: "Checkout validation",
+      outcome: "product-failure" as const,
+      targetName: "Ready Pixel",
+      cause: "Button was not reachable",
+      timeline: [
+        {
+          id: "step-1",
+          index: 0,
+          title: "Press checkout",
+          state: "failed" as const,
+          evidenceCount: 1,
+          expected: "Checkout opens",
+          observed: "Button stayed disabled",
+        },
+      ],
+      evidence: [
+        {
+          id: "visual",
+          label: "Visual",
+          count: 1,
+          detail: "Screenshot",
+          summary: "",
+          inspectable: true,
+          items: [],
+        },
+      ],
+    }));
     await render({
+      path: "/debug?runId=run-failed",
+      runService: { getReport } as unknown as RunProductService,
+    });
+
+    expect(getReport).toHaveBeenCalledWith("run-failed");
+    expect(document.body.textContent).toContain("Button stayed disabled");
+    expect(document.body.textContent).toContain("1 evidence references available");
+    expect(document.getElementById("agent-debug-target")?.textContent).toContain("Ready Pixel");
+    expect(document.body.textContent).not.toContain("serial-");
+  });
+
+  it("opens the live Session after a successful start", async () => {
+    const history = await render({
       agentDebugService: debugService(vi.fn(async () => startOutcome("session-durable"))),
       devices: [productDevice("ready", "Ready Pixel", true, "android")],
     });
@@ -297,9 +342,6 @@ describe("Agent Debug route", () => {
     await selectTarget("serial-ready");
     await clickStart();
 
-    expect(document.body.textContent).toContain("Session ready for review");
-    expect(
-      document.querySelector<HTMLAnchorElement>('a[href="/sessions/session-durable"]'),
-    ).not.toBeNull();
+    expect(history.location.pathname).toBe("/sessions/session-durable");
   });
 });

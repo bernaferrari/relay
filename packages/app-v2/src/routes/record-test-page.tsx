@@ -251,7 +251,7 @@ function RecordingWorkspace({
               Keep the recording running and return later, or stop it now to review the captured
               journey. Leaving does not discard captured work.
             </DialogDescription>
-            <div className="relay-dialog-actions">
+            <div className="relay-dialog-actions flex flex-wrap items-center justify-end gap-2.5">
               <DialogClose render={<Button variant="ghost">Keep recording</Button>} />
               <Button
                 variant="outline"
@@ -287,7 +287,9 @@ function RecordingWorkspace({
           />
           <div>
             <p>{captureReady ? "Recording" : "Restoring recording"}</p>
-            <h1>{snapshot?.title ?? "Preparing Test"}</h1>
+            <h1 className="text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance] text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance]">
+              {snapshot?.title ?? "Preparing Test"}
+            </h1>
           </div>
         </div>
         <span className="justify-self-end text-xs text-muted-foreground" role="status">
@@ -306,7 +308,10 @@ function RecordingWorkspace({
 
         {!recording.isPending && snapshot && captureReady ? (
           <div className="grid h-full min-h-[360px] w-full grid-cols-[minmax(0,1fr)_270px] gap-3.5 max-[980px]:grid-cols-1">
-            <div className="block min-h-[360px] w-full overflow-hidden rounded-xl border border-border bg-muted" aria-label="Recording stage">
+            <div
+              className="block min-h-[360px] w-full overflow-hidden rounded-xl border border-border bg-muted"
+              aria-label="Recording stage"
+            >
               {selectedTarget ? (
                 <LiveTargetCanvas
                   canvasRef={liveCanvas}
@@ -319,16 +324,21 @@ function RecordingWorkspace({
                 />
               ) : null}
             </div>
-            <aside className="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-xl border border-border bg-card" aria-labelledby="capture-timeline-title">
-              <div className="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-xl border border-border bg-card-heading">
+            <aside
+              className="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-xl border border-border bg-card"
+              aria-labelledby="capture-timeline-title"
+            >
+              <div className="flex items-center justify-between gap-3 border-b border-border p-3.5">
                 <div>
-                  <p className="relay-section-label">Journey</p>
+                  <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+                    Journey
+                  </p>
                   <h2 id="capture-timeline-title">Captured actions</h2>
                 </div>
                 <span>{recordedActions.length}</span>
               </div>
               {recordedActions.length ? (
-                <ScrollArea className="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-xl border border-border bg-card-scroll">
+                <ScrollArea className="min-h-0">
                   <ol>
                     {recordedActions.map((recorded, index) => (
                       <li key={recorded.id}>
@@ -351,7 +361,7 @@ function RecordingWorkspace({
                   </ol>
                 </ScrollArea>
               ) : (
-                <div className="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-xl border border-border bg-card-empty">
+                <div className="grid min-h-[180px] place-items-center text-center text-muted-foreground">
                   <Circle aria-hidden="true" />
                   <p>Your clicks, taps, typing, and checkpoints will appear here.</p>
                 </div>
@@ -377,7 +387,10 @@ function RecordingWorkspace({
               }
             />
 
-            <DialogContent showCloseButton={false} className="max-h-[min(720px,calc(100dvh-32px))] overflow-auto">
+            <DialogContent
+              showCloseButton={false}
+              className="max-h-[min(720px,calc(100dvh-32px))] overflow-auto"
+            >
               <DialogTitle>Save a checkpoint</DialogTitle>
               <DialogDescription>
                 Mark a state someone should verify when this Test runs.
@@ -395,7 +408,7 @@ function RecordingWorkspace({
                   />
                   <FieldDescription>Optional, but helpful in Reports.</FieldDescription>
                 </Field>
-                <div className="relay-dialog-actions">
+                <div className="relay-dialog-actions flex flex-wrap items-center justify-end gap-2.5">
                   <DialogClose render={<Button variant="ghost">Cancel</Button>} />
                   <Button type="submit" variant="default" disabled={action.isPending}>
                     {action.isPending ? "Saving…" : "Save checkpoint"}

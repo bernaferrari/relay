@@ -98,7 +98,10 @@ export function AppVersionsPage() {
               title="No registered versions"
               detail="No mobile build or web deployment has been registered in this workspace yet."
               action={
-                <Link className="relay-inline-link" to="/tests">
+                <Link
+                  className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
+                  to="/tests"
+                >
                   Open Tests
                 </Link>
               }
@@ -251,7 +254,10 @@ export function AppAccountsPage() {
               title="No saved browser sign-ins"
               detail="Open a managed browser from Devices, sign in, and save its reviewed state when you need an authenticated Test."
               action={
-                <Link className="relay-inline-link" to="/devices">
+                <Link
+                  className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
+                  to="/devices"
+                >
                   Open Devices
                 </Link>
               }
@@ -311,13 +317,19 @@ function AppResourceFrame({
   children: React.ReactNode;
 }) {
   return (
-    <section className="relay-page max-w-[1040px]">
+    <section className="relay-page mx-auto w-full px-[clamp(20px,3vw,40px)] pt-7 pb-10 max-w-[1040px]">
       <Breadcrumbs items={[{ label: "Workspace", to: "/home" }, { label: title }]} />
       <header className="relay-page-header flex items-start justify-between gap-7 max-[780px]:flex-col">
         <div>
-          <p className="relay-eyebrow">Workspace</p>
-          <h1>{title}</h1>
-          <p className="relay-page-description">{description}</p>
+          <p className="relay-eyebrow mb-2 text-[11px] font-semibold tracking-[0.02em] text-[var(--text-weak)]">
+            Workspace
+          </p>
+          <h1 className="text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance] text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance]">
+            {title}
+          </h1>
+          <p className="relay-page-description mt-2.5 max-w-[62ch] text-[15px] leading-[1.55] text-[var(--text-weak)]">
+            {description}
+          </p>
         </div>
         {action}
       </header>
@@ -364,7 +376,9 @@ function ResourceHeading({
 }) {
   return (
     <header className="max-w-[720px]">
-      <p className="relay-section-label">{label}</p>
+      <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+        {label}
+      </p>
       <h2 id={id}>{title}</h2>
       <p>{detail}</p>
     </header>
@@ -386,8 +400,11 @@ function AccountRow({
 }) {
   const state = accountState(account.fixture);
   return (
-    <li className="grid min-h-[66px] grid-cols-[36px_minmax(0,1fr)_auto_minmax(110px,auto)] items-center gap-3 px-3.5 py-[11px] max-[780px]:grid-cols-[36px_minmax(0,1fr)_auto] grid min-h-[66px] grid-cols-[36px_minmax(0,1fr)_auto_minmax(110px,auto)] items-center gap-3 px-3.5 py-[11px] max-[780px]:grid-cols-[36px_minmax(0,1fr)_auto]--account">
-      <span className="grid size-9 place-items-center rounded-md border border-border bg-background text-foreground" aria-hidden="true">
+    <li className="grid min-h-[66px] grid-cols-[36px_minmax(0,1fr)_auto_minmax(110px,auto)] items-center gap-3 px-3.5 py-[11px] max-[780px]:grid-cols-[36px_minmax(0,1fr)_auto]">
+      <span
+        className="grid size-9 place-items-center rounded-md border border-border bg-background text-foreground"
+        aria-hidden="true"
+      >
         <KeyRound />
       </span>
       <span className="grid min-w-0 gap-1">
@@ -399,14 +416,16 @@ function AccountRow({
             : ""}
         </small>
       </span>
-      <span className={`inline-flex min-h-6 items-center rounded-full bg-background px-2.5 text-[11px] font-semibold capitalize text-muted-foreground inline-flex min-h-6 items-center rounded-full bg-background px-2.5 text-[11px] font-semibold capitalize text-muted-foreground--${state}`}>
+      <span
+        className={`inline-flex min-h-6 items-center rounded-full bg-background px-2.5 text-[11px] font-semibold capitalize text-muted-foreground`}
+      >
         {statusLabel(state)}
       </span>
       <time dateTime={new Date(account.fixture.createdAt).toISOString()}>
         Saved {shortDate(account.fixture.createdAt)}
       </time>
       {canRefresh || (canRevoke && state !== "revoked") ? (
-        <span className="grid min-h-[66px] grid-cols-[36px_minmax(0,1fr)_auto_minmax(110px,auto)] items-center gap-3 px-3.5 py-[11px] max-[780px]:grid-cols-[36px_minmax(0,1fr)_auto]-actions">
+        <span className="grid min-h-[66px] grid-cols-[36px_minmax(0,1fr)_auto_minmax(110px,auto)] items-center gap-3 px-3.5 py-[11px] max-[780px]:col-start-2 max-[780px]:col-end-[-1]">
           {canRefresh ? (
             <Button
               size="sm"

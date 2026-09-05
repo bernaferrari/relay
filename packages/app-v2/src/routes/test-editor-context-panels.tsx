@@ -16,21 +16,26 @@ export function RepairSection({
   onDecision(repair: ProductTestRepair, decision: "approve" | "reject" | "revert"): void;
 }) {
   return (
-    <section className="relay-editor-context-panel" aria-labelledby="repairs-title">
-      <div className="relay-context-heading">
+    <section className="min-w-0" aria-labelledby="repairs-title">
+      <div className="flex items-center gap-2.5">
         <Sparkles aria-hidden="true" />
         <div>
-          <p className="relay-section-label">Review</p>
+          <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+            Review
+          </p>
           <h2 id="repairs-title">Suggested repairs</h2>
         </div>
       </div>
       {repairs.length ? (
-        <ul className="relay-editor-context-list">
+        <ul className="grid list-none gap-2 p-0">
           {repairs.map((proposal) => (
-            <li key={proposal.id}>
+            <li
+              className="flex min-w-0 items-start justify-between gap-3 border-t border-border pt-2"
+              key={proposal.id}
+            >
               <div>
                 <strong>{proposal.title}</strong>
-                <p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
                   {proposal.description ??
                     `${proposal.editCount} suggested ${proposal.editCount === 1 ? "change" : "changes"}`}
                 </p>
@@ -70,7 +75,7 @@ export function RepairSection({
           ))}
         </ul>
       ) : (
-        <p className="relay-context-empty">
+        <p className="flex items-center gap-2 text-xs text-muted-foreground">
           <Check aria-hidden="true" /> No repairs are waiting for review.
         </p>
       )}
@@ -80,22 +85,27 @@ export function RepairSection({
 
 export function HistorySection({ items }: { items: ProductTestEditorDocument["history"] }) {
   return (
-    <section className="relay-editor-context-panel" aria-labelledby="history-title">
-      <div className="relay-context-heading">
+    <section className="min-w-0" aria-labelledby="history-title">
+      <div className="flex items-center gap-2.5">
         <History aria-hidden="true" />
         <div>
-          <p className="relay-section-label">Saved activity</p>
+          <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+            Saved activity
+          </p>
           <h2 id="history-title">History</h2>
         </div>
       </div>
       {items.length ? (
-        <ol className="relay-editor-history-list">
+        <ol className="grid list-none gap-2 p-0">
           {items.slice(0, 8).map((item) => (
-            <li key={item.id}>
+            <li
+              className="flex min-w-0 items-start gap-2 border-t border-border pt-2"
+              key={item.id}
+            >
               <CircleDot aria-hidden="true" />
               <div>
-                <strong>{item.summary}</strong>
-                <span>
+                <strong className="block text-xs font-semibold">{item.summary}</strong>
+                <span className="mt-0.5 block text-[10px] text-muted-foreground">
                   {item.actorKind === "human" ? "You" : "Agent"} · {relativeTime(item.at)}
                 </span>
               </div>
@@ -103,7 +113,7 @@ export function HistorySection({ items }: { items: ProductTestEditorDocument["hi
           ))}
         </ol>
       ) : (
-        <p className="relay-context-empty">Saved edits will appear here.</p>
+        <p className="text-xs text-muted-foreground">Saved edits will appear here.</p>
       )}
     </section>
   );

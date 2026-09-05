@@ -32,18 +32,13 @@ export function RawEvidenceDisclosure({
   });
 
   return (
-    <Collapsible
-      id="raw-evidence"
-      className="mt-4"
-      open={open}
-      onOpenChange={onOpenChange}
-    >
+    <Collapsible id="raw-evidence" className="mt-4" open={open} onOpenChange={onOpenChange}>
       <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 py-2 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
         Audit details
       </CollapsibleTrigger>
       <CollapsibleContent className="border-t pt-3">
-        <div className="mt-4-body">
-          <div className="mt-4-heading">
+        <div className="grid gap-3">
+          <div className="flex items-start justify-between gap-3">
             <p>
               Technical evidence for forensic review. It may include internal identifiers and
               captured content.
@@ -69,7 +64,10 @@ export function RawEvidenceDisclosure({
           </div>
           {evidence.isPending ? <PageLoading label="Loading audit details…" /> : null}
           {evidence.isError ? (
-            <div className="mt-4-error" role="alert">
+            <div
+              className="flex items-center justify-between gap-3 rounded-md border border-red-500/30 bg-red-500/5 p-3 text-sm"
+              role="alert"
+            >
               <p>Audit details could not be loaded. The Report outcome above is unchanged.</p>
               <Button size="sm" variant="outline" onClick={() => void evidence.refetch()}>
                 Try again
@@ -77,7 +75,7 @@ export function RawEvidenceDisclosure({
             </div>
           ) : null}
           {evidence.data !== undefined ? (
-            <ScrollArea className="mt-4-scroll">
+            <ScrollArea className="max-h-[420px] overflow-auto rounded-md border border-border">
               <pre tabIndex={0} aria-label="Raw evidence JSON">
                 <code>{highlightJson(readableJson(evidence.data))}</code>
               </pre>

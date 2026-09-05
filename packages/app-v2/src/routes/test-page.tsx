@@ -167,7 +167,10 @@ export function TestPage() {
           title="This Test is not available"
           detail="It may have been removed or may belong to another app. Choose a saved Test to continue."
           action={
-            <Link className="relay-inline-link" to="/tests">
+            <Link
+              className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
+              to="/tests"
+            >
               Browse saved Tests
             </Link>
           }
@@ -197,13 +200,15 @@ export function TestPage() {
             <section className="relay-test-overview" aria-labelledby="test-overview-title">
               <div className="relay-section-heading">
                 <div>
-                  <p className="relay-section-label">Journey</p>
+                  <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+                    Journey
+                  </p>
                   <h2 id="test-overview-title">Saved steps</h2>
                 </div>
                 <span>{test.data.stepCount === 1 ? "1 step" : `${test.data.stepCount} steps`}</span>
               </div>
               {test.data.steps?.length ? (
-                <ol className="relay-test-readable-steps">
+                <ol className="relay-test-readable-steps mt-4 grid list-none gap-0 p-0">
                   {test.data.steps.map((step, index) => (
                     <ReadableStep
                       key={step.id}
@@ -265,13 +270,16 @@ export function TestPage() {
                     title="No device or browser is ready"
                     detail="Connect a target to continue with this Test."
                     action={
-                      <Link className="relay-inline-link" to="/devices">
+                      <Link
+                        className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
+                        to="/devices"
+                      >
                         View devices
                       </Link>
                     }
                   />
                 ) : null}
-                <div className="relay-test-run-action">
+                <div className="flex flex-wrap items-center gap-2">
                   <Button
                     variant="default"
                     onClick={() => start.mutate()}
@@ -290,11 +298,13 @@ export function TestPage() {
       ) : null}
 
       {!loading && test.data && recentRuns.data?.length ? (
-        <div className="relay-test-history-grid">
-          <section className="relay-test-stability" aria-labelledby="test-stability-title">
+        <div className="mt-8 grid gap-7 border-t border-border pt-6 md:grid-cols-2">
+          <section className="min-w-0" aria-labelledby="test-stability-title">
             <div className="relay-section-heading">
               <div>
-                <p className="relay-section-label">Reliability</p>
+                <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+                  Reliability
+                </p>
                 <h2 id="test-stability-title">Recent stability</h2>
               </div>
               <Badge
@@ -308,7 +318,7 @@ export function TestPage() {
                 {stabilityHistoryComplete ? "Complete history" : "Partial history"}
               </Badge>
             </div>
-            <dl>
+            <dl className="mt-4 grid grid-cols-3 gap-2">
               <div>
                 <dt>Observed Runs</dt>
                 <dd>{stability?.sampleCount ?? 0}</dd>
@@ -323,7 +333,7 @@ export function TestPage() {
               </div>
             </dl>
             {stability?.signals.length ? (
-              <ul>
+              <ul className="mt-3 grid gap-1.5 pl-4 text-xs text-muted-foreground">
                 {stability.signals.map((signal) => (
                   <li key={`${signal.kind}:${signal.environmentId ?? "all"}`}>{signal.summary}</li>
                 ))}
@@ -336,17 +346,23 @@ export function TestPage() {
             )}
           </section>
 
-          <section className="relay-test-runs" aria-labelledby="test-runs-title">
+          <section className="min-w-0" aria-labelledby="test-runs-title">
             <div className="relay-section-heading">
               <div>
-                <p className="relay-section-label">Reports</p>
+                <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+                  Reports
+                </p>
                 <h2 id="test-runs-title">Recent Runs</h2>
               </div>
-              <Link className="relay-inline-link" to="/runs" search={{ view: "all", test: testId }}>
+              <Link
+                className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
+                to="/runs"
+                search={{ view: "all", test: testId }}
+              >
                 View all Runs
               </Link>
             </div>
-            <ul>
+            <ul className="mt-4 grid list-none gap-0 p-0">
               {[...recentRuns.data]
                 .sort(
                   (left, right) =>
@@ -385,18 +401,28 @@ function ReadableStep({
   onSelect(stepId: string): void;
 }) {
   return (
-    <li data-selected={selectedId === step.id}>
-      <span>{number}</span>
-      <button type="button" aria-pressed={selectedId === step.id} onClick={() => onSelect(step.id)}>
-        <strong>{step.intent}</strong>
-        <small>
+    <li
+      className="grid grid-cols-[44px_minmax(0,1fr)] border-t border-border data-[selected=true]:bg-muted/50 data-[selected=true]:shadow-[2px_0_0_var(--foreground)_inset]"
+      data-selected={selectedId === step.id}
+    >
+      <span className="grid place-items-center text-[11px] tabular-nums text-muted-foreground">
+        {number}
+      </span>
+      <button
+        className="min-w-0 rounded-md px-0 py-3 text-left"
+        type="button"
+        aria-pressed={selectedId === step.id}
+        onClick={() => onSelect(step.id)}
+      >
+        <strong className="block pt-0.5 text-[13px] font-semibold">{step.intent}</strong>
+        <small className="mt-0.5 block text-[11px] text-muted-foreground">
           {step.kind === "validation" ? "Checkpoint" : "Action"}
           {step.capture ? " · Evidence captured" : ""}
           {step.status === "needs-review" ? " · Needs review" : ""}
         </small>
       </button>
       {step.children?.length ? (
-        <ol>
+        <ol className="col-span-2 ml-5 grid list-none gap-0 p-0">
           {step.children.map((child, index) => (
             <ReadableStep
               key={child.id}

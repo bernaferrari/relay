@@ -115,7 +115,7 @@ export function TestRunDialog({ test }: { test: ProductTestSummary }) {
         {!targets.isPending && !targets.error && !targets.data?.length ? (
           <p>No ready device or browser is available.</p>
         ) : null}
-        <div className="relay-dialog-actions">
+        <div className="relay-dialog-actions flex flex-wrap items-center justify-end gap-2.5">
           <DialogClose
             render={
               <Button variant="ghost" disabled={start.isPending}>

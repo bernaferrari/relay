@@ -401,6 +401,12 @@ const defaultRunService = {
   getRawEvidence: async () => ({ redacted: true, events: [] }),
 } as unknown as RunProductService;
 const runService = workflowFixture?.runService ?? defaultRunService;
+const workflowInitialPath =
+  fixture === "workflow" &&
+  JSON.parse(window.localStorage.getItem("relay:visual-workflow-fixture:v1") ?? "null")?.stage ===
+    "committed"
+    ? "/tests/test-stateful"
+    : definitions[fixture].path;
 
 const batchReport: ProductBatchReport = {
   id: "batch-checkout",
@@ -803,7 +809,7 @@ createRoot(root).render(
   <StrictMode>
     <RelayV2App
       platform={platform}
-      history={createMemoryHistory({ initialEntries: [definitions[fixture].path] })}
+      history={createMemoryHistory({ initialEntries: [workflowInitialPath] })}
       productService={recordingService}
       appResourcesService={appResourcesService}
       catalogService={catalogService}
