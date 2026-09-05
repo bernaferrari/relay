@@ -51,7 +51,7 @@ export function RunReviewControls({
 
   if (!service.review && !service.compareVisual) return null;
   return (
-    <Collapsible className="relay-report-review-controls">
+    <Collapsible className="relay-report-review-controls rounded-lg border border-border bg-card p-4">
       <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 py-2 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
         Review and visual decisions
       </CollapsibleTrigger>
@@ -61,7 +61,10 @@ export function RunReviewControls({
           approved baseline.
         </p>
         {service.review ? (
-          <div className="relay-report-review-actions" aria-label="Run review decision">
+          <div
+            className="relay-report-review-actions flex flex-wrap gap-2"
+            aria-label="Run review decision"
+          >
             <Button
               size="sm"
               variant="outline"
@@ -89,7 +92,7 @@ export function RunReviewControls({
           </div>
         ) : null}
         {service.compareVisual ? (
-          <div className="relay-report-visual-review">
+          <div className="relay-report-visual-review grid gap-3">
             <Button
               size="sm"
               variant="outline"
@@ -99,13 +102,16 @@ export function RunReviewControls({
               {compare.isPending ? "Comparing…" : "Compare visual evidence"}
             </Button>
             {compare.data ? (
-              <div className="relay-report-visual-result">
+              <div className="relay-report-visual-result grid gap-2 rounded-lg border border-border bg-muted/30 p-3">
                 <strong>{visualComparisonLabel(compare.data.code)}</strong>
                 <span>
                   {compare.data.diff.changedFrames} changed · {compare.data.diff.addedFrames} added
                   · {compare.data.diff.removedFrames} removed
                 </span>
-                <div className="relay-report-review-actions" aria-label="Visual review decision">
+                <div
+                  className="relay-report-review-actions flex flex-wrap gap-2"
+                  aria-label="Visual review decision"
+                >
                   <Button
                     size="sm"
                     variant="default"
@@ -136,12 +142,18 @@ export function RunReviewControls({
           </div>
         ) : null}
         {reviewMessage ? (
-          <p className="relay-report-review-saved" role="status">
+          <p
+            className="relay-report-review-saved rounded-md bg-emerald-500/10 p-2 text-sm text-emerald-700 dark:text-emerald-300"
+            role="status"
+          >
             {reviewMessage}
           </p>
         ) : null}
         {problem ? (
-          <p className="relay-settings-error" role="alert">
+          <p
+            className="relay-settings-error mt-3 text-sm leading-relaxed text-destructive"
+            role="alert"
+          >
             {errorMessage(problem)}
           </p>
         ) : null}

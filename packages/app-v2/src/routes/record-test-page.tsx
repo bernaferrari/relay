@@ -231,12 +231,12 @@ function RecordingWorkspace({
 
   return (
     <section className="grid h-dvh w-full grid-rows-[auto_minmax(0,1fr)_auto] bg-background">
-      <header className="grid min-h-[68px] grid-cols-[minmax(120px,1fr)_auto_minmax(120px,1fr)] items-center gap-5 border-b border-border px-5 py-2 relay-electron-drag">
+      <header className="grid min-h-[68px] grid-cols-[minmax(120px,1fr)_auto_minmax(120px,1fr)] items-center gap-5 border-b border-border px-5 py-2 relay-electron-drag [-webkit-app-region:drag]">
         <Dialog open={exitOpen} onOpenChange={setExitOpen}>
           <DialogTrigger
             render={
               <Button
-                className="inline-flex min-h-11 w-fit items-center text-muted-foreground relay-electron-no-drag"
+                className="inline-flex min-h-11 w-fit items-center text-muted-foreground relay-electron-no-drag [-webkit-app-region:no-drag]"
                 variant="ghost"
                 size="sm"
               />

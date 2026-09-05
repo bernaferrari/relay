@@ -315,7 +315,7 @@ export function SuitesPage() {
       ) : null}
       {!suites.isPending && !suites.error && suites.data ? (
         <>
-          <label className="relay-filter-field">
+          <label className="relay-filter-field mb-5 grid max-w-xs gap-2 text-sm font-medium">
             <span>App</span>
             <select
               className="relay-native-select min-h-9 w-full rounded-[var(--radius-md)] border border-[var(--border-base)] bg-[var(--background-strong)] px-3 text-base text-[var(--text-strong)]"

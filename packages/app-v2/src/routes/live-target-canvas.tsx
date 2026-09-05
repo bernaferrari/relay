@@ -177,7 +177,7 @@ export function LiveTargetCanvas({
             role="status"
           >
             <span
-              className="absolute inset-0 grid place-items-center content-center gap-3 bg-muted/60 p-6 text-center"
+              className="grid size-12 place-items-center rounded-xl border border-border bg-background text-muted-foreground [&>svg]:size-6"
               aria-hidden="true"
             >
               <MonitorSmartphone />
@@ -194,9 +194,9 @@ export function LiveTargetCanvas({
       </div>
 
       <div className="flex items-center justify-between gap-4 border-t border-border p-3 max-[700px]:grid">
-        <div>
-          <strong>{targetTitle}</strong>
-          <span>{targetDetail}</span>
+        <div className="grid min-w-0 gap-0.5">
+          <strong className="text-sm font-semibold">{targetTitle}</strong>
+          <span className="text-xs text-muted-foreground">{targetDetail}</span>
         </div>
         <div className="flex items-center gap-2">
           <label className="relay-visually-hidden sr-only" htmlFor={textInputId}>

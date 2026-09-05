@@ -78,7 +78,10 @@ export function TestRunDialog({ test }: { test: ProductTestSummary }) {
   return (
     <Dialog open={open} onOpenChange={(next) => !start.isPending && setOpen(next)}>
       <DialogTrigger render={<Button variant="ghost" size="sm" />}>Run</DialogTrigger>
-      <DialogContent showCloseButton={false} className="relay-test-run-dialog">
+      <DialogContent
+        showCloseButton={false}
+        className="relay-test-run-dialog w-[min(560px,calc(100vw-32px))]"
+      >
         <DialogTitle>Run {test.name}</DialogTitle>
         <DialogDescription>Choose a ready device or browser for this Test.</DialogDescription>
         {targets.isPending ? <PageLoading label="Loading ready devices and browsers…" /> : null}

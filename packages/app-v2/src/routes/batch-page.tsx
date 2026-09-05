@@ -136,7 +136,7 @@ export function BatchPage() {
   return (
     <section className="relay-page mx-auto w-full px-[clamp(20px,3vw,40px)] pt-7 pb-10 relay-batch-page">
       <Breadcrumbs items={[{ label: "Runs", to: "/runs" }, { label: report?.title ?? "Batch" }]} />
-      <header className="relay-page-header relay-batch-header">
+      <header className="relay-page-header relay-batch-header flex flex-wrap items-start justify-between gap-6">
         <div>
           <p className="relay-eyebrow mb-2 text-[11px] font-semibold tracking-[0.02em] text-[var(--text-weak)]">
             Run Across
@@ -150,7 +150,7 @@ export function BatchPage() {
           </p>
         </div>
         {report ? (
-          <div className="relay-batch-header-actions">
+          <div className="relay-batch-header-actions flex flex-wrap items-center gap-2">
             <IssueDraftButton source={{ kind: "batch", report }} />
             {!active && report.status !== "cancelled" && !report.export ? (
               <Button
@@ -181,7 +181,10 @@ export function BatchPage() {
 
       {report ? (
         <>
-          <section className="relay-batch-summary" aria-labelledby="batch-summary-title">
+          <section
+            className="relay-batch-summary mt-8 grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-4 rounded-xl border border-border bg-card p-5 max-[780px]:grid-cols-1"
+            aria-labelledby="batch-summary-title"
+          >
             <OutcomeMark
               outcome={
                 hasFailedCases
@@ -199,7 +202,7 @@ export function BatchPage() {
               <h2 id="batch-summary-title">{report.report.headline}</h2>
               <p>{report.report.detail}</p>
             </div>
-            <dl>
+            <dl className="flex gap-6 max-[620px]:flex-wrap">
               <div>
                 <dt>Passed</dt>
                 <dd>{report.passedCases}</dd>
@@ -224,8 +227,11 @@ export function BatchPage() {
           </section>
 
           {active ? (
-            <div className="relay-batch-active" role="status">
-              <span aria-hidden="true" />
+            <div
+              className="relay-batch-active mt-3.5 flex items-center gap-2.5 text-sm text-muted-foreground"
+              role="status"
+            >
+              <span className="size-2 shrink-0 rounded-full bg-primary" aria-hidden="true" />
               <p>Relay is running this Batch. Results update automatically.</p>
               <Button
                 variant="outline"
@@ -239,7 +245,7 @@ export function BatchPage() {
           ) : null}
 
           {canContinue ? (
-            <section className="relay-batch-next-step">
+            <section className="relay-batch-next-step mt-5 rounded-xl border border-primary/30 bg-primary/5 p-5">
               <h2>Review the pilot before continuing</h2>
               <p>Check the representative Run before Relay starts the remaining cases.</p>
               <div className="relay-form-actions flex flex-wrap items-center gap-2.5">
@@ -270,14 +276,17 @@ export function BatchPage() {
           ) : null}
 
           {clusters.isError ? (
-            <p className="relay-batch-cluster-notice" role="status">
+            <p
+              className="relay-batch-cluster-notice my-4 rounded-lg border border-border bg-muted/50 px-4 py-3 text-sm text-muted-foreground"
+              role="status"
+            >
               Failure grouping is unavailable, but every case and Report remains available below.
             </p>
           ) : null}
 
           {report.cases.length ? (
             <>
-              <div className="relay-batch-matrix-toolbar">
+              <div className="relay-batch-matrix-toolbar mt-6 flex flex-wrap items-center justify-between gap-4">
                 <Tabs
                   value={view}
                   onValueChange={(next) =>
@@ -322,8 +331,12 @@ export function BatchPage() {
           ) : null}
 
           {totalSelected ? (
-            <div className="relay-batch-selection" role="region" aria-label="Selected Batch cases">
-              <div>
+            <div
+              className="relay-batch-selection mt-5 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-primary/30 bg-primary/5 p-4"
+              role="region"
+              aria-label="Selected Batch cases"
+            >
+              <div className="grid gap-1">
                 <strong>{totalSelected} selected</strong>
                 <span>
                   Only failed, blocked, or cancelled cases with durable Run evidence can be rerun.
@@ -337,7 +350,10 @@ export function BatchPage() {
           ) : null}
 
           {report.export ? (
-            <div className="relay-batch-export-ready" role="status">
+            <div
+              className="relay-batch-export-ready mt-1 flex flex-wrap items-center gap-3 text-xs font-semibold text-emerald-700 dark:text-emerald-300"
+              role="status"
+            >
               <p>Export ready: {report.export.jobIds.length} run artifacts prepared.</p>
               <Button
                 size="sm"

@@ -257,6 +257,24 @@ describe("live Session to Test editor", () => {
     expect(document.body.textContent).not.toContain("Edit Test live");
   });
 
+  it("adopts an external Session end after the canonical refresh", async () => {
+    const ended = {
+      ...session,
+      state: "cancelled",
+      lease: { ...session.lease, status: "released" },
+    } as unknown as ProductSessionDetail;
+    const service = sessionService();
+    service.refresh = vi.fn(async () => ended);
+
+    await render("/sessions/session-live", { sessionService: service });
+    expect(document.body.textContent).toContain("Refresh target");
+    await click("Refresh target");
+
+    expect(service.refresh).toHaveBeenCalledWith("session-live");
+    expect(document.body.textContent).toContain("This Session has ended");
+    expect(document.body.textContent).not.toContain("Refresh target");
+  });
+
   it("opens the exact live binding, stays observe-only, and persists edits through the live service", async () => {
     const sessions = sessionService();
     const harness = editorService();

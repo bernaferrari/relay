@@ -114,7 +114,7 @@ export function Sidebar({ desktop = false }: { desktop?: boolean }) {
       aria-label="Relay navigation"
     >
       <SidebarHeader
-        className={`relay-sidebar-head relay-electron-drag flex min-h-[52px] items-center px-4${desktop ? " min-h-[60px] pl-[82px]" : ""}`}
+        className={`relay-sidebar-head relay-electron-drag [-webkit-app-region:drag] flex min-h-[52px] items-center px-4${desktop ? " min-h-[60px] pl-[82px]" : ""}`}
       >
         <div
           className="relay-brand inline-flex items-center gap-[9px] text-sm font-semibold tracking-[-0.01em]"

@@ -499,20 +499,42 @@ function reportFor(
   batch: ProductRunAcrossBatch,
   exported?: ProductBatchReport["export"],
 ): ProductBatchReport {
-  const headline =
-    batch.status === "completed" && batch.failedCases === 0
-      ? "All selected cases passed"
-      : batch.failedCases
-        ? `${batch.failedCases} selected ${batch.failedCases === 1 ? "case needs" : "cases need"} attention`
-        : "Batch is still in progress";
+  const summary = summarizeProductBatch(batch);
   return {
     ...batch,
     report: {
-      headline,
-      detail: `${batch.passedCases} passed · ${batch.failedCases} failed · ${batch.pendingCases} remaining`,
+      headline: summary.headline,
+      detail: summary.detail,
     },
     ...(exported ? { export: exported } : {}),
   };
+}
+
+export function summarizeProductBatch(batch: ProductRunAcrossBatch): {
+  readonly headline: string;
+  readonly detail: string;
+} {
+  const counts = batch.cases.reduce(
+    (result, item) => {
+      result[item.status] += 1;
+      return result;
+    },
+    { passed: 0, failed: 0, blocked: 0, cancelled: 0, pending: 0, queued: 0, running: 0 },
+  );
+  const total = batch.cases.length;
+  const terminal = counts.passed + counts.failed + counts.blocked + counts.cancelled;
+  const unresolved = counts.pending + counts.queued + counts.running;
+  const detail = `${counts.passed} passed · ${counts.failed} failed · ${counts.blocked} blocked · ${counts.cancelled} cancelled · ${unresolved} remaining`;
+  let headline: string;
+  if (batch.status === "cancelled" || (counts.cancelled === total && total > 0))
+    headline = "Batch was cancelled";
+  else if (total === 0 && batch.status === "completed") headline = "No cases were run";
+  else if (counts.blocked === total && total > 0) headline = "All selected cases are blocked";
+  else if (counts.passed === total && total > 0) headline = "All selected cases passed";
+  else if (counts.cancelled || counts.blocked || counts.failed) {
+    headline = `${terminal === total ? "Batch completed with" : "Batch has"} ${counts.failed + counts.blocked + counts.cancelled} cases needing attention`;
+  } else headline = "Batch is still in progress";
+  return { headline, detail };
 }
 
 export function createProductRunAcrossService(

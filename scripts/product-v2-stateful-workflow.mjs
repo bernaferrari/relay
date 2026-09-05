@@ -42,9 +42,8 @@ try {
   await click(/replay recording/i);
   await page.getByRole("button", { name: /^save test$/i }).click();
   await page.getByRole("heading", { name: /verify checkout totals/i }).waitFor();
-  const testUrl = page.url();
   await page.reload({ waitUntil: "networkidle" });
-  if (page.url() !== testUrl || !(await has("Verify checkout totals")))
+  if (!(await has("Verify checkout totals")))
     throw new Error("saved Test identity did not survive reload");
   await click(/run test/i);
   if (
@@ -57,9 +56,13 @@ try {
     throw new Error("first run did not persist its retry state");
   await click(/run test/i);
   await page.getByText(/run report/i).waitFor();
-  await page.getByRole("link", { name: /view test/i }).click();
+  const viewTest = page.getByRole("link", { name: /view test/i });
+  const testUrl = await viewTest.getAttribute("href");
+  if (testUrl !== "/tests/test-stateful") throw new Error("report lost the saved Test identity");
+  await viewTest.click();
   await click(/edit test/i);
-  await page.getByRole("heading", { name: /edit/i }).waitFor();
+  await page.getByRole("heading", { name: /verify checkout totals/i }).waitFor();
+  await page.getByRole("complementary", { name: "Selected step editor" }).waitFor();
   console.log(
     JSON.stringify({
       ok: true,

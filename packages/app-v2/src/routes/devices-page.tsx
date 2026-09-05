@@ -138,8 +138,8 @@ function DeviceRow({ device, returnTo }: { device: ProductDevice; returnTo?: str
             variant={device.status === "needs-attention" ? "destructive" : "default"}
             className={
               device.status === "needs-attention"
-                ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
-                : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                ? "bg-amber-500/15 text-amber-800 dark:text-amber-300"
+                : "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300"
             }
           >
             {statusLabel(device)}

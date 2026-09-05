@@ -76,7 +76,7 @@ export function AppearanceSettings() {
           <p>System follows this computer and changes automatically throughout the day.</p>
         </header>
         <RadioGroup
-          className="relay-appearance-options"
+          className="mt-[18px] grid grid-cols-3 gap-3 p-0 max-[620px]:grid-cols-1"
           name="appearance"
           value={preference}
           disabled={saveState === "saving"}
@@ -86,22 +86,37 @@ export function AppearanceSettings() {
           {(["system", "light", "dark"] as const).map((value) => (
             <FieldLabel
               key={value}
-              className="relay-appearance-option grid min-w-0 cursor-pointer rounded-lg border border-border bg-card text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50"
+              className="grid w-full min-w-0 cursor-pointer grid-cols-[minmax(0,1fr)_20px] gap-2 rounded-lg border border-border bg-card p-1.5 pb-3 text-card-foreground transition-colors outline-none hover:bg-muted/50 active:scale-[.98] has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50 max-[620px]:grid-cols-[minmax(0,1fr)_20px]"
             >
               <span
-                className="relay-appearance-leading flex w-full items-center justify-center rounded-md bg-transparent [&_svg]:size-4 [&_svg]:shrink-0"
+                className="col-span-2 flex w-full items-center justify-center rounded-md bg-transparent [&_svg]:size-4 [&_svg]:shrink-0"
                 aria-hidden="true"
               >
-                <span className={`relay-appearance-preview relay-appearance-preview--${value}`}>
-                  <span />
-                  <span />
+                <span
+                  className={`relative block h-[86px] w-full overflow-hidden rounded-[10px] shadow-[inset_0_0_0_1px_color-mix(in_srgb,black_10%,transparent)] ${
+                    value === "dark"
+                      ? "bg-slate-950"
+                      : value === "system"
+                        ? "bg-gradient-to-r from-slate-100 via-slate-100 via-50% to-slate-950"
+                        : "bg-slate-100"
+                  }`}
+                >
+                  <span
+                    className={`absolute inset-y-0 left-0 w-[30%] ${value === "dark" ? "bg-slate-800" : value === "system" ? "bg-slate-200" : "bg-white"}`}
+                  />
+                  <span
+                    className={`absolute right-3 top-5 h-2 w-[48%] rounded-full ${value === "dark" ? "bg-slate-600" : "bg-slate-300"}`}
+                  />
+                  <span
+                    className={`absolute right-3 top-9 h-[26px] w-[58%] rounded-[5px] ${value === "dark" ? "bg-slate-800" : "bg-white"}`}
+                  />
                 </span>
               </span>
-              <span className="relay-appearance-copy grid min-w-0 gap-0.5 px-1">
-                <span className="relay-appearance-title truncate font-medium text-foreground">
+              <span className="grid min-w-0 gap-0.5 px-1">
+                <span className="truncate font-medium text-foreground">
                   {value[0]!.toUpperCase() + value.slice(1)}
                 </span>
-                <span className="relay-appearance-description truncate text-muted-foreground">
+                <span className="truncate text-muted-foreground">
                   {value === "system"
                     ? "Follow this computer"
                     : value === "light"

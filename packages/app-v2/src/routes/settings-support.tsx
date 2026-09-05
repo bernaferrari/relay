@@ -98,9 +98,9 @@ export function SetupRow({
   const attention = checks.find((check) => check.status !== "ready");
   const ready = checks.length > 0 && !attention;
   return (
-    <div className="relay-setup-status">
-      <Item className="relay-setting-row relay-setup-status-row" size="sm">
-        <ItemContent className="relay-setting-row-copy">
+    <div className="grid">
+      <Item className="min-h-[76px] gap-6 border-b border-border py-3.5 last:border-b-0" size="sm">
+        <ItemContent className="grid min-w-0 gap-0.5">
           <ItemTitle>{title}</ItemTitle>
           <ItemDescription>
             {loading
@@ -111,12 +111,12 @@ export function SetupRow({
                   : "Relay could not read this support check."))}
           </ItemDescription>
         </ItemContent>
-        <ItemActions className="relay-setting-row-control relay-setup-status-actions">
+        <ItemActions className="flex shrink-0 items-center gap-2.5">
           <Badge
             variant={ready ? "default" : "secondary"}
             className={
               ready
-                ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                ? "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300"
                 : "bg-amber-500/15 text-amber-800 dark:text-amber-300"
             }
           >
@@ -126,7 +126,7 @@ export function SetupRow({
         </ItemActions>
       </Item>
       {!loading && attention && checks.length > 1 ? (
-        <Collapsible className="relay-setup-checks">
+        <Collapsible>
           <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 py-2 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
             Diagnostic checks ({checks.length})
           </CollapsibleTrigger>
@@ -138,7 +138,7 @@ export function SetupRow({
                     variant={check.status === "ready" ? "default" : "secondary"}
                     className={
                       check.status === "ready"
-                        ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                        ? "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300"
                         : "bg-amber-500/15 text-amber-800 dark:text-amber-300"
                     }
                   >

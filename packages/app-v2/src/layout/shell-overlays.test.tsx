@@ -52,9 +52,13 @@ function catalog(
   runs: readonly ProductRunSummary[],
   tests: readonly ProductTestSummary[] = [],
   runsUnavailable = false,
+  testsUnavailable = false,
 ): CatalogProductService {
   return {
-    listTests: async () => tests,
+    listTests: async () => {
+      if (testsUnavailable) throw new Error("catalog unavailable");
+      return tests;
+    },
     getTest: async () => undefined,
     listRuns: async () => {
       if (runsUnavailable) throw new Error("workspace unavailable");
@@ -86,6 +90,7 @@ async function renderShell(input: {
   runs?: readonly ProductRunSummary[];
   tests?: readonly ProductTestSummary[];
   runsUnavailable?: boolean;
+  testsUnavailable?: boolean;
   changes?: readonly ProductChange[];
 }) {
   const host = document.createElement("div");
@@ -99,7 +104,12 @@ async function renderShell(input: {
         platform={platform()}
         history={history}
         productService={recording()}
-        catalogService={catalog(input.runs ?? [], input.tests ?? [], input.runsUnavailable)}
+        catalogService={catalog(
+          input.runs ?? [],
+          input.tests ?? [],
+          input.runsUnavailable,
+          input.testsUnavailable,
+        )}
         changeService={changes(input.changes ?? [])}
       />,
     );
@@ -253,6 +263,20 @@ describe("shell overlays", () => {
     expect(
       document.querySelector('[role="listbox"][aria-label="Commands"]')?.textContent,
     ).toContain("Thirty-first checkout");
+  });
+
+  it("reports unavailable test search instead of claiming there are no matches", async () => {
+    await renderShell({ testsUnavailable: true });
+    await act(async () => {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true }),
+      );
+    });
+    await settle();
+    expect(document.body.textContent).toContain("Test search is unavailable");
+    expect(document.body.textContent).not.toContain("No matching commands");
+    expect(document.body.textContent).toContain("Open Home");
+    expect(document.querySelector('button[type="button"]')?.textContent).not.toBeUndefined();
   });
 
   it("selects a command with the keyboard", async () => {

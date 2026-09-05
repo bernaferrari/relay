@@ -35,9 +35,9 @@ export function setAppMapTestHistoryCursor(
   store.setAppMapTestHistoryCursor(projectId, appMapId, testId, cursor, updatedAt);
 }
 
-/** Test timestamps are audit metadata, not content identity. Restoring a
- * snapshot intentionally assigns a fresh updatedAt, so comparisons ignore it
- * while retaining every authored field and stable child id. */
+/** Timestamps and validation receipts are derived metadata, not authored content.
+ * Restoring a snapshot assigns a fresh timestamp and invalidates its receipt;
+ * comparisons retain every authored field and stable child id. */
 export function sameAppMapTestContent(
   left: AppMapScenarioTest,
   right: AppMapScenarioTest,
@@ -45,6 +45,7 @@ export function sameAppMapTestContent(
   const normalized = (test: AppMapScenarioTest): AppMapScenarioTest => {
     const copy = structuredClone(test);
     copy.updatedAt = 0;
+    delete copy.validation;
     return copy;
   };
   return JSON.stringify(normalized(left)) === JSON.stringify(normalized(right));

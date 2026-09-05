@@ -206,29 +206,29 @@ export function EnvironmentPage() {
               {readiness.isPending ? <PageLoading label="Checking Environment…" /> : null}
               {readiness.data ? (
                 <>
-                  <div className="relay-environment-ready-line">
+                  <div className="relay-environment-ready-line flex items-center gap-2 text-sm font-semibold">
                     <Badge
                       variant={readiness.data.target.ok ? "default" : "secondary"}
                       className={
                         readiness.data.target.ok
-                          ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-                          : "bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                          ? "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300"
+                          : "bg-amber-500/15 text-amber-800 dark:text-amber-300"
                       }
                     >
                       {readiness.data.target.ok ? "Ready" : "Needs attention"}
                     </Badge>
                     <span>{readiness.data.target.capabilities.length} available capabilities</span>
                   </div>
-                  <ul className="relay-environment-checks">
+                  <ul className="relay-environment-checks grid gap-3 p-0">
                     {readiness.data.target.checks.map((check) => (
                       <li key={check.id}>
                         <Badge
                           variant={check.status === "fail" ? "destructive" : "secondary"}
                           className={
                             check.status === "pass"
-                              ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                              ? "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300"
                               : check.status === "warning"
-                                ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                                ? "bg-amber-500/15 text-amber-800 dark:text-amber-300"
                                 : undefined
                           }
                         >
@@ -248,7 +248,7 @@ export function EnvironmentPage() {
                   {!failedChecks.length &&
                   !warningChecks.length &&
                   !readiness.data.target.checks.length ? (
-                    <p className="relay-action-hint">
+                    <p className="relay-action-hint mt-3 text-sm leading-relaxed text-muted-foreground">
                       Relay reported this Space ready without additional checks.
                     </p>
                   ) : null}
@@ -286,10 +286,13 @@ export function EnvironmentPage() {
               </p>
               {fixtures.isPending ? <PageLoading label="Loading reviewed accounts…" /> : null}
               {fixtures.data?.length ? (
-                <ul className="relay-environment-accounts">
+                <ul className="relay-environment-accounts grid gap-2 p-0">
                   {fixtures.data.map((fixture) => (
                     <li key={fixture.reference}>
-                      <span className="relay-account-shield" aria-hidden="true">
+                      <span
+                        className="relay-account-shield grid size-8 place-items-center rounded-full bg-muted text-muted-foreground"
+                        aria-hidden="true"
+                      >
                         <ShieldCheck />
                       </span>
                       <span>
@@ -334,7 +337,7 @@ export function EnvironmentPage() {
                   ))}
                 </ul>
               ) : !fixtures.isPending ? (
-                <p className="relay-action-hint">
+                <p className="relay-action-hint mt-3 text-sm leading-relaxed text-muted-foreground">
                   No reviewed sign-in has been saved for this Space.
                 </p>
               ) : null}
@@ -406,7 +409,7 @@ export function EnvironmentPage() {
                 <div className="relay-dialog-actions flex flex-wrap items-center justify-end gap-2.5">
                   <DialogClose render={<Button variant="ghost">Cancel</Button>} />
                   <Button
-                    className="relay-suite-remove-confirm"
+                    className="relay-suite-remove-confirm rounded-lg border border-red-500/30 bg-red-500/5 p-4"
                     onClick={() => remove.mutate()}
                     disabled={remove.isPending}
                   >

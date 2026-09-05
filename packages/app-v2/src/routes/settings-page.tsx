@@ -17,7 +17,6 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useRouteContext } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { settingsQueryKeys, type SettingsCategory } from "../data/settings-product-service";
-import type { DesktopUpdateState } from "../platform/types";
 import { AppearanceSettings } from "./appearance-settings";
 import { PageLoading } from "./recording-shared";
 import { SettingRow, SettingsFrame, ToggleRow, type SaveState } from "./settings-frame";
@@ -67,7 +66,7 @@ function GeneralSettings() {
           title="Active work"
           description="Relay restores a Recording or Run from its last durable state when you return."
         >
-          <span className="relay-settings-value">Automatic</span>
+          <span className="whitespace-nowrap text-xs font-semibold text-foreground">Automatic</span>
         </SettingRow>
         <SettingRow
           title="Workspace connection"
@@ -111,7 +110,9 @@ function GeneralSettings() {
               {notification.isPending ? "Sending…" : "Send a test"}
             </Button>
           ) : (
-            <span className="relay-settings-value">Web only</span>
+            <span className="whitespace-nowrap text-xs font-semibold text-foreground">
+              Web only
+            </span>
           )}
         </SettingRow>
       </section>
@@ -229,7 +230,7 @@ function EvidenceSettings() {
                     : "Relay is using its default policy until you change it."
               }
             >
-              <span className="relay-settings-value">
+              <span className="whitespace-nowrap text-xs font-semibold text-foreground">
                 {privacy.data.enabled ? "Sensitive values redacted" : "Raw values allowed"}
               </span>
             </SettingRow>
@@ -329,17 +330,24 @@ function IntegrationsSettings() {
             </AlertAction>
           </Alert>
         ) : integrations.data ? (
-          <div className="relay-integration-list">
+          <div className="mt-4 grid gap-2.5">
             {integrations.data.map((integration) => (
-              <Item className="relay-integration-card" variant="outline" key={integration.provider}>
-                <ItemMedia className="relay-integration-mark" aria-hidden="true">
+              <Item
+                className="mt-0 min-h-[84px] grid-cols-[36px_minmax(0,1fr)_auto] gap-3 rounded-xl bg-card p-3.5 shadow-sm"
+                variant="outline"
+                key={integration.provider}
+              >
+                <ItemMedia
+                  className="grid size-9 place-items-center rounded-lg bg-primary text-[13px] font-bold text-primary-foreground"
+                  aria-hidden="true"
+                >
                   {integration.name.slice(0, 1).toLocaleUpperCase()}
                 </ItemMedia>
                 <ItemContent>
                   <ItemTitle>{integration.name}</ItemTitle>
                   <ItemDescription>{integration.detail}</ItemDescription>
                   {integration.capabilities.length ? (
-                    <span className="relay-integration-capabilities">
+                    <span className="mt-1 block text-[10px] capitalize text-muted-foreground">
                       {integration.capabilities
                         .map((capability) => capability.replace(/-/gu, " "))
                         .join(" · ")}
@@ -351,7 +359,7 @@ function IntegrationsSettings() {
                     variant={integration.state === "unsupported" ? "outline" : "secondary"}
                     className={
                       integration.state === "connected"
-                        ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                        ? "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300"
                         : integration.state === "unsupported"
                           ? undefined
                           : "bg-amber-500/15 text-amber-800 dark:text-amber-300"
@@ -366,8 +374,14 @@ function IntegrationsSettings() {
             ))}
           </div>
         ) : connection.data ? (
-          <Item className="relay-integration-card" variant="outline">
-            <ItemMedia className="relay-integration-mark" aria-hidden="true">
+          <Item
+            className="mt-0 min-h-[84px] grid-cols-[36px_minmax(0,1fr)_auto] gap-3 rounded-xl bg-card p-3.5 shadow-sm"
+            variant="outline"
+          >
+            <ItemMedia
+              className="grid size-9 place-items-center rounded-lg bg-primary text-[13px] font-bold text-primary-foreground"
+              aria-hidden="true"
+            >
               R
             </ItemMedia>
             <ItemContent>
@@ -377,7 +391,7 @@ function IntegrationsSettings() {
             <ItemActions>
               <Badge
                 variant="default"
-                className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                className="bg-emerald-500/15 text-emerald-800 dark:text-emerald-300"
               >
                 Configured
               </Badge>
@@ -473,7 +487,7 @@ function AdvancedSettings() {
           </Alert>
         ) : null}
         {connection.data ? (
-          <form className="relay-settings-address-control grid gap-6" onSubmit={saveConnection}>
+          <form className="grid gap-6" onSubmit={saveConnection}>
             <Field className="grid gap-2">
               <FieldLabel htmlFor="relay-server-url">Server URL</FieldLabel>
               <div className="flex items-center gap-2">

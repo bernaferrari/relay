@@ -65,8 +65,8 @@ export function AgentDebugPage() {
   }, [report.data, title]);
   useEffect(() => {
     if (!report.data?.targetName || targetId) return;
-    const matchingTarget = readyDevices.find((device) => device.name === report.data.targetName);
-    if (matchingTarget) setTargetId(matchingTarget.serial);
+    const matchingTargets = readyDevices.filter((device) => device.name === report.data.targetName);
+    if (matchingTargets.length === 1) setTargetId(matchingTargets[0]!.serial);
   }, [readyDevices, report.data?.targetName, targetId]);
   const start = useMutation({
     mutationFn: (input: Parameters<AgentDebugProductService["debugBug"]>[0]) =>

@@ -178,7 +178,7 @@ export function TestPage() {
       ) : null}
 
       {activeRun ? (
-        <div className="relay-resume-recording relay-resume-run">
+        <div className="relay-resume-recording relay-resume-run mt-7 flex max-w-3xl flex-wrap items-center justify-between gap-5 rounded-lg border border-border bg-card px-4 py-3.5 [&_p]:mt-1 [&_p]:text-muted-foreground">
           <div>
             <strong>A Run is already in progress</strong>
             <p>Resume it before starting this Test again.</p>
@@ -197,8 +197,11 @@ export function TestPage() {
       {!test.isPending && test.data ? (
         <WorkbenchPanes
           outline={
-            <section className="relay-test-overview" aria-labelledby="test-overview-title">
-              <div className="relay-section-heading">
+            <section
+              className="relay-test-overview min-w-0 pt-1"
+              aria-labelledby="test-overview-title"
+            >
+              <div className="flex items-end justify-between gap-5 max-[620px]:items-start max-[620px]:gap-3">
                 <div>
                   <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
                     Journey
@@ -220,7 +223,9 @@ export function TestPage() {
                   ))}
                 </ol>
               ) : (
-                <p className="relay-test-no-steps">This Test has no reviewed steps yet.</p>
+                <p className="relay-test-no-steps mt-4 text-sm text-muted-foreground">
+                  This Test has no reviewed steps yet.
+                </p>
               )}
             </section>
           }
@@ -300,7 +305,7 @@ export function TestPage() {
       {!loading && test.data && recentRuns.data?.length ? (
         <div className="mt-8 grid gap-7 border-t border-border pt-6 md:grid-cols-2">
           <section className="min-w-0" aria-labelledby="test-stability-title">
-            <div className="relay-section-heading">
+            <div className="flex items-end justify-between gap-5 max-[620px]:items-start max-[620px]:gap-3">
               <div>
                 <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
                   Reliability
@@ -311,7 +316,7 @@ export function TestPage() {
                 variant="secondary"
                 className={
                   stability?.signals.length
-                    ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                    ? "bg-amber-500/15 text-amber-800 dark:text-amber-300"
                     : undefined
                 }
               >
@@ -347,7 +352,7 @@ export function TestPage() {
           </section>
 
           <section className="min-w-0" aria-labelledby="test-runs-title">
-            <div className="relay-section-heading">
+            <div className="flex items-end justify-between gap-5 max-[620px]:items-start max-[620px]:gap-3">
               <div>
                 <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
                   Reports

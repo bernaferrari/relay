@@ -24,7 +24,6 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { catalogQueryKeys } from "../data/catalog-queries";
 import { recordingQueryKeys } from "../data/recording-queries";
 import { readWorkflowPointer } from "../data/workflow-pointer";
 
@@ -127,10 +126,11 @@ export function CommandPalette({
     staleTime: 30_000,
   });
   const tests = useQuery({
-    queryKey: catalogQueryKeys.tests,
+    queryKey: ["command-palette", "tests"] as const,
     queryFn: () => catalogService.listTests(),
     enabled: open,
-    staleTime: 30_000,
+    staleTime: 0,
+    retry: false,
   });
   const recording = useQuery({
     queryKey: recordingQueryKeys.pointer,
@@ -263,6 +263,23 @@ export function CommandPalette({
             aria-label="Commands"
             className="flex flex-col gap-0.5"
           >
+            {tests.isError ? (
+              <div
+                className="grid gap-2 p-6 text-center text-sm text-[var(--text-weaker)]"
+                role="alert"
+              >
+                <p>
+                  Test search is unavailable. Try again or use the available workspace commands.
+                </p>
+                <button
+                  className="mx-auto min-h-10 rounded-[var(--radius-md)] border border-[var(--border-base)] px-3 font-medium text-[var(--text-interactive-base)] focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2"
+                  type="button"
+                  onClick={() => void tests.refetch()}
+                >
+                  Try again
+                </button>
+              </div>
+            ) : null}
             {commands.length ? (
               commands.map((command, index) => (
                 <button
@@ -286,7 +303,7 @@ export function CommandPalette({
                   </span>
                 </button>
               ))
-            ) : (
+            ) : tests.isError ? null : (
               <p className="relay-command-empty p-6 text-center text-sm text-[var(--text-weaker)]">
                 No matching commands
               </p>

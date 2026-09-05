@@ -200,7 +200,7 @@ function outcomeBadgeVariant(
 }
 
 function outcomeBadgeClass(tone: ReturnType<typeof outcomePresentation>["tone"]): string {
-  if (tone === "success") return "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300";
+  if (tone === "success") return "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300";
   if (tone === "notice") return "bg-amber-500/15 text-amber-800 dark:text-amber-300";
   return "";
 }

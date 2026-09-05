@@ -472,7 +472,7 @@ function TestEditorDocument() {
           <WorkbenchPanes
             outline={
               <section className="min-w-0" aria-labelledby="test-steps-title">
-                <div className="relay-section-heading">
+                <div className="flex items-end justify-between gap-5 max-[620px]:items-start max-[620px]:gap-3">
                   <div>
                     <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
                       Journey
@@ -617,7 +617,10 @@ function TestEditorDocument() {
               </div>
             }
             inspector={
-              <aside className="relay-editor-inspector" aria-label="Selected step editor">
+              <aside
+                className="sticky top-0 min-w-0 rounded-xl border border-border bg-card shadow-sm"
+                aria-label="Selected step editor"
+              >
                 {selected ? (
                   <SelectedStepEditor
                     key={`${selected.step.id}:${editorDocument.revision}`}

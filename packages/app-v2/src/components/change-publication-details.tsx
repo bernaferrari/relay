@@ -57,7 +57,7 @@ export function ChangePublicationStatus({ detail }: { detail: ProductChangeDetai
         id="publication-status-title"
       />
       <p>{presentation.detail}</p>
-      <div className="relay-publication-status">
+      <div className="relay-publication-status mt-2 flex min-h-11 flex-wrap items-center gap-x-3.5 gap-y-2.5">
         {publication.detailsUrl ? (
           <a href={publication.detailsUrl} target="_blank" rel="noreferrer">
             Open GitHub check
@@ -128,7 +128,7 @@ export function ChangeAuditDetails({ detail }: { detail: ProductChangeDetail }) 
             <ul>
               {details.publications.map((publication) => (
                 <li key={publication.id}>
-                  <dl className="relay-publication-facts">
+                  <dl className="relay-publication-facts grid grid-cols-2 gap-3 border-t border-border pt-3 text-xs sm:grid-cols-3">
                     <div>
                       <dt>Status</dt>
                       <dd>{publicationLabel(publication.status)}</dd>

@@ -326,7 +326,7 @@ export function ReviewRecordingPage() {
       />
 
       {leaveDraft.error ? (
-        <p role="alert" className="relay-config-problem">
+        <p role="alert" className="m-0 rounded-lg border border-border p-3 text-[13px]">
           Could not confirm the saved draft. Your work is still open here. Try Save draft again when
           the connection returns.
         </p>

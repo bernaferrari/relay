@@ -40,8 +40,17 @@ function recordValue(value: unknown): Record<string, unknown> | undefined {
 
 function SaveStatus({ state }: { state: SaveState }) {
   return (
-    <span className={`mt-4 flex items-center gap-2`} aria-live="polite">
-      <span aria-hidden="true" />
+    <span
+      className={`mt-0.5 inline-flex min-h-7 items-center gap-2 rounded-full bg-muted px-2.5 text-[11px] font-semibold text-muted-foreground ${
+        state === "saved"
+          ? "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300"
+          : state === "failed" || state === "unavailable"
+            ? "bg-red-500/10 text-red-700 dark:text-red-300"
+            : ""
+      }`}
+      aria-live="polite"
+    >
+      <span className="size-1.5 rounded-full bg-current" aria-hidden="true" />
       {state === "saving"
         ? "Saving…"
         : state === "failed"
@@ -107,16 +116,19 @@ export function SettingsFrame({
           }}
         />
       </div>
-      <div className="grid grid-cols-[180px_minmax(0,1fr)] gap-8 max-[780px]:grid-cols-1">
-        <nav className="grid content-start gap-1" aria-label="Settings sections">
+      <div className="mt-7 grid grid-cols-[180px_minmax(0,1fr)] items-start gap-8 max-[780px]:grid-cols-1">
+        <nav
+          className="sticky top-6 grid content-start gap-1 max-[780px]:static"
+          aria-label="Settings sections"
+        >
           {settingsCategories.map((item) => (
             <Link
               key={item.id}
               to={item.path}
               className={
                 item.id === category
-                  ? "relay-settings-nav-link grid content-start gap-1 bg-muted text-foreground"
-                  : "relay-settings-nav-link grid content-start gap-1"
+                  ? "grid min-h-11 content-center rounded-md bg-muted px-2.5 font-medium text-foreground transition-colors"
+                  : "grid min-h-11 content-center rounded-md px-2.5 font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
               }
               aria-current={item.id === category ? "page" : undefined}
             >
@@ -144,12 +156,15 @@ export function SettingRow({
   id?: string;
 }) {
   return (
-    <div className="relay-setting-row" id={id}>
-      <div className="relay-setting-row-copy">
-        <h2>{title}</h2>
-        <p>{description}</p>
+    <div
+      className="flex min-h-[76px] items-center justify-between gap-6 border-b border-border py-3.5 last:border-b-0 scroll-mt-6"
+      id={id}
+    >
+      <div className="grid min-w-0 gap-0.5">
+        <h2 className="text-[13px] font-semibold text-foreground">{title}</h2>
+        <p className="max-w-[58ch] text-xs leading-normal text-muted-foreground">{description}</p>
       </div>
-      {children ? <div className="relay-setting-row-control">{children}</div> : null}
+      {children ? <div className="flex shrink-0 items-center gap-2.5">{children}</div> : null}
     </div>
   );
 }
@@ -172,11 +187,16 @@ export function ToggleRow({
   const descriptionId = `${id}-description`;
   return (
     <label
-      className={`relay-setting-row relay-setting-toggle-row${disabled ? " relay-setting-row--disabled" : ""}`}
+      className={`flex min-h-[76px] cursor-pointer items-center justify-between gap-6 border-b border-border py-3.5 last:border-b-0 scroll-mt-6 ${disabled ? "cursor-not-allowed opacity-60" : ""}`}
     >
-      <span className="relay-setting-row-copy">
-        <strong>{title}</strong>
-        <span id={descriptionId}>{description}</span>
+      <span className="grid min-w-0 gap-0.5">
+        <strong className="text-[13px] font-semibold text-foreground">{title}</strong>
+        <span
+          id={descriptionId}
+          className="max-w-[58ch] text-xs leading-normal text-muted-foreground"
+        >
+          {description}
+        </span>
       </span>
       <Switch
         id={id}

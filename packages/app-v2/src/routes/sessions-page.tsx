@@ -262,8 +262,8 @@ function sessionBadgeVariant(tone: ReturnType<typeof sessionVariant>): "default"
 }
 
 function sessionBadgeClass(tone: ReturnType<typeof sessionVariant>): string | undefined {
-  if (tone === "success") return "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300";
-  if (tone === "warning") return "bg-amber-500/15 text-amber-700 dark:text-amber-300";
+  if (tone === "success") return "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300";
+  if (tone === "warning") return "bg-amber-500/15 text-amber-800 dark:text-amber-300";
   if (tone === "danger") return "bg-red-500/15 text-red-700 dark:text-red-300";
   return undefined;
 }

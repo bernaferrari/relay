@@ -121,14 +121,16 @@ export function ChangesPage() {
       {changes.isPending ? <PageLoading label="Loading Changes…" /> : null}
 
       {!changes.isPending && !changes.isError && visible.length ? (
-        <section className="relay-library-results" aria-labelledby="changes-result-title">
-          <div className="relay-library-results-heading">
-            <h2 id="changes-result-title">
+        <section className="relay-library-results mt-7" aria-labelledby="changes-result-title">
+          <div className="relay-library-results-heading flex min-h-8 items-center justify-between gap-5 px-0.5 pb-2.5">
+            <h2 id="changes-result-title" className="text-[13px] font-semibold">
               {visible.length === 1 ? "1 Change" : `${visible.length} Changes`}
             </h2>
-            <span aria-live="polite">{viewLabel(view)}</span>
+            <span className="text-xs text-[var(--text-weak)]" aria-live="polite">
+              {viewLabel(view)}
+            </span>
           </div>
-          <ul className="relay-library-list">
+          <ul className="relay-library-list m-0 overflow-hidden rounded-[var(--radius-xl)] border border-[var(--border-weak-base)] bg-[var(--surface-raised-strong)] p-0 list-none [&>li]:border-b [&>li]:border-[var(--border-weak-base)] [&>li:last-child]:border-b-0">
             {visible.map((change) => (
               <ChangeRow key={change.id} change={change} />
             ))}
@@ -177,17 +179,19 @@ function ChangeRow({ change }: { change: ProductChange }) {
   return (
     <li>
       <Item
-        className="relay-library-row grid-cols-[minmax(220px,1fr)_minmax(118px,auto)_minmax(148px,.42fr)_18px]"
+        className="relay-library-row grid min-h-[78px] min-w-0 grid-cols-[minmax(220px,1fr)_minmax(118px,auto)_minmax(148px,.42fr)_18px] items-center gap-[18px] px-3.5 py-2 text-[var(--text-base)] transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 max-[720px]:grid-cols-[minmax(0,1fr)_auto]"
         render={<Link to="/changes/$changeId" params={{ changeId: change.id }} />}
       >
-        <span className="relay-library-row-main">
-          <strong>{change.title}</strong>
-          <span>
+        <span className="relay-library-row-main grid min-w-0 gap-1">
+          <strong className="overflow-hidden text-ellipsis whitespace-nowrap text-sm font-semibold text-[var(--text-strong)]">
+            {change.title}
+          </strong>
+          <span className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-[var(--text-weak)]">
             {change.repository}
             {change.pullRequest ? ` · PR #${change.pullRequest}` : ""}
           </span>
         </span>
-        <span className="relay-library-row-status">
+        <span className="relay-library-row-status flex justify-start">
           <Badge
             variant={changeBadgeVariant(status.tone)}
             className={changeBadgeClass(status.tone)}
@@ -195,11 +199,18 @@ function ChangeRow({ change }: { change: ProductChange }) {
             {status.label}
           </Badge>
         </span>
-        <span className="relay-library-row-recent">
-          <strong>{relativeTime(change.updatedAt)}</strong>
-          <small>{coverageLabel(change)}</small>
+        <span className="relay-library-row-recent grid min-w-0 justify-items-start gap-1">
+          <strong className="text-xs font-semibold text-[var(--text-base)]">
+            {relativeTime(change.updatedAt)}
+          </strong>
+          <small className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-[var(--text-weak)]">
+            {coverageLabel(change)}
+          </small>
         </span>
-        <ChevronRight className="relay-library-row-arrow" aria-hidden="true" />
+        <ChevronRight
+          className="relay-library-row-arrow text-sm text-[var(--text-weaker)]"
+          aria-hidden="true"
+        />
       </Item>
     </li>
   );
@@ -214,8 +225,8 @@ function changeBadgeVariant(
 }
 
 function changeBadgeClass(tone: ReturnType<typeof changeStatus>["tone"]): string | undefined {
-  if (tone === "success") return "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300";
-  if (tone === "notice") return "bg-amber-500/15 text-amber-700 dark:text-amber-300";
+  if (tone === "success") return "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300";
+  if (tone === "notice") return "bg-amber-500/15 text-amber-800 dark:text-amber-300";
   return undefined;
 }
 

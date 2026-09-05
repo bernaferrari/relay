@@ -258,7 +258,7 @@ export function ChangePage() {
               <p>{details.execution.attention.reason}</p>
               {details.execution.attention.kind === "human-evidence" ? (
                 <form
-                  className="relay-human-evidence-form"
+                  className="relay-human-evidence-form grid gap-3 rounded-lg border border-border bg-card p-4"
                   onSubmit={(event: FormEvent<HTMLFormElement>) => {
                     event.preventDefault();
                     if (!humanEvidence.isPending && evidenceObservation.trim())
@@ -365,7 +365,7 @@ export function ChangePage() {
               aside={planCount(details)}
             />
             {details.verificationPlan.length ? (
-              <ol className="relay-verification-plan">
+              <ol className="relay-verification-plan mt-4 grid list-none gap-3 p-0 sm:grid-cols-2">
                 {details.verificationPlan.map((item) => (
                   <VerificationItem key={item.id} item={item} detail={detail} />
                 ))}
@@ -554,15 +554,15 @@ function VerificationItem({
 }) {
   const test = detail.names.tests[`${item.appId}:${item.testId}`] ?? humanize(item.testId);
   return (
-    <li className="relay-verification-item">
-      <div className="relay-verification-item-head">
+    <li className="relay-verification-item rounded-lg border border-border bg-muted/30 p-4">
+      <div className="relay-verification-item-head flex items-start justify-between gap-4">
         <div>
           <strong>{test}</strong>
           <span>
             {item.targetName} · {platformLabel(item.platform)}
           </span>
         </div>
-        <div className="relay-verification-tags">
+        <div className="relay-verification-tags flex flex-wrap justify-end gap-1.5">
           {item.pilot ? <span>Pilot</span> : null}
           <span>{item.requirement === "required" ? "Required" : "Advisory"}</span>
         </div>

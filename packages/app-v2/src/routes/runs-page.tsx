@@ -122,7 +122,7 @@ export function RunsPage() {
 
   return (
     <LibraryPage
-      className="relay-library-page relay-runs-page"
+      className="relay-library-page relay-runs-page mx-auto w-full max-w-[1040px]"
       onClickCapture={returnFocus.onClickCapture}
     >
       <PageHeader
@@ -189,14 +189,16 @@ export function RunsPage() {
       {!runs.isPending && !runs.isError && visibleRuns.length ? (
         <section
           id="run-history-results"
-          className="relay-library-results"
+          className="relay-library-results mt-7"
           aria-labelledby="run-history-title"
         >
-          <div className="relay-library-results-heading">
-            <h2 id="run-history-title">
+          <div className="relay-library-results-heading flex min-h-8 items-center justify-between gap-5 px-0.5 pb-2.5">
+            <h2 id="run-history-title" className="text-[13px] font-semibold">
               {visibleRuns.length === 1 ? "1 Run" : `${visibleRuns.length} Runs`}
             </h2>
-            <span aria-live="polite">{runViewDescription(view, historyComplete)}</span>
+            <span className="text-xs text-[var(--text-weak)]" aria-live="polite">
+              {runViewDescription(view, historyComplete)}
+            </span>
           </div>
           <RunHistoryList runs={visibleRuns}>
             {(run, _index, interaction) => <RunRow run={run} interaction={interaction} />}
@@ -245,24 +247,31 @@ function RunRow({
   const context = [run.appName, run.targetName ?? platformName(run.platform)].filter(Boolean);
   return (
     <Item
-      className="relay-library-row relay-run-row"
+      className="relay-library-row relay-run-row grid min-h-[78px] min-w-0 grid-cols-[minmax(180px,1fr)_minmax(94px,auto)_minmax(150px,.48fr)_18px] items-center gap-[18px] px-3.5 py-2 text-[var(--text-base)] transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 max-[720px]:grid-cols-[minmax(0,1fr)_auto]"
       render={<Link to="/runs/$runId" params={{ runId: run.id }} />}
       {...interaction}
     >
-      <span className="relay-library-row-main">
-        <strong>{title}</strong>
-        <span className="relay-run-row-context">
+      <span className="relay-library-row-main grid min-w-0 gap-1">
+        <strong className="overflow-hidden text-ellipsis whitespace-nowrap text-sm font-semibold text-[var(--text-strong)]">
+          {title}
+        </strong>
+        <span className="relay-run-row-context overflow-hidden text-ellipsis whitespace-nowrap text-xs text-[var(--text-weak)]">
           <OutcomeMark outcome={run.outcome ?? phaseOutcome(run)} />
           <span>{context.length ? context.join(" · ") : "Saved Run"}</span>
         </span>
       </span>
-      <span className="relay-library-row-recent">
-        <strong>
+      <span className="relay-library-row-recent grid min-w-0 justify-items-start gap-1">
+        <strong className="text-xs font-semibold text-[var(--text-base)]">
           {run.durationMs === undefined ? phaseDetail(run) : formatDuration(run.durationMs)}
         </strong>
-        <small>{relativeTime(run.finishedAt ?? run.startedAt ?? run.queuedAt)}</small>
+        <small className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-[var(--text-weak)]">
+          {relativeTime(run.finishedAt ?? run.startedAt ?? run.queuedAt)}
+        </small>
       </span>
-      <ChevronRight className="relay-library-row-arrow" aria-hidden="true" />
+      <ChevronRight
+        className="relay-library-row-arrow text-sm text-[var(--text-weaker)]"
+        aria-hidden="true"
+      />
     </Item>
   );
 }

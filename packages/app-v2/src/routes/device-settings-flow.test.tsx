@@ -397,14 +397,14 @@ describe("Settings", () => {
       settingsService: service,
     });
 
-    expect(document.querySelectorAll(".relay-settings-nav-link")).toHaveLength(6);
+    expect(document.querySelectorAll('[aria-label="Settings sections"] a')).toHaveLength(6);
     expect(document.body.textContent).toContain("Evidence & privacy");
     expect(document.body.textContent).toContain("Request and response bodies");
     expect(document.body.textContent).toContain("Raw network captures");
     expect(document.body.textContent).toContain(
       "Android emulator packet metadata is captured temporarily either way.",
     );
-    expect(document.querySelector(".relay-settings-save")).toBeNull();
+    expect(document.querySelector('[aria-live="polite"]:not(.sr-only)')).toBeNull();
     expect(document.body.textContent).not.toMatch(/\b(?:lease|runtime profile|inventory)\b/i);
 
     await click(input("Redact sensitive evidence"));
@@ -465,7 +465,7 @@ describe("Settings", () => {
     expect(document.querySelector<HTMLInputElement>("#relay-server-url")?.value).toBe(
       "http://127.0.0.1:8787",
     );
-    const controls = document.querySelector(".relay-settings-address-control");
+    const controls = document.querySelector("form");
     expect(controls?.querySelector("input")).not.toBeNull();
     expect(controls?.querySelector("button")?.textContent).toContain("Save address");
   });
@@ -479,7 +479,7 @@ describe("Settings", () => {
     };
     await renderPath("/settings/advanced", { settingsService: service });
     expect(document.body.textContent).not.toContain("Some device-support checks are unavailable");
-    expect(document.querySelectorAll(".relay-settings-alert")).toHaveLength(0);
+    expect(document.querySelectorAll('[role="alert"]')).toHaveLength(0);
     expect(button("Check again")).not.toBeNull();
     expect(document.body.textContent).toContain("Android devices");
     expect(document.body.textContent).toContain("Needs attention");

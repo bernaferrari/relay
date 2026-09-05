@@ -97,7 +97,7 @@ export function RunAcrossPage() {
           { label: "Run with data" },
         ]}
       />
-      <header className="relay-page-header">
+      <header className="relay-page-header mb-7 flex min-w-0 flex-wrap items-start justify-between gap-5">
         <p className="relay-eyebrow mb-2 text-[11px] font-semibold tracking-[0.02em] text-[var(--text-weak)]">
           Run with data
         </p>
@@ -202,7 +202,7 @@ export function RunAcrossPage() {
                 </small>
               </div>
             ) : (
-              <p className="relay-action-hint">
+              <p className="relay-action-hint mt-3 text-sm leading-relaxed text-muted-foreground">
                 Choose at least one value and one ready device or browser.
               </p>
             )}

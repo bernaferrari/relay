@@ -57,10 +57,10 @@ export function AppShell({ platform }: { platform: Platform }) {
       <div className="relay-workspace flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--background-base)]">
         {!immersive ? (
           <header
-            className="relay-desktop-toolbar relay-electron-drag hidden min-h-[54px] items-center gap-4 border-b border-[var(--border-weak-base)] bg-[color-mix(in_srgb,var(--background-base)_94%,transparent)] px-2.5 py-1.5 min-[861px]:flex"
+            className="relay-desktop-toolbar relay-electron-drag [-webkit-app-region:drag] hidden min-h-[54px] items-center gap-4 border-b border-[var(--border-weak-base)] bg-[color-mix(in_srgb,var(--background-base)_94%,transparent)] px-2.5 py-1.5 min-[861px]:flex"
             aria-label="Window navigation"
           >
-            <div className="relay-history-controls relay-electron-no-drag inline-flex items-center gap-px">
+            <div className="relay-history-controls relay-electron-no-drag [-webkit-app-region:no-drag] inline-flex items-center gap-px">
               <Button
                 size="icon-sm"
                 variant="ghost"
@@ -85,7 +85,7 @@ export function AppShell({ platform }: { platform: Platform }) {
             <ActivityCenterButton />
             <button
               type="button"
-              className="relay-command-trigger relay-electron-no-drag ml-0 inline-flex min-h-9 min-w-[220px] items-center gap-2 rounded-[var(--radius-md)] border border-[var(--border-weak-base)] bg-[var(--surface-raised-strong)] px-2 py-0 pl-2.5 text-left text-xs text-[var(--text-weaker)]"
+              className="relay-command-trigger relay-electron-no-drag [-webkit-app-region:no-drag] ml-0 inline-flex min-h-9 min-w-[220px] items-center gap-2 rounded-[var(--radius-md)] border border-[var(--border-weak-base)] bg-[var(--surface-raised-strong)] px-2 py-0 pl-2.5 text-left text-xs text-[var(--text-weaker)]"
               onClick={() => setCommandOpen(true)}
               aria-label="Open command palette"
             >
@@ -99,12 +99,12 @@ export function AppShell({ platform }: { platform: Platform }) {
         ) : null}
         <header
           className={[
-            "relay-mobile-header relay-electron-drag flex min-h-12 items-center gap-2 border-b border-[var(--border-weak-base)] bg-[var(--background-base)] px-2 min-[861px]:hidden",
+            "relay-mobile-header relay-electron-drag [-webkit-app-region:drag] flex min-h-12 items-center gap-2 border-b border-[var(--border-weak-base)] bg-[var(--background-base)] px-2 min-[861px]:hidden",
             platform.platform === "desktop" ? "min-h-[60px] pl-[82px]" : "",
           ].join(" ")}
         >
           <SidebarTrigger
-            className="relay-mobile-menu relay-electron-no-drag"
+            className="relay-mobile-menu relay-electron-no-drag [-webkit-app-region:no-drag]"
             aria-label="Open navigation"
           />
           <span className="relay-mobile-title text-sm font-semibold">Relay</span>

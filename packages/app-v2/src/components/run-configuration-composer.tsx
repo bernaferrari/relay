@@ -74,7 +74,7 @@ export function RunConfigurationComposer({
       aria-label="Run configuration"
       className="relay-run-configuration grid min-w-0 gap-[18px] rounded-xl border border-border bg-card p-5 [&_h2]:m-0 [&_h2]:text-base"
     >
-      <div className="relay-section-heading">
+      <div className="flex items-end justify-between gap-5 max-[620px]:items-start max-[620px]:gap-3">
         <h2 id={titleId}>
           {configuration.frozen ? "Recorded configuration" : "Run configuration"}
         </h2>
@@ -101,7 +101,7 @@ export function RunConfigurationComposer({
       {error ? (
         <div
           role="alert"
-          className="relay-config-problem m-0 rounded-lg border border-border p-3 text-[13px] [&_p]:mt-1 [&_p]:mb-2"
+          className="m-0 rounded-lg border border-border p-3 text-[13px] [&_p]:mt-1 [&_p]:mb-2"
         >
           <p>{error}</p>
           {onRetry ? (
@@ -183,7 +183,7 @@ export function RunConfigurationComposer({
       ) : null}
       {configuration.blockers?.length ? (
         <div
-          className="relay-config-problem m-0 rounded-lg border border-border p-3 text-[13px] [&_p]:mt-1 [&_p]:mb-2"
+          className="m-0 rounded-lg border border-border p-3 text-[13px] [&_p]:mt-1 [&_p]:mb-2"
           role="alert"
         >
           <ul>

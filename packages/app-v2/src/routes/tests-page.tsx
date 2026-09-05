@@ -200,7 +200,7 @@ export function TestsPage() {
 
   return (
     <LibraryPage
-      className="relay-library-page relay-tests-page"
+      className="relay-library-page relay-tests-page mx-auto w-full max-w-[1040px]"
       onClickCapture={returnFocus.onClickCapture}
     >
       <PageHeader
@@ -403,14 +403,18 @@ export function TestsPage() {
       />
 
       {!tests.isPending && !tests.isError && visibleTests.length ? (
-        <section className="relay-library-results" aria-labelledby="saved-tests-title">
-          <div className="relay-library-results-heading">
-            <h2 id="saved-tests-title">
+        <section className="relay-library-results mt-7" aria-labelledby="saved-tests-title">
+          <div className="relay-library-results-heading flex min-h-8 items-center justify-between gap-5 px-0.5 pb-2.5">
+            <h2 id="saved-tests-title" className="text-[13px] font-semibold">
               {visibleTests.length === 1 ? "1 Test" : `${visibleTests.length} Tests`}
             </h2>
-            {resultLabel ? <span aria-live="polite">{resultLabel}</span> : null}
+            {resultLabel ? (
+              <span className="text-xs text-[var(--text-weak)]" aria-live="polite">
+                {resultLabel}
+              </span>
+            ) : null}
           </div>
-          <ul className="relay-library-list">
+          <ul className="relay-library-list m-0 overflow-hidden rounded-[var(--radius-xl)] border border-[var(--border-weak-base)] bg-[var(--surface-raised-strong)] p-0 [&>li]:border-b [&>li]:border-[var(--border-weak-base)] [&>li:last-child]:border-b-0">
             {visibleTests.map((test) => (
               <TestRow
                 key={`${test.appMapId}:${test.id}`}
@@ -475,33 +479,35 @@ function TestRow({
           />
         </label>
         <Item
-          className="relay-library-row"
+          className="relay-library-row grid min-h-[78px] min-w-0 grid-cols-[minmax(180px,1fr)_minmax(94px,auto)_minmax(150px,.48fr)_18px] items-center gap-[18px] px-3.5 py-2 text-[var(--text-base)] transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 max-[720px]:grid-cols-[minmax(0,1fr)_auto]"
           render={<Link to="/tests/$testId" params={{ testId: test.id }} />}
         >
-          <span className="relay-library-row-main">
-            <strong>{test.name}</strong>
-            <span>
+          <span className="relay-library-row-main grid min-w-0 gap-1">
+            <strong className="overflow-hidden text-ellipsis whitespace-nowrap text-sm font-semibold text-[var(--text-strong)]">
+              {test.name}
+            </strong>
+            <span className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-[var(--text-weak)]">
               {test.appName} · {test.stepCount === 1 ? "1 step" : `${test.stepCount} steps`}
             </span>
           </span>
-          <span className="relay-library-row-status">
+          <span className="relay-library-row-status flex justify-start">
             {test.status === "needs-review" ? (
               <Badge
                 variant="secondary"
-                className="bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                className="bg-amber-500/15 text-amber-800 dark:text-amber-300"
               >
                 Needs review
               </Badge>
             ) : (
               <Badge
                 variant="secondary"
-                className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                className="bg-emerald-500/10 text-emerald-800 dark:text-emerald-300"
               >
                 Ready
               </Badge>
             )}
           </span>
-          <span className="relay-library-row-recent">
+          <span className="relay-library-row-recent grid min-w-0 justify-items-start gap-1">
             {recent ? (
               <>
                 <OutcomeMark outcome={recent.outcome ?? recent.phase} />
@@ -509,8 +515,10 @@ function TestRow({
               </>
             ) : (
               <>
-                <span className="relay-library-never-run">Not run yet</span>
-                <small>
+                <span className="relay-library-never-run text-xs font-semibold text-[var(--text-base)]">
+                  Not run yet
+                </span>
+                <small className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-[var(--text-weak)]">
                   {test.status === "needs-review"
                     ? "Review steps before the first Run"
                     : "Ready for its first Run"}
@@ -518,7 +526,10 @@ function TestRow({
               </>
             )}
           </span>
-          <ChevronRight className="relay-library-row-arrow" aria-hidden="true" />
+          <ChevronRight
+            className="relay-library-row-arrow text-sm text-[var(--text-weaker)]"
+            aria-hidden="true"
+          />
         </Item>
         {test.status === "needs-review" ? (
           <Link

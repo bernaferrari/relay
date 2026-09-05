@@ -275,7 +275,7 @@ export function NewTestPage() {
       </header>
 
       {activePointer.data ? (
-        <Alert className="relay-resume-recording" variant="default">
+        <Alert className="relay-resume-recording mt-7 max-w-3xl" variant="default">
           <CircleDot />
           <AlertTitle>
             {begin.data?.recovery

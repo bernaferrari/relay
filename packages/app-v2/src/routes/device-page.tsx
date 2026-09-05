@@ -276,8 +276,8 @@ export function DevicePage() {
               variant={device.data.status === "needs-attention" ? "secondary" : "default"}
               className={
                 device.data.status === "needs-attention"
-                  ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
-                  : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                  ? "bg-amber-500/15 text-amber-800 dark:text-amber-300"
+                  : "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300"
               }
             >
               {presentation.label}
@@ -285,7 +285,10 @@ export function DevicePage() {
             <h2 id="device-health-title">{presentation.title}</h2>
             <p>{presentation.detail}</p>
             {recover.error ? (
-              <p className="relay-settings-error" role="alert">
+              <p
+                className="relay-settings-error mt-3 text-sm leading-relaxed text-destructive"
+                role="alert"
+              >
                 Reconnection did not finish. Keep the device awake and connected, then try again.
               </p>
             ) : null}
@@ -303,7 +306,7 @@ export function DevicePage() {
             className="my-7 grid grid-cols-3 border-y border-border py-4 max-[560px]:grid-cols-1"
             aria-labelledby="device-details-title"
           >
-            <div className="relay-section-heading">
+            <div className="flex items-end justify-between gap-5 max-[620px]:items-start max-[620px]:gap-3">
               <div>
                 <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
                   At a glance
@@ -344,7 +347,7 @@ export function DevicePage() {
                 onSubmit={submitAppLaunch}
                 noValidate
               >
-                <div className="relay-form-field">
+                <div className="relay-form-field grid min-w-0 gap-2 text-sm [&>label]:font-medium">
                   <label htmlFor="device-app-identifier">App/package/bundle identifier</label>
                   <input
                     id="device-app-identifier"
@@ -373,7 +376,7 @@ export function DevicePage() {
                   {appIdentifierError ? (
                     <p
                       id="device-app-identifier-error"
-                      className="relay-settings-error"
+                      className="relay-settings-error mt-3 text-sm leading-relaxed text-destructive"
                       role="alert"
                     >
                       {appIdentifierError}
@@ -392,7 +395,10 @@ export function DevicePage() {
                   {appLaunch.isPending ? "Launching…" : "Launch app"}
                 </Button>
                 {appLaunch.error ? (
-                  <p className="relay-settings-error" role="alert">
+                  <p
+                    className="relay-settings-error mt-3 text-sm leading-relaxed text-destructive"
+                    role="alert"
+                  >
                     {friendlyAppLaunchIssue(appLaunch.error)}
                   </p>
                 ) : null}

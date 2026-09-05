@@ -73,7 +73,7 @@ export function MapPage() {
           { label: "Explore" },
         ]}
       />
-      <header className="relay-page-header">
+      <header className="relay-page-header mb-7 flex min-w-0 flex-wrap items-start justify-between gap-5">
         <p className="relay-eyebrow mb-2 text-[11px] font-semibold tracking-[0.02em] text-[var(--text-weak)]">
           Explore
         </p>
@@ -141,7 +141,7 @@ export function MapPage() {
             />
           )}
           <section className="" aria-labelledby="paths-title">
-            <div className="relay-section-heading">
+            <div className="flex items-end justify-between gap-5 max-[620px]:items-start max-[620px]:gap-3">
               <div>
                 <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
                   Journeys
@@ -267,7 +267,9 @@ export function MapPage() {
                     ))}
                 </ul>
               ) : (
-                <p className="relay-context-empty">No proposal needs a decision.</p>
+                <p className="relay-context-empty rounded-lg border border-dashed border-border p-5 text-sm text-muted-foreground">
+                  No proposal needs a decision.
+                </p>
               )}
             </CollapsibleContent>
           </Collapsible>
@@ -276,7 +278,7 @@ export function MapPage() {
       {map.data &&
       (map.data.screens.length > visibleScreens.length ||
         map.data.paths.length > visiblePaths.length) ? (
-        <p className="relay-action-hint">
+        <p className="relay-action-hint mt-2 text-xs leading-5 text-muted-foreground">
           Canvas shows the first {visibleScreens.length} screens and {visiblePaths.length} paths.
           Use the searchable path list to review all known paths.
         </p>

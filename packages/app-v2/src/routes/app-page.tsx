@@ -108,7 +108,7 @@ export function AppPage() {
 
           <div className="mt-[38px] grid grid-cols-2 gap-9 max-[780px]:grid-cols-1">
             <section className="min-w-0" aria-labelledby="app-tests-title">
-              <header className="relay-section-heading">
+              <header className="flex items-end justify-between gap-5 max-[620px]:items-start max-[620px]:gap-3">
                 <div>
                   <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
                     Tests
@@ -116,11 +116,19 @@ export function AppPage() {
                   <h2 id="app-tests-title">Saved journeys</h2>
                 </div>
                 {tests.data?.length ? (
-                  <Link className="relay-inline-action" to="/tests" search={{ app: appId }}>
+                  <Link
+                    className="relay-inline-action inline-flex min-h-11 items-center gap-1.5 text-xs font-semibold text-[var(--text-interactive-base)]"
+                    to="/tests"
+                    search={{ app: appId }}
+                  >
                     View all <ArrowRight aria-hidden="true" />
                   </Link>
                 ) : null}
-                <Link className="relay-inline-action" to="/suites" search={{ app: appId }}>
+                <Link
+                  className="relay-inline-action inline-flex min-h-11 items-center gap-1.5 text-xs font-semibold text-[var(--text-interactive-base)]"
+                  to="/suites"
+                  search={{ app: appId }}
+                >
                   Suites <ArrowRight aria-hidden="true" />
                 </Link>
               </header>
@@ -176,7 +184,7 @@ export function AppPage() {
             </section>
 
             <section className="min-w-0" aria-labelledby="app-runs-title">
-              <header className="relay-section-heading">
+              <header className="flex items-end justify-between gap-5 max-[620px]:items-start max-[620px]:gap-3">
                 <div>
                   <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
                     Reports
@@ -184,7 +192,11 @@ export function AppPage() {
                   <h2 id="app-runs-title">Recent results</h2>
                 </div>
                 {recentRuns.length ? (
-                  <Link className="relay-inline-action" to="/runs" search={{ app: appId }}>
+                  <Link
+                    className="relay-inline-action inline-flex min-h-11 items-center gap-1.5 text-xs font-semibold text-[var(--text-interactive-base)]"
+                    to="/runs"
+                    search={{ app: appId }}
+                  >
                     View all <ArrowRight aria-hidden="true" />
                   </Link>
                 ) : null}
@@ -231,7 +243,7 @@ export function AppPage() {
             </section>
           </div>
           <section className="mt-[34px]" aria-labelledby="app-resources-title">
-            <header className="relay-section-heading">
+            <header className="flex items-end justify-between gap-5 max-[620px]:items-start max-[620px]:gap-3">
               <div>
                 <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
                   Configuration

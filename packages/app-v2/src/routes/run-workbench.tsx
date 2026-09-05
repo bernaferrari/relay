@@ -157,7 +157,7 @@ function StepMedia({ frames }: { frames: readonly ReportEvidenceItem[] }) {
   const [failed, setFailed] = useState(false);
   const frame = frames[selected] ?? frames[0];
   return (
-    <div className="relay-evidence-image-frame">
+    <div className="relay-evidence-image-frame overflow-hidden rounded-lg border border-border bg-card">
       <div className="flex min-h-64 items-center justify-center bg-muted/30 p-5">
         {frame?.media && !failed ? (
           <img

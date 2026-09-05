@@ -66,6 +66,7 @@ test("Test edit history restores every stable step operation and survives restar
         testId: "checkout",
         expectedRevision: changed.revision,
       });
+      assert.equal(undone.appMap.tests.checkout?.validation?.status, "needs-validation");
       assert.equal(
         sameAppMapTestContent(undone.appMap.tests.checkout!, current.tests.checkout!),
         true,

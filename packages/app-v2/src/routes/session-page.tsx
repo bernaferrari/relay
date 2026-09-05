@@ -288,7 +288,7 @@ export function SessionPage() {
             className="min-w-0 rounded-xl border border-border bg-card p-[18px] shadow-sm"
             aria-labelledby="session-stage-title"
           >
-            <div className="relay-section-heading">
+            <div className="flex items-end justify-between gap-5 max-[620px]:items-start max-[620px]:gap-3">
               <div>
                 <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
                   Live target
@@ -475,7 +475,7 @@ function sessionBadgeVariant(tone: SessionBadgeTone): "default" | "secondary" {
 }
 
 function sessionBadgeClass(tone: SessionBadgeTone): string | undefined {
-  if (tone === "success") return "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300";
-  if (tone === "warning") return "bg-amber-500/15 text-amber-700 dark:text-amber-300";
+  if (tone === "success") return "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300";
+  if (tone === "warning") return "bg-amber-500/15 text-amber-800 dark:text-amber-300";
   return undefined;
 }

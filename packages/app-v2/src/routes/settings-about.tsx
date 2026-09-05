@@ -73,12 +73,12 @@ export function AboutSettings() {
           <p>Proof that software works on real apps, browsers, and devices.</p>
         </header>
         <SettingRow title="Version" description="The build currently running on this computer.">
-          <span className="relay-settings-value relay-settings-value--numeric">
+          <span className="whitespace-nowrap text-xs font-semibold tabular-nums text-foreground">
             {platform.version ? `v${platform.version}` : "Development build"}
           </span>
         </SettingRow>
         <SettingRow title="Host" description="Where this Relay interface is running.">
-          <span className="relay-settings-value">
+          <span className="whitespace-nowrap text-xs font-semibold text-foreground">
             {platform.platform === "desktop" ? "Desktop app" : "Web browser"}
           </span>
         </SettingRow>
@@ -123,7 +123,9 @@ export function AboutSettings() {
               Open project guide
             </Button>
           ) : (
-            <span className="relay-settings-value">Available in the desktop app</span>
+            <span className="whitespace-nowrap text-xs font-semibold text-foreground">
+              Available in the desktop app
+            </span>
           )}
         </SettingRow>
       </section>

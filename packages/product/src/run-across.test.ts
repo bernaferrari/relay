@@ -4,6 +4,7 @@ import {
   createProductRunAcrossService,
   previewProductRunAcross,
   selectProductBatchCases,
+  summarizeProductBatch,
   type ProductRunAcrossSetup,
 } from "./run-across.js";
 
@@ -37,6 +38,55 @@ const setup: ProductRunAcrossSetup = {
     ],
   },
 };
+
+function batchWithStatuses(...statuses: Array<"passed" | "failed" | "blocked" | "cancelled">) {
+  return {
+    id: "batch-summary",
+    navigation: { route: "/batches/$batchId", href: "/batches/batch-summary" },
+    title: "Summary",
+    status: "completed" as const,
+    createdAt: 1,
+    updatedAt: 2,
+    cases: statuses.map((status, index) => ({
+      id: `case-${index}`,
+      index,
+      phase: "coverage" as const,
+      status,
+      values: {},
+    })),
+    runIds: [],
+    targetNames: [],
+    totalCases: statuses.length,
+    completedCases: statuses.length,
+    passedCases: statuses.filter((status) => status === "passed").length,
+    failedCases: statuses.filter((status) => status === "failed").length,
+    pendingCases: 0,
+  };
+}
+
+test("batch summaries preserve cancelled and blocked outcomes", () => {
+  assert.equal(
+    summarizeProductBatch({ ...batchWithStatuses(), status: "cancelled" }).headline,
+    "Batch was cancelled",
+  );
+  assert.equal(summarizeProductBatch(batchWithStatuses()).headline, "No cases were run");
+  assert.equal(
+    summarizeProductBatch(batchWithStatuses("cancelled")).headline,
+    "Batch was cancelled",
+  );
+  assert.equal(
+    summarizeProductBatch(batchWithStatuses("blocked")).headline,
+    "All selected cases are blocked",
+  );
+  assert.match(
+    summarizeProductBatch(batchWithStatuses("passed", "blocked", "cancelled")).detail,
+    /1 passed · 0 failed · 1 blocked · 1 cancelled · 0 remaining/u,
+  );
+  assert.equal(
+    summarizeProductBatch(batchWithStatuses("passed", "passed")).headline,
+    "All selected cases passed",
+  );
+});
 
 test("preview exposes exact readable scope and a representative pilot", () => {
   const preview = previewProductRunAcross({

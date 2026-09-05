@@ -496,7 +496,7 @@ function MapEdges({
   );
   return (
     <svg
-      className="relay-map-edges"
+      className="relay-map-edges pointer-events-none absolute overflow-visible [&_marker_path]:fill-[var(--text-weaker)]"
       aria-hidden="true"
       viewBox={`${edgeBounds.minX} ${edgeBounds.minY} ${edgeBounds.maxX - edgeBounds.minX} ${edgeBounds.maxY - edgeBounds.minY}`}
       style={{
@@ -520,7 +520,10 @@ function MapEdges({
         </marker>
       </defs>
       {geometries.map((geometry) => (
-        <g key={geometry.path.id} className="relay-map-edge">
+        <g
+          key={geometry.path.id}
+          className="relay-map-edge [&>path]:fill-none [&>path]:stroke-[color-mix(in_srgb,var(--text-weaker)_58%,var(--border-weak-base))] [&>path]:[stroke-linecap:round] [&>path]:stroke-[1.5] [&>path]:[vector-effect:non-scaling-stroke] [&>rect]:fill-[var(--surface-raised-stronger-non-alpha)] [&>rect]:stroke-[var(--border-weak-base)] [&>rect]:stroke-1 [&>rect]:[vector-effect:non-scaling-stroke] [&_text]:fill-[var(--text-weak)] [&_text]:font-sans [&_text]:text-[10.5px] [&_text]:font-semibold"
+        >
           <path id={geometry.id} d={geometry.d} markerEnd={`url(#${markerId})`} />
           <rect
             x={geometry.label.x - geometry.label.width / 2}
