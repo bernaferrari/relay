@@ -20,6 +20,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { ChevronDown, ChevronRight, Monitor, Smartphone, Tablet } from "lucide-react";
 import { useDeferredValue, useEffect, useState } from "react";
+import { LibraryPage, PageHeader } from "../components/page-layout";
 import { EmptyState, RecoveryState } from "../components/product-patterns";
 import {
   deviceQueryKeys,
@@ -105,18 +106,31 @@ function deviceMetadata(device: ProductDevice): string {
 
 function DeviceIcon({ device }: { device: ProductDevice }) {
   const className = "grid size-9 place-items-center rounded-md border border-border bg-background";
-  if (device.platform === "browser") return <Monitor className={className} aria-hidden="true" />;
+  if (device.platform === "browser")
+    return (
+      <span className={className}>
+        <Monitor className="size-5" aria-hidden="true" />
+      </span>
+    );
   if (/ipad|tablet/iu.test(`${device.name} ${device.kind ?? ""}`)) {
-    return <Tablet className={className} aria-hidden="true" />;
+    return (
+      <span className={className}>
+        <Tablet className="size-5" aria-hidden="true" />
+      </span>
+    );
   }
-  return <Smartphone className={className} aria-hidden="true" />;
+  return (
+    <span className={className}>
+      <Smartphone className="size-5" aria-hidden="true" />
+    </span>
+  );
 }
 
 function DeviceRow({ device, returnTo }: { device: ProductDevice; returnTo?: string }) {
   return (
-    <li className="flex min-h-[68px] items-center gap-3 px-3.5 py-3">
+    <li className="border-b border-border last:border-b-0">
       <Item
-        className="relay-device-row flex min-h-[68px] items-center gap-3 px-3.5 py-3"
+        className="relay-device-row flex min-h-20 w-full items-center gap-4 rounded-none px-4 py-3 transition-colors hover:bg-muted/50"
         size="sm"
         render={
           <Link
@@ -133,7 +147,7 @@ function DeviceRow({ device, returnTo }: { device: ProductDevice; returnTo?: str
           <ItemTitle>{device.name}</ItemTitle>
           <ItemDescription>{deviceMetadata(device)}</ItemDescription>
         </ItemContent>
-        <ItemActions className="flex min-h-[68px] items-center gap-3 px-3.5 py-3">
+        <ItemActions className="flex shrink-0 items-center gap-3">
           <Badge
             variant={device.status === "needs-attention" ? "destructive" : "default"}
             className={
@@ -205,8 +219,10 @@ function DeviceSection({
     <section className="grid gap-3" aria-labelledby={headingId}>
       <header>
         <div>
-          <div className="grid gap-3">
-            <h2 id={headingId}>{title}</h2>
+          <div className="flex items-center gap-2">
+            <h2 id={headingId} className="text-sm font-semibold">
+              {title}
+            </h2>
             <span
               className="text-xs text-muted-foreground"
               aria-label={`${devices.length} devices`}
@@ -214,7 +230,7 @@ function DeviceSection({
               {devices.length}
             </span>
           </div>
-          <p>{description}</p>
+          <p className="mt-1 text-sm text-muted-foreground">{description}</p>
         </div>
       </header>
       {content}
@@ -290,47 +306,43 @@ export function DevicesPage() {
   }
 
   return (
-    <section
-      className="relay-page mx-auto w-full px-[clamp(20px,3vw,40px)] pt-7 pb-10 max-w-[1080px]"
-      onClickCapture={returnFocus.onClickCapture}
-    >
-      <header className="relay-page-header flex items-start justify-between gap-7 max-[780px]:flex-col">
-        <div>
-          <p className="relay-eyebrow mb-2 text-[11px] font-semibold tracking-[0.02em] text-[var(--text-weak)]">
-            Workspace
-          </p>
-          <h1 className="text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance] text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance]">
-            Devices
-          </h1>
-          <p className="relay-page-description mt-2.5 max-w-[62ch] text-[15px] leading-[1.55] text-[var(--text-weak)]">
-            See what is ready, what needs help, and which virtual devices are available for a Test.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            nativeButton={false}
-            render={
-              <Link
-                to="/environments"
-                search={continuation ? { returnTo: search.returnTo } : undefined}
-              />
-            }
-          >
-            Manage browsers
-          </Button>
-          {!devices.isError ? (
-            <Button size="sm" onClick={() => void devices.refetch()} disabled={devices.isFetching}>
-              {devices.isFetching ? "Checking…" : "Check again"}
+    <LibraryPage onClickCapture={returnFocus.onClickCapture}>
+      <PageHeader
+        context="Workspace"
+        title="Devices"
+        description="Choose a device or browser to inspect, record, or run a Test."
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              nativeButton={false}
+              render={
+                <Link
+                  to="/environments"
+                  search={continuation ? { returnTo: search.returnTo } : undefined}
+                />
+              }
+            >
+              Manage browsers
             </Button>
-          ) : null}
-        </div>
-      </header>
+            {!devices.isError ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => void devices.refetch()}
+                disabled={devices.isFetching}
+              >
+                {devices.isFetching ? "Checking…" : "Check again"}
+              </Button>
+            ) : null}
+          </div>
+        }
+      />
 
-      <div className="mt-8 flex min-w-0 flex-col gap-3 border-b border-border/60 pb-4 md:flex-row md:items-center">
+      <div className="mb-6 grid min-w-0 grid-cols-1 gap-4 border-b border-border pb-4 min-[780px]:grid-cols-[minmax(0,1fr)_auto]">
         <Tabs
-          className="min-w-0 flex-1"
+          className="order-3 min-w-0 min-[780px]:col-span-full"
           value={activeFilter}
           onValueChange={(value) => updateSearch({ status: value as DeviceFilter })}
         >
@@ -343,15 +355,11 @@ export function DevicesPage() {
           </TabsList>
         </Tabs>
         <Tabs
-          className="min-w-0 md:max-w-[270px]"
+          className="order-2 min-w-0"
           value={activeTypeFilter}
           onValueChange={(value) => updateSearch({ type: value as DeviceTypeFilter })}
         >
-          <TabsList
-            className="max-w-full justify-start"
-            variant="line"
-            aria-label="Filter device type"
-          >
+          <TabsList className="max-w-full justify-start" aria-label="Filter device type">
             {TYPE_FILTERS.map((filter) => (
               <TabsTrigger key={filter.id} value={filter.id}>
                 {filter.label}
@@ -360,7 +368,7 @@ export function DevicesPage() {
           </TabsList>
         </Tabs>
         <Input
-          className="w-full min-w-0 md:w-56 md:max-w-[35%]"
+          className="order-1 w-full min-w-0 max-w-lg"
           type="search"
           value={query}
           onChange={(event) => setQuery(event.currentTarget.value)}
@@ -399,10 +407,19 @@ export function DevicesPage() {
 
       {!devices.isPending && !devices.isError && devices.data?.length && visibleCount === 0 ? (
         <EmptyState
-          title={`No ${FILTERS.find((item) => item.id === activeFilter)?.label.toLowerCase()} devices`}
+          title="No devices match your filters"
           detail="Choose another filter to see the devices Relay found."
           action={
-            <Button variant="outline" onClick={() => updateSearch({ status: "all" })}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setQuery("");
+                void navigate({
+                  to: "/devices",
+                  search: search.returnTo ? { returnTo: search.returnTo } : {},
+                });
+              }}
+            >
               Show all devices
             </Button>
           }
@@ -435,6 +452,6 @@ export function DevicesPage() {
             ))}
         </div>
       ) : null}
-    </section>
+    </LibraryPage>
   );
 }

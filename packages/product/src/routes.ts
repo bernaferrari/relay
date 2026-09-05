@@ -105,6 +105,7 @@ export type RouteDefinition = {
     | "session"
     | "section"
     | "replayJob"
+    | "type"
     | "q"
     | "returnTo"
   )[];
@@ -218,6 +219,7 @@ export const ROUTE_DEFINITIONS = [
   d("/changes/:changeId", "/changes", "Change", "Change", "changes", "inspect-change", ["view"]),
   d("/devices", "/home", "Devices", "Device", "devices", "connect-device", [
     "status",
+    "type",
     "view",
     "returnTo",
     "q",

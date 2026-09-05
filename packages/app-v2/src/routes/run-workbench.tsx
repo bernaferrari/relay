@@ -38,17 +38,17 @@ export function RunWorkbench({
   if (!step) return null;
   return (
     <section
-      className="grid min-w-0 overflow-hidden rounded-xl border border-border bg-card lg:grid-cols-[16rem_minmax(0,1fr)]"
+      className="grid min-w-0 overflow-hidden rounded-xl border border-border bg-card min-[721px]:grid-cols-[12rem_minmax(0,1fr)] min-[1280px]:grid-cols-[16rem_minmax(0,1fr)]"
       aria-label="Run workbench"
     >
-      <aside className="min-w-0 border-b border-border bg-muted/20 lg:border-r lg:border-b-0">
+      <aside className="min-w-0 border-b border-border bg-muted/20 min-[721px]:border-r min-[721px]:border-b-0">
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <h2 className="text-sm font-semibold">Steps</h2>
           <span className="text-xs tabular-nums text-muted-foreground">
             {report.timeline.length}
           </span>
         </div>
-        <ol className="relay-test-readable-steps max-h-56 overflow-y-auto p-2 lg:max-h-[36rem]">
+        <ol className="relay-test-readable-steps max-h-40 overflow-y-auto p-2 min-[721px]:max-h-[36rem]">
           {report.timeline.map((item, index) => {
             const Icon =
               item.state === "passed" || item.state === "recovered"
@@ -221,7 +221,15 @@ function timelineStateLabel(state: Report["timeline"][number]["state"]): string 
   return "Not reached";
 }
 
-export function RunContextFacts({ report, duration }: { report: Report; duration: string }) {
+export function RunContextFacts({
+  report,
+  duration,
+  compact = false,
+}: {
+  report: Report;
+  duration: string;
+  compact?: boolean;
+}) {
   const context = report.executionContext;
   const facts = [
     ["Device or browser", report.targetName ?? "Not recorded"],
@@ -233,8 +241,8 @@ export function RunContextFacts({ report, duration }: { report: Report; duration
     ["Target profile", context?.targetProfileId],
   ].filter((entry): entry is [string, string] => typeof entry[1] === "string");
   return (
-    <dl className="mb-5 flex flex-wrap gap-6 border-y border-border py-3">
-      {facts.map(([label, value]) => (
+    <dl className="mt-4 flex flex-wrap gap-x-6 gap-y-3 border-y border-border py-3">
+      {(compact ? facts.slice(0, 2) : facts).map(([label, value]) => (
         <div key={label} className="min-w-0 max-w-full">
           <dt className="text-xs text-muted-foreground">{label}</dt>
           <dd className="mt-1 break-all text-sm font-medium tabular-nums">{value}</dd>

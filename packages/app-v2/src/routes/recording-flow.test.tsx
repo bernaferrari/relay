@@ -599,7 +599,9 @@ describe("record, review, replay, and save", () => {
     await click(document.querySelector<HTMLInputElement>('input[name="app"]')!);
     await click(document.querySelector<HTMLInputElement>('input[name="target"]')!);
 
-    expect(document.body.textContent).toContain("Nothing is recorded yet. Go to your starting screen, then start recording.");
+    expect(document.body.textContent).toContain(
+      "Nothing is recorded yet. Go to your starting screen, then start recording.",
+    );
     expect(button("Start recording").disabled).toBe(false);
     await interactWithLiveTarget();
     expect(fake.calls).toContain("input:touch");

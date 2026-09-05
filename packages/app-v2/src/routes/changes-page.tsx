@@ -10,6 +10,7 @@ import { ChevronRight, RotateCcw } from "lucide-react";
 import { useMemo } from "react";
 import { EmptyState, RecoveryState } from "../components/product-patterns";
 import { PageLoading, RecordingProblem } from "./recording-shared";
+import { LibraryPage, PageHeader } from "../components/page-layout";
 
 const routeApi = getRouteApi("/changes");
 export const changesQueryKey = ["changes"] as const;
@@ -48,26 +49,19 @@ export function ChangesPage() {
   );
 
   return (
-    <section className="relay-page mx-auto w-full px-[clamp(20px,3vw,40px)] pt-7 pb-10 relay-library-page max-w-[1040px]">
-      <header className="relay-library-header flex items-start justify-between gap-7 max-[780px]:flex-col">
-        <div>
-          <p className="relay-eyebrow mb-2 text-[11px] font-semibold tracking-[0.02em] text-[var(--text-weak)]">
-            Changes
-          </p>
-          <h1 className="text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance] text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance]">
-            Change verification
-          </h1>
-          <p className="relay-page-description mt-2.5 max-w-[62ch] text-[15px] leading-[1.55] text-[var(--text-weak)]">
-            See which code changes are ready to merge, what Relay verified, and what still needs
-            attention.
-          </p>
-        </div>
-        {!changes.isError ? (
-          <Button variant="default" onClick={() => prepare.mutate()} disabled={prepare.isPending}>
-            {prepare.isPending ? "Preparing verification…" : "Verify current Change"}
-          </Button>
-        ) : null}
-      </header>
+    <LibraryPage className="relay-library-page relay-changes-page mx-auto w-full max-w-[1040px]">
+      <PageHeader
+        context="Changes"
+        title="Change verification"
+        description="See which code changes are ready to merge, what Relay verified, and what still needs attention."
+        actions={
+          !changes.isError ? (
+            <Button variant="default" onClick={() => prepare.mutate()} disabled={prepare.isPending}>
+              {prepare.isPending ? "Preparing verification…" : "Verify current Change"}
+            </Button>
+          ) : null
+        }
+      />
 
       <Tabs
         value={view}
@@ -170,7 +164,7 @@ export function ChangesPage() {
           />
         )
       ) : null}
-    </section>
+    </LibraryPage>
   );
 }
 

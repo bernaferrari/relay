@@ -7,9 +7,14 @@ import {
 import { WorkbenchPage, PageHeader, WorkbenchPanes } from "../components/page-layout";
 import { Badge } from "@relay/ui-react/components/badge";
 import { Button } from "@relay/ui-react/components/button";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@relay/ui-react/components/collapsible";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ProductTestStep } from "@relay/product/catalog";
 import { Breadcrumbs, EmptyState, OutcomeMark } from "../components/product-patterns";
 import { TestStepEvidencePreview } from "../components/test-step-evidence-preview";
@@ -28,6 +33,7 @@ export function TestPage() {
   const { runService, platform, queryClient } = useRouteContext({ from: "__root__" });
   const { testId } = routeApi.useParams();
   const navigate = useNavigate();
+  const runSetupRef = useRef<HTMLElement>(null);
 
   const [evidenceStepId, setEvidenceStepId] = useState("");
   const test = useQuery({
@@ -116,6 +122,19 @@ export function TestPage() {
       })
     : undefined;
 
+  function focusRunSetup() {
+    runSetupRef.current?.scrollIntoView({ behavior: "auto", block: "center" });
+    runSetupRef.current?.focus({ preventScroll: true });
+  }
+
+  function runOrFocusSetup() {
+    if (!targetReady || configuration.loading) {
+      focusRunSetup();
+      return;
+    }
+    start.mutate();
+  }
+
   return (
     <WorkbenchPage className="relay-test-page">
       <Breadcrumbs
@@ -131,6 +150,29 @@ export function TestPage() {
         }
         actions={
           <>
+            {activeRun ? (
+              <Button
+                nativeButton={false}
+                render={<Link to="/runs/$runId" params={{ runId: activeRun.runId }} />}
+                variant="default"
+                size="sm"
+              >
+                Resume Run
+              </Button>
+            ) : (
+              <Button
+                variant="default"
+                size="sm"
+                onClick={runOrFocusSetup}
+                disabled={start.isPending}
+              >
+                {start.isPending
+                  ? "Starting…"
+                  : targetReady && !configuration.loading
+                    ? "Run Test"
+                    : "Set up Run"}
+              </Button>
+            )}
             <Button
               nativeButton={false}
               render={<Link to="/tests/$testId/edit" params={{ testId }} />}
@@ -243,152 +285,195 @@ export function TestPage() {
           }
           inspector={
             !activeRun && !targets.isError ? (
-              <RunConfigurationComposer
-                configuration={{
-                  values: {
-                    targetName: targets.data?.find((target) => target.targetId === targetId)?.name,
-                  },
-                  validated: targetReady && !configuration.loading,
-                  blockers: configuration.targetUnavailable
-                    ? [
-                        {
-                          id: "target",
-                          label: "Saved target is unavailable",
-                          detail: "Choose a ready device or browser to continue.",
-                        },
-                      ]
-                    : [],
-                }}
-                targetOptions={targets.data?.map((target) => ({
-                  id: target.targetId,
-                  label: targetLabel(target).title,
-                  detail: targetLabel(target).detail,
-                }))}
-                selection={configuration.selection}
-                onSelectionChange={configuration.setSelection}
-                loading={configuration.loading}
-                error={scope.error ?? configuration.error}
-                onRetry={scope.error ? scope.retry : configuration.retry}
+              <section
+                ref={runSetupRef}
+                id="test-run-setup"
+                tabIndex={-1}
+                className="scroll-mt-6 outline-none focus-visible:ring-3 focus-visible:ring-ring/40"
+                aria-labelledby="test-run-setup-title"
               >
-                {!targets.data?.length ? (
-                  <EmptyState
-                    title="No device or browser is ready"
-                    detail="Connect a target to continue with this Test."
-                    action={
-                      <Link
-                        className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
-                        to="/devices"
-                      >
-                        View devices
-                      </Link>
-                    }
-                  />
-                ) : null}
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button
-                    variant="default"
-                    onClick={() => start.mutate()}
-                    disabled={!targetReady || configuration.loading || start.isPending}
-                  >
-                    {start.isPending ? "Starting…" : "Run Test"}
-                  </Button>
-                  {!targetId && targets.data?.length ? (
-                    <span className="text-xs text-text-weaker">Choose where to run</span>
+                <h2 id="test-run-setup-title" className="sr-only">
+                  Run setup
+                </h2>
+                <RunConfigurationComposer
+                  configuration={{
+                    values: {
+                      targetName: targets.data?.find((target) => target.targetId === targetId)
+                        ?.name,
+                    },
+                    validated: targetReady && !configuration.loading,
+                    blockers: configuration.targetUnavailable
+                      ? [
+                          {
+                            id: "target",
+                            label: "Saved target is unavailable",
+                            detail: "Choose a ready device or browser to continue.",
+                          },
+                        ]
+                      : [],
+                  }}
+                  targetOptions={targets.data?.map((target) => ({
+                    id: target.targetId,
+                    label: targetLabel(target).title,
+                    detail: targetLabel(target).detail,
+                  }))}
+                  selection={configuration.selection}
+                  onSelectionChange={configuration.setSelection}
+                  loading={configuration.loading}
+                  error={scope.error ?? configuration.error}
+                  onRetry={scope.error ? scope.retry : configuration.retry}
+                >
+                  {!targets.data?.length ? (
+                    <EmptyState
+                      title="No device or browser is ready"
+                      detail="Connect a target to continue with this Test."
+                      action={
+                        <Link
+                          className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
+                          to="/devices"
+                        >
+                          View devices
+                        </Link>
+                      }
+                    />
                   ) : null}
-                </div>
-              </RunConfigurationComposer>
+                  {!targetReady || configuration.loading ? (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        variant="default"
+                        onClick={() => start.mutate()}
+                        disabled={!targetReady || configuration.loading || start.isPending}
+                      >
+                        {start.isPending ? "Starting…" : "Run Test"}
+                      </Button>
+                      {!targetId && targets.data?.length ? (
+                        <span className="text-xs text-text-weaker">Choose where to run</span>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </RunConfigurationComposer>
+              </section>
             ) : undefined
           }
         />
       ) : null}
 
       {!loading && test.data && recentRuns.data?.length ? (
-        <div className="mt-8 grid gap-7 border-t border-border pt-6 md:grid-cols-2">
-          <section className="min-w-0" aria-labelledby="test-stability-title">
-            <div className="flex items-end justify-between gap-5 max-[620px]:items-start max-[620px]:gap-3">
-              <div>
-                <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
-                  Reliability
-                </p>
-                <h2 id="test-stability-title">Recent stability</h2>
-              </div>
-              <Badge
-                variant="secondary"
-                className={
-                  stability?.signals.length
-                    ? "bg-amber-500/15 text-amber-800 dark:text-amber-300"
-                    : undefined
-                }
-              >
+        <Collapsible className="mt-8 border-t border-border pt-4">
+          <CollapsibleTrigger className="flex min-h-11 w-full items-center justify-between gap-4 rounded-md py-2 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/40">
+            <span>
+              <span className="block text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+                History
+              </span>
+              <span className="block text-base font-semibold text-foreground">
+                Reliability and recent Runs
+              </span>
+              <span className="sr-only">
+                Recent stability ·{" "}
+                {stabilityHistoryComplete ? "Complete history" : "Partial history"}
+                {stability?.signals.length
+                  ? stability.signals.map((signal) => signal.summary).join(" ")
+                  : " Rates stay hidden until complete history is available."}
+              </span>
+            </span>
+            <span className="flex items-center gap-2 text-xs">
+              <Badge variant="secondary">
                 {stabilityHistoryComplete ? "Complete history" : "Partial history"}
               </Badge>
-            </div>
-            <dl className="mt-4 grid grid-cols-3 gap-2">
-              <div>
-                <dt>Observed Runs</dt>
-                <dd>{stability?.sampleCount ?? 0}</dd>
-              </div>
-              <div>
-                <dt>Verified passes</dt>
-                <dd>{stability?.passedCount ?? 0}</dd>
-              </div>
-              <div>
-                <dt>Product failures</dt>
-                <dd>{stability?.failedCount ?? 0}</dd>
-              </div>
-            </dl>
-            {stability?.signals.length ? (
-              <ul className="mt-3 grid gap-1.5 pl-4 text-xs text-muted-foreground">
-                {stability.signals.map((signal) => (
-                  <li key={`${signal.kind}:${signal.environmentId ?? "all"}`}>{signal.summary}</li>
-                ))}
-              </ul>
-            ) : (
-              <p>
-                Relay has not found a repeated stability signal in the loaded Runs. Rates stay
-                hidden until complete history is available.
-              </p>
-            )}
-          </section>
+              <span>Expand</span>
+            </span>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="pt-4">
+            <div className="grid gap-7 md:grid-cols-2">
+              <section className="min-w-0" aria-labelledby="test-stability-title">
+                <div className="flex items-end justify-between gap-5 max-[620px]:items-start max-[620px]:gap-3">
+                  <div>
+                    <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+                      Reliability
+                    </p>
+                    <h2 id="test-stability-title">Recent stability</h2>
+                  </div>
+                  <Badge
+                    variant="secondary"
+                    className={
+                      stability?.signals.length
+                        ? "bg-amber-500/15 text-amber-800 dark:text-amber-300"
+                        : undefined
+                    }
+                  >
+                    {stabilityHistoryComplete ? "Complete history" : "Partial history"}
+                  </Badge>
+                </div>
+                <dl className="mt-4 grid grid-cols-3 gap-2">
+                  <div>
+                    <dt>Observed Runs</dt>
+                    <dd>{stability?.sampleCount ?? 0}</dd>
+                  </div>
+                  <div>
+                    <dt>Verified passes</dt>
+                    <dd>{stability?.passedCount ?? 0}</dd>
+                  </div>
+                  <div>
+                    <dt>Product failures</dt>
+                    <dd>{stability?.failedCount ?? 0}</dd>
+                  </div>
+                </dl>
+                {stability?.signals.length ? (
+                  <ul className="mt-3 grid gap-1.5 pl-4 text-xs text-muted-foreground">
+                    {stability.signals.map((signal) => (
+                      <li key={`${signal.kind}:${signal.environmentId ?? "all"}`}>
+                        {signal.summary}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p>
+                    Relay has not found a repeated stability signal in the loaded Runs. Rates stay
+                    hidden until complete history is available.
+                  </p>
+                )}
+              </section>
 
-          <section className="min-w-0" aria-labelledby="test-runs-title">
-            <div className="flex items-end justify-between gap-5 max-[620px]:items-start max-[620px]:gap-3">
-              <div>
-                <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
-                  Reports
-                </p>
-                <h2 id="test-runs-title">Recent Runs</h2>
-              </div>
-              <Link
-                className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
-                to="/runs"
-                search={{ view: "all", test: testId }}
-              >
-                View all Runs
-              </Link>
+              <section className="min-w-0" aria-labelledby="test-runs-title">
+                <div className="flex items-end justify-between gap-5 max-[620px]:items-start max-[620px]:gap-3">
+                  <div>
+                    <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+                      Reports
+                    </p>
+                    <h2 id="test-runs-title">Recent Runs</h2>
+                  </div>
+                  <Link
+                    className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
+                    to="/runs"
+                    search={{ view: "all", test: testId }}
+                  >
+                    View all Runs
+                  </Link>
+                </div>
+                <ul className="mt-4 grid list-none gap-0 p-0">
+                  {[...recentRuns.data]
+                    .sort(
+                      (left, right) =>
+                        (right.finishedAt ?? right.startedAt ?? right.queuedAt) -
+                        (left.finishedAt ?? left.startedAt ?? left.queuedAt),
+                    )
+                    .slice(0, 4)
+                    .map((run) => (
+                      <li key={run.id}>
+                        <Link to="/runs/$runId" params={{ runId: run.id }}>
+                          <OutcomeMark outcome={run.outcome ?? run.phase} />
+                          <span>{run.targetName ?? "Saved target"}</span>
+                          <small>
+                            {formatRunDate(run.finishedAt ?? run.startedAt ?? run.queuedAt)}
+                          </small>
+                        </Link>
+                      </li>
+                    ))}
+                </ul>
+              </section>
             </div>
-            <ul className="mt-4 grid list-none gap-0 p-0">
-              {[...recentRuns.data]
-                .sort(
-                  (left, right) =>
-                    (right.finishedAt ?? right.startedAt ?? right.queuedAt) -
-                    (left.finishedAt ?? left.startedAt ?? left.queuedAt),
-                )
-                .slice(0, 4)
-                .map((run) => (
-                  <li key={run.id}>
-                    <Link to="/runs/$runId" params={{ runId: run.id }}>
-                      <OutcomeMark outcome={run.outcome ?? run.phase} />
-                      <span>{run.targetName ?? "Saved target"}</span>
-                      <small>
-                        {formatRunDate(run.finishedAt ?? run.startedAt ?? run.queuedAt)}
-                      </small>
-                    </Link>
-                  </li>
-                ))}
-            </ul>
-          </section>
-        </div>
+          </CollapsibleContent>
+        </Collapsible>
       ) : null}
     </WorkbenchPage>
   );

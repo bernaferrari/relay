@@ -328,9 +328,16 @@ function RunReport({
           <h1 className="text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance] text-[clamp(24px,2.4vw,28px)] font-[650] leading-[1.15] tracking-[-0.03em] text-[var(--text-strong)] [text-wrap:balance]">
             {report.title}
           </h1>
-          <p className="mt-5 rounded-xl border border-border bg-card p-5">
+          <p className="mt-3 max-w-[62ch] text-sm leading-6 text-muted-foreground">
             {outcomeSentence(report.outcome, target)}
           </p>
+          <RunContextFacts
+            report={report}
+            duration={
+              report.durationMs === undefined ? "Not recorded" : formatDuration(report.durationMs)
+            }
+            compact
+          />
         </div>
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <RunReplayAction report={report} runService={runService} />
@@ -369,8 +376,51 @@ function RunReport({
       </header>
       <RunReplayStatus runService={runService} />
 
+      {failure ? (
+        <Alert
+          className="mt-5 grid max-w-[920px] grid-cols-[20px_minmax(0,1fr)_auto] max-[620px]:grid-cols-[20px_minmax(0,1fr)]"
+          variant="destructive"
+          aria-labelledby="causal-failure-title"
+        >
+          <CircleAlert />
+          <AlertTitle id="causal-failure-title">
+            {failureTitle(failure, report.category)}
+          </AlertTitle>
+          <AlertDescription>{nextAction(report.outcome)}</AlertDescription>
+          {report.category || testId ? (
+            <AlertAction>
+              {report.category ? <Badge variant="destructive">{report.category}</Badge> : null}
+              {testId ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  nativeButton={false}
+                  render={<Link to="/tests/$testId" params={{ testId }} />}
+                >
+                  Open Test to run again
+                </Button>
+              ) : null}
+            </AlertAction>
+          ) : null}
+          <Collapsible className="col-start-2 col-end-[-1] max-[620px]:col-end-[-1]">
+            <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 py-2 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
+              Technical details
+            </CollapsibleTrigger>
+            <CollapsibleContent className="border-t pt-3">
+              <ScrollArea className="max-h-[180px] overflow-auto">
+                <pre>{failure}</pre>
+              </ScrollArea>
+            </CollapsibleContent>
+          </Collapsible>
+        </Alert>
+      ) : null}
+
       {views.length > 1 ? (
-        <Tabs value={view} onValueChange={(next) => selectView(next as ReportView)}>
+        <Tabs
+          className="mt-4"
+          value={view}
+          onValueChange={(next) => selectView(next as ReportView)}
+        >
           <TabsList className="flex items-center gap-2" variant="line" aria-label="Report view">
             {views.map((item) => (
               <TabsTrigger
@@ -389,54 +439,29 @@ function RunReport({
       {view === "overview" ? (
         <section
           id="report-panel-overview"
-          className="rounded-xl border border-border bg-card p-5 grid gap-5"
+          className="mt-4 grid gap-6"
           role={views.length > 1 ? "tabpanel" : undefined}
           aria-labelledby={views.length > 1 ? "report-tab-overview" : undefined}
         >
-          {failure ? (
-            <Alert
-              className="grid max-w-[760px] grid-cols-[20px_minmax(0,1fr)_auto] max-[620px]:grid-cols-[20px_minmax(0,1fr)]"
-              variant="destructive"
-              aria-labelledby="causal-failure-title"
-            >
-              <CircleAlert />
-              <AlertTitle id="causal-failure-title">
-                {failureTitle(failure, report.category)}
-              </AlertTitle>
-              <AlertDescription>{nextAction(report.outcome)}</AlertDescription>
-              {report.category || testId ? (
-                <AlertAction>
-                  {report.category ? <Badge variant="destructive">{report.category}</Badge> : null}
-                  {testId ? (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      nativeButton={false}
-                      render={<Link to="/tests/$testId" params={{ testId }} />}
-                    >
-                      Open Test to run again
-                    </Button>
-                  ) : null}
-                </AlertAction>
-              ) : null}
-              <Collapsible className="col-start-2 col-end-[-1] max-[620px]:col-end-[-1]">
-                <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 py-2 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
-                  Technical details
-                </CollapsibleTrigger>
-                <CollapsibleContent className="border-t pt-3">
-                  <ScrollArea className="max-h-[180px] overflow-auto">
-                    <pre>{failure}</pre>
-                  </ScrollArea>
-                </CollapsibleContent>
-              </Collapsible>
-            </Alert>
+          {report.timeline.length || report.evidence.length ? (
+            <RunWorkbench
+              report={report}
+              selectedStepIndex={selectedStepIndex}
+              renderEvidence={(section) => <EvidencePreview section={section} />}
+              onSelectStep={(index) => {
+                const selected = report.timeline[index];
+                void navigate({
+                  search: (previous) => ({
+                    ...previous,
+                    step: String(index + 1),
+                    at: selected?.startedAt === undefined ? undefined : String(selected.startedAt),
+                    attempt: selected?.attempt === undefined ? undefined : String(selected.attempt),
+                  }),
+                });
+              }}
+            />
           ) : null}
-          <RunContextFacts
-            report={report}
-            duration={
-              report.durationMs === undefined ? "Not recorded" : formatDuration(report.durationMs)
-            }
-          />
+
           <Collapsible className="grid gap-3">
             <CollapsibleTrigger className="group flex w-full items-center justify-between gap-3 rounded-lg border border-border bg-muted/30 px-4 py-3 text-left text-sm font-semibold text-foreground transition-colors hover:bg-muted/60">
               Recorded configuration
@@ -461,25 +486,6 @@ function RunReport({
               />
             </CollapsibleContent>
           </Collapsible>
-
-          {report.timeline.length || report.evidence.length ? (
-            <RunWorkbench
-              report={report}
-              selectedStepIndex={selectedStepIndex}
-              renderEvidence={(section) => <EvidencePreview section={section} />}
-              onSelectStep={(index) => {
-                const selected = report.timeline[index];
-                void navigate({
-                  search: (previous) => ({
-                    ...previous,
-                    step: String(index + 1),
-                    at: selected?.startedAt === undefined ? undefined : String(selected.startedAt),
-                    attempt: selected?.attempt === undefined ? undefined : String(selected.attempt),
-                  }),
-                });
-              }}
-            />
-          ) : null}
 
           <RunReviewControls runId={report.runId} service={runService} />
 

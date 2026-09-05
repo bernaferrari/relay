@@ -338,7 +338,7 @@ describe("Run and Report", () => {
         testName: "Change the app language",
         appName: "Settings Language Proof",
         dataSet: {
-          name: "Locale matrix",
+          name: "Checkout cases",
           dimensions: [
             {
               id: "language",

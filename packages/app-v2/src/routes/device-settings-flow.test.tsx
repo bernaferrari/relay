@@ -309,6 +309,32 @@ describe("Devices", () => {
     expect(virtualDevices.getAttribute("aria-expanded")).toBe("true");
   });
 
+  it("clears search and type filters from the empty state while preserving setup return context", async () => {
+    const history = await renderPath("/devices?returnTo=%2Ftests%2Fnew");
+
+    await click(button("Physical"));
+    const searchInput = input("Search devices");
+    if (!(searchInput instanceof HTMLInputElement)) throw new Error("Search input not found");
+    await fillInput(searchInput, "does-not-exist");
+
+    expect(document.body.textContent).toContain("No devices match your filters");
+    await click(button("Show all devices"));
+
+    expect(document.body.textContent).toContain("Design iPad");
+    expect(document.body.textContent).toContain("QA phone");
+    const virtualDevices = [
+      ...document.querySelectorAll<HTMLButtonElement>("button[aria-expanded]"),
+    ].find((candidate) => candidate.textContent?.includes("Virtual devices"));
+    if (!virtualDevices) throw new Error("Virtual devices disclosure not found after reset");
+    await click(virtualDevices);
+    expect(document.body.textContent).toContain("Checkout browser");
+    const search = new URLSearchParams(history.location.search);
+    expect(search.get("returnTo")).toBe("/tests/new");
+    expect(search.get("q")).toBeNull();
+    expect(search.get("type")).toBeNull();
+    expect(search.get("status")).toBeNull();
+  });
+
   it("gives a device needing attention one dominant recovery action", async () => {
     const service = fakeDeviceService();
     await renderPath("/devices/phone", { deviceService: service });

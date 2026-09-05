@@ -214,37 +214,6 @@ export function TestsPage() {
         }
       />
 
-      <div
-        className="relay-test-selection-toolbar mt-6 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 text-[13px] text-[var(--text-weak)]"
-        aria-label="Test selection actions"
-      >
-        <span>
-          {selectedIds.size
-            ? `${selectedIds.size} selected`
-            : "Select ready Tests to build a Suite"}
-        </span>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={selectAllReady}
-            disabled={!readyVisibleIds.length}
-          >
-            Select all ready
-          </Button>
-          {selectedIds.size ? (
-            <>
-              <Button variant="ghost" size="sm" onClick={clearSelection}>
-                Clear selection
-              </Button>
-              <Button variant="outline" size="sm" onClick={openSuiteDialog}>
-                Create Suite
-              </Button>
-            </>
-          ) : null}
-        </div>
-      </div>
-
       <Dialog
         open={suiteDialogOpen}
         onOpenChange={(open) => {
@@ -346,7 +315,7 @@ export function TestsPage() {
       </Dialog>
 
       <div
-        className="mt-6 grid gap-3 md:grid-cols-2 md:items-end min-[1280px]:grid-cols-[minmax(16rem,2fr)_minmax(9rem,1fr)_minmax(9rem,1fr)_minmax(10rem,1fr)]"
+        className="mt-4 grid gap-3 border-b border-border pb-5 md:grid-cols-2 md:items-end min-[1280px]:grid-cols-[minmax(16rem,2fr)_minmax(9rem,1fr)_minmax(9rem,1fr)_minmax(10rem,1fr)]"
         aria-label="Filter Tests"
       >
         <div className="grid min-w-0 gap-1.5">
@@ -394,6 +363,37 @@ export function TestsPage() {
         />
       </div>
 
+      <div
+        className={`relay-test-selection-toolbar mt-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-2 text-xs text-muted-foreground ${selectedIds.size ? "rounded-lg bg-muted px-3" : ""}`}
+        aria-label="Test selection actions"
+      >
+        <span>
+          {selectedIds.size
+            ? `${selectedIds.size} selected`
+            : "Select ready Tests to build a Suite"}
+        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={selectAllReady}
+            disabled={!readyVisibleIds.length}
+          >
+            Select all ready
+          </Button>
+          {selectedIds.size ? (
+            <>
+              <Button variant="ghost" size="sm" onClick={clearSelection}>
+                Clear selection
+              </Button>
+              <Button variant="default" size="sm" onClick={openSuiteDialog}>
+                Create Suite
+              </Button>
+            </>
+          ) : null}
+        </div>
+      </div>
+
       {tests.isPending ? <PageLoading label="Loading saved Tests…" /> : null}
       <RecordingProblem
         error={tests.error}
@@ -403,7 +403,7 @@ export function TestsPage() {
       />
 
       {!tests.isPending && !tests.isError && visibleTests.length ? (
-        <section className="relay-library-results mt-7" aria-labelledby="saved-tests-title">
+        <section className="relay-library-results mt-3" aria-labelledby="saved-tests-title">
           <div className="relay-library-results-heading flex min-h-8 items-center justify-between gap-5 px-0.5 pb-2.5">
             <h2 id="saved-tests-title" className="text-[13px] font-semibold">
               {visibleTests.length === 1 ? "1 Test" : `${visibleTests.length} Tests`}
