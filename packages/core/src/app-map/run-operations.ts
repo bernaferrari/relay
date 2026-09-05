@@ -16,6 +16,44 @@ export type RecordAppMapRunInput = {
   evidenceIds: string[];
 };
 
+export function recordAppMapTestValidation(
+  map: AppMap,
+  input: { runId: string; testId: string; appMapRevision: number; validatedAt: number },
+  context: AppMapMutationContext,
+): AppMap {
+  if (input.appMapRevision !== map.revision) {
+    appMapFail(
+      "revision-conflict",
+      `Test validation ${input.testId} references a stale App Map revision`,
+    );
+  }
+  const test = map.tests[input.testId];
+  if (!test) appMapFail("missing-reference", `Test ${input.testId} does not exist`);
+  return mutateAppMap(
+    map,
+    context,
+    {
+      eventType: "test.validated",
+      subject: { kind: "test", id: input.testId },
+      touched: [`test:${input.testId}:validation`],
+      summary: `Validated Test ${test.name}`,
+    },
+    (draft) => {
+      const current = draft.tests[input.testId];
+      if (!current) appMapFail("missing-reference", `Test ${input.testId} does not exist`);
+      draft.tests[input.testId] = {
+        ...current,
+        validation: {
+          status: "passed",
+          appMapRevision: input.appMapRevision,
+          testUpdatedAt: current.updatedAt,
+          validatedAt: input.validatedAt,
+        },
+      };
+    },
+  );
+}
+
 /** Persist one target execution in the same canonical document humans and
  * agents author. Reports remain the detailed evidence; this projection keeps
  * coverage, attribution, and map status queryable without parsing run files. */

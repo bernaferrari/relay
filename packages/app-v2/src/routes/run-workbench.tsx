@@ -29,7 +29,6 @@ export function RunWorkbench({
   const failureIndexes = report.timeline.flatMap((item, index) =>
     item.state === "failed" ? [index] : [],
   );
-  const failurePosition = failureIndexes.indexOf(selectedStepIndex);
   const previousFailure = failureIndexes.filter((index) => index < selectedStepIndex).at(-1);
   const nextFailure = failureIndexes.find((index) => index > selectedStepIndex);
   const frames =

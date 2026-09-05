@@ -1,3 +1,5 @@
+import { runOutcome } from "./run-outcome";
+export { runOutcome } from "./run-outcome";
 import type {
   ProductRunReport,
   ProductRunStartInput,
@@ -279,14 +281,6 @@ function frameImageMedia(frame: Record<string, unknown>): ReportEvidenceItem["me
     ...(width && width > 0 ? { width } : {}),
     ...(height && height > 0 ? { height } : {}),
   };
-}
-
-function runOutcome(value: unknown): RunOutcome | undefined {
-  return ["passed", "product-failure", "harness-failure", "uncertain", "cancelled"].includes(
-    String(value),
-  )
-    ? (value as RunOutcome)
-    : undefined;
 }
 
 const channelLabels: Partial<Record<EvidenceChannel, string>> = {

@@ -15,11 +15,11 @@ export function TestEditorEvidencePanel({
   loading: boolean;
 }) {
   return (
-    <aside className="relay-editor-evidence" aria-label="Selected step evidence">
-      <div className="relay-editor-evidence-heading">
+    <aside className="sticky top-0 min-w-0 rounded-xl border border-border bg-card p-5 text-card-foreground shadow-sm" aria-label="Selected step evidence">
+      <div className="grid gap-1">
         <p className="relay-section-label">Evidence</p>
         <h2>{step ? "Latest proof for this step" : "Choose a step"}</h2>
-        <p>
+        <p className="mt-1.5 text-xs leading-normal text-muted-foreground">
           {step
             ? "Compare the instruction with what Relay most recently captured."
             : "Evidence appears here without moving you away from the journey."}
@@ -28,7 +28,7 @@ export function TestEditorEvidencePanel({
       {step ? (
         <TestStepEvidencePreview step={step} report={report} hasRuns={hasRuns} loading={loading} />
       ) : (
-        <span className="relay-editor-evidence-placeholder" aria-hidden="true" />
+        <span className="mt-4 block min-h-56 rounded-lg bg-muted" aria-hidden="true" />
       )}
     </aside>
   );

@@ -181,6 +181,7 @@ export const ROUTE_DEFINITIONS = [
   d("/sessions", "/home", "Sessions", "Session", "sessions", "inspect-session", [
     "status",
     "target",
+    "q",
   ]),
   d("/sessions/:sessionId", "/sessions", "Session", "Session", "sessions", "inspect-session", [
     "view",
@@ -218,6 +219,7 @@ export const ROUTE_DEFINITIONS = [
     "status",
     "view",
     "returnTo",
+    "q",
   ]),
   d("/devices/:deviceId", "/devices", "Device", "Device", "devices", "inspect-device", ["view"]),
   d("/debug", "/sessions", "Agent Debug", "Session", "sessions", null, ["target"]),

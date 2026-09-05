@@ -121,7 +121,7 @@ export function EnvironmentPage() {
     readiness.data?.target.checks.filter((check) => check.status === "warning") ?? [];
 
   return (
-    <section className="relay-page relay-environment-page">
+    <section className="relay-page max-w-[1080px]">
       <Breadcrumbs
         items={[
           { label: "Environments", to: "/environments" },
@@ -166,7 +166,7 @@ export function EnvironmentPage() {
       ) : null}
       {space ? (
         <>
-          <header className="relay-page-header relay-environment-detail-header">
+          <header className="relay-page-header flex items-start justify-between gap-4 max-[780px]:flex-col">
             <div>
               <p className="relay-eyebrow">Browser Space</p>
               <h1>{space.name}</h1>
@@ -187,9 +187,9 @@ export function EnvironmentPage() {
             </FieldError>
           ) : null}
 
-          <div className="relay-environment-workspace">
+          <div className="mt-6 grid grid-cols-2 items-start gap-4 max-[780px]:grid-cols-1">
             <section
-              className="relay-environment-card"
+              className="min-w-0 rounded-xl border border-border bg-card p-[18px] shadow-sm"
               aria-labelledby="environment-readiness-title"
             >
               <p className="relay-section-label">Readiness</p>
@@ -263,7 +263,7 @@ export function EnvironmentPage() {
               </Button>
             </section>
 
-            <section className="relay-environment-card" aria-labelledby="environment-account-title">
+            <section className="min-w-0 rounded-xl border border-border bg-card p-[18px] shadow-sm" aria-labelledby="environment-account-title">
               <p className="relay-section-label">Accounts</p>
               <h2 id="environment-account-title">Reviewed sign-ins</h2>
               <p>
@@ -360,7 +360,7 @@ export function EnvironmentPage() {
             </section>
           </div>
 
-          <section className="relay-suite-danger" aria-labelledby="remove-environment-title">
+          <section className="min-w-0 rounded-xl border border-red-500/40 bg-red-500/5 p-[18px]" aria-labelledby="remove-environment-title">
             <div>
               <h2 id="remove-environment-title">Remove Browser Space</h2>
               <p>

@@ -29,6 +29,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { LiveTargetSession, LiveTargetStatus } from "../data/live-target-session";
 import { recordingQueryKeys } from "../data/recording-queries";
 import { newTestSetupContinuation } from "../data/setup-continuation";
+import { FormPage } from "../components/page-layout";
 import {
   clearWorkflowPointerIfCurrent,
   readWorkflowPointer,
@@ -225,7 +226,7 @@ export function NewTestPage() {
   const formReady = Boolean(appId && targetId && previewStatus === "streaming" && !begin.isPending);
   const appChoices = (
     <RadioGroup
-      className="relay-choice-group relay-choice-group--apps"
+      className="relay-choice-group relay-choice-group--apps grid gap-2"
       name="app"
       value={appId}
       onValueChange={setAppId}
@@ -254,11 +255,11 @@ export function NewTestPage() {
   );
 
   return (
-    <section className="relay-page relay-new-test-page">
+    <FormPage className="relay-new-test-page">
       <Link className="relay-back-link" to="/tests">
         <ArrowLeft aria-hidden="true" /> Tests
       </Link>
-      <header className="relay-page-header relay-new-test-header">
+      <header className="relay-page-header relay-new-test-header max-w-[650px]">
         <div>
           <h1>Record a Test</h1>
           <p className="relay-page-description">
@@ -319,16 +320,16 @@ export function NewTestPage() {
       !targets.isError &&
       !targets.data?.recovery &&
       !activePointer.data ? (
-        <div className="relay-new-test-layout">
-          <form className="relay-recording-form" onSubmit={submit}>
-            <Card className="relay-new-test-card">
-              <CardHeader>
+        <div className="relay-new-test-layout mt-[34px] grid grid-cols-[minmax(0,900px)] items-start">
+          <form className="relay-recording-form m-0 max-w-none gap-0" onSubmit={submit}>
+            <Card className="relay-new-test-card overflow-hidden">
+              <CardHeader className="px-[22px] pb-0 pt-[22px]">
                 <CardTitle>Choose where to record</CardTitle>
                 <CardDescription>
                   Position the app first. You will name the Test after recording.
                 </CardDescription>
               </CardHeader>
-              <CardContent className="relay-new-test-fields">
+              <CardContent className="relay-new-test-fields grid grid-cols-[minmax(280px,360px)_minmax(0,1fr)] items-start gap-x-8 gap-y-5 px-[22px] pb-[26px] pt-6">
                 {startsFromPath ? (
                   <Alert variant="default">
                     <Check />
@@ -343,7 +344,7 @@ export function NewTestPage() {
                   </Alert>
                 ) : null}
                 <Field>
-                  <div className="relay-choice-heading">
+                  <div className="relay-choice-heading grid gap-0.5 px-px">
                     <FieldTitle
                       className="text-[13px] font-semibold text-foreground"
                       id="test-app-title"
@@ -353,7 +354,7 @@ export function NewTestPage() {
                     <FieldDescription className="mt-0">Where this Test belongs</FieldDescription>
                   </div>
                   {noApps ? (
-                    <div className="relay-choice-empty">
+                    <div className="relay-choice-empty grid gap-1.5 rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
                       <strong>No apps are available</strong>
                       <p>Add an app before recording a Test.</p>
                       <Link className="relay-inline-link" to="/apps">
@@ -361,14 +362,16 @@ export function NewTestPage() {
                       </Link>
                     </div>
                   ) : (apps.data?.length ?? 0) > 4 ? (
-                    <ScrollArea className="relay-choice-scroll">{appChoices}</ScrollArea>
+                    <ScrollArea className="relay-choice-scroll h-[196px] mr-[-7px]">
+                      {appChoices}
+                    </ScrollArea>
                   ) : (
                     appChoices
                   )}
                 </Field>
 
                 <Field>
-                  <div className="relay-choice-heading">
+                  <div className="relay-choice-heading grid gap-0.5 px-px">
                     <FieldTitle
                       className="text-[13px] font-semibold text-foreground"
                       id="test-target-title"
@@ -378,20 +381,23 @@ export function NewTestPage() {
                     <FieldDescription className="mt-0">Where Relay will record</FieldDescription>
                   </div>
                   {targets.isPending ? (
-                    <div className="relay-choice-group relay-choice-group--loading" role="status">
+                    <div
+                      className="relay-choice-group relay-choice-group--loading grid gap-2"
+                      role="status"
+                    >
                       <span className="relay-visually-hidden">
                         Finding ready devices and browsers…
                       </span>
-                      <Skeleton />
-                      <Skeleton />
+                      <Skeleton className="min-h-[68px] rounded-[var(--radius-lg)]" />
+                      <Skeleton className="min-h-[68px] rounded-[var(--radius-lg)]" />
                     </div>
                   ) : targets.isError ? (
-                    <div className="relay-choice-empty">
+                    <div className="relay-choice-empty grid gap-1.5 rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
                       <strong>Targets are not available yet</strong>
                       <p>Use Try again above after the local Relay service is running.</p>
                     </div>
                   ) : noTargets ? (
-                    <div className="relay-choice-empty">
+                    <div className="relay-choice-empty grid gap-1.5 rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
                       <strong>Nothing is ready to record</strong>
                       <p>Connect a device or start a managed browser, then try again.</p>
                       <Link
@@ -411,7 +417,7 @@ export function NewTestPage() {
                     </div>
                   ) : (
                     <RadioGroup
-                      className="relay-choice-group"
+                      className="relay-choice-group grid gap-2"
                       name="target"
                       value={targetId}
                       onValueChange={setTargetId}
@@ -448,13 +454,16 @@ export function NewTestPage() {
                 </Field>
 
                 {selectedTarget ? (
-                  <section className="relay-prerecord-workspace" aria-labelledby="prerecord-title">
-                    <div className="relay-prerecord-heading">
+                  <section
+                    className="relay-prerecord-workspace col-start-2 row-span-3 row-start-1 grid gap-3 border-l border-border pl-7"
+                    aria-labelledby="prerecord-title"
+                  >
+                    <div className="relay-prerecord-heading grid items-start gap-2.5">
                       <div>
                         <p className="relay-section-label">Starting point</p>
                         <h2 id="prerecord-title">Put the app where recording should begin</h2>
                       </div>
-                      <div className="relay-prerecord-actions">
+                      <div className="relay-prerecord-actions flex shrink-0 items-center gap-2">
                         <Button type="submit" variant="default" size="sm" disabled={!formReady}>
                           <Play aria-hidden="true" />
                           {begin.isPending ? "Starting…" : "Start recording"}
@@ -482,11 +491,14 @@ export function NewTestPage() {
                   </section>
                 ) : null}
               </CardContent>
-              <CardFooter className="relay-form-actions">
+              <CardFooter className="relay-form-actions min-h-[70px] justify-start gap-2">
                 <Button nativeButton={false} render={<Link to="/tests" />} variant="ghost">
                   Cancel
                 </Button>
-                <span className="relay-form-readiness" aria-live="polite">
+                <span
+                  className="relay-form-readiness ml-auto inline-flex min-w-0 items-center gap-1.5 text-[11px] text-[var(--text-weaker)]"
+                  aria-live="polite"
+                >
                   {formReady ? (
                     <>
                       <Check aria-hidden="true" /> Ready to record
@@ -502,7 +514,7 @@ export function NewTestPage() {
           </form>
         </div>
       ) : null}
-    </section>
+    </FormPage>
   );
 }
 

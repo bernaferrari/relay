@@ -26,6 +26,7 @@ import { LibraryPage, PageHeader } from "../components/page-layout";
 import { catalogQueryKeys } from "../data/catalog-queries";
 import { PageLoading, RecordingProblem } from "./recording-shared";
 import type { ProductSuiteEditor } from "../data/suite-profile-product-service";
+import { useCollectionReturnFocus } from "../hooks/use-collection-return-focus";
 
 const routeApi = getRouteApi("/tests");
 const allAppsValue = "all-apps";
@@ -126,21 +127,8 @@ export function TestsPage() {
     [app, deferredQuery, result, status, tests.data],
   );
   const readyVisibleIds = visibleReadyIdsFor(visibleTests);
+  const returnFocus = useCollectionReturnFocus("relay:focus:/tests", visibleTests, "/tests/");
   const resultLabel = resultContext(status, app, apps);
-  useEffect(() => {
-    let href: string | null = null;
-    try {
-      href = window.sessionStorage.getItem("relay:focus:/tests");
-      if (href) window.sessionStorage.removeItem("relay:focus:/tests");
-    } catch {
-      href = null;
-    }
-    if (!href) return;
-    const frame = window.requestAnimationFrame(() => {
-      document.querySelector<HTMLElement>(`a[href="${CSS.escape(href!)}"]`)?.focus();
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [visibleTests]);
   const statusOptions = [
     { value: "all", label: "All statuses" },
     { value: "ready", label: "Ready" },
@@ -213,17 +201,7 @@ export function TestsPage() {
   return (
     <LibraryPage
       className="relay-library-page relay-tests-page"
-      onClickCapture={(event) => {
-        const anchor = (event.target as HTMLElement).closest<HTMLAnchorElement>(
-          'a[href^="/tests/"]',
-        );
-        if (!anchor) return;
-        try {
-          window.sessionStorage.setItem("relay:focus:/tests", anchor.getAttribute("href") ?? "");
-        } catch {
-          // Focus restoration is an enhancement when session storage is unavailable.
-        }
-      }}
+      onClickCapture={returnFocus.onClickCapture}
     >
       <PageHeader
         context="Tests"
@@ -236,7 +214,10 @@ export function TestsPage() {
         }
       />
 
-      <div className="relay-test-selection-toolbar" aria-label="Test selection actions">
+      <div
+        className="relay-test-selection-toolbar mt-6 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 text-[13px] text-[var(--text-weak)]"
+        aria-label="Test selection actions"
+      >
         <span>
           {selectedIds.size
             ? `${selectedIds.size} selected`
@@ -271,7 +252,10 @@ export function TestsPage() {
           setSuiteDialogOpen(open);
         }}
       >
-        <DialogContent showCloseButton={false} className="relay-suite-dialog">
+        <DialogContent
+          showCloseButton={false}
+          className="max-h-[min(760px,calc(100vh-32px))] w-[min(720px,calc(100vw-32px))] overflow-auto"
+        >
           <DialogTitle>Create Suite from selected Tests</DialogTitle>
           <DialogDescription>
             A Suite belongs to one App and runs its selected Tests together. This only creates the
@@ -478,8 +462,8 @@ function TestRow({
   const recent = test.recentRun;
   return (
     <li>
-      <div className="relay-library-row-shell">
-        <label className="relay-library-row-select">
+      <div className="relay-library-row-shell relative grid grid-cols-[44px_minmax(0,1fr)_auto] items-center pr-3">
+        <label className="relay-library-row-select grid min-h-11 w-11 shrink-0 cursor-pointer place-items-center">
           <Checkbox
             checked={selected}
             disabled={test.status !== "ready"}
@@ -535,7 +519,7 @@ function TestRow({
         </Item>
         {test.status === "needs-review" ? (
           <Link
-            className="relay-library-row-run"
+            className="relay-library-row-run inline-flex min-h-10 items-center rounded-[var(--radius-md)] px-2.5 text-xs font-semibold text-[var(--text-interactive-base)] hover:bg-[var(--surface-raised-base)]"
             to="/tests/$testId/edit"
             params={{ testId: test.id }}
           >

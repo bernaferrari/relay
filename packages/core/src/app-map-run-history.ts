@@ -5,7 +5,7 @@ import type {
 } from "@relay/protocol";
 import { mutateStoredAppMap, readAppMap } from "./collaboration.js";
 import { listPersistedRuns, type PersistedRun } from "./runs.js";
-import { recordAppMapRun } from "./app-map/run-operations.js";
+import { recordAppMapRun, recordAppMapTestValidation } from "./app-map/run-operations.js";
 
 function compiledPlan(run: PersistedRun): AppMapCompiledFlow | null {
   const value = run.artifacts.find((artifact) => artifact.kind === "app-map-flow-plan")?.data;
@@ -46,6 +46,53 @@ function failedConnectionId(run: PersistedRun, plan: AppMapCompiledFlow): string
       failedStep.index >= connection.compiledStepRange[0] &&
       failedStep.index < connection.compiledStepRange[1],
   )?.connectionId;
+}
+
+function compiledTestProvenance(
+  run: PersistedRun,
+): { appMapId: string; appMapRevision: number; testId: string } | undefined {
+  const value = run.artifacts.find((artifact) => artifact.kind === "app-map-test-plan")?.data;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const candidate = value as {
+    appMapId?: unknown;
+    appMapRevision?: unknown;
+    test?: { id?: unknown };
+  };
+  return typeof candidate.appMapId === "string" &&
+    Number.isSafeInteger(candidate.appMapRevision) &&
+    typeof candidate.test?.id === "string"
+    ? {
+        appMapId: candidate.appMapId,
+        appMapRevision: candidate.appMapRevision as number,
+        testId: candidate.test.id,
+      }
+    : undefined;
+}
+
+async function recordSuccessfulTestValidation(
+  run: PersistedRun,
+  provenance: { appMapId: string; appMapRevision: number; testId: string },
+): Promise<boolean> {
+  if (run.outcome !== "passed" || run.finishedAt === undefined || !run.projectId) return false;
+  const current = await readAppMap(run.projectId, provenance.appMapId);
+  if (!current || current.revision !== provenance.appMapRevision) return false;
+  const test = current.tests[provenance.testId];
+  if (!test) return false;
+  await mutateStoredAppMap(run.projectId, provenance.appMapId, (map) => {
+    const operation = run.executionProvenance;
+    return recordAppMapTestValidation(
+      map,
+      { ...provenance, runId: run.id, validatedAt: run.finishedAt! },
+      {
+        expectedRevision: map.revision,
+        eventId: `test-validated-${run.id}`,
+        actorId: operation?.actorId ?? run.ownerId ?? "system:runner",
+        actorKind: operation?.actorKind ?? "system",
+        at: Math.max(map.updatedAt, run.finishedAt!),
+      },
+    );
+  });
+  return true;
 }
 
 export function connectionObservationsFromPersistedRun(
@@ -101,6 +148,10 @@ export function connectionObservationsFromPersistedRun(
 /** Reconcile a durable report into its App Map. Safe to call after restarts:
  * an already projected run is a successful no-op. */
 export async function projectPersistedAppMapRun(run: PersistedRun): Promise<boolean> {
+  const testProvenance = compiledTestProvenance(run);
+  if (testProvenance && !compiledPlan(run)) {
+    return recordSuccessfulTestValidation(run, testProvenance);
+  }
   const plan = compiledPlan(run);
   const targetProfile = run.targetProfile ?? fallbackProfile(run);
   const outcome = run.outcome;

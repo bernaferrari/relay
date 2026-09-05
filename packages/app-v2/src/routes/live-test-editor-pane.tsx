@@ -57,7 +57,7 @@ export function LiveTestEditorPane({
   }
 
   return (
-    <section className="relay-live-editor-pane" aria-labelledby="live-editor-title">
+    <section className="grid gap-3" aria-labelledby="live-editor-title">
       <div className="relay-section-heading">
         <div>
           <p className="relay-section-label">Live Session</p>
@@ -76,13 +76,13 @@ export function LiveTestEditorPane({
       </div>
       {loading ? <PageLoading label="Opening live Session…" /> : null}
       {error ? (
-        <p className="relay-live-editor-error" role="alert">
+        <p className="rounded-md border border-red-500/30 bg-red-500/5 p-3 text-sm" role="alert">
           {errorMessage(error)}
         </p>
       ) : null}
       {session ? (
         <>
-          <div className="relay-live-editor-status">
+          <div className="text-sm text-muted-foreground">
             <Badge
               variant="secondary"
               className={

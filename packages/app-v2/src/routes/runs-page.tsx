@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import type { ProductRunSummary } from "@relay/product/catalog";
+import type { ProductRunPhase, ProductRunSummary } from "@relay/product/catalog";
 import { Item } from "@relay/ui-react/components/item";
 import { Tabs, TabsList, TabsTrigger } from "@relay/ui-react/components/tabs";
 import { Button } from "@relay/ui-react/components/button";
@@ -15,6 +15,7 @@ import { RunHistoryList, type RunHistoryRowInteraction } from "../components/run
 import { LibraryPage, PageHeader } from "../components/page-layout";
 import { catalogQueryKeys } from "../data/catalog-queries";
 import { PageLoading, RecordingProblem } from "./recording-shared";
+import { useCollectionReturnFocus } from "../hooks/use-collection-return-focus";
 
 const routeApi = getRouteApi("/runs");
 const allAppsValue = "all-apps";
@@ -99,20 +100,7 @@ export function RunsPage() {
     }
     return searched;
   }, [app, deferredQuery, runs.data, view]);
-  useEffect(() => {
-    let href: string | null = null;
-    try {
-      href = window.sessionStorage.getItem("relay:focus:/runs");
-      if (href) window.sessionStorage.removeItem("relay:focus:/runs");
-    } catch {
-      href = null;
-    }
-    if (!href) return;
-    const frame = window.requestAnimationFrame(() => {
-      document.querySelector<HTMLElement>(`a[href="${CSS.escape(href!)}"]`)?.focus();
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [visibleRuns]);
+  const returnFocus = useCollectionReturnFocus("relay:focus:/runs", visibleRuns, "/runs/");
   function setView(next: RunView) {
     void navigate({
       search: (previous) => ({ ...previous, view: next === "latest" ? undefined : next }),
@@ -135,17 +123,7 @@ export function RunsPage() {
   return (
     <LibraryPage
       className="relay-library-page relay-runs-page"
-      onClickCapture={(event) => {
-        const anchor = (event.target as HTMLElement).closest<HTMLAnchorElement>(
-          'a[href^="/runs/"]',
-        );
-        if (!anchor) return;
-        try {
-          window.sessionStorage.setItem("relay:focus:/runs", anchor.getAttribute("href") ?? "");
-        } catch {
-          // Focus restoration is an enhancement when session storage is unavailable.
-        }
-      }}
+      onClickCapture={returnFocus.onClickCapture}
     >
       <PageHeader
         context="Runs"
@@ -319,7 +297,7 @@ function emptyRunTitle(view: RunView) {
   return "No Runs match these filters";
 }
 
-function phaseOutcome(run: ProductRunSummary): string {
+function phaseOutcome(run: ProductRunSummary): ProductRunPhase | "needs-review" {
   if (run.review?.status === "pending") return "needs-review";
   return run.phase;
 }

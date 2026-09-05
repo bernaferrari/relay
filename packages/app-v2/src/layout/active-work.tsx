@@ -150,26 +150,40 @@ export function ActiveWork() {
 
   return (
     <>
-      <section className="relay-sidebar-active-work" aria-label="Active work">
-        <div className="relay-sidebar-active-heading">
+      <section
+        className="relay-sidebar-active-work mb-2 grid gap-1 rounded-[var(--radius-lg)] border border-[var(--border-weak-base)] bg-[var(--surface-raised-strong)] p-[9px]"
+        aria-label="Active work"
+      >
+        <div className="relay-sidebar-active-heading flex min-h-6 items-center justify-between gap-2 text-[10px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
           <span>Active work</span>
-          <Badge variant="secondary">{items.length}</Badge>
+          <Badge variant="secondary" className="min-h-5 px-1.5 text-[9px]">
+            {items.length}
+          </Badge>
         </div>
         <button
           type="button"
-          className="relay-sidebar-active-link"
+          className="relay-sidebar-active-link grid min-h-11 w-full grid-cols-[16px_minmax(0,1fr)] items-center gap-[9px] rounded-[var(--radius-md)] border-0 bg-transparent p-1.5 text-left text-[var(--text-base)]"
           onClick={() => router.history.push(primary.href)}
         >
-          <Icon aria-hidden="true" />
-          <span>
-            <strong>{primary.title}</strong>
-            <small>
+          <Icon
+            className="h-[15px] w-[15px] text-[var(--text-interactive-base)]"
+            aria-hidden="true"
+          />
+          <span className="grid min-w-0 gap-px">
+            <strong className="overflow-hidden text-ellipsis whitespace-nowrap text-[11px] font-semibold">
+              {primary.title}
+            </strong>
+            <small className="overflow-hidden text-ellipsis whitespace-nowrap text-[10px] text-[var(--text-weaker)]">
               {primary.status} · {primary.detail}
             </small>
           </span>
         </button>
         {items.length > 1 ? (
-          <button type="button" className="relay-sidebar-active-all" onClick={() => setOpen(true)}>
+          <button
+            type="button"
+            className="relay-sidebar-active-all inline-flex min-h-9 items-center rounded-[var(--radius-sm)] border-0 bg-transparent px-1.5 text-[10px] font-semibold text-[var(--text-interactive-base)]"
+            onClick={() => setOpen(true)}
+          >
             View all {items.length} activities
           </button>
         ) : null}

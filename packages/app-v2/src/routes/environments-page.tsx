@@ -83,9 +83,9 @@ export function EnvironmentsPage() {
   }
 
   return (
-    <section className="relay-page relay-environments-page">
+    <section className="relay-page max-w-[1080px]">
       <Breadcrumbs items={[{ label: "Home", to: "/home" }, { label: "Environments" }]} />
-      <header className="relay-page-header relay-environments-header">
+      <header className="relay-page-header flex items-start justify-between gap-4 max-[780px]:flex-col">
         <div>
           <p className="relay-eyebrow">Workspace</p>
           <h1>Environments</h1>
@@ -94,7 +94,7 @@ export function EnvironmentsPage() {
             Relay host.
           </p>
         </div>
-        <div className="relay-environment-actions">
+        <div className="flex flex-none flex-wrap gap-4">
           {continuation ? (
             <Button
               variant="ghost"
@@ -226,7 +226,7 @@ export function EnvironmentsPage() {
         />
       ) : null}
       {spaces.data?.length ? (
-        <ul className="relay-environment-grid" aria-label="Browser Spaces">
+        <ul className="grid list-none gap-2.5 p-0" aria-label="Browser Spaces">
           {spaces.data.map((space) => (
             <li key={space.id}>
               <Link
@@ -234,7 +234,7 @@ export function EnvironmentsPage() {
                 params={{ profileId: space.id }}
                 search={continuation ? { returnTo: rawReturnTo } : undefined}
               >
-                <span className="relay-environment-mark" aria-hidden="true">
+                <span className="grid size-[38px] place-items-center rounded-md border border-border bg-muted text-muted-foreground" aria-hidden="true">
                   <Globe2 />
                 </span>
                 <span>
@@ -245,7 +245,7 @@ export function EnvironmentsPage() {
                     {space.environment?.locale ? ` · ${space.environment.locale}` : ""}
                   </small>
                 </span>
-                <span className="relay-app-list-action">
+                <span className="inline-flex flex-none items-center gap-1.5 text-xs font-semibold text-primary">
                   Open <span aria-hidden="true">→</span>
                 </span>
               </Link>
@@ -271,7 +271,7 @@ export function EnvironmentsPage() {
           }
         />
       ) : null}
-      <section className="relay-environment-device-note">
+      <section className="min-w-0 rounded-xl border border-border bg-card p-[18px] shadow-sm">
         <div>
           <h2>Physical devices stay live</h2>
           <p>

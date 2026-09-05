@@ -109,7 +109,7 @@ export function SelectedStepEditor({
 
   return (
     <form
-      className="relay-selected-step-form"
+      className="grid min-w-0 grid-cols-1 gap-5 p-5"
       onSubmit={(event) => {
         event.preventDefault();
         if (!changed || !cleanIntent) return;
@@ -152,17 +152,17 @@ export function SelectedStepEditor({
         });
       }}
     >
-      <div className="relay-inspector-heading">
-        <span className="relay-editor-step-number">{entry.number}</span>
-        <div>
+      <div className="flex items-center gap-2.5">
+        <span className="grid size-7 shrink-0 place-items-center rounded-full border border-border bg-background text-[10px] tabular-nums text-muted-foreground">{entry.number}</span>
+        <div className="min-w-0">
           <p className="relay-section-label">Selected step</p>
           <h2>{stepKindLabel(entry.step)}</h2>
         </div>
       </div>
       {entry.step.kind === "decision" || entry.step.kind === "loop" ? (
-        <div className="relay-editor-branch-actions">
-          <strong>Add to branch</strong>
-          <div>
+        <div className="grid gap-2 pb-1">
+          <strong className="text-xs font-semibold text-muted-foreground">Add to branch</strong>
+          <div className="flex flex-wrap gap-1.5">
             {entry.step.kind === "decision" ? (
               <>
                 <Button
@@ -198,7 +198,7 @@ export function SelectedStepEditor({
           </div>
         </div>
       ) : null}
-      <label className="relay-editor-field" htmlFor="selected-step-intent">
+      <label className="grid gap-1.5 text-xs font-semibold" htmlFor="selected-step-intent">
         <span>What should happen</span>
         <Input
           id="selected-step-intent"
@@ -223,7 +223,7 @@ export function SelectedStepEditor({
           }}
         />
       ) : null}
-      <label className="relay-editor-field" htmlFor="selected-step-note">
+      <label className="grid gap-1.5 text-xs font-semibold" htmlFor="selected-step-note">
         <span>
           Note <small>Optional</small>
         </span>
@@ -257,7 +257,7 @@ export function SelectedStepEditor({
         />
       </FieldLabel>
       {entry.step.binding.status === "unresolved" ? (
-        <Alert variant="default" className="relay-step-binding-alert">
+        <Alert variant="default" className="grid grid-cols-[18px_minmax(0,1fr)] gap-2 p-2.5">
           <AlertTriangle aria-hidden="true" />
           <div>
             <AlertTitle>Step needs review</AlertTitle>
@@ -273,23 +273,23 @@ export function SelectedStepEditor({
           onBind={onBind}
         />
       ) : null}
-      <Collapsible className="relay-editor-advanced">
+      <Collapsible className="border-t border-border pt-3">
         <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 py-2 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
           Advanced
         </CollapsibleTrigger>
         <CollapsibleContent className="space-y-3 border-t pt-3 text-sm">
           <div>
             <span>Technical details</span>
-            <p className="relay-editor-advanced-help">
+            <p className="-mt-0.5 text-xs leading-normal text-muted-foreground">
               The saved configuration Relay uses to carry out or check this step.
             </p>
-            <ScrollArea className="relay-editor-binding-scroll">
+            <ScrollArea className="max-h-44 rounded-md bg-muted">
               <pre>{JSON.stringify(entry.step.binding, null, 2)}</pre>
             </ScrollArea>
           </div>
         </CollapsibleContent>
       </Collapsible>
-      <div className="relay-form-actions">
+      <div className="flex flex-wrap items-center gap-2">
         <Button
           variant="default"
           type="submit"
@@ -298,14 +298,14 @@ export function SelectedStepEditor({
           {busy ? "Saving…" : "Save step"}
         </Button>
         {removeArmed ? (
-          <Alert variant="default" className="relay-editor-remove-confirm">
+          <Alert variant="default" className="grid gap-2.5 p-2.5">
             <div>
               <AlertTitle>Remove this step?</AlertTitle>
               <AlertDescription>
                 This saved change can be undone while this editor is open.
               </AlertDescription>
             </div>
-            <div className="relay-editor-remove-actions">
+            <div className="flex flex-wrap gap-1.5">
               <Button
                 variant="ghost"
                 type="button"
@@ -323,20 +323,20 @@ export function SelectedStepEditor({
           <Button
             variant="ghost"
             type="button"
-            className="relay-editor-remove-button"
+            className="text-destructive"
             disabled={busy}
             onClick={() => setRemoveArmed(true)}
           >
             Remove step
           </Button>
         )}
-        {!changed ? <span className="relay-action-hint">No unsaved changes</span> : null}
+        {!changed ? <span className="text-xs text-muted-foreground">No unsaved changes</span> : null}
       </div>
     </form>
   );
 }
 
-function validationDraft(step: AppMapScenarioTestStep): ValidationDraft | undefined {
+export function validationDraft(step: AppMapScenarioTestStep): ValidationDraft | undefined {
   if (step.kind !== "validation" || step.binding.status !== "resolved") return undefined;
   if (step.binding.kind !== "assertion") return undefined;
   const assertion = step.binding.assertion;
@@ -371,14 +371,15 @@ function ValidationExpectationEditor({
 }) {
   if (!value) {
     return (
-      <div className="relay-editor-field relay-editor-expectation">
+      <div className="grid gap-1.5 text-xs font-semibold">
         <span>Expected result</span>
-        <p className="relay-editor-binding-help">
-          This checkpoint has no directly editable assertion yet. Bind a reviewed assertion to make
-          the expected result explicit.
+        <p className="text-xs font-normal leading-normal text-muted-foreground">
+          {canAdd
+            ? "This checkpoint has no directly editable assertion yet. Bind a reviewed assertion to make the expected result explicit."
+            : "This checkpoint uses a reviewed structured assertion. Its readable binding remains available under Advanced."}
         </p>
         {original === undefined ? null : (
-          <p className="relay-editor-binding-help">
+          <p className="text-xs font-normal leading-normal text-muted-foreground">
             The saved assertion uses an advanced structure and remains available under Advanced.
           </p>
         )}
@@ -395,9 +396,9 @@ function ValidationExpectationEditor({
     );
   }
   return (
-    <fieldset className="relay-editor-expectation relay-editor-field" disabled={busy}>
+    <fieldset className="grid gap-1.5 text-xs font-semibold" disabled={busy}>
       <legend>Expected result</legend>
-      <p className="relay-editor-binding-help">
+    <p className="text-xs font-normal leading-normal text-muted-foreground">
         This is the value Relay validates after the action. It is separate from the human step
         wording above.
       </p>
@@ -489,19 +490,19 @@ function BindingRepair({
   });
   if (!bindable.length) {
     return (
-      <p className="relay-editor-binding-help">
+      <p className="text-xs leading-normal text-muted-foreground">
         No compatible saved target is available yet. Review the recording or ask Relay to suggest a
         repair.
       </p>
     );
   }
   return (
-    <div className="relay-editor-binding-repair">
+    <div className="grid gap-2.5 rounded-md border border-border bg-muted/40 p-3">
       <div>
         <strong>Choose a saved target</strong>
-        <p>These reviewed targets can repair this step without changing its wording.</p>
+        <p className="mt-0.5 text-xs leading-normal text-muted-foreground">These reviewed targets can repair this step without changing its wording.</p>
       </div>
-      <div className="relay-editor-binding-candidates">
+      <div className="flex flex-wrap gap-1.5">
         {bindable.map(({ candidate, binding }) => (
           <Button
             key={`${candidate.kind}:${candidate.id}`}

@@ -15,6 +15,8 @@ import { REDACTED } from "./redaction.js";
 import type { PersistedRun } from "./runs.js";
 import type { EnqueueJobInput, TestJob } from "./session-contract.js";
 import type { TraceFrameRef, TraceStep } from "./trace.js";
+import { installRegisteredBuild, preflightRegisteredBuild } from "./builds.js";
+import type { Build } from "@relay/protocol";
 import { defaultTargetWorkerAssignment } from "./target-worker.js";
 import {
   executionTargetRefForJob,
@@ -131,6 +133,55 @@ function legacyTargetContext(input: EnqueueJobInput, parent: TestJob | undefined
 }
 
 export type PersistedReplayMode = "saved-steps" | "same-configuration";
+
+/** Validate frozen replay data before mutating a target with a build install. */
+export async function prepareSameConfigurationReplay(input: {
+  run: Parameters<typeof replayInputFromPersistedRun>[0];
+  build: Build;
+  target: TargetContext;
+  targetKind?: string | null;
+  preflight?: typeof preflightRegisteredBuild;
+  install?: typeof installRegisteredBuild;
+}): Promise<EnqueueJobInput> {
+  const replay = replayInputFromPersistedRun(input.run, "same-configuration");
+  if (input.build.id !== input.run.sourceRevision?.buildId) {
+    throw new Error("Recorded build identity does not match the persisted run");
+  }
+  const persistedTarget = input.run.executionTarget;
+  if (persistedTarget) {
+    if (
+      persistedTarget.kind !== "local-device" ||
+      input.target.kind !== "device" ||
+      persistedTarget.identity.value !== input.target.serial ||
+      persistedTarget.platform !== input.target.platform
+    ) {
+      throw new Error("Replay target does not match the persisted execution target");
+    }
+  } else if (
+    input.target.kind !== "device" ||
+    input.run.serial !== input.target.serial ||
+    input.run.platform !== input.target.platform
+  ) {
+    throw new Error("Replay target does not match the persisted execution target");
+  }
+  const preflight = await (input.preflight ?? preflightRegisteredBuild)(input.build, {
+    target: input.target,
+  });
+  if (!preflight.ok) {
+    throw new Error(
+      preflight.checks
+        .filter((check) => check.status === "fail")
+        .map((check) => check.message)
+        .join("; ") || `Recorded build ${input.build.id} failed preflight`,
+    );
+  }
+  await (input.install ?? installRegisteredBuild)({
+    build: input.build,
+    target: input.target,
+    targetKind: input.targetKind,
+  });
+  return replay;
+}
 
 export function replayInputFromPersistedRun(
   run: Pick<

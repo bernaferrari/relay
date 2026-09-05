@@ -218,7 +218,15 @@ export function editAppMapScenarioTest(
     (draft) => {
       draft.tests = {
         ...draft.tests,
-        [testId]: { ...structuredClone(changed), updatedAt: context.at },
+        [testId]: {
+          ...structuredClone(changed),
+          updatedAt: context.at,
+          validation: {
+            status: "needs-validation",
+            appMapRevision: map.revision,
+            testUpdatedAt: context.at,
+          },
+        },
       };
     },
   );
@@ -251,6 +259,11 @@ export function restoreAppMapScenarioTest(
       draft.tests[testId] = {
         ...structuredClone(snapshot),
         updatedAt: context.at,
+        validation: {
+          status: "needs-validation",
+          appMapRevision: map.revision,
+          testUpdatedAt: context.at,
+        },
       };
     },
   );

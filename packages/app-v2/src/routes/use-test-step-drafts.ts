@@ -1,7 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import type { Platform } from "../platform/types";
 
-export type StepDraft = { intent: string; note: string; capture: boolean };
+import type { StepDraft } from "../components/test-editor-step";
+export type { StepDraft } from "../components/test-editor-step";
+
+function validExpected(value: StepDraft["expected"]): boolean {
+  if (value === undefined) return true;
+  if (!value || typeof value !== "object") return false;
+  return value.kind === "screen"
+    ? typeof value.screenId === "string"
+    : value.kind === "content" &&
+        typeof value.input === "string" &&
+        typeof value.expected === "string" &&
+        ["exact", "contains", "not-contains"].includes(value.match);
+}
 
 function isStepDraftRecord(value: unknown): value is Record<string, StepDraft> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
@@ -11,7 +23,8 @@ function isStepDraftRecord(value: unknown): value is Record<string, StepDraft> {
       typeof draft === "object" &&
       typeof (draft as StepDraft).intent === "string" &&
       typeof (draft as StepDraft).note === "string" &&
-      typeof (draft as StepDraft).capture === "boolean",
+      typeof (draft as StepDraft).capture === "boolean" &&
+      validExpected((draft as StepDraft).expected),
   );
 }
 
@@ -33,7 +46,8 @@ export function useTestStepDrafts(
 
   useEffect(() => {
     let disposed = false;
-    void Promise.resolve(platform.getServerConnection?.())
+    void Promise.resolve()
+      .then(() => platform.getServerConnection?.())
       .then(async (connection) => {
         const url = connection?.url ?? (await Promise.resolve(platform.getServerUrl()));
         return JSON.stringify({
@@ -68,24 +82,27 @@ export function useTestStepDrafts(
         if (stored) {
           try {
             const parsed = JSON.parse(stored) as unknown;
-            if (isStepDraftRecord(parsed)) {
+            if (!isStepDraftRecord(parsed)) throw new Error("Invalid local draft");
+            {
               setStepDrafts((current) =>
                 draftEditRevision.current === loadRevision ? parsed : { ...parsed, ...current },
               );
             }
           } catch {
-            // Ignore stale or malformed local drafts; the durable Test remains authoritative.
+            setSaveNotice("Could not restore local drafts; keep this editor open until you save.");
+            return;
           }
         }
         setDraftsLoadedFor(draftStorageKey);
       })
       .catch(() => {
-        if (!disposed) setDraftsLoadedFor(draftStorageKey);
+        if (!disposed)
+          setSaveNotice("Could not restore local drafts; keep this editor open until you save.");
       });
     return () => {
       disposed = true;
     };
-  }, [draftStorageKey, platform]);
+  }, [draftStorageKey, platform, setSaveNotice]);
 
   useEffect(() => {
     if (!draftStorageKey || draftsLoadedFor !== draftStorageKey) return;
@@ -119,7 +136,8 @@ export function useTestStepDrafts(
         !draft ||
         draft.intent !== expected.intent ||
         draft.note !== expected.note ||
-        draft.capture !== expected.capture
+        draft.capture !== expected.capture ||
+        JSON.stringify(draft.expected) !== JSON.stringify(expected.expected)
       ) {
         return current;
       }

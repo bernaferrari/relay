@@ -30,19 +30,19 @@ export function ChangePublicationStatus({ detail }: { detail: ProductChangeDetai
   });
   if (!publication) {
     return (
-      <section className="relay-change-section" aria-labelledby="publication-status-title">
+      <section className="rounded-lg border border-border bg-card p-5" aria-labelledby="publication-status-title">
         <ChangeSectionHeader
           eyebrow="GitHub delivery"
           title="Not published"
           id="publication-status-title"
         />
-        <p className="relay-change-muted">Relay has not sent this verification result to GitHub.</p>
+        <p className="text-sm text-muted-foreground">Relay has not sent this verification result to GitHub.</p>
       </section>
     );
   }
   const presentation = publicationPresentation(publication.status);
   return (
-    <section className="relay-change-section" aria-labelledby="publication-status-title">
+    <section className="rounded-lg border border-border bg-card p-5" aria-labelledby="publication-status-title">
       <ChangeSectionHeader
         eyebrow="GitHub delivery"
         title={presentation.title}
@@ -70,7 +70,7 @@ export function ChangeAuditDetails({ detail }: { detail: ProductChangeDetail }) 
   const details = detail.state.details!;
   const change = details.change;
   return (
-    <Collapsible className="relay-change-audit">
+    <Collapsible className="mt-3">
       <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 py-2 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
         Audit details
       </CollapsibleTrigger>
@@ -116,7 +116,7 @@ export function ChangeAuditDetails({ detail }: { detail: ProductChangeDetail }) 
         </dl>
         {details.publications.length ? (
           <section
-            className="relay-change-publication-history"
+            className="mt-3 space-y-2"
             aria-labelledby="publication-history-title"
           >
             <h3 id="publication-history-title">Publication history</h3>
@@ -244,7 +244,7 @@ export function ChangeSectionHeader({
   aside?: string;
 }) {
   return (
-    <header className="relay-change-section-header">
+    <header className="rounded-lg border border-border bg-card p-5-header">
       <div>
         <p className="relay-section-label">{eyebrow}</p>
         <h2 id={id}>{title}</h2>

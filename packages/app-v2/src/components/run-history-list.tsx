@@ -158,10 +158,10 @@ function WindowedRunHistory({
           "aria-describedby": "run-history-keyboard-help",
           className: "overscroll-contain",
         }}
-        className="relay-windowed-run-scroll h-[calc(100dvh-20rem)] min-h-64 max-h-[64rem] min-w-0 md:h-[calc(100dvh-22rem)] md:min-h-[30rem]"
+        className="overflow-auto h-[calc(100dvh-20rem)] min-h-64 max-h-[64rem] min-w-0 md:h-[calc(100dvh-22rem)] md:min-h-[30rem]"
       >
         <ul
-          className="relay-library-list relay-run-list relay-windowed-run-list"
+          className="relay-library-list relay-run-list list-none p-0"
           style={
             {
               height: runs.length * rowHeight,

@@ -2,7 +2,7 @@
 import { EditorSaveStatus } from "../components/editor-save-status";
 import { WorkbenchPage, PageHeader, WorkbenchPanes } from "../components/page-layout";
 import type { AppMapScenarioTestStep, AppMapTestStepPlacement } from "@relay/protocol";
-import { Badge } from "@relay/ui-react/components/badge";
+import { ApiError } from "@relay/client";
 import { Button } from "@relay/ui-react/components/button";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
@@ -116,6 +116,12 @@ function TestEditorDocument() {
             intent: savedIntent,
             note: savedNote ?? "",
             capture: savedCapture,
+            ...(edit.patch.binding?.status === "resolved" &&
+            edit.patch.binding.kind === "assertion" &&
+            (edit.patch.binding.assertion.kind === "screen" ||
+              edit.patch.binding.assertion.kind === "content")
+              ? { expected: edit.patch.binding.assertion }
+              : {}),
           });
         }
       }
@@ -128,9 +134,13 @@ function TestEditorDocument() {
         selectStep(nextSelection);
       }
     },
-    onError: () => {
+    onError: (error) => {
       selectAfterSave.current = undefined;
-      setSaveNotice("Could not save");
+      setSaveNotice(
+        error instanceof ApiError && error.status === 409
+          ? "Revision changed. Your draft is preserved."
+          : "Could not save",
+      );
       void queryClient.invalidateQueries({ queryKey: sessionId ? liveQueryKey : queryKey });
     },
   });
@@ -368,20 +378,40 @@ function TestEditorDocument() {
       />
       <PageHeader
         title={editorDocument?.test.name ?? "Edit Test"}
-        context={<><span>{editorDocument?.appName}</span><span>Editing Test</span>{editorDocument ? <span>Revision {editorDocument.revision}</span> : null}</>}
-        actions={<>
-          <EditorSaveStatus
-            state={edit.isPending || historyAction.isPending ? "saving" : saveNotice === "Could not save" || saveNotice.toLowerCase().includes("failed") || saveNotice.includes("unavailable") ? "failed" : hasUnsavedDrafts ? "dirty" : "saved"}
-            detail={hasUnsavedDrafts && saveNotice === "Saved" ? "Unsaved draft" : saveNotice}
-          />
-          <Button
-            nativeButton={false}
-            variant="default"
-            render={<Link to="/tests/$testId" params={{ testId }} />}
-          >
-            Done editing
-          </Button>
-        </>}
+        context={
+          <>
+            <span>{editorDocument?.appName}</span>
+            <span>Editing Test</span>
+            {editorDocument ? <span>Revision {editorDocument.revision}</span> : null}
+          </>
+        }
+        actions={
+          <>
+            <EditorSaveStatus
+              state={
+                edit.isPending || historyAction.isPending
+                  ? "saving"
+                  : saveNotice.startsWith("Revision changed")
+                    ? "conflicted"
+                    : saveNotice.startsWith("Could not") ||
+                        saveNotice.toLowerCase().includes("failed") ||
+                        saveNotice.includes("unavailable")
+                      ? "failed"
+                      : hasUnsavedDrafts
+                        ? "dirty"
+                        : "saved"
+              }
+              detail={hasUnsavedDrafts && saveNotice === "Saved" ? "Unsaved draft" : saveNotice}
+            />
+            <Button
+              nativeButton={false}
+              variant="default"
+              render={<Link to="/tests/$testId" params={{ testId }} />}
+            >
+              Done editing
+            </Button>
+          </>
+        }
       />
 
       {(sessionId ? liveEditor.isPending : document.isPending) ? (
@@ -436,156 +466,162 @@ function TestEditorDocument() {
             ) : null}
           </div>
 
-          <WorkbenchPanes outline={
-            <section className="relay-editor-outline" aria-labelledby="test-steps-title">
-              <div className="relay-section-heading">
-                <div>
-                  <p className="relay-section-label">Journey</p>
-                  <h2 id="test-steps-title">Steps</h2>
-                </div>
-                <div className="relay-editor-outline-actions">
-                  <span>{entries.length === 1 ? "1 step" : `${entries.length} steps`}</span>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={addStep}
-                    disabled={edit.isPending || repair.isPending}
-                  >
-                    Add step
-                  </Button>
-                </div>
-              </div>
-              <p className="relay-editor-help">
-                Drag within a group, use the arrow buttons, or press Alt + ↑/↓ on a step.
-              </p>
-              {entries.length ? (
-                <ol className="relay-editor-step-list">
-                  {entries.map((entry) => (
-                    <li
-                      key={entry.step.id}
-                      style={{ "--step-depth": entry.depth } as CSSProperties}
+          <WorkbenchPanes
+            outline={
+              <section className="min-w-0" aria-labelledby="test-steps-title">
+                <div className="relay-section-heading">
+                  <div>
+                    <p className="relay-section-label">Journey</p>
+                    <h2 id="test-steps-title">Steps</h2>
+                  </div>
+                  <div className="flex items-center gap-2.5">
+                    <span className="text-[11px] tabular-nums text-muted-foreground">{entries.length === 1 ? "1 step" : `${entries.length} steps`}</span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={addStep}
+                      disabled={edit.isPending || repair.isPending}
                     >
-                      <div
-                        id={`test-step-${entry.step.id}`}
-                        className="relay-editor-step-row"
-                        data-selected={selected?.step.id === entry.step.id}
-                        draggable={!edit.isPending}
-                        tabIndex={0}
-                        onDragStart={() => {
-                          draggedStepId.current = entry.step.id;
-                        }}
-                        onDragEnd={() => {
-                          draggedStepId.current = undefined;
-                        }}
-                        onDragOver={(event) => {
-                          if (
-                            draggedStepId.current &&
-                            entry.siblingIds.includes(draggedStepId.current)
-                          )
-                            event.preventDefault();
-                        }}
-                        onDrop={(event) => {
-                          event.preventDefault();
-                          const bounds = event.currentTarget.getBoundingClientRect();
-                          dropOn(entry, event.clientY > bounds.top + bounds.height / 2);
-                        }}
-                        onKeyDown={(event) => {
-                          if (!event.altKey) return;
-                          if (event.key === "ArrowUp" || event.key === "ArrowDown") {
-                            event.preventDefault();
-                            move(entry, event.key === "ArrowUp" ? -1 : 1);
-                          }
-                        }}
+                      Add step
+                    </Button>
+                  </div>
+                </div>
+                <p className="mt-1.5 max-w-[65ch] text-[11px] text-muted-foreground">
+                  Drag within a group, use the arrow buttons, or press Alt + ↑/↓ on a step.
+                </p>
+                {entries.length ? (
+                  <ol className="mt-4 grid list-none gap-1.5 p-0">
+                    {entries.map((entry) => (
+                      <li
+                        key={entry.step.id}
+                        style={{ "--step-depth": entry.depth } as CSSProperties}
                       >
-                        <button
-                          className="relay-editor-step-select"
-                          type="button"
-                          onClick={() => selectStep(entry.step.id)}
-                          aria-pressed={selected?.step.id === entry.step.id}
+                        <div
+                          id={`test-step-${entry.step.id}`}
+                          className="grid min-h-14 min-w-0 grid-cols-[minmax(0,1fr)_36px] items-stretch rounded-lg border border-border bg-card transition-colors hover:border-input hover:bg-muted/40 data-[selected=true]:border-primary/40 data-[selected=true]:bg-primary/5 data-[selected=true]:shadow-[0_0_0_1px_color-mix(in_srgb,var(--primary)_10%,transparent)]"
+                          data-selected={selected?.step.id === entry.step.id}
+                          draggable={!edit.isPending}
+                          tabIndex={0}
+                          onDragStart={() => {
+                            draggedStepId.current = entry.step.id;
+                          }}
+                          onDragEnd={() => {
+                            draggedStepId.current = undefined;
+                          }}
+                          onDragOver={(event) => {
+                            if (
+                              draggedStepId.current &&
+                              entry.siblingIds.includes(draggedStepId.current)
+                            )
+                              event.preventDefault();
+                          }}
+                          onDrop={(event) => {
+                            event.preventDefault();
+                            const bounds = event.currentTarget.getBoundingClientRect();
+                            dropOn(entry, event.clientY > bounds.top + bounds.height / 2);
+                          }}
+                          onKeyDown={(event) => {
+                            if (!event.altKey) return;
+                            if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+                              event.preventDefault();
+                              move(entry, event.key === "ArrowUp" ? -1 : 1);
+                            }
+                          }}
                         >
-                          <GripVertical className="relay-editor-grip" aria-hidden="true" />
-                          <span className="relay-editor-step-number">{entry.number}</span>
-                          <span className="relay-editor-step-copy">
-                            <strong>{entry.step.intent}</strong>
-                            <small>
-                              {entry.placement ? `${branchLabel(entry.placement)} · ` : ""}
-                              {stepKindLabel(entry.step)} ·{" "}
-                              {entry.step.binding.status === "resolved" ? "Ready" : "Needs review"}
-                            </small>
+                          <button
+                            className="grid min-h-14 min-w-0 grid-cols-[14px_24px_minmax(0,1fr)_12px] items-center gap-1.5 border-0 bg-transparent p-2 text-left text-inherit"
+                            type="button"
+                            onClick={() => selectStep(entry.step.id)}
+                            aria-pressed={selected?.step.id === entry.step.id}
+                          >
+                            <GripVertical className="size-4 cursor-grab text-muted-foreground" aria-hidden="true" />
+                            <span className="grid size-7 place-items-center rounded-full border border-border bg-background text-[10px] tabular-nums text-muted-foreground">{entry.number}</span>
+                            <span className="min-w-0">
+                              <strong className="block overflow-hidden text-xs font-semibold break-words">{entry.step.intent}</strong>
+                              <small className="mt-0.5 block overflow-hidden text-[10px] text-muted-foreground break-words">
+                                {entry.placement ? `${branchLabel(entry.placement)} · ` : ""}
+                                {stepKindLabel(entry.step)} ·{" "}
+                                {entry.step.binding.status === "resolved"
+                                  ? "Ready"
+                                  : "Needs review"}
+                              </small>
+                            </span>
+                            <ChevronRight className="size-3.5 text-muted-foreground" aria-hidden="true" />
+                          </button>
+                          <span className="grid grid-cols-1 border-l border-border">
+                            <Button
+                              size="icon-sm"
+                              variant="ghost"
+                              onClick={() => move(entry, -1)}
+                              disabled={entry.index === 0 || edit.isPending}
+                              aria-label={`Move ${entry.step.intent} up`}
+                            >
+                              <ArrowUp aria-hidden="true" />
+                            </Button>
+                            <Button
+                              size="icon-sm"
+                              variant="ghost"
+                              onClick={() => move(entry, 1)}
+                              disabled={
+                                entry.index === entry.siblingIds.length - 1 || edit.isPending
+                              }
+                              aria-label={`Move ${entry.step.intent} down`}
+                            >
+                              <ArrowDown aria-hidden="true" />
+                            </Button>
                           </span>
-                          <ChevronRight aria-hidden="true" />
-                        </button>
-                        <span className="relay-editor-reorder-actions">
-                          <Button
-                            size="icon-sm"
-                            variant="ghost"
-                            onClick={() => move(entry, -1)}
-                            disabled={entry.index === 0 || edit.isPending}
-                            aria-label={`Move ${entry.step.intent} up`}
-                          >
-                            <ArrowUp aria-hidden="true" />
-                          </Button>
-                          <Button
-                            size="icon-sm"
-                            variant="ghost"
-                            onClick={() => move(entry, 1)}
-                            disabled={entry.index === entry.siblingIds.length - 1 || edit.isPending}
-                            aria-label={`Move ${entry.step.intent} down`}
-                          >
-                            <ArrowDown aria-hidden="true" />
-                          </Button>
-                        </span>
-                      </div>
-                    </li>
-                  ))}
-                </ol>
-              ) : (
-                <EmptyState
-                  title="This Test has no steps"
-                  detail="Record this journey again to give Relay a reviewed path to repeat."
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                ) : (
+                  <EmptyState
+                    title="This Test has no steps"
+                    detail="Record this journey again to give Relay a reviewed path to repeat."
+                  />
+                )}
+              </section>
+            }
+            stage={
+              <div className="relay-editor-stage-evidence">
+                {sessionId ? (
+                  <LiveTestEditorPane
+                    session={liveEditor.data}
+                    loading={liveEditor.isPending}
+                    error={liveEditor.error}
+                  />
+                ) : null}
+                <TestEditorEvidencePanel
+                  step={selected?.step}
+                  report={latestReport.data}
+                  hasRuns={Boolean(recentRuns.data?.length)}
+                  loading={reportLoading}
                 />
-              )}
-            </section>
-
-} stage={
-            <div className="relay-editor-stage-evidence">
-              {sessionId ? (
-                <LiveTestEditorPane
-                  session={liveEditor.data}
-                  loading={liveEditor.isPending}
-                  error={liveEditor.error}
-                />
-              ) : null}
-              <TestEditorEvidencePanel
-                step={selected?.step}
-                report={latestReport.data}
-                hasRuns={Boolean(recentRuns.data?.length)}
-                loading={reportLoading}
-              />
-            </div>
-} inspector={
-            <aside className="relay-editor-inspector" aria-label="Selected step editor">
-              {selected ? (
-                <SelectedStepEditor
-                  key={`${selected.step.id}:${editorDocument.revision}`}
-                  entry={selected}
-                  draft={stepDrafts[selected.step.id]}
-                  onDraftChange={(draft) => updateStepDraft(selected.step.id, draft)}
-                  busy={edit.isPending}
-                  onSave={apply}
-                  onBind={(transaction) => apply(transaction)}
-                  onRemove={() => removeStep(selected)}
-                  onAddChild={(branch) => addChildStep(selected, branch)}
-                />
-              ) : (
-                <EmptyState
-                  title="Choose a step"
-                  detail="Select a step to edit its instruction, note, and evidence capture."
-                />
-              )}
-            </aside>
-
-} />
+              </div>
+            }
+            inspector={
+              <aside className="relay-editor-inspector" aria-label="Selected step editor">
+                {selected ? (
+                  <SelectedStepEditor
+                    key={`${selected.step.id}:${editorDocument.revision}`}
+                    entry={selected}
+                    draft={stepDrafts[selected.step.id]}
+                    onDraftChange={(draft) => updateStepDraft(selected.step.id, draft)}
+                    busy={edit.isPending}
+                    onSave={apply}
+                    onBind={(transaction) => apply(transaction)}
+                    onRemove={() => removeStep(selected)}
+                    onAddChild={(branch) => addChildStep(selected, branch)}
+                  />
+                ) : (
+                  <EmptyState
+                    title="Choose a step"
+                    detail="Select a step to edit its instruction, note, and evidence capture."
+                  />
+                )}
+              </aside>
+            }
+          />
 
           {editorDocument.repairs.length || editorDocument.history.length ? (
             <div className="relay-test-editor-context">

@@ -19,7 +19,7 @@ import { Tabs, TabsList, TabsTrigger } from "@relay/ui-react/components/tabs";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { ChevronDown, ChevronRight, Monitor, Smartphone, Tablet } from "lucide-react";
-import { useDeferredValue, useState } from "react";
+import { useDeferredValue, useEffect, useState } from "react";
 import { EmptyState, RecoveryState } from "../components/product-patterns";
 import {
   deviceQueryKeys,
@@ -28,6 +28,7 @@ import {
 } from "../data/device-product-service";
 import { PageLoading } from "./recording-shared";
 import { readSetupContinuation } from "../data/setup-continuation";
+import { useCollectionReturnFocus } from "../hooks/use-collection-return-focus";
 
 type DeviceFilter = "all" | Exclude<ProductDeviceStatus, "virtual">;
 type DeviceTypeFilter = "all" | "physical" | "virtual";
@@ -65,7 +66,12 @@ const SECTIONS: readonly {
   },
 ];
 
-function searchState(value: unknown): { status?: string; type?: string; returnTo?: string } {
+function searchState(value: unknown): {
+  status?: string;
+  type?: string;
+  returnTo?: string;
+  q?: string;
+} {
   return value && typeof value === "object"
     ? (value as { status?: string; type?: string; returnTo?: string })
     : {};
@@ -98,7 +104,7 @@ function deviceMetadata(device: ProductDevice): string {
 }
 
 function DeviceIcon({ device }: { device: ProductDevice }) {
-  const className = "relay-device-icon";
+  const className = "grid size-9 place-items-center rounded-md border border-border bg-background";
   if (device.platform === "browser") return <Monitor className={className} aria-hidden="true" />;
   if (/ipad|tablet/iu.test(`${device.name} ${device.kind ?? ""}`)) {
     return <Tablet className={className} aria-hidden="true" />;
@@ -108,9 +114,9 @@ function DeviceIcon({ device }: { device: ProductDevice }) {
 
 function DeviceRow({ device, returnTo }: { device: ProductDevice; returnTo?: string }) {
   return (
-    <li className="relay-device-row-item">
+    <li className="flex min-h-[68px] items-center gap-3 px-3.5 py-3-item">
       <Item
-        className="relay-device-row"
+        className="flex min-h-[68px] items-center gap-3 px-3.5 py-3"
         size="sm"
         render={
           <Link
@@ -127,7 +133,7 @@ function DeviceRow({ device, returnTo }: { device: ProductDevice; returnTo?: str
           <ItemTitle>{device.name}</ItemTitle>
           <ItemDescription>{deviceMetadata(device)}</ItemDescription>
         </ItemContent>
-        <ItemActions className="relay-device-row-end">
+        <ItemActions className="flex min-h-[68px] items-center gap-3 px-3.5 py-3-end">
           <Badge
             variant={device.status === "needs-attention" ? "destructive" : "default"}
             className={
@@ -138,7 +144,7 @@ function DeviceRow({ device, returnTo }: { device: ProductDevice; returnTo?: str
           >
             {statusLabel(device)}
           </Badge>
-          <ChevronRight className="relay-device-row-chevron" aria-hidden="true" />
+          <ChevronRight className="flex min-h-[68px] items-center gap-3 px-3.5 py-3-chevron" aria-hidden="true" />
         </ItemActions>
       </Item>
     </li>
@@ -160,7 +166,7 @@ function DeviceSection({
 }) {
   const headingId = `device-section-${title.toLowerCase().replaceAll(" ", "-")}`;
   const content = (
-    <ul className="relay-device-list">
+    <ul className="list-none overflow-hidden rounded-lg border border-border bg-card p-0">
       {devices.map((device) => (
         <DeviceRow key={device.id} device={device} returnTo={returnTo} />
       ))}
@@ -193,12 +199,12 @@ function DeviceSection({
     );
   }
   return (
-    <section className="relay-device-section" aria-labelledby={headingId}>
+    <section className="grid gap-3" aria-labelledby={headingId}>
       <header>
         <div>
-          <div className="relay-device-section-title">
+          <div className="grid gap-3-title">
             <h2 id={headingId}>{title}</h2>
-            <span className="relay-device-count" aria-label={`${devices.length} devices`}>
+            <span className="text-xs text-muted-foreground" aria-label={`${devices.length} devices`}>
               {devices.length}
             </span>
           </div>
@@ -218,7 +224,7 @@ export function DevicesPage() {
   const continuation = readSetupContinuation(search.returnTo);
   const activeFilter = deviceFilter(search.status);
   const activeTypeFilter = search.status === "virtual" ? "virtual" : deviceTypeFilter(search.type);
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(search.q ?? "");
   const deferredQuery = useDeferredValue(query.trim().toLocaleLowerCase());
   const devices = useQuery({
     queryKey: deviceQueryKeys.devices,
@@ -244,6 +250,24 @@ export function DevicesPage() {
             .includes(deferredQuery)),
     ) ?? [];
   const visibleCount = visibleDevices.length;
+  const returnFocus = useCollectionReturnFocus("relay:focus:/devices", visibleDevices, "/devices/");
+
+  useEffect(() => {
+    if (search.q !== undefined && search.q !== query) setQuery(search.q);
+  }, [query, search.q]);
+
+  useEffect(() => {
+    if ((search.q ?? "") === query) return;
+    void navigate({
+      to: "/devices",
+      search: {
+        ...(activeFilter === "all" ? {} : { status: activeFilter }),
+        ...(activeTypeFilter === "all" ? {} : { type: activeTypeFilter }),
+        ...(query.trim() ? { q: query.trim() } : {}),
+        ...(search.returnTo ? { returnTo: search.returnTo } : {}),
+      },
+    });
+  }, [activeFilter, activeTypeFilter, navigate, query, search.q, search.returnTo]);
 
   function updateSearch(next: { status?: DeviceFilter; type?: DeviceTypeFilter }) {
     const status = next.status ?? activeFilter;
@@ -253,14 +277,15 @@ export function DevicesPage() {
       search: {
         ...(status === "all" ? {} : { status }),
         ...(type === "all" ? {} : { type }),
+        ...(query.trim() ? { q: query.trim() } : {}),
         ...(search.returnTo ? { returnTo: search.returnTo } : {}),
       },
     });
   }
 
   return (
-    <section className="relay-page relay-devices-page">
-      <header className="relay-page-header relay-devices-header">
+    <section className="relay-page max-w-[1080px]" onClickCapture={returnFocus.onClickCapture}>
+      <header className="relay-page-header flex items-start justify-between gap-7 max-[780px]:flex-col">
         <div>
           <p className="relay-eyebrow">Workspace</p>
           <h1>Devices</h1>
@@ -372,7 +397,7 @@ export function DevicesPage() {
       ) : null}
 
       {!devices.isPending && !devices.isError && visibleCount > 0 ? (
-        <div className="relay-device-sections" aria-live="polite">
+        <div className="grid gap-7" aria-live="polite">
           {shownSections
             .filter((section) =>
               visibleDevices.some((device) =>

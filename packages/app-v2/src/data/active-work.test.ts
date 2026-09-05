@@ -97,4 +97,51 @@ describe("active work projection", () => {
 
     expect(items).toEqual([]);
   });
+
+  it("keeps independently started work discoverable when the local pointer is stale", () => {
+    const items = collectActiveWork({
+      recordingId: "recording-host-a",
+      recording: {
+        status: "recording",
+        targets: [],
+        snapshot: {
+          schemaVersion: 1,
+          kind: "author-test",
+          title: "Record checkout",
+          phase: "running",
+          stage: "recording",
+          version: "v1",
+          progress: { label: "Recording" },
+          allowedNextActions: [],
+          problems: [],
+          evidenceRefs: [],
+        },
+      },
+      runs: [
+        {
+          id: "run-host-b",
+          title: "Run checkout",
+          action: "run",
+          status: "running",
+          phase: "running",
+          queuedAt: 2,
+          testName: "Checkout",
+          identity: { runId: "run-host-b" },
+          links: { self: "/runs/run-host-b" },
+        },
+      ],
+      runPointer: {
+        workflowId: "stale-local-workflow",
+        runId: "run-host-c",
+        testId: "checkout-c",
+      },
+    });
+
+    expect(items.map(({ id }) => id)).toEqual([
+      "recording:recording-host-a",
+      "run:run-host-b",
+      "run:run-host-c",
+    ]);
+    expect(items.find(({ id }) => id === "run:run-host-c")?.href).toBe("/runs/run-host-c");
+  });
 });

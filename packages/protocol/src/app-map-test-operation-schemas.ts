@@ -599,6 +599,15 @@ export const graphTest = z
     steps: z.array(graphTestStep).max(200),
     family: testFamily.optional(),
     capture: testCapturePolicy.optional(),
+    validation: z
+      .object({
+        status: z.enum(["passed", "needs-validation"]),
+        appMapRevision: z.number().int().nonnegative(),
+        testUpdatedAt: z.number().int().nonnegative(),
+        validatedAt: z.number().int().nonnegative().optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
   .superRefine((test, context) => {

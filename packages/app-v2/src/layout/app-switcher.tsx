@@ -93,41 +93,66 @@ export function AppSwitcher() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        className="relay-app-switcher"
+        className="relay-app-switcher grid min-h-[50px] w-full grid-cols-[30px_minmax(0,1fr)_18px] items-center gap-[9px] rounded-[var(--radius-lg)] border border-[var(--border-weak-base)] bg-[var(--surface-raised-strong)] px-[9px] py-1.5 text-left text-[var(--text-strong)] shadow-[0_1px_2px_color-mix(in_srgb,black_4%,transparent)]"
         aria-label={`App context: ${contextName}`}
       >
-        <span className="relay-app-avatar" aria-hidden="true">
+        <span
+          className="relay-app-avatar grid h-[30px] w-[30px] place-items-center rounded-[var(--radius-lg)] bg-[var(--button-primary-base)] text-xs font-semibold text-[var(--button-primary-foreground)]"
+          aria-hidden="true"
+        >
           {avatar}
         </span>
-        <span className="relay-app-switcher-copy">
-          <span className="relay-app-switcher-label">App context</span>
-          <span className="relay-app-switcher-name">{contextName}</span>
+        <span className="relay-app-switcher-copy flex min-w-0 flex-col">
+          <span className="relay-app-switcher-label text-[10px] font-semibold uppercase leading-[1.2] tracking-[0.06em] text-[var(--text-weaker)]">
+            App context
+          </span>
+          <span className="relay-app-switcher-name overflow-hidden text-xs leading-[1.35] text-ellipsis whitespace-nowrap">
+            {contextName}
+          </span>
         </span>
-        <span className="relay-app-switcher-chevron" aria-hidden="true">
+        <span
+          className="relay-app-switcher-chevron text-center text-[13px] text-[var(--text-weak)]"
+          aria-hidden="true"
+        >
           ⌄
         </span>
       </DropdownMenuTrigger>
 
       <DropdownMenuContent sideOffset={6} align="start">
         <DropdownMenuGroup>
-          <DropdownMenuLabel className="relay-menu-label">Apps</DropdownMenuLabel>
-          <DropdownMenuItem onClick={() => switchApp()}>
+          <DropdownMenuLabel className="relay-menu-label block px-2.5 pb-1.5 pt-[7px] text-[10px] font-semibold uppercase leading-[1.2] tracking-[0.06em] text-[var(--text-weaker)]">
+            Apps
+          </DropdownMenuLabel>
+          <DropdownMenuItem
+            className="relay-menu-item flex justify-between gap-4"
+            onClick={() => switchApp()}
+          >
             <span>All apps</span>
             {scope.kind === "all" ? <span aria-hidden="true">✓</span> : null}
           </DropdownMenuItem>
           {apps.data?.map((app) => (
-            <DropdownMenuItem key={app.id} onClick={() => switchApp(app.id)}>
+            <DropdownMenuItem
+              key={app.id}
+              className="relay-menu-item flex justify-between gap-4"
+              onClick={() => switchApp(app.id)}
+            >
               <span>{app.name}</span>
               {selectedApp?.id === app.id ? <span aria-hidden="true">✓</span> : null}
             </DropdownMenuItem>
           ))}
           {apps.isError ? (
-            <DropdownMenuItem className="relay-menu-note" disabled>
+            <DropdownMenuItem
+              className="relay-menu-note flex min-h-11 items-center px-2.5 text-xs text-[var(--text-weaker)]"
+              disabled
+            >
               Apps are temporarily unavailable
             </DropdownMenuItem>
           ) : null}
-          <DropdownMenuSeparator className="relay-menu-separator" />
-          <DropdownMenuItem onClick={() => router.history.push("/apps")}>
+          <DropdownMenuSeparator className="relay-menu-separator my-2 ml-1.5 mr-1.5 mt-2 h-px bg-[var(--border-weak-base)]" />
+          <DropdownMenuItem
+            className="relay-menu-item flex justify-between gap-4"
+            onClick={() => router.history.push("/apps")}
+          >
             Manage apps
           </DropdownMenuItem>
         </DropdownMenuGroup>

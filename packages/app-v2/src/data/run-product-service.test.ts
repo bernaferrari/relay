@@ -1,7 +1,21 @@
-import { describe, expect, it } from "vitest";
-import { framePathsForTraceStep, projectRunReport } from "./run-product-service";
+import { describe, expect, it, vi } from "vitest";
+import { framePathsForTraceStep, projectRunReport, runOutcome } from "./run-product-service";
 
 describe("run report projection", () => {
+  it("reports unknown transport outcome categories once without exposing the raw value", () => {
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    expect(runOutcome("unsupported-status")).toBeUndefined();
+    expect(runOutcome("another-unsupported-status")).toBeUndefined();
+    expect(warning).toHaveBeenCalledTimes(1);
+    expect(warning.mock.calls[0]?.[1]).toEqual({
+      component: "OutcomeMark",
+      reason: "unknown-outcome",
+      category: "string",
+    });
+    expect(JSON.stringify(warning.mock.calls[0])).not.toContain("unsupported-status");
+    warning.mockRestore();
+  });
+
   it("joins frames by authoritative trace step index and never by array position", () => {
     const evidence = [
       {

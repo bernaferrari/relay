@@ -15,7 +15,7 @@ import { FieldLabel as ChoiceLabel } from "@relay/ui-react/components/field";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { Play, RotateCcw, Trash2 } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import {
   Breadcrumbs,
   EmptyState,
@@ -59,7 +59,17 @@ export function SuitePage() {
     key: scope.key,
     targetOptions: environments.data?.map((item) => ({ id: item.id, label: item.name })),
   });
-  const selectedProfileIds = [...(configuration.selection.targetProfileIds ?? (configuration.selection.targetProfileId ? [configuration.selection.targetProfileId] : []))];
+  useEffect(() => {
+    if (configuration.pristine && environments.data?.length === 1)
+      configuration.setSelection({
+        targetProfileIds: [environments.data[0]!.id],
+        targetProfileId: environments.data[0]!.id,
+      });
+  }, [configuration.pristine, configuration.setSelection, environments.data]);
+  const selectedProfileIds = [
+    ...(configuration.selection.targetProfileIds ??
+      (configuration.selection.targetProfileId ? [configuration.selection.targetProfileId] : [])),
+  ];
   const preview = useQuery({
     queryKey: ["suites", appId, suiteId, "preview", selectedProfileIds],
     queryFn: () =>
@@ -135,7 +145,6 @@ export function SuitePage() {
       return next;
     });
   }
-
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -232,8 +241,6 @@ export function SuitePage() {
             </div>
           </dl>
 
-
-
           <div className="mt-6 grid items-start gap-4 lg:grid-cols-2">
             <section
               className="min-w-0 rounded-xl border border-border-weak-base bg-surface-raised-strong p-4"
@@ -279,47 +286,50 @@ export function SuitePage() {
               >
                 Where should Relay run?
               </h2>
-          <RunConfigurationComposer
-            configuration={{
-              frozen: false,
-              values: {
-                targetProfileId: selectedProfileIds[0],
-                targetName: environments.data?.find((item) => item.id === selectedProfileIds[0])
-                  ?.name,
-                dataSetName: value.variableIds.length
-                  ? `${value.variableIds.length} saved data sets`
-                  : undefined,
-              },
-              blockers: selectedProfileIds.length
-                ? configuration.targetUnavailable
-                  ? [
-                      {
-                        id: "target",
-                        label: "Saved environment is unavailable",
-                        detail: "Choose another environment to continue.",
-                      },
-                    ]
-                  : []
-                : [{ id: "target", label: "Choose an environment before starting" }],
-              validated: Boolean(
-                preview.data &&
-                !preview.data.blockers.length &&
-                preview.data.execution?.capacity !== "unavailable",
-              ),
-            }}
-            targetOptions={environments.data?.map((item) => ({
-              id: item.id,
-              label: item.name,
-              detail: `${item.platform} · ${item.target.name}`,
-            }))}
-            multipleTargets
-            loading={configuration.loading}
-            error={scope.error ?? configuration.error}
-            onRetry={configuration.retry}
-            selection={configuration.selection}
-            onSelectionChange={configuration.setSelection}
-          />
-              <p className="text-sm text-text-weak">One environment runs a first case. Additional environments can be compared in preview; multi-environment execution is unavailable.</p>
+              <RunConfigurationComposer
+                configuration={{
+                  frozen: false,
+                  values: {
+                    targetProfileId: selectedProfileIds[0],
+                    targetName: environments.data?.find((item) => item.id === selectedProfileIds[0])
+                      ?.name,
+                    dataSetName: value.variableIds.length
+                      ? `${value.variableIds.length} saved data sets`
+                      : undefined,
+                  },
+                  blockers: selectedProfileIds.length
+                    ? configuration.targetUnavailable
+                      ? [
+                          {
+                            id: "target",
+                            label: "Saved environment is unavailable",
+                            detail: "Choose another environment to continue.",
+                          },
+                        ]
+                      : []
+                    : [{ id: "target", label: "Choose an environment before starting" }],
+                  validated: Boolean(
+                    preview.data &&
+                    !preview.data.blockers.length &&
+                    preview.data.execution?.capacity !== "unavailable",
+                  ),
+                }}
+                targetOptions={environments.data?.map((item) => ({
+                  id: item.id,
+                  label: item.name,
+                  detail: `${item.platform} · ${item.target.name}`,
+                }))}
+                multipleTargets
+                loading={configuration.loading}
+                error={scope.error ?? configuration.error}
+                onRetry={scope.error ? scope.retry : configuration.retry}
+                selection={configuration.selection}
+                onSelectionChange={configuration.setSelection}
+              />
+              <p className="text-sm text-text-weak">
+                One environment runs a first case. Additional environments can be compared in
+                preview; multi-environment execution is unavailable.
+              </p>
               {preview.data ? (
                 <div
                   className={`mt-4 grid gap-1 rounded-lg border p-3 text-xs ${
@@ -420,7 +430,7 @@ export function SuitePage() {
           </section>
 
           <Dialog open={editOpen} onOpenChange={setEditOpen}>
-            <DialogContent showCloseButton={false} className="relay-suite-dialog">
+            <DialogContent showCloseButton={false} className="max-h-[min(760px,calc(100vh-32px))] w-[min(720px,calc(100vw-32px))] overflow-auto">
               <DialogTitle>Edit Suite</DialogTitle>
               <DialogDescription>
                 Keep the scope deliberate. Removing a Test from this Suite does not delete it.
@@ -434,7 +444,7 @@ export function SuitePage() {
                     onChange={(event) => setName(event.currentTarget.value)}
                   />
                 </Field>
-                <div className="relay-suite-dialog-scopes">
+                <div className="max-h-[min(760px,calc(100vh-32px))] w-[min(720px,calc(100vw-32px))] overflow-auto-scopes">
                   <fieldset>
                     <legend>Tests</legend>
                     {editor.data?.tests.map((test) => (

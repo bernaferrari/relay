@@ -424,6 +424,7 @@ export function assertScenarioTest(test: AppMapScenarioTest, label: string): voi
       "family",
       "capture",
       "surfaceBindings",
+      "validation",
       "createdAt",
       "updatedAt",
     ],
@@ -456,6 +457,34 @@ export function assertScenarioTest(test: AppMapScenarioTest, label: string): voi
       }
     } else if (capture.screenIds !== undefined) {
       appMapFail("invalid-map", `${label}.capture.screenIds is only valid for checkpoints`);
+    }
+  }
+  if (test.validation !== undefined) {
+    const validation = objectValue(test.validation, `${label}.validation`);
+    allowedKeys(
+      validation,
+      ["status", "appMapRevision", "testUpdatedAt", "validatedAt"],
+      `${label}.validation`,
+    );
+    if (validation.status !== "passed" && validation.status !== "needs-validation") {
+      appMapFail("invalid-map", `${label}.validation.status is unsupported`);
+    }
+    for (const key of ["appMapRevision", "testUpdatedAt"] as const) {
+      if (
+        typeof validation[key] !== "number" ||
+        !Number.isSafeInteger(validation[key]) ||
+        validation[key] < 0
+      ) {
+        appMapFail("invalid-map", `${label}.validation.${key} must be a non-negative integer`);
+      }
+    }
+    if (
+      validation.validatedAt !== undefined &&
+      (typeof validation.validatedAt !== "number" ||
+        !Number.isSafeInteger(validation.validatedAt) ||
+        validation.validatedAt < 0)
+    ) {
+      appMapFail("invalid-map", `${label}.validation.validatedAt must be a non-negative integer`);
     }
   }
   if (test.surfaceBindings !== undefined) {

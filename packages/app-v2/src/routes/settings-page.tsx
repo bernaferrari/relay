@@ -52,7 +52,7 @@ function GeneralSettings() {
 
   return (
     <SettingsFrame category="general" saveState={connection.isError ? "unavailable" : undefined}>
-      <section className="relay-settings-group" aria-labelledby="general-behavior-title">
+      <section className="grid gap-3 rounded-xl border border-border bg-card p-5" aria-labelledby="general-behavior-title">
         <header>
           <p className="relay-section-label">Workspace behavior</p>
           <h2 id="general-behavior-title">Your workspace</h2>
@@ -169,7 +169,7 @@ function EvidenceSettings() {
         <PageLoading label="Loading evidence and privacy settings…" />
       ) : null}
       {error ? (
-        <Alert className="relay-settings-alert" variant="destructive" role="alert">
+        <Alert className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm" variant="destructive" role="alert">
           <AlertTitle>Relay could not load or save this setting</AlertTitle>
           <AlertDescription>{errorMessage(error)}</AlertDescription>
           <AlertAction>
@@ -189,7 +189,7 @@ function EvidenceSettings() {
       ) : null}
       {privacy.data && evidence.data ? (
         <>
-          <section className="relay-settings-group" id="privacy" aria-labelledby="privacy-title">
+          <section className="grid gap-3 rounded-xl border border-border bg-card p-5" id="privacy" aria-labelledby="privacy-title">
             <header>
               <p className="relay-section-label">Privacy</p>
               <h2 id="privacy-title">Protect evidence before it is saved</h2>
@@ -220,7 +220,7 @@ function EvidenceSettings() {
           </section>
 
           <section
-            className="relay-settings-group"
+            className="grid gap-3 rounded-xl border border-border bg-card p-5"
             id="sensitive"
             aria-labelledby="sensitive-title"
           >
@@ -274,7 +274,7 @@ function IntegrationsSettings() {
       category="integrations"
       saveState={connection.isError ? "unavailable" : undefined}
     >
-      <section className="relay-settings-group" aria-labelledby="integration-title">
+      <section className="grid gap-3 rounded-xl border border-border bg-card p-5" aria-labelledby="integration-title">
         <header>
           <p className="relay-section-label">Current workspace</p>
           <h2 id="integration-title">Connected services</h2>
@@ -284,7 +284,7 @@ function IntegrationsSettings() {
           <PageLoading label="Checking workspace integrations…" />
         ) : null}
         {connection.isError || (settingsService.integrations && integrations.error) ? (
-          <Alert className="relay-settings-alert" variant="destructive" role="alert">
+          <Alert className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm" variant="destructive" role="alert">
             <AlertTitle>Could not load connected services</AlertTitle>
             <AlertDescription>
               {errorMessage(integrations.error ?? connection.error)}
@@ -357,7 +357,7 @@ function IntegrationsSettings() {
             </ItemActions>
           </Item>
         ) : null}
-        <div className="relay-settings-empty-inline">
+        <div className="rounded-lg border border-dashed border-border p-5 text-sm text-muted-foreground">
           <h3>Managed by your workspace</h3>
           <p>
             Your workspace administrator manages service credentials on the Relay server. You can
@@ -419,24 +419,24 @@ function AdvancedSettings() {
 
   return (
     <SettingsFrame category="advanced" saveState={connection.isError ? "unavailable" : saveState}>
-      <section className="relay-settings-group" id="connection" aria-labelledby="connection-title">
+      <section className="grid gap-3 rounded-xl border border-border bg-card p-5" id="connection" aria-labelledby="connection-title">
         <header>
-          <p className="relay-section-label">Connection</p>
+          <p className="relay-section-label">Server</p>
           <h2 id="connection-title">Relay address</h2>
           <p>Change this only when your workspace runs on a different Relay server.</p>
         </header>
         {connection.isPending ? <PageLoading label="Loading the Relay address…" /> : null}
         {connection.isError ? (
-          <Alert className="relay-settings-alert" variant="destructive" role="alert">
+          <Alert className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm" variant="destructive" role="alert">
             <AlertTitle>The Relay address is unavailable</AlertTitle>
             <AlertDescription>{errorMessage(connection.error)}</AlertDescription>
           </Alert>
         ) : null}
         {connection.data ? (
-          <form className="relay-settings-form" onSubmit={saveConnection}>
-            <Field className="relay-settings-address-field">
+          <form className="grid gap-6" onSubmit={saveConnection}>
+            <Field className="grid gap-2">
               <FieldLabel htmlFor="relay-server-url">Server URL</FieldLabel>
-              <div className="relay-settings-address-control">
+              <div className="flex items-center gap-2">
                 <Input
                   id="relay-server-url"
                   type="url"
@@ -470,7 +470,7 @@ function AdvancedSettings() {
                 </p>
               ) : null}
               {savedNotice ? (
-                <p className="relay-settings-saved-notice" role="status">
+                <p className="mt-4 flex items-center gap-2d-notice" role="status">
                   Saved. Reopen Relay to use the new address everywhere.
                 </p>
               ) : null}
@@ -480,11 +480,11 @@ function AdvancedSettings() {
       </section>
 
       <section
-        className="relay-settings-group"
+        className="grid gap-3 rounded-xl border border-border bg-card p-5"
         id="device-support"
         aria-labelledby="device-support-title"
       >
-        <header className="relay-settings-section-header">
+        <header className="flex items-start justify-between gap-3">
           <div>
             <p className="relay-section-label">Device support</p>
             <h2 id="device-support-title">Local readiness</h2>
@@ -601,7 +601,7 @@ function AboutSettings() {
 
   return (
     <SettingsFrame category="about">
-      <section className="relay-settings-group" aria-labelledby="about-product-title">
+      <section className="grid gap-3 rounded-xl border border-border bg-card p-5" aria-labelledby="about-product-title">
         <header>
           <p className="relay-section-label">Product</p>
           <h2 id="about-product-title">Relay</h2>

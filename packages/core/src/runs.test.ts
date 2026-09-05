@@ -16,7 +16,10 @@ import {
   runsRoot,
   writeFramePng,
 } from "./runs.js";
-import { replayInputFromPersistedRun } from "./session-job-factory.js";
+import {
+  prepareSameConfigurationReplay,
+  replayInputFromPersistedRun,
+} from "./session-job-factory.js";
 
 function job(root: string, status: TestJob["status"] = "ok"): TestJob {
   const at = Date.now();
@@ -327,6 +330,8 @@ test("persisted browser runs retain browser identity instead of becoming Android
 test("same-configuration replay fails closed without an immutable build", () => {
   const frozen = {
     ...job("/tmp/replay-mode"),
+    serial: "runs-test",
+    platform: "android" as const,
     recipeSnapshot: { id: "evidence-test", title: "Evidence test", steps: [] } as never,
     recipeGraph: {
       "evidence-test": { id: "evidence-test", title: "Evidence test", steps: [] },
@@ -344,6 +349,104 @@ test("same-configuration replay fails closed without an immutable build", () => 
   assert.equal(
     replayInputFromPersistedRun(withBuild, "same-configuration").sourceRevision?.buildId,
     "build-recorded",
+  );
+});
+
+test("same-configuration preparation validates before install and enqueues only after install", async () => {
+  const run = {
+    ...job("/tmp/replay-preparation"),
+    serial: "runs-test",
+    platform: "android" as const,
+    sourceRevision: { vcs: "git" as const, sha: "abcdef1", buildId: "build-recorded" },
+    recipeSnapshot: { id: "evidence-test", title: "Evidence test", steps: [] } as never,
+    recipeGraph: {
+      "evidence-test": { id: "evidence-test", title: "Evidence test", steps: [] },
+    } as never,
+  };
+  const build = {
+    id: "build-recorded",
+    projectId: "project",
+    name: "Recorded build",
+    platform: "android" as const,
+    status: "ready" as const,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const target = { kind: "device" as const, platform: "android" as const, serial: "runs-test" };
+  const events: string[] = [];
+  const preflight = async () => {
+    events.push("preflight");
+    return {
+      buildId: build.id,
+      ok: true,
+      checkedAt: 1,
+      capabilities: { install: true, launch: true },
+      checks: [],
+    };
+  };
+  const install = async () => {
+    events.push("install");
+    return { installed: true as const, artifactPath: "/tmp/recorded.apk" };
+  };
+  const replay = await prepareSameConfigurationReplay({
+    run,
+    build,
+    target,
+    preflight,
+    install,
+  });
+  assert.equal(replay.sourceRevision?.buildId, build.id);
+  assert.deepEqual(events, ["preflight", "install"]);
+  await assert.rejects(
+    prepareSameConfigurationReplay({
+      run,
+      build,
+      target,
+      preflight: async () => ({
+        buildId: build.id,
+        ok: false,
+        checkedAt: 1,
+        capabilities: { install: false, launch: false },
+        checks: [{ id: "hash", status: "fail" as const, message: "artifact hash mismatch" }],
+      }),
+      install,
+    }),
+    /artifact hash mismatch/u,
+  );
+  assert.deepEqual(events, ["preflight", "install"]);
+  await assert.rejects(
+    prepareSameConfigurationReplay({
+      run,
+      build,
+      target,
+      preflight,
+      install: async () => {
+        events.push("install-failed");
+        throw new Error("install failed");
+      },
+    }),
+    /install failed/u,
+  );
+  assert.deepEqual(events, ["preflight", "install", "preflight", "install-failed"]);
+  await assert.rejects(
+    prepareSameConfigurationReplay({
+      run,
+      build: { ...build, id: "other-build" },
+      target,
+      preflight,
+      install,
+    }),
+    /build identity does not match/u,
+  );
+  await assert.rejects(
+    prepareSameConfigurationReplay({
+      run,
+      build,
+      target: { ...target, serial: "other-device" },
+      preflight,
+      install,
+    }),
+    /target does not match/u,
   );
 });
 

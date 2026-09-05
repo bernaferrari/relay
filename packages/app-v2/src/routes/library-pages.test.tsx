@@ -217,6 +217,26 @@ describe("App overview", () => {
 });
 
 describe("Tests library", () => {
+  it("restores the collection scroll container and row focus after browser Back", async () => {
+    const { history } = await render("/tests");
+    const main = document.querySelector<HTMLElement>(".relay-main");
+    if (!main) throw new Error("main scroll container not found");
+    main.scrollTop = 384;
+    const row = document.querySelector<HTMLAnchorElement>(
+      'a[href="/tests/test-checkout-internal"]',
+    );
+    if (!row) throw new Error("test row not found");
+    await act(async () => row.click());
+    await settle();
+    await act(async () => history.back());
+    await settle();
+    expect(history.location.pathname).toBe("/tests");
+    expect(main.scrollTop).toBe(384);
+    expect(document.activeElement).toBe(
+      document.querySelector('a[href="/tests/test-checkout-internal"]'),
+    );
+  });
+
   it("runs a ready Test from the row with an explicit target", async () => {
     const start = vi.fn(async () => ({ workflow: { workflowId: "workflow-library" } }));
     let inspectAttempts = 0;

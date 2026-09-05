@@ -4,7 +4,7 @@ import "@relay/app-v2/index.css";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { createDesktopPlatform } from "./desktop-platform";
-import "./styles.css";
+import "./globals.css";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("Root element #root not found");

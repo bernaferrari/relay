@@ -39,7 +39,7 @@ export function MapPage() {
       decision: "approve" | "reject";
     }) => {
       const current = map.data;
-      if (!current) throw new TypeError("Reload this App Map before reviewing a proposal.");
+      if (!current) throw new TypeError("Reload this Map before reviewing a proposal.");
       const operation =
         decision === "approve" ? mapService.approveProposal : mapService.rejectProposal;
       if (!operation) throw new TypeError("Map proposal review is unavailable.");
@@ -65,7 +65,7 @@ export function MapPage() {
   const visiblePaths = map.data?.paths.slice(0, 500) ?? [];
 
   return (
-    <section className="relay-page relay-map-page">
+    <section className="relay-page h-full min-h-0">
       <Breadcrumbs
         items={[
           { label: "Home", to: "/home" },
@@ -89,7 +89,7 @@ export function MapPage() {
       />
       {map.data ? (
         <>
-          <section className="relay-map-summary" aria-labelledby="map-summary-title">
+          <section className="flex items-center justify-between gap-4" aria-labelledby="map-summary-title">
             <div>
               <p className="relay-section-label">Coverage</p>
               <h2 id="map-summary-title">
@@ -125,7 +125,7 @@ export function MapPage() {
               }
             />
           )}
-          <section className="relay-map-paths" aria-labelledby="paths-title">
+          <section className="" aria-labelledby="paths-title">
             <div className="relay-section-heading">
               <div>
                 <p className="relay-section-label">Journeys</p>
@@ -193,11 +193,11 @@ export function MapPage() {
               ))}
             </ul>
           </section>
-          <Collapsible className="relay-map-developer">
+          <Collapsible className="mt-4">
             <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 py-2 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
               Edit Map · Developer Mode
             </CollapsibleTrigger>
-            <CollapsibleContent className="relay-map-developer-panel space-y-3 border-t pt-3 text-sm">
+            <CollapsibleContent className="mt-4-panel space-y-3 border-t pt-3 text-sm">
               <p>
                 Editing known screens and paths changes the saved verification source. Open this
                 mode only when you intend to review a proposal.
@@ -208,7 +208,7 @@ export function MapPage() {
                   : "There are no pending proposals."}
               </p>
               {proposals.data?.some((proposal) => proposal.status === "pending") ? (
-                <ul className="relay-map-proposal-list">
+                <ul className="list-none space-y-2 p-0">
                   {proposals.data
                     .filter((proposal) => proposal.status === "pending")
                     .map((proposal) => (
@@ -217,7 +217,7 @@ export function MapPage() {
                           <strong>{proposal.title}</strong>
                           <p>
                             {proposal.description ??
-                              "Review this proposed change to the saved App Map."}
+                              "Review this proposed change to the saved Map."}
                           </p>
                           <small>Based on revision {proposal.baseRevision}</small>
                         </div>

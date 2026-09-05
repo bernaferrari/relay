@@ -123,7 +123,7 @@ export function SessionPage() {
   }
 
   return (
-    <section className="relay-page relay-session-page">
+    <section className="relay-page max-w-[1120px]">
       <Breadcrumbs
         items={[
           { label: "Live", to: "/sessions" },
@@ -131,7 +131,7 @@ export function SessionPage() {
         ]}
       />
       {value ? (
-        <header className="relay-page-header relay-session-detail-header">
+        <header className="relay-page-header flex items-start justify-between gap-4 max-[620px]:grid">
           <div>
             <p className="relay-eyebrow">Session</p>
             <h1>{value.title}</h1>
@@ -139,7 +139,7 @@ export function SessionPage() {
               {targetLabel(value)} · {value.actorKind === "agent" ? "Agent-owned" : "Human-owned"}
             </p>
           </div>
-          <div className="relay-session-actions">
+          <div className="flex flex-wrap items-center justify-between gap-4">
             <Badge
               variant={sessionBadgeVariant(
                 value.state === "failed"
@@ -279,8 +279,8 @@ export function SessionPage() {
       ) : null}
 
       {value ? (
-        <div className="relay-session-workspace">
-          <section className="relay-session-stage" aria-labelledby="session-stage-title">
+        <div className="mt-[30px] grid grid-cols-[minmax(0,1.45fr)_minmax(280px,.55fr)] items-start gap-[18px] max-[880px]:grid-cols-1">
+          <section className="min-w-0 rounded-xl border border-border bg-card p-[18px] shadow-sm" aria-labelledby="session-stage-title">
             <div className="relay-section-heading">
               <div>
                 <p className="relay-section-label">Live target</p>
@@ -316,7 +316,7 @@ export function SessionPage() {
                 helpText="Inspecting live state. These controls do not add Test steps. Open the Test editor or recording workspace to capture steps. Enter and Backspace are supported keys."
               />
             ) : (
-              <div className="relay-session-unavailable">
+              <div className="mt-3.5 grid min-h-[280px] place-items-center content-center gap-4 rounded-lg border border-dashed border-border p-[30px] text-center text-muted-foreground">
                 <p>{sessionAvailability(value)}</p>
                 {value.state === "reviewing" ? (
                   <Button
@@ -344,7 +344,7 @@ export function SessionPage() {
             )}
           </section>
 
-          <aside className="relay-session-context" aria-label="Session context">
+          <aside className="grid gap-3.5" aria-label="Session context">
             <section>
               <p className="relay-section-label">At a glance</p>
               <h2>Session details</h2>
@@ -370,14 +370,14 @@ export function SessionPage() {
                   <dd>{value.take?.evidenceCount ?? 0}</dd>
                 </div>
               </dl>
-              <Collapsible className="relay-session-audit">
+              <Collapsible className="mt-[18px]">
                 <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 py-2 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
                   Audit details
                 </CollapsibleTrigger>
                 <CollapsibleContent className="space-y-3 border-t pt-3 text-sm">
                   <dl>
                     <div>
-                      <dt>App Map ID</dt>
+                      <dt>Map ID</dt>
                       <dd>{value.appMapId}</dd>
                     </div>
                     <div>
@@ -385,14 +385,14 @@ export function SessionPage() {
                       <dd>{value.actorId}</dd>
                     </div>
                     <div>
-                      <dt>Lease status</dt>
+                      <dt>Device reservation status</dt>
                       <dd>{value.lease?.status ?? "Unavailable"}</dd>
                     </div>
                   </dl>
                 </CollapsibleContent>
               </Collapsible>
             </section>
-            <section className="relay-session-activity" aria-labelledby="session-activity-title">
+            <section className="" aria-labelledby="session-activity-title">
               <p className="relay-section-label">Activity</p>
               <h2 id="session-activity-title">Recent operations</h2>
               {value.activity.length ? (
@@ -411,7 +411,7 @@ export function SessionPage() {
                     ))}
                 </ol>
               ) : (
-                <p className="relay-session-activity-empty">
+                <p className="-empty">
                   No project activity is available to this role.
                 </p>
               )}

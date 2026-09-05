@@ -1,0 +1,90 @@
+import { Button } from "@relay/ui-react/components/button";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@relay/ui-react/components/collapsible";
+import { ScrollArea } from "@relay/ui-react/components/scroll-area";
+import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { highlightJson, readableJson } from "../components/run-report-formatters";
+import type { RunProductService } from "../data/run-product-service";
+import { runQueryKeys } from "../data/run-queries";
+import { PageLoading } from "./recording-shared";
+
+export function RawEvidenceDisclosure({
+  runId,
+  runService,
+  open,
+  onOpenChange,
+}: {
+  runId: string;
+  runService: RunProductService;
+  open: boolean;
+  onOpenChange(open: boolean): void;
+}) {
+  const [copied, setCopied] = useState(false);
+  const evidence = useQuery({
+    queryKey: runQueryKeys.rawEvidence(runId),
+    queryFn: () => runService.getRawEvidence(runId),
+    enabled: open,
+    staleTime: Infinity,
+  });
+
+  return (
+    <Collapsible
+      id="raw-evidence"
+      className="mt-4"
+      open={open}
+      onOpenChange={onOpenChange}
+    >
+      <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 py-2 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
+        Audit details
+      </CollapsibleTrigger>
+      <CollapsibleContent className="border-t pt-3">
+        <div className="mt-4-body">
+          <div className="mt-4-heading">
+            <p>
+              Technical evidence for forensic review. It may include internal identifiers and
+              captured content.
+            </p>
+            {evidence.data !== undefined ? (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={async () => {
+                  if (!navigator.clipboard) return;
+                  try {
+                    await navigator.clipboard.writeText(readableJson(evidence.data));
+                    setCopied(true);
+                    window.setTimeout(() => setCopied(false), 1_500);
+                  } catch {
+                    setCopied(false);
+                  }
+                }}
+              >
+                {copied ? "Copied" : "Copy JSON"}
+              </Button>
+            ) : null}
+          </div>
+          {evidence.isPending ? <PageLoading label="Loading audit details…" /> : null}
+          {evidence.isError ? (
+            <div className="mt-4-error" role="alert">
+              <p>Audit details could not be loaded. The Report outcome above is unchanged.</p>
+              <Button size="sm" variant="outline" onClick={() => void evidence.refetch()}>
+                Try again
+              </Button>
+            </div>
+          ) : null}
+          {evidence.data !== undefined ? (
+            <ScrollArea className="mt-4-scroll">
+              <pre tabIndex={0} aria-label="Raw evidence JSON">
+                <code>{highlightJson(readableJson(evidence.data))}</code>
+              </pre>
+            </ScrollArea>
+          ) : null}
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}

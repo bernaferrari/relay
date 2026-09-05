@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { EditorSaveStatus, type EditorSaveState } from "../components/editor-save-status";
+import { EditorSaveStatus } from "../components/editor-save-status";
 import { WorkbenchPage, PageHeader, WorkbenchPanes } from "../components/page-layout";
 import {
   Dialog,
@@ -14,7 +14,7 @@ import { Field, FieldDescription, FieldLabel } from "@relay/ui-react/components/
 import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
+import { getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import {
   ArrowDown,
   ArrowUp,
@@ -42,6 +42,8 @@ import {
   useEvidenceObjectUrl,
 } from "./recording-review-presentation";
 
+import { useRecordingNameDraft } from "../data/use-recording-name-draft";
+
 const routeApi = getRouteApi("/recordings/$recordingId/review");
 
 type ReviewTransitionIntent =
@@ -59,7 +61,6 @@ export function ReviewRecordingPage() {
   const navigate = useNavigate();
   const workflowId = recordingId;
   const nameDraftKey = `recordingName:${workflowId}`;
-  const [testName, setTestName] = useState("");
   const [selectedActionIds, setSelectedActionIds] = useState<readonly string[]>([]);
   const [actionIntent, setActionIntent] = useState("");
   const [replacementLabel, setReplacementLabel] = useState("");
@@ -69,36 +70,7 @@ export function ReviewRecordingPage() {
   const [undoStack, setUndoStack] = useState<readonly number[]>([]);
   const [redoStack, setRedoStack] = useState<readonly number[]>([]);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [nameDraftLoaded, setNameDraftLoaded] = useState(false);
-  const [nameSaveState, setNameSaveState] = useState<EditorSaveState>("saved");
-  const [nameSaveError, setNameSaveError] = useState<string>();
-  const [nameSaveAttempt, setNameSaveAttempt] = useState(0);
-  const nameEdits = useRef(0);
-  const nameWrites = useRef(Promise.resolve());
-  const suggestionApplied = useRef(false);
   const historyInitialized = useRef(false);
-
-  useEffect(() => {
-    let disposed = false;
-    const version = nameEdits.current;
-    void Promise.resolve().then(() => platform.storage.get(nameDraftKey)).then((stored) => {
-      if (disposed) return;
-      if (stored && nameEdits.current === version) {
-        setTestName(stored);
-        suggestionApplied.current = true;
-      }
-      setNameDraftLoaded(true);
-    }).catch(() => {
-      if (!disposed) {
-        setNameDraftLoaded(true);
-        setNameSaveState("failed");
-        setNameSaveError("Could not load the saved name. Keep this page open until you save the Test.");
-      }
-    });
-    return () => {
-      disposed = true;
-    };
-  }, [nameDraftKey, platform]);
 
   const recording = useQuery({
     queryKey: recordingQueryKeys.workflow(workflowId),
@@ -138,6 +110,19 @@ export function ReviewRecordingPage() {
     },
   });
 
+  const leaveDraft = useMutation({
+    mutationFn: async () => {
+      await nameWrites.current;
+      const persisted = await productService.inspect(workflowId);
+      if (persisted.recovery || !persisted.snapshot?.review)
+        throw new Error("Could not confirm the saved draft. Keep this page open and try again.");
+      return persisted;
+    },
+    onSuccess: async () => {
+      await navigate({ to: "/home" });
+    },
+  });
+
   const state = recording.data;
   const snapshot = state?.snapshot;
   const review = snapshot?.review;
@@ -161,6 +146,16 @@ export function ReviewRecordingPage() {
   const canApprove = allowed.has("approve");
   const committedTestId = snapshot?.authoring?.committedTestId;
   const saved = reviewReady && snapshot?.stage === "committed";
+  const {
+    testName,
+    setTestName,
+    nameEdits,
+    nameWrites,
+    nameSaveState,
+    setNameSaveState,
+    nameSaveError,
+    setNameSaveAttempt,
+  } = useRecordingNameDraft({ platform, nameDraftKey, saved, snapshot });
   const currentRevision = review?.currentRevision;
   const sessionId = snapshot?.authoring?.sessionId;
   const optimization = useQuery({
@@ -179,32 +174,6 @@ export function ReviewRecordingPage() {
     staleTime: Number.POSITIVE_INFINITY,
   });
   const evidenceUrl = useEvidenceObjectUrl(evidencePreview.data);
-
-  useEffect(() => {
-    if (!nameDraftLoaded || suggestionApplied.current || !snapshot) return;
-    suggestionApplied.current = true;
-    if (snapshot.title !== "Untitled recording") setTestName(snapshot.title);
-  }, [nameDraftLoaded, snapshot]);
-
-  useEffect(() => {
-    if (saved || !nameDraftLoaded || nameEdits.current === 0) return;
-    let disposed = false;
-    setNameSaveState("saving");
-    const write = nameWrites.current.catch(() => undefined).then(async () => {
-      if (testName) await platform.storage.set(nameDraftKey, testName);
-      else await platform.storage.remove?.(nameDraftKey);
-    });
-    nameWrites.current = write;
-    void write.then(() => {
-      if (!disposed) { setNameSaveState("saved"); setNameSaveError(undefined); }
-    }).catch(() => {
-      if (!disposed) {
-        setNameSaveState("failed");
-        setNameSaveError("Could not save the name on this computer. Your captured steps remain saved; keep this page open to retry.");
-      }
-    });
-    return () => { disposed = true; };
-  }, [nameDraftKey, nameDraftLoaded, platform, saved, testName, nameSaveAttempt]);
 
   useEffect(() => {
     if (!saved) return;
@@ -303,304 +272,376 @@ export function ReviewRecordingPage() {
       <Breadcrumbs items={[{ label: "Tests", to: "/tests" }, { label: "Review" }]} />
       <PageHeader
         title={testName || snapshot?.title || "Review your recording"}
-        context={<><span>Review recording</span>{currentRevision ? <span>Revision {currentRevision}</span> : null}</>}
+        context={
+          <>
+            <span>Review recording</span>
+            {currentRevision ? <span>Revision {currentRevision}</span> : null}
+          </>
+        }
         description={reviewInstruction(review?.replayRequired, canApprove)}
-        actions={reviewReady ? <EditorSaveStatus state={transition.isPending ? "saving" : transition.error ? "failed" : nameSaveState} detail={!transition.isPending && !transition.error && nameSaveState === "saved" ? "Recording draft saved" : undefined} /> : undefined}
+        actions={
+          reviewReady ? (
+            <>
+              <Button
+                variant="outline"
+                disabled={
+                  transition.isPending ||
+                  leaveDraft.isPending ||
+                  nameSaveState === "saving" ||
+                  nameSaveState === "failed"
+                }
+                onClick={() => leaveDraft.mutate()}
+              >
+                {leaveDraft.isPending ? "Saving draft…" : "Save draft"}
+              </Button>
+              <EditorSaveStatus
+                state={
+                  transition.isPending || leaveDraft.isPending
+                    ? "saving"
+                    : transition.error || leaveDraft.error
+                      ? "failed"
+                      : nameSaveState
+                }
+                detail={
+                  leaveDraft.error
+                    ? "Could not confirm draft"
+                    : !leaveDraft.isPending &&
+                        !transition.isPending &&
+                        !transition.error &&
+                        nameSaveState === "saved"
+                      ? "Recording draft saved"
+                      : undefined
+                }
+              />
+            </>
+          ) : undefined
+        }
       />
 
       {recording.isPending ? <PageLoading label="Loading the reviewed recording…" /> : null}
       <RecordingProblem
-        error={recording.error ?? transition.error}
+        error={recording.error ?? transition.error ?? leaveDraft.error}
         recovery={transition.data?.recovery ?? state?.recovery}
         onRetry={() => void recording.refetch()}
         retrying={recording.isFetching}
       />
 
+      {leaveDraft.error ? (
+        <p role="alert" className="relay-config-problem">
+          Could not confirm the saved draft. Your work is still open here. Try Save draft again when
+          the connection returns.
+        </p>
+      ) : null}
+
       {!recording.isPending && snapshot && reviewReady ? (
         <>
           <WorkbenchPanes
             outline={
-          <RecordingActionsPanel
-            actions={actions}
-            selectedActionIds={selectedActionIds}
-            optimization={{
-              isFetching: optimization.isFetching,
-              isFetched: optimization.isFetched,
-              suggestions: optimization.data?.proposal?.suggestions ?? [],
-            }}
-            canOptimize={Boolean(sessionId)}
-            onOptimize={() => void optimization.refetch()}
-            onSelect={(actionId) => setSelectedActionIds([actionId])}
-            onToggle={toggleAction}
-          />
-
-
+              <RecordingActionsPanel
+                actions={actions}
+                selectedActionIds={selectedActionIds}
+                optimization={{
+                  isFetching: optimization.isFetching,
+                  isFetched: optimization.isFetched,
+                  suggestions: optimization.data?.proposal?.suggestions ?? [],
+                }}
+                canOptimize={Boolean(sessionId)}
+                onOptimize={() => void optimization.refetch()}
+                onSelect={(actionId) => setSelectedActionIds([actionId])}
+                onToggle={toggleAction}
+              />
             }
             stage={
-          <RecordingEvidencePanel
-            action={selectedAction}
-            evidenceRole={evidenceRole}
-            previewUrl={evidenceUrl}
-            onEvidenceRoleChange={setEvidenceRole}
-          />
-
+              <RecordingEvidencePanel
+                action={selectedAction}
+                evidenceRole={evidenceRole}
+                previewUrl={evidenceUrl}
+                onEvidenceRoleChange={setEvidenceRole}
+              />
             }
             inspector={
-          <aside className="relay-recording-inspector" aria-label="Edit, replay, and save">
-            <section className="relay-review-editor" aria-labelledby="review-editor-title">
-              <div className="relay-recording-panel-heading">
-                <div>
-                  <p className="relay-section-label">Inspector</p>
-                  <h2 id="review-editor-title">
-                    {selectedActions.length === 0
-                      ? "Select an action"
-                      : selectedActions.length === 1
-                        ? "Action details"
-                        : `${selectedActions.length} actions selected`}
-                  </h2>
-                </div>
-                <div className="relay-recording-history-actions" aria-label="Edit history">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => restore("undo")}
-                    disabled={!canEdit || undoStack.length === 0}
-                  >
-                    <Undo2 aria-hidden="true" /> Undo
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => restore("redo")}
-                    disabled={!canEdit || redoStack.length === 0}
-                  >
-                    <Redo2 aria-hidden="true" /> Redo
-                  </Button>
-                </div>
-              </div>
-
-              {selectedAction ? (
-                <>
-                  <Field>
-                    <FieldLabel htmlFor="review-action-intent">Instruction</FieldLabel>
-                    <Input
-                      id="review-action-intent"
-                      value={actionIntent}
-                      onChange={(event) => setActionIntent(event.currentTarget.value)}
-                      maxLength={240}
-                      disabled={!canEdit}
-                    />
-                    <FieldDescription>Describe the outcome in plain language.</FieldDescription>
-                  </Field>
-                  <Button
-                    size="sm"
-                    onClick={() =>
-                      edit({
-                        kind: "rename",
-                        actionId: selectedAction.id,
-                        intent: actionIntent.trim(),
-                      })
-                    }
-                    disabled={
-                      !canEdit ||
-                      !actionIntent.trim() ||
-                      actionIntent.trim() === selectedAction.intent
-                    }
-                  >
-                    Save instruction
-                  </Button>
-                  {selectedAction.kind === "tap" ? (
-                    <Field>
-                      <FieldLabel htmlFor="review-replacement-label">Replace target</FieldLabel>
-                      <Input
-                        id="review-replacement-label"
-                        value={replacementLabel}
-                        onChange={(event) => setReplacementLabel(event.currentTarget.value)}
-                        placeholder="Accessible label"
-                        maxLength={160}
-                        disabled={!canEdit}
-                      />
-                      <FieldDescription>Use the target’s stable accessible name.</FieldDescription>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() =>
-                          edit({
-                            kind: "replace",
-                            actionId: selectedAction.id,
-                            interaction: {
-                              kind: "tap",
-                              target: { label: replacementLabel.trim() },
-                            },
-                          })
-                        }
-                        disabled={!canEdit || !replacementLabel.trim()}
-                      >
-                        <Target aria-hidden="true" /> Replace target
-                      </Button>
-                    </Field>
-                  ) : null}
-                  <div className="relay-review-edit-row" aria-label="Reorder action">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => moveSelected(-1)}
-                      disabled={!canEdit || selectedIndex <= 0}
-                    >
-                      <ArrowUp aria-hidden="true" /> Move up
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => moveSelected(1)}
-                      disabled={!canEdit || selectedIndex === actions.length - 1}
-                    >
-                      <ArrowDown aria-hidden="true" /> Move down
-                    </Button>
-                  </div>
-                  {selectedAction.stepCount > 1 ? (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() =>
-                        edit({
-                          kind: "split",
-                          actionId: selectedAction.id,
-                          atStep: Math.ceil(selectedAction.stepCount / 2),
-                        })
-                      }
-                      disabled={!canEdit}
-                    >
-                      <Scissors aria-hidden="true" /> Split action
-                    </Button>
-                  ) : null}
-                </>
-              ) : selectedActions.length > 1 ? (
-                <Button
-                  size="sm"
-                  onClick={() =>
-                    edit({ kind: "merge", actionIds: selectedActions.map((action) => action.id) })
-                  }
-                  disabled={!canEdit || !selectionIsContiguous}
-                >
-                  <Combine aria-hidden="true" /> Merge actions
-                </Button>
-              ) : (
-                <p className="relay-review-editor-help">
-                  Choose an action to rename, reorder, replace, split, or remove it.
-                </p>
-              )}
-
-              {selectedActions.length ? (
-                <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-                  <DialogTrigger
-                    render={
+              <aside className="flex min-w-0 flex-col gap-[18px] self-start rounded-xl border border-border bg-card p-[18px] text-card-foreground shadow-sm" aria-label="Edit, replay, and save">
+                <section className="relay-review-editor" aria-labelledby="review-editor-title">
+                  <div className="flex flex-wrap items-center justify-between gap-3.5">
+                    <div>
+                      <p className="relay-section-label">Inspector</p>
+                      <h2 id="review-editor-title">
+                        {selectedActions.length === 0
+                          ? "Select an action"
+                          : selectedActions.length === 1
+                            ? "Action details"
+                            : `${selectedActions.length} actions selected`}
+                      </h2>
+                    </div>
+                    <div className="flex items-center gap-2" aria-label="Edit history">
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="relay-review-delete"
-                        disabled={!canEdit}
-                      />
-                    }
-                  >
-                    <Trash2 aria-hidden="true" /> Remove{" "}
-                    {selectedActions.length === 1 ? "action" : "actions"}
-                  </DialogTrigger>
-
-                  <DialogContent showCloseButton={false}>
-                    <DialogTitle>
-                      Remove selected {selectedActions.length === 1 ? "action" : "actions"}?
-                    </DialogTitle>
-                    <DialogDescription>
-                      This changes the journey and requires a new replay before saving.
-                    </DialogDescription>
-                    <div className="relay-dialog-actions">
-                      <DialogClose render={<Button variant="ghost">Cancel</Button>} />
-                      <Button
-                        className="relay-review-delete-confirm"
-                        onClick={() => {
-                          setDeleteOpen(false);
-                          edit({
-                            kind: "remove",
-                            actionIds: selectedActions.map((action) => action.id),
-                          });
-                        }}
+                        onClick={() => restore("undo")}
+                        disabled={!canEdit || undoStack.length === 0}
                       >
-                        Remove
+                        <Undo2 aria-hidden="true" /> Undo
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => restore("redo")}
+                        disabled={!canEdit || redoStack.length === 0}
+                      >
+                        <Redo2 aria-hidden="true" /> Redo
                       </Button>
                     </div>
-                  </DialogContent>
-                </Dialog>
-              ) : null}
-            </section>
+                  </div>
 
-            <div className="relay-review-save-panel">
-              <Field>
-                <FieldLabel htmlFor="review-test-name">Test name</FieldLabel>
-                <Input
-                  id="review-test-name"
-                  value={testName}
-                  onChange={(event) => { nameEdits.current += 1; setNameSaveState("dirty"); setTestName(event.currentTarget.value); }}
-                  placeholder="For example, Change the app language"
-                  maxLength={160}
-                  autoComplete="off"
-                  spellCheck
-                  required
-                />
-                <FieldDescription>
-                  {nameSaveError ?? (nameSaveState === "saving" ? "Saving the name…" : testName ? "Captured steps are saved on the server. The name is kept on this computer until you save the Test." : "Name the outcome a teammate should recognize.")}
-                </FieldDescription>
-                {nameSaveError && nameEdits.current > 0 ? <Button variant="outline" size="sm" disabled={nameSaveState === "saving"} onClick={() => setNameSaveAttempt((value) => value + 1)}>Retry saving name</Button> : null}
-              </Field>
-              <div className="relay-replay-status">
-                <p className="relay-section-label">Verification</p>
-                <h2>
-                  {replayTitle(review?.latestReplay?.outcome, review?.replayRequired, canApprove)}
-                </h2>
-                <p>{replayDetail(review?.latestReplay?.outcome, canApprove)}</p>
-              </div>
+                  {selectedAction ? (
+                    <>
+                      <Field>
+                        <FieldLabel htmlFor="review-action-intent">Instruction</FieldLabel>
+                        <Input
+                          id="review-action-intent"
+                          value={actionIntent}
+                          onChange={(event) => setActionIntent(event.currentTarget.value)}
+                          maxLength={240}
+                          disabled={!canEdit}
+                        />
+                        <FieldDescription>Describe the outcome in plain language.</FieldDescription>
+                      </Field>
+                      <Button
+                        size="sm"
+                        onClick={() =>
+                          edit({
+                            kind: "rename",
+                            actionId: selectedAction.id,
+                            intent: actionIntent.trim(),
+                          })
+                        }
+                        disabled={
+                          !canEdit ||
+                          !actionIntent.trim() ||
+                          actionIntent.trim() === selectedAction.intent
+                        }
+                      >
+                        Save instruction
+                      </Button>
+                      {selectedAction.kind === "tap" ? (
+                        <Field>
+                          <FieldLabel htmlFor="review-replacement-label">Replace target</FieldLabel>
+                          <Input
+                            id="review-replacement-label"
+                            value={replacementLabel}
+                            onChange={(event) => setReplacementLabel(event.currentTarget.value)}
+                            placeholder="Accessible label"
+                            maxLength={160}
+                            disabled={!canEdit}
+                          />
+                          <FieldDescription>
+                            Use the target’s stable accessible name.
+                          </FieldDescription>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() =>
+                              edit({
+                                kind: "replace",
+                                actionId: selectedAction.id,
+                                interaction: {
+                                  kind: "tap",
+                                  target: { label: replacementLabel.trim() },
+                                },
+                              })
+                            }
+                            disabled={!canEdit || !replacementLabel.trim()}
+                          >
+                            <Target aria-hidden="true" /> Replace target
+                          </Button>
+                        </Field>
+                      ) : null}
+                      <div className="relay-review-edit-row" aria-label="Reorder action">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => moveSelected(-1)}
+                          disabled={!canEdit || selectedIndex <= 0}
+                        >
+                          <ArrowUp aria-hidden="true" /> Move up
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => moveSelected(1)}
+                          disabled={!canEdit || selectedIndex === actions.length - 1}
+                        >
+                          <ArrowDown aria-hidden="true" /> Move down
+                        </Button>
+                      </div>
+                      {selectedAction.stepCount > 1 ? (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() =>
+                            edit({
+                              kind: "split",
+                              actionId: selectedAction.id,
+                              atStep: Math.ceil(selectedAction.stepCount / 2),
+                            })
+                          }
+                          disabled={!canEdit}
+                        >
+                          <Scissors aria-hidden="true" /> Split action
+                        </Button>
+                      ) : null}
+                    </>
+                  ) : selectedActions.length > 1 ? (
+                    <Button
+                      size="sm"
+                      onClick={() =>
+                        edit({
+                          kind: "merge",
+                          actionIds: selectedActions.map((action) => action.id),
+                        })
+                      }
+                      disabled={!canEdit || !selectionIsContiguous}
+                    >
+                      <Combine aria-hidden="true" /> Merge actions
+                    </Button>
+                  ) : (
+                    <p className="relay-review-editor-help">
+                      Choose an action to rename, reorder, replace, split, or remove it.
+                    </p>
+                  )}
 
-              {canApprove ? (
-                <Button
-                  variant="default"
-                  onClick={() =>
-                    transition.mutate({ action: "approve", testName: testName.trim() })
-                  }
-                  disabled={transition.isPending || !testName.trim()}
-                >
-                  <Save aria-hidden="true" />
-                  {transition.isPending && transition.variables?.action === "approve"
-                    ? "Saving…"
-                    : "Save Test"}
-                </Button>
-              ) : allowed.has("replay") ? (
-                <Button
-                  variant="default"
-                  onClick={() => transition.mutate({ action: "replay" })}
-                  disabled={transition.isPending}
-                >
-                  <RotateCcw aria-hidden="true" />
-                  {transition.isPending ? "Replaying…" : "Replay recording"}
-                </Button>
-              ) : (
-                <p className="relay-review-waiting" role="status">
-                  Waiting for Relay to make the next review action available.
-                </p>
-              )}
-              {allowed.has("replay") && review?.replayRequired ? (
-                <p className="relay-save-requirement">
-                  A passing replay is required before saving.
-                </p>
-              ) : null}
-            </div>
-          </aside>
+                  {selectedActions.length ? (
+                    <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+                      <DialogTrigger
+                        render={
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="relay-review-delete"
+                            disabled={!canEdit}
+                          />
+                        }
+                      >
+                        <Trash2 aria-hidden="true" /> Remove{" "}
+                        {selectedActions.length === 1 ? "action" : "actions"}
+                      </DialogTrigger>
+
+                      <DialogContent showCloseButton={false}>
+                        <DialogTitle>
+                          Remove selected {selectedActions.length === 1 ? "action" : "actions"}?
+                        </DialogTitle>
+                        <DialogDescription>
+                          This changes the journey and requires a new replay before saving.
+                        </DialogDescription>
+                        <div className="relay-dialog-actions">
+                          <DialogClose render={<Button variant="ghost">Cancel</Button>} />
+                          <Button
+                            className="relay-review-delete-confirm"
+                            onClick={() => {
+                              setDeleteOpen(false);
+                              edit({
+                                kind: "remove",
+                                actionIds: selectedActions.map((action) => action.id),
+                              });
+                            }}
+                          >
+                            Remove
+                          </Button>
+                        </div>
+                      </DialogContent>
+                    </Dialog>
+                  ) : null}
+                </section>
+
+                <div className="grid gap-3.5">
+                  <Field>
+                    <FieldLabel htmlFor="review-test-name">Test name</FieldLabel>
+                    <Input
+                      id="review-test-name"
+                      value={testName}
+                      disabled={leaveDraft.isPending || transition.isPending}
+                      onChange={(event) => {
+                        nameEdits.current += 1;
+                        setNameSaveState("dirty");
+                        setTestName(event.currentTarget.value);
+                      }}
+                      placeholder="For example, Change the app language"
+                      maxLength={160}
+                      autoComplete="off"
+                      spellCheck
+                      required
+                    />
+                    <FieldDescription>
+                      {nameSaveError ??
+                        (nameSaveState === "saving"
+                          ? "Saving the name…"
+                          : testName
+                            ? "Captured steps are saved on the server. The name is kept on this computer until you save the Test."
+                            : "Name the outcome a teammate should recognize.")}
+                    </FieldDescription>
+                    {nameSaveError && nameEdits.current > 0 ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={nameSaveState === "saving"}
+                        onClick={() => setNameSaveAttempt((value) => value + 1)}
+                      >
+                        Retry saving name
+                      </Button>
+                    ) : null}
+                  </Field>
+                  <div className="grid gap-1 rounded-lg border border-border bg-muted/40 p-3">
+                    <p className="relay-section-label">Verification</p>
+                    <h2>
+                      {replayTitle(
+                        review?.latestReplay?.outcome,
+                        review?.replayRequired,
+                        canApprove,
+                      )}
+                    </h2>
+                    <p className="text-xs leading-normal text-muted-foreground">{replayDetail(review?.latestReplay?.outcome, canApprove)}</p>
+                  </div>
+
+                  {canApprove ? (
+                    <Button
+                      variant="default"
+                      onClick={() =>
+                        transition.mutate({ action: "approve", testName: testName.trim() })
+                      }
+                      disabled={transition.isPending || !testName.trim()}
+                    >
+                      <Save aria-hidden="true" />
+                      {transition.isPending && transition.variables?.action === "approve"
+                        ? "Saving…"
+                        : "Save Test"}
+                    </Button>
+                  ) : allowed.has("replay") ? (
+                    <Button
+                      variant="default"
+                      onClick={() => transition.mutate({ action: "replay" })}
+                      disabled={transition.isPending}
+                    >
+                      <RotateCcw aria-hidden="true" />
+                      {transition.isPending ? "Replaying…" : "Replay recording"}
+                    </Button>
+                  ) : (
+                    <p className="relay-review-waiting" role="status">
+                      Waiting for Relay to make the next review action available.
+                    </p>
+                  )}
+                  {allowed.has("replay") && review?.replayRequired ? (
+                    <p className="relay-save-requirement">
+                      A passing replay is required before saving.
+                    </p>
+                  ) : null}
+                </div>
+              </aside>
             }
           />
 
-
           {review?.timeline ? (
-            <section className="relay-recording-trim" aria-labelledby="recording-trim-title">
-              <div className="relay-recording-trim-copy">
+            <section className="grid min-w-0 grid-cols-1 items-center gap-5 rounded-xl border border-border bg-card px-4 py-3 text-card-foreground shadow-sm md:grid-cols-[auto_minmax(240px,1fr)_auto]" aria-labelledby="recording-trim-title">
+              <div className="flex items-center gap-2">
                 <Clock3 aria-hidden="true" />
                 <div>
                   <p className="relay-section-label">Time range</p>

@@ -44,24 +44,27 @@ export function AppShell({ platform }: { platform: Platform }) {
 
   return (
     <SidebarProvider
-      className={`relay-shell${immersive ? " relay-shell--immersive" : ""}`}
+      className={`relay-shell flex h-dvh min-w-0 overflow-hidden bg-[var(--background-base)]${immersive ? " relay-shell--immersive" : ""}`}
       data-platform={platform.platform}
     >
-      <a className="relay-skip-link" href="#main-content">
+      <a
+        className="relay-skip-link fixed left-1/2 top-2 z-[var(--relay-overlay-tooltip)] inline-flex min-h-11 -translate-x-1/2 -translate-y-[160%] items-center rounded-[var(--radius-md)] bg-[var(--button-primary-base)] px-3 py-2 text-[var(--button-primary-foreground)] focus:translate-y-0"
+        href="#main-content"
+      >
         Skip to content
       </a>
-      {!immersive ? <Sidebar /> : null}
-      <div className="relay-workspace">
+      {!immersive ? <Sidebar desktop={platform.platform === "desktop"} /> : null}
+      <div className="relay-workspace flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--background-base)]">
         {!immersive ? (
           <header
-            className="relay-desktop-toolbar relay-electron-drag"
+            className="relay-desktop-toolbar relay-electron-drag hidden min-h-[54px] items-center gap-4 border-b border-[var(--border-weak-base)] bg-[color-mix(in_srgb,var(--background-base)_94%,transparent)] px-2.5 py-1.5 min-[861px]:flex"
             aria-label="Window navigation"
           >
-            <div className="relay-history-controls relay-electron-no-drag">
+            <div className="relay-history-controls relay-electron-no-drag inline-flex items-center gap-px">
               <Button
                 size="icon-sm"
                 variant="ghost"
-                className="relay-history-button"
+                className="relay-history-button h-8 w-8 border-transparent bg-transparent"
                 aria-label="Go back"
                 onClick={goBack}
                 disabled={!canGoBack}
@@ -71,7 +74,7 @@ export function AppShell({ platform }: { platform: Platform }) {
               <Button
                 size="icon-sm"
                 variant="ghost"
-                className="relay-history-button"
+                className="relay-history-button h-8 w-8 border-transparent bg-transparent"
                 aria-label="Go forward"
                 onClick={() => router.history.forward()}
                 disabled={!historyAvailability.canGoForward}
@@ -82,24 +85,32 @@ export function AppShell({ platform }: { platform: Platform }) {
             <ActivityCenterButton />
             <button
               type="button"
-              className="relay-command-trigger relay-electron-no-drag"
+              className="relay-command-trigger relay-electron-no-drag ml-0 inline-flex min-h-9 min-w-[220px] items-center gap-2 rounded-[var(--radius-md)] border border-[var(--border-weak-base)] bg-[var(--surface-raised-strong)] px-2 py-0 pl-2.5 text-left text-xs text-[var(--text-weaker)]"
               onClick={() => setCommandOpen(true)}
               aria-label="Open command palette"
             >
               <Search aria-hidden="true" />
               <span>Search or run a command</span>
-              <kbd>{modifierKey()} K</kbd>
+              <kbd className="min-w-7 rounded-[var(--radius-sm)] border border-[var(--border-weak-base)] bg-[var(--background-weak)] px-[5px] py-0.5 text-center text-[10px] leading-[1.4] text-[var(--text-weaker)]">
+                {modifierKey()} K
+              </kbd>
             </button>
           </header>
         ) : null}
-        <header className="relay-mobile-header relay-electron-drag">
+        <header
+          className={`relay-mobile-header relay-electron-drag flex min-h-12 items-center gap-2 border-b border-[var(--border-weak-base)] bg-[var(--background-base)] px-2 min-[861px]:hidden${platform.platform === "desktop" ? " min-h-[60px] pl-[82px]" : ""}`}
+        >
           <SidebarTrigger
             className="relay-mobile-menu relay-electron-no-drag"
             aria-label="Open navigation"
           />
-          <span className="relay-mobile-title">Relay</span>
+          <span className="relay-mobile-title text-sm font-semibold">Relay</span>
         </header>
-        <main id="main-content" className="relay-main" tabIndex={-1}>
+        <main
+          id="main-content"
+          className="relay-main min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain [scrollbar-gutter:stable] focus:outline-none"
+          tabIndex={-1}
+        >
           <Outlet />
         </main>
       </div>

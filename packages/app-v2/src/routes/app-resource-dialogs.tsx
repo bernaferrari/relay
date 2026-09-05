@@ -43,11 +43,11 @@ export function VersionRow({
   onEdit(): void;
 }) {
   return (
-    <li className="relay-resource-row">
-      <span className="relay-resource-icon" aria-hidden="true">
+    <li className="grid min-h-[66px] grid-cols-[36px_minmax(0,1fr)_auto_minmax(110px,auto)] items-center gap-3 px-3.5 py-[11px] max-[780px]:grid-cols-[36px_minmax(0,1fr)_auto]">
+      <span className="grid size-9 place-items-center rounded-md border border-border bg-background text-foreground" aria-hidden="true">
         {version.platform === "web" ? <Globe2 /> : <Box />}
       </span>
-      <span className="relay-resource-copy">
+      <span className="grid min-w-0 gap-1">
         <strong>{version.name}</strong>
         <small>
           {platformLabel(version.platform)}
@@ -55,14 +55,14 @@ export function VersionRow({
           {version.applicationId ? ` · ${version.applicationId}` : ""}
         </small>
       </span>
-      <span className={`relay-resource-status relay-resource-status--${version.status}`}>
+      <span className={`inline-flex min-h-6 items-center rounded-full bg-background px-2.5 text-[11px] font-semibold capitalize text-muted-foreground inline-flex min-h-6 items-center rounded-full bg-background px-2.5 text-[11px] font-semibold capitalize text-muted-foreground--${version.status}`}>
         {statusLabel(version.status)}
       </span>
       <time dateTime={new Date(version.updatedAt).toISOString()}>
         Updated {shortDate(version.updatedAt)}
       </time>
       {canEdit ? (
-        <span className="relay-resource-row-actions">
+        <span className="grid min-h-[66px] grid-cols-[36px_minmax(0,1fr)_auto_minmax(110px,auto)] items-center gap-3 px-3.5 py-[11px] max-[780px]:grid-cols-[36px_minmax(0,1fr)_auto]-actions">
           <Button size="sm" variant="ghost" onClick={onEdit} aria-label={`Edit ${version.name}`}>
             Edit
           </Button>
@@ -106,11 +106,11 @@ export function VersionEditorDialog({
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent showCloseButton={false} className="relay-resource-dialog">
+      <DialogContent showCloseButton={false} className="max-h-[min(720px,calc(100dvh-32px))] overflow-auto">
         <DialogTitle>{editing ? "Edit version" : "Add version"}</DialogTitle>
         <DialogDescription>
           Register the exact build identity Relay can use. This does not associate a build with an
-          App Map.
+          saved Map.
         </DialogDescription>
         <form onSubmit={submit}>
           <Field>
@@ -153,12 +153,12 @@ export function VersionEditorDialog({
             </select>
           </Field>
           {editing ? (
-            <p className="relay-resource-lifecycle-note">
+            <p className="text-xs text-muted-foreground">
               Current status: <strong>{statusLabel(draft.status)}</strong>. Relay updates build
               readiness from preflight, installation, and launch results.
             </p>
           ) : null}
-          <div className="relay-resource-field-grid">
+          <div className="grid grid-cols-2 gap-3 max-[780px]:grid-cols-1">
             <Field>
               <FieldLabel htmlFor="version-configuration">Configuration</FieldLabel>
               <Input
@@ -199,7 +199,7 @@ export function VersionEditorDialog({
               {error instanceof Error ? error.message : "Relay could not save this version."}
             </FieldError>
           ) : null}
-          <div className="relay-dialog-actions">
+          <div className="flex items-center justify-end gap-2">
             <Button type="button" variant="ghost" disabled={pending} onClick={onClose}>
               Cancel
             </Button>
@@ -254,7 +254,7 @@ export function BrowserAccountDialog({
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent showCloseButton={false} className="relay-resource-dialog">
+      <DialogContent showCloseButton={false} className="max-h-[min(720px,calc(100dvh-32px))] overflow-auto">
         <DialogTitle>{editing ? "Refresh browser sign-in" : "Save browser sign-in"}</DialogTitle>
         <DialogDescription>
           {editing
@@ -301,7 +301,7 @@ export function BrowserAccountDialog({
               {error instanceof Error ? error.message : "Relay could not update this sign-in."}
             </FieldError>
           ) : null}
-          <div className="relay-dialog-actions">
+          <div className="flex items-center justify-end gap-2">
             <Button type="button" variant="ghost" disabled={pending} onClick={onClose}>
               Cancel
             </Button>
@@ -330,14 +330,14 @@ export function RevokeAccountDialog({
 }) {
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent showCloseButton={false} className="relay-resource-dialog">
+      <DialogContent showCloseButton={false} className="max-h-[min(720px,calc(100dvh-32px))] overflow-auto">
         <DialogTitle>Revoke browser sign-in?</DialogTitle>
         <DialogDescription>
           This revokes “{account.fixture.name}” on {account.target.name}. Relay will keep the audit
           record, but it cannot be used for future authenticated Tests.
         </DialogDescription>
         {error ? <FieldError>{error.message}</FieldError> : null}
-        <div className="relay-dialog-actions">
+        <div className="flex items-center justify-end gap-2">
           <Button type="button" variant="ghost" disabled={pending} onClick={onClose}>
             Cancel
           </Button>

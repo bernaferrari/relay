@@ -124,8 +124,8 @@ export function SuitesPage() {
   }
 
   return (
-    <section className="relay-page relay-suites-page">
-      <header className="relay-page-header relay-suites-header">
+    <section className="relay-page max-w-[1080px]">
+      <header className="relay-page-header flex items-start justify-between gap-4 max-[780px]:flex-col">
         <div>
           <p className="relay-eyebrow">Library</p>
           <h1>Suites</h1>
@@ -133,7 +133,7 @@ export function SuitesPage() {
             Save groups of Tests and Data sets, check their scope, and run them again with intent.
           </p>
         </div>
-        <div className="relay-suites-actions">
+        <div className="flex flex-none flex-wrap gap-4">
           <Button nativeButton={false} render={<Link to="/environments" />} variant="outline">
             Environments
           </Button>
@@ -149,7 +149,7 @@ export function SuitesPage() {
               <Plus aria-hidden="true" /> New Suite
             </DialogTrigger>
 
-            <DialogContent showCloseButton={false} className="relay-suite-dialog">
+            <DialogContent showCloseButton={false} className="max-h-[min(760px,calc(100vh-32px))] w-[min(720px,calc(100vw-32px))] overflow-auto">
               <DialogTitle>New Suite</DialogTitle>
               <DialogDescription>
                 Choose one App, then group the reviewed Tests and optional Data sets that belong
@@ -202,7 +202,7 @@ export function SuitesPage() {
                   </FieldError>
                 ) : null}
                 {editor.data ? (
-                  <div className="relay-suite-dialog-scopes">
+                  <div className="max-h-[min(760px,calc(100vh-32px))] w-[min(720px,calc(100vw-32px))] overflow-auto-scopes">
                     <fieldset>
                       <legend>Tests</legend>
                       {editor.data.tests.map((test) => (
@@ -326,7 +326,7 @@ export function SuitesPage() {
               ))}
             </select>
           </label>
-          <dl className="relay-suite-facts" aria-label="Suite status">
+          <dl className="my-7 grid grid-cols-3 border-y border-border py-4 max-[560px]:grid-cols-1" aria-label="Suite status">
             <div>
               <dt>Saved</dt>
               <dd>{suites.data.length}</dd>
@@ -340,7 +340,7 @@ export function SuitesPage() {
               <dd>{counts.review}</dd>
             </div>
           </dl>
-          <ul className="relay-suite-list" aria-label="Suites">
+          <ul className="mt-5 grid list-none gap-2.5 p-0" aria-label="Suites">
             {suites.data.map((suite) => {
               const needsReview = suite.tests.some((test) => test.status === "needs-review");
               return (
@@ -349,7 +349,7 @@ export function SuitesPage() {
                     to="/apps/$appId/suites/$suiteId"
                     params={{ appId: suite.appMapId, suiteId: suite.id }}
                   >
-                    <span className="relay-suite-icon" aria-hidden="true">
+                    <span className="grid size-[38px] place-items-center rounded-md border border-border bg-muted text-muted-foreground" aria-hidden="true">
                       <Layers3 />
                     </span>
                     <span>

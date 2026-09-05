@@ -1,7 +1,7 @@
 // @ts-nocheck — OpenCode upstream (strict array indexing differs)
 import type { V2ColorValue } from "../types";
 
-/** Default v2 hue + alpha ramps from `v2/styles/colors.css` (OC-2). */
+/** Default v2 hue + alpha ramps from `v2/styles/globals.css` (OC-2). */
 export const V2_PRIMITIVES_DEFAULT: Record<string, V2ColorValue> = {
   "v2-grey-50": "#ffffffff",
   "v2-grey-100": "#fafafaff",

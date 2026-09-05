@@ -1,3 +1,0 @@
-/* Color bridge + AB typography scale mapping for consumers that already load TW */
-@import "./colors.css";
-@import "../utilities.css" layer(utilities);

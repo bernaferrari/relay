@@ -72,7 +72,7 @@ export function AppVersionsPage() {
         />
       ) : null}
       {!loading && !error ? (
-        <section className="relay-app-resource-section" aria-labelledby="registered-versions-title">
+        <section className="mt-[30px]" aria-labelledby="registered-versions-title">
           <ResourceHeading
             id="registered-versions-title"
             label="Workspace registry"
@@ -80,7 +80,7 @@ export function AppVersionsPage() {
             detail="Builds are workspace-scoped and available when configuring verification."
           />
           {versions.data?.length ? (
-            <ul className="relay-resource-list">
+            <ul className="mt-[18px] list-none overflow-hidden rounded-lg border border-border bg-card p-0">
               {versions.data.map((version) => (
                 <VersionRow
                   key={version.id}
@@ -192,7 +192,7 @@ export function AppAccountsPage() {
       title="Accounts"
       description="Review saved browser sign-ins attached to managed browsers in this workspace."
       action={
-        <span className="relay-resource-header-actions">
+        <span className="inline-flex items-center justify-end gap-1.5 max-[780px]:flex-wrap max-[780px]:justify-start">
           <Button
             variant="default"
             onClick={() => setAccountDialog("save")}
@@ -225,7 +225,7 @@ export function AppAccountsPage() {
         />
       ) : null}
       {!loading && !error ? (
-        <section className="relay-app-resource-section" aria-labelledby="browser-signins-title">
+        <section className="mt-[30px]" aria-labelledby="browser-signins-title">
           <ResourceHeading
             id="browser-signins-title"
             label="Managed browsers"
@@ -233,7 +233,7 @@ export function AppAccountsPage() {
             detail="Sign-ins belong to an exact managed browser, not directly to an App."
           />
           {accounts.data?.length ? (
-            <ul className="relay-resource-list">
+            <ul className="mt-[18px] list-none overflow-hidden rounded-lg border border-border bg-card p-0">
               {accounts.data.map((account) => (
                 <AccountRow
                   key={account.fixture.reference}
@@ -311,9 +311,9 @@ function AppResourceFrame({
   children: React.ReactNode;
 }) {
   return (
-    <section className="relay-page relay-app-resource-page">
+    <section className="relay-page max-w-[1040px]">
       <Breadcrumbs items={[{ label: "Workspace", to: "/home" }, { label: title }]} />
-      <header className="relay-page-header relay-app-resource-header">
+      <header className="relay-page-header flex items-start justify-between gap-7 max-[780px]:flex-col">
         <div>
           <p className="relay-eyebrow">Workspace</p>
           <h1>{title}</h1>
@@ -363,7 +363,7 @@ function ResourceHeading({
   detail: string;
 }) {
   return (
-    <header className="relay-app-resource-heading">
+    <header className="max-w-[720px]">
       <p className="relay-section-label">{label}</p>
       <h2 id={id}>{title}</h2>
       <p>{detail}</p>
@@ -386,11 +386,11 @@ function AccountRow({
 }) {
   const state = accountState(account.fixture);
   return (
-    <li className="relay-resource-row relay-resource-row--account">
-      <span className="relay-resource-icon" aria-hidden="true">
+    <li className="grid min-h-[66px] grid-cols-[36px_minmax(0,1fr)_auto_minmax(110px,auto)] items-center gap-3 px-3.5 py-[11px] max-[780px]:grid-cols-[36px_minmax(0,1fr)_auto] grid min-h-[66px] grid-cols-[36px_minmax(0,1fr)_auto_minmax(110px,auto)] items-center gap-3 px-3.5 py-[11px] max-[780px]:grid-cols-[36px_minmax(0,1fr)_auto]--account">
+      <span className="grid size-9 place-items-center rounded-md border border-border bg-background text-foreground" aria-hidden="true">
         <KeyRound />
       </span>
-      <span className="relay-resource-copy">
+      <span className="grid min-w-0 gap-1">
         <strong>{account.fixture.name}</strong>
         <small>
           {account.target.name}
@@ -399,14 +399,14 @@ function AccountRow({
             : ""}
         </small>
       </span>
-      <span className={`relay-resource-status relay-resource-status--${state}`}>
+      <span className={`inline-flex min-h-6 items-center rounded-full bg-background px-2.5 text-[11px] font-semibold capitalize text-muted-foreground inline-flex min-h-6 items-center rounded-full bg-background px-2.5 text-[11px] font-semibold capitalize text-muted-foreground--${state}`}>
         {statusLabel(state)}
       </span>
       <time dateTime={new Date(account.fixture.createdAt).toISOString()}>
         Saved {shortDate(account.fixture.createdAt)}
       </time>
       {canRefresh || (canRevoke && state !== "revoked") ? (
-        <span className="relay-resource-row-actions">
+        <span className="grid min-h-[66px] grid-cols-[36px_minmax(0,1fr)_auto_minmax(110px,auto)] items-center gap-3 px-3.5 py-[11px] max-[780px]:grid-cols-[36px_minmax(0,1fr)_auto]-actions">
           {canRefresh ? (
             <Button
               size="sm"

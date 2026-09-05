@@ -5,7 +5,7 @@
   "tsx": true,
   "tailwind": {
     "config": "",
-    "css": "../ui-react/src/styles/index.css",
+    "css": "../ui-react/src/styles/globals.css",
     "baseColor": "neutral",
     "cssVariables": true
   },

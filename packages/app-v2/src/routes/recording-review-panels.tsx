@@ -30,19 +30,20 @@ export function RecordingEvidencePanel({
   onEvidenceRoleChange(role: "entrance" | "exit"): void;
 }) {
   return (
-    <section className="relay-recording-evidence" aria-labelledby="recording-evidence-title">
-      <div className="relay-recording-panel-heading">
+    <section className="min-w-0 self-start rounded-xl border border-border bg-card p-4 text-card-foreground shadow-sm" aria-labelledby="recording-evidence-title">
+      <div className="flex flex-wrap items-center justify-between gap-3.5">
         <div>
           <p className="relay-section-label">Evidence</p>
           <h2 id="recording-evidence-title">Selected moment</h2>
         </div>
-        <ImageIcon aria-hidden="true" />
+        <ImageIcon className="w-[17px] text-muted-foreground" aria-hidden="true" />
       </div>
-      <div className="relay-recording-evidence-toggle" aria-label="Evidence moment">
+      <div className="mt-4 grid grid-cols-2 gap-0.5 rounded-md bg-muted p-0.5" aria-label="Evidence moment">
         <button
           type="button"
           aria-pressed={evidenceRole === "entrance"}
           onClick={() => onEvidenceRoleChange("entrance")}
+          className="min-h-9 rounded-[calc(var(--radius-md)-2px)] text-xs font-medium text-muted-foreground aria-pressed:bg-card aria-pressed:text-foreground aria-pressed:shadow-sm"
         >
           Before
         </button>
@@ -50,18 +51,19 @@ export function RecordingEvidencePanel({
           type="button"
           aria-pressed={evidenceRole === "exit"}
           onClick={() => onEvidenceRoleChange("exit")}
+          className="min-h-9 rounded-[calc(var(--radius-md)-2px)] text-xs font-medium text-muted-foreground aria-pressed:bg-card aria-pressed:text-foreground aria-pressed:shadow-sm"
         >
           After
         </button>
       </div>
-      <div className="relay-recording-evidence-frame">
+      <div className="mt-2.5 grid aspect-[4/5] place-items-center overflow-hidden rounded-lg border border-border bg-[radial-gradient(circle_at_50%_20%,color-mix(in_srgb,white_7%,transparent),transparent_42%),oklch(0.19_0.008_255)]">
         {previewUrl ? (
           <img src={previewUrl} alt={`${evidenceRole} evidence for ${action?.intent}`} />
         ) : (
-          <div className="relay-recording-evidence-empty">
+          <div className="grid max-w-[22ch] justify-items-center gap-2 p-6 text-center text-[oklch(0.8_0.008_255)]">
             <Target aria-hidden="true" />
-            <strong>{action ? "No visual frame for this moment" : "Select an action"}</strong>
-            <span>
+            <strong className="text-[13px] text-[oklch(0.94_0.005_255)]">{action ? "No visual frame for this moment" : "Select an action"}</strong>
+            <span className="text-[11px] leading-normal">
               {action
                 ? "The captured proof is still listed below."
                 : "Its before and after proof will appear here."}
@@ -70,18 +72,18 @@ export function RecordingEvidencePanel({
         )}
       </div>
       {action ? (
-        <dl className="relay-recording-evidence-facts">
+        <dl className="mt-3 grid grid-cols-3 gap-2">
           <div>
-            <dt>Proof</dt>
-            <dd>{action.proofStatus ? proofLabel(action.proofStatus) : "Review"}</dd>
+            <dt className="text-[10px] uppercase tracking-wider text-muted-foreground">Proof</dt>
+            <dd className="mt-0.5 truncate text-[11px] text-foreground">{action.proofStatus ? proofLabel(action.proofStatus) : "Review"}</dd>
           </div>
           <div>
-            <dt>Evidence</dt>
-            <dd>{action.evidenceCount ?? action.evidenceIds?.length ?? 0} items</dd>
+            <dt className="text-[10px] uppercase tracking-wider text-muted-foreground">Evidence</dt>
+            <dd className="mt-0.5 truncate text-[11px] text-foreground">{action.evidenceCount ?? action.evidenceIds?.length ?? 0} items</dd>
           </div>
           <div>
-            <dt>Duration</dt>
-            <dd>{formatDuration(action.durationMs ?? 0)}</dd>
+            <dt className="text-[10px] uppercase tracking-wider text-muted-foreground">Duration</dt>
+            <dd className="mt-0.5 truncate text-[11px] text-foreground">{formatDuration(action.durationMs ?? 0)}</dd>
           </div>
         </dl>
       ) : null}
@@ -111,14 +113,14 @@ export function RecordingActionsPanel({
   onToggle(actionId: string, checked: boolean): void;
 }) {
   return (
-    <section className="relay-recording-actions" aria-labelledby="recording-actions-title">
-      <div className="relay-recording-panel-heading relay-recording-actions-heading">
+    <section className="min-w-0 overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-sm" aria-labelledby="recording-actions-title">
+      <div className="flex min-h-[72px] flex-wrap items-center justify-between gap-3.5 border-b border-border px-4 py-3">
         <div>
           <p className="relay-section-label">Journey</p>
           <h2 id="recording-actions-title">{recordedMomentCount(actions.length)}</h2>
         </div>
-        <div className="relay-recording-heading-actions">
-          <span>{captureSummary(actions)}</span>
+        <div className="flex items-center justify-end gap-2">
+          <span className="whitespace-nowrap text-[11px] text-muted-foreground">{captureSummary(actions)}</span>
           <Button
             size="sm"
             variant="ghost"
@@ -132,10 +134,10 @@ export function RecordingActionsPanel({
       </div>
 
       {optimization.suggestions.length ? (
-        <div className="relay-recording-suggestions" aria-label="Cleanup suggestions">
-          <div>
-            <strong>{optimization.suggestions.length} review-only suggestions</strong>
-            <span>Relay will never apply these automatically.</span>
+        <div className="grid gap-1.5 border-b border-border bg-muted p-3" aria-label="Cleanup suggestions">
+          <div className="grid gap-0.5">
+            <strong className="text-xs">{optimization.suggestions.length} review-only suggestions</strong>
+            <span className="text-[11px] text-muted-foreground">Relay will never apply these automatically.</span>
           </div>
           {optimization.suggestions.map((suggestion) => (
             <button

@@ -90,6 +90,62 @@ test("start adopts canonical inspection and keeps the durable Run identity", asy
   assert.equal(current.snapshot?.target?.targetId, "pixel-9");
 });
 
+test("reconstructed UI and CLI journeys inspect one server workflow and resume it without duplication", async () => {
+  let starts = 0;
+  let cancels = 0;
+  const durable = snapshot("running", 12, {
+    workflow: { workflowId: "workflow-shared", expectedVersion: 12 },
+    execution: { jobId: "job-shared", runId: "run-shared" },
+  });
+  const jobs = jobsFor({
+    inspected: durable,
+    cancelled: {
+      ...durable,
+      phase: "cancelled",
+      version: "workflow-v13",
+      workflow: { workflowId: "workflow-shared", expectedVersion: 13 },
+    },
+    onCancel: () => (cancels += 1),
+  });
+  const cliJourney = createProductRunJourney({
+    jobs: {
+      ...jobs,
+      async run() {
+        starts += 1;
+        return durable;
+      },
+    },
+  });
+  const first = await cliJourney.start({
+    testId: "test-1",
+    appMapId: "app-1",
+    targetId: "pixel-9",
+  });
+  assert.equal(first.run?.runId, "run-shared");
+
+  // Simulate a renderer restart: the new product service has no local pointer and can only
+  // recover the server-owned workflow through the canonical inspect operation.
+  const reconstructedUiJourney = createProductRunJourney({
+    jobs: {
+      ...jobs,
+      async run() {
+        starts += 1;
+        return durable;
+      },
+    },
+  });
+  const restored = await reconstructedUiJourney.inspect("workflow-shared");
+  assert.equal(restored.snapshot?.execution?.runId, "run-shared");
+  const cancelled = await reconstructedUiJourney.cancel();
+  assert.equal(cancelled.snapshot?.workflow?.workflowId, "workflow-shared");
+  assert.equal(cancels, 1);
+  assert.equal(
+    starts,
+    1,
+    "resume must inspect and continue the existing workflow, never start a duplicate",
+  );
+});
+
 test("cancel forwards the latest durable version and publishes the server result", async () => {
   let cancelInput: unknown;
   const journey = createProductRunJourney({

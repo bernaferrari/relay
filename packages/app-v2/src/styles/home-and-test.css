@@ -157,10 +157,6 @@
   line-height: 1.45;
 }
 
-.relay-new-test-page {
-  max-width: 920px;
-}
-
 .relay-flow-context {
   display: flex;
   max-width: 720px;
@@ -501,17 +497,6 @@
 
 .relay-library-row-shell .relay-library-row-arrow {
   display: none;
-}
-
-.relay-test-selection-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px 16px;
-  margin-top: 24px;
-  color: var(--text-weak);
-  font-size: 13px;
 }
 
 .relay-library-row-select {
@@ -893,127 +878,17 @@
   stroke-width: 1.9;
 }
 
-.relay-new-test-page {
-  max-width: 1000px;
-}
-
-.relay-new-test-header {
-  max-width: 650px;
-}
-
-.relay-new-test-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 900px);
-  align-items: start;
-  margin-top: 34px;
-}
-
-.relay-prerecord-workspace {
-  display: grid;
-  grid-column: 2;
-  grid-row: 1 / span 3;
-  gap: 14px;
-  padding-left: 28px;
-  border-left: 1px solid var(--border-weak-base);
-}
-
-.relay-prerecord-heading {
-  display: grid;
-  align-items: start;
-  gap: 10px;
-}
-
-.relay-prerecord-heading h2 {
-  margin-top: 3px;
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.relay-prerecord-actions {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 8px;
-}
-
-.relay-prerecord-workspace .relay-live-target-frame {
-  min-height: 300px;
-  max-height: 390px;
-}
-
 .relay-recording-form {
   max-width: none;
   gap: 0;
   margin-top: 0;
 }
 
-.relay-new-test-card {
-  overflow: hidden;
-}
-
-.relay-new-test-card > .relay-card-header {
-  padding: 22px 22px 0;
-}
-
-.relay-new-test-fields {
-  display: grid;
-  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
-  align-items: start;
-  gap: 20px 32px;
-  padding: 24px 22px 26px;
-}
-
-.relay-new-test-fields > [data-slot="field"] {
-  grid-column: 1;
-}
-
 .relay-test-name-field {
   max-width: 520px;
-}
-
-.relay-choice-heading {
-  display: grid;
-  gap: 2px;
-  padding-inline: 1px;
 }
 
 .relay-new-test-fields > [data-slot="field"] .relay-choice-group {
   grid-template-columns: minmax(0, 1fr);
   gap: 8px;
-}
-
-.relay-choice-scroll {
-  height: 196px;
-  margin-right: -7px;
-}
-
-.relay-choice-scroll .relay-choice-group {
-  padding-right: 7px;
-}
-
-.relay-choice-group--loading > * {
-  min-height: 68px;
-  border-radius: var(--radius-lg);
-}
-
-.relay-new-test-card > .relay-card-footer {
-  justify-content: flex-start;
-  gap: 8px;
-  min-height: 70px;
-}
-
-.relay-form-readiness {
-  display: inline-flex;
-  min-width: 0;
-  align-items: center;
-  gap: 6px;
-  margin-left: auto;
-  color: var(--text-weaker);
-  font-size: 11px;
-}
-
-.relay-form-readiness > svg {
-  width: 14px;
-  height: 14px;
-  color: var(--text-success-base);
 }

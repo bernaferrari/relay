@@ -11,6 +11,7 @@ export const definitions = {
   "prerecord-ready": { path: "/tests/new?app=checkout-app" },
   "prerecord-connecting": { path: "/tests/new?app=checkout-app" },
   "prerecord-failure": { path: "/tests/new?app=checkout-app" },
+  workflow: { path: "/tests/new?app=checkout-app" },
   "recording-review": { path: "/recordings/recording-checkout/review" },
   "recording-active": { path: "/recordings/recording-active" },
   "test-detail": { path: "/tests/test-checkout" },

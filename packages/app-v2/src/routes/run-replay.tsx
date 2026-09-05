@@ -29,11 +29,12 @@ export function RunReplayAction({
   const search = routeApi.useSearch() as { replayJob?: unknown };
   const replayJobId = typeof search.replayJob === "string" ? search.replayJob : "";
   const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState<"saved-steps" | "same-configuration">("saved-steps");
   const navigate = useNavigate({ from: "/runs/$runId" });
   const replay = useMutation({
     mutationFn: async () => {
       if (!runService.replay) throw new Error("Exact replay is unavailable in this Relay host.");
-      return runService.replay(report.runId);
+      return runService.replay(report.runId, mode);
     },
     onSuccess: async (result) => {
       await navigate({ search: (previous) => ({ ...previous, replayJob: result.jobId }) });
@@ -56,9 +57,46 @@ export function RunReplayAction({
           Relay checks the saved target and browser profile before starting.
         </DialogDescription>
         <p className="text-sm text-muted-foreground">
-          The installed app or build stays as it is now. Replay does not restore an older build.
+          {mode === "same-configuration"
+            ? "Relay will verify and install the recorded immutable build before replaying. If that build is unavailable, no replay is started."
+            : "The installed app or build stays as it is now. Replay does not restore an older build."}{" "}
           Unavailable private inputs must be supplied through a new run setup.
         </p>
+        <fieldset className="grid gap-2 text-sm">
+          <legend className="font-medium">Replay mode</legend>
+          <label className="flex items-start gap-2">
+            <input
+              type="radio"
+              name="replay-mode"
+              value="saved-steps"
+              checked={mode === "saved-steps"}
+              onChange={() => setMode("saved-steps")}
+            />
+            <span>
+              <strong className="font-medium">Saved steps</strong>
+              <span className="block text-muted-foreground">
+                Use the recorded recipe and current installed build.
+              </span>
+            </span>
+          </label>
+          {report.executionContext?.buildId ? (
+            <label className="flex items-start gap-2">
+              <input
+                type="radio"
+                name="replay-mode"
+                value="same-configuration"
+                checked={mode === "same-configuration"}
+                onChange={() => setMode("same-configuration")}
+              />
+              <span>
+                <strong className="font-medium">Same configuration</strong>
+                <span className="block text-muted-foreground">
+                  Restore recorded build <code>{report.executionContext.buildId}</code> first.
+                </span>
+              </span>
+            </label>
+          ) : null}
+        </fieldset>
         {replay.error ? (
           <p role="alert">
             {replay.error instanceof Error ? replay.error.message : "Replay could not start."}
@@ -171,7 +209,7 @@ export function RunReplayStatus({ runService }: { runService: RunProductService 
       </Alert>
     );
   return (
-    <div className="relay-report-note flex flex-wrap items-center justify-between gap-3">
+    <div className="rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground flex flex-wrap items-center justify-between gap-3">
       <p role="status">
         {replayJob.data?.status === "paused"
           ? "Replay paused; waiting for the current operation to continue."

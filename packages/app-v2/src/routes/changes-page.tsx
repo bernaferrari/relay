@@ -48,8 +48,8 @@ export function ChangesPage() {
   );
 
   return (
-    <section className="relay-page relay-library-page relay-changes-page">
-      <header className="relay-library-header relay-changes-header">
+    <section className="relay-page relay-library-page max-w-[1040px]">
+      <header className="relay-library-header flex items-start justify-between gap-7 max-[780px]:flex-col">
         <div>
           <p className="relay-eyebrow">Changes</p>
           <h1>Change verification</h1>
@@ -95,7 +95,7 @@ export function ChangesPage() {
 
       {changes.isError ? (
         <RecoveryState
-          className="relay-changes-recovery"
+          className="mt-5"
           layout="centered"
           title="Relay is offline"
           detail="Start the local service, then reconnect. Your work is safe."
@@ -173,7 +173,7 @@ function ChangeRow({ change }: { change: ProductChange }) {
   return (
     <li>
       <Item
-        className="relay-library-row relay-change-row"
+        className="relay-library-row grid-cols-[minmax(220px,1fr)_minmax(118px,auto)_minmax(148px,.42fr)_18px]"
         render={<Link to="/changes/$changeId" params={{ changeId: change.id }} />}
       >
         <span className="relay-library-row-main">

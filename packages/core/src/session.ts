@@ -38,7 +38,6 @@ import { requireOperationContext, runWithOperationContext } from "./operation-co
 import { redactText, visualEvidenceAllowed } from "./redaction.js";
 import { projectPersistedAppMapRun } from "./app-map-run-history.js";
 import { JobRegistry } from "./job-registry.js";
-import { replayInputFromPersistedRun, type PersistedReplayMode } from "./session-job-factory.js";
 import { releaseTargetControl, reserveTargetControl } from "./target-control.js";
 import {
   classifySessionError,
@@ -52,8 +51,10 @@ import { captureAutomaticState } from "./session-automatic-evidence.js";
 import { appendStepLog, finishStep, observeStepActions, openStep } from "./session-trace-steps.js";
 import {
   createSessionJob,
+  prepareSameConfigurationReplay,
   replayInputFromPersistedRun,
   retryInputFromJob,
+  type PersistedReplayMode,
 } from "./session-job-factory.js";
 import {
   createDurableSessionHeartbeat,
@@ -158,9 +159,16 @@ export function replayPersistedRun(
   run: PersistedRun,
   mode: PersistedReplayMode = "saved-steps",
 ): TestJob {
+  if (mode === "same-configuration") {
+    throw new Error(
+      "Same-configuration replay requires prepareSameConfigurationReplay before enqueue",
+    );
+  }
   requireScopedAppMapTestExecutionSource(appMapTestExecutionSourceFromRun(run));
   return enqueueJob({ ...replayInputFromPersistedRun(run, mode), retryOf: run.id });
 }
+
+export { prepareSameConfigurationReplay };
 
 function makeJob(input: EnqueueJobInput, attemptSeed = 1): TestJob {
   const job = createSessionJob(input, {

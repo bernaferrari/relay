@@ -19,6 +19,7 @@ import { fixtureSettingsService } from "./settings-fixture";
 import { fixtureChangeService } from "./change-fixture";
 import { failedReport } from "./report-fixture";
 import { activeRecordingState, createActiveRecordingTarget } from "./active-recording-fixture";
+import { createWorkflowFixture } from "./workflow-fixture";
 import type { LiveTargetSnapshot } from "../data/live-target-session";
 import type { RunAcrossProductService } from "../data/run-across-product-service";
 import type { SessionProductService } from "../data/session-product-service";
@@ -26,7 +27,7 @@ import type { SuiteProfileProductService } from "../data/suite-profile-product-s
 import type { BrowserSpacesProductService } from "../data/browser-spaces-product-service";
 import type { AgentDebugProductService } from "../data/agent-debug-product-service";
 import type { Platform } from "../platform/types";
-import "../styles/app.css";
+import "../styles/globals.css";
 
 const FIXTURE_TIME = Date.UTC(2026, 8, 4, 12, 0, 0);
 const VISUAL_NOW = 1_788_390_000_000;
@@ -37,21 +38,21 @@ const platform: Platform = {
   platform: "web",
   getServerUrl: () => "http://visual-fixture.invalid",
   storage: {
-    get: () => null,
-    set: () => undefined,
-    remove: () => undefined,
+    get: (key) => window.localStorage.getItem(`visual:${key}`),
+    set: (key, value) => window.localStorage.setItem(`visual:${key}`, value),
+    remove: (key) => window.localStorage.removeItem(`visual:${key}`),
   },
 };
 
 const apps = [{ id: "checkout-app", name: "Checkout" }] as const;
-const prerecord = fixture.startsWith("prerecord-");
+const prerecord = fixture.startsWith("prerecord-") || fixture === "workflow";
 const populatedHome = fixture === "home-populated";
 const previewTarget = {
   kind: "browser" as const,
   platform: "browser" as const,
   targetId: "checkout-browser",
 };
-const recordingService = {
+const defaultRecordingService = {
   listApps: async () => {
     if (fixture === "apps-error") throw new Error("Relay is offline");
     return fixture === "home-empty" ? [] : apps;
@@ -187,6 +188,9 @@ const recordingService = {
   },
   liveTarget: async () => createActiveRecordingTarget(),
 } as unknown as RecordingProductService;
+const workflowFixture =
+  fixture === "workflow" ? createWorkflowFixture(window.localStorage) : undefined;
+const recordingService = workflowFixture?.productService ?? defaultRecordingService;
 
 function fixtureRun(index: number): ProductRunSummary {
   const failed = index % 7 === 4;
@@ -371,7 +375,7 @@ const fixtureTest = {
     { id: "receipt", kind: "instruction" as const, intent: "Open the receipt", capture: false },
   ],
 };
-const runService = {
+const defaultRunService = {
   getTest: async () => fixtureTest,
   listTestRuns: async () => (fixture === "test-detail" ? [fixtureRun(0), fixtureRun(1)] : []),
   listTargets: async () => [
@@ -396,6 +400,7 @@ const runService = {
   cancelReplay: async () => undefined,
   getRawEvidence: async () => ({ redacted: true, events: [] }),
 } as unknown as RunProductService;
+const runService = workflowFixture?.runService ?? defaultRunService;
 
 const batchReport: ProductBatchReport = {
   id: "batch-checkout",
@@ -813,17 +818,19 @@ createRoot(root).render(
       deviceService={deviceService}
       agentDebugService={agentDebugService}
       settingsService={fixtureSettingsService}
-      testEditorService={{
-        get: async () =>
-          (
-            await liveTestEditorService.open({
-              testId: "test-checkout",
-              sessionId: "session-checkout",
-            })
-          ).test,
-        edit: async ({ document }) => document,
-        decideRepair: async ({ document }) => document,
-      }}
+      testEditorService={
+        (workflowFixture?.testEditorService ?? {
+          get: async () =>
+            (
+              await liveTestEditorService.open({
+                testId: "test-checkout",
+                sessionId: "session-checkout",
+              })
+            ).test,
+          edit: async ({ document }: { document: unknown }) => document,
+          decideRepair: async ({ document }: { document: unknown }) => document,
+        }) as never
+      }
     />
   </StrictMode>,
 );

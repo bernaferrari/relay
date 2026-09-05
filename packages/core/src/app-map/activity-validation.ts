@@ -46,6 +46,7 @@ export function assertActivity(
     "variable.saved",
     "variable.removed",
     "test.saved",
+    "test.validated",
     "test.undone",
     "test.redone",
     "test.removed",

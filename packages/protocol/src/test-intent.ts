@@ -211,6 +211,14 @@ export type AppMapScenarioTest = AppMapEntity & {
   capture?: AppMapCapturePolicy;
   /** Logical surface coverage is independent from graph navigation. */
   surfaceBindings?: ScrollSurfaceTestBinding[];
+  /** Optional exact validation receipt. Legacy Tests without a receipt retain
+   * their historical authoring status; once present it is revision-bound. */
+  validation?: {
+    status: "passed" | "needs-validation";
+    appMapRevision: number;
+    testUpdatedAt: number;
+    validatedAt?: number;
+  };
 };
 
 /** Semantic, stable-ID edits are the collaboration boundary for Tests.

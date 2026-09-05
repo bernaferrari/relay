@@ -15,9 +15,9 @@
     "./theme/context": "./src/theme/context.tsx",
     "./theme/preload": "./src/theme/preload.js",
     "./theme/v2/*": "./src/theme/v2/*.ts",
-    "./styles": "./src/styles/index.css",
-    "./styles/tailwind": "./src/styles/tailwind/index.css",
-    "./v2/styles/*": "./src/v2/styles/*",
+    "./styles": "./src/styles/globals.css",
+    "./styles/tailwind": "./src/styles/globals.css",
+    "./v2/styles/*": "./src/v2/styles/globals.css",
     "./context/helper": "./src/context/helper.tsx"
   },
   "scripts": {

@@ -226,12 +226,15 @@ export function CommandPalette({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent showCloseButton={false} className="relay-command-palette">
+      <DialogContent
+        showCloseButton={false}
+        className="relay-command-palette w-[min(620px,calc(100vw-32px))] max-h-[min(620px,calc(100dvh-48px))] overflow-hidden rounded-[var(--radius-xl)] p-0 shadow-[var(--shadow-lg)]"
+      >
         <DialogTitle className="relay-visually-hidden">Relay commands</DialogTitle>
         <DialogDescription className="relay-visually-hidden">
           Search destinations and common product actions.
         </DialogDescription>
-        <div className="relay-command-search">
+        <div className="relay-command-search grid min-h-[58px] grid-cols-[20px_minmax(0,1fr)_auto] items-center gap-[9px] border-b border-[var(--border-weak-base)] px-4 py-2">
           <Search aria-hidden="true" />
           <Input
             autoFocus
@@ -247,32 +250,46 @@ export function CommandPalette({
             aria-activedescendant={
               commands[activeIndex] ? `relay-command-${commands[activeIndex].id}` : undefined
             }
+            className="relay-input min-h-[42px] border-0 bg-transparent p-0 text-base shadow-none focus-visible:outline-0"
           />
-          <kbd>Esc</kbd>
+          <kbd className="min-w-7 rounded-[var(--radius-sm)] border border-[var(--border-weak-base)] bg-[var(--background-weak)] px-[5px] py-0.5 text-center text-[10px] leading-[1.4] text-[var(--text-weaker)]">
+            Esc
+          </kbd>
         </div>
-        <ScrollArea className="relay-command-results">
-          <div id="relay-command-results" role="listbox" aria-label="Commands">
+        <ScrollArea className="relay-command-results max-h-[min(480px,calc(100dvh-150px))] p-1.5">
+          <div
+            id="relay-command-results"
+            role="listbox"
+            aria-label="Commands"
+            className="flex flex-col gap-0.5"
+          >
             {commands.length ? (
               commands.map((command, index) => (
                 <button
                   role="option"
                   type="button"
-                  className={`relay-command-item${index === activeIndex ? " relay-command-item--active" : ""}`}
+                  className={`relay-command-item flex min-h-11 w-full items-center gap-2.5 rounded-[var(--radius-md)] px-2.5 py-1.5 text-left text-sm${index === activeIndex ? " relay-command-item--active bg-[var(--surface-base-active)]" : ""}`}
                   key={command.id}
                   id={`relay-command-${command.id}`}
                   aria-selected={index === activeIndex}
                   onMouseEnter={() => setActiveIndex(index)}
                   onClick={() => choose(command)}
                 >
-                  <command.icon aria-hidden="true" />
-                  <span>
-                    <strong>{command.label}</strong>
-                    <small>{command.detail}</small>
+                  <command.icon className="h-[17px] w-[17px] shrink-0" aria-hidden="true" />
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <strong className="overflow-hidden text-ellipsis whitespace-nowrap font-medium">
+                      {command.label}
+                    </strong>
+                    <small className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-[var(--text-weaker)]">
+                      {command.detail}
+                    </small>
                   </span>
                 </button>
               ))
             ) : (
-              <p className="relay-command-empty">No matching commands</p>
+              <p className="relay-command-empty p-6 text-center text-sm text-[var(--text-weaker)]">
+                No matching commands
+              </p>
             )}
           </div>
         </ScrollArea>

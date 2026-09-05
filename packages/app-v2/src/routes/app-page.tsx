@@ -46,7 +46,7 @@ export function AppPage() {
     .slice(0, 3);
 
   return (
-    <section className="relay-page relay-app-page">
+    <section className="relay-page max-w-[1040px]">
       <Breadcrumbs
         items={[{ label: "Home", to: "/home" }, { label: app.data?.appName ?? "App" }]}
       />
@@ -58,7 +58,7 @@ export function AppPage() {
       />
       {app.data && !error ? (
         <>
-          <header className="relay-page-header relay-app-header">
+          <header className="relay-page-header flex items-start justify-between gap-7 max-[780px]:flex-col">
             <div>
               <p className="relay-eyebrow">App</p>
               <h1>{app.data.appName}</h1>
@@ -67,7 +67,7 @@ export function AppPage() {
                   "Saved Tests, recent Reports, and known behavior in one place."}
               </p>
             </div>
-            <div className="relay-app-actions">
+            <div className="flex flex-none flex-wrap gap-2">
               <Button
                 nativeButton={false}
                 render={<Link to="/tests/new" search={{ app: appId }} />}
@@ -78,7 +78,7 @@ export function AppPage() {
             </div>
           </header>
 
-          <dl className="relay-app-facts" aria-label={`${app.data.appName} overview`}>
+          <dl className="my-7.5 grid grid-cols-3 border-y border-border py-[18px] max-[560px]:grid-cols-1 max-[560px]:gap-3.5" aria-label={`${app.data.appName} overview`}>
             <div>
               <dt>Saved Tests</dt>
               <dd>
@@ -99,8 +99,8 @@ export function AppPage() {
             </div>
           </dl>
 
-          <div className="relay-app-workspace">
-            <section className="relay-app-section" aria-labelledby="app-tests-title">
+          <div className="mt-[38px] grid grid-cols-2 gap-9 max-[780px]:grid-cols-1">
+            <section className="min-w-0" aria-labelledby="app-tests-title">
               <header className="relay-section-heading">
                 <div>
                   <p className="relay-section-label">Tests</p>
@@ -116,7 +116,7 @@ export function AppPage() {
                 </Link>
               </header>
               {tests.isPending ? (
-                <p className="relay-app-panel-state">Loading Tests…</p>
+                <p className="text-sm text-muted-foreground">Loading Tests…</p>
               ) : tests.isError ? (
                 <EmptyState
                   title="Tests are temporarily unavailable"
@@ -128,7 +128,7 @@ export function AppPage() {
                   }
                 />
               ) : tests.data?.length ? (
-                <ul className="relay-app-list">
+                <ul className="mt-3 list-none overflow-hidden rounded-lg border border-border bg-card p-0">
                   {tests.data.slice(0, 4).map((test) => (
                     <li key={test.id}>
                       <Link to="/tests/$testId" params={{ testId: test.id }}>
@@ -138,7 +138,7 @@ export function AppPage() {
                             {test.stepCount} {test.stepCount === 1 ? "step" : "steps"}
                           </small>
                         </span>
-                        <span className="relay-app-list-action">
+                        <span className="mt-3 list-none overflow-hidden rounded-lg border border-border bg-card p-0-action">
                           Open <span aria-hidden="true">→</span>
                         </span>
                       </Link>
@@ -158,7 +158,7 @@ export function AppPage() {
               )}
             </section>
 
-            <section className="relay-app-section" aria-labelledby="app-runs-title">
+            <section className="min-w-0" aria-labelledby="app-runs-title">
               <header className="relay-section-heading">
                 <div>
                   <p className="relay-section-label">Reports</p>
@@ -171,7 +171,7 @@ export function AppPage() {
                 ) : null}
               </header>
               {runs.isPending ? (
-                <p className="relay-app-panel-state">Loading recent results…</p>
+                <p className="text-sm text-muted-foreground">Loading recent results…</p>
               ) : runs.isError ? (
                 <EmptyState
                   title="Recent results are temporarily unavailable"
@@ -183,7 +183,7 @@ export function AppPage() {
                   }
                 />
               ) : recentRuns.length ? (
-                <ul className="relay-app-list">
+                <ul className="mt-3 list-none overflow-hidden rounded-lg border border-border bg-card p-0">
                   {recentRuns.map((run) => (
                     <li key={run.id}>
                       <Link to="/runs/$runId" params={{ runId: run.id }}>
@@ -207,14 +207,14 @@ export function AppPage() {
               )}
             </section>
           </div>
-          <section className="relay-app-resources" aria-labelledby="app-resources-title">
+          <section className="mt-[34px]" aria-labelledby="app-resources-title">
             <header className="relay-section-heading">
               <div>
                 <p className="relay-section-label">Configuration</p>
                 <h2 id="app-resources-title">Workspace resources</h2>
               </div>
             </header>
-            <div className="relay-app-resource-links">
+            <div className="mt-3 grid grid-cols-2 gap-2.5 max-[780px]:grid-cols-1">
               <Link to="/versions">
                 <span>
                   <strong>Versions</strong>
@@ -231,7 +231,7 @@ export function AppPage() {
               </Link>
             </div>
           </section>
-          <Collapsible className="relay-app-advanced">
+          <Collapsible className="mt-[34px] max-w-[620px] border-t border-border">
             <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 py-2 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
               Advanced
             </CollapsibleTrigger>
@@ -239,7 +239,7 @@ export function AppPage() {
               <div>
                 <p>Inspect Relay’s known screens, verified paths, and coverage for this app.</p>
                 <Link className="relay-inline-link" to="/apps/$appId/map" params={{ appId }}>
-                  Open App Map
+                  Open Map
                 </Link>
               </div>
             </CollapsibleContent>

@@ -6,8 +6,9 @@ import { Tabs, TabsList, TabsTrigger } from "@relay/ui-react/components/tabs";
 import { useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { ChevronRight, Monitor, Smartphone } from "lucide-react";
-import { useDeferredValue, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { EmptyState } from "../components/product-patterns";
+import { LibraryPage, PageHeader } from "../components/page-layout";
 import { sessionQueryKeys, type ProductSessionSummary } from "../data/session-product-service";
 import { PageLoading, RecordingProblem } from "./recording-shared";
 
@@ -21,10 +22,10 @@ export function isActiveSession(session: ProductSessionSummary): boolean {
 export function SessionsPage() {
   const { sessionService } = useRouteContext({ from: "__root__" });
   const navigate = useNavigate({ from: "/sessions" });
-  const search = routeApi.useSearch() as { status?: unknown; target?: unknown };
+  const search = routeApi.useSearch() as { status?: unknown; target?: unknown; q?: unknown };
   const view: SessionView =
     search.status === "history" || search.status === "all" ? search.status : "active";
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(typeof search.q === "string" ? search.q : "");
   const deferredQuery = useDeferredValue(query.trim().toLocaleLowerCase());
   const referenceTime = Date.now();
   const sessions = useQuery({
@@ -35,6 +36,18 @@ export function SessionsPage() {
     refetchOnReconnect: true,
     refetchOnWindowFocus: false,
   });
+
+  useEffect(() => {
+    if (typeof search.q === "string" && search.q !== query) setQuery(search.q);
+  }, [query, search.q]);
+
+  useEffect(() => {
+    const current = typeof search.q === "string" ? search.q : "";
+    if (current === query) return;
+    void navigate({
+      search: (previous) => ({ ...previous, q: query.trim() || undefined }),
+    });
+  }, [navigate, query, search.q]);
 
   const visible = useMemo(
     () =>
@@ -70,24 +83,22 @@ export function SessionsPage() {
   }
 
   return (
-    <section className="relay-page max-w-[1120px]">
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <p className="relay-eyebrow">Workspace</p>
-          <h1>Live</h1>
-          <p className="relay-page-description">
-            Continue active device work, or open durable session history when you need to review it.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button nativeButton={false} variant="default" render={<Link to="/tests/new" />}>
-            Start a Test
-          </Button>
-          <Button nativeButton={false} variant="outline" render={<Link to="/devices" />}>
-            Start Live from a device
-          </Button>
-        </div>
-      </header>
+    <LibraryPage className="relay-sessions-page max-w-[1120px]">
+      <PageHeader
+        context="Workspace"
+        title="Live"
+        description="Continue active device work, or open durable session history when you need to review it."
+        actions={
+          <>
+            <Button nativeButton={false} variant="default" render={<Link to="/tests/new" />}>
+              Start a Test
+            </Button>
+            <Button nativeButton={false} variant="outline" render={<Link to="/devices" />}>
+              Start Live from a device
+            </Button>
+          </>
+        }
+      />
 
       <Tabs value={view} onValueChange={(value) => setView(value as SessionView)}>
         <TabsList variant="line" aria-label="Session view">
@@ -169,7 +180,7 @@ export function SessionsPage() {
           }
         />
       ) : null}
-    </section>
+    </LibraryPage>
   );
 }
 

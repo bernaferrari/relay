@@ -107,6 +107,36 @@ test("projects production App Maps into app-scoped Tests with recent Run links",
   assert.equal(summaries[1]?.href, "/tests/attention");
 });
 
+test("validation receipts are exact revision markers while legacy tests stay compatible", () => {
+  const valid = scenario("validated", "Validated");
+  valid.validation = {
+    status: "passed",
+    appMapRevision: 4,
+    testUpdatedAt: valid.updatedAt,
+    validatedAt: 5,
+  };
+  const failed = scenario("failed-validation", "Failed validation");
+  failed.validation = { ...valid.validation, status: "needs-validation" };
+  const edited = scenario("edited", "Edited");
+  edited.validation = { ...valid.validation, testUpdatedAt: edited.updatedAt - 1 };
+  const legacy = scenario("legacy", "Legacy");
+  const map = app("app-one", "Shopping", {
+    validated: valid,
+    "failed-validation": failed,
+    edited,
+    legacy,
+  });
+  const tests = projectProductTests([map]);
+  assert.equal(tests.find((test) => test.id === "validated")?.status, "ready");
+  assert.equal(tests.find((test) => test.id === "failed-validation")?.status, "needs-review");
+  assert.equal(tests.find((test) => test.id === "edited")?.status, "needs-review");
+  assert.equal(tests.find((test) => test.id === "legacy")?.status, "ready");
+  assert.equal(
+    projectProductTests([{ ...map, revision: 5 }]).find((test) => test.id === "validated")?.status,
+    "ready",
+  );
+});
+
 test("projects Run views with durable identity, human joins, phases, and filters", () => {
   const maps = [app("app-one", "Shopping", { ready: scenario("ready", "Checkout") })];
   const runs = projectProductRuns(

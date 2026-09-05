@@ -1,3 +1,4 @@
+import { RawEvidenceDisclosure } from "./raw-evidence-disclosure";
 /** @jsxImportSource react */
 import { Badge } from "@relay/ui-react/components/badge";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@relay/ui-react/components/alert";
@@ -21,10 +22,8 @@ import {
   firstSentence,
   failureTitle,
   formatDuration,
-  highlightJson,
   nextAction,
   outcomeSentence,
-  readableJson,
 } from "../components/run-report-formatters";
 import type { ProductRunState, RunProductService } from "../data/run-product-service";
 import { runQueryKeys } from "../data/run-queries";
@@ -139,11 +138,11 @@ export function RunPage() {
 
   if (problem || recovery) {
     return (
-      <section className="relay-page relay-run-page">
+      <section className="relay-page max-w-[1120px]">
         <Breadcrumbs items={[{ label: "Runs", to: "/runs" }, { label: "Run" }]} />
         <h1 className="relay-visually-hidden">{snapshot?.title ?? "Run unavailable"}</h1>
         <RecordingProblem
-          className="relay-run-recovery"
+          className="mt-4"
           error={problem}
           recovery={recovery}
           onRetry={retry}
@@ -156,9 +155,9 @@ export function RunPage() {
 
   if (loading) {
     return (
-      <section className="relay-page relay-run-page">
+      <section className="relay-page max-w-[1120px]">
         <Breadcrumbs items={[{ label: "Runs", to: "/runs" }, { label: "In progress" }]} />
-        <header className="relay-run-context-header">
+        <header className="rounded-lg border border-border bg-muted/40 p-4">
           <p className="relay-eyebrow">Run</p>
           <h1>{snapshot?.title ?? "Loading Run"}</h1>
         </header>
@@ -168,7 +167,7 @@ export function RunPage() {
   }
 
   return (
-    <section className="relay-page relay-run-page">
+    <section className="relay-page max-w-[1120px]">
       <Breadcrumbs
         items={[
           { label: "Runs", to: "/runs" },
@@ -176,7 +175,7 @@ export function RunPage() {
           { label: "In progress" },
         ]}
       />
-      <header className="relay-page-header relay-run-header">
+      <header className="relay-page-header flex items-start justify-between gap-5">
         <div>
           <p className="relay-eyebrow">Run</p>
           <h1>{snapshot?.title ?? "Running Test"}</h1>
@@ -184,7 +183,7 @@ export function RunPage() {
             {snapshot?.progress.label ?? "Restoring progress…"}
           </p>
         </div>
-        <div className="relay-run-header-actions">
+        <div className="flex items-start justify-between gap-5-actions">
           {activePointer ? (
             <Link
               className="relay-text-link relay-header-link"
@@ -203,8 +202,8 @@ export function RunPage() {
       </header>
 
       {snapshot ? (
-        <div className="relay-run-progress" role="status">
-          <div className="relay-run-progress-heading">
+        <div className="rounded-xl border border-border bg-card p-5" role="status">
+          <div className="rounded-xl border border-border bg-card p-5-heading">
             <div>
               <p className="relay-section-label">Progress</p>
               <h2>{snapshot.progress.label}</h2>
@@ -215,7 +214,7 @@ export function RunPage() {
           </div>
           {snapshot.progress.total !== undefined ? (
             <Progress
-              className="relay-run-progress-meter"
+              className="rounded-xl border border-border bg-card p-5-meter"
               value={snapshot.progress.completed ?? 0}
               max={snapshot.progress.total}
             >
@@ -261,6 +260,8 @@ function RunReport({
   const navigate = useNavigate({ from: "/runs/$runId" });
   const requestedView = reportView(search.view);
   const requestedStep = typeof search.step === "string" ? Number.parseInt(search.step, 10) : 0;
+  const requestedAt = typeof search.at === "string" ? Number(search.at) : Number.NaN;
+  const requestedAttempt = typeof search.attempt === "string" ? Number(search.attempt) : Number.NaN;
   const views = [
     { id: "overview" as const, label: "Overview", available: true },
     { id: "timeline" as const, label: "Timeline", available: report.timeline.length > 0 },
@@ -268,13 +269,20 @@ function RunReport({
   ].filter((view) => view.available);
   const view = views.some((item) => item.id === requestedView) ? requestedView : "overview";
   const [selectedEvidenceId, setSelectedEvidenceId] = useState(report.evidence[0]?.id);
+  const contextStepIndex = report.timeline.findIndex(
+    (item) =>
+      (Number.isFinite(requestedAt) && item.startedAt === requestedAt) ||
+      (Number.isFinite(requestedAttempt) && item.attempt === requestedAttempt),
+  );
   const selectedStepIndex =
     Number.isFinite(requestedStep) && requestedStep > 0
       ? Math.min(requestedStep - 1, Math.max(0, report.timeline.length - 1))
-      : Math.max(
-          0,
-          report.timeline.findIndex((item) => item.state === "failed"),
-        );
+      : contextStepIndex >= 0
+        ? contextStepIndex
+        : Math.max(
+            0,
+            report.timeline.findIndex((item) => item.state === "failed"),
+          );
   const [rawEvidenceOpen, setRawEvidenceOpen] = useState(false);
   const selectedEvidence =
     report.evidence.find((section) => section.id === selectedEvidenceId) ?? report.evidence[0];
@@ -287,7 +295,7 @@ function RunReport({
     });
   }
   return (
-    <section className="relay-page relay-report-page">
+    <section className="relay-page max-w-[1120px]">
       {testId ? (
         <Link className="relay-back-link" to="/tests/$testId" params={{ testId }}>
           <ArrowLeft aria-hidden="true" /> View test
@@ -295,16 +303,16 @@ function RunReport({
       ) : (
         <Breadcrumbs items={[{ label: "Runs", to: "/runs" }, { label: "Report" }]} />
       )}
-      <header className="relay-report-header">
+      <header className="flex items-start justify-between gap-5">
         <div>
-          <div className="relay-report-kicker">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <OutcomeMark outcome={report.outcome} />
             <span>Run Report</span>
           </div>
           <h1>{report.title}</h1>
-          <p className="relay-report-outcome">{outcomeSentence(report.outcome, target)}</p>
+          <p className="mt-5 rounded-xl border border-border bg-card p-5">{outcomeSentence(report.outcome, target)}</p>
         </div>
-        <div className="relay-report-header-actions">
+        <div className="flex items-start justify-between gap-5-actions">
           <RunReplayAction report={report} runService={runService} />
           {report.outcome === "product-failure" ||
           report.outcome === "harness-failure" ||
@@ -331,7 +339,7 @@ function RunReport({
 
       {views.length > 1 ? (
         <Tabs value={view} onValueChange={(next) => selectView(next as ReportView)}>
-          <TabsList className="relay-report-nav" variant="line" aria-label="Report view">
+          <TabsList className="flex items-center gap-2" variant="line" aria-label="Report view">
             {views.map((item) => (
               <TabsTrigger
                 key={item.id}
@@ -349,7 +357,7 @@ function RunReport({
       {view === "overview" ? (
         <section
           id="report-panel-overview"
-          className="relay-report-panel relay-report-overview"
+          className="rounded-xl border border-border bg-card p-5 grid gap-5"
           role={views.length > 1 ? "tabpanel" : undefined}
           aria-labelledby={views.length > 1 ? "report-tab-overview" : undefined}
         >
@@ -396,7 +404,7 @@ function RunReport({
 
           {failure ? (
             <Alert
-              className="relay-causal-failure"
+              className="mt-7 grid max-w-[760px] grid-cols-[20px_minmax(0,1fr)_auto]"
               variant="destructive"
               aria-labelledby="causal-failure-title"
             >
@@ -420,12 +428,12 @@ function RunReport({
                   ) : null}
                 </AlertAction>
               ) : null}
-              <Collapsible className="relay-causal-technical">
+              <Collapsible className="col-start-2 col-end-[-1]">
                 <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 py-2 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
                   Technical details
                 </CollapsibleTrigger>
                 <CollapsibleContent className="border-t pt-3">
-                  <ScrollArea className="relay-causal-technical-scroll">
+                  <ScrollArea className="col-start-2 col-end-[-1]-scroll">
                     <pre>{failure}</pre>
                   </ScrollArea>
                 </CollapsibleContent>
@@ -434,7 +442,7 @@ function RunReport({
           ) : null}
 
           {firstEvidenceIsDistinct && report.firstEvidence ? (
-            <section className="relay-report-first-evidence" aria-labelledby="first-evidence-title">
+            <section className="mt-5 rounded-xl border border-border bg-card p-5" aria-labelledby="first-evidence-title">
               <p className="relay-section-label">
                 {report.outcome === "passed" ? "What Relay verified" : "Evidence at this point"}
               </p>
@@ -444,7 +452,7 @@ function RunReport({
           ) : null}
 
           {report.evidenceUnavailable ? (
-            <p className="relay-report-note" role="status">
+            <p className="rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground" role="status">
               Evidence details are temporarily unavailable. The saved outcome above is unchanged.
             </p>
           ) : null}
@@ -458,24 +466,24 @@ function RunReport({
       {view === "evidence" && selectedEvidence ? (
         <section
           id="report-panel-evidence"
-          className="relay-report-panel relay-report-evidence"
+          className="rounded-xl border border-border bg-card p-5 mt-5 rounded-xl border border-border bg-card p-5"
           role="tabpanel"
           aria-labelledby="report-tab-evidence"
         >
-          <header className="relay-report-section-header">
+          <header className="flex items-center justify-between gap-3">
             <div>
               <p className="relay-section-label">Evidence</p>
               <h2>Captured during this Run</h2>
             </div>
             <p>Only evidence Relay actually saved is shown here.</p>
           </header>
-          <div className="relay-evidence-workspace">
+          <div className="grid gap-4">
             <Tabs
               value={selectedEvidence.id}
               onValueChange={(next) => setSelectedEvidenceId(next)}
               orientation="vertical"
             >
-              <TabsList className="relay-evidence-channels" aria-label="Evidence type">
+              <TabsList className="flex flex-wrap gap-2" aria-label="Evidence type">
                 {report.evidence.map((section) => (
                   <TabsTrigger key={section.id} value={section.id}>
                     <span>
@@ -517,27 +525,27 @@ function ReportTimeline({
   return (
     <section
       id="report-panel-timeline"
-      className="relay-report-panel relay-report-timeline"
+      className="rounded-xl border border-border bg-card p-5 mt-5"
       role={tabbed ? "tabpanel" : undefined}
       aria-labelledby={tabbed ? "report-tab-timeline" : undefined}
     >
-      <header className="relay-report-section-header">
+      <header className="flex items-center justify-between gap-3">
         <div>
           <p className="relay-section-label">Timeline</p>
           <h2>What happened</h2>
         </div>
         <p>{items.length === 1 ? "1 recorded step" : `${items.length} recorded steps`}</p>
       </header>
-      <ol className="relay-report-timeline-list">
+      <ol className="mt-5-list">
         {items.map((item, index) => (
           <li
             key={item.id}
-            className={`relay-report-timeline-item relay-report-timeline-item--${item.state}`}
+            className={`mt-5-item mt-5-item--${item.state}`}
           >
-            <span className="relay-report-timeline-index" aria-hidden="true">
+            <span className="mt-5-index" aria-hidden="true">
               {index + 1}
             </span>
-            <span className="relay-report-timeline-copy">
+            <span className="mt-5-copy">
               <strong>{item.title}</strong>
               <small>
                 {timelineStateLabel(item.state)}
@@ -547,7 +555,7 @@ function ReportTimeline({
               </small>
             </span>
             {item.durationMs !== undefined ? (
-              <span className="relay-report-timeline-duration">
+              <span className="mt-5-duration">
                 {formatDuration(item.durationMs)}
               </span>
             ) : null}
@@ -574,7 +582,7 @@ function EvidencePreview({
   section: Awaited<ReturnType<RunProductService["getReport"]>>["evidence"][number];
 }) {
   return (
-    <section className="relay-evidence-preview" aria-live="polite">
+    <section className="rounded-xl border border-border bg-card p-4" aria-live="polite">
       <header>
         <div>
           <h3>{section.label}</h3>
@@ -583,15 +591,15 @@ function EvidencePreview({
         <span>{section.detail}</span>
       </header>
       {section.items.length ? (
-        <ScrollArea className="relay-evidence-items-scroll">
-          <ol className={`relay-evidence-items relay-evidence-items--${section.id}`}>
+        <ScrollArea className="list-none space-y-2 p-0-scroll">
+          <ol className={`list-none space-y-2 p-0 list-none space-y-2 p-0--${section.id}`}>
             {section.items.map((item) => (
               <li
                 key={item.id}
-                className={`relay-evidence-item relay-evidence-item--${item.tone ?? "neutral"}${item.media ? " relay-evidence-item--media" : ""}`}
+                className={`grid grid-cols-[96px_minmax(0,1fr)] gap-3 rounded-md border border-border p-2 grid grid-cols-[96px_minmax(0,1fr)] gap-3 rounded-md border border-border p-2--${item.tone ?? "neutral"}${item.media ? " grid grid-cols-[96px_minmax(0,1fr)] gap-3 rounded-md border border-border p-2--media" : ""}`}
               >
                 {item.media ? (
-                  <span className="relay-evidence-image-frame" aria-hidden="true">
+                  <span className="overflow-hidden rounded-md bg-muted" aria-hidden="true">
                     <img
                       src={item.media.src}
                       alt=""
@@ -602,7 +610,7 @@ function EvidencePreview({
                     />
                   </span>
                 ) : null}
-                <span className="relay-evidence-item-copy">
+                <span className="grid grid-cols-[96px_minmax(0,1fr)] gap-3 rounded-md border border-border p-2-copy">
                   <strong>{item.title}</strong>
                   {item.detail ? <span>{item.detail}</span> : null}
                 </span>
@@ -612,88 +620,11 @@ function EvidencePreview({
           </ol>
         </ScrollArea>
       ) : (
-        <div className="relay-evidence-preview-empty">
+        <div className="rounded-xl border border-border bg-card p-4-empty">
           <p>This evidence was saved, but it does not have a readable preview.</p>
           <span>Audit details remain available below.</span>
         </div>
       )}
     </section>
-  );
-}
-
-function RawEvidenceDisclosure({
-  runId,
-  runService,
-  open,
-  onOpenChange,
-}: {
-  runId: string;
-  runService: RunProductService;
-  open: boolean;
-  onOpenChange(open: boolean): void;
-}) {
-  const [copied, setCopied] = useState(false);
-  const evidence = useQuery({
-    queryKey: runQueryKeys.rawEvidence(runId),
-    queryFn: () => runService.getRawEvidence(runId),
-    enabled: open,
-    staleTime: Infinity,
-  });
-
-  return (
-    <Collapsible
-      id="raw-evidence"
-      className="relay-raw-evidence"
-      open={open}
-      onOpenChange={onOpenChange}
-    >
-      <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 py-2 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
-        Audit details
-      </CollapsibleTrigger>
-      <CollapsibleContent className="border-t pt-3">
-        <div className="relay-raw-evidence-body">
-          <div className="relay-raw-evidence-heading">
-            <p>
-              Technical evidence for forensic review. It may include internal identifiers and
-              captured content.
-            </p>
-            {evidence.data !== undefined ? (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={async () => {
-                  if (!navigator.clipboard) return;
-                  try {
-                    await navigator.clipboard.writeText(readableJson(evidence.data));
-                    setCopied(true);
-                    window.setTimeout(() => setCopied(false), 1_500);
-                  } catch {
-                    setCopied(false);
-                  }
-                }}
-              >
-                {copied ? "Copied" : "Copy JSON"}
-              </Button>
-            ) : null}
-          </div>
-          {evidence.isPending ? <PageLoading label="Loading audit details…" /> : null}
-          {evidence.isError ? (
-            <div className="relay-raw-evidence-error" role="alert">
-              <p>Audit details could not be loaded. The Report outcome above is unchanged.</p>
-              <Button size="sm" variant="outline" onClick={() => void evidence.refetch()}>
-                Try again
-              </Button>
-            </div>
-          ) : null}
-          {evidence.data !== undefined ? (
-            <ScrollArea className="relay-raw-evidence-scroll">
-              <pre tabIndex={0} aria-label="Raw evidence JSON">
-                <code>{highlightJson(readableJson(evidence.data))}</code>
-              </pre>
-            </ScrollArea>
-          ) : null}
-        </div>
-      </CollapsibleContent>
-    </Collapsible>
   );
 }

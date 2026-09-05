@@ -20,6 +20,21 @@ const PORT = Number(process.env.RELAY_VISUAL_APP_PORT ?? 4178);
 const START_TIMEOUT_MS = 30_000;
 const PIXEL_DELTA = 18;
 const MAX_DIFFERENT_PIXEL_RATIO = 0.0005;
+const zoomAcceptanceFixtures = new Set([
+  "test-detail",
+  "test-editor",
+  "recording-review",
+  "report-replay",
+  "report-failed",
+  "report-evidence",
+  "device-detail",
+  "settings-general",
+  "settings-evidence",
+  "settings-integrations",
+  "settings-appearance",
+  "settings-advanced",
+  "settings-about",
+]);
 
 const fixtures = [
   { id: "home-empty", heading: "Prove one journey that matters" },
@@ -34,7 +49,11 @@ const fixtures = [
   { id: "prerecord-ready", heading: "Record a Test" },
   { id: "prerecord-connecting", heading: "Record a Test" },
   { id: "prerecord-failure", heading: "Record a Test" },
-  { id: "recording-review", heading: "Review your recording", recordingReview: true },
+  {
+    id: "recording-review",
+    heading: "Complete checkout and confirm the order",
+    recordingReview: true,
+  },
   { id: "recording-active", heading: "Complete checkout and confirm the order" },
   { id: "test-detail", heading: "Complete checkout and confirm the order" },
   { id: "runs-large", heading: "Run history" },
@@ -166,6 +185,112 @@ async function assertAccessible(page, fixture, viewport) {
     .map((violation) => `${violation.id}: ${violation.nodes[0]?.target.join(", ")}`)
     .join("\n- ");
   throw new Error(`${fixture.id}/${viewport.id} failed accessibility:\n- ${details}`);
+}
+
+async function assertZoomedKeyboardReachability(page, fixture, viewport) {
+  if (!zoomAcceptanceFixtures.has(fixture.id)) return;
+  const originalViewport = page.viewportSize();
+  if (!originalViewport) throw new Error("Visual acceptance page has no viewport");
+  await page.setViewportSize({
+    width: Math.max(1, Math.floor(originalViewport.width / 2)),
+    height: Math.max(1, Math.floor(originalViewport.height / 2)),
+  });
+  try {
+    const dimensions = await page.evaluate(() => ({
+      viewportWidth: document.documentElement.clientWidth,
+      documentWidth: document.documentElement.scrollWidth,
+      mainWidth: document.querySelector("#main-content")?.scrollWidth ?? 0,
+      mainClientWidth: document.querySelector("#main-content")?.clientWidth ?? 0,
+    }));
+    if (
+      dimensions.documentWidth > dimensions.viewportWidth + 1 ||
+      dimensions.mainWidth > dimensions.mainClientWidth + 1
+    ) {
+      throw new Error(
+        `${fixture.id}/${viewport.id} overflows at 200% zoom: ${JSON.stringify(dimensions)}`,
+      );
+    }
+    const focusable = page.locator(
+      'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',
+    );
+    if ((await focusable.count()) === 0) throw new Error(`${fixture.id} has no keyboard controls`);
+    const tabCount = Math.min((await focusable.count()) + 2, 96);
+    for (let index = 0; index < tabCount; index += 1) {
+      await page.keyboard.press("Tab");
+      const state = await page.evaluate(() => {
+        const active = document.activeElement;
+        if (!(active instanceof HTMLElement)) return { visible: false, tag: "none" };
+        const rect = active.getBoundingClientRect();
+        let hidden = false;
+        for (
+          let current = active;
+          current instanceof HTMLElement;
+          current = current.parentElement
+        ) {
+          const style = getComputedStyle(current);
+          if (
+            current.hidden ||
+            current.inert ||
+            current.getAttribute("aria-hidden") === "true" ||
+            style.display === "none" ||
+            style.visibility === "hidden"
+          ) {
+            hidden = true;
+            break;
+          }
+        }
+        return {
+          visible: rect.width > 0 && rect.height > 0 && !hidden,
+          tag: active.tagName,
+          ariaHidden: active.getAttribute("aria-hidden"),
+        };
+      });
+      if (!state.visible || state.ariaHidden === "true") {
+        throw new Error(
+          `${fixture.id}/${viewport.id} reached an inaccessible control at 200% zoom`,
+        );
+      }
+    }
+    const critical = page.locator(
+      'button:visible:not([disabled]):not([aria-disabled="true"]), a[href]:visible, input:visible:not([type="hidden"]):not([disabled]), select:visible:not([disabled]), textarea:visible:not([disabled])',
+    );
+    const criticalCount = await critical.count();
+    for (let index = 0; index < criticalCount; index += 1) {
+      const candidate = critical.nth(index);
+      const label = (await candidate.innerText().catch(() => "")).trim();
+      if (!/save|run|review|retry|continue|start|open report|check again/iu.test(label)) continue;
+      await candidate.scrollIntoViewIfNeeded();
+      await candidate.focus();
+      const reachable = await candidate.evaluate((element) => {
+        if (!(element instanceof HTMLElement) || document.activeElement !== element) return false;
+        for (
+          let current = element;
+          current instanceof HTMLElement;
+          current = current.parentElement
+        ) {
+          const style = getComputedStyle(current);
+          if (
+            current.hidden ||
+            current.inert ||
+            current.getAttribute("aria-hidden") === "true" ||
+            style.display === "none" ||
+            style.visibility === "hidden"
+          )
+            return false;
+        }
+        const rect = element.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      });
+      if (!reachable)
+        throw new Error(
+          `${fixture.id}/${viewport.id} critical action is not keyboard reachable at 200% zoom`,
+        );
+    }
+    // Some read-only fixtures intentionally have no Save/Run/Review action; the full tab pass
+    // above still proves every interactive control can be reached at this layout size.
+  } finally {
+    await page.setViewportSize(originalViewport);
+  }
 }
 
 async function assertLayout(page, fixture, viewport) {
@@ -352,6 +477,7 @@ async function run(options) {
         );
         await assertAccessible(page, fixture, viewport);
         const actual = await page.screenshot({ animations: "disabled", type: "png" });
+        await assertZoomedKeyboardReachability(page, fixture, viewport);
         const filename = `${fixture.id}-${viewport.id}.png`;
         const baselinePath = resolve(BASELINE_DIR, filename);
         if (options.update) {

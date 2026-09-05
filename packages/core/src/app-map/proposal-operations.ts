@@ -44,6 +44,11 @@ function applyProposalChange(
       draft.tests[change.testId] = {
         ...applyScenarioTestStepEdits(test, change.edits),
         updatedAt: at,
+        validation: {
+          status: "needs-validation",
+          appMapRevision: draft.revision,
+          testUpdatedAt: at,
+        },
       };
       break;
     }

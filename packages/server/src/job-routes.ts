@@ -31,6 +31,8 @@ import {
   retryJob,
   replayPersistedRun,
   readPersistedRun,
+  readBuild,
+  prepareSameConfigurationReplay,
   listDeviceLeases,
   listDevices,
   listTargetWorkers,
@@ -232,13 +234,47 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
       run,
       assertLocalTargetControl: runtime.assertTargetControl,
     });
-    const body = (await parseJsonBody(request)) as { mode?: unknown };
+    const body = (await parseJsonBody(req)) as { mode?: unknown };
     const mode = body.mode === undefined ? "saved-steps" : body.mode;
     if (mode !== "saved-steps" && mode !== "same-configuration") {
       throw new HttpError(400, "Replay mode must be saved-steps or same-configuration");
     }
     try {
-      const job = runtime.replayPersistedRun(run, mode);
+      if (mode === "same-configuration") {
+        const buildId = run.sourceRevision?.buildId;
+        if (!buildId) {
+          throw new HttpError(
+            409,
+            "Same-configuration replay requires a persisted immutable build identity",
+          );
+        }
+        const build = await readBuild(scope.projectId, buildId);
+        if (!build) throw new HttpError(409, `Recorded build ${buildId} is unavailable`);
+        const target = run.executionTarget;
+        if (target?.kind !== "local-device") {
+          throw new HttpError(
+            409,
+            "Same-configuration replay requires a locally controllable device target",
+          );
+        }
+        const device = (await runtime.listDevices()).find(
+          (candidate) => candidate.serial === target.identity.value,
+        );
+        if (!device)
+          throw new HttpError(409, `Recorded target ${target.identity.value} is unavailable`);
+        const targetContext = {
+          kind: "device" as const,
+          platform: target.platform,
+          serial: target.identity.value,
+        };
+        await prepareSameConfigurationReplay({
+          run,
+          build,
+          target: targetContext,
+          targetKind: device.kind,
+        });
+      }
+      const job = runtime.replayPersistedRun(run);
       json(res, 202, { job });
     } catch (error) {
       throw new HttpError(409, error instanceof Error ? error.message : String(error));

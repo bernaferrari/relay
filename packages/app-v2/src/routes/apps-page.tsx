@@ -66,7 +66,7 @@ export function AppsPage() {
   }
 
   return (
-    <LibraryPage className="relay-apps-page">
+    <LibraryPage className="max-w-[1040px]">
       <PageHeader
         context="Workspace"
         title="Apps"
@@ -77,10 +77,10 @@ export function AppsPage() {
             <Plus aria-hidden="true" /> Add App
           </DialogTrigger>
 
-          <DialogContent showCloseButton={false} className="relay-add-app-dialog">
+          <DialogContent showCloseButton={false} className="">
             <DialogTitle>Add an App</DialogTitle>
             <DialogDescription>
-              Give the app a clear name. Relay will create its App Map, then take you directly to
+              Give the app a clear name. Relay will create its saved Map, then take you directly to
               target selection so you can record the first Test.
             </DialogDescription>
             <form onSubmit={submit}>
@@ -102,7 +102,7 @@ export function AppsPage() {
                   </FieldError>
                 ) : null}
               </Field>
-              <div className="relay-dialog-actions">
+              <div className="flex items-center justify-end gap-2">
                 <DialogClose
                   render={
                     <Button variant="ghost" disabled={createApp.isPending}>
@@ -174,7 +174,7 @@ export function AppsPage() {
         />
       ) : null}
       {!error && apps.data?.length ? (
-        <ul className="relay-app-grid" aria-label="Apps">
+        <ul className="mt-7.5 grid list-none grid-cols-2 gap-3 p-0 max-[780px]:grid-cols-1" aria-label="Apps">
           {apps.data.map((app) => {
             const testCount = tests.data?.filter((test) => test.appMapId === app.id).length ?? 0;
             const appRuns = runs.data?.filter((run) => run.appMapId === app.id) ?? [];
@@ -182,10 +182,10 @@ export function AppsPage() {
             return (
               <li key={app.id}>
                 <Link to="/apps/$appId" params={{ appId: app.id }}>
-                  <span className="relay-app-grid-icon" aria-hidden="true">
+                  <span className="mt-7.5 grid list-none grid-cols-2 gap-3 p-0 max-[780px]:grid-cols-1-icon" aria-hidden="true">
                     {app.name.slice(0, 1).toLocaleUpperCase()}
                   </span>
-                  <span className="relay-app-grid-copy">
+                  <span className="mt-7.5 grid list-none grid-cols-2 gap-3 p-0 max-[780px]:grid-cols-1-copy">
                     <strong>{app.name}</strong>
                     <small>
                       {tests.isPending

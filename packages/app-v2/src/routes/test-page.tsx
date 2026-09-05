@@ -1,12 +1,15 @@
 /** @jsxImportSource react */
 import { RunConfigurationComposer } from "../components/run-configuration-composer";
-import { usePersistedRunConfiguration, useRunConfigurationKey } from "../data/use-persisted-run-configuration";
+import {
+  usePersistedRunConfiguration,
+  useRunConfigurationKey,
+} from "../data/use-persisted-run-configuration";
 import { WorkbenchPage, PageHeader, WorkbenchPanes } from "../components/page-layout";
 import { Badge } from "@relay/ui-react/components/badge";
 import { Button } from "@relay/ui-react/components/button";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ProductTestStep } from "@relay/product/catalog";
 import { Breadcrumbs, EmptyState, OutcomeMark } from "../components/product-patterns";
 import { TestStepEvidencePreview } from "../components/test-step-evidence-preview";
@@ -52,7 +55,15 @@ export function TestPage() {
     staleTime: 5_000,
   });
   const scope = useRunConfigurationKey(platform, `test:${testId}`, test.data?.appMapId);
-  const configuration = usePersistedRunConfiguration({ storage: platform.storage, key: scope.key, targetOptions: targets.data?.map((target) => ({ id: target.targetId, label: target.name })), initial: targets.data?.length === 1 ? { targetProfileId: targets.data[0]!.targetId } : {} });
+  const configuration = usePersistedRunConfiguration({
+    storage: platform.storage,
+    key: scope.key,
+    targetOptions: targets.data?.map((target) => ({ id: target.targetId, label: target.name })),
+  });
+  useEffect(() => {
+    if (configuration.pristine && targets.data?.length === 1)
+      configuration.setSelection({ targetProfileId: targets.data[0]!.targetId });
+  }, [configuration.pristine, configuration.setSelection, targets.data]);
   const targetId = configuration.selection.targetProfileId ?? "";
   const targetReady = Boolean(targets.data?.some((target) => target.targetId === targetId));
   const start = useMutation({
@@ -112,25 +123,32 @@ export function TestPage() {
       />
       <PageHeader
         title={test.data?.name ?? "Test"}
-        context={<><span>{test.data?.appName}</span><span>Saved Test</span></>}
-        actions={<>
-          <Button
-            nativeButton={false}
-            render={<Link to="/tests/$testId/edit" params={{ testId }} />}
-            variant="outline"
-            size="sm"
-          >
-            Edit Test
-          </Button>
-          <Button
-            nativeButton={false}
-            render={<Link to="/tests/$testId/run-across" params={{ testId }} />}
-            variant="ghost"
-            size="sm"
-          >
-            Run with data
-          </Button>
-        </>}
+        context={
+          <>
+            <span>{test.data?.appName}</span>
+            <span>Saved Test</span>
+          </>
+        }
+        actions={
+          <>
+            <Button
+              nativeButton={false}
+              render={<Link to="/tests/$testId/edit" params={{ testId }} />}
+              variant="outline"
+              size="sm"
+            >
+              Edit Test
+            </Button>
+            <Button
+              nativeButton={false}
+              render={<Link to="/tests/$testId/run-across" params={{ testId }} />}
+              variant="ghost"
+              size="sm"
+            >
+              Run with data
+            </Button>
+          </>
+        }
       />
 
       {loading ? <PageLoading label="Loading the Test and available devices…" /> : null}
@@ -176,67 +194,98 @@ export function TestPage() {
       {!test.isPending && test.data ? (
         <WorkbenchPanes
           outline={
-          <section className="relay-test-overview" aria-labelledby="test-overview-title">
-            <div className="relay-section-heading">
-              <div>
-                <p className="relay-section-label">Journey</p>
-                <h2 id="test-overview-title">Saved steps</h2>
+            <section className="relay-test-overview" aria-labelledby="test-overview-title">
+              <div className="relay-section-heading">
+                <div>
+                  <p className="relay-section-label">Journey</p>
+                  <h2 id="test-overview-title">Saved steps</h2>
+                </div>
+                <span>{test.data.stepCount === 1 ? "1 step" : `${test.data.stepCount} steps`}</span>
               </div>
-              <span>{test.data.stepCount === 1 ? "1 step" : `${test.data.stepCount} steps`}</span>
-            </div>
-            {test.data.steps?.length ? (
-              <ol className="relay-test-readable-steps">
-                {test.data.steps.map((step, index) => (
-                  <ReadableStep
-                    key={step.id}
-                    step={step}
-                    number={String(index + 1)}
-                    selectedId={selectedEvidenceStep?.id}
-                    onSelect={setEvidenceStepId}
-                  />
-                ))}
-              </ol>
-            ) : (
-              <p className="relay-test-no-steps">This Test has no reviewed steps yet.</p>
-            )}
-
-          </section>
+              {test.data.steps?.length ? (
+                <ol className="relay-test-readable-steps">
+                  {test.data.steps.map((step, index) => (
+                    <ReadableStep
+                      key={step.id}
+                      step={step}
+                      number={String(index + 1)}
+                      selectedId={selectedEvidenceStep?.id}
+                      onSelect={setEvidenceStepId}
+                    />
+                  ))}
+                </ol>
+              ) : (
+                <p className="relay-test-no-steps">This Test has no reviewed steps yet.</p>
+              )}
+            </section>
           }
-          stage={<>
-            {selectedEvidenceStep ? (
-              <TestStepEvidencePreview
-                step={selectedEvidenceStep}
-                report={latestReport.data}
-                hasRuns={Boolean(recentRuns.data?.length)}
-                loading={reportLoading}
-              />
-            ) : null}
-          </>}
-          inspector={!activeRun && !targets.isError ? (
-          <RunConfigurationComposer
-            configuration={{ values: { targetName: targets.data?.find((target) => target.targetId === targetId)?.name }, validated: targetReady && !configuration.loading, blockers: configuration.targetUnavailable ? [{ id: "target", label: "Saved target is unavailable", detail: "Choose a ready device or browser to continue." }] : [] }}
-            targetOptions={targets.data?.map((target) => ({ id: target.targetId, label: targetLabel(target).title, detail: targetLabel(target).detail }))}
-            selection={configuration.selection}
-            onSelectionChange={configuration.setSelection}
-            loading={configuration.loading}
-            error={scope.error ?? configuration.error}
-            onRetry={configuration.retry}
-          >
-            {!targets.data?.length ? <EmptyState title="No device or browser is ready" detail="Connect a target to continue with this Test." action={<Link className="relay-inline-link" to="/devices">View devices</Link>} /> : null}
-            <div className="relay-test-run-action">
-              <Button
-                variant="default"
-                onClick={() => start.mutate()}
-                disabled={!targetReady || configuration.loading || start.isPending}
-              >
-                {start.isPending ? "Starting…" : "Run Test"}
-              </Button>
-              {!targetId && targets.data?.length ? (
-                <span className="text-xs text-text-weaker">Choose where to run</span>
+          stage={
+            <>
+              {selectedEvidenceStep ? (
+                <TestStepEvidencePreview
+                  step={selectedEvidenceStep}
+                  report={latestReport.data}
+                  hasRuns={Boolean(recentRuns.data?.length)}
+                  loading={reportLoading}
+                />
               ) : null}
-            </div>
-          </RunConfigurationComposer>
-          ) : undefined}
+            </>
+          }
+          inspector={
+            !activeRun && !targets.isError ? (
+              <RunConfigurationComposer
+                configuration={{
+                  values: {
+                    targetName: targets.data?.find((target) => target.targetId === targetId)?.name,
+                  },
+                  validated: targetReady && !configuration.loading,
+                  blockers: configuration.targetUnavailable
+                    ? [
+                        {
+                          id: "target",
+                          label: "Saved target is unavailable",
+                          detail: "Choose a ready device or browser to continue.",
+                        },
+                      ]
+                    : [],
+                }}
+                targetOptions={targets.data?.map((target) => ({
+                  id: target.targetId,
+                  label: targetLabel(target).title,
+                  detail: targetLabel(target).detail,
+                }))}
+                selection={configuration.selection}
+                onSelectionChange={configuration.setSelection}
+                loading={configuration.loading}
+                error={scope.error ?? configuration.error}
+                onRetry={scope.error ? scope.retry : configuration.retry}
+              >
+                {!targets.data?.length ? (
+                  <EmptyState
+                    title="No device or browser is ready"
+                    detail="Connect a target to continue with this Test."
+                    action={
+                      <Link className="relay-inline-link" to="/devices">
+                        View devices
+                      </Link>
+                    }
+                  />
+                ) : null}
+                <div className="relay-test-run-action">
+                  <Button
+                    variant="default"
+                    onClick={() => start.mutate()}
+                    disabled={!targetReady || configuration.loading || start.isPending}
+                  >
+                    {start.isPending ? "Starting…" : "Run Test"}
+                  </Button>
+                  {!targetId && targets.data?.length ? (
+                    <span className="text-xs text-text-weaker">Choose where to run</span>
+                  ) : null}
+                </div>
+              </RunConfigurationComposer>
+            ) : undefined
+          }
         />
       ) : null}
 

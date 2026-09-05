@@ -10,7 +10,7 @@
   },
   "exports": {
     ".": "./src/index.ts",
-    "./index.css": "./src/styles/app.css"
+    "./index.css": "./src/styles/globals.css"
   },
   "scripts": {
     "dev": "vp dev",

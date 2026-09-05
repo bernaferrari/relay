@@ -402,7 +402,8 @@ describe("Run and Report", () => {
     await act(async () => history.back());
     await settle();
     expect(history.location.pathname).toBe("/tests/test-1");
-    expect(button("Run Test").disabled).toBe(true);
+    // Returning to the document restores the explicitly chosen compatible target.
+    expect(button("Run Test").disabled).toBe(false);
   });
 
   it("keeps a queued saved-step replay on the source report until a real run id exists", async () => {

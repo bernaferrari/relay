@@ -800,6 +800,36 @@ describe("record, review, replay, and save", () => {
     expect(document.body.textContent).not.toContain("Save Test");
   });
 
+  it("keeps an unfinished recording as a resumable draft without approving it", async () => {
+    const fake = fakeService(state("reviewing", ["inspect", "replay"], { replay: "failed" }));
+    const storage = platformWithStorage({ activeRecordingWorkflowId: "workflow-1" });
+    const { history } = await renderJourney(
+      "/recordings/workflow-1/review",
+      fake.service,
+      storage.platform,
+    );
+    await click(button("Save draft"));
+    expect(history.location.pathname).toBe("/home");
+    expect(storage.values.get("activeRecordingWorkflowId")).toBe("workflow-1");
+    expect(fake.calls).not.toContain("approve");
+  });
+
+  it("keeps the draft open when the server cannot confirm its saved revision", async () => {
+    const fake = fakeService(state("reviewing", ["inspect", "replay"], { replay: "failed" }));
+    const { history } = await renderJourney(
+      "/recordings/workflow-1/review",
+      fake.service,
+      platformWithStorage().platform,
+    );
+    fake.service.inspect = async () => {
+      throw new Error("Connection interrupted");
+    };
+    await click(button("Save draft"));
+    expect(history.location.pathname).toBe("/recordings/workflow-1/review");
+    expect(document.body.textContent).toContain("Could not confirm the saved draft");
+    expect(fake.calls).not.toContain("approve");
+  });
+
   it("clears a matching recovery pointer after refreshing a committed workflow", async () => {
     const fake = fakeService(state("committed", [], { committed: true }));
     const storage = platformWithStorage({ activeRecordingWorkflowId: "workflow-1" });

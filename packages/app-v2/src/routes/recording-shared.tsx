@@ -40,13 +40,13 @@ export function errorMessage(error: unknown): string {
 
 export function PageLoading({ label }: { label: string }) {
   return (
-    <div className="relay-recording-loading" role="status" aria-live="polite">
+    <div className="mt-[34px] grid max-w-[848px] gap-[18px]" role="status" aria-live="polite">
       <span className="relay-visually-hidden">{label}</span>
-      <div className="relay-recording-loading-copy" aria-hidden="true">
-        <Skeleton className="relay-recording-loading-title" />
-        <Skeleton className="relay-recording-loading-line" />
+      <div className="mt-[34px] grid max-w-[848px] gap-[18px]-copy" aria-hidden="true">
+        <Skeleton className="mt-[34px] grid max-w-[848px] gap-[18px]-title" />
+        <Skeleton className="mt-[34px] grid max-w-[848px] gap-[18px]-line" />
       </div>
-      <div className="relay-recording-loading-grid" aria-hidden="true">
+      <div className="mt-[34px] grid max-w-[848px] gap-[18px]-grid" aria-hidden="true">
         <Skeleton />
         <Skeleton />
       </div>
@@ -78,7 +78,7 @@ export function RecordingProblem({
       : undefined;
   return (
     <RecoveryState
-      className={`relay-recording-problem${className ? ` ${className}` : ""}`}
+      className={`mt-7 max-w-[640px]${className ? ` ${className}` : ""}`}
       title={publicRecovery?.title ?? "Relay could not complete this request"}
       detail={publicRecovery?.detail ?? errorMessage(error)}
       recovery={publicRecovery?.recovery}

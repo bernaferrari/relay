@@ -10,7 +10,7 @@ export type SaveState = "saved" | "saving" | "failed" | "unavailable";
 const SETTINGS_COPY: Record<SettingsCategory, { title: string; description: string }> = {
   general: {
     title: "General",
-    description: "Connection and preferences for this computer.",
+    description: "Server and preferences for this computer.",
   },
   evidence: {
     title: "Evidence & privacy",
@@ -40,7 +40,7 @@ function recordValue(value: unknown): Record<string, unknown> | undefined {
 
 function SaveStatus({ state }: { state: SaveState }) {
   return (
-    <span className={`relay-settings-save relay-settings-save--${state}`} aria-live="polite">
+    <span className={`mt-4 flex items-center gap-2 mt-4 flex items-center gap-2--${state}`} aria-live="polite">
       <span aria-hidden="true" />
       {state === "saving"
         ? "Saving…"
@@ -81,8 +81,8 @@ export function SettingsFrame({
   }, [category, section]);
 
   return (
-    <section className="relay-page relay-settings-page">
-      <header className="relay-settings-header">
+    <section className="relay-page max-w-[1080px]">
+      <header className="flex items-start justify-between gap-4">
         <div>
           <p className="relay-eyebrow">Settings</p>
           <h1>{copy.title}</h1>
@@ -90,9 +90,9 @@ export function SettingsFrame({
         </div>
         {visibleSaveState ? <SaveStatus state={visibleSaveState} /> : null}
       </header>
-      <div className="relay-settings-mobile-nav">
+      <div className="hidden max-[780px]:block">
         <SelectField
-          className="relay-settings-mobile-select"
+          className="w-full"
           label="Settings section"
           value={`/settings/${category}`}
           options={settingsCategories.map((item) => ({ value: item.path, label: item.label }))}
@@ -101,16 +101,16 @@ export function SettingsFrame({
           }}
         />
       </div>
-      <div className="relay-settings-layout">
-        <nav className="relay-settings-nav" aria-label="Settings sections">
+      <div className="grid grid-cols-[180px_minmax(0,1fr)] gap-8 max-[780px]:grid-cols-1">
+        <nav className="grid content-start gap-1" aria-label="Settings sections">
           {settingsCategories.map((item) => (
             <Link
               key={item.id}
               to={item.path}
               className={
                 item.id === category
-                  ? "relay-settings-nav-link relay-settings-nav-link--active"
-                  : "relay-settings-nav-link"
+                  ? "grid content-start gap-1-link grid content-start gap-1-link--active"
+                  : "grid content-start gap-1-link"
               }
               aria-current={item.id === category ? "page" : undefined}
             >
@@ -118,7 +118,7 @@ export function SettingsFrame({
             </Link>
           ))}
         </nav>
-        <section className="relay-settings-content" aria-label={`${copy.title} settings`}>
+        <section className="min-w-0" aria-label={`${copy.title} settings`}>
           {children}
         </section>
       </div>

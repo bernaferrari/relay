@@ -23,6 +23,10 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
+import type { RunOutcome } from "@relay/protocol";
+import type { ProductRunPhase } from "@relay/product/catalog";
+
+type OutcomeValue = RunOutcome | ProductRunPhase | "ready" | "needs-review" | undefined;
 
 type BreadcrumbItem =
   | {
@@ -151,7 +155,7 @@ export function RecoveryState({
   );
 }
 
-export function OutcomeMark({ outcome }: { outcome: string | undefined }) {
+export function OutcomeMark({ outcome }: { outcome: OutcomeValue }) {
   const presentation = outcomePresentation(outcome);
   return (
     <Badge
@@ -178,7 +182,7 @@ function outcomeBadgeClass(tone: ReturnType<typeof outcomePresentation>["tone"])
   return "";
 }
 
-function outcomePresentation(outcome: string | undefined): {
+function outcomePresentation(outcome: OutcomeValue): {
   label: string;
   icon: LucideIcon;
   tone: "success" | "danger" | "notice" | "quiet";

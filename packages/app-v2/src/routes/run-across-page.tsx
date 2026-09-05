@@ -1,9 +1,9 @@
 /** @jsxImportSource react */
 import { Button } from "@relay/ui-react/components/button";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
+import { getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { Breadcrumbs, EmptyState } from "../components/product-patterns";
+import { Breadcrumbs } from "../components/product-patterns";
 import { RunConfigurationComposer } from "../components/run-configuration-composer";
 import { useRunConfigurationKey } from "../data/use-persisted-run-configuration";
 import { usePersistedRunConfiguration } from "../data/use-persisted-run-configuration";
@@ -37,9 +37,25 @@ export function RunAcrossPage() {
     targetOptions: targets.data?.map((item) => ({ id: item.targetId, label: item.name })),
   });
   const targetId = configuration.selection.targetProfileId ?? "";
+  const availableValues = new Set(
+    (setup.data?.dataSet.dimensions ?? []).flatMap((dimension) =>
+      dimension.values.map((value) => JSON.stringify([dimension.id, value.id])),
+    ),
+  );
+  const unavailableValues = (configuration.selection.dataSetIds ?? []).filter(
+    (id) => !availableValues.has(id),
+  );
+  const valuesUnavailable = Boolean(setup.data && unavailableValues.length);
   const selected = useMemo(() => {
     const chosen = new Set(configuration.selection.dataSetIds ?? []);
-    return Object.fromEntries((setup.data?.dataSet.dimensions ?? []).map((dimension) => [dimension.id, dimension.values.filter((value) => chosen.has(JSON.stringify([dimension.id, value.id]))).map((value) => value.id)]));
+    return Object.fromEntries(
+      (setup.data?.dataSet.dimensions ?? []).map((dimension) => [
+        dimension.id,
+        dimension.values
+          .filter((value) => chosen.has(JSON.stringify([dimension.id, value.id])))
+          .map((value) => value.id),
+      ]),
+    );
   }, [configuration.selection.dataSetIds, setup.data]);
   const [previewAttempt, setPreviewAttempt] = useState(0);
   const target = useMemo(
@@ -47,7 +63,8 @@ export function RunAcrossPage() {
     [targetId, targets.data],
   );
   const previewResult = useMemo(() => {
-    if (!setup.data || !target) return { preview: undefined, error: undefined };
+    if (!setup.data || !target || valuesUnavailable)
+      return { preview: undefined, error: undefined };
     try {
       return {
         preview: runAcrossService.preview({ setup: setup.data, selected, target }),
@@ -56,11 +73,11 @@ export function RunAcrossPage() {
     } catch (error) {
       return { preview: undefined, error: errorMessage(error) };
     }
-  }, [previewAttempt, runAcrossService, selected, setup.data, target]);
+  }, [previewAttempt, runAcrossService, selected, setup.data, target, valuesUnavailable]);
   const preview = previewResult.preview;
   const start = useMutation({
     mutationFn: () => {
-      if (!setup.data || !target) {
+      if (!setup.data || !target || configuration.loading || !preview) {
         throw new TypeError("Choose a ready device or browser and at least one data value.");
       }
       return runAcrossService.startPilot({ setup: setup.data, selected, target });
@@ -72,7 +89,7 @@ export function RunAcrossPage() {
 
   const loading = setup.isPending || targets.isPending;
   return (
-    <section className="relay-page relay-run-across-page">
+    <section className="relay-page max-w-[1040px]">
       <Breadcrumbs
         items={[
           { label: "Tests", to: "/tests" },
@@ -98,7 +115,7 @@ export function RunAcrossPage() {
         retrying={setup.isFetching || targets.isFetching}
       />
       {!loading && setup.data && !setup.error ? (
-        <div className="relay-run-across-workspace">
+        <div className="mt-[34px] grid gap-6">
           <RunConfigurationComposer
             configuration={{
               values: {
@@ -106,25 +123,33 @@ export function RunAcrossPage() {
                 targetName: target?.name,
                 dataSetName: setup.data.dataSet.name,
               },
-              blockers: previewResult.error
+              blockers: valuesUnavailable
                 ? [
                     {
-                      id: "preview",
-                      label: "Configuration unavailable",
-                      detail: previewResult.error,
+                      id: "values",
+                      label: "Saved data values are unavailable",
+                      detail: "Remove unavailable choices, then select the values you want to run.",
                     },
                   ]
-                : configuration.targetUnavailable
+                : previewResult.error
                   ? [
                       {
-                        id: "target",
-                        label: "Saved environment is unavailable",
-                        detail: "Choose another environment to continue.",
+                        id: "preview",
+                        label: "Configuration unavailable",
+                        detail: previewResult.error,
                       },
                     ]
-                  : !target
-                    ? [{ id: "target", label: "Choose a ready device or browser" }]
-                    : [],
+                  : configuration.targetUnavailable
+                    ? [
+                        {
+                          id: "target",
+                          label: "Saved environment is unavailable",
+                          detail: "Choose another environment to continue.",
+                        },
+                      ]
+                    : !target
+                      ? [{ id: "target", label: "Choose a ready device or browser" }]
+                      : [],
               validated: Boolean(preview),
             }}
             targetOptions={targets.data?.map((item) => ({
@@ -143,11 +168,26 @@ export function RunAcrossPage() {
             onSelectionChange={configuration.setSelection}
             loading={configuration.loading}
             error={scope.error ?? configuration.error}
-            onRetry={configuration.retry}
+            onRetry={scope.error ? scope.retry : configuration.retry}
             targetGroupName="run-across-target"
           >
+            {valuesUnavailable ? (
+              <Button
+                variant="outline"
+                onClick={() =>
+                  configuration.setSelection({
+                    ...configuration.selection,
+                    dataSetIds: configuration.selection.dataSetIds?.filter((id) =>
+                      availableValues.has(id),
+                    ),
+                  })
+                }
+              >
+                Remove unavailable choices
+              </Button>
+            ) : null}
             {preview ? (
-              <div className="relay-run-across-preview" role="status">
+              <div className="my-5 grid gap-1 rounded-lg border border-border bg-background p-3.5" role="status">
                 <strong>Ready to start</strong>
                 <span>{preview.scopeLabel}</span>
                 <small>

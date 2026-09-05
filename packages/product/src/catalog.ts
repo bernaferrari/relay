@@ -182,7 +182,15 @@ function stepHasReview(step: AppMapScenarioTestStep): boolean {
 }
 
 function testStatus(test: AppMapScenarioTest): ProductTestStatus {
-  return test.steps.length === 0 || test.steps.some(stepHasReview) ? "needs-review" : "ready";
+  if (test.steps.length === 0 || test.steps.some(stepHasReview)) return "needs-review";
+  const validation = test.validation;
+  if (
+    validation &&
+    (validation.status !== "passed" || validation.testUpdatedAt !== test.updatedAt)
+  ) {
+    return "needs-review";
+  }
+  return "ready";
 }
 
 function flattenCount(steps: readonly AppMapScenarioTestStep[]): number {

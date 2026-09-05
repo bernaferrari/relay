@@ -114,7 +114,7 @@ export function ChangePage() {
   const action = current && details ? primaryAction(detail.state, details) : undefined;
 
   return (
-    <section className="relay-page relay-change-page">
+    <section className="relay-page max-w-[1040px]">
       <Breadcrumbs
         items={[{ label: "Changes", to: "/changes" }, { label: current?.title ?? "Change" }]}
       />
@@ -142,17 +142,17 @@ export function ChangePage() {
 
       {current && details && status ? (
         <>
-          <header className="relay-change-detail-header">
-            <div className="relay-change-title-block">
+          <header className="flex items-start justify-between gap-7 max-[780px]:flex-col">
+            <div className="min-w-0">
               <p className="relay-eyebrow">Change verification</p>
               <h1>{current.title}</h1>
-              <p className="relay-change-context">
+              <p className="mt-2.5 text-sm text-muted-foreground">
                 {current.repository}
                 {current.pullRequest ? ` · Pull request #${current.pullRequest}` : ""}
                 {current.targetBranch ? ` · ${current.targetBranch}` : ""}
               </p>
             </div>
-            <div className="relay-change-actions">
+            <div className="flex flex-none items-center gap-2">
               {details.firstFailure ? (
                 <IssueDraftButton source={{ kind: "change", details }} />
               ) : null}
@@ -193,11 +193,11 @@ export function ChangePage() {
           <RecordingProblem recovery={detail.state.recovery} error={mutation.error} />
 
           <section
-            className={`relay-change-verdict relay-change-verdict--${status.tone}`}
+            className={`mt-7 flex items-center justify-between gap-6 border-b border-border pb-5 mt-7 flex items-center justify-between gap-6 border-b border-border pb-5--${status.tone}`}
             aria-labelledby="change-verdict-title"
           >
-            <div className="relay-change-verdict-main">
-              <span className="relay-change-verdict-mark" aria-hidden="true">
+            <div className="mt-7 flex items-center justify-between gap-6 border-b border-border pb-5-main">
+              <span className="mt-7 flex items-center justify-between gap-6 border-b border-border pb-5-mark" aria-hidden="true">
                 <VerdictIcon tone={status.tone} />
               </span>
               <div>
@@ -209,7 +209,7 @@ export function ChangePage() {
           </section>
 
           {details.firstFailure ? (
-            <section className="relay-change-causal-failure" aria-labelledby="first-failure-title">
+            <section className="mt-5 rounded-lg border border-red-500/40 bg-red-500/5 p-5" aria-labelledby="first-failure-title">
               <p className="relay-section-label">First problem</p>
               <h2 id="first-failure-title">Why verification stopped</h2>
               <p>{details.firstFailure.summary}</p>
@@ -217,7 +217,7 @@ export function ChangePage() {
                 Open the failing Report <span aria-hidden="true">→</span>
               </Link>
               {details.nextVerification ? (
-                <div className="relay-change-repair-guidance">
+                <div className="mt-2.5 grid max-w-[68ch] gap-1 border-t border-red-500/30 pt-3">
                   <strong>Recommended repair</strong>
                   <p>{details.nextVerification.reason}</p>
                 </div>
@@ -229,7 +229,7 @@ export function ChangePage() {
 
           {details.execution?.attention ? (
             <section
-              className={`relay-change-attention relay-change-attention--${details.execution.attention.kind}`}
+              className={`mt-5 rounded-lg border border-red-500/40 bg-red-500/5 p-5 mt-5 rounded-lg border border-red-500/40 bg-red-500/5 p-5--${details.execution.attention.kind}`}
               aria-labelledby="verification-paused-title"
             >
               <p className="relay-section-label">Verification paused safely</p>
@@ -273,7 +273,7 @@ export function ChangePage() {
                   </Button>
                 </form>
               ) : (
-                <p className="relay-change-muted">
+                <p className="text-sm text-muted-foreground">
                   Relay will not make a merge decision until this step is resolved.
                 </p>
               )}
@@ -286,14 +286,14 @@ export function ChangePage() {
             </section>
           ) : null}
 
-          <div className="relay-change-overview-grid">
-            <section className="relay-change-section" aria-labelledby="change-summary-title">
+          <div className="grid gap-5 md:grid-cols-2">
+            <section className="rounded-lg border border-border bg-card p-5" aria-labelledby="change-summary-title">
               <ChangeSectionHeader eyebrow="Claim" title="What changed" id="change-summary-title" />
               {current.agentClaim ? (
                 <>
-                  <p className="relay-change-claim">{current.agentClaim.summary}</p>
+                  <p className="text-sm">{current.agentClaim.summary}</p>
                   {current.agentClaim.acceptanceCriteria.length ? (
-                    <ul className="relay-change-criteria">
+                    <ul className="list-disc pl-5">
                       {current.agentClaim.acceptanceCriteria.map((criterion) => (
                         <li key={criterion}>{criterion}</li>
                       ))}
@@ -301,7 +301,7 @@ export function ChangePage() {
                   ) : null}
                 </>
               ) : (
-                <p className="relay-change-muted">
+                <p className="text-sm text-muted-foreground">
                   No agent claim was attached. Relay selected coverage from the reviewed repository
                   change.
                 </p>
@@ -312,7 +312,7 @@ export function ChangePage() {
           </div>
 
           <section
-            className="relay-change-section relay-change-wide-section"
+            className="rounded-lg border border-border bg-card p-5 md:col-span-2"
             aria-labelledby="affected-tests-title"
           >
             <ChangeSectionHeader
@@ -322,18 +322,18 @@ export function ChangePage() {
               aside={`${details.affectedTests.length} selected`}
             />
             {details.affectedTests.length ? (
-              <ul className="relay-change-tests">
+              <ul className="list-none space-y-2 p-0">
                 {details.affectedTests.map((test) => (
                   <AffectedTest key={`${test.appId}:${test.testId}`} test={test} detail={detail} />
                 ))}
               </ul>
             ) : (
-              <p className="relay-change-muted">Relay has not selected any affected Tests yet.</p>
+              <p className="text-sm text-muted-foreground">Relay has not selected any affected Tests yet.</p>
             )}
           </section>
 
           <section
-            className="relay-change-section relay-change-wide-section"
+            className="rounded-lg border border-border bg-card p-5 md:col-span-2"
             aria-labelledby="verification-plan-title"
           >
             <ChangeSectionHeader
@@ -349,7 +349,7 @@ export function ChangePage() {
                 ))}
               </ol>
             ) : (
-              <p className="relay-change-muted">
+              <p className="text-sm text-muted-foreground">
                 {details.nextVerification?.reason ??
                   "The Verification Plan is still being prepared."}
               </p>
@@ -357,7 +357,7 @@ export function ChangePage() {
           </section>
 
           {current.coverageGaps.length || current.residualRisk.length ? (
-            <div className="relay-change-overview-grid">
+            <div className="grid gap-5 md:grid-cols-2">
               {current.coverageGaps.length ? (
                 <RiskSection title="Coverage gaps" values={current.coverageGaps} empty="" />
               ) : null}
@@ -366,7 +366,7 @@ export function ChangePage() {
               ) : null}
             </div>
           ) : (
-            <p className="relay-change-clear-state">No known coverage gaps or remaining risk.</p>
+            <p className="text-sm text-muted-foreground">No known coverage gaps or remaining risk.</p>
           )}
 
           <ChangeAuditDetails detail={detail} />
@@ -378,7 +378,7 @@ export function ChangePage() {
 
 function RepairContext({ packet }: { packet: ProductChangeRepairPacket }) {
   return (
-    <section className="relay-change-repair-context" aria-labelledby="repair-context-title">
+    <section className="mt-5 grid max-w-[820px] gap-[18px] rounded-xl border border-border bg-card p-5 shadow-sm" aria-labelledby="repair-context-title">
       <header>
         <p className="relay-section-label">Repair context</p>
         <h2 id="repair-context-title">Smallest useful fix</h2>
@@ -401,7 +401,7 @@ function RepairContext({ packet }: { packet: ProductChangeRepairPacket }) {
         </dl>
       ) : null}
       {packet.suggestedScope.length ? (
-        <div className="relay-change-repair-scope">
+        <div className="text-sm">
           <strong>Suggested scope</strong>
           <ul>
             {packet.suggestedScope.map((path) => (
@@ -413,7 +413,7 @@ function RepairContext({ packet }: { packet: ProductChangeRepairPacket }) {
         </div>
       ) : null}
       {packet.relevantLogs.length ? (
-        <Collapsible className="relay-change-repair-logs">
+        <Collapsible className="mt-3">
           <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 py-2 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
             Relevant logs ({packet.relevantLogs.length})
           </CollapsibleTrigger>
@@ -469,13 +469,13 @@ function ExecutionProgress({ details }: { details: ProductChangeDetails }) {
   const complete = execution.total > 0 && execution.completed >= execution.total;
   if (complete) {
     return (
-      <p className="relay-change-progress-complete" role="status">
+      <p className="grid gap-2-complete" role="status">
         {execution.completed} of {execution.total} checks complete
       </p>
     );
   }
   return (
-    <div className="relay-change-progress" role="status" aria-live="polite">
+    <div className="grid gap-2" role="status" aria-live="polite">
       <div>
         <span>Verification progress</span>
         <strong>
@@ -509,7 +509,7 @@ function AffectedTest({
         <span>{app}</span>
       </div>
       <p>{test.reason}</p>
-      <span className={`relay-change-confidence relay-change-confidence--${test.confidence}`}>
+      <span className={`text-xs font-medium text-xs font-medium--${test.confidence}`}>
         {confidenceLabel(test.confidence)}
       </span>
     </li>
@@ -570,16 +570,16 @@ function RiskSection({
 }) {
   const id = `${title.toLocaleLowerCase().replaceAll(" ", "-")}-title`;
   return (
-    <section className="relay-change-section" aria-labelledby={id}>
+    <section className="rounded-lg border border-border bg-card p-5" aria-labelledby={id}>
       <ChangeSectionHeader eyebrow="Confidence" title={title} id={id} />
       {values.length ? (
-        <ul className="relay-change-risk-list">
+        <ul className="list-none space-y-2 p-0">
           {values.map((value) => (
             <li key={value}>{value}</li>
           ))}
         </ul>
       ) : (
-        <p className="relay-change-clear">
+        <p className="text-sm text-emerald-600">
           <span aria-hidden="true">✓</span>
           {empty}
         </p>

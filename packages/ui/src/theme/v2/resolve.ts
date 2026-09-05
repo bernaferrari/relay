@@ -89,7 +89,7 @@ function readPalette(variant: ThemeVariant): PaletteInput {
   };
 }
 
-/** Build v2 primitive ramps (100 = lightest). Alpha ramps are static in `v2/styles/colors.css`. */
+/** Build v2 primitive ramps (100 = lightest). Alpha ramps are static in `v2/styles/globals.css`. */
 export function generateV2Primitives(
   variant: ThemeVariant,
   isDark: boolean,

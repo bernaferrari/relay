@@ -1,3 +1,4 @@
+import { ApiError } from "@relay/client";
 /** @jsxImportSource react */
 import type { AppMapScenarioTestEdit, AppMapScenarioTestStep } from "@relay/protocol";
 import { createMemoryHistory } from "@tanstack/react-router";
@@ -228,6 +229,52 @@ async function click(label: string) {
 }
 
 describe("Test editor", () => {
+  it("preserves a draft through a revision conflict and saves it on retry", async () => {
+    const harness = service();
+    const save = harness.editor.edit;
+    harness.editor.edit = async () => {
+      throw new ApiError(409, "Revision conflict");
+    };
+    await render(harness.editor);
+    await fill(
+      document.querySelector<HTMLInputElement>("#selected-step-intent")!,
+      "Keep this changed expectation",
+    );
+    await click("Save step");
+    expect(document.querySelector<HTMLInputElement>("#selected-step-intent")?.value).toBe(
+      "Keep this changed expectation",
+    );
+    expect(document.querySelector('[data-state="conflicted"]')?.textContent).toContain(
+      "draft is preserved",
+    );
+    harness.editor.edit = save;
+    await click("Save step");
+    expect(document.querySelector('[data-state="conflicted"]')).toBeNull();
+    expect(document.querySelector(".relay-editor-save-status")?.textContent).toBe("Saved");
+  });
+
+  it("does not erase local drafts when their storage read fails", async () => {
+    const removed: string[] = [];
+    const failedStorage: Platform = {
+      ...platform,
+      storage: {
+        get: async (key) => {
+          if (key.startsWith("test-editor-drafts:")) throw new Error("Unavailable");
+          return null;
+        },
+        set: () => undefined,
+        remove: (key) => {
+          removed.push(key);
+        },
+      },
+    };
+    await render(service().editor, undefined, failedStorage);
+    expect(document.querySelector(".relay-editor-save-status")?.textContent).toContain(
+      "Could not restore local drafts",
+    );
+    expect(removed.some((key) => key.startsWith("test-editor-drafts:"))).toBe(false);
+  });
+
   it("does not hydrate a late local draft over an edit made during loading", async () => {
     let resolveStored!: (value: string | null) => void;
     const stored = new Promise<string | null>((resolve) => {
@@ -350,7 +397,8 @@ describe("Test editor", () => {
   it("edits a validation expected result through the canonical assertion binding", async () => {
     const source = structuredClone(initialDocument);
     const validation = source.test.steps[1];
-    if (!validation || validation.kind !== "validation") throw new Error("Expected validation step");
+    if (!validation || validation.kind !== "validation")
+      throw new Error("Expected validation step");
     validation.binding = {
       status: "resolved",
       kind: "assertion",
@@ -363,7 +411,10 @@ describe("Test editor", () => {
     expect(document.querySelector<HTMLInputElement>("#selected-step-expected-value")?.value).toBe(
       "$40.00",
     );
-    await fill(document.querySelector<HTMLInputElement>("#selected-step-expected-value")!, "$42.00");
+    await fill(
+      document.querySelector<HTMLInputElement>("#selected-step-expected-value")!,
+      "$42.00",
+    );
     await click("Save step");
 
     expect(harness.edits.at(-1)).toEqual([
@@ -374,7 +425,12 @@ describe("Test editor", () => {
           binding: {
             status: "resolved",
             kind: "assertion",
-            assertion: { kind: "content", input: "Order total", expected: "$42.00", match: "exact" },
+            assertion: {
+              kind: "content",
+              input: "Order total",
+              expected: "$42.00",
+              match: "exact",
+            },
           },
         }),
       }),
