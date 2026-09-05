@@ -525,7 +525,9 @@ describe("Settings", () => {
 
     await click(input("Redact sensitive evidence"));
     expect(service.privacyCalls).toEqual([false]);
-    expect(document.body.textContent).toContain("Runs keep raw values");
+    expect(document.body.textContent).toContain(
+      "Masks credentials, cookies, secrets, clipboard, and URL queries.",
+    );
     expect(document.body.textContent).toContain("Saved");
 
     await click(input("Crashes"));

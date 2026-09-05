@@ -222,7 +222,7 @@ describe("live Session to Test editor", () => {
     expect(document.querySelectorAll('[role="alert"]')).toHaveLength(1);
     expect(
       [...document.querySelectorAll<HTMLAnchorElement>('a[href="/sessions"]')].some(
-        (link) => link.textContent === "Back to Sessions",
+        (link) => link.textContent === "Back to Live",
       ),
     ).toBe(true);
   });
@@ -249,7 +249,7 @@ describe("live Session to Test editor", () => {
     expect(service.live).toHaveBeenCalledWith("session-live");
     expect(document.body.textContent).toContain("Checkout");
     expect(document.body.textContent).toContain("Human");
-    expect(document.body.textContent).toContain("Managed browser");
+    expect(document.body.textContent).toContain("Browser");
     expect(document.body.textContent).not.toContain("Browser profile unavailable");
     expect(document.body.textContent).toContain("Recording session active · inspecting only");
     expect(document.body.textContent).toContain("Tap, type, or scroll. Not recorded.");
@@ -285,7 +285,7 @@ describe("live Session to Test editor", () => {
       lease: { ...session.lease, expiresAt: 1 },
     } as ProductSessionDetail;
     await render("/sessions/session-live", { session: expired });
-    expect(document.body.textContent).toContain("The device reservation expired");
+    expect(document.body.textContent).toContain("Reservation expired.");
     expect(document.body.textContent).toContain("End session");
     expect(document.body.textContent).not.toContain("Investigate");
     expect(document.body.textContent).not.toContain("Connecting to the target");
@@ -315,7 +315,7 @@ describe("live Session to Test editor", () => {
     await settle();
 
     expect(service.end).toHaveBeenCalledWith("session-live");
-    expect(document.body.textContent).toContain("This Session has ended");
+    expect(document.body.textContent).toContain("This session has ended");
     expect(document.body.textContent).not.toContain("End session");
   });
 
@@ -333,7 +333,7 @@ describe("live Session to Test editor", () => {
     await click("Refresh target");
 
     expect(service.refresh).toHaveBeenCalledWith("session-live");
-    expect(document.body.textContent).toContain("This Session has ended");
+    expect(document.body.textContent).toContain("This session has ended");
     expect(document.body.textContent).not.toContain("Refresh target");
   });
 

@@ -170,9 +170,7 @@ function EvidenceSettings() {
               description={
                 privacy.data.locked
                   ? "This policy is controlled outside Relay for this workspace."
-                  : privacy.data.enabled
-                    ? "Credentials, cookies, secrets, clipboard, and URL queries are masked."
-                    : "Runs keep raw values."
+                  : "Masks credentials, cookies, secrets, clipboard, and URL queries."
               }
               checked={privacy.data.enabled}
               disabled={privacy.data.locked || privacyMutation.isPending}

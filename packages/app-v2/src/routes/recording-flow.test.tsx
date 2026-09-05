@@ -583,10 +583,10 @@ describe("record, review, replay, and save", () => {
       "Arabic",
     );
     await click(button("Type"));
-    await click(button("Checkpoint"));
+    await click(button("Mark screen"));
     const checkpoint = document.querySelector<HTMLInputElement>("#checkpoint-label")!;
     await fill(checkpoint, "Language screen");
-    await click(button("Save checkpoint"));
+    await click(button("Save"));
     await click(button("Stop"));
 
     expect(history.location.pathname).toBe("/recordings/workflow-1/review");
@@ -974,7 +974,7 @@ describe("record, review, replay, and save", () => {
     expect(document.body.textContent).toContain("Restoring recording");
     expect(document.body.textContent).not.toContain("Continue on the connected target");
     expect(document.body.textContent).not.toContain("Relay records each supported interaction");
-    expect(button("Checkpoint").disabled).toBe(true);
+    expect(button("Mark screen").disabled).toBe(true);
     expect(button("Stop").disabled).toBe(true);
   });
 

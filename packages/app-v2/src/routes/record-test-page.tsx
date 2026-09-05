@@ -8,7 +8,7 @@ import {
   DialogDescription,
 } from "@relay/ui-react/components/dialog";
 import { ScrollArea } from "@relay/ui-react/components/scroll-area";
-import { Field, FieldDescription, FieldLabel } from "@relay/ui-react/components/field";
+import { Field, FieldLabel } from "@relay/ui-react/components/field";
 import { Button } from "@relay/ui-react/components/button";
 import { PageHeader } from "../components/page-layout";
 
@@ -16,7 +16,7 @@ import { Input } from "@relay/ui-react/components/input";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { ArrowLeft, BookmarkPlus, CheckCircle2, Circle, Square } from "lucide-react";
+import { ArrowLeft, BookmarkPlus, CheckCircle2, Circle } from "lucide-react";
 import type {
   LiveTargetBrowserContext,
   LiveTargetSession,
@@ -272,7 +272,7 @@ function RecordingWorkspace({
                 }}
                 disabled={!allowed.has("stop") || action.isPending || stopWaitingForInput}
               >
-                {stopWaitingForInput ? "Finishing interaction…" : "Stop and review"}
+                {stopWaitingForInput ? "Finishing interaction…" : "Stop"}
               </Button>
             </div>
           </DialogContent>
@@ -307,7 +307,7 @@ function RecordingWorkspace({
                   }
                 >
                   <ArrowLeft aria-hidden="true" />
-                  Leave recording
+                  Leave
                 </DialogTrigger>
                 <Button
                   className="relay-electron-no-drag [-webkit-app-region:no-drag]"
@@ -316,7 +316,7 @@ function RecordingWorkspace({
                   onClick={() => void stopAfterInputDrain()}
                   disabled={!allowed.has("stop") || action.isPending || stopWaitingForInput}
                 >
-                  {stopWaitingForInput ? "Finishing interaction…" : "Stop and review"}
+                  {stopWaitingForInput ? "Finishing interaction…" : "Stop"}
                 </Button>
               </>
             }
@@ -334,36 +334,18 @@ function RecordingWorkspace({
         />
 
         {!recording.isPending && snapshot && captureReady ? (
-          <div className="grid h-full min-h-[360px] w-full grid-cols-[minmax(0,1fr)_270px] gap-3.5 max-[980px]:grid-cols-1">
-            <div
-              className="block min-h-[360px] w-full overflow-hidden rounded-xl border border-border bg-muted"
-              aria-label="Recording stage"
-            >
-              {selectedTarget ? (
-                <LiveTargetCanvas
-                  canvasRef={liveCanvas}
-                  status={liveStatus}
-                  issue={liveIssue}
-                  busy={liveInputBusy}
-                  targetTitle={targetLabel(targetPresentation.data?.[0] ?? selectedTarget).title}
-                  targetDetail={targetLabel(targetPresentation.data?.[0] ?? selectedTarget).detail}
-                  browserContext={browserContext}
-                  send={sendLiveInput}
-                />
-              ) : null}
-            </div>
+          <div className="grid h-full min-h-[360px] w-full grid-cols-[minmax(240px,280px)_minmax(0,1fr)] gap-3.5 max-[980px]:grid-cols-1">
             <aside
-              className="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-xl border border-border bg-card"
+              className="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-xl border border-border bg-card max-[980px]:order-last"
               aria-labelledby="capture-timeline-title"
             >
               <div className="flex items-center justify-between gap-3 border-b border-border p-3.5">
-                <div>
-                  <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
-                    Journey
-                  </p>
-                  <h2 id="capture-timeline-title">Captured actions</h2>
-                </div>
-                <span>{recordedActions.length}</span>
+                <h2 id="capture-timeline-title" className="text-[13px] font-medium">
+                  Steps
+                </h2>
+                <span className="text-xs tabular-nums text-muted-foreground">
+                  {recordedActions.length}
+                </span>
               </div>
               {recordedActions.length ? (
                 <ScrollArea className="min-h-0">
@@ -384,8 +366,8 @@ function RecordingWorkspace({
                           </strong>
                           <small className="text-xs text-muted-foreground">
                             {recorded.stepCount === 0
-                              ? "Checkpoint"
-                              : `${recorded.stepCount} ${recorded.stepCount === 1 ? "interaction" : "interactions"}`}
+                              ? "Marked screen"
+                              : `${recorded.stepCount} ${recorded.stepCount === 1 ? "step" : "steps"}`}
                           </small>
                         </span>
                         <span className="pt-0.5 text-xs tabular-nums text-muted-foreground">
@@ -396,76 +378,69 @@ function RecordingWorkspace({
                   </ol>
                 </ScrollArea>
               ) : (
-                <div className="grid min-h-[180px] place-items-center text-center text-muted-foreground">
-                  <Circle aria-hidden="true" />
-                  <p>Your clicks, taps, typing, and checkpoints will appear here.</p>
+                <div className="grid min-h-[180px] place-items-center px-4 text-center text-sm text-muted-foreground">
+                  <p>Taps and typing appear here.</p>
                 </div>
               )}
             </aside>
+            <div
+              className="block min-h-[360px] w-full overflow-hidden rounded-xl border border-border bg-muted"
+              aria-label="Recording stage"
+            >
+              {selectedTarget ? (
+                <LiveTargetCanvas
+                  canvasRef={liveCanvas}
+                  status={liveStatus}
+                  issue={liveIssue}
+                  busy={liveInputBusy}
+                  targetTitle={targetLabel(targetPresentation.data?.[0] ?? selectedTarget).title}
+                  targetDetail={targetLabel(targetPresentation.data?.[0] ?? selectedTarget).detail}
+                  browserContext={browserContext}
+                  send={sendLiveInput}
+                />
+              ) : null}
+            </div>
           </div>
         ) : null}
       </div>
 
-      <footer className="flex items-center justify-between gap-4" aria-label="Recording controls">
-        <div className="grid gap-1 text-sm text-muted-foreground">
-          <strong>Record the journey naturally</strong>
-          <span>Add a checkpoint only when a screen must be verified later.</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <Dialog open={checkpointOpen} onOpenChange={setCheckpointOpen}>
-            <DialogTrigger
-              render={
-                <Button disabled={!allowed.has("checkpoint") || action.isPending}>
-                  <BookmarkPlus aria-hidden="true" />
-                  Checkpoint
-                </Button>
-              }
-            />
-
-            <DialogContent
-              showCloseButton={false}
-              className="max-h-[min(720px,calc(100dvh-32px))] overflow-auto"
-            >
-              <DialogTitle>Save a checkpoint</DialogTitle>
-              <DialogDescription>
-                Mark a state someone should verify when this Test runs.
-              </DialogDescription>
-              <form onSubmit={saveCheckpoint}>
-                <Field>
-                  <FieldLabel htmlFor="checkpoint-label">Checkpoint name</FieldLabel>
-                  <Input
-                    id="checkpoint-label"
-                    value={checkpointLabel}
-                    onChange={(event) => setCheckpointLabel(event.currentTarget.value)}
-                    placeholder="For example, Order confirmation"
-                    maxLength={160}
-                    autoComplete="off"
-                  />
-                  <FieldDescription>Optional, but helpful in Reports.</FieldDescription>
-                </Field>
-                <div className="relay-dialog-actions flex flex-wrap items-center justify-end gap-2.5">
-                  <DialogClose render={<Button variant="ghost">Cancel</Button>} />
-                  <Button type="submit" variant="default" disabled={action.isPending}>
-                    {action.isPending ? "Saving…" : "Save checkpoint"}
-                  </Button>
-                </div>
-              </form>
-            </DialogContent>
-          </Dialog>
-          <Button
-            variant="default"
-            aria-label="Stop recording and review"
-            onClick={() => void stopAfterInputDrain()}
-            disabled={!allowed.has("stop") || action.isPending || stopWaitingForInput}
+      <footer className="flex items-center justify-end gap-2" aria-label="Recording controls">
+        <Dialog open={checkpointOpen} onOpenChange={setCheckpointOpen}>
+          <DialogTrigger
+            render={
+              <Button variant="outline" disabled={!allowed.has("checkpoint") || action.isPending}>
+                <BookmarkPlus aria-hidden="true" />
+                Mark screen
+              </Button>
+            }
+          />
+          <DialogContent
+            showCloseButton={false}
+            className="max-h-[min(720px,calc(100dvh-32px))] overflow-auto"
           >
-            <Square aria-hidden="true" />
-            {stopWaitingForInput
-              ? "Finishing interaction…"
-              : action.isPending && action.variables?.action === "stop"
-                ? "Stopping…"
-                : "Stop"}
-          </Button>
-        </div>
+            <DialogTitle>Mark this screen</DialogTitle>
+            <DialogDescription>Name a screen this Test should verify later.</DialogDescription>
+            <form onSubmit={saveCheckpoint}>
+              <Field>
+                <FieldLabel htmlFor="checkpoint-label">Name</FieldLabel>
+                <Input
+                  id="checkpoint-label"
+                  value={checkpointLabel}
+                  onChange={(event) => setCheckpointLabel(event.currentTarget.value)}
+                  placeholder="For example, Order confirmation"
+                  maxLength={160}
+                  autoComplete="off"
+                />
+              </Field>
+              <div className="relay-dialog-actions flex flex-wrap items-center justify-end gap-2.5">
+                <DialogClose render={<Button variant="ghost">Cancel</Button>} />
+                <Button type="submit" variant="default" disabled={action.isPending}>
+                  {action.isPending ? "Saving…" : "Save"}
+                </Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
       </footer>
     </section>
   );

@@ -15,7 +15,7 @@ export function LiveDevices({ devices }: { devices: readonly ProductDevice[] }) 
     <section className="mb-8" aria-labelledby="live-devices-title">
       <div className="mb-2 flex min-h-7 items-center justify-between gap-4">
         <h2 id="live-devices-title" className="text-[13px] font-medium text-muted-foreground">
-          Devices
+          Devices & browsers
         </h2>
         <Link
           className="text-[13px] text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
@@ -59,9 +59,7 @@ export function LiveDevices({ devices }: { devices: readonly ProductDevice[] }) 
           })}
         </ul>
       ) : (
-        <p className="text-[13px] text-muted-foreground">
-          Connect a device or open a browser, then come back here.
-        </p>
+        <p className="text-[13px] text-muted-foreground">None connected.</p>
       )}
     </section>
   );

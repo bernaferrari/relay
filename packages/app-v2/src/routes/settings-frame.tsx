@@ -222,14 +222,28 @@ export function ToggleRow({
   onChange(checked: boolean): void;
 }) {
   const descriptionId = `${id}-description`;
+  const titleId = `${id}-title`;
   return (
     <div
-      className={`flex min-h-14 items-center justify-between gap-6 border-b border-border py-3 last:border-b-0 scroll-mt-6 ${disabled ? "opacity-60" : ""}`}
+      role="switch"
+      aria-checked={checked}
+      aria-labelledby={titleId}
+      aria-describedby={descriptionId}
+      tabIndex={disabled ? -1 : 0}
+      className={`flex min-h-14 cursor-pointer items-center justify-between gap-6 border-b border-border py-3 text-left last:border-b-0 scroll-mt-6 ${disabled ? "cursor-not-allowed opacity-60" : ""}`}
+      onClick={() => {
+        if (!disabled) onChange(!checked);
+      }}
+      onKeyDown={(event) => {
+        if (disabled || (event.key !== " " && event.key !== "Enter")) return;
+        event.preventDefault();
+        onChange(!checked);
+      }}
     >
       <span className="grid min-w-0 gap-0.5">
-        <label htmlFor={id} className="text-[13px] font-medium text-foreground">
+        <span id={titleId} className="text-[13px] font-medium text-foreground">
           {title}
-        </label>
+        </span>
         <span
           id={descriptionId}
           className="max-w-[52ch] text-[13px] leading-5 text-muted-foreground"
@@ -243,7 +257,8 @@ export function ToggleRow({
         disabled={disabled}
         aria-label={title}
         aria-describedby={descriptionId}
-        onCheckedChange={onChange}
+        tabIndex={-1}
+        className="pointer-events-none"
       />
     </div>
   );

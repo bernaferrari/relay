@@ -135,9 +135,15 @@ export function SessionPage() {
         <PageHeader
           crumbs={[{ label: "Live", to: "/sessions" }, { label: value.title }]}
           title={value.title}
-          description={`${targetLabel(value)} · ${value.actorKind === "agent" ? "Agent" : "Manual"} · ${sessionStateLabel(value.state)}${isActiveSession(value) && !canControl ? " · Reconnect needed" : ""}`}
+          description={`${targetLabel(value)} · ${value.actorKind === "agent" ? "Agent" : "Manual"} · ${sessionStateLabel(value.state)}`}
           actions={
             <>
+              {isActiveSession(value) && !canControl ? (
+                <Button onClick={() => refresh.mutate()} disabled={refresh.isPending}>
+                  <RefreshCcw aria-hidden="true" />
+                  {refresh.isPending ? "Reconnecting…" : "Reconnect"}
+                </Button>
+              ) : null}
               {canControl ? (
                 <Button
                   variant="outline"
@@ -165,10 +171,7 @@ export function SessionPage() {
               ) : null}
               {isActiveSession(value) ? (
                 <>
-                  <Button
-                    variant={canControl ? "ghost" : "outline"}
-                    onClick={() => setEndOpen(true)}
-                  >
+                  <Button variant="ghost" onClick={() => setEndOpen(true)}>
                     End session
                   </Button>
                   <Dialog open={endOpen} onOpenChange={setEndOpen}>
@@ -219,7 +222,7 @@ export function SessionPage() {
           </p>
           <div className="mt-5 flex flex-wrap items-center gap-2">
             <Button nativeButton={false} render={<Link to="/sessions" />}>
-              Back to Sessions
+              Back to Live
             </Button>
             <Button
               variant="outline"
@@ -369,7 +372,7 @@ export function SessionPage() {
           >
             <div className="flex items-center justify-between gap-3 border-b border-border px-3.5 py-2.5">
               <h2 id="session-stage-title" className="text-[13px] font-medium">
-                {canControl ? "Live target" : "Target unavailable for control"}
+                {canControl ? "Live target" : "Target unavailable"}
               </h2>
               {canControl && liveStatus === "degraded" ? (
                 <Button
@@ -377,7 +380,7 @@ export function SessionPage() {
                   variant="ghost"
                   onClick={() => setLiveAttempt((attempt) => attempt + 1)}
                 >
-                  Reconnect view
+                  Reconnect
                 </Button>
               ) : null}
             </div>
@@ -389,7 +392,7 @@ export function SessionPage() {
                   issue={liveIssue}
                   busy={liveBusy}
                   targetTitle={targetLabel(value)}
-                  targetDetail={`${value.target.kind === "browser" ? "Managed browser" : "Managed device"} · ${value.actorKind === "agent" ? "Agent-owned session" : "Human-owned session"}`}
+                  targetDetail={`${value.target.kind === "browser" ? "Browser" : "Device"} · ${value.actorKind === "agent" ? "Agent" : "Manual"}`}
                   browserContext={browserContext}
                   send={send}
                   recording={false}
@@ -404,7 +407,7 @@ export function SessionPage() {
                   {isActiveSession(value) ? (
                     <Button onClick={() => refresh.mutate()} disabled={refresh.isPending}>
                       <RefreshCcw aria-hidden="true" />
-                      {refresh.isPending ? "Refreshing…" : "Refresh target"}
+                      {refresh.isPending ? "Reconnecting…" : "Reconnect"}
                     </Button>
                   ) : null}
                   {value.state === "reviewing" ? (
@@ -452,13 +455,9 @@ function targetLabel(session: ProductSessionDetail): string {
 }
 
 function sessionAvailability(session: ProductSessionDetail): string {
-  if (!isActiveSession(session))
-    return "This Session has ended. Its evidence and operation history remain available.";
-  if (!session.lease)
-    return "The device reservation is unavailable. Refresh the target to check whether you can reconnect.";
-  if (session.lease.status !== "leased")
-    return "The device is no longer reserved for this Session. Refresh the target to check its availability.";
-  if (session.lease.expiresAt <= Date.now())
-    return "The device reservation expired. Refresh the target to check whether you can reconnect.";
-  return "The target is not available for live control.";
+  if (!isActiveSession(session)) return "This session has ended. Saved evidence stays.";
+  if (!session.lease) return "Reservation unavailable.";
+  if (session.lease.status !== "leased") return "The device is no longer reserved.";
+  if (session.lease.expiresAt <= Date.now()) return "Reservation expired.";
+  return "The device is not available.";
 }

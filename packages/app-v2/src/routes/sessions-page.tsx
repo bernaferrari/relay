@@ -86,9 +86,9 @@ export function SessionsPage() {
   return (
     <LibraryPage className="relay-sessions-page flex min-h-full max-w-[1040px] flex-col">
       <PageHeader
-        context="Workspace"
+        context="Live"
         title="Live"
-        description="Open a device, or continue something already running."
+        description="Open a Device or continue something already running."
       />
       {devices.isPending ? <PageLoading label="Finding devices…" /> : null}
       <RecordingProblem
@@ -98,7 +98,7 @@ export function SessionsPage() {
       />
       {devices.data ? <LiveDevices devices={devices.data} /> : null}
       <LibraryToolbar
-        label="Filter Sessions"
+        label="Filter Live"
         tabs={
           <Tabs
             className="border-b border-border pb-1.5"
@@ -115,7 +115,7 @@ export function SessionsPage() {
         search={
           <LibrarySearch
             id="session-search"
-            label="Search Sessions"
+            label="Search Live"
             value={query}
             placeholder="Search by name, target, or owner"
             onChange={setQuery}
@@ -135,7 +135,7 @@ export function SessionsPage() {
         <section className="mt-7" aria-labelledby="session-results-title">
           <div className="flex min-h-8 items-center justify-between gap-5 px-0.5 pb-2.5">
             <h2 className="text-[13px] font-semibold" id="session-results-title">
-              {visible.length === 1 ? "1 session" : `${visible.length} sessions`}
+              {visible.length === 1 ? "1 live" : `${visible.length} live`}
             </h2>
             <span className="text-xs text-text-weak" aria-live="polite">
               {view === "active" ? "Continue where you left off" : "Session history"}
