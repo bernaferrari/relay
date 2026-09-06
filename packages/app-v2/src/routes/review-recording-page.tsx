@@ -505,7 +505,20 @@ export function ReviewRecordingPage({
                                 previewTarget: productService.previewTarget,
                                 selectedTarget: state?.selectedTarget,
                                 control,
-                                observe: async () => evidencePreview.data?.controls ?? [],
+                                confirmStartingState: async () =>
+                                  state?.selectedTarget
+                                    ? { ok: true }
+                                    : {
+                                        ok: false,
+                                        detail:
+                                          "Restore the recording Device before trying this target.",
+                                      },
+                                observe: async () => {
+                                  if (!productService.observeTarget || !state?.selectedTarget) {
+                                    return [];
+                                  }
+                                  return productService.observeTarget(state.selectedTarget);
+                                },
                               })
                             }
                             onKeep={(target) =>

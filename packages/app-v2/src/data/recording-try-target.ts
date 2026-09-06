@@ -42,7 +42,7 @@ export async function tryReviewTarget(input: {
   selectedTarget?: AuthoringTarget;
   control: RecordingEvidenceControl;
   confirmStartingState?: () => Promise<{ ok: true } | { ok: false; detail: string }>;
-  observe?: () => Promise<readonly RecordingEvidenceControl[]>;
+  observe?: (session: LiveTargetSession) => Promise<readonly RecordingEvidenceControl[]>;
 }): Promise<ReviewTargetTryResult> {
   if (!input.previewTarget) {
     return {
@@ -60,36 +60,39 @@ export async function tryReviewTarget(input: {
   if ("rejected" in binding) {
     return { kind: "failed", detail: binding.rejected };
   }
-  if (input.confirmStartingState) {
-    const starting = await input.confirmStartingState();
-    if (!starting.ok) return { kind: "failed", detail: starting.detail };
+  if (!input.confirmStartingState) {
+    return {
+      kind: "failed",
+      detail: "Try target must confirm the required starting state before exercising the binding.",
+    };
+  }
+  const starting = await input.confirmStartingState();
+  if (!starting.ok) return { kind: "failed", detail: starting.detail };
+  if (!input.observe) {
+    return {
+      kind: "failed",
+      detail:
+        "Try target needs a fresh observation to resolve the saved binding. Historic coordinates are not a trial.",
+    };
   }
 
   let session: LiveTargetSession | undefined;
   try {
     session = await input.previewTarget(input.selectedTarget);
-    const fresh = input.observe ? [...(await input.observe())] : [];
+    const fresh = [...(await input.observe(session))];
     const resolved = fresh.find((control) => {
       const next = reviewTargetBinding(control);
       return !("rejected" in next) && sameBinding(next, binding);
     });
-    if (input.observe && !resolved) {
+    if (!resolved) {
       return {
         kind: "failed",
         detail:
           "The proposed binding is not on the current screen. Restore the starting state before trying it.",
       };
     }
-    const rect = resolved?.rect ?? input.control.rect;
-    if (!resolved && !input.observe) {
-      return {
-        kind: "failed",
-        detail:
-          "Try target needs a fresh observation to resolve the saved binding. Historic coordinates are not a trial.",
-      };
-    }
-    const x = rect.x + rect.width / 2;
-    const y = rect.y + rect.height / 2;
+    const x = resolved.rect.x + resolved.rect.width / 2;
+    const y = resolved.rect.y + resolved.rect.height / 2;
     await session.input({ kind: "touch", action: "down", x, y });
     await session.input({ kind: "touch", action: "up", x, y });
     return {

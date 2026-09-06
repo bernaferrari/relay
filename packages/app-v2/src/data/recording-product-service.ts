@@ -14,6 +14,7 @@ import type {
 import { presentReadyTargets, type ProductTargetOption } from "./target-presentation";
 import {
   controlsForAuthoringEvidence,
+  projectRecordingEvidenceControls,
   type RecordingEvidenceControl,
 } from "./recording-evidence-target";
 
@@ -74,6 +75,8 @@ export type RecordingProductService = {
   /** Open the selected target for exploration before durable recording begins. */
   previewTarget?(target: AuthoringTarget): Promise<LiveTargetSession>;
   liveTarget?(target: AuthoringTarget): Promise<LiveTargetSession>;
+  /** Fresh accessibility controls from the live target. Historic screenshots are not this. */
+  observeTarget?(target: AuthoringTarget): Promise<RecordingEvidenceControl[]>;
 };
 
 /**
@@ -225,6 +228,14 @@ export function createRecordingProductService(
         import("./live-target-session"),
       ]);
       return createLiveTargetSession({ client: recording.client, target });
+    },
+    async observeTarget(target) {
+      const { client } = await product();
+      const snapshot = await client.invoke("target.snapshot.capture", {
+        serial: target.targetId,
+        full: true,
+      });
+      return projectRecordingEvidenceControls(snapshot.nodes as Record<string, unknown>[]);
     },
   };
 }

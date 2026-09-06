@@ -224,6 +224,19 @@ function fakeService(initial = state("recording", ["inspect", "record", "checkpo
     },
     previewTarget: targetSession,
     liveTarget: targetSession,
+    async observeTarget() {
+      calls.push("observe-target");
+      return [
+        {
+          id: "preferred-language",
+          name: "Preferred language",
+          role: "button",
+          rect: { x: 80, y: 400, width: 240, height: 48 },
+          target: { label: "Preferred language" },
+          why: "Matched the visible name “Preferred language”.",
+        },
+      ];
+    },
   };
   return { service, calls, edits };
 }

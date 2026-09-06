@@ -441,6 +441,28 @@ test("aborting watch A after inspecting B returns A and never writes B into A", 
   assert.equal(journey.state().snapshot?.workflow?.workflowId, "workflow-B");
 });
 
+test("inspect A failing while B is selected does not write recovery onto B", async () => {
+  const runB = snapshot("running", 8, {
+    workflow: { workflowId: "workflow-B", expectedVersion: 8 },
+    execution: { jobId: "job-B", runId: "run-B" },
+  });
+  const journey = createProductRunJourney({
+    jobs: {
+      ...jobsFor({}),
+      async inspect(request) {
+        if (request.workflowId === "workflow-A") throw new Error("workflow A is gone");
+        return runB;
+      },
+    },
+  });
+  await journey.inspect("workflow-B");
+  const failed = await journey.inspect("workflow-A");
+  assert.equal(failed.recovery?.action, "inspect");
+  assert.notEqual(failed.snapshot?.workflow?.workflowId, "workflow-B");
+  assert.equal(journey.state().snapshot?.workflow?.workflowId, "workflow-B");
+  assert.equal(journey.state().recovery, undefined);
+});
+
 test("start forwards the exact account binding instead of dropping it", async () => {
   let received: unknown;
   const journey = createProductRunJourney({

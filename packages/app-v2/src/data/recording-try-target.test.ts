@@ -42,7 +42,11 @@ describe("tryReviewTarget", () => {
         previewTarget,
         selectedTarget: device,
         control,
-        observe: async () => [moved],
+        confirmStartingState: async () => ({ ok: true }),
+        observe: async (live) => {
+          expect(live).toBe(preview);
+          return [moved];
+        },
       }),
     ).resolves.toEqual({
       kind: "tried",
@@ -67,8 +71,31 @@ describe("tryReviewTarget", () => {
           }),
         selectedTarget: device,
         control,
+        confirmStartingState: async () => ({ ok: true }),
       }),
-    ).resolves.toMatchObject({ kind: "failed" });
+    ).resolves.toMatchObject({
+      kind: "failed",
+      detail: expect.stringMatching(/fresh observation/i),
+    });
+    expect(inputs).toEqual([]);
+  });
+
+  it("refuses to try when the starting state is not confirmed", async () => {
+    const inputs: unknown[] = [];
+    await expect(
+      tryReviewTarget({
+        previewTarget: async () =>
+          session(async (value) => {
+            inputs.push(value);
+          }),
+        selectedTarget: device,
+        control,
+        observe: async () => [control],
+      }),
+    ).resolves.toMatchObject({
+      kind: "failed",
+      detail: expect.stringMatching(/starting state/i),
+    });
     expect(inputs).toEqual([]);
   });
 
@@ -104,6 +131,7 @@ describe("tryReviewTarget", () => {
         previewTarget: async () => preview,
         selectedTarget: device,
         control,
+        confirmStartingState: async () => ({ ok: true }),
         observe: async () => [control],
       }),
     ).resolves.toEqual({

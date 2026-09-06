@@ -451,7 +451,7 @@ export function createProductRunJourney(input: { jobs: RunJobs }): ProductRunJou
         expectedWorkflowId: workflowId,
       });
     } catch (error) {
-      return publishRecovery(error, "inspect");
+      return publishRecovery(error, "inspect", workflowId);
     }
   }
 

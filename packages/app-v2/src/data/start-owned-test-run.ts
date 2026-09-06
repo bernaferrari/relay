@@ -52,6 +52,8 @@ export type OwnedTestRunResult = ProductRunState & {
 export type CombineProfileTarget = {
   profileId: string;
   targetProfileId?: string;
+  engine?: ProductRunStartInput["engine"];
+  account: NonNullable<ProductRunStartInput["account"]>;
   target: {
     targetKind: "browser";
     browserTargetId: string;
@@ -97,6 +99,8 @@ export function profileTargetsFromStarts(
     return {
       profileId,
       targetProfileId: profileId,
+      ...(request.engine ? { engine: request.engine } : {}),
+      account: request.account,
       target: { targetKind: "browser", browserTargetId: targetId },
     };
   });
@@ -143,9 +147,16 @@ export async function startPairedTestBatch(input: {
   });
   if (!cases.length) {
     return {
-      status: "queued",
+      status: "idle",
       batchId,
-      children: input.requests.map((request) => ({ request, status: "started" as const })),
+      recovery: {
+        code: "transport",
+        title: "The Batch has no scheduled cells",
+        detail: "Relay created a Batch without scheduled children for these pairs.",
+        recovery: "Inspect the Batch before treating any pair as started.",
+        retryable: true,
+      },
+      children: input.requests.map((request) => ({ request, status: "untouched" as const })),
     };
   }
   return { status: "queued", batchId, children };

@@ -185,10 +185,39 @@ describe("start owned Test runs", () => {
       "blocked",
       "untouched",
     ]);
-    expect(profileTargetsFromStarts(requests).map((item) => item.profileId)).toEqual([
-      "profile-admin",
-      "profile-member",
-      "profile-out",
+    expect(profileTargetsFromStarts(requests).map((item) => item.account)).toEqual([
+      { kind: "fixture", accountId: "acct-admin", accountRevision: "4" },
+      { kind: "fixture", accountId: "acct-member", accountRevision: "7" },
+      { kind: "signed-out", attested: true },
+    ]);
+    expect(
+      new Set(profileTargetsFromStarts(requests).map((item) => JSON.stringify(item.account))).size,
+    ).toBe(3);
+  });
+
+  it("does not treat a Batch with no scheduled cells as a successful expansion", async () => {
+    const requests = testStartRequests({
+      usePairedWorkspace: true,
+      workspace,
+      testId: "checkout",
+      appMapId: "app-1",
+      targetId: "ignored",
+      profiles: [
+        { id: "profile-admin", targetId: "chrome-1", account: { id: "acct-admin" } },
+        { id: "profile-member", targetId: "chrome-1", account: { id: "acct-member" } },
+        { id: "profile-out", targetId: "webkit-1" },
+      ],
+    });
+    const result = await startPairedTestBatch({
+      requests,
+      combineStart: async () => ({ campaign: { id: "batch-empty", cases: [] } }),
+    });
+    expect(result.batchId).toBe("batch-empty");
+    expect(result.recovery?.detail).toMatch(/without scheduled children/i);
+    expect(result.children.map((child) => child.status)).toEqual([
+      "untouched",
+      "untouched",
+      "untouched",
     ]);
   });
 });

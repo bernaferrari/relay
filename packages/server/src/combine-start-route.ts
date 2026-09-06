@@ -63,6 +63,10 @@ type CombineStartRequest = {
   profileTargets?: {
     profileId: string;
     targetProfileId?: string;
+    engine?: "chromium" | "firefox" | "webkit";
+    account?:
+      | { kind: "fixture"; accountId: string; accountRevision: string; reference?: string }
+      | { kind: "signed-out"; attested: true };
     target: {
       targetKind?: "device" | "browser";
       serial?: string;

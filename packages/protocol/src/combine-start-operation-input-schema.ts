@@ -65,6 +65,25 @@ export const combineStartOperationInputSchemas = {
             .object({
               profileId: identifier("Environment profile identifier"),
               targetProfileId: identifier("Saved runtime profile identifier").optional(),
+              engine: z.enum(["chromium", "firefox", "webkit"]).optional(),
+              account: z
+                .discriminatedUnion("kind", [
+                  z
+                    .object({
+                      kind: z.literal("fixture"),
+                      accountId: z.string().trim().min(1),
+                      accountRevision: z.string().trim().min(1),
+                      reference: z.string().trim().min(1).optional(),
+                    })
+                    .strict(),
+                  z
+                    .object({
+                      kind: z.literal("signed-out"),
+                      attested: z.literal(true),
+                    })
+                    .strict(),
+                ])
+                .optional(),
               target: z
                 .object({
                   targetKind: z.enum(["device", "browser"]).optional(),
