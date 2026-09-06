@@ -40,6 +40,7 @@ import {
   useEvidenceObjectUrl,
 } from "./recording-review-presentation";
 
+import { reviewPersistence } from "../data/recording-review-persistence";
 import { useRecordingNameDraft } from "../data/use-recording-name-draft";
 import { RecordingTargetPicker } from "./recording-target-picker";
 
@@ -156,6 +157,17 @@ export function ReviewRecordingPage() {
     nameSaveError,
     setNameSaveAttempt,
   } = useRecordingNameDraft({ platform, nameDraftKey, saved, snapshot });
+  const persistence = reviewPersistence({
+    nameSaveState,
+    nameChanged: Boolean(testName.trim() && snapshot?.title && testName.trim() !== snapshot.title),
+    canApprove,
+    replayRequired: review?.replayRequired,
+    replayOutcome: review?.latestReplay?.outcome,
+    transitionPending: transition.isPending,
+    leavePending: leaveDraft.isPending,
+    failed: Boolean(transition.error || leaveDraft.error),
+    failureDetail: leaveDraft.error ? "Could not confirm the saved draft" : undefined,
+  });
   const currentRevision = review?.currentRevision;
   const sessionId = snapshot?.authoring?.sessionId;
   const optimization = useQuery({
@@ -311,27 +323,9 @@ export function ReviewRecordingPage() {
                 }
                 onClick={() => leaveDraft.mutate()}
               >
-                {leaveDraft.isPending ? "Saving draft…" : "Save draft"}
+                {leaveDraft.isPending ? "Leaving…" : "Back to Tests"}
               </Button>
-              <EditorSaveStatus
-                state={
-                  transition.isPending || leaveDraft.isPending
-                    ? "saving"
-                    : transition.error || leaveDraft.error
-                      ? "failed"
-                      : nameSaveState
-                }
-                detail={
-                  leaveDraft.error
-                    ? "Could not confirm draft"
-                    : !leaveDraft.isPending &&
-                        !transition.isPending &&
-                        !transition.error &&
-                        nameSaveState === "saved"
-                      ? "Recording draft saved"
-                      : undefined
-                }
-              />
+              <EditorSaveStatus state={persistence.editorState} detail={persistence.label} />
             </>
           ) : undefined
         }
@@ -357,10 +351,10 @@ export function ReviewRecordingPage() {
               />
               <FieldDescription>
                 {nameSaveError ??
-                  (nameSaveState === "saving"
-                    ? "Saving the name…"
+                  (persistence.kind === "name-only"
+                    ? persistence.detail
                     : testName
-                      ? "The name is kept on this computer until you save the Test."
+                      ? "The name is kept on this computer. It does not change the recorded steps."
                       : "Name the outcome a teammate should recognize.")}
               </FieldDescription>
               {nameSaveError && nameEdits.current > 0 ? (
@@ -398,8 +392,8 @@ export function ReviewRecordingPage() {
 
       {leaveDraft.error ? (
         <p role="alert" className="m-0 rounded-lg border border-border p-3 text-[13px]">
-          Could not confirm the saved draft. Your work is still open here. Try Save draft again when
-          the connection returns.
+          Could not confirm the saved draft. Your work is still open here. Try Back to Tests again
+          when the connection returns.
         </p>
       ) : null}
 

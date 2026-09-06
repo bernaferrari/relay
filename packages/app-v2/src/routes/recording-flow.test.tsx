@@ -619,15 +619,15 @@ describe("record, review, replay, and save", () => {
 
     await click(button("Replay recording"));
     expect(document.body.textContent).toContain("Ready to save");
+    expect(document.body.textContent).toContain("Verified on the selected Device");
     expect(document.body.textContent).not.toContain("A passing replay is required before saving");
     expect(document.body.textContent).not.toContain("Replay recording");
     expect(document.body.textContent).not.toContain("Replay again");
+    expect(document.body.textContent).not.toContain("Save draft");
     expect(button("Save Test").disabled).toBe(false);
 
-    await fill(
-      document.querySelector<HTMLInputElement>("#review-test-name")!,
-      "Change the app language",
-    );
+    await fill(document.querySelector<HTMLInputElement>("#review-test-name")!, "Language tour");
+    expect(document.body.textContent).toContain("Name updated — recorded steps are unchanged");
     await click(button("Save Test"));
     expect(history.location.pathname).toBe("/tests/test-1");
     expect(document.body.textContent).not.toContain("Open Test");
@@ -1063,7 +1063,7 @@ describe("record, review, replay, and save", () => {
       fake.service,
       storage.platform,
     );
-    await click(button("Save draft"));
+    await click(button("Back to Tests"));
     expect(history.location.pathname).toBe("/tests");
     expect(storage.values.get("activeRecordingWorkflowId")).toBe("workflow-1");
     expect(fake.calls).not.toContain("approve");
@@ -1079,7 +1079,7 @@ describe("record, review, replay, and save", () => {
     fake.service.inspect = async () => {
       throw new Error("Connection interrupted");
     };
-    await click(button("Save draft"));
+    await click(button("Back to Tests"));
     expect(history.location.pathname).toBe("/recordings/workflow-1/review");
     expect(document.body.textContent).toContain("Could not confirm the saved draft");
     expect(fake.calls).not.toContain("approve");

@@ -150,9 +150,10 @@ async function selectTarget(value: string) {
 }
 
 async function clickStart() {
-  const button = [...document.querySelectorAll("button")].find(
-    (candidate) => candidate.textContent?.trim() === "Start investigation",
-  );
+  const button = [...document.querySelectorAll("button")].find((candidate) => {
+    const label = candidate.textContent?.trim();
+    return label === "Start investigation" || label === "Start new experiment";
+  });
   if (!(button instanceof HTMLButtonElement))
     throw new Error("Start investigation button not found");
   await act(async () => button.click());
@@ -341,7 +342,7 @@ describe("Agent Debug route", () => {
           schemaVersion: 1,
           source: { runId: "run-failed", attempt: 1, stepId: "step-1" },
           evidenceRefs: [],
-          configRefs: [],
+          configRefs: ["reproduction:original"],
         },
       }),
     );
@@ -371,7 +372,8 @@ describe("Agent Debug route", () => {
     });
 
     expect(document.body.textContent).toContain("Before step 1");
-    expect(document.body.textContent).toContain("build build-92");
+    expect(document.body.textContent).toContain("Build build-92");
+    expect(document.body.textContent).toContain("Restoring original configuration…");
     expect(debugBug).toHaveBeenCalledWith(
       expect.objectContaining({
         targetId: "serial-ready",
@@ -412,7 +414,7 @@ describe("Agent Debug route", () => {
     });
 
     expect(document.body.textContent).toContain("Target is owned by another actor.");
-    expect(document.body.textContent).toContain("Start investigation");
+    expect(document.body.textContent).toMatch(/Start investigation|Start new experiment/);
     expect(document.body.textContent).toContain("Open result");
     await clickStart();
     expect(debugBug).toHaveBeenCalledTimes(2);
@@ -429,5 +431,57 @@ describe("Agent Debug route", () => {
     await clickStart();
 
     expect(history.location.pathname).toBe("/sessions/session-durable");
+  });
+
+  it("does not auto-start a substitute and labels it as a new experiment", async () => {
+    const debugBug = vi.fn(async () => startOutcome());
+    await render({
+      path: "/debug?runId=run-failed",
+      runService: {
+        getReport: async () => ({
+          runId: "run-failed",
+          title: "Checkout validation",
+          outcome: "product-failure" as const,
+          targetName: "Ready Pixel",
+          cause: "Button was not reachable",
+          timeline: [],
+          evidence: [],
+          executionContext: { targetProfileId: "serial-offline", buildId: "build-92" },
+        }),
+      } as unknown as RunProductService,
+      agentDebugService: debugService(debugBug),
+      devices: [
+        productDevice("ready", "Ready Pixel", true, "android"),
+        productDevice("offline", "Offline iPad", false, "ios"),
+      ],
+    });
+
+    expect(debugBug).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain("Original result");
+    expect(document.body.textContent).toContain("Build build-92");
+    expect(document.body.textContent).toContain("Original device unavailable");
+    expect(document.body.textContent).toContain("new experiment");
+    const start = [...document.querySelectorAll("button")].find(
+      (candidate) => candidate.textContent?.trim() === "Start new experiment",
+    );
+    expect((start as HTMLButtonElement | undefined)?.disabled).toBe(true);
+
+    await selectTarget("serial-ready");
+    expect(document.body.textContent).toContain("Investigating on Ready Pixel instead");
+    expect((start as HTMLButtonElement).disabled).toBe(false);
+    await clickStart();
+    expect(debugBug).toHaveBeenCalledWith(
+      expect.objectContaining({
+        targetId: "serial-ready",
+        debugOrigin: expect.objectContaining({
+          source: { runId: "run-failed", attempt: 1, stepId: "before-first-step" },
+          configRefs: expect.arrayContaining([
+            "targetProfileId:serial-offline",
+            "buildId:build-92",
+            "reproduction:substituted",
+          ]),
+        }),
+      }),
+    );
   });
 });

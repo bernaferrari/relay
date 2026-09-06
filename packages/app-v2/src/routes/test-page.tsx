@@ -34,6 +34,7 @@ import {
   workspaceDestinationDecision,
   workspaceDestinationQueryKey,
 } from "../layout/destination-summary";
+import { currentTestOutlineCopy } from "../data/workbench-step-selection";
 
 const routeApi = getRouteApi("/tests/$testId");
 
@@ -212,6 +213,10 @@ export function TestPage() {
   // that owns the run; a run for another Test belongs in Activity, not here.
   const activeRun = pointer.data?.testId === testId ? pointer.data : undefined;
   const attachedRunId = pinnedRunId;
+  const outlineCopy = currentTestOutlineCopy({
+    stepCount: test.data?.stepCount ?? 0,
+    viewingHistoricalRun: Boolean(attachedRunId),
+  });
   const loading = test.isPending || targets.isPending || pointer.isPending;
   const evidenceSteps = flattenSteps(test.data?.steps ?? []);
   const selectedEvidenceStep =
@@ -322,8 +327,11 @@ export function TestPage() {
                 id="test-overview-title"
                 className="mb-2 text-[13px] font-medium text-muted-foreground"
               >
-                {test.data.stepCount === 1 ? "1 step" : `${test.data.stepCount} steps`}
+                {outlineCopy.title}
               </h2>
+              {outlineCopy.hint ? (
+                <p className="mb-2 text-xs text-muted-foreground">{outlineCopy.hint}</p>
+              ) : null}
               {test.data.steps?.length ? (
                 <ol className="relay-test-readable-steps mt-4 grid list-none gap-0 p-0">
                   {test.data.steps.map((step, index) => (

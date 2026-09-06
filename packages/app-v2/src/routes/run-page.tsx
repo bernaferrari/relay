@@ -40,6 +40,7 @@ import { RunWorkbench, RunContextFacts } from "./run-workbench";
 import { EvidencePreview } from "./run-report-panels";
 import { RunReplayAction, RunReplayStatus } from "./run-replay";
 import { attachedRunLinkTestId, attachedRunOwnership } from "../data/attached-run-ownership";
+import { historicalRunCaption } from "../data/workbench-step-selection";
 
 const routeApi = getRouteApi("/runs/$runId");
 
@@ -618,7 +619,10 @@ function RunReport({
             </p>
             {historical ? (
               <p className="mt-0.5 text-sm text-muted-foreground">
-                Historical Run {report.runId}. Current Test steps stay selected separately.
+                {historicalRunCaption({
+                  runId: report.runId,
+                  sourceRevision: report.executionContext?.sourceRevision,
+                })}
               </p>
             ) : null}
             <p className="mt-0.5 text-sm text-muted-foreground">

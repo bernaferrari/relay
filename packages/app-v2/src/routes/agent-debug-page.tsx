@@ -19,6 +19,13 @@ import { FormPage, PageHeader } from "../components/page-layout";
 
 import type { AgentDebugProductService } from "../data/agent-debug-product-service";
 import { deviceQueryKeys } from "../data/device-product-service";
+import {
+  classifyInvestigationReproduction,
+  investigationConfigRefs,
+  investigationReproductionCopy,
+  originalEnvironmentSummary,
+  type InvestigationOriginalEnvironment,
+} from "../data/investigation-environment";
 import { runQueryKeys } from "../data/run-queries";
 
 function isStartOutcome(
@@ -65,25 +72,6 @@ export function AgentDebugPage() {
     if (!report.data || title) return;
     setTitle(`Investigate ${report.data.title}`);
   }, [report.data, title]);
-  useEffect(() => {
-    if (targetId) return;
-    const profileId = report.data?.executionContext?.targetProfileId;
-    const byProfile = profileId
-      ? readyDevices.filter((device) => device.serial === profileId || device.id === profileId)
-      : [];
-    if (byProfile.length === 1) {
-      setTargetId(byProfile[0]!.serial);
-      return;
-    }
-    if (!report.data?.targetName) return;
-    const matchingTargets = readyDevices.filter((device) => device.name === report.data.targetName);
-    if (matchingTargets.length === 1) setTargetId(matchingTargets[0]!.serial);
-  }, [
-    readyDevices,
-    report.data?.executionContext?.targetProfileId,
-    report.data?.targetName,
-    targetId,
-  ]);
   const start = useMutation({
     mutationFn: (input: Parameters<AgentDebugProductService["debugBug"]>[0]) =>
       agentDebugService.debugBug(input),
@@ -103,7 +91,39 @@ export function AgentDebugPage() {
       ? "Investigate this failure"
       : "";
   const resolvedTitle = title.trim() || defaultTitle;
-  const originReady = Boolean(contextualRunId && report.data && targetReady && resolvedTitle);
+  const originalEnvironment = useMemo<InvestigationOriginalEnvironment | undefined>(() => {
+    if (!contextualRunId || !report.data) return undefined;
+    const context = report.data.executionContext;
+    return {
+      runId: contextualRunId,
+      ...(report.data.targetName ? { targetName: report.data.targetName } : {}),
+      ...(context?.targetProfileId ? { targetProfileId: context.targetProfileId } : {}),
+      ...(context?.buildId ? { buildId: context.buildId } : {}),
+      ...(context?.browser ? { browser: context.browser } : {}),
+      ...(context?.sourceRevision ? { sourceRevision: context.sourceRevision } : {}),
+      ...(context?.appVersion ? { appVersion: context.appVersion } : {}),
+    };
+  }, [contextualRunId, report.data]);
+  const reproduction = classifyInvestigationReproduction({
+    original: originalEnvironment,
+    devices: devices.data,
+    devicesPending: devices.isPending,
+    selectedSerial: targetId,
+  });
+  const reproductionCopy = investigationReproductionCopy(reproduction);
+  const restoreTargetId =
+    reproduction.kind === "restoring-original" ? reproduction.device.serial : targetId;
+  useEffect(() => {
+    if (targetId || reproduction.kind !== "restoring-original") return;
+    setTargetId(reproduction.device.serial);
+  }, [reproduction, targetId]);
+  const originReady = Boolean(
+    contextualRunId &&
+    report.data &&
+    resolvedTitle &&
+    reproduction.kind === "restoring-original" &&
+    reproduction.device.runnable,
+  );
   const startSucceeded = Boolean(start.data && isStartOutcome(start.data));
   const hideStartForm = startSucceeded || (start.isPending && !start.error);
   const startedFromOrigin = useRef(false);
@@ -122,13 +142,7 @@ export function AgentDebugPage() {
             evidenceRefs: report.data.evidence
               .flatMap((section) => section.items.map((item) => item.id))
               .slice(0, 64),
-            configRefs: Object.entries(report.data.executionContext ?? {})
-              .filter(
-                (entry): entry is [string, string] =>
-                  typeof entry[1] === "string" && entry[1].length > 0,
-              )
-              .map(([key, value]) => `${key}:${value}`)
-              .slice(0, 64),
+            configRefs: investigationConfigRefs(originalEnvironment, reproduction),
           }
         : undefined;
     start.mutate({
@@ -148,12 +162,12 @@ export function AgentDebugPage() {
     if (!originReady || startedFromOrigin.current || start.isPending || start.data || start.error)
       return;
     startedFromOrigin.current = true;
-    startInvestigation(resolvedTitle, targetId);
-  }, [originReady, resolvedTitle, start.data, start.error, start.isPending, targetId]);
+    startInvestigation(resolvedTitle, restoreTargetId);
+  }, [originReady, resolvedTitle, restoreTargetId, start.data, start.error, start.isPending]);
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    startInvestigation(resolvedTitle, targetId);
+    startInvestigation(resolvedTitle, restoreTargetId);
   }
 
   return (
@@ -165,7 +179,7 @@ export function AgentDebugPage() {
         }
         description={
           contextualRunId
-            ? "This investigation stays bound to the original result."
+            ? "The original result stays unchanged. A substituted device is a new experiment."
             : "Name the problem, pick a device, and start capturing."
         }
       />
@@ -198,18 +212,16 @@ export function AgentDebugPage() {
           {report.data ? (
             <dl className="grid gap-2 text-sm">
               <div>
-                <dt className="font-medium text-muted-foreground">Original</dt>
+                <dt className="font-medium text-muted-foreground">Original result</dt>
                 <dd className="text-foreground">
-                  {[
-                    report.data.targetName,
-                    report.data.executionContext?.browser,
-                    report.data.executionContext?.buildId
-                      ? `build ${report.data.executionContext.buildId}`
-                      : undefined,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ") || "Configuration from this result"}
+                  {originalEnvironment
+                    ? originalEnvironmentSummary(originalEnvironment)
+                    : "Configuration from this result"}
                 </dd>
+              </div>
+              <div>
+                <dt className="font-medium text-muted-foreground">{reproductionCopy.title}</dt>
+                <dd className="text-foreground">{reproductionCopy.detail}</dd>
               </div>
               {!failureStep ? (
                 <div>
@@ -287,9 +299,9 @@ export function AgentDebugPage() {
                 ))}
               </SelectContent>
             </Select>
-            {!devices.isPending && contextualTargetId === targetId && !targetReady ? (
+            {reproduction.kind === "original-unavailable" || reproduction.kind === "substituted" ? (
               <p className="text-sm text-muted-foreground" role="status">
-                The original device is unavailable. Choose another ready device or browser.
+                {reproductionCopy.detail}
               </p>
             ) : null}
             {devices.data && !devices.data.some((device) => device.runnable) ? (
@@ -321,7 +333,7 @@ export function AgentDebugPage() {
               disabled={start.isPending || !resolvedTitle || !targetReady}
               className="w-full sm:w-auto"
             >
-              {start.isPending ? "Starting…" : "Start investigation"}
+              {start.isPending ? "Starting…" : reproductionCopy.startLabel}
             </Button>
           </div>
         </form>
