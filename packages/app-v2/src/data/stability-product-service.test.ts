@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { ProductRunSummary } from "@relay/product/catalog";
 import type { ProductBatchReport } from "@relay/product/run-across";
 import {
+  attachStabilityClusterIds,
+  stabilityMaintenanceRecommendations,
   stabilitySamplesFromBatch,
   stabilitySamplesFromRuns,
   summarizeProductStability,
@@ -59,8 +61,18 @@ describe("stability product service", () => {
     expect(summary.byEnvironment).toEqual([
       expect.objectContaining({ environmentId: "env-1", passRate: 0.75, confidence: "complete" }),
     ]);
+    expect(summary.byApp).toEqual([
+      expect.objectContaining({ appMapId: "app-1", passRate: 0.75, confidence: "complete" }),
+    ]);
     expect(summary.signals).toEqual([
       expect.objectContaining({ kind: "possible-flakiness", environmentId: "env-1" }),
+    ]);
+    expect(summary.recommendations).toEqual([
+      expect.objectContaining({
+        action: "rerun-flake",
+        summary:
+          "Rerun the same Test in this environment before treating the failure as a product change.",
+      }),
     ]);
   });
 
@@ -238,5 +250,64 @@ describe("stability product service", () => {
         }),
       ]),
     );
+    expect(summary.recommendations).toEqual(
+      expect.arrayContaining([expect.objectContaining({ action: "review-owned" })]),
+    );
+  });
+
+  it("groups Apps and attached failure clusters without inventing cluster identity", () => {
+    const samples: ProductStabilitySample[] = [
+      {
+        id: "cell-a",
+        runId: "run-a",
+        appMapId: "app-a",
+        testId: "test-1",
+        environmentId: "env-1",
+        outcome: "product-failure",
+        status: "failed",
+      },
+      {
+        id: "cell-b",
+        runId: "run-b",
+        appMapId: "app-b",
+        testId: "test-2",
+        environmentId: "env-1",
+        outcome: "passed",
+        status: "passed",
+      },
+    ];
+    const joined = attachStabilityClusterIds(samples, [
+      { id: "cluster-visual", caseIds: ["cell-a"] },
+    ]);
+    expect(joined[0]?.clusterId).toBe("cluster-visual");
+    expect(joined[1]?.clusterId).toBeUndefined();
+    const summary = summarizeProductStability({ samples: joined, historyComplete: true });
+    expect(summary.byApp.map((bucket) => [bucket.appMapId, bucket.passed, bucket.failed])).toEqual([
+      ["app-a", 0, 1],
+      ["app-b", 1, 0],
+    ]);
+    expect(summary.byCluster).toEqual([
+      expect.objectContaining({ clusterId: "cluster-visual", total: 1, failed: 1, passed: 0 }),
+    ]);
+    expect(summary.byCluster).toHaveLength(1);
+  });
+
+  it("maps duration regression onto an inspect-duration recommendation", () => {
+    const recommendations = stabilityMaintenanceRecommendations([
+      {
+        kind: "duration-regression",
+        severity: "warning",
+        summary: "Median duration increased from 100ms to 200ms.",
+        runIds: ["run-1", "run-2"],
+      },
+    ]);
+    expect(recommendations).toEqual([
+      {
+        id: "inspect-duration",
+        action: "inspect-duration",
+        summary: "Investigate the duration increase before the next release.",
+        runIds: ["run-1", "run-2"],
+      },
+    ]);
   });
 });

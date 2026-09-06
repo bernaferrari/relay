@@ -18,6 +18,8 @@ export type ProductStabilitySample = {
   readonly durationMs?: number;
   /** Review owner from Batch triage. Absent on ordinary Run history. */
   readonly assignee?: string;
+  /** Failure-cluster identity when the caller joined cluster members. */
+  readonly clusterId?: string;
 };
 
 export type ProductStabilityScope = {
@@ -57,6 +59,34 @@ export type ProductStabilityOwner = {
   readonly problemCount: number;
 };
 
+export type ProductStabilityAppBucket = {
+  readonly appMapId: string;
+  readonly total: number;
+  readonly passed: number;
+  readonly failed: number;
+  readonly unknown: number;
+  readonly passRate: number | null;
+  readonly confidence: ProductStabilityConfidence;
+};
+
+export type ProductStabilityClusterBucket = {
+  readonly clusterId: string;
+  readonly total: number;
+  readonly passed: number;
+  readonly failed: number;
+  readonly unknown: number;
+  readonly passRate: number | null;
+  readonly confidence: ProductStabilityConfidence;
+};
+
+export type ProductStabilityRecommendation = {
+  readonly id: string;
+  readonly action: "rerun-flake" | "inspect-environment" | "inspect-duration" | "review-owned";
+  readonly summary: string;
+  readonly runIds: readonly string[];
+  readonly environmentId?: string;
+};
+
 export type ProductStabilitySummary = {
   readonly scope: ProductStabilityScope;
   readonly sampleCount: number;
@@ -72,8 +102,11 @@ export type ProductStabilitySummary = {
   readonly historyComplete: boolean;
   readonly runIds: readonly string[];
   readonly byEnvironment: readonly ProductStabilityBucket[];
+  readonly byApp: readonly ProductStabilityAppBucket[];
+  readonly byCluster: readonly ProductStabilityClusterBucket[];
   readonly owners: readonly ProductStabilityOwner[];
   readonly signals: readonly ProductStabilitySignal[];
+  readonly recommendations: readonly ProductStabilityRecommendation[];
 };
 
 export type ProductStabilitySummaryInput = {
@@ -128,6 +161,64 @@ export function stabilitySamplesFromRuns(
   runs: readonly ProductRunSummary[],
 ): readonly ProductStabilitySample[] {
   return runs.map(stabilitySampleFromRun);
+}
+
+/** Join current failure-cluster membership onto Batch samples by exact case id. */
+export function attachStabilityClusterIds(
+  samples: readonly ProductStabilitySample[],
+  clusters: readonly { id: string; caseIds: readonly string[] }[],
+): readonly ProductStabilitySample[] {
+  const clusterByCase = new Map<string, string>();
+  for (const cluster of clusters) {
+    for (const caseId of cluster.caseIds) {
+      if (!clusterByCase.has(caseId)) clusterByCase.set(caseId, cluster.id);
+    }
+  }
+  return samples.map((sample) => {
+    const clusterId = clusterByCase.get(sample.id);
+    return clusterId ? { ...sample, clusterId } : sample;
+  });
+}
+
+export function stabilityMaintenanceRecommendations(
+  signals: readonly ProductStabilitySignal[],
+): readonly ProductStabilityRecommendation[] {
+  const recommendations: ProductStabilityRecommendation[] = [];
+  for (const signal of signals) {
+    if (signal.kind === "possible-flakiness") {
+      recommendations.push({
+        id: `rerun-flake:${signal.environmentId ?? "all"}`,
+        action: "rerun-flake",
+        summary:
+          "Rerun the same Test in this environment before treating the failure as a product change.",
+        runIds: signal.runIds,
+        ...(signal.environmentId ? { environmentId: signal.environmentId } : {}),
+      });
+    } else if (signal.kind === "environment-recurrence") {
+      recommendations.push({
+        id: `inspect-environment:${signal.environmentId ?? "all"}`,
+        action: "inspect-environment",
+        summary: "Inspect this environment before adding more coverage there.",
+        runIds: signal.runIds,
+        ...(signal.environmentId ? { environmentId: signal.environmentId } : {}),
+      });
+    } else if (signal.kind === "duration-regression") {
+      recommendations.push({
+        id: "inspect-duration",
+        action: "inspect-duration",
+        summary: "Investigate the duration increase before the next release.",
+        runIds: signal.runIds,
+      });
+    } else if (signal.kind === "open-ownership") {
+      recommendations.push({
+        id: "review-owned",
+        action: "review-owned",
+        summary: "Review the assigned cases with their owners.",
+        runIds: signal.runIds,
+      });
+    }
+  }
+  return recommendations;
 }
 
 function terminalBatchStatus(status: ProductBatchCase["status"]): boolean {
@@ -313,6 +404,59 @@ export function summarizeProductStability(
     };
   });
 
+  const appIds = [
+    ...new Set(samples.flatMap((sample) => (sample.appMapId ? [sample.appMapId] : []))),
+  ].sort();
+  const byApp = appIds.map((appMapId) => {
+    const members = samples.filter((sample) => sample.appMapId === appMapId);
+    const memberOutcomes = members.map(sampleOutcome);
+    const memberPassed = memberOutcomes.filter((value) => value === "passed").length;
+    const memberFailed = memberOutcomes.filter((value) => value === "failed").length;
+    const memberUnknown = members.length - memberPassed - memberFailed;
+    const memberIdentityComplete = members.every((sample) => sample.appMapId !== undefined);
+    const memberConfidence = confidence(
+      members.length,
+      input.historyComplete,
+      memberIdentityComplete,
+      memberUnknown === 0,
+    );
+    return {
+      appMapId,
+      total: members.length,
+      passed: memberPassed,
+      failed: memberFailed,
+      unknown: memberUnknown,
+      passRate: memberConfidence === "complete" ? memberPassed / members.length : null,
+      confidence: memberConfidence,
+    };
+  });
+
+  const clusterIds = [
+    ...new Set(samples.flatMap((sample) => (sample.clusterId ? [sample.clusterId] : []))),
+  ].sort();
+  const byCluster = clusterIds.map((clusterId) => {
+    const members = samples.filter((sample) => sample.clusterId === clusterId);
+    const memberOutcomes = members.map(sampleOutcome);
+    const memberPassed = memberOutcomes.filter((value) => value === "passed").length;
+    const memberFailed = memberOutcomes.filter((value) => value === "failed").length;
+    const memberUnknown = members.length - memberPassed - memberFailed;
+    const memberConfidence = confidence(
+      members.length,
+      input.historyComplete,
+      true,
+      memberUnknown === 0,
+    );
+    return {
+      clusterId,
+      total: members.length,
+      passed: memberPassed,
+      failed: memberFailed,
+      unknown: memberUnknown,
+      passRate: memberConfidence === "complete" ? memberPassed / members.length : null,
+      confidence: memberConfidence,
+    };
+  });
+
   const signals: ProductStabilitySignal[] = [];
   if (input.historyComplete && identityComplete && outcomesComplete) {
     const byIdentity = new Map<string, ProductStabilitySample[]>();
@@ -398,8 +542,11 @@ export function summarizeProductStability(
     historyComplete: input.historyComplete,
     runIds: signalRunIds(samples),
     byEnvironment,
+    byApp,
+    byCluster,
     owners,
     signals,
+    recommendations: stabilityMaintenanceRecommendations(signals),
   };
 }
 

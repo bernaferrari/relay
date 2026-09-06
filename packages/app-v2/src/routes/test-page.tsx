@@ -568,6 +568,9 @@ export function TestPage() {
                         {signal.summary}
                       </li>
                     ))}
+                    {stability.recommendations.map((item) => (
+                      <li key={item.id}>{item.summary}</li>
+                    ))}
                   </ul>
                 ) : (
                   <p>

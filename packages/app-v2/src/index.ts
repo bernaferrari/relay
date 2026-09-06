@@ -77,14 +77,19 @@ export {
 } from "./data/catalog-product-service";
 export type { ProductMapOverview, ProductMapProposal } from "./data/map-product-service";
 export {
+  attachStabilityClusterIds,
   createStabilityProductService,
+  stabilityMaintenanceRecommendations,
   stabilitySampleFromRun,
   stabilitySamplesFromBatch,
   stabilitySamplesFromRuns,
   summarizeProductStability,
+  type ProductStabilityAppBucket,
   type ProductStabilityBucket,
+  type ProductStabilityClusterBucket,
   type ProductStabilityConfidence,
   type ProductStabilityOwner,
+  type ProductStabilityRecommendation,
   type ProductStabilitySample,
   type ProductStabilityScope,
   type ProductStabilitySignal,
