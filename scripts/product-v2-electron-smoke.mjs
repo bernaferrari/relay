@@ -103,8 +103,7 @@ async function assertDesktopChrome(page) {
     timeout: CHECK_TIMEOUT_MS,
   });
   const chrome = await page.evaluate(() => {
-    const rect = (selector) => {
-      const element = document.querySelector(selector);
+    const measure = (element) => {
       if (!(element instanceof Element)) return null;
       const bounds = element.getBoundingClientRect();
       const style = getComputedStyle(element);
@@ -120,6 +119,13 @@ async function assertDesktopChrome(page) {
         appRegion: style.getPropertyValue("-webkit-app-region"),
       };
     };
+    const rect = (selector) => {
+      for (const element of document.querySelectorAll(selector)) {
+        const next = measure(element);
+        if (next && next.display !== "none" && next.width > 0 && next.height > 0) return next;
+      }
+      return null;
+    };
     return {
       brand: rect(".relay-brand"),
       sidebarHeader: rect(".relay-sidebar-head"),
@@ -128,8 +134,8 @@ async function assertDesktopChrome(page) {
       forward: rect('.relay-history-button[aria-label="Go forward"]'),
       backIcon: rect('.relay-history-button[aria-label="Go back"] svg'),
       forwardIcon: rect('.relay-history-button[aria-label="Go forward"] svg'),
-      activity: rect('[aria-label^="Open Activity Center"]'),
-      command: rect(".relay-command-trigger"),
+      activity: rect('.relay-desktop-toolbar [aria-label^="Open Activity Center"]'),
+      command: rect(".relay-desktop-toolbar .relay-command-trigger"),
     };
   });
   for (const [name, value] of Object.entries(chrome)) {
@@ -158,8 +164,8 @@ async function assertDesktopChrome(page) {
     );
   }
   assert(
-    chrome.command.left - chrome.activity.right >= 12,
-    `Activity and search are cramped: ${chrome.command.left - chrome.activity.right}px`,
+    chrome.activity.left - chrome.command.right >= 12,
+    `Activity and search are cramped: ${chrome.activity.left - chrome.command.right}px`,
   );
   assert(chrome.command.width >= 220, `Command search is too narrow: ${chrome.command.width}`);
 }
@@ -239,8 +245,8 @@ async function run() {
 
     const nativeWindow = await application.browserWindow(page);
     await nativeWindow.evaluate((window) => window.setSize(1200, 760));
-    await waitForRoute(page, "/home");
-    await page.getByRole("heading", { level: 1 }).first().waitFor();
+    await waitForRoute(page, "/tests");
+    await page.getByRole("heading", { level: 1, name: "Tests" }).waitFor();
     await assertLayout(page);
     await assertDesktopChrome(page);
 
@@ -253,13 +259,16 @@ async function run() {
       checks += 1;
     };
     await check();
-    for (const [name, route] of [
-      ["Tests", "/tests"],
-      ["Live", "/sessions"],
-    ]) {
+    for (const [name, route] of [["Tests", "/tests"]]) {
       await clickNav(page, name, route);
       await check();
     }
+    if (await page.getByRole("link", { name: "Live", exact: true }).count()) {
+      await clickNav(page, "Live", "/sessions");
+    } else {
+      await openRoute(page, "/sessions");
+    }
+    await check();
 
     const debugLink = page.getByRole("link", { name: "Agent Debug", exact: true });
     if (await debugLink.count()) {
@@ -273,7 +282,7 @@ async function run() {
     await check();
 
     for (const [name, route] of [
-      ["Devices & browsers", "/devices"],
+      ["Devices", "/devices"],
       ["Changes", "/changes"],
       ["Runs", "/runs"],
     ]) {

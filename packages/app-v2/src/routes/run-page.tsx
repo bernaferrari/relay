@@ -20,6 +20,7 @@ import {
 import { ChevronRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import { EmptyState } from "../components/product-patterns";
 import { IssueDraftButton } from "../components/issue-draft-button";
 import { RunConfigurationComposer } from "../components/run-configuration-composer";
 import {
@@ -38,6 +39,7 @@ import { RunReviewControls } from "./run-review-controls";
 import { RunWorkbench, RunContextFacts } from "./run-workbench";
 import { EvidencePreview } from "./run-report-panels";
 import { RunReplayAction, RunReplayStatus } from "./run-replay";
+import { attachedRunLinkTestId, attachedRunOwnership } from "../data/attached-run-ownership";
 
 const routeApi = getRouteApi("/runs/$runId");
 
@@ -178,12 +180,34 @@ export function RunInspection({
   }, [platform, queryClient, report.data, runId]);
 
   if (report.data) {
+    const ownership = attachedRunOwnership({
+      routeTestId: testIdProp ?? originTest.current.testId,
+      runTestId: report.data.testId,
+    });
+    if (embedded && ownership.kind === "foreign") {
+      return (
+        <EmptyState
+          title="This Run belongs to another Test"
+          detail="The copied result is still available, but it is not an attached report for this Test."
+          action={
+            <Link
+              className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
+              to="/runs/$runId"
+              params={{ runId }}
+            >
+              Open the original Run
+            </Link>
+          }
+        />
+      );
+    }
     return (
       <RunReport
         report={report.data}
-        testId={originTest.current.testId ?? report.data.testId}
+        testId={attachedRunLinkTestId(ownership, report.data.testId)}
         runService={runService}
         embedded={embedded}
+        historical={embedded}
       />
     );
   }
@@ -363,11 +387,13 @@ function RunReport({
   testId,
   runService,
   embedded = false,
+  historical = false,
 }: {
   report: Awaited<ReturnType<RunProductService["getReport"]>>;
   testId?: string;
   runService: RunProductService;
   embedded?: boolean;
+  historical?: boolean;
 }) {
   const target = report.targetName ?? "the selected device or browser";
   const failure = report.outcome && report.outcome !== "passed" ? report.cause : undefined;
@@ -590,6 +616,11 @@ function RunReport({
             <p className="text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
               {heading}
             </p>
+            {historical ? (
+              <p className="mt-0.5 text-sm text-muted-foreground">
+                Historical Run {report.runId}. Current Test steps stay selected separately.
+              </p>
+            ) : null}
             <p className="mt-0.5 text-sm text-muted-foreground">
               {outcomeSentence(report.outcome, target)}
             </p>

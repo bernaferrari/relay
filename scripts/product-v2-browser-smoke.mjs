@@ -159,8 +159,19 @@ async function waitForRoute(page, expected) {
   await page.locator("#main-content").waitFor({ state: "attached", timeout: CHECK_TIMEOUT_MS });
 }
 
+async function currentRoute(page) {
+  return page.evaluate(() => {
+    const hash = window.location.hash.startsWith("#") ? window.location.hash.slice(1) : "";
+    return (hash || window.location.pathname || "/").split("?")[0];
+  });
+}
+
 async function clickNav(page, name, route) {
   process.stderr.write(`[browser-smoke] navigate ${name} -> ${route}\n`);
+  if ((await currentRoute(page)) === route) {
+    process.stderr.write(`[browser-smoke] already on ${route}\n`);
+    return;
+  }
   // 800px is the Product V2 minimum shell and uses the compact navigation
   // drawer. Open it only when the desktop sidebar is not in the DOM.
   let openedCompactNavigation = false;
@@ -307,10 +318,13 @@ async function runSmoke(options) {
   };
 
   try {
-    trace(`opening ${appUrl}/home`);
-    await page.goto(`${appUrl}/home`, { waitUntil: "domcontentloaded", timeout: START_TIMEOUT_MS });
-    await waitForRoute(page, "/home");
-    await page.getByRole("heading", { level: 1 }).first().waitFor();
+    trace(`opening ${appUrl}/tests`);
+    await page.goto(`${appUrl}/tests`, {
+      waitUntil: "domcontentloaded",
+      timeout: START_TIMEOUT_MS,
+    });
+    await waitForRoute(page, "/tests");
+    await page.getByRole("heading", { level: 1, name: "Tests" }).waitFor();
     await assertMinimumLayout(page);
     await assertKeyboardFocus(page);
     await checkAccessibility();
@@ -318,7 +332,12 @@ async function runSmoke(options) {
     trace("checking Tests, Live, Agent Debug, Devices, Changes, Runs and Settings routes");
     await clickNav(page, "Tests", "/tests");
     await checkAccessibility();
-    await clickNav(page, "Live", "/sessions");
+    if (await page.getByRole("link", { name: "Live", exact: true }).count()) {
+      await clickNav(page, "Live", "/sessions");
+    } else {
+      trace("Live is reached through Devices; opening its route directly");
+      await openRoute(page, "/sessions");
+    }
     await checkAccessibility();
     const debugLink = page.getByRole("link", { name: "Agent Debug", exact: true });
     if (await debugLink.count()) {
@@ -331,7 +350,7 @@ async function runSmoke(options) {
       await openRoute(page, "/debug");
     }
     await checkAccessibility();
-    await clickNav(page, "Devices & browsers", "/devices");
+    await clickNav(page, "Devices", "/devices");
     await checkAccessibility();
     await clickNav(page, "Changes", "/changes");
     await checkAccessibility();

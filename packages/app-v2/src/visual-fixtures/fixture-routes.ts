@@ -1,6 +1,6 @@
 export const definitions = {
-  "home-empty": { path: "/home" },
-  "home-populated": { path: "/home" },
+  "home-empty": { path: "/tests" },
+  "home-populated": { path: "/tests" },
   "apps-list": { path: "/apps" },
   "app-overview": { path: "/apps/checkout-app" },
   "apps-error": { path: "/apps" },

@@ -37,8 +37,8 @@ const zoomAcceptanceFixtures = new Set([
 ]);
 
 const fixtures = [
-  { id: "home-empty", heading: "Prove one journey that matters" },
-  { id: "home-populated", heading: "Your workspace" },
+  { id: "home-empty", heading: "Tests" },
+  { id: "home-populated", heading: "Tests" },
   { id: "apps-list", heading: "Apps" },
   { id: "app-overview", heading: "Checkout" },
   { id: "apps-error", heading: "Apps" },
@@ -71,7 +71,7 @@ const fixtures = [
   { id: "environment-detail", heading: "Checkout staging" },
   { id: "agent-debug", heading: "Investigate a bug" },
   { id: "devices", heading: "Devices" },
-  { id: "tests-library", heading: "Saved Tests" },
+  { id: "tests-library", heading: "Tests" },
   { id: "test-editor", heading: "Complete checkout and confirm the order" },
   { id: "map-overview", heading: "Checkout" },
   { id: "device-detail", heading: "Pixel 9 Pro XL" },
