@@ -610,7 +610,8 @@ describe("record, review, replay, and save", () => {
     await click(button("Save"));
     await click(button("Stop"));
 
-    expect(history.location.pathname).toBe("/recordings/workflow-1/review");
+    expect(history.location.pathname).toBe("/tests/new");
+    expect(String(history.location.search)).toContain("view=review");
     expect(document.body.textContent).toContain("2 steps");
     expect(document.body.textContent).toContain("Recorded by Relay");
     expect(document.body.textContent).toContain("replay before saving the Test");
@@ -694,7 +695,7 @@ describe("record, review, replay, and save", () => {
     releaseInput();
     await settle();
     await settle();
-    expect(history.location.pathname).toBe("/recordings/workflow-1/review");
+    expect(history.location.pathname).toBe("/tests/new");
     expect(document.body.textContent).toContain("2 steps");
     expect(fake.calls.indexOf("input:key")).toBeLessThan(fake.calls.indexOf("stop"));
   });
@@ -743,7 +744,11 @@ describe("record, review, replay, and save", () => {
     await click(button("Preferred language"));
     expect(document.body.textContent).toContain("Matched the visible name");
     await click(button("Try target"));
-    expect(document.body.textContent).toContain("Relay would tap Preferred language");
+    expect(document.body.textContent).toContain("Relay tapped Preferred language on the Device.");
+    expect(fake.calls.filter((call) => call === "input:touch")).toEqual([
+      "input:touch",
+      "input:touch",
+    ]);
     await click(button("Keep target"));
 
     expect(fake.edits).toContainEqual({

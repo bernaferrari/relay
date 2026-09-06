@@ -33,6 +33,7 @@ import {
   type RecordingRecoveryLedger,
 } from "../data/recording-input-outcome";
 import { recordingQueryKeys, refreshRecording } from "../data/recording-queries";
+import { reviewDocumentLocation } from "../data/test-document-surface";
 import { clearWorkflowPointerIfCurrent, writeWorkflowPointer } from "../data/workflow-pointer";
 import { LiveTargetCanvas } from "./live-target-canvas";
 import { PageLoading, RecordingProblem, errorMessage, targetLabel } from "./recording-shared";
@@ -103,10 +104,7 @@ function RecordingWorkspace({
         setCheckpointOpen(false);
       }
       if (intent.action === "stop" && canonical.snapshot?.stage === "reviewing") {
-        await navigate({
-          to: "/recordings/$recordingId/review",
-          params: { recordingId: workflowId },
-        });
+        await navigate(reviewDocumentLocation(exitDestination));
       }
     },
   });
@@ -119,12 +117,8 @@ function RecordingWorkspace({
   useEffect(() => {
     if (recording.data?.recovery || recording.error) return;
     if (snapshot?.stage !== "reviewing" && snapshot?.stage !== "committed") return;
-    void navigate({
-      to: "/recordings/$recordingId/review",
-      params: { recordingId: workflowId },
-      replace: true,
-    });
-  }, [navigate, recording.data?.recovery, recording.error, snapshot?.stage, workflowId]);
+    void navigate({ ...reviewDocumentLocation(exitDestination), replace: true });
+  }, [exitDestination, navigate, recording.data?.recovery, recording.error, snapshot?.stage]);
 
   useEffect(() => {
     if (snapshot?.stage !== "cancelled") return;

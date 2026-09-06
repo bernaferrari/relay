@@ -6,25 +6,29 @@ import type { RecordingEvidenceControl } from "../data/recording-evidence-target
 import { pickRecordingEvidenceControl } from "../data/recording-evidence-target";
 import { imagePointFromClick } from "../data/recording-evidence-target";
 import type { RecordingEvidenceTarget } from "../data/recording-evidence-target";
+import type { ReviewTargetTryResult } from "../data/recording-try-target";
 
 export function RecordingTargetPicker({
   controls,
   canEdit,
   previewUrl,
+  onTry,
   onKeep,
 }: {
   controls: readonly RecordingEvidenceControl[];
   canEdit: boolean;
   previewUrl: string | null;
+  onTry(control: RecordingEvidenceControl): Promise<ReviewTargetTryResult>;
   onKeep(target: RecordingEvidenceTarget): void;
 }) {
   const [picking, setPicking] = useState(false);
   const [selected, setSelected] = useState<RecordingEvidenceControl>();
-  const [tried, setTried] = useState(false);
+  const [tryResult, setTryResult] = useState<ReviewTargetTryResult>();
+  const [trying, setTrying] = useState(false);
 
   function choose(control: RecordingEvidenceControl) {
     setSelected(control);
-    setTried(false);
+    setTryResult(undefined);
   }
 
   return (
@@ -35,7 +39,7 @@ export function RecordingTargetPicker({
         disabled={!canEdit}
         onClick={() => {
           setPicking(true);
-          setTried(false);
+          setTryResult(undefined);
         }}
       >
         <Target aria-hidden="true" /> Change target
@@ -84,19 +88,27 @@ export function RecordingTargetPicker({
           {selected ? (
             <div className="grid gap-2">
               <p className="text-sm text-foreground">{selected.why}</p>
-              {tried ? (
-                <p className="text-xs text-muted-foreground">
-                  Relay would tap {selected.name}. Keep this target to store a reviewed revision.
+              {tryResult ? (
+                <p
+                  className="text-xs text-muted-foreground"
+                  role={tryResult.kind === "failed" ? "alert" : "status"}
+                >
+                  {tryResult.detail}
                 </p>
               ) : null}
               <div className="flex flex-wrap gap-2">
                 <Button
                   size="sm"
                   variant="ghost"
-                  onClick={() => setTried(true)}
-                  disabled={!canEdit}
+                  onClick={() => {
+                    setTrying(true);
+                    void onTry(selected)
+                      .then(setTryResult)
+                      .finally(() => setTrying(false));
+                  }}
+                  disabled={!canEdit || trying}
                 >
-                  Try target
+                  {trying ? "Trying…" : "Try target"}
                 </Button>
                 <Button size="sm" onClick={() => onKeep(selected.target)} disabled={!canEdit}>
                   Keep target

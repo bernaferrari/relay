@@ -34,14 +34,17 @@ import {
   workspaceDestinationDecision,
   workspaceDestinationQueryKey,
 } from "../layout/destination-summary";
+import { useTestDocumentReview } from "../data/test-document-surface";
 import { currentTestOutlineCopy } from "../data/workbench-step-selection";
+import { ReviewRecordingPage } from "./review-recording-page";
 
 const routeApi = getRouteApi("/tests/$testId");
 
 export function TestPage() {
   const { runService, platform, queryClient } = useRouteContext({ from: "__root__" });
   const { testId } = routeApi.useParams();
-  const search = routeApi.useSearch() as { run?: unknown; step?: unknown };
+  const search = routeApi.useSearch() as { run?: unknown; step?: unknown; view?: unknown };
+  const reviewRecordingId = useTestDocumentReview(platform, search.view);
   const navigate = useNavigate({ from: "/tests/$testId" });
   const runSetupRef = useRef<HTMLElement>(null);
 
@@ -230,6 +233,8 @@ export function TestPage() {
         scope: { testId },
       })
     : undefined;
+
+  if (reviewRecordingId) return <ReviewRecordingPage recordingId={reviewRecordingId} />;
 
   function focusRunSetup() {
     runSetupRef.current?.scrollIntoView({ behavior: "auto", block: "center" });

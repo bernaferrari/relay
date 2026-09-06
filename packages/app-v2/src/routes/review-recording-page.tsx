@@ -15,7 +15,7 @@ import { Field, FieldDescription, FieldLabel } from "@relay/ui-react/components/
 import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
+import { useNavigate, useParams, useRouteContext } from "@tanstack/react-router";
 import {
   ArrowDown,
   ArrowUp,
@@ -41,10 +41,9 @@ import {
 } from "./recording-review-presentation";
 
 import { reviewPersistence } from "../data/recording-review-persistence";
+import { tryReviewTarget } from "../data/recording-try-target";
 import { useRecordingNameDraft } from "../data/use-recording-name-draft";
 import { RecordingTargetPicker } from "./recording-target-picker";
-
-const routeApi = getRouteApi("/recordings/$recordingId/review");
 
 type ReviewTransitionIntent =
   | { action: "replay" }
@@ -55,9 +54,12 @@ type ReviewTransitionIntent =
       history?: { kind: "new" | "undo" | "redo"; fromRevision: number };
     };
 
-export function ReviewRecordingPage() {
+export function ReviewRecordingPage({
+  recordingId: recordingIdProp,
+}: { recordingId?: string } = {}) {
   const { productService, platform, queryClient } = useRouteContext({ from: "__root__" });
-  const { recordingId } = routeApi.useParams();
+  const params = useParams({ strict: false }) as { recordingId?: string };
+  const recordingId = recordingIdProp ?? params.recordingId ?? "";
   const navigate = useNavigate();
   const workflowId = recordingId;
   const nameDraftKey = `recordingName:${workflowId}`;
@@ -498,6 +500,13 @@ export function ReviewRecordingPage() {
                             controls={evidencePreview.data?.controls ?? []}
                             canEdit={canEdit}
                             previewUrl={evidenceUrl}
+                            onTry={(control) =>
+                              tryReviewTarget({
+                                previewTarget: productService.previewTarget,
+                                selectedTarget: state?.selectedTarget,
+                                control,
+                              })
+                            }
                             onKeep={(target) =>
                               edit({
                                 kind: "replace",

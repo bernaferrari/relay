@@ -23,6 +23,7 @@ import {
   writeWorkflowPointer,
 } from "../data/workflow-pointer";
 import { PageLoading, RecordingProblem, targetLabel } from "./recording-shared";
+import { ReviewRecordingPage } from "./review-recording-page";
 import { LiveTargetCanvas } from "./live-target-canvas";
 
 const NEW_TEST_DRAFT_KEY = "newTestDraft";
@@ -142,6 +143,7 @@ export function NewTestPage() {
 
   const selectedTarget = targets.data?.targetOptions.find((target) => target.targetId === targetId);
   useEffect(() => {
+    if (search.view === "review") return;
     if (!selectedTarget || !previewCanvas.current || !productService.previewTarget) {
       setPreviewStatus("idle");
       return;
@@ -179,7 +181,7 @@ export function NewTestPage() {
       if (previewSession.current === session) previewSession.current = undefined;
       session?.close();
     };
-  }, [previewAttempt, productService, selectedTarget?.targetId]);
+  }, [previewAttempt, productService, search.view, selectedTarget?.targetId]);
 
   async function sendPreview(input: Parameters<LiveTargetSession["input"]>[0]) {
     const session = previewSession.current;
@@ -247,6 +249,11 @@ export function NewTestPage() {
   const setupOpen =
     !loading && !apps.isError && !targets.isError && !targets.data?.recovery && !activePointer.data;
   const formReady = Boolean(appId && targetId && !begin.isPending);
+  if (search.view === "review") {
+    if (activePointer.isPending) return <PageLoading label="Opening the reviewed recording…" />;
+    if (activePointer.data) return <ReviewRecordingPage recordingId={activePointer.data} />;
+  }
+
   const startHint = !appId
     ? "Choose an app"
     : !targetId
