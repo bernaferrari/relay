@@ -27,8 +27,10 @@ import {
   dispatchRecordingInput,
   recordingInputRecoveryMessage,
   recordingRecoveryBlocksSend,
+  reconcileRecordingMutation,
   refreshRecordingEvidence,
   resolveRecordingMutation,
+  unresolvedRecordingMutation,
   type RecordingInputOutcome,
   type RecordingRecoveryLedger,
 } from "../data/recording-input-outcome";
@@ -170,8 +172,9 @@ function RecordingWorkspace({
         liveSession.current = session;
         unsubscribe = session.subscribe((next) => {
           setLiveStatus(next.status);
-          setLiveIssue(next.issue ? liveIssueMessage(next.issue) : undefined);
           setBrowserContext(next.browserContext);
+          if (recordingRecoveryBlocksSend(recordingLedger.current)) return;
+          setLiveIssue(next.issue ? liveIssueMessage(next.issue) : undefined);
         });
         stop = session.mount(liveCanvas.current);
       })
@@ -207,6 +210,22 @@ function RecordingWorkspace({
     const queued = liveInputOutcome.current
       .catch(() => ({ kind: "confirmed" as const }))
       .then(async () => {
+        if (recordingRecoveryBlocksSend(recordingLedger.current)) {
+          const unresolved =
+            unresolvedRecordingMutation(recordingLedger.current, "unknown") ??
+            unresolvedRecordingMutation(recordingLedger.current, "refresh-failed");
+          setRecoveryKind(unresolved?.kind ?? "unknown");
+          setLiveIssue(
+            (unresolved ? recordingInputRecoveryMessage(unresolved) : undefined) ??
+              "An earlier interaction is still unconfirmed. Observe the app before sending more input.",
+          );
+          return {
+            kind: "unknown" as const,
+            mutationId: unresolved?.mutationId,
+            message:
+              "An earlier interaction is still unconfirmed. Observe the app before sending more input.",
+          };
+        }
         setLiveInputBusy(true);
         try {
           const outcome = await dispatchRecordingInput({
@@ -236,10 +255,23 @@ function RecordingWorkspace({
     return liveInputQueue.current;
   }
 
+  function observeLastUnknownMutation(observed: "applied" | "not-applied") {
+    const unresolved = unresolvedRecordingMutation(recordingLedger.current, "unknown");
+    if (!unresolved?.mutationId) return;
+    recordingLedger.current = reconcileRecordingMutation(
+      recordingLedger.current,
+      unresolved.mutationId,
+      observed,
+    );
+    const resolved = recordingLedger.current.mutations.find(
+      (mutation) => mutation.mutationId === unresolved.mutationId,
+    );
+    setRecoveryKind(resolved?.kind ?? "confirmed");
+    setLiveIssue(resolved ? recordingInputRecoveryMessage(resolved) : undefined);
+  }
+
   async function recoverRecordingRefreshOnly() {
-    const unresolved = [...recordingLedger.current.mutations]
-      .reverse()
-      .find((mutation) => mutation.kind === "refresh-failed");
+    const unresolved = unresolvedRecordingMutation(recordingLedger.current, "refresh-failed");
     if (!unresolved?.mutationId) return;
     setLiveInputBusy(true);
     try {
@@ -470,6 +502,32 @@ function RecordingWorkspace({
       </div>
 
       <footer className="flex items-center justify-end gap-2" aria-label="Recording controls">
+        {recoveryKind === "unknown" ? (
+          <div
+            className="mr-auto flex min-w-0 flex-wrap items-center gap-2"
+            role="group"
+            aria-label="Observe the last interaction"
+          >
+            <p className="max-w-xl text-sm text-muted-foreground">
+              {liveIssue ??
+                "Relay could not confirm whether the last interaction reached the app. Observe the app before sending more input."}
+            </p>
+            <Button
+              variant="outline"
+              disabled={liveInputBusy}
+              onClick={() => observeLastUnknownMutation("applied")}
+            >
+              It applied
+            </Button>
+            <Button
+              variant="outline"
+              disabled={liveInputBusy}
+              onClick={() => observeLastUnknownMutation("not-applied")}
+            >
+              It did not apply
+            </Button>
+          </div>
+        ) : null}
         {recoveryKind === "refresh-failed" ? (
           <Button
             variant="outline"

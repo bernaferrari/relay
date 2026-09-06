@@ -53,10 +53,17 @@ export function recordingInputRecoveryMessage(outcome: RecordingInputOutcome): s
 
 export function recordingRecoveryBlocksSend(ledger: RecordingRecoveryLedger | undefined): boolean {
   return Boolean(
-    ledger?.mutations.some(
-      (mutation) => mutation.kind === "unknown" || mutation.kind === "refresh-failed",
-    ),
+    unresolvedRecordingMutation(ledger, "unknown") ||
+      unresolvedRecordingMutation(ledger, "refresh-failed"),
   );
+}
+
+/** Latest mutation that still needs refresh-only recovery or an explicit observe. */
+export function unresolvedRecordingMutation(
+  ledger: RecordingRecoveryLedger | undefined,
+  kind: "unknown" | "refresh-failed",
+): RecordingInputOutcome | undefined {
+  return [...(ledger?.mutations ?? [])].reverse().find((mutation) => mutation.kind === kind);
 }
 
 export function appendRecordingMutation(

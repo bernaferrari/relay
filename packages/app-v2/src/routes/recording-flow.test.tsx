@@ -1180,4 +1180,103 @@ describe("record, review, replay, and save", () => {
     await click(button("Open recording"));
     expect(history.location.pathname).toBe("/recordings/workflow-1");
   });
+
+  it("blocks live input after an unknown dispatch until the user observes and reconciles", async () => {
+    const fake = fakeService();
+    const originalLiveTarget = fake.service.liveTarget!;
+    let inputCount = 0;
+    fake.service.liveTarget = async (selected) => {
+      const session = await originalLiveTarget(selected);
+      return {
+        ...session,
+        async input(input) {
+          inputCount += 1;
+          if (inputCount === 1) {
+            throw new Error("Input submitted; runner not ready to acknowledge");
+          }
+          await session.input(input);
+        },
+      };
+    };
+
+    const { history } = await renderJourney(
+      "/tests/new",
+      fake.service,
+      platformWithStorage().platform,
+    );
+    await beginRecording();
+    await tapLiveTarget();
+
+    expect(inputCount).toBe(1);
+    expect(document.body.textContent).toContain("Observe the app");
+    expect(document.body.textContent).not.toMatch(/was not sent/i);
+    expect(document.body.textContent).not.toContain("Refresh recording");
+    expect(button("It applied")).toBeTruthy();
+    expect(button("It did not apply")).toBeTruthy();
+
+    await tapLiveTarget();
+    expect(inputCount).toBe(1);
+    await click(button("Stop"));
+    expect(fake.calls).not.toContain("stop");
+    expect(history.location.pathname).toBe("/recordings/workflow-1");
+
+    await click(button("It applied"));
+    expect(document.body.textContent).not.toContain("Observe the app");
+    await tapLiveTarget();
+    expect(inputCount).toBe(2);
+    await click(button("Stop"));
+    expect(fake.calls).toContain("stop");
+    expect(history.location.pathname).toBe("/tests/new");
+    expect(String(history.location.search)).toContain("view=review");
+  });
+
+  it("lets the user retry after observing that the unknown interaction did not apply", async () => {
+    const fake = fakeService();
+    const originalLiveTarget = fake.service.liveTarget!;
+    let inputCount = 0;
+    fake.service.liveTarget = async (selected) => {
+      const session = await originalLiveTarget(selected);
+      return {
+        ...session,
+        async input(input) {
+          inputCount += 1;
+          if (inputCount === 1) {
+            throw new Error("Input submitted; runner not ready to acknowledge");
+          }
+          await session.input(input);
+        },
+      };
+    };
+
+    await renderJourney("/tests/new", fake.service, platformWithStorage().platform);
+    await beginRecording();
+    await tapLiveTarget();
+    expect(inputCount).toBe(1);
+    await tapLiveTarget();
+    expect(inputCount).toBe(1);
+    await click(button("It did not apply"));
+    expect(document.body.textContent).toContain("was not sent");
+    await tapLiveTarget();
+    expect(inputCount).toBe(2);
+    expect(fake.calls.filter((call) => call === "input:touch")).toEqual(["input:touch"]);
+  });
 });
+
+async function tapLiveTarget() {
+  const canvas = document.querySelector<HTMLCanvasElement>(".relay-capture-live-target");
+  if (!canvas) throw new Error("Live target canvas not found");
+  canvas.width = 320;
+  canvas.height = 240;
+  canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 320, height: 240 }) as DOMRect;
+  canvas.setPointerCapture = () => undefined;
+  await act(async () => {
+    canvas.dispatchEvent(
+      new PointerEvent("pointerdown", { bubbles: true, pointerId: 1, clientX: 40, clientY: 50 }),
+    );
+    canvas.dispatchEvent(
+      new PointerEvent("pointerup", { bubbles: true, pointerId: 1, clientX: 40, clientY: 50 }),
+    );
+  });
+  await settle();
+  await settle();
+}

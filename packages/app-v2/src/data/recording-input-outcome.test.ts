@@ -7,6 +7,7 @@ import {
   recordingRecoveryBlocksSend,
   reconcileRecordingMutation,
   refreshRecordingEvidence,
+  unresolvedRecordingMutation,
 } from "./recording-input-outcome";
 
 describe("recording input outcome", () => {
@@ -130,5 +131,23 @@ describe("recording input outcome", () => {
     expect(
       reconciled.mutations.some((mutation) => mutation.mutationId === unknown.mutationId),
     ).toBe(true);
+    expect(unresolvedRecordingMutation(ledger, "unknown")?.mutationId).toBe(unknown.mutationId);
+    expect(unresolvedRecordingMutation(reconciled, "unknown")).toBeUndefined();
+  });
+
+  it("keeps an applied observation on the same mutation identity", () => {
+    const ledger = appendRecordingMutation(undefined, {
+      kind: "unknown",
+      mutationId: "recording-mutation-observe",
+      message: "Input submitted; runner not ready to acknowledge",
+    });
+    const applied = reconcileRecordingMutation(ledger, "recording-mutation-observe", "applied");
+    expect(applied.mutations).toEqual([
+      expect.objectContaining({
+        kind: "confirmed",
+        mutationId: "recording-mutation-observe",
+      }),
+    ]);
+    expect(recordingRecoveryBlocksSend(applied)).toBe(false);
   });
 });

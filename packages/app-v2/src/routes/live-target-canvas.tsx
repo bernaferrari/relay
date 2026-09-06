@@ -225,6 +225,11 @@ export function LiveTargetCanvas({
           </span>
         ) : null}
       </div>
+      {streaming && issue ? (
+        <p role="status" className="border-t border-border px-3 py-2 text-sm">
+          {issue}
+        </p>
+      ) : null}
 
       <div
         className={
