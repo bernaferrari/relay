@@ -30,6 +30,7 @@ import { RunInspection } from "./run-page";
 import {
   WORKSPACE_DESTINATION_KEY,
   parseWorkspaceDestination,
+  incompatibleSavedProfile,
   workspaceDestinationDecision,
   workspaceDestinationQueryKey,
 } from "../layout/destination-summary";
@@ -97,34 +98,27 @@ export function TestPage() {
   }, [configuration.pristine, configuration.setSelection, targets.data]);
   const targetId = configuration.selection.targetId ?? "";
   const targetReady = Boolean(targets.data?.some((target) => target.targetId === targetId));
-  useEffect(() => {
-    // A saved profile is bound to one concrete runtime target. Clear a stale
-    // persisted profile before start when the user changes targets; otherwise
-    // the visible target and frozen targetProfileId would describe different
-    // executions and the server would reject the request late.
-    if (profiles.data === undefined || !configuration.selection.savedProfileId) return;
-    const selectedProfile = profiles.data.find(
-      (profile) => profile.id === configuration.selection.savedProfileId,
-    );
-    if (selectedProfile?.targetId === targetId) return;
-    configuration.setSelection({
-      ...configuration.selection,
-      savedProfileId: undefined,
-    });
-  }, [configuration.selection, configuration.setSelection, profiles.data, targetId]);
+  const profileBlocker = incompatibleSavedProfile({
+    savedProfileId: configuration.selection.savedProfileId,
+    targetId,
+    profiles: profiles.data,
+  });
+  const canStart = targetReady && !configuration.loading && !profileBlocker;
   const selectedBuild = builds.data?.find(
     (build) => build.id === configuration.selection.buildId && build.status === "ready",
   );
   const start = useMutation({
     mutationFn: async () => {
-      if (!test.data || !targetReady || configuration.loading) {
-        throw new TypeError("Choose a ready device or browser for this Run.");
+      if (!test.data || !canStart) {
+        throw new TypeError(
+          profileBlocker?.detail ?? "Choose a ready device or browser for this Run.",
+        );
       }
       const started = await runService.start({
         testId,
         appMapId: test.data.appMapId,
         targetId,
-        ...(configuration.selection.savedProfileId
+        ...(configuration.selection.savedProfileId && !profileBlocker
           ? { targetProfileId: configuration.selection.savedProfileId }
           : {}),
         ...(selectedBuild?.sourceSha && /^[0-9a-f]{7,40}$/u.test(selectedBuild.sourceSha)
@@ -242,7 +236,7 @@ export function TestPage() {
   }
 
   function runOrFocusSetup() {
-    if (!targetReady || configuration.loading) {
+    if (!canStart) {
       focusRunSetup();
       return;
     }
@@ -266,9 +260,11 @@ export function TestPage() {
               >
                 {start.isPending
                   ? "Starting…"
-                  : targetReady && !configuration.loading
+                  : canStart
                     ? "Run Test"
-                    : "Set up Run"}
+                    : profileBlocker
+                      ? "Fix setup"
+                      : "Set up Run"}
               </Button>
             )}
             {attachedRunId ? (
@@ -382,16 +378,19 @@ export function TestPage() {
                       targetName: targets.data?.find((target) => target.targetId === targetId)
                         ?.name,
                     },
-                    validated: targetReady && !configuration.loading,
-                    blockers: configuration.targetUnavailable
-                      ? [
-                          {
-                            id: "target",
-                            label: "Saved target is unavailable",
-                            detail: "Choose a ready device or browser to continue.",
-                          },
-                        ]
-                      : [],
+                    validated: canStart,
+                    blockers: [
+                      ...(configuration.targetUnavailable
+                        ? [
+                            {
+                              id: "target",
+                              label: "Saved target is unavailable",
+                              detail: "Choose a ready device or browser to continue.",
+                            },
+                          ]
+                        : []),
+                      ...(profileBlocker ? [profileBlocker] : []),
+                    ],
                   }}
                   targetOptions={targets.data?.map((target) => ({
                     id: target.targetId,
@@ -407,7 +406,7 @@ export function TestPage() {
                   error={scope.error ?? configuration.error}
                   onRetry={scope.error ? scope.retry : configuration.retry}
                 >
-                  {profiles.data?.filter((profile) => profile.targetId === targetId).length ? (
+                  {profiles.data?.length ? (
                     <label className="grid gap-1 text-sm">
                       <span className="text-xs text-muted-foreground">Saved profile</span>
                       <select
@@ -421,14 +420,15 @@ export function TestPage() {
                         }
                       >
                         <option value="">Let Relay select the reviewed profile</option>
-                        {profiles.data
-                          ?.filter((profile) => profile.targetId === targetId)
-                          .map((profile) => (
-                            <option key={profile.id} value={profile.id}>
-                              {profile.name}
-                              {profile.account ? ` · ${profile.account.name}` : ""}
-                            </option>
-                          ))}
+                        {profiles.data.map((profile) => (
+                          <option key={profile.id} value={profile.id}>
+                            {profile.name}
+                            {profile.account ? ` · ${profile.account.name}` : ""}
+                            {profile.targetId && profile.targetId !== targetId
+                              ? " · other destination"
+                              : ""}
+                          </option>
+                        ))}
                       </select>
                     </label>
                   ) : null}

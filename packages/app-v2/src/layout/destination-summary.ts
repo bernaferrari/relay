@@ -165,6 +165,35 @@ export function workspaceDestinationDecision(input: {
   return { kind: "apply", targetId: resolved };
 }
 
+export function incompatibleSavedProfile(input: {
+  savedProfileId?: string;
+  targetId?: string;
+  profiles?: readonly {
+    id: string;
+    targetId?: string;
+    name: string;
+    account?: { name?: string };
+  }[];
+}): { id: string; label: string; detail: string } | undefined {
+  const savedId = input.savedProfileId?.trim();
+  if (!savedId || !input.profiles) return undefined;
+  const profile = input.profiles.find((item) => item.id === savedId);
+  if (!profile) {
+    return {
+      id: "saved-profile",
+      label: "Saved profile is unavailable",
+      detail: "Choose a profile that matches this device or browser.",
+    };
+  }
+  if (!input.targetId || profile.targetId === input.targetId) return undefined;
+  const account = profile.account?.name ?? profile.name;
+  return {
+    id: "saved-profile",
+    label: `${account} is saved for another destination`,
+    detail: "Keep that destination, or choose a different profile before running.",
+  };
+}
+
 export function destinationManageAction(): DestinationAction {
   return { kind: "manage", href: "/devices" };
 }

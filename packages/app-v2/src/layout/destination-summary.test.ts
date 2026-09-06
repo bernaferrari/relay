@@ -7,6 +7,7 @@ import {
   destinationRunTargetId,
   matchRunTargetId,
   summarizeDestinations,
+  incompatibleSavedProfile,
   workspaceDestinationDecision,
 } from "./destination-summary";
 
@@ -182,5 +183,40 @@ describe("destination summary", () => {
         origin: "workspace-default",
       }),
     ).toEqual({ kind: "apply", targetId: "emulator-5554" });
+  });
+
+  it("keeps an incompatible saved account visible instead of clearing it", () => {
+    expect(
+      incompatibleSavedProfile({
+        savedProfileId: "profile-member",
+        targetId: "emulator-5554",
+        profiles: [
+          {
+            id: "profile-member",
+            name: "Member",
+            targetId: "browser-golden",
+            account: { name: "Member" },
+          },
+        ],
+      }),
+    ).toEqual({
+      id: "saved-profile",
+      label: "Member is saved for another destination",
+      detail: "Keep that destination, or choose a different profile before running.",
+    });
+    expect(
+      incompatibleSavedProfile({
+        savedProfileId: "profile-member",
+        targetId: "browser-golden",
+        profiles: [
+          {
+            id: "profile-member",
+            name: "Member",
+            targetId: "browser-golden",
+            account: { name: "Member" },
+          },
+        ],
+      }),
+    ).toBeUndefined();
   });
 });

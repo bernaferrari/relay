@@ -446,7 +446,7 @@ describe("Run and Report", () => {
     });
   });
 
-  it("clears a saved profile when its bound target is changed", async () => {
+  it("keeps an incompatible saved profile visible as a blocker", async () => {
     const fake = fakeRunService();
     fake.service.listProfiles = async () => [
       {
@@ -466,10 +466,10 @@ describe("Run and Report", () => {
       profile.dispatchEvent(new Event("change", { bubbles: true }));
     });
     await click(document.querySelector<HTMLInputElement>('input[value="browser-golden"]')!);
-    await click(button("Run Test"));
-
-    expect(fake.startInputs[0]).toMatchObject({ targetId: "browser-golden" });
-    expect(fake.startInputs[0]).not.toHaveProperty("targetProfileId");
+    expect(profile.value).toBe("profile-android");
+    expect(document.body.textContent).toContain("saved for another destination");
+    await click(button("Fix setup"));
+    expect(fake.startInputs).toHaveLength(0);
   });
 
   it("keeps a saved Test browser and profile when a workspace Pixel is remembered", async () => {
