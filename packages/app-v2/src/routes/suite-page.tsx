@@ -21,6 +21,8 @@ import { EmptyState, ReadinessMark, RecoveryState } from "../components/product-
 import { RunConfigurationComposer } from "../components/run-configuration-composer";
 import { useRunConfigurationKey } from "../data/use-persisted-run-configuration";
 import { usePersistedRunConfiguration } from "../data/use-persisted-run-configuration";
+import { compileSuiteTargets } from "../data/paired-configuration";
+import { usePairedConfigurationWorkspace } from "../data/use-paired-configuration-workspace";
 import { PageLoading } from "./recording-shared";
 
 const routeApi = getRouteApi("/apps/$appId/suites/$suiteId");
@@ -63,10 +65,16 @@ export function SuitePage() {
         targetProfileId: environments.data[0]!.id,
       });
   }, [configuration.pristine, configuration.setSelection, environments.data]);
-  const selectedProfileIds = [
-    ...(configuration.selection.targetProfileIds ??
-      (configuration.selection.targetProfileId ? [configuration.selection.targetProfileId] : [])),
-  ];
+  const paired = usePairedConfigurationWorkspace(platform);
+  const compiledSuite = compileSuiteTargets(paired.workspace, environments.data ?? []);
+  const selectedProfileIds = configuration.selection.usePairedWorkspace
+    ? compiledSuite.profileIds
+    : [
+        ...(configuration.selection.targetProfileIds ??
+          (configuration.selection.targetProfileId
+            ? [configuration.selection.targetProfileId]
+            : [])),
+      ];
   const preview = useQuery({
     queryKey: ["suites", appId, suiteId, "preview", selectedProfileIds],
     queryFn: () =>
@@ -321,9 +329,16 @@ export function SuitePage() {
                 onRetry={scope.error ? scope.retry : configuration.retry}
                 selection={configuration.selection}
                 onSelectionChange={configuration.setSelection}
+                pairedWorkspaceLabel={
+                  paired.workspace.rows.length
+                    ? `Use saved workspace · ${paired.workspace.rows.length} paired configurations`
+                    : undefined
+                }
               />
               <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-                Choose one to four browsers.
+                {configuration.selection.usePairedWorkspace
+                  ? "Each saved Browser and Account pair runs once. This is not a Browser × Account product."
+                  : "Choose one to four browsers."}
               </p>
               <p className="mt-5 border-t border-border pt-4 text-sm font-medium">
                 How much should run?

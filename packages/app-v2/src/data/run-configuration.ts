@@ -21,6 +21,7 @@ export type RunConfigurationSelection = {
   dataSetIds?: readonly string[];
   buildId?: string;
   startupMode?: "cold";
+  usePairedWorkspace?: boolean;
 };
 export type RunConfigurationState = {
   values: RunConfigurationValue;

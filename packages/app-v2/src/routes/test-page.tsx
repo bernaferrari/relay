@@ -34,6 +34,8 @@ import {
   workspaceDestinationDecision,
   workspaceDestinationQueryKey,
 } from "../layout/destination-summary";
+import { usePairedConfigurationWorkspace } from "../data/use-paired-configuration-workspace";
+import { startOwnedTestRun, testStartRequests } from "../data/start-owned-test-run";
 import { useTestDocumentReview } from "../data/test-document-surface";
 import { currentTestOutlineCopy } from "../data/workbench-step-selection";
 import { ReviewRecordingPage } from "./review-recording-page";
@@ -112,7 +114,12 @@ export function TestPage() {
     buildsStatus: builds.isEnabled && builds.isPending ? "pending" : "success",
   });
   const profileBlocker = admission.blockers.find((item) => item.id === "saved-profile");
-  const canStart = targetReady && !configuration.loading && admission.status === "ready";
+  const paired = usePairedConfigurationWorkspace(platform);
+  const usePairs = configuration.selection.usePairedWorkspace === true;
+  const canStart =
+    (usePairs ? paired.workspace.rows.length > 0 : targetReady) &&
+    !configuration.loading &&
+    admission.status === "ready";
   const start = useMutation({
     mutationFn: async () => {
       if (!test.data || !canStart) {
@@ -120,37 +127,27 @@ export function TestPage() {
           admission.blockers[0]?.detail ?? "Choose a ready device or browser for this Run.",
         );
       }
-      const started = await runService.start({
-        testId,
-        appMapId: test.data.appMapId,
-        targetId,
-        ...(admission.start.targetProfileId
-          ? { targetProfileId: admission.start.targetProfileId }
-          : {}),
-        ...(admission.start.sourceRevision
-          ? { sourceRevision: admission.start.sourceRevision }
-          : {}),
-        ...(configuration.selection.startupMode === "cold"
-          ? { startup: { mode: "cold" as const } }
-          : {}),
+      return startOwnedTestRun({
+        requests: testStartRequests({
+          usePairedWorkspace: usePairs,
+          workspace: paired.workspace,
+          testId,
+          appMapId: test.data.appMapId,
+          targetId,
+          targetProfileId: admission.start.targetProfileId,
+          sourceRevision: admission.start.sourceRevision,
+          startup:
+            configuration.selection.startupMode === "cold" ? { mode: "cold" as const } : undefined,
+        }),
+        start: (request) => runService.start(request),
+        inspect: (workflowId) => runService.inspect(workflowId),
+        remember: async (durable, workflowId, runId) => {
+          await writeRunPointer(platform, { workflowId, runId, testId });
+          queryClient.setQueryData(runQueryKeys.pointer, { workflowId, runId, testId });
+          queryClient.setQueryData(runQueryKeys.workflow(workflowId), durable);
+          startedForTestId.current = testId;
+        },
       });
-      const workflowId = started.workflow?.workflowId;
-      if (!workflowId) {
-        if (started.recovery) return started;
-        throw new TypeError("Relay could not start this Run.");
-      }
-      const canonical = await runService.inspect(workflowId);
-      const runId = canonical.run?.runId ?? started.run?.runId;
-      if (!runId) {
-        if (canonical.recovery) return canonical;
-        throw new TypeError("Relay could not open the new Run.");
-      }
-      const durable = canonical.run?.runId ? canonical : { ...canonical, run: started.run };
-      await writeRunPointer(platform, { workflowId, runId, testId });
-      queryClient.setQueryData(runQueryKeys.pointer, { workflowId, runId, testId });
-      queryClient.setQueryData(runQueryKeys.workflow(workflowId), durable);
-      startedForTestId.current = testId;
-      return durable;
     },
     onSuccess: (state) => {
       const runId = state.run?.runId;
@@ -382,6 +379,11 @@ export function TestPage() {
                 </h2>
                 <RunConfigurationComposer
                   variant="plain"
+                  pairedWorkspaceLabel={
+                    paired.workspace.rows.length
+                      ? `Use saved workspace · ${paired.workspace.rows.length} paired configurations`
+                      : undefined
+                  }
                   configuration={{
                     values: {
                       targetName: targets.data?.find((target) => target.targetId === targetId)

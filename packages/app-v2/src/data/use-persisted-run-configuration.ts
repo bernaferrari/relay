@@ -73,6 +73,7 @@ function parseSelection(raw: string | null): RunConfigurationSelection {
     ...(ids(record.dataSetIds) ? { dataSetIds: ids(record.dataSetIds) } : {}),
     ...(typeof record.buildId === "string" ? { buildId: record.buildId } : {}),
     ...(record.startupMode === "cold" ? { startupMode: "cold" as const } : {}),
+    ...(record.usePairedWorkspace === true ? { usePairedWorkspace: true } : {}),
   };
 }
 

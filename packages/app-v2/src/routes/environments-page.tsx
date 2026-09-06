@@ -11,14 +11,16 @@ import { Field, FieldError, FieldLabel } from "@relay/ui-react/components/field"
 import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
 
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { ChevronRight, Globe2, Plus, RotateCcw } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { LibraryPage, PageHeader } from "../components/page-layout";
 import { EmptyState, RecoveryState } from "../components/product-patterns";
 import { readSetupContinuation } from "../data/setup-continuation";
+import { usePairedConfigurationWorkspace } from "../data/use-paired-configuration-workspace";
 import { PageLoading } from "./recording-shared";
+import { PairedWorkspacePanel } from "./paired-workspace-panel";
 
 function displayHost(url: string): string {
   try {
@@ -29,7 +31,8 @@ function displayHost(url: string): string {
 }
 
 export function EnvironmentsPage() {
-  const { browserSpacesService, queryClient } = useRouteContext({ from: "__root__" });
+  const { browserSpacesService, queryClient, platform } = useRouteContext({ from: "__root__" });
+  const paired = usePairedConfigurationWorkspace(platform);
   const navigate = useNavigate();
   const rawSearch = useLocation({ select: (state) => state.search });
   const rawReturnTo =
@@ -45,6 +48,16 @@ export function EnvironmentsPage() {
     queryFn: () => browserSpacesService.listSpaces(),
     staleTime: 10_000,
   });
+  const accountQueries = useQueries({
+    queries: (spaces.data ?? []).map((space) => ({
+      queryKey: ["browser-spaces", space.id, "accounts"],
+      queryFn: () => browserSpacesService.listAuthenticationFixtures(space.id),
+      staleTime: 10_000,
+    })),
+  });
+  const accountsByBrowser = Object.fromEntries(
+    (spaces.data ?? []).map((space, index) => [space.id, accountQueries[index]?.data ?? []]),
+  );
   const create = useMutation({
     mutationFn: () =>
       browserSpacesService.createSpace({
@@ -238,6 +251,15 @@ export function EnvironmentsPage() {
             </li>
           ))}
         </ul>
+      ) : null}
+      {spaces.data?.length ? (
+        <PairedWorkspacePanel
+          workspace={paired.workspace}
+          spaces={spaces.data}
+          accountsByBrowser={accountsByBrowser}
+          onSave={paired.save}
+          onOpenLive={(browserId) => browserSpacesService.openSpace(browserId)}
+        />
       ) : null}
       {!spaces.isPending && !spaces.error && spaces.data?.length === 0 ? (
         <EmptyState

@@ -30,6 +30,7 @@ export function RunConfigurationComposer({
   targetGroupName = "run-target",
   variant = "panel",
   title,
+  pairedWorkspaceLabel,
 }: {
   configuration: RunConfigurationState;
   onResolveBlocker?: (blocker: RunConfigurationBlocker) => void;
@@ -45,6 +46,7 @@ export function RunConfigurationComposer({
   targetGroupName?: string;
   variant?: "panel" | "plain";
   title?: ReactNode;
+  pairedWorkspaceLabel?: string;
 }) {
   const titleId = useId();
   const selectedTargets =
@@ -193,6 +195,21 @@ export function RunConfigurationComposer({
             ))}
           </ul>
         </div>
+      ) : null}
+      {pairedWorkspaceLabel && onSelectionChange ? (
+        <label className="flex min-h-11 items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={selection?.usePairedWorkspace === true}
+            onChange={(event) =>
+              onSelectionChange({
+                ...selection,
+                usePairedWorkspace: event.currentTarget.checked || undefined,
+              })
+            }
+          />
+          {pairedWorkspaceLabel}
+        </label>
       ) : null}
       {children}
     </section>

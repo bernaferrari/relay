@@ -8,6 +8,8 @@ import { FormPage, PageHeader } from "../components/page-layout";
 import { RunConfigurationComposer } from "../components/run-configuration-composer";
 import { useRunConfigurationKey } from "../data/use-persisted-run-configuration";
 import { usePersistedRunConfiguration } from "../data/use-persisted-run-configuration";
+import { compileRepeatScope } from "../data/paired-configuration";
+import { usePairedConfigurationWorkspace } from "../data/use-paired-configuration-workspace";
 import { runQueryKeys } from "../data/run-queries";
 import { PageLoading, RecordingProblem, errorMessage } from "./recording-shared";
 
@@ -77,25 +79,55 @@ export function RunAcrossPage() {
     () => (target ? { ...target, label: target.name } : undefined),
     [target],
   );
+  const paired = usePairedConfigurationWorkspace(platform);
   const previewResult = useMemo(() => {
     if (!setup.data || !runTarget || !selectionReady)
       return { preview: undefined, error: undefined };
     try {
-      return {
-        preview: runAcrossService.preview({ setup: setup.data, selected, target: runTarget }),
-        error: undefined,
-      };
+      const preview = runAcrossService.preview({
+        setup: setup.data,
+        selected,
+        target: runTarget,
+      });
+      if (configuration.selection.usePairedWorkspace) {
+        const scope = compileRepeatScope({
+          workspace: paired.workspace,
+          dataCaseCount: preview.caseCount,
+        });
+        return {
+          preview: { ...preview, caseCount: scope.executionCount, scopeLabel: scope.scopeLabel },
+          error: undefined,
+        };
+      }
+      return { preview, error: undefined };
     } catch (error) {
       return { preview: undefined, error: errorMessage(error) };
     }
-  }, [previewAttempt, runAcrossService, selected, setup.data, runTarget, selectionReady]);
+  }, [
+    configuration.selection.usePairedWorkspace,
+    paired.workspace,
+    previewAttempt,
+    runAcrossService,
+    selected,
+    setup.data,
+    runTarget,
+    selectionReady,
+  ]);
   const preview = previewResult.preview;
   const start = useMutation({
     mutationFn: () => {
       if (!setup.data || !runTarget || configuration.loading || !preview) {
         throw new TypeError("Choose a ready device or browser and at least one data value.");
       }
-      return runAcrossService.startPilot({ setup: setup.data, selected, target: runTarget });
+      const pilotTargetId = configuration.selection.usePairedWorkspace
+        ? paired.workspace.rows[0]?.browserId
+        : runTarget.targetId;
+      const target = targets.data?.find((item) => item.targetId === pilotTargetId) ?? runTarget;
+      return runAcrossService.startPilot({
+        setup: setup.data,
+        selected,
+        target: { ...target, label: target.name },
+      });
     },
     onSuccess: async (batch) => {
       await navigate({ to: "/batches/$batchId", params: { batchId: batch.id } });
@@ -190,6 +222,11 @@ export function RunAcrossPage() {
             error={scope.error ?? configuration.error}
             onRetry={scope.error ? scope.retry : configuration.retry}
             targetGroupName="run-across-target"
+            pairedWorkspaceLabel={
+              paired.workspace.rows.length
+                ? `Use saved workspace · ${paired.workspace.rows.length} paired configurations`
+                : undefined
+            }
           >
             {valuesUnavailable ? (
               <Button
