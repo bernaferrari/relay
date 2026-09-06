@@ -29,29 +29,63 @@ function session(input?: LiveTargetSession["input"]): LiveTargetSession {
 }
 
 describe("tryReviewTarget", () => {
-  it("taps the selected control through preview, then closes without recording", async () => {
+  it("resolves the saved binding on a fresh observation instead of the historic rectangle", async () => {
     const inputs: unknown[] = [];
     const preview = session(async (value) => {
       inputs.push(value);
     });
     const previewTarget = vi.fn(async () => preview);
+    const moved = { ...control, rect: { x: 80, y: 400, width: 240, height: 48 } };
 
     await expect(
       tryReviewTarget({
         previewTarget,
         selectedTarget: device,
         control,
+        observe: async () => [moved],
       }),
     ).resolves.toEqual({
       kind: "tried",
-      detail: "Relay tapped Preferred language on the Device.",
+      binding: { label: "Preferred language" },
+      detail: "Relay tried Preferred language as the saved binding.",
     });
     expect(previewTarget).toHaveBeenCalledWith(device);
     expect(inputs).toEqual([
-      { kind: "touch", action: "down", x: 168, y: 304 },
-      { kind: "touch", action: "up", x: 168, y: 304 },
+      { kind: "touch", action: "down", x: 200, y: 424 },
+      { kind: "touch", action: "up", x: 200, y: 424 },
     ]);
     expect(preview.close).toHaveBeenCalledOnce();
+  });
+
+  it("refuses a historic-rectangle trial when there is no fresh observation", async () => {
+    const inputs: unknown[] = [];
+    await expect(
+      tryReviewTarget({
+        previewTarget: async () =>
+          session(async (value) => {
+            inputs.push(value);
+          }),
+        selectedTarget: device,
+        control,
+      }),
+    ).resolves.toMatchObject({ kind: "failed" });
+    expect(inputs).toEqual([]);
+  });
+
+  it("refuses an observation-local ref labeled as a stable identifier", async () => {
+    await expect(
+      tryReviewTarget({
+        previewTarget: async () => session(),
+        selectedTarget: device,
+        control: {
+          ...control,
+          target: { identifier: "node-14" },
+        },
+      }),
+    ).resolves.toMatchObject({
+      kind: "failed",
+      detail: expect.stringMatching(/observation-local/i),
+    });
   });
 
   it("does not invent a successful try when the Device is missing", async () => {
@@ -70,6 +104,7 @@ describe("tryReviewTarget", () => {
         previewTarget: async () => preview,
         selectedTarget: device,
         control,
+        observe: async () => [control],
       }),
     ).resolves.toEqual({
       kind: "failed",

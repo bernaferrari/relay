@@ -135,6 +135,7 @@ export function TestPage() {
           appMapId: test.data.appMapId,
           targetId,
           targetProfileId: admission.start.targetProfileId,
+          profiles: profiles.data,
           sourceRevision: admission.start.sourceRevision,
           startup:
             configuration.selection.startupMode === "cold" ? { mode: "cold" as const } : undefined,

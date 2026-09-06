@@ -256,6 +256,17 @@ export function explicitBuildAdmission(input: {
       startSource,
     };
   }
+  if (!startSource) {
+    return {
+      status: "blocked",
+      blocker: {
+        id: "selected-build",
+        label: "Selected build has no bindable identity",
+        detail:
+          "This build cannot be frozen as an artifact identity. Choose a build with a source revision.",
+      },
+    };
+  }
   return { status: "ready", startSource };
 }
 

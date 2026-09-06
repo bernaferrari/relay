@@ -258,7 +258,7 @@ export function EnvironmentsPage() {
           spaces={spaces.data}
           accountsByBrowser={accountsByBrowser}
           onSave={paired.save}
-          onOpenLive={(browserId) => browserSpacesService.openSpace(browserId)}
+          onOpenLive={(plan) => browserSpacesService.openSpace(plan.browserId)}
         />
       ) : null}
       {!spaces.isPending && !spaces.error && spaces.data?.length === 0 ? (

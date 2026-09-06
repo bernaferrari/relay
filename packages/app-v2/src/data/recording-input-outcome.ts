@@ -1,8 +1,58 @@
+export type RecordingObservedEffect = "applied" | "not-observed" | "uncertain";
+
 export type RecordingInputOutcome =
-  | { kind: "confirmed"; mutationId?: string }
-  | { kind: "not-dispatched"; message: string; mutationId?: string }
-  | { kind: "refresh-failed"; message: string; mutationId?: string }
-  | { kind: "unknown"; message: string; mutationId?: string };
+  | {
+      kind: "confirmed";
+      mutationId?: string;
+      observed?: RecordingObservedEffect;
+      resolvedBy?: { at: number };
+    }
+  | {
+      kind: "not-dispatched";
+      message: string;
+      mutationId?: string;
+      observed?: RecordingObservedEffect;
+      resolvedBy?: { at: number };
+    }
+  | {
+      kind: "refresh-failed";
+      message: string;
+      mutationId?: string;
+      observed?: RecordingObservedEffect;
+      resolvedBy?: { at: number };
+    }
+  | {
+      kind: "unknown";
+      message: string;
+      mutationId?: string;
+      observed?: RecordingObservedEffect;
+      resolvedBy?: { at: number };
+    };
+
+export function recordingLedgerStorageKey(workflowId: string): string {
+  return `recording-mutation-ledger:${workflowId}`;
+}
+
+export function parseRecordingLedger(raw: string | null | undefined): RecordingRecoveryLedger {
+  if (!raw) return { mutations: [] };
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (
+      !value ||
+      typeof value !== "object" ||
+      !Array.isArray((value as { mutations?: unknown }).mutations)
+    ) {
+      return { mutations: [] };
+    }
+    return { mutations: (value as RecordingRecoveryLedger).mutations };
+  } catch {
+    return { mutations: [] };
+  }
+}
+
+export function serializeRecordingLedger(ledger: RecordingRecoveryLedger): string {
+  return JSON.stringify(ledger);
+}
 
 export type RecordingDispatchReceipt =
   | { kind: "local-preflight-refused"; message: string }
@@ -54,16 +104,22 @@ export function recordingInputRecoveryMessage(outcome: RecordingInputOutcome): s
 export function recordingRecoveryBlocksSend(ledger: RecordingRecoveryLedger | undefined): boolean {
   return Boolean(
     unresolvedRecordingMutation(ledger, "unknown") ||
-      unresolvedRecordingMutation(ledger, "refresh-failed"),
+    unresolvedRecordingMutation(ledger, "refresh-failed"),
   );
 }
 
-/** Latest mutation that still needs refresh-only recovery or an explicit observe. */
+/** Latest mutation that still needs refresh-only recovery or an explicit observe.
+ * An applied observation unblocks unknown dispatch; Not sure and not-observed do not. */
 export function unresolvedRecordingMutation(
   ledger: RecordingRecoveryLedger | undefined,
   kind: "unknown" | "refresh-failed",
 ): RecordingInputOutcome | undefined {
-  return [...(ledger?.mutations ?? [])].reverse().find((mutation) => mutation.kind === kind);
+  return [...(ledger?.mutations ?? [])]
+    .reverse()
+    .find(
+      (mutation) =>
+        mutation.kind === kind && (kind === "refresh-failed" || mutation.observed !== "applied"),
+    );
 }
 
 export function appendRecordingMutation(
@@ -102,13 +158,25 @@ export async function refreshRecordingEvidence(input: {
 export function reconcileRecordingMutation(
   ledger: RecordingRecoveryLedger,
   mutationId: string,
-  observed: "applied" | "not-applied",
+  observed: RecordingObservedEffect,
+  now = Date.now(),
 ): RecordingRecoveryLedger {
+  const current = ledger.mutations.find((mutation) => mutation.mutationId === mutationId);
+  if (!current) return ledger;
+  const message =
+    observed === "not-observed"
+      ? "Observed: no visible effect. That does not prove the command never left this client."
+      : observed === "uncertain"
+        ? "Observed: not sure whether the interaction applied."
+        : current.kind === "unknown" || current.kind === "refresh-failed"
+          ? current.message
+          : undefined;
   return resolveRecordingMutation(ledger, mutationId, {
-    kind: observed === "applied" ? "confirmed" : "not-dispatched",
-    message:
-      observed === "not-applied" ? "Observed: the interaction did not reach the app." : undefined,
-  } as RecordingInputOutcome);
+    ...current,
+    ...(message ? { message } : {}),
+    observed,
+    resolvedBy: { at: now },
+  });
 }
 
 /** Dispatch and evidence refresh are separate outcomes. A refresh failure must

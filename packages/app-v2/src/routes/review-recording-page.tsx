@@ -505,6 +505,7 @@ export function ReviewRecordingPage({
                                 previewTarget: productService.previewTarget,
                                 selectedTarget: state?.selectedTarget,
                                 control,
+                                observe: async () => evidencePreview.data?.controls ?? [],
                               })
                             }
                             onKeep={(target) =>

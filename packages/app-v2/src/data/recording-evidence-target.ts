@@ -55,7 +55,7 @@ export function projectRecordingEvidenceControls(
     if (node.visibleToUser === false) continue;
     const rect = rectOf(node.rect);
     if (!rect) continue;
-    const identifier = text(node.identifier ?? node.ref);
+    const identifier = text(node.identifier);
     const label = text(node.label);
     const value = text(node.text ?? node.value);
     if (!identifier && !label && !value) continue;

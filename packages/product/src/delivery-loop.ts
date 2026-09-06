@@ -18,10 +18,16 @@ export type DeliveryLoopProof = {
 export type DeliveryLoopPhase =
   | "prepare"
   | "awaiting-approval"
+  | "ready"
   | "running"
   | "failed"
+  | "infrastructure-failure"
+  | "needs-review"
+  | "insufficient-evidence"
   | "re-verifying"
+  | "verified-pending-publication"
   | "published"
+  | "superseded"
   | "blocked";
 
 export type DeliveryLoopSnapshot = {
@@ -52,14 +58,19 @@ function isRunning(state: string): boolean {
   return state === "running" || state === "running-pilot" || state === "awaiting-expansion";
 }
 
-function isFailed(proof: DeliveryLoopProof): boolean {
-  return (
-    Boolean(proof.firstFailure) ||
-    proof.decision === "rejected" ||
-    proof.state === "rejected" ||
-    proof.state === "needs-review" ||
-    proof.state === "insufficient-evidence"
-  );
+function isProductFailed(proof: DeliveryLoopProof): boolean {
+  return Boolean(proof.firstFailure) || proof.decision === "rejected" || proof.state === "rejected";
+}
+
+function reviewPhase(proof: DeliveryLoopProof): DeliveryLoopPhase | undefined {
+  if (proof.state === "needs-review" || proof.decision === "needs-review") return "needs-review";
+  if (proof.state === "insufficient-evidence" || proof.decision === "insufficient-evidence") {
+    return "insufficient-evidence";
+  }
+  if (proof.state === "infrastructure-failure" || proof.decision === "infrastructure-failure") {
+    return "infrastructure-failure";
+  }
+  return undefined;
 }
 
 function isProved(proof: DeliveryLoopProof): boolean {
@@ -158,17 +169,20 @@ export function classifyDeliveryLoop(input: {
     };
   }
   if (replacement && sameBuild(original, replacement)) {
+    const sameBuildPhase =
+      reviewPhase(replacement) ?? (isRunning(replacement.state) ? "running" : "failed");
     return {
-      phase: "blocked",
+      phase:
+        sameBuildPhase === "failed" && !isProductFailed(replacement) ? "running" : sameBuildPhase,
       original,
       replacement,
       failureEvidence: original.firstFailure
         ? { ...original.firstFailure, proofId: original.id }
         : undefined,
       next: {
-        action: "provide-new-build",
+        action: isRunning(replacement.state) ? "wait" : "retry-same-build",
         reason:
-          "Replacement evidence requires a newer build or revision. The original failure stays unchanged.",
+          "This is a same-build retry, not replacement evidence. The original failure stays unchanged.",
       },
     };
   }
@@ -194,7 +208,7 @@ export function classifyDeliveryLoop(input: {
         },
       };
     }
-    if (isProved(replacement) && replacement.publication) {
+    if (isProved(replacement) && replacement.publication?.conclusion) {
       return {
         phase: "published",
         original,
@@ -209,7 +223,7 @@ export function classifyDeliveryLoop(input: {
         },
         merge: {
           proofId: replacement.id,
-          conclusion: replacement.publication.conclusion ?? "success",
+          conclusion: replacement.publication.conclusion,
           ...(replacement.publication.checkRunId
             ? { checkRunId: replacement.publication.checkRunId }
             : {}),
@@ -221,7 +235,47 @@ export function classifyDeliveryLoop(input: {
         },
       };
     }
-    if (isFailed(replacement) || isFailed(original)) {
+    if (isProved(replacement)) {
+      return {
+        phase: "verified-pending-publication",
+        original,
+        replacement,
+        failureEvidence: original.firstFailure
+          ? { ...original.firstFailure, proofId: original.id }
+          : undefined,
+        replacementEvidence: {
+          runIds: replacement.runIds,
+          proofId: replacement.id,
+          headSha: replacement.headSha,
+        },
+        next: {
+          action: "publish",
+          reason: "The replacement Proof is verified. Publication is still pending.",
+        },
+      };
+    }
+    const replacementReview = reviewPhase(replacement);
+    if (replacementReview) {
+      return {
+        phase: replacementReview,
+        original,
+        replacement,
+        failureEvidence: original.firstFailure
+          ? { ...original.firstFailure, proofId: original.id }
+          : undefined,
+        replacementEvidence: {
+          runIds: replacement.runIds,
+          proofId: replacement.id,
+          headSha: replacement.headSha,
+        },
+        next: {
+          action: replacementReview === "needs-review" ? "review" : "collect-evidence",
+          reason:
+            "The replacement Proof is not a product failure. Keep review and evidence distinct.",
+        },
+      };
+    }
+    if (isProductFailed(replacement)) {
       return {
         phase: "failed",
         original,
@@ -242,9 +296,12 @@ export function classifyDeliveryLoop(input: {
       };
     }
     return {
-      phase: "re-verifying",
+      phase: "ready",
       original,
       replacement,
+      failureEvidence: original.firstFailure
+        ? { ...original.firstFailure, proofId: original.id }
+        : undefined,
       replacementEvidence: {
         runIds: replacement.runIds,
         proofId: replacement.id,
@@ -256,20 +313,30 @@ export function classifyDeliveryLoop(input: {
       },
     };
   }
-  if (isProved(original) && original.publication) {
+  if (isProved(original) && original.publication?.conclusion) {
     return {
       phase: "published",
       original,
       merge: {
         proofId: original.id,
-        conclusion: original.publication.conclusion ?? "success",
+        conclusion: original.publication.conclusion,
         ...(original.publication.checkRunId ? { checkRunId: original.publication.checkRunId } : {}),
         ...(original.publication.htmlUrl ? { htmlUrl: original.publication.htmlUrl } : {}),
       },
       next: { action: "none", reason: "This Proof published the exact merge result." },
     };
   }
-  if (isFailed(original)) {
+  if (isProved(original)) {
+    return {
+      phase: "verified-pending-publication",
+      original,
+      next: {
+        action: "publish",
+        reason: "This Proof is verified. Publication is still pending.",
+      },
+    };
+  }
+  if (isProductFailed(original)) {
     return {
       phase: "failed",
       original,
@@ -282,8 +349,19 @@ export function classifyDeliveryLoop(input: {
       },
     };
   }
+  const originalReview = reviewPhase(original);
+  if (originalReview) {
+    return {
+      phase: originalReview,
+      original,
+      next: {
+        action: originalReview === "needs-review" ? "review" : "collect-evidence",
+        reason: "Keep review and insufficient evidence distinct from a product failure.",
+      },
+    };
+  }
   return {
-    phase: "running",
+    phase: "ready",
     original,
     next: { action: "run", reason: "Verify the approved plan on the exact bound configuration." },
   };

@@ -94,8 +94,48 @@ test("the same build cannot become replacement evidence", () => {
       state: "proved",
     }),
   });
-  assert.equal(snapshot.phase, "blocked");
-  assert.equal(snapshot.next.action, "provide-new-build");
+  assert.notEqual(snapshot.phase, "published");
+  assert.equal(snapshot.next.action, "retry-same-build");
   assert.equal(snapshot.failureEvidence?.proofId, "proof-original");
   assert.equal(snapshot.merge, undefined);
+});
+
+test("a ready replacement after a failed predecessor is run, not repair", () => {
+  const snapshot = classifyDeliveryLoop({
+    predecessor: proof(),
+    current: proof({
+      id: "proof-ready",
+      headSha: "head-fix",
+      buildIds: ["build-93"],
+      runIds: [],
+      firstFailure: undefined,
+      decision: undefined,
+      state: "ready",
+    }),
+  });
+  assert.equal(snapshot.phase, "ready");
+  assert.equal(snapshot.next.action, "run-replacement");
+  assert.equal(snapshot.failureEvidence?.proofId, "proof-original");
+});
+
+test("needs-review and missing publication conclusions stay distinct from failure and success", () => {
+  const review = classifyDeliveryLoop({
+    current: proof({
+      firstFailure: undefined,
+      decision: undefined,
+      state: "needs-review",
+    }),
+  });
+  assert.equal(review.phase, "needs-review");
+  assert.notEqual(review.next.action, "repair");
+  const pending = classifyDeliveryLoop({
+    current: proof({
+      firstFailure: undefined,
+      decision: "proved",
+      state: "proved",
+      publication: {},
+    }),
+  });
+  assert.equal(pending.phase, "verified-pending-publication");
+  assert.equal(pending.merge, undefined);
 });

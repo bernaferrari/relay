@@ -176,11 +176,43 @@ export function frozenIdentity(
     ...(intent.startup ? { startup: { ...intent.startup } } : {}),
     ...(intent.targetProfileId ? { targetProfileId: intent.targetProfileId } : {}),
     ...(intent.sourceRevision ? { sourceRevision: { ...intent.sourceRevision } } : {}),
+    ...(intent.engine ? { engine: intent.engine } : {}),
+    ...(intent.account ? { account: { ...intent.account } } : {}),
     ...(intent.capture
       ? { capture: { fullSurfaceScreenIds: [...intent.capture.fullSurfaceScreenIds] } }
       : {}),
     ...(intent.workflowRequestId ? { workflowRequestId: intent.workflowRequestId } : {}),
   };
+}
+
+function accountFromFrozen(
+  frozen: Record<string, WorkflowJsonValue>,
+): Pick<FrozenRunTestIdentity, "account"> {
+  const account = frozen.account;
+  if (!account || typeof account !== "object" || Array.isArray(account)) return {};
+  const record = account as Record<string, WorkflowJsonValue>;
+  if (record.kind === "signed-out" && record.attested === true) {
+    return { account: { kind: "signed-out", attested: true } };
+  }
+  if (
+    record.kind === "fixture" &&
+    typeof record.accountId === "string" &&
+    record.accountId &&
+    typeof record.accountRevision === "string" &&
+    record.accountRevision
+  ) {
+    return {
+      account: {
+        kind: "fixture",
+        accountId: record.accountId,
+        accountRevision: record.accountRevision,
+        ...(typeof record.reference === "string" && record.reference
+          ? { reference: record.reference }
+          : {}),
+      },
+    };
+  }
+  return {};
 }
 
 function durableRunIdentity(value: WorkflowJsonValue): FrozenRunTestIdentity | undefined {
@@ -223,6 +255,10 @@ function durableRunIdentity(value: WorkflowJsonValue): FrozenRunTestIdentity | u
     ...(typeof frozen.targetProfileId === "string" && frozen.targetProfileId
       ? { targetProfileId: frozen.targetProfileId }
       : {}),
+    ...(frozen.engine === "chromium" || frozen.engine === "firefox" || frozen.engine === "webkit"
+      ? { engine: frozen.engine }
+      : {}),
+    ...accountFromFrozen(frozen),
     ...(typeof frozen.workflowRequestId === "string" && frozen.workflowRequestId
       ? { workflowRequestId: frozen.workflowRequestId }
       : {}),

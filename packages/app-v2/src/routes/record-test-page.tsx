@@ -25,13 +25,17 @@ import type {
 import {
   appendRecordingMutation,
   dispatchRecordingInput,
+  parseRecordingLedger,
   recordingInputRecoveryMessage,
+  recordingLedgerStorageKey,
   recordingRecoveryBlocksSend,
   reconcileRecordingMutation,
   refreshRecordingEvidence,
   resolveRecordingMutation,
+  serializeRecordingLedger,
   unresolvedRecordingMutation,
   type RecordingInputOutcome,
+  type RecordingObservedEffect,
   type RecordingRecoveryLedger,
 } from "../data/recording-input-outcome";
 import { recordingQueryKeys, refreshRecording } from "../data/recording-queries";
@@ -198,8 +202,24 @@ function RecordingWorkspace({
   );
   const recordingLedger = useRef<RecordingRecoveryLedger>({ mutations: [] });
 
+  useEffect(() => {
+    void Promise.resolve(platform.storage.get(recordingLedgerStorageKey(workflowId))).then(
+      (raw) => {
+        recordingLedger.current = parseRecordingLedger(raw);
+      },
+    );
+  }, [platform, workflowId]);
+
+  function persistLedger(ledger: RecordingRecoveryLedger): void {
+    recordingLedger.current = ledger;
+    void platform.storage.set(
+      recordingLedgerStorageKey(workflowId),
+      serializeRecordingLedger(ledger),
+    );
+  }
+
   function rememberOutcome(outcome: RecordingInputOutcome): RecordingInputOutcome {
-    recordingLedger.current = appendRecordingMutation(recordingLedger.current, outcome);
+    persistLedger(appendRecordingMutation(recordingLedger.current, outcome));
     setRecoveryKind(outcome.kind);
     const recovery = recordingInputRecoveryMessage(outcome);
     if (recovery) setLiveIssue(recovery);
@@ -255,19 +275,29 @@ function RecordingWorkspace({
     return liveInputQueue.current;
   }
 
-  function observeLastUnknownMutation(observed: "applied" | "not-applied") {
+  function observeLastUnknownMutation(observed: RecordingObservedEffect) {
     const unresolved = unresolvedRecordingMutation(recordingLedger.current, "unknown");
     if (!unresolved?.mutationId) return;
-    recordingLedger.current = reconcileRecordingMutation(
-      recordingLedger.current,
-      unresolved.mutationId,
-      observed,
+    persistLedger(
+      reconcileRecordingMutation(recordingLedger.current, unresolved.mutationId, observed),
     );
     const resolved = recordingLedger.current.mutations.find(
       (mutation) => mutation.mutationId === unresolved.mutationId,
     );
-    setRecoveryKind(resolved?.kind ?? "confirmed");
-    setLiveIssue(resolved ? recordingInputRecoveryMessage(resolved) : undefined);
+    setRecoveryKind(
+      resolved?.observed === "applied" ? "confirmed" : (resolved?.kind ?? "confirmed"),
+    );
+    setLiveIssue(
+      resolved?.observed === "applied"
+        ? undefined
+        : resolved?.observed === "not-observed" || resolved?.observed === "uncertain"
+          ? resolved.kind === "confirmed"
+            ? undefined
+            : resolved.message
+          : resolved
+            ? recordingInputRecoveryMessage(resolved)
+            : undefined,
+    );
   }
 
   async function recoverRecordingRefreshOnly() {
@@ -281,10 +311,8 @@ function RecordingWorkspace({
           await refreshRecording(queryClient, productService, workflowId);
         },
       });
-      recordingLedger.current = resolveRecordingMutation(
-        recordingLedger.current,
-        unresolved.mutationId,
-        recovered,
+      persistLedger(
+        resolveRecordingMutation(recordingLedger.current, unresolved.mutationId, recovered),
       );
       setRecoveryKind(recovered.kind);
       const recovery = recordingInputRecoveryMessage(recovered);
@@ -522,9 +550,16 @@ function RecordingWorkspace({
             <Button
               variant="outline"
               disabled={liveInputBusy}
-              onClick={() => observeLastUnknownMutation("not-applied")}
+              onClick={() => observeLastUnknownMutation("not-observed")}
             >
               It did not apply
+            </Button>
+            <Button
+              variant="outline"
+              disabled={liveInputBusy}
+              onClick={() => observeLastUnknownMutation("uncertain")}
+            >
+              Not sure
             </Button>
           </div>
         ) : null}

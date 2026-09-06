@@ -299,7 +299,9 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
     }
 
     let targetProfileId = intent.targetProfileId;
-    if (!targetProfileId && intent.target.kind === "browser") {
+    if (!targetProfileId && intent.account?.kind === "signed-out") {
+      targetProfileId = undefined;
+    } else if (!targetProfileId && intent.target.kind === "browser") {
       try {
         targetProfileId = await selectBrowserTargetProfile(
           this.operations,

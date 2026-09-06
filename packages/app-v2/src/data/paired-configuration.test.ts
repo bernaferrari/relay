@@ -32,6 +32,7 @@ const workspace = parsePairedConfigurationWorkspace(
         engine: "firefox",
         accountId: "acct-member",
         accountName: "Member",
+        accountRevision: "7",
       },
       {
         id: "signed-out",
@@ -39,6 +40,7 @@ const workspace = parsePairedConfigurationWorkspace(
         browserId: "webkit-1",
         browserName: "WebKit",
         engine: "webkit",
+        signedOutAttested: true,
       },
     ],
   }),
@@ -54,8 +56,12 @@ describe("paired Browser and Account workspace", () => {
       undefined,
     ]);
     expect(compiled).toHaveLength(3);
-    expect(compiled[0]?.coverage).toEqual({ kind: "browser-account", accountId: "acct-admin" });
-    expect(compiled[2]?.coverage).toEqual({ kind: "browser-engine", engine: "webkit" });
+    expect(compiled[0]?.coverage).toEqual({
+      kind: "browser-account",
+      accountId: "acct-admin",
+      accountRevision: "3",
+    });
+    expect(compiled[2]?.coverage).toEqual({ kind: "signed-out", attested: true });
 
     const starts = compileTestStarts({
       testId: "checkout",
@@ -63,12 +69,31 @@ describe("paired Browser and Account workspace", () => {
       workspace,
     });
     expect(starts).toEqual([
-      { testId: "checkout", appMapId: "app-1", targetId: "chrome-1" },
-      { testId: "checkout", appMapId: "app-1", targetId: "firefox-1" },
-      { testId: "checkout", appMapId: "app-1", targetId: "webkit-1" },
+      {
+        testId: "checkout",
+        appMapId: "app-1",
+        targetId: "chrome-1",
+        engine: "chromium",
+        account: { kind: "fixture", accountId: "acct-admin", accountRevision: "3" },
+      },
+      {
+        testId: "checkout",
+        appMapId: "app-1",
+        targetId: "firefox-1",
+        engine: "firefox",
+        account: { kind: "fixture", accountId: "acct-member", accountRevision: "7" },
+      },
+      {
+        testId: "checkout",
+        appMapId: "app-1",
+        targetId: "webkit-1",
+        engine: "webkit",
+        account: { kind: "signed-out", attested: true },
+      },
     ]);
     expect(starts).toHaveLength(3);
     expect(starts).not.toHaveLength(9);
+    expect(starts[0]).not.toEqual(starts[1]);
   });
 
   it("starts every compiled pair through the same Test start compiler", async () => {
@@ -98,6 +123,7 @@ describe("paired Browser and Account workspace", () => {
             browserName: "Chrome",
             engine: "chromium",
             accountId: "acct-admin",
+            accountRevision: "4",
           },
           {
             id: "member",
@@ -106,6 +132,7 @@ describe("paired Browser and Account workspace", () => {
             browserName: "Chrome",
             engine: "chromium",
             accountId: "acct-member",
+            accountRevision: "7",
           },
         ],
       }),
@@ -114,15 +141,61 @@ describe("paired Browser and Account workspace", () => {
       "acct-admin",
       "acct-member",
     ]);
+    const starts = compileTestStarts({ testId: "checkout", workspace: twoAccounts });
+    expect(starts).toHaveLength(2);
+    expect(starts[0]?.targetId).toBe(starts[1]?.targetId);
+    expect(starts[0]?.account).not.toEqual(starts[1]?.account);
+    expect(starts[0]?.account).toEqual({
+      kind: "fixture",
+      accountId: "acct-admin",
+      accountRevision: "4",
+    });
+    expect(starts[1]?.account).toEqual({
+      kind: "fixture",
+      accountId: "acct-member",
+      accountRevision: "7",
+    });
     expect(compileRepeatScope({ workspace: twoAccounts, dataCaseCount: 1 }).executionCount).toBe(2);
+  });
+
+  it("blocks an unattested blank account and an account without a revision", () => {
+    const incomplete = parsePairedConfigurationWorkspace(
+      JSON.stringify({
+        schemaVersion: 1,
+        updatedAt: 1,
+        rows: [
+          {
+            id: "blank",
+            name: "Looks signed out",
+            browserId: "chrome-1",
+            browserName: "Chrome",
+          },
+          {
+            id: "no-rev",
+            name: "Admin",
+            browserId: "chrome-1",
+            browserName: "Chrome",
+            accountId: "acct-admin",
+          },
+        ],
+      }),
+    );
+    expect(compilePairedConfigurations(incomplete).map((item) => item.coverage.kind)).toEqual([
+      "blocked",
+      "blocked",
+    ]);
+    expect(() => compileTestStarts({ testId: "checkout", workspace: incomplete })).toThrow(
+      /attested|revision/i,
+    );
   });
 
   it("maps Suite targets in row order and Repeat scope as pairs times data cases", () => {
     expect(
       compileSuiteTargets(workspace, [
-        { id: "env-ff", targetId: "firefox-1" },
+        { id: "env-ff", targetId: "firefox-1", accountId: "acct-member" },
         { id: "env-wk", targetId: "webkit-1" },
-        { id: "env-ch", targetId: "chrome-1" },
+        { id: "env-ch-member", targetId: "chrome-1", accountId: "acct-member" },
+        { id: "env-ch", targetId: "chrome-1", accountId: "acct-admin" },
       ]).profileIds,
     ).toEqual(["env-ch", "env-ff", "env-wk"]);
     expect(compileRepeatScope({ workspace, dataCaseCount: 1 })).toEqual({
@@ -140,14 +213,16 @@ describe("paired Browser and Account workspace", () => {
         browserId: "chrome-1",
         accountId: "acct-admin",
         accountName: "Admin",
+        accountRevision: "3",
       },
       {
         name: "Member desktop",
         browserId: "firefox-1",
         accountId: "acct-member",
         accountName: "Member",
+        accountRevision: "7",
       },
-      { name: "Signed out", browserId: "webkit-1" },
+      { name: "Signed out", browserId: "webkit-1", signedOut: true },
     ]);
     const restored = parsePairedConfigurationWorkspace(JSON.stringify(workspace));
     expect(restored.rows.map((row) => row.name)).toEqual([
@@ -161,11 +236,13 @@ describe("paired Browser and Account workspace", () => {
     const opened: string[] = [];
     const result = await openPairedWorkspaceInLive({
       workspace,
-      openSpace: vi.fn(async (browserId) => {
-        opened.push(browserId);
+      openSpace: vi.fn(async (plan) => {
+        opened.push(
+          `${plan.browserId}:${plan.accountId ?? (plan.signedOut ? "signed-out" : "missing")}`,
+        );
       }),
     });
-    expect(opened).toEqual(["chrome-1", "firefox-1", "webkit-1"]);
+    expect(opened).toEqual(["chrome-1:acct-admin", "firefox-1:acct-member", "webkit-1:signed-out"]);
     expect(result.opened).toBe(3);
     expect(result.plan).toHaveLength(3);
   });

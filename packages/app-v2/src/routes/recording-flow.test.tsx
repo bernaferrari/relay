@@ -744,7 +744,9 @@ describe("record, review, replay, and save", () => {
     await click(button("Preferred language"));
     expect(document.body.textContent).toContain("Matched the visible name");
     await click(button("Try target"));
-    expect(document.body.textContent).toContain("Relay tapped Preferred language on the Device.");
+    expect(document.body.textContent).toContain(
+      "Relay tried Preferred language as the saved binding.",
+    );
     expect(fake.calls.filter((call) => call === "input:touch")).toEqual([
       "input:touch",
       "input:touch",
@@ -1213,6 +1215,7 @@ describe("record, review, replay, and save", () => {
     expect(document.body.textContent).not.toContain("Refresh recording");
     expect(button("It applied")).toBeTruthy();
     expect(button("It did not apply")).toBeTruthy();
+    expect(button("Not sure")).toBeTruthy();
 
     await tapLiveTarget();
     expect(inputCount).toBe(1);
@@ -1255,10 +1258,14 @@ describe("record, review, replay, and save", () => {
     await tapLiveTarget();
     expect(inputCount).toBe(1);
     await click(button("It did not apply"));
-    expect(document.body.textContent).toContain("was not sent");
+    expect(document.body.textContent).toContain("no visible effect");
+    expect(document.body.textContent).not.toMatch(/was not sent/i);
     await tapLiveTarget();
-    expect(inputCount).toBe(2);
-    expect(fake.calls.filter((call) => call === "input:touch")).toEqual(["input:touch"]);
+    expect(inputCount).toBe(1);
+    await click(button("Not sure"));
+    expect(document.body.textContent).toContain("not sure");
+    await tapLiveTarget();
+    expect(inputCount).toBe(1);
   });
 });
 

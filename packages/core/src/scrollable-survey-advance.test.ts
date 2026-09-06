@@ -337,3 +337,23 @@ test("drops a title-slide that adds no labels and does not unclip a row", () => 
   ]);
   assert.equal(surveyShouldKeepScrolledFrame(before, after), false);
 });
+
+test("does not treat an unrelated sibling exhaustion hint as the selected scroller being complete", () => {
+  const first = snapshot([
+    {
+      type: "ScrollView",
+      identifier: "feed",
+      rect: { x: 0, y: 0, width: 978, height: 1800 },
+    },
+    {
+      type: "TextView",
+      label: "Caption",
+      rect: { x: 40, y: 1900, width: 200, height: 40 },
+      hiddenContentBelow: false,
+    },
+    { label: "Latest post", rect: { x: 80, y: 1600, width: 800, height: 60 } },
+  ]);
+  assert.equal(surveyHasHiddenContentBelow(first), false);
+  assert.notEqual(surveyExtent(first).kind, "complete");
+  assert.equal(surveyExtent(first).kind, "unknown");
+});

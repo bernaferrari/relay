@@ -366,6 +366,8 @@ class CanonicalRelayOutcomeJobs implements RelayOutcomeJobs {
       ...(intent.targetProfileId ? { targetProfileId: intent.targetProfileId } : {}),
       ...(intent.sourceRevision ? { sourceRevision: structuredClone(intent.sourceRevision) } : {}),
       ...(intent.startup ? { startup: structuredClone(intent.startup) } : {}),
+      ...(intent.engine ? { engine: intent.engine } : {}),
+      ...(intent.account ? { account: structuredClone(intent.account) } : {}),
       workflowRequestId: crypto.randomUUID(),
       continuation: "durable",
       ...(intent.confirmRisk ? { confirmRisk: true } : {}),

@@ -89,14 +89,25 @@ export function surveyFeatureRows(snapshot: SnapshotPayload): SurveyFeatureRow[]
   return rows.sort((left, right) => left.bottom - right.bottom);
 }
 
-export function surveyHasHiddenContentBelow(snapshot: SnapshotPayload): boolean {
-  return snapshot.nodes.some((node) => node.hiddenContentBelow === true);
+function selectedScrollContainer(snapshot: SnapshotPayload): SnapshotNode | undefined {
+  const views = snapshot.nodes.filter(
+    (node) => isScrollContainer(node) && node.rect && node.rect.height >= 120,
+  );
+  const hinted = views.find((node) => node.hiddenContentBelow === true);
+  const recycler = views.find((node) =>
+    /recycler.?view|listview/i.test(`${node.type ?? ""} ${node.role ?? ""}`),
+  );
+  return hinted ?? recycler ?? views[0];
 }
 
-/** Provider explicitly proved the scroller has nothing left below. Absence of
- * a hint is not exhaustion. */
+export function surveyHasHiddenContentBelow(snapshot: SnapshotPayload): boolean {
+  return selectedScrollContainer(snapshot)?.hiddenContentBelow === true;
+}
+
+/** Provider explicitly proved the selected scroll container has nothing left
+ * below. A sibling or label hint is not exhaustion of this container. */
 export function surveyHasExplicitExhaustion(snapshot: SnapshotPayload): boolean {
-  return snapshot.nodes.some((node) => node.hiddenContentBelow === false);
+  return selectedScrollContainer(snapshot)?.hiddenContentBelow === false;
 }
 
 export function surveyRowFlushWithScroll(

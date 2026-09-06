@@ -36,6 +36,10 @@ export type DurableWorkflowHandle = {
   expectedVersion: number;
 };
 
+export type RunTestAccountBinding =
+  | { kind: "fixture"; accountId: string; accountRevision: string; reference?: string }
+  | { kind: "signed-out"; attested: true };
+
 export type RunTestIntent = {
   kind: "run-test";
   appMapId: string;
@@ -46,6 +50,8 @@ export type RunTestIntent = {
   startup?: AppMapTestStartup;
   targetProfileId?: string;
   sourceRevision?: SourceRevision;
+  engine?: import("@relay/protocol").BrowserEngine;
+  account?: RunTestAccountBinding;
   capture?: { fullSurfaceScreenIds: readonly string[] };
   /** Stable before dispatch so a renderer crash can adopt the queued job. */
   workflowRequestId?: string;
@@ -160,6 +166,8 @@ export type FrozenRunTestIdentity = {
   sourceRevision?: SourceRevision;
   capture?: { fullSurfaceScreenIds: readonly string[] };
   workflowRequestId?: string;
+  engine?: import("@relay/protocol").BrowserEngine;
+  account?: RunTestAccountBinding;
 };
 
 export type FrozenAuthorTestIdentity = RecordingPathContext & {
@@ -440,6 +448,8 @@ export type RunTestOutcomeIntent = OutcomeTargetSelection & {
   targetProfileId?: string;
   sourceRevision?: SourceRevision;
   startup?: AppMapTestStartup;
+  engine?: import("@relay/protocol").BrowserEngine;
+  account?: RunTestAccountBinding;
   confirmRisk?: true;
 };
 

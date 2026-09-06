@@ -395,3 +395,82 @@ test("watch A, inspect B, late A, cancel B only cancels B", async () => {
   assert.equal(journey.state().snapshot?.workflow?.workflowId, "workflow-B");
   assert.equal(watchAStates.includes("workflow-B"), false);
 });
+
+test("aborting watch A after inspecting B returns A and never writes B into A", async () => {
+  const runA = snapshot("running", 3, {
+    workflow: { workflowId: "workflow-A", expectedVersion: 3 },
+    execution: { jobId: "job-A", runId: "run-A" },
+  });
+  const runB = snapshot("running", 8, {
+    workflow: { workflowId: "workflow-B", expectedVersion: 8 },
+    execution: { jobId: "job-B", runId: "run-B" },
+  });
+  let rejectWatchA: ((error: Error) => void) | undefined;
+  let resolveWatchAReady: (() => void) | undefined;
+  const watchAReady = new Promise<void>((resolve) => {
+    resolveWatchAReady = resolve;
+  });
+  const journey = createProductRunJourney({
+    jobs: {
+      ...jobsFor({}),
+      async inspect(request) {
+        return request.workflowId === "workflow-B" ? runB : runA;
+      },
+      async watchWorkflow(request) {
+        if (request.workflowId === "workflow-A") {
+          resolveWatchAReady?.();
+          return await new Promise<RunTestSnapshot>((_resolve, reject) => {
+            rejectWatchA = reject;
+          });
+        }
+        return runB;
+      },
+    },
+  });
+
+  await journey.inspect("workflow-A");
+  const watchA = journey.watch({ workflowId: "workflow-A" });
+  await watchAReady;
+  await journey.inspect("workflow-B");
+  const abort = new Error("aborted");
+  abort.name = "AbortError";
+  rejectWatchA?.(abort);
+  const aborted = await watchA;
+  assert.equal(aborted.snapshot?.workflow?.workflowId, "workflow-A");
+  assert.equal(aborted.snapshot?.execution?.runId, "run-A");
+  assert.equal(journey.state().snapshot?.workflow?.workflowId, "workflow-B");
+});
+
+test("start forwards the exact account binding instead of dropping it", async () => {
+  let received: unknown;
+  const journey = createProductRunJourney({
+    jobs: {
+      ...jobsFor({}),
+      async run(intent) {
+        received = intent;
+        return snapshot("queued");
+      },
+    },
+  });
+  await journey.start({
+    testId: "checkout",
+    appMapId: "app-1",
+    targetId: "browser-1",
+    engine: "chromium",
+    account: { kind: "fixture", accountId: "acct-member", accountRevision: "7" },
+  });
+  const intent = received as {
+    account?: unknown;
+    engine?: unknown;
+    targetId?: unknown;
+    testId?: unknown;
+  };
+  assert.equal(intent.testId, "checkout");
+  assert.equal(intent.targetId, "browser-1");
+  assert.equal(intent.engine, "chromium");
+  assert.deepEqual(intent.account, {
+    kind: "fixture",
+    accountId: "acct-member",
+    accountRevision: "7",
+  });
+});

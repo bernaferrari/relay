@@ -25,7 +25,12 @@ export function PairedWorkspacePanel({
   spaces: readonly ProductBrowserSpace[];
   accountsByBrowser: Readonly<Record<string, readonly ProductBrowserAuthFixture[]>>;
   onSave: (workspace: PairedConfigurationWorkspace) => Promise<void>;
-  onOpenLive: (browserId: string) => Promise<unknown>;
+  onOpenLive: (plan: {
+    browserId: string;
+    accountId?: string;
+    accountRevision?: string;
+    signedOut?: true;
+  }) => Promise<unknown>;
 }) {
   const [name, setName] = useState("");
   const [browserId, setBrowserId] = useState(spaces[0]?.id ?? "");
@@ -48,8 +53,9 @@ export function PairedWorkspacePanel({
               accountId: account.id,
               accountName: account.name,
               accountRevision: String(account.revision),
+              ...(account.reference ? { accountReference: account.reference } : {}),
             }
-          : {}),
+          : { signedOutAttested: true as const }),
       };
       await onSave({ ...workspace, rows: [...workspace.rows, row], updatedAt: Date.now() });
     },

@@ -117,8 +117,10 @@ describe("recording input outcome", () => {
     });
     expect(blocked.kind).toBe("unknown");
     expect(sendCount).toBe(1);
-    const reconciled = reconcileRecordingMutation(ledger, unknown.mutationId!, "not-applied");
-    expect(recordingRecoveryBlocksSend(reconciled)).toBe(false);
+    const reconciled = reconcileRecordingMutation(ledger, unknown.mutationId!, "not-observed");
+    expect(reconciled.mutations[0]?.kind).toBe("unknown");
+    expect(reconciled.mutations[0]?.observed).toBe("not-observed");
+    expect(recordingRecoveryBlocksSend(reconciled)).toBe(true);
     const later = await dispatchRecordingInput({
       ledger: reconciled,
       send: async () => {
@@ -126,16 +128,16 @@ describe("recording input outcome", () => {
       },
       refresh: async () => undefined,
     });
-    expect(later.kind).toBe("confirmed");
-    expect(sendCount).toBe(2);
+    expect(later.kind).toBe("unknown");
+    expect(sendCount).toBe(1);
     expect(
       reconciled.mutations.some((mutation) => mutation.mutationId === unknown.mutationId),
     ).toBe(true);
     expect(unresolvedRecordingMutation(ledger, "unknown")?.mutationId).toBe(unknown.mutationId);
-    expect(unresolvedRecordingMutation(reconciled, "unknown")).toBeUndefined();
+    expect(unresolvedRecordingMutation(reconciled, "unknown")?.mutationId).toBe(unknown.mutationId);
   });
 
-  it("keeps an applied observation on the same mutation identity", () => {
+  it("keeps an applied observation on the same mutation identity without rewriting dispatch", () => {
     const ledger = appendRecordingMutation(undefined, {
       kind: "unknown",
       mutationId: "recording-mutation-observe",
@@ -144,10 +146,23 @@ describe("recording input outcome", () => {
     const applied = reconcileRecordingMutation(ledger, "recording-mutation-observe", "applied");
     expect(applied.mutations).toEqual([
       expect.objectContaining({
-        kind: "confirmed",
+        kind: "unknown",
+        observed: "applied",
         mutationId: "recording-mutation-observe",
       }),
     ]);
     expect(recordingRecoveryBlocksSend(applied)).toBe(false);
+  });
+
+  it("keeps Not sure as an observation that still blocks dependent input", () => {
+    const ledger = appendRecordingMutation(undefined, {
+      kind: "unknown",
+      mutationId: "recording-mutation-unsure",
+      message: "Input submitted; runner not ready to acknowledge",
+    });
+    const unsure = reconcileRecordingMutation(ledger, "recording-mutation-unsure", "uncertain");
+    expect(unsure.mutations[0]?.kind).toBe("unknown");
+    expect(unsure.mutations[0]?.observed).toBe("uncertain");
+    expect(recordingRecoveryBlocksSend(unsure)).toBe(true);
   });
 });

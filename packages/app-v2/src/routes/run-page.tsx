@@ -166,6 +166,7 @@ export function RunInspection({
         },
       })
       .then((next) => {
+        if (next.workflow?.workflowId !== activeWorkflowId) return;
         queryClient.setQueryData(runQueryKeys.workflow(activeWorkflowId), next);
         if (isTerminal(next.status)) {
           void queryClient.invalidateQueries({ queryKey: runQueryKeys.report(runId) });

@@ -1,16 +1,48 @@
 import type { AuthoringTarget } from "@relay/protocol";
 import type { LiveTargetSession } from "./live-target-session";
-import type { RecordingEvidenceControl } from "./recording-evidence-target";
+import type {
+  RecordingEvidenceControl,
+  RecordingEvidenceTarget,
+} from "./recording-evidence-target";
 
 export type ReviewTargetTryResult =
-  | { kind: "tried"; detail: string }
-  | { kind: "failed"; detail: string };
+  | { kind: "tried"; detail: string; binding: RecordingEvidenceTarget }
+  | { kind: "failed"; detail: string }
+  | { kind: "unknown"; detail: string; binding: RecordingEvidenceTarget };
 
-/** Send the selected control to the live Device without recording a new step. */
+const OBSERVATION_LOCAL_REF = /^(node[-_:]?\d+|\d+|ref[-_:]?.+)$/iu;
+
+export function reviewTargetBinding(
+  control: RecordingEvidenceControl,
+): RecordingEvidenceTarget | { rejected: string } {
+  const identifier = control.target.identifier?.trim();
+  if (identifier) {
+    if (OBSERVATION_LOCAL_REF.test(identifier)) {
+      return {
+        rejected: "This identifier is observation-local and is not a stable replay binding.",
+      };
+    }
+    return { identifier };
+  }
+  if (control.target.label?.trim()) return { label: control.target.label.trim() };
+  if (control.target.text?.trim()) return { text: control.target.text.trim() };
+  return { rejected: "This control has no semantic binding to try." };
+}
+
+function sameBinding(left: RecordingEvidenceTarget, right: RecordingEvidenceTarget): boolean {
+  if (left.identifier && right.identifier) return left.identifier === right.identifier;
+  if (left.label && right.label) return left.label === right.label;
+  if (left.text && right.text) return left.text === right.text;
+  return false;
+}
+
+/** Send the selected semantic binding to the live Device without recording a new step. */
 export async function tryReviewTarget(input: {
   previewTarget?: (target: AuthoringTarget) => Promise<LiveTargetSession>;
   selectedTarget?: AuthoringTarget;
   control: RecordingEvidenceControl;
+  confirmStartingState?: () => Promise<{ ok: true } | { ok: false; detail: string }>;
+  observe?: () => Promise<readonly RecordingEvidenceControl[]>;
 }): Promise<ReviewTargetTryResult> {
   if (!input.previewTarget) {
     return {
@@ -24,26 +56,56 @@ export async function tryReviewTarget(input: {
       detail: "This recording has no Device to try the target on.",
     };
   }
+  const binding = reviewTargetBinding(input.control);
+  if ("rejected" in binding) {
+    return { kind: "failed", detail: binding.rejected };
+  }
+  if (input.confirmStartingState) {
+    const starting = await input.confirmStartingState();
+    if (!starting.ok) return { kind: "failed", detail: starting.detail };
+  }
 
-  const x = input.control.rect.x + input.control.rect.width / 2;
-  const y = input.control.rect.y + input.control.rect.height / 2;
   let session: LiveTargetSession | undefined;
   try {
     session = await input.previewTarget(input.selectedTarget);
+    const fresh = input.observe ? [...(await input.observe())] : [];
+    const resolved = fresh.find((control) => {
+      const next = reviewTargetBinding(control);
+      return !("rejected" in next) && sameBinding(next, binding);
+    });
+    if (input.observe && !resolved) {
+      return {
+        kind: "failed",
+        detail:
+          "The proposed binding is not on the current screen. Restore the starting state before trying it.",
+      };
+    }
+    const rect = resolved?.rect ?? input.control.rect;
+    if (!resolved && !input.observe) {
+      return {
+        kind: "failed",
+        detail:
+          "Try target needs a fresh observation to resolve the saved binding. Historic coordinates are not a trial.",
+      };
+    }
+    const x = rect.x + rect.width / 2;
+    const y = rect.y + rect.height / 2;
     await session.input({ kind: "touch", action: "down", x, y });
     await session.input({ kind: "touch", action: "up", x, y });
     return {
       kind: "tried",
-      detail: `Relay tapped ${input.control.name} on the Device.`,
+      binding,
+      detail: `Relay tried ${binding.identifier ?? binding.label ?? binding.text} as the saved binding.`,
     };
   } catch (error) {
-    return {
-      kind: "failed",
-      detail:
-        error instanceof Error && error.message.trim()
-          ? error.message
-          : "Relay could not tap that control on the Device.",
-    };
+    const message =
+      error instanceof Error && error.message.trim()
+        ? error.message
+        : "Relay could not try that binding on the Device.";
+    if (/unknown|acknowledg|not ready to acknowledge/i.test(message)) {
+      return { kind: "unknown", binding, detail: message };
+    }
+    return { kind: "failed", detail: message };
   } finally {
     session?.close();
   }

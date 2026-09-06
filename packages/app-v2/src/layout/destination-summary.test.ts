@@ -247,6 +247,18 @@ describe("destination summary", () => {
     expect(admission.blockers.some((item) => item.id === "selected-build")).toBe(true);
   });
 
+  it("blocks a ready selected build that has no bindable source identity", () => {
+    const admission = startConfigurationAdmission({
+      selectedBuildId: "build-92",
+      buildsStatus: "success",
+      builds: [{ id: "build-92", status: "ready" }],
+    });
+    expect(admission.status).toBe("blocked");
+    expect(admission.start.selectedBuildId).toBe("build-92");
+    expect(admission.start.sourceRevision).toBeUndefined();
+    expect(admission.blockers.some((item) => item.id === "selected-build")).toBe(true);
+  });
+
   it("blocks start while an explicit build list is still resolving", () => {
     const admission = startConfigurationAdmission({
       selectedBuildId: "build-92",

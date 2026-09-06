@@ -1,5 +1,10 @@
 import { createRelayRunOutcomeJobs } from "@relay/workflows/run-outcomes";
-import type { AppMapTestStartup, AuthoringTarget, SourceRevision } from "@relay/protocol";
+import type {
+  AppMapTestStartup,
+  AuthoringTarget,
+  BrowserEngine,
+  SourceRevision,
+} from "@relay/protocol";
 import type { RelayInvokeClient } from "@relay/workflows/operation-port";
 import type {
   DurableWorkflowHandle,
@@ -74,6 +79,12 @@ export type ProductRunState = {
   readonly recovery?: ProductRunRecovery;
 };
 
+/** Exact account fixture or an attested clean signed-out state. A missing
+ * account is not signed-out. */
+export type ProductRunAccountBinding =
+  | { kind: "fixture"; accountId: string; accountRevision: string; reference?: string }
+  | { kind: "signed-out"; attested: true };
+
 export type ProductRunStartInput = {
   /** The saved Test's durable identity. */
   testId: string;
@@ -86,6 +97,10 @@ export type ProductRunStartInput = {
   sourceRevision?: SourceRevision;
   startup?: AppMapTestStartup;
   confirmRisk?: true;
+  /** Requested browser engine. Omitted only when the target is not a browser. */
+  engine?: BrowserEngine;
+  /** Exact authentication identity for this start. Never inferred from targetId. */
+  account?: ProductRunAccountBinding;
 };
 
 export type ProductRunBuildOption = {
@@ -342,7 +357,12 @@ export function createProductRunJourney(input: { jobs: RunJobs }): ProductRunJou
   ): ProductRunState {
     const workflowId = snapshot.workflow?.workflowId;
     if (options.expectedWorkflowId && workflowId !== options.expectedWorkflowId) {
-      return exposedState();
+      return options.expectedWorkflowId
+        ? stateForWorkflow(options.expectedWorkflowId)
+        : exposedState();
+    }
+    if (workflowId && isStaleSnapshot(snapshot, byWorkflow.get(workflowId))) {
+      return stateForWorkflow(workflowId);
     }
     if (workflowId) byWorkflow.set(workflowId, snapshot);
     const next = stateFromSnapshot(snapshot, action);
@@ -354,12 +374,40 @@ export function createProductRunJourney(input: { jobs: RunJobs }): ProductRunJou
     return expose(next);
   }
 
-  function publishRecovery(error: unknown, action?: ProductRunAction): ProductRunState {
+  function publishRecovery(
+    error: unknown,
+    action?: ProductRunAction,
+    workflowId?: string,
+  ): ProductRunState {
+    const recovery = recoveryFromError(error, action);
+    if (workflowId && workflowId !== selectedWorkflowId) {
+      const stored = byWorkflow.get(workflowId);
+      return expose({
+        ...(stored ? stateFromSnapshot(stored, action) : { status: "idle" }),
+        recovery,
+      });
+    }
     current = {
       ...current,
-      recovery: recoveryFromError(error, action),
+      recovery,
     };
     return exposedState();
+  }
+
+  function stateForWorkflow(workflowId: string): ProductRunState {
+    const stored = byWorkflow.get(workflowId);
+    if (!stored) {
+      return { status: "idle" };
+    }
+    return expose(stateFromSnapshot(stored));
+  }
+
+  function isStaleSnapshot(next: RunTestSnapshot, stored: RunTestSnapshot | undefined): boolean {
+    if (!stored) return false;
+    const nextVersion = next.workflow?.expectedVersion;
+    const storedVersion = stored.workflow?.expectedVersion;
+    if (nextVersion === undefined || storedVersion === undefined) return false;
+    return nextVersion < storedVersion;
   }
 
   async function start(input: ProductRunStartInput): Promise<ProductRunState> {
@@ -378,6 +426,8 @@ export function createProductRunJourney(input: { jobs: RunJobs }): ProductRunJou
         ...(input.targetProfileId ? { targetProfileId: input.targetProfileId } : {}),
         ...(input.sourceRevision ? { sourceRevision: structuredClone(input.sourceRevision) } : {}),
         ...(input.startup ? { startup: structuredClone(input.startup) } : {}),
+        ...(input.engine ? { engine: input.engine } : {}),
+        ...(input.account ? { account: structuredClone(input.account) } : {}),
         ...(input.confirmRisk ? { confirmRisk: true } : {}),
       });
       return publish(snapshot, "start", { select: true });
@@ -412,17 +462,17 @@ export function createProductRunJourney(input: { jobs: RunJobs }): ProductRunJou
       if (!selectedCanonical()?.workflow?.workflowId) return inspected;
     }
     const workflowId = requested || selectedCanonical()!.workflow!.workflowId;
-    const initial = byWorkflow.get(workflowId) ?? selectedCanonical();
+    let initial = byWorkflow.get(workflowId);
     if (!initial?.workflow?.workflowId) {
       const inspected = await inspect(workflowId);
-      if (!byWorkflow.get(workflowId)?.workflow?.workflowId) return inspected;
+      initial = byWorkflow.get(workflowId);
+      if (!initial?.workflow?.workflowId) return inspected;
     }
-    const watchInitial = byWorkflow.get(workflowId) ?? selectedCanonical()!;
     let notifiedVersion: string | undefined;
     try {
       const snapshot = await jobs.watchWorkflow({
         workflowId,
-        initial: watchInitial,
+        initial,
         signal: input.signal,
         disconnectedRefreshMs: input.disconnectedRefreshMs,
         reconnectMs: input.reconnectMs,
@@ -434,18 +484,18 @@ export function createProductRunJourney(input: { jobs: RunJobs }): ProductRunJou
             notifiedVersion = run.version;
             input.onState?.(state);
           } catch (error) {
-            publishRecovery(error, "watch");
+            publishRecovery(error, "watch", workflowId);
           }
         },
       });
       const run = asRunSnapshot(snapshot);
-      if (run.workflow?.workflowId !== workflowId) return exposedState();
+      if (run.workflow?.workflowId !== workflowId) return stateForWorkflow(workflowId);
       const state = publish(run, "watch", { expectedWorkflowId: workflowId });
       if (run.version !== notifiedVersion) input.onState?.(state);
       return state;
     } catch (error) {
-      if (isAbortError(error)) return exposedState();
-      return publishRecovery(error, "watch");
+      if (isAbortError(error)) return stateForWorkflow(workflowId);
+      return publishRecovery(error, "watch", workflowId);
     }
   }
 
@@ -474,7 +524,7 @@ export function createProductRunJourney(input: { jobs: RunJobs }): ProductRunJou
         { select: true, expectedWorkflowId: workflowId },
       );
     } catch (error) {
-      return publishRecovery(error, "cancel");
+      return publishRecovery(error, "cancel", workflowId);
     }
   }
 
