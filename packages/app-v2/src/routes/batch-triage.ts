@@ -165,25 +165,57 @@ function isTypingTarget(target: unknown): boolean {
   );
 }
 
-/** Map a Batch keyboard event to a review mutation. Execution status is unchanged. */
+/** Authenticated actor only. The placeholder "me" is never a review owner. */
+export function resolveTriageActor(actorId: string | undefined): string | undefined {
+  const value = actorId?.trim();
+  if (!value || value === "me") return undefined;
+  return value;
+}
+
+export type BatchTriageCommand =
+  | { kind: "status"; input: ProductBatchTriageInput }
+  | { kind: "assignee"; input: ProductBatchTriageInput }
+  | { kind: "note"; caseIds: readonly string[] };
+
+/** Map a Batch keyboard event to a review command. Execution status is unchanged. */
 export function batchTriageKeyboardCommand(input: {
   key: string;
   metaKey?: boolean;
   ctrlKey?: boolean;
   altKey?: boolean;
+  shiftKey?: boolean;
+  repeat?: boolean;
+  defaultPrevented?: boolean;
+  isComposing?: boolean;
+  overlayOpen?: boolean;
+  pending?: boolean;
   target?: unknown;
   selectedCaseIds: readonly string[];
-  actorId: string;
-}): ProductBatchTriageInput | null {
-  if (input.metaKey || input.ctrlKey || input.altKey) return null;
+  actorId?: string;
+}): BatchTriageCommand | null {
+  if (input.metaKey || input.ctrlKey || input.altKey || input.shiftKey) return null;
+  if (input.repeat || input.defaultPrevented || input.isComposing) return null;
+  if (input.overlayOpen || input.pending) return null;
   if (isTypingTarget(input.target)) return null;
   const caseIds = [...new Set(input.selectedCaseIds.map((id) => id.trim()).filter(Boolean))];
   if (!caseIds.length) return null;
   const key = input.key.length === 1 ? input.key.toLowerCase() : input.key;
-  if (key === "a") return { caseIds, assignee: input.actorId.trim() || "me" };
+  if (key === "n") return { kind: "note", caseIds };
+  if (key === "a") {
+    const assignee = resolveTriageActor(input.actorId);
+    if (!assignee) return null;
+    return { kind: "assignee", input: { caseIds, assignee } };
+  }
   const triageStatus = TRIAGE_STATUS_KEYS[key];
   if (!triageStatus) return null;
-  return { caseIds, triageStatus };
+  return { kind: "status", input: { caseIds, triageStatus } };
+}
+
+export function batchTriageMutation(
+  command: BatchTriageCommand | null,
+): ProductBatchTriageInput | null {
+  if (command?.kind === "status" || command?.kind === "assignee") return command.input;
+  return null;
 }
 
 export function batchTriageCaption(item: ProductBatchCase): string | undefined {

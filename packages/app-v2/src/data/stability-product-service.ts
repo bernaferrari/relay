@@ -3,6 +3,7 @@ import type { ProductBatchCase, ProductBatchReport } from "@relay/product/run-ac
 import type { RunOutcome } from "@relay/protocol";
 import type { Platform } from "../platform/types";
 import { productClientForPlatform } from "./product-client";
+import { groupComparableStabilitySamples } from "./stability-cohort";
 
 /** A product-level observation projected from durable Run or Batch evidence. */
 export type ProductStabilitySample = {
@@ -11,6 +12,13 @@ export type ProductStabilitySample = {
   readonly appMapId?: string;
   readonly testId?: string;
   readonly environmentId?: string;
+  readonly testRevision?: string | number;
+  readonly sourceRevision?: string;
+  readonly buildId?: string;
+  readonly targetProfileId?: string;
+  readonly accountId?: string;
+  readonly dataSetId?: string;
+  readonly startupMode?: string;
   readonly outcome?: RunOutcome;
   readonly status?: string;
   readonly queuedAt?: number;
@@ -44,6 +52,7 @@ export type ProductStabilityBucket = {
 export type ProductStabilitySignal = {
   readonly kind:
     | "possible-flakiness"
+    | "mixed-outcomes"
     | "environment-recurrence"
     | "duration-regression"
     | "open-ownership";
@@ -145,10 +154,18 @@ function runIdentity(run: ProductRunSummary): Pick<ProductStabilitySample, "appM
 /** Converts the existing catalog projection without copying raw evidence. */
 export function stabilitySampleFromRun(run: ProductRunSummary): ProductStabilitySample {
   const identity = runIdentity(run);
+  const execution = run.executionIdentity;
+  const targetProfileId = execution?.targetProfileId ?? execution?.deviceId;
   return {
     id: run.id,
     runId: run.identity.runId || run.id,
     ...identity,
+    ...(targetProfileId ? { environmentId: targetProfileId, targetProfileId } : {}),
+    ...(execution?.appMapRevision !== undefined ? { testRevision: execution.appMapRevision } : {}),
+    ...(execution?.sourceRevision ? { sourceRevision: execution.sourceRevision } : {}),
+    ...(execution?.buildId ? { buildId: execution.buildId } : {}),
+    ...(execution?.accountId ? { accountId: execution.accountId } : {}),
+    ...(execution?.dataSetId ? { dataSetId: execution.dataSetId } : {}),
     ...(run.outcome ? { outcome: run.outcome } : {}),
     status: run.status,
     queuedAt: run.queuedAt,
@@ -190,7 +207,15 @@ export function stabilityMaintenanceRecommendations(
         id: `rerun-flake:${signal.environmentId ?? "all"}`,
         action: "rerun-flake",
         summary:
-          "Rerun the same Test in this environment before treating the failure as a product change.",
+          "Compare these Runs. They used the same Test revision, build, target, account, and starting state.",
+        runIds: signal.runIds,
+        ...(signal.environmentId ? { environmentId: signal.environmentId } : {}),
+      });
+    } else if (signal.kind === "mixed-outcomes") {
+      recommendations.push({
+        id: `compare-mixed:${signal.environmentId ?? "all"}`,
+        action: "inspect-environment",
+        summary: "Different outcomes were observed. Compare these Runs.",
         runIds: signal.runIds,
         ...(signal.environmentId ? { environmentId: signal.environmentId } : {}),
       });
@@ -459,25 +484,32 @@ export function summarizeProductStability(
 
   const signals: ProductStabilitySignal[] = [];
   if (input.historyComplete && identityComplete && outcomesComplete) {
-    const byIdentity = new Map<string, ProductStabilitySample[]>();
-    for (const sample of samples) {
-      if (!sample.environmentId) continue;
-      const key = `${sample.appMapId}\u0000${sample.testId}\u0000${sample.environmentId}`;
-      const group = byIdentity.get(key) ?? [];
-      group.push(sample);
-      byIdentity.set(key, group);
-    }
-    for (const group of byIdentity.values()) {
+    const comparable = groupComparableStabilitySamples(samples);
+    const comparableIds = new Set(
+      [...comparable.values()].flatMap((group) => group.map((sample) => sample.id)),
+    );
+    for (const group of comparable.values()) {
       const groupOutcomes = new Set(group.map(sampleOutcome));
       if (group.length >= 2 && groupOutcomes.has("passed") && groupOutcomes.has("failed")) {
         signals.push({
           kind: "possible-flakiness",
           severity: "warning",
-          summary: "The same Test and environment have both passed and failed.",
-          environmentId: group[0]!.environmentId,
+          summary:
+            "This Test passed and failed on the same revision, build, target, account, and starting state.",
+          environmentId: group[0]!.environmentId ?? group[0]!.targetProfileId,
           runIds: signalRunIds(group),
         });
       }
+    }
+    const mixed = samples.filter((sample) => !comparableIds.has(sample.id));
+    const mixedOutcomes = new Set(mixed.map(sampleOutcome));
+    if (mixed.length >= 2 && mixedOutcomes.has("passed") && mixedOutcomes.has("failed")) {
+      signals.push({
+        kind: "mixed-outcomes",
+        severity: "info",
+        summary: "Different outcomes were observed. Compare these Runs.",
+        runIds: signalRunIds(mixed),
+      });
     }
     for (const bucket of byEnvironment) {
       if (bucket.failed < 2) continue;

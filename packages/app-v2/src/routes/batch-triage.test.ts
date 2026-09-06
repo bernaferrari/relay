@@ -5,7 +5,9 @@ import {
   batchRerunRequest,
   batchTriageCaption,
   batchTriageKeyboardCommand,
+  batchTriageMutation,
   buildBatchMatrix,
+  resolveTriageActor,
   selectedClusterCaseIds,
   shouldShowBatchMatrix,
   visibleBatchCases,
@@ -101,19 +103,30 @@ describe("Batch triage presentation", () => {
 
   it("maps keyboard triage ownership onto selected cases", () => {
     expect(
-      batchTriageKeyboardCommand({
-        key: "i",
-        selectedCaseIds: ["login-ios", " checkout-ios "],
-        actorId: "human:qa",
-      }),
+      batchTriageMutation(
+        batchTriageKeyboardCommand({
+          key: "i",
+          selectedCaseIds: ["login-ios", " checkout-ios "],
+          actorId: "human:qa",
+        }),
+      ),
     ).toEqual({ caseIds: ["login-ios", "checkout-ios"], triageStatus: "investigating" });
     expect(
+      batchTriageMutation(
+        batchTriageKeyboardCommand({
+          key: "A",
+          selectedCaseIds: ["login-ios"],
+          actorId: "human:qa",
+        }),
+      ),
+    ).toEqual({ caseIds: ["login-ios"], assignee: "human:qa" });
+    expect(
       batchTriageKeyboardCommand({
-        key: "A",
+        key: "n",
         selectedCaseIds: ["login-ios"],
         actorId: "human:qa",
       }),
-    ).toEqual({ caseIds: ["login-ios"], assignee: "human:qa" });
+    ).toEqual({ kind: "note", caseIds: ["login-ios"] });
     expect(
       batchTriageKeyboardCommand({
         key: "r",
@@ -133,6 +146,39 @@ describe("Batch triage presentation", () => {
     expect(
       batchTriageKeyboardCommand({
         key: "r",
+        repeat: true,
+        selectedCaseIds: ["login-ios"],
+        actorId: "human:qa",
+      }),
+    ).toBeNull();
+    expect(
+      batchTriageKeyboardCommand({
+        key: "r",
+        isComposing: true,
+        selectedCaseIds: ["login-ios"],
+        actorId: "human:qa",
+      }),
+    ).toBeNull();
+    expect(
+      batchTriageKeyboardCommand({
+        key: "r",
+        overlayOpen: true,
+        selectedCaseIds: ["login-ios"],
+        actorId: "human:qa",
+      }),
+    ).toBeNull();
+    expect(
+      batchTriageKeyboardCommand({
+        key: "a",
+        selectedCaseIds: ["login-ios"],
+        actorId: "me",
+      }),
+    ).toBeNull();
+    expect(resolveTriageActor("me")).toBeUndefined();
+    expect(resolveTriageActor("human:qa")).toBe("human:qa");
+    expect(
+      batchTriageKeyboardCommand({
+        key: "r",
         selectedCaseIds: [],
         actorId: "human:qa",
       }),
@@ -146,10 +192,13 @@ describe("Batch triage presentation", () => {
     expect(batchTriageCaption({ ...cases[0]!, triageStatus: "unreviewed" })).toBeUndefined();
   });
 
-  it("Batch page wires keyboard triage through the shipped command and server operation", () => {
+  it("Batch page wires visible review controls and keyboard through the same command", () => {
     const source = readFileSync("src/routes/batch-page.tsx", "utf8");
     expect(source).toContain("batchTriageKeyboardCommand");
+    expect(source).toContain("BatchTriageControls");
+    expect(source).toContain("resolveTriageActor");
     expect(source).toContain("runAcrossService.triage");
+    expect(source).not.toContain('useState("me")');
   });
 
   it("keeps an explicit row rerun free of selected cluster ids", () => {

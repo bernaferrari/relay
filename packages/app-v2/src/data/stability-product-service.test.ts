@@ -34,6 +34,31 @@ function run(
 }
 
 describe("stability product service", () => {
+  it("projects Run execution identity onto the stability sample", () => {
+    const [sample] = stabilitySamplesFromRuns([
+      {
+        ...run("run-id", "passed", 1_000),
+        executionIdentity: {
+          appMapId: "app-1",
+          testId: "test-1",
+          appMapRevision: 12,
+          buildId: "build-92",
+          targetProfileId: "chrome-admin",
+          accountId: "acct-admin",
+          dataSetId: "default",
+        },
+      },
+    ]);
+    expect(sample).toMatchObject({
+      testRevision: 12,
+      buildId: "build-92",
+      targetProfileId: "chrome-admin",
+      environmentId: "chrome-admin",
+      accountId: "acct-admin",
+      dataSetId: "default",
+    });
+  });
+
   it("reports a complete, explainable summary from identified terminal Runs", () => {
     const samples = stabilitySamplesFromRuns([
       run("run-1", "passed", 1_000, 100),
@@ -65,15 +90,74 @@ describe("stability product service", () => {
       expect.objectContaining({ appMapId: "app-1", passRate: 0.75, confidence: "complete" }),
     ]);
     expect(summary.signals).toEqual([
-      expect.objectContaining({ kind: "possible-flakiness", environmentId: "env-1" }),
+      expect.objectContaining({
+        kind: "mixed-outcomes",
+        summary: "Different outcomes were observed. Compare these Runs.",
+      }),
     ]);
     expect(summary.recommendations).toEqual([
       expect.objectContaining({
-        action: "rerun-flake",
-        summary:
-          "Rerun the same Test in this environment before treating the failure as a product change.",
+        action: "inspect-environment",
+        summary: "Different outcomes were observed. Compare these Runs.",
       }),
     ]);
+    expect(summary.signals.some((signal) => signal.kind === "possible-flakiness")).toBe(false);
+  });
+
+  it("calls mixed pass/fail flaky only inside a full comparable cohort", () => {
+    const cohort = {
+      testRevision: 12,
+      buildId: "build-92",
+      targetProfileId: "env-1",
+      environmentId: "env-1",
+      accountId: "acct-admin",
+      dataSetId: "default",
+      startupMode: "warm",
+    };
+    const summary = summarizeProductStability({
+      samples: [
+        {
+          id: "run-1",
+          runId: "run-1",
+          appMapId: "app-1",
+          testId: "test-1",
+          outcome: "passed",
+          queuedAt: 1,
+          ...cohort,
+        },
+        {
+          id: "run-2",
+          runId: "run-2",
+          appMapId: "app-1",
+          testId: "test-1",
+          outcome: "product-failure",
+          queuedAt: 2,
+          ...cohort,
+        },
+        {
+          id: "run-3",
+          runId: "run-3",
+          appMapId: "app-1",
+          testId: "test-1",
+          outcome: "product-failure",
+          queuedAt: 3,
+          ...cohort,
+          buildId: "build-93",
+          targetProfileId: "env-2",
+          environmentId: "env-2",
+        },
+      ],
+      historyComplete: true,
+    });
+    expect(summary.signals).toEqual([
+      expect.objectContaining({
+        kind: "possible-flakiness",
+        summary:
+          "This Test passed and failed on the same revision, build, target, account, and starting state.",
+        runIds: ["run-1", "run-2"],
+      }),
+    ]);
+    expect(summary.recommendations[0]?.summary).toContain("same Test revision, build, target");
   });
 
   it("fails closed when history is partial, outcomes are non-terminal, or identity is legacy", () => {

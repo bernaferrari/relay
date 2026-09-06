@@ -8,11 +8,20 @@ import { LibraryPage, PageHeader } from "../components/page-layout";
 import { EmptyState } from "../components/product-patterns";
 import { IssueDraftButton } from "../components/issue-draft-button";
 import {
+  batchReviewNotesKey,
+  parseBatchReviewNotes,
+  appendBatchReviewNote,
+  type BatchReviewNote,
+} from "../data/batch-review-notes";
+import {
   batchRerunRequest,
   batchTriageKeyboardCommand,
+  batchTriageMutation,
   isBatchCaseRerunnable,
+  resolveTriageActor,
   selectedClusterCaseIds,
 } from "./batch-triage";
+import { BatchTriageControls } from "./batch-triage-controls";
 import { BatchFailureClusters, BatchResultMatrix } from "./batch-triage-panels";
 import { PageLoading, RecordingProblem } from "./recording-shared";
 
@@ -24,7 +33,9 @@ export function BatchPage() {
   const [selectedCases, setSelectedCases] = useState<Set<string>>(() => new Set());
   const [selectedClusters, setSelectedClusters] = useState<Set<string>>(() => new Set());
   const [downloadUrl, setDownloadUrl] = useState<string>();
-  const [actorId, setActorId] = useState("me");
+  const [actorId, setActorId] = useState<string>();
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [notes, setNotes] = useState<readonly BatchReviewNote[]>([]);
   const batch = useQuery({
     queryKey: ["run-across", "batch", batchId],
     queryFn: () => runAcrossService.getReport(batchId),
@@ -111,6 +122,16 @@ export function BatchPage() {
       if (connection?.actorId) setActorId(connection.actorId);
     });
   }, [platform]);
+  useEffect(() => {
+    void Promise.resolve(platform.storage.get(batchReviewNotesKey(batchId)))
+      .then((raw) => setNotes(parseBatchReviewNotes(raw)))
+      .catch(() => setNotes([]));
+  }, [batchId, platform]);
+
+  const selectedCaseIds = useMemo(
+    () => [...selectedCases, ...selectedClusterCases],
+    [selectedCases, selectedClusterCases],
+  );
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -119,17 +140,27 @@ export function BatchPage() {
         metaKey: event.metaKey,
         ctrlKey: event.ctrlKey,
         altKey: event.altKey,
+        repeat: event.repeat,
+        defaultPrevented: event.defaultPrevented,
+        isComposing: event.isComposing,
+        overlayOpen: noteOpen,
+        pending: triage.isPending,
         target: event.target,
-        selectedCaseIds: [...selectedCases, ...selectedClusterCases],
+        selectedCaseIds,
         actorId,
       });
       if (!command) return;
       event.preventDefault();
-      triage.mutate(command);
+      if (command.kind === "note") {
+        setNoteOpen(true);
+        return;
+      }
+      const mutation = batchTriageMutation(command);
+      if (mutation) triage.mutate(mutation);
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [actorId, selectedCases, selectedClusterCases, triage]);
+  }, [actorId, noteOpen, selectedCaseIds, triage]);
 
   useEffect(
     () => () => {
@@ -273,24 +304,46 @@ export function BatchPage() {
             />
           ) : null}
 
-          {totalSelected ? (
-            <div
-              className="relay-batch-selection mt-4 flex flex-wrap items-center justify-between gap-3"
-              role="region"
-              aria-label="Selected Batch cases"
-            >
-              <div className="grid gap-1">
-                <strong className="text-sm">{totalSelected} selected</strong>
-                <p className="text-xs text-muted-foreground">
-                  I investigate · R resolve · W won&apos;t fix · U unreviewed · A assign to me
-                </p>
-              </div>
+          <div
+            className="relay-batch-selection mt-4 grid gap-3"
+            role="region"
+            aria-label="Selected Batch cases"
+          >
+            <BatchTriageControls
+              selectedCount={totalSelected}
+              actorId={actorId}
+              pending={triage.isPending}
+              noteOpen={noteOpen}
+              onNoteOpenChange={setNoteOpen}
+              onStatus={(triageStatus) => triage.mutate({ caseIds: selectedCaseIds, triageStatus })}
+              onAssignToMe={() => {
+                const assignee = resolveTriageActor(actorId);
+                if (assignee) triage.mutate({ caseIds: selectedCaseIds, assignee });
+              }}
+              onAddNote={(text) => {
+                const actor = resolveTriageActor(actorId);
+                if (!actor || !selectedCaseIds[0]) return;
+                const next = selectedCaseIds.reduce(
+                  (notes, caseId) =>
+                    appendBatchReviewNote(notes, {
+                      caseId,
+                      text,
+                      at: Date.now(),
+                      actorId: actor,
+                    }),
+                  notes,
+                );
+                setNotes(next);
+                void platform.storage.set(batchReviewNotesKey(batchId), JSON.stringify(next));
+              }}
+            />
+            {totalSelected ? (
               <Button variant="default" onClick={() => rerun.mutate()} disabled={rerun.isPending}>
                 <RotateCcw aria-hidden="true" />
                 {rerun.isPending ? "Starting rerun…" : `Rerun ${totalSelected}`}
               </Button>
-            </div>
-          ) : null}
+            ) : null}
+          </div>
 
           {report.export ? (
             <div
