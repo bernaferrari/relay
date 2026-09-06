@@ -213,7 +213,16 @@ test("appLocale Combine relaunches when the child Test has no destination identi
         app: "com.example",
         locale: `{{${relaunch.prefixes.language}}}`,
       },
-      { kind: "app", action: "open", app: "com.example", relaunch: true },
+      {
+        kind: "app",
+        action: "open",
+        app: "com.example",
+        relaunch: true,
+        expectedLabels: [
+          `{{${relaunch.prefixes.language}_label}}`,
+          `{{${relaunch.prefixes.language}_text}}`,
+        ],
+      },
       { kind: "app", action: "set-locale", app: "com.example", locale: "en" },
       { kind: "app", action: "open", app: "com.example", relaunch: true },
     ],

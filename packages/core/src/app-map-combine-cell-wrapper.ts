@@ -8,7 +8,10 @@ import {
   type OptionRunSet,
 } from "./option-run.js";
 import type { Recipe } from "./recipes.js";
-import { stayAppLocaleDestinationCheck } from "./stay-app-locale-destination.js";
+import {
+  appLocaleExpectedLabels,
+  stayAppLocaleDestinationCheck,
+} from "./stay-app-locale-destination.js";
 
 export { stayAppLocaleDestinationCheck };
 
@@ -206,6 +209,10 @@ export function composeAppMapCombineCellWrapper(input: {
           app: set.apply.app,
           locale: `{{${prefix}}}`,
           relaunch: relaunch && !appLaunched,
+          expectedLabels: appLocaleExpectedLabels(graph, input.childRootId, [
+            `{{${prefix}_label}}`,
+            `{{${prefix}_text}}`,
+          ]),
         }),
       );
       if (relaunch && !appLaunched) appLaunched = true;
@@ -236,6 +243,7 @@ export function composeAppMapCombineCellWrapper(input: {
           app: set.apply.app,
           locale: set.restoreId.trim(),
           relaunch: appLocaleShouldRelaunch(set.apply, graph, input.childRootId),
+          expectedLabels: appLocaleExpectedLabels(graph, input.childRootId),
         }),
       );
       continue;

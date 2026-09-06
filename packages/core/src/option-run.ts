@@ -20,9 +20,11 @@ import type {
 import type { Recipe } from "./recipes.js";
 import { freezeRecipeGraph, readRecipe } from "./recipes.js";
 import {
+  appLocaleExpectedLabels,
   appLocaleShouldRelaunch,
   stayAppLocaleDestinationCheck,
 } from "./stay-app-locale-destination.js";
+import { attachExpectedLabels, appStepExpectedLabels } from "./semantic-readiness.js";
 import { prepareCasePlan, redactCasePlan, type PreparedCasePlan } from "./case-plan.js";
 import { enqueueJob, type EnqueueJobInput, type TestJob } from "./session.js";
 import { currentOperationContext } from "./operation-context.js";
@@ -67,13 +69,18 @@ export function appLocaleRecipeSteps(input: {
   app: string;
   locale: string;
   relaunch?: boolean;
+  expectedLabels?: readonly string[];
 }): RecipeStep[] {
   const steps: RecipeStep[] = [
     { kind: "app", action: "set-locale", app: input.app, locale: input.locale },
   ];
   if (appLocaleShouldRelaunch(input)) {
-    steps.push({ kind: "app", action: "open", app: input.app, relaunch: true });
-    steps.push({ kind: "sleep", ms: 1200 });
+    const open = attachExpectedLabels(
+      { kind: "app" as const, action: "open" as const, app: input.app, relaunch: true },
+      input.expectedLabels,
+    );
+    steps.push(open);
+    if (!appStepExpectedLabels(open).length) steps.push({ kind: "sleep", ms: 1200 });
   }
   return steps;
 }
@@ -559,6 +566,10 @@ export function composeOptionRunRecipes(input: {
           app: set.apply.app,
           locale: `{{${set.id}}}`,
           relaunch: relaunch && !appLaunched,
+          expectedLabels: appLocaleExpectedLabels(graph, input.body.id, [
+            `{{${set.id}_label}}`,
+            `{{${set.id}_text}}`,
+          ]),
         }),
       );
       if (relaunch && !appLaunched) appLaunched = true;
@@ -614,6 +625,7 @@ export function composeOptionRunRecipes(input: {
             app: set.apply.app,
             locale: set.restoreId.trim(),
             relaunch: appLocaleShouldRelaunch(set.apply, graph, input.body.id),
+            expectedLabels: appLocaleExpectedLabels(graph, input.body.id),
           }),
         );
         continue;

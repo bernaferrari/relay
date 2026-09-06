@@ -25,6 +25,59 @@ import {
 } from "./campaign-recovery-effects.js";
 export { isRightToLeftRun, resolveRecipeStep } from "./recipe-runner-support.js";
 export type { RecipeStepContext } from "./recipe-runner-context.js";
+
+function isAndroidSemanticReadinessTarget(): boolean {
+  try {
+    return selectedPlatform() === "android";
+  } catch {
+    return false;
+  }
+}
+
+async function awaitAndroidSemanticReadiness(
+  device: Device,
+  expectedLabels: string[],
+  ctx: RecipeStepContext,
+): Promise<void> {
+  try {
+    await awaitSemanticReadiness({
+      expectedLabels,
+      captureSnapshot: async () => {
+        const nodes = await snapshot(device);
+        const labels = labelsFromSemanticSnapshot({ nodes });
+        return { nodes, labels, digest: semanticSnapshotDigest(labels) };
+      },
+      sleep: (ms) => sleep(ms, device),
+    });
+  } catch (error) {
+    if (!(error instanceof SemanticReadinessTimeoutError)) throw error;
+    let screenshotPath = error.screenshotPath;
+    if (!screenshotPath) {
+      try {
+        const shot = await captureScreenshot({
+          device,
+          jobId: ctx.job?.id,
+          caption: "semantic-readiness timeout",
+        });
+        screenshotPath = shot.framePath ?? shot.path;
+      } catch {
+        // Tree labels + digest still diagnose the timeout when pixels fail.
+      }
+    }
+    throw screenshotPath && screenshotPath !== error.screenshotPath
+      ? new SemanticReadinessTimeoutError({
+          timeoutMs: error.timeoutMs,
+          expectedLabels: error.expectedLabels,
+          missingLabels: error.missingLabels,
+          lastLabels: error.lastLabels,
+          attempts: error.attempts,
+          elapsedMs: error.elapsedMs,
+          digest: error.digest,
+          screenshotPath,
+        })
+      : error;
+  }
+}
 import {
   pressKey,
   sleep,
@@ -49,8 +102,17 @@ import {
   manageLogs,
   setAndroidLockState,
   snapshot,
+  selectedPlatform,
 } from "./device.js";
 import { openAppAndVerifyForeground } from "./recipe-runner-app.js";
+import { captureScreenshot } from "./workspace-capture.js";
+import {
+  appStepExpectedLabels,
+  awaitSemanticReadiness,
+  labelsFromSemanticSnapshot,
+  SemanticReadinessTimeoutError,
+  semanticSnapshotDigest,
+} from "./semantic-readiness.js";
 import {
   cooperativeCheckpointWithTimeout,
   cooperativeCheckpoint,
@@ -675,6 +737,11 @@ async function runRequiredRecipeStep(
             step.relaunch === undefined ? undefined : { relaunch: step.relaunch },
             log,
           );
+        const expectedLabels = appStepExpectedLabels(step);
+        if (expectedLabels.length && isAndroidSemanticReadinessTarget()) {
+          await awaitAndroidSemanticReadiness(device, expectedLabels, ctx);
+          log(`semantic readiness: ${expectedLabels.join(", ")}`);
+        }
         break;
       }
       if (step.action === "set-locale") {

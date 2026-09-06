@@ -223,14 +223,66 @@ test("an Android app-language Variable uses stable locale ids instead of picker 
   });
   assert.deepEqual(root.steps.slice(0, 3), [
     { kind: "app", action: "set-locale", app: "ai.x.grok", locale: "{{language}}" },
-    { kind: "app", action: "open", app: "ai.x.grok", relaunch: true },
-    { kind: "sleep", ms: 1200 },
+    {
+      kind: "app",
+      action: "open",
+      app: "ai.x.grok",
+      relaunch: true,
+      expectedLabels: ["{{language_label}}", "{{language_text}}"],
+    },
+    { kind: "device", action: "keyboard-dismiss" },
   ]);
-  assert.deepEqual(root.steps.slice(-3), [
-    { kind: "app", action: "set-locale", app: "ai.x.grok", locale: "en" },
-    { kind: "app", action: "open", app: "ai.x.grok", relaunch: true },
-    { kind: "sleep", ms: 1200 },
+  assert.ok(
+    root.steps.some(
+      (step) => step.kind === "app" && step.action === "set-locale" && step.locale === "en",
+    ),
+  );
+});
+
+test("an app-locale relaunch waits on expected destination labels instead of sleeping", () => {
+  const leaf: Recipe = {
+    ...body,
+    id: "settings-leaf",
+    steps: [
+      {
+        kind: "expect-screen",
+        id: "settings",
+        screenId: "settings",
+        screenTitle: "Settings",
+        fingerprint: "",
+      },
+    ],
+  };
+  const { root } = composeOptionRunRecipes({
+    body: leaf,
+    request: {
+      sets: [
+        {
+          id: "language",
+          name: "Language",
+          kind: "language",
+          apply: { kind: "appLocale", app: "ai.x.grok" },
+          options: [{ id: "it", label: "Italiano" }],
+        },
+      ],
+      screenshotEach: false,
+    },
+    batchId: "semantic-ready",
+  });
+  assert.deepEqual(root.steps.slice(0, 2), [
+    { kind: "app", action: "set-locale", app: "ai.x.grok", locale: "{{language}}" },
+    {
+      kind: "app",
+      action: "open",
+      app: "ai.x.grok",
+      relaunch: true,
+      expectedLabels: ["Settings", "{{language_label}}", "{{language_text}}"],
+    },
   ]);
+  assert.equal(
+    root.steps.some((step) => step.kind === "sleep" && step.ms === 1200),
+    false,
+  );
 });
 
 test("an appLocale Variable stays when a module-rooted Test names a destination", () => {

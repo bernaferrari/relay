@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { Recipe } from "./recipes.js";
 import {
+  appLocaleExpectedLabels,
   appLocaleShouldRelaunch,
   stayAppLocaleCanBeProved,
   stayAppLocaleDestinationCheck,
@@ -106,6 +107,22 @@ test("a named destination without identity cannot stay and does not invent one",
     appLocaleShouldRelaunch({ relaunch: false }, { [nameless.id]: nameless }, nameless.id),
     false,
   );
+});
+
+test("post-relaunch readiness labels come from the first named destination", () => {
+  const tour = recipe("tour", [
+    {
+      kind: "expect-screen",
+      id: "relay-destination-data",
+      screenId: "data-controls",
+      screenTitle: "Data Controls",
+      fingerprint: "",
+    },
+  ]);
+  assert.deepEqual(appLocaleExpectedLabels({ [tour.id]: tour }, tour.id, ["Italiano", "-"]), [
+    "Data Controls",
+    "Italiano",
+  ]);
 });
 
 test("explicit relaunch wins even when stay can be proved", () => {

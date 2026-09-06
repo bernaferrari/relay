@@ -1,5 +1,6 @@
 import type { RecipeStep } from "@relay/protocol";
 import type { Recipe } from "./recipes.js";
+import { collectExpectedSemanticLabels } from "./semantic-readiness.js";
 
 type ExpectScreen = Extract<RecipeStep, { kind: "expect-screen" }>;
 
@@ -14,6 +15,42 @@ function isProductExpectScreen(step: ExpectScreen, recipeId: string): boolean {
   if (id.startsWith("relay-source-")) return false;
   if (id.endsWith(":warm")) return false;
   return true;
+}
+
+/** First named screen the Test will assert — the post-relaunch surface. */
+export function nextExpectScreen(
+  graph: Record<string, Recipe>,
+  rootId: string,
+  seen = new Set<string>(),
+): ExpectScreen | undefined {
+  if (seen.has(rootId)) return undefined;
+  seen.add(rootId);
+  if (isRecoveryOnlyRecipeId(rootId)) return undefined;
+  const recipe = graph[rootId];
+  if (!recipe) return undefined;
+  for (const step of recipe.steps) {
+    if (step.kind === "expect-screen") return structuredClone(step);
+    if (step.kind === "module" && step.recipeId) {
+      const nested = nextExpectScreen(graph, step.recipeId, seen);
+      if (nested) return nested;
+    }
+  }
+  return undefined;
+}
+
+export function appLocaleExpectedLabels(
+  graph?: Record<string, Recipe>,
+  childRootId?: string,
+  optionLabels?: readonly (string | undefined)[],
+): string[] {
+  const screen = graph && childRootId ? nextExpectScreen(graph, childRootId) : undefined;
+  return collectExpectedSemanticLabels({
+    screenTitle: screen?.screenTitle,
+    observationLabels: screen?.observations?.flatMap((observation) =>
+      observation.nodes.map((node) => node.label),
+    ),
+    optionLabels,
+  });
 }
 
 function lastProductExpectScreen(
