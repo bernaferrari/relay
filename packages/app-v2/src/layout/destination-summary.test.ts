@@ -8,6 +8,7 @@ import {
   matchRunTargetId,
   summarizeDestinations,
   incompatibleSavedProfile,
+  startConfigurationAdmission,
   workspaceDestinationDecision,
 } from "./destination-summary";
 
@@ -218,5 +219,40 @@ describe("destination summary", () => {
         ],
       }),
     ).toBeUndefined();
+  });
+
+  it("blocks start while a saved profile list is still resolving", () => {
+    const admission = startConfigurationAdmission({
+      savedProfileId: "profile-member",
+      targetId: "browser-golden",
+    });
+    expect(admission.status).toBe("resolving");
+    expect(admission.start.targetProfileId).toBe("profile-member");
+    expect(
+      incompatibleSavedProfile({
+        savedProfileId: "profile-member",
+        targetId: "browser-golden",
+      })?.resolving,
+    ).toBe(true);
+  });
+
+  it("keeps an explicit missing build on the would-be start payload", () => {
+    const admission = startConfigurationAdmission({
+      selectedBuildId: "build-92",
+      buildsStatus: "success",
+      builds: [{ id: "build-91", status: "ready", sourceSha: "abcdef1234567" }],
+    });
+    expect(admission.status).toBe("blocked");
+    expect(admission.start.selectedBuildId).toBe("build-92");
+    expect(admission.blockers.some((item) => item.id === "selected-build")).toBe(true);
+  });
+
+  it("blocks start while an explicit build list is still resolving", () => {
+    const admission = startConfigurationAdmission({
+      selectedBuildId: "build-92",
+      buildsStatus: "pending",
+    });
+    expect(admission.status).toBe("resolving");
+    expect(admission.start.selectedBuildId).toBe("build-92");
   });
 });

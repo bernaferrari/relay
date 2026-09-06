@@ -93,6 +93,12 @@ export function surveyHasHiddenContentBelow(snapshot: SnapshotPayload): boolean 
   return snapshot.nodes.some((node) => node.hiddenContentBelow === true);
 }
 
+/** Provider explicitly proved the scroller has nothing left below. Absence of
+ * a hint is not exhaustion. */
+export function surveyHasExplicitExhaustion(snapshot: SnapshotPayload): boolean {
+  return snapshot.nodes.some((node) => node.hiddenContentBelow === false);
+}
+
 export function surveyRowFlushWithScroll(
   row: SurveyFeatureRow,
   snapshot: SnapshotPayload,
@@ -143,9 +149,17 @@ export function surveyExtent(snapshot: SnapshotPayload): SurveyExtent {
     }
     return { kind: "partial", reason: "helper reports hidden content below" };
   }
-  if (!last) return { kind: "unknown", reason: "no labeled content rows" };
+  if (!surveyHasExplicitExhaustion(snapshot)) {
+    return {
+      kind: "unknown",
+      reason: "scroll helper did not report whether more content exists",
+    };
+  }
   if (clipped) {
     return { kind: "partial", reason: "last labeled row is clipped or flush with the fold" };
+  }
+  if (!last) {
+    return { kind: "complete", evidence: "physical-scroll-stationary" };
   }
   return { kind: "complete", evidence: "helper-exhausted-and-last-row-unclipped" };
 }

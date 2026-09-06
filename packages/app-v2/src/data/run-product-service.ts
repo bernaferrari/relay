@@ -1,6 +1,7 @@
 import { boundedVideoBlob } from "./run-video-loader";
 export { runOutcome } from "./run-outcome";
 import type {
+  ProductRunCancelInput,
   ProductRunReport,
   ProductRunStartInput,
   ProductRunState,
@@ -59,7 +60,7 @@ export type RunProductService = {
   cancelExecution?(runId: string): Promise<ProductRunState | undefined>;
   restore?(runId: string): Promise<ProductRunState | undefined>;
   watch(input?: ProductRunWatchInput): Promise<ProductRunState>;
-  cancel(): Promise<ProductRunState>;
+  cancel(input?: ProductRunCancelInput): Promise<ProductRunState>;
   review?(input: OperationInput<"run.review">): Promise<ProductRunReview>;
   getEvidence?(
     runId: string,
@@ -252,8 +253,8 @@ export function createRunProductService(platform: Platform): RunProductService {
     async watch(input) {
       return (await runtime()).journey.watch(input);
     },
-    async cancel() {
-      return (await runtime()).journey.cancel();
+    async cancel(input) {
+      return (await runtime()).journey.cancel(input);
     },
     async review(input) {
       return (await (await runtime()).client.invoke("run.review", input)).review;

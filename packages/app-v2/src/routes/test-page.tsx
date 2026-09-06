@@ -30,7 +30,7 @@ import { RunInspection } from "./run-page";
 import {
   WORKSPACE_DESTINATION_KEY,
   parseWorkspaceDestination,
-  incompatibleSavedProfile,
+  startConfigurationAdmission,
   workspaceDestinationDecision,
   workspaceDestinationQueryKey,
 } from "../layout/destination-summary";
@@ -98,37 +98,33 @@ export function TestPage() {
   }, [configuration.pristine, configuration.setSelection, targets.data]);
   const targetId = configuration.selection.targetId ?? "";
   const targetReady = Boolean(targets.data?.some((target) => target.targetId === targetId));
-  const profileBlocker = incompatibleSavedProfile({
+  const admission = startConfigurationAdmission({
     savedProfileId: configuration.selection.savedProfileId,
     targetId,
-    profiles: profiles.data,
+    profiles: profiles.isEnabled ? profiles.data : undefined,
+    profilesStatus: profiles.isEnabled && profiles.isPending ? "pending" : "success",
+    selectedBuildId: configuration.selection.buildId,
+    builds: builds.isEnabled ? builds.data : undefined,
+    buildsStatus: builds.isEnabled && builds.isPending ? "pending" : "success",
   });
-  const canStart = targetReady && !configuration.loading && !profileBlocker;
-  const selectedBuild = builds.data?.find(
-    (build) => build.id === configuration.selection.buildId && build.status === "ready",
-  );
+  const profileBlocker = admission.blockers.find((item) => item.id === "saved-profile");
+  const canStart = targetReady && !configuration.loading && admission.status === "ready";
   const start = useMutation({
     mutationFn: async () => {
       if (!test.data || !canStart) {
         throw new TypeError(
-          profileBlocker?.detail ?? "Choose a ready device or browser for this Run.",
+          admission.blockers[0]?.detail ?? "Choose a ready device or browser for this Run.",
         );
       }
       const started = await runService.start({
         testId,
         appMapId: test.data.appMapId,
         targetId,
-        ...(configuration.selection.savedProfileId && !profileBlocker
-          ? { targetProfileId: configuration.selection.savedProfileId }
+        ...(admission.start.targetProfileId
+          ? { targetProfileId: admission.start.targetProfileId }
           : {}),
-        ...(selectedBuild?.sourceSha && /^[0-9a-f]{7,40}$/u.test(selectedBuild.sourceSha)
-          ? {
-              sourceRevision: {
-                vcs: "git",
-                sha: selectedBuild.sourceSha,
-                buildId: selectedBuild.id,
-              },
-            }
+        ...(admission.start.sourceRevision
+          ? { sourceRevision: admission.start.sourceRevision }
           : {}),
         ...(configuration.selection.startupMode === "cold"
           ? { startup: { mode: "cold" as const } }

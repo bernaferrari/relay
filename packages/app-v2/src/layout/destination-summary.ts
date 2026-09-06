@@ -165,18 +165,42 @@ export function workspaceDestinationDecision(input: {
   return { kind: "apply", targetId: resolved };
 }
 
+export type ConfigurationAdmissionStatus = "resolving" | "ready" | "blocked";
+
+export type ConfigurationAdmissionBlocker = {
+  id: string;
+  label: string;
+  detail: string;
+  resolving?: boolean;
+};
+
+export type StartConfigurationFragment = {
+  targetProfileId?: string;
+  selectedBuildId?: string;
+  sourceRevision?: { vcs: "git"; sha: string; buildId: string };
+};
+
 export function incompatibleSavedProfile(input: {
   savedProfileId?: string;
   targetId?: string;
+  profilesStatus?: "pending" | "success" | "error";
   profiles?: readonly {
     id: string;
     targetId?: string;
     name: string;
     account?: { name?: string };
   }[];
-}): { id: string; label: string; detail: string } | undefined {
+}): ConfigurationAdmissionBlocker | undefined {
   const savedId = input.savedProfileId?.trim();
-  if (!savedId || !input.profiles) return undefined;
+  if (!savedId) return undefined;
+  if (input.profilesStatus === "pending" || input.profiles === undefined) {
+    return {
+      id: "saved-profile",
+      label: "Checking saved profile…",
+      detail: "Relay is still loading accounts for this destination.",
+      resolving: true,
+    };
+  }
   const profile = input.profiles.find((item) => item.id === savedId);
   if (!profile) {
     return {
@@ -192,6 +216,84 @@ export function incompatibleSavedProfile(input: {
     label: `${account} is saved for another destination`,
     detail: "Keep that destination, or choose a different profile before running.",
   };
+}
+
+export function explicitBuildAdmission(input: {
+  selectedBuildId?: string;
+  buildsStatus?: "pending" | "success" | "error";
+  builds?: readonly { id: string; status: string; sourceSha?: string }[];
+}): {
+  status: "none" | ConfigurationAdmissionStatus;
+  blocker?: ConfigurationAdmissionBlocker;
+  startSource?: StartConfigurationFragment["sourceRevision"];
+} {
+  const buildId = input.selectedBuildId?.trim();
+  if (!buildId) return { status: "none" };
+  const sha = input.builds?.find((build) => build.id === buildId)?.sourceSha?.trim();
+  const startSource =
+    sha && /^[0-9a-f]{7,40}$/u.test(sha) ? { vcs: "git" as const, sha, buildId } : undefined;
+  if (input.buildsStatus === "pending" || input.builds === undefined) {
+    return {
+      status: "resolving",
+      blocker: {
+        id: "selected-build",
+        label: "Checking selected build…",
+        detail: "Relay is still loading the selected build.",
+        resolving: true,
+      },
+      startSource,
+    };
+  }
+  const build = input.builds.find((item) => item.id === buildId);
+  if (!build || build.status !== "ready") {
+    return {
+      status: "blocked",
+      blocker: {
+        id: "selected-build",
+        label: build ? "Selected build is not ready" : "Selected build is unavailable",
+        detail: "Keep this build or choose a ready build before running.",
+      },
+      startSource,
+    };
+  }
+  return { status: "ready", startSource };
+}
+
+export function startConfigurationAdmission(input: {
+  savedProfileId?: string;
+  targetId?: string;
+  profilesStatus?: "pending" | "success" | "error";
+  profiles?: readonly {
+    id: string;
+    targetId?: string;
+    name: string;
+    account?: { name?: string };
+  }[];
+  selectedBuildId?: string;
+  buildsStatus?: "pending" | "success" | "error";
+  builds?: readonly { id: string; status: string; sourceSha?: string }[];
+}): {
+  status: ConfigurationAdmissionStatus;
+  blockers: ConfigurationAdmissionBlocker[];
+  start: StartConfigurationFragment;
+} {
+  const profileBlocker = incompatibleSavedProfile(input);
+  const build = explicitBuildAdmission(input);
+  const blockers = [profileBlocker, build.blocker].filter(
+    (item): item is ConfigurationAdmissionBlocker => Boolean(item),
+  );
+  const savedProfileId = input.savedProfileId?.trim();
+  const selectedBuildId = input.selectedBuildId?.trim();
+  const start: StartConfigurationFragment = {
+    ...(savedProfileId ? { targetProfileId: savedProfileId } : {}),
+    ...(selectedBuildId ? { selectedBuildId } : {}),
+    ...(build.startSource ? { sourceRevision: build.startSource } : {}),
+  };
+  if (blockers.some((item) => item.resolving)) {
+    return { status: "resolving", blockers, start };
+  }
+  if (blockers.length) return { status: "blocked", blockers, start };
+  return { status: "ready", blockers, start };
 }
 
 export function destinationManageAction(): DestinationAction {

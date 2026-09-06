@@ -90,4 +90,7 @@ export type ScrollSurveyOptions = {
   /** Default true. False collects the surface and leaves the viewport where
    * the last frame landed — for campaigns that relaunch or abandon next. */
   restore?: boolean;
+  /** Opt-in, reviewed app/build/locale expectations. Generic capture never
+   * applies Grok paywall plan names or marketing-copy rules without this. */
+  surfaceExpectation?: { kind: "grok-paywall" };
 };

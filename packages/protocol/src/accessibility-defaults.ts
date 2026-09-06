@@ -70,7 +70,9 @@ export function presentAccessibilityNode(
   if (source.visible === false && defaults.visible) out.visible = false;
   if (source.hittable === true) out.hittable = true;
   if (source.hittable === false) out.hittable = false;
-  if (source.hiddenContentBelow === true) out.hiddenContentBelow = true;
+  if (source.hiddenContentBelow === true || source.hiddenContentBelow === false) {
+    out.hiddenContentBelow = source.hiddenContentBelow;
+  }
   if (typeof source.depth === "number") out.depth = source.depth;
   return out;
 }

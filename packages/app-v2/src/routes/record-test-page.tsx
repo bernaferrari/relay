@@ -23,9 +23,14 @@ import type {
   LiveTargetStatus,
 } from "../data/live-target-session";
 import {
+  appendRecordingMutation,
   dispatchRecordingInput,
   recordingInputRecoveryMessage,
+  recordingRecoveryBlocksSend,
+  refreshRecordingEvidence,
+  resolveRecordingMutation,
   type RecordingInputOutcome,
+  type RecordingRecoveryLedger,
 } from "../data/recording-input-outcome";
 import { recordingQueryKeys, refreshRecording } from "../data/recording-queries";
 import { clearWorkflowPointerIfCurrent, writeWorkflowPointer } from "../data/workflow-pointer";
@@ -66,6 +71,7 @@ function RecordingWorkspace({
   const [liveStatus, setLiveStatus] = useState<LiveTargetStatus>("idle");
   const [browserContext, setBrowserContext] = useState<LiveTargetBrowserContext>();
   const [liveIssue, setLiveIssue] = useState<string>();
+  const [recoveryKind, setRecoveryKind] = useState<RecordingInputOutcome["kind"]>("confirmed");
   const [liveInputBusy, setLiveInputBusy] = useState(false);
   const [stopWaitingForInput, setStopWaitingForInput] = useState(false);
   const liveSession = useRef<LiveTargetSession | undefined>(undefined);
@@ -193,31 +199,39 @@ function RecordingWorkspace({
   const liveInputOutcome = useRef<Promise<RecordingInputOutcome>>(
     Promise.resolve({ kind: "confirmed" }),
   );
+  const recordingLedger = useRef<RecordingRecoveryLedger>({ mutations: [] });
+
+  function rememberOutcome(outcome: RecordingInputOutcome): RecordingInputOutcome {
+    recordingLedger.current = appendRecordingMutation(recordingLedger.current, outcome);
+    setRecoveryKind(outcome.kind);
+    const recovery = recordingInputRecoveryMessage(outcome);
+    if (recovery) setLiveIssue(recovery);
+    return outcome;
+  }
 
   function sendLiveInput(input: Parameters<LiveTargetSession["input"]>[0]): Promise<boolean> {
     const queued = liveInputOutcome.current
       .catch(() => ({ kind: "confirmed" as const }))
       .then(async () => {
-        if (!allowed.has("record")) {
-          setLiveIssue("Relay is not ready to record another interaction yet.");
-          return { kind: "not-dispatched" as const, message: "Relay is not ready to record." };
-        }
-        const session = liveSession.current;
-        if (!session) {
-          setLiveIssue("The live view is still connecting.");
-          return { kind: "not-dispatched" as const, message: "The live view is still connecting." };
-        }
         setLiveInputBusy(true);
-        setLiveIssue(undefined);
         try {
           const outcome = await dispatchRecordingInput({
-            send: () => session.input(input),
+            ledger: recordingLedger.current,
+            preflight: () => {
+              if (!allowed.has("record")) {
+                return { ok: false, message: "Relay is not ready to record." };
+              }
+              if (!liveSession.current) {
+                return { ok: false, message: "The live view is still connecting." };
+              }
+              return { ok: true };
+            },
+            send: () => liveSession.current!.input(input),
             refresh: async () => {
               await refreshRecording(queryClient, productService, workflowId);
             },
           });
-          const recovery = recordingInputRecoveryMessage(outcome);
-          if (recovery) setLiveIssue(recovery);
+          rememberOutcome(outcome);
           return outcome;
         } finally {
           setLiveInputBusy(false);
@@ -226,6 +240,32 @@ function RecordingWorkspace({
     liveInputOutcome.current = queued;
     liveInputQueue.current = queued.then((outcome) => outcome.kind === "confirmed");
     return liveInputQueue.current;
+  }
+
+  async function recoverRecordingRefreshOnly() {
+    const unresolved = [...recordingLedger.current.mutations]
+      .reverse()
+      .find((mutation) => mutation.kind === "refresh-failed");
+    if (!unresolved?.mutationId) return;
+    setLiveInputBusy(true);
+    try {
+      const recovered = await refreshRecordingEvidence({
+        mutationId: unresolved.mutationId,
+        refresh: async () => {
+          await refreshRecording(queryClient, productService, workflowId);
+        },
+      });
+      recordingLedger.current = resolveRecordingMutation(
+        recordingLedger.current,
+        unresolved.mutationId,
+        recovered,
+      );
+      setRecoveryKind(recovered.kind);
+      const recovery = recordingInputRecoveryMessage(recovered);
+      setLiveIssue(recovery);
+    } finally {
+      setLiveInputBusy(false);
+    }
   }
 
   async function stopAfterInputDrain() {
@@ -238,9 +278,20 @@ function RecordingWorkspace({
           message: "The last interaction did not finish cleanly.",
         }),
       );
-      if (outcome.kind !== "confirmed") {
+      if (outcome.kind === "refresh-failed") {
+        await recoverRecordingRefreshOnly();
+      }
+      const latestOutcome = recordingLedger.current.mutations.at(-1) ?? outcome;
+      if (latestOutcome.kind !== "confirmed" && latestOutcome.kind !== "not-dispatched") {
         setLiveIssue(
-          recordingInputRecoveryMessage(outcome) ?? "Relay could not confirm the last interaction.",
+          recordingInputRecoveryMessage(latestOutcome) ??
+            "Relay could not confirm the last interaction.",
+        );
+        return;
+      }
+      if (recordingRecoveryBlocksSend(recordingLedger.current)) {
+        setLiveIssue(
+          "An earlier interaction is still unconfirmed. Observe the app before stopping.",
         );
         return;
       }
@@ -425,6 +476,15 @@ function RecordingWorkspace({
       </div>
 
       <footer className="flex items-center justify-end gap-2" aria-label="Recording controls">
+        {recoveryKind === "refresh-failed" ? (
+          <Button
+            variant="outline"
+            disabled={liveInputBusy}
+            onClick={() => void recoverRecordingRefreshOnly()}
+          >
+            Refresh recording
+          </Button>
+        ) : null}
         <Dialog open={checkpointOpen} onOpenChange={setCheckpointOpen}>
           <DialogTrigger
             render={

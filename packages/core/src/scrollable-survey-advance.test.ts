@@ -182,7 +182,11 @@ test("does not declare complete for a nested scroller or a landscape last-label 
 
 test("declares complete only when the helper is exhausted and the last row is unclipped", () => {
   const first = snapshot([
-    { type: "ScrollView", rect: { x: 51, y: 0, width: 978, height: 2137 } },
+    {
+      type: "ScrollView",
+      rect: { x: 51, y: 0, width: 978, height: 2137 },
+      hiddenContentBelow: false,
+    },
     { label: "Lite", rect: { x: 200, y: 530, width: 80, height: 40 } },
     {
       label: "Increased limits at regular speed",
@@ -194,6 +198,34 @@ test("declares complete only when the helper is exhausted and the last row is un
     kind: "complete",
     evidence: "helper-exhausted-and-last-row-unclipped",
   });
+});
+
+test("does not treat a missing hiddenContentBelow hint as helper exhaustion", () => {
+  const first = snapshot([
+    { type: "ScrollView", rect: { x: 51, y: 0, width: 978, height: 2137 } },
+    { label: "Lite", rect: { x: 200, y: 530, width: 80, height: 40 } },
+    {
+      label: "Increased limits at regular speed",
+      rect: { x: 80, y: 1884, width: 800, height: 60 },
+    },
+    { label: "Terms | Privacy Policy", rect: { x: 300, y: 2137, width: 480, height: 45 } },
+  ]);
+  assert.notEqual(surveyExtent(first).kind, "complete");
+  assert.equal(surveyExtent(first).kind, "unknown");
+});
+
+test("does not apply Grok paywall rules to an unrelated Lite/Plus pricing tree", () => {
+  const first = snapshot([
+    { type: "ScrollView", rect: { x: 51, y: 0, width: 978, height: 2137 } },
+    { label: "Lite", rect: { x: 180, y: 400, width: 80, height: 40 } },
+    { label: "Plus", rect: { x: 300, y: 400, width: 80, height: 40 } },
+    { label: "Monthly price", rect: { x: 80, y: 900, width: 800, height: 60 } },
+  ]);
+  assert.notEqual(surveyExtent(first).kind, "complete");
+  assert.match(
+    surveyExtent(first).kind === "unknown" ? surveyExtent(first).reason : "",
+    /did not report whether more content exists/u,
+  );
 });
 
 test("keeps a frame that unclips the faded last row or adds Grok Bot", () => {

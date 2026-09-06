@@ -130,7 +130,7 @@ export function RunInspection({
   const cancel = useMutation({
     mutationFn: async () =>
       activePointer
-        ? runService.cancel()
+        ? runService.cancel({ workflowId: activePointer.workflowId })
         : ((await runService.cancelExecution?.(runId)) ?? undefined),
     onSuccess: async (state) => {
       if (!state) return;
@@ -154,8 +154,10 @@ export function RunInspection({
     const controller = new AbortController();
     void runService
       .watch({
+        workflowId: activeWorkflowId,
         signal: controller.signal,
         onState(next) {
+          if (next.workflow?.workflowId !== activeWorkflowId) return;
           queryClient.setQueryData(runQueryKeys.workflow(activeWorkflowId), next);
         },
       })

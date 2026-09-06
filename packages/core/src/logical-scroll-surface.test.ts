@@ -130,6 +130,7 @@ function regenerableSurvey(): ScrollSurveyResult {
             rect: { x: 0, y: 24, width: 64, height: 136 },
             index: 1,
             parentIndex: 0,
+            hiddenContentBelow: index === 0,
           },
           ...Array.from({ length: 4 }, (_, nodeIndex) => ({
             label: `Stable row ${nodeIndex}`,

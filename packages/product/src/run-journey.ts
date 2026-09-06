@@ -105,10 +105,19 @@ export type ProductRunProfileOption = {
 };
 
 export type ProductRunWatchInput = {
+  /** Durable workflow this watch is bound to. A selected-Run pointer is
+   * navigation only; omitting this falls back to the current selection. */
+  workflowId?: string;
   signal?: AbortSignal;
   onState?: (state: ProductRunState) => void;
   disconnectedRefreshMs?: number;
   reconnectMs?: number;
+};
+
+export type ProductRunCancelInput = {
+  /** Durable workflow to cancel. Required for safe concurrent Runs. */
+  workflowId?: string;
+  expectedVersion?: number;
 };
 
 export type ProductRunJourney = {
@@ -118,8 +127,9 @@ export type ProductRunJourney = {
   inspect(workflowId?: string): Promise<ProductRunState>;
   /** Follow server-owned progress until Relay reports a terminal phase. */
   watch(input?: ProductRunWatchInput): Promise<ProductRunState>;
-  /** Cancel using the latest canonical durable workflow version. */
-  cancel(): Promise<ProductRunState>;
+  /** Cancel the named durable workflow. A selected-Run pointer is never
+   * substituted for a different Run's identity. */
+  cancel(input?: ProductRunCancelInput): Promise<ProductRunState>;
 };
 
 type RunJobs = {
@@ -279,8 +289,13 @@ function reportFromSnapshot(snapshot: RunTestSnapshot): ProductRunReport | undef
  * outcome jobs. This controller never invokes HTTP or decides an outcome. */
 export function createProductRunJourney(input: { jobs: RunJobs }): ProductRunJourney {
   const jobs = input.jobs;
-  let canonical: RunTestSnapshot | undefined;
+  const byWorkflow = new Map<string, RunTestSnapshot>();
+  let selectedWorkflowId: string | undefined;
   let current: ProductRunState = { status: "idle" };
+
+  function selectedCanonical(): RunTestSnapshot | undefined {
+    return selectedWorkflowId ? byWorkflow.get(selectedWorkflowId) : undefined;
+  }
 
   function exposedState(): ProductRunState {
     const snapshot = current.snapshot;
@@ -294,17 +309,49 @@ export function createProductRunJourney(input: { jobs: RunJobs }): ProductRunJou
     };
   }
 
-  function publish(snapshot: RunTestSnapshot, action?: ProductRunAction): ProductRunState {
-    canonical = snapshot;
+  function stateFromSnapshot(
+    snapshot: RunTestSnapshot,
+    action?: ProductRunAction,
+  ): ProductRunState {
     const bounded = copySnapshot(snapshot);
     const problem = bounded.problems.at(-1);
-    current = {
+    return {
       status: phaseStatus(snapshot),
       snapshot: bounded,
       ...(reportFromSnapshot(snapshot) ? { report: reportFromSnapshot(snapshot) } : {}),
       ...(problem ? { recovery: recoveryFromProblem(problem, action) } : {}),
     };
-    return exposedState();
+  }
+
+  function expose(state: ProductRunState): ProductRunState {
+    const snapshot = state.snapshot;
+    return {
+      status: state.status,
+      ...(snapshot?.workflow ? { workflow: structuredClone(snapshot.workflow) } : {}),
+      ...(snapshot?.execution ? { run: structuredClone(snapshot.execution) } : {}),
+      ...(snapshot ? { snapshot: structuredClone(snapshot) } : {}),
+      ...(state.report ? { report: structuredClone(state.report) } : {}),
+      ...(state.recovery ? { recovery: { ...state.recovery } } : {}),
+    };
+  }
+
+  function publish(
+    snapshot: RunTestSnapshot,
+    action?: ProductRunAction,
+    options: { select?: boolean; expectedWorkflowId?: string } = {},
+  ): ProductRunState {
+    const workflowId = snapshot.workflow?.workflowId;
+    if (options.expectedWorkflowId && workflowId !== options.expectedWorkflowId) {
+      return exposedState();
+    }
+    if (workflowId) byWorkflow.set(workflowId, snapshot);
+    const next = stateFromSnapshot(snapshot, action);
+    const shouldSelect = options.select === true || workflowId === selectedWorkflowId;
+    if (shouldSelect && workflowId) {
+      selectedWorkflowId = workflowId;
+      current = next;
+    }
+    return expose(next);
   }
 
   function publishRecovery(error: unknown, action?: ProductRunAction): ProductRunState {
@@ -333,13 +380,15 @@ export function createProductRunJourney(input: { jobs: RunJobs }): ProductRunJou
         ...(input.startup ? { startup: structuredClone(input.startup) } : {}),
         ...(input.confirmRisk ? { confirmRisk: true } : {}),
       });
-      return publish(snapshot);
+      return publish(snapshot, "start", { select: true });
     } catch (error) {
       return publishRecovery(error, "start");
     }
   }
 
-  async function inspect(workflowId = canonical?.workflow?.workflowId): Promise<ProductRunState> {
+  async function inspect(
+    workflowId = selectedCanonical()?.workflow?.workflowId,
+  ): Promise<ProductRunState> {
     if (!workflowId?.trim()) {
       return publishRecovery(
         new TypeError("A durable Run workflow identifier is required."),
@@ -347,30 +396,41 @@ export function createProductRunJourney(input: { jobs: RunJobs }): ProductRunJou
       );
     }
     try {
-      return publish(asRunSnapshot(await jobs.inspect({ workflowId })), "inspect");
+      return publish(asRunSnapshot(await jobs.inspect({ workflowId })), "inspect", {
+        select: true,
+        expectedWorkflowId: workflowId,
+      });
     } catch (error) {
       return publishRecovery(error, "inspect");
     }
   }
 
   async function watch(input: ProductRunWatchInput = {}): Promise<ProductRunState> {
-    if (!canonical?.workflow?.workflowId) {
+    const requested = input.workflowId?.trim();
+    if (!requested && !selectedCanonical()?.workflow?.workflowId) {
       const inspected = await inspect();
-      if (!canonical?.workflow?.workflowId) return inspected;
+      if (!selectedCanonical()?.workflow?.workflowId) return inspected;
     }
-    const workflowId = canonical!.workflow!.workflowId;
+    const workflowId = requested || selectedCanonical()!.workflow!.workflowId;
+    const initial = byWorkflow.get(workflowId) ?? selectedCanonical();
+    if (!initial?.workflow?.workflowId) {
+      const inspected = await inspect(workflowId);
+      if (!byWorkflow.get(workflowId)?.workflow?.workflowId) return inspected;
+    }
+    const watchInitial = byWorkflow.get(workflowId) ?? selectedCanonical()!;
     let notifiedVersion: string | undefined;
     try {
       const snapshot = await jobs.watchWorkflow({
         workflowId,
-        initial: canonical!,
+        initial: watchInitial,
         signal: input.signal,
         disconnectedRefreshMs: input.disconnectedRefreshMs,
         reconnectMs: input.reconnectMs,
         onSnapshot: (next) => {
           try {
             const run = asRunSnapshot(next);
-            const state = publish(run, "watch");
+            if (run.workflow?.workflowId !== workflowId) return;
+            const state = publish(run, "watch", { expectedWorkflowId: workflowId });
             notifiedVersion = run.version;
             input.onState?.(state);
           } catch (error) {
@@ -379,7 +439,8 @@ export function createProductRunJourney(input: { jobs: RunJobs }): ProductRunJou
         },
       });
       const run = asRunSnapshot(snapshot);
-      const state = publish(run, "watch");
+      if (run.workflow?.workflowId !== workflowId) return exposedState();
+      const state = publish(run, "watch", { expectedWorkflowId: workflowId });
       if (run.version !== notifiedVersion) input.onState?.(state);
       return state;
     } catch (error) {
@@ -388,18 +449,29 @@ export function createProductRunJourney(input: { jobs: RunJobs }): ProductRunJou
     }
   }
 
-  async function cancel(): Promise<ProductRunState> {
-    const workflow = canonical?.workflow;
-    if (!workflow) return publishRecovery(new TypeError("No durable Run is selected."), "cancel");
+  async function cancel(input: ProductRunCancelInput = {}): Promise<ProductRunState> {
+    const workflowId = input.workflowId?.trim() || selectedCanonical()?.workflow?.workflowId;
+    if (!workflowId) {
+      return publishRecovery(new TypeError("No durable Run is selected."), "cancel");
+    }
+    const stored = byWorkflow.get(workflowId);
+    const expectedVersion = input.expectedVersion ?? stored?.workflow?.expectedVersion;
+    if (expectedVersion === undefined) {
+      return publishRecovery(
+        new TypeError("Cancel requires the durable workflow version for this Run."),
+        "cancel",
+      );
+    }
     try {
       return publish(
         await jobs.cancelRun({
           kind: "cancel-run",
-          workflowId: workflow.workflowId,
-          expectedVersion: workflow.expectedVersion,
+          workflowId,
+          expectedVersion,
           confirmCancel: true,
         }),
         "cancel",
+        { select: true, expectedWorkflowId: workflowId },
       );
     } catch (error) {
       return publishRecovery(error, "cancel");

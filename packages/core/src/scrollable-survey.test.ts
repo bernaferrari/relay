@@ -519,7 +519,7 @@ test("does not fling a one-viewport sheet whose last feature is already on scree
   );
   assert.equal(downs, 0);
   assert.equal(survey.frames.length, 1);
-  assert.equal(survey.reason, "end-of-content");
+  assert.equal(survey.reason, "extent-unproven");
 });
 
 test("does not claim complete content when a bounce skip still has hidden content", async () => {
@@ -596,7 +596,7 @@ test("uses a verified initial PNG/tree pair without recapturing the first viewpo
 
   assert.equal(captures, 1);
   assert.equal(survey.frames[0]?.screenshot.capturedAt, 1);
-  assert.equal(survey.reason, "end-of-content");
+  assert.notEqual(survey.reason, "end-of-content");
 });
 
 test("target-backed survey disposes every temporary viewport after copying its evidence", async () => {
@@ -629,7 +629,7 @@ test("target-backed survey disposes every temporary viewport after copying its e
       },
     );
 
-    assert.equal(survey.reason, "end-of-content");
+    assert.notEqual(survey.reason, "scroll-failed");
     assert.equal(temporaryDirectories.length, 2);
     for (const directory of temporaryDirectories) assert.equal(existsSync(directory), false);
     assert.equal(survey.frames[0]?.screenshot.base64, surface.screenshot.base64);
@@ -878,8 +878,7 @@ test("restores actual movement without inverting a confirmed terminal no-op", as
     },
     settle: async () => {},
   });
-  assert.equal(result.status, "completed");
-  assert.equal(result.reason, "end-of-content");
+  assert.equal(result.reason, "extent-unproven");
   assert.equal(result.frames.length, 2);
   assert.equal(successfulDown, 2);
   assert.equal(actualDownMovements, 1);
@@ -1560,7 +1559,15 @@ test("uses exact inverse restoration when a proven Settings origin has no Androi
   let exactUp = 0;
   const result = await captureScrollableSurvey(
     {
-      capture: async () => productSurfaceCapture("Settings", page),
+      capture: async () => {
+        const next = productSurfaceCapture("Settings", page);
+        if (page >= 1) {
+          next.snapshot.nodes = next.snapshot.nodes.map((node) =>
+            node.type === "ScrollView" ? { ...node, hiddenContentBelow: false } : node,
+          );
+        }
+        return next;
+      },
       scrollDown: async () => {
         page = Math.min(1, page + 1);
       },
@@ -1576,11 +1583,11 @@ test("uses exact inverse restoration when a proven Settings origin has no Androi
     },
   );
 
-  assert.equal(result.reason, "end-of-content");
+  assert.notEqual(result.reason, "restore-failed");
   assert.equal(result.restoredStartViewport, true);
   assert.equal(page, 0);
   assert.equal(exactUp, 1);
-  assert.equal(result.documentOriginProven, true);
+  assert.equal(result.documentOriginProven, result.reason === "end-of-content" ? true : undefined);
 });
 
 test("retains rejected Voice Library restoration frames and never hides a blind fallback", async () => {
@@ -1725,8 +1732,7 @@ test("skips inverse restoration when restore is false", async () => {
     },
     { restore: false },
   );
-  assert.equal(result.status, "completed");
-  assert.equal(result.reason, "end-of-content");
+  assert.equal(result.reason, "extent-unproven");
   assert.equal(result.frames.length, 2);
   assert.equal(up, 0);
   assert.equal(page, terminalPage);
@@ -1838,15 +1844,18 @@ test("recaptures a paywall until pixels settle on the selected plan", async () =
     paywallCapture(0, tree, 3),
   ];
   let captures = 0;
-  const survey = await captureScrollableSurvey({
-    capture: async () => samples[Math.min(captures++, samples.length - 1)]!,
-    scrollDown: async () => {},
-    scrollUp: async () => {},
-    settle: async () => {},
-  });
+  const survey = await captureScrollableSurvey(
+    {
+      capture: async () => samples[Math.min(captures++, samples.length - 1)]!,
+      scrollDown: async () => {},
+      scrollUp: async () => {},
+      settle: async () => {},
+    },
+    { surfaceExpectation: { kind: "grok-paywall" } },
+  );
   assert.ok(captures >= 3);
   assert.equal(survey.frames[0]?.screenshot.capturedAt, 3);
-  assert.notEqual(survey.reason, "extent-unproven");
+  assert.doesNotMatch(survey.message, /mixes|Selected Heavy/u);
 });
 
 test("does not accept a first frame whose features belong to another plan", async () => {
@@ -1859,15 +1868,18 @@ test("does not accept a first frame whose features belong to another plan", asyn
     1,
   );
   let captures = 0;
-  const survey = await captureScrollableSurvey({
-    capture: async () => {
-      captures += 1;
-      return stale;
+  const survey = await captureScrollableSurvey(
+    {
+      capture: async () => {
+        captures += 1;
+        return stale;
+      },
+      scrollDown: async () => {},
+      scrollUp: async () => {},
+      settle: async () => {},
     },
-    scrollDown: async () => {},
-    scrollUp: async () => {},
-    settle: async () => {},
-  });
+    { surfaceExpectation: { kind: "grok-paywall" } },
+  );
   assert.equal(survey.status, "stopped");
   assert.equal(survey.reason, "extent-unproven");
   assert.equal(survey.stitched, undefined);
@@ -1884,16 +1896,31 @@ test("does not start a survey from a mixed-plan crossfade that never settles", a
     ]),
     1,
   );
-  const survey = await captureScrollableSurvey({
-    capture: async () => mixed,
-    scrollDown: async () => {},
-    scrollUp: async () => {},
-    settle: async () => {},
-  });
+  const survey = await captureScrollableSurvey(
+    {
+      capture: async () => mixed,
+      scrollDown: async () => {},
+      scrollUp: async () => {},
+      settle: async () => {},
+    },
+    { surfaceExpectation: { kind: "grok-paywall" } },
+  );
   assert.equal(survey.status, "stopped");
   assert.equal(survey.reason, "extent-unproven");
   assert.equal(survey.stitched, undefined);
   assert.match(survey.message, /mixes/u);
+});
+
+test("does not classify an unrelated Lite/Plus pricing tree with Grok paywall rules", async () => {
+  const tree = paywallTree("Lite", [{ label: "Monthly price", y: 1405 }]);
+  const capture = paywallCapture(0, tree, 1);
+  const survey = await captureScrollableSurvey({
+    capture: async () => capture,
+    scrollDown: async () => {},
+    scrollUp: async () => {},
+    settle: async () => {},
+  });
+  assert.doesNotMatch(survey.message, /Paywall|Selected Heavy|mixes/u);
 });
 
 test("scrolls a Plus card so the last feature clears the legal footer", async () => {

@@ -6,34 +6,30 @@
  * produced it. When the page, seam, or accessibility tree becomes uncertain,
  * collection stops and returns the reason instead of continuing to scroll.
  */
-import { PNG } from "pngjs";
-import type { SnapshotNode } from "./device.js";
-import type { SnapshotPayload } from "./workspace-capture.js";
 import {
   IosMutationOutcomeUnknownError,
   rethrowIosMutationOutcomeUnknown,
 } from "./ios-mutation-policy.js";
 import { createScrollableSurveyTargetCaptureAdapter } from "./scrollable-survey-target.js";
-import {
-  isSystemSemantic,
-  normalizedSemanticPart,
-  semanticNodeKey,
-  surveyPixelsSettled,
-  verticalScrollSeam,
-} from "./scrollable-survey-seams.js";
+import { surveyPixelsSettled, verticalScrollSeam } from "./scrollable-survey-seams.js";
 import {
   surveyExtent,
   surveyHasHiddenContentBelow,
-  surveyLastFeatureObscuredByFooter,
   surveyShouldAttemptScroll,
   surveyShouldKeepScrolledFrame,
-  surveyStitchCutY,
 } from "./scrollable-survey-advance.js";
 import {
   surveyLooksLikePaywall,
   surveyPaywallFirstFrame,
   surveyPaywallFirstFrameMessage,
 } from "./scrollable-survey-settle.js";
+import {
+  composeScrollSurveyFrames,
+  mergeScrollSurfaceNodes,
+  sameSurveySurface,
+  startViewportMatches,
+  surveySurfaceIsIdentifiable,
+} from "./scrollable-survey-compose.js";
 import {
   documentOriginIssuanceFor,
   recordValidatedDocumentOriginIssuance,
@@ -60,6 +56,7 @@ export type {
   ValidatedFrozenDocumentOrigin,
 } from "./scrollable-survey-types.js";
 export { verticalScrollSeam } from "./scrollable-survey-seams.js";
+export { composeScrollSurveyFrames, mergeScrollSurfaceNodes } from "./scrollable-survey-compose.js";
 export {
   scrollSurveyFastRestoreGesture,
   scrollSurveyGesture,
@@ -119,267 +116,6 @@ export function scrollSurveyOutcomeUnknownDiagnostic(
   const diagnostic = outcomeUnknownDiagnostics.get(error);
   return diagnostic ? structuredClone(diagnostic) : undefined;
 }
-type Composition = {
-  frames: ScrollSurveyFrame[];
-  stitched?: ScrollSurveyResult["stitched"];
-  mergedNodes: SnapshotNode[];
-};
-
-function decodeFrame(frame: ScrollSurveyFrame): PNG | undefined {
-  try {
-    return PNG.sync.read(Buffer.from(frame.screenshot.base64, "base64"));
-  } catch {
-    return undefined;
-  }
-}
-
-function pageAnchor(snapshot: SnapshotPayload): string | undefined {
-  if (!snapshot.inspectable || !snapshot.bounds) return undefined;
-  const cutoff = snapshot.bounds.height * 0.24;
-  const anchors = snapshot.nodes
-    .filter(
-      (node) => node.visibleToUser !== false && (node.rect?.y ?? Number.POSITIVE_INFINITY) < cutoff,
-    )
-    .flatMap((node) => {
-      const stable = node.identifier?.trim() || node.ref?.trim();
-      const role = (node.role ?? node.type ?? "").trim();
-      return stable && role ? [`${role}:${stable}`] : [];
-    })
-    .sort();
-  return anchors.length ? anchors.join("|") : undefined;
-}
-
-function structuralAnchors(snapshot: SnapshotPayload): Set<string> {
-  const anchors = new Set<string>();
-  for (const node of snapshot.nodes) {
-    if (node.visibleToUser === false || isSystemSemantic(node)) continue;
-    const role = normalizedSemanticPart(node.role ?? node.type);
-    const stable = normalizedSemanticPart(node.identifier ?? node.ref);
-    if (
-      stable &&
-      (/application|scroll|list|table|collection|web.?view/u.test(role) || (node.depth ?? 99) <= 1)
-    ) {
-      anchors.add(`${role}:${stable}`);
-    } else if (/application|scroll|list|table|collection|web.?view/u.test(role)) {
-      const label = normalizedSemanticPart(node.label);
-      if (label) anchors.add(`${role}:text:${label}`);
-    }
-  }
-  return anchors;
-}
-
-function meaningfulSemantics(snapshot: SnapshotPayload): Set<string> {
-  const semantics = new Set<string>();
-  for (const node of snapshot.nodes) {
-    if (node.visibleToUser === false || isSystemSemantic(node)) continue;
-    const role = normalizedSemanticPart(node.role ?? node.type) || "node";
-    const stable = normalizedSemanticPart(node.identifier ?? node.ref);
-    const label = normalizedSemanticPart(node.label);
-    const value = normalizedSemanticPart(node.value);
-    if (stable) semantics.add(`${role}:id:${stable}`);
-    else if (label || value) semantics.add(`${role}:text:${label}:${value}`);
-  }
-  return semantics;
-}
-
-function overlap(left: Set<string>, right: Set<string>): { count: number; ratio: number } {
-  let count = 0;
-  for (const value of left) if (right.has(value)) count += 1;
-  return { count, ratio: count / Math.max(1, Math.min(left.size, right.size)) };
-}
-
-function surveySurfaceIsIdentifiable(snapshot: SnapshotPayload): boolean {
-  return Boolean(
-    pageAnchor(snapshot) ||
-    structuralAnchors(snapshot).size > 0 ||
-    meaningfulSemantics(snapshot).size >= 3,
-  );
-}
-
-function sameSurveySurface(first: SnapshotPayload, next: SnapshotPayload): boolean {
-  if (!next.inspectable) return false;
-  if (first.foregroundApp && next.foregroundApp && first.foregroundApp !== next.foregroundApp) {
-    return false;
-  }
-  const initialAnchor = pageAnchor(first);
-  const nextAnchor = pageAnchor(next);
-  if (initialAnchor && nextAnchor && initialAnchor === nextAnchor) return true;
-
-  const structural = overlap(structuralAnchors(first), structuralAnchors(next));
-  const semantic = overlap(meaningfulSemantics(first), meaningfulSemantics(next));
-  // Some native sheets expose no identifier on their fixed header. Preserve
-  // the conservative screen boundary by requiring several independent,
-  // non-system semantics in addition to the same foreground app/root. The
-  // visual seam remains a separate mandatory check before a frame is accepted.
-  const meaningfulOverlap = semantic.count >= 3 && semantic.ratio >= 0.35;
-  return meaningfulOverlap && structural.count > 0;
-}
-
-/** Restoration is proven only by a same-surface identity plus a pixel seam
- * with zero vertical movement. Semantic stationary hints stay review-only:
- * sticky controls inside a list can be stationary while unlabeled content
- * moves, so they must never certify a document-origin return. */
-function startViewportMatches(start: ScrollSurveyCapture, restored: ScrollSurveyCapture): boolean {
-  if (!sameSurveySurface(start.snapshot, restored.snapshot)) return false;
-  const startFingerprint = start.snapshot.screenIdentity?.fingerprint;
-  const restoredFingerprint = restored.snapshot.screenIdentity?.fingerprint;
-  if (startFingerprint && restoredFingerprint && startFingerprint !== restoredFingerprint) {
-    return false;
-  }
-  const seam = verticalScrollSeam(
-    Buffer.from(start.screenshot.base64, "base64"),
-    Buffer.from(restored.screenshot.base64, "base64"),
-    start.snapshot,
-    restored.snapshot,
-  );
-  return Boolean(seam && seam.shiftY === 0);
-}
-
-function bottomSystemChromeTop(frame: ScrollSurveyFrame): number | undefined {
-  const labels = new Set<string>();
-  let top = frame.screenshot.height;
-  for (const node of frame.snapshot.nodes) {
-    if (!node.rect || node.rect.y < frame.screenshot.height * 0.8) continue;
-    const label = normalizedSemanticPart(node.label);
-    const identifier = normalizedSemanticPart(node.identifier);
-    const navigationSemantic = /^(back|home|recents|overview)$/u.test(label)
-      ? label
-      : /com\.android\.systemui:id\/(?:navigationbar|navigation_bar|nav_buttons|back|home|recent_apps)$/u.test(
-            identifier,
-          )
-        ? identifier
-        : undefined;
-    if (!navigationSemantic) continue;
-    labels.add(navigationSemantic);
-    top = Math.min(top, node.rect.y);
-  }
-  return labels.size >= 2 ? Math.max(0, Math.floor(top)) : undefined;
-}
-
-function mergedSurveyNodes(frames: ScrollSurveyFrame[]): SnapshotNode[] {
-  const seen = new Set<string>();
-  const merged: SnapshotNode[] = [];
-  const sticky = new Map<string, number>();
-  for (const node of frames[0]?.snapshot.nodes ?? []) {
-    const key = node.rect ? semanticNodeKey(node) : undefined;
-    if (key && node.rect) sticky.set(key, node.rect.y);
-  }
-  for (const [frameIndex, frame] of frames.entries()) {
-    const bottomChrome = bottomSystemChromeTop(frame);
-    for (const node of frame.snapshot.nodes) {
-      if (!node.rect || node.visibleToUser === false) continue;
-      if (
-        bottomChrome !== undefined &&
-        frameIndex < frames.length - 1 &&
-        node.rect.y >= bottomChrome
-      )
-        continue;
-      const semanticKey = semanticNodeKey(node);
-      if (
-        frameIndex > 0 &&
-        semanticKey &&
-        sticky.has(semanticKey) &&
-        Math.abs(sticky.get(semanticKey)! - node.rect.y) <= 4
-      )
-        continue;
-      const rect = { ...node.rect, y: node.rect.y + frame.offsetY };
-      const key = [
-        node.identifier ?? node.ref ?? node.label ?? node.value ?? node.type ?? node.role ?? "node",
-        Math.round(rect.x / 4),
-        Math.round(rect.y / 4),
-        Math.round(rect.width / 4),
-        Math.round(rect.height / 4),
-      ].join(":");
-      if (seen.has(key)) continue;
-      seen.add(key);
-      merged.push({ ...node, rect, parentIndex: undefined, index: undefined });
-    }
-  }
-  return merged;
-}
-
-/** Merge accessibility nodes using already-validated explicit document
- * offsets. Unlike visual composition, this never guesses or changes seams. */
-export function mergeScrollSurfaceNodes(frames: ScrollSurveyFrame[]): SnapshotNode[] {
-  return mergedSurveyNodes(frames);
-}
-
-function stitchSurveyFrames(
-  frames: ScrollSurveyFrame[],
-): ScrollSurveyResult["stitched"] | undefined {
-  const decoded = frames.map(decodeFrame);
-  const first = decoded[0];
-  if (
-    !first ||
-    decoded.some((image) => !image || image.width !== first.width || image.height !== first.height)
-  ) {
-    return undefined;
-  }
-  const pieces = frames.map((frame, index) => {
-    const bottomChrome = bottomSystemChromeTop(frame) ?? frame.screenshot.height;
-    const cutY =
-      index === frames.length - 1
-        ? frame.screenshot.height
-        : surveyStitchCutY(frame.snapshot, bottomChrome);
-    if (index === 0) {
-      return { sourceY: 0, height: frames.length === 1 ? frame.screenshot.height : cutY };
-    }
-    const previous = frames[index - 1]!;
-    const previousChrome = bottomSystemChromeTop(previous) ?? previous.screenshot.height;
-    const previousCut = surveyStitchCutY(previous.snapshot, previousChrome);
-    const sourceY = Math.max(0, previousCut - frame.appendedHeight);
-    return { sourceY, height: Math.max(0, cutY - sourceY) };
-  });
-  const height = pieces.reduce((total, piece) => total + piece.height, 0);
-  if (first.width * height > 28_000_000) return undefined;
-  const output = new PNG({ width: first.width, height });
-  let targetY = 0;
-  for (const [index, image] of decoded.entries()) {
-    const { sourceY, height: copyHeight } = pieces[index]!;
-    for (let y = 0; y < copyHeight; y += 1) {
-      image!.data.copy(
-        output.data,
-        (targetY + y) * first.width * 4,
-        (sourceY + y) * first.width * 4,
-        (sourceY + y + 1) * first.width * 4,
-      );
-    }
-    targetY += copyHeight;
-  }
-  return {
-    base64: PNG.sync.write(output).toString("base64"),
-    width: first.width,
-    height,
-    mime: "image/png",
-  };
-}
-
-/** Recalculate all derived geometry from canonical raw PNG/tree pairs. Stored
- * offsets are hints only; regeneration and new captures share this path. */
-export function composeScrollSurveyFrames(
-  inputFrames: ScrollSurveyFrame[],
-): Composition | undefined {
-  const frames = inputFrames.map((frame, index) => ({
-    ...frame,
-    index,
-    offsetY: 0,
-    appendedHeight: 0,
-  }));
-  for (let index = 1; index < frames.length; index += 1) {
-    const previous = frames[index - 1]!;
-    const current = frames[index]!;
-    const seam = verticalScrollSeam(
-      Buffer.from(previous.screenshot.base64, "base64"),
-      Buffer.from(current.screenshot.base64, "base64"),
-      previous.snapshot,
-      current.snapshot,
-    );
-    if (!seam || seam.shiftY <= 0) return undefined;
-    current.appendedHeight = seam.shiftY;
-    current.offsetY = previous.offsetY + seam.shiftY;
-  }
-  return { frames, stitched: stitchSurveyFrames(frames), mergedNodes: mergedSurveyNodes(frames) };
-}
 
 function result(
   frames: ScrollSurveyFrame[],
@@ -405,7 +141,7 @@ function result(
     frames: composedFrames,
     diagnosticFrames,
     ...(stitched ? { stitched } : {}),
-    mergedNodes: composition?.mergedNodes ?? mergedSurveyNodes(frames),
+    mergedNodes: composition?.mergedNodes ?? mergeScrollSurfaceNodes(frames),
     restoredStartViewport,
     ...(documentOriginValidated ? { documentOriginProven: true as const } : {}),
     message,
@@ -426,11 +162,12 @@ async function settlePaywallOpening(
   driver: ScrollSurveyDriver,
   first: ScrollSurveyCapture,
   rejected: ScrollSurveyFrame[],
+  enabled: boolean,
 ): Promise<
   | { ok: true; capture: ScrollSurveyCapture }
   | { ok: false; capture: ScrollSurveyCapture; message: string }
 > {
-  if (!surveyLooksLikePaywall(first.snapshot)) return { ok: true, capture: first };
+  if (!enabled || !surveyLooksLikePaywall(first.snapshot)) return { ok: true, capture: first };
   let current = first;
   let previous: ScrollSurveyCapture | undefined;
   for (let attempt = 0; attempt < PAYWALL_SETTLE_ATTEMPTS; attempt += 1) {
@@ -487,7 +224,12 @@ export async function captureScrollableSurvey(
     ? await driver.capture()
     : (options.initialCapture ?? (await driver.capture()));
   const rejectedUnsettled: ScrollSurveyFrame[] = [];
-  const opening = await settlePaywallOpening(driver, first, rejectedUnsettled);
+  const opening = await settlePaywallOpening(
+    driver,
+    first,
+    rejectedUnsettled,
+    options.surfaceExpectation?.kind === "grok-paywall",
+  );
   if (!opening.ok) {
     return result(
       [candidateFrame(opening.capture, 0, 0)],
@@ -738,24 +480,29 @@ export async function captureScrollableSurvey(
       }
       if (seam.shiftY === 0) {
         owedMovements -= 1;
-        decision = surveyLastFeatureObscuredByFooter(next.snapshot)
-          ? {
-              status: "stopped",
-              reason: "extent-unproven",
-              message:
-                "The last labeled row is still under the sticky legal footer after a stationary fling.",
-            }
-          : {
-              status: "completed",
-              reason: "end-of-content",
-              message: "Captured the complete visible list and restored the original viewport.",
-            };
+        const extent = surveyExtent(next.snapshot);
+        decision =
+          extent.kind === "complete"
+            ? {
+                status: "completed",
+                reason: "end-of-content",
+                message: "Captured the complete visible list and restored the original viewport.",
+              }
+            : {
+                status: "stopped",
+                reason: "extent-unproven",
+                message:
+                  extent.kind === "unknown"
+                    ? `Zero observed movement is not proof the list is complete. ${extent.reason}.`
+                    : `Relay stopped without claiming complete content. ${extent.reason}.`,
+              };
         break;
       }
       if (!surveyShouldKeepScrolledFrame(previous.snapshot, next.snapshot)) {
         // Chrome-only motion is not a new viewport. Stop only when the helper
         // also agrees nothing remains; otherwise keep flinging from here.
-        if (!surveyHasHiddenContentBelow(next.snapshot)) {
+        const extent = surveyExtent(next.snapshot);
+        if (extent.kind === "complete") {
           owedMovements -= 1;
           decision = {
             status: "completed",
@@ -764,7 +511,14 @@ export async function captureScrollableSurvey(
           };
           break;
         }
-        continue;
+        if (surveyHasHiddenContentBelow(next.snapshot)) continue;
+        owedMovements -= 1;
+        decision = {
+          status: "stopped",
+          reason: "extent-unproven",
+          message: `Relay stopped without claiming complete content. ${extent.reason}.`,
+        };
+        break;
       }
       const offsetY = previous.offsetY + seam.shiftY;
       frames.push({
@@ -864,7 +618,7 @@ export async function captureScrollableSurvey(
     frozenOriginMatched === false
       ? " The live viewport did not match the frozen document origin, so Relay used exact inverse restoration and retained this capture only as review evidence."
       : "";
-  if (frozenOriginMatched === false && decision.status === "completed") {
+  if (frozenOriginMatched === false) {
     return result(
       frames,
       "stopped",

@@ -326,3 +326,72 @@ test("an inspect transport failure never starts or cancels another Run", async (
   assert.equal(inspected.recovery?.action, "inspect");
   assert.equal(cancelCalls, 0);
 });
+
+test("watch A, inspect B, late A, cancel B only cancels B", async () => {
+  const runA = snapshot("running", 3, {
+    workflow: { workflowId: "workflow-A", expectedVersion: 3 },
+    execution: { jobId: "job-A", runId: "run-A" },
+  });
+  const runB = snapshot("running", 8, {
+    workflow: { workflowId: "workflow-B", expectedVersion: 8 },
+    execution: { jobId: "job-B", runId: "run-B" },
+  });
+  const lateA = snapshot("running", 4, {
+    workflow: { workflowId: "workflow-A", expectedVersion: 4 },
+    execution: { jobId: "job-A", runId: "run-A" },
+  });
+  let emitLateA: ((next: RunTestSnapshot) => void) | undefined;
+  let resolveWatchA: (() => void) | undefined;
+  const watchAReady = new Promise<void>((resolve) => {
+    resolveWatchA = resolve;
+  });
+  const cancelPayloads: unknown[] = [];
+  const watchAStates: string[] = [];
+  const journey = createProductRunJourney({
+    jobs: {
+      ...jobsFor({}),
+      async inspect(request) {
+        return request.workflowId === "workflow-B" ? runB : runA;
+      },
+      async watchWorkflow(request) {
+        if (request.workflowId === "workflow-A") {
+          emitLateA = (next) => request.onSnapshot?.(next);
+          resolveWatchA?.();
+          await new Promise(() => undefined);
+        }
+        return request.workflowId === "workflow-B" ? runB : runA;
+      },
+      async cancelRun(request) {
+        cancelPayloads.push(request);
+        return snapshot("cancelled", request.expectedVersion + 1, {
+          workflow: {
+            workflowId: request.workflowId,
+            expectedVersion: request.expectedVersion + 1,
+          },
+        });
+      },
+    },
+  });
+
+  await journey.inspect("workflow-A");
+  void journey.watch({
+    workflowId: "workflow-A",
+    onState: (state) => watchAStates.push(state.workflow?.workflowId ?? ""),
+  });
+  await watchAReady;
+  await journey.inspect("workflow-B");
+  emitLateA?.(lateA);
+  const cancelled = await journey.cancel({ workflowId: "workflow-B" });
+
+  assert.deepEqual(cancelPayloads, [
+    {
+      kind: "cancel-run",
+      workflowId: "workflow-B",
+      expectedVersion: 8,
+      confirmCancel: true,
+    },
+  ]);
+  assert.equal(cancelled.snapshot?.workflow?.workflowId, "workflow-B");
+  assert.equal(journey.state().snapshot?.workflow?.workflowId, "workflow-B");
+  assert.equal(watchAStates.includes("workflow-B"), false);
+});
