@@ -1733,3 +1733,194 @@ test("skips inverse restoration when restore is false", async () => {
   assert.equal(result.restoredStartViewport, false);
   assert.match(result.message, /Restore skipped/u);
 });
+
+function paywallPng(phase: number): Buffer {
+  const width = 1080;
+  const height = 2340;
+  const png = new PNG({ width, height });
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const offset = (y * width + x) * 4;
+      const band = Math.floor((y + phase * 40) / 80);
+      png.data[offset] = (18 + band * 17 + phase * 9) % 255;
+      png.data[offset + 1] = (24 + band * 11) % 255;
+      png.data[offset + 2] = (31 + band * 13 + x) % 255;
+      png.data[offset + 3] = 255;
+    }
+  }
+  return PNG.sync.write(png);
+}
+
+function paywallTree(
+  selected: "Lite" | "SuperGrok" | "Plus" | "Heavy",
+  features: Array<{ label: string; y: number; height?: number }>,
+): SnapshotPayload {
+  const tabs = [
+    { label: "Lite" as const, x: 189 },
+    { label: "SuperGrok" as const, x: 338 },
+    { label: "Plus" as const, x: 620 },
+    { label: "Heavy" as const, x: 776 },
+  ];
+  const nodes: SnapshotPayload["nodes"] = [
+    { type: "ScrollView", rect: { x: 51, y: 0, width: 978, height: 2137 } },
+  ];
+  for (const tab of tabs) {
+    if (tab.label !== selected) {
+      nodes.push({
+        type: "View",
+        hittable: true,
+        rect: { x: tab.x - 20, y: 462, width: 140, height: 135 },
+      });
+    }
+    nodes.push({
+      type: "TextView",
+      label: tab.label,
+      rect: { x: tab.x, y: 505, width: 100, height: 49 },
+    });
+  }
+  nodes.push({
+    type: "TextView",
+    label: "SuperGrok",
+    rect: { x: 113, y: 708, width: 289, height: 70 },
+  });
+  if (selected !== "SuperGrok") {
+    nodes.push({
+      type: "TextView",
+      label: selected,
+      rect: { x: 419, y: 708, width: 158, height: 70 },
+    });
+  }
+  for (const feature of features) {
+    nodes.push({
+      type: "TextView",
+      label: feature.label,
+      rect: { x: 203, y: feature.y, width: 600, height: feature.height ?? 60 },
+    });
+  }
+  nodes.push({
+    type: "TextView",
+    label: "Terms | Privacy Policy",
+    rect: { x: 46, y: 2137, width: 988, height: 45 },
+  });
+  return {
+    capturedAt: 1,
+    inspectable: true,
+    source: "sdk",
+    interactive: [],
+    bounds: { width: 1080, height: 2340 },
+    foregroundApp: "ai.x.grok",
+    screenIdentity: { fingerprint: "paywall", nodes: [], volatileSignals: [] },
+    nodes,
+  };
+}
+
+function paywallCapture(phase: number, tree: SnapshotPayload, capturedAt: number) {
+  const png = paywallPng(phase);
+  return {
+    screenshot: {
+      base64: png.toString("base64"),
+      width: 1080,
+      height: 2340,
+      capturedAt,
+    },
+    snapshot: { ...tree, capturedAt },
+  };
+}
+
+test("recaptures a paywall until pixels settle on the selected plan", async () => {
+  const tree = paywallTree("Heavy", [
+    { label: "Everything in SuperGrok Plus", y: 1248 },
+    { label: "Highest usage at the fastest speed", y: 1359 },
+  ]);
+  const samples = [
+    paywallCapture(4, tree, 1),
+    paywallCapture(0, tree, 2),
+    paywallCapture(0, tree, 3),
+  ];
+  let captures = 0;
+  const survey = await captureScrollableSurvey({
+    capture: async () => samples[Math.min(captures++, samples.length - 1)]!,
+    scrollDown: async () => {},
+    scrollUp: async () => {},
+    settle: async () => {},
+  });
+  assert.ok(captures >= 3);
+  assert.equal(survey.frames[0]?.screenshot.capturedAt, 3);
+  assert.notEqual(survey.reason, "extent-unproven");
+});
+
+test("does not accept a first frame whose features belong to another plan", async () => {
+  const stale = paywallCapture(
+    0,
+    paywallTree("Heavy", [
+      { label: "Everything in SuperGrok", y: 1329 },
+      { label: "Lightning-fast replies", y: 1719 },
+    ]),
+    1,
+  );
+  let captures = 0;
+  const survey = await captureScrollableSurvey({
+    capture: async () => {
+      captures += 1;
+      return stale;
+    },
+    scrollDown: async () => {},
+    scrollUp: async () => {},
+    settle: async () => {},
+  });
+  assert.equal(survey.status, "stopped");
+  assert.equal(survey.reason, "extent-unproven");
+  assert.equal(survey.stitched, undefined);
+  assert.match(survey.message, /Selected Heavy but the labeled rows belong to Plus/u);
+  assert.ok(captures >= 2);
+});
+
+test("does not start a survey from a mixed-plan crossfade that never settles", async () => {
+  const mixed = paywallCapture(
+    3,
+    paywallTree("Lite", [
+      { label: "تقدر تستخدم Grok Build", y: 1405 },
+      { label: "More powerful coding tools", y: 1667 },
+    ]),
+    1,
+  );
+  const survey = await captureScrollableSurvey({
+    capture: async () => mixed,
+    scrollDown: async () => {},
+    scrollUp: async () => {},
+    settle: async () => {},
+  });
+  assert.equal(survey.status, "stopped");
+  assert.equal(survey.reason, "extent-unproven");
+  assert.equal(survey.stitched, undefined);
+  assert.match(survey.message, /mixes/u);
+});
+
+test("scrolls a Plus card so the last feature clears the legal footer", async () => {
+  const coveredTree = paywallTree("Plus", [
+    { label: "Lightning-fast replies", y: 1719 },
+    { label: "Access to Grok Bot", y: 2052 },
+  ]);
+  coveredTree.nodes = coveredTree.nodes.map((node) =>
+    node.type === "ScrollView" ? { ...node, hiddenContentBelow: true } : node,
+  );
+  const clearedTree = paywallTree("Plus", [
+    { label: "Lightning-fast replies", y: 1500 },
+    { label: "Access to Grok Bot", y: 1831 },
+  ]);
+  const covered = paywallCapture(0, coveredTree, 1);
+  const cleared = paywallCapture(8, clearedTree, 2);
+  const samples = [covered, covered, cleared, covered];
+  let captures = 0;
+  let downs = 0;
+  const survey = await captureScrollableSurvey({
+    capture: async () => samples[Math.min(captures++, samples.length - 1)]!,
+    scrollDown: async () => {
+      downs += 1;
+    },
+    scrollUp: async () => {},
+    settle: async () => {},
+  });
+  assert.ok(downs >= 1);
+  assert.ok(survey.frames.length >= 1);
+});

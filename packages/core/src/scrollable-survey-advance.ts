@@ -27,10 +27,30 @@ function scrollViewport(snapshot: SnapshotPayload): { y: number; height: number 
   return chosen?.rect ? { y: chosen.rect.y, height: chosen.rect.height } : undefined;
 }
 
-function hasStickyLegalFooter(snapshot: SnapshotPayload): boolean {
+function stickyLegalFooter(snapshot: SnapshotPayload): SnapshotNode | undefined {
   const scroll = scrollViewport(snapshot);
   const scrollBottom = scroll ? scroll.y + scroll.height : (snapshot.bounds?.height ?? 0) * 0.92;
-  return snapshot.nodes.some((node) => isStickyFooter(node, scrollBottom));
+  return snapshot.nodes.find((node) => isStickyFooter(node, scrollBottom));
+}
+
+function hasStickyLegalFooter(snapshot: SnapshotPayload): boolean {
+  return Boolean(stickyLegalFooter(snapshot));
+}
+
+const FOOTER_CLEARANCE_PX = 80;
+
+/** Last feature is in the fade under the sticky legal row and is not yet clear. */
+export function surveyLastFeatureObscuredByFooter(snapshot: SnapshotPayload): boolean {
+  if (!hasStickyLegalFooter(snapshot)) return false;
+  const last = surveyLastUnclippedFeature(snapshot) ?? surveyFeatureRows(snapshot).at(-1);
+  if (!last) return false;
+  const scroll = scrollViewport(snapshot);
+  const scrollBottom = scroll ? scroll.y + scroll.height : (snapshot.bounds?.height ?? 0) * 0.92;
+  const footer = stickyLegalFooter(snapshot);
+  const fadeTop = Math.min(footer?.rect?.y ?? scrollBottom, scrollBottom) - FOOTER_CLEARANCE_PX;
+  // Tall wrapped rows can dip into the fade while their label is already
+  // readable. Only the row that starts in that band is still covered.
+  return last.y > fadeTop - 12 && last.bottom > fadeTop;
 }
 
 function isStickyFooter(node: SnapshotNode, scrollBottom: number): boolean {
@@ -111,6 +131,9 @@ export function surveyExtent(snapshot: SnapshotPayload): SurveyExtent {
   const rows = surveyFeatureRows(snapshot);
   const last = surveyLastUnclippedFeature(snapshot) ?? rows.at(-1);
   const clipped = rows.some((row) => surveyRowFlushWithScroll(row, snapshot));
+  if (surveyLastFeatureObscuredByFooter(snapshot)) {
+    return { kind: "partial", reason: "last labeled row sits under the sticky legal footer" };
+  }
   if (surveyHasHiddenContentBelow(snapshot)) {
     if (last && !clipped) {
       return {
@@ -140,6 +163,7 @@ export function surveyShouldAttemptScroll(snapshot: SnapshotPayload): boolean {
   if (!scroll) return true;
   const rows = surveyFeatureRows(snapshot);
   if (rows.some((row) => surveyRowFlushWithScroll(row, snapshot))) return true;
+  if (surveyLastFeatureObscuredByFooter(snapshot)) return true;
   const last = surveyLastUnclippedFeature(snapshot) ?? rows.at(-1);
   if (!last) return true;
   const fullyOnScreen = last.bottom <= scroll.y + scroll.height - 8;
@@ -183,8 +207,16 @@ export function surveyShouldKeepScrolledFrame(
     if (next && next.height > row.height + 4) return true;
     if (next && !surveyRowFlushWithScroll(next, current)) return true;
   }
+  if (surveyLastFeatureObscuredByFooter(previous) && !surveyLastFeatureObscuredByFooter(current)) {
+    return true;
+  }
   return false;
 }
+
+export {
+  surveyPaywallFrameDecision,
+  type SurveyPaywallFrameDecision,
+} from "./scrollable-survey-settle.js";
 
 /** Cut a non-final frame above the fade / clipped tail so the next frame supplies the sharp pixels. */
 export function surveyStitchCutY(snapshot: SnapshotPayload, fallback: number): number {

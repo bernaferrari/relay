@@ -18,15 +18,22 @@ import {
   isSystemSemantic,
   normalizedSemanticPart,
   semanticNodeKey,
+  surveyPixelsSettled,
   verticalScrollSeam,
 } from "./scrollable-survey-seams.js";
 import {
   surveyExtent,
   surveyHasHiddenContentBelow,
+  surveyLastFeatureObscuredByFooter,
   surveyShouldAttemptScroll,
   surveyShouldKeepScrolledFrame,
   surveyStitchCutY,
 } from "./scrollable-survey-advance.js";
+import {
+  surveyLooksLikePaywall,
+  surveyPaywallFirstFrame,
+  surveyPaywallFirstFrameMessage,
+} from "./scrollable-survey-settle.js";
 import {
   documentOriginIssuanceFor,
   recordValidatedDocumentOriginIssuance,
@@ -382,10 +389,11 @@ function result(
   restoredStartViewport: boolean,
   diagnosticFrames: ScrollSurveyFrame[] = [],
   documentOriginIssuance?: ValidatedDocumentOriginIssuance,
+  omitStitch = false,
 ): ScrollSurveyResult {
   const composition = composeScrollSurveyFrames(frames);
   const composedFrames = composition?.frames ?? frames;
-  const stitched = reason === "seam-ambiguous" ? undefined : composition?.stitched;
+  const stitched = reason === "seam-ambiguous" || omitStitch ? undefined : composition?.stitched;
   const documentOriginValidated =
     documentOriginIssuance &&
     status === "completed" &&
@@ -412,6 +420,52 @@ function result(
   return output;
 }
 
+const PAYWALL_SETTLE_ATTEMPTS = 6;
+
+async function settlePaywallOpening(
+  driver: ScrollSurveyDriver,
+  first: ScrollSurveyCapture,
+  rejected: ScrollSurveyFrame[],
+): Promise<
+  | { ok: true; capture: ScrollSurveyCapture }
+  | { ok: false; capture: ScrollSurveyCapture; message: string }
+> {
+  if (!surveyLooksLikePaywall(first.snapshot)) return { ok: true, capture: first };
+  let current = first;
+  let previous: ScrollSurveyCapture | undefined;
+  for (let attempt = 0; attempt < PAYWALL_SETTLE_ATTEMPTS; attempt += 1) {
+    const verdict = surveyPaywallFirstFrame(current.snapshot);
+    if (verdict.kind === "mixed-plans" || verdict.kind === "plan-mismatch") {
+      rejected.push(candidateFrame(current, rejected.length, 0));
+    } else if (previous) {
+      const pixels = surveyPixelsSettled(
+        Buffer.from(previous.screenshot.base64, "base64"),
+        Buffer.from(current.screenshot.base64, "base64"),
+      );
+      if (pixels) return { ok: true, capture: current };
+    }
+    previous = current;
+    if (attempt === PAYWALL_SETTLE_ATTEMPTS - 1) break;
+    try {
+      await driver.settle();
+      current = await driver.capture();
+    } catch (error) {
+      rethrowIosMutationOutcomeUnknown(error);
+      return {
+        ok: false,
+        capture: current,
+        message:
+          "The paywall card mixed or contradicted the selected plan, and Relay could not recapture a settled frame.",
+      };
+    }
+  }
+  return {
+    ok: false,
+    capture: current,
+    message: surveyPaywallFirstFrameMessage(surveyPaywallFirstFrame(current.snapshot)),
+  };
+}
+
 export async function captureScrollableSurvey(
   driver: ScrollSurveyDriver,
   options: ScrollSurveyOptions = {},
@@ -429,9 +483,24 @@ export async function captureScrollableSurvey(
   // physical list has since moved. It remains useful evidence for ordinary
   // collection, but cannot be used to authorize a high-distance origin
   // restore: ask the device for one fresh PNG/tree pair first.
-  const first = frozenDocumentOrigin
+  let first = frozenDocumentOrigin
     ? await driver.capture()
     : (options.initialCapture ?? (await driver.capture()));
+  const rejectedUnsettled: ScrollSurveyFrame[] = [];
+  const opening = await settlePaywallOpening(driver, first, rejectedUnsettled);
+  if (!opening.ok) {
+    return result(
+      [candidateFrame(opening.capture, 0, 0)],
+      "stopped",
+      "extent-unproven",
+      opening.message,
+      true,
+      rejectedUnsettled,
+      undefined,
+      true,
+    );
+  }
+  first = opening.capture;
   const initial: ScrollSurveyFrame = {
     index: 0,
     offsetY: 0,
@@ -445,7 +514,7 @@ export async function captureScrollableSurvey(
     appendedHeight: 0,
   };
   const frames = [initial];
-  const diagnosticFrames: ScrollSurveyFrame[] = [];
+  const diagnosticFrames: ScrollSurveyFrame[] = [...rejectedUnsettled];
   const frozenOriginMatched = frozenDocumentOrigin
     ? startViewportMatches(frozenDocumentOrigin, first)
     : undefined;
@@ -669,11 +738,18 @@ export async function captureScrollableSurvey(
       }
       if (seam.shiftY === 0) {
         owedMovements -= 1;
-        decision = {
-          status: "completed",
-          reason: "end-of-content",
-          message: "Captured the complete visible list and restored the original viewport.",
-        };
+        decision = surveyLastFeatureObscuredByFooter(next.snapshot)
+          ? {
+              status: "stopped",
+              reason: "extent-unproven",
+              message:
+                "The last labeled row is still under the sticky legal footer after a stationary fling.",
+            }
+          : {
+              status: "completed",
+              reason: "end-of-content",
+              message: "Captured the complete visible list and restored the original viewport.",
+            };
         break;
       }
       if (!surveyShouldKeepScrolledFrame(previous.snapshot, next.snapshot)) {

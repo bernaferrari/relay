@@ -12,6 +12,8 @@ import type { SnapshotPayload } from "./workspace-capture.js";
 
 export type ScrollSurveySeam = { shiftY: number; confidence: number };
 
+const SETTLED_PIXEL_DELTA = 8;
+
 function decodeImage(bytes: Buffer): PNG | undefined {
   try {
     return PNG.sync.read(bytes);
@@ -273,7 +275,7 @@ export function verticalScrollSeam(
   // inverse-swipe off the page when the first fling rubber-banded.
   // Pixel identity must beat semantic shift: sticky SuperGrok tabs can report a
   // fake translation while rubber-band pixels stay put.
-  if (unchanged < 8) return { shiftY: 0, confidence: 1 };
+  if (unchanged < SETTLED_PIXEL_DELTA) return { shiftY: 0, confidence: 1 };
   const semantic =
     previousSnapshot && currentSnapshot
       ? semanticScrollShift(previousSnapshot, currentSnapshot)
@@ -307,4 +309,12 @@ export function verticalScrollSeam(
     Math.min(1, (1 - best.score / 32) * 0.75 + Math.min(1, separation / 12) * 0.25),
   );
   return confidence >= 0.7 ? { shiftY: best.shiftY, confidence } : undefined;
+}
+
+/** Two rasters of the same viewport after a tab change, not a scroll. */
+export function surveyPixelsSettled(previous: Buffer, current: Buffer): boolean {
+  const left = decodeImage(previous);
+  const right = decodeImage(current);
+  if (!left || !right || left.width !== right.width || left.height !== right.height) return false;
+  return sampleDifference(left, right, 0) < SETTLED_PIXEL_DELTA;
 }

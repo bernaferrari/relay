@@ -241,6 +241,45 @@ test("does not treat a chrome-only slide as the end when the helper still report
   assert.equal(surveyHasHiddenContentBelow(after), true);
 });
 
+test("scrolls when the last feature sits under the sticky legal footer", () => {
+  const first = snapshot([
+    {
+      type: "ScrollView",
+      rect: { x: 51, y: 0, width: 978, height: 2137 },
+      hiddenContentBelow: true,
+    },
+    { label: "Plus", rect: { x: 620, y: 505, width: 77, height: 49 } },
+    { label: "Early access to new features", rect: { x: 203, y: 1941, width: 602, height: 60 } },
+    { label: "Access to Grok Bot", rect: { x: 203, y: 2052, width: 409, height: 60 } },
+    { label: "Terms | Privacy Policy", rect: { x: 46, y: 2137, width: 988, height: 45 } },
+  ]);
+  assert.equal(surveyShouldAttemptScroll(first), true);
+  assert.deepEqual(surveyExtent(first), {
+    kind: "partial",
+    reason: "last labeled row sits under the sticky legal footer",
+  });
+});
+
+test("keeps a frame that lifts the last feature out from under the legal footer", () => {
+  const covered = snapshot([
+    {
+      type: "ScrollView",
+      rect: { x: 51, y: 0, width: 978, height: 2137 },
+      hiddenContentBelow: true,
+    },
+    { label: "Early access to new features", rect: { x: 203, y: 1941, width: 602, height: 60 } },
+    { label: "Access to Grok Bot", rect: { x: 203, y: 2052, width: 409, height: 60 } },
+    { label: "Terms | Privacy Policy", rect: { x: 46, y: 2137, width: 988, height: 45 } },
+  ]);
+  const cleared = snapshot([
+    { type: "ScrollView", rect: { x: 51, y: 0, width: 978, height: 2137 } },
+    { label: "Early access to new features", rect: { x: 203, y: 1720, width: 602, height: 60 } },
+    { label: "Access to Grok Bot", rect: { x: 203, y: 1831, width: 409, height: 60 } },
+    { label: "Terms | Privacy Policy", rect: { x: 46, y: 2137, width: 988, height: 45 } },
+  ]);
+  assert.equal(surveyShouldKeepScrolledFrame(covered, cleared), true);
+});
+
 test("drops a title-slide that adds no labels and does not unclip a row", () => {
   const before = snapshot([
     {
