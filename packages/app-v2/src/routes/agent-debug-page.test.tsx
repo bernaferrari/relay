@@ -348,6 +348,40 @@ describe("Agent Debug route", () => {
     expect(history.location.pathname).toBe("/debug");
   });
 
+  it("binds a pre-step failure to the source Run without guessing a same-name device", async () => {
+    const debugBug = vi.fn(async () => startOutcome());
+    const getReport = vi.fn(async () => ({
+      runId: "run-pre-step",
+      title: "Checkout validation",
+      outcome: "harness-failure" as const,
+      targetName: "Ready Pixel",
+      cause: "Authentication fixture unavailable",
+      timeline: [],
+      evidence: [],
+      executionContext: { targetProfileId: "serial-ready", buildId: "build-92" },
+    }));
+    await render({
+      path: "/debug?runId=run-pre-step",
+      runService: { getReport } as unknown as RunProductService,
+      agentDebugService: debugService(debugBug),
+      devices: [
+        productDevice("ready", "Ready Pixel", true, "android"),
+        productDevice("lab", "Ready Pixel", true, "android"),
+      ],
+    });
+
+    expect(document.body.textContent).toContain("Before step 1");
+    expect(document.body.textContent).toContain("build build-92");
+    expect(debugBug).toHaveBeenCalledWith(
+      expect.objectContaining({
+        targetId: "serial-ready",
+        debugOrigin: expect.objectContaining({
+          source: { runId: "run-pre-step", attempt: 1, stepId: "before-first-step" },
+        }),
+      }),
+    );
+  });
+
   it("keeps start and retry visible when a bound investigation fails to start", async () => {
     const debugBug = vi.fn(async () => {
       throw new Error("Target is owned by another actor.");

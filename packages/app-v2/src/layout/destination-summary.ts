@@ -130,11 +130,20 @@ export function matchRunTargetId(
   return targets.find((target) => target.targetId === wanted)?.targetId;
 }
 
+export type ConfigurationSelectionOrigin =
+  | "repository-default"
+  | "workspace-default"
+  | "saved-test"
+  | "explicit-user-selection";
+
 export function workspaceDestinationDecision(input: {
   storedTargetId?: string;
   lastAppliedTargetId?: string;
   currentTargetId?: string;
   availableTargetIds: readonly string[];
+  /** A remembered workspace device is only a default for an unconfigured task. */
+  origin?: ConfigurationSelectionOrigin;
+  protectedTargetId?: string;
 }):
   | { kind: "skip" }
   | { kind: "remember"; targetId: string }
@@ -142,6 +151,11 @@ export function workspaceDestinationDecision(input: {
   const stored = input.storedTargetId?.trim();
   if (!stored) return { kind: "skip" };
   if (input.lastAppliedTargetId === stored) return { kind: "skip" };
+  if (input.origin === "saved-test" || input.origin === "explicit-user-selection") {
+    return { kind: "skip" };
+  }
+  const protectedTarget = input.protectedTargetId?.trim();
+  if (protectedTarget && protectedTarget !== stored) return { kind: "skip" };
   const resolved = matchRunTargetId(
     stored,
     input.availableTargetIds.map((targetId) => ({ targetId })),

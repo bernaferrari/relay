@@ -480,7 +480,11 @@ test("does not fling a one-viewport sheet whose last feature is already on scree
   const initial = androidScrollableFrame(0, 1);
   initial.snapshot.nodes = initial.snapshot.nodes.map((node) =>
     node.type === "ScrollView"
-      ? { ...node, rect: { x: 0, y: 280, width: 1080, height: 1925 } }
+      ? {
+          ...node,
+          hiddenContentBelow: undefined,
+          rect: { x: 0, y: 280, width: 1080, height: 1925 },
+        }
       : node.label?.startsWith("Product row")
         ? {
             ...node,
@@ -508,11 +512,64 @@ test("does not fling a one-viewport sheet whose last feature is already on scree
       scrollUp: async () => {},
       settle: async () => {},
     },
-    { maxScrolls: 3, initialCapture: { screenshot: initial.frame.screenshot, snapshot: initial.snapshot } },
+    {
+      maxScrolls: 3,
+      initialCapture: { screenshot: initial.frame.screenshot, snapshot: initial.snapshot },
+    },
   );
   assert.equal(downs, 0);
   assert.equal(survey.frames.length, 1);
   assert.equal(survey.reason, "end-of-content");
+});
+
+test("does not claim complete content when a bounce skip still has hidden content", async () => {
+  const initial = androidScrollableFrame(0, 1);
+  initial.snapshot.nodes = initial.snapshot.nodes.map((node) =>
+    node.type === "ScrollView"
+      ? {
+          ...node,
+          hiddenContentBelow: true,
+          rect: { x: 0, y: 280, width: 1080, height: 1925 },
+        }
+      : node.label?.startsWith("Product row")
+        ? {
+            ...node,
+            rect: node.rect
+              ? { ...node.rect, y: Math.min(node.rect.y, 1700), height: 60 }
+              : node.rect,
+          }
+        : node,
+  );
+  initial.snapshot.nodes = initial.snapshot.nodes.filter((node) => {
+    if (node.label?.startsWith("Product row") && node.rect && node.rect.y > 1800) return false;
+    return true;
+  });
+  initial.snapshot.nodes.push({
+    label: "Terms | Privacy Policy",
+    rect: { x: 300, y: 2205, width: 480, height: 45 },
+  });
+  let downs = 0;
+  const survey = await captureScrollableSurvey(
+    {
+      capture: async () => ({
+        screenshot: initial.frame.screenshot,
+        snapshot: initial.snapshot,
+      }),
+      scrollDown: async () => {
+        downs += 1;
+      },
+      scrollUp: async () => {},
+      settle: async () => {},
+    },
+    {
+      maxScrolls: 3,
+      initialCapture: { screenshot: initial.frame.screenshot, snapshot: initial.snapshot },
+    },
+  );
+  assert.equal(downs, 0);
+  assert.equal(survey.status, "stopped");
+  assert.equal(survey.reason, "extent-unproven");
+  assert.notEqual(survey.reason, "end-of-content");
 });
 
 test("uses a verified initial PNG/tree pair without recapturing the first viewport", async () => {

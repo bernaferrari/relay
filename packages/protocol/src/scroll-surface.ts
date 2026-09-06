@@ -11,6 +11,8 @@ export type ScrollSurfaceStopReason =
    * the frozen document origin. Relay uses exact inverse restoration instead
    * of an origin fling; retained frames are repair input, not a baseline. */
   | "start-viewport-unproven"
+  /** Capture stopped without evidence that the remaining document is empty. */
+  | "extent-unproven"
   | "limit-reached";
 
 /** Immutable content-addressed evidence. The bytes live in Relay's evidence

@@ -10,7 +10,9 @@ export type SurveyFeatureRow = {
 };
 
 function isScrollContainer(node: SnapshotNode): boolean {
-  return /scrollview|scrollarea|recycler.?view|listview/i.test(`${node.type ?? ""} ${node.role ?? ""}`);
+  return /scrollview|scrollarea|recycler.?view|listview/i.test(
+    `${node.type ?? ""} ${node.role ?? ""}`,
+  );
 }
 
 function scrollViewport(snapshot: SnapshotPayload): { y: number; height: number } | undefined {
@@ -18,7 +20,9 @@ function scrollViewport(snapshot: SnapshotPayload): { y: number; height: number 
     (node) => isScrollContainer(node) && node.rect && node.rect.height >= 120,
   );
   const hinted = views.find((node) => node.hiddenContentBelow === true);
-  const recycler = views.find((node) => /recycler.?view|listview/i.test(`${node.type ?? ""} ${node.role ?? ""}`));
+  const recycler = views.find((node) =>
+    /recycler.?view|listview/i.test(`${node.type ?? ""} ${node.role ?? ""}`),
+  );
   const chosen = hinted ?? recycler ?? views[0];
   return chosen?.rect ? { y: chosen.rect.y, height: chosen.rect.height } : undefined;
 }
@@ -69,14 +73,19 @@ export function surveyHasHiddenContentBelow(snapshot: SnapshotPayload): boolean 
   return snapshot.nodes.some((node) => node.hiddenContentBelow === true);
 }
 
-export function surveyRowFlushWithScroll(row: SurveyFeatureRow, snapshot: SnapshotPayload): boolean {
+export function surveyRowFlushWithScroll(
+  row: SurveyFeatureRow,
+  snapshot: SnapshotPayload,
+): boolean {
   const scroll = scrollViewport(snapshot);
   if (!scroll) return false;
   return row.bottom >= scroll.y + scroll.height - 4;
 }
 
 /** Last feature that is fully inside the scroll viewport (not the faded/clipped tail). */
-export function surveyLastUnclippedFeature(snapshot: SnapshotPayload): SurveyFeatureRow | undefined {
+export function surveyLastUnclippedFeature(
+  snapshot: SnapshotPayload,
+): SurveyFeatureRow | undefined {
   const rows = surveyFeatureRows(snapshot);
   for (let index = rows.length - 1; index >= 0; index -= 1) {
     const row = rows[index]!;
@@ -85,9 +94,46 @@ export function surveyLastUnclippedFeature(snapshot: SnapshotPayload): SurveyFea
   return undefined;
 }
 
+export type EndOfContentEvidence =
+  | "helper-exhausted-and-last-row-unclipped"
+  | "physical-scroll-stationary";
+
+export type SurveyExtent =
+  | { kind: "complete"; evidence: EndOfContentEvidence }
+  | { kind: "partial"; reason: string }
+  | { kind: "unknown"; reason: string };
+
+/**
+ * Completeness is independent of whether another fling is worth trying.
+ * Hidden content below a fully visible last label is unknown, not complete.
+ */
+export function surveyExtent(snapshot: SnapshotPayload): SurveyExtent {
+  const rows = surveyFeatureRows(snapshot);
+  const last = surveyLastUnclippedFeature(snapshot) ?? rows.at(-1);
+  const clipped = rows.some((row) => surveyRowFlushWithScroll(row, snapshot));
+  if (surveyHasHiddenContentBelow(snapshot)) {
+    if (last && !clipped) {
+      return {
+        kind: "unknown",
+        reason: "helper reports hidden content below the last visible label",
+      };
+    }
+    return { kind: "partial", reason: "helper reports hidden content below" };
+  }
+  if (!last) return { kind: "unknown", reason: "no labeled content rows" };
+  if (clipped) {
+    return { kind: "partial", reason: "last labeled row is clipped or flush with the fold" };
+  }
+  return { kind: "complete", evidence: "helper-exhausted-and-last-row-unclipped" };
+}
+
 /**
  * Scroll only when the tree says there is more, a row is clipped into the
  * fade, or the last row sits too close to the fold to be sure.
+ *
+ * A false result is a bounded fling skip (Compose bounce / flush legal
+ * footer). It is not evidence that the document is complete — use
+ * `surveyExtent` for that claim.
  */
 export function surveyShouldAttemptScroll(snapshot: SnapshotPayload): boolean {
   const scroll = scrollViewport(snapshot);
@@ -141,10 +187,7 @@ export function surveyShouldKeepScrolledFrame(
 }
 
 /** Cut a non-final frame above the fade / clipped tail so the next frame supplies the sharp pixels. */
-export function surveyStitchCutY(
-  snapshot: SnapshotPayload,
-  fallback: number,
-): number {
+export function surveyStitchCutY(snapshot: SnapshotPayload, fallback: number): number {
   const last = surveyLastUnclippedFeature(snapshot);
   if (!last) return fallback;
   if (last.bottom <= 0 || last.bottom >= fallback) return fallback;

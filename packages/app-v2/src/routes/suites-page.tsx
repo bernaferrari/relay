@@ -132,6 +132,16 @@ export function SuitesPage() {
         description="Groups of Tests you can run together."
         actions={
           <>
+            <nav className="flex items-center gap-1 text-sm" aria-label="Library">
+              <Link
+                className="rounded-md px-2 py-1 text-muted-foreground hover:text-foreground"
+                to="/tests"
+                search={requestedApp ? { app: requestedApp } : {}}
+              >
+                Tests
+              </Link>
+              <span className="rounded-md bg-muted px-2 py-1 font-semibold">Suites</span>
+            </nav>
             <Button nativeButton={false} render={<Link to="/environments" />} variant="outline">
               Browsers
             </Button>

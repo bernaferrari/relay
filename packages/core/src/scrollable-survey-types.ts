@@ -11,6 +11,8 @@ export type ScrollSurveyStopReason =
   | "scroll-failed"
   | "restore-failed"
   | "start-viewport-unproven"
+  /** Relay skipped or stopped scrolling without evidence the list is complete. */
+  | "extent-unproven"
   | "limit-reached";
 
 export type ScrollSurveyFrame = {

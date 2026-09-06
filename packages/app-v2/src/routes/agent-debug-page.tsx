@@ -66,10 +66,24 @@ export function AgentDebugPage() {
     setTitle(`Investigate ${report.data.title}`);
   }, [report.data, title]);
   useEffect(() => {
-    if (!report.data?.targetName || targetId) return;
+    if (targetId) return;
+    const profileId = report.data?.executionContext?.targetProfileId;
+    const byProfile = profileId
+      ? readyDevices.filter((device) => device.serial === profileId || device.id === profileId)
+      : [];
+    if (byProfile.length === 1) {
+      setTargetId(byProfile[0]!.serial);
+      return;
+    }
+    if (!report.data?.targetName) return;
     const matchingTargets = readyDevices.filter((device) => device.name === report.data.targetName);
     if (matchingTargets.length === 1) setTargetId(matchingTargets[0]!.serial);
-  }, [readyDevices, report.data?.targetName, targetId]);
+  }, [
+    readyDevices,
+    report.data?.executionContext?.targetProfileId,
+    report.data?.targetName,
+    targetId,
+  ]);
   const start = useMutation({
     mutationFn: (input: Parameters<AgentDebugProductService["debugBug"]>[0]) =>
       agentDebugService.debugBug(input),
@@ -97,13 +111,13 @@ export function AgentDebugPage() {
   function startInvestigation(nextTitle: string, nextTargetId: string) {
     if (!nextTitle.trim() || !readyDevices.some((device) => device.serial === nextTargetId)) return;
     const origin =
-      contextualRunId && report.data && failureStep?.id
+      contextualRunId && report.data
         ? {
             schemaVersion: 1 as const,
             source: {
               runId: contextualRunId,
-              attempt: failureStep.attempt ?? 1,
-              stepId: failureStep.id,
+              attempt: failureStep?.attempt ?? 1,
+              stepId: failureStep?.id ?? "before-first-step",
             },
             evidenceRefs: report.data.evidence
               .flatMap((section) => section.items.map((item) => item.id))
@@ -184,11 +198,25 @@ export function AgentDebugPage() {
           {report.data ? (
             <dl className="grid gap-2 text-sm">
               <div>
-                <dt className="font-medium text-muted-foreground">Device</dt>
+                <dt className="font-medium text-muted-foreground">Original</dt>
                 <dd className="text-foreground">
-                  {report.data.targetName ?? "Device from this result"}
+                  {[
+                    report.data.targetName,
+                    report.data.executionContext?.browser,
+                    report.data.executionContext?.buildId
+                      ? `build ${report.data.executionContext.buildId}`
+                      : undefined,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ") || "Configuration from this result"}
                 </dd>
               </div>
+              {!failureStep ? (
+                <div>
+                  <dt className="font-medium text-muted-foreground">Failed</dt>
+                  <dd className="text-foreground">Before step 1</dd>
+                </div>
+              ) : null}
               <div>
                 <dt className="font-medium text-muted-foreground">Expected</dt>
                 <dd className="text-foreground">

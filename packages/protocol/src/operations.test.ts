@@ -1521,6 +1521,10 @@ test("scroll survey has one strict target-operation contract", () => {
     ...validOutput,
     reason: "start-viewport-unproven",
   });
+  assert.deepEqual(definition.output.parse({ ...validOutput, reason: "extent-unproven" }), {
+    ...validOutput,
+    reason: "extent-unproven",
+  });
   const persisted = {
     ...validOutput,
     persist: {

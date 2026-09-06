@@ -28,6 +28,7 @@ import {
   failureTitle,
   nextAction,
   outcomeSentence,
+  resultHeading,
 } from "../components/run-report-formatters";
 import type { ProductRunState, RunProductService } from "../data/run-product-service";
 import { runQueryKeys } from "../data/run-queries";
@@ -212,7 +213,19 @@ export function RunInspection({
     if (!activePointer || terminal) void report.refetch();
   };
 
+  const problemView = (
+    <RecordingProblem
+      className="relay-run-recovery mt-4"
+      error={problem}
+      recovery={recovery}
+      onRetry={retry}
+      retrying={retrying}
+      layout="centered"
+    />
+  );
+
   if (problem || recovery) {
+    if (embedded) return problemView;
     return (
       <WorkbenchPage className="max-w-[1120px]">
         <PageHeader
@@ -220,27 +233,65 @@ export function RunInspection({
           title={snapshot?.title ?? "Run unavailable"}
           titleHidden
         />
-        <RecordingProblem
-          className="relay-run-recovery mt-4"
-          error={problem}
-          recovery={recovery}
-          onRetry={retry}
-          retrying={retrying}
-          layout="centered"
-        />
+        {problemView}
       </WorkbenchPage>
     );
   }
 
   if (loading) {
+    const loadingView = <PageLoading label="Loading the Run…" />;
+    if (embedded) return loadingView;
     return (
       <WorkbenchPage className="max-w-[1120px]">
         <PageHeader
           crumbs={[{ label: "Runs", to: "/runs" }, { label: "In progress" }]}
           title={snapshot?.title ?? "Loading Run"}
         />
-        <PageLoading label="Loading the Run…" />
+        {loadingView}
       </WorkbenchPage>
+    );
+  }
+
+  if (embedded) {
+    return (
+      <section className="grid gap-4" aria-label="Attached run">
+        {snapshot ? (
+          <section
+            className="rounded-xl border border-border bg-card p-4"
+            aria-label="Run progress"
+          >
+            <p className="text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
+              Running
+            </p>
+            <h2 className="mt-1 text-sm font-semibold" role="status">
+              {snapshot.progress.label}
+            </h2>
+            {snapshot.progress.total !== undefined ? (
+              <Progress
+                className="mt-3"
+                value={snapshot.progress.completed ?? 0}
+                max={snapshot.progress.total}
+              >
+                <ProgressLabel>Completed steps</ProgressLabel>
+                <ProgressValue>
+                  {() => `${snapshot.progress.completed ?? 0} of ${snapshot.progress.total}`}
+                </ProgressValue>
+              </Progress>
+            ) : null}
+            {canCancel ? (
+              <Button
+                className="mt-3"
+                variant="outline"
+                size="sm"
+                onClick={() => cancel.mutate()}
+                disabled={cancel.isPending}
+              >
+                {cancel.isPending ? "Cancelling…" : "Cancel Run"}
+              </Button>
+            ) : null}
+          </section>
+        ) : null}
+      </section>
     );
   }
 
@@ -348,88 +399,67 @@ function RunReport({
             0,
             report.timeline.findIndex((item) => item.state === "failed"),
           );
-  const [localStepIndex, setLocalStepIndex] = useState(urlStepIndex);
-  const selectedStepIndex = embedded ? localStepIndex : urlStepIndex;
+  const [stepByRun, setStepByRun] = useState({ runId: report.runId, index: urlStepIndex });
+  if (stepByRun.runId !== report.runId) {
+    setStepByRun({ runId: report.runId, index: urlStepIndex });
+  }
+  const selectedStepIndex = embedded ? stepByRun.index : urlStepIndex;
   const [rawEvidenceOpen, setRawEvidenceOpen] = useState(false);
   const canInvestigate =
     report.outcome === "product-failure" ||
     report.outcome === "uncertain" ||
     report.outcome === "harness-failure";
-  return (
-    <WorkbenchPage className="max-w-[1280px]">
-      <PageHeader
-        crumbs={
-          embedded
-            ? [{ label: report.title }]
-            : [
-                { label: "Runs", to: "/runs" },
-                ...(testId
-                  ? [{ label: "View test", to: "/tests/$testId" as const, params: { testId } }]
-                  : []),
-                { label: report.title },
-              ]
-        }
-        title={report.title}
-        description={outcomeSentence(report.outcome, target)}
-        actions={
-          <>
-            {embedded ? (
-              <Button
-                nativeButton={false}
-                render={<Link to="/runs/$runId" params={{ runId: report.runId }} />}
-                variant="ghost"
-                size="sm"
-              >
-                Open full report
-              </Button>
-            ) : null}
-            {canInvestigate ? (
-              <Button
-                nativeButton={false}
-                render={<Link to="/debug" search={{ runId: report.runId }} />}
-                variant="default"
-              >
-                Investigate this failure
-              </Button>
-            ) : null}
-            {!embedded && report.outcome === "harness-failure" ? (
-              <RunReplayAction
-                report={report}
-                runService={runService}
-                variant={canInvestigate ? "ghost" : "default"}
-                label="Run again"
-              />
-            ) : testId && !embedded ? (
-              <Button
-                nativeButton={false}
-                render={<Link to="/tests/$testId" params={{ testId }} />}
-                variant={canInvestigate ? "ghost" : "default"}
-              >
-                Set up another run
-              </Button>
-            ) : embedded ? null : (
-              <RunReplayAction report={report} runService={runService} />
-            )}
-          </>
-        }
-      >
-        <RunContextFacts
+  const heading = resultHeading(report.outcome);
+  const actions = (
+    <>
+      {embedded ? (
+        <Button
+          nativeButton={false}
+          render={<Link to="/runs/$runId" params={{ runId: report.runId }} />}
+          variant="ghost"
+          size="sm"
+        >
+          Open full report
+        </Button>
+      ) : null}
+      {canInvestigate ? (
+        <Button
+          nativeButton={false}
+          render={<Link to="/debug" search={{ runId: report.runId }} />}
+          variant="default"
+        >
+          Investigate this failure
+        </Button>
+      ) : null}
+      {!embedded && report.outcome === "harness-failure" ? (
+        <RunReplayAction
           report={report}
-          duration={
-            report.durationMs === undefined ? "Not recorded" : formatDuration(report.durationMs)
-          }
-          compact
+          runService={runService}
+          variant={canInvestigate ? "ghost" : "default"}
+          label="Run again"
         />
-      </PageHeader>
-      {embedded ? null : <RunReplayStatus runService={runService} />}
-
+      ) : testId && !embedded ? (
+        <Button
+          nativeButton={false}
+          render={<Link to="/tests/$testId" params={{ testId }} />}
+          variant={canInvestigate ? "ghost" : "default"}
+        >
+          Set up another run
+        </Button>
+      ) : embedded ? null : (
+        <RunReplayAction report={report} runService={runService} />
+      )}
+    </>
+  );
+  const body = (
+    <>
       {failure ? (
         <section
-          className="mt-2 max-w-[60ch] rounded-xl border border-destructive/30 bg-destructive/5 p-5"
+          className="max-w-[60ch] rounded-xl border border-destructive/30 bg-destructive/5 p-5"
           aria-labelledby="causal-failure-title"
         >
           <p className="text-[11px] font-semibold uppercase tracking-[0.04em] text-destructive">
-            Failed
+            {heading}
           </p>
           <h2 id="causal-failure-title" className="mt-1 text-[15px] font-medium text-foreground">
             {failureTitle(failure, report.category)}
@@ -450,6 +480,10 @@ function RunReport({
             </CollapsibleContent>
           </Collapsible>
         </section>
+      ) : report.outcome && report.outcome !== "passed" ? (
+        <p className="text-sm font-semibold" role="status">
+          {heading}
+        </p>
       ) : null}
 
       <section className="mt-4 grid gap-6" aria-label="Run evidence">
@@ -461,7 +495,7 @@ function RunReport({
             onSelectStep={(index) => {
               const selected = report.timeline[index];
               if (embedded) {
-                setLocalStepIndex(index);
+                setStepByRun({ runId: report.runId, index });
                 return;
               }
               void navigate({
@@ -543,6 +577,59 @@ function RunReport({
           <IssueDraftButton source={{ kind: "run", report }} />
         </div>
       ) : null}
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <section className="grid gap-4" aria-label="Attached run">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
+              {heading}
+            </p>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              {outcomeSentence(report.outcome, target)}
+            </p>
+            <RunContextFacts
+              report={report}
+              duration={
+                report.durationMs === undefined ? "Not recorded" : formatDuration(report.durationMs)
+              }
+              compact
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-2">{actions}</div>
+        </div>
+        {body}
+      </section>
+    );
+  }
+
+  return (
+    <WorkbenchPage className="max-w-[1280px]">
+      <PageHeader
+        crumbs={[
+          { label: "Runs", to: "/runs" },
+          ...(testId
+            ? [{ label: "View test", to: "/tests/$testId" as const, params: { testId } }]
+            : []),
+          { label: report.title },
+        ]}
+        title={report.title}
+        description={outcomeSentence(report.outcome, target)}
+        actions={actions}
+      >
+        <RunContextFacts
+          report={report}
+          duration={
+            report.durationMs === undefined ? "Not recorded" : formatDuration(report.durationMs)
+          }
+          compact
+        />
+      </PageHeader>
+      <RunReplayStatus runService={runService} />
+      {body}
     </WorkbenchPage>
   );
 }

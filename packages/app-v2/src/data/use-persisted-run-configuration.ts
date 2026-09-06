@@ -193,6 +193,8 @@ export function usePersistedRunConfiguration({
     selection,
     setSelection,
     pristine: loaded && !edited && !current?.restored,
+    restored: current?.restored ?? false,
+    edited,
     loading: !key || !loaded,
     saving: current?.saving ?? false,
     error: current?.error,

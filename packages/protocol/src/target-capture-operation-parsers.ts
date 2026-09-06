@@ -27,6 +27,7 @@ const scrollSurveyReasons = new Set<ScrollSurveyStopReasonDto>([
   "scroll-failed",
   "restore-failed",
   "start-viewport-unproven",
+  "extent-unproven",
   "limit-reached",
 ]);
 

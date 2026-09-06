@@ -24,6 +24,7 @@ const reasons = new Set([
   "scroll-failed",
   "restore-failed",
   "start-viewport-unproven",
+  "extent-unproven",
   "limit-reached",
 ]);
 

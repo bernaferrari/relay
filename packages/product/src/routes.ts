@@ -108,6 +108,7 @@ export type RouteDefinition = {
     | "type"
     | "q"
     | "returnTo"
+    | "run"
   )[];
   primaryAction: ContextualAction | null;
 };
@@ -148,7 +149,12 @@ export const ROUTE_DEFINITIONS = [
     "path",
     "target",
   ]),
-  d("/tests/:testId", "/tests", "Test", "Test", "tests", "run-test", ["view", "step", "screen"]),
+  d("/tests/:testId", "/tests", "Test", "Test", "tests", "run-test", [
+    "view",
+    "step",
+    "screen",
+    "run",
+  ]),
   d("/tests/:testId/edit", "/tests/:testId", "Edit Test", "Test", "tests", "record-test", [
     "step",
     "screen",

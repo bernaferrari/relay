@@ -26,7 +26,7 @@ type TestFilter = "all" | "ready" | "needs-review";
 type ResultFilter = "all" | "passed" | "failed" | "running" | "never";
 
 export function TestsPage() {
-  const { catalogService, platform } = useRouteContext({
+  const { catalogService, platform, productService } = useRouteContext({
     from: "__root__",
   });
   const search = routeApi.useSearch() as {
@@ -65,8 +65,19 @@ export function TestsPage() {
     queryFn: async () => (await readRunPointer(platform)) ?? null,
     staleTime: Infinity,
   });
+  const recordingState = useQuery({
+    queryKey: recordingQueryKeys.workflow(recording.data ?? "inactive"),
+    queryFn: () => productService.inspect(recording.data!),
+    enabled: Boolean(recording.data),
+    staleTime: 15_000,
+  });
   const scopedRuns = (runs.data ?? []).filter((item) => !app || item.appMapId === app);
-  const resumeRecordingId = app ? undefined : recording.data;
+  const recordingAppId = recordingState.data?.snapshot?.frozen?.appMapId;
+  const resumeRecordingId = !recording.data
+    ? undefined
+    : !app || !recordingAppId || recordingAppId === app
+      ? recording.data
+      : undefined;
   const resumeRunId =
     !app || scopedRuns.some((item) => item.id === runPointer.data?.runId)
       ? runPointer.data?.runId
@@ -122,6 +133,7 @@ export function TestsPage() {
   ];
   function updateFilter(next: { app?: string; status?: TestFilter; result?: ResultFilter }) {
     void navigate({
+      replace: true,
       search: (previous) => ({
         ...previous,
         ...(next.app === undefined ? {} : { app: next.app || undefined }),
@@ -138,6 +150,7 @@ export function TestsPage() {
   function clearFilters() {
     setQuery("");
     void navigate({
+      replace: true,
       search: (previous) => ({
         ...previous,
         app: undefined,
@@ -158,13 +171,25 @@ export function TestsPage() {
         title="Tests"
         description="Run a saved Test, or record a new one."
         actions={
-          <Button
-            nativeButton={false}
-            variant="default"
-            render={<Link to="/tests/new" search={app ? { app } : {}} />}
-          >
-            New Test
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <nav className="flex items-center gap-1 text-sm" aria-label="Library">
+              <span className="rounded-md bg-muted px-2 py-1 font-semibold">Tests</span>
+              <Link
+                className="rounded-md px-2 py-1 text-muted-foreground hover:text-foreground"
+                to="/suites"
+                search={app ? { app } : {}}
+              >
+                Suites
+              </Link>
+            </nav>
+            <Button
+              nativeButton={false}
+              variant="default"
+              render={<Link to="/tests/new" search={app ? { app } : {}} />}
+            >
+              New Test
+            </Button>
+          </div>
         }
       />
 
@@ -238,7 +263,10 @@ export function TestsPage() {
             placeholder="Search by Test or app"
             onChange={(next) => {
               setQuery(next);
-              void navigate({ search: (previous) => ({ ...previous, q: next || undefined }) });
+              void navigate({
+                replace: true,
+                search: (previous) => ({ ...previous, q: next || undefined }),
+              });
             }}
           />
         }

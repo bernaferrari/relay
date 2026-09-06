@@ -368,6 +368,7 @@ export type ScrollSurveyStopReasonDto =
   | "scroll-failed"
   | "restore-failed"
   | "start-viewport-unproven"
+  | "extent-unproven"
   | "limit-reached";
 
 export type DeviceLeaseDto = {

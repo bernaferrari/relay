@@ -63,6 +63,7 @@ export function ReviewRecordingPage() {
   const [selectedActionIds, setSelectedActionIds] = useState<readonly string[]>([]);
   const [actionIntent, setActionIntent] = useState("");
   const [replacementLabel, setReplacementLabel] = useState("");
+  const [splitAfterStep, setSplitAfterStep] = useState(1);
   const [evidenceRole, setEvidenceRole] = useState<"entrance" | "exit">("exit");
   const [trimStartMs, setTrimStartMs] = useState(0);
   const [trimEndMs, setTrimEndMs] = useState(0);
@@ -557,20 +558,42 @@ export function ReviewRecordingPage() {
                           </Button>
                         </div>
                         {selectedAction.stepCount > 1 ? (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() =>
-                              edit({
-                                kind: "split",
-                                actionId: selectedAction.id,
-                                atStep: Math.ceil(selectedAction.stepCount / 2),
-                              })
-                            }
-                            disabled={!canEdit}
-                          >
-                            <Scissors aria-hidden="true" /> Split action
-                          </Button>
+                          <label className="grid gap-1 text-sm">
+                            <span className="text-xs text-muted-foreground">
+                              Split after selected step
+                            </span>
+                            <select
+                              className="min-h-10 rounded-md border border-border bg-background px-3"
+                              value={Math.min(splitAfterStep, selectedAction.stepCount - 1)}
+                              onChange={(event) =>
+                                setSplitAfterStep(Number.parseInt(event.target.value, 10))
+                              }
+                              disabled={!canEdit}
+                            >
+                              {Array.from(
+                                { length: selectedAction.stepCount - 1 },
+                                (_, index) => index + 1,
+                              ).map((step) => (
+                                <option key={step} value={step}>
+                                  After step {step}
+                                </option>
+                              ))}
+                            </select>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() =>
+                                edit({
+                                  kind: "split",
+                                  actionId: selectedAction.id,
+                                  atStep: Math.min(splitAfterStep, selectedAction.stepCount - 1),
+                                })
+                              }
+                              disabled={!canEdit}
+                            >
+                              <Scissors aria-hidden="true" /> Split action
+                            </Button>
+                          </label>
                         ) : null}
                       </>
                     ) : selectedActions.length > 1 ? (

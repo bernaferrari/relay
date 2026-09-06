@@ -13,7 +13,7 @@ import {
   CollapsibleTrigger,
 } from "@relay/ui-react/components/collapsible";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Link, getRouteApi, useRouteContext } from "@tanstack/react-router";
+import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import type { ProductTestStep } from "@relay/product/catalog";
 import { EmptyState, OutcomeMark } from "../components/product-patterns";
@@ -39,10 +39,13 @@ const routeApi = getRouteApi("/tests/$testId");
 export function TestPage() {
   const { runService, platform, queryClient } = useRouteContext({ from: "__root__" });
   const { testId } = routeApi.useParams();
+  const search = routeApi.useSearch() as { run?: unknown; step?: unknown };
+  const navigate = useNavigate({ from: "/tests/$testId" });
   const runSetupRef = useRef<HTMLElement>(null);
 
   const [evidenceStepId, setEvidenceStepId] = useState("");
-  const [pinnedRunId, setPinnedRunId] = useState<string | undefined>();
+  const searchRunId = typeof search.run === "string" ? search.run : undefined;
+  const [pinnedRunId, setPinnedRunId] = useState<string | undefined>(searchRunId);
   const startedForTestId = useRef<string | undefined>(undefined);
   const testIdRef = useRef(testId);
   testIdRef.current = testId;
@@ -156,8 +159,13 @@ export function TestPage() {
       return durable;
     },
     onSuccess: (state) => {
-      if (state.run?.runId && startedForTestId.current === testIdRef.current) {
-        setPinnedRunId(state.run.runId);
+      const runId = state.run?.runId;
+      if (runId && startedForTestId.current === testIdRef.current) {
+        setPinnedRunId(runId);
+        void navigate({
+          search: (previous) => ({ ...previous, run: runId }),
+          replace: true,
+        });
       }
     },
   });
@@ -178,6 +186,12 @@ export function TestPage() {
       lastAppliedTargetId: appliedDestination.current,
       currentTargetId: selectionRef.current.targetId,
       availableTargetIds: targets.data.map((target) => target.targetId),
+      origin: configuration.edited
+        ? "explicit-user-selection"
+        : configuration.restored
+          ? "saved-test"
+          : "workspace-default",
+      protectedTargetId: selectionRef.current.targetId,
     });
     if (decision.kind === "skip") return;
     appliedDestination.current = workspaceDestination.data?.targetId;
@@ -185,17 +199,24 @@ export function TestPage() {
     configuration.setSelection({ ...selectionRef.current, targetId: decision.targetId });
   }, [
     configuration.loading,
+    configuration.edited,
+    configuration.restored,
     configuration.setSelection,
     targets.data,
     workspaceDestination.data?.targetId,
   ]);
 
   useEffect(() => {
-    setPinnedRunId(undefined);
-  }, [testId]);
+    setPinnedRunId(searchRunId);
+  }, [testId, searchRunId]);
   useEffect(() => {
-    if (pointer.data?.testId === testId) setPinnedRunId(pointer.data.runId);
-  }, [pointer.data?.testId, pointer.data?.runId, testId]);
+    if (searchRunId || pointer.data?.testId !== testId || !pointer.data?.runId) return;
+    setPinnedRunId(pointer.data.runId);
+    void navigate({
+      search: (previous) => ({ ...previous, run: pointer.data!.runId }),
+      replace: true,
+    });
+  }, [navigate, pointer.data?.runId, pointer.data?.testId, searchRunId, testId]);
 
   // The run pointer is workspace-wide. It should only interrupt the document
   // that owns the run; a run for another Test belongs in Activity, not here.
@@ -298,12 +319,6 @@ export function TestPage() {
         />
       ) : null}
 
-      {attachedRunId ? (
-        <div className="mt-6">
-          <RunInspection runId={attachedRunId} testId={testId} embedded />
-        </div>
-      ) : null}
-
       {!test.isPending && test.data ? (
         <WorkbenchPanes
           outline={
@@ -337,16 +352,16 @@ export function TestPage() {
             </section>
           }
           stage={
-            <>
-              {selectedEvidenceStep ? (
-                <TestStepEvidencePreview
-                  step={selectedEvidenceStep}
-                  report={latestReport.data}
-                  hasRuns={Boolean(recentRuns.data?.length)}
-                  loading={reportLoading}
-                />
-              ) : null}
-            </>
+            attachedRunId ? (
+              <RunInspection key={attachedRunId} runId={attachedRunId} testId={testId} embedded />
+            ) : selectedEvidenceStep ? (
+              <TestStepEvidencePreview
+                step={selectedEvidenceStep}
+                report={latestReport.data}
+                hasRuns={Boolean(recentRuns.data?.length)}
+                loading={reportLoading}
+              />
+            ) : null
           }
           inspector={
             !activeRun && !targets.isError ? (

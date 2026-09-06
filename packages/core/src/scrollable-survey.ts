@@ -21,6 +21,7 @@ import {
   verticalScrollSeam,
 } from "./scrollable-survey-seams.js";
 import {
+  surveyExtent,
   surveyHasHiddenContentBelow,
   surveyShouldAttemptScroll,
   surveyShouldKeepScrolledFrame,
@@ -570,11 +571,22 @@ export async function captureScrollableSurvey(
   let hasUnexpected = false;
   try {
     if (!surveyShouldAttemptScroll(first.snapshot)) {
-      decision = {
-        status: "completed",
-        reason: "end-of-content",
-        message: "Captured the complete visible list and restored the original viewport.",
-      };
+      const extent = surveyExtent(first.snapshot);
+      decision =
+        extent.kind === "complete"
+          ? {
+              status: "completed",
+              reason: "end-of-content",
+              message: "Captured the complete visible list and restored the original viewport.",
+            }
+          : {
+              status: "stopped",
+              reason: "extent-unproven",
+              message:
+                extent.kind === "unknown"
+                  ? `Relay did not scroll further, but it cannot prove the list is complete. ${extent.reason}.`
+                  : `Relay stopped without claiming complete content. ${extent.reason}.`,
+            };
     }
     for (let index = 0; index < maxScrolls && decision.reason === "limit-reached"; index += 1) {
       try {

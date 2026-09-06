@@ -63,18 +63,21 @@ export function firstSentence(value: string): string {
   return line.slice(0, 280).replace(/[.:!?]+$/u, "") + ".";
 }
 
+export function resultHeading(
+  outcome: Awaited<ReturnType<RunProductService["getReport"]>>["outcome"],
+): string {
+  if (outcome === "passed") return "Checks passed";
+  if (outcome === "product-failure") return "Check failed";
+  if (outcome === "harness-failure") return "Could not complete";
+  if (outcome === "uncertain") return "Outcome not confirmed";
+  if (outcome === "cancelled") return "Cancelled";
+  return "Incomplete evidence";
+}
+
 export function failureTitle(value: string, category?: string): string {
-  if (
-    /econnrefused|connection refused|net::err_connection_refused|failed to connect/iu.test(value)
-  ) {
-    return "Browser could not open the app";
-  }
-  if (/timed? out|timeout/iu.test(value)) return "The app took too long to respond";
-  if (/disconnected|device.*offline|target.*offline/iu.test(value)) {
-    return "The device or browser disconnected";
-  }
   if (category) return category;
-  return "Relay could not complete this Test";
+  const line = value.split(/\r?\n/, 1)[0]?.trim();
+  return line || "Relay could not complete this Test";
 }
 
 export function formatDuration(durationMs: number): string {

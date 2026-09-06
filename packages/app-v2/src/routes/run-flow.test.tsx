@@ -10,6 +10,7 @@ import type { RunAcrossProductService } from "../data/run-across-product-service
 import type { ProductRunReportOverview, RunProductService } from "../data/run-product-service";
 import type { Platform } from "../platform/types";
 import { WORKSPACE_DESTINATION_KEY } from "../layout/destination-summary";
+import { runConfigurationStorageKey } from "../data/use-persisted-run-configuration";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -471,6 +472,44 @@ describe("Run and Report", () => {
     expect(fake.startInputs[0]).not.toHaveProperty("targetProfileId");
   });
 
+  it("keeps a saved Test browser and profile when a workspace Pixel is remembered", async () => {
+    const fake = fakeRunService();
+    fake.service.listProfiles = async () => [
+      {
+        id: "profile-member",
+        name: "Member",
+        targetId: "browser-golden",
+        platform: "browser",
+        account: { id: "acct-member", name: "Member" },
+      },
+    ];
+    const saved = JSON.stringify({
+      targetId: "browser-golden",
+      savedProfileId: "profile-member",
+    });
+    const storage = platformWithStorage({
+      [WORKSPACE_DESTINATION_KEY]: JSON.stringify({ targetId: "emulator-5554" }),
+      [runConfigurationStorageKey({
+        server: "http://127.0.0.1:8787",
+        entity: "test-run:test-1",
+      })]: saved,
+      [runConfigurationStorageKey({
+        server: "http://127.0.0.1:8787",
+        appId: "settings-language-proof",
+        entity: "test-run:test-1",
+      })]: saved,
+    });
+    await renderRun("/tests/test-1", fake.service, storage.platform);
+
+    expect(document.querySelector<HTMLInputElement>('input[value="browser-golden"]')?.checked).toBe(
+      true,
+    );
+    expect(document.querySelector<HTMLInputElement>('input[value="emulator-5554"]')?.checked).toBe(
+      false,
+    );
+    expect(document.querySelector<HTMLSelectElement>("select")?.value).toBe("profile-member");
+  });
+
   it("applies a toolbar destination serial once and keeps a later in-page target", async () => {
     const fake = fakeRunService();
     const storage = platformWithStorage({
@@ -519,6 +558,7 @@ describe("Run and Report", () => {
 
     expect(fake.calls).toContain("start:test-1:settings-language-proof:browser-golden");
     expect(history.location.pathname).toBe("/tests/test-1");
+    expect(String(history.location.search)).toContain("run=run-1");
     expect(document.body.textContent).toContain("Checking Language");
     expect(button("Cancel Run").disabled).toBe(false);
     expect(storage.values.has("activeRunWorkflow")).toBe(true);
@@ -1067,7 +1107,9 @@ describe("Run and Report", () => {
     });
     await renderRun("/runs/run-1", fake.service, platformWithStorage().platform);
 
-    expect(document.body.textContent).toContain("Browser could not open the app");
+    expect(document.body.textContent).toContain("Could not complete");
+    expect(document.body.textContent).toContain("Browser connection");
+    expect(document.body.textContent).not.toContain("The app took too long to respond");
     expect(document.body.textContent).toContain("Reconnect the device or browser");
     expect(document.body.textContent).toContain("Technical details");
     expect(

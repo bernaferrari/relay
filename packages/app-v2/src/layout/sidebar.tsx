@@ -13,7 +13,7 @@ import {
   useSidebar,
 } from "@relay/ui-react/components/sidebar";
 import { Link, useLocation } from "@tanstack/react-router";
-import { FlaskConical, History, MonitorSmartphone, Settings } from "lucide-react";
+import { FlaskConical, GitCompare, History, MonitorSmartphone, Settings } from "lucide-react";
 import { AppSwitcher } from "./app-switcher";
 import { ActiveWork } from "./active-work";
 
@@ -76,6 +76,17 @@ export function SidebarContent({ label = "Primary" }: { label?: string }) {
           className="relay-nav relay-nav--secondary flex flex-col gap-0.5 border-t border-[var(--border-weak-base)] pt-2.5"
           aria-label={`${label} settings`}
         >
+          <SidebarMenuButton
+            render={<Link to="/changes" onClick={closeMobileNavigation} />}
+            isActive={pathname.startsWith("/changes")}
+            className={`relay-nav-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 flex min-h-9 cursor-pointer items-center gap-2.5 rounded-[var(--radius-md)] px-[11px] text-[13px] font-medium text-[var(--text-base)]${pathname.startsWith("/changes") ? " relay-nav-link--active bg-[var(--surface-base-active)] font-semibold text-[var(--text-strong)] shadow-none" : ""}`}
+          >
+            <GitCompare
+              className={`h-[17px] w-[17px] shrink-0 text-[var(--text-weaker)]${pathname.startsWith("/changes") ? " text-[var(--text-strong)]" : ""}`}
+              aria-hidden="true"
+            />
+            <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">Changes</span>
+          </SidebarMenuButton>
           <SidebarMenuButton
             render={<Link to="/settings/general" onClick={closeMobileNavigation} />}
             isActive={settingsActive}

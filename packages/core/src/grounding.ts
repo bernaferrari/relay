@@ -257,9 +257,8 @@ function matchUniqueA11y(nodes: SnapshotNode[], query: string): InteractInput | 
     const identifier = hit.identifier?.trim();
     if (
       identifier &&
-      nodes.filter(
-        (node) => node.visibleToUser !== false && node.identifier?.trim() === identifier,
-      ).length === 1
+      nodes.filter((node) => node.visibleToUser !== false && node.identifier?.trim() === identifier)
+        .length === 1
     ) {
       return { kind: "identifier", identifier };
     }

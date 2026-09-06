@@ -15,9 +15,10 @@ function device(
   name: string,
   status: ProductDevice["status"],
   platform: ProductDevice["platform"] = "ios",
-): Pick<ProductDevice, "id" | "name" | "status" | "platform" | "osVersion" | "kind"> {
+): Pick<ProductDevice, "id" | "serial" | "name" | "status" | "platform" | "osVersion" | "kind"> {
   return {
     id,
+    serial: id,
     name,
     status,
     platform,
@@ -153,5 +154,33 @@ describe("destination summary", () => {
         availableTargetIds: available,
       }),
     ).toEqual({ kind: "skip" });
+  });
+
+  it("does not let a workspace default overwrite a saved Test destination", () => {
+    expect(
+      workspaceDestinationDecision({
+        storedTargetId: "emulator-5554",
+        currentTargetId: "browser-golden",
+        availableTargetIds: ["emulator-5554", "browser-golden"],
+        origin: "saved-test",
+        protectedTargetId: "browser-golden",
+      }),
+    ).toEqual({ kind: "skip" });
+    expect(
+      workspaceDestinationDecision({
+        storedTargetId: "emulator-5554",
+        currentTargetId: "browser-golden",
+        availableTargetIds: ["emulator-5554", "browser-golden"],
+        origin: "explicit-user-selection",
+      }),
+    ).toEqual({ kind: "skip" });
+    expect(
+      workspaceDestinationDecision({
+        storedTargetId: "emulator-5554",
+        currentTargetId: undefined,
+        availableTargetIds: ["emulator-5554", "browser-golden"],
+        origin: "workspace-default",
+      }),
+    ).toEqual({ kind: "apply", targetId: "emulator-5554" });
   });
 });

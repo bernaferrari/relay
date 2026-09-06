@@ -22,6 +22,11 @@ import type {
   LiveTargetSession,
   LiveTargetStatus,
 } from "../data/live-target-session";
+import {
+  dispatchRecordingInput,
+  recordingInputRecoveryMessage,
+  type RecordingInputOutcome,
+} from "../data/recording-input-outcome";
 import { recordingQueryKeys, refreshRecording } from "../data/recording-queries";
 import { clearWorkflowPointerIfCurrent, writeWorkflowPointer } from "../data/workflow-pointer";
 import { LiveTargetCanvas } from "./live-target-canvas";
@@ -185,43 +190,58 @@ function RecordingWorkspace({
     };
   }, [captureReady, platform, productService, selectedTargetId]);
 
+  const liveInputOutcome = useRef<Promise<RecordingInputOutcome>>(
+    Promise.resolve({ kind: "confirmed" }),
+  );
+
   function sendLiveInput(input: Parameters<LiveTargetSession["input"]>[0]): Promise<boolean> {
-    const queued = liveInputQueue.current
-      .catch(() => true)
+    const queued = liveInputOutcome.current
+      .catch(() => ({ kind: "confirmed" as const }))
       .then(async () => {
         if (!allowed.has("record")) {
           setLiveIssue("Relay is not ready to record another interaction yet.");
-          return false;
+          return { kind: "not-dispatched" as const, message: "Relay is not ready to record." };
         }
         const session = liveSession.current;
         if (!session) {
           setLiveIssue("The live view is still connecting.");
-          return false;
+          return { kind: "not-dispatched" as const, message: "The live view is still connecting." };
         }
         setLiveInputBusy(true);
         setLiveIssue(undefined);
         try {
-          await session.input(input);
-          await refreshRecording(queryClient, productService, workflowId);
-          return true;
-        } catch (error) {
-          setLiveIssue(liveIssueMessage(errorMessage(error)));
-          return false;
+          const outcome = await dispatchRecordingInput({
+            send: () => session.input(input),
+            refresh: async () => {
+              await refreshRecording(queryClient, productService, workflowId);
+            },
+          });
+          const recovery = recordingInputRecoveryMessage(outcome);
+          if (recovery) setLiveIssue(recovery);
+          return outcome;
         } finally {
           setLiveInputBusy(false);
         }
       });
-    liveInputQueue.current = queued;
-    return queued;
+    liveInputOutcome.current = queued;
+    liveInputQueue.current = queued.then((outcome) => outcome.kind === "confirmed");
+    return liveInputQueue.current;
   }
 
   async function stopAfterInputDrain() {
     if (!allowed.has("stop") || action.isPending || stopWaitingForInput) return;
     setStopWaitingForInput(true);
     try {
-      const delivered = await liveInputQueue.current.catch(() => false);
-      if (!delivered) {
-        setLiveIssue("The last interaction was not confirmed. Try it again before stopping.");
+      const outcome = await liveInputOutcome.current.catch(
+        (): RecordingInputOutcome => ({
+          kind: "unknown",
+          message: "The last interaction did not finish cleanly.",
+        }),
+      );
+      if (outcome.kind !== "confirmed") {
+        setLiveIssue(
+          recordingInputRecoveryMessage(outcome) ?? "Relay could not confirm the last interaction.",
+        );
         return;
       }
       const latest = await refreshRecording(queryClient, productService, workflowId);
@@ -239,7 +259,7 @@ function RecordingWorkspace({
   }
 
   return (
-    <section className="grid h-dvh w-full grid-rows-[auto_minmax(0,1fr)_auto] bg-background">
+    <section className="grid h-full min-h-0 w-full grid-rows-[auto_minmax(0,1fr)_auto] bg-background">
       <div className="border-b border-border px-5 py-2 relay-electron-drag [-webkit-app-region:drag] [&_.relay-workspace-header]:mb-0 [&_.relay-workspace-header]:mt-0">
         <Dialog open={exitOpen} onOpenChange={setExitOpen}>
           <DialogContent showCloseButton={false}>
