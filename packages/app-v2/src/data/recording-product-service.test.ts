@@ -158,6 +158,61 @@ describe("recording edit adapter", () => {
       `/authoring-evidence/${sha256}?mime=image%2Fpng`,
     );
   });
+
+  it("projects pickable controls from the observation that owns the screenshot", async () => {
+    const sha256 = "b".repeat(64);
+    client.invoke.mockClear();
+    client.binaryResource.mockClear();
+    client.invoke.mockResolvedValueOnce({
+      session: {
+        take: {
+          currentRevision: 1,
+          revisions: [
+            {
+              revision: 1,
+              evidence: [
+                {
+                  id: "screenshot-lang",
+                  kind: "screenshot",
+                  uri: `relay-evidence://${sha256}`,
+                  mime: "image/png",
+                },
+              ],
+              observations: [
+                {
+                  evidenceIds: ["screenshot-lang"],
+                  nodes: [
+                    {
+                      identifier: "com.app:id/language",
+                      label: "Language",
+                      rect: { x: 40, y: 200, width: 280, height: 56 },
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
+    client.binaryResource.mockResolvedValueOnce({
+      bytes: new Uint8Array([9]),
+      headers: new Headers({ "content-type": "image/png" }),
+    });
+    const preview = await createRecordingProductService(platform).getEvidencePreview(
+      "session-1",
+      "screenshot-lang",
+    );
+    expect(preview?.controls).toEqual([
+      {
+        id: "com.app:id/language",
+        name: "Language",
+        rect: { x: 40, y: 200, width: 280, height: 56 },
+        target: { identifier: "com.app:id/language" },
+        why: "Matched the stable identifier com.app:id/language.",
+      },
+    ]);
+  });
 });
 
 // Keep this assertion close to the adapter tests so a future protocol edit

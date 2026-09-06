@@ -12,6 +12,10 @@ import type {
   AuthoringTarget,
 } from "@relay/protocol";
 import { presentReadyTargets, type ProductTargetOption } from "./target-presentation";
+import {
+  controlsForAuthoringEvidence,
+  type RecordingEvidenceControl,
+} from "./recording-evidence-target";
 
 export type ProductAppOption = {
   id: string;
@@ -21,6 +25,7 @@ export type ProductAppOption = {
 export type RecordingEvidencePreview = {
   bytes: Uint8Array;
   mime: string;
+  controls?: readonly RecordingEvidenceControl[];
 };
 
 /** Named review edits exposed to the React product surface.
@@ -171,9 +176,11 @@ export function createRecordingProductService(
       const resource = await client.binaryResource(
         `/authoring-evidence/${encodeURIComponent(match[1]!)}?mime=${encodeURIComponent(mime)}`,
       );
+      const controls = controlsForAuthoringEvidence(revision, evidenceId);
       return {
         bytes: resource.bytes,
         mime: resource.headers.get("content-type")?.split(";")[0] ?? mime,
+        ...(controls.length ? { controls } : {}),
       };
     },
     async recordCurrent() {

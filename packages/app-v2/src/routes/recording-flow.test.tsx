@@ -65,6 +65,14 @@ function state(
                   intent: "Open Settings",
                   stepCount: 1,
                   proofStatus: "verified" as const,
+                  evidence: [
+                    {
+                      id: "shot-1",
+                      kind: "screenshot" as const,
+                      capturedAt: 1,
+                      roles: ["exit" as const],
+                    },
+                  ],
                   captureProof: options.replay
                     ? ("replay-proved" as const)
                     : ("relay-controlled" as const),
@@ -161,7 +169,20 @@ function fakeService(initial = state("recording", ["inspect", "record", "checkpo
       return { proposal: null };
     },
     async getEvidencePreview() {
-      return null;
+      return {
+        bytes: new Uint8Array([1]),
+        mime: "image/png",
+        controls: [
+          {
+            id: "preferred-language",
+            name: "Preferred language",
+            role: "button",
+            rect: { x: 48, y: 280, width: 240, height: 48 },
+            target: { label: "Preferred language" },
+            why: "Matched the visible name “Preferred language”.",
+          },
+        ],
+      };
     },
     async recordCurrent() {
       calls.push("record");
@@ -696,7 +717,7 @@ describe("record, review, replay, and save", () => {
     expect(document.body.textContent).toContain("A passing replay is required before saving");
   });
 
-  it("replaces a tap target without exposing selector internals", async () => {
+  it("replaces a tap target by picking a control from evidence", async () => {
     const reviewing = state("reviewing", ["inspect", "edit", "replay"]);
     if (!reviewing.snapshot?.review) throw new Error("Review fixture was not created");
     reviewing.snapshot.review.actions[0]!.kind = "tap";
@@ -710,10 +731,20 @@ describe("record, review, replay, and save", () => {
     );
 
     await click(button("Edit"));
-    const target = document.querySelector<HTMLInputElement>("#review-replacement-label");
-    if (!target) throw new Error("Replacement label editor was not rendered");
-    await fill(target, "Preferred language");
-    await click(button("Replace label"));
+    expect(document.querySelector("#review-replacement-label")).toBeNull();
+    await click(button("Change target"));
+    for (
+      let attempt = 0;
+      attempt < 12 && !document.body.textContent?.includes("Preferred language");
+      attempt += 1
+    ) {
+      await settle();
+    }
+    await click(button("Preferred language"));
+    expect(document.body.textContent).toContain("Matched the visible name");
+    await click(button("Try target"));
+    expect(document.body.textContent).toContain("Relay would tap Preferred language");
+    await click(button("Keep target"));
 
     expect(fake.edits).toContainEqual({
       kind: "replace",

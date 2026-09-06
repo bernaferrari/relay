@@ -24,7 +24,6 @@ import {
   RotateCcw,
   Save,
   Scissors,
-  Target,
   Trash2,
   Undo2,
 } from "lucide-react";
@@ -42,6 +41,7 @@ import {
 } from "./recording-review-presentation";
 
 import { useRecordingNameDraft } from "../data/use-recording-name-draft";
+import { RecordingTargetPicker } from "./recording-target-picker";
 
 const routeApi = getRouteApi("/recordings/$recordingId/review");
 
@@ -62,7 +62,6 @@ export function ReviewRecordingPage() {
   const nameDraftKey = `recordingName:${workflowId}`;
   const [selectedActionIds, setSelectedActionIds] = useState<readonly string[]>([]);
   const [actionIntent, setActionIntent] = useState("");
-  const [replacementLabel, setReplacementLabel] = useState("");
   const [splitAfterStep, setSplitAfterStep] = useState(1);
   const [evidenceRole, setEvidenceRole] = useState<"entrance" | "exit">("exit");
   const [trimStartMs, setTrimStartMs] = useState(0);
@@ -198,7 +197,6 @@ export function ReviewRecordingPage() {
 
   useEffect(() => {
     setActionIntent(selectedAction?.intent ?? "");
-    setReplacementLabel("");
   }, [selectedAction?.id, selectedAction?.intent]);
 
   useEffect(() => {
@@ -502,39 +500,18 @@ export function ReviewRecordingPage() {
                           Save instruction
                         </Button>
                         {selectedAction.kind === "tap" ? (
-                          <Field>
-                            <FieldLabel htmlFor="review-replacement-label">
-                              Replace label
-                            </FieldLabel>
-                            <Input
-                              id="review-replacement-label"
-                              value={replacementLabel}
-                              onChange={(event) => setReplacementLabel(event.currentTarget.value)}
-                              placeholder="Accessible name"
-                              maxLength={160}
-                              disabled={!canEdit}
-                            />
-                            <FieldDescription>
-                              Use the control’s stable accessible name.
-                            </FieldDescription>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() =>
-                                edit({
-                                  kind: "replace",
-                                  actionId: selectedAction.id,
-                                  interaction: {
-                                    kind: "tap",
-                                    target: { label: replacementLabel.trim() },
-                                  },
-                                })
-                              }
-                              disabled={!canEdit || !replacementLabel.trim()}
-                            >
-                              <Target aria-hidden="true" /> Replace label
-                            </Button>
-                          </Field>
+                          <RecordingTargetPicker
+                            controls={evidencePreview.data?.controls ?? []}
+                            canEdit={canEdit}
+                            previewUrl={evidenceUrl}
+                            onKeep={(target) =>
+                              edit({
+                                kind: "replace",
+                                actionId: selectedAction.id,
+                                interaction: { kind: "tap", target },
+                              })
+                            }
+                          />
                         ) : null}
                         <div
                           className="flex flex-wrap items-center gap-2"
