@@ -53,6 +53,9 @@ export type RunProductService = {
   listProfiles?(appMapId: string): Promise<readonly ProductRunProfileOption[]>;
   presentTargets(targets: readonly AuthoringTarget[]): Promise<readonly ProductTargetOption[]>;
   start(input: ProductRunStartInput): Promise<ProductRunState>;
+  startBatch?(
+    requests: readonly ProductRunStartInput[],
+  ): Promise<import("./start-owned-test-run").OwnedTestRunResult>;
   replay?(
     runId: string,
     mode?: "saved-steps" | "same-configuration",
@@ -204,6 +207,20 @@ export function createRunProductService(platform: Platform): RunProductService {
     },
     async start(input) {
       return (await runtime()).journey.start(input);
+    },
+    async startBatch(requests) {
+      const { startPairedTestBatch } = await import("./start-owned-test-run");
+      const { client } = await runtime();
+      return startPairedTestBatch({
+        requests,
+        combineStart: async (body) => {
+          const result = await client.invoke("job.combine.start", body);
+          return {
+            ...(result.campaign ? { campaign: result.campaign } : {}),
+            ...(result.batch ? { batch: result.batch } : {}),
+          };
+        },
+      });
     },
     async replay(runId, mode) {
       const { job } = await (

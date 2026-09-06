@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { emptyPairedWorkspace } from "./paired-configuration";
-import { startOwnedTestRun, testStartRequests } from "./start-owned-test-run";
+import {
+  profileTargetsFromStarts,
+  startOwnedTestRun,
+  startPairedTestBatch,
+  testStartRequests,
+} from "./start-owned-test-run";
 import { parsePairedConfigurationWorkspace } from "./paired-configuration";
 
 const workspace = parsePairedConfigurationWorkspace(
@@ -44,7 +49,11 @@ describe("start owned Test runs", () => {
       appMapId: "app-1",
       targetId: "ignored-pixel",
     });
-    expect(requests.map((request) => request.targetId)).toEqual(["chrome-1", "chrome-1", "webkit-1"]);
+    expect(requests.map((request) => request.targetId)).toEqual([
+      "chrome-1",
+      "chrome-1",
+      "webkit-1",
+    ]);
     expect(requests.map((request) => request.account)).toEqual([
       { kind: "fixture", accountId: "acct-admin", accountRevision: "4" },
       { kind: "fixture", accountId: "acct-member", accountRevision: "7" },
@@ -61,85 +70,125 @@ describe("start owned Test runs", () => {
     ).toEqual([{ testId: "checkout", appMapId: "app-1", targetId: "pixel" }]);
   });
 
-  it("does not expand later pairs when the first start is recovering", async () => {
+  it("starts a single request through the ordinary Run path", async () => {
     const started: string[] = [];
-    const remembered: string[] = [];
     const result = await startOwnedTestRun({
-      requests: testStartRequests({
-        usePairedWorkspace: true,
-        workspace,
-        testId: "checkout",
-        appMapId: "app-1",
-        targetId: "ignored",
-      }),
+      requests: [{ testId: "checkout", appMapId: "app-1", targetId: "pixel" }],
       start: async (request) => {
-        started.push(`${request.targetId}:${request.account?.kind ?? "none"}`);
-        return {
-          status: "idle",
-          recovery: { code: "transport", title: "Wait", detail: "Need review", recovery: "Retry" },
-        } as never;
-      },
-      inspect: async () => {
-        throw new Error("must not inspect a recovering first start");
-      },
-      remember: async (_state, workflowId, runId) => {
-        remembered.push(`${workflowId}:${runId}`);
-      },
-    });
-    expect(started).toEqual(["chrome-1:fixture"]);
-    expect(remembered).toEqual([]);
-    expect(result.children.map((child) => child.status)).toEqual([
-      "blocked",
-      "untouched",
-      "untouched",
-    ]);
-  });
-
-  it("remembers every started child and leaves later failures untouched", async () => {
-    const started: string[] = [];
-    const remembered: string[] = [];
-    const result = await startOwnedTestRun({
-      requests: testStartRequests({
-        usePairedWorkspace: true,
-        workspace,
-        testId: "checkout",
-        appMapId: "app-1",
-        targetId: "ignored",
-      }),
-      start: async (request) => {
-        const identity =
-          request.account && request.account.kind === "fixture"
-            ? request.account.accountId
-            : "signed-out";
-        started.push(identity);
-        if (identity === "acct-member") {
-          return {
-            status: "idle",
-            recovery: { code: "transport", title: "Wait", detail: "Need review", recovery: "Retry" },
-          } as never;
-        }
+        started.push(request.targetId ?? "");
         return {
           status: "queued",
-          workflow: { workflowId: `wf-${identity}` },
-          run: { runId: `run-${identity}` },
+          workflow: { workflowId: "wf-pixel" },
+          run: { runId: "run-pixel" },
         } as never;
       },
       inspect: async (workflowId) =>
         ({
           status: "running",
           workflow: { workflowId },
-          run: { runId: workflowId.replace("wf-", "run-") },
+          run: { runId: "run-pixel" },
         }) as never,
-      remember: async (_state, workflowId, runId) => {
-        remembered.push(`${workflowId}:${runId}`);
-      },
+      remember: async () => undefined,
     });
-    expect(started).toEqual(["acct-admin", "acct-member", "signed-out"]);
-    expect(remembered).toEqual(["wf-acct-admin:run-acct-admin", "wf-signed-out:run-signed-out"]);
+    expect(started).toEqual(["pixel"]);
+    expect(result.children.map((child) => child.status)).toEqual(["started"]);
+    expect(result.batchId).toBeUndefined();
+  });
+
+  it("refuses to loop start() for multiple pairs without one durable Batch", async () => {
+    const started: string[] = [];
+    await expect(
+      startOwnedTestRun({
+        requests: testStartRequests({
+          usePairedWorkspace: true,
+          workspace,
+          testId: "checkout",
+          appMapId: "app-1",
+          targetId: "ignored",
+        }),
+        start: async (request) => {
+          started.push(request.targetId ?? "");
+          return { status: "queued" } as never;
+        },
+        inspect: async () => ({ status: "running" }) as never,
+        remember: async () => undefined,
+      }),
+    ).rejects.toThrow(/durable Batch/i);
+    expect(started).toEqual([]);
+  });
+
+  it("starts every compiled pair through one Combine campaign", async () => {
+    const requests = testStartRequests({
+      usePairedWorkspace: true,
+      workspace,
+      testId: "checkout",
+      appMapId: "app-1",
+      targetId: "ignored",
+      profiles: [
+        { id: "profile-admin", targetId: "chrome-1", account: { id: "acct-admin" } },
+        { id: "profile-member", targetId: "chrome-1", account: { id: "acct-member" } },
+        { id: "profile-out", targetId: "webkit-1" },
+      ],
+    });
+    expect(requests.map((request) => request.targetProfileId)).toEqual([
+      "profile-admin",
+      "profile-member",
+      "profile-out",
+    ]);
+    const started: string[] = [];
+    const bodies: unknown[] = [];
+    const result = await startOwnedTestRun({
+      requests,
+      start: async (request) => {
+        started.push(request.targetId ?? "");
+        return { status: "queued" } as never;
+      },
+      inspect: async () => {
+        throw new Error("must not inspect children of a Batch");
+      },
+      remember: async () => undefined,
+      startBatch: (batchRequests) =>
+        startPairedTestBatch({
+          requests: batchRequests,
+          combineStart: async (body) => {
+            bodies.push(body);
+            return {
+              campaign: {
+                id: "batch-pairs",
+                cases: [
+                  {
+                    cellId: "cell-admin",
+                    status: "queued",
+                    targetProfileId: "profile-admin",
+                    runId: "run-admin",
+                  },
+                  { cellId: "cell-member", status: "blocked", targetProfileId: "profile-member" },
+                  { cellId: "cell-out", status: "pending", targetProfileId: "profile-out" },
+                ],
+              },
+            };
+          },
+        }),
+    });
+    expect(started).toEqual([]);
+    expect(bodies).toEqual([
+      {
+        appMapId: "app-1",
+        testId: "checkout",
+        executionMode: "all",
+        profileTargets: profileTargetsFromStarts(requests),
+      },
+    ]);
+    expect(result.batchId).toBe("batch-pairs");
     expect(result.children.map((child) => child.status)).toEqual([
       "started",
       "blocked",
-      "started",
+      "untouched",
+    ]);
+    expect(profileTargetsFromStarts(requests).map((item) => item.profileId)).toEqual([
+      "profile-admin",
+      "profile-member",
+      "profile-out",
     ]);
   });
 });

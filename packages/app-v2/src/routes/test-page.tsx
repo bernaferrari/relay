@@ -148,9 +148,17 @@ export function TestPage() {
           queryClient.setQueryData(runQueryKeys.workflow(workflowId), durable);
           startedForTestId.current = testId;
         },
+        ...(runService.startBatch
+          ? { startBatch: (requests) => runService.startBatch!(requests) }
+          : {}),
       });
     },
     onSuccess: (state) => {
+      if (state.batchId) {
+        startedForTestId.current = testId;
+        void navigate({ to: "/batches/$batchId", params: { batchId: state.batchId } });
+        return;
+      }
       const runId = state.run?.runId;
       if (runId && startedForTestId.current === testIdRef.current) {
         setPinnedRunId(runId);
