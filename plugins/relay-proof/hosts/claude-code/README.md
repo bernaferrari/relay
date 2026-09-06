@@ -5,7 +5,9 @@ merge its `mcpServers.relay` entry into the existing file). It launches the
 same host-neutral `@relay/mcp` package used by Codex:
 
 ```bash
-npm install --global @relay/mcp@0.1.0
+npm install --global @relay/mcp@0.1.0 # after the public release
+# Before publication, from this repository:
+# npm pack --silent ./packages/mcp && npm install --global ./relay-mcp-0.1.0.tgz
 export RELAY_URL=http://127.0.0.1:8787
 export RELAY_ORGANIZATION_ID=local
 export RELAY_PROJECT_ID=default

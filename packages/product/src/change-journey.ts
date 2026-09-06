@@ -15,6 +15,11 @@ import type {
 import { createChangeVerificationWorkflow } from "@relay/workflows";
 import { projectError, type HumanError } from "./errors.js";
 import {
+  classifyDeliveryLoop,
+  deliveryProofFromChangeInspect,
+  type DeliveryLoopSnapshot,
+} from "./delivery-loop.js";
+import {
   createRelayOperationPort,
   type RelayInvokeClient,
   type RelayOperationPort,
@@ -151,6 +156,7 @@ export type ProductChangeDetails = {
     readonly kind: "approve-plan" | "provide-build" | "run-pilot" | "expand" | "review" | "none";
     readonly reason: string;
   };
+  readonly delivery?: DeliveryLoopSnapshot;
   readonly planApproved: boolean;
   readonly audit: {
     readonly policy: string;
@@ -392,6 +398,30 @@ function detailsOf(value: Inspect): ProductChangeDetails {
         }
       : {}),
     ...(value.repairPacket ? { repairPacket: value.repairPacket } : {}),
+    delivery: classifyDeliveryLoop({
+      current: deliveryProofFromChangeInspect({
+        proof: value.proof,
+        publicationOutbox: value.publicationOutbox.map((record) => ({
+          receipt: record.receipt
+            ? {
+                ...(record.receipt.conclusion ? { conclusion: record.receipt.conclusion } : {}),
+                ...(record.receipt.checkRunId !== undefined
+                  ? { checkRunId: record.receipt.checkRunId }
+                  : {}),
+                ...(record.receipt.htmlUrl ? { htmlUrl: record.receipt.htmlUrl } : {}),
+              }
+            : undefined,
+        })),
+      }),
+      ...(value.history?.[0]
+        ? {
+            predecessor: deliveryProofFromChangeInspect({
+              proof: value.history[0]!,
+              publicationOutbox: [],
+            }),
+          }
+        : {}),
+    }),
     planApproved: value.proof.planApproval !== undefined,
     audit: {
       policy: `${value.proof.policy.id}@${value.proof.policy.version}`,

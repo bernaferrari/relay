@@ -135,11 +135,14 @@ describe("Batch review controls", () => {
     await act(async () => assign.click());
     await act(async () => void (await new Promise((resolve) => setTimeout(resolve, 0))));
     expect(triage).toHaveBeenCalledTimes(1);
-    expect(triage.mock.calls[0]?.[0]).toBe("batch-1");
-    expect(triage.mock.calls[0]?.[1]).toEqual({
-      caseIds: [expect.stringMatching(/ios$/u)],
-      assignee: "human:qa",
-    });
-    expect(triage.mock.calls[0]?.[1]).not.toEqual(expect.objectContaining({ assignee: "me" }));
+    expect(triage.mock.calls).toEqual([
+      [
+        "batch-1",
+        {
+          caseIds: [expect.stringMatching(/ios$/u)],
+          assignee: "human:qa",
+        },
+      ],
+    ]);
   });
 });

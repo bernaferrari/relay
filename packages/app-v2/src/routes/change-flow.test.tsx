@@ -353,6 +353,37 @@ describe("Change verification", () => {
         runId: "run-failed",
         testId: "arabic-layout",
       },
+      delivery: {
+        phase: "failed",
+        original: {
+          id: "change-proof-private-id",
+          version: 3,
+          state: "rejected",
+          repository: "acme/app",
+          baseSha: "a",
+          headSha: "b",
+          buildIds: ["build-92"],
+          testIds: ["arabic-layout"],
+          targetNames: ["Pixel 9"],
+          runIds: ["run-failed"],
+          planApproved: true,
+          firstFailure: {
+            runId: "run-failed",
+            summary: "The Arabic heading overlapped the primary action.",
+            testId: "arabic-layout",
+          },
+        },
+        failureEvidence: {
+          runId: "run-failed",
+          summary: "The Arabic heading overlapped the primary action.",
+          testId: "arabic-layout",
+          proofId: "change-proof-private-id",
+        },
+        next: {
+          action: "repair",
+          reason: "A required Test failed on the bound build. Repair, then verify a new build.",
+        },
+      },
       nextVerification: { kind: "review", reason: "Review the failed screenshot." },
     };
     const rejected: ProductChangeDetail = {
@@ -362,6 +393,9 @@ describe("Change verification", () => {
     fake.service.open = async () => rejected;
     await renderChange("/changes/change-proof-private-id", fake.service);
 
+    expect(document.body.textContent).toContain("Required Test failed");
+    expect(document.body.textContent).toContain("Failure evidence");
+    expect(document.body.textContent).toContain("build-92");
     expect(document.body.textContent).toContain("First problem");
     expect(document.body.textContent).toContain(
       "The Arabic heading overlapped the primary action.",

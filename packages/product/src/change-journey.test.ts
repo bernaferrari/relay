@@ -418,6 +418,9 @@ test("Change details project the reviewed plan, claim, failure, and audit bounda
   assert.equal(state.details?.verificationPlan[0]?.targetName, "Pixel 9");
   assert.equal(state.details?.verificationPlan[0]?.pilot, true);
   assert.equal(state.details?.firstFailure?.summary, "The Arabic heading overlapped the action.");
+  assert.equal(state.details?.delivery?.phase, "failed");
+  assert.equal(state.details?.delivery?.failureEvidence?.runId, "run-failed");
+  assert.equal(state.details?.delivery?.original.buildIds[0], "build-private-id");
   assert.equal(state.details?.execution?.attention?.kind, "human-evidence");
   assert.equal(state.status, "needs-attention");
   assert.equal(state.details?.audit.policyId, "relay.verify-change");

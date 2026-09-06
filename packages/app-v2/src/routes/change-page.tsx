@@ -210,6 +210,65 @@ export function ChangePage() {
             {details.execution ? <ExecutionProgress details={details} /> : null}
           </section>
 
+          {details.delivery ? (
+            <section
+              className="mt-5 max-w-[60ch] rounded-xl border border-border bg-card p-5"
+              aria-labelledby="delivery-loop-title"
+            >
+              <h2 id="delivery-loop-title" className="text-[15px] font-medium">
+                {details.delivery.phase === "published"
+                  ? "Merge result"
+                  : details.delivery.phase === "re-verifying"
+                    ? "Replacement verification"
+                    : details.delivery.phase === "failed"
+                      ? "Required Test failed"
+                      : details.delivery.phase === "blocked"
+                        ? "New build required"
+                        : "Verification"}
+              </h2>
+              <p className="mt-1 text-[13px] text-muted-foreground">
+                {details.delivery.next.reason}
+              </p>
+              <dl className="mt-3 grid gap-2 text-sm">
+                <div>
+                  <dt className="text-xs text-muted-foreground">Original</dt>
+                  <dd>
+                    {details.delivery.original.headSha.slice(0, 12)} ·{" "}
+                    {details.delivery.original.buildIds.join(", ") || "no build"} ·{" "}
+                    {details.delivery.original.testIds.join(", ") || "no Test"}
+                  </dd>
+                </div>
+                {details.delivery.failureEvidence ? (
+                  <div>
+                    <dt className="text-xs text-muted-foreground">Failure evidence</dt>
+                    <dd>
+                      {details.delivery.failureEvidence.summary} · Run{" "}
+                      {details.delivery.failureEvidence.runId}
+                    </dd>
+                  </div>
+                ) : null}
+                {details.delivery.replacementEvidence ? (
+                  <div>
+                    <dt className="text-xs text-muted-foreground">Replacement evidence</dt>
+                    <dd>
+                      {details.delivery.replacementEvidence.headSha.slice(0, 12)} · Runs{" "}
+                      {details.delivery.replacementEvidence.runIds.join(", ") || "none yet"}
+                    </dd>
+                  </div>
+                ) : null}
+                {details.delivery.merge ? (
+                  <div>
+                    <dt className="text-xs text-muted-foreground">Published merge</dt>
+                    <dd>
+                      {details.delivery.merge.conclusion}
+                      {details.delivery.merge.htmlUrl ? ` · ${details.delivery.merge.htmlUrl}` : ""}
+                    </dd>
+                  </div>
+                ) : null}
+              </dl>
+            </section>
+          ) : null}
+
           {details.firstFailure ? (
             <section
               className="relay-change-first-failure mt-5 max-w-[60ch]"

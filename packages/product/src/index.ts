@@ -6,6 +6,7 @@ export * from "./recording-journey.js";
 export * from "./run-journey.js";
 export * from "./test-identity.js";
 export * from "./change-journey.js";
+export * from "./delivery-loop.js";
 export * from "./catalog.js";
 export * from "./run-across.js";
 export * from "./map-exploration.js";

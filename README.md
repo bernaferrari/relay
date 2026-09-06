@@ -169,8 +169,16 @@ help such as `pnpm relay test --help` for advanced operations. JSON results are 
 waits and diagnostics are written to stderr. The
 [MCP adapter](./packages/mcp/README.md) exposes the same outcome workflows to agents by default.
 
-An external MCP host can use the published host-neutral package without a Relay checkout or global
-install:
+An external MCP host can use the host-neutral `@relay/mcp` package without a Relay checkout.
+The `npx` command applies after that package is published; until then, pack and install the
+local artifact from this checkout (see [packages/mcp/README.md](./packages/mcp/README.md)):
+
+```bash
+npm pack --silent ./packages/mcp
+npm install --global ./relay-mcp-0.1.0.tgz
+```
+
+After publication, a clean host can launch the same executable with:
 
 ```json
 {
