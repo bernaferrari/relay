@@ -9,7 +9,8 @@ export type CombineOperationId =
   | "job.combine.campaign.repeat.active"
   | "job.combine.campaign.repeat.clusters"
   | "job.combine.campaign.resume"
-  | "job.combine.campaign.cancel";
+  | "job.combine.campaign.cancel"
+  | "job.combine.campaign.triage";
 
 const { command, query } = createOperationBuilders<Pick<RelayOperationMap, CombineOperationId>>();
 
@@ -63,6 +64,13 @@ export const combineOperationDefinitions = [
     "Cancel a Combine campaign",
     "POST",
     "/jobs/combine/:batchId/cancel",
+    { category: "execution", idempotency: "inherent" },
+  ),
+  command(
+    "job.combine.campaign.triage",
+    "Assign or mark Combine campaign cases",
+    "POST",
+    "/jobs/combine/:batchId/triage",
     { category: "execution", idempotency: "inherent" },
   ),
 ] as const;

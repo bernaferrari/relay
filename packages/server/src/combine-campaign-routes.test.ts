@@ -263,3 +263,125 @@ test("Repeat failure clusters expose immutable member evidence and deterministic
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("campaign triage assigns ownership and review status without changing execution status", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-combine-triage-server-"));
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = root;
+  const server = await startServer({ host: "127.0.0.1", port: 0 });
+  try {
+    await persistRun(failedRun("run-en-triage", "Content assertion: expected title"));
+    await persistRun(failedRun("run-pt-triage", "Content assertion: expected title"));
+    await createCombineCampaign({
+      schemaVersion: 1,
+      id: "campaign-triage",
+      projectId: "android",
+      ownerId: "human:test",
+      appMapId: "settings",
+      combineId: "locales",
+      sourceRevision: 1,
+      latestRevision: 1,
+      status: "completed-with-problems",
+      createdAt: 1,
+      updatedAt: 1,
+      cases: [
+        {
+          index: 0,
+          cellId: "cell-en",
+          testId: "settings",
+          world: "English",
+          values: { language: "en" },
+          targetProfileId: "android-1",
+          childIntentDigest: "a",
+          outerIntentDigest: "b",
+          wrapperGraphDigest: "c",
+          staticInputDigest: "d",
+          phase: "coverage",
+          status: "failed",
+          jobId: "run-en-triage",
+          runId: "run-en-triage",
+        },
+        {
+          index: 1,
+          cellId: "cell-pt",
+          testId: "settings",
+          world: "Português",
+          values: { language: "pt-BR" },
+          targetProfileId: "android-1",
+          childIntentDigest: "a",
+          outerIntentDigest: "b",
+          wrapperGraphDigest: "c",
+          staticInputDigest: "d",
+          phase: "coverage",
+          status: "failed",
+          jobId: "run-pt-triage",
+          runId: "run-pt-triage",
+        },
+      ],
+      lineage: [{ kind: "created", at: 1, appMapRevision: 1, actorId: "human:test" }],
+      execution: { selectedCellIds: ["cell-en", "cell-pt"], seed: 1 },
+    });
+    const client = new RelayClient({
+      url: `http://127.0.0.1:${server.port}`,
+      auth: { type: "none" },
+      organizationId: "acme",
+      projectId: "android",
+      actorId: "human:test",
+      actorKind: "human",
+    });
+
+    const triaged = await client.invoke("job.combine.campaign.triage", {
+      batchId: "campaign-triage",
+      caseIds: ["cell-en"],
+      triageStatus: "investigating",
+      assignee: "human:qa",
+    });
+    const campaign = triaged.campaign as CombineCampaign;
+    assert.equal(campaign.cases[0]?.status, "failed");
+    assert.equal(campaign.cases[0]?.triageStatus, "investigating");
+    assert.equal(campaign.cases[0]?.assignee, "human:qa");
+    assert.equal(campaign.cases[1]?.assignee, undefined);
+    assert.equal(campaign.cases[1]?.triageStatus, undefined);
+    assert.equal(campaign.lineage.at(-1)?.kind, "triaged");
+
+    const reread = await client.invoke("job.combine.campaign.get", {
+      batchId: "campaign-triage",
+    });
+    assert.equal((reread.campaign as CombineCampaign).cases[0]?.assignee, "human:qa");
+    assert.equal((reread.campaign as CombineCampaign).cases[0]?.status, "failed");
+
+    const cleared = await client.invoke("job.combine.campaign.triage", {
+      batchId: "campaign-triage",
+      caseIds: ["cell-en"],
+      assignee: " ",
+    });
+    assert.equal((cleared.campaign as CombineCampaign).cases[0]?.assignee, undefined);
+    assert.equal((cleared.campaign as CombineCampaign).cases[0]?.triageStatus, "investigating");
+
+    await assert.rejects(
+      client.invoke("job.combine.campaign.triage", {
+        batchId: "campaign-triage",
+        caseIds: ["missing-case"],
+        triageStatus: "resolved",
+      }),
+      (error: unknown) =>
+        error instanceof ApiError &&
+        error.status === 404 &&
+        (error.body as { code?: unknown }).code === "COMBINE_TRIAGE_UNKNOWN_CASE",
+    );
+    await assert.rejects(
+      client.invoke("job.combine.campaign.triage", {
+        batchId: "campaign-triage",
+        caseIds: ["cell-en"],
+        triageStatus: "needs-human" as never,
+      }),
+      (error: unknown) =>
+        error instanceof Error && /unreviewed.*investigating.*wont-fix/u.test(error.message),
+    );
+  } finally {
+    await server.close();
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});

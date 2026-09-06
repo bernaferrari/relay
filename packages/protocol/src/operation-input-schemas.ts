@@ -707,6 +707,17 @@ export const operationInputSchemas = {
       workflowMutation: repeatWorkflowMutationSchema.optional(),
     })
     .strict(),
+  "job.combine.campaign.triage": z
+    .object({
+      batchId: identifier("Combine campaign identifier"),
+      caseIds: z.array(identifier("Campaign case identifier")).min(1).max(1_000),
+      triageStatus: z.enum(["unreviewed", "investigating", "resolved", "wont-fix"]).optional(),
+      assignee: z.string().max(256).optional(),
+    })
+    .strict()
+    .refine((input) => input.triageStatus !== undefined || input.assignee !== undefined, {
+      message: "triage requires triageStatus or assignee",
+    }),
   "job.retry": z.object({ jobId: identifier("Job identifier") }).strict(),
   "job.cancel": z.object({ jobId: identifier("Job identifier") }).strict(),
   "job.pause": z.object({ jobId: identifier("Job identifier") }).strict(),

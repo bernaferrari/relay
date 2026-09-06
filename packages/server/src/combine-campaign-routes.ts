@@ -26,8 +26,11 @@ import {
   releaseDeviceLease,
   summarizeJob,
   updateCombineCampaign,
+  updateCombineCampaignTriage,
+  CombineCampaignTriageError,
 } from "@relay/core";
 import {
+  COMBINE_TRIAGE_STATUSES,
   executionTargetRefKey,
   repeatFailureKindSchema,
   type AppMapCombineCellTargetBinding,
@@ -660,6 +663,50 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
         },
       }));
       json(response, 200, { campaign: await projectCombineCampaign(updated) });
+      return true;
+    });
+  }
+
+  const triageMatch = matchPath(pathname, "/jobs/combine/:batchId/triage");
+  if (method === "POST" && triageMatch) {
+    const campaignId = triageMatch.batchId!;
+    const body = (await parseJsonBody(request)) as {
+      caseIds?: unknown;
+      triageStatus?: unknown;
+      assignee?: unknown;
+    };
+    return campaignDecisionLocks.run(`${scope.projectId}:${campaignId}`, async () => {
+      const existing = await readCombineCampaign(scope.projectId, campaignId);
+      if (!existing || (!scope.localTrusted && existing.ownerId !== scope.subject)) {
+        throw new HttpError(404, "Combine campaign not found");
+      }
+      const caseIds = Array.isArray(body.caseIds)
+        ? body.caseIds.filter((id): id is string => typeof id === "string")
+        : [];
+      const triageStatus = COMBINE_TRIAGE_STATUSES.find((status) => status === body.triageStatus);
+      if (typeof body.triageStatus === "string" && triageStatus === undefined) {
+        throw new HttpError(400, "triageStatus is unsupported", {
+          code: "COMBINE_TRIAGE_INVALID_STATUS",
+        });
+      }
+      try {
+        const updated = await updateCombineCampaignTriage(scope.projectId, campaignId, {
+          caseIds,
+          ...(triageStatus ? { triageStatus } : {}),
+          ...(typeof body.assignee === "string" ? { assignee: body.assignee } : {}),
+          actorId: currentOperationContext()!.actorId,
+        });
+        json(response, 200, { campaign: await projectCombineCampaign(updated) });
+      } catch (error) {
+        if (error instanceof CombineCampaignTriageError) {
+          throw new HttpError(
+            error.code === "COMBINE_TRIAGE_UNKNOWN_CASE" ? 404 : 400,
+            error.message,
+            { code: error.code },
+          );
+        }
+        throw error;
+      }
       return true;
     });
   }

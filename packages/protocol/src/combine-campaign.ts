@@ -42,6 +42,15 @@ export type LocalCampaignAdmissionPreflightResponse = {
   targetPreflights: LocalCampaignCapacityTargetCriticalPathPreflight[];
 };
 
+export const COMBINE_TRIAGE_STATUSES = [
+  "unreviewed",
+  "investigating",
+  "resolved",
+  "wont-fix",
+] as const;
+
+export type CombineTriageStatus = (typeof COMBINE_TRIAGE_STATUSES)[number];
+
 export type CombineCampaignCaseStatus =
   | "pending"
   | "queued"
@@ -89,6 +98,10 @@ export type CombineCampaignCase = {
    * re-executes this exact frozen case tuple. */
   priorRunIds?: string[];
   error?: string;
+  /** Review ownership. Independent of execution status. */
+  assignee?: string;
+  /** Review state. Independent of execution status. */
+  triageStatus?: CombineTriageStatus;
 };
 
 /** Immutable workflow identity retained beside durable scheduling state. It
@@ -144,7 +157,7 @@ export type CombineCampaign = {
   updatedAt: number;
   cases: CombineCampaignCase[];
   lineage: Array<{
-    kind: "created" | "resumed" | "cancelled";
+    kind: "created" | "resumed" | "cancelled" | "triaged";
     at: number;
     appMapRevision: number;
     actorId?: string;

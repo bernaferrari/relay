@@ -1,7 +1,10 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { ProductBatchCase } from "@relay/product/run-across";
 import {
   batchRerunRequest,
+  batchTriageCaption,
+  batchTriageKeyboardCommand,
   buildBatchMatrix,
   selectedClusterCaseIds,
   shouldShowBatchMatrix,
@@ -94,6 +97,59 @@ describe("Batch triage presentation", () => {
         new Set(["cluster-1"]),
       ),
     ).toEqual(["checkout-ios", "login-ios"]);
+  });
+
+  it("maps keyboard triage ownership onto selected cases", () => {
+    expect(
+      batchTriageKeyboardCommand({
+        key: "i",
+        selectedCaseIds: ["login-ios", " checkout-ios "],
+        actorId: "human:qa",
+      }),
+    ).toEqual({ caseIds: ["login-ios", "checkout-ios"], triageStatus: "investigating" });
+    expect(
+      batchTriageKeyboardCommand({
+        key: "A",
+        selectedCaseIds: ["login-ios"],
+        actorId: "human:qa",
+      }),
+    ).toEqual({ caseIds: ["login-ios"], assignee: "human:qa" });
+    expect(
+      batchTriageKeyboardCommand({
+        key: "r",
+        selectedCaseIds: ["login-ios"],
+        actorId: "human:qa",
+        target: { tagName: "INPUT" },
+      }),
+    ).toBeNull();
+    expect(
+      batchTriageKeyboardCommand({
+        key: "r",
+        ctrlKey: true,
+        selectedCaseIds: ["login-ios"],
+        actorId: "human:qa",
+      }),
+    ).toBeNull();
+    expect(
+      batchTriageKeyboardCommand({
+        key: "r",
+        selectedCaseIds: [],
+        actorId: "human:qa",
+      }),
+    ).toBeNull();
+  });
+
+  it("describes review ownership without changing execution copy", () => {
+    expect(
+      batchTriageCaption({ ...cases[1]!, triageStatus: "investigating", assignee: "human:qa" }),
+    ).toBe("Investigating · Human qa");
+    expect(batchTriageCaption({ ...cases[0]!, triageStatus: "unreviewed" })).toBeUndefined();
+  });
+
+  it("Batch page wires keyboard triage through the shipped command and server operation", () => {
+    const source = readFileSync("src/routes/batch-page.tsx", "utf8");
+    expect(source).toContain("batchTriageKeyboardCommand");
+    expect(source).toContain("runAcrossService.triage");
   });
 
   it("keeps an explicit row rerun free of selected cluster ids", () => {

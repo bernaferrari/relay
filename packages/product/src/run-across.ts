@@ -2,6 +2,7 @@ import type {
   AppMap,
   AppMapVariable,
   AuthoringTarget,
+  CombineTriageStatus,
   FailureCategory,
   RepeatFailureKind,
   RepeatFailureClusterReport,
@@ -75,6 +76,10 @@ export type ProductBatchCase = {
   readonly identity?: ProductBatchResultIdentity;
   readonly priorRunIds?: readonly string[];
   readonly error?: string;
+  /** Review ownership. Independent of execution status. */
+  readonly assignee?: string;
+  /** Review state. Independent of execution status. */
+  readonly triageStatus?: CombineTriageStatus;
 };
 
 /** Stable product identity for one Test × environment result. The environment
@@ -118,6 +123,12 @@ export type ProductBatchSelectionInput = {
   readonly caseIds?: readonly string[];
   readonly executionCaseIds?: readonly string[];
   readonly clusterIds?: readonly string[];
+};
+
+export type ProductBatchTriageInput = {
+  readonly caseIds: readonly string[];
+  readonly triageStatus?: CombineTriageStatus;
+  readonly assignee?: string;
 };
 
 export type ProductBatchSelection = {
@@ -176,6 +187,7 @@ export type ProductRunAcrossService = {
   ): Promise<ProductBatchFailureClusterReport>;
   select(batchId: string, input: ProductBatchSelectionInput): Promise<ProductBatchSelection>;
   rerun(batchId: string, input: ProductBatchSelectionInput): Promise<ProductRunAcrossBatch>;
+  triage(batchId: string, input: ProductBatchTriageInput): Promise<ProductRunAcrossBatch>;
   cancel(batchId: string): Promise<ProductRunAcrossBatch>;
   getReport(batchId: string): Promise<ProductBatchReport>;
   exportReport(batchId: string): Promise<ProductBatchReport>;
@@ -197,6 +209,8 @@ type CampaignCase = {
   testId?: string;
   targetProfileId?: string;
   target?: { targetId?: string; platform?: string };
+  assignee?: string;
+  triageStatus?: CombineTriageStatus;
 };
 
 type Campaign = {
@@ -382,6 +396,8 @@ function batchFromCampaign(
             }
           : {}),
         ...(item.error ? { error: item.error } : {}),
+        ...(item.assignee ? { assignee: item.assignee } : {}),
+        ...(item.triageStatus ? { triageStatus: item.triageStatus } : {}),
       };
     }),
     ...(setup ? { setup } : {}),
@@ -636,6 +652,20 @@ export function createProductRunAcrossService(
           : { cellIds: [...selection.caseIds] }),
       });
       return campaign(batchId);
+    },
+    async triage(batchId, input) {
+      const caseIds = uniqueIds(input.caseIds, "caseIds");
+      if (!caseIds.length) throw new TypeError("Choose at least one Batch case to triage.");
+      if (input.triageStatus === undefined && input.assignee === undefined) {
+        throw new TypeError("Triage requires a review status or an assignee.");
+      }
+      const response = (await operations.invoke("job.combine.campaign.triage", {
+        batchId,
+        caseIds,
+        ...(input.triageStatus ? { triageStatus: input.triageStatus } : {}),
+        ...(input.assignee !== undefined ? { assignee: input.assignee } : {}),
+      })) as CampaignResponse;
+      return batchFromCampaign(response.campaign);
     },
     async cancel(batchId) {
       await operations.invoke("job.combine.campaign.cancel", { batchId });

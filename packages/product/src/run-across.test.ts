@@ -438,6 +438,77 @@ test("failure clusters and selective rerun stay bounded and evidence-gated", asy
   );
 });
 
+test("triage assigns review ownership without changing execution status", async () => {
+  const campaign = {
+    id: "batch-triage-ownership",
+    title: "Language settings",
+    status: "completed-with-problems",
+    createdAt: 1,
+    updatedAt: 2,
+    appMapId: "app-1",
+    cases: [
+      {
+        index: 0,
+        cellId: "cell-en",
+        testId: "test-1",
+        targetProfileId: "pixel-profile",
+        target: { targetId: "pixel-9", platform: "android" },
+        phase: "coverage" as const,
+        status: "failed",
+        values: { language: "en" },
+        runId: "run-en",
+        triageStatus: "investigating",
+        assignee: "human:qa",
+      },
+      {
+        index: 1,
+        cellId: "cell-pt",
+        testId: "test-1",
+        targetProfileId: "pixel-profile",
+        target: { targetId: "pixel-9", platform: "android" },
+        phase: "coverage" as const,
+        status: "failed",
+        values: { language: "pt" },
+        runId: "run-pt",
+      },
+    ],
+  };
+  const calls: Array<[string, Record<string, unknown>]> = [];
+  const invoke = async (id: string, input: Record<string, unknown>) => {
+    calls.push([id, input]);
+    assert.equal(id, "job.combine.campaign.triage");
+    return { campaign };
+  };
+  const service = createProductRunAcrossService({ invoke } as never, { invoke } as never);
+  const updated = await service.triage("batch-triage-ownership", {
+    caseIds: ["cell-en"],
+    triageStatus: "investigating",
+    assignee: "human:qa",
+  });
+  assert.deepEqual(calls, [
+    [
+      "job.combine.campaign.triage",
+      {
+        batchId: "batch-triage-ownership",
+        caseIds: ["cell-en"],
+        triageStatus: "investigating",
+        assignee: "human:qa",
+      },
+    ],
+  ]);
+  assert.equal(updated.cases[0]?.status, "failed");
+  assert.equal(updated.cases[0]?.triageStatus, "investigating");
+  assert.equal(updated.cases[0]?.assignee, "human:qa");
+  assert.equal(updated.cases[1]?.assignee, undefined);
+  await assert.rejects(
+    service.triage("batch-triage-ownership", {
+      caseIds: [],
+      triageStatus: "resolved",
+    }),
+    /at least one Batch case/u,
+  );
+});
+
 test("expanded Batch identities rerun only the selected profile case", () => {
   const batch = {
     id: "batch-expanded",

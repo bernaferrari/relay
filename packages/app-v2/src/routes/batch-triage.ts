@@ -1,8 +1,10 @@
 import type {
   ProductBatchCase,
   ProductBatchFailureCluster,
+  ProductBatchTriageInput,
   ProductRunAcrossSetup,
 } from "@relay/product/run-across";
+import type { CombineTriageStatus } from "@relay/protocol";
 
 export type BatchMatrixColumn = {
   id: string;
@@ -145,6 +147,60 @@ export function selectedClusterCaseIds(
         .flatMap((cluster) => cluster.caseIds),
     ),
   ].sort();
+}
+
+const TRIAGE_STATUS_KEYS: Record<string, CombineTriageStatus> = {
+  i: "investigating",
+  r: "resolved",
+  w: "wont-fix",
+  u: "unreviewed",
+};
+
+function isTypingTarget(target: unknown): boolean {
+  if (!target || typeof target !== "object") return false;
+  const element = target as { tagName?: string; isContentEditable?: boolean };
+  const tag = element.tagName?.toLowerCase();
+  return (
+    tag === "input" || tag === "textarea" || tag === "select" || element.isContentEditable === true
+  );
+}
+
+/** Map a Batch keyboard event to a review mutation. Execution status is unchanged. */
+export function batchTriageKeyboardCommand(input: {
+  key: string;
+  metaKey?: boolean;
+  ctrlKey?: boolean;
+  altKey?: boolean;
+  target?: unknown;
+  selectedCaseIds: readonly string[];
+  actorId: string;
+}): ProductBatchTriageInput | null {
+  if (input.metaKey || input.ctrlKey || input.altKey) return null;
+  if (isTypingTarget(input.target)) return null;
+  const caseIds = [...new Set(input.selectedCaseIds.map((id) => id.trim()).filter(Boolean))];
+  if (!caseIds.length) return null;
+  const key = input.key.length === 1 ? input.key.toLowerCase() : input.key;
+  if (key === "a") return { caseIds, assignee: input.actorId.trim() || "me" };
+  const triageStatus = TRIAGE_STATUS_KEYS[key];
+  if (!triageStatus) return null;
+  return { caseIds, triageStatus };
+}
+
+export function batchTriageCaption(item: ProductBatchCase): string | undefined {
+  const status =
+    item.triageStatus && item.triageStatus !== "unreviewed"
+      ? batchTriageStatusLabel(item.triageStatus)
+      : undefined;
+  const owner = item.assignee?.trim() ? humanizeBatchIdentity(item.assignee) : undefined;
+  const parts = [status, owner].filter(Boolean);
+  return parts.length ? parts.join(" · ") : undefined;
+}
+
+export function batchTriageStatusLabel(status: CombineTriageStatus): string {
+  if (status === "investigating") return "Investigating";
+  if (status === "resolved") return "Resolved";
+  if (status === "wont-fix") return "Won't fix";
+  return "Unreviewed";
 }
 
 export function batchRerunRequest(input: {

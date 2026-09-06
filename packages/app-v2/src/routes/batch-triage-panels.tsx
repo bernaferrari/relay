@@ -9,6 +9,7 @@ import { Link } from "@tanstack/react-router";
 import { ChevronDown, ChevronRight, ExternalLink } from "lucide-react";
 import { useState } from "react";
 import {
+  batchTriageCaption,
   buildBatchMatrix,
   humanizeBatchIdentity,
   isBatchCaseProblem,
@@ -273,6 +274,7 @@ function BatchCaseResult({
   const rerunnable = isBatchCaseRerunnable(item);
   const label = caseValues(item);
   const problem = isBatchCaseProblem(item);
+  const review = batchTriageCaption(item);
   return (
     <div
       className={`relay-batch-result grid items-center gap-3 ${
@@ -305,10 +307,16 @@ function BatchCaseResult({
           {item.error && problem ? (
             <small className="text-[13px] leading-5 text-muted-foreground">{item.error}</small>
           ) : null}
+          {review ? (
+            <small className="text-[12px] leading-5 text-muted-foreground">{review}</small>
+          ) : null}
         </Link>
       ) : (
         <span className="grid min-w-0 gap-1">
           <strong className="truncate text-[15px] font-medium text-foreground">{label}</strong>
+          {review ? (
+            <small className="text-[12px] leading-5 text-muted-foreground">{review}</small>
+          ) : null}
         </span>
       )}
       <span className="flex shrink-0 items-center gap-1">

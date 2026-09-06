@@ -1079,6 +1079,32 @@ test("graph Test runs accept optional Combine worlds and a capture lens", () => 
   );
 });
 
+test("Combine triage requires a case and a review mutation", () => {
+  const input = {
+    batchId: "campaign-1",
+    caseIds: ["cell-en"],
+    triageStatus: "investigating" as const,
+    assignee: "human:qa",
+  };
+  assert.deepEqual(operationDefinition("job.combine.campaign.triage").input.parse(input), input);
+  assert.throws(
+    () =>
+      operationDefinition("job.combine.campaign.triage").input.parse({
+        batchId: "campaign-1",
+        caseIds: ["cell-en"],
+      }),
+    /triage requires triageStatus or assignee/u,
+  );
+  assert.throws(
+    () =>
+      operationDefinition("job.combine.campaign.triage").input.parse({
+        ...input,
+        triageStatus: "needs-human",
+      }),
+    /triageStatus/u,
+  );
+});
+
 test("Repeat continuation accepts an exact App Map revision fence", () => {
   const input = {
     batchId: "repeat-1",

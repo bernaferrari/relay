@@ -1,6 +1,11 @@
 import { mkdir, readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
-import type { CombineCampaign, CombineCampaignCaseStatus } from "@relay/protocol";
+import {
+  COMBINE_TRIAGE_STATUSES,
+  type CombineCampaign,
+  type CombineCampaignCaseStatus,
+  type CombineTriageStatus,
+} from "@relay/protocol";
 import { atomicWriteFile, KeyedSerialQueue } from "./coordination-store.js";
 import { findWorkspaceRoot } from "./workspace-root.js";
 import { getJob } from "./session.js";
@@ -300,6 +305,113 @@ export async function findRepeatCampaignsByWorkflow(
     }
   }
   return matches;
+}
+
+export class CombineCampaignTriageError extends Error {
+  constructor(
+    message: string,
+    readonly code:
+      | "COMBINE_TRIAGE_EMPTY"
+      | "COMBINE_TRIAGE_UNKNOWN_CASE"
+      | "COMBINE_TRIAGE_INVALID_STATUS" = "COMBINE_TRIAGE_EMPTY",
+  ) {
+    super(message);
+    this.name = "CombineCampaignTriageError";
+  }
+}
+
+export function campaignCaseMatchesId(
+  item: StoredCombineCampaign["cases"][number],
+  id: string,
+): boolean {
+  return item.executionCaseId === id || item.cellId === id || `case-${item.index + 1}` === id;
+}
+
+export function applyCombineCampaignTriage(
+  campaign: StoredCombineCampaign,
+  input: {
+    caseIds: readonly string[];
+    triageStatus?: CombineTriageStatus;
+    assignee?: string;
+    actorId: string;
+    now: number;
+  },
+): StoredCombineCampaign {
+  const caseIds = [...new Set(input.caseIds.map((id) => id.trim()).filter(Boolean))];
+  if (!caseIds.length) {
+    throw new CombineCampaignTriageError(
+      "triage requires at least one case id",
+      "COMBINE_TRIAGE_EMPTY",
+    );
+  }
+  if (input.triageStatus === undefined && input.assignee === undefined) {
+    throw new CombineCampaignTriageError(
+      "triage requires triageStatus or assignee",
+      "COMBINE_TRIAGE_EMPTY",
+    );
+  }
+  if (input.triageStatus !== undefined && !COMBINE_TRIAGE_STATUSES.includes(input.triageStatus)) {
+    throw new CombineCampaignTriageError(
+      "triageStatus is unsupported",
+      "COMBINE_TRIAGE_INVALID_STATUS",
+    );
+  }
+  const assignee =
+    input.assignee === undefined ? undefined : input.assignee.trim() ? input.assignee.trim() : "";
+  const matched = new Set<string>();
+  const cases = campaign.cases.map((item) => {
+    const hit = caseIds.find((id) => campaignCaseMatchesId(item, id));
+    if (!hit) return item;
+    matched.add(hit);
+    const next = {
+      ...item,
+      ...(input.triageStatus !== undefined ? { triageStatus: input.triageStatus } : {}),
+    };
+    if (assignee === undefined) return next;
+    if (assignee) return { ...next, assignee };
+    const { assignee: _cleared, ...rest } = next;
+    void _cleared;
+    return rest;
+  });
+  if (matched.size !== caseIds.length) {
+    throw new CombineCampaignTriageError(
+      "One or more triage case ids are not in this campaign",
+      "COMBINE_TRIAGE_UNKNOWN_CASE",
+    );
+  }
+  return {
+    ...campaign,
+    updatedAt: input.now,
+    cases,
+    lineage: [
+      ...campaign.lineage,
+      {
+        kind: "triaged",
+        at: input.now,
+        appMapRevision: campaign.latestRevision,
+        actorId: input.actorId,
+        affectedCellIds: campaign.cases
+          .filter((item) => caseIds.some((id) => campaignCaseMatchesId(item, id)))
+          .map((item) => item.executionCaseId ?? item.cellId),
+      },
+    ],
+  };
+}
+
+export async function updateCombineCampaignTriage(
+  projectId: string,
+  campaignId: string,
+  input: {
+    caseIds: readonly string[];
+    triageStatus?: CombineTriageStatus;
+    assignee?: string;
+    actorId: string;
+    now?: number;
+  },
+): Promise<StoredCombineCampaign> {
+  return updateCombineCampaign(projectId, campaignId, (current) =>
+    applyCombineCampaignTriage(current, { ...input, now: input.now ?? Date.now() }),
+  );
 }
 
 export async function updateCombineCampaign(

@@ -490,13 +490,15 @@ export const combineCampaignSchema = z
           runId: z.string().optional(),
           priorRunIds: z.array(z.string()).optional(),
           error: z.string().optional(),
+          assignee: z.string().optional(),
+          triageStatus: z.enum(["unreviewed", "investigating", "resolved", "wont-fix"]).optional(),
         })
         .strict(),
     ),
     lineage: z.array(
       z
         .object({
-          kind: z.enum(["created", "resumed", "cancelled"]),
+          kind: z.enum(["created", "resumed", "cancelled", "triaged"]),
           at: z.number(),
           appMapRevision: z.number(),
           actorId: z.string().optional(),
@@ -726,6 +728,7 @@ export const executionOperationOutputSchemas = {
     })
     .strict(),
   "job.combine.campaign.cancel": z.object({ campaign: combineCampaignSchema }).strict(),
+  "job.combine.campaign.triage": z.object({ campaign: combineCampaignSchema }).strict(),
   "job.retry": z.object({ job: executionJobSchema }).strict(),
   "run.replay": z.object({ job: executionJobSchema }).strict(),
   "job.active.cancel": z.object({ job: executionJobSchema }).strict(),

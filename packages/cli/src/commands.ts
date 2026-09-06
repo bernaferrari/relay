@@ -534,6 +534,30 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     }),
   ),
   mapped(
+    "job.combine.campaign.triage",
+    path("combine campaign triage", ["batchId"], undefined, {
+      summary: "Assign or mark Combine campaign cases without changing execution status",
+      argumentHelp: [{ name: "batchId", type: "string", description: "Combine campaign ID" }],
+      inputHelp: [
+        {
+          name: "caseIds",
+          type: "array",
+          description: "Campaign case or cell identifiers to update",
+        },
+        {
+          name: "triageStatus",
+          type: "unreviewed | investigating | resolved | wont-fix",
+          description: "Review status. Independent of execution status.",
+        },
+        {
+          name: "assignee",
+          type: "string",
+          description: "Review owner. Empty string clears ownership.",
+        },
+      ],
+    }),
+  ),
+  mapped(
     "job.combine.export",
     path("combine export", ["batchId"], undefined, {
       summary: "Export a Combine screenshot pack",

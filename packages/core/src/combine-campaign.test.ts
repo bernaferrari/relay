@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
+  applyCombineCampaignTriage,
+  CombineCampaignTriageError,
   createCombineCampaign,
   findActiveCombineCampaignForCombine,
   findActiveRepeatCampaigns,
@@ -12,6 +14,7 @@ import {
   projectCombineCampaign,
   readCombineCampaign,
   updateCombineCampaign,
+  updateCombineCampaignTriage,
   type StoredCombineCampaign,
 } from "./combine-campaign.js";
 import {
@@ -132,6 +135,51 @@ test("Combine campaigns persist pilot state and derive a truthful resume boundar
     assert.deepEqual(
       resumed.lineage.map((item) => item.appMapRevision),
       [7, 9],
+    );
+  } finally {
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("triage assigns ownership and review status without changing execution status", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "relay-combine-triage-"));
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = directory;
+  try {
+    const seeded = fixture("failed");
+    await createCombineCampaign(seeded);
+    const updated = await updateCombineCampaignTriage("project-1", "campaign-1", {
+      caseIds: [seeded.cases[0]!.cellId],
+      triageStatus: "investigating",
+      assignee: "human:qa",
+      actorId: "human:qa",
+      now: 50,
+    });
+    assert.equal(updated.cases[0]?.status, "failed");
+    assert.equal(updated.cases[0]?.triageStatus, "investigating");
+    assert.equal(updated.cases[0]?.assignee, "human:qa");
+    assert.equal(updated.cases[1]?.assignee, undefined);
+    assert.equal(updated.lineage.at(-1)?.kind, "triaged");
+    const cleared = applyCombineCampaignTriage(updated, {
+      caseIds: [seeded.cases[0]!.cellId],
+      assignee: "  ",
+      actorId: "human:qa",
+      now: 51,
+    });
+    assert.equal(cleared.cases[0]?.assignee, undefined);
+    assert.equal(cleared.cases[0]?.triageStatus, "investigating");
+    assert.throws(
+      () =>
+        applyCombineCampaignTriage(updated, {
+          caseIds: ["missing-case"],
+          triageStatus: "resolved",
+          actorId: "human:qa",
+          now: 52,
+        }),
+      (error: unknown) =>
+        error instanceof CombineCampaignTriageError && error.code === "COMBINE_TRIAGE_UNKNOWN_CASE",
     );
   } finally {
     if (previous === undefined) delete process.env.RELAY_STATE_DIR;

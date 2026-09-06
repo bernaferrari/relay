@@ -7,18 +7,24 @@ import { useEffect, useMemo, useState } from "react";
 import { LibraryPage, PageHeader } from "../components/page-layout";
 import { EmptyState } from "../components/product-patterns";
 import { IssueDraftButton } from "../components/issue-draft-button";
-import { batchRerunRequest, isBatchCaseRerunnable, selectedClusterCaseIds } from "./batch-triage";
+import {
+  batchRerunRequest,
+  batchTriageKeyboardCommand,
+  isBatchCaseRerunnable,
+  selectedClusterCaseIds,
+} from "./batch-triage";
 import { BatchFailureClusters, BatchResultMatrix } from "./batch-triage-panels";
 import { PageLoading, RecordingProblem } from "./recording-shared";
 
 const routeApi = getRouteApi("/batches/$batchId");
 
 export function BatchPage() {
-  const { runAcrossService, queryClient } = useRouteContext({ from: "__root__" });
+  const { runAcrossService, queryClient, platform } = useRouteContext({ from: "__root__" });
   const { batchId } = routeApi.useParams();
   const [selectedCases, setSelectedCases] = useState<Set<string>>(() => new Set());
   const [selectedClusters, setSelectedClusters] = useState<Set<string>>(() => new Set());
   const [downloadUrl, setDownloadUrl] = useState<string>();
+  const [actorId, setActorId] = useState("me");
   const batch = useQuery({
     queryKey: ["run-across", "batch", batchId],
     queryFn: () => runAcrossService.getReport(batchId),
@@ -80,6 +86,11 @@ export function BatchPage() {
       await refreshBatch();
     },
   });
+  const triage = useMutation({
+    mutationFn: (input: Parameters<typeof runAcrossService.triage>[1]) =>
+      runAcrossService.triage(batchId, input),
+    onSuccess: () => refreshBatch(),
+  });
   const active = report?.status === "pilot-running" || report?.status === "running";
   const canContinue = report?.status === "ready-to-continue" || report?.status === "needs-review";
   const clusterValues = clusters.data?.clusters ?? [];
@@ -94,6 +105,31 @@ export function BatchPage() {
     const eligible = new Set(report.cases.filter(isBatchCaseRerunnable).map((item) => item.id));
     setSelectedCases((current) => new Set([...current].filter((id) => eligible.has(id))));
   }, [batchId, report]);
+
+  useEffect(() => {
+    void Promise.resolve(platform.getServerConnection?.()).then((connection) => {
+      if (connection?.actorId) setActorId(connection.actorId);
+    });
+  }, [platform]);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      const command = batchTriageKeyboardCommand({
+        key: event.key,
+        metaKey: event.metaKey,
+        ctrlKey: event.ctrlKey,
+        altKey: event.altKey,
+        target: event.target,
+        selectedCaseIds: [...selectedCases, ...selectedClusterCases],
+        actorId,
+      });
+      if (!command) return;
+      event.preventDefault();
+      triage.mutate(command);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [actorId, selectedCases, selectedClusterCases, triage]);
 
   useEffect(
     () => () => {
@@ -160,7 +196,8 @@ export function BatchPage() {
           cancel.error ??
           exportReport.error ??
           downloadExport.error ??
-          rerun.error
+          rerun.error ??
+          triage.error
         }
         onRetry={() => void batch.refetch()}
         retrying={batch.isFetching}
@@ -242,7 +279,12 @@ export function BatchPage() {
               role="region"
               aria-label="Selected Batch cases"
             >
-              <strong className="text-sm">{totalSelected} selected</strong>
+              <div className="grid gap-1">
+                <strong className="text-sm">{totalSelected} selected</strong>
+                <p className="text-xs text-muted-foreground">
+                  I investigate · R resolve · W won&apos;t fix · U unreviewed · A assign to me
+                </p>
+              </div>
               <Button variant="default" onClick={() => rerun.mutate()} disabled={rerun.isPending}>
                 <RotateCcw aria-hidden="true" />
                 {rerun.isPending ? "Starting rerun…" : `Rerun ${totalSelected}`}
