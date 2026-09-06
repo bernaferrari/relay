@@ -221,11 +221,11 @@ test("does not apply Grok paywall rules to an unrelated Lite/Plus pricing tree",
     { label: "Plus", rect: { x: 300, y: 400, width: 80, height: 40 } },
     { label: "Monthly price", rect: { x: 80, y: 900, width: 800, height: 60 } },
   ]);
-  assert.notEqual(surveyExtent(first).kind, "complete");
-  assert.match(
-    surveyExtent(first).kind === "unknown" ? surveyExtent(first).reason : "",
-    /did not report whether more content exists/u,
-  );
+  const extent = surveyExtent(first);
+  assert.notEqual(extent.kind, "complete");
+  assert.equal(extent.kind, "unknown");
+  if (extent.kind !== "unknown") throw new Error("expected unknown extent");
+  assert.match(extent.reason, /did not report whether more content exists/u);
 });
 
 test("keeps a frame that unclips the faded last row or adds Grok Bot", () => {
