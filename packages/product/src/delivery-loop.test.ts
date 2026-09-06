@@ -138,4 +138,14 @@ test("needs-review and missing publication conclusions stay distinct from failur
   });
   assert.equal(pending.phase, "verified-pending-publication");
   assert.equal(pending.merge, undefined);
+  const missingEvidence = classifyDeliveryLoop({
+    current: proof({
+      firstFailure: undefined,
+      decision: undefined,
+      state: "insufficient-evidence",
+    }),
+  });
+  assert.equal(missingEvidence.phase, "insufficient-evidence");
+  assert.equal(missingEvidence.next.action, "collect-evidence");
+  assert.notEqual(missingEvidence.next.action, "repair");
 });

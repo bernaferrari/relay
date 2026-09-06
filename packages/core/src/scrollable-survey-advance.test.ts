@@ -356,4 +356,21 @@ test("does not treat an unrelated sibling exhaustion hint as the selected scroll
   assert.equal(surveyHasHiddenContentBelow(first), false);
   assert.notEqual(surveyExtent(first).kind, "complete");
   assert.equal(surveyExtent(first).kind, "unknown");
+
+  const siblingScroller = snapshot([
+    {
+      type: "ScrollView",
+      identifier: "feed",
+      rect: { x: 0, y: 0, width: 978, height: 1800 },
+    },
+    {
+      type: "ScrollView",
+      identifier: "rail",
+      rect: { x: 0, y: 1800, width: 978, height: 200 },
+      hiddenContentBelow: false,
+    },
+    { label: "Latest post", rect: { x: 80, y: 1600, width: 800, height: 60 } },
+  ]);
+  assert.equal(surveyHasHiddenContentBelow(siblingScroller), false);
+  assert.equal(surveyExtent(siblingScroller).kind, "unknown");
 });

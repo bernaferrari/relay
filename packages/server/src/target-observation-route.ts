@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type http from "node:http";
 import {
+  captureBrowserDeviceFrame,
   captureScreenshot,
   captureSnapshot,
   cleanupScreenshot,
@@ -9,6 +10,7 @@ import {
   observeVisualScreenFingerprint,
   persistCapturedAuthoringObservation,
   projectAuthoringEvidenceArtifact,
+  readTarget,
   type ScreenshotPayload,
   type SnapshotPayload,
 } from "@relay/core";
@@ -29,6 +31,15 @@ type DurableTargetObservationDependencies = {
   capturePixels(serial: string): Promise<ScreenshotPayload>;
   captureSemantics(serial: string): Promise<SnapshotPayload>;
   cleanupPixels(path: string): Promise<void>;
+  readBrowserTarget?(serial: string): Promise<{ id: string } | null>;
+  captureBrowserPixels?(serial: string): Promise<{
+    capturedAt: number;
+    mime: "image/jpeg" | "image/png";
+    base64: string;
+    width: number;
+    height: number;
+    visualFingerprint: string;
+  }>;
 };
 
 const defaultDependencies: DurableTargetObservationDependencies = {
@@ -82,12 +93,102 @@ function controls(snapshot: SnapshotPayload | undefined): TargetObservationContr
  * Session or a Run: it is a small read-only evidence record for the ordinary
  * observe → act → observe loop.
  */
+async function captureDurableBrowserObservation(
+  serial: string,
+  dependencies: DurableTargetObservationDependencies,
+): Promise<TargetObservation> {
+  const capture =
+    dependencies.captureBrowserPixels ??
+    (async (targetId: string) => {
+      const { frame } = await captureBrowserDeviceFrame(targetId);
+      return {
+        capturedAt: frame.capturedAt,
+        mime: frame.mime,
+        base64: frame.base64,
+        width: frame.width,
+        height: frame.height,
+        visualFingerprint: frame.visualFingerprint,
+      };
+    });
+  let frame: Awaited<ReturnType<typeof capture>>;
+  try {
+    frame = await capture(serial);
+  } catch (error) {
+    throw new HttpError(
+      409,
+      message(error, "Target input reconciliation requires durable observation evidence"),
+      { code: "TARGET_INPUT_RECONCILIATION_EVIDENCE_UNAVAILABLE" },
+    );
+  }
+  const bytes = Buffer.from(frame.base64, "base64");
+  const persisted = await persistCapturedAuthoringObservation({
+    capturedAt: frame.capturedAt,
+    targetId: serial,
+    fingerprint: frame.visualFingerprint,
+    proof: {
+      schemaVersion: 1,
+      captureOrder: "pixels-first",
+      pixels: {
+        status: "captured",
+        capturedAt: frame.capturedAt,
+        fingerprint: frame.visualFingerprint,
+        width: frame.width,
+        height: frame.height,
+      },
+      semantics: { status: "unavailable", capturedAt: frame.capturedAt },
+    },
+    bounds: { width: frame.width, height: frame.height },
+    nodes: [],
+    screenshotCapturedAt: frame.capturedAt,
+    screenshot: { data: bytes, mime: frame.mime },
+  });
+  const pixelEvidence = persisted.evidence.find((evidence) => evidence.kind === "screenshot");
+  const semanticEvidence = persisted.evidence.find((evidence) => evidence.kind === "snapshot");
+  if (!pixelEvidence || !semanticEvidence) {
+    throw new HttpError(409, "Target input reconciliation requires durable observation evidence", {
+      code: "TARGET_INPUT_RECONCILIATION_EVIDENCE_UNAVAILABLE",
+    });
+  }
+  return {
+    schemaVersion: 1,
+    target: { kind: "browser", platform: "browser", targetId: serial },
+    capturedAt: frame.capturedAt,
+    pixels: {
+      status: "captured",
+      capturedAt: frame.capturedAt,
+      mime: frame.mime,
+      bytes: bytes.byteLength,
+      artifact: projectAuthoringEvidenceArtifact(pixelEvidence),
+      fingerprint: frame.visualFingerprint,
+      width: frame.width,
+      height: frame.height,
+    },
+    semantics: {
+      status: "unavailable",
+      artifact: projectAuthoringEvidenceArtifact(semanticEvidence),
+      capturedAt: frame.capturedAt,
+      nodeCount: 0,
+      controls: [],
+      message: "Browser reconcile uses the current painted frame, not a historic rectangle.",
+    },
+  };
+}
+
 export async function captureDurableTargetObservation(
   serial: string,
   dependencies: DurableTargetObservationDependencies = defaultDependencies,
 ): Promise<TargetObservation> {
   const platform = await dependencies.platformForSerial(serial);
   if (platform !== "android" && platform !== "ios") {
+    const browser =
+      (await (
+        dependencies.readBrowserTarget ??
+        (async (targetId) => {
+          const target = await readTarget(targetId);
+          return target?.kind === "browser" ? target : null;
+        })
+      )(serial)) ?? null;
+    if (browser) return captureDurableBrowserObservation(serial, dependencies);
     throw new HttpError(404, `Target ${serial} is not a connected Android or iOS device.`);
   }
   const target: AuthoringTarget = { kind: "device", platform, targetId: serial };

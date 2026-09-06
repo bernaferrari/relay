@@ -67,8 +67,11 @@ export function createTargetObservationOperationDefinition(input: {
     (value) => {
       if (value.schemaVersion !== 1) fail("target observation schemaVersion", "must be 1");
       const target = record(value.target, "target observation target");
-      if (target.kind !== "device" || !["android", "ios"].includes(String(target.platform))) {
-        fail("target observation target", "must be an Android or iOS device");
+      const isDevice =
+        target.kind === "device" && ["android", "ios"].includes(String(target.platform));
+      const isBrowser = target.kind === "browser" && target.platform === "browser";
+      if (!isDevice && !isBrowser) {
+        fail("target observation target", "must be an Android, iOS, or browser target");
       }
       string(target.targetId, "target observation targetId");
       number(value.capturedAt, "target observation capturedAt");
@@ -76,8 +79,9 @@ export function createTargetObservationOperationDefinition(input: {
       const pixels = record(value.pixels, "target observation pixels");
       if (pixels.status === "captured") {
         number(pixels.capturedAt, "target observation pixels capturedAt");
-        if (pixels.mime !== "image/png")
-          fail("target observation pixels mime", "must be image/png");
+        if (pixels.mime !== "image/png" && pixels.mime !== "image/jpeg") {
+          fail("target observation pixels mime", "must be image/png or image/jpeg");
+        }
         number(pixels.bytes, "target observation pixels bytes");
         assertArtifactProjection(pixels.artifact, "target observation pixels artifact");
         if (pixels.presentationBase64 !== undefined) {

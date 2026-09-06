@@ -23,7 +23,7 @@ export type TargetObservation = {
     | {
         status: "captured";
         capturedAt: number;
-        mime: "image/png";
+        mime: "image/png" | "image/jpeg";
         bytes: number;
         artifact: ArtifactRefProjection;
         /** Bounded, transient presentation bytes. Persisted proof is `artifact`. */

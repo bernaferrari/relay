@@ -16,6 +16,7 @@ import {
   createDevice,
   listDeviceLeases,
   listDevices,
+  listTargets,
   listAndroidAppLocales,
   setAndroidAppLocaleOnDevice,
   listTargetWorkers,
@@ -50,8 +51,11 @@ import { iosMutationOutcomeUnknownHttpError } from "./interaction-routes.js";
 import { recordAudit, type RequestContext } from "./security.js";
 import { captureDurableTargetObservation } from "./target-observation-route.js";
 
+export type SupervisedRuntimePlatform = "android" | "ios" | "browser";
+
 export type TargetRuntimeRouteRuntime = {
   listDevices: typeof listDevices;
+  listTargets: typeof listTargets;
   listDeviceLeases: typeof listDeviceLeases;
   listTargetWorkers: typeof listTargetWorkers;
   assertTargetControl: typeof assertTargetControl;
@@ -80,11 +84,11 @@ export type TargetRuntimeRouteRuntime = {
   listAndroidAppLocales: typeof listAndroidAppLocales;
   setAppLocale: typeof setAndroidAppLocaleOnDevice;
   now: () => number;
-  readTargetHealth: (serial: string, platform: "android" | "ios") => TargetSupervisorHealth;
+  readTargetHealth: (serial: string, platform: SupervisedRuntimePlatform) => TargetSupervisorHealth;
   captureTargetObservation: typeof captureDurableTargetObservation;
   reconcileTargetInput: (
     serial: string,
-    platform: "android" | "ios",
+    platform: SupervisedRuntimePlatform,
     input: {
       mutationId: string;
       observationId: string;
@@ -100,6 +104,7 @@ export type TargetRuntimeRouteRuntime = {
 
 const defaultRuntime: TargetRuntimeRouteRuntime = {
   listDevices,
+  listTargets,
   listDeviceLeases,
   listTargetWorkers,
   assertTargetControl,
@@ -132,6 +137,7 @@ const defaultRuntime: TargetRuntimeRouteRuntime = {
   readTargetHealth: (serial, platform) => {
     const store = currentTargetSupervisorStore();
     if (!store) throw new Error("Server-owned TargetSupervisor store is unavailable");
+    if (platform === "browser") return store.health({ id: serial, kind: "browser" });
     return store.health(
       { id: serial, kind: platform },
       targetRuntimeReadiness({ serial, platform }),
@@ -233,6 +239,23 @@ function durableObservationId(
   });
 }
 
+async function resolveSupervisedRuntimeTarget(input: {
+  serial: string;
+  runtime: Pick<TargetRuntimeRouteRuntime, "listDevices" | "listTargets">;
+}): Promise<{ id: string; platform: SupervisedRuntimePlatform }> {
+  const device = (await input.runtime.listDevices().catch(() => [])).find(
+    (candidate) => candidate.serial === input.serial,
+  );
+  if (device && (device.platform === "android" || device.platform === "ios")) {
+    return { id: device.serial, platform: device.platform };
+  }
+  const browser = (await input.runtime.listTargets().catch(() => [])).find(
+    (candidate) => candidate.id === input.serial && candidate.kind === "browser",
+  );
+  if (browser) return { id: browser.id, platform: "browser" };
+  throw new HttpError(404, `Target ${input.serial} is not connected`);
+}
+
 async function scopedTargetHealth(input: {
   scope: RequestContext;
   serial: string;
@@ -256,14 +279,11 @@ async function scopedTargetHealth(input: {
     // Do not disclose whether a global host target exists to another project.
     throw new HttpError(404, "Target not found");
   }
-  const device = (await input.runtime.listDevices().catch(() => [])).find(
-    (candidate) => candidate.serial === input.serial,
-  );
-  if (!device) throw new HttpError(404, `Target ${input.serial} is not connected`);
-  if (device.platform !== "android" && device.platform !== "ios") {
-    throw new HttpError(400, "Target health currently requires a connected device");
-  }
-  const health = input.runtime.readTargetHealth(input.serial, device.platform);
+  const resolved = await resolveSupervisedRuntimeTarget({
+    serial: input.serial,
+    runtime: input.runtime,
+  });
+  const health = input.runtime.readTargetHealth(resolved.id, resolved.platform);
   recordAudit(input.scope, {
     action: "target.health.read",
     resource: "target",
@@ -322,13 +342,8 @@ export async function handleTargetRuntimeRoute(context: {
       throw new HttpError(400, "outcome must be applied, not-applied, or ambiguous");
     }
     await runtime.assertTargetControl(scope, serial);
-    const device = (await runtime.listDevices().catch(() => [])).find(
-      (candidate) => candidate.serial === serial,
-    );
-    if (!device || (device.platform !== "android" && device.platform !== "ios")) {
-      throw new HttpError(404, `Target ${serial} is not connected`);
-    }
-    const before = runtime.readTargetHealth(serial, device.platform);
+    const resolved = await resolveSupervisedRuntimeTarget({ serial, runtime });
+    const before = runtime.readTargetHealth(resolved.id, resolved.platform);
     if (before.input.state !== "uncertain" || before.input.pendingMutationId !== mutationId) {
       throw new HttpError(409, "The target has no matching uncertain mutation to reconcile", {
         code: "TARGET_INPUT_RECONCILIATION_STALE",
@@ -338,7 +353,7 @@ export async function handleTargetRuntimeRoute(context: {
     // exact mutation fence. The reviewed decision is therefore bound to a
     // fresh immutable observation rather than a caller-supplied evidence id.
     const observation = await runtime.captureTargetObservation(serial);
-    const health = runtime.reconcileTargetInput(serial, device.platform, {
+    const health = runtime.reconcileTargetInput(resolved.id, resolved.platform, {
       mutationId,
       observationId: durableObservationId(observation),
       outcome: body.outcome,

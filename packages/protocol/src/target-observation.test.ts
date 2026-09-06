@@ -54,6 +54,20 @@ test("target observation is one lease-free read-only operation with durable arti
   assert.deepEqual(definition.output.parse(observation()), observation());
 });
 
+test("target observation accepts a browser painted-frame receipt", () => {
+  const definition = operationDefinition("target.observation.capture");
+  const browserObservation = {
+    ...observation(),
+    target: { kind: "browser" as const, platform: "browser" as const, targetId: "browser-member" },
+    pixels: {
+      ...observation().pixels,
+      mime: "image/jpeg" as const,
+      artifact: artifact("a", "image", "image/jpeg"),
+    },
+  };
+  assert.deepEqual(definition.output.parse(browserObservation), browserObservation);
+});
+
 test("target observation rejects host paths and unbounded semantic summaries", () => {
   const definition = operationDefinition("target.observation.capture");
   const pathLeak = observation();
