@@ -35,6 +35,7 @@ import {
   MAX_BROWSER_DEVICE_BINARY_FRAME_BYTES,
   MAX_BROWSER_DEVICE_BINARY_METADATA_BYTES,
   compileBrowserEnvironment,
+  browserAuthenticationFixtureReferenceSchema,
   type BrowserDeviceSession,
   type BrowserEnvironmentInput,
   type BrowserViewport,
@@ -168,7 +169,52 @@ export async function handleTargetRoute(context: TargetRouteContext): Promise<bo
     if (!target) throw new HttpError(404, "Target not found");
     if (target.kind !== "browser") throw new HttpError(400, "Target is not a browser");
     await assertTargetControl(scope, target.id);
-    json(res, 200, { session: await openBrowserTarget(target.id) });
+    const body = (await parseJsonBody(req)) as {
+      authenticationFixtureReference?: unknown;
+      signedOut?: unknown;
+    };
+    const authenticationFixtureReference =
+      typeof body.authenticationFixtureReference === "string"
+        ? browserAuthenticationFixtureReferenceSchema.parse(body.authenticationFixtureReference)
+        : undefined;
+    const signedOut = body.signedOut === true;
+    if (authenticationFixtureReference && signedOut) {
+      throw new HttpError(400, "Choose an account fixture or attested signed-out, not both.");
+    }
+    const profile = browserCaseProfileForTarget(target);
+    if (authenticationFixtureReference) {
+      const fixtures = await listBrowserAuthenticationFixtures({
+        projectId: scope.projectId,
+        targetId: target.id,
+      });
+      const fixture = fixtures.find((item) => item.reference === authenticationFixtureReference);
+      if (!fixture || fixture.revokedAt) {
+        throw new HttpError(409, "That account fixture is not available on this Browser.");
+      }
+      await saveTargetBrowserEnvironment(target, {
+        ...profile,
+        authenticationFixtureId: fixture.reference,
+      });
+    } else if (signedOut) {
+      if (target.browser?.profileRetention === "retain") {
+        throw new HttpError(
+          409,
+          "A persistent Browser cannot attest a clean signed-out session. Use an ephemeral Browser.",
+        );
+      }
+      const { authenticationFixtureId: _active, ...environment } = profile;
+      await saveTargetBrowserEnvironment(target, environment);
+    }
+    const session = await openBrowserTarget(target.id);
+    json(res, 200, {
+      session: {
+        ...session,
+        ...(authenticationFixtureReference
+          ? { authenticationFixtureId: authenticationFixtureReference }
+          : {}),
+        ...(signedOut ? { signedOut: true as const } : {}),
+      },
+    });
     return true;
   }
 

@@ -6,6 +6,7 @@ import {
   browserDeviceInspectInputSchema,
   browserDeviceOpenInputSchema,
 } from "./browser-device.js";
+import { browserAuthenticationFixtureReferenceSchema } from "./browser-authentication-fixture.js";
 import {
   empty,
   identifier,
@@ -28,7 +29,22 @@ export const targetOperationInputSchemas = {
     .strict(),
   "target.delete": z.object({ targetId: identifier("Managed target identifier") }).strict(),
   "target.preflight": z.object({ targetId: identifier("Managed target identifier") }).strict(),
-  "target.open": z.object({ targetId: identifier("Managed browser target identifier") }).strict(),
+  "target.open": z
+    .object({
+      targetId: identifier("Managed browser target identifier"),
+      authenticationFixtureReference: browserAuthenticationFixtureReferenceSchema.optional(),
+      signedOut: z.literal(true).optional(),
+    })
+    .strict()
+    .superRefine((value, context) => {
+      if (value.authenticationFixtureReference && value.signedOut) {
+        context.addIssue({
+          code: "custom",
+          message: "Choose an account fixture or attested signed-out, not both.",
+          path: ["signedOut"],
+        });
+      }
+    }),
   "target.browser-device.open": browserDeviceOpenInputSchema,
   "target.browser-device.frame": browserDeviceFrameInputSchema,
   "target.browser-device.frame-binary": browserDeviceFrameInputSchema,

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  admitLiveOpenPlan,
   compilePairedConfigurations,
   compileRepeatScope,
   compileSuiteTargets,
@@ -245,5 +246,52 @@ describe("paired Browser and Account workspace", () => {
     expect(opened).toEqual(["chrome-1:acct-admin", "firefox-1:acct-member", "webkit-1:signed-out"]);
     expect(result.opened).toBe(3);
     expect(result.plan).toHaveLength(3);
+  });
+
+  it("refuses Admin, Member, and Signed out sharing one persistent Browser session", async () => {
+    const sameBrowser = parsePairedConfigurationWorkspace(
+      JSON.stringify({
+        schemaVersion: 1,
+        updatedAt: 1,
+        rows: [
+          {
+            id: "admin",
+            name: "Admin",
+            browserId: "chrome-1",
+            browserName: "Chrome",
+            accountId: "acct-admin",
+            accountRevision: "4",
+            accountReference: "authfx:00000000-0000-4000-8000-0000000000aa:4",
+          },
+          {
+            id: "member",
+            name: "Member",
+            browserId: "chrome-1",
+            browserName: "Chrome",
+            accountId: "acct-member",
+            accountRevision: "7",
+            accountReference: "authfx:00000000-0000-4000-8000-0000000000bb:7",
+          },
+          {
+            id: "out",
+            name: "Signed out",
+            browserId: "chrome-1",
+            browserName: "Chrome",
+            signedOutAttested: true,
+          },
+        ],
+      }),
+    );
+    const opened: string[] = [];
+    expect(() => admitLiveOpenPlan(sameBrowser)).toThrow(/cannot share one persistent Browser/i);
+    await expect(
+      openPairedWorkspaceInLive({
+        workspace: sameBrowser,
+        openSpace: async (plan) => {
+          opened.push(plan.browserId);
+        },
+      }),
+    ).rejects.toThrow(/cannot share one persistent Browser/i);
+    expect(opened).toEqual([]);
   });
 });

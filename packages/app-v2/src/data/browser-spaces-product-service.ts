@@ -86,7 +86,20 @@ export type ProductCompareSetInput = Pick<AppMapCombine, "name" | "testIds" | "v
 export type BrowserSpacesProductService = {
   listSpaces(): Promise<readonly ProductBrowserSpace[]>;
   createSpace(input: ProductBrowserSpaceInput): Promise<ProductBrowserSpace>;
-  openSpace(spaceId: string): Promise<{ targetId: string; name: string; url: string }>;
+  openSpace(
+    input:
+      | string
+      | {
+          spaceId: string;
+          account?: { kind: "fixture"; reference: string } | { kind: "signed-out" };
+        },
+  ): Promise<{
+    targetId: string;
+    name: string;
+    url: string;
+    authenticationFixtureId?: string;
+    signedOut?: true;
+  }>;
   removeSpace(spaceId: string): Promise<void>;
   listAuthenticationFixtures(spaceId: string): Promise<readonly ProductBrowserAuthFixture[]>;
   saveAuthenticationFixture(input: {
@@ -249,9 +262,21 @@ export function createBrowserSpacesProductService(platform: Platform): BrowserSp
       if (!space) throw new TypeError("Relay created something that is not a browser.");
       return space;
     },
-    async openSpace(spaceId) {
-      await getSpace(spaceId);
-      return (await (await client()).invoke("target.open", { targetId: spaceId })).session;
+    async openSpace(input) {
+      const request = typeof input === "string" ? { spaceId: input } : input;
+      await getSpace(request.spaceId);
+      const account = request.account;
+      return (
+        await (
+          await client()
+        ).invoke("target.open", {
+          targetId: request.spaceId,
+          ...(account?.kind === "fixture"
+            ? { authenticationFixtureReference: account.reference }
+            : {}),
+          ...(account?.kind === "signed-out" ? { signedOut: true as const } : {}),
+        })
+      ).session;
     },
     async removeSpace(spaceId) {
       await getSpace(spaceId);

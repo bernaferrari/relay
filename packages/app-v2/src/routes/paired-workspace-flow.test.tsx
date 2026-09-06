@@ -41,6 +41,9 @@ const spaces = [
   space("webkit-1", "WebKit", "webkit"),
 ];
 
+const adminFixtureId = "00000000-0000-4000-8000-0000000000aa";
+const memberFixtureId = "00000000-0000-4000-8000-0000000000bb";
+
 function account(id: string, name: string, targetId: string): ProductBrowserAuthFixture {
   return {
     id,
@@ -76,11 +79,10 @@ function platformWithStorage(initial: Record<string, string> = {}): Platform {
 }
 
 function browserService(
-  openSpace: BrowserSpacesProductService["openSpace"] = vi.fn(async (id) => ({
-    targetId: id,
-    name: id,
-    url: "https://app.example.test",
-  })),
+  openSpace: BrowserSpacesProductService["openSpace"] = vi.fn(async (input) => {
+    const spaceId = typeof input === "string" ? input : input.spaceId;
+    return { targetId: spaceId, name: spaceId, url: "https://app.example.test" };
+  }),
 ): BrowserSpacesProductService {
   return {
     listSpaces: async () => spaces,
@@ -89,9 +91,9 @@ function browserService(
     removeSpace: async () => undefined,
     listAuthenticationFixtures: async (spaceId) =>
       spaceId === "chrome-1"
-        ? [account("acct-admin", "Admin", "chrome-1")]
+        ? [account(adminFixtureId, "Admin", "chrome-1")]
         : spaceId === "firefox-1"
-          ? [account("acct-member", "Member", "firefox-1")]
+          ? [account(memberFixtureId, "Member", "firefox-1")]
           : [],
     saveAuthenticationFixture: async () => {
       throw new Error("unused");
@@ -174,20 +176,19 @@ afterEach(async () => {
 describe("saved Browser and Account workspace", () => {
   it("persists named pairs across restart and opens those exact pairs in Live", async () => {
     const platform = platformWithStorage();
-    const openSpace = vi.fn(async (id: string) => ({
-      targetId: id,
-      name: id,
-      url: "https://app.example.test",
-    }));
+    const openSpace = vi.fn(async (input: { spaceId?: string } | string) => {
+      const spaceId = typeof input === "string" ? input : input.spaceId;
+      return { targetId: spaceId ?? "", name: spaceId ?? "", url: "https://app.example.test" };
+    });
     await render(platform, browserService(openSpace));
 
     await fill("Pair name", "Admin desktop");
     await choose("Browser", "chrome-1");
-    await choose("Account", "acct-admin");
+    await choose("Account", adminFixtureId);
     await click("Add pair");
     await fill("Pair name", "Member desktop");
     await choose("Browser", "firefox-1");
-    await choose("Account", "acct-member");
+    await choose("Account", memberFixtureId);
     await click("Add pair");
     await fill("Pair name", "Signed out");
     await choose("Browser", "webkit-1");
@@ -197,7 +198,7 @@ describe("saved Browser and Account workspace", () => {
     expect(document.body.textContent).toContain("Admin desktop");
     expect(document.body.textContent).toContain("Member desktop");
     expect(document.body.textContent).toContain("Signed out");
-    expect(platform.storage.get(PAIRED_CONFIGURATION_STORAGE_KEY)).toContain("acct-admin");
+    expect(platform.storage.get(PAIRED_CONFIGURATION_STORAGE_KEY)).toContain(adminFixtureId);
 
     await act(async () => {
       for (const root of roots.splice(0)) root.unmount();
@@ -211,9 +212,15 @@ describe("saved Browser and Account workspace", () => {
     expect(document.body.textContent).toContain("Admin");
     await click("Open in Live");
     expect(openSpace.mock.calls.map((call) => call[0])).toEqual([
-      "chrome-1",
-      "firefox-1",
-      "webkit-1",
+      {
+        spaceId: "chrome-1",
+        account: { kind: "fixture", reference: `authfx:${adminFixtureId}:1` },
+      },
+      {
+        spaceId: "firefox-1",
+        account: { kind: "fixture", reference: `authfx:${memberFixtureId}:1` },
+      },
+      { spaceId: "webkit-1", account: { kind: "signed-out" } },
     ]);
     expect(document.body.textContent).toContain("Opened Admin desktop, Member desktop, Signed out");
   });

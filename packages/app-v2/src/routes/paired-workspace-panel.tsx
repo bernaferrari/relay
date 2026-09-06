@@ -29,6 +29,7 @@ export function PairedWorkspacePanel({
     browserId: string;
     accountId?: string;
     accountRevision?: string;
+    accountReference?: string;
     signedOut?: true;
   }) => Promise<unknown>;
 }) {

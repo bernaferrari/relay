@@ -74,6 +74,24 @@ const { calls, fixture, invoke, target } = vi.hoisted(() => {
       };
     }
     if (id === "target.delete" || id === "app-map.combine.remove") return { ok: true };
+    if (id === "target.open") {
+      const body = input as {
+        targetId: string;
+        authenticationFixtureReference?: string;
+        signedOut?: true;
+      };
+      return {
+        session: {
+          targetId: body.targetId,
+          name: body.targetId,
+          url: "https://example.test/",
+          ...(body.authenticationFixtureReference
+            ? { authenticationFixtureId: body.authenticationFixtureReference }
+            : {}),
+          ...(body.signedOut ? { signedOut: true } : {}),
+        },
+      };
+    }
     throw new Error(`Unexpected operation ${id}`);
   });
   return { appMap, calls, fixture, invoke, target };
@@ -113,6 +131,25 @@ describe("browser spaces and compare set product service", () => {
     });
     await service.removeSpace("space-1");
     expect(calls.map(({ id }) => id)).toContain("target.delete");
+  });
+
+  it("opens Live with the selected fixture or attested signed-out state", async () => {
+    calls.length = 0;
+    const service = createBrowserSpacesProductService({} as Platform);
+    const member = await service.openSpace({
+      spaceId: "space-1",
+      account: { kind: "fixture", reference: fixture.reference },
+    });
+    const signedOut = await service.openSpace({
+      spaceId: "space-2",
+      account: { kind: "signed-out" },
+    });
+    expect(member.authenticationFixtureId).toBe(fixture.reference);
+    expect(signedOut.signedOut).toBe(true);
+    expect(calls.filter(({ id }) => id === "target.open").map(({ input }) => input)).toEqual([
+      { targetId: "space-1", authenticationFixtureReference: fixture.reference },
+      { targetId: "space-2", signedOut: true },
+    ]);
   });
 
   it("keeps auth fixture operations versioned and metadata-only", async () => {

@@ -258,7 +258,23 @@ export function EnvironmentsPage() {
           spaces={spaces.data}
           accountsByBrowser={accountsByBrowser}
           onSave={paired.save}
-          onOpenLive={(plan) => browserSpacesService.openSpace(plan.browserId)}
+          onOpenLive={(plan) =>
+            browserSpacesService.openSpace({
+              spaceId: plan.browserId,
+              ...(plan.signedOut
+                ? { account: { kind: "signed-out" as const } }
+                : plan.accountReference || (plan.accountId && plan.accountRevision)
+                  ? {
+                      account: {
+                        kind: "fixture" as const,
+                        reference:
+                          plan.accountReference ??
+                          `authfx:${plan.accountId}:${plan.accountRevision}`,
+                      },
+                    }
+                  : {}),
+            })
+          }
         />
       ) : null}
       {!spaces.isPending && !spaces.error && spaces.data?.length === 0 ? (

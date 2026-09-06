@@ -332,6 +332,7 @@ export type LiveOpenPlanRow = {
   accountId?: string;
   accountName?: string;
   accountRevision?: string;
+  accountReference?: string;
   signedOut?: true;
 };
 
@@ -342,15 +343,26 @@ export function liveOpenPlan(workspace: PairedConfigurationWorkspace): readonly 
     ...(row.accountId ? { accountId: row.accountId } : {}),
     ...(row.accountName ? { accountName: row.accountName } : {}),
     ...(row.accountRevision ? { accountRevision: row.accountRevision } : {}),
+    ...(row.accountReference ? { accountReference: row.accountReference } : {}),
     ...(row.signedOutAttested ? { signedOut: true as const } : {}),
   }));
 }
 
-export async function openPairedWorkspaceInLive(input: {
-  workspace: PairedConfigurationWorkspace;
-  openSpace: (plan: LiveOpenPlanRow) => Promise<unknown>;
-}): Promise<{ opened: number; plan: ReturnType<typeof liveOpenPlan> }> {
-  const compiled = compilePairedConfigurations(input.workspace);
+function liveAccountKey(row: LiveOpenPlanRow): string {
+  if (row.signedOut) return "signed-out";
+  if (row.accountReference) return `fixture:${row.accountReference}`;
+  if (row.accountId && row.accountRevision) {
+    return `fixture:${row.accountId}:${row.accountRevision}`;
+  }
+  if (row.accountId) return `fixture:${row.accountId}`;
+  return "unknown";
+}
+
+/** Admin, Member, and Signed out cannot share one persistent Browser session. */
+export function admitLiveOpenPlan(
+  workspace: PairedConfigurationWorkspace,
+): readonly LiveOpenPlanRow[] {
+  const compiled = compilePairedConfigurations(workspace);
   const blocked = compiled.filter((item) => item.coverage.kind === "blocked");
   if (blocked.length) {
     throw new TypeError(
@@ -361,7 +373,28 @@ export async function openPairedWorkspaceInLive(input: {
         .join(" "),
     );
   }
-  const plan = liveOpenPlan(input.workspace);
+  const plan = liveOpenPlan(workspace);
+  const identities = new Map<string, Set<string>>();
+  for (const row of plan) {
+    const key = liveAccountKey(row);
+    const seen = identities.get(row.browserId) ?? new Set<string>();
+    seen.add(key);
+    identities.set(row.browserId, seen);
+  }
+  const shared = [...identities.entries()].filter(([, keys]) => keys.size > 1);
+  if (shared.length) {
+    throw new TypeError(
+      "Admin, Member, and Signed out cannot share one persistent Browser session. Give each account its own Browser.",
+    );
+  }
+  return plan;
+}
+
+export async function openPairedWorkspaceInLive(input: {
+  workspace: PairedConfigurationWorkspace;
+  openSpace: (plan: LiveOpenPlanRow) => Promise<unknown>;
+}): Promise<{ opened: number; plan: ReturnType<typeof liveOpenPlan> }> {
+  const plan = admitLiveOpenPlan(input.workspace);
   for (const row of plan) await input.openSpace(row);
   return { opened: plan.length, plan };
 }

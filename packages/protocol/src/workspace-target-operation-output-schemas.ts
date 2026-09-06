@@ -691,7 +691,17 @@ export const workspaceTargetOperationOutputSchemas = {
   "target.delete": ok,
   "target.preflight": z.object({ preflight: targetPreflight }).strict(),
   "target.open": z
-    .object({ session: z.object({ targetId: text, name: text, url: z.url() }).strict() })
+    .object({
+      session: z
+        .object({
+          targetId: text,
+          name: text,
+          url: z.url(),
+          authenticationFixtureId: z.string().optional(),
+          signedOut: z.literal(true).optional(),
+        })
+        .strict(),
+    })
     .strict(),
   "target.browser-device.open": z.object({ session: browserDeviceSessionSchema }).strict(),
   "target.browser-device.frame": z
