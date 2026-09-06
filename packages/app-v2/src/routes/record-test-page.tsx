@@ -25,11 +25,12 @@ import type {
 import {
   appendRecordingMutation,
   dispatchRecordingInput,
+  mergeHydratedRecordingLedger,
   parseRecordingLedger,
   recordingInputRecoveryMessage,
   recordingLedgerStorageKey,
   recordingRecoveryBlocksSend,
-  reconcileRecordingMutation,
+  reconcileRecordingMutationAuthoritatively,
   refreshRecordingEvidence,
   resolveRecordingMutation,
   serializeRecordingLedger,
@@ -203,12 +204,29 @@ function RecordingWorkspace({
   const recordingLedger = useRef<RecordingRecoveryLedger>({ mutations: [] });
 
   useEffect(() => {
-    void Promise.resolve(platform.storage.get(recordingLedgerStorageKey(workflowId))).then(
-      (raw) => {
-        recordingLedger.current = parseRecordingLedger(raw);
-      },
-    );
-  }, [platform, workflowId]);
+    let cancelled = false;
+    void (async () => {
+      const projection = parseRecordingLedger(
+        await Promise.resolve(platform.storage.get(recordingLedgerStorageKey(workflowId))),
+      );
+      const health =
+        productService.inspectTargetHealth && selectedTarget
+          ? await productService.inspectTargetHealth(selectedTarget.targetId).catch(() => undefined)
+          : undefined;
+      if (cancelled) return;
+      const view = mergeHydratedRecordingLedger({
+        stored: projection,
+        inMemory: recordingLedger.current,
+        ...(health ? { health } : {}),
+      });
+      persistLedger(view.ledger);
+      setRecoveryKind(view.recoveryKind);
+      if (view.issue) setLiveIssue(view.issue);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [platform, productService, selectedTargetId, workflowId]);
 
   function persistLedger(ledger: RecordingRecoveryLedger): void {
     recordingLedger.current = ledger;
@@ -275,29 +293,54 @@ function RecordingWorkspace({
     return liveInputQueue.current;
   }
 
-  function observeLastUnknownMutation(observed: RecordingObservedEffect) {
+  async function observeLastUnknownMutation(observed: RecordingObservedEffect) {
     const unresolved = unresolvedRecordingMutation(recordingLedger.current, "unknown");
     if (!unresolved?.mutationId) return;
-    persistLedger(
-      reconcileRecordingMutation(recordingLedger.current, unresolved.mutationId, observed),
-    );
-    const resolved = recordingLedger.current.mutations.find(
-      (mutation) => mutation.mutationId === unresolved.mutationId,
-    );
-    setRecoveryKind(
-      resolved?.observed === "applied" ? "confirmed" : (resolved?.kind ?? "confirmed"),
-    );
-    setLiveIssue(
-      resolved?.observed === "applied"
-        ? undefined
-        : resolved?.observed === "not-observed" || resolved?.observed === "uncertain"
-          ? resolved.kind === "confirmed"
-            ? undefined
-            : resolved.message
-          : resolved
-            ? recordingInputRecoveryMessage(resolved)
-            : undefined,
-    );
+    if (!productService.reconcileInput || !selectedTarget) {
+      setLiveIssue("Relay cannot record this observation on the Device.");
+      return;
+    }
+    setLiveInputBusy(true);
+    try {
+      const connection = await platform.getServerConnection?.();
+      persistLedger(
+        await reconcileRecordingMutationAuthoritatively({
+          ledger: recordingLedger.current,
+          mutationId: unresolved.mutationId,
+          observed,
+          authority: {
+            serial: selectedTarget.targetId,
+            ...(connection?.actorId ? { actor: connection.actorId } : {}),
+            reconcile: (input) => productService.reconcileInput!(input),
+          },
+        }),
+      );
+      const resolved = recordingLedger.current.mutations.find(
+        (mutation) => mutation.mutationId === unresolved.mutationId,
+      );
+      setRecoveryKind(
+        resolved?.observed === "applied" ? "confirmed" : (resolved?.kind ?? "confirmed"),
+      );
+      setLiveIssue(
+        resolved?.observed === "applied"
+          ? undefined
+          : resolved?.observed === "not-observed" || resolved?.observed === "uncertain"
+            ? resolved.kind === "confirmed"
+              ? undefined
+              : resolved.message
+            : resolved
+              ? recordingInputRecoveryMessage(resolved)
+              : undefined,
+      );
+    } catch (error) {
+      setLiveIssue(
+        error instanceof Error && error.message.trim()
+          ? error.message
+          : "Relay could not record that observation on the Device.",
+      );
+    } finally {
+      setLiveInputBusy(false);
+    }
   }
 
   async function recoverRecordingRefreshOnly() {
@@ -543,21 +586,21 @@ function RecordingWorkspace({
             <Button
               variant="outline"
               disabled={liveInputBusy}
-              onClick={() => observeLastUnknownMutation("applied")}
+              onClick={() => void observeLastUnknownMutation("applied")}
             >
               It applied
             </Button>
             <Button
               variant="outline"
               disabled={liveInputBusy}
-              onClick={() => observeLastUnknownMutation("not-observed")}
+              onClick={() => void observeLastUnknownMutation("not-observed")}
             >
               It did not apply
             </Button>
             <Button
               variant="outline"
               disabled={liveInputBusy}
-              onClick={() => observeLastUnknownMutation("uncertain")}
+              onClick={() => void observeLastUnknownMutation("uncertain")}
             >
               Not sure
             </Button>

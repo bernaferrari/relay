@@ -77,6 +77,20 @@ export type RecordingProductService = {
   liveTarget?(target: AuthoringTarget): Promise<LiveTargetSession>;
   /** Fresh accessibility controls from the live target. Historic screenshots are not this. */
   observeTarget?(target: AuthoringTarget): Promise<RecordingEvidenceControl[]>;
+  /** Join a human observation to the durable target mutation receipt. */
+  reconcileInput?(input: {
+    serial: string;
+    mutationId: string;
+    outcome: "applied" | "not-applied" | "ambiguous";
+  }): Promise<{ mutationId: string; outcome: "applied" | "not-applied" | "ambiguous" }>;
+  /** Server-owned input fence for remount. The local ledger is only a projection. */
+  inspectTargetHealth?(serial: string): Promise<{
+    input: {
+      state: "ready" | "blocked" | "uncertain";
+      pendingMutationId?: string;
+      reason?: string;
+    };
+  }>;
 };
 
 /**
@@ -236,6 +250,28 @@ export function createRecordingProductService(
         full: true,
       });
       return projectRecordingEvidenceControls(snapshot.nodes as Record<string, unknown>[]);
+    },
+    async reconcileInput(input) {
+      const { client } = await product();
+      await client.invoke("target.input.reconcile", {
+        serial: input.serial,
+        mutationId: input.mutationId,
+        outcome: input.outcome,
+      });
+      return { mutationId: input.mutationId, outcome: input.outcome };
+    },
+    async inspectTargetHealth(serial) {
+      const { client } = await product();
+      const { health } = await client.invoke("target.health.get", { serial });
+      return {
+        input: {
+          state: health.input.state,
+          ...(health.input.pendingMutationId
+            ? { pendingMutationId: health.input.pendingMutationId }
+            : {}),
+          ...(health.input.reason ? { reason: health.input.reason } : {}),
+        },
+      };
     },
   };
 }

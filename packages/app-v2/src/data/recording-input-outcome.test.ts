@@ -5,7 +5,14 @@ import {
   dispatchRecordingInput,
   recordingInputRecoveryMessage,
   recordingRecoveryBlocksSend,
+  hydrateRecordingLedger,
+  hydrateRecordingRecoveryView,
+  isSupervisedRecordingMutationId,
+  mergeHydratedRecordingLedger,
   reconcileRecordingMutation,
+  reconcileRecordingMutationAuthoritatively,
+  recordingReconcileServerOutcome,
+  supervisedRecordingMutationId,
   refreshRecordingEvidence,
   unresolvedRecordingMutation,
 } from "./recording-input-outcome";
@@ -164,5 +171,161 @@ describe("recording input outcome", () => {
     expect(unsure.mutations[0]?.kind).toBe("unknown");
     expect(unsure.mutations[0]?.observed).toBe("uncertain");
     expect(recordingRecoveryBlocksSend(unsure)).toBe(true);
+  });
+
+  it("keeps the server mutation identity and maps Not sure to ambiguous", () => {
+    expect(
+      supervisedRecordingMutationId({
+        body: { mutationId: "ios-input-reviewed" },
+      }),
+    ).toBe("ios-input-reviewed");
+    expect(recordingReconcileServerOutcome("applied")).toBe("applied");
+    expect(recordingReconcileServerOutcome("not-observed")).toBe("not-applied");
+    expect(recordingReconcileServerOutcome("uncertain")).toBe("ambiguous");
+  });
+
+  it("does not apply a local observation until the server receipt matches", async () => {
+    const ledger = appendRecordingMutation(undefined, {
+      kind: "unknown",
+      mutationId: "ios-input-reviewed",
+      message: "Input submitted; runner not ready to acknowledge",
+    });
+    const calls: unknown[] = [];
+    await expect(
+      reconcileRecordingMutationAuthoritatively({
+        ledger,
+        mutationId: "ios-input-reviewed",
+        observed: "applied",
+        authority: {
+          serial: "emulator-5554",
+          actor: "human:qa",
+          reconcile: async () => {
+            throw new Error("The target has no matching uncertain mutation to reconcile");
+          },
+        },
+      }),
+    ).rejects.toThrow(/matching uncertain mutation/i);
+    expect(recordingRecoveryBlocksSend(ledger)).toBe(true);
+    const applied = await reconcileRecordingMutationAuthoritatively({
+      ledger,
+      mutationId: "ios-input-reviewed",
+      observed: "applied",
+      authority: {
+        serial: "emulator-5554",
+        actor: "human:qa",
+        reconcile: async (input) => {
+          calls.push(input);
+          return { mutationId: input.mutationId, outcome: input.outcome };
+        },
+      },
+    });
+    expect(calls).toEqual([
+      { serial: "emulator-5554", mutationId: "ios-input-reviewed", outcome: "applied" },
+    ]);
+    expect(applied.mutations[0]).toMatchObject({
+      kind: "unknown",
+      observed: "applied",
+      mutationId: "ios-input-reviewed",
+      resolvedBy: { actor: "human:qa", authority: "server" },
+    });
+    expect(recordingRecoveryBlocksSend(applied)).toBe(false);
+  });
+
+  it("hydrates an empty projection from the Device pending mutation", () => {
+    expect(isSupervisedRecordingMutationId("ios-input-reviewed")).toBe(true);
+    expect(isSupervisedRecordingMutationId("recording-mutation-local")).toBe(false);
+    const hydrated = hydrateRecordingLedger({
+      projection: { mutations: [] },
+      health: {
+        input: {
+          state: "uncertain",
+          pendingMutationId: "ios-input-reviewed",
+          reason: "acknowledgement lost",
+        },
+      },
+    });
+    expect(hydrated.mutations).toEqual([
+      expect.objectContaining({
+        kind: "unknown",
+        mutationId: "ios-input-reviewed",
+        message: "acknowledgement lost",
+      }),
+    ]);
+    expect(recordingRecoveryBlocksSend(hydrated)).toBe(true);
+    const view = hydrateRecordingRecoveryView({
+      projection: { mutations: [] },
+      health: {
+        input: {
+          state: "uncertain",
+          pendingMutationId: "ios-input-reviewed",
+          reason: "acknowledgement lost",
+        },
+      },
+    });
+    expect(view.recoveryKind).toBe("unknown");
+    expect(view.issue).toContain("Observe the app");
+  });
+
+  it("does not let a stale local unknown outrank a ready Device fence", () => {
+    const projection = appendRecordingMutation(undefined, {
+      kind: "unknown",
+      mutationId: "ios-input-stale",
+      message: "Input submitted; runner not ready to acknowledge",
+    });
+    const hydrated = hydrateRecordingLedger({
+      projection,
+      health: { input: { state: "ready" } },
+    });
+    expect(hydrated.mutations).toEqual([]);
+    expect(recordingRecoveryBlocksSend(hydrated)).toBe(false);
+  });
+
+  it("keeps a client-only unknown when the Device has no matching receipt", () => {
+    const projection = appendRecordingMutation(undefined, {
+      kind: "unknown",
+      mutationId: "recording-mutation-local",
+      message: "The live view disconnected before Relay saw an acknowledgement.",
+    });
+    const hydrated = hydrateRecordingLedger({
+      projection,
+      health: { input: { state: "ready" } },
+    });
+    expect(hydrated.mutations[0]?.mutationId).toBe("recording-mutation-local");
+    expect(recordingRecoveryBlocksSend(hydrated)).toBe(true);
+  });
+
+  it("keeps Not sure on the same mutation when the Device still fences it", () => {
+    const projection = reconcileRecordingMutation(
+      appendRecordingMutation(undefined, {
+        kind: "unknown",
+        mutationId: "ios-input-reviewed",
+        message: "Input submitted; runner not ready to acknowledge",
+      }),
+      "ios-input-reviewed",
+      "uncertain",
+    );
+    const hydrated = hydrateRecordingLedger({
+      projection,
+      health: {
+        input: { state: "uncertain", pendingMutationId: "ios-input-reviewed" },
+      },
+    });
+    expect(hydrated.mutations[0]?.observed).toBe("uncertain");
+    expect(recordingRecoveryBlocksSend(hydrated)).toBe(true);
+  });
+
+  it("does not drop an in-flight unknown when a stale ready health arrives", () => {
+    const inMemory = appendRecordingMutation(undefined, {
+      kind: "unknown",
+      mutationId: "ios-input-live",
+      message: "Input submitted; runner not ready to acknowledge",
+    });
+    const merged = mergeHydratedRecordingLedger({
+      stored: { mutations: [] },
+      inMemory,
+      health: { input: { state: "ready" } },
+    });
+    expect(merged.ledger.mutations[0]?.mutationId).toBe("ios-input-live");
+    expect(merged.recoveryKind).toBe("unknown");
   });
 });

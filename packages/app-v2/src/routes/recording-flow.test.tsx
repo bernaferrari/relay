@@ -224,6 +224,14 @@ function fakeService(initial = state("recording", ["inspect", "record", "checkpo
     },
     previewTarget: targetSession,
     liveTarget: targetSession,
+    async reconcileInput(input) {
+      calls.push(`reconcile:${input.mutationId}:${input.outcome}`);
+      return input;
+    },
+    async inspectTargetHealth() {
+      calls.push("inspect-target-health");
+      return { input: { state: "ready" as const } };
+    },
     async observeTarget() {
       calls.push("observe-target");
       return [
@@ -1237,6 +1245,9 @@ describe("record, review, replay, and save", () => {
     expect(history.location.pathname).toBe("/recordings/workflow-1");
 
     await click(button("It applied"));
+    expect(
+      fake.calls.some((call) => call.startsWith("reconcile:") && call.endsWith(":applied")),
+    ).toBe(true);
     expect(document.body.textContent).not.toContain("Observe the app");
     await tapLiveTarget();
     expect(inputCount).toBe(2);
@@ -1271,12 +1282,56 @@ describe("record, review, replay, and save", () => {
     await tapLiveTarget();
     expect(inputCount).toBe(1);
     await click(button("It did not apply"));
+    expect(fake.calls.some((call) => call.endsWith(":not-applied"))).toBe(true);
     expect(document.body.textContent).toContain("no visible effect");
     expect(document.body.textContent).not.toMatch(/was not sent/i);
     await tapLiveTarget();
     expect(inputCount).toBe(1);
     await click(button("Not sure"));
     expect(document.body.textContent).toContain("not sure");
+    await tapLiveTarget();
+    expect(inputCount).toBe(1);
+  });
+
+  it("restores an uncertain Device mutation after remount without a local ledger", async () => {
+    const fake = fakeService();
+    fake.service.inspectTargetHealth = async () => {
+      fake.calls.push("inspect-target-health");
+      return {
+        input: {
+          state: "uncertain",
+          pendingMutationId: "ios-input-reviewed",
+          reason: "acknowledgement lost",
+        },
+      };
+    };
+    let inputCount = 0;
+    const originalLiveTarget = fake.service.liveTarget!;
+    fake.service.liveTarget = async (selected) => {
+      const session = await originalLiveTarget(selected);
+      return {
+        ...session,
+        async input(input) {
+          inputCount += 1;
+          await session.input(input);
+        },
+      };
+    };
+
+    await renderJourney("/recordings/workflow-1", fake.service, platformWithStorage().platform);
+    await settle();
+    await settle();
+
+    expect(fake.calls).toContain("inspect-target-health");
+    expect(document.body.textContent).toContain("Observe the app");
+    expect(button("It applied")).toBeTruthy();
+    expect(button("It did not apply")).toBeTruthy();
+    expect(button("Not sure")).toBeTruthy();
+    await tapLiveTarget();
+    expect(inputCount).toBe(0);
+    await click(button("It applied"));
+    expect(fake.calls).toContain("reconcile:ios-input-reviewed:applied");
+    expect(document.body.textContent).not.toContain("Observe the app");
     await tapLiveTarget();
     expect(inputCount).toBe(1);
   });
