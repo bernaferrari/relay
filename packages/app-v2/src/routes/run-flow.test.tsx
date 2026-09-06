@@ -7,7 +7,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { RelayV2App } from "../app";
 import type { RecordingProductService } from "../data/recording-product-service";
 import type { RunAcrossProductService } from "../data/run-across-product-service";
+import { runEvidenceExportDocument } from "@relay/product/run-evidence-export";
 import type { ProductRunReportOverview, RunProductService } from "../data/run-product-service";
+import type { TracePackExportResponse } from "@relay/protocol";
 import type { Platform } from "../platform/types";
 import { WORKSPACE_DESTINATION_KEY } from "../layout/destination-summary";
 import { runConfigurationStorageKey } from "../data/use-persisted-run-configuration";
@@ -271,6 +273,10 @@ function fakeRunService(initial: ProductRunState = runState("running")) {
         note: null,
         events: [{ sequence: 1, kind: "checkpoint.passed" }],
       };
+    },
+    async exportEvidence(runId) {
+      calls.push(`export:${runId}`);
+      return runEvidenceExportDocument(runId, tracePackForRun(runId));
     },
   };
   return {
@@ -1119,4 +1125,90 @@ describe("Run and Report", () => {
     expect(document.body.textContent).not.toContain("Evidence at this point");
     expect(document.querySelector('[role="tab"]')).toBeNull();
   });
+
+  it("exports the attached Run as a TracePack named for that Run", async () => {
+    const fake = fakeRunService(runState("succeeded"));
+    const created: string[] = [];
+    const originalCreate = URL.createObjectURL;
+    URL.createObjectURL = (blob: Blob) => {
+      created.push(blob.type);
+      return "blob:relay-run-export";
+    };
+    try {
+      await renderRun("/runs/run-1", fake.service, platformWithStorage().platform);
+      expect(document.body.textContent).toContain("Export evidence");
+      await click(button("Export evidence"));
+      expect(fake.calls).toContain("export:run-1");
+      const link = document.querySelector<HTMLAnchorElement>('a[download="relay-run-run-1.json"]');
+      expect(link).not.toBeNull();
+      expect(link?.textContent).toContain("Save evidence pack");
+      expect(created).toEqual(["application/json"]);
+    } finally {
+      URL.createObjectURL = originalCreate;
+    }
+  });
+
+  it("does not offer a pack from a different Run as this Run's export", async () => {
+    const fake = fakeRunService(runState("succeeded"));
+    fake.service.exportEvidence = async (runId) =>
+      runEvidenceExportDocument(runId, tracePackForRun("run-from-test-B"));
+    await renderRun("/runs/run-1", fake.service, platformWithStorage().platform);
+    await click(button("Export evidence"));
+    expect(document.body.textContent).toContain("TracePack evidence for a different Run");
+    expect(document.querySelector("a[download]")).toBeNull();
+  });
 });
+
+function tracePackForRun(runId: string): TracePackExportResponse {
+  const digest = `sha256:${"a".repeat(64)}`;
+  return {
+    tracePack: {
+      schemaVersion: 1,
+      kind: "relay-trace-pack",
+      digest,
+      createdAt: 1,
+      source: {
+        runId,
+        runSchemaVersion: 5,
+        status: "ok",
+        action: "test",
+        inputDigest: "b".repeat(64),
+        writtenAt: 1,
+      },
+      redaction: { status: "applied-at-persistence", redactedChannels: [] },
+      completeness: { status: "complete", channels: {}, missing: [], artifacts: [] },
+      objects: [
+        {
+          path: "run.json",
+          kind: "frozen-run",
+          mediaType: "application/json",
+          encoding: "json",
+          digest,
+          bytes: 2,
+          content: {},
+        },
+      ],
+    },
+    analysis: {
+      schemaVersion: 1,
+      mode: "trace-pack-offline-analysis",
+      tracePackDigest: digest,
+      sourceRunId: runId,
+      historicalVerdict: "failed",
+      futureTransitionVerdict: "unknown",
+      proved: [],
+      unknown: [
+        {
+          code: "MISSING_EVIDENCE",
+          statement: "The fixture has no verified future-device claim.",
+          resolution: "Replay the frozen Test on the intended target.",
+        },
+      ],
+      smallestLiveVerification: {
+        kind: "replay-frozen-test",
+        reason: "Offline export cannot prove a later device.",
+        requiresTarget: true,
+      },
+    },
+  };
+}

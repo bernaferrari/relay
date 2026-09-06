@@ -39,6 +39,7 @@ import { RunReviewControls } from "./run-review-controls";
 import { RunWorkbench, RunContextFacts } from "./run-workbench";
 import { EvidencePreview } from "./run-report-panels";
 import { RunReplayAction, RunReplayStatus } from "./run-replay";
+import { RunEvidenceExport } from "./run-evidence-export";
 import { attachedRunLinkTestId, attachedRunOwnership } from "../data/attached-run-ownership";
 import { historicalRunCaption } from "../data/workbench-step-selection";
 
@@ -441,6 +442,9 @@ function RunReport({
   const heading = resultHeading(report.outcome);
   const actions = (
     <>
+      {runService.exportEvidence ? (
+        <RunEvidenceExport runId={report.runId} exportEvidence={runService.exportEvidence} />
+      ) : null}
       {embedded ? (
         <Button
           nativeButton={false}

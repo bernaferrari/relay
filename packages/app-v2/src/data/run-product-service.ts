@@ -1,5 +1,9 @@
 import { boundedVideoBlob } from "./run-video-loader";
 export { runOutcome } from "./run-outcome";
+import {
+  runEvidenceExportDocument,
+  type RunEvidenceExportDocument,
+} from "@relay/product/run-evidence-export";
 import type {
   ProductRunCancelInput,
   ProductRunReport,
@@ -77,6 +81,7 @@ export type RunProductService = {
   ): Promise<ProductVisualBaselineApproval>;
   getReport(runId: string, canonical?: ProductRunReport): Promise<ProductRunReportOverview>;
   getRawEvidence(runId: string): Promise<unknown>;
+  exportEvidence?(runId: string): Promise<RunEvidenceExportDocument>;
 };
 type ProductRuntime = {
   client: Awaited<ReturnType<typeof productClientForPlatform>>["client"];
@@ -277,6 +282,10 @@ export function createRunProductService(platform: Platform): RunProductService {
     },
     async approveVisualBaseline(input) {
       return (await runtime()).client.invoke("run.visual-baseline.update", input);
+    },
+    async exportEvidence(runId) {
+      const result = await (await runtime()).client.invoke("run.trace-pack.get", { runId });
+      return runEvidenceExportDocument(runId, result);
     },
     async getReport(runId, canonical) {
       const { client } = await runtime();

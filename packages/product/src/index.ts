@@ -11,3 +11,4 @@ export * from "./catalog.js";
 export * from "./run-across.js";
 export * from "./map-exploration.js";
 export * from "./agent-debug.js";
+export * from "./run-evidence-export.js";
