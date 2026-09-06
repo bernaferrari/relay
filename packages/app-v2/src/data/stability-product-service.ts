@@ -16,6 +16,8 @@ export type ProductStabilitySample = {
   readonly queuedAt?: number;
   readonly finishedAt?: number;
   readonly durationMs?: number;
+  /** Review owner from Batch triage. Absent on ordinary Run history. */
+  readonly assignee?: string;
 };
 
 export type ProductStabilityScope = {
@@ -38,11 +40,21 @@ export type ProductStabilityBucket = {
 };
 
 export type ProductStabilitySignal = {
-  readonly kind: "possible-flakiness" | "environment-recurrence" | "duration-regression";
+  readonly kind:
+    | "possible-flakiness"
+    | "environment-recurrence"
+    | "duration-regression"
+    | "open-ownership";
   readonly severity: "info" | "warning";
   readonly summary: string;
   readonly runIds: readonly string[];
   readonly environmentId?: string;
+};
+
+export type ProductStabilityOwner = {
+  readonly assignee: string;
+  readonly caseCount: number;
+  readonly problemCount: number;
 };
 
 export type ProductStabilitySummary = {
@@ -60,6 +72,7 @@ export type ProductStabilitySummary = {
   readonly historyComplete: boolean;
   readonly runIds: readonly string[];
   readonly byEnvironment: readonly ProductStabilityBucket[];
+  readonly owners: readonly ProductStabilityOwner[];
   readonly signals: readonly ProductStabilitySignal[];
 };
 
@@ -138,6 +151,7 @@ export function stabilitySamplesFromBatch(
         }
       : {}),
     status: item.status,
+    ...(item.assignee ? { assignee: item.assignee } : {}),
   }));
 }
 
@@ -339,6 +353,37 @@ export function summarizeProductStability(
     if (duration) signals.push(duration);
   }
 
+  const owners = [
+    ...new Set(samples.flatMap((sample) => (sample.assignee ? [sample.assignee] : []))),
+  ]
+    .sort()
+    .map((assignee) => {
+      const members = samples.filter((sample) => sample.assignee === assignee);
+      return {
+        assignee,
+        caseCount: members.length,
+        problemCount: members.filter(
+          (sample) =>
+            sample.status === "failed" ||
+            sample.status === "blocked" ||
+            sample.status === "cancelled" ||
+            sampleOutcome(sample) === "failed",
+        ).length,
+      };
+    });
+  if (owners.some((owner) => owner.problemCount > 0)) {
+    const assignedProblems = owners.reduce((total, owner) => total + owner.problemCount, 0);
+    signals.push({
+      kind: "open-ownership",
+      severity: "info",
+      summary:
+        assignedProblems === 1
+          ? "1 assigned case has a review owner."
+          : `${assignedProblems} assigned cases have a review owner.`,
+      runIds: signalRunIds(samples.filter((sample) => sample.assignee)),
+    });
+  }
+
   return {
     scope,
     sampleCount: samples.length,
@@ -353,6 +398,7 @@ export function summarizeProductStability(
     historyComplete: input.historyComplete,
     runIds: signalRunIds(samples),
     byEnvironment,
+    owners,
     signals,
   };
 }

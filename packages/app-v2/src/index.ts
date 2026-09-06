@@ -84,6 +84,7 @@ export {
   summarizeProductStability,
   type ProductStabilityBucket,
   type ProductStabilityConfidence,
+  type ProductStabilityOwner,
   type ProductStabilitySample,
   type ProductStabilityScope,
   type ProductStabilitySignal,

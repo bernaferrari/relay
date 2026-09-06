@@ -165,5 +165,78 @@ describe("stability product service", () => {
       environmentId: "env-1",
       passRate: 1,
     });
+    expect(summary.owners).toEqual([]);
+  });
+
+  it("projects Batch triage assignees as ownership without inventing owners", () => {
+    const report = {
+      id: "batch-owned",
+      title: "Languages",
+      status: "completed-with-problems",
+      createdAt: 1,
+      updatedAt: 2,
+      totalCases: 2,
+      completedCases: 2,
+      passedCases: 0,
+      failedCases: 2,
+      pendingCases: 0,
+      targetNames: [],
+      runIds: ["run-en", "run-pt"],
+      cases: [
+        {
+          id: "cell-en",
+          index: 0,
+          phase: "coverage",
+          status: "failed",
+          values: {},
+          runId: "run-en",
+          assignee: "human:qa",
+          identity: {
+            testId: "test-1",
+            environmentId: "pixel",
+            environmentPlatform: "android",
+            runId: "run-en",
+          },
+        },
+        {
+          id: "cell-pt",
+          index: 1,
+          phase: "coverage",
+          status: "failed",
+          values: {},
+          runId: "run-pt",
+          identity: {
+            testId: "test-1",
+            environmentId: "pixel",
+            environmentPlatform: "android",
+            runId: "run-pt",
+          },
+        },
+      ],
+      setup: {
+        appMapId: "app-1",
+        appMapRevision: 1,
+        testId: "test-1",
+        testName: "Languages",
+        appName: "Grok",
+        dataSet: { name: "Languages", dimensions: [] },
+      },
+      navigation: { route: "/batches/batch-owned", href: "/batches/batch-owned" },
+      report: { headline: "2 cases need attention", detail: "0 passed · 2 failed" },
+    } as unknown as ProductBatchReport;
+
+    const samples = stabilitySamplesFromBatch(report);
+    expect(samples[0]?.assignee).toBe("human:qa");
+    expect(samples[1]?.assignee).toBeUndefined();
+    const summary = summarizeProductStability({ samples, historyComplete: true });
+    expect(summary.owners).toEqual([{ assignee: "human:qa", caseCount: 1, problemCount: 1 }]);
+    expect(summary.signals).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "open-ownership",
+          summary: "1 assigned case has a review owner.",
+        }),
+      ]),
+    );
   });
 });
