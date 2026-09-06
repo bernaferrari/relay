@@ -160,6 +160,7 @@ export * from "./scroll-surface-policy.js";
 export * from "./scrollable-survey.js";
 export * from "./scroll-survey-persist.js";
 export * from "./semantic-readiness.js";
+export * from "./golden-loop-telemetry-store.js";
 export * from "./authoring-sessions.js";
 export * from "./app-map.js";
 export * from "./app-map-combine-preflight.js";
