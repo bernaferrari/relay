@@ -6,7 +6,7 @@ import { defineConfig } from "vite";
 export default defineConfig({
   root: resolve("src/renderer-v2"),
   base: "./",
-  publicDir: resolve("src/renderer/public"),
+  publicDir: resolve("src/renderer-v2/public"),
   plugins: [react(), tailwindcss()],
   server: {
     port: 5173,
