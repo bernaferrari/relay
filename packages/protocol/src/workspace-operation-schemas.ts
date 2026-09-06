@@ -117,6 +117,8 @@ export const workspaceOperationSchemas = {
       serial: identifier("Connected device serial"),
       maxScrolls: z.number().int().min(1).max(12).optional(),
       restore: z.boolean().optional(),
+      dir: text("Folder for sibling 00.png / 00.json frames and full.png").optional(),
+      force: z.boolean().optional().describe("Overwrite a non-empty survey directory"),
     })
     .strict(),
 

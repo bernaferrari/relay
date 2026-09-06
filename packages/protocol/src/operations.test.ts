@@ -1464,6 +1464,18 @@ test("scroll survey has one strict target-operation contract", () => {
     maxScrolls: 4,
     restore: false,
   });
+  assert.deepEqual(
+    definition.input.parse({
+      serial: "ipad-1",
+      dir: "/tmp/settings",
+      force: true,
+    }),
+    {
+      serial: "ipad-1",
+      dir: "/tmp/settings",
+      force: true,
+    },
+  );
   for (const input of [
     { serial: "" },
     { serial: "   " },
@@ -1472,6 +1484,9 @@ test("scroll survey has one strict target-operation contract", () => {
     { serial: "ipad-1", maxScrolls: 1.5 },
     { serial: "ipad-1", maxScrolls: "4" },
     { serial: "ipad-1", restore: "false" },
+    { serial: "ipad-1", dir: "" },
+    { serial: "ipad-1", dir: "   " },
+    { serial: "ipad-1", force: "true" },
   ]) {
     assert.throws(() => definition.input.parse(input), /scroll survey/u);
   }
@@ -1506,9 +1521,78 @@ test("scroll survey has one strict target-operation contract", () => {
     ...validOutput,
     reason: "start-viewport-unproven",
   });
+  const persisted = {
+    ...validOutput,
+    persist: {
+      dir: "/tmp/settings",
+      status: "stopped" as const,
+      reason: "inspection-unavailable",
+      frameCount: 1,
+      paths: [{ png: "/tmp/settings/00.png", json: "/tmp/settings/00.json" }],
+      frames: [
+        {
+          index: 0,
+          offsetY: 0,
+          labelCount: 0,
+          files: { png: "/tmp/settings/00.png", json: "/tmp/settings/00.json" },
+        },
+      ],
+      full: {
+        png: "/tmp/settings/full.png",
+        json: "/tmp/settings/full.json",
+        width: 834,
+        height: 1112,
+        nodeCount: 0,
+      },
+    },
+  };
+  assert.deepEqual(definition.output.parse(persisted), persisted);
   assert.throws(
     () => definition.output.parse({ ...validOutput, reason: "unknown" }),
     /scroll survey reason/u,
+  );
+  assert.throws(
+    () => definition.output.parse({ ...validOutput, persist: { dir: "" } }),
+    /scroll survey persist/u,
+  );
+});
+
+test("app launch reports the observed foreground app", () => {
+  const definition = operationDefinition("target.app.launch");
+  assert.deepEqual(definition.input.parse({ serial: "pixel-1", app: "Chrome" }), {
+    serial: "pixel-1",
+    app: "Chrome",
+  });
+  const matched = {
+    launched: {
+      serial: "pixel-1",
+      app: "Chrome",
+      platform: "android" as const,
+      launchedAt: 1,
+    },
+    observed: { app: "Chrome", matched: true },
+  };
+  assert.deepEqual(definition.output.parse(matched), matched);
+  const bounced = {
+    launched: matched.launched,
+    observed: { app: "Settings", matched: false },
+  };
+  assert.deepEqual(definition.output.parse(bounced), bounced);
+  assert.deepEqual(
+    definition.output.parse({
+      launched: matched.launched,
+      observed: { matched: false },
+    }),
+    { launched: matched.launched, observed: { matched: false } },
+  );
+  assert.throws(() => definition.output.parse({ launched: matched.launched }), /observed/u);
+  assert.throws(
+    () =>
+      definition.output.parse({
+        launched: matched.launched,
+        observed: { app: "Settings", matched: "false" },
+      }),
+    /observed/u,
   );
 });
 

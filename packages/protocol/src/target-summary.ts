@@ -404,6 +404,156 @@ function runtimeReadinessSummary(value: unknown): Record<string, unknown> | unde
 }
 
 /** CLI/MCP presentation flag: keep the raw snapshot (including `nodes`) when set. */
+function surveyFrameLabels(nodes: unknown[]): string[] {
+  const labels: string[] = [];
+  for (const node of nodes) {
+    if (!node || typeof node !== "object" || Array.isArray(node)) continue;
+    const label =
+      typeof (node as { label?: unknown }).label === "string"
+        ? (node as { label: string }).label.trim()
+        : "";
+    if (!label || /^(back|home|recents)$/iu.test(label)) continue;
+    if (/notification:/iu.test(label)) continue;
+    labels.push(label);
+    if (labels.length >= 12) break;
+  }
+  return labels;
+}
+
+function summarizeScrollSurveyResult(result: unknown): unknown {
+  if (!result || typeof result !== "object" || Array.isArray(result)) return result;
+  const body = result as {
+    status?: unknown;
+    reason?: unknown;
+    message?: unknown;
+    restoredStartViewport?: unknown;
+    frames?: unknown;
+    stitched?: unknown;
+    mergedNodes?: unknown;
+    persist?: unknown;
+  };
+  if (!Array.isArray(body.frames) || body.frames.length === 0) return result;
+  const frames = body.frames.flatMap((value) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+    const frame = value as {
+      index?: unknown;
+      offsetY?: unknown;
+      appendedHeight?: unknown;
+      screenshot?: { width?: unknown; height?: unknown };
+      snapshot?: { nodes?: unknown };
+    };
+    const index = Number(frame.index);
+    if (!Number.isInteger(index)) return [];
+    const nodes = Array.isArray(frame.snapshot?.nodes) ? frame.snapshot.nodes : [];
+    return [
+      {
+        index,
+        offsetY: Number(frame.offsetY) || 0,
+        appendedHeight: Number(frame.appendedHeight) || 0,
+        ...(Number.isFinite(Number(frame.screenshot?.width))
+          ? { width: Number(frame.screenshot?.width) }
+          : {}),
+        ...(Number.isFinite(Number(frame.screenshot?.height))
+          ? { height: Number(frame.screenshot?.height) }
+          : {}),
+        labels: surveyFrameLabels(nodes),
+      },
+    ];
+  });
+  if (!frames.length) return result;
+  const stitched =
+    body.stitched && typeof body.stitched === "object" && !Array.isArray(body.stitched)
+      ? (body.stitched as { width?: unknown; height?: unknown })
+      : undefined;
+  const mergedNodes = Array.isArray(body.mergedNodes) ? body.mergedNodes : [];
+  const persist =
+    body.persist && typeof body.persist === "object" && !Array.isArray(body.persist)
+      ? (body.persist as Record<string, unknown>)
+      : undefined;
+  return {
+    status: body.status,
+    reason: body.reason,
+    ...(typeof body.message === "string" ? { message: body.message } : {}),
+    restoredStartViewport: body.restoredStartViewport === true,
+    frameCount: frames.length,
+    frames,
+    ...(stitched &&
+    Number.isFinite(Number(stitched.width)) &&
+    Number.isFinite(Number(stitched.height))
+      ? {
+          full: {
+            width: Number(stitched.width),
+            height: Number(stitched.height),
+            nodeCount: mergedNodes.length,
+          },
+        }
+      : {}),
+    ...(persist?.dir && typeof persist.dir === "string"
+      ? {
+          persist: {
+            dir: persist.dir,
+            ...(persist.full && typeof persist.full === "object" && !Array.isArray(persist.full)
+              ? { full: persist.full }
+              : {}),
+          },
+        }
+      : {}),
+  };
+}
+
+function normalizeLaunchAppToken(value: string): string {
+  return value.trim().toLocaleLowerCase();
+}
+
+function launchAppPackageTail(value: string): string {
+  const parts = normalizeLaunchAppToken(value).split(".");
+  return parts[parts.length - 1] ?? "";
+}
+
+/** Package ids and display names are both valid launch requests. Chrome vs
+ * Settings must stay a miss; `ai.x.GrokApp` vs the Application label `Grok`
+ * is a hit. */
+export function launchedAppMatchesObserved(requested: string, observed: string): boolean {
+  const req = normalizeLaunchAppToken(requested);
+  const obs = normalizeLaunchAppToken(observed);
+  if (!req || !obs) return false;
+  if (req === obs) return true;
+  const reqTail = launchAppPackageTail(req);
+  const obsTail = launchAppPackageTail(obs);
+  if (reqTail && obsTail && reqTail === obsTail) return true;
+  const shorter = reqTail.length <= obsTail.length ? reqTail : obsTail;
+  const longer = reqTail.length <= obsTail.length ? obsTail : reqTail;
+  return shorter.length >= 4 && longer.startsWith(shorter);
+}
+
+/** Launch acknowledgement is not foreground proof. Agents need the observed
+ * app so a bounce (Chrome → Settings) is visible without a second snapshot. */
+export function summarizeLaunchedForeground(
+  requested: string,
+  snapshot:
+    | {
+        nodes?: unknown;
+        foregroundApp?: unknown;
+        treeApp?: unknown;
+      }
+    | undefined,
+): { app?: string; matched: boolean } {
+  if (!snapshot) return { matched: false };
+  const nodes = Array.isArray(snapshot.nodes) ? snapshot.nodes : [];
+  const chrome = describeSnapshotChrome(nodes);
+  const treeApp = typeof snapshot.treeApp === "string" ? snapshot.treeApp.trim() : "";
+  const foregroundApp =
+    typeof snapshot.foregroundApp === "string" ? snapshot.foregroundApp.trim() : "";
+  const app = chrome.app || treeApp || foregroundApp || undefined;
+  const candidates = [chrome.app, treeApp, foregroundApp].filter(
+    (value): value is string => typeof value === "string" && value.length > 0,
+  );
+  return {
+    ...(app ? { app } : {}),
+    matched: candidates.some((candidate) => launchedAppMatchesObserved(requested, candidate)),
+  };
+}
+
 export function wantsFullSnapshotTree(input: unknown): boolean {
   if (!input || typeof input !== "object" || Array.isArray(input)) return false;
   const full = (input as { full?: unknown }).full;
@@ -501,6 +651,9 @@ export function summarizeTargetOperationResult(operationId: string, result: unkn
           }
         : {}),
     };
+  }
+  if (operationId === "target.scroll-survey.capture") {
+    return summarizeScrollSurveyResult(result);
   }
   if (operationId !== "target.devices.list") return result;
   if (!result || typeof result !== "object" || Array.isArray(result)) return result;

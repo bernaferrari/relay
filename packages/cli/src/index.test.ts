@@ -844,7 +844,7 @@ test("device survey --dir persists frames and prints a digest without base64", a
     assert.deepEqual(calls, [
       {
         operationId: "target.scroll-survey.capture",
-        input: { serial: "pixel-9", maxScrolls: 6 },
+        input: { serial: "pixel-9", maxScrolls: 6, dir },
       },
     ]);
     const terminal = JSON.parse(io.stdout()) as { result: Record<string, unknown> };

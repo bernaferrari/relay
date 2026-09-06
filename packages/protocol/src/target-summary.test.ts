@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { summarizeTargetOperationResult, wantsFullSnapshotTree } from "./target-summary.js";
+import {
+  summarizeLaunchedForeground,
+  summarizeTargetOperationResult,
+  wantsFullSnapshotTree,
+} from "./target-summary.js";
 
 test("full snapshot presentation is opt-in", () => {
   assert.equal(wantsFullSnapshotTree({ serial: "ipad" }), false);
@@ -353,6 +357,137 @@ test("snapshot summaries bound an inspection error", () => {
     inspectionError: "x".repeat(600),
   }) as { inspectionError?: string };
   assert.equal(result.inspectionError?.length, 480);
+});
+
+test("scroll survey summaries drop PNG payloads and keep a review digest", () => {
+  const result = summarizeTargetOperationResult("target.scroll-survey.capture", {
+    status: "completed",
+    reason: "end-of-content",
+    message: "Captured the complete visible list and restored the original viewport.",
+    restoredStartViewport: true,
+    frames: [
+      {
+        index: 0,
+        offsetY: 0,
+        appendedHeight: 0,
+        screenshot: { base64: "QUFB", width: 1080, height: 2340, capturedAt: 1 },
+        snapshot: {
+          nodes: [
+            {
+              label: "Network & internet",
+              type: "TextView",
+              rect: { x: 80, y: 605, width: 800, height: 50 },
+            },
+            {
+              label: "Wallpaper & style",
+              type: "TextView",
+              rect: { x: 80, y: 2089, width: 800, height: 50 },
+            },
+          ],
+        },
+      },
+      {
+        index: 1,
+        offsetY: 1420,
+        appendedHeight: 1420,
+        screenshot: { base64: "QkJC", width: 1080, height: 2340, capturedAt: 2 },
+        snapshot: {
+          nodes: [
+            {
+              label: "Tips & support",
+              type: "TextView",
+              rect: { x: 80, y: 2131, width: 800, height: 50 },
+            },
+          ],
+        },
+      },
+    ],
+    diagnosticFrames: [],
+    stitched: { base64: "Q0ND", width: 1080, height: 3760, mime: "image/png" },
+    mergedNodes: [{ label: "Network & internet" }, { label: "Tips & support" }],
+    persist: {
+      dir: "/tmp/settings",
+      full: { png: "/tmp/settings/full.png", json: "/tmp/settings/full.json" },
+    },
+  });
+  const text = JSON.stringify(result);
+  assert.equal(text.includes("QUFB"), false);
+  assert.equal(text.includes("base64"), false);
+  assert.deepEqual(result, {
+    status: "completed",
+    reason: "end-of-content",
+    message: "Captured the complete visible list and restored the original viewport.",
+    restoredStartViewport: true,
+    frameCount: 2,
+    frames: [
+      {
+        index: 0,
+        offsetY: 0,
+        appendedHeight: 0,
+        width: 1080,
+        height: 2340,
+        labels: ["Network & internet", "Wallpaper & style"],
+      },
+      {
+        index: 1,
+        offsetY: 1420,
+        appendedHeight: 1420,
+        width: 1080,
+        height: 2340,
+        labels: ["Tips & support"],
+      },
+    ],
+    full: { width: 1080, height: 3760, nodeCount: 2 },
+    persist: {
+      dir: "/tmp/settings",
+      full: { png: "/tmp/settings/full.png", json: "/tmp/settings/full.json" },
+    },
+  });
+});
+
+test("launch summaries name the observed foreground app so launch is not foreground", () => {
+  assert.deepEqual(
+    summarizeLaunchedForeground("Grok", {
+      nodes: [
+        {
+          type: "Application",
+          label: "Grok",
+          hittable: true,
+          rect: { x: 0, y: 0, width: 834, height: 1112 },
+        },
+      ],
+    }),
+    { app: "Grok", matched: true },
+  );
+  assert.deepEqual(
+    summarizeLaunchedForeground("ai.x.GrokApp", {
+      nodes: [
+        {
+          type: "Application",
+          label: "Grok",
+          hittable: true,
+          rect: { x: 0, y: 0, width: 834, height: 1112 },
+        },
+      ],
+    }),
+    { app: "Grok", matched: true },
+  );
+  assert.deepEqual(
+    summarizeLaunchedForeground("com.android.chrome", {
+      nodes: [
+        {
+          type: "Application",
+          label: "Settings",
+          hittable: true,
+          rect: { x: 0, y: 0, width: 1080, height: 2340 },
+        },
+      ],
+      foregroundApp: "com.android.settings",
+      treeApp: "com.android.settings",
+    }),
+    { app: "Settings", matched: false },
+  );
+  assert.deepEqual(summarizeLaunchedForeground("Chrome", undefined), { matched: false });
 });
 
 test("non-device and malformed results remain unchanged", () => {

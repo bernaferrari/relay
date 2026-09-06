@@ -12,7 +12,9 @@ import {
   getActiveJob,
   interact,
   IosMutationOutcomeUnknownError,
+  persistScrollSurvey,
   scrollCollectControls,
+  SurveyPersistError,
   formatSnapshotTree,
   runWithOperationContext,
 } from "@relay/core";
@@ -140,6 +142,13 @@ export async function handleManualTargetRoute(input: ManualTargetRouteInput): Pr
     ) {
       throw new HttpError(400, "maxScrolls must be an integer between 1 and 12");
     }
+    const dir = typeof body.dir === "string" ? body.dir.trim() : undefined;
+    if (body.dir !== undefined && !dir) {
+      throw new HttpError(400, "dir must be a non-empty folder path");
+    }
+    if (body.force !== undefined && typeof body.force !== "boolean") {
+      throw new HttpError(400, "force must be a boolean");
+    }
     await assertTargetControl(scope, serial);
     let survey: Awaited<ReturnType<typeof captureScrollableSurveyForTarget>>;
     try {
@@ -154,7 +163,19 @@ export async function handleManualTargetRoute(input: ManualTargetRouteInput): Pr
       }
       throw error;
     }
-    json(res, 200, survey);
+    if (!dir) {
+      json(res, 200, survey);
+      return true;
+    }
+    try {
+      const persist = await persistScrollSurvey(dir, survey, { force: body.force === true });
+      json(res, 200, { ...survey, persist });
+    } catch (error) {
+      if (error instanceof SurveyPersistError) {
+        throw new HttpError(error.code === "conflict" ? 409 : 400, error.message);
+      }
+      throw error;
+    }
     return true;
   }
 

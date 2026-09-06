@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { ExitCode } from "./errors.js";
-import { persistScrollSurvey } from "./survey-persist.js";
+import { persistScrollSurvey, scrollSurveyPersistDigest } from "./survey-persist.js";
 
 const pngBase64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
@@ -42,6 +42,26 @@ function survey(frames = [frame(0, "Language"), frame(1, "Data Controls")]) {
     stitched: { base64: pngBase64, width: 10, height: 40, mime: "image/png" as const },
   };
 }
+
+test("a complete server persist digest is reused instead of writing again", () => {
+  const persist = {
+    status: "completed" as const,
+    reason: "end-of-content",
+    frameCount: 1,
+    dir: "/tmp/settings",
+    paths: [{ png: "/tmp/settings/00.png", json: "/tmp/settings/00.json" }],
+    frames: [
+      {
+        index: 0,
+        labelCount: 1,
+        files: { png: "/tmp/settings/00.png", json: "/tmp/settings/00.json" },
+      },
+    ],
+  };
+  assert.deepEqual(scrollSurveyPersistDigest({ persist }), persist);
+  assert.equal(scrollSurveyPersistDigest({ persist: { dir: "/tmp/settings" } }), undefined);
+  assert.equal(scrollSurveyPersistDigest({ status: "completed" }), undefined);
+});
 
 test("persist writes numbered png+json siblings and keeps the review tree", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-survey-persist-"));

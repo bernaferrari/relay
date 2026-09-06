@@ -504,7 +504,13 @@ type SpecificOperationMap = {
   };
   "step.run": { input: { step: RecipeStep; serial: string }; output: StepRunResult };
   "target.scroll-survey.capture": {
-    input: { serial: string; maxScrolls?: number; restore?: boolean };
+    input: {
+      serial: string;
+      maxScrolls?: number;
+      restore?: boolean;
+      dir?: string;
+      force?: boolean;
+    };
 
     output: {
       status: "completed" | "stopped";
@@ -542,6 +548,26 @@ type SpecificOperationMap = {
       mergedNodes: ScrollSurveyNodeDto[];
       restoredStartViewport: boolean;
       message: string;
+      persist?: {
+        dir: string;
+        status: "completed" | "stopped";
+        reason: string;
+        frameCount: number;
+        paths: Array<{ png: string; json: string }>;
+        frames: Array<{
+          index: number;
+          offsetY?: number;
+          labelCount: number;
+          files: { png: string; json: string };
+        }>;
+        full?: {
+          png: string;
+          json: string;
+          width: number;
+          height: number;
+          nodeCount: number;
+        };
+      };
     };
   };
   "target.app.launch": {
@@ -552,6 +578,10 @@ type SpecificOperationMap = {
         app: string;
         platform: "android" | "ios";
         launchedAt: number;
+      };
+      observed: {
+        app?: string;
+        matched: boolean;
       };
     };
   };

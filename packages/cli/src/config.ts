@@ -385,7 +385,11 @@ function applySurveyDir(
   if (operationId !== "target.scroll-survey.capture") {
     throw new UsageError("--dir is only valid on device survey");
   }
-  return { ...input, dir };
+  return {
+    ...input,
+    dir,
+    ...(tokens.switches.has("--force") ? { force: true } : {}),
+  };
 }
 
 function applySurveyMaxScrolls(

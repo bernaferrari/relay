@@ -212,6 +212,11 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
             "Folder for sibling 00.png / 00.json frames (review tree: defaults + overrides). Prefer --dir over inline --json. Refuses a non-empty dest unless --force.",
         },
         {
+          name: "force",
+          type: "boolean",
+          description: "Overwrite a non-empty survey directory. Only valid with dir.",
+        },
+        {
           name: "restore",
           type: "boolean",
           description:

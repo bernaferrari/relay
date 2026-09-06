@@ -513,6 +513,9 @@ const targetAppLaunchOutputParser = objectParser<OperationOutput<"target.app.lau
       fail("launched app platform", "must be android or ios");
     }
     number(launched.launchedAt, "launched app timestamp");
+    const observed = record(input.observed, "observed foreground app");
+    if (observed.app !== undefined) string(observed.app, "observed foreground app name");
+    boolean(observed.matched, "observed foreground app matched");
   },
 );
 

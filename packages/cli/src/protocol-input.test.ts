@@ -16,9 +16,10 @@ test("strips CLI-only keys that are absent from the protocol schema", () => {
       serial: "pixel-9",
       maxScrolls: 6,
       dir: "/tmp/frames",
+      force: true,
       restore: false,
     }),
-    { serial: "pixel-9", maxScrolls: 6, restore: false },
+    { serial: "pixel-9", maxScrolls: 6, dir: "/tmp/frames", force: true, restore: false },
   );
 });
 

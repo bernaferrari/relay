@@ -126,6 +126,14 @@ const targetScrollSurveyInputParser = objectParser<OperationInput<"target.scroll
     if (input.restore !== undefined && typeof input.restore !== "boolean") {
       fail("scroll survey restore", "must be a boolean");
     }
+    if (input.dir !== undefined) {
+      if (typeof input.dir !== "string" || !input.dir.trim()) {
+        fail("scroll survey dir", "must be a non-empty folder path");
+      }
+    }
+    if (input.force !== undefined && typeof input.force !== "boolean") {
+      fail("scroll survey force", "must be a boolean");
+    }
   },
 );
 
@@ -161,6 +169,25 @@ const targetScrollSurveyOutputParser = objectParser<
   );
   boolean(input.restoredStartViewport, "scroll survey restoredStartViewport");
   string(input.message, "scroll survey message");
+  if (input.persist !== undefined) {
+    const persist = record(input.persist, "scroll survey persist");
+    string(persist.dir, "scroll survey persist dir");
+    if (
+      persist.status !== undefined &&
+      persist.status !== "completed" &&
+      persist.status !== "stopped"
+    ) {
+      fail("scroll survey persist status", "must be completed or stopped");
+    }
+    if (persist.reason !== undefined) string(persist.reason, "scroll survey persist reason");
+    if (persist.frameCount !== undefined)
+      number(persist.frameCount, "scroll survey persist frameCount");
+    if (persist.full !== undefined) {
+      const full = record(persist.full, "scroll survey persist full");
+      string(full.png, "scroll survey persist full png");
+      string(full.json, "scroll survey persist full json");
+    }
+  }
 });
 
 export function createTargetCaptureOperationParsers(input: {

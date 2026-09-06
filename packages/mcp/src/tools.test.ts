@@ -212,10 +212,20 @@ test("exposes app launch as one high-intent leased target tool", () => {
   assert.match(launch.description, /Project role: runner/);
   assert.match(launch.description, /Target capabilities: launch/);
   assert.match(launch.description, /Lease: exclusive/);
+  assert.match(launch.description, /observed\.matched/u);
+  assert.match(launch.description, /Launch is not the same as foreground/u);
   assert.deepEqual(launch.inputSchema.parse({ serial: "ipad-1", app: "Settings" }), {
     serial: "ipad-1",
     app: "Settings",
   });
+  assert.deepEqual(
+    tool("target.scroll-survey.capture").inputSchema.parse({
+      serial: "pixel-9",
+      dir: "/tmp/settings",
+      force: true,
+    }),
+    { serial: "pixel-9", dir: "/tmp/settings", force: true },
+  );
 });
 
 test("app-map.get accepts an optional list presentation field", () => {
@@ -764,10 +774,10 @@ test("a language Variable exposes one canonical Variable × Test Combine", () =>
   ] as const) {
     assert.ok(locale.has(operationId), `locale profile is missing ${operationId}`);
   }
-  assert.match(tool("target.scroll-survey.capture").description, /--dir/u);
+  assert.match(tool("target.scroll-survey.capture").description, /Pass dir/u);
   assert.match(tool("target.scroll-survey.capture").description, /Combine export/u);
   assert.match(tool("target.scroll-survey.capture").description, /portable review folder/u);
-  assert.match(tool("target.scroll-survey.capture").description, /Do not dump base64/u);
+  assert.match(tool("target.scroll-survey.capture").description, /digest without base64/u);
   assert.doesNotMatch(tool("target.scroll-survey.capture").description, /Then compare the folder/u);
   // A sweep drives a real device; authoring the App Map is a different task.
   assert.equal(locale.has("app-map.proposal.submit"), false);

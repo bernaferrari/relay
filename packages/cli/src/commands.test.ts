@@ -354,6 +354,7 @@ test("device survey exposes the canonical scroll-survey operation and bounded in
   assert.match(help?.inputHelp?.[0]?.type ?? "", /1-12/u);
   assert.equal(help?.inputHelp?.[1]?.name, "dir");
   assert.match(help?.inputHelp?.[1]?.description ?? "", /review tree/u);
+  assert.equal(help?.inputHelp?.[2]?.name, "force");
   assert.match(help?.note ?? "", /exclusive lease/u);
   assert.match(help?.note ?? "", /--dir/u);
   assert.match(help?.note ?? "", /megabytes/u);

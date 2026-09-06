@@ -238,6 +238,9 @@ test("exposes pool capacity and installs and launches a registered artifact thro
 });
 
 test("launches an arbitrary app through the leased target session", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-target-launch-"));
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = root;
   const launched: Array<{
     serial: string;
     platform: "android" | "ios";
@@ -271,6 +274,22 @@ test("launches an arbitrary app through the leased target session", async () => 
       launchApp: async (input) => {
         launched.push(input);
       },
+      captureSnapshot: async () => ({
+        serial: "ipad-1",
+        capturedAt: 1,
+        nodes: [
+          {
+            type: "Application",
+            label: "Settings",
+            hittable: true,
+            rect: { x: 0, y: 0, width: 834, height: 1112 },
+          },
+        ],
+        interactive: [],
+        inspectable: true,
+        source: "sdk" as const,
+        screenIdentity: { fingerprint: "a".repeat(64), nodes: [], volatileSignals: [] },
+      }),
     },
   });
   try {
@@ -280,6 +299,10 @@ test("launches an arbitrary app through the leased target session", async () => 
       body: JSON.stringify({ serial: "ipad-1", app: "Grok" }),
     });
     assert.equal(defaultResponse.status, 200);
+    const bounced = (await defaultResponse.json()) as {
+      observed: { app?: string; matched: boolean };
+    };
+    assert.deepEqual(bounced.observed, { app: "Settings", matched: false });
     const response = await fetch(`http://127.0.0.1:${server.port}/device/app/launch`, {
       method: "POST",
       headers: headers("target.app.launch"),
@@ -292,6 +315,7 @@ test("launches an arbitrary app through the leased target session", async () => 
     ]);
     const body = (await response.json()) as {
       launched: { serial: string; app: string; platform: string; launchedAt: number };
+      observed: { app?: string; matched: boolean };
     };
     assert.deepEqual(
       {
@@ -302,8 +326,12 @@ test("launches an arbitrary app through the leased target session", async () => 
       { serial: "ipad-1", app: "Settings", platform: "ios" },
     );
     assert.equal(Number.isFinite(body.launched.launchedAt), true);
+    assert.deepEqual(body.observed, { app: "Settings", matched: true });
   } finally {
     await server.close();
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
+    await rm(root, { recursive: true, force: true });
   }
 });
 

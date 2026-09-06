@@ -25,7 +25,7 @@ import {
 import { protocolOperationInput } from "./protocol-input.js";
 import { CliOutput, type OutputStreams } from "./output.js";
 import { emitScreenshot, emitSnapshotFile } from "./screenshot.js";
-import { persistScrollSurvey } from "./survey-persist.js";
+import { persistScrollSurvey, scrollSurveyPersistDigest } from "./survey-persist.js";
 import { runDbCommand } from "./db-commands.js";
 import { runReportCommand } from "./report-commands.js";
 import { ensureLocalRelayServer, type LocalServerResult } from "./local-server.js";
@@ -628,9 +628,10 @@ export async function runCli(
         } else if (parsed.operationId === "target.scroll-survey.capture" && surveyDir) {
           output.result(
             operationId,
-            await persistScrollSurvey(surveyDir, result, {
-              force: parsed.surveyForce === true,
-            }),
+            scrollSurveyPersistDigest(result) ??
+              (await persistScrollSurvey(surveyDir, result, {
+                force: parsed.surveyForce === true,
+              })),
           );
         } else {
           output.result(operationId, summarizeResult(operationId, result, input, commandPath));

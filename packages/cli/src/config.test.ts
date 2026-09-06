@@ -610,7 +610,7 @@ test("device survey --dir maps onto the scroll-survey operation input", () => {
   assert.equal(forced.command, "invoke");
   if (forced.command === "invoke") {
     assert.equal(forced.surveyForce, true);
-    assert.deepEqual(forced.input, { serial: "ipad-1", dir: "/tmp/survey" });
+    assert.deepEqual(forced.input, { serial: "ipad-1", dir: "/tmp/survey", force: true });
   }
 
   assert.throws(

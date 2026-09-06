@@ -158,6 +158,7 @@ export * from "./logical-scroll-surface.js";
 export * from "./reviewed-document-origin.js";
 export * from "./scroll-surface-policy.js";
 export * from "./scrollable-survey.js";
+export * from "./scroll-survey-persist.js";
 export * from "./authoring-sessions.js";
 export * from "./app-map.js";
 export * from "./app-map-combine-preflight.js";

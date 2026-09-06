@@ -41,6 +41,7 @@ import {
 } from "./campaign-duration-routes.js";
 import {
   projectRoleAllows,
+  summarizeLaunchedForeground,
   type LocalAgentDeviceExecutionTargetRef,
   type OperationInput,
   type TargetSupervisorHealth,
@@ -478,8 +479,15 @@ export async function handleTargetRuntimeRoute(context: {
       }
       throw error;
     }
+    let observed = summarizeLaunchedForeground(app, undefined);
+    try {
+      observed = summarizeLaunchedForeground(app, await runtime.captureSnapshot({ serial }));
+    } catch {
+      observed = { matched: false };
+    }
     json(response, 200, {
       launched: { serial, app, platform: device.platform, launchedAt: Date.now() },
+      observed,
     });
     return true;
   }

@@ -91,7 +91,9 @@ const extraGuidance: Partial<Record<OperationId, string>> = {
   "target.snapshot.capture":
     " Default JSON is a digest (app, header, controls, nodeCount). Pass full:true for the accessibility tree nodes. The tree may still be missing — screenshot plus a point tap still works. Do not retry snapshot in a loop.",
   "target.scroll-survey.capture":
-    " Persist frames with the CLI: relay device survey <serial> --dir <folder>. Do not dump base64 in the tool result. A survey directory is raw capture evidence; use Combine export when a person needs a portable review folder.",
+    " Pass dir on this call to persist frames once (force overwrites a non-empty folder). The tool result is a digest without base64. A survey directory is raw capture evidence; use Combine export when a person needs a portable review folder.",
+  "target.app.launch":
+    " Launch is not the same as foreground. The result includes observed.app and observed.matched so a bounce (Chrome → Settings) is visible.",
   "target.recover":
     " Repair the runner without rebooting the device. A missing XCTest session is not a failed launch.",
   "target.browser-auth.save":
