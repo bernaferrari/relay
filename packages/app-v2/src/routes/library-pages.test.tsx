@@ -129,12 +129,58 @@ function catalog(overrides: Partial<CatalogProductService> = {}): CatalogProduct
   };
 }
 
+function platformWithPointer(workflowId: string): Platform {
+  const values = new Map([["activeRecordingWorkflowId", workflowId]]);
+  return {
+    platform: "web",
+    getServerUrl: () => "http://127.0.0.1:8787",
+    storage: {
+      get: (key) => values.get(key) ?? null,
+      set: (key, value) => void values.set(key, value),
+      remove: (key) => void values.delete(key),
+    },
+  };
+}
+
+function recordingInspect(appMapId?: string): RecordingProductService {
+  return {
+    inspect: vi.fn(async () => ({
+      status: "recording",
+      targets: [],
+      snapshot: {
+        schemaVersion: 1,
+        kind: "author-test",
+        title: "Untitled recording",
+        phase: "running",
+        stage: "recording",
+        version: "1",
+        progress: { label: "Recording" },
+        allowedNextActions: ["stop"],
+        problems: [],
+        evidenceRefs: [],
+        ...(appMapId
+          ? {
+              frozen: {
+                title: "Untitled recording",
+                actorId: "human:test",
+                appMapId,
+                appMapRevision: 1,
+                target: { kind: "device", platform: "android", targetId: "emulator-5554" },
+              },
+            }
+          : {}),
+      },
+    })),
+  } as unknown as RecordingProductService;
+}
+
 async function render(
   path: string,
   service = catalog(),
   mapService?: MapProductService,
   runService: RunProductService = {} as RunProductService,
   suiteProfileService: SuiteProfileProductService = {} as SuiteProfileProductService,
+  extras?: { platform?: Platform; productService?: RecordingProductService },
 ) {
   const history = createMemoryHistory({ initialEntries: [path] });
   const host = document.createElement("div");
@@ -144,9 +190,9 @@ async function render(
   await act(async () => {
     root.render(
       <RelayV2App
-        platform={platform}
+        platform={extras?.platform ?? platform}
         history={history}
-        productService={{} as RecordingProductService}
+        productService={extras?.productService ?? ({} as RecordingProductService)}
         runService={runService}
         suiteProfileService={suiteProfileService}
         catalogService={service}
@@ -351,6 +397,43 @@ describe("Tests workspace", () => {
     expect(document.body.textContent).not.toContain("Create Suite");
     expect(document.body.textContent).not.toContain("Save Suite");
     expect(document.body.textContent).not.toContain("Your selection spans Apps");
+  });
+
+  it("keeps a recording resume when the selected App owns it", async () => {
+    const productService = recordingInspect("app-shop-internal");
+    await render("/tests?app=app-shop-internal", catalog(), undefined, undefined, undefined, {
+      platform: platformWithPointer("workflow-shop"),
+      productService,
+    });
+
+    expect(productService.inspect).toHaveBeenCalledWith("workflow-shop");
+    expect(document.body.textContent).toContain("Finish the Test you started");
+    expect(document.body.textContent).toContain("Continue recording.");
+    expect(
+      document.querySelector<HTMLAnchorElement>('a[href="/recordings/workflow-shop"]'),
+    ).not.toBeNull();
+  });
+
+  it("does not hide a recording whose App ownership is still unknown", async () => {
+    await render("/tests?app=app-shop-internal", catalog(), undefined, undefined, undefined, {
+      platform: platformWithPointer("workflow-unknown"),
+      productService: recordingInspect(),
+    });
+
+    expect(document.body.textContent).toContain("Finish the Test you started");
+    expect(
+      document.querySelector<HTMLAnchorElement>('a[href="/recordings/workflow-unknown"]'),
+    ).not.toBeNull();
+  });
+
+  it("hides a recording resume that belongs to a different App", async () => {
+    await render("/tests?app=app-bank-internal", catalog(), undefined, undefined, undefined, {
+      platform: platformWithPointer("workflow-shop"),
+      productService: recordingInspect("app-shop-internal"),
+    });
+
+    expect(document.body.textContent).not.toContain("Finish the Test you started");
+    expect(document.querySelector('a[href="/recordings/workflow-shop"]')).toBeNull();
   });
 });
 
