@@ -56,6 +56,7 @@ export type LiveTargetMount = HTMLCanvasElement;
 
 export type LiveTargetInput =
   | BrowserDeviceInput
+  | { kind: "tap"; target: { identifier?: string; label?: string; text?: string } }
   | { kind: "touch"; action: "down" | "move" | "up" | "cancel"; x: number; y: number }
   | { kind: "key"; key: "enter" | "backspace"; text?: string }
   | { kind: "scroll"; x: number; y: number; scrollX: number; scrollY: number };
@@ -427,6 +428,37 @@ export function createLiveTargetSession(input: {
       await input.onInteraction(interaction);
       return;
     }
+    if (value.kind === "tap") {
+      const binding = value.target;
+      if (target.kind === "browser") {
+        throw new Error("Browser Try must record the semantic binding, not a coordinate click.");
+      }
+      if (binding.identifier) {
+        await input.client.invoke("target.interact", {
+          serial: target.targetId,
+          kind: "identifier",
+          identifier: binding.identifier,
+        });
+        return;
+      }
+      if (binding.label) {
+        await input.client.invoke("target.interact", {
+          serial: target.targetId,
+          kind: "label",
+          label: binding.label,
+        });
+        return;
+      }
+      if (binding.text) {
+        await input.client.invoke("target.interact", {
+          serial: target.targetId,
+          kind: "text-match",
+          match: binding.text,
+        });
+        return;
+      }
+      throw new Error("This control has no semantic binding to try.");
+    }
     if (target.kind === "browser") {
       await input.client.invoke("target.browser-device.control", {
         targetId: target.targetId,
@@ -498,6 +530,9 @@ function normalizeInteraction(
   value: LiveTargetInput,
   frame: BrowserDeviceFrame | undefined,
 ): LiveTargetInteraction | undefined {
+  if (value.kind === "tap") {
+    return { kind: "tap", target: value.target };
+  }
   if (value.kind === "touch") {
     if (value.action !== "up") return undefined;
     return {

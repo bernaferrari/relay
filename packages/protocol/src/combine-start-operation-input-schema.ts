@@ -147,5 +147,21 @@ export const combineStartOperationInputSchemas = {
           path: ["targetKind"],
         });
       }
+      input.profileTargets?.forEach((item, index) => {
+        if (item.engine && !item.account) {
+          context.addIssue({
+            code: "custom",
+            message: "A paired engine requires an account fixture or attested signed-out state",
+            path: ["profileTargets", index, "account"],
+          });
+        }
+        if (item.account && !item.engine) {
+          context.addIssue({
+            code: "custom",
+            message: "A paired account requires a browser engine",
+            path: ["profileTargets", index, "engine"],
+          });
+        }
+      });
     }),
 } as const;

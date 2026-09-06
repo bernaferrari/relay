@@ -1,6 +1,7 @@
 import type { ProductRunStartInput, ProductRunState } from "@relay/product/run-journey";
 import {
   compileTestStarts,
+  type BoundExecutionIdentity,
   type PairedConfigurationWorkspace,
   type PairedStartProfile,
 } from "./paired-configuration";
@@ -51,9 +52,9 @@ export type OwnedTestRunResult = ProductRunState & {
 
 export type CombineProfileTarget = {
   profileId: string;
-  targetProfileId?: string;
-  engine?: ProductRunStartInput["engine"];
-  account: NonNullable<ProductRunStartInput["account"]>;
+  targetProfileId: string;
+  engine: BoundExecutionIdentity["engine"];
+  account: BoundExecutionIdentity["account"];
   target: {
     targetKind: "browser";
     browserTargetId: string;
@@ -80,17 +81,28 @@ export type CombineStartResult = {
   batch?: { id?: string };
 };
 
-/** Map compiled pair starts onto the existing Combine profileTargets contract. */
+export function boundExecutionIdentity(request: ProductRunStartInput): BoundExecutionIdentity {
+  const targetId = request.targetId?.trim();
+  if (!targetId) throw new TypeError("Each pair needs a Browser.");
+  if (!request.engine) throw new TypeError("Each pair needs a browser engine.");
+  if (!request.account) {
+    throw new TypeError("Each pair needs an account fixture or attested signed-out state.");
+  }
+  return {
+    targetId,
+    engine: request.engine,
+    account: request.account,
+    ...(request.targetProfileId?.trim() ? { targetProfileId: request.targetProfileId.trim() } : {}),
+  };
+}
+
+/** Pass the compiled identity through. Do not pick optional fields. */
 export function profileTargetsFromStarts(
   requests: readonly ProductRunStartInput[],
 ): CombineProfileTarget[] {
   return requests.map((request) => {
-    const targetId = request.targetId?.trim();
-    const profileId = request.targetProfileId?.trim();
-    if (!targetId) throw new TypeError("Each pair needs a Browser.");
-    if (!request.account) {
-      throw new TypeError("Each pair needs an account fixture or attested signed-out state.");
-    }
+    const identity = boundExecutionIdentity(request);
+    const profileId = identity.targetProfileId;
     if (!profileId) {
       throw new TypeError(
         "Each Browser and Account pair needs a saved profile before Relay can start one Batch.",
@@ -99,9 +111,9 @@ export function profileTargetsFromStarts(
     return {
       profileId,
       targetProfileId: profileId,
-      ...(request.engine ? { engine: request.engine } : {}),
-      account: request.account,
-      target: { targetKind: "browser", browserTargetId: targetId },
+      engine: identity.engine,
+      account: identity.account,
+      target: { targetKind: "browser", browserTargetId: identity.targetId },
     };
   });
 }

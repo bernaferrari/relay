@@ -54,10 +54,8 @@ describe("tryReviewTarget", () => {
       detail: "Relay tried Preferred language as the saved binding.",
     });
     expect(previewTarget).toHaveBeenCalledWith(device);
-    expect(inputs).toEqual([
-      { kind: "touch", action: "down", x: 200, y: 424 },
-      { kind: "touch", action: "up", x: 200, y: 424 },
-    ]);
+    expect(inputs).toEqual([{ kind: "tap", target: { label: "Preferred language" } }]);
+    expect(inputs.some((value) => value && typeof value === "object" && "x" in value)).toBe(false);
     expect(preview.close).toHaveBeenCalledOnce();
   });
 

@@ -374,13 +374,17 @@ export function createProductRunJourney(input: { jobs: RunJobs }): ProductRunJou
     return expose(next);
   }
 
+  function publishIdleRecovery(error: unknown, action: ProductRunAction): ProductRunState {
+    return expose({ status: "idle", recovery: recoveryFromError(error, action) });
+  }
+
   function publishRecovery(
     error: unknown,
-    action?: ProductRunAction,
-    workflowId?: string,
+    action: ProductRunAction,
+    workflowId: string,
   ): ProductRunState {
     const recovery = recoveryFromError(error, action);
-    if (workflowId && workflowId !== selectedWorkflowId) {
+    if (workflowId !== selectedWorkflowId) {
       const stored = byWorkflow.get(workflowId);
       return expose({
         ...(stored ? stateFromSnapshot(stored, action) : { status: "idle" }),
@@ -412,7 +416,7 @@ export function createProductRunJourney(input: { jobs: RunJobs }): ProductRunJou
 
   async function start(input: ProductRunStartInput): Promise<ProductRunState> {
     if (!input.testId.trim()) {
-      return publishRecovery(
+      return publishIdleRecovery(
         new TypeError("Starting a Run requires a saved Test identifier."),
         "start",
       );
@@ -432,7 +436,7 @@ export function createProductRunJourney(input: { jobs: RunJobs }): ProductRunJou
       });
       return publish(snapshot, "start", { select: true });
     } catch (error) {
-      return publishRecovery(error, "start");
+      return publishIdleRecovery(error, "start");
     }
   }
 
@@ -440,7 +444,7 @@ export function createProductRunJourney(input: { jobs: RunJobs }): ProductRunJou
     workflowId = selectedCanonical()?.workflow?.workflowId,
   ): Promise<ProductRunState> {
     if (!workflowId?.trim()) {
-      return publishRecovery(
+      return publishIdleRecovery(
         new TypeError("A durable Run workflow identifier is required."),
         "inspect",
       );
@@ -502,7 +506,7 @@ export function createProductRunJourney(input: { jobs: RunJobs }): ProductRunJou
   async function cancel(input: ProductRunCancelInput = {}): Promise<ProductRunState> {
     const workflowId = input.workflowId?.trim() || selectedCanonical()?.workflow?.workflowId;
     if (!workflowId) {
-      return publishRecovery(new TypeError("No durable Run is selected."), "cancel");
+      return publishIdleRecovery(new TypeError("No durable Run is selected."), "cancel");
     }
     const stored = byWorkflow.get(workflowId);
     const expectedVersion = input.expectedVersion ?? stored?.workflow?.expectedVersion;
@@ -510,6 +514,7 @@ export function createProductRunJourney(input: { jobs: RunJobs }): ProductRunJou
       return publishRecovery(
         new TypeError("Cancel requires the durable workflow version for this Run."),
         "cancel",
+        workflowId,
       );
     }
     try {

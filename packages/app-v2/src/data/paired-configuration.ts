@@ -43,8 +43,24 @@ export type FrozenPairedConfiguration = {
     | { kind: "blocked"; reason: string };
 };
 
+/** Compiled pair identity. Account and engine are required so a later hop
+ * cannot drop them and collapse Admin/Member into the same start. */
+export type BoundExecutionIdentity = {
+  targetId: string;
+  engine: BrowserEngine;
+  account: ProductRunAccountBinding;
+  targetProfileId?: string;
+};
+
+export type BoundTestStart = BoundExecutionIdentity & {
+  testId: string;
+  appMapId?: string;
+  sourceRevision?: ProductRunStartInput["sourceRevision"];
+  startup?: ProductRunStartInput["startup"];
+};
+
 export type PairedStartAdmission =
-  | { status: "ready"; request: ProductRunStartInput; configuration: FrozenPairedConfiguration }
+  | { status: "ready"; request: BoundTestStart; configuration: FrozenPairedConfiguration }
   | { status: "blocked"; configuration: FrozenPairedConfiguration; reason: string };
 
 export type PairedStartProfile = Pick<ProductRunProfileOption, "id" | "targetId"> & {
@@ -202,11 +218,13 @@ export function admitPairedTestStarts(input: {
       return { status: "blocked", configuration, reason: configuration.coverage.reason };
     }
     const account = accountBinding(configuration);
-    if (!account) {
+    if (!account || !configuration.engine) {
       return {
         status: "blocked",
         configuration,
-        reason: "This pair has no executable account identity.",
+        reason: !configuration.engine
+          ? "This pair has no browser engine. Choose Chromium, Firefox, or WebKit before running."
+          : "This pair has no executable account identity.",
       };
     }
     let targetProfileId: string | undefined;
@@ -233,9 +251,9 @@ export function admitPairedTestStarts(input: {
         testId: input.testId,
         ...(input.appMapId ? { appMapId: input.appMapId } : {}),
         targetId: configuration.targetId,
-        ...(targetProfileId ? { targetProfileId } : {}),
-        ...(configuration.engine ? { engine: configuration.engine } : {}),
+        engine: configuration.engine,
         account,
+        ...(targetProfileId ? { targetProfileId } : {}),
         ...(input.sourceRevision ? { sourceRevision: input.sourceRevision } : {}),
         ...(input.startup ? { startup: input.startup } : {}),
       },
@@ -250,7 +268,7 @@ export function compileTestStarts(input: {
   sourceRevision?: ProductRunStartInput["sourceRevision"];
   startup?: ProductRunStartInput["startup"];
   profiles?: readonly PairedStartProfile[];
-}): ProductRunStartInput[] {
+}): BoundTestStart[] {
   const admitted = admitPairedTestStarts(input);
   const blocked = admitted.filter((item) => item.status === "blocked");
   if (blocked.length) {
@@ -400,14 +418,14 @@ export async function openPairedWorkspaceInLive(input: {
 }
 
 export async function startPairedTestRuns(input: {
-  start: (request: ProductRunStartInput) => Promise<unknown>;
+  start: (request: BoundTestStart) => Promise<unknown>;
   testId: string;
   appMapId?: string;
   workspace: PairedConfigurationWorkspace;
   sourceRevision?: ProductRunStartInput["sourceRevision"];
   startup?: ProductRunStartInput["startup"];
 }): Promise<{
-  requests: ProductRunStartInput[];
+  requests: BoundTestStart[];
   started: unknown[];
   first: unknown;
 }> {

@@ -36,6 +36,14 @@ function sameBinding(left: RecordingEvidenceTarget, right: RecordingEvidenceTarg
   return false;
 }
 
+/** Try and saved replay send this binding — never a historic rectangle center. */
+export async function dispatchSemanticBinding(
+  session: Pick<LiveTargetSession, "input">,
+  binding: RecordingEvidenceTarget,
+): Promise<void> {
+  await session.input({ kind: "tap", target: binding });
+}
+
 /** Send the selected semantic binding to the live Device without recording a new step. */
 export async function tryReviewTarget(input: {
   previewTarget?: (target: AuthoringTarget) => Promise<LiveTargetSession>;
@@ -91,10 +99,7 @@ export async function tryReviewTarget(input: {
           "The proposed binding is not on the current screen. Restore the starting state before trying it.",
       };
     }
-    const x = resolved.rect.x + resolved.rect.width / 2;
-    const y = resolved.rect.y + resolved.rect.height / 2;
-    await session.input({ kind: "touch", action: "down", x, y });
-    await session.input({ kind: "touch", action: "up", x, y });
+    await dispatchSemanticBinding(session, binding);
     return {
       kind: "tried",
       binding,
