@@ -430,7 +430,7 @@ export function ReviewRecordingPage({
             inspector={
               editing ? (
                 <aside
-                  className="flex min-w-0 flex-col gap-[18px] self-start rounded-xl border border-border bg-card p-[18px] text-card-foreground shadow-sm"
+                  className="flex min-w-0 flex-col gap-4 bg-card p-4 text-card-foreground"
                   aria-label="Edit steps"
                 >
                   <section className="grid gap-3.5" aria-labelledby="review-editor-title">
@@ -652,17 +652,6 @@ export function ReviewRecordingPage({
                       </Dialog>
                     ) : null}
                   </section>
-
-                  <div className="grid gap-3.5">
-                    <p className="text-xs leading-normal text-muted-foreground">
-                      {replayDetail(review?.latestReplay?.outcome, canApprove)}
-                    </p>
-                    {allowed.has("replay") && review?.replayRequired ? (
-                      <p className="text-xs text-muted-foreground">
-                        A passing replay is required before saving.
-                      </p>
-                    ) : null}
-                  </div>
                 </aside>
               ) : undefined
             }

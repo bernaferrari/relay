@@ -1,3 +1,4 @@
+import { AuthoringWorkspace } from "./authoring-workspace";
 import { AuthoringHeader } from "./authoring-header";
 import { RecordingAppChoice } from "./recording-app-choice";
 /** @jsxImportSource react */
@@ -297,7 +298,6 @@ export function NewTestPage() {
               Cancel
             </Button>
           }
-          description="Open your app in the preview. When you’re ready, record your steps."
           actions={
             setupOpen ? (
               <>
@@ -361,134 +361,144 @@ export function NewTestPage() {
         !targets.isError &&
         !targets.data?.recovery &&
         !activePointer.data ? (
-          <div className="grid min-h-0 w-full flex-1 grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
-            <aside
-              className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)] items-start gap-6 border-b border-border/60 px-4 py-3 max-[700px]:grid-cols-1"
-              aria-label="Record setup"
-            >
-              {startsFromPath ? (
-                <p className="text-sm text-muted-foreground">
-                  Starting from{" "}
-                  <strong className="font-medium text-foreground">
-                    {pathContext.data
-                      ? `${pathContext.data.fromTitle} → ${pathContext.data.toTitle ?? "Finish"}`
-                      : "the selected path"}
-                  </strong>
-                </p>
-              ) : null}
-              <RecordingAppChoice
-                apps={apps.data ?? []}
-                value={appId}
-                onChange={chooseApp}
-                onCreatingChange={setCreatingApp}
-                createApp={(name) => appResourcesService.createApp(name)}
-                onCreated={(app) => {
-                  queryClient.setQueryData(recordingQueryKeys.apps, [...(apps.data ?? []), app]);
-                  chooseApp(app.id);
-                  void queryClient.invalidateQueries({ queryKey: ["app-maps"] });
-                }}
-              />
-              <RecordingDeviceChoice
-                service={deviceService}
-                onStarted={async (serial) => {
-                  await targets.refetch();
-                  setTargetId(serial);
-                }}
-                value={targetId}
-                options={(targets.data?.targetOptions ?? []).map((target) => {
-                  const label = targetLabel(target);
-                  return {
-                    value: target.targetId,
-                    label: label.detail ? `${label.title} · ${label.detail}` : label.title,
-                  };
-                })}
-                onChange={setTargetId}
-              />
-            </aside>
-            <div
-              className="relay-prerecord-workspace flex min-h-0 w-full overflow-hidden bg-background/40"
-              aria-label="Recording stage"
-            >
-              {selectedTarget ? (
-                <section
-                  className="grid min-h-0 min-w-0 flex-1 grid-rows-[auto_minmax(0,1fr)]"
-                  aria-label="Device preview"
-                >
-                  <div className="flex justify-end">
-                    {previewIssue ? (
+          <AuthoringWorkspace
+            tools={
+              <aside
+                className="grid min-w-0 content-start gap-5 rounded-lg border border-border p-4"
+                aria-label="Record setup"
+              >
+                <div className="grid gap-1">
+                  <h2 className="text-sm font-medium">Recording setup</h2>
+                  <p className="text-xs leading-relaxed text-muted-foreground">
+                    Choose your app and device. Open the starting screen in the preview.
+                  </p>
+                </div>
+                {startsFromPath ? (
+                  <p className="text-sm text-muted-foreground">
+                    Starting from{" "}
+                    <strong className="font-medium text-foreground">
+                      {pathContext.data
+                        ? `${pathContext.data.fromTitle} → ${pathContext.data.toTitle ?? "Finish"}`
+                        : "the selected path"}
+                    </strong>
+                  </p>
+                ) : null}
+                <RecordingAppChoice
+                  apps={apps.data ?? []}
+                  value={appId}
+                  onChange={chooseApp}
+                  onCreatingChange={setCreatingApp}
+                  createApp={(name) => appResourcesService.createApp(name)}
+                  onCreated={(app) => {
+                    queryClient.setQueryData(recordingQueryKeys.apps, [...(apps.data ?? []), app]);
+                    chooseApp(app.id);
+                    void queryClient.invalidateQueries({ queryKey: ["app-maps"] });
+                  }}
+                />
+                <RecordingDeviceChoice
+                  service={deviceService}
+                  onStarted={async (serial) => {
+                    await targets.refetch();
+                    setTargetId(serial);
+                  }}
+                  value={targetId}
+                  options={(targets.data?.targetOptions ?? []).map((target) => {
+                    const label = targetLabel(target);
+                    return {
+                      value: target.targetId,
+                      label: label.detail ? `${label.title} · ${label.detail}` : label.title,
+                    };
+                  })}
+                  onChange={setTargetId}
+                />
+              </aside>
+            }
+            stage={
+              <div
+                className="relay-prerecord-workspace flex h-full min-h-0 w-full overflow-hidden bg-background/40"
+                aria-label="Recording stage"
+              >
+                {selectedTarget ? (
+                  <section
+                    className="grid min-h-0 min-w-0 flex-1 grid-rows-[auto_minmax(0,1fr)]"
+                    aria-label="Device preview"
+                  >
+                    <div className="flex justify-end">
+                      {previewIssue ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setPreviewAttempt((value) => value + 1)}
+                        >
+                          <RotateCcw aria-hidden="true" /> Try again
+                        </Button>
+                      ) : null}
+                    </div>
+                    <LiveTargetCanvas
+                      canvasRef={previewCanvas}
+                      status={previewStatus}
+                      issue={previewIssue}
+                      busy={previewBusy}
+                      targetTitle={targetLabel(selectedTarget).title}
+                      targetDetail={targetLabel(selectedTarget).detail}
+                      browserContext={browserContext}
+                      send={sendPreview}
+                      recording={false}
+                      showTargetDetails={false}
+                      targetPlatform={selectedTarget?.platform}
+                      helpText=""
+                    />
+                  </section>
+                ) : targetId ? (
+                  <div className="grid min-h-0 w-full place-items-center p-6">
+                    <div className="grid max-w-sm justify-items-center gap-3 text-center">
+                      <CircleDot className="size-6 text-muted-foreground" aria-hidden="true" />
+                      <h2 className="text-sm font-medium">
+                        {targets.isFetching
+                          ? "Connecting to your device…"
+                          : "Your selected device isn’t ready"}
+                      </h2>
+                      <p className="text-sm text-muted-foreground">
+                        {targets.isFetching
+                          ? "Waiting for the device to become available."
+                          : "Check that it’s running, or choose another device."}
+                      </p>
                       <Button
                         type="button"
-                        variant="ghost"
+                        variant="outline"
                         size="sm"
-                        onClick={() => setPreviewAttempt((value) => value + 1)}
+                        disabled={targets.isFetching}
+                        onClick={() => void targets.refetch()}
                       >
-                        <RotateCcw aria-hidden="true" /> Try again
+                        Check again
                       </Button>
-                    ) : null}
+                    </div>
                   </div>
-                  <LiveTargetCanvas
-                    canvasRef={previewCanvas}
-                    status={previewStatus}
-                    issue={previewIssue}
-                    busy={previewBusy}
-                    targetTitle={targetLabel(selectedTarget).title}
-                    targetDetail={targetLabel(selectedTarget).detail}
-                    browserContext={browserContext}
-                    send={sendPreview}
-                    recording={false}
-                    showTargetDetails={false}
-                    targetPlatform={selectedTarget?.platform}
-                    helpText=""
+                ) : noTargets ? (
+                  <BrowserSetup
+                    browsers={savedBrowsers.data ?? []}
+                    browserUrl={browserUrl}
+                    newBrowserOpen={newBrowserOpen || !(savedBrowsers.data?.length ?? 0)}
+                    pending={startBrowser.isPending}
+                    checking={targets.isFetching}
+                    error={startBrowser.error}
+                    onBrowserUrlChange={setBrowserUrl}
+                    onToggleNewBrowser={() => setNewBrowserOpen((open) => !open)}
+                    onStart={(spaceId) => startBrowser.mutate(spaceId)}
+                    onCheckAgain={() => void targets.refetch()}
                   />
-                </section>
-              ) : targetId ? (
-                <div className="grid min-h-0 w-full place-items-center p-6">
-                  <div className="grid max-w-sm justify-items-center gap-3 text-center">
-                    <CircleDot className="size-6 text-muted-foreground" aria-hidden="true" />
-                    <h2 className="text-sm font-medium">
-                      {targets.isFetching
-                        ? "Connecting to your device…"
-                        : "Your selected device isn’t ready"}
-                    </h2>
-                    <p className="text-sm text-muted-foreground">
-                      {targets.isFetching
-                        ? "Waiting for the device to become available."
-                        : "Check that it’s running, or choose another device above."}
-                    </p>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={targets.isFetching}
-                      onClick={() => void targets.refetch()}
-                    >
-                      Check again
-                    </Button>
+                ) : (
+                  <div className="grid min-h-0 w-full place-items-center p-6">
+                    <EmptyState
+                      title="Choose where to record"
+                      detail="Pick a Device or Browser. The live view opens here."
+                    />
                   </div>
-                </div>
-              ) : noTargets ? (
-                <BrowserSetup
-                  browsers={savedBrowsers.data ?? []}
-                  browserUrl={browserUrl}
-                  newBrowserOpen={newBrowserOpen || !(savedBrowsers.data?.length ?? 0)}
-                  pending={startBrowser.isPending}
-                  checking={targets.isFetching}
-                  error={startBrowser.error}
-                  onBrowserUrlChange={setBrowserUrl}
-                  onToggleNewBrowser={() => setNewBrowserOpen((open) => !open)}
-                  onStart={(spaceId) => startBrowser.mutate(spaceId)}
-                  onCheckAgain={() => void targets.refetch()}
-                />
-              ) : (
-                <div className="grid min-h-0 w-full place-items-center p-6">
-                  <EmptyState
-                    title="Choose where to record"
-                    detail="Pick a Device or Browser. The live view opens here."
-                  />
-                </div>
-              )}
-            </div>
-          </div>
+                )}
+              </div>
+            }
+          />
         ) : null}
       </form>
     </WorkbenchPage>

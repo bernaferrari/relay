@@ -1,10 +1,12 @@
+import { AuthoringHeader } from "./authoring-header";
+import { RecordingReviewLayout } from "./recording-review-layout";
 /** @jsxImportSource react */
 import { RunConfigurationComposer } from "../components/run-configuration-composer";
 import {
   usePersistedRunConfiguration,
   useRunConfigurationKey,
 } from "../data/use-persisted-run-configuration";
-import { WorkbenchPage, PageHeader, WorkbenchPanes } from "../components/page-layout";
+import { WorkbenchPage } from "../components/page-layout";
 import { Badge } from "@relay/ui-react/components/badge";
 import { Button } from "@relay/ui-react/components/button";
 import {
@@ -256,9 +258,13 @@ export function TestPage() {
   }
 
   return (
-    <WorkbenchPage className="relay-test-page">
-      <PageHeader
-        crumbs={[{ label: "Tests", to: "/tests" }, { label: test.data?.name ?? "Test" }]}
+    <WorkbenchPage className="relay-test-page flex h-full min-h-0 flex-col overflow-auto !p-0">
+      <AuthoringHeader
+        back={
+          <Button nativeButton={false} render={<Link to="/tests" />} variant="ghost" size="sm">
+            Back to Tests
+          </Button>
+        }
         title={test.data?.name ?? "Test"}
         description={test.data?.appName}
         actions={
@@ -328,10 +334,10 @@ export function TestPage() {
       ) : null}
 
       {!test.isPending && test.data ? (
-        <WorkbenchPanes
+        <RecordingReviewLayout
           outline={
             <section
-              className="relay-test-overview min-w-0 pt-1"
+              className="relay-test-overview min-w-0 rounded-lg border border-border p-4"
               aria-labelledby="test-overview-title"
             >
               <h2
@@ -380,7 +386,7 @@ export function TestPage() {
                 ref={runSetupRef}
                 id="test-run-setup"
                 tabIndex={-1}
-                className="scroll-mt-6 outline-none focus-visible:ring-3 focus-visible:ring-ring/40"
+                className="min-w-0 scroll-mt-6 p-4 outline-none focus-visible:ring-3 focus-visible:ring-ring/40 [&_select]:w-full [&_select]:min-w-0"
                 aria-labelledby="test-run-setup-title"
               >
                 <h2 id="test-run-setup-title" className="sr-only">

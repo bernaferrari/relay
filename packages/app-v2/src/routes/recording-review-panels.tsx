@@ -29,7 +29,7 @@ export function RecordingEvidencePanel({
 }) {
   return (
     <section
-      className="grid h-full min-h-0 min-w-0 grid-rows-[auto_auto_minmax(0,1fr)] self-start rounded-xl bg-card p-4 text-card-foreground ring-1 ring-border/60"
+      className="grid h-full min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] self-start p-3 text-card-foreground"
       aria-labelledby="recording-evidence-title"
     >
       <div className="flex items-center justify-between gap-3">
@@ -43,27 +43,31 @@ export function RecordingEvidencePanel({
             "Step preview"
           )}
         </h2>
-      </div>
-      <div
-        className="mt-4 grid grid-cols-2 gap-0.5 rounded-md bg-muted p-0.5"
-        aria-label="Evidence moment"
-      >
-        <button
-          type="button"
-          aria-pressed={evidenceRole === "entrance"}
-          onClick={() => onEvidenceRoleChange("entrance")}
-          className="min-h-9 rounded-[calc(var(--radius-md)-2px)] text-xs font-medium text-muted-foreground aria-pressed:bg-card aria-pressed:text-foreground aria-pressed:shadow-sm"
+        <div
+          className="inline-flex shrink-0 gap-0.5 rounded-md bg-muted p-0.5"
+          aria-label="Evidence moment"
         >
-          Before
-        </button>
-        <button
-          type="button"
-          aria-pressed={evidenceRole === "exit"}
-          onClick={() => onEvidenceRoleChange("exit")}
-          className="min-h-9 rounded-[calc(var(--radius-md)-2px)] text-xs font-medium text-muted-foreground aria-pressed:bg-card aria-pressed:text-foreground aria-pressed:shadow-sm"
-        >
-          After
-        </button>
+          <Button
+            size="sm"
+            variant="ghost"
+            type="button"
+            aria-pressed={evidenceRole === "entrance"}
+            onClick={() => onEvidenceRoleChange("entrance")}
+            className="text-xs text-muted-foreground aria-pressed:bg-card aria-pressed:text-foreground aria-pressed:shadow-sm"
+          >
+            Before
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            type="button"
+            aria-pressed={evidenceRole === "exit"}
+            onClick={() => onEvidenceRoleChange("exit")}
+            className="text-xs text-muted-foreground aria-pressed:bg-card aria-pressed:text-foreground aria-pressed:shadow-sm"
+          >
+            After
+          </Button>
+        </div>
       </div>
       <div className="mt-3 flex min-h-0 items-center justify-center overflow-hidden rounded-lg bg-background/40 p-2">
         {previewUrl ? (
@@ -113,9 +117,10 @@ export function RecordingActionsPanel({
   onSelect(actionId: string): void;
   onToggle(actionId: string, checked: boolean): void;
 }) {
+  let actionOrdinal = 0;
   return (
     <section
-      className="min-w-0 overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-sm"
+      className="min-w-0 overflow-hidden rounded-lg border border-border bg-card text-card-foreground"
       aria-labelledby="recording-actions-title"
     >
       <div className="flex min-h-12 min-w-0 flex-wrap items-center justify-between gap-3.5 border-b border-border px-4 py-3">
@@ -170,11 +175,9 @@ export function RecordingActionsPanel({
       {actions.length ? (
         <ScrollArea className="max-h-[min(62vh,700px)]">
           <ol className="px-4" aria-label="Recorded actions">
-            {actions.map((step, index) => {
+            {actions.map((step) => {
               const copy = reviewActionCopy(step);
-              const ordinal = actions
-                .slice(0, index + 1)
-                .filter((candidate) => reviewActionCopy(candidate).kind !== "pause").length;
+              const ordinal = copy.kind === "pause" ? actionOrdinal : ++actionOrdinal;
               const selected = selectedActionIds.includes(step.id);
               return (
                 <li

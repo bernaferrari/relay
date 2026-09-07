@@ -17,7 +17,9 @@ Use quiet borders only to separate adjacent functional regions. Avoid framing ev
 
 ## Navigation and authoring
 
-`AuthoringHeader` provides one hierarchy across setup, recording, and review. Back/cancel is on the left, context and phase follow, and the primary next action is on the right. Android Back belongs directly beneath the device, because it controls the app rather than Relay navigation.
+`AuthoringHeader` provides one hierarchy across setup, recording, review, and saved tests. Back/cancel is on the left, context and phase follow, and the primary next action is on the right. Android Back belongs directly beneath the device, because it controls the app rather than Relay navigation.
+
+`AuthoringWorkspace` anchors the full-height device/result stage on the left and setup or steps on the right. Editing appears directly below the steps, never as an overlay covering them. Both regions scroll independently; narrow windows stack the stage above the tools. Keep this shared geometry across route changes rather than composing a new column layout per screen.
 
 The global sidebar can be collapsed. Its background continues into the title bar. Pages use the same shell rather than adding separate navigation frames.
 

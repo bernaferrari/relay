@@ -21,10 +21,10 @@ export function TestStepEvidencePreview({
     report?.evidence.find((section) => section.id === "screenshot")?.items ?? [];
 
   return (
-    <section className="mt-4 min-w-0 border-t border-border pt-4" aria-labelledby={titleId}>
+    <section className="h-full min-h-0 min-w-0 overflow-y-auto p-4" aria-labelledby={titleId}>
       <header className="flex items-start justify-between gap-3">
         <h3 id={titleId} className="text-[13px] font-medium text-muted-foreground">
-          Evidence for this step
+          Step result
         </h3>
         {report ? (
           <Link
@@ -43,7 +43,7 @@ export function TestStepEvidencePreview({
       ) : null}
       {!loading && !hasRuns ? (
         <p className="mt-2 text-xs leading-normal text-muted-foreground">
-          No Run evidence yet. Run this Test to capture evidence for this step.
+          Run this test to see its result here.
         </p>
       ) : null}
       {!loading && hasRuns && !report ? (
@@ -108,7 +108,7 @@ function EvidenceImage({
   }
   return (
     <img
-      className="block h-auto max-h-48 w-full rounded-md border border-border object-contain"
+      className="block h-auto max-h-[65vh] w-full rounded-md border border-border object-contain"
       src={frame.media.src}
       alt={frame.title}
       width={frame.media.width}

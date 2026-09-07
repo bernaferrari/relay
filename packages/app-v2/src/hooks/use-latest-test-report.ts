@@ -22,7 +22,7 @@ export function useLatestTestReport(runService: RunProductService, testId: strin
     recentRuns,
     latestRun,
     latestReport,
-    loading: recentRuns.isPending || latestReport.isPending,
+    loading: recentRuns.isLoading || latestReport.isLoading,
   };
 }
 

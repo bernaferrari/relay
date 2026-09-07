@@ -1,3 +1,4 @@
+import { AuthoringWorkspace } from "./authoring-workspace";
 import { AuthoringHeader } from "./authoring-header";
 import { RecordingActionList } from "./recording-action-list";
 import { RecordingInputRecovery } from "./recording-input-recovery";
@@ -521,7 +522,7 @@ function RecordingWorkspace({
         </Dialog>
       </div>
 
-      <div className="min-h-0 overflow-auto p-3">
+      <div className="min-h-0 overflow-auto">
         {recording.isPending ? <PageLoading label="Restoring the recording…" /> : null}
         {recording.isError || recording.data?.recovery ? (
           <div className="mx-auto grid max-w-md gap-4 rounded-xl border border-border bg-card p-6">
@@ -549,79 +550,85 @@ function RecordingWorkspace({
         )}
 
         {!recording.isPending && snapshot && captureReady ? (
-          <div className="grid h-full min-h-[360px] w-full grid-cols-[minmax(220px,260px)_minmax(0,1fr)] gap-3.5 max-[980px]:grid-cols-1">
-            <aside
-              className="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-xl border border-border bg-card max-[980px]:order-last"
-              aria-labelledby="capture-timeline-title"
-            >
-              <div className="flex items-center justify-between gap-3 border-b border-border p-3.5">
-                <h2 id="capture-timeline-title" className="text-[13px] font-medium">
-                  Recorded steps
-                </h2>
-                <span className="text-xs tabular-nums text-muted-foreground">
-                  {recordedActions.length}
-                </span>
-              </div>
-              {recordedActions.length ? (
-                <ScrollArea className="min-h-0">
-                  <RecordingActionList actions={recordedActions} />
-                </ScrollArea>
-              ) : (
-                <div className="grid min-h-[180px] place-items-center px-4 text-center text-sm text-muted-foreground">
-                  <p>Taps and typing appear here.</p>
+          <AuthoringWorkspace
+            tools={
+              <aside
+                className="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-lg border border-border bg-card h-full"
+                aria-labelledby="capture-timeline-title"
+              >
+                <div className="flex items-center justify-between gap-3 border-b border-border p-3.5">
+                  <h2 id="capture-timeline-title" className="text-[13px] font-medium">
+                    Recorded steps
+                  </h2>
+                  <span className="text-xs tabular-nums text-muted-foreground">
+                    {recordedActions.length}
+                  </span>
                 </div>
-              )}
-            </aside>
-            <div
-              className="block min-h-[360px] w-full overflow-hidden rounded-xl border border-border bg-muted"
-              aria-label="Recording stage"
-            >
-              {selectedTarget ? (
-                <>
-                  <LiveTargetCanvas
-                    canvasRef={liveCanvas}
-                    status={liveStatus}
-                    issue={recoveryKind === "unknown" ? undefined : liveIssue}
-                    busy={liveInputBusy}
-                    targetTitle={targetLabel(targetPresentation.data?.[0] ?? selectedTarget).title}
-                    targetDetail={
-                      targetLabel(targetPresentation.data?.[0] ?? selectedTarget).detail
-                    }
-                    browserContext={browserContext}
-                    showTargetDetails={false}
-                    targetPlatform={selectedTarget?.platform}
-                    helpText="Click the app to record a step. Drag to scroll."
-                    send={sendLiveInput}
-                    overlay={
-                      talkBack.on && talkBack.mode !== "off" ? (
-                        <TalkBackOverlay
-                          canvasRef={liveCanvas}
-                          items={talkBack.inspection.overlayItems}
+                {recordedActions.length ? (
+                  <ScrollArea className="min-h-0">
+                    <RecordingActionList actions={recordedActions} />
+                  </ScrollArea>
+                ) : (
+                  <div className="grid min-h-[180px] place-items-center px-4 text-center text-sm text-muted-foreground">
+                    <p>Taps and typing appear here.</p>
+                  </div>
+                )}
+              </aside>
+            }
+            stage={
+              <div
+                className="grid h-full min-h-0 w-full grid-rows-[minmax(0,1fr)] overflow-hidden"
+                aria-label="Recording stage"
+              >
+                {selectedTarget ? (
+                  <>
+                    <LiveTargetCanvas
+                      canvasRef={liveCanvas}
+                      status={liveStatus}
+                      issue={recoveryKind === "unknown" ? undefined : liveIssue}
+                      busy={liveInputBusy}
+                      targetTitle={
+                        targetLabel(targetPresentation.data?.[0] ?? selectedTarget).title
+                      }
+                      targetDetail={
+                        targetLabel(targetPresentation.data?.[0] ?? selectedTarget).detail
+                      }
+                      browserContext={browserContext}
+                      showTargetDetails={false}
+                      targetPlatform={selectedTarget?.platform}
+                      helpText="Click the app to record a step. Drag to scroll."
+                      send={sendLiveInput}
+                      overlay={
+                        talkBack.on && talkBack.mode !== "off" ? (
+                          <TalkBackOverlay
+                            canvasRef={liveCanvas}
+                            items={talkBack.inspection.overlayItems}
+                            mode={talkBack.mode}
+                          />
+                        ) : null
+                      }
+                      toolbar={
+                        <TalkBackModeSelect
                           mode={talkBack.mode}
+                          loading={talkBack.loading}
+                          onModeChange={(mode) => talkBack.setMode(mode)}
                         />
-                      ) : null
-                    }
-                    toolbar={
-                      <TalkBackModeSelect
-                        mode={talkBack.mode}
-                        loading={talkBack.loading}
-                        onModeChange={(mode) => talkBack.setMode(mode)}
-                      />
-                    }
-                  />
-                  {talkBack.on ? (
-                    <div className="border-t border-border px-3 py-3">
-                      <TalkBackIssueList
-                        review={talkBack.inspection.review}
-                        inspectable={talkBack.inspection.inspectable}
-                        message={talkBack.issue ?? talkBack.inspection.message}
-                      />
-                    </div>
-                  ) : null}
-                </>
-              ) : null}
-            </div>
-          </div>
+                      }
+                    />
+                    {talkBack.on ? (
+                      <div className="border-t border-border px-3 py-3">
+                        <TalkBackIssueList
+                          review={talkBack.inspection.review}
+                          inspectable={talkBack.inspection.inspectable}
+                          message={talkBack.issue ?? talkBack.inspection.message}
+                        />
+                      </div>
+                    ) : null}
+                  </>
+                ) : null}
+              </div>
+            }
+          />
         ) : null}
       </div>
 
