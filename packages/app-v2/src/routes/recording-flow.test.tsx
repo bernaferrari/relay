@@ -1,3 +1,4 @@
+import type { AppResourcesProductService } from "../data/app-resources-product-service";
 /** @jsxImportSource react */
 import type { AuthoringRecordingEdit } from "@relay/protocol";
 import { createMemoryHistory } from "@tanstack/react-router";
@@ -269,6 +270,7 @@ async function renderJourney(
   platform: Platform,
   mapService?: MapProductService,
   browserSpacesService?: BrowserSpacesProductService,
+  appResourcesService?: AppResourcesProductService,
 ) {
   const history = createMemoryHistory({ initialEntries: [path] });
   const host = document.createElement("div");
@@ -283,6 +285,7 @@ async function renderJourney(
         productService={productService}
         mapService={mapService}
         browserSpacesService={browserSpacesService}
+        appResourcesService={appResourcesService}
       />,
     );
   });
@@ -601,6 +604,41 @@ describe("record, review, replay, and save", () => {
     expect(document.querySelector('[aria-label="Record on"]')?.textContent).toContain(
       "Checkout staging",
     );
+  });
+
+  it("creates an app inline without losing the chosen device or starting recording", async () => {
+    const fake = fakeService();
+    const createdNames: string[] = [];
+    const { history } = await renderJourney(
+      "/tests/new?target=emulator-5554",
+      fake.service,
+      platformWithStorage().platform,
+      undefined,
+      undefined,
+      {
+        createApp: async (name: string) => {
+          createdNames.push(name);
+          if (createdNames.length === 1) throw new Error("Temporary service failure");
+          return { id: "new-app", name };
+        },
+      } as AppResourcesProductService,
+    );
+    await click(button("Create app"));
+    expect(button("Start recording").disabled).toBe(true);
+    await fill(document.querySelector<HTMLInputElement>("#recording-app-name")!, "Acme");
+    await click(button("Create app"));
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+      "Couldn’t create the app",
+    );
+    expect(document.querySelector<HTMLInputElement>("#recording-app-name")?.value).toBe("Acme");
+    await click(button("Create app"));
+    expect(createdNames).toEqual(["Acme", "Acme"]);
+    expect(history.location.pathname).toBe("/tests/new");
+    expect(String(history.location.search)).toContain("new-app");
+    expect(String(history.location.search)).toContain("emulator-5554");
+    expect(document.querySelector('[aria-label="App"]')?.textContent).toContain("Acme");
+    expect(button("Start recording").disabled).toBe(false);
+    expect(fake.calls.some((call) => call.startsWith("begin:"))).toBe(false);
   });
 
   it("follows the full server-owned progression with one dominant review action", async () => {

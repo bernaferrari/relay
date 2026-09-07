@@ -1,3 +1,4 @@
+import { RecordingAppChoice } from "./recording-app-choice";
 /** @jsxImportSource react */
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@relay/ui-react/components/alert";
 import { Button } from "@relay/ui-react/components/button";
@@ -30,10 +31,17 @@ import { EmulatorStart } from "../components/emulator-start";
 const NEW_TEST_DRAFT_KEY = "newTestDraft";
 
 export function NewTestPage() {
-  const { mapService, platform, productService, browserSpacesService, deviceService, queryClient } =
-    useRouteContext({
-      from: "__root__",
-    });
+  const {
+    mapService,
+    appResourcesService,
+    platform,
+    productService,
+    browserSpacesService,
+    deviceService,
+    queryClient,
+  } = useRouteContext({
+    from: "__root__",
+  });
   const rawSearch = useLocation({ select: (state) => state.search });
   const search = rawSearch as Readonly<Record<string, unknown>>;
   const requestedAppId = typeof search.app === "string" ? search.app : undefined;
@@ -53,6 +61,7 @@ export function NewTestPage() {
   const [previewAttempt, setPreviewAttempt] = useState(0);
   const [browserUrl, setBrowserUrl] = useState("");
   const [newBrowserOpen, setNewBrowserOpen] = useState(false);
+  const [creatingApp, setCreatingApp] = useState(false);
 
   const apps = useQuery({
     queryKey: recordingQueryKeys.apps,
@@ -245,11 +254,10 @@ export function NewTestPage() {
   }
 
   const loading = apps.isPending || activePointer.isPending;
-  const noApps = apps.data?.length === 0;
   const noTargets = Boolean(targets.data && targets.data.targetOptions.length === 0);
   const setupOpen =
     !loading && !apps.isError && !targets.isError && !targets.data?.recovery && !activePointer.data;
-  const formReady = Boolean(appId && targetId && !begin.isPending);
+  const formReady = Boolean(appId && targetId && !begin.isPending && !creatingApp);
   if (search.view === "review") {
     if (activePointer.isPending) return <PageLoading label="Opening the reviewed recording…" />;
     if (activePointer.data) return <ReviewRecordingPage recordingId={activePointer.data} />;
@@ -278,7 +286,7 @@ export function NewTestPage() {
         <PageHeader
           crumbs={[{ label: "Tests", to: "/tests" }, { label: "Record" }]}
           title="Record a Test"
-          description="Choose an app and a device, then start."
+          description="Open your app in the preview. When you’re ready, record your steps."
           actions={
             setupOpen ? (
               <>
@@ -349,7 +357,7 @@ export function NewTestPage() {
         !activePointer.data ? (
           <div className="grid h-full min-h-[360px] w-full flex-1 grid-cols-[minmax(240px,280px)_minmax(0,1fr)] gap-3.5 max-[980px]:grid-cols-1">
             <aside
-              className="grid min-h-0 min-w-0 content-start gap-3 rounded-xl border border-border bg-card p-3.5 max-[980px]:order-last"
+              className="grid min-h-0 min-w-0 content-start gap-6 pr-4 max-[980px]:pr-0"
               aria-label="Record setup"
             >
               {startsFromPath ? (
@@ -362,12 +370,17 @@ export function NewTestPage() {
                   </strong>
                 </p>
               ) : null}
-              <SelectField
-                label="App"
+              <RecordingAppChoice
+                apps={apps.data ?? []}
                 value={appId}
-                placeholder="Choose an app"
-                options={(apps.data ?? []).map((app) => ({ value: app.id, label: app.name }))}
-                onValueChange={chooseApp}
+                onChange={chooseApp}
+                onCreatingChange={setCreatingApp}
+                createApp={(name) => appResourcesService.createApp(name)}
+                onCreated={(app) => {
+                  queryClient.setQueryData(recordingQueryKeys.apps, [...(apps.data ?? []), app]);
+                  chooseApp(app.id);
+                  void queryClient.invalidateQueries({ queryKey: ["app-maps"] });
+                }}
               />
               {noTargets ? null : (
                 <SelectField
@@ -423,21 +436,10 @@ export function NewTestPage() {
                     browserContext={browserContext}
                     send={sendPreview}
                     recording={false}
+                    showTargetDetails={false}
                     helpText=""
                   />
                 </section>
-              ) : noApps ? (
-                <div className="grid min-h-[360px] place-items-center p-6">
-                  <EmptyState
-                    title="Add an app first"
-                    detail="Relay needs an app so this Test has a home."
-                    action={
-                      <Button nativeButton={false} render={<Link to="/apps" />}>
-                        Add an app
-                      </Button>
-                    }
-                  />
-                </div>
               ) : noTargets ? (
                 <BrowserSetup
                   browsers={savedBrowsers.data ?? []}
