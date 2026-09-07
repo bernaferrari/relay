@@ -153,7 +153,7 @@ export function TalkBackIssueList({
   if (inspectable === false) {
     return (
       <p className="text-xs text-muted-foreground">
-        {message ?? "TalkBack labels are unavailable. The live view still works."}
+        {message ?? "Accessibility names are unavailable. The live view still works."}
       </p>
     );
   }

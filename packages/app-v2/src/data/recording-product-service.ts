@@ -280,7 +280,7 @@ export function createRecordingProductService(
               message:
                 snapshot.inspectionState === "keyguard"
                   ? "Unlock the device to read TalkBack labels."
-                  : "TalkBack labels are unavailable. The live view still works.",
+                  : "Accessibility names are unavailable. The live view still works.",
             }),
       };
     },

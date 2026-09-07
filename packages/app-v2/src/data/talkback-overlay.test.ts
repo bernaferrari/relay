@@ -82,6 +82,27 @@ describe("talkBackOverlayBox", () => {
     expect(retained?.stale).toBe(false);
   });
 
+  it("marks a previous observation stale when the current target changes", () => {
+    const previous = {
+      inspectable: true,
+      review: { items: [], issues: [], errorCount: 0, warningCount: 0 },
+      targetId: "pixel-1",
+      observationId: "pixel-1:1",
+    };
+    const retained = retainAccessibilityObservation({
+      currentId: "pixel-2:1",
+      incomingId: "pixel-1:1",
+      previous,
+      next: {
+        inspectable: true,
+        review: { items: [], issues: [], errorCount: 0, warningCount: 0 },
+        targetId: "pixel-1",
+      },
+    });
+    expect(retained?.observationId).toBe("pixel-1:1");
+    expect(retained?.stale).toBe(true);
+  });
+
   it("exposes hover and always as the saved setting choices", () => {
     expect(ACCESSIBILITY_LABEL_MODE_OPTIONS.map((option) => option.value)).toEqual([
       "off",
