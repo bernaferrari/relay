@@ -433,6 +433,36 @@ describe("shell overlays", () => {
     expect(history.location.pathname).toBe("/tests/test-1");
   });
 
+  it("collapses stopped simulators and keeps the picker compact", async () => {
+    const stopped = Array.from({ length: 38 }, (_, index) => ({
+      ...productDevice(`sim-${index}`, `iPad ${index}`, "needs-attention", "ios"),
+      device: {
+        ...productDevice(`sim-${index}`, `iPad ${index}`, "needs-attention", "ios").device,
+        booted: false,
+      },
+      kind: "simulator",
+      osVersion: "18.5",
+    }));
+    await renderShell({
+      devices: [
+        { ...productDevice("phone", "My phone", "ready", "android"), osVersion: "16" },
+        ...stopped,
+      ],
+    });
+    const trigger = document.querySelector<HTMLButtonElement>('[aria-label^="Device or browser"]')!;
+    await act(async () => trigger.click());
+    await settle();
+    const menu = document.querySelector('[role="menu"]')!;
+    expect(menu.textContent).toContain("My phone");
+    expect(menu.textContent).toContain("Android 16");
+    expect(menu.textContent).toContain("38");
+    expect(menu.textContent).not.toContain("stopped");
+    expect(menu.textContent).not.toContain("iPad 0");
+    expect(menu.textContent).not.toContain("Needs attention");
+    expect(menu.textContent).toContain("Check again");
+    expect(menu.querySelectorAll('[role="menuitem"]').length).toBeLessThan(8);
+  });
+
   it("keeps the run destination in the toolbar instead of the workspace sidebar", async () => {
     const history = await renderShell({
       devices: [
