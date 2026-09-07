@@ -186,14 +186,16 @@ export function parseAndroidUiSnapshot(xml: string): SnapshotNode[] {
     const attrs = attributes(match[1] ?? "");
     const rect = bounds(attrs.bounds);
     const text = attrs.text?.trim();
-    const label = attrs["content-desc"]?.trim();
+    const description = attrs["content-desc"]?.trim();
+    const label = description || text;
     const clickable = bool(attrs.clickable) === true;
     const focusable = bool(attrs.focusable) === true;
     const longClickable = bool(attrs["long-clickable"]) === true;
     const scrollable = bool(attrs.scrollable) === true;
     const index = nodes.length;
     nodes.push({
-      ...(label || text ? { label: label || text } : {}),
+      ...(label ? { label } : {}),
+      ...(description ? { description } : {}),
       ...(text ? { value: text } : {}),
       ...(attrs["resource-id"] ? { identifier: attrs["resource-id"] } : {}),
       ...(attrs.class ? { role: attrs.class } : {}),

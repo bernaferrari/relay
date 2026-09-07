@@ -275,6 +275,8 @@ export type DevicePoolDto = {
 export type ScrollSurveyNodeDto = {
   label?: string;
   value?: string;
+  /** Android content-desc when the tree preserves it separately from text. */
+  description?: string;
   identifier?: string;
   role?: string;
   type?: string;

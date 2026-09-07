@@ -44,6 +44,12 @@ import { reviewDocumentLocation } from "../data/test-document-surface";
 import { clearWorkflowPointerIfCurrent, writeWorkflowPointer } from "../data/workflow-pointer";
 import { LiveTargetCanvas } from "./live-target-canvas";
 import { PageLoading, RecordingProblem, errorMessage, targetLabel } from "./recording-shared";
+import {
+  TalkBackIssueList,
+  TalkBackModeSelect,
+  TalkBackOverlay,
+  useTalkBackReview,
+} from "./talkback-review-panel";
 
 const testRouteApi = getRouteApi("/tests/$testId/record");
 const recordingRouteApi = getRouteApi("/recordings/$recordingId");
@@ -81,6 +87,7 @@ function RecordingWorkspace({
   const [liveIssue, setLiveIssue] = useState<string>();
   const [recoveryKind, setRecoveryKind] = useState<RecordingInputOutcome["kind"]>("confirmed");
   const [liveInputBusy, setLiveInputBusy] = useState(false);
+  const [talkBackRefresh, setTalkBackRefresh] = useState(0);
   const [stopWaitingForInput, setStopWaitingForInput] = useState(false);
   const liveSession = useRef<LiveTargetSession | undefined>(undefined);
   const liveInputQueue = useRef<Promise<boolean>>(Promise.resolve(true));
@@ -148,6 +155,13 @@ function RecordingWorkspace({
 
   const selectedTarget = recording.data?.selectedTarget ?? snapshot?.frozen?.target;
   const selectedTargetId = selectedTarget?.targetId;
+  const talkBack = useTalkBackReview({
+    enabled: selectedTarget?.platform === "android",
+    serial: selectedTargetId,
+    capture: productService.reviewTalkBack,
+    refreshKey: talkBackRefresh,
+    platform,
+  });
   const targetPresentation = useQuery({
     queryKey: recordingQueryKeys.targetPresentation(selectedTargetId ?? "unselected"),
     queryFn: () => productService.presentTargets([selectedTarget!]),
@@ -283,6 +297,7 @@ function RecordingWorkspace({
             },
           });
           rememberOutcome(outcome);
+          if (outcome.kind === "confirmed") setTalkBackRefresh((count) => count + 1);
           return outcome;
         } finally {
           setLiveInputBusy(false);
@@ -556,16 +571,47 @@ function RecordingWorkspace({
               aria-label="Recording stage"
             >
               {selectedTarget ? (
-                <LiveTargetCanvas
-                  canvasRef={liveCanvas}
-                  status={liveStatus}
-                  issue={liveIssue}
-                  busy={liveInputBusy}
-                  targetTitle={targetLabel(targetPresentation.data?.[0] ?? selectedTarget).title}
-                  targetDetail={targetLabel(targetPresentation.data?.[0] ?? selectedTarget).detail}
-                  browserContext={browserContext}
-                  send={sendLiveInput}
-                />
+                <>
+                  <LiveTargetCanvas
+                    canvasRef={liveCanvas}
+                    status={liveStatus}
+                    issue={liveIssue}
+                    busy={liveInputBusy}
+                    targetTitle={targetLabel(targetPresentation.data?.[0] ?? selectedTarget).title}
+                    targetDetail={
+                      targetLabel(targetPresentation.data?.[0] ?? selectedTarget).detail
+                    }
+                    browserContext={browserContext}
+                    send={sendLiveInput}
+                    overlay={
+                      talkBack.on && talkBack.mode !== "off" ? (
+                        <TalkBackOverlay
+                          canvasRef={liveCanvas}
+                          items={talkBack.result?.review.items ?? []}
+                          mode={talkBack.mode}
+                        />
+                      ) : null
+                    }
+                    toolbar={
+                      selectedTarget.platform === "android" ? (
+                        <TalkBackModeSelect
+                          mode={talkBack.mode}
+                          loading={talkBack.loading}
+                          onModeChange={(mode) => talkBack.setMode(mode)}
+                        />
+                      ) : null
+                    }
+                  />
+                  {selectedTarget.platform === "android" && talkBack.on ? (
+                    <div className="border-t border-border px-3 py-3">
+                      <TalkBackIssueList
+                        review={talkBack.result?.review}
+                        inspectable={talkBack.result?.inspectable}
+                        message={talkBack.issue ?? talkBack.result?.message}
+                      />
+                    </div>
+                  ) : null}
+                </>
               ) : null}
             </div>
           </div>

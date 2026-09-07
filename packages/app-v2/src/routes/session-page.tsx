@@ -27,13 +27,21 @@ import type {
 } from "../data/live-target-session";
 import { LiveTargetCanvas } from "./live-target-canvas";
 import { PageLoading, RecordingProblem, errorMessage } from "./recording-shared";
+import {
+  TalkBackIssueList,
+  TalkBackModeSelect,
+  TalkBackOverlay,
+  useTalkBackReview,
+} from "./talkback-review-panel";
 import { isActiveSession, sessionStateLabel } from "./sessions-page";
 
 const routeApi = getRouteApi("/sessions/$sessionId");
 
 export function SessionPage() {
   const { sessionId } = routeApi.useParams();
-  const { sessionService, queryClient } = useRouteContext({ from: "__root__" });
+  const { sessionService, productService, queryClient, platform } = useRouteContext({
+    from: "__root__",
+  });
   const canvas = useRef<HTMLCanvasElement>(null);
   const live = useRef<LiveTargetSession | undefined>(undefined);
   const [liveStatus, setLiveStatus] = useState<LiveTargetStatus>("idle");
@@ -41,6 +49,7 @@ export function SessionPage() {
   const [liveIssue, setLiveIssue] = useState<string>();
   const [liveBusy, setLiveBusy] = useState(false);
   const [liveAttempt, setLiveAttempt] = useState(0);
+  const [talkBackRefresh, setTalkBackRefresh] = useState(0);
   const [endOpen, setEndOpen] = useState(false);
   const session = useQuery({
     queryKey: sessionQueryKeys.session(sessionId),
@@ -64,6 +73,13 @@ export function SessionPage() {
     },
   });
   const value = session.data;
+  const talkBack = useTalkBackReview({
+    enabled: value?.target.platform === "android",
+    serial: value?.target.targetId,
+    capture: productService.reviewTalkBack,
+    refreshKey: talkBackRefresh,
+    platform,
+  });
   const canControl = Boolean(
     value &&
     isActiveSession(value) &&
@@ -120,6 +136,7 @@ export function SessionPage() {
     setLiveIssue(undefined);
     try {
       await live.current.input(input);
+      setTalkBackRefresh((count) => count + 1);
       return true;
     } catch (error) {
       setLiveIssue(errorMessage(error));
@@ -400,7 +417,34 @@ export function SessionPage() {
                   recording={false}
                   layout="rail"
                   helpText="Tap, type, or scroll. Not recorded."
+                  overlay={
+                    talkBack.on && talkBack.mode !== "off" ? (
+                      <TalkBackOverlay
+                        canvasRef={canvas}
+                        items={talkBack.result?.review.items ?? []}
+                        mode={talkBack.mode}
+                      />
+                    ) : null
+                  }
+                  toolbar={
+                    value.target.platform === "android" ? (
+                      <TalkBackModeSelect
+                        mode={talkBack.mode}
+                        loading={talkBack.loading}
+                        onModeChange={(mode) => talkBack.setMode(mode)}
+                      />
+                    ) : null
+                  }
                 />
+                {value.target.platform === "android" && talkBack.on ? (
+                  <div className="border-t border-border px-3 py-3">
+                    <TalkBackIssueList
+                      review={talkBack.result?.review}
+                      inspectable={talkBack.result?.inspectable}
+                      message={talkBack.issue ?? talkBack.result?.message}
+                    />
+                  </div>
+                ) : null}
               </div>
             ) : (
               <div className="grid min-h-[280px] flex-1 place-items-center content-center gap-4 px-5 py-8 text-center text-sm leading-relaxed text-muted-foreground">

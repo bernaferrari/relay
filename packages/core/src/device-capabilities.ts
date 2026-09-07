@@ -76,6 +76,9 @@ export type Device = {
 export type SnapshotNode = {
   label?: string;
   value?: string;
+  /** Android content-desc. Distinct from visible text so TalkBack review can
+   * tell what the screen reader will speak. */
+  description?: string;
   identifier?: string;
   role?: string;
   type?: string;

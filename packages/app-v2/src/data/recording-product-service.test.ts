@@ -213,6 +213,39 @@ describe("recording edit adapter", () => {
       },
     ]);
   });
+
+  it("projects TalkBack names from a live Android snapshot without enabling audio", async () => {
+    client.invoke.mockClear();
+    client.invoke.mockResolvedValueOnce({
+      inspectable: true,
+      nodes: [
+        {
+          description: "Close",
+          role: "android.widget.ImageButton",
+          hittable: true,
+          rect: { x: 8, y: 8, width: 48, height: 48 },
+          index: 0,
+        },
+        {
+          role: "android.widget.ImageButton",
+          hittable: true,
+          identifier: "app:id/more",
+          rect: { x: 60, y: 8, width: 48, height: 48 },
+          index: 1,
+        },
+      ],
+    });
+    const service = createRecordingProductService(platform);
+    const result = await service.reviewTalkBack!("pixel-1");
+    expect(client.invoke).toHaveBeenCalledWith("target.snapshot.capture", {
+      serial: "pixel-1",
+      full: true,
+    });
+    expect(result.inspectable).toBe(true);
+    expect(result.review.items[0]?.announcement).toBe("Close, Button");
+    expect(result.review.errorCount).toBe(1);
+    expect(result.review.issues[0]?.issues[0]?.code).toBe("icon-without-name");
+  });
 });
 
 // Keep this assertion close to the adapter tests so a future protocol edit

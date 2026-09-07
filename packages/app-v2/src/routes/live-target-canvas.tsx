@@ -10,6 +10,7 @@ import {
   type KeyboardEvent,
   type ClipboardEvent,
   type PointerEvent,
+  type ReactNode,
   type RefObject,
   type WheelEvent,
 } from "react";
@@ -33,6 +34,8 @@ export function LiveTargetCanvas({
   recording = true,
   helpText,
   layout = "stage",
+  overlay,
+  toolbar,
 }: {
   canvasRef: RefObject<HTMLCanvasElement | null>;
   status: LiveTargetStatus;
@@ -45,6 +48,8 @@ export function LiveTargetCanvas({
   recording?: boolean;
   helpText?: string;
   layout?: "stage" | "rail";
+  overlay?: ReactNode;
+  toolbar?: ReactNode;
 }) {
   const [text, setText] = useState("");
   const helpId = `${useId()}-help`;
@@ -219,6 +224,7 @@ export function LiveTargetCanvas({
             <p>{issue ?? "The app will appear here when the Device is ready."}</p>
           </div>
         ) : null}
+        {overlay}
         {busy ? (
           <span className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-background/90 px-3 py-1 text-xs text-muted-foreground shadow-sm">
             {recording ? "Recording interaction…" : "Sending interaction…"}
@@ -256,6 +262,7 @@ export function LiveTargetCanvas({
           ) : null}
         </div>
         <div className="flex items-center gap-2">
+          {toolbar}
           <label className="relay-visually-hidden sr-only" htmlFor={textInputId}>
             Text to type into the focused field
           </label>

@@ -56,6 +56,7 @@ export * from "./target-runtime.js";
 export * from "./campaign-capacity-plan.js";
 export * from "./target-summary.js";
 export * from "./accessibility-defaults.js";
+export * from "./talkback-review.js";
 export * from "./execution-target.js";
 export * from "./artifact-ref.js";
 export * from "./source-revision.js";

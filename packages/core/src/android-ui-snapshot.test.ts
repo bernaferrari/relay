@@ -23,6 +23,7 @@ test("parses Android UI dump into semantic, nested Relay nodes", () => {
   assert.equal(nodes.length, 2);
   assert.deepEqual(nodes[0]?.rect, { x: 0, y: 0, width: 1080, height: 2400 });
   assert.equal(nodes[1]?.label, "Continue setup");
+  assert.equal(nodes[1]?.description, "Continue setup");
   assert.equal(nodes[1]?.value, "Continue");
   assert.equal(nodes[1]?.identifier, "app:id/continue");
   assert.equal(nodes[1]?.bundleId, "ai.x.grok");

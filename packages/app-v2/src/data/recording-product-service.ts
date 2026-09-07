@@ -2,8 +2,10 @@ import type {
   ProductRecordingBeginInput,
   ProductRecordingState,
 } from "@relay/product/recording-journey";
+import { reviewAndroidTalkBack } from "@relay/protocol";
 import type { Platform } from "../platform/types";
 import { productClientForPlatform } from "./product-client";
+import type { TalkBackCaptureResult } from "./talkback-overlay";
 import type { LiveTargetSession } from "./live-target-session";
 import type {
   AuthoringInteraction,
@@ -77,6 +79,8 @@ export type RecordingProductService = {
   liveTarget?(target: AuthoringTarget): Promise<LiveTargetSession>;
   /** Fresh accessibility controls from the live target. Historic screenshots are not this. */
   observeTarget?(target: AuthoringTarget): Promise<RecordingEvidenceControl[]>;
+  /** Visual TalkBack names from a live Android snapshot. Does not enable TalkBack. */
+  reviewTalkBack?(serial: string): Promise<TalkBackCaptureResult>;
   /** Join a human observation to the durable target mutation receipt. */
   reconcileInput?(input: {
     serial: string;
@@ -250,6 +254,26 @@ export function createRecordingProductService(
         full: true,
       });
       return projectRecordingEvidenceControls(snapshot.nodes as Record<string, unknown>[]);
+    },
+    async reviewTalkBack(serial) {
+      const { client } = await product();
+      const snapshot = await client.invoke("target.snapshot.capture", {
+        serial,
+        full: true,
+      });
+      const inspectable = snapshot.inspectable !== false;
+      return {
+        inspectable,
+        review: reviewAndroidTalkBack(snapshot.nodes ?? []),
+        ...(inspectable
+          ? {}
+          : {
+              message:
+                snapshot.inspectionState === "keyguard"
+                  ? "Unlock the device to read TalkBack labels."
+                  : "TalkBack labels are unavailable. The live view still works.",
+            }),
+      };
     },
     async reconcileInput(input) {
       const { client } = await product();

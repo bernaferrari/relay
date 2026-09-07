@@ -17,6 +17,12 @@ import type {
 } from "../data/live-target-session";
 import { LiveTargetCanvas } from "./live-target-canvas";
 import { PageLoading, errorMessage } from "./recording-shared";
+import {
+  TalkBackIssueList,
+  TalkBackModeSelect,
+  TalkBackOverlay,
+  useTalkBackReview,
+} from "./talkback-review-panel";
 
 const routeApi = getRouteApi("/devices/$deviceId");
 
@@ -34,7 +40,9 @@ export function DevicePage() {
     rawSearch && typeof rawSearch === "object" && "returnTo" in rawSearch
       ? readSetupContinuation(rawSearch.returnTo)
       : undefined;
-  const { deviceService, productService, queryClient } = useRouteContext({ from: "__root__" });
+  const { deviceService, productService, queryClient, platform } = useRouteContext({
+    from: "__root__",
+  });
   const canvas = useRef<HTMLCanvasElement>(null);
   const session = useRef<LiveTargetSession | undefined>(undefined);
   const [liveStatus, setLiveStatus] = useState<LiveTargetStatus>("idle");
@@ -42,6 +50,7 @@ export function DevicePage() {
   const [liveIssue, setLiveIssue] = useState<string>();
   const [liveBusy, setLiveBusy] = useState(false);
   const [liveAttempt, setLiveAttempt] = useState(0);
+  const [talkBackRefresh, setTalkBackRefresh] = useState(0);
   const [appIdentifier, setAppIdentifier] = useState("");
   const [appIdentifierError, setAppIdentifierError] = useState<string>();
   const [relaunchApp, setRelaunchApp] = useState(false);
@@ -49,6 +58,13 @@ export function DevicePage() {
     queryKey: deviceQueryKeys.device(deviceId),
     queryFn: () => deviceService.get(deviceId),
     staleTime: 5_000,
+  });
+  const talkBack = useTalkBackReview({
+    enabled: device.data?.platform === "android",
+    serial: device.data?.serial,
+    capture: productService.reviewTalkBack,
+    refreshKey: talkBackRefresh,
+    platform,
   });
   const recover = useMutation({
     mutationFn: async () => {
@@ -148,6 +164,7 @@ export function DevicePage() {
     setLiveIssue(undefined);
     try {
       await session.current.input(input);
+      setTalkBackRefresh((count) => count + 1);
       return true;
     } catch (error) {
       setLiveIssue(friendlyLiveIssue(errorMessage(error)));
@@ -270,6 +287,8 @@ export function DevicePage() {
               }}
               send={send}
               pending={target.isPending}
+              android={device.data.platform === "android"}
+              talkBack={talkBack}
             />
           ) : null}
 
@@ -370,6 +389,8 @@ function DeviceLivePreview({
   reconnect,
   send,
   pending,
+  android,
+  talkBack,
 }: {
   canvas: RefObject<HTMLCanvasElement | null>;
   target?: { name: string; detail: string };
@@ -380,6 +401,8 @@ function DeviceLivePreview({
   reconnect: () => void;
   send: (input: LiveTargetInput) => Promise<boolean>;
   pending: boolean;
+  android: boolean;
+  talkBack: ReturnType<typeof useTalkBackReview>;
 }) {
   if (pending) return <PageLoading label="Opening the live device…" />;
   if (!target) {
@@ -418,7 +441,34 @@ function DeviceLivePreview({
         browserContext={browserContext}
         send={send}
         recording={false}
+        overlay={
+          talkBack.on && talkBack.mode !== "off" ? (
+            <TalkBackOverlay
+              canvasRef={canvas}
+              items={talkBack.result?.review.items ?? []}
+              mode={talkBack.mode}
+            />
+          ) : null
+        }
+        toolbar={
+          android ? (
+            <TalkBackModeSelect
+              mode={talkBack.mode}
+              loading={talkBack.loading}
+              onModeChange={(mode) => talkBack.setMode(mode)}
+            />
+          ) : null
+        }
       />
+      {android && talkBack.on ? (
+        <div className="border-t border-border px-4 py-3">
+          <TalkBackIssueList
+            review={talkBack.result?.review}
+            inspectable={talkBack.result?.inspectable}
+            message={talkBack.issue ?? talkBack.result?.message}
+          />
+        </div>
+      ) : null}
     </section>
   );
 }

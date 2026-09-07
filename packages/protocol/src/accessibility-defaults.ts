@@ -57,6 +57,9 @@ export function presentAccessibilityNode(
   const out: Record<string, unknown> = {};
   if (source.type) out.type = shortType(source.type);
   if (typeof source.label === "string" && source.label) out.label = source.label;
+  if (typeof source.description === "string" && source.description) {
+    out.description = source.description;
+  }
   if (typeof source.value === "string" && source.value && source.value !== source.label) {
     out.value = source.value;
   }
