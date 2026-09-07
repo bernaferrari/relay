@@ -73,11 +73,16 @@ export function TestsPage() {
   });
   const scopedRuns = (runs.data ?? []).filter((item) => !app || item.appMapId === app);
   const recordingAppId = recordingState.data?.snapshot?.frozen?.appMapId;
-  const resumeRecordingId = !recording.data
-    ? undefined
-    : !app || !recordingAppId || recordingAppId === app
-      ? recording.data
-      : undefined;
+  const recordingStage = recordingState.data?.snapshot?.stage;
+  const recordingFinished = recordingStage === "committed" || recordingStage === "cancelled";
+  const reviewing = recordingStage === "reviewing";
+  const resumeLabel = reviewing ? "Review recording" : "Continue recording";
+  const resumeRecordingId =
+    !recording.data || recordingFinished
+      ? undefined
+      : !app || !recordingAppId || recordingAppId === app
+        ? recording.data
+        : undefined;
   const resumeRunId =
     !app || scopedRuns.some((item) => item.id === runPointer.data?.runId)
       ? runPointer.data?.runId
@@ -200,14 +205,18 @@ export function TestsPage() {
           <div className="min-w-0">
             <strong id="tests-resume-title" className="block text-sm font-semibold">
               {resumeRecordingId
-                ? "Finish the Test you started"
+                ? reviewing
+                  ? "Your recording is ready to review"
+                  : "Continue your test"
                 : resumeRunId
                   ? "A Run is in progress"
                   : (resumeAttention?.testName ?? resumeAttention?.title)}
             </strong>
             <p className="mt-0.5 text-xs text-muted-foreground">
               {resumeRecordingId
-                ? "Continue recording."
+                ? reviewing
+                  ? "Review the captured steps, then save your test."
+                  : "Your captured steps are saved."
                 : resumeRunId
                   ? "See how the current Run is going."
                   : `Failed on ${resumeAttention?.targetName ?? "the Device"}.`}
@@ -219,7 +228,7 @@ export function TestsPage() {
               to="/recordings/$recordingId"
               params={{ recordingId: resumeRecordingId }}
             >
-              Continue recording
+              {resumeLabel}
             </Link>
           ) : resumeRunId ? (
             <Link

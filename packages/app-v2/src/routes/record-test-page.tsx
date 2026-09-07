@@ -467,7 +467,9 @@ function RecordingWorkspace({
           <AuthoringHeader
             phase="record"
             title={
-              recording.isError || recording.data?.recovery ? "Recording interrupted" : "Recording"
+              recording.isError || recording.data?.recovery
+                ? "Recording interrupted"
+                : "Record test"
             }
             description={
               <span className="inline-flex items-center gap-2 text-sm">
@@ -489,19 +491,21 @@ function RecordingWorkspace({
                   : ""}
               </span>
             }
+            back={
+              <DialogTrigger
+                render={
+                  <Button
+                    className="inline-flex w-fit text-muted-foreground relay-electron-no-drag [-webkit-app-region:no-drag]"
+                    variant="ghost"
+                    size="sm"
+                  />
+                }
+              >
+                Cancel
+              </DialogTrigger>
+            }
             actions={
               <>
-                <DialogTrigger
-                  render={
-                    <Button
-                      className="inline-flex min-h-11 w-fit text-muted-foreground relay-electron-no-drag [-webkit-app-region:no-drag]"
-                      variant="ghost"
-                      size="sm"
-                    />
-                  }
-                >
-                  Cancel
-                </DialogTrigger>
                 <Button
                   className="relay-electron-no-drag [-webkit-app-region:no-drag]"
                   variant="default"

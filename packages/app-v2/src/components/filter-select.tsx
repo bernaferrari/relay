@@ -21,6 +21,7 @@ export function SelectField({
   className,
   placeholder,
   compact = false,
+  disabled = false,
 }: {
   label: string;
   value: string;
@@ -29,6 +30,7 @@ export function SelectField({
   className?: string;
   placeholder?: string;
   compact?: boolean;
+  disabled?: boolean;
 }) {
   if (!options.length) {
     return (
@@ -45,6 +47,7 @@ export function SelectField({
   }
   return (
     <Select
+      disabled={disabled}
       items={options}
       value={value || null}
       onValueChange={(nextValue) => {

@@ -73,9 +73,9 @@ export function RecordingEvidencePanel({
             alt={`${evidenceRole} evidence for ${action?.intent}`}
           />
         ) : (
-          <div className="grid max-w-[22ch] justify-items-center gap-2 p-6 text-center text-[oklch(0.8_0.008_255)]">
+          <div className="grid max-w-[22ch] justify-items-center gap-2 p-6 text-center text-muted-foreground">
             <Target aria-hidden="true" />
-            <strong className="text-[13px] text-[oklch(0.94_0.005_255)]">
+            <strong className="text-[13px] text-foreground">
               {action ? "No visual frame for this moment" : "Select an action"}
             </strong>
             <span className="text-[11px] leading-normal">

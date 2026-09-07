@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import type { DeviceProductService } from "../data/device-product-service";
 import { SelectField, type FilterSelectOption } from "./filter-select";
@@ -15,6 +16,7 @@ export function RecordingDeviceChoice({
   onChange(value: string): void;
   onStarted(serial: string): Promise<void>;
 }) {
+  const starting = useRef(false);
   const inventory = useQuery({
     queryKey: ["android-emulators"],
     queryFn: () => service.listEmulators!(),
@@ -24,6 +26,9 @@ export function RecordingDeviceChoice({
   });
   const boot = useMutation({
     mutationFn: (name: string) => service.startEmulator!(name),
+    onSettled: () => {
+      starting.current = false;
+    },
     onSuccess: async (result) => {
       await onStarted(result.serial);
       await inventory.refetch();
@@ -36,8 +41,15 @@ export function RecordingDeviceChoice({
     <div className="grid min-w-0 gap-2">
       <SelectField
         label="Record on"
+        disabled={boot.isPending}
         value={options.some((option) => option.value === value) ? value : ""}
-        placeholder={value ? "Selected device unavailable" : "Choose a device or browser"}
+        placeholder={
+          boot.isPending
+            ? "Starting Android emulator…"
+            : value
+              ? "Selected device unavailable"
+              : "Choose a device or browser"
+        }
         options={[
           ...options,
           ...stopped.map((avd) => ({
@@ -46,9 +58,13 @@ export function RecordingDeviceChoice({
           })),
         ]}
         onValueChange={(next) => {
-          if (boot.isPending) return;
-          if (next.startsWith("avd:")) boot.mutate(next.slice(4));
-          else onChange(next);
+          if (starting.current) return;
+          boot.reset();
+          if (next.startsWith("avd:")) {
+            starting.current = true;
+            onChange("");
+            boot.mutate(next.slice(4));
+          } else onChange(next);
         }}
       />
       {boot.isPending ? (
