@@ -436,6 +436,24 @@ describe("record, review, replay, and save", () => {
     );
   });
 
+  it("preserves a missing device selection without asking the user to select it again", async () => {
+    const fake = fakeService();
+    fake.service.connect = async () => ({ status: "target-selection", targets: [] });
+    fake.service.presentTargets = async () => [];
+    await renderJourney(
+      "/tests/new?app=app-1&target=emulator-5554",
+      fake.service,
+      platformWithStorage().platform,
+    );
+    expect(document.body.textContent).toContain("Your selected device isn’t ready");
+    expect(document.body.textContent).not.toContain("Choose where to record");
+    expect(document.querySelector('[aria-label="Record on"]')?.textContent).toContain(
+      "Selected device unavailable",
+    );
+    expect(button("Start recording").disabled).toBe(true);
+    expect(button("Check again")).toBeTruthy();
+  });
+
   it("keeps app and device in a compact toolbar instead of a setup form", async () => {
     const fake = fakeService();
     fake.service.connect = async () => ({ status: "target-selection", targets: [] });
@@ -443,18 +461,16 @@ describe("record, review, replay, and save", () => {
     await renderJourney("/tests/new?app=app-1", fake.service, platformWithStorage().platform);
 
     expect(document.querySelector('[aria-label="App"]')?.textContent).toContain("Grok");
-    expect(document.querySelector('[aria-label="Record on"]')).toBeNull();
+    expect(document.querySelector('[aria-label="Record on"]')?.textContent).toContain(
+      "Choose a device or browser",
+    );
     expect(document.body.textContent).toContain("Start a browser to record");
     expect(document.body.textContent).toContain("Start a browser");
     expect(document.body.textContent).not.toContain("Open devices");
     expect(document.body.textContent).not.toContain("Manage browser Spaces");
     expect(document.body.textContent).not.toContain("Where this Test belongs");
     expect(document.body.textContent).not.toContain("Stay on this page");
-    expect(
-      [...document.querySelectorAll("button")].some(
-        (item) => item.textContent?.trim() === "Start recording",
-      ),
-    ).toBe(false);
+    expect(button("Start recording").disabled).toBe(true);
   });
 
   it("starts a browser on this page instead of sending the user away", async () => {

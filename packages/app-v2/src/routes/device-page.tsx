@@ -1,7 +1,13 @@
 /** @jsxImportSource react */
 import { Button } from "@relay/ui-react/components/button";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Link, getRouteApi, useLocation, useRouteContext } from "@tanstack/react-router";
+import {
+  Link,
+  getRouteApi,
+  useLocation,
+  useRouteContext,
+  useNavigate,
+} from "@tanstack/react-router";
 import { RotateCcw } from "lucide-react";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { LibraryPage, PageHeader } from "../components/page-layout";
@@ -35,6 +41,7 @@ function deviceDescription(device: ProductDevice): string {
 
 export function DevicePage() {
   const { deviceId } = routeApi.useParams();
+  const navigate = useNavigate();
   const rawSearch = useLocation({ select: (state) => state.search });
   const returnTo =
     rawSearch && typeof rawSearch === "object" && "returnTo" in rawSearch
@@ -65,6 +72,13 @@ export function DevicePage() {
     capture: productService.reviewTalkBack,
     refreshKey: talkBackRefresh,
     platform,
+  });
+  const boot = useMutation({
+    mutationFn: () => deviceService.startEmulator!(device.data!.avdName!),
+    onSuccess: async (result) => {
+      await queryClient.invalidateQueries({ queryKey: deviceQueryKeys.devices });
+      await navigate({ to: "/devices/$deviceId", params: { deviceId: result.serial } });
+    },
   });
   const recover = useMutation({
     mutationFn: async () => {
@@ -202,10 +216,16 @@ export function DevicePage() {
             {device.data?.status === "needs-attention" ? (
               <Button
                 variant="default"
-                onClick={() => recover.mutate()}
-                disabled={recover.isPending}
+                onClick={() => (device.data?.avdName ? boot.mutate() : recover.mutate())}
+                disabled={recover.isPending || boot.isPending}
               >
-                {recover.isPending ? "Reconnecting…" : "Reconnect device"}
+                {device.data?.avdName
+                  ? boot.isPending
+                    ? "Starting…"
+                    : "Start emulator"
+                  : recover.isPending
+                    ? "Reconnecting…"
+                    : "Reconnect device"}
               </Button>
             ) : device.data ? (
               <Button
@@ -257,6 +277,11 @@ export function DevicePage() {
 
       {device.data ? (
         <div className="grid gap-8">
+          {boot.error ? (
+            <p role="alert" className="text-sm text-destructive">
+              {boot.error.message}
+            </p>
+          ) : null}
           {recover.error ? (
             <p
               className="relay-settings-error max-w-[60ch] text-[13px] leading-5 text-destructive"

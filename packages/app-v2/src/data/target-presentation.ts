@@ -1,3 +1,4 @@
+import { devicePlatformLabel } from "./device-label";
 import type { AuthoringTarget, DeviceSummary } from "@relay/protocol";
 
 export type ProductTargetOption = AuthoringTarget & {
@@ -88,5 +89,10 @@ function targetDetail(target: AuthoringTarget, device?: DeviceSummary): string {
         ? "Android emulator"
         : "Android";
   const version = device?.osVersion?.trim();
-  return [kind, version, "Ready"].filter(Boolean).join(" · ");
+  return [
+    version ? devicePlatformLabel({ platform: target.platform, osVersion: version }) : kind,
+    version && kind === "Android emulator" ? "Emulator" : undefined,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }

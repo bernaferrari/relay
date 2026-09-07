@@ -35,7 +35,7 @@ export function SelectField({
       <div className={compact ? className : `grid min-w-0 gap-1.5 ${className ?? ""}`}>
         {compact ? null : <Label className="text-xs font-medium text-foreground">{label}</Label>}
         <div
-          className="flex h-9 items-center rounded-lg border border-dashed border-input px-2.5 text-sm text-muted-foreground"
+          className="flex h-8 items-center rounded-lg border border-dashed border-input px-2.5 text-sm text-muted-foreground"
           aria-label={label}
         >
           {placeholder ?? "None available"}
@@ -54,7 +54,11 @@ export function SelectField({
       <div className={compact ? className : `grid min-w-0 gap-1.5 ${className ?? ""}`}>
         {compact ? null : <Label className="text-xs font-medium text-foreground">{label}</Label>}
         <SelectTrigger
-          className={compact ? "h-9 w-auto min-w-[8.75rem]" : "w-full"}
+          className={
+            compact
+              ? "w-auto min-w-[8.75rem]"
+              : "w-full min-w-0 [&_[data-slot=select-value]]:truncate"
+          }
           aria-label={label}
         >
           <SelectValue placeholder={placeholder} />

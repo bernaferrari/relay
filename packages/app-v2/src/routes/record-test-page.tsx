@@ -1,3 +1,5 @@
+import { AuthoringHeader } from "./authoring-header";
+import { RecordingActionList } from "./recording-action-list";
 import { RecordingInputRecovery } from "./recording-input-recovery";
 import { RecordingScreenCapture } from "./recording-screen-capture";
 /** @jsxImportSource react */
@@ -11,12 +13,10 @@ import {
 } from "@relay/ui-react/components/dialog";
 import { ScrollArea } from "@relay/ui-react/components/scroll-area";
 import { Button } from "@relay/ui-react/components/button";
-import { PageHeader } from "../components/page-layout";
 
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Camera } from "lucide-react";
 import type {
   LiveTargetBrowserContext,
   LiveTargetSession,
@@ -441,8 +441,8 @@ function RecordingWorkspace({
   }
 
   return (
-    <section className="grid h-full min-h-0 w-full grid-rows-[auto_minmax(0,1fr)_auto] bg-background">
-      <div className="border-b border-border px-5 py-2 relay-electron-drag [-webkit-app-region:drag] [&_.relay-workspace-header]:mb-0 [&_.relay-workspace-header]:mt-0">
+    <section className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden bg-card">
+      <div className="min-w-0">
         <Dialog open={exitOpen} onOpenChange={setExitOpen}>
           <DialogContent showCloseButton={false}>
             <DialogTitle>Cancel recording?</DialogTitle>
@@ -464,11 +464,10 @@ function RecordingWorkspace({
               </Button>
             </div>
           </DialogContent>
-          <PageHeader
+          <AuthoringHeader
+            phase="record"
             title={
-              recording.isError || recording.data?.recovery
-                ? "Recording interrupted"
-                : "Record a Test"
+              recording.isError || recording.data?.recovery ? "Recording interrupted" : "Recording"
             }
             description={
               <span className="inline-flex items-center gap-2 text-sm">
@@ -518,7 +517,7 @@ function RecordingWorkspace({
         </Dialog>
       </div>
 
-      <div className="min-h-0 overflow-auto p-5">
+      <div className="min-h-0 overflow-auto p-3">
         {recording.isPending ? <PageLoading label="Restoring the recording…" /> : null}
         {recording.isError || recording.data?.recovery ? (
           <div className="mx-auto grid max-w-md gap-4 rounded-xl border border-border bg-card p-6">
@@ -561,30 +560,7 @@ function RecordingWorkspace({
               </div>
               {recordedActions.length ? (
                 <ScrollArea className="min-h-0">
-                  <ol className="grid list-none gap-1.5 p-3">
-                    {recordedActions.map((recorded, index) => (
-                      <li
-                        className="flex items-start gap-3 rounded-lg border border-border/60 bg-background/50 p-3"
-                        key={recorded.id}
-                      >
-                        <span className="grid size-6 shrink-0 place-items-center rounded-md bg-muted text-xs tabular-nums text-muted-foreground">
-                          {recorded.stepCount === 0 ? (
-                            <Camera className="size-3.5" aria-hidden="true" />
-                          ) : (
-                            index + 1
-                          )}
-                        </span>
-                        <span className="grid min-w-0 gap-0.5">
-                          <strong className="break-words text-sm font-medium leading-snug">
-                            {recorded.label ?? recorded.intent}
-                          </strong>
-                          {recorded.stepCount === 0 ? (
-                            <small className="text-xs text-muted-foreground">Screen capture</small>
-                          ) : null}
-                        </span>
-                      </li>
-                    ))}
-                  </ol>
+                  <RecordingActionList actions={recordedActions} />
                 </ScrollArea>
               ) : (
                 <div className="grid min-h-[180px] place-items-center px-4 text-center text-sm text-muted-foreground">
@@ -609,6 +585,7 @@ function RecordingWorkspace({
                     }
                     browserContext={browserContext}
                     showTargetDetails={false}
+                    targetPlatform={selectedTarget?.platform}
                     helpText="Click the app to record a step. Drag to scroll."
                     send={sendLiveInput}
                     overlay={

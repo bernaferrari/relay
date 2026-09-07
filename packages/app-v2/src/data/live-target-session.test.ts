@@ -231,6 +231,51 @@ describe("live target session", () => {
     sessionController.close();
   });
 
+  it("routes Android Back through recording authority without direct dispatch", async () => {
+    const invoke = vi.fn();
+    const onInteraction = vi.fn();
+    const sessionController = createLiveTargetSession({
+      client: {
+        connection: { url: "http://relay.test" },
+        invoke,
+        binaryResource: vi.fn(),
+        openStream: vi.fn(),
+      } as never,
+      target: { kind: "device", platform: "android", targetId: "emulator-5554" },
+      onInteraction,
+    });
+
+    await sessionController.input({ kind: "key", key: "back" });
+
+    expect(onInteraction).toHaveBeenCalledWith({ kind: "key", key: "back" });
+    expect(invoke).not.toHaveBeenCalled();
+    sessionController.close();
+  });
+
+  it("sends Android system Back in preview without a recording", async () => {
+    const invoke = vi.fn();
+    const onInteraction = vi.fn();
+    const sessionController = createLiveTargetSession({
+      client: {
+        connection: { url: "http://relay.test" },
+        invoke,
+        binaryResource: vi.fn(),
+        openStream: vi.fn(),
+      } as never,
+      target: { kind: "device", platform: "android", targetId: "emulator-5554" },
+    });
+
+    await sessionController.input({ kind: "key", key: "back" });
+
+    expect(onInteraction).not.toHaveBeenCalled();
+    expect(invoke).toHaveBeenCalledWith("target.interact", {
+      serial: "emulator-5554",
+      kind: "key",
+      key: "back",
+    });
+    sessionController.close();
+  });
+
   it("never bypasses recording authority for an unsupported input", async () => {
     const invoke = vi.fn();
     const client = {

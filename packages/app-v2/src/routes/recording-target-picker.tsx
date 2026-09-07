@@ -5,7 +5,8 @@ import { useState } from "react";
 import type { RecordingEvidenceControl } from "../data/recording-evidence-target";
 import { pickRecordingEvidenceControl } from "../data/recording-evidence-target";
 import { imagePointFromClick } from "../data/recording-evidence-target";
-import type { RecordingEvidenceTarget } from "../data/recording-evidence-target";
+import type { StepTarget } from "@relay/protocol";
+import { RecordingTargetFields } from "./recording-target-fields";
 import type { ReviewTargetTryResult } from "../data/recording-try-target";
 
 export function RecordingTargetPicker({
@@ -19,7 +20,7 @@ export function RecordingTargetPicker({
   canEdit: boolean;
   previewUrl: string | null;
   onTry(control: RecordingEvidenceControl): Promise<ReviewTargetTryResult>;
-  onKeep(target: RecordingEvidenceTarget): void;
+  onKeep(target: StepTarget): void;
 }) {
   const [picking, setPicking] = useState(false);
   const [selected, setSelected] = useState<RecordingEvidenceControl>();
@@ -82,7 +83,8 @@ export function RecordingTargetPicker({
             </ul>
           ) : (
             <p className="text-xs text-muted-foreground">
-              This frame has no labeled controls. Relay cannot pick a target from pixels alone.
+              No labeled controls in this frame. Enter a label, identifier, or screen coordinates
+              below.
             </p>
           )}
           {selected ? (
@@ -120,6 +122,7 @@ export function RecordingTargetPicker({
               Click the control in the screenshot, or choose it from the list.
             </p>
           )}
+          <RecordingTargetFields canEdit={canEdit} onKeep={onKeep} />
         </div>
       ) : null}
     </div>

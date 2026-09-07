@@ -1,14 +1,12 @@
+import { RecordingActionIcon } from "./recording-action-icon";
 /** @jsxImportSource react */
 import type { AuthoringRawOptimizationProposalResponse } from "@relay/protocol";
 import { ScrollArea } from "@relay/ui-react/components/scroll-area";
 import { Checkbox } from "@relay/ui-react/components/checkbox";
 import { Button } from "@relay/ui-react/components/button";
-import { Image as ImageIcon, MoreHorizontal, Sparkles, Target } from "lucide-react";
+import { MoreHorizontal, Sparkles, Target } from "lucide-react";
 import { EmptyState } from "../components/product-patterns";
 import {
-  captureSummary,
-  formatDuration,
-  proofLabel,
   recordedMomentCount,
   reviewActionCopy,
   type ReviewAction,
@@ -31,17 +29,20 @@ export function RecordingEvidencePanel({
 }) {
   return (
     <section
-      className="min-w-0 self-start rounded-xl border border-border bg-card p-4 text-card-foreground shadow-sm"
+      className="grid h-full min-h-0 min-w-0 grid-rows-[auto_auto_minmax(0,1fr)] self-start rounded-xl bg-card p-4 text-card-foreground ring-1 ring-border/60"
       aria-labelledby="recording-evidence-title"
     >
-      <div className="flex flex-wrap items-center justify-between gap-3.5">
-        <div>
-          <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
-            Evidence
-          </p>
-          <h2 id="recording-evidence-title">Selected moment</h2>
-        </div>
-        <ImageIcon className="w-[17px] text-muted-foreground" aria-hidden="true" />
+      <div className="flex items-center justify-between gap-3">
+        <h2 id="recording-evidence-title" className="flex items-center gap-2 text-sm font-medium">
+          {action ? (
+            <>
+              <RecordingActionIcon action={action} />
+              {reviewActionCopy(action).title}
+            </>
+          ) : (
+            "Step preview"
+          )}
+        </h2>
       </div>
       <div
         className="mt-4 grid grid-cols-2 gap-0.5 rounded-md bg-muted p-0.5"
@@ -64,12 +65,10 @@ export function RecordingEvidencePanel({
           After
         </button>
       </div>
-      <div
-        className={`mt-2.5 grid place-items-center overflow-hidden rounded-lg border border-border bg-[oklch(0.19_0.008_255)] bg-[image:radial-gradient(circle_at_50%_20%,color-mix(in_srgb,white_7%,transparent),transparent_42%)] ${previewUrl ? "aspect-[4/5] max-h-[420px]" : "min-h-[180px] max-h-[220px]"}`}
-      >
+      <div className="mt-3 flex min-h-0 items-center justify-center overflow-hidden rounded-lg bg-background/40 p-2">
         {previewUrl ? (
           <img
-            className="max-h-full w-full object-contain"
+            className="h-full max-h-full max-w-full rounded-md object-contain"
             src={previewUrl}
             alt={`${evidenceRole} evidence for ${action?.intent}`}
           />
@@ -81,34 +80,12 @@ export function RecordingEvidencePanel({
             </strong>
             <span className="text-[11px] leading-normal">
               {action
-                ? "The proof is still listed below."
+                ? "Choose another step or switch between Before and After."
                 : "Its before and after frames will appear here."}
             </span>
           </div>
         )}
       </div>
-      {action ? (
-        <dl className="mt-3 grid grid-cols-3 gap-2">
-          <div>
-            <dt className="text-[10px] uppercase tracking-wider text-muted-foreground">Proof</dt>
-            <dd className="mt-0.5 truncate text-[11px] text-foreground">
-              {action.proofStatus ? proofLabel(action.proofStatus) : "Review"}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-[10px] uppercase tracking-wider text-muted-foreground">Evidence</dt>
-            <dd className="mt-0.5 truncate text-[11px] text-foreground">
-              {action.evidenceCount ?? action.evidenceIds?.length ?? 0} items
-            </dd>
-          </div>
-          <div>
-            <dt className="text-[10px] uppercase tracking-wider text-muted-foreground">Duration</dt>
-            <dd className="mt-0.5 truncate text-[11px] text-foreground">
-              {formatDuration(action.durationMs ?? 0)}
-            </dd>
-          </div>
-        </dl>
-      ) : null}
     </section>
   );
 }
@@ -141,14 +118,11 @@ export function RecordingActionsPanel({
       className="min-w-0 overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-sm"
       aria-labelledby="recording-actions-title"
     >
-      <div className="flex min-h-[72px] min-w-0 flex-wrap items-center justify-between gap-3.5 border-b border-border px-4 py-3">
+      <div className="flex min-h-12 min-w-0 flex-wrap items-center justify-between gap-3.5 border-b border-border px-4 py-3">
         <div className="min-w-0">
           <h2 id="recording-actions-title">{recordedMomentCount(actions.length)}</h2>
         </div>
         <div className="flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2">
-          <span className="max-w-full truncate text-[11px] text-muted-foreground">
-            {captureSummary(actions)}
-          </span>
           {editing ? (
             <Button
               size="sm"
@@ -204,14 +178,18 @@ export function RecordingActionsPanel({
               const selected = selectedActionIds.includes(step.id);
               return (
                 <li
-                  className={`relay-review-step grid min-h-[70px] grid-cols-[auto_28px_minmax(0,1fr)] items-center gap-2 border-t border-border py-2 ${selected ? "bg-muted/60" : ""}`}
+                  className={`relay-review-step grid min-h-[52px] grid-cols-[auto_28px_minmax(0,1fr)] items-center gap-2 border-t border-border py-2 ${selected ? "bg-muted/60" : ""}`}
                   key={step.id}
                 >
-                  <Checkbox
-                    checked={selected}
-                    onCheckedChange={(checked) => onToggle(step.id, checked)}
-                    aria-label={`Select ${copy.title}`}
-                  />
+                  {editing ? (
+                    <Checkbox
+                      checked={selected}
+                      onCheckedChange={(checked) => onToggle(step.id, checked)}
+                      aria-label={`Select ${copy.title}`}
+                    />
+                  ) : (
+                    <span />
+                  )}
                   <span
                     className="grid size-7 place-items-center rounded-full border border-border bg-muted text-foreground shadow-sm"
                     aria-hidden="true"
@@ -223,8 +201,13 @@ export function RecordingActionsPanel({
                     className="min-w-0 text-left"
                     onClick={() => onSelect(step.id)}
                   >
-                    <strong>{copy.title}</strong>
-                    <p className="text-xs text-muted-foreground">{copy.detail}</p>
+                    <span className="flex items-center gap-2">
+                      <RecordingActionIcon action={step} />
+                      <strong className="text-sm font-medium">{copy.title}</strong>
+                    </span>
+                    {step.proofStatus === "unresolved" ? (
+                      <p className="text-xs text-muted-foreground">Needs review</p>
+                    ) : null}
                   </button>
                 </li>
               );

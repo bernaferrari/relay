@@ -1,7 +1,13 @@
 /** @jsxImportSource react */
 import type { TalkBackReview, TalkBackReviewItem } from "@relay/protocol";
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
-import { SelectField } from "../components/filter-select";
+import { ScanText, Check } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@relay/ui-react/components/dropdown-menu";
 import type { Platform } from "../platform/types";
 import {
   ACCESSIBILITY_LABELS_STORAGE_KEY,
@@ -40,13 +46,32 @@ export function TalkBackModeSelect({
   onModeChange: (mode: AccessibilityLabelMode) => void;
 }) {
   return (
-    <SelectField
-      label={loading ? "Reading labels" : "Accessibility names"}
-      value={mode}
-      options={MODE_OPTIONS}
-      onValueChange={(value) => onModeChange(validAccessibilityLabelMode(value))}
-      className={disabled ? "pointer-events-none opacity-60" : "min-w-[9.5rem]"}
-    />
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        disabled={disabled || loading}
+        aria-label={`Accessibility labels: ${mode === "off" ? "hidden" : mode === "hover" ? "on hover" : "visible"}`}
+        className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring ${mode !== "off" ? "bg-muted text-foreground" : ""}`}
+      >
+        <ScanText className="size-4" aria-hidden="true" /> {loading ? "Reading labels…" : "Labels"}
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start">
+        {MODE_OPTIONS.map((option) => (
+          <DropdownMenuItem
+            key={option.value}
+            onClick={() => onModeChange(validAccessibilityLabelMode(option.value))}
+          >
+            <span className="flex-1">
+              {option.value === "off"
+                ? "Hide labels"
+                : option.value === "hover"
+                  ? "Show on hover"
+                  : "Always show labels"}
+            </span>
+            {mode === option.value ? <Check className="size-3.5" aria-hidden="true" /> : null}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

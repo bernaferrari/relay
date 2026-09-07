@@ -61,7 +61,7 @@
   --input: var(--border-base);
   --ring: var(--border-hover);
   --radius: 0.625rem;
-  --sidebar: var(--background-weak);
+  --sidebar: var(--background-base);
   --sidebar-foreground: var(--text-strong);
   --sidebar-primary: var(--button-primary-base);
   --sidebar-primary-foreground: var(--button-primary-foreground);

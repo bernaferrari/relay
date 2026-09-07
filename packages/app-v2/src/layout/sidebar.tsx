@@ -5,7 +5,6 @@ import {
   SidebarContent as SharedSidebarContent,
   SidebarFooter,
   SidebarGroup,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
@@ -41,9 +40,6 @@ export function SidebarContent({ label = "Primary" }: { label?: string }) {
     <SharedSidebarContent className="relay-sidebar-body flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto overscroll-contain px-3 pb-3 [scrollbar-gutter:auto]">
       <AppSwitcher />
       <SidebarGroup className="relay-sidebar-group flex-none pt-1.5">
-        <SidebarGroupLabel className="relay-sidebar-section-label min-h-7 px-2.5 pb-1 pt-2 text-[11px] font-semibold text-[var(--text-weaker)]">
-          Relay
-        </SidebarGroupLabel>
         <nav className="relay-nav flex flex-col gap-0.5" aria-label={label}>
           <SidebarMenu className="relay-sidebar-menu m-0 grid list-none gap-0.5 p-0">
             {mainItems.map((item) => {
@@ -109,7 +105,7 @@ export function SidebarContent({ label = "Primary" }: { label?: string }) {
 export function Sidebar({ desktop = false }: { desktop?: boolean }) {
   return (
     <SharedSidebar
-      className="relay-sidebar hidden h-full min-w-[var(--relay-sidebar-width)] w-[var(--relay-sidebar-width)] bg-[var(--background-weak)] min-[861px]:flex"
+      className="relay-sidebar border-r-0! hidden h-full min-w-[var(--relay-sidebar-width)] w-[var(--relay-sidebar-width)] bg-sidebar min-[861px]:flex"
       aria-label="Relay navigation"
     >
       <SidebarHeader

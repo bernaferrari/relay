@@ -1,3 +1,4 @@
+import { AuthoringHeader } from "./authoring-header";
 import { RecordingAppChoice } from "./recording-app-choice";
 /** @jsxImportSource react */
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@relay/ui-react/components/alert";
@@ -15,8 +16,7 @@ import type {
 } from "../data/live-target-session";
 import type { BrowserSpacesProductService } from "../data/browser-spaces-product-service";
 import { recordingQueryKeys } from "../data/recording-queries";
-import { SelectField } from "../components/filter-select";
-import { PageHeader, WorkbenchPage } from "../components/page-layout";
+import { WorkbenchPage } from "../components/page-layout";
 import { EmptyState } from "../components/product-patterns";
 import {
   clearWorkflowPointerIfCurrent,
@@ -26,7 +26,7 @@ import {
 import { PageLoading, RecordingProblem, targetLabel } from "./recording-shared";
 import { ReviewRecordingPage } from "./review-recording-page";
 import { LiveTargetCanvas } from "./live-target-canvas";
-import { EmulatorStart } from "../components/emulator-start";
+import { RecordingDeviceChoice } from "../components/recording-device-choice";
 
 const NEW_TEST_DRAFT_KEY = "newTestDraft";
 
@@ -79,6 +79,10 @@ export function NewTestPage() {
       return { ...state, targetOptions: await productService.presentTargets(state.targets) };
     },
     staleTime: 5_000,
+    refetchInterval: (query) =>
+      targetId && !query.state.data?.targetOptions.some((target) => target.targetId === targetId)
+        ? 5_000
+        : false,
   });
   const savedBrowsers = useQuery({
     queryKey: ["browser-spaces"],
@@ -181,7 +185,7 @@ export function NewTestPage() {
       .catch(() => {
         if (!disposed) {
           setPreviewStatus("degraded");
-          setPreviewIssue("Relay could not open the live view. Reconnect, then try again.");
+          setPreviewIssue("The device preview could not connect. Try again to reopen it.");
         }
       });
     return () => {
@@ -205,7 +209,9 @@ export function NewTestPage() {
       await session.input(input);
       return true;
     } catch {
-      setPreviewIssue("Relay could not send that interaction. Reconnect, then try again.");
+      setPreviewIssue(
+        "The device did not accept that interaction. Try again to reopen the connection.",
+      );
       return false;
     } finally {
       setPreviewBusy(false);
@@ -249,7 +255,7 @@ export function NewTestPage() {
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!appId || !targetId || begin.isPending) return;
+    if (!appId || !selectedTarget || creatingApp || begin.isPending) return;
     begin.mutate();
   }
 
@@ -257,7 +263,7 @@ export function NewTestPage() {
   const noTargets = Boolean(targets.data && targets.data.targetOptions.length === 0);
   const setupOpen =
     !loading && !apps.isError && !targets.isError && !targets.data?.recovery && !activePointer.data;
-  const formReady = Boolean(appId && targetId && !begin.isPending && !creatingApp);
+  const formReady = Boolean(appId && selectedTarget && !begin.isPending && !creatingApp);
   if (search.view === "review") {
     if (activePointer.isPending) return <PageLoading label="Opening the reviewed recording…" />;
     if (activePointer.data) return <ReviewRecordingPage recordingId={activePointer.data} />;
@@ -281,24 +287,24 @@ export function NewTestPage() {
   }
 
   return (
-    <WorkbenchPage className="relay-new-test-page flex min-h-0 flex-col">
+    <WorkbenchPage className="relay-new-test-page flex h-full min-h-0 w-full flex-col overflow-hidden bg-card !p-0">
       <form id="new-test-form" className="flex min-h-0 flex-1 flex-col" onSubmit={submit}>
-        <PageHeader
-          crumbs={[{ label: "Tests", to: "/tests" }, { label: "Record" }]}
-          title="Record a Test"
+        <AuthoringHeader
+          phase="setup"
+          title="New test"
+          back={
+            <Button nativeButton={false} render={<Link to="/tests" />} variant="ghost">
+              Cancel
+            </Button>
+          }
           description="Open your app in the preview. When you’re ready, record your steps."
           actions={
             setupOpen ? (
               <>
-                <Button nativeButton={false} render={<Link to="/tests" />} variant="ghost">
-                  Cancel
+                <Button type="submit" disabled={!formReady} title={startHint}>
+                  <Play aria-hidden="true" />
+                  {begin.isPending ? "Starting…" : "Start recording"}
                 </Button>
-                {selectedTarget ? (
-                  <Button type="submit" disabled={!formReady} title={startHint}>
-                    <Play aria-hidden="true" />
-                    {begin.isPending ? "Starting…" : "Start recording"}
-                  </Button>
-                ) : null}
               </>
             ) : null
           }
@@ -355,9 +361,9 @@ export function NewTestPage() {
         !targets.isError &&
         !targets.data?.recovery &&
         !activePointer.data ? (
-          <div className="grid h-full min-h-[360px] w-full flex-1 grid-cols-[minmax(240px,280px)_minmax(0,1fr)] gap-3.5 max-[980px]:grid-cols-1">
+          <div className="grid min-h-0 w-full flex-1 grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
             <aside
-              className="grid min-h-0 min-w-0 content-start gap-6 pr-4 max-[980px]:pr-0"
+              className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)] items-start gap-6 border-b border-border/60 px-4 py-3 max-[700px]:grid-cols-1"
               aria-label="Record setup"
             >
               {startsFromPath ? (
@@ -382,49 +388,43 @@ export function NewTestPage() {
                   void queryClient.invalidateQueries({ queryKey: ["app-maps"] });
                 }}
               />
-              {noTargets ? null : (
-                <SelectField
-                  label="Record on"
-                  value={targetId}
-                  placeholder={
-                    targets.isPending ? "Finding devices…" : "Choose a Device or Browser"
-                  }
-                  options={(targets.data?.targetOptions ?? []).map((target) => {
-                    const label = targetLabel(target);
-                    return {
-                      value: target.targetId,
-                      label: label.detail ? `${label.title} · ${label.detail}` : label.title,
-                    };
-                  })}
-                  onValueChange={setTargetId}
-                />
-              )}
-              <EmulatorStart
+              <RecordingDeviceChoice
                 service={deviceService}
                 onStarted={async (serial) => {
                   await targets.refetch();
                   setTargetId(serial);
                 }}
+                value={targetId}
+                options={(targets.data?.targetOptions ?? []).map((target) => {
+                  const label = targetLabel(target);
+                  return {
+                    value: target.targetId,
+                    label: label.detail ? `${label.title} · ${label.detail}` : label.title,
+                  };
+                })}
+                onChange={setTargetId}
               />
             </aside>
             <div
-              className="relay-prerecord-workspace block min-h-[360px] w-full overflow-hidden rounded-xl border border-border bg-muted"
+              className="relay-prerecord-workspace flex min-h-0 w-full overflow-hidden bg-background/40"
               aria-label="Recording stage"
             >
               {selectedTarget ? (
-                <section className="grid min-h-[360px] flex-1" aria-labelledby="prerecord-title">
-                  <div className="flex items-center justify-between gap-3 border-b border-border px-3.5 py-2.5">
-                    <h2 id="prerecord-title" className="text-[13px] font-medium">
-                      {targetLabel(selectedTarget).title}
-                    </h2>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setPreviewAttempt((value) => value + 1)}
-                    >
-                      <RotateCcw aria-hidden="true" /> Reconnect
-                    </Button>
+                <section
+                  className="grid min-h-0 min-w-0 flex-1 grid-rows-[auto_minmax(0,1fr)]"
+                  aria-label="Device preview"
+                >
+                  <div className="flex justify-end">
+                    {previewIssue ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setPreviewAttempt((value) => value + 1)}
+                      >
+                        <RotateCcw aria-hidden="true" /> Try again
+                      </Button>
+                    ) : null}
                   </div>
                   <LiveTargetCanvas
                     canvasRef={previewCanvas}
@@ -437,9 +437,35 @@ export function NewTestPage() {
                     send={sendPreview}
                     recording={false}
                     showTargetDetails={false}
+                    targetPlatform={selectedTarget?.platform}
                     helpText=""
                   />
                 </section>
+              ) : targetId ? (
+                <div className="grid min-h-0 w-full place-items-center p-6">
+                  <div className="grid max-w-sm justify-items-center gap-3 text-center">
+                    <CircleDot className="size-6 text-muted-foreground" aria-hidden="true" />
+                    <h2 className="text-sm font-medium">
+                      {targets.isFetching
+                        ? "Connecting to your device…"
+                        : "Your selected device isn’t ready"}
+                    </h2>
+                    <p className="text-sm text-muted-foreground">
+                      {targets.isFetching
+                        ? "Waiting for the device to become available."
+                        : "Check that it’s running, or choose another device above."}
+                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={targets.isFetching}
+                      onClick={() => void targets.refetch()}
+                    >
+                      Check again
+                    </Button>
+                  </div>
+                </div>
               ) : noTargets ? (
                 <BrowserSetup
                   browsers={savedBrowsers.data ?? []}
@@ -454,7 +480,7 @@ export function NewTestPage() {
                   onCheckAgain={() => void targets.refetch()}
                 />
               ) : (
-                <div className="grid min-h-[360px] place-items-center p-6">
+                <div className="grid min-h-0 w-full place-items-center p-6">
                   <EmptyState
                     title="Choose where to record"
                     detail="Pick a Device or Browser. The live view opens here."

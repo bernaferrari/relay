@@ -167,7 +167,6 @@ export function TestsPage() {
       onClickCapture={returnFocus.onClickCapture}
     >
       <PageHeader
-        context="Tests"
         title="Tests"
         description="Run a saved Test, or record a new one."
         actions={
@@ -195,7 +194,7 @@ export function TestsPage() {
 
       {resumeRecordingId || resumeRunId || resumeAttention ? (
         <div
-          className="mt-2 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card px-4 py-3"
+          className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card px-4 py-3"
           aria-label="Resume work"
         >
           <div className="min-w-0">
@@ -243,13 +242,10 @@ export function TestsPage() {
       ) : null}
 
       {attentionRuns.length > 1 ? (
-        <p className="mt-2 text-xs text-muted-foreground" aria-label="Results that need attention">
-          {attentionRuns
-            .map(
-              (item) =>
-                `${item.testName ?? item.title}${item.targetName ? ` · ${item.targetName}` : ""}`,
-            )
-            .join(" · ")}
+        <p className="mb-4 text-sm text-muted-foreground" aria-label="Results that need attention">
+          <Link to="/runs" className="hover:underline">
+            {attentionRuns.length} runs need attention
+          </Link>
         </p>
       ) : null}
 
@@ -375,7 +371,7 @@ function TestRow({ test }: { test: ProductTestSummary }) {
             </span>
           </span>
           <span className="relay-library-row-status flex justify-start">
-            <ReadinessMark status={test.status} />
+            {test.status !== "ready" ? <ReadinessMark status={test.status} /> : null}
           </span>
           <span className="relay-library-row-recent grid min-w-0 justify-items-start gap-1">
             {recent ? (
@@ -388,11 +384,6 @@ function TestRow({ test }: { test: ProductTestSummary }) {
                 <span className="relay-library-never-run text-xs font-semibold text-[var(--text-base)]">
                   Not run yet
                 </span>
-                <small className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-[var(--text-weak)]">
-                  {test.status === "needs-review"
-                    ? "Review steps before the first Run"
-                    : "Ready for its first Run"}
-                </small>
               </>
             )}
           </span>
@@ -401,24 +392,21 @@ function TestRow({ test }: { test: ProductTestSummary }) {
             aria-hidden="true"
           />
         </Item>
-        {test.status === "needs-review" ? (
-          <Link
-            className="relay-library-row-run inline-flex min-h-10 items-center rounded-[var(--radius-md)] px-2.5 text-xs font-semibold text-[var(--text-interactive-base)] hover:bg-[var(--surface-raised-base)]"
-            to="/tests/$testId/edit"
-            params={{ testId: test.id }}
-          >
-            Review steps
-          </Link>
-        ) : (
-          <Link
-            className="relay-library-row-run inline-flex min-h-10 items-center rounded-[var(--radius-md)] px-2.5 text-xs font-semibold text-[var(--text-interactive-base)] hover:bg-[var(--surface-raised-base)]"
-            to="/tests/$testId"
-            params={{ testId: test.id }}
-            hash="test-run-setup"
-          >
-            Run
-          </Link>
-        )}
+        <Button
+          nativeButton={false}
+          variant="ghost"
+          size="sm"
+          className="relay-library-row-run"
+          render={
+            test.status === "needs-review" ? (
+              <Link to="/tests/$testId/edit" params={{ testId: test.id }} />
+            ) : (
+              <Link to="/tests/$testId" params={{ testId: test.id }} hash="test-run-setup" />
+            )
+          }
+        >
+          {test.status === "needs-review" ? "Review steps" : "Run"}
+        </Button>
       </div>
     </li>
   );

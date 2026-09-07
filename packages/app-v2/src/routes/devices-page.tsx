@@ -19,7 +19,6 @@ import {
 import { readSetupContinuation } from "../data/setup-continuation";
 import { useCollectionReturnFocus } from "../hooks/use-collection-return-focus";
 import { PageLoading } from "./recording-shared";
-import { EmulatorStart } from "../components/emulator-start";
 
 type DeviceFilter = "all" | Exclude<ProductDeviceStatus, "virtual">;
 
@@ -348,7 +347,7 @@ export function DevicesPage() {
                       className="rounded-xl border border-border p-3"
                     >
                       <summary className="cursor-pointer text-sm font-medium focus-visible:outline-2 focus-visible:outline-ring">
-                        {title} · {stopped.length} stopped
+                        {title} · {stopped.length}
                       </summary>
                       <div className="mt-3">
                         <DeviceSection
@@ -365,14 +364,6 @@ export function DevicesPage() {
           )}
         </div>
       ) : null}
-      <div className="mt-4">
-        <EmulatorStart
-          service={deviceService}
-          onStarted={async () => {
-            await devices.refetch();
-          }}
-        />
-      </div>
     </LibraryPage>
   );
 }

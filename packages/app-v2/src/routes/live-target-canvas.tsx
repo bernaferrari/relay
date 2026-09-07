@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
-import { MonitorSmartphone } from "lucide-react";
+import { ArrowLeft, MonitorSmartphone } from "lucide-react";
 import {
   useEffect,
   useRef,
@@ -37,6 +37,7 @@ export function LiveTargetCanvas({
   overlay,
   toolbar,
   showTargetDetails = true,
+  targetPlatform,
 }: {
   canvasRef: RefObject<HTMLCanvasElement | null>;
   status: LiveTargetStatus;
@@ -52,6 +53,7 @@ export function LiveTargetCanvas({
   overlay?: ReactNode;
   toolbar?: ReactNode;
   showTargetDetails?: boolean;
+  targetPlatform?: string;
 }) {
   const [text, setText] = useState("");
   const helpId = `${useId()}-help`;
@@ -178,14 +180,14 @@ export function LiveTargetCanvas({
       className={
         rail
           ? "flex h-full min-h-0 flex-col"
-          : "grid h-full min-h-[358px] grid-rows-[minmax(0,1fr)_auto_auto]"
+          : "grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto_auto]"
       }
     >
       <div
         className={
           rail
             ? "relative flex min-h-[320px] flex-1 items-center justify-center overflow-hidden bg-muted/40"
-            : "relative flex min-h-[260px] items-center justify-center overflow-hidden"
+            : "relative flex min-h-0 items-center justify-center overflow-hidden"
         }
       >
         <canvas
@@ -266,6 +268,18 @@ export function LiveTargetCanvas({
           </div>
         ) : null}
         <div className="flex w-full items-end gap-3">
+          {targetPlatform === "android" ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              aria-label="Android Back"
+              title="Go back in Android"
+              disabled={busy || !streaming}
+              onClick={() => void send({ kind: "key", key: "back" })}
+            >
+              <ArrowLeft aria-hidden="true" /> Back
+            </Button>
+          ) : null}
           {toolbar}
           <label className="relay-visually-hidden sr-only" htmlFor={textInputId}>
             Text to type into the focused field

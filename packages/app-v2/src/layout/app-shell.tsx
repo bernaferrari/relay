@@ -25,6 +25,7 @@ import {
 
 export function AppShell({ platform }: { platform: Platform }) {
   const [commandOpen, setCommandOpen] = useState(false);
+  const [navigationOpen, setNavigationOpen] = useState(true);
   const commandReturnFocus = useRef<HTMLElement | null>(null);
   const changeCommandOpen = useCallback((open: boolean) => {
     if (open)
@@ -52,7 +53,9 @@ export function AppShell({ platform }: { platform: Platform }) {
 
   return (
     <SidebarProvider
-      className={`relay-shell flex h-dvh min-w-0 overflow-hidden bg-[var(--background-base)]${immersive ? " relay-shell--immersive" : ""}`}
+      open={navigationOpen}
+      onOpenChange={setNavigationOpen}
+      className={`relay-shell flex h-dvh min-w-0 overflow-hidden bg-sidebar${immersive ? " relay-shell--immersive" : ""}`}
       data-platform={platform.platform}
     >
       <a
@@ -62,12 +65,17 @@ export function AppShell({ platform }: { platform: Platform }) {
         Skip to content
       </a>
       {!immersive ? <Sidebar desktop={platform.platform === "desktop"} /> : null}
-      <div className="relay-workspace flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--background-base)]">
+      <div className="relay-workspace flex min-h-0 min-w-0 flex-1 flex-col bg-sidebar">
         {!immersive ? (
           <header
-            className="relay-desktop-toolbar relay-electron-drag [-webkit-app-region:drag] hidden min-h-[54px] items-center gap-4 border-b border-[var(--border-weak-base)] bg-[color-mix(in_srgb,var(--background-base)_94%,transparent)] px-2.5 py-1.5 min-[861px]:flex"
+            className={`${!navigationOpen && platform.platform === "desktop" ? "pl-[82px]" : ""} relay-desktop-toolbar relay-electron-drag [-webkit-app-region:drag] hidden min-h-[54px] items-center gap-4 bg-sidebar px-2.5 py-1.5 min-[861px]:flex`}
             aria-label="Window navigation"
           >
+            <SidebarTrigger
+              aria-label="Toggle navigation"
+              title="Show or hide navigation"
+              className="relay-electron-no-drag [-webkit-app-region:no-drag]"
+            />
             <div className="relay-history-controls relay-electron-no-drag [-webkit-app-region:no-drag] inline-flex items-center gap-px">
               <Button
                 size="icon-sm"
@@ -98,7 +106,7 @@ export function AppShell({ platform }: { platform: Platform }) {
             >
               <Search className="size-3.5" aria-hidden="true" />
               <span>Search or run a command</span>
-              <kbd className="min-w-7 rounded-[var(--radius-sm)] border border-[var(--border-weak-base)] bg-[var(--background-weak)] px-[5px] py-0.5 text-center text-[10px] leading-[1.4] text-[var(--text-weaker)]">
+              <kbd className="min-w-7 rounded-[var(--radius-sm)] border border-[var(--border-weak-base)] bg-sidebar px-[5px] py-0.5 text-center text-[10px] leading-[1.4] text-[var(--text-weaker)]">
                 {modifierKey()} K
               </kbd>
             </button>
@@ -135,7 +143,7 @@ export function AppShell({ platform }: { platform: Platform }) {
         </header>
         <main
           id="main-content"
-          className="relay-main min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain [scrollbar-gutter:stable] focus:outline-none"
+          className="relay-main mr-2 mb-2 min-h-0 min-w-0 flex-1 overflow-auto rounded-xl bg-card overscroll-contain [scrollbar-gutter:stable] focus:outline-none"
           tabIndex={-1}
         >
           <Outlet />

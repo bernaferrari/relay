@@ -13,6 +13,7 @@ export type ProductDevice = {
   osVersion?: string;
   status: ProductDeviceStatus;
   runnable: boolean;
+  avdName?: string;
   recovery?: string;
   device: DeviceSummary;
 };
@@ -150,8 +151,33 @@ export function createDeviceProductService(platform: Platform): DeviceProductSer
   const client = () =>
     (clientPromise ??= productClientForPlatform(platform)).then(({ client }) => client);
   async function listDevices(): Promise<readonly ProductDevice[]> {
-    const result = await (await client()).invoke("target.devices.list", {});
-    return projectDevices(result.devices);
+    const api = await client();
+    const [result, inventory] = await Promise.all([
+      api.invoke("target.devices.list", {}),
+      api
+        .invoke("target.avds.list", {})
+        .then((result) => result.inventory)
+        .catch(() => undefined),
+    ]);
+    const devices = [...projectDevices(result.devices)];
+    for (const avd of inventory?.avds ?? []) {
+      if (avd.serial && devices.some((device) => device.serial === avd.serial)) continue;
+      // A configured AVD is available to start, never an attached/runnable target.
+      const summary: DeviceSummary = {
+        id: `avd:${avd.avdName}`,
+        serial: `avd:${avd.avdName}`,
+        name: avd.name,
+        platform: "android",
+        kind: "emulator",
+        booted: false,
+      };
+      devices.push({
+        ...project(summary),
+        avdName: avd.avdName,
+        recovery: "Start this Android emulator to use it.",
+      });
+    }
+    return devices;
   }
   return {
     list: listDevices,

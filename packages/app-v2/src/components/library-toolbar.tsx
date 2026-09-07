@@ -43,12 +43,12 @@ export function LibrarySearch({
   return (
     <div data-slot="library-search-control" className="relative min-w-[16rem] flex-1">
       <Search
-        className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground"
+        className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
         aria-hidden="true"
       />
       <Input
         id={id}
-        className="h-9 pl-8"
+        className="pl-8 md:text-sm"
         type="search"
         value={value}
         aria-label={label}

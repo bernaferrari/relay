@@ -1,7 +1,9 @@
+import { AuthoringHeader } from "./authoring-header";
+import { RecordingReviewLayout } from "./recording-review-layout";
 import { RecordingTrimPanel } from "./recording-trim-panel";
 /** @jsxImportSource react */
 import { EditorSaveStatus } from "../components/editor-save-status";
-import { WorkbenchPage, PageHeader, WorkbenchPanes } from "../components/page-layout";
+import { WorkbenchPage } from "../components/page-layout";
 import {
   Dialog,
   DialogTrigger,
@@ -18,6 +20,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams, useRouteContext } from "@tanstack/react-router";
 import {
   ArrowDown,
+  ArrowLeft,
   ArrowUp,
   Combine,
   Redo2,
@@ -33,12 +36,7 @@ import { recordingQueryKeys, refreshRecording } from "../data/recording-queries"
 import { clearWorkflowPointerIfCurrent } from "../data/workflow-pointer";
 import { PageLoading, RecordingProblem } from "./recording-shared";
 import { RecordingActionsPanel, RecordingEvidencePanel } from "./recording-review-panels";
-import {
-  replayDetail,
-  replayTitle,
-  reviewInstruction,
-  useEvidenceObjectUrl,
-} from "./recording-review-presentation";
+import { replayDetail, useEvidenceObjectUrl } from "./recording-review-presentation";
 
 import { reviewPersistence } from "../data/recording-review-persistence";
 import { tryReviewTarget } from "../data/recording-try-target";
@@ -281,14 +279,34 @@ export function ReviewRecordingPage({
   }
 
   return (
-    <WorkbenchPage className="w-full max-w-[1480px] px-[clamp(22px,3vw,42px)] py-[clamp(22px,3vw,42px)]">
-      <PageHeader
-        crumbs={[{ label: "Tests", to: "/tests" }, { label: "Review" }]}
-        title={testName || snapshot?.title || "Review your recording"}
-        description={reviewInstruction(review?.replayRequired, canApprove)}
+    <WorkbenchPage className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-card !p-0">
+      <AuthoringHeader
+        phase="review"
+        back={
+          reviewReady ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="-ml-2 text-muted-foreground"
+              disabled={
+                transition.isPending ||
+                leaveDraft.isPending ||
+                nameSaveState === "saving" ||
+                nameSaveState === "failed"
+              }
+              onClick={() => leaveDraft.mutate()}
+            >
+              <ArrowLeft aria-hidden="true" /> {leaveDraft.isPending ? "Leaving…" : "Back to Tests"}
+            </Button>
+          ) : null
+        }
+        title="Review test"
         actions={
           reviewReady ? (
             <>
+              <Button variant="ghost" onClick={() => setEditing((open) => !open)}>
+                {editing ? "Done" : "Edit"}
+              </Button>
               {canApprove ? (
                 <Button
                   variant="default"
@@ -312,28 +330,16 @@ export function ReviewRecordingPage({
                   {transition.isPending ? "Replaying…" : "Replay recording"}
                 </Button>
               ) : null}
-              <Button variant="ghost" onClick={() => setEditing((open) => !open)}>
-                {editing ? "Done" : "Edit"}
-              </Button>
-              <Button
-                variant="ghost"
-                disabled={
-                  transition.isPending ||
-                  leaveDraft.isPending ||
-                  nameSaveState === "saving" ||
-                  nameSaveState === "failed"
-                }
-                onClick={() => leaveDraft.mutate()}
-              >
-                {leaveDraft.isPending ? "Leaving…" : "Back to Tests"}
-              </Button>
-              <EditorSaveStatus state={persistence.editorState} detail={persistence.label} />
+
+              {persistence.editorState === "failed" ? (
+                <EditorSaveStatus state={persistence.editorState} detail={persistence.label} />
+              ) : null}
             </>
           ) : undefined
         }
       >
         {reviewReady ? (
-          <div className="grid max-w-xl gap-3">
+          <div className="flex items-end justify-between gap-4 [&>div]:w-full [&>div]:max-w-lg">
             <Field>
               <FieldLabel htmlFor="review-test-name">Test name</FieldLabel>
               <Input
@@ -351,14 +357,7 @@ export function ReviewRecordingPage({
                 spellCheck
                 required
               />
-              <FieldDescription>
-                {nameSaveError ??
-                  (persistence.kind === "name-only"
-                    ? persistence.detail
-                    : testName
-                      ? "The name is kept on this computer. It does not change the recorded steps."
-                      : "Name the outcome a teammate should recognize.")}
-              </FieldDescription>
+              {nameSaveError ? <FieldDescription>{nameSaveError}</FieldDescription> : null}
               {nameSaveError && nameEdits.current > 0 ? (
                 <Button
                   variant="outline"
@@ -373,16 +372,15 @@ export function ReviewRecordingPage({
             <p
               className="text-xs text-muted-foreground"
               role="status"
-              aria-label="Verification status"
+              aria-label="Recording status"
             >
-              {replayTitle(review?.latestReplay?.outcome, review?.replayRequired, canApprove)}
-            </p>
-            <p className="text-xs leading-normal text-muted-foreground">
-              {replayDetail(review?.latestReplay?.outcome, canApprove)}
+              {canApprove
+                ? "Recording captured. Ready to save."
+                : replayDetail(review?.latestReplay?.outcome, canApprove)}
             </p>
           </div>
         ) : null}
-      </PageHeader>
+      </AuthoringHeader>
 
       {recording.isPending ? <PageLoading label="Loading the reviewed recording…" /> : null}
       <RecordingProblem
@@ -401,7 +399,7 @@ export function ReviewRecordingPage({
 
       {!recording.isPending && snapshot && reviewReady ? (
         <>
-          <WorkbenchPanes
+          <RecordingReviewLayout
             outline={
               <RecordingActionsPanel
                 actions={actions}
@@ -414,7 +412,10 @@ export function ReviewRecordingPage({
                 canOptimize={Boolean(sessionId)}
                 editing={editing}
                 onOptimize={() => void optimization.refetch()}
-                onSelect={(actionId) => setSelectedActionIds([actionId])}
+                onSelect={(actionId) => {
+                  setSelectedActionIds([actionId]);
+                  setEditing(true);
+                }}
                 onToggle={toggleAction}
               />
             }

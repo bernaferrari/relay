@@ -23,7 +23,7 @@ describe("target presentation", () => {
       "Support browser",
       "Pixel 9 Pro",
     ]);
-    expect(options[2]?.detail).toBe("Android emulator · 15 · Ready");
+    expect(options[2]?.detail).toBe("Android emulator · Android 15 · Ready");
     expect(options[0]?.detail).toBe("Managed browser");
     expect(options.some(({ targetId }) => targetId === "not-ready")).toBe(false);
   });

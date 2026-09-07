@@ -3,7 +3,6 @@ import { useMutation } from "@tanstack/react-query";
 import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
 import { Label } from "@relay/ui-react/components/label";
-import { Plus } from "lucide-react";
 import { SelectField } from "../components/filter-select";
 
 export function RecordingAppChoice({
@@ -37,7 +36,7 @@ export function RecordingAppChoice({
     if (name.trim() && !create.isPending) create.mutate();
   }
   return (
-    <div className="grid gap-3">
+    <div className="grid min-w-0 gap-3">
       {open ? (
         <div className="grid gap-3">
           <div className="grid gap-1.5">
@@ -94,28 +93,23 @@ export function RecordingAppChoice({
           </div>
         </div>
       ) : (
-        <>
+        <div className="flex min-w-0 items-end gap-2 [&>div]:min-w-0 [&>div]:flex-1">
           <SelectField
             label="App"
             value={value}
             placeholder="Choose an app"
-            options={apps.map((app) => ({ value: app.id, label: app.name }))}
-            onValueChange={onChange}
-          />
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            className="w-fit justify-start px-0 text-muted-foreground"
-            onClick={() => {
-              setCreating(true);
-              onCreatingChange(true);
+            options={[
+              ...apps.map((app) => ({ value: app.id, label: app.name })),
+              { value: "__create_app__", label: "+ Create app…" },
+            ]}
+            onValueChange={(id) => {
+              if (id === "__create_app__") {
+                setCreating(true);
+                onCreatingChange(true);
+              } else onChange(id);
             }}
-          >
-            <Plus className="size-3.5" aria-hidden="true" />
-            Create app
-          </Button>
-        </>
+          />
+        </div>
       )}
     </div>
   );

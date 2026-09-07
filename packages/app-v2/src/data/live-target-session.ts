@@ -59,7 +59,7 @@ export type LiveTargetInput =
   | BrowserDeviceInput
   | { kind: "tap"; target: { identifier?: string; label?: string; text?: string } }
   | { kind: "touch"; action: "down" | "move" | "up" | "cancel"; x: number; y: number }
-  | { kind: "key"; key: "enter" | "backspace"; text?: string }
+  | { kind: "key"; key: "enter" | "backspace" | "back"; text?: string }
   | { kind: "scroll"; x: number; y: number; scrollX: number; scrollY: number };
 
 export type LiveTargetInteraction = Extract<
@@ -553,6 +553,12 @@ export function createLiveTargetSession(input: {
         kind: "text",
         text: value.text,
       });
+    } else if (value.kind === "key" && value.key === "back") {
+      await input.client.invoke("target.interact", {
+        serial: target.targetId,
+        kind: "key",
+        key: "back",
+      });
     } else if (value.kind === "key") {
       const key = value.key;
       const mobileKey = key === "Enter" ? "enter" : key === "Backspace" ? "backspace" : key;
@@ -633,6 +639,7 @@ function normalizeInteraction(
   if (value.kind === "key" && "text" in value && typeof value.text === "string") {
     return { kind: "type", text: value.text };
   }
+  if (value.kind === "key" && value.key === "back") return { kind: "key", key: "back" };
   if (value.kind === "key" && value.key === "enter") {
     return { kind: "device", action: "keyboard-enter" };
   }
