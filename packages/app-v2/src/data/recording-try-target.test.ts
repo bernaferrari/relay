@@ -133,9 +133,28 @@ describe("tryReviewTarget", () => {
         observe: async () => [control],
       }),
     ).resolves.toEqual({
-      kind: "failed",
+      kind: "unknown",
+      binding: { label: "Preferred language" },
       detail: "The live target session is closed",
     });
     expect(preview.close).toHaveBeenCalledOnce();
+  });
+
+  it("keeps post-dispatch transport loss unknown instead of ordinary failure", async () => {
+    const preview = session(async () => {
+      throw new Error("socket closed");
+    });
+    await expect(
+      tryReviewTarget({
+        previewTarget: async () => preview,
+        selectedTarget: device,
+        control,
+        confirmStartingState: async () => ({ ok: true }),
+        observe: async () => [control],
+      }),
+    ).resolves.toMatchObject({
+      kind: "unknown",
+      binding: { label: "Preferred language" },
+    });
   });
 });

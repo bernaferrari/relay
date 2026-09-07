@@ -4,6 +4,11 @@ import type { BrowserContext, Page, Request, Video } from "playwright-core";
 import { parseBrowserCaseProfile, type BrowserCaseProfile } from "@relay/protocol";
 import type { Device, SnapshotNode } from "./device.js";
 import { createBrowserContextFactory, type BrowserContextPurpose } from "./browser-context.js";
+import {
+  browserLiveSessionKey,
+  browserSessionProfileMatches,
+} from "./browser-execution-identity.js";
+import { compileBrowserEnvironment } from "@relay/protocol";
 import { createDeviceObservationFacade } from "./device-observation-membrane.js";
 import { LEGACY_POSITIONAL_BROWSER_REF_ERROR } from "./browser-locator-contract.js";
 import { browserCaseProfileForTarget } from "./browser-case-profile-target.js";
@@ -170,20 +175,31 @@ async function sessionFor(
     mode?: BrowserContextPurpose;
     profile?: BrowserCaseProfile;
     recordVideo?: boolean;
+    projectId?: string;
+    reuseMatchingIdentity?: boolean;
   } = {},
 ): Promise<BrowserSession> {
   const mode = options.mode ?? "authoring";
-  const key = `${mode}:${targetId}`;
+  const key = options.reuseMatchingIdentity
+    ? browserLiveSessionKey({
+        targetId,
+        authenticationFixtureId: options.profile?.authenticationFixtureId,
+        signedOut: !options.profile?.authenticationFixtureId,
+      })
+    : `${mode}:${targetId}`;
   const existing = sessions.get(key);
   if (existing) {
     const session = await existing;
-    // Proof contexts are deliberately one-shot. Even if a caller forgot to
-    // close the prior handle, never reuse its cookies/storage for another Run.
-    const profileMatches =
-      options.profile === undefined ||
-      JSON.stringify(session.profile) === JSON.stringify(options.profile);
+    const requestedProfile =
+      options.profile ??
+      (mode === "authoring"
+        ? await readTarget(targetId).then((target) =>
+            target ? browserCaseProfileForTarget(target) : undefined,
+          )
+        : undefined);
+    const profileMatches = browserSessionProfileMatches(session.profile, requestedProfile);
     if (
-      mode === "authoring" &&
+      (mode === "authoring" || options.reuseMatchingIdentity) &&
       profileMatches &&
       (options.recordVideo === undefined || session.recordVideo === options.recordVideo) &&
       (options.headless === undefined || session.headless === options.headless)
@@ -269,16 +285,54 @@ export type OpenBrowserTargetResult = {
  * consent, MFA, or any other setup that should not be encoded into a test.
  * The same isolated profile is reused by later app, CLI, and scheduled runs.
  */
-export async function openBrowserTarget(targetId: string): Promise<OpenBrowserTargetResult> {
+export async function openBrowserTarget(
+  targetId: string,
+  options: {
+    projectId?: string;
+    authenticationFixtureId?: string;
+    signedOut?: true;
+  } = {},
+): Promise<OpenBrowserTargetResult> {
   const target = await readTarget(targetId);
   if (!target?.browser) throw new Error(`managed browser target not found: ${targetId}`);
-  const session = await sessionFor(targetId, { headless: false, mode: "authoring" });
+  const baseProfile = browserCaseProfileForTarget(target);
+  const fixtureId = options.authenticationFixtureId?.trim();
+  const accountBound = Boolean(fixtureId || options.signedOut);
+  if (accountBound) {
+    await closeBrowserSessionsForTarget(targetId);
+  }
+  const { authenticationFixtureId: _ignored, ...unsigned } = baseProfile;
+  const profile = fixtureId
+    ? compileBrowserEnvironment({ ...baseProfile, authenticationFixtureId: fixtureId })
+    : options.signedOut
+      ? compileBrowserEnvironment(unsigned)
+      : baseProfile;
+  const session = await sessionFor(targetId, {
+    headless: false,
+    mode: accountBound ? "proof" : "authoring",
+    profile,
+    ...(accountBound ? { reuseMatchingIdentity: true, projectId: options.projectId } : {}),
+  });
   const page = await activePage(session);
   if (page.url() === "about:blank") {
     await page.goto(target.browser.startUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
   }
   await page.bringToFront();
   return { targetId, name: target.name, url: page.url() };
+}
+
+async function closeBrowserSessionsForTarget(targetId: string): Promise<void> {
+  const prefix = `:${targetId}`;
+  const entries = [...sessions.entries()].filter(([key]) => {
+    const [, id] = key.split(":");
+    return id === targetId || key.includes(`${prefix}:`) || key.endsWith(prefix);
+  });
+  await Promise.all(
+    entries.map(async ([key, pending]) => {
+      sessions.delete(key);
+      await pending.then((session) => session.close()).catch(() => undefined);
+    }),
+  );
 }
 
 export async function activePage(session: BrowserSession): Promise<Page> {
@@ -759,9 +813,7 @@ export async function closeBrowserTarget(
   options: { mode?: BrowserContextPurpose } = {},
 ): Promise<void> {
   const entries = [...sessions.entries()].filter(([key]) => {
-    const separator = key.indexOf(":");
-    const mode = key.slice(0, separator);
-    const id = key.slice(separator + 1);
+    const [mode, id] = key.split(":");
     return (
       (targetId === undefined || id === targetId) &&
       (options.mode === undefined || mode === options.mode)

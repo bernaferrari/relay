@@ -1,5 +1,5 @@
 import * as z from "zod/v4";
-import { testCapturePolicy } from "./app-map-test-operation-schemas.js";
+import { sourceRevisionSchema, testCapturePolicy } from "./app-map-test-operation-schemas.js";
 import { executionTargetInputSchema } from "./core-target-operation-input-schemas.js";
 import { identifier, unknownRecord } from "./operation-schema-primitives.js";
 
@@ -20,6 +20,7 @@ export const combineStartOperationInputSchemas = {
       seed: z.number().int().optional(),
       capture: testCapturePolicy.optional(),
       executionMode: z.enum(["pilot", "all"]).optional(),
+      sourceRevision: sourceRevisionSchema.optional(),
       pilotCaseIndex: z.number().int().nonnegative().optional(),
       selectedCellIds: z.array(identifier("Combine cell identifier")).optional(),
       cell: identifier("World or Combine cell selector").optional(),

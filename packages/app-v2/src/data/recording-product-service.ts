@@ -86,7 +86,16 @@ export type RecordingProductService = {
     serial: string;
     mutationId: string;
     outcome: "applied" | "not-applied" | "ambiguous";
-  }): Promise<{ mutationId: string; outcome: "applied" | "not-applied" | "ambiguous" }>;
+  }): Promise<{
+    mutationId: string;
+    outcome: "applied" | "not-applied" | "ambiguous";
+    health?: {
+      state: "ready" | "blocked" | "uncertain";
+      pendingMutationId?: string;
+      reason?: string;
+    };
+    observation?: unknown;
+  }>;
   /** Server-owned input fence for remount. The local ledger is only a projection. */
   inspectTargetHealth?(serial: string): Promise<{
     input: {
@@ -277,12 +286,27 @@ export function createRecordingProductService(
     },
     async reconcileInput(input) {
       const { client } = await product();
-      await client.invoke("target.input.reconcile", {
+      const result = await client.invoke("target.input.reconcile", {
         serial: input.serial,
         mutationId: input.mutationId,
         outcome: input.outcome,
       });
-      return { mutationId: input.mutationId, outcome: input.outcome };
+      const pending = result.health?.input?.pendingMutationId;
+      const state = result.health?.input?.state;
+      return {
+        mutationId: pending ?? input.mutationId,
+        outcome: state === "uncertain" ? "ambiguous" : input.outcome,
+        ...(result.health?.input
+          ? {
+              health: {
+                state: result.health.input.state,
+                ...(pending ? { pendingMutationId: pending } : {}),
+                ...(result.health.input.reason ? { reason: result.health.input.reason } : {}),
+              },
+            }
+          : {}),
+        ...(result.observation ? { observation: result.observation } : {}),
+      };
     },
     async inspectTargetHealth(serial) {
       const { client } = await product();

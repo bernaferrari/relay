@@ -99,6 +99,14 @@ export async function tryReviewTarget(input: {
           "The proposed binding is not on the current screen. Restore the starting state before trying it.",
       };
     }
+  } catch (error) {
+    const message =
+      error instanceof Error && error.message.trim()
+        ? error.message
+        : "Relay could not prepare that binding on the Device.";
+    return { kind: "failed", detail: message };
+  }
+  try {
     await dispatchSemanticBinding(session, binding);
     return {
       kind: "tried",
@@ -109,11 +117,8 @@ export async function tryReviewTarget(input: {
     const message =
       error instanceof Error && error.message.trim()
         ? error.message
-        : "Relay could not try that binding on the Device.";
-    if (/unknown|acknowledg|not ready to acknowledge/i.test(message)) {
-      return { kind: "unknown", binding, detail: message };
-    }
-    return { kind: "failed", detail: message };
+        : "Relay could not confirm whether that tap reached the Device.";
+    return { kind: "unknown", binding, detail: message };
   } finally {
     session?.close();
   }

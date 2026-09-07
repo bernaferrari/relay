@@ -41,7 +41,7 @@ export function testStartRequests(input: {
 
 export type OwnedTestStartChild = {
   request: ProductRunStartInput;
-  status: "started" | "blocked" | "untouched";
+  status: "started" | "blocked" | "untouched" | "mismatched";
   state?: ProductRunState;
 };
 
@@ -66,6 +66,7 @@ export type CombineStartBody = {
   testId: string;
   executionMode: "all";
   profileTargets: CombineProfileTarget[];
+  sourceRevision?: ProductRunStartInput["sourceRevision"];
 };
 
 export type CombineStartResult = {
@@ -78,6 +79,7 @@ export type CombineStartResult = {
       runId?: string;
       engine?: BoundExecutionIdentity["engine"];
       account?: BoundExecutionIdentity["account"];
+      targetId?: string;
     }[];
   };
   batch?: { id?: string };
@@ -127,18 +129,36 @@ function childStatusFromCase(status: string | undefined): OwnedTestStartChild["s
   return "started";
 }
 
-function sameAccountBinding(
-  left: BoundExecutionIdentity["account"] | undefined,
-  right: BoundExecutionIdentity["account"] | undefined,
-): boolean {
-  if (!left || !right) return false;
-  if (left.kind === "signed-out" && right.kind === "signed-out") return true;
-  return (
-    left.kind === "fixture" &&
-    right.kind === "fixture" &&
-    left.accountId === right.accountId &&
-    left.accountRevision === right.accountRevision
+export function executionCellIdentity(input: {
+  targetId?: string;
+  engine?: BoundExecutionIdentity["engine"];
+  account?: BoundExecutionIdentity["account"];
+  sourceRevision?: ProductRunStartInput["sourceRevision"];
+}): string {
+  return JSON.stringify({
+    targetId: input.targetId ?? "",
+    engine: input.engine ?? "",
+    account: input.account ?? null,
+    sourceRevision: input.sourceRevision ?? null,
+  });
+}
+
+export function pairedBatchFields(requests: readonly ProductRunStartInput[]): {
+  sourceRevision?: ProductRunStartInput["sourceRevision"];
+} {
+  if (requests.some((request) => request.startup)) {
+    throw new TypeError(
+      "This Batch cannot represent a starting state. Run those pairs as separate Tests.",
+    );
+  }
+  const revisions = new Set(
+    requests.map((request) => JSON.stringify(request.sourceRevision ?? null)),
   );
+  if (revisions.size > 1) {
+    throw new TypeError("Every pair in this Batch must use the same build.");
+  }
+  const sourceRevision = requests[0]?.sourceRevision;
+  return sourceRevision ? { sourceRevision } : {};
 }
 
 /** One Combine campaign owns every compiled pair. Do not start children locally. */
@@ -149,28 +169,56 @@ export async function startPairedTestBatch(input: {
   const first = input.requests[0];
   if (!first?.appMapId) throw new TypeError("Save at least one Browser and Account pair.");
   const profileTargets = profileTargetsFromStarts(input.requests);
+  const fields = pairedBatchFields(input.requests);
   const started = await input.combineStart({
     appMapId: first.appMapId,
     testId: first.testId,
     executionMode: "all",
     profileTargets,
+    ...fields,
   });
   const batchId = started.campaign?.id ?? started.batch?.id;
   if (!batchId) throw new TypeError("Relay did not create a durable Batch for these pairs.");
   const cases = started.campaign?.cases ?? [];
   const unused = [...cases];
   const children: OwnedTestStartChild[] = input.requests.map((request) => {
+    const expected = executionCellIdentity({
+      targetId: request.targetId,
+      engine: request.engine,
+      account: request.account,
+      sourceRevision: request.sourceRevision,
+    });
     const matchIndex = unused.findIndex(
       (item) =>
-        sameAccountBinding(item.account, request.account) ||
-        Boolean(item.targetProfileId && item.targetProfileId === request.targetProfileId),
+        executionCellIdentity({
+          targetId: item.targetId ?? request.targetId,
+          engine: item.engine,
+          account: item.account,
+          sourceRevision: request.sourceRevision,
+        }) === expected,
     );
-    const item = matchIndex >= 0 ? unused.splice(matchIndex, 1)[0] : unused.shift();
-    const status = childStatusFromCase(item?.status);
+    const item = matchIndex >= 0 ? unused.splice(matchIndex, 1)[0] : undefined;
+    if (!item) {
+      return {
+        request,
+        status: "mismatched",
+        state: {
+          status: "idle",
+          recovery: {
+            code: "transport",
+            title: "This pair has no matching Batch cell",
+            detail: "Relay did not return a child for this exact Browser, account, and engine.",
+            recovery: "Inspect the Batch. Do not treat another pair's result as this one.",
+            retryable: true,
+          },
+        },
+      };
+    }
+    const status = childStatusFromCase(item.status);
     return {
       request,
       status,
-      ...(item?.runId
+      ...(item.runId
         ? { state: { status: "queued", run: { jobId: item.runId, runId: item.runId } } }
         : {}),
     };

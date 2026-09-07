@@ -25,6 +25,7 @@ import {
   currentOperationContext,
   findActiveCombineCampaignForCombine,
   findActiveRepeatCampaigns,
+  bindRequestedBrowserIdentity,
   prepareAppMapCombineCells,
   readAppMap,
   listTargets,
@@ -125,6 +126,35 @@ export type CombineStartRouteContext = {
   scope: RequestContext;
   runtime: JobRouteRuntime;
 };
+
+function savedBrowserIdentityForProfile(
+  map: {
+    screenVariants?: Record<
+      string,
+      {
+        targetProfile?: {
+          id?: string;
+          platform?: string;
+          browserCaseProfile?: { engine?: string; authenticationFixtureId?: string };
+        };
+      }
+    >;
+  },
+  targetProfileId: string,
+): { engine?: string; authenticationFixtureId?: string; platform?: string } {
+  for (const variant of Object.values(map.screenVariants ?? {})) {
+    if (variant.targetProfile?.id !== targetProfileId) continue;
+    const browser = variant.targetProfile.browserCaseProfile;
+    return {
+      ...(browser?.engine ? { engine: browser.engine } : {}),
+      ...(browser?.authenticationFixtureId
+        ? { authenticationFixtureId: browser.authenticationFixtureId }
+        : {}),
+      ...(variant.targetProfile.platform ? { platform: variant.targetProfile.platform } : {}),
+    };
+  }
+  return {};
+}
 
 function ephemeralCombineFromTest(input: {
   mapId: string;
@@ -343,6 +373,24 @@ async function executeCombineStartUnlocked(
                       "Capture or explicitly bind one saved runtime profile for this target.",
                   },
                 );
+              }
+              if (profileTarget.account || profileTarget.engine) {
+                const saved = savedBrowserIdentityForProfile(map, targetProfileId);
+                const bound = bindRequestedBrowserIdentity({
+                  requested: {
+                    ...(profileTarget.engine ? { engine: profileTarget.engine } : {}),
+                    ...(profileTarget.account ? { account: profileTarget.account } : {}),
+                  },
+                  saved,
+                  platform: target.platform ?? saved.platform,
+                });
+                if (bound.status === "blocked") {
+                  throw new HttpError(409, bound.reason, {
+                    code: "REQUESTED_ACCOUNT_MISMATCH",
+                    recovery:
+                      "Use the exact saved account fixture revision, or capture a matching runtime profile before running.",
+                  });
+                }
               }
               return prepareAppMapCombineCells({
                 ...prepareInput,

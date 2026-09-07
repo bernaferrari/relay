@@ -205,7 +205,13 @@ export async function handleTargetRoute(context: TargetRouteContext): Promise<bo
       const { authenticationFixtureId: _active, ...environment } = profile;
       await saveTargetBrowserEnvironment(target, environment);
     }
-    const session = await openBrowserTarget(target.id);
+    const session = await openBrowserTarget(target.id, {
+      projectId: scope.projectId,
+      ...(authenticationFixtureReference
+        ? { authenticationFixtureId: authenticationFixtureReference }
+        : {}),
+      ...(signedOut ? { signedOut: true as const } : {}),
+    });
     json(res, 200, {
       session: {
         ...session,

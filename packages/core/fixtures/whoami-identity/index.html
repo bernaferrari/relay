@@ -1,0 +1,12 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Relay whoami</title>
+<body>
+  <p id="whoami">signed-out</p>
+  <button id="admin-only" hidden>Admin control</button>
+  <script>
+    const role = document.cookie.match(/(?:^|; )relay-role=([^;]+)/)?.[1] ?? "signed-out";
+    document.getElementById("whoami").textContent = role;
+    document.getElementById("admin-only").hidden = role !== "admin";
+  </script>
+</body>

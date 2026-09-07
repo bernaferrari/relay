@@ -77,6 +77,7 @@ export * from "./browser-device-session.js";
 export * from "./browser-mutation-supervision.js";
 export * from "./browser-mutation-admission.js";
 export * from "./browser-context.js";
+export * from "./browser-execution-identity.js";
 export * from "./browser-authentication-fixtures.js";
 export * from "./browser-host-pool.js";
 export * from "./browser-case-profile-target.js";

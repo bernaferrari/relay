@@ -6,6 +6,7 @@ import {
   startOwnedTestRun,
   startPairedTestBatch,
   testStartRequests,
+  type CombineStartBody,
 } from "./start-owned-test-run";
 import { parsePairedConfigurationWorkspace } from "./paired-configuration";
 
@@ -164,10 +165,35 @@ describe("start owned Test runs", () => {
                     cellId: "cell-admin",
                     status: "queued",
                     targetProfileId: "profile-admin",
+                    targetId: "chrome-1",
+                    engine: "chromium",
+                    account: {
+                      kind: "fixture",
+                      accountId: "acct-admin",
+                      accountRevision: "4",
+                    },
                     runId: "run-admin",
                   },
-                  { cellId: "cell-member", status: "blocked", targetProfileId: "profile-member" },
-                  { cellId: "cell-out", status: "pending", targetProfileId: "profile-out" },
+                  {
+                    cellId: "cell-member",
+                    status: "blocked",
+                    targetProfileId: "profile-member",
+                    targetId: "chrome-1",
+                    engine: "chromium",
+                    account: {
+                      kind: "fixture",
+                      accountId: "acct-member",
+                      accountRevision: "7",
+                    },
+                  },
+                  {
+                    cellId: "cell-out",
+                    status: "pending",
+                    targetProfileId: "profile-out",
+                    targetId: "webkit-1",
+                    engine: "webkit",
+                    account: { kind: "signed-out", attested: true },
+                  },
                 ],
               },
             };
@@ -225,6 +251,7 @@ describe("start owned Test runs", () => {
                 cellId: "cell-member",
                 status: "blocked",
                 targetProfileId: "pixel-en",
+                targetId: "chrome-1",
                 account: {
                   kind: "fixture",
                   accountId: "acct-member",
@@ -236,6 +263,7 @@ describe("start owned Test runs", () => {
                 cellId: "cell-out",
                 status: "pending",
                 targetProfileId: "pixel-it",
+                targetId: "webkit-1",
                 account: { kind: "signed-out", attested: true },
                 engine: "webkit",
               },
@@ -243,6 +271,7 @@ describe("start owned Test runs", () => {
                 cellId: "cell-admin",
                 status: "queued",
                 targetProfileId: "pixel-en",
+                targetId: "chrome-1",
                 account: {
                   kind: "fixture",
                   accountId: "acct-admin",
@@ -289,5 +318,50 @@ describe("start owned Test runs", () => {
       "untouched",
       "untouched",
     ]);
+  });
+
+  it("carries the selected build and does not borrow a reordered child", async () => {
+    const requests = testStartRequests({
+      usePairedWorkspace: true,
+      workspace,
+      testId: "checkout",
+      appMapId: "app-1",
+      targetId: "ignored",
+      sourceRevision: { vcs: "git", sha: "abcdef1" },
+      profiles: [
+        { id: "profile-admin", targetId: "chrome-1", account: { id: "acct-admin" } },
+        { id: "profile-member", targetId: "chrome-1", account: { id: "acct-member" } },
+        { id: "profile-out", targetId: "webkit-1" },
+      ],
+    }).slice(0, 2);
+    const bodies: CombineStartBody[] = [];
+    const result = await startPairedTestBatch({
+      requests,
+      combineStart: async (body) => {
+        bodies.push(body);
+        return {
+          campaign: {
+            id: "batch-reordered",
+            cases: [
+              {
+                cellId: "other",
+                status: "queued",
+                targetId: "chrome-1",
+                engine: "firefox",
+                account: {
+                  kind: "fixture",
+                  accountId: "acct-admin",
+                  accountRevision: "4",
+                },
+                runId: "run-wrong-engine",
+              },
+            ],
+          },
+        };
+      },
+    });
+    expect(bodies[0]?.sourceRevision).toEqual({ vcs: "git", sha: "abcdef1" });
+    expect(result.children.map((child) => child.status)).toEqual(["mismatched", "mismatched"]);
+    expect(result.children[0]?.state?.run?.runId).toBeUndefined();
   });
 });

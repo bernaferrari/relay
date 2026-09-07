@@ -246,6 +246,29 @@ describe("recording edit adapter", () => {
     expect(result.review.errorCount).toBe(1);
     expect(result.review.issues[0]?.issues[0]?.code).toBe("icon-without-name");
   });
+
+  it("returns the server health and observation from reconcile, not only the request", async () => {
+    client.invoke.mockClear();
+    client.invoke.mockResolvedValueOnce({
+      health: {
+        input: { state: "uncertain", pendingMutationId: "mut-1", reason: "Still ambiguous" },
+      },
+      observation: { schemaVersion: 1, capturedAt: 9 },
+    });
+    const service = createRecordingProductService(platform);
+    await expect(
+      service.reconcileInput!({
+        serial: "pixel-1",
+        mutationId: "mut-1",
+        outcome: "not-applied",
+      }),
+    ).resolves.toEqual({
+      mutationId: "mut-1",
+      outcome: "ambiguous",
+      health: { state: "uncertain", pendingMutationId: "mut-1", reason: "Still ambiguous" },
+      observation: { schemaVersion: 1, capturedAt: 9 },
+    });
+  });
 });
 
 // Keep this assertion close to the adapter tests so a future protocol edit
