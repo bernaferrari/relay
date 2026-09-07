@@ -30,7 +30,7 @@ import {
   resolveSessionEventLogPath,
   type SessionEventLogInput,
   type SessionEventLogPage,
-} from './session-event-log.ts';
+} from '@agent-device/session-journal/session-event-log';
 
 const REPAIR_TOMBSTONE_TTL_MS = 60 * 60_000;
 
