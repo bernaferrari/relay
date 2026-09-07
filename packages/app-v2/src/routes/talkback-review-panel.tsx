@@ -7,16 +7,19 @@ import {
   ACCESSIBILITY_LABELS_STORAGE_KEY,
   ACCESSIBILITY_LABEL_MODE_OPTIONS,
   accessibilityObservationId,
+  currentAccessibilityInspection,
   retainAccessibilityObservation,
   talkBackItemAtPoint,
   talkBackOverlayBox,
   validAccessibilityLabelMode,
   visibleTalkBackOverlayItems,
+  type AccessibilityInspection,
   type AccessibilityLabelMode,
   type TalkBackCaptureResult,
 } from "../data/talkback-overlay";
 
-export { visibleTalkBackOverlayItems };
+export { currentAccessibilityInspection, visibleTalkBackOverlayItems };
+export type { AccessibilityInspection };
 
 export type { TalkBackCaptureResult, AccessibilityLabelMode };
 
@@ -233,9 +236,7 @@ export function useTalkBackReview(input: {
     setLoading(true);
     setIssue(undefined);
     setResult((previous) =>
-      previous?.targetId && previous.targetId !== input.serial
-        ? { ...previous, stale: true }
-        : previous,
+      previous && previous.observationId !== epoch ? { ...previous, stale: true } : previous,
     );
     void capture
       .current(input.serial)
@@ -252,11 +253,7 @@ export function useTalkBackReview(input: {
       })
       .catch((error: unknown) => {
         if (cancelled) return;
-        setResult((previous) => {
-          if (!previous || previous.targetId !== input.serial) return undefined;
-          const stale: TalkBackCaptureResult = { ...previous, stale: true };
-          return stale;
-        });
+        setResult((previous) => (previous ? { ...previous, stale: true } : undefined));
         setIssue(
           error instanceof Error ? error.message : "Relay could not read accessibility names.",
         );
@@ -269,11 +266,17 @@ export function useTalkBackReview(input: {
     };
   }, [on, input.enabled, input.serial, input.refreshKey]);
 
+  const epoch = accessibilityObservationId({
+    targetId: input.serial,
+    refreshKey: input.refreshKey,
+  });
+  const inspection = currentAccessibilityInspection(on && input.serial ? result : undefined, epoch);
+
   return {
     mode,
     on,
     loading,
-    result,
+    inspection,
     issue,
     setMode(next: AccessibilityLabelMode) {
       setStoredMode(next);

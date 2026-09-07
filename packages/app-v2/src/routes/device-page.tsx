@@ -22,7 +22,6 @@ import {
   TalkBackModeSelect,
   TalkBackOverlay,
   useTalkBackReview,
-  visibleTalkBackOverlayItems,
 } from "./talkback-review-panel";
 
 const routeApi = getRouteApi("/devices/$deviceId");
@@ -289,7 +288,6 @@ export function DevicePage() {
               send={send}
               pending={target.isPending}
               android={device.data.platform === "android"}
-              serial={device.data.serial}
               talkBack={talkBack}
             />
           ) : null}
@@ -392,7 +390,6 @@ function DeviceLivePreview({
   send,
   pending,
   android,
-  serial,
   talkBack,
 }: {
   canvas: RefObject<HTMLCanvasElement | null>;
@@ -405,7 +402,6 @@ function DeviceLivePreview({
   send: (input: LiveTargetInput) => Promise<boolean>;
   pending: boolean;
   android: boolean;
-  serial?: string;
   talkBack: ReturnType<typeof useTalkBackReview>;
 }) {
   if (pending) return <PageLoading label="Opening the live device…" />;
@@ -449,7 +445,7 @@ function DeviceLivePreview({
           talkBack.on && talkBack.mode !== "off" ? (
             <TalkBackOverlay
               canvasRef={canvas}
-              items={visibleTalkBackOverlayItems(talkBack.result, serial)}
+              items={talkBack.inspection.overlayItems}
               mode={talkBack.mode}
             />
           ) : null
@@ -465,9 +461,9 @@ function DeviceLivePreview({
       {android && talkBack.on ? (
         <div className="border-t border-border px-4 py-3">
           <TalkBackIssueList
-            review={talkBack.result?.review}
-            inspectable={talkBack.result?.inspectable}
-            message={talkBack.issue ?? talkBack.result?.message}
+            review={talkBack.inspection.review}
+            inspectable={talkBack.inspection.inspectable}
+            message={talkBack.issue ?? talkBack.inspection.message}
           />
         </div>
       ) : null}

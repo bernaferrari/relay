@@ -49,7 +49,6 @@ import {
   TalkBackModeSelect,
   TalkBackOverlay,
   useTalkBackReview,
-  visibleTalkBackOverlayItems,
 } from "./talkback-review-panel";
 
 const testRouteApi = getRouteApi("/tests/$testId/record");
@@ -591,10 +590,7 @@ function RecordingWorkspace({
                       talkBack.on && talkBack.mode !== "off" ? (
                         <TalkBackOverlay
                           canvasRef={liveCanvas}
-                          items={visibleTalkBackOverlayItems(
-                            talkBack.result,
-                            selectedTarget?.targetId,
-                          )}
+                          items={talkBack.inspection.overlayItems}
                           mode={talkBack.mode}
                         />
                       ) : null
@@ -610,9 +606,9 @@ function RecordingWorkspace({
                   {selectedTarget.platform === "android" && talkBack.on ? (
                     <div className="border-t border-border px-3 py-3">
                       <TalkBackIssueList
-                        review={talkBack.result?.review}
-                        inspectable={talkBack.result?.inspectable}
-                        message={talkBack.issue ?? talkBack.result?.message}
+                        review={talkBack.inspection.review}
+                        inspectable={talkBack.inspection.inspectable}
+                        message={talkBack.issue ?? talkBack.inspection.message}
                       />
                     </div>
                   ) : null}

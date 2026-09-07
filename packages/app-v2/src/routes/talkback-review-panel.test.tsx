@@ -2,9 +2,15 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { reviewAndroidTalkBack } from "@relay/protocol";
-import { TalkBackIssueList, TalkBackModeSelect, TalkBackOverlay } from "./talkback-review-panel";
+import type { Platform } from "../platform/types";
+import {
+  TalkBackIssueList,
+  TalkBackModeSelect,
+  TalkBackOverlay,
+  useTalkBackReview,
+} from "./talkback-review-panel";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -105,5 +111,93 @@ describe("TalkBack review panel", () => {
       root.render(<Harness />);
     });
     expect(host.textContent).toContain("Preferred Language");
+  });
+
+  it("hides overlay names and issue counts when the observation epoch advances", async () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    roots.push(root);
+    const review = reviewAndroidTalkBack([
+      {
+        description: "Close",
+        role: "android.widget.ImageButton",
+        hittable: true,
+        rect: { x: 0, y: 0, width: 48, height: 48 },
+        index: 0,
+      },
+      {
+        role: "android.widget.ImageButton",
+        hittable: true,
+        rect: { x: 60, y: 0, width: 48, height: 48 },
+        index: 1,
+      },
+    ]);
+    const platform = {
+      storage: {
+        get: async () => "always",
+        set: async () => undefined,
+      },
+    } as Pick<Platform, "storage"> as Platform;
+    let captureCount = 0;
+    let releaseSecond: (() => void) | undefined;
+    const secondCapture = new Promise<void>((resolve) => {
+      releaseSecond = resolve;
+    });
+    function Harness() {
+      const [refreshKey, setRefreshKey] = useState(0);
+      const talkBack = useTalkBackReview({
+        enabled: true,
+        serial: "pixel-1",
+        refreshKey,
+        platform,
+        capture: async () => {
+          captureCount += 1;
+          if (captureCount > 1) await secondCapture;
+          return { inspectable: true, review, targetId: "pixel-1" };
+        },
+      });
+      return (
+        <div>
+          <button type="button" onClick={() => setRefreshKey((value) => value + 1)}>
+            Advance
+          </button>
+          <TalkBackIssueList
+            review={talkBack.inspection.review}
+            inspectable={talkBack.inspection.inspectable}
+            message={talkBack.issue ?? talkBack.inspection.message}
+          />
+          <span data-testid="overlay-count">{talkBack.inspection.overlayItems.length}</span>
+        </div>
+      );
+    }
+    await act(async () => {
+      root.render(<Harness />);
+    });
+    for (let i = 0; i < 20; i += 1) {
+      if (host.querySelector("[data-testid=overlay-count]")?.textContent !== "0") break;
+      await act(async () => {
+        await Promise.resolve();
+      });
+    }
+    expect(host.textContent).toContain("TalkBack has no name for this icon.");
+    expect(host.textContent).toMatch(/1 unlabeled control/);
+    expect(host.querySelector("[data-testid=overlay-count]")?.textContent).toBe(
+      String(review.items.length),
+    );
+    await act(async () => {
+      host.querySelector("button")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(host.textContent).not.toContain("TalkBack has no name for this icon.");
+    expect(host.textContent).not.toMatch(/1 unlabeled control/);
+    expect(host.textContent).not.toMatch(/\d+ accessibility names on this screen/);
+    expect(host.querySelector("[data-testid=overlay-count]")?.textContent).toBe("0");
+    await act(async () => {
+      releaseSecond?.();
+      await Promise.resolve();
+    });
   });
 });

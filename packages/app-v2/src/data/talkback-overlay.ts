@@ -62,14 +62,48 @@ export function accessibilityObservationId(input: {
   return `${input.targetId ?? ""}:${input.refreshKey ?? 0}`;
 }
 
-/** Hide names that belong to another surface or a stale observation. */
+export type AccessibilityInspection = {
+  overlayItems: readonly TalkBackReviewItem[];
+  review?: TalkBackReview;
+  inspectable?: boolean;
+  message?: string;
+};
+
+const EMPTY_INSPECTION: AccessibilityInspection = { overlayItems: [] };
+
+function targetIdFromObservationId(observationId: string): string {
+  const separator = observationId.lastIndexOf(":");
+  return separator === -1 ? observationId : observationId.slice(0, separator);
+}
+
+/** Current overlay and details, or empty when the result is stale, foreign, or
+ * from another observation epoch. Pages must not read the raw capture bag. */
+export function currentAccessibilityInspection(
+  result: TalkBackCaptureResult | undefined,
+  observationId?: string,
+): AccessibilityInspection {
+  if (!result || result.stale) return EMPTY_INSPECTION;
+  if (observationId) {
+    if (result.observationId && result.observationId !== observationId) return EMPTY_INSPECTION;
+    const expectedTarget = targetIdFromObservationId(observationId);
+    if (result.targetId && expectedTarget && result.targetId !== expectedTarget) {
+      return EMPTY_INSPECTION;
+    }
+  }
+  return {
+    overlayItems: result.review.items,
+    review: result.review,
+    inspectable: result.inspectable,
+    ...(result.message ? { message: result.message } : {}),
+  };
+}
+
+/** Hide names that belong to another surface, epoch, or a stale observation. */
 export function visibleTalkBackOverlayItems(
   result: TalkBackCaptureResult | undefined,
-  currentTargetId?: string,
+  observationId?: string,
 ): readonly TalkBackReviewItem[] {
-  if (!result || result.stale) return [];
-  if (currentTargetId && result.targetId && result.targetId !== currentTargetId) return [];
-  return result.review.items;
+  return currentAccessibilityInspection(result, observationId).overlayItems;
 }
 
 /** Keep a newer observation; ignore late captures for another target/epoch. */

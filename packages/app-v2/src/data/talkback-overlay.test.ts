@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ACCESSIBILITY_LABEL_MODE_OPTIONS,
+  currentAccessibilityInspection,
   retainAccessibilityObservation,
   talkBackItemAtPoint,
   talkBackOverlayBox,
@@ -138,6 +139,17 @@ describe("talkBackOverlayBox", () => {
         "pixel-1",
       ),
     ).toEqual(review.items);
+    expect(
+      currentAccessibilityInspection(
+        {
+          inspectable: true,
+          review,
+          targetId: "pixel-1",
+          observationId: "pixel-1:0",
+        },
+        "pixel-1:1",
+      ),
+    ).toEqual({ overlayItems: [] });
   });
 
   it("exposes hover and always as the saved setting choices", () => {

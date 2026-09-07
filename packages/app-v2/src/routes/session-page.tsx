@@ -32,7 +32,6 @@ import {
   TalkBackModeSelect,
   TalkBackOverlay,
   useTalkBackReview,
-  visibleTalkBackOverlayItems,
 } from "./talkback-review-panel";
 import { isActiveSession, sessionStateLabel } from "./sessions-page";
 
@@ -422,7 +421,7 @@ export function SessionPage() {
                     talkBack.on && talkBack.mode !== "off" ? (
                       <TalkBackOverlay
                         canvasRef={canvas}
-                        items={visibleTalkBackOverlayItems(talkBack.result, value.target.targetId)}
+                        items={talkBack.inspection.overlayItems}
                         mode={talkBack.mode}
                       />
                     ) : null
@@ -438,9 +437,9 @@ export function SessionPage() {
                 {value.target.platform === "android" && talkBack.on ? (
                   <div className="border-t border-border px-3 py-3">
                     <TalkBackIssueList
-                      review={talkBack.result?.review}
-                      inspectable={talkBack.result?.inspectable}
-                      message={talkBack.issue ?? talkBack.result?.message}
+                      review={talkBack.inspection.review}
+                      inspectable={talkBack.inspection.inspectable}
+                      message={talkBack.issue ?? talkBack.inspection.message}
                     />
                   </div>
                 ) : null}
