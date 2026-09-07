@@ -74,7 +74,7 @@ export function SessionPage() {
   });
   const value = session.data;
   const talkBack = useTalkBackReview({
-    enabled: value?.target.platform === "android",
+    enabled: Boolean(value?.target.targetId),
     serial: value?.target.targetId,
     capture: productService.reviewTalkBack,
     refreshKey: talkBackRefresh,
@@ -427,13 +427,11 @@ export function SessionPage() {
                     ) : null
                   }
                   toolbar={
-                    value.target.platform === "android" ? (
-                      <TalkBackModeSelect
-                        mode={talkBack.mode}
-                        loading={talkBack.loading}
-                        onModeChange={(mode) => talkBack.setMode(mode)}
-                      />
-                    ) : null
+                    <TalkBackModeSelect
+                      mode={talkBack.mode}
+                      loading={talkBack.loading}
+                      onModeChange={(mode) => talkBack.setMode(mode)}
+                    />
                   }
                 />
                 {value.target.platform === "android" && talkBack.on ? (

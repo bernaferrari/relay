@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  ACCESSIBILITY_LABEL_MODE_OPTIONS,
   talkBackItemAtPoint,
   talkBackOverlayBox,
   validAccessibilityLabelMode,
@@ -57,5 +58,13 @@ describe("talkBackOverlayBox", () => {
     expect(validAccessibilityLabelMode("always")).toBe("always");
     expect(validAccessibilityLabelMode("hover")).toBe("hover");
     expect(validAccessibilityLabelMode("listen")).toBe("off");
+  });
+
+  it("exposes hover and always as the saved setting choices", () => {
+    expect(ACCESSIBILITY_LABEL_MODE_OPTIONS.map((option) => option.value)).toEqual([
+      "off",
+      "hover",
+      "always",
+    ]);
   });
 });

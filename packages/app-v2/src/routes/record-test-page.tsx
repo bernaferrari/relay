@@ -156,7 +156,7 @@ function RecordingWorkspace({
   const selectedTarget = recording.data?.selectedTarget ?? snapshot?.frozen?.target;
   const selectedTargetId = selectedTarget?.targetId;
   const talkBack = useTalkBackReview({
-    enabled: selectedTarget?.platform === "android",
+    enabled: Boolean(selectedTargetId),
     serial: selectedTargetId,
     capture: productService.reviewTalkBack,
     refreshKey: talkBackRefresh,
@@ -593,13 +593,11 @@ function RecordingWorkspace({
                       ) : null
                     }
                     toolbar={
-                      selectedTarget.platform === "android" ? (
-                        <TalkBackModeSelect
-                          mode={talkBack.mode}
-                          loading={talkBack.loading}
-                          onModeChange={(mode) => talkBack.setMode(mode)}
-                        />
-                      ) : null
+                      <TalkBackModeSelect
+                        mode={talkBack.mode}
+                        loading={talkBack.loading}
+                        onModeChange={(mode) => talkBack.setMode(mode)}
+                      />
                     }
                   />
                   {selectedTarget.platform === "android" && talkBack.on ? (

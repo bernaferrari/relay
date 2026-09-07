@@ -313,6 +313,7 @@ describe("Devices", () => {
       expect(
         document.querySelector<HTMLCanvasElement>(".relay-capture-live-target")?.tabIndex,
       ).toBe(0);
+      expect(document.querySelector('[aria-label="Accessibility names"]')).not.toBeNull();
     },
   );
 
@@ -543,6 +544,21 @@ describe("Settings", () => {
     await click(input("Light"));
     expect(document.documentElement.dataset.colorScheme).toBe("light");
     expect(platform.values.get("appearance.colorScheme")).toBe("light");
+    expect(document.body.textContent).toContain("Saved");
+  });
+
+  it("saves accessibility names as a live-view setting", async () => {
+    const platform = testPlatform({ "live.accessibilityLabels": "off" });
+    await renderPath("/settings/appearance", { platform });
+
+    expect(document.body.textContent).toContain("Show the accessibility name");
+    expect(document.body.textContent).toContain("TalkBack and VoiceOver stay off");
+    expect(input("Off").getAttribute("aria-checked")).toBe("true");
+    await click(input("Always show"));
+    expect(platform.values.get("live.accessibilityLabels")).toBe("always");
+    expect(input("Always show").getAttribute("aria-checked")).toBe("true");
+    await click(input("On hover"));
+    expect(platform.values.get("live.accessibilityLabels")).toBe("hover");
     expect(document.body.textContent).toContain("Saved");
   });
 

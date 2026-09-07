@@ -60,7 +60,7 @@ export function DevicePage() {
     staleTime: 5_000,
   });
   const talkBack = useTalkBackReview({
-    enabled: device.data?.platform === "android",
+    enabled: Boolean(device.data?.serial),
     serial: device.data?.serial,
     capture: productService.reviewTalkBack,
     refreshKey: talkBackRefresh,
@@ -451,13 +451,11 @@ function DeviceLivePreview({
           ) : null
         }
         toolbar={
-          android ? (
-            <TalkBackModeSelect
-              mode={talkBack.mode}
-              loading={talkBack.loading}
-              onModeChange={(mode) => talkBack.setMode(mode)}
-            />
-          ) : null
+          <TalkBackModeSelect
+            mode={talkBack.mode}
+            loading={talkBack.loading}
+            onModeChange={(mode) => talkBack.setMode(mode)}
+          />
         }
       />
       {android && talkBack.on ? (

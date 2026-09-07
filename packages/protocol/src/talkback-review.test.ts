@@ -6,6 +6,20 @@ import {
   talkBackSpokenName,
 } from "./talkback-review.js";
 
+test("iOS VoiceOver labels become spoken names", () => {
+  const review = reviewAndroidTalkBack([
+    {
+      label: "Preferred Language",
+      type: "Cell",
+      hittable: true,
+      rect: { x: 0, y: 120, width: 390, height: 48 },
+      index: 0,
+    },
+  ]);
+  assert.equal(review.items[0]?.name, "Preferred Language");
+  assert.match(review.items[0]!.announcement, /Preferred Language/);
+});
+
 test("TalkBack prefers content-desc over visible text", () => {
   assert.equal(
     talkBackSpokenName({

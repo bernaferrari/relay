@@ -5,6 +5,7 @@ import { SelectField } from "../components/filter-select";
 import type { Platform } from "../platform/types";
 import {
   ACCESSIBILITY_LABELS_STORAGE_KEY,
+  ACCESSIBILITY_LABEL_MODE_OPTIONS,
   talkBackItemAtPoint,
   talkBackOverlayBox,
   validAccessibilityLabelMode,
@@ -14,11 +15,10 @@ import {
 
 export type { TalkBackCaptureResult, AccessibilityLabelMode };
 
-const MODE_OPTIONS = [
-  { value: "off", label: "Labels off" },
-  { value: "hover", label: "On hover" },
-  { value: "always", label: "Always show" },
-] as const;
+const MODE_OPTIONS = ACCESSIBILITY_LABEL_MODE_OPTIONS.map((option) => ({
+  value: option.value,
+  label: option.label,
+}));
 
 export function TalkBackModeSelect({
   mode,

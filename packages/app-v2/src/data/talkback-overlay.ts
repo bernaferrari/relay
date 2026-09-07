@@ -6,6 +6,12 @@ export const ACCESSIBILITY_LABELS_STORAGE_KEY = "live.accessibilityLabels";
 
 export type AccessibilityLabelMode = "off" | "hover" | "always";
 
+export const ACCESSIBILITY_LABEL_MODE_OPTIONS = [
+  { value: "off", label: "Off", description: "Hide names on the live view" },
+  { value: "hover", label: "On hover", description: "Show the name under the pointer" },
+  { value: "always", label: "Always show", description: "Keep names on the live view" },
+] as const;
+
 export function validAccessibilityLabelMode(
   value: string | null | undefined,
 ): AccessibilityLabelMode {
