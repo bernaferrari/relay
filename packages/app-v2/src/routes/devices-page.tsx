@@ -6,7 +6,7 @@ import { Tabs, TabsList, TabsTrigger } from "@relay/ui-react/components/tabs";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { ChevronRight, CircleHelp, ListChecks } from "lucide-react";
-import { useDeferredValue, useEffect, useState } from "react";
+import { useDeferredValue, useEffect, useId, useState } from "react";
 import { LibrarySearch, LibraryToolbar } from "../components/library-toolbar";
 import { LibraryPage, PageHeader } from "../components/page-layout";
 import { EmptyState, RecoveryState } from "../components/product-patterns";
@@ -19,6 +19,7 @@ import {
 import { readSetupContinuation } from "../data/setup-continuation";
 import { useCollectionReturnFocus } from "../hooks/use-collection-return-focus";
 import { PageLoading } from "./recording-shared";
+import { EmulatorStart } from "../components/emulator-start";
 
 type DeviceFilter = "all" | Exclude<ProductDeviceStatus, "virtual">;
 
@@ -47,8 +48,16 @@ function isBrowser(device: ProductDevice): boolean {
 }
 
 function statusLabel(device: ProductDevice): string {
+  if (device.device.booted === false) return "Stopped";
   if (device.status === "needs-attention") return "Needs attention";
   return "Ready";
+}
+
+function deviceGroup(device: ProductDevice): string {
+  if (isBrowser(device)) return "Browsers";
+  if (/simulator/i.test(device.kind ?? "")) return "iOS simulators";
+  if (/emulator/i.test(device.kind ?? "")) return "Android emulators";
+  return "Physical devices";
 }
 
 function DeviceRow({ device, returnTo }: { device: ProductDevice; returnTo?: string }) {
@@ -115,7 +124,7 @@ function DeviceSection({
   devices: readonly ProductDevice[];
   returnTo?: string;
 }) {
-  const headingId = `device-section-${title.toLowerCase()}`;
+  const headingId = useId();
   return (
     <section className="relay-library-results" aria-labelledby={headingId}>
       <div className="relay-library-results-heading flex min-h-8 items-center justify-between gap-5 px-0.5 pb-2.5">
@@ -316,22 +325,54 @@ export function DevicesPage() {
 
       {!devices.isPending && !devices.isError && visibleCount > 0 ? (
         <div className="mt-3 grid gap-7" aria-live="polite">
-          {(["Devices", "Browsers"] as const).map((title) => {
-            const devicesInSection = visibleDevices.filter((device) =>
-              title === "Browsers" ? isBrowser(device) : !isBrowser(device),
-            );
-            if (!devicesInSection.length) return null;
-            return (
-              <DeviceSection
-                key={title}
-                title={title}
-                devices={devicesInSection}
-                returnTo={continuation ? search.returnTo : undefined}
-              />
-            );
-          })}
+          {(["Physical devices", "Android emulators", "iOS simulators", "Browsers"] as const).map(
+            (title) => {
+              const devicesInSection = visibleDevices.filter(
+                (device) => deviceGroup(device) === title,
+              );
+              if (!devicesInSection.length) return null;
+              const active = devicesInSection.filter((device) => device.device.booted !== false);
+              const stopped = devicesInSection.filter((device) => device.device.booted === false);
+              return (
+                <div key={title} className="grid gap-3">
+                  {active.length ? (
+                    <DeviceSection
+                      title={title}
+                      devices={active}
+                      returnTo={continuation ? search.returnTo : undefined}
+                    />
+                  ) : null}
+                  {stopped.length ? (
+                    <details
+                      open={deferredQuery ? true : undefined}
+                      className="rounded-xl border border-border p-3"
+                    >
+                      <summary className="cursor-pointer text-sm font-medium focus-visible:outline-2 focus-visible:outline-ring">
+                        {title} · {stopped.length} stopped
+                      </summary>
+                      <div className="mt-3">
+                        <DeviceSection
+                          title={title}
+                          devices={stopped}
+                          returnTo={continuation ? search.returnTo : undefined}
+                        />
+                      </div>
+                    </details>
+                  ) : null}
+                </div>
+              );
+            },
+          )}
         </div>
       ) : null}
+      <div className="mt-4">
+        <EmulatorStart
+          service={deviceService}
+          onStarted={async () => {
+            await devices.refetch();
+          }}
+        />
+      </div>
     </LibraryPage>
   );
 }

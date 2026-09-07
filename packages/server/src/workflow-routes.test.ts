@@ -166,6 +166,7 @@ async function withServer(
       next.updatedAt = clock++;
       if (input.action === "authoring-stop") next.state = "reviewing";
       if (input.action === "authoring-approve") {
+        if (input.testName) next.testName = input.testName;
         next.state = "committed";
         next.expectedAppMapRevision += 1;
         next.committedConnectionId = "connection-1";
@@ -655,7 +656,9 @@ test("Authoring stale versions do not mutate and approval commits exactly once",
       workflowId,
       expectedVersion: 5,
       action: "authoring-approve",
+      testName: "Renamed during review",
     });
+    assert.equal(approved.session?.testName, "Renamed during review");
     assert.equal(approved.workflow.record.status, "terminal");
     assert.equal(approved.session?.committedConnectionId, "connection-1");
     assert.equal(approved.session?.committedTestId, "test-1");
@@ -1286,4 +1289,57 @@ test("a network workflow cannot attach or adopt another principal's canonical jo
     else process.env.RELAY_AUTH_PROJECT_IDS = previous.projects;
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("background inspection cannot reconcile an Authoring dispatch still in flight", async () => {
+  await withServer(async ({ port, runtime }) => {
+    const actor = client(port, "agent:first");
+    const created = await actor.invoke(
+      "workflow.create",
+      {
+        kind: "author-test",
+        frozenIdentity: frozenAuthor("author-active-dispatch"),
+        expiresAt: 50_000,
+      },
+      { requestId: "author-active-dispatch" },
+    );
+    const workflowId = created.workflow.record.workflowId;
+    const started = await actor.invoke("workflow.transition", {
+      workflowId,
+      expectedVersion: 1,
+      action: "start-authoring",
+      leaseId: "lease-1",
+    });
+    const original = runtime.transitionAuthoringSession;
+    let entered!: () => void;
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    runtime.transitionAuthoringSession = async (...args) => {
+      entered();
+      await gate;
+      return original(...args);
+    };
+    const recording = actor.invoke("workflow.transition", {
+      workflowId,
+      expectedVersion: started.workflow.record.version,
+      action: "authoring-record",
+      interaction: { kind: "wait", ms: 1 },
+    });
+    await pending;
+    try {
+      const inspected = await actor.invoke("workflow.get", { workflowId });
+      assert.equal(inspected.workflow.record.lastTransition, "authoring-record-requested");
+      assert.equal(inspected.workflow.record.status, "active");
+    } finally {
+      release();
+    }
+    const completed = await recording;
+    assert.equal(completed.workflow.record.lastTransition, "authoring-record-completed");
+    assert.equal(completed.workflow.record.status, "active");
+  });
 });

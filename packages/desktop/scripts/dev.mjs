@@ -30,9 +30,8 @@ function resolveElectronCli() {
 }
 
 /**
- * Each desktop development session owns its Relay server. Reusing :8787 is
- * handy for production and the CLI, but it can silently attach Electron to a
- * server started before the current source changes were compiled.
+ * Reserve an independent inspector port. The service itself uses the shared
+ * workspace endpoint: two servers cannot own the same Relay state directory.
  */
 async function reserveLoopbackPort() {
   return await new Promise((resolvePort, reject) => {
@@ -77,8 +76,7 @@ async function main() {
     new URL(rendererUrl).origin,
   ].filter((origin, index, all) => all.indexOf(origin) === index);
 
-  const relayPort = await reserveLoopbackPort();
-  const relayUrl = `http://127.0.0.1:${relayPort}`;
+  const relayUrl = process.env.RELAY_URL?.trim() || "http://127.0.0.1:8787";
   console.log(`[desktop] Relay server ${relayUrl}`);
 
   // The dev app exposes Chromium's loopback-only DevTools Protocol so visual

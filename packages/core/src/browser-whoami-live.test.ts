@@ -79,6 +79,8 @@ test(
     try {
       await access(CHROME);
     } catch (error) {
+      if (process.env.GOLDEN_ACCEPTANCE_MODE === "required" || process.env.RELAY_TEST_CHROME_PATH)
+        throw error;
       t.skip(`Google Chrome is not installed: ${error instanceof Error ? error.message : error}`);
       return;
     }
@@ -133,12 +135,6 @@ test(
         assert.equal(adminOnlyHidden, role !== "admin");
         seen.set(role, { sessionId: opened.sessionId, role: visible, adminOnly: !adminOnlyHidden });
       }
-    } catch (error) {
-      if (error instanceof assert.AssertionError) throw error;
-      t.skip(
-        `Playwright could not launch the shipped open path: ${error instanceof Error ? error.message : error}`,
-      );
-      return;
     } finally {
       await closeBrowserTarget(targetId).catch(() => undefined);
       await deleteTarget(targetId).catch(() => undefined);

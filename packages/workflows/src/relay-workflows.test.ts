@@ -259,6 +259,7 @@ test("Member v7 cannot enqueue a Test against a saved Member v4 profile", async 
         preflight: preflight(7),
       },
     },
+    { id: "target.browser-auth.list", output: { fixtures: [] } },
   ]);
   const snapshot = await createRelayWorkflows(scripted.client).start(
     intent({

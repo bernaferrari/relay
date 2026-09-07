@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  parseRecordingLedger,
   appendRecordingMutation,
   classifyDispatchFailure,
   dispatchRecordingInput,
@@ -71,14 +72,18 @@ describe("recording input outcome", () => {
     expect(
       classifyDispatchFailure(new Error("Input submitted; runner not ready to acknowledge")).kind,
     ).toBe("unknown");
-    expect(recordingInputRecoveryMessage(outcome)).toContain("Observe the app");
+    expect(recordingInputRecoveryMessage(outcome)).toContain(
+      "Recording paused: Relay lost confirmation",
+    );
     expect(recordingInputRecoveryMessage(outcome)).not.toMatch(/try it again/i);
   });
 
   it("asks the user to observe when dispatch outcome is unknown", () => {
     const outcome = classifyDispatchFailure(new Error("XCTest lost the acknowledgement"));
     expect(outcome.kind).toBe("unknown");
-    expect(recordingInputRecoveryMessage(outcome)).toContain("Observe the app");
+    expect(recordingInputRecoveryMessage(outcome)).toContain(
+      "Recording paused: Relay lost confirmation",
+    );
     expect(recordingInputRecoveryMessage(outcome)).not.toMatch(/try it again/i);
   });
 
@@ -337,7 +342,7 @@ describe("recording input outcome", () => {
       },
     });
     expect(view.recoveryKind).toBe("unknown");
-    expect(view.issue).toContain("Observe the app");
+    expect(view.issue).toContain("Recording paused: Relay lost confirmation");
   });
 
   it("does not let a stale local unknown outrank a ready Device fence", () => {
@@ -402,4 +407,22 @@ describe("recording input outcome", () => {
     expect(merged.ledger.mutations[0]?.mutationId).toBe("ios-input-live");
     expect(merged.recoveryKind).toBe("unknown");
   });
+});
+
+it("repairs only the known renderer size-preflight legacy error", () => {
+  const message = "Relay could not verify the device size. Reconnect before recording.";
+  const ledger = parseRecordingLedger(
+    JSON.stringify({
+      mutations: [
+        { kind: "unknown", mutationId: "recording-mutation-local", message },
+        { kind: "unknown", mutationId: "ios-input-remote", message },
+        { kind: "unknown", mutationId: "recording-mutation-transport", message: "Connection lost" },
+      ],
+    }),
+  );
+  expect(ledger.mutations.map((item) => item.kind)).toEqual([
+    "not-dispatched",
+    "unknown",
+    "unknown",
+  ]);
 });

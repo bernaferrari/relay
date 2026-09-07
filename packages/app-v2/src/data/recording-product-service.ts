@@ -72,6 +72,7 @@ export type RecordingProductService = {
   recordCurrent(): Promise<ProductRecordingState>;
   checkpoint(label?: string): Promise<ProductRecordingState>;
   stop(): Promise<ProductRecordingState>;
+  cancel?(): Promise<ProductRecordingState>;
   edit(edit: AuthoringRecordingEdit): Promise<ProductRecordingState>;
   replay(): Promise<ProductRecordingState>;
   approve(testName: string): Promise<ProductRecordingState>;
@@ -244,6 +245,9 @@ export function createRecordingProductService(
     },
     async stop() {
       return (await product()).journey.stop();
+    },
+    async cancel() {
+      return (await product()).journey.transition({ action: "cancel" });
     },
     edit,
     ...createRecordingEditAdapter({ edit }),

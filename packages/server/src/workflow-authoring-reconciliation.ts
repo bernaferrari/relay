@@ -1,4 +1,5 @@
 import { isDeepStrictEqual } from "node:util";
+import { authoringDispatchIsActive } from "./workflow-authoring-dispatch.js";
 import type {
   AuthoringInteraction,
   AuthoringSession,
@@ -47,6 +48,7 @@ function sameTarget(frozen: JsonRecord, session: AuthoringSession): boolean {
 function authoringFrozenIdentityFromSession(
   record: DurableWorkflowRecord,
   session: AuthoringSession,
+  allowApprovedTitle = false,
 ): JsonRecord | undefined {
   if (
     record.kind !== "author-test" ||
@@ -60,7 +62,7 @@ function authoringFrozenIdentityFromSession(
     session.workflowRequestId !== frozen.workflowRequestId ||
     session.actorId !== frozen.actorId ||
     session.appMapId !== frozen.appMapId ||
-    session.testName !== frozen.title ||
+    (!allowApprovedTitle && session.testName !== frozen.title) ||
     session.sourceScreenId !== frozen.sourceScreenId ||
     session.pendingConnectionId !== frozen.pendingConnectionId ||
     (session.group?.trim() || undefined) !==
@@ -92,7 +94,7 @@ export function authoringIdentityAfterMutation(
 ): WorkflowJsonValue | undefined {
   const exact = authoringIdentityFromSession(record, session);
   if (exact) return exact;
-  const frozen = authoringFrozenIdentityFromSession(record, session);
+  const frozen = authoringFrozenIdentityFromSession(record, session, true);
   if (!frozen) return undefined;
   const frozenRevision = frozen.appMapRevision;
   if (
@@ -289,6 +291,9 @@ export async function reconcileAuthoring(
   }
   if (!session) return { workflow };
   const pending = pendingAuthoringMutation(workflow.record);
+  // A GET is allowed to recover an interrupted dispatch, never to race one
+  // still executing in this process. Its completion will commit the receipt.
+  if (authoringDispatchIsActive(scope, workflow.record.workflowId)) return { workflow, session };
   const transition =
     pending && pendingOutcomeIsProven(workflow.record, session)
       ? `${pending.action}-reconciled`

@@ -1,9 +1,7 @@
 import {
   accountFixtureIdsFromListed,
   bindRequestedBrowserIdentity,
-  currentOperationContext,
-  listBrowserAuthenticationFixtures,
-} from "@relay/core";
+} from "@relay/core/browser-execution-identity";
 import type { OperationInput, OperationOutput } from "@relay/protocol";
 import {
   createRelayOperationPort,
@@ -440,13 +438,14 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
           ? profiles[0]
           : undefined;
       const saved = profile?.browserCaseProfile;
-      const projectId = currentOperationContext()?.projectId;
-      const listed = projectId
-        ? await listBrowserAuthenticationFixtures({
-            projectId,
-            targetId: intent.target.targetId,
-          })
-        : [];
+      const listed =
+        intent.target.kind === "browser" && intent.account?.kind === "fixture"
+          ? (
+              await this.operations.invoke("target.browser-auth.list", {
+                targetId: intent.target.targetId,
+              })
+            ).fixtures
+          : [];
       const bound = bindRequestedBrowserIdentity({
         requested: {
           ...(intent.engine ? { engine: intent.engine } : {}),

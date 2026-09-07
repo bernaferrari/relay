@@ -36,6 +36,7 @@ export function LiveTargetCanvas({
   layout = "stage",
   overlay,
   toolbar,
+  showTargetDetails = true,
 }: {
   canvasRef: RefObject<HTMLCanvasElement | null>;
   status: LiveTargetStatus;
@@ -50,6 +51,7 @@ export function LiveTargetCanvas({
   layout?: "stage" | "rail";
   overlay?: ReactNode;
   toolbar?: ReactNode;
+  showTargetDetails?: boolean;
 }) {
   const [text, setText] = useState("");
   const helpId = `${useId()}-help`;
@@ -86,7 +88,7 @@ export function LiveTargetCanvas({
 
   function pointerDown(event: PointerEvent<HTMLCanvasElement>) {
     if (!streaming) return;
-    event.currentTarget.focus();
+    event.currentTarget.focus({ preventScroll: true });
     event.currentTarget.setPointerCapture(event.pointerId);
     pointerStart.current = point(event);
   }
@@ -244,24 +246,26 @@ export function LiveTargetCanvas({
             : "flex items-center justify-between gap-4 border-t border-border p-3 max-[700px]:grid"
         }
       >
-        <div className="grid min-w-0 gap-0.5">
-          <strong className="text-sm font-semibold">{targetTitle}</strong>
-          <span className="text-xs text-muted-foreground">{targetDetail}</span>
-          {browserContext ? (
-            <span
-              aria-label="Current browser configuration"
-              className="break-words text-xs text-muted-foreground"
-            >
-              {browserContext.engine[0]?.toUpperCase()}
-              {browserContext.engine.slice(1)} · {browserContext.viewport.width}×
-              {browserContext.viewport.height} · {browserContext.locale}
-              {browserContext.authenticationFixtureId
-                ? ` · Account reference ${browserContext.authenticationFixtureId}`
-                : ""}
-            </span>
-          ) : null}
-        </div>
-        <div className="flex items-center gap-2">
+        {showTargetDetails ? (
+          <div className="grid min-w-0 gap-0.5">
+            <strong className="text-sm font-semibold">{targetTitle}</strong>
+            <span className="text-xs text-muted-foreground">{targetDetail}</span>
+            {browserContext ? (
+              <span
+                aria-label="Current browser configuration"
+                className="break-words text-xs text-muted-foreground"
+              >
+                {browserContext.engine[0]?.toUpperCase()}
+                {browserContext.engine.slice(1)} · {browserContext.viewport.width}×
+                {browserContext.viewport.height} · {browserContext.locale}
+                {browserContext.authenticationFixtureId
+                  ? ` · Account reference ${browserContext.authenticationFixtureId}`
+                  : ""}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+        <div className="flex w-full items-end gap-3">
           {toolbar}
           <label className="relay-visually-hidden sr-only" htmlFor={textInputId}>
             Text to type into the focused field

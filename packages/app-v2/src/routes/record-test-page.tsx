@@ -1,3 +1,5 @@
+import { RecordingInputRecovery } from "./recording-input-recovery";
+import { RecordingScreenCapture } from "./recording-screen-capture";
 /** @jsxImportSource react */
 import {
   Dialog,
@@ -8,15 +10,13 @@ import {
   DialogDescription,
 } from "@relay/ui-react/components/dialog";
 import { ScrollArea } from "@relay/ui-react/components/scroll-area";
-import { Field, FieldLabel } from "@relay/ui-react/components/field";
 import { Button } from "@relay/ui-react/components/button";
 import { PageHeader } from "../components/page-layout";
 
-import { Input } from "@relay/ui-react/components/input";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
+import { getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { ArrowLeft, BookmarkPlus, CheckCircle2, Circle } from "lucide-react";
+import { Camera } from "lucide-react";
 import type {
   LiveTargetBrowserContext,
   LiveTargetSession,
@@ -54,7 +54,10 @@ import {
 const testRouteApi = getRouteApi("/tests/$testId/record");
 const recordingRouteApi = getRouteApi("/recordings/$recordingId");
 
-type CaptureAction = { action: "checkpoint"; label?: string } | { action: "stop" };
+type CaptureAction =
+  | { action: "checkpoint"; label?: string }
+  | { action: "stop" }
+  | { action: "cancel" };
 
 export function RecordTestPage() {
   const { testId } = testRouteApi.useParams();
@@ -108,11 +111,23 @@ function RecordingWorkspace({
   const action = useMutation({
     mutationFn: async (intent: CaptureAction) => {
       if (intent.action === "checkpoint") return productService.checkpoint(intent.label);
+      if (intent.action === "cancel") {
+        if (!productService.cancel) throw new Error("Cancel recording is unavailable.");
+        await liveInputQueue.current;
+        return productService.cancel();
+      }
       return productService.stop();
     },
     onSuccess: async (state, intent) => {
       const canonical = await refreshRecording(queryClient, productService, workflowId);
       if (state.recovery || canonical.recovery) return;
+      if (intent.action === "cancel" && canonical.snapshot?.stage === "cancelled") {
+        await clearWorkflowPointerIfCurrent(platform, workflowId);
+        queryClient.setQueryData(recordingQueryKeys.pointer, null);
+        queryClient.setQueryData(recordingQueryKeys.reconciledPointer, null);
+        await navigate({ to: "/tests" });
+        return;
+      }
       if (intent.action === "checkpoint") {
         setCheckpointLabel("");
         setCheckpointOpen(false);
@@ -141,8 +156,9 @@ function RecordingWorkspace({
         queryClient.setQueryData<string | null>(recordingQueryKeys.pointer, null);
         queryClient.setQueryData<string | null>(recordingQueryKeys.reconciledPointer, null);
       }
+      void navigate({ to: "/tests" });
     });
-  }, [platform, queryClient, snapshot?.stage, workflowId]);
+  }, [navigate, platform, queryClient, snapshot?.stage, workflowId]);
 
   function saveCheckpoint(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -429,56 +445,49 @@ function RecordingWorkspace({
       <div className="border-b border-border px-5 py-2 relay-electron-drag [-webkit-app-region:drag] [&_.relay-workspace-header]:mb-0 [&_.relay-workspace-header]:mt-0">
         <Dialog open={exitOpen} onOpenChange={setExitOpen}>
           <DialogContent showCloseButton={false}>
-            <DialogTitle>Leave this recording?</DialogTitle>
+            <DialogTitle>Cancel recording?</DialogTitle>
             <DialogDescription>
-              Keep recording and come back later, or stop now to review the steps. Leaving does not
-              discard your work.
+              End this recording without saving a Test. Captured evidence remains available in
+              Activity. To keep the steps as a Test, choose Stop and review instead.
             </DialogDescription>
-            <div className="relay-dialog-actions flex flex-wrap items-center justify-end gap-2.5">
-              <DialogClose render={<Button variant="ghost">Keep recording</Button>} />
+            <div className="flex justify-end gap-2 pt-4">
+              <DialogClose render={<Button variant="outline">Keep recording</Button>} />
               <Button
-                variant="outline"
-                nativeButton={false}
-                render={
-                  exitDestination.kind === "new" ? (
-                    <Link to="/sessions" />
-                  ) : (
-                    <Link to="/tests/$testId" params={{ testId: exitDestination.testId }} />
-                  )
-                }
-                onClick={() => setExitOpen(false)}
-              >
-                Leave running
-              </Button>
-              <Button
-                variant="default"
+                variant="destructive"
+                disabled={action.isPending || liveInputBusy || !productService.cancel}
                 onClick={() => {
                   setExitOpen(false);
-                  void stopAfterInputDrain();
+                  action.mutate({ action: "cancel" });
                 }}
-                disabled={!allowed.has("stop") || action.isPending || stopWaitingForInput}
               >
-                {stopWaitingForInput ? "Finishing interaction…" : "Stop"}
+                Cancel recording
               </Button>
             </div>
           </DialogContent>
           <PageHeader
-            crumbs={[
-              { label: "Tests", to: "/tests" },
-              {
-                label: snapshot?.title ?? (exitDestination.kind === "new" ? "Record Test" : "Test"),
-              },
-              { label: "Record" },
-            ]}
-            title={snapshot?.title ?? "Preparing Test"}
+            title={
+              recording.isError || recording.data?.recovery
+                ? "Recording interrupted"
+                : "Record a Test"
+            }
             description={
-              <span className="inline-flex items-center gap-1.5">
+              <span className="inline-flex items-center gap-2 text-sm">
                 <span
-                  className={captureReady ? "relay-recording-dot" : "relay-recording-idle-dot"}
+                  className={
+                    captureReady
+                      ? "size-2 rounded-full bg-red-500"
+                      : "size-2 rounded-full bg-muted-foreground"
+                  }
                   aria-hidden="true"
                 />
-                {captureReady ? "Recording" : "Restoring recording"}
-                {snapshot?.progress.label ? ` · ${snapshot.progress.label}` : ""}
+                {captureReady
+                  ? "Recording"
+                  : recording.isPending
+                    ? "Opening recording…"
+                    : "Recording paused"}
+                {selectedTarget
+                  ? ` · ${targetLabel(targetPresentation.data?.[0] ?? selectedTarget).title}`
+                  : ""}
               </span>
             }
             actions={
@@ -492,8 +501,7 @@ function RecordingWorkspace({
                     />
                   }
                 >
-                  <ArrowLeft aria-hidden="true" />
-                  Leave
+                  Cancel
                 </DialogTrigger>
                 <Button
                   className="relay-electron-no-drag [-webkit-app-region:no-drag]"
@@ -502,7 +510,7 @@ function RecordingWorkspace({
                   onClick={() => void stopAfterInputDrain()}
                   disabled={!allowed.has("stop") || action.isPending || stopWaitingForInput}
                 >
-                  {stopWaitingForInput ? "Finishing interaction…" : "Stop"}
+                  {stopWaitingForInput ? "Finishing interaction…" : "Stop and review"}
                 </Button>
               </>
             }
@@ -510,24 +518,42 @@ function RecordingWorkspace({
         </Dialog>
       </div>
 
-      <div className="min-h-0 overflow-auto p-[clamp(20px,4vw,44px)]">
+      <div className="min-h-0 overflow-auto p-5">
         {recording.isPending ? <PageLoading label="Restoring the recording…" /> : null}
-        <RecordingProblem
-          error={recording.error ?? action.error}
-          recovery={action.data?.recovery ?? recording.data?.recovery}
-          onRetry={() => void recording.refetch()}
-          retrying={recording.isFetching}
-        />
+        {recording.isError || recording.data?.recovery ? (
+          <div className="mx-auto grid max-w-md gap-4 rounded-xl border border-border bg-card p-6">
+            <h2 className="text-lg font-semibold">Let’s get back to your recording</h2>
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              Relay couldn’t reopen this session. Retry the connection, or return to your Tests.
+              Previously captured steps remain saved.
+            </p>
+            <div className="flex gap-2">
+              <Button disabled={recording.isFetching} onClick={() => void recording.refetch()}>
+                {recording.isFetching ? "Reconnecting…" : "Reconnect"}
+              </Button>
+              <Button variant="outline" onClick={() => void navigate({ to: "/tests" })}>
+                Back to Tests
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <RecordingProblem
+            error={recording.error ?? action.error}
+            recovery={action.data?.recovery ?? recording.data?.recovery}
+            onRetry={() => void recording.refetch()}
+            retrying={recording.isFetching}
+          />
+        )}
 
         {!recording.isPending && snapshot && captureReady ? (
-          <div className="grid h-full min-h-[360px] w-full grid-cols-[minmax(240px,280px)_minmax(0,1fr)] gap-3.5 max-[980px]:grid-cols-1">
+          <div className="grid h-full min-h-[360px] w-full grid-cols-[minmax(220px,260px)_minmax(0,1fr)] gap-3.5 max-[980px]:grid-cols-1">
             <aside
               className="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-xl border border-border bg-card max-[980px]:order-last"
               aria-labelledby="capture-timeline-title"
             >
               <div className="flex items-center justify-between gap-3 border-b border-border p-3.5">
                 <h2 id="capture-timeline-title" className="text-[13px] font-medium">
-                  Steps
+                  Recorded steps
                 </h2>
                 <span className="text-xs tabular-nums text-muted-foreground">
                   {recordedActions.length}
@@ -538,26 +564,23 @@ function RecordingWorkspace({
                   <ol className="grid list-none gap-1.5 p-3">
                     {recordedActions.map((recorded, index) => (
                       <li
-                        className="grid grid-cols-[18px_minmax(0,1fr)_auto] items-start gap-2 rounded-md px-1 py-1.5"
+                        className="flex items-start gap-3 rounded-lg border border-border/60 bg-background/50 p-3"
                         key={recorded.id}
                       >
-                        {recorded.stepCount === 0 ? (
-                          <CheckCircle2 aria-hidden="true" />
-                        ) : (
-                          <Circle aria-hidden="true" />
-                        )}
+                        <span className="grid size-6 shrink-0 place-items-center rounded-md bg-muted text-xs tabular-nums text-muted-foreground">
+                          {recorded.stepCount === 0 ? (
+                            <Camera className="size-3.5" aria-hidden="true" />
+                          ) : (
+                            index + 1
+                          )}
+                        </span>
                         <span className="grid min-w-0 gap-0.5">
                           <strong className="break-words text-sm font-medium leading-snug">
                             {recorded.label ?? recorded.intent}
                           </strong>
-                          <small className="text-xs text-muted-foreground">
-                            {recorded.stepCount === 0
-                              ? "Marked screen"
-                              : `${recorded.stepCount} ${recorded.stepCount === 1 ? "step" : "steps"}`}
-                          </small>
-                        </span>
-                        <span className="pt-0.5 text-xs tabular-nums text-muted-foreground">
-                          {index + 1}
+                          {recorded.stepCount === 0 ? (
+                            <small className="text-xs text-muted-foreground">Screen capture</small>
+                          ) : null}
                         </span>
                       </li>
                     ))}
@@ -578,13 +601,15 @@ function RecordingWorkspace({
                   <LiveTargetCanvas
                     canvasRef={liveCanvas}
                     status={liveStatus}
-                    issue={liveIssue}
+                    issue={recoveryKind === "unknown" ? undefined : liveIssue}
                     busy={liveInputBusy}
                     targetTitle={targetLabel(targetPresentation.data?.[0] ?? selectedTarget).title}
                     targetDetail={
                       targetLabel(targetPresentation.data?.[0] ?? selectedTarget).detail
                     }
                     browserContext={browserContext}
+                    showTargetDetails={false}
+                    helpText="Click the app to record a step. Drag to scroll."
                     send={sendLiveInput}
                     overlay={
                       talkBack.on && talkBack.mode !== "off" ? (
@@ -619,86 +644,44 @@ function RecordingWorkspace({
         ) : null}
       </div>
 
-      <footer className="flex items-center justify-end gap-2" aria-label="Recording controls">
-        {recoveryKind === "unknown" ? (
-          <div
-            className="mr-auto flex min-w-0 flex-wrap items-center gap-2"
-            role="group"
-            aria-label="Observe the last interaction"
-          >
-            <p className="max-w-xl text-sm text-muted-foreground">
-              {liveIssue ??
-                "Relay could not confirm whether the last interaction reached the app. Observe the app before sending more input."}
-            </p>
+      {captureReady ? (
+        <footer
+          className="flex flex-wrap items-center justify-end gap-3 border-t border-border px-5 py-3"
+          aria-label="Recording controls"
+        >
+          {recoveryKind === "unknown" ? (
+            <RecordingInputRecovery
+              issue={liveIssue}
+              failure={unresolvedRecordingMutation(recordingLedger.current, "unknown")}
+              busy={liveInputBusy}
+              onObserve={observeLastUnknownMutation}
+            />
+          ) : null}
+          {recoveryKind === "refresh-failed" ? (
             <Button
               variant="outline"
               disabled={liveInputBusy}
-              onClick={() => void observeLastUnknownMutation("applied")}
+              onClick={() => void recoverRecordingRefreshOnly()}
             >
-              It applied
+              Refresh recording
             </Button>
-            <Button
-              variant="outline"
-              disabled={liveInputBusy}
-              onClick={() => void observeLastUnknownMutation("not-observed")}
-            >
-              It did not apply
-            </Button>
-            <Button
-              variant="outline"
-              disabled={liveInputBusy}
-              onClick={() => void observeLastUnknownMutation("uncertain")}
-            >
-              Not sure
-            </Button>
-          </div>
-        ) : null}
-        {recoveryKind === "refresh-failed" ? (
-          <Button
-            variant="outline"
-            disabled={liveInputBusy}
-            onClick={() => void recoverRecordingRefreshOnly()}
-          >
-            Refresh recording
-          </Button>
-        ) : null}
-        <Dialog open={checkpointOpen} onOpenChange={setCheckpointOpen}>
-          <DialogTrigger
-            render={
-              <Button variant="outline" disabled={!allowed.has("checkpoint") || action.isPending}>
-                <BookmarkPlus aria-hidden="true" />
-                Mark screen
-              </Button>
+          ) : null}
+          <RecordingScreenCapture
+            open={checkpointOpen}
+            onOpenChange={setCheckpointOpen}
+            disabled={
+              !allowed.has("checkpoint") ||
+              action.isPending ||
+              liveInputBusy ||
+              recoveryKind === "unknown"
             }
+            pending={action.isPending}
+            label={checkpointLabel}
+            onLabelChange={setCheckpointLabel}
+            onSubmit={saveCheckpoint}
           />
-          <DialogContent
-            showCloseButton={false}
-            className="max-h-[min(720px,calc(100dvh-32px))] overflow-auto"
-          >
-            <DialogTitle>Mark this screen</DialogTitle>
-            <DialogDescription>Name a screen this Test should verify later.</DialogDescription>
-            <form onSubmit={saveCheckpoint}>
-              <Field>
-                <FieldLabel htmlFor="checkpoint-label">Name</FieldLabel>
-                <Input
-                  id="checkpoint-label"
-                  value={checkpointLabel}
-                  onChange={(event) => setCheckpointLabel(event.currentTarget.value)}
-                  placeholder="For example, Order confirmation"
-                  maxLength={160}
-                  autoComplete="off"
-                />
-              </Field>
-              <div className="relay-dialog-actions flex flex-wrap items-center justify-end gap-2.5">
-                <DialogClose render={<Button variant="ghost">Cancel</Button>} />
-                <Button type="submit" variant="default" disabled={action.isPending}>
-                  {action.isPending ? "Saving…" : "Save"}
-                </Button>
-              </div>
-            </form>
-          </DialogContent>
-        </Dialog>
-      </footer>
+        </footer>
+      ) : null}
     </section>
   );
 }

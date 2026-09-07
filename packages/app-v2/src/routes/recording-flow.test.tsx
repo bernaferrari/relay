@@ -610,7 +610,7 @@ describe("record, review, replay, and save", () => {
 
     await beginRecording();
     expect(history.location.pathname).toBe("/recordings/workflow-1");
-    expect(document.body.textContent).toContain("Relay records each supported interaction");
+    expect(document.body.textContent).toContain("Click the app to record a step");
     expect(document.body.textContent).toContain("Pixel 9 Pro");
     expect(document.body.textContent).not.toContain("emulator-5554");
     const liveTextInput = document.querySelector<HTMLInputElement>(
@@ -625,11 +625,11 @@ describe("record, review, replay, and save", () => {
       "Arabic",
     );
     await click(button("Type"));
-    await click(button("Mark screen"));
+    await click(button("Capture screen"));
     const checkpoint = document.querySelector<HTMLInputElement>("#checkpoint-label")!;
     await fill(checkpoint, "Language screen");
     await click(button("Save"));
-    await click(button("Stop"));
+    await click(button("Stop and review"));
 
     expect(history.location.pathname).toBe("/tests/new");
     expect(String(history.location.search)).toContain("view=review");
@@ -656,7 +656,7 @@ describe("record, review, replay, and save", () => {
     expect(storage.values.has("activeRecordingWorkflowId")).toBe(false);
     expect(fake.calls).toEqual(
       expect.arrayContaining([
-        "begin:Untitled recording:app-1:emulator-5554",
+        "begin:Grok recording:app-1:emulator-5554",
         "input:touch",
         "input:scroll",
         "input:key",
@@ -706,7 +706,7 @@ describe("record, review, replay, and save", () => {
     expect(inputStarted).toBe(true);
 
     await act(async () => {
-      button("Stop").click();
+      button("Stop and review").click();
     });
     await settle();
     expect(fake.calls).not.toContain("stop");
@@ -768,10 +768,7 @@ describe("record, review, replay, and save", () => {
     expect(document.body.textContent).toContain(
       "Relay tried Preferred language as the saved binding.",
     );
-    expect(fake.calls.filter((call) => call === "input:touch")).toEqual([
-      "input:touch",
-      "input:touch",
-    ]);
+    expect(fake.calls.filter((call) => call === "input:tap")).toEqual(["input:tap"]);
     await click(button("Keep target"));
 
     expect(fake.edits).toContainEqual({
@@ -897,7 +894,7 @@ describe("record, review, replay, and save", () => {
     const storage = platformWithStorage();
     await renderJourney("/recordings/workflow-1", fake.service, storage.platform);
 
-    expect(document.body.textContent).toContain("Relay records each supported interaction");
+    expect(document.body.textContent).toContain("Click the app to record a step");
     expect(fake.calls).toContain("inspect:workflow-1");
     expect(storage.values.get("activeRecordingWorkflowId")).toBe("workflow-1");
   });
@@ -907,7 +904,7 @@ describe("record, review, replay, and save", () => {
     const storage = platformWithStorage();
     await renderJourney("/tests/test-1/record", fake.service, storage.platform);
 
-    expect(document.body.textContent).toContain("Relay records each supported interaction");
+    expect(document.body.textContent).toContain("Click the app to record a step");
     expect(fake.calls).toContain("inspect:test-1");
     expect(storage.values.get("activeRecordingWorkflowId")).toBe("test-1");
   });
@@ -973,11 +970,11 @@ describe("record, review, replay, and save", () => {
     expect(document.body.textContent).toContain("Tap the highlighted control");
     expect(document.body.textContent).toContain("Tap Arabic");
     expect(document.body.textContent).not.toContain("Tap target");
-    expect(document.body.textContent).toContain("Marked screen");
+    expect(document.body.textContent).toContain("Screen capture");
     expect(document.body.textContent).toContain("Pause");
     expect(document.body.textContent).toContain("Relay waited before the next step");
     expect(document.body.textContent).toContain("Language settings visible");
-    expect(document.body.textContent).toContain("Marked screen · Visual evidence");
+    expect(document.body.textContent).toContain("Screen capture · Visual evidence");
     expect(document.body.textContent).toContain("Verified by Relay");
     expect(document.body.textContent).toContain("Ready to save");
     expect(document.body.textContent).toContain("Review the steps, then save the Test");
@@ -1033,11 +1030,11 @@ describe("record, review, replay, and save", () => {
     const storage = platformWithStorage();
     await renderJourney("/recordings/workflow-1", fake.service, storage.platform);
 
-    expect(document.body.textContent).toContain("Restoring recording");
+    expect(document.body.textContent).toContain("Recording paused");
     expect(document.body.textContent).not.toContain("Continue on the connected target");
-    expect(document.body.textContent).not.toContain("Relay records each supported interaction");
-    expect(button("Mark screen").disabled).toBe(true);
-    expect(button("Stop").disabled).toBe(true);
+    expect(document.body.textContent).not.toContain("Click the app to record a step");
+    expect(document.body.textContent).not.toContain("Capture screen");
+    expect(button("Stop and review").disabled).toBe(true);
   });
 
   it("does not show target choices from a failed connection", async () => {
@@ -1231,16 +1228,16 @@ describe("record, review, replay, and save", () => {
     await tapLiveTarget();
 
     expect(inputCount).toBe(1);
-    expect(document.body.textContent).toContain("Observe the app");
+    expect(document.body.textContent).toContain("Recording paused: Relay lost confirmation");
     expect(document.body.textContent).not.toMatch(/was not sent/i);
     expect(document.body.textContent).not.toContain("Refresh recording");
     expect(button("It applied")).toBeTruthy();
     expect(button("It did not apply")).toBeTruthy();
-    expect(button("Not sure")).toBeTruthy();
+    expect(document.body.textContent).toContain("leave the recording paused");
 
     await tapLiveTarget();
     expect(inputCount).toBe(1);
-    await click(button("Stop"));
+    await click(button("Stop and review"));
     expect(fake.calls).not.toContain("stop");
     expect(history.location.pathname).toBe("/recordings/workflow-1");
 
@@ -1248,10 +1245,10 @@ describe("record, review, replay, and save", () => {
     expect(
       fake.calls.some((call) => call.startsWith("reconcile:") && call.endsWith(":applied")),
     ).toBe(true);
-    expect(document.body.textContent).not.toContain("Observe the app");
+    expect(document.body.textContent).not.toContain("Recording paused: Relay lost confirmation");
     await tapLiveTarget();
     expect(inputCount).toBe(2);
-    await click(button("Stop"));
+    await click(button("Stop and review"));
     expect(fake.calls).toContain("stop");
     expect(history.location.pathname).toBe("/tests/new");
     expect(String(history.location.search)).toContain("view=review");
@@ -1287,8 +1284,7 @@ describe("record, review, replay, and save", () => {
     expect(document.body.textContent).not.toMatch(/was not sent/i);
     await tapLiveTarget();
     expect(inputCount).toBe(1);
-    await click(button("Not sure"));
-    expect(document.body.textContent).toContain("not sure");
+    expect(document.body.textContent).toContain("leave the recording paused");
     await tapLiveTarget();
     expect(inputCount).toBe(1);
   });
@@ -1323,15 +1319,15 @@ describe("record, review, replay, and save", () => {
     await settle();
 
     expect(fake.calls).toContain("inspect-target-health");
-    expect(document.body.textContent).toContain("Observe the app");
+    expect(document.body.textContent).toContain("Recording paused: Relay lost confirmation");
     expect(button("It applied")).toBeTruthy();
     expect(button("It did not apply")).toBeTruthy();
-    expect(button("Not sure")).toBeTruthy();
+    expect(document.body.textContent).toContain("leave the recording paused");
     await tapLiveTarget();
     expect(inputCount).toBe(0);
     await click(button("It applied"));
     expect(fake.calls).toContain("reconcile:ios-input-reviewed:applied");
-    expect(document.body.textContent).not.toContain("Observe the app");
+    expect(document.body.textContent).not.toContain("Recording paused: Relay lost confirmation");
     await tapLiveTarget();
     expect(inputCount).toBe(1);
   });

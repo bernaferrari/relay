@@ -32,6 +32,8 @@ export type DeviceProductService = {
   list(): Promise<readonly ProductDevice[]>;
   get(deviceId: string): Promise<ProductDevice | undefined>;
   actions(): Promise<readonly ActionSummary[]>;
+  listEmulators?(): Promise<OperationOutput<"target.avds.list">["inventory"]>;
+  startEmulator?(avdName: string): Promise<OperationOutput<"target.avd.boot">["boot"]>;
   recover(
     serial: string,
     reason?: "connect" | "observe" | "control" | "record" | "auto",
@@ -123,7 +125,14 @@ function project(device: DeviceSummary): ProductDevice {
     platform: device.platform,
     kind: device.kind,
     ...(device.osVersion ? { osVersion: device.osVersion } : {}),
-    status: virtual ? "virtual" : targetReadiness.runnable ? "ready" : "needs-attention",
+    status:
+      device.platform === "browser"
+        ? "virtual"
+        : !targetReadiness.runnable
+          ? "needs-attention"
+          : virtual
+            ? "virtual"
+            : "ready",
     runnable: targetReadiness.runnable,
     ...(targetReadiness.runnable ? {} : { recovery: targetReadiness.recovery }),
     device,
@@ -146,6 +155,12 @@ export function createDeviceProductService(platform: Platform): DeviceProductSer
   }
   return {
     list: listDevices,
+    async listEmulators() {
+      return (await (await client()).invoke("target.avds.list", {})).inventory;
+    },
+    async startEmulator(avdName) {
+      return (await (await client()).invoke("target.avd.boot", { avdName })).boot;
+    },
     async get(deviceId) {
       return (await listDevices()).find(
         (device) => device.id === deviceId || device.serial === deviceId,

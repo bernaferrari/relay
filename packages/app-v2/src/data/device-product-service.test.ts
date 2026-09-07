@@ -49,3 +49,18 @@ describe("device product projection", () => {
     expect(devices.find((device) => device.id === "offline")?.recovery).toMatch(/reconnect/i);
   });
 });
+
+it("never advertises a stopped simulator as ready", () => {
+  const [device] = projectDevices([
+    {
+      id: "stopped",
+      name: "iPad",
+      serial: "stopped",
+      platform: "ios",
+      kind: "simulator",
+      booted: false,
+    },
+  ]);
+  expect(device?.status).toBe("needs-attention");
+  expect(device?.runnable).toBe(false);
+});

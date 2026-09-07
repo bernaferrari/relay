@@ -132,7 +132,24 @@ export function parseRecordingLedger(raw: string | null | undefined): RecordingR
     ) {
       return { mutations: [] };
     }
-    return { mutations: (value as RecordingRecoveryLedger).mutations };
+    return {
+      mutations: (value as RecordingRecoveryLedger).mutations.map((mutation) => {
+        // This exact legacy error was raised by the renderer before onInteraction.
+        // Never reinterpret a server-owned mutation or a generic transport failure.
+        if (
+          mutation.kind === "unknown" &&
+          mutation.mutationId?.startsWith("recording-mutation-") &&
+          mutation.message === "Relay could not verify the device size. Reconnect before recording."
+        ) {
+          return {
+            ...mutation,
+            kind: "not-dispatched" as const,
+            message: "Relay couldn’t read the device screen size.",
+          };
+        }
+        return mutation;
+      }),
+    };
   } catch {
     return { mutations: [] };
   }
@@ -184,6 +201,9 @@ export function recordingReconcileServerOutcome(
   return "ambiguous";
 }
 
+/** Only thrown before a device mutation is dispatched. */
+export class RecordingInputNotSentError extends Error {}
+
 /** Post-send transport errors stay unknown unless a typed receipt or a local
  * pre-dispatch check proved the input never left this client. */
 export function classifyDispatchFailure(
@@ -191,6 +211,7 @@ export function classifyDispatchFailure(
   receipt?: RecordingDispatchReceipt,
 ): RecordingInputOutcome {
   const message = errorText(error);
+  if (error instanceof RecordingInputNotSentError) return { kind: "not-dispatched", message };
   if (receipt?.kind === "local-preflight-refused") {
     return { kind: "not-dispatched", message: receipt.message };
   }
@@ -209,12 +230,12 @@ export function classifyDispatchFailure(
 export function recordingInputRecoveryMessage(outcome: RecordingInputOutcome): string | undefined {
   if (outcome.kind === "confirmed") return undefined;
   if (outcome.kind === "not-dispatched") {
-    return "The last interaction was not sent. Try it again before stopping.";
+    return `The interaction was not sent. ${outcome.message} You can try again.`;
   }
   if (outcome.kind === "refresh-failed") {
     return "The interaction reached the app, but Relay could not refresh the recording. Refresh the steps instead of tapping again.";
   }
-  return "Relay could not confirm whether the last interaction reached the app. Observe the app before sending more input.";
+  return "Recording paused: Relay lost confirmation of the last interaction. Check the app preview below before continuing; sending it again could repeat the action.";
 }
 
 export function recordingRecoveryBlocksSend(ledger: RecordingRecoveryLedger | undefined): boolean {

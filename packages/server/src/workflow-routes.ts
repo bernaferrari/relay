@@ -49,6 +49,7 @@ import {
   type RepeatWorkflowTransitionInput,
 } from "./workflow-repeat-transition.js";
 import { handleWorkflowCreateRoute } from "./workflow-create-route.js";
+import { trackAuthoringDispatch } from "./workflow-authoring-dispatch.js";
 
 const terminalJobStatuses = new Set([
   "ok",
@@ -392,277 +393,282 @@ export async function handleWorkflowRoute(input: {
       return true;
     }
     if (current.record.kind === "author-test") {
-      const frozen = jsonRecord(current.record.frozenIdentity);
-      if (!frozen) workflowNotFound();
-      if (body.action === "start-authoring") {
-        if (current.record.resource || current.record.lastTransition !== "created") {
-          throw new HttpError(409, "Authoring start has already been dispatched");
+      const finishDispatch = trackAuthoringDispatch(input.scope, current.record.workflowId);
+      try {
+        const frozen = jsonRecord(current.record.frozenIdentity);
+        if (!frozen) workflowNotFound();
+        if (body.action === "start-authoring") {
+          if (current.record.resource || current.record.lastTransition !== "created") {
+            throw new HttpError(409, "Authoring start has already been dispatched");
+          }
+          const target = jsonRecord(frozen.target);
+          if (
+            typeof frozen.workflowRequestId !== "string" ||
+            typeof frozen.title !== "string" ||
+            typeof frozen.appMapId !== "string" ||
+            typeof frozen.appMapRevision !== "number" ||
+            !Number.isSafeInteger(frozen.appMapRevision) ||
+            !target ||
+            (target.kind !== "device" && target.kind !== "browser") ||
+            typeof target.platform !== "string" ||
+            typeof target.targetId !== "string"
+          ) {
+            throw new HttpError(409, "Authoring workflow identity is invalid");
+          }
+          await runtime.assertAuthoringStartAccess(input.scope, target.targetId, body.leaseId);
+          const reserved = await runtime.transitionWorkflow({
+            organizationId: input.scope.organizationId,
+            projectId: input.scope.projectId,
+            workflowId: current.record.workflowId,
+            expectedVersion: body.expectedVersion,
+            actorId,
+            transition: "start-authoring-requested",
+            status: "active",
+            at,
+          });
+          if (reserved.status !== "updated") {
+            throw new HttpError(409, "Workflow version changed before Authoring began");
+          }
+          let session: AuthoringSession;
+          try {
+            session = await runtime.beginAuthoringSession(
+              input.scope,
+              {
+                appMapId: frozen.appMapId,
+                workflowRequestId: frozen.workflowRequestId,
+                testName: frozen.title,
+                target: {
+                  kind: target.kind,
+                  platform: target.platform as "android" | "ios" | "browser",
+                  targetId: target.targetId,
+                } as CreateAuthoringSessionInput["target"],
+                leaseId: body.leaseId,
+                expectedAppMapRevision: frozen.appMapRevision,
+                ...(typeof frozen.sourceScreenId === "string"
+                  ? { sourceScreenId: frozen.sourceScreenId }
+                  : {}),
+                ...(typeof frozen.pendingConnectionId === "string"
+                  ? { pendingConnectionId: frozen.pendingConnectionId }
+                  : {}),
+                ...(typeof frozen.group === "string" ? { group: frozen.group } : {}),
+              },
+              runtime.authoringRuntime,
+            );
+          } catch (error) {
+            await runtime.transitionWorkflow({
+              organizationId: input.scope.organizationId,
+              projectId: input.scope.projectId,
+              workflowId: current.record.workflowId,
+              expectedVersion: reserved.workflow.record.version,
+              actorId,
+              transition: "start-authoring-outcome-unknown",
+              status: "needs-attention",
+              at: runtime.now(),
+            });
+            throw new HttpError(
+              409,
+              error instanceof Error ? error.message : "Authoring start outcome is unknown",
+            );
+          }
+          if (!authoringIdentityFromSession(current.record, session)) {
+            throw new HttpError(409, "Authoring start returned a different canonical session");
+          }
+          const attached = await runtime.transitionWorkflow({
+            organizationId: input.scope.organizationId,
+            projectId: input.scope.projectId,
+            workflowId: current.record.workflowId,
+            expectedVersion: reserved.workflow.record.version,
+            actorId,
+            transition: "authoring-started",
+            status: authoringIsTerminal(session) ? "terminal" : "active",
+            resource: { kind: "authoring-session", id: session.id },
+            at: runtime.now(),
+          });
+          if (attached.status !== "updated") {
+            throw new HttpError(409, "Authoring began but workflow reconciliation changed");
+          }
+          json(input.response, 200, { workflow: attached.workflow, session });
+          return true;
         }
-        const target = jsonRecord(frozen.target);
+        if (body.action === "authoring-abandon") {
+          const hasCanonicalSession = current.record.resource?.kind === "authoring-session";
+          const unprovenStart =
+            !hasCanonicalSession &&
+            (current.record.lastTransition === "start-authoring-requested" ||
+              current.record.lastTransition === "start-authoring-outcome-unknown");
+          const unresolvedWithoutSession =
+            !hasCanonicalSession && current.record.status === "needs-attention";
+          if (!unprovenStart && !unresolvedWithoutSession) {
+            throw new HttpError(
+              409,
+              "Authoring can be abandoned only when no canonical session can be safely continued",
+            );
+          }
+          const abandoned = await runtime.transitionWorkflow({
+            organizationId: input.scope.organizationId,
+            projectId: input.scope.projectId,
+            workflowId: current.record.workflowId,
+            expectedVersion: body.expectedVersion,
+            actorId,
+            transition: "authoring-abandoned",
+            status: "terminal",
+            ...(current.record.resource ? { resource: current.record.resource } : {}),
+            resolution: { kind: "abandoned", reason: body.reason, at },
+            at,
+          });
+          if (abandoned.status !== "updated") {
+            throw new HttpError(409, "Workflow version changed before Authoring was abandoned");
+          }
+          const session =
+            current.record.resource?.kind === "authoring-session"
+              ? await runtime.getAuthoringSession(current.record.resource.id).catch(() => undefined)
+              : undefined;
+          recordAudit(input.scope, {
+            action: "workflow.authoring.abandon",
+            resource: current.record.workflowId,
+            result: "allow",
+          });
+          json(input.response, 200, {
+            workflow: abandoned.workflow,
+            ...(session ? { session } : {}),
+          });
+          return true;
+        }
+        if (body.action === "attach-run" || body.action === "cancel-run") {
+          throw new HttpError(409, "This transition does not apply to Authoring");
+        }
+        if (current.record.status === "terminal") {
+          throw new HttpError(409, "This Authoring workflow is already finished");
+        }
+        const resource = current.record.resource;
+        if (resource?.kind !== "authoring-session") {
+          throw new HttpError(409, "Authoring workflow has no proven canonical session");
+        }
+        const session = await runtime.getAuthoringSession(resource.id).catch(() => undefined);
+        if (!session || !authoringIdentityFromSession(current.record, session)) workflowNotFound();
         if (
-          typeof frozen.workflowRequestId !== "string" ||
-          typeof frozen.title !== "string" ||
-          typeof frozen.appMapId !== "string" ||
-          typeof frozen.appMapRevision !== "number" ||
-          !Number.isSafeInteger(frozen.appMapRevision) ||
-          !target ||
-          (target.kind !== "device" && target.kind !== "browser") ||
-          typeof target.platform !== "string" ||
-          typeof target.targetId !== "string"
+          current.record.status === "needs-attention" ||
+          current.record.lastTransition.endsWith("-requested") ||
+          current.record.lastTransition.endsWith("-outcome-unknown")
         ) {
-          throw new HttpError(409, "Authoring workflow identity is invalid");
+          throw new HttpError(409, "Authoring outcome requires inspection; it will not be retried");
         }
-        await runtime.assertAuthoringStartAccess(input.scope, target.targetId, body.leaseId);
+        if (!authoringActionIsAllowed(session, body.action)) {
+          throw new HttpError(409, `Authoring action is not allowed while ${session.state}`);
+        }
+        await runtime.assertAuthoringAccess(input.scope, session, body.action);
         const reserved = await runtime.transitionWorkflow({
           organizationId: input.scope.organizationId,
           projectId: input.scope.projectId,
           workflowId: current.record.workflowId,
           expectedVersion: body.expectedVersion,
           actorId,
-          transition: "start-authoring-requested",
+          transition: `${body.action}-requested`,
           status: "active",
+          resource,
           at,
         });
         if (reserved.status !== "updated") {
-          throw new HttpError(409, "Workflow version changed before Authoring began");
+          throw new HttpError(409, "Workflow version changed before Authoring mutation");
         }
-        let session: AuthoringSession;
+        const recordInteraction = body.action === "authoring-record" ? body.interaction : undefined;
+        let next: AuthoringSession;
         try {
-          session = await runtime.beginAuthoringSession(
+          next = await runtime.transitionAuthoringSession(
             input.scope,
-            {
-              appMapId: frozen.appMapId,
-              workflowRequestId: frozen.workflowRequestId,
-              testName: frozen.title,
-              target: {
-                kind: target.kind,
-                platform: target.platform as "android" | "ios" | "browser",
-                targetId: target.targetId,
-              } as CreateAuthoringSessionInput["target"],
-              leaseId: body.leaseId,
-              expectedAppMapRevision: frozen.appMapRevision,
-              ...(typeof frozen.sourceScreenId === "string"
-                ? { sourceScreenId: frozen.sourceScreenId }
-                : {}),
-              ...(typeof frozen.pendingConnectionId === "string"
-                ? { pendingConnectionId: frozen.pendingConnectionId }
-                : {}),
-              ...(typeof frozen.group === "string" ? { group: frozen.group } : {}),
-            },
+            session.id,
+            body,
             runtime.authoringRuntime,
+            {
+              workflowId: current.record.workflowId,
+              transitionVersion: reserved.workflow.record.version,
+              action: body.action,
+              completedAt: runtime.now(),
+            },
           );
         } catch (error) {
+          const failedSession = recordInteraction
+            ? await runtime.getAuthoringSession(session.id).catch(() => undefined)
+            : undefined;
+          if (
+            failedSession &&
+            recordInteraction &&
+            authoringIdentityFromSession(current.record, failedSession) &&
+            authoringRecordFailureIsProven(session, failedSession, recordInteraction)
+          ) {
+            const failed = await runtime.transitionWorkflow({
+              organizationId: input.scope.organizationId,
+              projectId: input.scope.projectId,
+              workflowId: current.record.workflowId,
+              expectedVersion: reserved.workflow.record.version,
+              actorId,
+              transition: `${body.action}-failed`,
+              status: "active",
+              resource,
+              at: runtime.now(),
+            });
+            if (failed.status !== "updated") {
+              throw new HttpError(
+                409,
+                "Authoring interaction failed but workflow reconciliation changed",
+              );
+            }
+            throw new HttpError(
+              422,
+              error instanceof Error ? error.message : "The target interaction failed",
+              {
+                code: "AUTHORING_INTERACTION_FAILED",
+                workflow: failed.workflow,
+                session: failedSession,
+              },
+            );
+          }
           await runtime.transitionWorkflow({
             organizationId: input.scope.organizationId,
             projectId: input.scope.projectId,
             workflowId: current.record.workflowId,
             expectedVersion: reserved.workflow.record.version,
             actorId,
-            transition: "start-authoring-outcome-unknown",
+            transition: `${body.action}-outcome-unknown`,
             status: "needs-attention",
-            at: runtime.now(),
-          });
-          throw new HttpError(
-            409,
-            error instanceof Error ? error.message : "Authoring start outcome is unknown",
-          );
-        }
-        if (!authoringIdentityFromSession(current.record, session)) {
-          throw new HttpError(409, "Authoring start returned a different canonical session");
-        }
-        const attached = await runtime.transitionWorkflow({
-          organizationId: input.scope.organizationId,
-          projectId: input.scope.projectId,
-          workflowId: current.record.workflowId,
-          expectedVersion: reserved.workflow.record.version,
-          actorId,
-          transition: "authoring-started",
-          status: authoringIsTerminal(session) ? "terminal" : "active",
-          resource: { kind: "authoring-session", id: session.id },
-          at: runtime.now(),
-        });
-        if (attached.status !== "updated") {
-          throw new HttpError(409, "Authoring began but workflow reconciliation changed");
-        }
-        json(input.response, 200, { workflow: attached.workflow, session });
-        return true;
-      }
-      if (body.action === "authoring-abandon") {
-        const hasCanonicalSession = current.record.resource?.kind === "authoring-session";
-        const unprovenStart =
-          !hasCanonicalSession &&
-          (current.record.lastTransition === "start-authoring-requested" ||
-            current.record.lastTransition === "start-authoring-outcome-unknown");
-        const unresolvedWithoutSession =
-          !hasCanonicalSession && current.record.status === "needs-attention";
-        if (!unprovenStart && !unresolvedWithoutSession) {
-          throw new HttpError(
-            409,
-            "Authoring can be abandoned only when no canonical session can be safely continued",
-          );
-        }
-        const abandoned = await runtime.transitionWorkflow({
-          organizationId: input.scope.organizationId,
-          projectId: input.scope.projectId,
-          workflowId: current.record.workflowId,
-          expectedVersion: body.expectedVersion,
-          actorId,
-          transition: "authoring-abandoned",
-          status: "terminal",
-          ...(current.record.resource ? { resource: current.record.resource } : {}),
-          resolution: { kind: "abandoned", reason: body.reason, at },
-          at,
-        });
-        if (abandoned.status !== "updated") {
-          throw new HttpError(409, "Workflow version changed before Authoring was abandoned");
-        }
-        const session =
-          current.record.resource?.kind === "authoring-session"
-            ? await runtime.getAuthoringSession(current.record.resource.id).catch(() => undefined)
-            : undefined;
-        recordAudit(input.scope, {
-          action: "workflow.authoring.abandon",
-          resource: current.record.workflowId,
-          result: "allow",
-        });
-        json(input.response, 200, {
-          workflow: abandoned.workflow,
-          ...(session ? { session } : {}),
-        });
-        return true;
-      }
-      if (body.action === "attach-run" || body.action === "cancel-run") {
-        throw new HttpError(409, "This transition does not apply to Authoring");
-      }
-      if (current.record.status === "terminal") {
-        throw new HttpError(409, "This Authoring workflow is already finished");
-      }
-      const resource = current.record.resource;
-      if (resource?.kind !== "authoring-session") {
-        throw new HttpError(409, "Authoring workflow has no proven canonical session");
-      }
-      const session = await runtime.getAuthoringSession(resource.id).catch(() => undefined);
-      if (!session || !authoringIdentityFromSession(current.record, session)) workflowNotFound();
-      if (
-        current.record.status === "needs-attention" ||
-        current.record.lastTransition.endsWith("-requested") ||
-        current.record.lastTransition.endsWith("-outcome-unknown")
-      ) {
-        throw new HttpError(409, "Authoring outcome requires inspection; it will not be retried");
-      }
-      if (!authoringActionIsAllowed(session, body.action)) {
-        throw new HttpError(409, `Authoring action is not allowed while ${session.state}`);
-      }
-      await runtime.assertAuthoringAccess(input.scope, session, body.action);
-      const reserved = await runtime.transitionWorkflow({
-        organizationId: input.scope.organizationId,
-        projectId: input.scope.projectId,
-        workflowId: current.record.workflowId,
-        expectedVersion: body.expectedVersion,
-        actorId,
-        transition: `${body.action}-requested`,
-        status: "active",
-        resource,
-        at,
-      });
-      if (reserved.status !== "updated") {
-        throw new HttpError(409, "Workflow version changed before Authoring mutation");
-      }
-      const recordInteraction = body.action === "authoring-record" ? body.interaction : undefined;
-      let next: AuthoringSession;
-      try {
-        next = await runtime.transitionAuthoringSession(
-          input.scope,
-          session.id,
-          body,
-          runtime.authoringRuntime,
-          {
-            workflowId: current.record.workflowId,
-            transitionVersion: reserved.workflow.record.version,
-            action: body.action,
-            completedAt: runtime.now(),
-          },
-        );
-      } catch (error) {
-        const failedSession = recordInteraction
-          ? await runtime.getAuthoringSession(session.id).catch(() => undefined)
-          : undefined;
-        if (
-          failedSession &&
-          recordInteraction &&
-          authoringIdentityFromSession(current.record, failedSession) &&
-          authoringRecordFailureIsProven(session, failedSession, recordInteraction)
-        ) {
-          const failed = await runtime.transitionWorkflow({
-            organizationId: input.scope.organizationId,
-            projectId: input.scope.projectId,
-            workflowId: current.record.workflowId,
-            expectedVersion: reserved.workflow.record.version,
-            actorId,
-            transition: `${body.action}-failed`,
-            status: "active",
             resource,
             at: runtime.now(),
           });
-          if (failed.status !== "updated") {
-            throw new HttpError(
-              409,
-              "Authoring interaction failed but workflow reconciliation changed",
-            );
-          }
           throw new HttpError(
-            422,
-            error instanceof Error ? error.message : "The target interaction failed",
-            {
-              code: "AUTHORING_INTERACTION_FAILED",
-              workflow: failed.workflow,
-              session: failedSession,
-            },
+            409,
+            error instanceof Error ? error.message : "Authoring mutation outcome is unknown",
           );
         }
-        await runtime.transitionWorkflow({
+        if (
+          !authoringIdentityAfterMutation(current.record, next, {
+            action: body.action,
+            transitionVersion: reserved.workflow.record.version,
+          })
+        ) {
+          throw new HttpError(409, "Authoring mutation returned a different canonical session");
+        }
+        const committed = await runtime.transitionWorkflow({
           organizationId: input.scope.organizationId,
           projectId: input.scope.projectId,
           workflowId: current.record.workflowId,
           expectedVersion: reserved.workflow.record.version,
           actorId,
-          transition: `${body.action}-outcome-unknown`,
-          status: "needs-attention",
+          transition: `${body.action}-completed`,
+          status: authoringIsTerminal(next) ? "terminal" : "active",
           resource,
           at: runtime.now(),
         });
-        throw new HttpError(
-          409,
-          error instanceof Error ? error.message : "Authoring mutation outcome is unknown",
-        );
+        if (committed.status !== "updated") {
+          throw new HttpError(
+            409,
+            "Authoring mutation completed but workflow reconciliation changed",
+          );
+        }
+        json(input.response, 200, { workflow: committed.workflow, session: next });
+        return true;
+      } finally {
+        finishDispatch();
       }
-      if (
-        !authoringIdentityAfterMutation(current.record, next, {
-          action: body.action,
-          transitionVersion: reserved.workflow.record.version,
-        })
-      ) {
-        throw new HttpError(409, "Authoring mutation returned a different canonical session");
-      }
-      const committed = await runtime.transitionWorkflow({
-        organizationId: input.scope.organizationId,
-        projectId: input.scope.projectId,
-        workflowId: current.record.workflowId,
-        expectedVersion: reserved.workflow.record.version,
-        actorId,
-        transition: `${body.action}-completed`,
-        status: authoringIsTerminal(next) ? "terminal" : "active",
-        resource,
-        at: runtime.now(),
-      });
-      if (committed.status !== "updated") {
-        throw new HttpError(
-          409,
-          "Authoring mutation completed but workflow reconciliation changed",
-        );
-      }
-      json(input.response, 200, { workflow: committed.workflow, session: next });
-      return true;
     }
     if (current.record.kind !== "run-test") {
       throw new HttpError(409, "This workflow kind is not supported yet");

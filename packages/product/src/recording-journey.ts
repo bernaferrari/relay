@@ -25,6 +25,7 @@ export type ProductRecordingAction =
   | { action: "record"; interaction: AuthoringInteraction }
   | { action: "checkpoint"; label?: string }
   | { action: "stop" }
+  | { action: "cancel" }
   | { action: "edit"; edit: AuthoringRecordingEdit }
   | { action: "replay" }
   | { action: "approve"; testName?: string; destination?: AuthoringCommitDestination };

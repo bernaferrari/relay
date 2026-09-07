@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./browser-execution-identity": "./src/browser-execution-identity.ts",
     "./device": "./src/device.ts",
     "./testing": "./src/testing.ts",
     "./play-store": "./src/play-store.ts",

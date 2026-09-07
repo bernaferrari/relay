@@ -1,3 +1,4 @@
+import { RecordingInputNotSentError } from "./recording-input-outcome";
 import type { BinaryResource, RelayClient } from "@relay/client";
 import type {
   AuthoringInteraction,
@@ -438,14 +439,53 @@ export function createLiveTargetSession(input: {
   }
 
   async function send(value: LiveTargetInput): Promise<void> {
-    if (closed) throw new Error("The live target session is closed");
+    if (closed) throw new RecordingInputNotSentError("The live preview is disconnected.");
     if (target.kind === "browser" && (!browserSession || !browserFrame)) {
-      throw new Error("The live browser frame is not ready");
+      throw new RecordingInputNotSentError("Wait for the browser preview to connect.");
     }
-    const interaction = normalizeInteraction(value, browserFrame);
+    let authoredValue = value;
+    if (
+      input.onInteraction &&
+      target.kind !== "browser" &&
+      (value.kind === "touch" || value.kind === "scroll")
+    ) {
+      if (!canvas?.width || !canvas.height)
+        throw new RecordingInputNotSentError("Wait for the live preview to connect.");
+      const frameWidth = canvas.width;
+      const frameHeight = canvas.height;
+      let size: { width?: number; height?: number } | undefined;
+      try {
+        const snapshot = await input.client.invoke("target.snapshot.capture", {
+          serial: target.targetId,
+        });
+        size = snapshot.bounds;
+        // Accessibility can be temporarily unavailable while pixels remain usable.
+        if (!size?.width || !size.height) {
+          size = await input.client.invoke("target.screenshot.capture", {
+            serial: target.targetId,
+          });
+        }
+      } catch {
+        throw new RecordingInputNotSentError("Relay couldn’t read the device screen size.");
+      }
+      if (!size?.width || !size.height) {
+        throw new RecordingInputNotSentError("Relay couldn’t read the device screen size.");
+      }
+      const sx = size.width / frameWidth;
+      const sy = size.height / frameHeight;
+      authoredValue = {
+        ...value,
+        x: Math.round(value.x * sx),
+        y: Math.round(value.y * sy),
+        ...(value.kind === "scroll"
+          ? { scrollX: Math.round(value.scrollX * sx), scrollY: Math.round(value.scrollY * sy) }
+          : {}),
+      };
+    }
+    const interaction = normalizeInteraction(authoredValue, browserFrame);
     if (input.onInteraction) {
       if (!interaction) {
-        throw new Error("This input cannot be recorded by Relay yet.");
+        throw new RecordingInputNotSentError("Relay does not support recording this input yet.");
       }
       await input.onInteraction(interaction);
       return;
@@ -489,11 +529,23 @@ export function createLiveTargetSession(input: {
       return;
     }
     if (value.kind === "touch") {
+      if (!canvas?.width || !canvas.height)
+        throw new RecordingInputNotSentError("Wait for the live preview to connect.");
+      const x = value.x / canvas.width;
+      const y = value.y / canvas.height;
+      if (value.action === "up") {
+        await input.client.invoke("target.touch", {
+          serial: target.targetId,
+          action: "down",
+          x,
+          y,
+        });
+      }
       await input.client.invoke("target.touch", {
         serial: target.targetId,
         action: value.action,
-        x: value.x,
-        y: value.y,
+        x,
+        y,
       });
     } else if (value.kind === "key" && "text" in value && typeof value.text === "string") {
       await input.client.invoke("target.key", {
@@ -513,12 +565,14 @@ export function createLiveTargetSession(input: {
         key: mobileKey,
       });
     } else if (value.kind === "scroll") {
+      if (!canvas?.width || !canvas.height)
+        throw new RecordingInputNotSentError("Wait for the live preview to connect.");
       await input.client.invoke("target.scroll", {
         serial: target.targetId,
-        x: value.x,
-        y: value.y,
-        scrollX: value.scrollX,
-        scrollY: value.scrollY,
+        x: value.x / canvas.width,
+        y: value.y / canvas.height,
+        scrollX: value.scrollX / canvas.width,
+        scrollY: value.scrollY / canvas.height,
       });
     }
   }

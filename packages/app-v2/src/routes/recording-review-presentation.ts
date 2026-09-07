@@ -58,7 +58,7 @@ export function reviewActionCopy(action: ReviewAction): {
     (/^0 recorded steps$/iu.test(action.intent) || /^0 recorded steps$/iu.test(action.label ?? ""))
   ) {
     return {
-      title: "Marked screen",
+      title: "Screen capture",
       detail: proof ?? "Current screen",
       kind: "observation",
     };
@@ -66,13 +66,13 @@ export function reviewActionCopy(action: ReviewAction): {
   if (action.stepCount === 0 && action.label) {
     return {
       title: action.label,
-      detail: proof ? `Marked screen · ${proof}` : "Marked screen",
+      detail: proof ? `Screen capture · ${proof}` : "Screen capture",
       kind: "checkpoint",
     };
   }
   if (action.stepCount === 0 || /^0 recorded steps$/i.test(action.intent)) {
     return {
-      title: "Marked screen",
+      title: "Screen capture",
       detail: proof ?? "Current screen",
       kind: "observation",
     };

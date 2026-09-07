@@ -1,3 +1,4 @@
+import { dispatchRecordingInput } from "./recording-input-outcome";
 import { ApiError } from "@relay/client";
 import type { BrowserDeviceSession } from "@relay/protocol";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -250,10 +251,88 @@ describe("live target session", () => {
         kind: "key",
         key: "backspace",
       }),
-    ).rejects.toThrow("cannot be recorded");
+    ).rejects.toThrow("does not support recording");
 
     expect(onInteraction).not.toHaveBeenCalled();
     expect(invoke).not.toHaveBeenCalled();
     sessionController.close();
   });
+});
+
+it("converts scaled Android video points into observed device pixels before recording", async () => {
+  const onInteraction = vi.fn();
+  const invoke = vi.fn(async () => ({ bounds: { width: 1080, height: 2400 } }));
+  const live = createLiveTargetSession({
+    client: {
+      connection: { url: "http://relay.test" },
+      invoke,
+      openStream: () => new Promise(() => {}),
+      binaryResource: vi.fn(),
+    } as never,
+    target: { kind: "device", platform: "android", targetId: "emulator-5554" },
+    onInteraction,
+  });
+  live.mount({ width: 488, height: 1080 } as HTMLCanvasElement);
+  await live.input({ kind: "touch", action: "up", x: 244, y: 540 });
+  expect(onInteraction).toHaveBeenCalledWith({
+    kind: "tap",
+    target: { point: { x: 540, y: 1200, anchor: { horizontal: "left", vertical: "top" } } },
+  });
+  expect(invoke).toHaveBeenCalledExactlyOnceWith("target.snapshot.capture", {
+    serial: "emulator-5554",
+  });
+  live.close();
+});
+
+it("sends a complete normalized Android tap from the non-recording canvas", async () => {
+  const invoke = vi.fn();
+  const live = createLiveTargetSession({
+    client: {
+      connection: { url: "http://relay.test" },
+      invoke,
+      openStream: () => new Promise(() => {}),
+      binaryResource: vi.fn(),
+    } as never,
+    target: { kind: "device", platform: "android", targetId: "emulator-5554" },
+  });
+  live.mount({ width: 488, height: 1080 } as HTMLCanvasElement);
+  await live.input({ kind: "touch", action: "up", x: 244, y: 540 });
+  expect(invoke.mock.calls).toEqual([
+    ["target.touch", { serial: "emulator-5554", action: "down", x: 0.5, y: 0.5 }],
+    ["target.touch", { serial: "emulator-5554", action: "up", x: 0.5, y: 0.5 }],
+  ]);
+  live.close();
+});
+
+it("uses pixel dimensions without accessibility and refuses input if both are unavailable", async () => {
+  const onInteraction = vi.fn();
+  let pixelsAvailable = true;
+  const invoke = vi.fn(async (id: string) =>
+    id === "target.snapshot.capture" ? {} : pixelsAvailable ? { width: 1080, height: 2400 } : {},
+  );
+  const live = createLiveTargetSession({
+    client: {
+      connection: { url: "http://relay.test" },
+      invoke,
+      openStream: () => new Promise(() => {}),
+    } as never,
+    target: { kind: "device", platform: "android", targetId: "emulator-5554" },
+    onInteraction,
+  });
+  live.mount({ width: 488, height: 1080 } as HTMLCanvasElement);
+  await live.input({ kind: "touch", action: "up", x: 244, y: 540 });
+  expect(onInteraction).toHaveBeenCalledExactlyOnceWith({
+    kind: "tap",
+    target: { point: { x: 540, y: 1200, anchor: { horizontal: "left", vertical: "top" } } },
+  });
+  pixelsAvailable = false;
+  const refresh = vi.fn();
+  const outcome = await dispatchRecordingInput({
+    send: () => live.input({ kind: "touch", action: "up", x: 244, y: 540 }),
+    refresh,
+  });
+  expect(outcome.kind).toBe("not-dispatched");
+  expect(onInteraction).toHaveBeenCalledTimes(1);
+  expect(refresh).not.toHaveBeenCalled();
+  live.close();
 });

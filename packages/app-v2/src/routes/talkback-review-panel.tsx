@@ -41,7 +41,6 @@ export function TalkBackModeSelect({
 }) {
   return (
     <SelectField
-      compact
       label={loading ? "Reading labels" : "Accessibility names"}
       value={mode}
       options={MODE_OPTIONS}

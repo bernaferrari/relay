@@ -25,11 +25,12 @@ import {
 import { PageLoading, RecordingProblem, targetLabel } from "./recording-shared";
 import { ReviewRecordingPage } from "./review-recording-page";
 import { LiveTargetCanvas } from "./live-target-canvas";
+import { EmulatorStart } from "../components/emulator-start";
 
 const NEW_TEST_DRAFT_KEY = "newTestDraft";
 
 export function NewTestPage() {
-  const { mapService, platform, productService, browserSpacesService, queryClient } =
+  const { mapService, platform, productService, browserSpacesService, deviceService, queryClient } =
     useRouteContext({
       from: "__root__",
     });
@@ -206,7 +207,7 @@ export function NewTestPage() {
     mutationFn: async () => {
       const suggestedName = pathContext.data
         ? `${pathContext.data.fromTitle} to ${pathContext.data.toTitle ?? "Finish"}`
-        : "Untitled recording";
+        : `${apps.data?.find((app) => app.id === appId)?.name ?? "New Test"} recording`;
       const state = await productService.begin({
         title: suggestedName,
         appMapId: appId,
@@ -385,6 +386,13 @@ export function NewTestPage() {
                   onValueChange={setTargetId}
                 />
               )}
+              <EmulatorStart
+                service={deviceService}
+                onStarted={async (serial) => {
+                  await targets.refetch();
+                  setTargetId(serial);
+                }}
+              />
             </aside>
             <div
               className="relay-prerecord-workspace block min-h-[360px] w-full overflow-hidden rounded-xl border border-border bg-muted"
@@ -580,7 +588,7 @@ function BrowserSetup({
           disabled={checking}
           onClick={onCheckAgain}
         >
-          {checking ? "Checking for a phone…" : "Using a phone? Check again"}
+          {checking ? "Checking for devices…" : "No device connected · Check again"}
         </button>
       </div>
     </div>
