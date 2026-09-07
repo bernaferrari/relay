@@ -76,6 +76,18 @@ export function browserSessionProfileMatches(existing: unknown, requested: unkno
   return JSON.stringify(existing) === JSON.stringify(requested);
 }
 
+/** Live reuse compares account/engine identity, not viewport or headless. */
+export function browserLiveIdentityMatches(
+  existing: { engine?: string; authenticationFixtureId?: string } | undefined,
+  requested: { engine?: string; authenticationFixtureId?: string } | undefined,
+): boolean {
+  if (!existing || !requested) return false;
+  return (
+    (existing.engine ?? "") === (requested.engine ?? "") &&
+    (existing.authenticationFixtureId ?? "") === (requested.authenticationFixtureId ?? "")
+  );
+}
+
 export function bindRequestedBrowserIdentity(input: {
   requested?: { engine?: string; account?: RequestedBrowserAccount };
   saved?: SavedBrowserIdentity;

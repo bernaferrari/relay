@@ -5,6 +5,7 @@ import { parseBrowserCaseProfile, type BrowserCaseProfile } from "@relay/protoco
 import type { Device, SnapshotNode } from "./device.js";
 import { createBrowserContextFactory, type BrowserContextPurpose } from "./browser-context.js";
 import {
+  browserLiveIdentityMatches,
   browserLiveSessionKey,
   browserRuntimeConfigurationDigest,
   browserSessionProfileMatches,
@@ -199,12 +200,15 @@ async function sessionFor(
             target ? browserCaseProfileForTarget(target) : undefined,
           )
         : undefined);
-    const profileMatches = browserSessionProfileMatches(session.profile, requestedProfile);
+    const profileMatches = options.reuseMatchingIdentity
+      ? browserLiveIdentityMatches(session.profile, requestedProfile)
+      : browserSessionProfileMatches(session.profile, requestedProfile);
     if (
       (mode === "authoring" || options.reuseMatchingIdentity) &&
       profileMatches &&
-      (options.recordVideo === undefined || session.recordVideo === options.recordVideo) &&
-      (options.headless === undefined || session.headless === options.headless)
+      (options.reuseMatchingIdentity ||
+        ((options.recordVideo === undefined || session.recordVideo === options.recordVideo) &&
+          (options.headless === undefined || session.headless === options.headless)))
     )
       return session;
     sessions.delete(key);

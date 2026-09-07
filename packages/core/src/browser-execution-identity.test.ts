@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   bindRequestedBrowserIdentity,
+  browserLiveIdentityMatches,
   browserLiveSessionKey,
   browserRuntimeConfigurationDigest,
   browserSessionProfileMatches,
@@ -73,6 +74,23 @@ test("Admin and Member on the same browser are distinct Live session keys", () =
       targetId: "browser-1",
       authenticationFixtureId: "authfx:admin:4",
     }),
+  );
+});
+
+test("live identity reuse ignores viewport and matches the fixture", () => {
+  assert.equal(
+    browserLiveIdentityMatches(
+      { engine: "chromium", authenticationFixtureId: "authfx:admin:4" },
+      { engine: "chromium", authenticationFixtureId: "authfx:admin:4" },
+    ),
+    true,
+  );
+  assert.equal(
+    browserLiveIdentityMatches(
+      { engine: "chromium", authenticationFixtureId: "authfx:admin:4" },
+      { engine: "chromium", authenticationFixtureId: "authfx:member:7" },
+    ),
+    false,
   );
 });
 
