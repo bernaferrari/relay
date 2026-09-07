@@ -77,6 +77,22 @@ export const coreTargetOperationInputSchemas = {
       outcome: z.enum(["applied", "not-applied", "ambiguous"]),
     })
     .strict(),
+  "target.input.receipt.get": z
+    .object({
+      ...targetReference,
+      mutationId: identifier("Reconciled mutation identifier").optional(),
+      resolutionId: identifier("Durable reconciliation receipt identifier").optional(),
+    })
+    .strict()
+    .superRefine((value, context) => {
+      if (!value.mutationId && !value.resolutionId) {
+        context.addIssue({
+          code: "custom",
+          message: "Provide a resolutionId or mutationId.",
+          path: ["resolutionId"],
+        });
+      }
+    }),
   "target.recover": z
     .object({
       ...targetReference,

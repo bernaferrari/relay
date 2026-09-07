@@ -59,6 +59,23 @@ export type BrowserSession = {
 
 const sessions = new Map<string, Promise<BrowserSession>>();
 
+/** Live identity already opened for this target, if any. Authoring is ignored. */
+export function existingLiveBrowserIdentity(targetId: string):
+  | {
+      authenticationFixtureId?: string;
+      signedOut?: boolean;
+    }
+  | undefined {
+  const signedOutKey = browserLiveSessionKey({ targetId, signedOut: true });
+  if (sessions.has(signedOutKey)) return { signedOut: true };
+  const prefix = `live:${targetId}:`;
+  for (const key of sessions.keys()) {
+    if (!key.startsWith(prefix) || key === signedOutKey) continue;
+    return { authenticationFixtureId: key.slice(prefix.length) };
+  }
+  return undefined;
+}
+
 async function createSession(
   targetId: string,
   options: {

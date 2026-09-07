@@ -574,6 +574,10 @@ export type AppMapOperationMap = {
       /** Optional explicit saved profile scope. Relay binds it to this exact
        * target before control, then preflights the same frozen plan it queues. */
       targetProfileId?: string;
+      engine?: "chromium" | "firefox" | "webkit";
+      account?:
+        | { kind: "fixture"; accountId: string; accountRevision: string; reference?: string }
+        | { kind: "signed-out"; attested: true };
       /** Run-scoped evidence policy. Named screens are bound as full-surface
        * for this run so Combine `visual` surveys after arrival. The saved Test
        * stays unchanged. */

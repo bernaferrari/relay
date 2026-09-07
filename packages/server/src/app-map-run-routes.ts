@@ -5,7 +5,9 @@ import {
   AppMapTestCompileError,
   activeReviewedDocumentOriginsForAppMap,
   bindRegisteredWebDeploymentToProof,
+  accountFixtureIdsFromListed,
   bindRequestedBrowserIdentity,
+  listBrowserAuthenticationFixtures,
   CasePlanError,
   buildTargetProfiles,
   compileAppMapConnection,
@@ -295,6 +297,10 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
       explicitlySelectedRuntimeTargetProfile ?? inferredRuntimeTargetProfile;
     if (body.account || body.engine) {
       const savedBrowser = runtimeTargetProfile?.browserCaseProfile;
+      const listed = await listBrowserAuthenticationFixtures({
+        projectId: input.scope.projectId,
+        targetId,
+      });
       const bound = bindRequestedBrowserIdentity({
         requested: {
           ...(body.engine ? { engine: body.engine } : {}),
@@ -306,7 +312,8 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
             ? { authenticationFixtureId: savedBrowser.authenticationFixtureId }
             : {}),
         },
-        platform: body.target.platform ?? (body.target.kind === "browser" ? "browser" : undefined),
+        platform: body.target.platform,
+        accountFixtureIds: accountFixtureIdsFromListed(listed),
       });
       if (bound.status === "blocked") {
         throw new HttpError(409, bound.reason, {

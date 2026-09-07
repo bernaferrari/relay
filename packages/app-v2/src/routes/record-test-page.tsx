@@ -49,6 +49,7 @@ import {
   TalkBackModeSelect,
   TalkBackOverlay,
   useTalkBackReview,
+  visibleTalkBackOverlayItems,
 } from "./talkback-review-panel";
 
 const testRouteApi = getRouteApi("/tests/$testId/record");
@@ -327,6 +328,9 @@ function RecordingWorkspace({
             serial: selectedTarget.targetId,
             ...(connection?.actorId ? { actor: connection.actorId } : {}),
             reconcile: (input) => productService.reconcileInput!(input),
+            ...(productService.fetchReconcileReceipt
+              ? { fetchReceipt: (input) => productService.fetchReconcileReceipt!(input) }
+              : {}),
           },
         }),
       );
@@ -587,7 +591,10 @@ function RecordingWorkspace({
                       talkBack.on && talkBack.mode !== "off" ? (
                         <TalkBackOverlay
                           canvasRef={liveCanvas}
-                          items={talkBack.result?.review.items ?? []}
+                          items={visibleTalkBackOverlayItems(
+                            talkBack.result,
+                            selectedTarget?.targetId,
+                          )}
                           mode={talkBack.mode}
                         />
                       ) : null

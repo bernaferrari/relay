@@ -1,4 +1,4 @@
-import type { TalkBackReview } from "@relay/protocol";
+import type { TalkBackReview, TalkBackReviewItem } from "@relay/protocol";
 
 export type OverlayBox = { left: number; top: number; width: number; height: number };
 
@@ -60,6 +60,16 @@ export function accessibilityObservationId(input: {
   refreshKey?: number;
 }): string {
   return `${input.targetId ?? ""}:${input.refreshKey ?? 0}`;
+}
+
+/** Hide names that belong to another surface or a stale observation. */
+export function visibleTalkBackOverlayItems(
+  result: TalkBackCaptureResult | undefined,
+  currentTargetId?: string,
+): readonly TalkBackReviewItem[] {
+  if (!result || result.stale) return [];
+  if (currentTargetId && result.targetId && result.targetId !== currentTargetId) return [];
+  return result.review.items;
 }
 
 /** Keep a newer observation; ignore late captures for another target/epoch. */

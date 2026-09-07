@@ -234,9 +234,18 @@ function supportsJsonFrameFallback(error: unknown): boolean {
  * and hand it a canvas. Lease acquisition and recording transitions remain
  * server-owned operations in the Product workflow.
  */
+export type LiveBrowserOpenIdentity = {
+  signedOut?: true;
+  sessionId?: string;
+  configurationDigest?: string;
+  authenticationFixtureId?: string;
+};
+
 export function createLiveTargetSession(input: {
   client: Client;
   target: AuthoringTarget;
+  /** Last target.open identity so the canvas attaches to that live session. */
+  identity?: LiveBrowserOpenIdentity;
   /** When recording, hand the normalized intent to ProductRecordingJourney.
    * The callback is the only mutation authority; the session does not also
    * dispatch a target operation. */
@@ -300,9 +309,22 @@ export function createLiveTargetSession(input: {
 
   async function pollBrowser(): Promise<void> {
     const targetId = target.targetId;
+    const identity = input.identity;
     const opened =
       browserSession ??
-      (await input.client.invoke("target.browser-device.open", { targetId })).session;
+      (
+        await input.client.invoke("target.browser-device.open", {
+          targetId,
+          ...(identity?.authenticationFixtureId
+            ? { authenticationFixtureId: identity.authenticationFixtureId }
+            : {}),
+          ...(identity?.signedOut ? { signedOut: true as const } : {}),
+          ...(identity?.sessionId ? { sessionId: identity.sessionId } : {}),
+          ...(identity?.configurationDigest
+            ? { configurationDigest: identity.configurationDigest }
+            : {}),
+        })
+      ).session;
     browserSession = opened;
     publish({
       status: "connecting",
@@ -598,7 +620,12 @@ function pointTarget(
 export async function createLiveTargetSessionFromPlatform(input: {
   platform: Platform;
   target: AuthoringTarget;
+  identity?: LiveBrowserOpenIdentity;
 }): Promise<LiveTargetSession> {
   const { client } = await productClientForPlatform(input.platform);
-  return createLiveTargetSession({ client, target: input.target });
+  return createLiveTargetSession({
+    client,
+    target: input.target,
+    ...(input.identity ? { identity: input.identity } : {}),
+  });
 }

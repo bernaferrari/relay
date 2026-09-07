@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { saveBrowserAuthenticationFixture } from "./browser-authentication-fixtures.js";
+import { openBrowserDeviceSession } from "./browser-device-session.js";
 import { closeBrowserHostPool } from "./browser-host-pool.js";
 import { closeBrowserTarget, openBrowserLiveRuntime, openBrowserTarget } from "./browser-target.js";
 import { deleteTarget, saveBrowserTarget } from "./targets.js";
@@ -109,10 +110,16 @@ test(
           projectId,
           ...(fixture ? { authenticationFixtureId: fixture.reference } : { signedOut: true }),
         });
+        const canvas = await openBrowserDeviceSession(targetId, undefined, { projectId });
         assert.equal(
           live.sessionId,
           opened.sessionId,
           `${role}: embedded live runtime must attach to the target.open session`,
+        );
+        assert.equal(
+          canvas.sessionId,
+          opened.sessionId,
+          `${role}: in-app Browser Device must attach to the target.open session, not authoring`,
         );
         const page = await live.activePage();
         const visible = (await page.locator("#whoami").innerText()).trim();

@@ -24,6 +24,8 @@ import {
   preflightDevicePool,
   preflightRegisteredBuild,
   currentTargetSupervisorStore,
+  readReconcileReceipt,
+  rememberReconcileReceipt,
   openApp,
   recoverSupervisedTargetRuntime,
   targetRuntimeReadiness,
@@ -342,6 +344,20 @@ export async function handleTargetRuntimeRoute(context: {
       throw new HttpError(400, "outcome must be applied, not-applied, or ambiguous");
     }
     await runtime.assertTargetControl(scope, serial);
+    const stored = readReconcileReceipt({ serial, mutationId });
+    if (stored) {
+      json(response, 200, {
+        health: stored.healthSnapshot ?? {
+          input: stored.health ?? { state: "ready" },
+          visibility: "project",
+        },
+        ...(stored.observation ? { observation: stored.observation } : {}),
+        mutationId: stored.mutationId,
+        outcome: stored.outcome,
+        resolutionId: stored.resolutionId,
+      });
+      return true;
+    }
     const resolved = await resolveSupervisedRuntimeTarget({ serial, runtime });
     const before = runtime.readTargetHealth(resolved.id, resolved.platform);
     if (before.input.state !== "uncertain" || before.input.pendingMutationId !== mutationId) {
@@ -364,9 +380,52 @@ export async function handleTargetRuntimeRoute(context: {
       target: serial,
       result: body.outcome === "ambiguous" ? "deny" : "allow",
     });
+    const receipt = rememberReconcileReceipt({
+      serial,
+      mutationId,
+      outcome: body.outcome,
+      observationId: durableObservationId(observation),
+      health: {
+        state: health.input.state,
+        ...(health.input.pendingMutationId
+          ? { pendingMutationId: health.input.pendingMutationId }
+          : {}),
+        ...(health.input.reason ? { reason: health.input.reason } : {}),
+      },
+      healthSnapshot: { ...health, visibility: "project" },
+      observation,
+    });
     json(response, 200, {
       health: { ...health, visibility: "project" },
       observation,
+      mutationId: receipt.mutationId,
+      outcome: receipt.outcome,
+      resolutionId: receipt.resolutionId,
+    });
+    return true;
+  }
+
+  if (method === "GET" && pathname === "/device/input/receipt") {
+    const url = new URL(request.url ?? pathname, "http://relay.local");
+    const serial = url.searchParams.get("serial")?.trim() ?? "";
+    const mutationId = url.searchParams.get("mutationId")?.trim() ?? "";
+    const resolutionId = url.searchParams.get("resolutionId")?.trim() ?? "";
+    if (!serial && !resolutionId) throw new HttpError(400, "serial or resolutionId is required");
+    const receipt = readReconcileReceipt({
+      ...(resolutionId ? { resolutionId } : {}),
+      ...(serial ? { serial } : {}),
+      ...(mutationId ? { mutationId } : {}),
+    });
+    if (!receipt) throw new HttpError(404, "No durable reconciliation receipt for that mutation");
+    json(response, 200, {
+      receipt: {
+        resolutionId: receipt.resolutionId,
+        mutationId: receipt.mutationId,
+        outcome: receipt.outcome,
+        reviewedAt: receipt.reviewedAt,
+        ...(receipt.health ? { health: receipt.health } : {}),
+        ...(receipt.observation ? { observation: receipt.observation } : {}),
+      },
     });
     return true;
   }

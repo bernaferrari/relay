@@ -5,6 +5,7 @@ import {
   browserDeviceBinaryFrameMetadataSchema,
   browserDeviceFrameSchema,
   browserDeviceInputResolutionSchema,
+  browserDeviceOpenInputSchema,
   browserDeviceSemanticOverlaySchema,
   browserDeviceSessionSchema,
   compileBrowserEnvironment,
@@ -101,6 +102,28 @@ test("Browser Device contracts retain exact session, page, and frame identity", 
       },
     }).success,
     true,
+  );
+  assert.deepEqual(
+    browserDeviceOpenInputSchema.parse({
+      targetId: "browser-1",
+      signedOut: true,
+      sessionId: "session-1",
+      configurationDigest: "browser-1::signed-out:out",
+    }),
+    {
+      targetId: "browser-1",
+      signedOut: true,
+      sessionId: "session-1",
+      configurationDigest: "browser-1::signed-out:out",
+    },
+  );
+  assert.equal(
+    browserDeviceOpenInputSchema.safeParse({
+      targetId: "browser-1",
+      signedOut: true,
+      authenticationFixtureId: "authfx:admin:4",
+    }).success,
+    false,
   );
 });
 

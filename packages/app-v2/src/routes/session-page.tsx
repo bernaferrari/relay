@@ -32,6 +32,7 @@ import {
   TalkBackModeSelect,
   TalkBackOverlay,
   useTalkBackReview,
+  visibleTalkBackOverlayItems,
 } from "./talkback-review-panel";
 import { isActiveSession, sessionStateLabel } from "./sessions-page";
 
@@ -421,7 +422,7 @@ export function SessionPage() {
                     talkBack.on && talkBack.mode !== "off" ? (
                       <TalkBackOverlay
                         canvasRef={canvas}
-                        items={talkBack.result?.review.items ?? []}
+                        items={visibleTalkBackOverlayItems(talkBack.result, value.target.targetId)}
                         mode={talkBack.mode}
                       />
                     ) : null

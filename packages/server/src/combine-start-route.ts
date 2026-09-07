@@ -25,7 +25,9 @@ import {
   currentOperationContext,
   findActiveCombineCampaignForCombine,
   findActiveRepeatCampaigns,
+  accountFixtureIdsFromListed,
   bindRequestedBrowserIdentity,
+  listBrowserAuthenticationFixtures,
   prepareAppMapCombineCells,
   readAppMap,
   listTargets,
@@ -393,6 +395,10 @@ async function executeCombineStartUnlocked(
                   profileTarget.profileId,
                   profileTarget.targetProfileId,
                 );
+                const listed = await listBrowserAuthenticationFixtures({
+                  projectId: scope.projectId,
+                  targetId: profileTargetId,
+                });
                 const bound = bindRequestedBrowserIdentity({
                   requested: {
                     ...(profileTarget.engine ? { engine: profileTarget.engine } : {}),
@@ -404,6 +410,7 @@ async function executeCombineStartUnlocked(
                     (target.browserTargetId || profileTarget.engine || profileTarget.account
                       ? "browser"
                       : saved.platform),
+                  accountFixtureIds: accountFixtureIdsFromListed(listed),
                 });
                 if (bound.status === "blocked") {
                   throw new HttpError(409, bound.reason, {

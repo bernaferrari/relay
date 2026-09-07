@@ -244,8 +244,21 @@ export const browserDeviceOpenInputSchema = z
   .object({
     targetId: id,
     environment: browserEnvironmentInputSchema.optional(),
+    authenticationFixtureId: z.string().trim().min(1).max(256).optional(),
+    signedOut: z.literal(true).optional(),
+    sessionId: id.optional(),
+    configurationDigest: z.string().trim().min(1).max(512).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    if (value.authenticationFixtureId && value.signedOut) {
+      context.addIssue({
+        code: "custom",
+        message: "Choose an account fixture or attested signed-out, not both.",
+        path: ["signedOut"],
+      });
+    }
+  });
 
 export const browserDeviceFrameInputSchema = z
   .object({ targetId: id, afterSequence: z.coerce.number().int().nonnegative().optional() })

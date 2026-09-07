@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  accountFixtureIdsFromListed,
   bindRequestedBrowserIdentity,
   browserLiveIdentityMatches,
   browserLiveSessionKey,
@@ -8,6 +9,7 @@ import {
   browserSessionProfileMatches,
   fixtureRevisionFromReference,
   liveBrowserSessionKeysToClose,
+  resolveBrowserDeviceOpenIdentity,
 } from "./browser-execution-identity.js";
 
 test("Member v7 cannot execute a saved Member v4 fixture", () => {
@@ -195,6 +197,78 @@ test("a contradictory accountId and fixture reference cannot bind", () => {
   });
   assert.equal(bound.status, "blocked");
   assert.match((bound as { reason: string }).reason, /does not map/i);
+});
+
+test("listed fixtures are an independent account registry", () => {
+  const map = accountFixtureIdsFromListed([
+    {
+      id: "11111111-1111-4111-8111-111111111111",
+      name: "Member",
+      reference: "authfx:11111111-1111-4111-8111-111111111111:7",
+    },
+  ]);
+  assert.equal(map["11111111-1111-4111-8111-111111111111"], "11111111-1111-4111-8111-111111111111");
+  assert.equal(map.Member, "11111111-1111-4111-8111-111111111111");
+  assert.equal(map["acct-member"], undefined);
+  const bound = bindRequestedBrowserIdentity({
+    requested: {
+      engine: "chromium",
+      account: {
+        kind: "fixture",
+        accountId: "Member",
+        accountRevision: "7",
+        reference: "authfx:11111111-1111-4111-8111-111111111111:7",
+      },
+    },
+    saved: {
+      engine: "chromium",
+      authenticationFixtureId: "authfx:11111111-1111-4111-8111-111111111111:7",
+    },
+    accountFixtureIds: map,
+  });
+  assert.equal(bound.status, "bound");
+  assert.equal(
+    bindRequestedBrowserIdentity({
+      requested: {
+        engine: "chromium",
+        account: {
+          kind: "fixture",
+          accountId: "acct-member",
+          accountRevision: "7",
+          reference: "authfx:11111111-1111-4111-8111-111111111111:7",
+        },
+      },
+      saved: {
+        engine: "chromium",
+        authenticationFixtureId: "authfx:11111111-1111-4111-8111-111111111111:7",
+      },
+      accountFixtureIds: map,
+    }).status,
+    "blocked",
+  );
+});
+
+test("signed-out live identity wins over a saved fixture profile", () => {
+  assert.deepEqual(
+    resolveBrowserDeviceOpenIdentity({
+      requested: { signedOut: true },
+      savedProfile: { authenticationFixtureId: "authfx:admin:4" },
+    }),
+    { signedOut: true },
+  );
+  assert.deepEqual(
+    resolveBrowserDeviceOpenIdentity({
+      existingLive: { signedOut: true },
+      savedProfile: { authenticationFixtureId: "authfx:admin:4" },
+    }),
+    { signedOut: true },
+  );
+  assert.deepEqual(
+    resolveBrowserDeviceOpenIdentity({
+      savedProfile: { authenticationFixtureId: "authfx:admin:4" },
+    }),
+    { authenticationFixtureId: "authfx:admin:4" },
+  );
 });
 
 test("a missing saved engine cannot fully bind a fixture account", () => {

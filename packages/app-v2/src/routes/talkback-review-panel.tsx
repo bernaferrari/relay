@@ -11,9 +11,12 @@ import {
   talkBackItemAtPoint,
   talkBackOverlayBox,
   validAccessibilityLabelMode,
+  visibleTalkBackOverlayItems,
   type AccessibilityLabelMode,
   type TalkBackCaptureResult,
 } from "../data/talkback-overlay";
+
+export { visibleTalkBackOverlayItems };
 
 export type { TalkBackCaptureResult, AccessibilityLabelMode };
 
@@ -160,7 +163,7 @@ export function TalkBackIssueList({
   if (!review.issues.length) {
     return (
       <p className="text-xs text-muted-foreground">
-        {review.items.length && inspectable !== false
+        {review.items.length
           ? `${review.items.length} accessibility names on this screen.`
           : "No accessibility names are available for this observation."}
       </p>
@@ -249,9 +252,11 @@ export function useTalkBackReview(input: {
       })
       .catch((error: unknown) => {
         if (cancelled) return;
-        setResult((previous) =>
-          previous?.targetId === input.serial ? { ...previous, stale: true } : undefined,
-        );
+        setResult((previous) => {
+          if (!previous || previous.targetId !== input.serial) return undefined;
+          const stale: TalkBackCaptureResult = { ...previous, stale: true };
+          return stale;
+        });
         setIssue(
           error instanceof Error ? error.message : "Relay could not read accessibility names.",
         );

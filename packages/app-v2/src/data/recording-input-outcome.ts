@@ -41,6 +41,7 @@ export type RecordingTargetHealthProjection = {
 
 export type RecordingReconcileAuthorityReceipt = {
   mutationId: string;
+  resolutionId?: string;
   outcome?: RecordingReconcileServerOutcome;
   health?: RecordingTargetHealthProjection["input"];
   observation?: unknown;
@@ -54,7 +55,34 @@ export type RecordingReconcileAuthority = {
     mutationId: string;
     outcome: RecordingReconcileServerOutcome;
   }) => Promise<RecordingReconcileAuthorityReceipt>;
+  fetchReceipt?: (input: {
+    serial: string;
+    mutationId?: string;
+    resolutionId?: string;
+  }) => Promise<RecordingReconcileAuthorityReceipt>;
 };
+
+export async function fetchRecordingReconcileReceipt(input: {
+  authority: RecordingReconcileAuthority;
+  mutationId?: string;
+  resolutionId?: string;
+}): Promise<RecordingReconcileAuthorityReceipt> {
+  if (!input.authority.fetchReceipt) {
+    throw new TypeError("Relay cannot retrieve a reconciliation receipt from this host.");
+  }
+  const receipt = await input.authority.fetchReceipt({
+    serial: input.authority.serial,
+    ...(input.mutationId ? { mutationId: input.mutationId } : {}),
+    ...(input.resolutionId ? { resolutionId: input.resolutionId } : {}),
+  });
+  if (input.mutationId && receipt.mutationId !== input.mutationId) {
+    throw new TypeError("Relay returned a receipt for a different mutation.");
+  }
+  if (input.resolutionId && receipt.resolutionId && receipt.resolutionId !== input.resolutionId) {
+    throw new TypeError("Relay returned a different reconciliation receipt.");
+  }
+  return receipt;
+}
 
 export function reconcileObservedFromServerReceipt(
   receipt: RecordingReconcileAuthorityReceipt,

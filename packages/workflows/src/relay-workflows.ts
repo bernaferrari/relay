@@ -1,4 +1,9 @@
-import { bindRequestedBrowserIdentity } from "@relay/core";
+import {
+  accountFixtureIdsFromListed,
+  bindRequestedBrowserIdentity,
+  currentOperationContext,
+  listBrowserAuthenticationFixtures,
+} from "@relay/core";
 import type { OperationInput, OperationOutput } from "@relay/protocol";
 import {
   createRelayOperationPort,
@@ -435,6 +440,13 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
           ? profiles[0]
           : undefined;
       const saved = profile?.browserCaseProfile;
+      const projectId = currentOperationContext()?.projectId;
+      const listed = projectId
+        ? await listBrowserAuthenticationFixtures({
+            projectId,
+            targetId: intent.target.targetId,
+          })
+        : [];
       const bound = bindRequestedBrowserIdentity({
         requested: {
           ...(intent.engine ? { engine: intent.engine } : {}),
@@ -447,6 +459,7 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
             : {}),
         },
         platform: intent.target.kind === "browser" ? "browser" : intent.target.platform,
+        accountFixtureIds: accountFixtureIdsFromListed(listed),
       });
       if (bound.status === "blocked") {
         return initialProblem({

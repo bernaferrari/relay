@@ -96,7 +96,11 @@ describe("live target session", () => {
       height: 0,
       getContext: () => context,
     } as unknown as HTMLCanvasElement;
-    const sessionController = createLiveTargetSession({ client, target });
+    const sessionController = createLiveTargetSession({
+      client,
+      target,
+      identity: { signedOut: true, sessionId: "session-1" },
+    });
     const snapshots: ReturnType<typeof sessionController.snapshot>[] = [];
     const unsubscribe = sessionController.subscribe((snapshot) => {
       snapshots.push(snapshot);
@@ -123,6 +127,11 @@ describe("live target session", () => {
     expect(streaming[2]?.browserContext?.authenticationFixtureId).toBe("account-checkout");
     expect(streaming[0]?.browserContext?.locale).toBe("en-US");
     expect(sessionController.snapshot().browserContext).toBeUndefined();
+    expect(invoke).toHaveBeenCalledWith("target.browser-device.open", {
+      targetId: target.targetId,
+      signedOut: true,
+      sessionId: "session-1",
+    });
     expect(invoke).toHaveBeenCalledWith("target.browser-device.frame", {
       targetId: target.targetId,
     });

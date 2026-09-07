@@ -5,6 +5,7 @@ import {
   talkBackItemAtPoint,
   talkBackOverlayBox,
   validAccessibilityLabelMode,
+  visibleTalkBackOverlayItems,
 } from "./talkback-overlay";
 
 function rect(x: number, y: number, width: number, height: number): DOMRect {
@@ -101,6 +102,42 @@ describe("talkBackOverlayBox", () => {
     });
     expect(retained?.observationId).toBe("pixel-1:1");
     expect(retained?.stale).toBe(true);
+  });
+
+  it("does not paint stale or foreign-target names", () => {
+    const review = {
+      items: [
+        {
+          id: "a",
+          index: 0,
+          announcement: "Close",
+          name: "Close",
+          interactive: true,
+          issues: [],
+        },
+      ],
+      issues: [],
+      errorCount: 0,
+      warningCount: 0,
+    };
+    expect(
+      visibleTalkBackOverlayItems(
+        { inspectable: true, review, targetId: "pixel-1", stale: true },
+        "pixel-1",
+      ),
+    ).toEqual([]);
+    expect(
+      visibleTalkBackOverlayItems(
+        { inspectable: true, review, targetId: "pixel-1", stale: false },
+        "pixel-2",
+      ),
+    ).toEqual([]);
+    expect(
+      visibleTalkBackOverlayItems(
+        { inspectable: true, review, targetId: "pixel-1", stale: false },
+        "pixel-1",
+      ),
+    ).toEqual(review.items);
   });
 
   it("exposes hover and always as the saved setting choices", () => {

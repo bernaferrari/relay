@@ -88,6 +88,17 @@ test("target.health.get rejects an unbounded diagnostic history", () => {
   );
 });
 
+test("target.input.receipt.get is a read-only fetch of a stored resolution", () => {
+  const definition = operationDefinition("target.input.receipt.get");
+  assert.equal(definition.mode, "query");
+  assert.equal(definition.confirmation, "none");
+  assert.deepEqual(definition.transport, { method: "GET", path: "/device/input/receipt" });
+  assert.deepEqual(definition.input.parse({ serial: "ipad-health", mutationId: "ios-input-1" }), {
+    serial: "ipad-health",
+    mutationId: "ios-input-1",
+  });
+});
+
 test("target.input.reconcile requires explicit review and an exclusive target", () => {
   const definition = operationDefinition("target.input.reconcile");
   assert.deepEqual(

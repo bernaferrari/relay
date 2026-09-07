@@ -697,6 +697,8 @@ export const workspaceTargetOperationOutputSchemas = {
           targetId: text,
           name: text,
           url: z.url(),
+          sessionId: text.optional(),
+          configurationDigest: z.string().min(1).optional(),
           authenticationFixtureId: z.string().optional(),
           signedOut: z.literal(true).optional(),
         })

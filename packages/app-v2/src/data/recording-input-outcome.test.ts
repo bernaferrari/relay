@@ -10,6 +10,7 @@ import {
   isSupervisedRecordingMutationId,
   mergeHydratedRecordingLedger,
   reconcileRecordingMutation,
+  fetchRecordingReconcileReceipt,
   reconcileObservedFromServerReceipt,
   reconcileRecordingMutationAuthoritatively,
   recordingReconcileServerOutcome,
@@ -197,6 +198,28 @@ describe("recording input outcome", () => {
         health: { state: "ready" },
       }),
     ).toBe("applied");
+  });
+
+  it("retrieves a stored receipt without sending another reconcile", async () => {
+    const receipt = await fetchRecordingReconcileReceipt({
+      mutationId: "ios-input-1",
+      resolutionId: "res-1",
+      authority: {
+        serial: "pixel-1",
+        reconcile: async () => {
+          throw new Error("must not resend input");
+        },
+        fetchReceipt: async () => ({
+          mutationId: "ios-input-1",
+          resolutionId: "res-1",
+          outcome: "not-applied",
+          health: { state: "ready" },
+        }),
+      },
+    });
+    expect(receipt.outcome).toBe("not-applied");
+    expect(receipt.resolutionId).toBe("res-1");
+    expect(reconcileObservedFromServerReceipt(receipt)).toBe("not-observed");
   });
 
   it("does not apply a local observation until the server receipt matches", async () => {

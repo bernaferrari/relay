@@ -75,8 +75,14 @@ export type RecordingProductService = {
   replay(): Promise<ProductRecordingState>;
   approve(testName: string): Promise<ProductRecordingState>;
   /** Open the selected target for exploration before durable recording begins. */
-  previewTarget?(target: AuthoringTarget): Promise<LiveTargetSession>;
-  liveTarget?(target: AuthoringTarget): Promise<LiveTargetSession>;
+  previewTarget?(
+    target: AuthoringTarget,
+    identity?: import("./live-target-session").LiveBrowserOpenIdentity,
+  ): Promise<LiveTargetSession>;
+  liveTarget?(
+    target: AuthoringTarget,
+    identity?: import("./live-target-session").LiveBrowserOpenIdentity,
+  ): Promise<LiveTargetSession>;
   /** Fresh accessibility controls from the live target. Historic screenshots are not this. */
   observeTarget?(target: AuthoringTarget): Promise<RecordingEvidenceControl[]>;
   /** Visual TalkBack names from a live Android snapshot. Does not enable TalkBack. */
@@ -88,6 +94,22 @@ export type RecordingProductService = {
     outcome: "applied" | "not-applied" | "ambiguous";
   }): Promise<{
     mutationId: string;
+    resolutionId?: string;
+    outcome: "applied" | "not-applied" | "ambiguous";
+    health?: {
+      state: "ready" | "blocked" | "uncertain";
+      pendingMutationId?: string;
+      reason?: string;
+    };
+    observation?: unknown;
+  }>;
+  fetchReconcileReceipt?(input: {
+    serial: string;
+    mutationId?: string;
+    resolutionId?: string;
+  }): Promise<{
+    mutationId: string;
+    resolutionId?: string;
     outcome: "applied" | "not-applied" | "ambiguous";
     health?: {
       state: "ready" | "blocked" | "uncertain";
@@ -230,7 +252,7 @@ export function createRecordingProductService(
     async approve(testName) {
       return (await product()).journey.approve(testName);
     },
-    async liveTarget(target) {
+    async liveTarget(target, identity) {
       const [recording, { createLiveTargetSession }] = await Promise.all([
         product(),
         import("./live-target-session"),
@@ -238,6 +260,7 @@ export function createRecordingProductService(
       return createLiveTargetSession({
         client: recording.client,
         target,
+        ...(identity ? { identity } : {}),
         // Input from the live canvas is already the user's recording intent.
         // ProductRecordingJourney performs the canonical target mutation and
         // appends the same interaction to the durable authoring workflow.
@@ -249,12 +272,16 @@ export function createRecordingProductService(
         },
       });
     },
-    async previewTarget(target) {
+    async previewTarget(target, identity) {
       const [recording, { createLiveTargetSession }] = await Promise.all([
         product(),
         import("./live-target-session"),
       ]);
-      return createLiveTargetSession({ client: recording.client, target });
+      return createLiveTargetSession({
+        client: recording.client,
+        target,
+        ...(identity ? { identity } : {}),
+      });
     },
     async observeTarget(target) {
       const { client } = await product();
@@ -302,6 +329,7 @@ export function createRecordingProductService(
             : input.outcome;
       return {
         mutationId: pending ?? input.mutationId,
+        ...(typeof result.resolutionId === "string" ? { resolutionId: result.resolutionId } : {}),
         outcome,
         ...(result.health?.input
           ? {
@@ -313,6 +341,22 @@ export function createRecordingProductService(
             }
           : {}),
         ...(result.observation ? { observation: result.observation } : {}),
+      };
+    },
+    async fetchReconcileReceipt(input) {
+      const { client } = await product();
+      const result = await client.invoke("target.input.receipt.get", {
+        serial: input.serial,
+        ...(input.mutationId ? { mutationId: input.mutationId } : {}),
+        ...(input.resolutionId ? { resolutionId: input.resolutionId } : {}),
+      });
+      const receipt = result.receipt;
+      return {
+        mutationId: receipt.mutationId,
+        resolutionId: receipt.resolutionId,
+        outcome: receipt.outcome,
+        ...(receipt.health ? { health: receipt.health } : {}),
+        ...(receipt.observation ? { observation: receipt.observation } : {}),
       };
     },
     async inspectTargetHealth(serial) {

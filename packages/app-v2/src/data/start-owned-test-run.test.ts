@@ -164,6 +164,7 @@ describe("start owned Test runs", () => {
                 cases: [
                   {
                     cellId: "cell-admin",
+                    executionCaseId: "case-admin",
                     status: "queued",
                     targetProfileId: "profile-admin",
                     target: { targetId: "chrome-1" },
@@ -177,6 +178,7 @@ describe("start owned Test runs", () => {
                   },
                   {
                     cellId: "cell-member",
+                    executionCaseId: "case-member",
                     status: "blocked",
                     targetProfileId: "profile-member",
                     target: { targetId: "chrome-1" },
@@ -189,6 +191,7 @@ describe("start owned Test runs", () => {
                   },
                   {
                     cellId: "cell-out",
+                    executionCaseId: "case-out",
                     status: "pending",
                     targetProfileId: "profile-out",
                     target: { targetId: "webkit-1" },
@@ -250,8 +253,9 @@ describe("start owned Test runs", () => {
             cases: [
               {
                 cellId: "cell-member",
+                executionCaseId: "case-member",
                 status: "blocked",
-                targetProfileId: "pixel-en",
+                targetProfileId: "profile-member",
                 target: { targetId: "chrome-1" },
                 account: {
                   kind: "fixture",
@@ -262,16 +266,18 @@ describe("start owned Test runs", () => {
               },
               {
                 cellId: "cell-out",
+                executionCaseId: "case-out",
                 status: "pending",
-                targetProfileId: "pixel-it",
+                targetProfileId: "profile-out",
                 target: { targetId: "webkit-1" },
                 account: { kind: "signed-out", attested: true },
                 engine: "webkit",
               },
               {
                 cellId: "cell-admin",
+                executionCaseId: "case-admin",
                 status: "queued",
-                targetProfileId: "pixel-en",
+                targetProfileId: "profile-admin",
                 target: { targetId: "chrome-1" },
                 account: {
                   kind: "fixture",
@@ -393,6 +399,8 @@ describe("start owned Test runs", () => {
           cases: [
             {
               cellId: "cell-firefox",
+              executionCaseId: "case-firefox",
+              targetProfileId: "profile-firefox",
               status: "queued",
               target: { targetId: "firefox-1" },
               engine: "firefox",
@@ -401,6 +409,8 @@ describe("start owned Test runs", () => {
             },
             {
               cellId: "cell-chrome",
+              executionCaseId: "case-chrome",
+              targetProfileId: "profile-chrome",
               status: "queued",
               target: { targetId: "chrome-1" },
               engine: "chromium",
@@ -442,6 +452,9 @@ describe("start owned Test runs", () => {
     expect(
       campaignCaseMatchesRequest(
         {
+          cellId: "cell-chrome",
+          executionCaseId: "case-chrome",
+          targetProfileId: "profile-chrome",
           target: { targetId: "chrome-1" },
           engine: "chromium",
           account: { accountRevision: "7", kind: "fixture", accountId: "acct-member" },
@@ -450,10 +463,88 @@ describe("start owned Test runs", () => {
           testId: "checkout",
           appMapId: "app-1",
           targetId: "chrome-1",
+          targetProfileId: "profile-chrome",
           engine: "chromium",
           account: { kind: "fixture", accountId: "acct-member", accountRevision: "7" },
         },
       ),
     ).toBe(true);
+  });
+
+  it("keeps the same account on two viewports distinct after reversed results", () => {
+    const desktop = {
+      testId: "checkout",
+      appMapId: "app-1",
+      targetId: "chrome-1",
+      targetProfileId: "desktop",
+      engine: "chromium" as const,
+      account: { kind: "fixture" as const, accountId: "acct-member", accountRevision: "7" },
+    };
+    const mobile = {
+      ...desktop,
+      targetProfileId: "mobile",
+    };
+    const cases = [
+      {
+        cellId: "cell-mobile",
+        executionCaseId: "case-mobile",
+        targetProfileId: "mobile",
+        target: { targetId: "chrome-1" },
+        engine: "chromium" as const,
+        account: desktop.account,
+        status: "queued",
+        runId: "run-mobile",
+      },
+      {
+        cellId: "cell-desktop",
+        executionCaseId: "case-desktop",
+        targetProfileId: "desktop",
+        target: { targetId: "chrome-1" },
+        engine: "chromium" as const,
+        account: desktop.account,
+        status: "queued",
+        runId: "run-desktop",
+      },
+    ];
+    expect(campaignCaseMatchesRequest(cases[0]!, desktop)).toBe(false);
+    expect(campaignCaseMatchesRequest(cases[1]!, desktop)).toBe(true);
+    expect(campaignCaseMatchesRequest(cases[0]!, mobile)).toBe(true);
+    expect(campaignCaseMatchesRequest(cases[1]!, mobile)).toBe(false);
+  });
+
+  it("treats missing or duplicate executionCaseId as unverifiable", () => {
+    const request = {
+      testId: "checkout",
+      appMapId: "app-1",
+      targetId: "chrome-1",
+      targetProfileId: "profile-chrome",
+      engine: "chromium" as const,
+      account: { kind: "fixture" as const, accountId: "acct-member", accountRevision: "7" },
+    };
+    expect(
+      campaignCaseMatchesRequest(
+        {
+          cellId: "cell-chrome",
+          targetProfileId: "profile-chrome",
+          target: { targetId: "chrome-1" },
+          engine: "chromium",
+          account: request.account,
+        },
+        request,
+      ),
+    ).toBe(false);
+    expect(
+      campaignCaseMatchesRequest(
+        {
+          cellId: "cell-chrome",
+          executionCaseId: "foreign-case",
+          targetProfileId: "other-profile",
+          target: { targetId: "chrome-1" },
+          engine: "chromium",
+          account: request.account,
+        },
+        request,
+      ),
+    ).toBe(false);
   });
 });

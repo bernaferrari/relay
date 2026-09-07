@@ -22,6 +22,7 @@ import {
   TalkBackModeSelect,
   TalkBackOverlay,
   useTalkBackReview,
+  visibleTalkBackOverlayItems,
 } from "./talkback-review-panel";
 
 const routeApi = getRouteApi("/devices/$deviceId");
@@ -288,6 +289,7 @@ export function DevicePage() {
               send={send}
               pending={target.isPending}
               android={device.data.platform === "android"}
+              serial={device.data.serial}
               talkBack={talkBack}
             />
           ) : null}
@@ -390,6 +392,7 @@ function DeviceLivePreview({
   send,
   pending,
   android,
+  serial,
   talkBack,
 }: {
   canvas: RefObject<HTMLCanvasElement | null>;
@@ -402,6 +405,7 @@ function DeviceLivePreview({
   send: (input: LiveTargetInput) => Promise<boolean>;
   pending: boolean;
   android: boolean;
+  serial?: string;
   talkBack: ReturnType<typeof useTalkBackReview>;
 }) {
   if (pending) return <PageLoading label="Opening the live device…" />;
@@ -445,7 +449,7 @@ function DeviceLivePreview({
           talkBack.on && talkBack.mode !== "off" ? (
             <TalkBackOverlay
               canvasRef={canvas}
-              items={talkBack.result?.review.items ?? []}
+              items={visibleTalkBackOverlayItems(talkBack.result, serial)}
               mode={talkBack.mode}
             />
           ) : null

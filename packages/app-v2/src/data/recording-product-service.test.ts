@@ -270,6 +270,32 @@ describe("recording edit adapter", () => {
     });
   });
 
+  it("retrieves a stored reconcile receipt without inventing an effect", async () => {
+    client.invoke.mockClear();
+    client.invoke.mockResolvedValueOnce({
+      receipt: {
+        resolutionId: "res-9",
+        mutationId: "mut-9",
+        outcome: "not-applied",
+        reviewedAt: 12,
+        health: { state: "ready" },
+      },
+    });
+    const service = createRecordingProductService(platform);
+    await expect(
+      service.fetchReconcileReceipt!({ serial: "pixel-1", mutationId: "mut-9" }),
+    ).resolves.toEqual({
+      mutationId: "mut-9",
+      resolutionId: "res-9",
+      outcome: "not-applied",
+      health: { state: "ready" },
+    });
+    expect(client.invoke).toHaveBeenCalledWith("target.input.receipt.get", {
+      serial: "pixel-1",
+      mutationId: "mut-9",
+    });
+  });
+
   it("keeps a not-applied observation when the fence is ready", async () => {
     client.invoke.mockClear();
     client.invoke.mockResolvedValueOnce({

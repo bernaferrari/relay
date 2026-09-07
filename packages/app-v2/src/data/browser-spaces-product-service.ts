@@ -97,6 +97,8 @@ export type BrowserSpacesProductService = {
     targetId: string;
     name: string;
     url: string;
+    sessionId?: string;
+    configurationDigest?: string;
     authenticationFixtureId?: string;
     signedOut?: true;
   }>;

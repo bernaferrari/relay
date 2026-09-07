@@ -157,7 +157,7 @@ export function executionCellIdentity(input: {
   });
 }
 
-/** Complete returned identity only. Omitted account/engine is not a wildcard. */
+/** Complete returned identity only. Omitted account/engine/cell is not a wildcard. */
 export function campaignCaseMatchesRequest(
   item: CombineCampaignCaseMatch,
   request: ProductRunStartInput,
@@ -167,6 +167,10 @@ export function campaignCaseMatchesRequest(
   if (!item.engine || !item.account) return false;
   if (item.engine !== request.engine) return false;
   if (canonicalJson(item.account) !== canonicalJson(request.account ?? null)) return false;
+  const requestProfile = request.targetProfileId?.trim();
+  const itemProfile = item.targetProfileId?.trim();
+  if (!requestProfile || !itemProfile || requestProfile !== itemProfile) return false;
+  if (!item.cellId?.trim() || !item.executionCaseId?.trim()) return false;
   if (
     item.sourceRevision &&
     canonicalJson(item.sourceRevision) !== canonicalJson(request.sourceRevision ?? null)
@@ -221,7 +225,8 @@ export async function startPairedTestBatch(input: {
   }
   const unused = cases.filter((item) => {
     const id = item.executionCaseId?.trim();
-    return !id || executionCaseCounts.get(id) === 1;
+    if (!id) return false;
+    return executionCaseCounts.get(id) === 1;
   });
   const children: OwnedTestStartChild[] = input.requests.map((request) => {
     const matchIndex = unused.findIndex((item) => campaignCaseMatchesRequest(item, request));

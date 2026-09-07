@@ -76,6 +76,42 @@ export function browserSessionProfileMatches(existing: unknown, requested: unkno
   return JSON.stringify(existing) === JSON.stringify(requested);
 }
 
+/** Explicit request wins. Otherwise attach to an already-open live identity
+ * before falling back to the saved profile (authoring). */
+export function resolveBrowserDeviceOpenIdentity(input: {
+  requested?: { authenticationFixtureId?: string; signedOut?: boolean };
+  existingLive?: { authenticationFixtureId?: string; signedOut?: boolean };
+  savedProfile?: { authenticationFixtureId?: string };
+}): { authenticationFixtureId?: string; signedOut?: boolean } {
+  const requestedFixture = input.requested?.authenticationFixtureId?.trim();
+  if (input.requested?.signedOut === true) return { signedOut: true };
+  if (requestedFixture) return { authenticationFixtureId: requestedFixture };
+  if (input.existingLive?.signedOut === true) return { signedOut: true };
+  const existingFixture = input.existingLive?.authenticationFixtureId?.trim();
+  if (existingFixture) return { authenticationFixtureId: existingFixture };
+  const saved = input.savedProfile?.authenticationFixtureId?.trim();
+  if (saved) return { authenticationFixtureId: saved };
+  return {};
+}
+
+/** Independent registry keys from listed fixtures. Do not derive keys from a
+ * request's own reference. */
+export function accountFixtureIdsFromListed(
+  fixtures: readonly { id: string; name: string; reference: string }[],
+): Record<string, string> {
+  const map: Record<string, string> = {};
+  for (const fixture of fixtures) {
+    const id = fixture.id.trim();
+    if (!id) continue;
+    map[id] = id;
+    const name = fixture.name.trim();
+    if (name) map[name] = id;
+    const parsed = parseCanonicalFixtureReference(fixture.reference);
+    if (parsed?.fixtureId) map[parsed.fixtureId] = id;
+  }
+  return map;
+}
+
 /** Live reuse compares account/engine identity, not viewport or headless. */
 export function browserLiveIdentityMatches(
   existing: { engine?: string; authenticationFixtureId?: string } | undefined,

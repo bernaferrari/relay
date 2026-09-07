@@ -15,11 +15,13 @@ import { summarizeBrowserDeviceTelemetry } from "@relay/protocol";
 import {
   closeBrowserTarget,
   browserPageVisualFingerprint,
+  existingLiveBrowserIdentity,
   openBrowserAuthoringRuntime,
   openBrowserLiveRuntime,
   snapshotBrowserPageSemantics,
   type BrowserAuthoringRuntime,
 } from "./browser-target.js";
+import { resolveBrowserDeviceOpenIdentity } from "./browser-execution-identity.js";
 import type { SnapshotNode } from "./device.js";
 import { runSupervisedBrowserMutation } from "./browser-mutation-supervision.js";
 import { runBrowserMutationAdmission } from "./browser-mutation-admission.js";
@@ -209,7 +211,12 @@ async function projection(state: SessionState): Promise<BrowserDeviceRuntimeSess
 export async function openBrowserDeviceSession(
   targetId: string,
   profile?: BrowserCaseProfile,
-  identity?: { authenticationFixtureId?: string; signedOut?: boolean; projectId?: string },
+  identity?: {
+    authenticationFixtureId?: string;
+    signedOut?: boolean;
+    projectId?: string;
+    sessionId?: string;
+  },
 ): Promise<BrowserDeviceRuntimeSession> {
   const previous = states.get(targetId);
   if (
@@ -219,8 +226,18 @@ export async function openBrowserDeviceSession(
   ) {
     await closeBrowserDeviceSession(targetId);
   }
-  const fixtureId = identity?.authenticationFixtureId ?? profile?.authenticationFixtureId;
-  const signedOut = identity?.signedOut === true;
+  const resolved = resolveBrowserDeviceOpenIdentity({
+    requested: {
+      ...(identity?.authenticationFixtureId
+        ? { authenticationFixtureId: identity.authenticationFixtureId }
+        : {}),
+      ...(identity?.signedOut ? { signedOut: true } : {}),
+    },
+    existingLive: existingLiveBrowserIdentity(targetId),
+    savedProfile: profile,
+  });
+  const fixtureId = resolved.authenticationFixtureId;
+  const signedOut = resolved.signedOut === true;
   const accountBound = Boolean(fixtureId || signedOut);
   const runtime = accountBound
     ? await openBrowserLiveRuntime(targetId, {
@@ -231,6 +248,12 @@ export async function openBrowserDeviceSession(
         ...(identity?.projectId ? { projectId: identity.projectId } : {}),
       })
     : await openBrowserAuthoringRuntime(targetId, { headless: true, profile });
+  const requestedSessionId = identity?.sessionId?.trim();
+  if (requestedSessionId && runtime.sessionId !== requestedSessionId) {
+    throw new Error(
+      `Browser Device attached to ${runtime.sessionId}, not the requested live session ${requestedSessionId}.`,
+    );
+  }
   const current = states.get(targetId);
   if (current?.runtime.sessionId === runtime.sessionId) return projection(current);
   const page = await runtime.activePage();

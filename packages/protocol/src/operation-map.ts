@@ -484,7 +484,30 @@ type SpecificOperationMap = {
       mutationId: string;
       outcome: "applied" | "not-applied" | "ambiguous";
     };
-    output: { health: TargetSupervisorHealth; observation: TargetObservation };
+    output: {
+      health: TargetSupervisorHealth;
+      observation: TargetObservation;
+      mutationId?: string;
+      outcome?: "applied" | "not-applied" | "ambiguous";
+      resolutionId?: string;
+    };
+  };
+  "target.input.receipt.get": {
+    input: { serial: string; mutationId?: string; resolutionId?: string };
+    output: {
+      receipt: {
+        resolutionId: string;
+        mutationId: string;
+        outcome: "applied" | "not-applied" | "ambiguous";
+        reviewedAt: number;
+        health?: {
+          state: "ready" | "blocked" | "uncertain";
+          pendingMutationId?: string;
+          reason?: string;
+        };
+        observation?: unknown;
+      };
+    };
   };
   "target.snapshot.capture": {
     input: { serial: string; visual?: boolean; full?: boolean; interactiveOnly?: boolean };

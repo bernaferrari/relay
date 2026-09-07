@@ -168,6 +168,69 @@ export function createTargetInputReconciliationOperationDefinition(input: {
   };
 }
 
+export function createTargetInputReceiptGetOperationDefinition(): OperationDefinition<
+  "target.input.receipt.get",
+  { serial: string; mutationId?: string; resolutionId?: string },
+  {
+    receipt: {
+      resolutionId: string;
+      mutationId: string;
+      outcome: "applied" | "not-applied" | "ambiguous";
+      reviewedAt: number;
+    };
+  }
+> {
+  const operationInput = objectParser<{
+    serial: string;
+    mutationId?: string;
+    resolutionId?: string;
+  }>("target input receipt", (value) => {
+    if (!string(value.serial, "target input receipt serial").trim()) {
+      fail("target input receipt serial", "must be non-empty");
+    }
+    if (!String(value.mutationId ?? "").trim() && !String(value.resolutionId ?? "").trim()) {
+      fail("target input receipt resolutionId", "or mutationId is required");
+    }
+  });
+  const output = objectParser<{
+    receipt: {
+      resolutionId: string;
+      mutationId: string;
+      outcome: "applied" | "not-applied" | "ambiguous";
+      reviewedAt: number;
+    };
+  }>("target input receipt response", (value) => {
+    const receipt = record(value.receipt, "target input receipt");
+    if (!string(receipt.resolutionId, "resolutionId").trim()) {
+      fail("resolutionId", "must be non-empty");
+    }
+    if (!string(receipt.mutationId, "mutationId").trim()) {
+      fail("mutationId", "must be non-empty");
+    }
+    if (!new Set(["applied", "not-applied", "ambiguous"]).has(String(receipt.outcome))) {
+      fail("outcome", "is unsupported");
+    }
+    number(receipt.reviewedAt, "reviewedAt");
+  });
+  return {
+    id: "target.input.receipt.get",
+    version: 1,
+    label: "Read a durable input reconciliation receipt",
+    category: "target",
+    mode: "query",
+    input: operationInputContract("target.input.receipt.get", operationInput),
+    output,
+    idempotency: "inherent",
+    targetCapabilities: [],
+    lease: "none",
+    confirmation: "none",
+    minimumRole: "viewer",
+    progress: false,
+    cancellable: false,
+    transport: { method: "GET", path: "/device/input/receipt" },
+  };
+}
+
 export function createTargetSupervisorOperationDefinitions(input: {
   assertTargetRuntimeReadiness(value: unknown, label: string): void;
   targetObservation: RuntimeParser<TargetObservation>;
@@ -175,5 +238,6 @@ export function createTargetSupervisorOperationDefinitions(input: {
   return [
     createTargetSupervisorOperationDefinition(input),
     createTargetInputReconciliationOperationDefinition(input),
+    createTargetInputReceiptGetOperationDefinition(),
   ] as const;
 }

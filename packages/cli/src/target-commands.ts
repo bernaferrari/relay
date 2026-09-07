@@ -35,6 +35,15 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
     }),
   ),
   mapped(
+    "target.input.receipt.get",
+    path("target input receipt", ["serial"]),
+    path("device input-receipt", ["serial"], undefined, {
+      summary: "Read a durable reconciliation receipt without sending input",
+      argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
+      examples: ["relay device input-receipt 00008110 --mutationId ios-input-123 --json"],
+    }),
+  ),
+  mapped(
     "target.input.reconcile",
     path("target input reconcile", ["serial", "mutationId", "outcome"]),
     path("device reconcile-input", ["serial", "mutationId", "outcome"], undefined, {

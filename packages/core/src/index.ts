@@ -86,6 +86,7 @@ export * from "./device-factory.js";
 export * from "./target-driver.js";
 export * from "./target-driver-registry.js";
 export * from "./target-supervisor.js";
+export * from "./reconcile-receipt-store.js";
 export * from "./target-supervisor-store.js";
 export * from "./target-supervisor-recovery-coordinator.js";
 export * from "./target-supervisor-runtime-recovery.js";

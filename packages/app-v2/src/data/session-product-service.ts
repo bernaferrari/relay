@@ -351,7 +351,23 @@ export function createSessionProductService(platform: Platform): SessionProductS
       const relayClient = await client();
       const result = await relayClient.invoke("authoring.session.get", { sessionId });
       const { createLiveTargetSession } = await import("./live-target-session");
-      return createLiveTargetSession({ client: relayClient, target: result.session.target });
+      const opened = result.session as {
+        target: typeof result.session.target;
+        authenticationFixtureId?: string;
+        signedOut?: true;
+        sessionId?: string;
+      };
+      return createLiveTargetSession({
+        client: relayClient,
+        target: opened.target,
+        identity: {
+          ...(opened.authenticationFixtureId
+            ? { authenticationFixtureId: opened.authenticationFixtureId }
+            : {}),
+          ...(opened.signedOut ? { signedOut: true as const } : {}),
+          ...(opened.sessionId ? { sessionId: opened.sessionId } : {}),
+        },
+      });
     },
   };
 }
