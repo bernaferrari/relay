@@ -56,6 +56,7 @@ describe("TalkBack review panel", () => {
     expect(host.textContent).toContain("not a TalkBack or VoiceOver proof");
     expect(host.textContent).toContain("TalkBack has no name for this icon.");
     expect(host.textContent).toContain("Unnamed, Button");
+    expect(host.querySelector('ul[aria-label="Accessibility names"]')).not.toBeNull();
   });
 
   it("paints accessibility names on the live view when always is selected", () => {

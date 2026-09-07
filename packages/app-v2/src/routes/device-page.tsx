@@ -287,7 +287,6 @@ export function DevicePage() {
               }}
               send={send}
               pending={target.isPending}
-              android={device.data.platform === "android"}
               talkBack={talkBack}
             />
           ) : null}
@@ -389,7 +388,6 @@ function DeviceLivePreview({
   reconnect,
   send,
   pending,
-  android,
   talkBack,
 }: {
   canvas: RefObject<HTMLCanvasElement | null>;
@@ -401,7 +399,6 @@ function DeviceLivePreview({
   reconnect: () => void;
   send: (input: LiveTargetInput) => Promise<boolean>;
   pending: boolean;
-  android: boolean;
   talkBack: ReturnType<typeof useTalkBackReview>;
 }) {
   if (pending) return <PageLoading label="Opening the live device…" />;
@@ -458,7 +455,7 @@ function DeviceLivePreview({
           />
         }
       />
-      {android && talkBack.on ? (
+      {talkBack.on ? (
         <div className="border-t border-border px-4 py-3">
           <TalkBackIssueList
             review={talkBack.inspection.review}

@@ -181,7 +181,10 @@ export function TalkBackIssueList({
         {review.warningCount ? ` · ${review.warningCount} warnings` : ""}. These are captured names
         from the accessibility tree, not a TalkBack or VoiceOver proof.
       </p>
-      <ul className="grid max-h-40 list-none gap-1 overflow-auto p-0" aria-label="TalkBack issues">
+      <ul
+        className="grid max-h-40 list-none gap-1 overflow-auto p-0"
+        aria-label="Accessibility names"
+      >
         {review.issues.map((item) => (
           <li key={item.id} className="rounded-md bg-muted/60 px-2 py-1.5 text-xs leading-snug">
             <strong className="font-medium">{item.announcement || "Unnamed"}</strong>

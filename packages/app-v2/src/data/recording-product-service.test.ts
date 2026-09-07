@@ -247,6 +247,20 @@ describe("recording edit adapter", () => {
     expect(result.review.issues[0]?.issues[0]?.code).toBe("icon-without-name");
   });
 
+  it("describes a locked screen as missing accessibility names, not TalkBack audio", async () => {
+    client.invoke.mockClear();
+    client.invoke.mockResolvedValueOnce({
+      inspectable: false,
+      inspectionState: "keyguard",
+      nodes: [],
+    });
+    const service = createRecordingProductService(platform);
+    const result = await service.reviewTalkBack!("pixel-1");
+    expect(result.inspectable).toBe(false);
+    expect(result.message).toMatch(/accessibility names/i);
+    expect(result.message).not.toMatch(/TalkBack/i);
+  });
+
   it("returns the server health and observation from reconcile, not only the request", async () => {
     client.invoke.mockClear();
     client.invoke.mockResolvedValueOnce({

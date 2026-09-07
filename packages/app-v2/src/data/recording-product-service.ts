@@ -86,7 +86,7 @@ export type RecordingProductService = {
   ): Promise<LiveTargetSession>;
   /** Fresh accessibility controls from the live target. Historic screenshots are not this. */
   observeTarget?(target: AuthoringTarget): Promise<RecordingEvidenceControl[]>;
-  /** Visual TalkBack names from a live Android snapshot. Does not enable TalkBack. */
+  /** Captured accessibility names from a live snapshot. Does not enable TalkBack. */
   reviewTalkBack?(serial: string): Promise<TalkBackCaptureResult>;
   /** Join a human observation to the durable target mutation receipt. */
   reconcileInput?(input: {
@@ -307,7 +307,7 @@ export function createRecordingProductService(
           : {
               message:
                 snapshot.inspectionState === "keyguard"
-                  ? "Unlock the device to read TalkBack labels."
+                  ? "Unlock the device to read accessibility names."
                   : "Accessibility names are unavailable. The live view still works.",
             }),
       };

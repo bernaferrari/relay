@@ -603,7 +603,7 @@ function RecordingWorkspace({
                       />
                     }
                   />
-                  {selectedTarget.platform === "android" && talkBack.on ? (
+                  {talkBack.on ? (
                     <div className="border-t border-border px-3 py-3">
                       <TalkBackIssueList
                         review={talkBack.inspection.review}
