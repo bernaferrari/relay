@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { ApiError, RelayClient } from "@relay/client";
+import { compileBrowserEnvironment } from "@relay/protocol";
 import {
   appMapCombineCellId,
   cancelJob,
@@ -2067,6 +2068,117 @@ test("testId plus profileTargets starts one campaign and keeps each account", as
       2,
     );
     assert.ok(campaign.cases.every((item) => item.engine === "chromium"));
+  } finally {
+    await server.close();
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("browser Member v7 is a 409 against a saved Member v4 fixture", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-combine-member-revision-"));
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = root;
+  const server = await startServer({
+    host: "127.0.0.1",
+    port: 0,
+    jobRouteRuntime: {
+      async listDevices() {
+        return [];
+      },
+    },
+  });
+  try {
+    const client = new RelayClient({
+      url: `http://127.0.0.1:${server.port}`,
+      auth: { type: "none" },
+      organizationId: "acme",
+      projectId: "mobile",
+      actorId: "human:designer",
+      actorKind: "human",
+    });
+    await client.invoke("app-map.create", { appMapId: "store", name: "Store" });
+    await client.invoke("app-map.screen.add", {
+      appMapId: "store",
+      expectedRevision: 0,
+      screen: {
+        id: "home",
+        title: "Home",
+        identity: { schemaVersion: 1, fingerprint: "a".repeat(64) },
+      },
+    });
+    const created = await client.invoke("app-map.test.save", {
+      appMapId: "store",
+      testId: "script-only",
+      expectedRevision: 1,
+      test: {
+        name: "Prepare once",
+        kind: "scenario",
+        intentSchemaVersion: 1,
+        steps: [
+          {
+            id: "prepare",
+            kind: "script",
+            intent: "Prepare without a selector",
+            binding: { status: "resolved", kind: "script", source: "return true" },
+          },
+        ],
+      } as never,
+    });
+    await mutateStoredAppMap("mobile", "store", (current) => {
+      const next = structuredClone(current);
+      next.screenVariants["home-member"] = {
+        id: "home-member",
+        organizationId: next.organizationId,
+        projectId: next.projectId,
+        appMapId: next.id,
+        screenId: "home",
+        targetProfile: {
+          id: "browser-member",
+          targetId: "shop",
+          source: "browser",
+          platform: "browser",
+          name: "Shop Member",
+          capabilities: ["snapshot"],
+          observedAt: 1,
+          browserCaseProfile: compileBrowserEnvironment({
+            engine: "chromium",
+            authenticationFixtureId: "authfx:member:4",
+          }),
+        },
+        observation: { fingerprint: "a".repeat(64), nodes: [], volatileSignals: [] },
+        evidenceIds: [],
+        evidenceUris: [],
+        createdAt: 1,
+        updatedAt: 1,
+      };
+      next.screens.home!.variantIds = ["home-member"];
+      next.revision = created.appMap.revision + 1;
+      next.updatedAt += 1;
+      return next;
+    });
+    await assert.rejects(
+      () =>
+        client.invoke("job.combine.start", {
+          appMapId: "store",
+          testId: "script-only",
+          executionMode: "all",
+          profileTargets: [
+            {
+              profileId: "profile-member",
+              targetProfileId: "browser-member",
+              engine: "chromium",
+              account: { kind: "fixture", accountId: "acct-member", accountRevision: "7" },
+              target: { targetKind: "browser", browserTargetId: "shop" },
+            },
+          ],
+        }),
+      (error: unknown) =>
+        error instanceof ApiError &&
+        error.status === 409 &&
+        /revision 7.*revision 4/iu.test(error.message),
+    );
   } finally {
     await server.close();
     if (previous === undefined) delete process.env.RELAY_STATE_DIR;

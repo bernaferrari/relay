@@ -1,3 +1,4 @@
+import { bindRequestedBrowserIdentity } from "@relay/core";
 import type { OperationInput, OperationOutput } from "@relay/protocol";
 import {
   createRelayOperationPort,
@@ -426,6 +427,43 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
       });
     }
 
+    if (intent.account || intent.engine) {
+      const profiles = checkedCompile.plan.rawAccessibilityTargetProfiles ?? [];
+      const profile = targetProfileId
+        ? profiles.find((item) => item.id === targetProfileId)
+        : profiles.length === 1
+          ? profiles[0]
+          : undefined;
+      const saved = profile?.browserCaseProfile;
+      const bound = bindRequestedBrowserIdentity({
+        requested: {
+          ...(intent.engine ? { engine: intent.engine } : {}),
+          ...(intent.account ? { account: intent.account } : {}),
+        },
+        saved: {
+          ...(saved?.engine ? { engine: saved.engine } : {}),
+          ...(saved?.authenticationFixtureId
+            ? { authenticationFixtureId: saved.authenticationFixtureId }
+            : {}),
+        },
+        platform: intent.target.kind === "browser" ? "browser" : intent.target.platform,
+      });
+      if (bound.status === "blocked") {
+        return initialProblem({
+          intent: effectiveIntent,
+          compiled: checkedCompile,
+          problem: {
+            code: "compile-blocked",
+            title: "The selected account does not match the saved runtime profile",
+            detail: bound.reason,
+            recovery:
+              "Use the exact saved account fixture revision, or capture a matching runtime profile before running.",
+            retryable: false,
+          },
+        });
+      }
+    }
+
     const frozen = frozenIdentity(effectiveIntent, revision, checkedCompile.preflight.planDigest);
 
     let durable: OperationOutput<"workflow.create"> | undefined;
@@ -475,6 +513,8 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
       expectedRevision: revision,
       target: { ...intent.target },
       ...(targetProfileId ? { targetProfileId } : {}),
+      ...(intent.engine ? { engine: intent.engine } : {}),
+      ...(intent.account ? { account: intent.account } : {}),
       ...(intent.startup ? { startup: { ...intent.startup } } : {}),
       ...(intent.sourceRevision ? { sourceRevision: { ...intent.sourceRevision } } : {}),
       ...(intent.capture

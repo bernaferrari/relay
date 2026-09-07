@@ -293,9 +293,17 @@ export function createRecordingProductService(
       });
       const pending = result.health?.input?.pendingMutationId;
       const state = result.health?.input?.state;
+      const outcome =
+        state === "uncertain"
+          ? "ambiguous"
+          : state === "blocked"
+            ? "not-applied"
+            : state === "ready"
+              ? "applied"
+              : "ambiguous";
       return {
         mutationId: pending ?? input.mutationId,
-        outcome: state === "uncertain" ? "ambiguous" : input.outcome,
+        outcome,
         ...(result.health?.input
           ? {
               health: {

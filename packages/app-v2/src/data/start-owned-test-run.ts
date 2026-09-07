@@ -69,18 +69,21 @@ export type CombineStartBody = {
   sourceRevision?: ProductRunStartInput["sourceRevision"];
 };
 
+export type CombineCampaignCaseMatch = {
+  cellId?: string;
+  status?: string;
+  targetProfileId?: string;
+  runId?: string;
+  engine?: BoundExecutionIdentity["engine"];
+  account?: BoundExecutionIdentity["account"];
+  target?: { targetId?: string };
+  sourceRevision?: ProductRunStartInput["sourceRevision"];
+};
+
 export type CombineStartResult = {
   campaign?: {
     id?: string;
-    cases?: readonly {
-      cellId?: string;
-      status?: string;
-      targetProfileId?: string;
-      runId?: string;
-      engine?: BoundExecutionIdentity["engine"];
-      account?: BoundExecutionIdentity["account"];
-      targetId?: string;
-    }[];
+    cases?: readonly CombineCampaignCaseMatch[];
   };
   batch?: { id?: string };
 };
@@ -143,6 +146,27 @@ export function executionCellIdentity(input: {
   });
 }
 
+/** Match only fields the campaign case actually returned. Never invent a
+ * target id or build from the request. */
+export function campaignCaseMatchesRequest(
+  item: CombineCampaignCaseMatch,
+  request: ProductRunStartInput,
+): boolean {
+  const targetId = item.target?.targetId?.trim();
+  if (!targetId || targetId !== request.targetId) return false;
+  if (item.engine && item.engine !== request.engine) return false;
+  if (item.account && JSON.stringify(item.account) !== JSON.stringify(request.account ?? null)) {
+    return false;
+  }
+  if (
+    item.sourceRevision &&
+    JSON.stringify(item.sourceRevision) !== JSON.stringify(request.sourceRevision ?? null)
+  ) {
+    return false;
+  }
+  return Boolean(item.engine || item.account);
+}
+
 export function pairedBatchFields(requests: readonly ProductRunStartInput[]): {
   sourceRevision?: ProductRunStartInput["sourceRevision"];
 } {
@@ -182,21 +206,7 @@ export async function startPairedTestBatch(input: {
   const cases = started.campaign?.cases ?? [];
   const unused = [...cases];
   const children: OwnedTestStartChild[] = input.requests.map((request) => {
-    const expected = executionCellIdentity({
-      targetId: request.targetId,
-      engine: request.engine,
-      account: request.account,
-      sourceRevision: request.sourceRevision,
-    });
-    const matchIndex = unused.findIndex(
-      (item) =>
-        executionCellIdentity({
-          targetId: item.targetId ?? request.targetId,
-          engine: item.engine,
-          account: item.account,
-          sourceRevision: request.sourceRevision,
-        }) === expected,
-    );
+    const matchIndex = unused.findIndex((item) => campaignCaseMatchesRequest(item, request));
     const item = matchIndex >= 0 ? unused.splice(matchIndex, 1)[0] : undefined;
     if (!item) {
       return {

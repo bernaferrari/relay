@@ -39,6 +39,13 @@ export type RecordingTargetHealthProjection = {
   };
 };
 
+export type RecordingReconcileAuthorityReceipt = {
+  mutationId: string;
+  outcome?: RecordingReconcileServerOutcome;
+  health?: RecordingTargetHealthProjection["input"];
+  observation?: unknown;
+};
+
 export type RecordingReconcileAuthority = {
   serial: string;
   actor?: string;
@@ -46,8 +53,20 @@ export type RecordingReconcileAuthority = {
     serial: string;
     mutationId: string;
     outcome: RecordingReconcileServerOutcome;
-  }) => Promise<{ mutationId: string; outcome: RecordingReconcileServerOutcome }>;
+  }) => Promise<RecordingReconcileAuthorityReceipt>;
 };
+
+export function reconcileObservedFromServerReceipt(
+  receipt: RecordingReconcileAuthorityReceipt,
+): RecordingObservedEffect {
+  if (receipt.health?.state === "uncertain") return "uncertain";
+  if (receipt.health?.state === "blocked") return "not-observed";
+  if (receipt.outcome === "not-applied") return "not-observed";
+  if (receipt.outcome === "ambiguous") return "uncertain";
+  if (receipt.outcome === "applied") return "applied";
+  if (receipt.health?.state === "ready") return "applied";
+  return "uncertain";
+}
 
 const SUPERVISED_MUTATION_ID = /^(ios-input-|browser-input-)/u;
 
@@ -339,10 +358,14 @@ export async function reconcileRecordingMutationAuthoritatively(input: {
   if (receipt.mutationId !== input.mutationId) {
     throw new TypeError("Relay reconciled a different mutation.");
   }
+  const pending = receipt.health?.pendingMutationId;
+  if (pending && pending !== input.mutationId) {
+    throw new TypeError("Relay still holds a different pending mutation.");
+  }
   return reconcileRecordingMutation(
     input.ledger,
     input.mutationId,
-    input.observed,
+    reconcileObservedFromServerReceipt(receipt),
     input.now ?? Date.now(),
     { actor: input.authority.actor, authority: "server" },
   );

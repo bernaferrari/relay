@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { operationDefinition } from "@relay/protocol";
 import { emptyPairedWorkspace } from "./paired-configuration";
 import {
+  campaignCaseMatchesRequest,
   profileTargetsFromStarts,
   startOwnedTestRun,
   startPairedTestBatch,
@@ -165,7 +166,7 @@ describe("start owned Test runs", () => {
                     cellId: "cell-admin",
                     status: "queued",
                     targetProfileId: "profile-admin",
-                    targetId: "chrome-1",
+                    target: { targetId: "chrome-1" },
                     engine: "chromium",
                     account: {
                       kind: "fixture",
@@ -178,7 +179,7 @@ describe("start owned Test runs", () => {
                     cellId: "cell-member",
                     status: "blocked",
                     targetProfileId: "profile-member",
-                    targetId: "chrome-1",
+                    target: { targetId: "chrome-1" },
                     engine: "chromium",
                     account: {
                       kind: "fixture",
@@ -190,7 +191,7 @@ describe("start owned Test runs", () => {
                     cellId: "cell-out",
                     status: "pending",
                     targetProfileId: "profile-out",
-                    targetId: "webkit-1",
+                    target: { targetId: "webkit-1" },
                     engine: "webkit",
                     account: { kind: "signed-out", attested: true },
                   },
@@ -251,7 +252,7 @@ describe("start owned Test runs", () => {
                 cellId: "cell-member",
                 status: "blocked",
                 targetProfileId: "pixel-en",
-                targetId: "chrome-1",
+                target: { targetId: "chrome-1" },
                 account: {
                   kind: "fixture",
                   accountId: "acct-member",
@@ -263,7 +264,7 @@ describe("start owned Test runs", () => {
                 cellId: "cell-out",
                 status: "pending",
                 targetProfileId: "pixel-it",
-                targetId: "webkit-1",
+                target: { targetId: "webkit-1" },
                 account: { kind: "signed-out", attested: true },
                 engine: "webkit",
               },
@@ -271,7 +272,7 @@ describe("start owned Test runs", () => {
                 cellId: "cell-admin",
                 status: "queued",
                 targetProfileId: "pixel-en",
-                targetId: "chrome-1",
+                target: { targetId: "chrome-1" },
                 account: {
                   kind: "fixture",
                   accountId: "acct-admin",
@@ -346,7 +347,7 @@ describe("start owned Test runs", () => {
               {
                 cellId: "other",
                 status: "queued",
-                targetId: "chrome-1",
+                target: { targetId: "chrome-1" },
                 engine: "firefox",
                 account: {
                   kind: "fixture",
@@ -363,5 +364,62 @@ describe("start owned Test runs", () => {
     expect(bodies[0]?.sourceRevision).toEqual({ vcs: "git", sha: "abcdef1" });
     expect(result.children.map((child) => child.status)).toEqual(["mismatched", "mismatched"]);
     expect(result.children[0]?.state?.run?.runId).toBeUndefined();
+  });
+
+  it("does not let the same account on two browsers steal a reordered neighbor", async () => {
+    const requests = [
+      {
+        testId: "checkout",
+        appMapId: "app-1",
+        targetId: "chrome-1",
+        targetProfileId: "profile-chrome",
+        engine: "chromium" as const,
+        account: { kind: "fixture" as const, accountId: "acct-member", accountRevision: "7" },
+      },
+      {
+        testId: "checkout",
+        appMapId: "app-1",
+        targetId: "firefox-1",
+        targetProfileId: "profile-firefox",
+        engine: "firefox" as const,
+        account: { kind: "fixture" as const, accountId: "acct-member", accountRevision: "7" },
+      },
+    ];
+    const result = await startPairedTestBatch({
+      requests,
+      combineStart: async () => ({
+        campaign: {
+          id: "batch-two-browsers",
+          cases: [
+            {
+              cellId: "cell-firefox",
+              status: "queued",
+              target: { targetId: "firefox-1" },
+              engine: "firefox",
+              account: { kind: "fixture", accountId: "acct-member", accountRevision: "7" },
+              runId: "run-firefox",
+            },
+            {
+              cellId: "cell-chrome",
+              status: "queued",
+              target: { targetId: "chrome-1" },
+              engine: "chromium",
+              account: { kind: "fixture", accountId: "acct-member", accountRevision: "7" },
+              runId: "run-chrome",
+            },
+          ],
+        },
+      }),
+    });
+    expect(result.children.map((child) => child.state?.run?.runId)).toEqual([
+      "run-chrome",
+      "run-firefox",
+    ]);
+    expect(
+      campaignCaseMatchesRequest(
+        { target: { targetId: "chrome-1" }, engine: "chromium", account: requests[0]!.account },
+        requests[1]!,
+      ),
+    ).toBe(false);
   });
 });

@@ -41,6 +41,36 @@ export function browserSessionProfileMatches(existing: unknown, requested: unkno
   return JSON.stringify(existing) === JSON.stringify(requested);
 }
 
+function fixtureAccountToken(value: string): string {
+  return value
+    .trim()
+    .replace(/^authfx:/iu, "")
+    .replace(FIXTURE_REFERENCE, "")
+    .toLowerCase();
+}
+
+function requestedAccountTokens(accountId: string): Set<string> {
+  const id = accountId.trim().toLowerCase();
+  return new Set([id, id.replace(/^acct-/u, "")].filter(Boolean));
+}
+
+function savedFixtureNamesAccount(accountId: string, savedFixture: string): boolean {
+  const saved = fixtureAccountToken(savedFixture);
+  const tokens = requestedAccountTokens(accountId);
+  if (tokens.has(saved)) return true;
+  return [...tokens].some((token) => token.length > 0 && saved === token);
+}
+
+/** Account/engine without an explicit platform is a browser case. */
+export function browserIdentityPlatform(
+  platform: string | undefined,
+  requested?: { engine?: string; account?: RequestedBrowserAccount },
+): string | undefined {
+  if (platform) return platform;
+  if (requested?.account || requested?.engine) return "browser";
+  return undefined;
+}
+
 export function bindRequestedBrowserIdentity(input: {
   requested?: { engine?: string; account?: RequestedBrowserAccount };
   saved?: SavedBrowserIdentity;
@@ -48,7 +78,8 @@ export function bindRequestedBrowserIdentity(input: {
 }): BrowserIdentityBindResult {
   const requested = input.requested;
   if (!requested?.account && !requested?.engine) return { status: "not-applicable" };
-  if (input.platform && input.platform !== "browser") return { status: "not-applicable" };
+  const platform = browserIdentityPlatform(input.platform, requested);
+  if (platform && platform !== "browser") return { status: "not-applicable" };
 
   if (requested.engine && input.saved?.engine && requested.engine !== input.saved.engine) {
     return {
@@ -73,27 +104,36 @@ export function bindRequestedBrowserIdentity(input: {
 
   const requestedReference = account.reference?.trim();
   const requestedRevision = account.accountRevision.trim();
-  if (savedFixture) {
-    const savedRevision = fixtureRevisionFromReference(savedFixture);
-    if (savedRevision && savedRevision !== requestedRevision) {
-      return {
-        status: "blocked",
-        reason: `Requested account revision ${requestedRevision} does not match saved fixture revision ${savedRevision}.`,
-      };
-    }
-    if (requestedReference && savedFixture !== requestedReference) {
-      return {
-        status: "blocked",
-        reason: `Requested account ${account.accountId} v${requestedRevision} does not match saved fixture ${savedFixture}.`,
-      };
-    }
-    return { status: "bound" };
-  }
-
-  if (input.platform === "browser") {
+  if (!savedFixture) {
     return {
       status: "blocked",
       reason: `The saved runtime profile does not name account ${account.accountId} revision ${requestedRevision}.`,
+    };
+  }
+
+  const savedRevision = fixtureRevisionFromReference(savedFixture);
+  if (savedRevision && savedRevision !== requestedRevision) {
+    return {
+      status: "blocked",
+      reason: `Requested account revision ${requestedRevision} does not match saved fixture revision ${savedRevision}.`,
+    };
+  }
+  if (requestedReference && savedFixture !== requestedReference) {
+    return {
+      status: "blocked",
+      reason: `Requested account ${account.accountId} v${requestedRevision} does not match saved fixture ${savedFixture}.`,
+    };
+  }
+  if (!requestedReference && !savedFixtureNamesAccount(account.accountId, savedFixture)) {
+    return {
+      status: "blocked",
+      reason: `Requested account ${account.accountId} v${requestedRevision} does not match saved fixture ${savedFixture}.`,
+    };
+  }
+  if (!savedRevision && !requestedReference) {
+    return {
+      status: "blocked",
+      reason: `Requested account ${account.accountId} v${requestedRevision} does not match saved fixture ${savedFixture}.`,
     };
   }
   return { status: "bound" };

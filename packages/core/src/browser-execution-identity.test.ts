@@ -93,3 +93,43 @@ test("device profileTargets without a browser case are not treated as account ex
 test("fixture references expose their revision", () => {
   assert.equal(fixtureRevisionFromReference("authfx:00000000-0000-4000-8000-000000000000:7"), "7");
 });
+
+test("Member v7 cannot bind an opaque saved session or a different account at the same revision", () => {
+  const requested = {
+    engine: "chromium",
+    account: { kind: "fixture" as const, accountId: "acct-member", accountRevision: "7" },
+  };
+  const opaque = bindRequestedBrowserIdentity({
+    requested,
+    saved: { engine: "chromium", authenticationFixtureId: "member-session" },
+  });
+  const otherAccount = bindRequestedBrowserIdentity({
+    requested,
+    saved: { engine: "chromium", authenticationFixtureId: "authfx:admin:7" },
+  });
+  const missing = bindRequestedBrowserIdentity({
+    requested,
+    saved: { engine: "chromium" },
+  });
+  assert.equal(opaque.status, "blocked");
+  assert.equal(otherAccount.status, "blocked");
+  assert.equal(missing.status, "blocked");
+  assert.match((opaque as { reason: string }).reason, /member-session/i);
+  assert.match((otherAccount as { reason: string }).reason, /authfx:admin:7/i);
+});
+
+test("account and engine without a platform still bind as a browser case", () => {
+  const bound = bindRequestedBrowserIdentity({
+    requested: {
+      engine: "chromium",
+      account: {
+        kind: "fixture",
+        accountId: "acct-member",
+        accountRevision: "7",
+        reference: "authfx:member:7",
+      },
+    },
+    saved: { engine: "chromium", authenticationFixtureId: "authfx:member:7" },
+  });
+  assert.equal(bound.status, "bound");
+});

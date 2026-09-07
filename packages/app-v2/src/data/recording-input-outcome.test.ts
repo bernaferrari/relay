@@ -231,6 +231,30 @@ describe("recording input outcome", () => {
     expect(recordingRecoveryBlocksSend(applied)).toBe(false);
   });
 
+  it("keeps the mutation uncertain when the server health is still uncertain", async () => {
+    const ledger = appendRecordingMutation(undefined, {
+      kind: "unknown",
+      mutationId: "ios-input-reviewed",
+      message: "Input submitted; runner not ready to acknowledge",
+    });
+    const next = await reconcileRecordingMutationAuthoritatively({
+      ledger,
+      mutationId: "ios-input-reviewed",
+      observed: "applied",
+      authority: {
+        serial: "emulator-5554",
+        actor: "human:qa",
+        reconcile: async (input) => ({
+          mutationId: input.mutationId,
+          outcome: "applied",
+          health: { state: "uncertain", pendingMutationId: "ios-input-reviewed" },
+        }),
+      },
+    });
+    expect(next.mutations[0]?.observed).toBe("uncertain");
+    expect(recordingRecoveryBlocksSend(next)).toBe(true);
+  });
+
   it("hydrates an empty projection from the Device pending mutation", () => {
     expect(isSupervisedRecordingMutationId("ios-input-reviewed")).toBe(true);
     expect(isSupervisedRecordingMutationId("recording-mutation-local")).toBe(false);

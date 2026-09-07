@@ -53,6 +53,20 @@ export const appMapTestRunInputSchema = z
     expectedRevision: natural("Exact saved App Map revision to run"),
     target: authoringTarget.describe("Explicit device or managed browser target"),
     targetProfileId: identifier("Saved runtime evidence profile to bind before control").optional(),
+    engine: z.enum(["chromium", "firefox", "webkit"]).optional(),
+    account: z
+      .discriminatedUnion("kind", [
+        z
+          .object({
+            kind: z.literal("fixture"),
+            accountId: z.string().trim().min(1),
+            accountRevision: z.string().trim().min(1),
+            reference: z.string().trim().min(1).optional(),
+          })
+          .strict(),
+        z.object({ kind: z.literal("signed-out"), attested: z.literal(true) }).strict(),
+      ])
+      .optional(),
     surfaceCapture: z
       .object({ forceRecaptureScreenIds })
       .strict()

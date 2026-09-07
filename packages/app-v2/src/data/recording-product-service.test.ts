@@ -269,6 +269,25 @@ describe("recording edit adapter", () => {
       observation: { schemaVersion: 1, capturedAt: 9 },
     });
   });
+
+  it("maps ready server health to applied instead of echoing the request outcome", async () => {
+    client.invoke.mockClear();
+    client.invoke.mockResolvedValueOnce({
+      health: { input: { state: "ready" } },
+    });
+    const service = createRecordingProductService(platform);
+    await expect(
+      service.reconcileInput!({
+        serial: "pixel-1",
+        mutationId: "mut-2",
+        outcome: "not-applied",
+      }),
+    ).resolves.toEqual({
+      mutationId: "mut-2",
+      outcome: "applied",
+      health: { state: "ready" },
+    });
+  });
 });
 
 // Keep this assertion close to the adapter tests so a future protocol edit

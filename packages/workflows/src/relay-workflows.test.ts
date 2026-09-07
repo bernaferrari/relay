@@ -235,6 +235,48 @@ test("automatically binds the device profile referenced by the reviewed Test", a
   );
 });
 
+test("Member v7 cannot enqueue a Test against a saved Member v4 profile", async () => {
+  const savedV4 = {
+    ...browserCaseProfile,
+    authenticationFixtureId: "authfx:member:4",
+  };
+  const scripted = createScriptedRelayClient([
+    {
+      id: "app-map.test.compile",
+      output: {
+        plan: {
+          rootRecipeId: "open-settings",
+          rawAccessibilityTargetProfiles: [
+            {
+              id: "browser-profile-1",
+              targetId: browserTarget.targetId,
+              platform: "browser",
+              viewport: savedV4.viewport,
+              browserCaseProfile: savedV4,
+            },
+          ],
+        },
+        preflight: preflight(7),
+      },
+    },
+  ]);
+  const snapshot = await createRelayWorkflows(scripted.client).start(
+    intent({
+      target: browserTarget,
+      revision: { exact: 7 },
+      targetProfileId: "browser-profile-1",
+      engine: "chromium",
+      account: { kind: "fixture", accountId: "acct-member", accountRevision: "7" },
+    }),
+  );
+  assert.equal(snapshot.phase, "blocked");
+  assert.match(snapshot.problems[0]?.detail ?? "", /revision 7.*revision 4/i);
+  assert.equal(
+    scripted.invocations.some(({ id }) => id === "app-map.test.run"),
+    false,
+  );
+});
+
 test("automatically binds the unique browser profile matching the registered environment", async () => {
   const scripted = createScriptedRelayClient([
     browserCompileStep([browserProfile()]),

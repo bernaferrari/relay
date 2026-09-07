@@ -5,6 +5,7 @@ import {
   AppMapTestCompileError,
   activeReviewedDocumentOriginsForAppMap,
   bindRegisteredWebDeploymentToProof,
+  bindRequestedBrowserIdentity,
   CasePlanError,
   buildTargetProfiles,
   compileAppMapConnection,
@@ -292,6 +293,29 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
         });
     const runtimeTargetProfile =
       explicitlySelectedRuntimeTargetProfile ?? inferredRuntimeTargetProfile;
+    if (body.account || body.engine) {
+      const savedBrowser = runtimeTargetProfile?.browserCaseProfile;
+      const bound = bindRequestedBrowserIdentity({
+        requested: {
+          ...(body.engine ? { engine: body.engine } : {}),
+          ...(body.account ? { account: body.account } : {}),
+        },
+        saved: {
+          ...(savedBrowser?.engine ? { engine: savedBrowser.engine } : {}),
+          ...(savedBrowser?.authenticationFixtureId
+            ? { authenticationFixtureId: savedBrowser.authenticationFixtureId }
+            : {}),
+        },
+        platform: body.target.platform ?? (body.target.kind === "browser" ? "browser" : undefined),
+      });
+      if (bound.status === "blocked") {
+        throw new HttpError(409, bound.reason, {
+          code: "REQUESTED_ACCOUNT_MISMATCH",
+          recovery:
+            "Use the exact saved account fixture revision, or capture a matching runtime profile before running.",
+        });
+      }
+    }
     let compiled;
     try {
       const reviewedDocumentOrigins = await activeReviewedDocumentOriginsForAppMap(map);

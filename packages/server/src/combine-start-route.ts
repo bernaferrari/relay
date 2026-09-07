@@ -127,7 +127,21 @@ export type CombineStartRouteContext = {
   runtime: JobRouteRuntime;
 };
 
-function savedBrowserIdentityForProfile(
+function savedIdentityFromProfile(profile: {
+  platform?: string;
+  browserCaseProfile?: { engine?: string; authenticationFixtureId?: string };
+}): { engine?: string; authenticationFixtureId?: string; platform?: string } {
+  const browser = profile.browserCaseProfile;
+  return {
+    ...(browser?.engine ? { engine: browser.engine } : {}),
+    ...(browser?.authenticationFixtureId
+      ? { authenticationFixtureId: browser.authenticationFixtureId }
+      : {}),
+    ...(profile.platform ? { platform: profile.platform } : {}),
+  };
+}
+
+export function savedBrowserIdentityForProfile(
   map: {
     screenVariants?: Record<
       string,
@@ -140,18 +154,16 @@ function savedBrowserIdentityForProfile(
       }
     >;
   },
-  targetProfileId: string,
+  ...profileIds: Array<string | undefined>
 ): { engine?: string; authenticationFixtureId?: string; platform?: string } {
+  const wanted = new Set(
+    profileIds.map((id) => id?.trim()).filter((id): id is string => Boolean(id)),
+  );
+  if (!wanted.size) return {};
   for (const variant of Object.values(map.screenVariants ?? {})) {
-    if (variant.targetProfile?.id !== targetProfileId) continue;
-    const browser = variant.targetProfile.browserCaseProfile;
-    return {
-      ...(browser?.engine ? { engine: browser.engine } : {}),
-      ...(browser?.authenticationFixtureId
-        ? { authenticationFixtureId: browser.authenticationFixtureId }
-        : {}),
-      ...(variant.targetProfile.platform ? { platform: variant.targetProfile.platform } : {}),
-    };
+    const profile = variant.targetProfile;
+    if (!profile?.id || !wanted.has(profile.id)) continue;
+    return savedIdentityFromProfile(profile);
   }
   return {};
 }
@@ -375,14 +387,23 @@ async function executeCombineStartUnlocked(
                 );
               }
               if (profileTarget.account || profileTarget.engine) {
-                const saved = savedBrowserIdentityForProfile(map, targetProfileId);
+                const saved = savedBrowserIdentityForProfile(
+                  map,
+                  targetProfileId,
+                  profileTarget.profileId,
+                  profileTarget.targetProfileId,
+                );
                 const bound = bindRequestedBrowserIdentity({
                   requested: {
                     ...(profileTarget.engine ? { engine: profileTarget.engine } : {}),
                     ...(profileTarget.account ? { account: profileTarget.account } : {}),
                   },
                   saved,
-                  platform: target.platform ?? saved.platform,
+                  platform:
+                    target.platform ??
+                    (target.browserTargetId || profileTarget.engine || profileTarget.account
+                      ? "browser"
+                      : saved.platform),
                 });
                 if (bound.status === "blocked") {
                   throw new HttpError(409, bound.reason, {
