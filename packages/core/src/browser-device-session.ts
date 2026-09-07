@@ -16,6 +16,7 @@ import {
   closeBrowserTarget,
   browserPageVisualFingerprint,
   openBrowserAuthoringRuntime,
+  openBrowserLiveRuntime,
   snapshotBrowserPageSemantics,
   type BrowserAuthoringRuntime,
 } from "./browser-target.js";
@@ -208,6 +209,7 @@ async function projection(state: SessionState): Promise<BrowserDeviceRuntimeSess
 export async function openBrowserDeviceSession(
   targetId: string,
   profile?: BrowserCaseProfile,
+  identity?: { authenticationFixtureId?: string; signedOut?: boolean; projectId?: string },
 ): Promise<BrowserDeviceRuntimeSession> {
   const previous = states.get(targetId);
   if (
@@ -217,7 +219,18 @@ export async function openBrowserDeviceSession(
   ) {
     await closeBrowserDeviceSession(targetId);
   }
-  const runtime = await openBrowserAuthoringRuntime(targetId, { headless: true, profile });
+  const fixtureId = identity?.authenticationFixtureId ?? profile?.authenticationFixtureId;
+  const signedOut = identity?.signedOut === true;
+  const accountBound = Boolean(fixtureId || signedOut);
+  const runtime = accountBound
+    ? await openBrowserLiveRuntime(targetId, {
+        headless: true,
+        profile,
+        ...(fixtureId ? { authenticationFixtureId: fixtureId } : {}),
+        ...(signedOut ? { signedOut: true } : {}),
+        ...(identity?.projectId ? { projectId: identity.projectId } : {}),
+      })
+    : await openBrowserAuthoringRuntime(targetId, { headless: true, profile });
   const current = states.get(targetId);
   if (current?.runtime.sessionId === runtime.sessionId) return projection(current);
   const page = await runtime.activePage();

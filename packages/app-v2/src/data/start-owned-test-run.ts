@@ -71,6 +71,7 @@ export type CombineStartBody = {
 
 export type CombineCampaignCaseMatch = {
   cellId?: string;
+  executionCaseId?: string;
   status?: string;
   targetProfileId?: string;
   runId?: string;
@@ -132,13 +133,23 @@ function childStatusFromCase(status: string | undefined): OwnedTestStartChild["s
   return "started";
 }
 
+export function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map((item) => canonicalJson(item)).join(",")}]`;
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
+    .join(",")}}`;
+}
+
 export function executionCellIdentity(input: {
   targetId?: string;
   engine?: BoundExecutionIdentity["engine"];
   account?: BoundExecutionIdentity["account"];
   sourceRevision?: ProductRunStartInput["sourceRevision"];
 }): string {
-  return JSON.stringify({
+  return canonicalJson({
     targetId: input.targetId ?? "",
     engine: input.engine ?? "",
     account: input.account ?? null,
@@ -146,25 +157,23 @@ export function executionCellIdentity(input: {
   });
 }
 
-/** Match only fields the campaign case actually returned. Never invent a
- * target id or build from the request. */
+/** Complete returned identity only. Omitted account/engine is not a wildcard. */
 export function campaignCaseMatchesRequest(
   item: CombineCampaignCaseMatch,
   request: ProductRunStartInput,
 ): boolean {
   const targetId = item.target?.targetId?.trim();
   if (!targetId || targetId !== request.targetId) return false;
-  if (item.engine && item.engine !== request.engine) return false;
-  if (item.account && JSON.stringify(item.account) !== JSON.stringify(request.account ?? null)) {
-    return false;
-  }
+  if (!item.engine || !item.account) return false;
+  if (item.engine !== request.engine) return false;
+  if (canonicalJson(item.account) !== canonicalJson(request.account ?? null)) return false;
   if (
     item.sourceRevision &&
-    JSON.stringify(item.sourceRevision) !== JSON.stringify(request.sourceRevision ?? null)
+    canonicalJson(item.sourceRevision) !== canonicalJson(request.sourceRevision ?? null)
   ) {
     return false;
   }
-  return Boolean(item.engine || item.account);
+  return true;
 }
 
 export function pairedBatchFields(requests: readonly ProductRunStartInput[]): {
@@ -204,7 +213,16 @@ export async function startPairedTestBatch(input: {
   const batchId = started.campaign?.id ?? started.batch?.id;
   if (!batchId) throw new TypeError("Relay did not create a durable Batch for these pairs.");
   const cases = started.campaign?.cases ?? [];
-  const unused = [...cases];
+  const executionCaseCounts = new Map<string, number>();
+  for (const item of cases) {
+    const id = item.executionCaseId?.trim();
+    if (!id) continue;
+    executionCaseCounts.set(id, (executionCaseCounts.get(id) ?? 0) + 1);
+  }
+  const unused = cases.filter((item) => {
+    const id = item.executionCaseId?.trim();
+    return !id || executionCaseCounts.get(id) === 1;
+  });
   const children: OwnedTestStartChild[] = input.requests.map((request) => {
     const matchIndex = unused.findIndex((item) => campaignCaseMatchesRequest(item, request));
     const item = matchIndex >= 0 ? unused.splice(matchIndex, 1)[0] : undefined;

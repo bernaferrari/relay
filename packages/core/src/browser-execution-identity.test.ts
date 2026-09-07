@@ -3,8 +3,10 @@ import test from "node:test";
 import {
   bindRequestedBrowserIdentity,
   browserLiveSessionKey,
+  browserRuntimeConfigurationDigest,
   browserSessionProfileMatches,
   fixtureRevisionFromReference,
+  liveBrowserSessionKeysToClose,
 } from "./browser-execution-identity.js";
 
 test("Member v7 cannot execute a saved Member v4 fixture", () => {
@@ -26,6 +28,32 @@ test("Member v7 cannot execute a saved Member v4 fixture", () => {
   });
   assert.equal(bound.status, "blocked");
   assert.match((bound as { reason: string }).reason, /revision 7.*revision 4/i);
+});
+
+test("opening a live account does not close authoring or the requested live key", () => {
+  const keys = liveBrowserSessionKeysToClose({
+    keys: [
+      "authoring:browser-1",
+      "live:browser-1:authfx:admin:4",
+      "live:browser-1:authfx:member:7",
+      "live:browser-2:authfx:admin:4",
+    ],
+    targetId: "browser-1",
+    keepKey: "live:browser-1:authfx:member:7",
+  });
+  assert.deepEqual(keys, ["live:browser-1:authfx:admin:4"]);
+  assert.notEqual(
+    browserRuntimeConfigurationDigest({
+      targetId: "browser-1",
+      engine: "chromium",
+      authenticationFixtureId: "authfx:admin:4",
+    }),
+    browserRuntimeConfigurationDigest({
+      targetId: "browser-1",
+      engine: "chromium",
+      authenticationFixtureId: "authfx:member:7",
+    }),
+  );
 });
 
 test("Admin and Member on the same browser are distinct Live session keys", () => {
@@ -114,8 +142,8 @@ test("Member v7 cannot bind an opaque saved session or a different account at th
   assert.equal(opaque.status, "blocked");
   assert.equal(otherAccount.status, "blocked");
   assert.equal(missing.status, "blocked");
-  assert.match((opaque as { reason: string }).reason, /member-session/i);
-  assert.match((otherAccount as { reason: string }).reason, /authfx:admin:7/i);
+  assert.match((opaque as { reason: string }).reason, /canonical fixture/i);
+  assert.match((otherAccount as { reason: string }).reason, /does not map|authfx:admin:7/i);
 });
 
 test("account and engine without a platform still bind as a browser case", () => {
@@ -124,7 +152,7 @@ test("account and engine without a platform still bind as a browser case", () =>
       engine: "chromium",
       account: {
         kind: "fixture",
-        accountId: "acct-member",
+        accountId: "member",
         accountRevision: "7",
         reference: "authfx:member:7",
       },
@@ -132,4 +160,33 @@ test("account and engine without a platform still bind as a browser case", () =>
     saved: { engine: "chromium", authenticationFixtureId: "authfx:member:7" },
   });
   assert.equal(bound.status, "bound");
+});
+
+test("a contradictory accountId and fixture reference cannot bind", () => {
+  const bound = bindRequestedBrowserIdentity({
+    requested: {
+      engine: "chromium",
+      account: {
+        kind: "fixture",
+        accountId: "acct-member",
+        accountRevision: "7",
+        reference: "authfx:admin:7",
+      },
+    },
+    saved: { engine: "chromium", authenticationFixtureId: "authfx:admin:7" },
+  });
+  assert.equal(bound.status, "blocked");
+  assert.match((bound as { reason: string }).reason, /does not map/i);
+});
+
+test("a missing saved engine cannot fully bind a fixture account", () => {
+  const bound = bindRequestedBrowserIdentity({
+    requested: {
+      engine: "chromium",
+      account: { kind: "fixture", accountId: "member", accountRevision: "7" },
+    },
+    saved: { authenticationFixtureId: "authfx:member:7" },
+  });
+  assert.equal(bound.status, "blocked");
+  assert.match((bound as { reason: string }).reason, /engine/i);
 });

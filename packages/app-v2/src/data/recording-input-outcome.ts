@@ -60,11 +60,9 @@ export function reconcileObservedFromServerReceipt(
   receipt: RecordingReconcileAuthorityReceipt,
 ): RecordingObservedEffect {
   if (receipt.health?.state === "uncertain") return "uncertain";
-  if (receipt.health?.state === "blocked") return "not-observed";
   if (receipt.outcome === "not-applied") return "not-observed";
   if (receipt.outcome === "ambiguous") return "uncertain";
   if (receipt.outcome === "applied") return "applied";
-  if (receipt.health?.state === "ready") return "applied";
   return "uncertain";
 }
 

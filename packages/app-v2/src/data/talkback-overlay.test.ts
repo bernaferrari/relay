@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ACCESSIBILITY_LABEL_MODE_OPTIONS,
+  retainAccessibilityObservation,
   talkBackItemAtPoint,
   talkBackOverlayBox,
   validAccessibilityLabelMode,
@@ -58,6 +59,27 @@ describe("talkBackOverlayBox", () => {
     expect(validAccessibilityLabelMode("always")).toBe("always");
     expect(validAccessibilityLabelMode("hover")).toBe("hover");
     expect(validAccessibilityLabelMode("listen")).toBe("off");
+  });
+
+  it("does not let a late observation overwrite a newer target", () => {
+    const previous = {
+      inspectable: true,
+      review: { items: [], issues: [], errorCount: 0, warningCount: 0 },
+      targetId: "pixel-2",
+      observationId: "pixel-2:2",
+    };
+    const retained = retainAccessibilityObservation({
+      currentId: "pixel-2:2",
+      incomingId: "pixel-1:1",
+      previous,
+      next: {
+        inspectable: true,
+        review: { items: [], issues: [], errorCount: 0, warningCount: 0 },
+        targetId: "pixel-1",
+      },
+    });
+    expect(retained?.observationId).toBe("pixel-2:2");
+    expect(retained?.stale).toBe(false);
   });
 
   it("exposes hover and always as the saved setting choices", () => {

@@ -15,11 +15,46 @@ export type BrowserIdentityBindResult =
   | { status: "blocked"; reason: string }
   | { status: "not-applicable" };
 
-const FIXTURE_REFERENCE = /:([1-9][0-9]*)$/u;
+const CANONICAL_FIXTURE = /^authfx:([^:]+):([1-9][0-9]*)$/u;
+
+export function parseCanonicalFixtureReference(
+  reference: string | undefined,
+): { fixtureId: string; revision: string } | undefined {
+  if (!reference) return undefined;
+  const match = CANONICAL_FIXTURE.exec(reference.trim());
+  return match?.[1] && match[2] ? { fixtureId: match[1], revision: match[2] } : undefined;
+}
 
 export function fixtureRevisionFromReference(reference: string | undefined): string | undefined {
-  if (!reference) return undefined;
-  return FIXTURE_REFERENCE.exec(reference)?.[1];
+  return parseCanonicalFixtureReference(reference)?.revision;
+}
+
+export function browserRuntimeConfigurationDigest(input: {
+  targetId: string;
+  engine?: string;
+  authenticationFixtureId?: string;
+  signedOut?: boolean;
+}): string {
+  const identity = input.signedOut
+    ? "signed-out"
+    : (parseCanonicalFixtureReference(input.authenticationFixtureId)?.fixtureId ??
+      input.authenticationFixtureId ??
+      "authoring");
+  return `${input.targetId}:${input.engine ?? ""}:${identity}:${input.signedOut ? "out" : "in"}`;
+}
+
+/** Close other live identities for this target. Keep authoring and the
+ * requested live key. */
+export function liveBrowserSessionKeysToClose(input: {
+  keys: readonly string[];
+  targetId: string;
+  keepKey?: string;
+}): string[] {
+  return input.keys.filter((key) => {
+    if (key === input.keepKey) return false;
+    if (key === `authoring:${input.targetId}`) return false;
+    return key.startsWith(`live:${input.targetId}:`) || key === `proof:${input.targetId}`;
+  });
 }
 
 export function browserLiveSessionKey(input: {
@@ -41,40 +76,12 @@ export function browserSessionProfileMatches(existing: unknown, requested: unkno
   return JSON.stringify(existing) === JSON.stringify(requested);
 }
 
-function fixtureAccountToken(value: string): string {
-  return value
-    .trim()
-    .replace(/^authfx:/iu, "")
-    .replace(FIXTURE_REFERENCE, "")
-    .toLowerCase();
-}
-
-function requestedAccountTokens(accountId: string): Set<string> {
-  const id = accountId.trim().toLowerCase();
-  return new Set([id, id.replace(/^acct-/u, "")].filter(Boolean));
-}
-
-function savedFixtureNamesAccount(accountId: string, savedFixture: string): boolean {
-  const saved = fixtureAccountToken(savedFixture);
-  const tokens = requestedAccountTokens(accountId);
-  if (tokens.has(saved)) return true;
-  return [...tokens].some((token) => token.length > 0 && saved === token);
-}
-
-/** Account/engine without an explicit platform is a browser case. */
-export function browserIdentityPlatform(
-  platform: string | undefined,
-  requested?: { engine?: string; account?: RequestedBrowserAccount },
-): string | undefined {
-  if (platform) return platform;
-  if (requested?.account || requested?.engine) return "browser";
-  return undefined;
-}
-
 export function bindRequestedBrowserIdentity(input: {
   requested?: { engine?: string; account?: RequestedBrowserAccount };
   saved?: SavedBrowserIdentity;
   platform?: string;
+  /** Reviewed accountId → canonical fixture id. Display names are not authority. */
+  accountFixtureIds?: Readonly<Record<string, string>>;
 }): BrowserIdentityBindResult {
   const requested = input.requested;
   if (!requested?.account && !requested?.engine) return { status: "not-applicable" };
@@ -89,7 +96,15 @@ export function bindRequestedBrowserIdentity(input: {
   }
 
   const account = requested.account;
-  if (!account) return { status: "bound" };
+  if (!account) {
+    if (requested.engine && !input.saved?.engine) {
+      return {
+        status: "blocked",
+        reason: "A browser engine request cannot bind without a saved engine.",
+      };
+    }
+    return { status: "bound" };
+  }
   const savedFixture = input.saved?.authenticationFixtureId?.trim();
 
   if (account.kind === "signed-out") {
@@ -102,39 +117,66 @@ export function bindRequestedBrowserIdentity(input: {
     return { status: "bound" };
   }
 
-  const requestedReference = account.reference?.trim();
-  const requestedRevision = account.accountRevision.trim();
-  if (!savedFixture) {
+  if (!requested.engine || !input.saved?.engine) {
     return {
       status: "blocked",
-      reason: `The saved runtime profile does not name account ${account.accountId} revision ${requestedRevision}.`,
+      reason: `Account ${account.accountId} v${account.accountRevision} cannot bind without a saved browser engine.`,
     };
   }
 
-  const savedRevision = fixtureRevisionFromReference(savedFixture);
-  if (savedRevision && savedRevision !== requestedRevision) {
+  const requestedRevision = account.accountRevision.trim();
+  const requestedReference = parseCanonicalFixtureReference(account.reference);
+  const savedReference = parseCanonicalFixtureReference(savedFixture);
+  if (!savedReference) {
     return {
       status: "blocked",
-      reason: `Requested account revision ${requestedRevision} does not match saved fixture revision ${savedRevision}.`,
+      reason: `The saved runtime profile does not name a canonical fixture for account ${account.accountId} revision ${requestedRevision}.`,
     };
   }
-  if (requestedReference && savedFixture !== requestedReference) {
+  if (savedReference.revision !== requestedRevision) {
+    return {
+      status: "blocked",
+      reason: `Requested account revision ${requestedRevision} does not match saved fixture revision ${savedReference.revision}.`,
+    };
+  }
+  if (account.reference && !requestedReference) {
+    return {
+      status: "blocked",
+      reason: `Requested account ${account.accountId} v${requestedRevision} is not a canonical fixture reference.`,
+    };
+  }
+  if (requestedReference && requestedReference.revision !== requestedRevision) {
+    return {
+      status: "blocked",
+      reason: `Requested account ${account.accountId} v${requestedRevision} contradicts fixture reference ${account.reference}.`,
+    };
+  }
+  if (
+    requestedReference &&
+    (requestedReference.fixtureId !== savedReference.fixtureId ||
+      requestedReference.revision !== savedReference.revision)
+  ) {
     return {
       status: "blocked",
       reason: `Requested account ${account.accountId} v${requestedRevision} does not match saved fixture ${savedFixture}.`,
     };
   }
-  if (!requestedReference && !savedFixtureNamesAccount(account.accountId, savedFixture)) {
+  const mappedId = input.accountFixtureIds?.[account.accountId] ?? account.accountId;
+  if (mappedId !== savedReference.fixtureId) {
     return {
       status: "blocked",
-      reason: `Requested account ${account.accountId} v${requestedRevision} does not match saved fixture ${savedFixture}.`,
-    };
-  }
-  if (!savedRevision && !requestedReference) {
-    return {
-      status: "blocked",
-      reason: `Requested account ${account.accountId} v${requestedRevision} does not match saved fixture ${savedFixture}.`,
+      reason: `Requested account ${account.accountId} v${requestedRevision} does not map to saved fixture ${savedFixture}.`,
     };
   }
   return { status: "bound" };
+}
+
+/** Account/engine without an explicit platform is a browser case. */
+export function browserIdentityPlatform(
+  platform: string | undefined,
+  requested?: { engine?: string; account?: RequestedBrowserAccount },
+): string | undefined {
+  if (platform) return platform;
+  if (requested?.account || requested?.engine) return "browser";
+  return undefined;
 }

@@ -49,7 +49,37 @@ export type TalkBackCaptureResult = {
   inspectable: boolean;
   review: TalkBackReview;
   message?: string;
+  targetId?: string;
+  observationId?: string;
+  stale?: boolean;
+  coverage?: "complete" | "partial" | "unknown";
 };
+
+export function accessibilityObservationId(input: {
+  targetId?: string;
+  refreshKey?: number;
+}): string {
+  return `${input.targetId ?? ""}:${input.refreshKey ?? 0}`;
+}
+
+/** Keep a newer observation; ignore late captures for another target/epoch. */
+export function retainAccessibilityObservation(input: {
+  currentId: string;
+  incomingId: string;
+  previous?: TalkBackCaptureResult;
+  next: TalkBackCaptureResult;
+}): TalkBackCaptureResult | undefined {
+  if (input.incomingId !== input.currentId) {
+    return input.previous
+      ? { ...input.previous, stale: input.previous.observationId !== input.currentId }
+      : undefined;
+  }
+  return {
+    ...input.next,
+    observationId: input.incomingId,
+    stale: false,
+  };
+}
 
 /** Map a device-pixel accessibility rect onto the letterboxed live canvas. */
 export function talkBackOverlayBox(

@@ -11,8 +11,13 @@ const fixture = join(
 );
 
 test("Admin, Member, and Signed out are three distinct requested identities", () => {
+  const accountFixtureIds = {
+    "acct-admin": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "acct-member": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  };
   const admin = bindRequestedBrowserIdentity({
     platform: "browser",
+    accountFixtureIds,
     requested: {
       engine: "chromium",
       account: {
@@ -29,6 +34,7 @@ test("Admin, Member, and Signed out are three distinct requested identities", ()
   });
   const member = bindRequestedBrowserIdentity({
     platform: "browser",
+    accountFixtureIds,
     requested: {
       engine: "chromium",
       account: {
@@ -54,6 +60,7 @@ test("Admin, Member, and Signed out are three distinct requested identities", ()
   assert.equal(
     bindRequestedBrowserIdentity({
       platform: "browser",
+      accountFixtureIds,
       requested: {
         engine: "chromium",
         account: {

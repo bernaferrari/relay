@@ -6,6 +6,8 @@ import type { Platform } from "../platform/types";
 import {
   ACCESSIBILITY_LABELS_STORAGE_KEY,
   ACCESSIBILITY_LABEL_MODE_OPTIONS,
+  accessibilityObservationId,
+  retainAccessibilityObservation,
   talkBackItemAtPoint,
   talkBackOverlayBox,
   validAccessibilityLabelMode,
@@ -158,9 +160,9 @@ export function TalkBackIssueList({
   if (!review.issues.length) {
     return (
       <p className="text-xs text-muted-foreground">
-        {review.items.length
-          ? `${review.items.length} TalkBack names on this screen. No unlabeled controls.`
-          : "No TalkBack names on this screen."}
+        {review.items.length && inspectable !== false
+          ? `${review.items.length} accessibility names on this screen.`
+          : "No accessibility names are available for this observation."}
       </p>
     );
   }
@@ -169,9 +171,9 @@ export function TalkBackIssueList({
       <p className="text-xs text-muted-foreground">
         {review.errorCount
           ? `${review.errorCount} unlabeled ${review.errorCount === 1 ? "control" : "controls"}`
-          : "TalkBack names"}
-        {review.warningCount ? ` · ${review.warningCount} warnings` : ""}. These are the spoken
-        names from the accessibility tree. TalkBack is not turned on.
+          : "Accessibility names"}
+        {review.warningCount ? ` · ${review.warningCount} warnings` : ""}. These are captured names
+        from the accessibility tree, not a TalkBack or VoiceOver proof.
       </p>
       <ul className="grid max-h-40 list-none gap-1 overflow-auto p-0" aria-label="TalkBack issues">
         {review.issues.map((item) => (
@@ -216,21 +218,43 @@ export function useTalkBackReview(input: {
   }, [input.platform]);
 
   useEffect(() => {
-    if (!on || !input.enabled || !input.serial || !capture.current) return;
+    if (!on || !input.enabled || !input.serial || !capture.current) {
+      setResult(undefined);
+      return;
+    }
+    const epoch = accessibilityObservationId({
+      targetId: input.serial,
+      refreshKey: input.refreshKey,
+    });
     let cancelled = false;
     setLoading(true);
     setIssue(undefined);
+    setResult((previous) =>
+      previous?.targetId && previous.targetId !== input.serial
+        ? { ...previous, stale: true }
+        : previous,
+    );
     void capture
       .current(input.serial)
       .then((next) => {
-        if (!cancelled) setResult(next);
+        if (cancelled) return;
+        setResult((previous) =>
+          retainAccessibilityObservation({
+            currentId: epoch,
+            incomingId: epoch,
+            previous,
+            next: { ...next, targetId: input.serial, observationId: epoch },
+          }),
+        );
       })
       .catch((error: unknown) => {
-        if (!cancelled) {
-          setIssue(
-            error instanceof Error ? error.message : "Relay could not read TalkBack labels.",
-          );
-        }
+        if (cancelled) return;
+        setResult((previous) =>
+          previous?.targetId === input.serial ? { ...previous, stale: true } : undefined,
+        );
+        setIssue(
+          error instanceof Error ? error.message : "Relay could not read accessibility names.",
+        );
       })
       .finally(() => {
         if (!cancelled) setLoading(false);

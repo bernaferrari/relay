@@ -85,6 +85,7 @@ export async function tryReviewTarget(input: {
   }
 
   let session: LiveTargetSession | undefined;
+  let dispatched = false;
   try {
     session = await input.previewTarget(input.selectedTarget);
     const fresh = [...(await input.observe(session))];
@@ -99,14 +100,7 @@ export async function tryReviewTarget(input: {
           "The proposed binding is not on the current screen. Restore the starting state before trying it.",
       };
     }
-  } catch (error) {
-    const message =
-      error instanceof Error && error.message.trim()
-        ? error.message
-        : "Relay could not prepare that binding on the Device.";
-    return { kind: "failed", detail: message };
-  }
-  try {
+    dispatched = true;
     await dispatchSemanticBinding(session, binding);
     return {
       kind: "tried",
@@ -117,8 +111,11 @@ export async function tryReviewTarget(input: {
     const message =
       error instanceof Error && error.message.trim()
         ? error.message
-        : "Relay could not confirm whether that tap reached the Device.";
-    return { kind: "unknown", binding, detail: message };
+        : dispatched
+          ? "Relay could not confirm whether that tap reached the Device."
+          : "Relay could not prepare that binding on the Device.";
+    if (dispatched) return { kind: "unknown", binding, detail: message };
+    return { kind: "failed", detail: message };
   } finally {
     session?.close();
   }

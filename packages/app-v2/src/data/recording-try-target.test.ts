@@ -140,6 +140,36 @@ describe("tryReviewTarget", () => {
     expect(preview.close).toHaveBeenCalledOnce();
   });
 
+  it("closes the preview when the binding is not on the current screen", async () => {
+    const preview = session();
+    await expect(
+      tryReviewTarget({
+        previewTarget: async () => preview,
+        selectedTarget: device,
+        control,
+        confirmStartingState: async () => ({ ok: true }),
+        observe: async () => [],
+      }),
+    ).resolves.toMatchObject({ kind: "failed", detail: expect.stringMatching(/current screen/i) });
+    expect(preview.close).toHaveBeenCalledOnce();
+  });
+
+  it("closes the preview when observation fails before dispatch", async () => {
+    const preview = session();
+    await expect(
+      tryReviewTarget({
+        previewTarget: async () => preview,
+        selectedTarget: device,
+        control,
+        confirmStartingState: async () => ({ ok: true }),
+        observe: async () => {
+          throw new Error("tree unavailable");
+        },
+      }),
+    ).resolves.toEqual({ kind: "failed", detail: "tree unavailable" });
+    expect(preview.close).toHaveBeenCalledOnce();
+  });
+
   it("keeps post-dispatch transport loss unknown instead of ordinary failure", async () => {
     const preview = session(async () => {
       throw new Error("socket closed");

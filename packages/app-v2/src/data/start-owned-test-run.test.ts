@@ -422,4 +422,38 @@ describe("start owned Test runs", () => {
       ),
     ).toBe(false);
   });
+
+  it("does not treat a returned engine without an account as an account-bound match", () => {
+    expect(
+      campaignCaseMatchesRequest(
+        { target: { targetId: "chrome-1" }, engine: "chromium" },
+        {
+          testId: "checkout",
+          appMapId: "app-1",
+          targetId: "chrome-1",
+          engine: "chromium",
+          account: { kind: "fixture", accountId: "acct-member", accountRevision: "7" },
+        },
+      ),
+    ).toBe(false);
+  });
+
+  it("matches equivalent account objects regardless of property order", () => {
+    expect(
+      campaignCaseMatchesRequest(
+        {
+          target: { targetId: "chrome-1" },
+          engine: "chromium",
+          account: { accountRevision: "7", kind: "fixture", accountId: "acct-member" },
+        },
+        {
+          testId: "checkout",
+          appMapId: "app-1",
+          targetId: "chrome-1",
+          engine: "chromium",
+          account: { kind: "fixture", accountId: "acct-member", accountRevision: "7" },
+        },
+      ),
+    ).toBe(true);
+  });
 });

@@ -47,7 +47,7 @@ describe("TalkBack review panel", () => {
       );
     });
     expect(host.textContent).toMatch(/Always show|Accessibility names/);
-    expect(host.textContent).toContain("TalkBack is not turned on");
+    expect(host.textContent).toContain("not a TalkBack or VoiceOver proof");
     expect(host.textContent).toContain("TalkBack has no name for this icon.");
     expect(host.textContent).toContain("Unnamed, Button");
   });

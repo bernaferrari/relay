@@ -270,9 +270,10 @@ describe("recording edit adapter", () => {
     });
   });
 
-  it("maps ready server health to applied instead of echoing the request outcome", async () => {
+  it("keeps a not-applied observation when the fence is ready", async () => {
     client.invoke.mockClear();
     client.invoke.mockResolvedValueOnce({
+      outcome: "not-applied",
       health: { input: { state: "ready" } },
     });
     const service = createRecordingProductService(platform);
@@ -284,7 +285,7 @@ describe("recording edit adapter", () => {
       }),
     ).resolves.toEqual({
       mutationId: "mut-2",
-      outcome: "applied",
+      outcome: "not-applied",
       health: { state: "ready" },
     });
   });

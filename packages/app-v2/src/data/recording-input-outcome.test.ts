@@ -10,6 +10,7 @@ import {
   isSupervisedRecordingMutationId,
   mergeHydratedRecordingLedger,
   reconcileRecordingMutation,
+  reconcileObservedFromServerReceipt,
   reconcileRecordingMutationAuthoritatively,
   recordingReconcileServerOutcome,
   supervisedRecordingMutationId,
@@ -182,6 +183,20 @@ describe("recording input outcome", () => {
     expect(recordingReconcileServerOutcome("applied")).toBe("applied");
     expect(recordingReconcileServerOutcome("not-observed")).toBe("not-applied");
     expect(recordingReconcileServerOutcome("uncertain")).toBe("ambiguous");
+    expect(
+      reconcileObservedFromServerReceipt({
+        mutationId: "mut",
+        outcome: "not-applied",
+        health: { state: "ready" },
+      }),
+    ).toBe("not-observed");
+    expect(
+      reconcileObservedFromServerReceipt({
+        mutationId: "mut",
+        outcome: "applied",
+        health: { state: "ready" },
+      }),
+    ).toBe("applied");
   });
 
   it("does not apply a local observation until the server receipt matches", async () => {

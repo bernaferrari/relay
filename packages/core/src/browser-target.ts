@@ -6,7 +6,9 @@ import type { Device, SnapshotNode } from "./device.js";
 import { createBrowserContextFactory, type BrowserContextPurpose } from "./browser-context.js";
 import {
   browserLiveSessionKey,
+  browserRuntimeConfigurationDigest,
   browserSessionProfileMatches,
+  liveBrowserSessionKeysToClose,
 } from "./browser-execution-identity.js";
 import { compileBrowserEnvironment } from "@relay/protocol";
 import { createDeviceObservationFacade } from "./device-observation-membrane.js";
@@ -230,19 +232,7 @@ export type BrowserAuthoringRuntime = Readonly<{
   markMutation: () => void;
 }>;
 
-export async function openBrowserAuthoringRuntime(
-  targetId: string,
-  options: { headless: boolean; profile?: BrowserCaseProfile },
-): Promise<BrowserAuthoringRuntime> {
-  const session = await sessionFor(targetId, {
-    mode: "authoring",
-    headless: options.headless,
-    profile: options.profile,
-    // Browser Device and canonical authoring intentionally share this one
-    // recordable context. Starting a Take must not replace the page supervisor
-    // (or vice versa) merely because their video options differ.
-    recordVideo: true,
-  });
+function runtimeFromSession(targetId: string, session: BrowserSession): BrowserAuthoringRuntime {
   return {
     sessionId: session.sessionId,
     targetId,
@@ -258,6 +248,50 @@ export async function openBrowserAuthoringRuntime(
       session.mutationVersion += 1;
     },
   };
+}
+
+export async function openBrowserAuthoringRuntime(
+  targetId: string,
+  options: { headless: boolean; profile?: BrowserCaseProfile },
+): Promise<BrowserAuthoringRuntime> {
+  const session = await sessionFor(targetId, {
+    mode: "authoring",
+    headless: options.headless,
+    profile: options.profile,
+    // Browser Device and canonical authoring intentionally share this one
+    // recordable context. Starting a Take must not replace the page supervisor
+    // (or vice versa) merely because their video options differ.
+    recordVideo: true,
+  });
+  return runtimeFromSession(targetId, session);
+}
+
+/** Attach the in-app Browser Device to the same live identity as target.open. */
+export async function openBrowserLiveRuntime(
+  targetId: string,
+  options: {
+    headless: boolean;
+    profile?: BrowserCaseProfile;
+    authenticationFixtureId?: string;
+    signedOut?: boolean;
+    projectId?: string;
+  },
+): Promise<BrowserAuthoringRuntime> {
+  const fixtureId = options.authenticationFixtureId?.trim();
+  const { authenticationFixtureId: _ignored, ...unsigned } = options.profile ?? {};
+  const profile = fixtureId
+    ? compileBrowserEnvironment({ ...options.profile, authenticationFixtureId: fixtureId })
+    : options.signedOut
+      ? compileBrowserEnvironment(unsigned)
+      : options.profile;
+  const session = await sessionFor(targetId, {
+    mode: "proof",
+    headless: options.headless,
+    profile,
+    reuseMatchingIdentity: true,
+    ...(options.projectId ? { projectId: options.projectId } : {}),
+  });
+  return runtimeFromSession(targetId, session);
 }
 
 /** Return the exact profile of the current authoring context when one exists;
@@ -278,6 +312,8 @@ export type OpenBrowserTargetResult = {
   targetId: string;
   name: string;
   url: string;
+  sessionId: string;
+  configurationDigest: string;
 };
 
 /**
@@ -298,8 +334,15 @@ export async function openBrowserTarget(
   const baseProfile = browserCaseProfileForTarget(target);
   const fixtureId = options.authenticationFixtureId?.trim();
   const accountBound = Boolean(fixtureId || options.signedOut);
+  const keepKey = accountBound
+    ? browserLiveSessionKey({
+        targetId,
+        authenticationFixtureId: fixtureId,
+        signedOut: options.signedOut,
+      })
+    : `authoring:${targetId}`;
   if (accountBound) {
-    await closeBrowserSessionsForTarget(targetId);
+    await closeConflictingLiveBrowserSessions(targetId, keepKey);
   }
   const { authenticationFixtureId: _ignored, ...unsigned } = baseProfile;
   const profile = fixtureId
@@ -318,19 +361,34 @@ export async function openBrowserTarget(
     await page.goto(target.browser.startUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
   }
   await page.bringToFront();
-  return { targetId, name: target.name, url: page.url() };
+  return {
+    targetId,
+    name: target.name,
+    url: page.url(),
+    sessionId: session.sessionId,
+    configurationDigest: browserRuntimeConfigurationDigest({
+      targetId,
+      engine: profile.engine,
+      authenticationFixtureId: fixtureId,
+      signedOut: options.signedOut,
+    }),
+  };
 }
 
-async function closeBrowserSessionsForTarget(targetId: string): Promise<void> {
-  const prefix = `:${targetId}`;
-  const entries = [...sessions.entries()].filter(([key]) => {
-    const [, id] = key.split(":");
-    return id === targetId || key.includes(`${prefix}:`) || key.endsWith(prefix);
+async function closeConflictingLiveBrowserSessions(
+  targetId: string,
+  keepKey: string,
+): Promise<void> {
+  const closing = liveBrowserSessionKeysToClose({
+    keys: [...sessions.keys()],
+    targetId,
+    keepKey,
   });
   await Promise.all(
-    entries.map(async ([key, pending]) => {
+    closing.map(async (key) => {
+      const pending = sessions.get(key);
       sessions.delete(key);
-      await pending.then((session) => session.close()).catch(() => undefined);
+      await pending?.then((session) => session.close()).catch(() => undefined);
     }),
   );
 }

@@ -322,7 +322,12 @@ export async function handleTargetRoute(context: TargetRouteContext): Promise<bo
     const profile = parsed.environment
       ? compileBrowserEnvironment({ ...base, ...parsed.environment })
       : base;
-    const session = await openBrowserDeviceSession(targetId, profile);
+    const session = await openBrowserDeviceSession(targetId, profile, {
+      ...(profile.authenticationFixtureId
+        ? { authenticationFixtureId: profile.authenticationFixtureId }
+        : {}),
+      projectId: scope.projectId,
+    });
     json(res, 200, { session: await withOwnership(scope, session) });
     return true;
   }
