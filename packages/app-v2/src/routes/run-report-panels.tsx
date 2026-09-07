@@ -1,3 +1,4 @@
+import { ReportImage } from "../components/report-image";
 /** @jsxImportSource react */
 import { formatDuration } from "../components/run-report-formatters";
 import type { RunProductService } from "../data/run-product-service";
@@ -75,8 +76,8 @@ export function EvidencePreview({
                   className="relay-evidence-image-frame overflow-hidden rounded-md bg-muted"
                   aria-hidden="true"
                 >
-                  <img
-                    src={item.media.src}
+                  <ReportImage
+                    media={item.media}
                     alt=""
                     width={item.media.width}
                     height={item.media.height}

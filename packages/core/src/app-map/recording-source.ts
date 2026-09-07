@@ -1,4 +1,10 @@
-import type { ActionSpec, AuthoringCaptureReview, AuthoringRecordingSource } from "@relay/protocol";
+import type {
+  ActionSpec,
+  AuthoringCaptureReview,
+  AuthoringRecordingSource,
+  AuthoringEvidence,
+  AuthoringObservation,
+} from "@relay/protocol";
 
 export function recordingSourceForCommit(
   input: {
@@ -6,6 +12,9 @@ export function recordingSourceForCommit(
     takeRevision: number;
     evidenceIds: readonly string[];
     captureReview?: AuthoringCaptureReview;
+    before?: AuthoringObservation;
+    after?: AuthoringObservation;
+    evidenceById?: Record<string, AuthoringEvidence>;
   },
   actions: readonly ActionSpec[],
 ): AuthoringRecordingSource | undefined {
@@ -13,7 +22,17 @@ export function recordingSourceForCommit(
   if (!input.captureReview) {
     throw new TypeError("recorded commits require explicit reviewed capture provenance");
   }
+  const frames: NonNullable<AuthoringRecordingSource["frames"]> = [];
+  for (const role of ["before", "after"] as const) {
+    const evidence = input[role]?.evidenceIds
+      .map((id) => input.evidenceById?.[id])
+      .find((item) => item?.kind === "screenshot" && input.evidenceIds.includes(item.id));
+    if (evidence && /^relay-evidence:\/\/[a-f\d]{64}$/iu.test(evidence.uri)) {
+      frames.push({ evidenceId: evidence.id, uri: evidence.uri, role });
+    }
+  }
   return {
+    ...(frames.length ? { frames } : {}),
     schemaVersion: 1,
     takeId: input.takeId,
     takeRevision: input.takeRevision,

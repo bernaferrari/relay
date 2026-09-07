@@ -670,6 +670,48 @@ test("commits a recording as one immutable App Map revision", () => {
   assert.equal(result.appMap.activity["event-1"]?.subject.id, result.connectionId);
 });
 
+test("saved Tests retain reviewed screenshots independently of later screen captures", () => {
+  const beforeUri = `relay-evidence://${"a".repeat(64)}`;
+  const afterUri = `relay-evidence://${"b".repeat(64)}`;
+  const result = commitAppMapRecording(
+    mapFixture(),
+    {
+      sessionId: "saved-preview",
+      target: { kind: "device", platform: "android", targetId: "pixel-8" },
+      takeId: "take-preview",
+      takeRevision: 1,
+      testId: "test-preview",
+      testName: "Open settings",
+      actions: [action()],
+      before: observation("before", beforeFingerprint, "evidence-before"),
+      after: observation("after", afterFingerprint, "evidence-after"),
+      evidenceIds: ["evidence-before", "evidence-after"],
+      evidenceById: {
+        "evidence-before": {
+          id: "evidence-before",
+          kind: "screenshot",
+          capturedAt: 1,
+          uri: beforeUri,
+        },
+        "evidence-after": {
+          id: "evidence-after",
+          kind: "screenshot",
+          capturedAt: 2,
+          uri: afterUri,
+        },
+      },
+    },
+    context("saved-preview"),
+  );
+  for (const variant of Object.values(result.appMap.screenVariants)) {
+    variant.screenshotUri = `relay-evidence://${"c".repeat(64)}`;
+  }
+  assert.deepEqual(result.appMap.connections[result.connectionId]?.recordingSource?.frames, [
+    { evidenceId: "evidence-before", uri: beforeUri, role: "before" },
+    { evidenceId: "evidence-after", uri: afterUri, role: "after" },
+  ]);
+});
+
 test("recorded commits cannot invent Relay-controlled capture provenance", () => {
   assert.throws(
     () =>

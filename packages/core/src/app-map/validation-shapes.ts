@@ -468,6 +468,31 @@ export function assertConnection(connection: Connection, scope: AppMapScope, lab
     stringArray(source.evidenceIds, `${label}.recordingSource.evidenceIds`);
     if (source.evidenceIds.length > 256)
       appMapFail("invalid-map", `${label}.recordingSource.evidenceIds exceeds 256 items`);
+    if (source.frames !== undefined) {
+      if (!Array.isArray(source.frames) || source.frames.length > 2) {
+        appMapFail(
+          "invalid-map",
+          `${label}.recordingSource.frames must contain at most two endpoints`,
+        );
+      }
+      const roles = new Set<string>();
+      for (const frame of source.frames) {
+        if (
+          !frame ||
+          !source.evidenceIds.includes(frame.evidenceId) ||
+          typeof frame.uri !== "string" ||
+          !/^relay-evidence:\/\/[a-f\d]{64}$/iu.test(frame.uri) ||
+          !["before", "after"].includes(frame.role) ||
+          roles.has(frame.role)
+        ) {
+          appMapFail(
+            "invalid-map",
+            `${label}.recordingSource.frames must reference unique reviewed endpoints`,
+          );
+        }
+        roles.add(frame.role);
+      }
+    }
     const recorded = connection.actions.filter((action) => action.kind === "recorded");
     const sourceEvidence = new Set(source.evidenceIds);
     if (

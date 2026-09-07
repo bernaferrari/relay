@@ -38,7 +38,11 @@ export function attachRecordedTest(input: {
       {
         id: stepId(input.sessionId),
         kind: "instruction",
-        intent: `Go from ${input.sourceTitle} to ${input.destinationTitle}`,
+        intent: [input.sourceTitle, input.destinationTitle].some((title) =>
+          /^(?:Start|Next screen)$/u.test(title),
+        )
+          ? (input.connection.label ?? "Continue")
+          : `Go from ${input.sourceTitle} to ${input.destinationTitle}`,
         capture: true,
         binding: {
           status: "resolved",

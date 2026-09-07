@@ -3,7 +3,7 @@ import { useId, type ReactNode } from "react";
 import { Button } from "@relay/ui-react/components/button";
 import { Checkbox } from "@relay/ui-react/components/checkbox";
 import { FieldLabel } from "@relay/ui-react/components/field";
-import { RadioGroup, RadioGroupItem } from "@relay/ui-react/components/radio-group";
+import { SelectField } from "./filter-select";
 import type {
   RunConfigurationBlocker,
   RunConfigurationOption,
@@ -27,7 +27,6 @@ export function RunConfigurationComposer({
   error,
   onRetry,
   children,
-  targetGroupName = "run-target",
   variant = "panel",
   title,
   pairedWorkspaceLabel,
@@ -81,7 +80,7 @@ export function RunConfigurationComposer({
       className={`relay-run-configuration grid min-w-0 gap-3 ${variant === "panel" ? "rounded-xl border border-border bg-card p-5" : ""}`}
     >
       <h2 id={titleId} className="text-[13px] font-medium text-muted-foreground">
-        {title ?? (configuration.frozen ? "Recorded configuration" : "Where to run")}
+        {title ?? (configuration.frozen ? "Recorded configuration" : "Run on")}
       </h2>
       {configuration.frozen ? (
         <dl className="relay-config-facts m-0 grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-4 [&_dt]:text-xs [&_dt]:text-muted-foreground [&_dd]:mt-1 [&_dd]:text-[13px] [&_dd]:wrap-anywhere">
@@ -128,26 +127,16 @@ export function RunConfigurationComposer({
               ))}
             </fieldset>
           ) : (
-            <RadioGroup
-              className="relay-config-options grid min-w-0 gap-2 border-0 p-0 [&_legend]:mb-2.5 [&_legend]:text-[13px] [&_legend]:font-semibold"
-              name={targetGroupName}
+            <SelectField
+              label="Device or browser"
               value={selection?.targetProfileId ?? ""}
+              options={targetOptions.map((option) => ({ value: option.id, label: option.label }))}
+              placeholder="Choose a device"
               onValueChange={(targetProfileId) =>
                 onSelectionChange({ ...selection, targetProfileId, targetProfileIds: undefined })
               }
               disabled={loading}
-              aria-label="Device or browser"
-            >
-              {targetOptions.map((option) => (
-                <FieldLabel
-                  key={option.id}
-                  className="relay-config-option flex min-h-11 w-full min-w-0 cursor-pointer items-center gap-3 border-b border-border py-2.5 has-data-checked:[&_[data-slot=run-target-title]]:text-foreground last:border-b-0"
-                >
-                  {optionCopy(option)}
-                  <RadioGroupItem value={option.id} />
-                </FieldLabel>
-              ))}
-            </RadioGroup>
+            />
           )}
         </>
       ) : null}

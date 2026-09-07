@@ -19,6 +19,7 @@ export type ReportEvidenceItem = {
   media?: {
     kind: "image";
     src: string;
+    load?: () => Promise<Blob>;
     width?: number;
     height?: number;
   };

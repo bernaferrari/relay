@@ -1,5 +1,7 @@
 import { AuthoringHeader } from "./authoring-header";
-import { RecordingReviewLayout } from "./recording-review-layout";
+import { SavedTestWorkspace } from "./saved-test-workspace";
+import { SelectField } from "../components/filter-select";
+import { Checkbox } from "@relay/ui-react/components/checkbox";
 /** @jsxImportSource react */
 import { RunConfigurationComposer } from "../components/run-configuration-composer";
 import {
@@ -52,6 +54,8 @@ export function TestPage() {
   const navigate = useNavigate({ from: "/tests/$testId" });
   const runSetupRef = useRef<HTMLElement>(null);
 
+  const [showRecording, setShowRecording] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [evidenceStepId, setEvidenceStepId] = useState("");
   const searchRunId = typeof search.run === "string" ? search.run : undefined;
   const [pinnedRunId, setPinnedRunId] = useState<string | undefined>(searchRunId);
@@ -163,6 +167,7 @@ export function TestPage() {
       }
       const runId = state.run?.runId;
       if (runId && startedForTestId.current === testIdRef.current) {
+        setShowRecording(false);
         setPinnedRunId(runId);
         void navigate({
           search: (previous) => ({ ...previous, run: runId }),
@@ -245,6 +250,7 @@ export function TestPage() {
   if (reviewRecordingId) return <ReviewRecordingPage recordingId={reviewRecordingId} />;
 
   function focusRunSetup() {
+    setSettingsOpen(true);
     runSetupRef.current?.scrollIntoView({ behavior: "auto", block: "center" });
     runSetupRef.current?.focus({ preventScroll: true });
   }
@@ -334,10 +340,13 @@ export function TestPage() {
       ) : null}
 
       {!test.isPending && test.data ? (
-        <RecordingReviewLayout
+        <SavedTestWorkspace
+          settingsOpen={settingsOpen}
+          onSettingsOpenChange={setSettingsOpen}
+          deviceName={targets.data?.find((target) => target.targetId === targetId)?.name}
           outline={
             <section
-              className="relay-test-overview min-w-0 rounded-lg border border-border p-4"
+              className="relay-test-overview min-w-0 p-3"
               aria-labelledby="test-overview-title"
             >
               <h2
@@ -350,14 +359,17 @@ export function TestPage() {
                 <p className="mb-2 text-xs text-muted-foreground">{outlineCopy.hint}</p>
               ) : null}
               {test.data.steps?.length ? (
-                <ol className="relay-test-readable-steps mt-4 grid list-none gap-0 p-0">
+                <ol className="relay-test-readable-steps mt-3 grid list-none gap-1 p-0">
                   {test.data.steps.map((step, index) => (
                     <ReadableStep
                       key={step.id}
                       step={step}
                       number={String(index + 1)}
                       selectedId={selectedEvidenceStep?.id}
-                      onSelect={setEvidenceStepId}
+                      onSelect={(id) => {
+                        setEvidenceStepId(id);
+                        setShowRecording(true);
+                      }}
                     />
                   ))}
                 </ol>
@@ -370,7 +382,47 @@ export function TestPage() {
           }
           stage={
             attachedRunId ? (
-              <RunInspection key={attachedRunId} runId={attachedRunId} testId={testId} embedded />
+              <div className="flex h-full min-h-0 flex-col">
+                {selectedEvidenceStep?.recordingFrames?.length ? (
+                  <div className="flex shrink-0 gap-1 px-4 pt-3">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      aria-pressed={!showRecording}
+                      className={!showRecording ? "bg-accent" : "text-muted-foreground"}
+                      onClick={() => setShowRecording(false)}
+                    >
+                      Run result
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      aria-pressed={showRecording}
+                      className={showRecording ? "bg-accent" : "text-muted-foreground"}
+                      onClick={() => setShowRecording(true)}
+                    >
+                      Recording
+                    </Button>
+                  </div>
+                ) : null}
+                <div className="min-h-0 flex-1">
+                  {showRecording && selectedEvidenceStep?.recordingFrames?.length ? (
+                    <TestStepEvidencePreview
+                      step={selectedEvidenceStep}
+                      report={undefined}
+                      hasRuns={false}
+                      loading={false}
+                    />
+                  ) : (
+                    <RunInspection
+                      key={attachedRunId}
+                      runId={attachedRunId}
+                      testId={testId}
+                      embedded
+                    />
+                  )}
+                </div>
+              </div>
             ) : selectedEvidenceStep ? (
               <TestStepEvidencePreview
                 step={selectedEvidenceStep}
@@ -433,67 +485,56 @@ export function TestPage() {
                   onRetry={scope.error ? scope.retry : configuration.retry}
                 >
                   {profiles.data?.length ? (
-                    <label className="grid gap-1 text-sm">
-                      <span className="text-xs text-muted-foreground">Saved profile</span>
-                      <select
-                        className="min-h-11 rounded-md border border-border bg-background px-3"
-                        value={configuration.selection.savedProfileId ?? ""}
-                        onChange={(event) =>
-                          configuration.setSelection({
-                            ...configuration.selection,
-                            savedProfileId: event.target.value || undefined,
-                          })
-                        }
-                      >
-                        <option value="">Let Relay select the reviewed profile</option>
-                        {profiles.data.map((profile) => (
-                          <option key={profile.id} value={profile.id}>
-                            {profile.name}
-                            {profile.account ? ` · ${profile.account.name}` : ""}
-                            {profile.targetId && profile.targetId !== targetId
-                              ? " · other destination"
-                              : ""}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  ) : null}
-                  {builds.data?.length ? (
-                    <label className="grid gap-1 text-sm">
-                      <span className="text-xs text-muted-foreground">Build</span>
-                      <select
-                        className="min-h-11 rounded-md border border-border bg-background px-3"
-                        value={configuration.selection.buildId ?? ""}
-                        onChange={(event) =>
-                          configuration.setSelection({
-                            ...configuration.selection,
-                            buildId: event.target.value || undefined,
-                          })
-                        }
-                      >
-                        <option value="">Use current target build</option>
-                        {builds.data
-                          .filter((build) => build.status === "ready" && build.sourceSha)
-                          .map((build) => (
-                            <option key={build.id} value={build.id}>
-                              {build.name} · {build.sourceSha?.slice(0, 12)}
-                            </option>
-                          ))}
-                      </select>
-                    </label>
-                  ) : null}
-                  <label className="flex min-h-11 items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={configuration.selection.startupMode === "cold"}
-                      onChange={(event) =>
+                    <SelectField
+                      label="Profile"
+                      value={configuration.selection.savedProfileId ?? "automatic"}
+                      options={[
+                        { value: "automatic", label: "Automatic" },
+                        ...profiles.data.map((profile) => ({
+                          value: profile.id,
+                          label: `${profile.name}${profile.account ? ` · ${profile.account.name}` : ""}${profile.targetId && profile.targetId !== targetId ? " · other device" : ""}`,
+                        })),
+                      ]}
+                      onValueChange={(value) =>
                         configuration.setSelection({
                           ...configuration.selection,
-                          startupMode: event.target.checked ? "cold" : undefined,
+                          savedProfileId: value === "automatic" ? undefined : value,
                         })
                       }
                     />
-                    Start from a cold app launch
+                  ) : null}
+                  {builds.data?.length ? (
+                    <SelectField
+                      label="Build"
+                      value={configuration.selection.buildId ?? "current"}
+                      options={[
+                        { value: "current", label: "Current build" },
+                        ...builds.data
+                          .filter((build) => build.status === "ready" && build.sourceSha)
+                          .map((build) => ({
+                            value: build.id,
+                            label: `${build.name} · ${build.sourceSha?.slice(0, 12)}`,
+                          })),
+                      ]}
+                      onValueChange={(value) =>
+                        configuration.setSelection({
+                          ...configuration.selection,
+                          buildId: value === "current" ? undefined : value,
+                        })
+                      }
+                    />
+                  ) : null}
+                  <label className="flex min-h-11 items-center gap-2 text-sm">
+                    <Checkbox
+                      checked={configuration.selection.startupMode === "cold"}
+                      onCheckedChange={(checked) =>
+                        configuration.setSelection({
+                          ...configuration.selection,
+                          startupMode: checked ? "cold" : undefined,
+                        })
+                      }
+                    />
+                    Restart app before running
                   </label>
                   {!targets.data?.length ? (
                     <EmptyState
@@ -664,24 +705,22 @@ function ReadableStep({
 }) {
   return (
     <li
-      className="grid grid-cols-[44px_minmax(0,1fr)] border-t border-border data-[selected=true]:bg-muted/50 data-[selected=true]:shadow-[2px_0_0_var(--foreground)_inset]"
+      className="grid grid-cols-[28px_minmax(0,1fr)] rounded-md px-2 data-[selected=true]:bg-accent/60"
       data-selected={selectedId === step.id}
     >
       <span className="grid place-items-center text-[11px] tabular-nums text-muted-foreground">
         {number}
       </span>
       <button
-        className="min-w-0 rounded-md px-0 py-3 text-left"
+        className="min-w-0 rounded-md px-1 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
         type="button"
         aria-pressed={selectedId === step.id}
         onClick={() => onSelect(step.id)}
       >
-        <strong className="block pt-0.5 text-[13px] font-semibold">{step.intent}</strong>
-        <small className="mt-0.5 block text-[11px] text-muted-foreground">
-          {step.kind === "validation" ? "Checkpoint" : "Action"}
-          {step.capture ? " · Evidence captured" : ""}
-          {step.status === "needs-review" ? " · Needs review" : ""}
-        </small>
+        <strong className="block text-[13px] font-medium">{step.label ?? step.intent}</strong>
+        {step.status === "needs-review" ? (
+          <small className="mt-0.5 block text-xs text-muted-foreground">Needs review</small>
+        ) : null}
       </button>
       {step.children?.length ? (
         <ol className="col-span-2 ml-5 grid list-none gap-0 p-0">

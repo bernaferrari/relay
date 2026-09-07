@@ -1,5 +1,8 @@
+import { ReportImage } from "./report-image";
 /** @jsxImportSource react */
 import { Link } from "@tanstack/react-router";
+import type { ProductTestStep } from "@relay/product/catalog";
+import { SavedRecordingPreview } from "./saved-recording-preview";
 import { useState } from "react";
 import type { ProductRunReportOverview } from "../data/run-product-service";
 
@@ -9,11 +12,20 @@ export function TestStepEvidencePreview({
   hasRuns,
   loading,
 }: {
-  step: { id: string; intent: string };
+  step: Pick<ProductTestStep, "id" | "intent" | "label" | "recordingFrames">;
   report: ProductRunReportOverview | undefined;
   hasRuns: boolean;
   loading: boolean;
 }) {
+  if (!hasRuns && step.recordingFrames?.length) {
+    return (
+      <SavedRecordingPreview
+        key={step.id}
+        frames={step.recordingFrames}
+        intent={step.label ?? step.intent}
+      />
+    );
+  }
   const matches = report?.stepEvidence?.filter((item) => item.testStepId === step.id) ?? [];
   const titleId = `step-evidence-${step.id}`;
 
@@ -107,9 +119,9 @@ function EvidenceImage({
     );
   }
   return (
-    <img
+    <ReportImage
       className="block h-auto max-h-[65vh] w-full rounded-md border border-border object-contain"
-      src={frame.media.src}
+      media={frame.media}
       alt={frame.title}
       width={frame.media.width}
       height={frame.media.height}

@@ -1,28 +1,33 @@
 /** @jsxImportSource react */
 import { Button } from "@relay/ui-react/components/button";
 import { Link, type ErrorComponentProps } from "@tanstack/react-router";
-import { FormPage, PageHeader } from "../components/page-layout";
+import { RefreshCw } from "lucide-react";
 
 export function RouteErrorPage({ reset }: ErrorComponentProps) {
   return (
-    <FormPage className="relay-not-found pt-[clamp(72px,14vh,144px)]" role="alert">
-      <PageHeader
-        context="Page unavailable"
-        title="This page could not load"
-        description="Try again, or return to Tests to find your work."
-        actions={
-          <>
-            <Button onClick={reset}>Try again</Button>
-            <Button
-              variant="outline"
-              nativeButton={false}
-              render={<Link to="/tests" search={{}} />}
-            >
-              Go to Tests
-            </Button>
-          </>
-        }
-      />
-    </FormPage>
+    <section className="flex min-h-dvh flex-1 items-center justify-center p-8" role="alert">
+      <div className="w-full max-w-sm">
+        <div className="mb-4 flex size-10 items-center justify-center rounded-xl bg-muted">
+          <RefreshCw className="size-5 text-muted-foreground" aria-hidden="true" />
+        </div>
+        <h1 className="text-lg font-semibold tracking-tight">This page couldn’t load</h1>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">
+          Try opening it again, or return to your tests.
+        </p>
+        <div className="mt-5 flex items-center gap-2">
+          <Button size="sm" onClick={reset}>
+            Try again
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            nativeButton={false}
+            render={<Link to="/tests" search={{}} />}
+          >
+            Back to Tests
+          </Button>
+        </div>
+      </div>
+    </section>
   );
 }

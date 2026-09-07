@@ -25,8 +25,10 @@ export type ProductTestStep = {
   id: string;
   kind: AppMapScenarioTestStep["kind"];
   intent: string;
+  label?: string;
   note?: string;
   capture: boolean;
+  recordingFrames?: readonly { evidenceId: string; uri: string; role: "before" | "after" }[];
   status: ProductTestStatus;
   children?: readonly ProductTestStep[];
 };
@@ -221,21 +223,38 @@ function flattenCount(steps: readonly AppMapScenarioTestStep[]): number {
   }, 0);
 }
 
-function projectStep(step: AppMapScenarioTestStep): ProductTestStep {
+function projectStep(step: AppMapScenarioTestStep, app: AppMap): ProductTestStep {
   const children =
     step.kind === "decision"
       ? [...step.thenSteps, ...(step.elseSteps ?? [])]
       : step.kind === "loop"
         ? step.steps
         : [];
+  const recordingFrames =
+    step.binding?.status === "resolved" && step.binding.kind === "connections"
+      ? step.binding.connectionIds.flatMap(
+          (id) => app.connections[id]?.recordingSource?.frames ?? [],
+        )
+      : [];
+  const connection =
+    step.binding.status === "resolved" &&
+    step.binding.kind === "connections" &&
+    step.binding.connectionIds.length === 1
+      ? app.connections[step.binding.connectionIds[0]!]
+      : undefined;
+  const label = /^Go from (?:Start|Next screen) to (?:Start|Next screen)$/u.test(step.intent)
+    ? connection?.label
+    : undefined;
   return {
+    ...(label ? { label } : {}),
+    ...(recordingFrames.length ? { recordingFrames } : {}),
     id: step.id,
     kind: step.kind,
     intent: step.intent,
     ...(step.note ? { note: step.note } : {}),
     capture: step.capture === true,
     status: stepHasReview(step) ? "needs-review" : "ready",
-    ...(children.length ? { children: children.map(projectStep) } : {}),
+    ...(children.length ? { children: children.map((child) => projectStep(child, app)) } : {}),
   };
 }
 
@@ -462,7 +481,7 @@ export function productTestDetail(
   return {
     ...summary,
     appMapRevision: app.revision,
-    steps: test.steps.map(projectStep),
+    steps: test.steps.map((step) => projectStep(step, app)),
     links: {
       self: routeUrls.test(test.id),
       app: routeUrls.app(app.id),

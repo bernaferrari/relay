@@ -41,7 +41,7 @@ import { EvidencePreview } from "./run-report-panels";
 import { RunReplayAction, RunReplayStatus } from "./run-replay";
 import { RunEvidenceExport } from "./run-evidence-export";
 import { attachedRunLinkTestId, attachedRunOwnership } from "../data/attached-run-ownership";
-import { historicalRunCaption } from "../data/workbench-step-selection";
+import { EmbeddedRunResult } from "../components/embedded-run-result";
 
 const routeApi = getRouteApi("/runs/$runId");
 
@@ -121,11 +121,16 @@ export function RunInspection({
   });
   const report = useQuery({
     queryKey: runQueryKeys.report(runId),
-    queryFn: () => runService.getReport(runId, state?.report),
+    queryFn: async () => {
+      const saved = await runService.getReport(runId, state?.report);
+      if (state?.recovery && !saved.outcome)
+        throw new Error("The run has not saved a final result yet.");
+      return saved;
+    },
     enabled:
       !pointer.isPending &&
       restoreSettled &&
-      (!activePointer || terminal) &&
+      (!activePointer || terminal || Boolean(state?.recovery)) &&
       (!executionEnabled ||
         (execution.isFetched && (!execution.data || isTerminal(execution.data.status)))),
     retry: false,
@@ -210,7 +215,6 @@ export function RunInspection({
         testId={attachedRunLinkTestId(ownership, report.data.testId)}
         runService={runService}
         embedded={embedded}
-        historical={embedded}
       />
     );
   }
@@ -239,7 +243,7 @@ export function RunInspection({
     if (!activePointer && typeof runService.inspectExecution === "function")
       void execution.refetch();
     if (activePointer) void run.refetch();
-    if (!activePointer || terminal) void report.refetch();
+    if (!activePointer || terminal || state?.recovery) void report.refetch();
   };
 
   const problemView = (
@@ -390,13 +394,11 @@ function RunReport({
   testId,
   runService,
   embedded = false,
-  historical = false,
 }: {
   report: Awaited<ReturnType<RunProductService["getReport"]>>;
   testId?: string;
   runService: RunProductService;
   embedded?: boolean;
-  historical?: boolean;
 }) {
   const target = report.targetName ?? "the selected device or browser";
   const failure = report.outcome && report.outcome !== "passed" ? report.cause : undefined;
@@ -614,39 +616,7 @@ function RunReport({
     </>
   );
 
-  if (embedded) {
-    return (
-      <section className="grid gap-4" aria-label="Attached run">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
-              {heading}
-            </p>
-            {historical ? (
-              <p className="mt-0.5 text-sm text-muted-foreground">
-                {historicalRunCaption({
-                  runId: report.runId,
-                  sourceRevision: report.executionContext?.sourceRevision,
-                })}
-              </p>
-            ) : null}
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              {outcomeSentence(report.outcome, target)}
-            </p>
-            <RunContextFacts
-              report={report}
-              duration={
-                report.durationMs === undefined ? "Not recorded" : formatDuration(report.durationMs)
-              }
-              compact
-            />
-          </div>
-          <div className="flex flex-wrap items-center gap-2">{actions}</div>
-        </div>
-        {body}
-      </section>
-    );
-  }
+  if (embedded) return <EmbeddedRunResult report={report} />;
 
   return (
     <WorkbenchPage className="max-w-[1280px]">

@@ -105,6 +105,8 @@ export type AuthoringRecordingSource = {
   takeRevision: number;
   capture: AuthoringCaptureReview;
   evidenceIds: string[];
+  /** Immutable reviewed endpoint images; never resolved through mutable screen variants. */
+  frames?: { evidenceId: string; uri: string; role: "before" | "after" }[];
 };
 
 export const CONTROL_AND_RECORD_PROVENANCE: AuthoringCaptureProvenance = Object.freeze({

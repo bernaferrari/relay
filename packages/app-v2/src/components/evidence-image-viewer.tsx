@@ -1,3 +1,4 @@
+import { ReportImage } from "./report-image";
 /** @jsxImportSource react */
 import { Button } from "@relay/ui-react/components/button";
 import {
@@ -24,8 +25,8 @@ export function EvidenceImageViewer({
   if (!frame.media) return null;
   return (
     <>
-      <img
-        src={frame.media.src}
+      <ReportImage
+        media={frame.media}
         alt={frame.title}
         width={frame.media.width}
         height={frame.media.height}
@@ -91,8 +92,8 @@ export function EvidenceImageViewer({
             role="region"
             aria-label="Screenshot inspection area"
           >
-            <img
-              src={frame.media.src}
+            <ReportImage
+              media={frame.media}
               alt={frame.title}
               width={frame.media.width}
               height={frame.media.height}

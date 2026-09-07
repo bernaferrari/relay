@@ -401,9 +401,11 @@ export async function startRunEvidence(
     options.foregroundAppResolver,
   );
   const missingAndroidAppSession =
-    androidEvidenceSession === "surface-only"
-      ? "requires an Android app session; the current surface is launcher or system UI"
-      : undefined;
+    androidEvidenceSession === "unavailable"
+      ? "Android diagnostics session could not start; screen evidence remains available"
+      : androidEvidenceSession === "surface-only"
+        ? "requires an Android app session; the current surface is launcher or system UI"
+        : undefined;
 
   await guardedCollector(
     handle,

@@ -10,6 +10,7 @@ import {
 } from "@relay/ui-react/components/dropdown-menu";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation, useRouter, useRouteContext } from "@tanstack/react-router";
+import { runQueryKeys } from "../data/run-queries";
 import { catalogQueryKeys } from "../data/catalog-queries";
 import { recordingQueryKeys } from "../data/recording-queries";
 import {
@@ -22,15 +23,25 @@ import {
 export function AppSwitcher() {
   const router = useRouter();
   const location = useLocation();
-  const { productService, catalogService, changeService, sessionService } = useRouteContext({
-    from: "__root__",
-  });
+  const { productService, catalogService, changeService, sessionService, runService } =
+    useRouteContext({
+      from: "__root__",
+    });
   const canListApps = typeof productService.listApps === "function";
   const apps = useQuery({
     queryKey: recordingQueryKeys.apps,
     queryFn: () => productService.listApps(),
     enabled: canListApps,
     staleTime: 30_000,
+  });
+  const routeTestId = safeDecodeURIComponent(
+    /^\/tests\/([^/]+)/u.exec(location.pathname)?.[1] ?? "",
+  );
+  const testId = routeTestId && routeTestId !== "new" ? routeTestId : undefined;
+  const test = useQuery({
+    queryKey: runQueryKeys.test(testId ?? "unselected"),
+    queryFn: () => runService.getTest(testId!),
+    enabled: Boolean(testId),
   });
   const needsCatalogScope = /^\/(?:tests|runs|batches)\//u.test(location.pathname);
   const tests = useQuery({
@@ -82,7 +93,7 @@ export function AppSwitcher() {
   const scope = appScopeDetailsForLocation({
     pathname: location.pathname,
     search: location.search,
-    tests: tests.data,
+    tests: test.data ? [test.data] : tests.data,
     runs: runs.data,
     changes: change.data?.state.change ? [change.data.state.change] : undefined,
     recordings: recording.data?.snapshot?.frozen
@@ -106,8 +117,13 @@ export function AppSwitcher() {
         : undefined,
   });
   const selectedAppId = scope.kind === "single" ? scope.appId : undefined;
-  const selectedApp = apps.data?.find((app) => app.id === selectedAppId);
-  const contextName = appScopeDisplayName(scope, apps.data, apps.isSuccess || apps.isError);
+  const selectedApp =
+    apps.data?.find((app) => app.id === selectedAppId) ??
+    (test.data && test.data.appMapId === selectedAppId
+      ? { id: test.data.appMapId, name: test.data.appName }
+      : undefined);
+  const contextName =
+    selectedApp?.name ?? appScopeDisplayName(scope, apps.data, apps.isSuccess || apps.isError);
   const avatar =
     scope.kind === "multiple"
       ? String(scope.appIds.length)

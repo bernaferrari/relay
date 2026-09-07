@@ -22,7 +22,7 @@ import type {
 import type { ProductRunSummary } from "@relay/product/catalog";
 import type { Platform } from "../platform/types";
 import { productClientForPlatform } from "./product-client";
-import { projectTestStep, type ProductTestSummary } from "./run-test-projection";
+import { type ProductTestSummary } from "./run-test-projection";
 import { presentReadyTargets, type ProductTargetOption } from "./target-presentation";
 import { projectRunReport, resolvedTestTitle } from "./run-report-projection";
 export { projectRunReport } from "./run-report-projection";
@@ -135,14 +135,8 @@ export function createRunProductService(platform: Platform): RunProductService {
       }
       const match = matches[0];
       if (!match) return undefined;
-      return {
-        id: match.test.id,
-        name: match.test.name,
-        appMapId: match.app.id,
-        appName: match.app.name,
-        stepCount: match.test.steps.length,
-        steps: match.test.steps.map(projectTestStep),
-      };
+      const { productTestDetail } = await import("@relay/product/catalog");
+      return productTestDetail(match);
     },
     async listTestRuns(testId) {
       const { client } = await runtime();
@@ -318,6 +312,33 @@ export function createRunProductService(platform: Platform): RunProductService {
         canonical,
         evidenceResult === undefined,
         resolvedTestTitle(run, appsResult?.appMaps),
+      );
+      // Persisted runs carry frame paths, not inline base64. Resolve those
+      // paths through the authenticated transport only when an image is shown.
+      report.evidence = report.evidence.map((section) =>
+        section.id !== "screenshot"
+          ? section
+          : {
+              ...section,
+              items: section.items.map((item) => {
+                if (item.media || !/^frames\/[a-zA-Z0-9_-]+\.(?:png|jpe?g|webp)$/u.test(item.id))
+                  return item;
+                const path = `/runs/${encodeURIComponent(runId)}/${item.id}`;
+                return {
+                  ...item,
+                  media: {
+                    kind: "image" as const,
+                    src: path,
+                    load: async () => {
+                      const resource = await client.binaryResource(path);
+                      return new Blob([new Uint8Array(resource.bytes)], {
+                        type: resource.headers.get("content-type") ?? "image/png",
+                      });
+                    },
+                  },
+                };
+              }),
+            },
       );
       if (report.video) {
         const path = report.video.src;

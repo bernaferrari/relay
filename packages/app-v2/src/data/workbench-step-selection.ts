@@ -4,11 +4,10 @@ export function currentTestOutlineCopy(input: {
   viewingHistoricalRun: boolean;
 }): { title: string; hint?: string } {
   return {
-    title:
-      input.stepCount === 1 ? "Current Test · 1 step" : `Current Test · ${input.stepCount} steps`,
+    title: input.stepCount === 1 ? "1 step" : `${input.stepCount} steps`,
     ...(input.viewingHistoricalRun
       ? {
-          hint: "Selecting a current step does not change the historical Run.",
+          hint: "",
         }
       : {}),
   };

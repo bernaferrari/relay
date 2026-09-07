@@ -15,7 +15,7 @@ export async function primeAndroidEvidenceSession(
   foregroundAppResolver: (
     serial: string,
   ) => Promise<string | undefined> = captureAndroidForegroundApp,
-): Promise<"not-required" | "app-bound" | "surface-only"> {
+): Promise<"not-required" | "app-bound" | "surface-only" | "unavailable"> {
   if (job.targetKind === "browser" || job.platform !== "android" || !job.serial) {
     return "not-required";
   }
@@ -78,6 +78,9 @@ export async function primeAndroidEvidenceSession(
         error instanceof Error ? error.message : String(error)
       }`,
     );
+    // Timeout cleanup may have terminated the bound session. Dependent
+    // optional collectors cannot use it, even if binding initially succeeded.
+    return "unavailable";
   }
   return appSessionBound ? "app-bound" : "surface-only";
 }

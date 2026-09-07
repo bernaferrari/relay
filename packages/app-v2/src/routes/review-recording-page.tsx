@@ -102,6 +102,10 @@ export function ReviewRecordingPage({
         }
       }
       if (intent.action === "approve" && canonical.snapshot?.stage === "committed") {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ["catalog", "tests"] }),
+          queryClient.invalidateQueries({ queryKey: recordingQueryKeys.apps }),
+        ]);
         await Promise.resolve(platform.storage.remove?.(nameDraftKey));
         if (await clearWorkflowPointerIfCurrent(platform, workflowId)) {
           queryClient.setQueryData<string | null>(recordingQueryKeys.pointer, null);
