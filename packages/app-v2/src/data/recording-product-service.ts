@@ -13,6 +13,7 @@ import type {
   AuthoringRecordingEdit,
   AuthoringTarget,
 } from "@relay/protocol";
+import { reconcileOutcomeFromServerResponse } from "./recording-input-outcome";
 import { presentReadyTargets, type ProductTargetOption } from "./target-presentation";
 import {
   controlsForAuthoringEvidence,
@@ -321,12 +322,10 @@ export function createRecordingProductService(
       const pending = result.health?.input?.pendingMutationId;
       const state = result.health?.input?.state;
       const returned = result.outcome as "applied" | "not-applied" | "ambiguous" | undefined;
-      const outcome =
-        returned === "applied" || returned === "not-applied" || returned === "ambiguous"
-          ? returned
-          : state === "uncertain"
-            ? "ambiguous"
-            : input.outcome;
+      const outcome = reconcileOutcomeFromServerResponse({
+        ...(returned ? { returned } : {}),
+        ...(state ? { healthState: state } : {}),
+      });
       return {
         mutationId: pending ?? input.mutationId,
         ...(typeof result.resolutionId === "string" ? { resolutionId: result.resolutionId } : {}),

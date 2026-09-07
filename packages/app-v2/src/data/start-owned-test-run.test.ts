@@ -512,6 +512,30 @@ describe("start owned Test runs", () => {
     expect(campaignCaseMatchesRequest(cases[1]!, mobile)).toBe(false);
   });
 
+  it("does not treat an omitted source revision as a wildcard for a build-bound request", () => {
+    expect(
+      campaignCaseMatchesRequest(
+        {
+          cellId: "cell-chrome",
+          executionCaseId: "case-chrome",
+          targetProfileId: "profile-chrome",
+          target: { targetId: "chrome-1" },
+          engine: "chromium",
+          account: { kind: "fixture", accountId: "acct-member", accountRevision: "7" },
+        },
+        {
+          testId: "checkout",
+          appMapId: "app-1",
+          targetId: "chrome-1",
+          targetProfileId: "profile-chrome",
+          engine: "chromium",
+          account: { kind: "fixture", accountId: "acct-member", accountRevision: "7" },
+          sourceRevision: { vcs: "git", sha: "abcdef1" },
+        },
+      ),
+    ).toBe(false);
+  });
+
   it("treats missing or duplicate executionCaseId as unverifiable", () => {
     const request = {
       testId: "checkout",

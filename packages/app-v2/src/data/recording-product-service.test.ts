@@ -296,6 +296,25 @@ describe("recording edit adapter", () => {
     });
   });
 
+  it("does not invent applied from ready when the server omits an outcome", async () => {
+    client.invoke.mockClear();
+    client.invoke.mockResolvedValueOnce({
+      health: { input: { state: "ready" } },
+    });
+    const service = createRecordingProductService(platform);
+    await expect(
+      service.reconcileInput!({
+        serial: "pixel-1",
+        mutationId: "mut-3",
+        outcome: "applied",
+      }),
+    ).resolves.toMatchObject({
+      mutationId: "mut-3",
+      outcome: "ambiguous",
+      health: { state: "ready" },
+    });
+  });
+
   it("keeps a not-applied observation when the fence is ready", async () => {
     client.invoke.mockClear();
     client.invoke.mockResolvedValueOnce({

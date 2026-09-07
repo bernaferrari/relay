@@ -12,6 +12,7 @@ import {
   reconcileRecordingMutation,
   fetchRecordingReconcileReceipt,
   reconcileObservedFromServerReceipt,
+  reconcileOutcomeFromServerResponse,
   reconcileRecordingMutationAuthoritatively,
   recordingReconcileServerOutcome,
   supervisedRecordingMutationId,
@@ -198,6 +199,17 @@ describe("recording input outcome", () => {
         health: { state: "ready" },
       }),
     ).toBe("applied");
+    expect(
+      reconcileOutcomeFromServerResponse({
+        returned: "not-applied",
+        healthState: "ready",
+      }),
+    ).toBe("not-applied");
+    expect(
+      reconcileOutcomeFromServerResponse({
+        healthState: "ready",
+      }),
+    ).toBe("ambiguous");
   });
 
   it("retrieves a stored receipt without sending another reconcile", async () => {

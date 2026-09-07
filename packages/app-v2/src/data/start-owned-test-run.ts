@@ -171,11 +171,12 @@ export function campaignCaseMatchesRequest(
   const itemProfile = item.targetProfileId?.trim();
   if (!requestProfile || !itemProfile || requestProfile !== itemProfile) return false;
   if (!item.cellId?.trim() || !item.executionCaseId?.trim()) return false;
-  if (
-    item.sourceRevision &&
-    canonicalJson(item.sourceRevision) !== canonicalJson(request.sourceRevision ?? null)
-  ) {
-    return false;
+  if (request.sourceRevision || item.sourceRevision) {
+    if (
+      canonicalJson(item.sourceRevision ?? null) !== canonicalJson(request.sourceRevision ?? null)
+    ) {
+      return false;
+    }
   }
   return true;
 }

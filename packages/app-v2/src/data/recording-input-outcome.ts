@@ -94,6 +94,23 @@ export function reconcileObservedFromServerReceipt(
   return "uncertain";
 }
 
+/** Server outcome is authority. Ready is not applied. A missing outcome is
+ * uncertain — never echo the request. */
+export function reconcileOutcomeFromServerResponse(input: {
+  returned?: RecordingReconcileServerOutcome;
+  healthState?: RecordingTargetHealthProjection["input"]["state"];
+}): RecordingReconcileServerOutcome {
+  if (
+    input.returned === "applied" ||
+    input.returned === "not-applied" ||
+    input.returned === "ambiguous"
+  ) {
+    return input.returned;
+  }
+  if (input.healthState === "uncertain") return "ambiguous";
+  return "ambiguous";
+}
+
 const SUPERVISED_MUTATION_ID = /^(ios-input-|browser-input-)/u;
 
 export function isSupervisedRecordingMutationId(mutationId: string | undefined): boolean {
