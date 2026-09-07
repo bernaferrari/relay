@@ -471,6 +471,25 @@ export const combineCampaignSchema = z
           world: z.string(),
           values: z.record(z.string(), z.string()),
           targetProfileId: z.string(),
+          engine: z.enum(["chromium", "firefox", "webkit"]).optional(),
+          account: z
+            .discriminatedUnion("kind", [
+              z
+                .object({
+                  kind: z.literal("fixture"),
+                  accountId: z.string().trim().min(1),
+                  accountRevision: z.string().trim().min(1),
+                  reference: z.string().trim().min(1).optional(),
+                })
+                .strict(),
+              z
+                .object({
+                  kind: z.literal("signed-out"),
+                  attested: z.literal(true),
+                })
+                .strict(),
+            ])
+            .optional(),
           target: executionTargetSchema.optional(),
           childIntentDigest: z.string(),
           outerIntentDigest: z.string(),

@@ -141,6 +141,26 @@ function mapWithProfiles(
 
 const pixel = { targetId: "pixel-1", platform: "android" } as const;
 
+test("empty Repeat dimensions still prepare one implicit paired world", async () => {
+  const map = mapWithProfiles([profile({ id: "pixel-en", targetId: "pixel-1" })]);
+  const prepared = await prepareAppMapCombineCells({
+    map,
+    combine: {
+      ...map.combines.locales!,
+      id: "ad-hoc",
+      variableIds: [],
+      selected: {},
+    },
+    target: { ...pixel },
+    defaultTargetProfileId: "pixel-en",
+  });
+  assert.equal(prepared.cells.length, 1);
+  assert.equal(prepared.matrix.cases.length, 1);
+  assert.equal(prepared.matrix.cases[0]!.name, "paired");
+  assert.deepEqual(prepared.cells[0]!.values, {});
+  assert.equal(prepared.cells[0]!.targetProfileId, "pixel-en");
+});
+
 test("resolveSavedAppMapRuntimeTargetProfile inherits the only saved profile for a target", () => {
   const map = mapWithProfiles([
     {

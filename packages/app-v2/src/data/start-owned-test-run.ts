@@ -76,6 +76,8 @@ export type CombineStartResult = {
       status?: string;
       targetProfileId?: string;
       runId?: string;
+      engine?: BoundExecutionIdentity["engine"];
+      account?: BoundExecutionIdentity["account"];
     }[];
   };
   batch?: { id?: string };
@@ -125,6 +127,20 @@ function childStatusFromCase(status: string | undefined): OwnedTestStartChild["s
   return "started";
 }
 
+function sameAccountBinding(
+  left: BoundExecutionIdentity["account"] | undefined,
+  right: BoundExecutionIdentity["account"] | undefined,
+): boolean {
+  if (!left || !right) return false;
+  if (left.kind === "signed-out" && right.kind === "signed-out") return true;
+  return (
+    left.kind === "fixture" &&
+    right.kind === "fixture" &&
+    left.accountId === right.accountId &&
+    left.accountRevision === right.accountRevision
+  );
+}
+
 /** One Combine campaign owns every compiled pair. Do not start children locally. */
 export async function startPairedTestBatch(input: {
   requests: readonly ProductRunStartInput[];
@@ -145,7 +161,9 @@ export async function startPairedTestBatch(input: {
   const unused = [...cases];
   const children: OwnedTestStartChild[] = input.requests.map((request) => {
     const matchIndex = unused.findIndex(
-      (item) => item.targetProfileId && item.targetProfileId === request.targetProfileId,
+      (item) =>
+        sameAccountBinding(item.account, request.account) ||
+        Boolean(item.targetProfileId && item.targetProfileId === request.targetProfileId),
     );
     const item = matchIndex >= 0 ? unused.splice(matchIndex, 1)[0] : unused.shift();
     const status = childStatusFromCase(item?.status);

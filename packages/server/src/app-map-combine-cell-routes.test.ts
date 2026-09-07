@@ -2000,3 +2000,77 @@ test("profileTargets expand one authored cell into distinct execution cases", as
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("testId plus profileTargets starts one campaign and keeps each account", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-combine-testid-profile-targets-"));
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = root;
+  const server = await startServer({
+    host: "127.0.0.1",
+    port: 0,
+    jobRouteRuntime: {
+      async listDevices() {
+        return [listedMobileTarget("pixel-1", "android"), listedMobileTarget("ipad-b", "ios")];
+      },
+    },
+  });
+  try {
+    const client = new RelayClient({
+      url: `http://127.0.0.1:${server.port}`,
+      auth: { type: "none" },
+      organizationId: "acme",
+      projectId: "mobile",
+      actorId: "human:designer",
+      actorKind: "human",
+    });
+    await saveLocaleCombine(client, {
+      en: { targetId: "pixel-1", platform: "android" },
+      it: { targetId: "ipad-b", platform: "ios" },
+      fr: { targetId: "pixel-1", platform: "android" },
+    });
+    const result = await client.invoke("job.combine.start", {
+      appMapId: "store",
+      testId: "script-only",
+      executionMode: "all",
+      profileTargets: [
+        {
+          profileId: "profile-admin",
+          targetProfileId: "pixel-en",
+          engine: "chromium",
+          account: { kind: "fixture", accountId: "acct-admin", accountRevision: "4" },
+          target: { targetKind: "device", serial: "pixel-1", platform: "android" },
+        },
+        {
+          profileId: "profile-member",
+          targetProfileId: "pixel-it",
+          engine: "chromium",
+          account: { kind: "fixture", accountId: "acct-member", accountRevision: "7" },
+          target: { targetKind: "device", serial: "ipad-b", platform: "ios" },
+        },
+      ],
+    });
+    const campaign = result.campaign as CombineCampaign;
+    assert.ok(campaign, "paired testId starts must persist a durable campaign");
+    assert.equal(campaign.combineId, "ad-hoc");
+    assert.equal(campaign.cases.length, 2);
+    assert.deepEqual(
+      campaign.cases
+        .map((item) => item.account)
+        .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right))),
+      [
+        { kind: "fixture", accountId: "acct-admin", accountRevision: "4" },
+        { kind: "fixture", accountId: "acct-member", accountRevision: "7" },
+      ],
+    );
+    assert.equal(
+      new Set(campaign.cases.map((item) => item.account && JSON.stringify(item.account))).size,
+      2,
+    );
+    assert.ok(campaign.cases.every((item) => item.engine === "chromium"));
+  } finally {
+    await server.close();
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});

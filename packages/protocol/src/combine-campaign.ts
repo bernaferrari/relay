@@ -79,6 +79,12 @@ export type CombineCampaignCase = {
   world: string;
   values: Record<string, string>;
   targetProfileId: string;
+  /** Browser engine frozen from the paired start. Optional on older campaigns. */
+  engine?: "chromium" | "firefox" | "webkit";
+  /** Account fixture or attested signed-out state frozen from the paired start. */
+  account?:
+    | { kind: "fixture"; accountId: string; accountRevision: string; reference?: string }
+    | { kind: "signed-out"; attested: true };
   /**
    * Frozen per-cell execution location. Optional only for schema-v1 campaigns
    * written before target binding was introduced; those records fall back to

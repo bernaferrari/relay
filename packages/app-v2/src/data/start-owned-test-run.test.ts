@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { operationDefinition } from "@relay/protocol";
 import { emptyPairedWorkspace } from "./paired-configuration";
 import {
   profileTargetsFromStarts,
@@ -196,6 +197,72 @@ describe("start owned Test runs", () => {
     expect(
       new Set(profileTargetsFromStarts(requests).map((item) => JSON.stringify(item.account))).size,
     ).toBe(3);
+    expect(() => operationDefinition("job.combine.start").input.parse(bodies[0])).not.toThrow();
+  });
+
+  it("matches Batch children by account when cases keep runtime profile ids", async () => {
+    const requests = testStartRequests({
+      usePairedWorkspace: true,
+      workspace,
+      testId: "checkout",
+      appMapId: "app-1",
+      targetId: "ignored",
+      profiles: [
+        { id: "profile-admin", targetId: "chrome-1", account: { id: "acct-admin" } },
+        { id: "profile-member", targetId: "chrome-1", account: { id: "acct-member" } },
+        { id: "profile-out", targetId: "webkit-1" },
+      ],
+    });
+    const result = await startPairedTestBatch({
+      requests,
+      combineStart: async (body) => {
+        expect(() => operationDefinition("job.combine.start").input.parse(body)).not.toThrow();
+        return {
+          campaign: {
+            id: "batch-runtime-profiles",
+            cases: [
+              {
+                cellId: "cell-member",
+                status: "blocked",
+                targetProfileId: "pixel-en",
+                account: {
+                  kind: "fixture",
+                  accountId: "acct-member",
+                  accountRevision: "7",
+                },
+                engine: "chromium",
+              },
+              {
+                cellId: "cell-out",
+                status: "pending",
+                targetProfileId: "pixel-it",
+                account: { kind: "signed-out", attested: true },
+                engine: "webkit",
+              },
+              {
+                cellId: "cell-admin",
+                status: "queued",
+                targetProfileId: "pixel-en",
+                account: {
+                  kind: "fixture",
+                  accountId: "acct-admin",
+                  accountRevision: "4",
+                },
+                engine: "chromium",
+                runId: "run-admin",
+              },
+            ],
+          },
+        };
+      },
+    });
+    expect(result.batchId).toBe("batch-runtime-profiles");
+    expect(result.children.map((child) => child.status)).toEqual([
+      "started",
+      "blocked",
+      "untouched",
+    ]);
+    expect(result.children[0]?.state?.run?.runId).toBe("run-admin");
   });
 
   it("does not treat a Batch with no scheduled cells as a successful expansion", async () => {

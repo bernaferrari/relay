@@ -279,6 +279,16 @@ export type AppMapCombineEnumeratedCell = {
   worldIndex: number;
 };
 
+function implicitPairedCasePlan(): PreparedCasePlan {
+  return {
+    id: "paired",
+    createdAt: Date.now(),
+    seed: 0,
+    strategy: "zip",
+    cases: [{ id: "paired", name: "paired", index: 0, values: {}, provenance: [] }],
+  };
+}
+
 export function enumerateAppMapCombineCells(input: {
   combine: AppMapCombine;
   tests: AppMapScenarioTest[];
@@ -697,12 +707,14 @@ export async function prepareAppMapCombineCells(input: {
   }
   const strategy =
     input.strategy ?? input.combine.strategy ?? defaultOptionMatrixStrategy(sets.length);
-  const matrix = await prepareOptionCasePlan({
-    sets,
-    selected,
-    strategy,
-    map: input.map,
-  });
+  const matrix = sets.length
+    ? await prepareOptionCasePlan({
+        sets,
+        selected,
+        strategy,
+        map: input.map,
+      })
+    : implicitPairedCasePlan();
   const cells = enumerateAppMapCombineCells({
     combine: input.combine,
     tests,

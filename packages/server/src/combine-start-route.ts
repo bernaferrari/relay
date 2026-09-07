@@ -247,7 +247,11 @@ async function executeCombineStartUnlocked(
       });
     }
   }
-  const runTestOnce = Boolean(body.testId?.trim()) && !combine && !body.variableIds?.length;
+  const runTestOnce =
+    Boolean(body.testId?.trim()) &&
+    !combine &&
+    !body.variableIds?.length &&
+    !body.profileTargets?.length;
   if (runTestOnce) {
     requireSingleTestUseAppMapTestRun(body.appMapId.trim(), body.testId!.trim());
   }
@@ -532,7 +536,7 @@ async function executeCombineStartUnlocked(
       staged = stageCells();
     }
     let campaign;
-    if (combine) {
+    if (combine || body.profileTargets?.length) {
       const jobByCell = new Map(
         staged.jobs.map((job, index) => [
           selectedToQueue[index]?.executionCaseId ?? selectedToQueue[index]?.cellId,
@@ -545,12 +549,24 @@ async function executeCombineStartUnlocked(
         const isPilot =
           isPilotRun &&
           executionId === (selectedToQueue[0]?.executionCaseId ?? selectedToQueue[0]?.cellId);
-        return combineCampaignCaseFromPreparedCell(cell, {
-          index,
-          phase: isPilot ? "pilot" : "coverage",
-          status: job ? "queued" : "pending",
-          jobId: job?.id,
-        });
+        const profileTarget = body.profileTargets?.find(
+          (item) =>
+            executionId ===
+            combineExecutionCaseId({
+              cellId: cell.cellId,
+              targetProfileId: item.profileId,
+            }),
+        );
+        return {
+          ...combineCampaignCaseFromPreparedCell(cell, {
+            index,
+            phase: isPilot ? "pilot" : "coverage",
+            status: job ? "queued" : "pending",
+            jobId: job?.id,
+          }),
+          ...(profileTarget?.account ? { account: structuredClone(profileTarget.account) } : {}),
+          ...(profileTarget?.engine ? { engine: profileTarget.engine } : {}),
+        };
       });
       const at = Date.now();
       if (body.repeatRecovery && (!isPilotRun || staged.jobs.length !== 1)) {
@@ -573,7 +589,7 @@ async function executeCombineStartUnlocked(
         projectId: scope.projectId,
         ownerId: currentOperationContext()!.actorId,
         appMapId: map.id,
-        combineId: combine.id,
+        combineId: scopedCombine.id,
         sourceRevision: map.revision,
         latestRevision: map.revision,
         ...(new Set(prepared.cells.map((cell) => executionTargetRefKey(cell.executionTarget)))
@@ -606,7 +622,7 @@ async function executeCombineStartUnlocked(
           },
         ],
         execution: {
-          selected: body.selected ?? combine.selected,
+          selected: body.selected ?? scopedCombine.selected,
           selectedCellIds: isPilotRun
             ? prepared.selectedCellIds
             : selectedToQueue.map((cell) => cell.cellId),
@@ -617,9 +633,9 @@ async function executeCombineStartUnlocked(
                   : selectedToQueue.map((cell) => cell.executionCaseId ?? cell.cellId),
               }
             : {}),
-          strategy: body.strategy ?? combine.strategy,
+          strategy: body.strategy ?? scopedCombine.strategy,
           seed: prepared.matrix.seed,
-          title: body.title?.trim() || combine.name,
+          title: body.title?.trim() || scopedCombine.name,
           ...(repeat ? { repeat } : {}),
           ...(admission
             ? {
