@@ -38,6 +38,11 @@ export type ProductTestEditorDocument = {
 
 export type TestEditorProductService = {
   get(testId: string): Promise<ProductTestEditorDocument | undefined>;
+  saveSettings?(input: {
+    document: ProductTestEditorDocument;
+    name: string;
+    originApplication?: string;
+  }): Promise<ProductTestEditorDocument>;
   edit(input: {
     document: ProductTestEditorDocument;
     edits: readonly AppMapScenarioTestEdit[];
@@ -73,6 +78,30 @@ export function createTestEditorProductService(platform: Platform): TestEditorPr
         testId: document.test.id,
         expectedRevision: document.revision,
         edits: [...edits],
+      });
+      return requireDocument(appMap, document.test.id);
+    },
+    async saveSettings({ document, name, originApplication }) {
+      const { kind, intentSchemaVersion, steps, family, capture, validation } = document.test;
+      const { appMap } = await (
+        await client()
+      ).invoke("app-map.test.save", {
+        appMapId: document.appMapId,
+        testId: document.test.id,
+        expectedRevision: document.revision,
+        // The public save schema accepts authored graph fields only; server-owned
+        // AppMapEntity metadata stays on the current document and is rehydrated
+        // from the response.
+        test: {
+          kind,
+          intentSchemaVersion,
+          steps,
+          ...(family ? { family } : {}),
+          ...(capture ? { capture } : {}),
+          ...(validation ? { validation } : {}),
+          name: name.trim(),
+          ...(originApplication?.trim() ? { originApplication: originApplication.trim() } : {}),
+        } as unknown as AppMapScenarioTest,
       });
       return requireDocument(appMap, document.test.id);
     },

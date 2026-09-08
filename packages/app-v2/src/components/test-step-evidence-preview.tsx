@@ -30,7 +30,8 @@ export function TestStepEvidencePreview({
   }
   const selected = matches.find((item) => item.occurrence === selectedOccurrence) ?? matches[0];
   const timelineItem = selected
-    ? report?.timeline.find((item) => item.index === selected.traceStepIndex)
+    ? (report?.timeline.find((item) => item.id === selected.traceStepId) ??
+      report?.timeline.find((item) => item.index === selected.traceStepIndex))
     : undefined;
   const titleId = `step-evidence-${step.id}`;
 
@@ -125,9 +126,11 @@ export function TestStepEvidencePreview({
               })}
             </div>
           ) : null}
-          <details className="text-xs text-muted-foreground">
-            <summary>Technical evidence</summary>
-            <p className="mt-1">{evidenceSummary(selected.evidence)}</p>
+          <details className="w-fit max-w-full text-xs text-muted-foreground">
+            <summary className="cursor-pointer rounded-md px-1 py-1.5 hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring">
+              Evidence details
+            </summary>
+            <p className="px-1 pb-1">{evidenceSummary(selected.evidence)}</p>
           </details>
         </div>
       ) : null}

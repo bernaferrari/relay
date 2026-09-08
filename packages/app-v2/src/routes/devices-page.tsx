@@ -2,12 +2,17 @@
 import { Badge } from "@relay/ui-react/components/badge";
 import { Button } from "@relay/ui-react/components/button";
 import { Item } from "@relay/ui-react/components/item";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@relay/ui-react/components/collapsible";
 import { Tabs, TabsList, TabsTrigger } from "@relay/ui-react/components/tabs";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { ChevronRight, CircleHelp, ListChecks } from "lucide-react";
 import { useDeferredValue, useEffect, useId, useState } from "react";
-import { LibrarySearch, LibraryToolbar } from "../components/library-toolbar";
+import { LibrarySearch } from "../components/library-toolbar";
 import { LibraryPage, PageHeader } from "../components/page-layout";
 import { EmptyState, RecoveryState } from "../components/product-patterns";
 import { deviceSummaryLine } from "../data/device-label";
@@ -63,7 +68,7 @@ function DeviceRow({ device, returnTo }: { device: ProductDevice; returnTo?: str
   return (
     <li>
       <Item
-        className="relay-library-row relay-device-row grid min-h-[78px] min-w-0 grid-cols-[minmax(0,1fr)_minmax(94px,auto)_18px] items-center gap-[18px] px-3.5 py-2 text-[var(--text-base)] transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2"
+        className="relay-library-row relay-device-row grid min-h-16 min-w-0 grid-cols-[minmax(0,1fr)_auto_18px] items-center gap-3 px-3.5 py-2 text-[var(--text-base)] transition-colors duration-150 hover:bg-accent/50 focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2"
         render={
           isBrowser(device) ? (
             <Link
@@ -118,28 +123,79 @@ function DeviceSection({
   title,
   devices,
   returnTo,
+  bordered = true,
 }: {
   title: string;
   devices: readonly ProductDevice[];
   returnTo?: string;
+  bordered?: boolean;
 }) {
   const headingId = useId();
   return (
-    <section className="relay-library-results" aria-labelledby={headingId}>
-      <div className="relay-library-results-heading flex min-h-8 items-center justify-between gap-5 px-0.5 pb-2.5">
-        <h2 id={headingId} className="text-[13px] font-semibold">
-          {title}
-        </h2>
-        <span className="text-xs text-[var(--text-weak)]" aria-label={`${devices.length} ${title}`}>
-          {devices.length}
-        </span>
-      </div>
-      <ul className="relay-library-list m-0 list-none overflow-hidden rounded-[var(--radius-xl)] border border-[var(--border-weak-base)] bg-[var(--surface-raised-strong)] p-0 [&>li]:border-b [&>li]:border-[var(--border-weak-base)] [&>li:last-child]:border-b-0">
+    <section
+      className="relay-library-results"
+      aria-labelledby={title ? headingId : undefined}
+      aria-label={!title ? "Available devices" : undefined}
+    >
+      {title ? (
+        <div className="relay-library-results-heading flex min-h-8 items-center gap-2 px-0.5 pb-2.5">
+          <h2 id={headingId} className="text-[13px] font-semibold">
+            {title}
+          </h2>
+          <Badge
+            variant="secondary"
+            className="h-5 min-w-5 justify-center px-1.5 text-[11px] tabular-nums"
+          >
+            {devices.length}
+          </Badge>
+        </div>
+      ) : null}
+      <ul
+        className={`relay-library-list m-0 list-none overflow-hidden p-0 [&>li]:border-b [&>li]:border-border [&>li:last-child]:border-b-0 ${bordered ? "rounded-lg border border-border bg-card" : ""}`}
+      >
         {devices.map((device) => (
           <DeviceRow key={device.id} device={device} returnTo={returnTo} />
         ))}
       </ul>
     </section>
+  );
+}
+
+function AvailableSection({
+  title,
+  devices,
+  returnTo,
+  searchActive,
+}: {
+  title: string;
+  devices: readonly ProductDevice[];
+  returnTo?: string;
+  searchActive: boolean;
+}) {
+  const [open, setOpen] = useState(searchActive);
+  useEffect(() => {
+    if (searchActive) setOpen(true);
+  }, [searchActive]);
+  const headingId = useId();
+  return (
+    <Collapsible open={open} onOpenChange={setOpen} className="grid gap-2">
+      <CollapsibleTrigger className="flex min-h-9 items-center gap-2 px-0.5 text-left text-[13px] font-semibold focus-visible:outline-2 focus-visible:outline-ring">
+        <ChevronRight
+          className={`size-4 text-muted-foreground transition-transform duration-200 motion-reduce:transition-none ${open ? "rotate-90" : ""}`}
+          aria-hidden="true"
+        />
+        <span id={headingId}>{title}</span>
+        <Badge
+          variant="secondary"
+          className="h-5 min-w-5 justify-center px-1.5 text-[11px] tabular-nums"
+        >
+          {devices.length}
+        </Badge>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <DeviceSection title="" devices={devices} returnTo={returnTo} bordered={false} />
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 
@@ -205,9 +261,8 @@ export function DevicesPage() {
       onClickCapture={returnFocus.onClickCapture}
     >
       <PageHeader
-        context="Devices"
         title="Devices"
-        description="Choose a Device or Browser, then inspect or record."
+        description="Connected phones, tablets, emulators, and browsers ready for a Test."
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Button
@@ -234,33 +289,30 @@ export function DevicesPage() {
         }
       />
 
-      <LibraryToolbar
-        label="Filter Devices"
-        tabs={
-          <Tabs
-            className="border-b border-border pb-1.5"
-            value={activeFilter}
-            onValueChange={(value) => updateSearch({ status: value as DeviceFilter })}
-          >
-            <TabsList className="h-9 justify-start" variant="line" aria-label="Filter devices">
-              {FILTERS.map((filter) => (
-                <TabsTrigger key={filter.id} value={filter.id}>
-                  {filter.label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
-        }
-        search={
-          <LibrarySearch
-            id="device-search"
-            label="Search Devices and Browsers"
-            value={query}
-            placeholder="Search by name or platform"
-            onChange={setQuery}
-          />
-        }
-      />
+      <div
+        className="flex flex-wrap items-center gap-3 border-b border-border pb-4"
+        aria-label="Filter devices"
+      >
+        <LibrarySearch
+          id="device-search"
+          label="Search Devices and Browsers"
+          value={query}
+          placeholder="Search by name or platform"
+          onChange={setQuery}
+        />
+        <Tabs
+          value={activeFilter}
+          onValueChange={(value) => updateSearch({ status: value as DeviceFilter })}
+        >
+          <TabsList className="h-10" variant="default" aria-label="Filter devices">
+            {FILTERS.map((filter) => (
+              <TabsTrigger key={filter.id} value={filter.id}>
+                {filter.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+      </div>
 
       {devices.isPending ? <PageLoading label="Checking Devices and Browsers…" /> : null}
 
@@ -327,41 +379,52 @@ export function DevicesPage() {
           {(["Physical devices", "Android emulators", "iOS simulators", "Browsers"] as const).map(
             (title) => {
               const devicesInSection = visibleDevices.filter(
-                (device) => deviceGroup(device) === title,
+                (device) =>
+                  deviceGroup(device) === title &&
+                  !device.id.startsWith("avd:") &&
+                  !(title === "iOS simulators" && device.device.booted === false),
               );
               if (!devicesInSection.length) return null;
-              const active = devicesInSection.filter((device) => device.device.booted !== false);
-              const stopped = devicesInSection.filter((device) => device.device.booted === false);
               return (
-                <div key={title} className="grid gap-3">
-                  {active.length ? (
-                    <DeviceSection
-                      title={title}
-                      devices={active}
-                      returnTo={continuation ? search.returnTo : undefined}
-                    />
-                  ) : null}
-                  {stopped.length ? (
-                    <details
-                      open={deferredQuery ? true : undefined}
-                      className="rounded-xl border border-border p-3"
-                    >
-                      <summary className="cursor-pointer text-sm font-medium focus-visible:outline-2 focus-visible:outline-ring">
-                        {title} · {stopped.length}
-                      </summary>
-                      <div className="mt-3">
-                        <DeviceSection
-                          title={title}
-                          devices={stopped}
-                          returnTo={continuation ? search.returnTo : undefined}
-                        />
-                      </div>
-                    </details>
-                  ) : null}
-                </div>
+                <DeviceSection
+                  key={title}
+                  title={title}
+                  devices={devicesInSection}
+                  returnTo={continuation ? search.returnTo : undefined}
+                />
               );
             },
           )}
+          {(() => {
+            const available = visibleDevices.filter(
+              (device) =>
+                device.id.startsWith("avd:") ||
+                (deviceGroup(device) === "iOS simulators" && device.device.booted === false),
+            );
+            if (!available.length) return null;
+            const android = available.filter((device) => device.id.startsWith("avd:"));
+            const simulators = available.filter((device) => !device.id.startsWith("avd:"));
+            return (
+              <div className="grid gap-4">
+                {simulators.length ? (
+                  <AvailableSection
+                    title="Available iOS simulators"
+                    devices={simulators}
+                    returnTo={continuation ? search.returnTo : undefined}
+                    searchActive={Boolean(deferredQuery)}
+                  />
+                ) : null}
+                {android.length ? (
+                  <AvailableSection
+                    title="Available Android emulators"
+                    devices={android}
+                    returnTo={continuation ? search.returnTo : undefined}
+                    searchActive={Boolean(deferredQuery)}
+                  />
+                ) : null}
+              </div>
+            );
+          })()}
         </div>
       ) : null}
     </LibraryPage>

@@ -1259,3 +1259,43 @@ test("a network-authenticated recovery request cannot release a local durable fe
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("lists launchable apps on the selected Android device", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-app-locales-"));
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = root;
+  const server = await startServer({
+    host: "127.0.0.1",
+    port: 0,
+    targetRuntime: {
+      listDevices: async () => [
+        {
+          id: "pixel",
+          serial: "pixel-1",
+          name: "Pixel",
+          platform: "android",
+          kind: "Pixel 9",
+          booted: true,
+        },
+      ],
+      listAndroidInstalledApps: async (serial) => {
+        assert.equal(serial, "pixel-1");
+        return [{ package: "com.android.settings", name: "Settings" }];
+      },
+    },
+  });
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.port}/device/apps?serial=pixel-1`, {
+      headers: headers("target.app.list"),
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      apps: [{ package: "com.android.settings", name: "Settings" }],
+    });
+  } finally {
+    await server.close();
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});

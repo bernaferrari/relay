@@ -273,6 +273,9 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
         ...(intent.startup?.mode === "verified-checkpoint"
           ? { entryCheckpointScreenId: intent.startup.screenId }
           : {}),
+        ...(intent.startup?.mode === "cold" || intent.startup?.mode === "warm"
+          ? { startupMode: intent.startup.mode }
+          : {}),
         ...(intent.targetProfileId ? { targetProfileId: intent.targetProfileId } : {}),
         ...(intent.capture
           ? { forceRecaptureScreenIds: [...intent.capture.fullSurfaceScreenIds] }
@@ -362,6 +365,9 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
           targetProfileId,
           ...(intent.startup?.mode === "verified-checkpoint"
             ? { entryCheckpointScreenId: intent.startup.screenId }
+            : {}),
+          ...(intent.startup?.mode === "cold" || intent.startup?.mode === "warm"
+            ? { startupMode: intent.startup.mode }
             : {}),
           ...(intent.capture
             ? { forceRecaptureScreenIds: [...intent.capture.fullSurfaceScreenIds] }

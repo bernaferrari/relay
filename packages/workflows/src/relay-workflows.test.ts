@@ -106,11 +106,12 @@ function compileStep(
   revision: number,
   blockers?: Array<{ code: string; message: string }>,
   executionRisk?: Parameters<typeof preflight>[2],
+  startup: { mode: "warm" | "cold" } = { mode: "warm" },
 ): ScriptedRelayStep {
   return {
     id: "app-map.test.compile",
     output: {
-      plan: { rootRecipeId: "open-settings" },
+      plan: { rootRecipeId: "open-settings", startup },
       preflight: preflight(revision, blockers, executionRisk),
     },
   };
@@ -126,7 +127,11 @@ function job(status: string, overrides: Record<string, unknown> = {}) {
   };
 }
 
-function runStep(revision: number, status = "queued"): ScriptedRelayStep {
+function runStep(
+  revision: number,
+  status = "queued",
+  startup: { mode: "warm" | "cold" } = { mode: "warm" },
+): ScriptedRelayStep {
   return {
     id: "app-map.test.run",
     output: {
@@ -136,7 +141,7 @@ function runStep(revision: number, status = "queued"): ScriptedRelayStep {
         testId: "data-controls",
         rootRecipeId: "open-settings",
       },
-      plan: { rootRecipeId: "open-settings" },
+      plan: { rootRecipeId: "open-settings", startup },
       job: job(status),
     },
   };
@@ -348,7 +353,7 @@ test("current revision is read once, compiled offline, and frozen into the exact
   const snapshot = await workflows.start(
     intent({
       revision: "current",
-      startup: { mode: "verified-checkpoint", screenId: "data-controls" },
+      startup: { mode: "cold" },
       sourceRevision: { vcs: "git", sha: "abcdef1", branch: "feature/workflows" },
       capture: { fullSurfaceScreenIds: ["data-controls"] },
     }),
@@ -367,7 +372,7 @@ test("current revision is read once, compiled offline, and frozen into the exact
   assert.deepEqual(scripted.invocations[1]?.input, {
     appMapId: "settings",
     testId: "data-controls",
-    entryCheckpointScreenId: "data-controls",
+    startupMode: "cold",
     forceRecaptureScreenIds: ["data-controls"],
   });
   assert.deepEqual(scripted.invocations[2]?.input, {
@@ -375,7 +380,7 @@ test("current revision is read once, compiled offline, and frozen into the exact
     testId: "data-controls",
     expectedRevision: 7,
     target,
-    startup: { mode: "verified-checkpoint", screenId: "data-controls" },
+    startup: { mode: "cold" },
     sourceRevision: { vcs: "git", sha: "abcdef1", branch: "feature/workflows" },
     surfaceCapture: { forceRecaptureScreenIds: ["data-controls"] },
   });

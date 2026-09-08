@@ -189,7 +189,7 @@ export function DevicePage() {
   }
 
   return (
-    <LibraryPage className="max-w-[1120px]">
+    <LibraryPage className="flex min-h-full max-w-[1120px] flex-col">
       <PageHeader
         crumbs={[{ label: "Devices", to: "/devices" }, { label: device.data?.name ?? "Device" }]}
         title={device.data?.name ?? "Device"}

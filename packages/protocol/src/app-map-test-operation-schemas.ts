@@ -232,6 +232,7 @@ export const appMapTestCompileInputSchema = z
     entryCheckpointScreenId: identifier(
       "Optional mapped screen identifier to compile as a verified live checkpoint",
     ).optional(),
+    startupMode: z.enum(["warm", "cold"]).optional(),
     targetProfileId: identifier("Saved runtime evidence profile to scope offline proof").optional(),
     forceRecaptureScreenIds: forceRecaptureScreenIds.optional(),
   })
@@ -610,6 +611,7 @@ export const graphTest = z
     name: text("Test name"),
     kind: z.literal("scenario"),
     intentSchemaVersion: z.literal(1),
+    originApplication: z.string().trim().min(1).optional(),
     steps: z.array(graphTestStep).max(200),
     family: testFamily.optional(),
     capture: testCapturePolicy.optional(),

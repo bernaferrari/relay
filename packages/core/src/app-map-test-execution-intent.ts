@@ -226,7 +226,7 @@ function planMatchesRecipeGraph(
 
 function canonicalStartup(value: unknown): boolean {
   if (!isRecord(value)) return false;
-  if (value.mode === "cold") return ownKeys(value, ["mode"]);
+  if (value.mode === "cold" || value.mode === "warm") return ownKeys(value, ["mode"]);
   return (
     value.mode === "verified-checkpoint" &&
     string(value.screenId) &&
@@ -405,6 +405,7 @@ export function parseCanonicalAppMapTestPlan(value: unknown): AppMapCompiledTest
       "stepProvenance",
       "performance",
       "startup",
+      "originApplication",
       "omittedSteps",
     ]) ||
     value.schemaVersion !== 1 ||
@@ -422,6 +423,7 @@ export function parseCanonicalAppMapTestPlan(value: unknown): AppMapCompiledTest
     !Array.isArray(value.stepProvenance) ||
     !isRecord(value.performance) ||
     !canonicalStartup(value.startup) ||
+    (value.originApplication !== undefined && !string(value.originApplication)) ||
     (value.testFamily !== undefined && !canonicalTestFamily(value.testFamily))
   ) {
     return undefined;

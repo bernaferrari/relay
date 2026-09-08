@@ -28,6 +28,7 @@ import { PageLoading, RecordingProblem, targetLabel } from "./recording-shared";
 import { ReviewRecordingPage } from "./review-recording-page";
 import { LiveTargetCanvas } from "./live-target-canvas";
 import { RecordingDeviceChoice } from "../components/recording-device-choice";
+import { InstalledAppChoice } from "../components/installed-app-choice";
 
 const NEW_TEST_DRAFT_KEY = "newTestDraft";
 
@@ -56,6 +57,7 @@ export function NewTestPage() {
   const appId = requestedAppId ?? fallbackAppId;
   const [targetId, setTargetId] = useState(requestedTargetId ?? "");
   const [originApplication, setOriginApplication] = useState(requestedOriginApplication ?? "");
+  const [openedApplication, setOpenedApplication] = useState("");
   const [draftRestored, setDraftRestored] = useState(false);
   const previewCanvas = useRef<HTMLCanvasElement>(null);
   const previewSession = useRef<LiveTargetSession | undefined>(undefined);
@@ -67,6 +69,7 @@ export function NewTestPage() {
   const [browserUrl, setBrowserUrl] = useState("");
   const [newBrowserOpen, setNewBrowserOpen] = useState(false);
   const [creatingApp, setCreatingApp] = useState(false);
+  const previousTargetId = useRef<string | undefined>(undefined);
 
   const apps = useQuery({
     queryKey: recordingQueryKeys.apps,
@@ -190,6 +193,13 @@ export function NewTestPage() {
   }, [appId, draftRestored, platform, targetId]);
 
   const selectedTarget = targets.data?.targetOptions.find((target) => target.targetId === targetId);
+  useEffect(() => {
+    if (previousTargetId.current && previousTargetId.current !== targetId) {
+      setOriginApplication("");
+      setOpenedApplication("");
+    }
+    previousTargetId.current = targetId;
+  }, [targetId]);
   const reconnectPreview = useMutation({
     mutationFn: async (serial: string) => deviceService.recover(serial, "connect"),
     onSuccess: (_result, serial) => {
@@ -314,7 +324,8 @@ export function NewTestPage() {
     !begin.isPending &&
     !creatingApp &&
     !previewIssue &&
-    !reconnectPreview.isPending,
+    !reconnectPreview.isPending &&
+    (!originApplication || openedApplication === originApplication),
   );
   if (search.view === "review") {
     if (activePointer.isPending) return <PageLoading label="Opening the reviewed recording…" />;
@@ -327,7 +338,9 @@ export function NewTestPage() {
       ? "Choose a Device or Browser"
       : begin.isPending
         ? "Starting…"
-        : "Start recording";
+        : originApplication && openedApplication !== originApplication
+          ? "Open the selected app first"
+          : "Start recording";
 
   function chooseApp(nextAppId: string) {
     setAppId(nextAppId);
@@ -455,22 +468,16 @@ export function NewTestPage() {
                   onChange={setTargetId}
                 />
                 {selectedTarget?.kind === "device" ? (
-                  <details className="text-xs text-muted-foreground">
-                    <summary className="cursor-pointer py-2">Advanced launch settings</summary>
-                    <div className="grid gap-1.5 py-2">
-                      <Label htmlFor="recording-origin-application">App package or bundle ID</Label>
-                      <Input
-                        id="recording-origin-application"
-                        value={originApplication}
-                        onChange={(event) => setOriginApplication(event.target.value)}
-                        placeholder="Package or bundle ID, for example com.android.settings"
-                        autoComplete="off"
-                      />
-                      <p className="text-xs leading-relaxed text-muted-foreground">
-                        Used when restarting the app for a test run.
-                      </p>
-                    </div>
-                  </details>
+                  <InstalledAppChoice
+                    service={deviceService}
+                    serial={selectedTarget.targetId}
+                    value={originApplication}
+                    onChange={(value) => {
+                      setOriginApplication(value);
+                      setOpenedApplication("");
+                    }}
+                    onOpened={setOpenedApplication}
+                  />
                 ) : null}
                 <Button type="submit" disabled={!formReady} title={startHint} className="w-full">
                   <Play aria-hidden="true" />

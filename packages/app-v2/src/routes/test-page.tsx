@@ -18,6 +18,7 @@ import {
 } from "@relay/ui-react/components/collapsible";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
+import { ChevronLeft } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ProductTestStep } from "@relay/product/catalog";
 import { EmptyState, OutcomeMark } from "../components/product-patterns";
@@ -268,7 +269,8 @@ export function TestPage() {
       <AuthoringHeader
         back={
           <Button nativeButton={false} render={<Link to="/tests" />} variant="ghost" size="sm">
-            Back to Tests
+            <ChevronLeft aria-hidden="true" />
+            Back
           </Button>
         }
         title={test.data?.name ?? "Test"}
@@ -569,15 +571,10 @@ export function TestPage() {
       ) : null}
 
       {!loading && test.data && recentRuns.data?.length ? (
-        <Collapsible className="mt-8 border-t border-border pt-4">
-          <CollapsibleTrigger className="flex min-h-11 w-full items-center justify-between gap-4 rounded-md py-2 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/40">
+        <Collapsible className="mx-3 mt-6 mb-3 border-t border-border px-1 pt-3">
+          <CollapsibleTrigger className="flex min-h-11 w-full items-center justify-between gap-4 rounded-md py-1 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/40">
             <span>
-              <span className="block text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
-                History
-              </span>
-              <span className="block text-base font-semibold text-foreground">
-                Reliability and recent Runs
-              </span>
+              <span className="block text-sm font-semibold text-foreground">Recent runs</span>
               <span className="sr-only">
                 Recent stability ·{" "}
                 {stabilityHistoryComplete ? "Complete history" : "Partial history"}
@@ -590,11 +587,11 @@ export function TestPage() {
               <Badge variant="secondary">
                 {stabilityHistoryComplete ? "Complete history" : "Partial history"}
               </Badge>
-              <span>Expand</span>
+              <span>Show history</span>
             </span>
           </CollapsibleTrigger>
-          <CollapsibleContent className="pt-4">
-            <div className="grid gap-7 md:grid-cols-2">
+          <CollapsibleContent className="pt-3">
+            <div className="grid gap-5 md:grid-cols-2">
               <section className="min-w-0" aria-labelledby="test-stability-title">
                 <div className="flex items-end justify-between gap-5 max-[620px]:items-start max-[620px]:gap-3">
                   <div>

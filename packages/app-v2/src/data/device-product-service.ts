@@ -28,6 +28,7 @@ export type ProductDeviceRecovery = {
 };
 
 export type ProductLaunchedApp = OperationOutput<"target.app.launch">["launched"];
+export type ProductInstalledApp = OperationOutput<"target.app.list">["apps"][number];
 
 export type DeviceProductService = {
   list(): Promise<readonly ProductDevice[]>;
@@ -42,6 +43,7 @@ export type DeviceProductService = {
   /** Launch is supported only for attached Android/iOS devices by the
    * canonical target operation; managed browsers remain a separate target. */
   launchApp?(deviceId: string, app: string, relaunch?: boolean): Promise<ProductLaunchedApp>;
+  listInstalledApps?(serial: string): Promise<readonly ProductInstalledApp[]>;
 };
 
 export const deviceQueryKeys = {
@@ -217,6 +219,10 @@ export function createDeviceProductService(platform: Platform): DeviceProductSer
         ...(relaunch === undefined ? {} : { relaunch }),
       });
       return result.launched;
+    },
+    async listInstalledApps(serial) {
+      const result = await (await client()).invoke("target.app.list", { serial });
+      return result.apps;
     },
   };
 }

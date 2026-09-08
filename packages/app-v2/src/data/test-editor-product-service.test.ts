@@ -67,4 +67,57 @@ describe("Test editor product history transport", () => {
       expectedRevision: 4,
     });
   });
+
+  it("saves edited test settings through the canonical test operation", async () => {
+    const service = createTestEditorProductService(platform);
+    const document = {
+      appMapId: "store",
+      appName: "Store",
+      revision: 3,
+      test: {
+        ...test,
+        originApplication: "com.example.original",
+        steps: [{ id: "tap", kind: "action", action: "tap" } as never],
+      },
+      history: [],
+      repairs: [],
+    };
+    clientRef.current.invoke.mockResolvedValueOnce({
+      appMap: {
+        ...map(4, "Checkout renamed"),
+        tests: {
+          checkout: {
+            ...document.test,
+            name: "Checkout renamed",
+            originApplication: "com.example.updated",
+          },
+        },
+      },
+    });
+
+    const saved = await service.saveSettings!({
+      document,
+      name: "  Checkout renamed  ",
+      originApplication: "  com.example.updated  ",
+    });
+
+    expect(saved.test).toMatchObject({
+      id: "checkout",
+      name: "Checkout renamed",
+      originApplication: "com.example.updated",
+      steps: document.test.steps,
+    });
+    expect(clientRef.current.invoke).toHaveBeenLastCalledWith("app-map.test.save", {
+      appMapId: "store",
+      testId: "checkout",
+      expectedRevision: 3,
+      test: {
+        kind: document.test.kind,
+        intentSchemaVersion: document.test.intentSchemaVersion,
+        steps: document.test.steps,
+        name: "Checkout renamed",
+        originApplication: "com.example.updated",
+      },
+    });
+  });
 });

@@ -629,6 +629,13 @@ test("offline Test compilation previews a verified checkpoint without a device o
     assert.equal(preview.plan.appMapRevision, runRevision);
     assert.equal(preview.preflight.mode, "offline-test-preflight");
 
+    const coldPreview = await client.invoke("app-map.test.compile", {
+      appMapId: "store",
+      testId: "settings-test",
+      startupMode: "cold",
+    });
+    assert.deepEqual(coldPreview.plan.startup, { mode: "cold" });
+
     const offline = await client.invoke("app-map.test.compile", {
       appMapId: "store",
       testId: "settings-test",

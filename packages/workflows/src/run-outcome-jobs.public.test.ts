@@ -103,6 +103,65 @@ test("run refuses a managed browser until canonical preflight passes", async () 
   );
 });
 
+test("public run entrypoint forwards cold startup into compilation", async () => {
+  const scripted = createScriptedRelayClient([
+    { id: "app-map.get", output: { appMap: { revision: 7 } } },
+    { id: "target.devices.list", output: { devices: [browser] } },
+    { id: "target.list", output: { targets: [browserDefinition] } },
+    { id: "target.preflight", output: { preflight: readyPreflight } },
+    {
+      id: "app-map.test.compile",
+      checkInput: (input) => assert.equal((input as { startupMode?: string }).startupMode, "cold"),
+      output: {
+        plan: { rootRecipeId: "root", startup: { mode: "cold" } },
+        preflight: {
+          schemaVersion: 1,
+          mode: "offline-test-preflight",
+          appMapId: "app-1",
+          appMapRevision: 7,
+          testId: "test-1",
+          planDigest: "plan-7",
+          executionRisk: {
+            schemaVersion: 1,
+            level: "safe",
+            reasons: [],
+            externalEffects: [],
+            confirmation: "none",
+            expectedAppBoundaries: [],
+            maximumActions: 0,
+            maximumDurationMs: 0,
+            cleanupRequired: false,
+          },
+          summary: {
+            recipes: 1,
+            checkedSelectors: 0,
+            resolvedSelectors: 0,
+            unknownCursorTransitions: 0,
+            reviewRequiredReturns: 0,
+            blockers: 1,
+            warnings: 0,
+          },
+          selectors: [],
+          cursorTimeline: [],
+          returns: [],
+          findings: [
+            { severity: "blocker", recipeId: "root", code: "missing", message: "blocked" },
+          ],
+        },
+      },
+    },
+  ]);
+  const jobs = createRelayRunOutcomeJobs(scripted.client, { actorId: "agent:test" });
+  const result = await jobs.run({
+    kind: "run-test",
+    appMapId: "app-1",
+    testId: "test-1",
+    targetId: browser.id,
+    startup: { mode: "cold" },
+  });
+  assert.equal(result.phase, "blocked");
+});
+
 test("cancel requires consent and forwards the latest durable CAS version", async () => {
   const scripted = createScriptedRelayClient([
     {

@@ -18,6 +18,7 @@ import {
   listDevices,
   listTargets,
   listAndroidAppLocales,
+  listAndroidInstalledApps,
   setAndroidAppLocaleOnDevice,
   listTargetWorkers,
   preflightLocalCampaignCapacity,
@@ -84,6 +85,7 @@ export type TargetRuntimeRouteRuntime = {
   >;
   runBuildCommand?: BuildCommandRunner;
   listAndroidAppLocales: typeof listAndroidAppLocales;
+  listAndroidInstalledApps: typeof listAndroidInstalledApps;
   setAppLocale: typeof setAndroidAppLocaleOnDevice;
   now: () => number;
   readTargetHealth: (serial: string, platform: SupervisedRuntimePlatform) => TargetSupervisorHealth;
@@ -134,6 +136,7 @@ const defaultRuntime: TargetRuntimeRouteRuntime = {
   // after this module has been imported.
   getDurableWorkerAssignments: () => durableWorkerAssignmentStore(),
   listAndroidAppLocales,
+  listAndroidInstalledApps,
   setAppLocale: setAndroidAppLocaleOnDevice,
   now: () => Date.now(),
   readTargetHealth: (serial, platform) => {
@@ -448,6 +451,18 @@ export async function handleTargetRuntimeRoute(context: {
       at: checkedAt,
     });
     json(response, 200, { preflight });
+    return true;
+  }
+
+  if (method === "GET" && pathname === "/device/apps") {
+    const url = new URL(request.url ?? pathname, "http://relay.local");
+    const serial = url.searchParams.get("serial")?.trim() ?? "";
+    if (!serial) throw new HttpError(400, "serial is required");
+    const device = (await runtime.listDevices()).find((candidate) => candidate.serial === serial);
+    if (!device) throw new HttpError(409, "The selected device is no longer connected");
+    if (device.platform !== "android")
+      throw new HttpError(400, "App discovery currently requires an Android device");
+    json(response, 200, { apps: await runtime.listAndroidInstalledApps(serial) });
     return true;
   }
 

@@ -42,8 +42,8 @@ export type ProviderSessionExecution = Readonly<{
 }>;
 
 /** Establish the saved application origin for a cold App Map Test before its
- * first strict screen assertion. The application binding is workspace state
- * recorded by an explicit launch; deriving one from AX identifiers would turn
+ * first strict screen assertion. The application binding is saved Test data
+ * chosen explicitly in setup; deriving one from AX identifiers would turn
  * a screen observation into an unreviewed navigation instruction. */
 export async function runColdAppMapStartup(
   job: TestJob,
@@ -57,9 +57,7 @@ export async function runColdAppMapStartup(
   if (startupMode !== "cold" || job.targetKind === "browser") return;
   const app = originApplication;
   if (!app) {
-    throw new Error(
-      "Cold App Map startup has no saved origin application. Open the mapped origin explicitly, then retry so Relay can remember it.",
-    );
+    throw new Error("Choose a starting app in Test settings before using Restart app.");
   }
   await launch(device, app);
   log(`startup: launched saved origin application ${app}`);

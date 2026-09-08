@@ -93,6 +93,10 @@ export async function handleAppMapTestRoute(input: AppMapTestRouteInput): Promis
     try {
       const search = new URL(request.url ?? pathname, "http://relay.local").searchParams;
       const entryCheckpointScreenId = search.get("entryCheckpointScreenId");
+      const startupMode = search.get("startupMode");
+      if (startupMode !== null && startupMode !== "warm" && startupMode !== "cold") {
+        throw new HttpError(400, "startupMode must be warm or cold");
+      }
       const targetProfileId = search.get("targetProfileId")?.trim() || undefined;
       const runtimeTargetProfiles = targetProfileId
         ? frozenRawAccessibilityTargetProfiles(appMap).filter(
@@ -114,6 +118,7 @@ export async function handleAppMapTestRoute(input: AppMapTestRouteInput): Promis
       const reviewedDocumentOrigins = await activeReviewedDocumentOriginsForAppMap(appMap);
       const plan = compileAppMapTest(appMap, test, {
         ...(entryCheckpointScreenId ? { entryCheckpointScreenId } : {}),
+        ...(startupMode ? { startupMode } : {}),
         ...(forceRecaptureScreenIds.length
           ? { forceRecaptureSurfaceScreenIds: forceRecaptureScreenIds }
           : {}),

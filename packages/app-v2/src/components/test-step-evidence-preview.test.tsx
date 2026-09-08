@@ -92,6 +92,17 @@ describe("TestStepEvidencePreview", () => {
     expect(host.querySelector('img[src="/wrong.png"]')).toBeNull();
   });
 
+  it("shows the trace outcome when timeline indexes are unavailable", () => {
+    const host = render({
+      ...baseReport,
+      timeline: [
+        { id: "trace-2", index: 9, title: "Verify checkout", state: "failed", evidenceCount: 1 },
+      ],
+    });
+    expect(host.textContent).toContain("Failed");
+    expect(host.textContent).not.toContain("Recorded");
+  });
+
   it("explains a referenced frame that is no longer retained", () => {
     const host = render({
       ...baseReport,

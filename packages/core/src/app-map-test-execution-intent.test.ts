@@ -4,6 +4,7 @@ import type { AppMapCompiledTest, OfflineTestPreflightReport } from "@relay/prot
 import { compileExecutionRisk } from "./execution-risk-compiler.js";
 import {
   createAppMapTestExecutionIntent,
+  parseCanonicalAppMapTestPlan,
   digestAppMapTestExecutionValue,
   parseAppMapTestExecutionIntentArtifact,
   parseAppMapTestExecutionIntent,
@@ -255,4 +256,18 @@ test("closes executable campaign cleanup and recovery recipes without freezing p
     coldRecipeId: "proposed-cold-repair-not-executable",
   });
   assert.doesNotThrow(() => createAppMapTestExecutionIntent(proposalOnlyColdRecovery));
+});
+
+test("canonical plans retain explicit app origins and support warm startup", () => {
+  const { plan } = fixture();
+  for (const mode of ["cold", "warm"] as const) {
+    const candidate = { ...plan, startup: { mode }, originApplication: "com.android.settings" };
+    assert.equal(
+      parseCanonicalAppMapTestPlan(candidate)?.originApplication,
+      "com.android.settings",
+    );
+    assert.equal(parseCanonicalAppMapTestPlan(candidate)?.startup.mode, mode);
+  }
+  assert.equal(parseCanonicalAppMapTestPlan({ ...plan, originApplication: 42 }), undefined);
+  assert.equal(parseCanonicalAppMapTestPlan({ ...plan, originApplication: "" }), undefined);
 });

@@ -105,6 +105,7 @@ export const workspaceOperationSchemas = {
       package: identifier("Application package identifier"),
     })
     .strict(),
+  "target.app.list": z.object({ serial: identifier("Target serial") }).strict(),
   "target.app.locale.set": z
     .object({
       serial: identifier("Connected device serial"),

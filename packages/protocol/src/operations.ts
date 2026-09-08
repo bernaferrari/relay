@@ -413,6 +413,23 @@ const targetAppLocalesOutputParser = objectParser<OperationOutput<"target.app.lo
   },
 );
 
+const targetAppListInputParser = objectParser<OperationInput<"target.app.list">>(
+  "target app list input",
+  (input) => string(input.serial, "target app list serial"),
+);
+
+const targetAppListOutputParser = objectParser<OperationOutput<"target.app.list">>(
+  "target app list response",
+  (input) => {
+    if (!Array.isArray(input.apps)) fail("target app list apps", "must be an array");
+    input.apps.forEach((app, index) => {
+      const item = record(app, `target app list app ${index}`);
+      string(item.package, `target app list app ${index} package`);
+      string(item.name, `target app list app ${index} name`);
+    });
+  },
+);
+
 const targetAppLocaleSetInputParser = objectParser<OperationInput<"target.app.locale.set">>(
   "target app locale set input",
   (input) => {
@@ -809,6 +826,13 @@ export const operationDefinitions = [
     lease: "shared",
     input: targetAppLocalesInputParser,
     output: targetAppLocalesOutputParser,
+  }),
+  query("target.app.list", "List installed apps", "/device/apps", {
+    category: "target",
+    targetCapabilities: ["snapshot"],
+    lease: "shared",
+    input: targetAppListInputParser,
+    output: targetAppListOutputParser,
   }),
   command("target.app.locale.set", "Set an app's per-app locale", "POST", "/device/app/locale", {
     category: "target",

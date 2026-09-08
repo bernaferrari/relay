@@ -663,6 +663,13 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
       if (input.entryCheckpointScreenId !== undefined) {
         string(input.entryCheckpointScreenId, "Test compilation entryCheckpointScreenId");
       }
+      if (
+        input.startupMode !== undefined &&
+        input.startupMode !== "warm" &&
+        input.startupMode !== "cold"
+      ) {
+        fail("Test compilation startupMode", "must be warm or cold");
+      }
       if (input.targetProfileId !== undefined) {
         string(input.targetProfileId, "Test compilation targetProfileId");
       }

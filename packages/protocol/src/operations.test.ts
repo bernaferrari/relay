@@ -177,6 +177,7 @@ test("graph Test transport accepts reviewed layout assertions for route variants
       name: "Arabic layout",
       kind: "scenario" as const,
       intentSchemaVersion: 1 as const,
+      originApplication: "com.example.settings",
       steps: [
         {
           id: "verify-layout",
@@ -202,6 +203,14 @@ test("graph Test transport accepts reviewed layout assertions for route variants
     },
   };
   assert.deepEqual(operationDefinition("app-map.test.save").input.parse(input), input);
+  assert.throws(
+    () =>
+      operationInputSchemas["app-map.test.save"].parse({
+        ...input,
+        test: { ...input.test, id: "server-owned" },
+      }),
+    /unrecognized key|id/u,
+  );
 });
 
 test("campaign capacity preflight remains composed into the central operation registry", () => {

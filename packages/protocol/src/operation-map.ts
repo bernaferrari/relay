@@ -615,6 +615,10 @@ type SpecificOperationMap = {
     input: { serial: string; package: string };
     output: { packageName: string; locales: string[] };
   };
+  "target.app.list": {
+    input: { serial: string };
+    output: { apps: Array<{ package: string; name: string }> };
+  };
   "target.app.locale.set": {
     input: { serial: string; package: string; locale: string };
     output: { packageName: string; locale: string; observedLocale?: string };

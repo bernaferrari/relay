@@ -4,10 +4,11 @@ import { WorkbenchPage, PageHeader, WorkbenchPanes } from "../components/page-la
 import type { AppMapScenarioTestStep, AppMapTestStepPlacement } from "@relay/protocol";
 import { ApiError } from "@relay/client";
 import { Button } from "@relay/ui-react/components/button";
+import { Input } from "@relay/ui-react/components/input";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { ArrowDown, ArrowUp, ChevronRight, GripVertical, Redo2, Undo2 } from "lucide-react";
-import { useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { EmptyState } from "../components/product-patterns";
 import { TestEditorEvidencePanel } from "../components/test-editor-evidence-panel";
 import {
@@ -74,6 +75,13 @@ function TestEditorDocument() {
     loading: reportLoading,
   } = useLatestTestReport(runService, testId);
   const [saveNotice, setSaveNotice] = useState("Saved");
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsName, setSettingsName] = useState("");
+  const [settingsOrigin, setSettingsOrigin] = useState("");
+  useEffect(() => {
+    setSettingsName(editorDocument?.test.name ?? "");
+    setSettingsOrigin(editorDocument?.test.originApplication ?? "");
+  }, [editorDocument?.test.name, editorDocument?.test.originApplication]);
   const { stepDrafts, updateStepDraft, clearStepDraftIfUnchanged } = useTestStepDrafts(
     platform,
     testId,
@@ -143,6 +151,25 @@ function TestEditorDocument() {
       );
       void queryClient.invalidateQueries({ queryKey: sessionId ? liveQueryKey : queryKey });
     },
+  });
+  const settings = useMutation({
+    mutationFn: async () => {
+      const current = currentDocument();
+      if (!current || !testEditorService.saveSettings)
+        throw new TypeError("Reload this saved Test before changing settings.");
+      return testEditorService.saveSettings({
+        document: current,
+        name: settingsName,
+        originApplication: settingsOrigin,
+      });
+    },
+    onMutate: () => setSaveNotice("Saving…"),
+    onSuccess: (next) => {
+      saveDocument(next);
+      setSettingsOpen(false);
+      setSaveNotice("Saved");
+    },
+    onError: () => setSaveNotice("Could not save settings"),
   });
 
   const historyAction = useMutation({
@@ -420,6 +447,11 @@ function TestEditorDocument() {
               }
               detail={hasUnsavedDrafts && saveNotice === "Saved" ? "Unsaved draft" : saveNotice}
             />
+            {!sessionId ? (
+              <Button size="sm" variant="outline" onClick={() => setSettingsOpen((open) => !open)}>
+                Test settings
+              </Button>
+            ) : null}
             <Button
               nativeButton={false}
               variant="default"
@@ -430,6 +462,47 @@ function TestEditorDocument() {
           </>
         }
       />
+      {settingsOpen && !sessionId ? (
+        <section
+          className="mx-4 mb-4 grid max-w-xl gap-3 rounded-lg border border-border bg-card p-4"
+          aria-label="Test settings"
+        >
+          <div>
+            <h2 className="text-sm font-semibold">Test settings</h2>
+            <p className="text-xs text-muted-foreground">
+              Update the saved Test identity and origin package.
+            </p>
+          </div>
+          <label className="grid gap-1 text-xs font-medium">
+            Name
+            <Input value={settingsName} onChange={(event) => setSettingsName(event.target.value)} />
+          </label>
+          <label className="grid gap-1 text-xs font-medium">
+            Origin application
+            <Input
+              placeholder="com.example.app"
+              value={settingsOrigin}
+              onChange={(event) => setSettingsOrigin(event.target.value)}
+            />
+          </label>
+          <div className="flex gap-2">
+            <Button
+              onClick={() => settings.mutate()}
+              disabled={!settingsName.trim() || settings.isPending}
+            >
+              Save settings
+            </Button>
+            <Button variant="ghost" onClick={() => setSettingsOpen(false)}>
+              Cancel
+            </Button>
+          </div>
+          <RecordingProblem
+            error={settings.error}
+            onRetry={() => settings.mutate()}
+            retrying={settings.isPending}
+          />
+        </section>
+      ) : null}
 
       {(sessionId ? liveEditor.isPending : document.isPending) ? (
         <PageLoading label="Loading Test steps…" />
