@@ -101,6 +101,7 @@ export type RouteDefinition = {
     | "screen"
     | "path"
     | "target"
+    | "originApplication"
     | "runId"
     | "session"
     | "section"
