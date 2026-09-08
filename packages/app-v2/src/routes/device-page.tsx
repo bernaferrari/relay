@@ -10,7 +10,7 @@ import {
 } from "@tanstack/react-router";
 import { RotateCcw } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent, type RefObject } from "react";
-import { LibraryPage, PageHeader } from "../components/page-layout";
+import { WorkbenchPage, PageHeader } from "../components/page-layout";
 import { EmptyState, RecoveryState } from "../components/product-patterns";
 import { deviceSummaryLine } from "../data/device-label";
 import {
@@ -29,12 +29,7 @@ import type {
 } from "../data/live-target-session";
 import { LiveTargetCanvas } from "./live-target-canvas";
 import { PageLoading, errorMessage } from "./recording-shared";
-import {
-  TalkBackIssueList,
-  TalkBackModeSelect,
-  TalkBackOverlay,
-  useTalkBackReview,
-} from "./talkback-review-panel";
+import { TalkBackModeSelect, TalkBackOverlay, useTalkBackReview } from "./talkback-review-panel";
 
 const routeApi = getRouteApi("/devices/$deviceId");
 
@@ -215,7 +210,7 @@ export function DevicePage() {
   }
 
   return (
-    <LibraryPage className="flex min-h-full max-w-[1120px] flex-col">
+    <WorkbenchPage className="flex h-full min-h-0 flex-col !pb-4 [&>header]:shrink-0">
       <PageHeader
         crumbs={[{ label: "Devices", to: "/devices" }, { label: device.data?.name ?? "Device" }]}
         title={device.data?.name ?? "Device"}
@@ -303,125 +298,10 @@ export function DevicePage() {
       ) : null}
 
       {device.data ? (
-        <div className="grid gap-8">
-          {boot.error ? (
-            <p role="alert" className="text-sm text-destructive">
-              {boot.error.message}
-            </p>
-          ) : null}
-          {recover.error ? (
-            <p
-              className="relay-settings-error max-w-[60ch] text-[13px] leading-5 text-destructive"
-              role="alert"
-            >
-              Reconnection did not finish. Keep the device awake and connected, then try again.
-            </p>
-          ) : null}
-          {recover.data ? (
-            <p className="max-w-[60ch] text-[13px] leading-5" aria-live="polite">
-              <strong className="font-medium">
-                {recover.data.ready ? "Device is ready. " : "Device still needs attention. "}
-              </strong>
-              {recover.data.summary}
-            </p>
-          ) : null}
-          {device.data.platform === "android" ? (
-            <section className="grid gap-4" aria-labelledby="device-launch-title">
-              <div className="grid gap-2 text-sm leading-relaxed text-text-weak">
-                <h2 className="font-semibold text-text-strong" id="device-launch-title">
-                  App and language
-                </h2>
-                <p>Choose an installed app, open it, and set one of its supported languages.</p>
-              </div>
-              <div className="grid gap-4">
-                <div className="relay-form-field grid min-w-0 gap-2 text-sm [&>label]:font-medium">
-                  {appControlsSupported ? (
-                    <InstalledAppChoice
-                      service={deviceService}
-                      serial={device.data.serial}
-                      value={appIdentifier}
-                      onChange={(value) => {
-                        setAppIdentifier(value);
-                        setSelectedLocale("");
-                        setLocaleSuccess(undefined);
-                        localeSelectionRef.current = {
-                          serial: device.data!.serial,
-                          packageName: value,
-                        };
-                      }}
-                      onOpened={() => setLiveAttempt((value) => value + 1)}
-                    />
-                  ) : (
-                    <p className="text-sm text-muted-foreground">
-                      App controls are unavailable on this host. Reconnect the device and try again.
-                    </p>
-                  )}
-                </div>
-                {appIdentifier ? (
-                  appLocales.isPending ? (
-                    <p className="text-sm text-muted-foreground" role="status">
-                      Loading supported languages…
-                    </p>
-                  ) : appLocales.isError ? (
-                    <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                      <span>Supported languages could not be loaded.</span>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => void appLocales.refetch()}
-                      >
-                        Try again
-                      </Button>
-                    </div>
-                  ) : appLocales.data?.locales.length ? (
-                    <div className="grid max-w-sm gap-2">
-                      <SelectField
-                        label="Language"
-                        value={selectedLocale}
-                        placeholder="Choose a language"
-                        options={appLocales.data.locales.map((locale) => ({
-                          value: locale,
-                          label: localeLabel(locale),
-                        }))}
-                        onValueChange={(locale) =>
-                          localeChange.mutate({
-                            locale,
-                            serial: device.data!.serial,
-                            packageName: appIdentifier,
-                          })
-                        }
-                        disabled={localeChange.isPending}
-                      />
-                      {localeSuccess ? (
-                        <p className="text-sm text-emerald-700 dark:text-emerald-400" role="status">
-                          Language updated: {localeLabel(localeSuccess)}
-                        </p>
-                      ) : null}
-                      {localeChange.error ? (
-                        <p className="text-sm text-destructive" role="alert">
-                          Language could not be updated. Try again.
-                        </p>
-                      ) : null}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">
-                      This app has no selectable languages available.
-                    </p>
-                  )
-                ) : null}
-              </div>
-            </section>
-          ) : null}
-          {device.data.platform === "ios" && device.data.runnable && deviceService.launchApp ? (
-            <IOSAppLaunchForm
-              service={deviceService}
-              deviceId={device.data.id}
-              deviceName={device.data.name}
-            />
-          ) : null}
+        <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(240px,300px)] gap-6 max-[900px]:grid-cols-1 max-[900px]:overflow-y-auto">
           {device.data.status !== "needs-attention" ? (
             <DeviceLivePreview
+              platform={device.data.platform}
               canvas={canvas}
               target={target.data ?? undefined}
               browserContext={browserContext}
@@ -436,9 +316,136 @@ export function DevicePage() {
               talkBack={talkBack}
             />
           ) : null}
+          <aside
+            className="grid min-w-0 content-start gap-5 overflow-y-auto py-2"
+            aria-label="Device controls"
+          >
+            {boot.error ? (
+              <p role="alert" className="text-sm text-destructive">
+                {boot.error.message}
+              </p>
+            ) : null}
+            {recover.error ? (
+              <p
+                className="relay-settings-error max-w-[60ch] text-[13px] leading-5 text-destructive"
+                role="alert"
+              >
+                Reconnection did not finish. Keep the device awake and connected, then try again.
+              </p>
+            ) : null}
+            {recover.data ? (
+              <p
+                className={recover.data.ready ? "sr-only" : "text-sm text-muted-foreground"}
+                aria-live="polite"
+              >
+                <strong className="font-medium">
+                  {recover.data.ready ? "Device is ready. " : "Device still needs attention. "}
+                </strong>
+                {recover.data.ready ? null : recover.data.summary}
+              </p>
+            ) : null}
+            {device.data.platform === "android" ? (
+              <section className="grid gap-4" aria-labelledby="device-launch-title">
+                <div className="grid gap-2 text-sm leading-relaxed text-text-weak">
+                  <h2 className="font-semibold text-text-strong" id="device-launch-title">
+                    App and language
+                  </h2>
+                </div>
+                <div className="grid gap-4">
+                  <div className="relay-form-field grid min-w-0 gap-2 text-sm [&>label]:font-medium">
+                    {appControlsSupported ? (
+                      <InstalledAppChoice
+                        service={deviceService}
+                        serial={device.data.serial}
+                        value={appIdentifier}
+                        onChange={(value) => {
+                          setAppIdentifier(value);
+                          setSelectedLocale("");
+                          setLocaleSuccess(undefined);
+                          localeSelectionRef.current = {
+                            serial: device.data!.serial,
+                            packageName: value,
+                          };
+                        }}
+                        onOpened={() => setLiveAttempt((value) => value + 1)}
+                      />
+                    ) : (
+                      <p className="text-sm text-muted-foreground">
+                        App controls are unavailable on this host. Reconnect the device and try
+                        again.
+                      </p>
+                    )}
+                  </div>
+                  {appIdentifier ? (
+                    appLocales.isPending ? (
+                      <p className="text-sm text-muted-foreground" role="status">
+                        Loading supported languages…
+                      </p>
+                    ) : appLocales.isError ? (
+                      <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                        <span>Supported languages could not be loaded.</span>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => void appLocales.refetch()}
+                        >
+                          Try again
+                        </Button>
+                      </div>
+                    ) : appLocales.data?.locales.length ? (
+                      <div className="grid max-w-sm gap-2">
+                        <SelectField
+                          label="Language"
+                          value={selectedLocale}
+                          placeholder="Choose a language"
+                          options={appLocales.data.locales.map((locale) => ({
+                            value: locale,
+                            label: localeLabel(locale),
+                          }))}
+                          onValueChange={(locale) =>
+                            localeChange.mutate({
+                              locale,
+                              serial: device.data!.serial,
+                              packageName: appIdentifier,
+                            })
+                          }
+                          disabled={localeChange.isPending}
+                        />
+                        {localeSuccess ? (
+                          <p
+                            className="text-sm text-emerald-700 dark:text-emerald-400"
+                            role="status"
+                          >
+                            Language updated: {localeLabel(localeSuccess)}
+                          </p>
+                        ) : null}
+                        {localeChange.error ? (
+                          <p className="text-sm text-destructive" role="alert">
+                            Language could not be updated. Try again.
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">
+                        This app has no selectable languages available.
+                      </p>
+                    )
+                  ) : null}
+                </div>
+              </section>
+            ) : null}
+            {device.data.platform === "ios" && device.data.runnable && deviceService.launchApp ? (
+              <IOSAppLaunchForm
+                service={deviceService}
+                deviceId={device.data.id}
+                deviceName={device.data.name}
+              />
+            ) : null}
+          </aside>
         </div>
       ) : null}
-    </LibraryPage>
+    </WorkbenchPage>
   );
 }
 
@@ -514,6 +521,7 @@ function IOSAppLaunchForm({
 }
 
 function DeviceLivePreview({
+  platform,
   canvas,
   target,
   browserContext,
@@ -525,6 +533,7 @@ function DeviceLivePreview({
   pending,
   talkBack,
 }: {
+  platform: string;
   canvas: RefObject<HTMLCanvasElement | null>;
   target?: { name: string; detail: string };
   browserContext?: LiveTargetBrowserContext;
@@ -552,54 +561,50 @@ function DeviceLivePreview({
   }
   return (
     <section
-      className="min-w-0 overflow-hidden rounded-xl border border-border bg-card"
+      className="flex min-h-0 min-w-0 flex-col rounded-xl bg-muted/30 max-[900px]:h-[65dvh]"
       aria-labelledby="device-live-title"
     >
-      <div className="flex items-center justify-between gap-4 px-4 py-3">
+      <div className="flex shrink-0 items-center justify-between gap-4 px-3 py-2">
         <h2 className="text-[13px] font-medium" id="device-live-title">
-          Live
+          Live preview
         </h2>
         <Button size="sm" variant="ghost" onClick={reconnect}>
           <RotateCcw aria-hidden="true" /> Reconnect
         </Button>
       </div>
-      <LiveTargetCanvas
-        canvasRef={canvas}
-        status={status}
-        issue={issue}
-        busy={busy}
-        targetTitle={target.name}
-        targetDetail={target.detail}
-        browserContext={browserContext}
-        send={send}
-        recording={false}
-        overlay={
-          talkBack.on && talkBack.mode !== "off" ? (
-            <TalkBackOverlay
-              canvasRef={canvas}
-              items={talkBack.inspection.overlayItems}
-              bounds={talkBack.inspection.bounds}
+      <div className="min-h-0 flex-1">
+        <LiveTargetCanvas
+          canvasRef={canvas}
+          status={status}
+          issue={issue}
+          busy={busy}
+          targetTitle={target.name}
+          targetDetail={target.detail}
+          browserContext={browserContext}
+          send={send}
+          recording={false}
+          showTargetDetails={false}
+          targetPlatform={platform}
+          helpText=""
+          overlay={
+            talkBack.on && talkBack.mode !== "off" ? (
+              <TalkBackOverlay
+                canvasRef={canvas}
+                items={talkBack.inspection.overlayItems}
+                bounds={talkBack.inspection.bounds}
+                mode={talkBack.mode}
+              />
+            ) : null
+          }
+          toolbar={
+            <TalkBackModeSelect
               mode={talkBack.mode}
+              loading={talkBack.loading}
+              onModeChange={(mode) => talkBack.setMode(mode)}
             />
-          ) : null
-        }
-        toolbar={
-          <TalkBackModeSelect
-            mode={talkBack.mode}
-            loading={talkBack.loading}
-            onModeChange={(mode) => talkBack.setMode(mode)}
-          />
-        }
-      />
-      {talkBack.on ? (
-        <div className="border-t border-border px-4 py-3">
-          <TalkBackIssueList
-            review={talkBack.inspection.review}
-            inspectable={talkBack.inspection.inspectable}
-            message={talkBack.issue ?? talkBack.inspection.message}
-          />
-        </div>
-      ) : null}
+          }
+        />
+      </div>
     </section>
   );
 }

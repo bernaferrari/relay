@@ -424,7 +424,7 @@ describe("Devices", () => {
     await click(button("Reconnect device"));
     expect(service.recoveryCalls).toEqual(["phone"]);
     expect(document.body.textContent).toContain("Device is ready");
-    expect(document.body.textContent).toContain("Relay reconnected and checked this device.");
+    expect(document.body.textContent).not.toContain("Relay reconnected and checked this device.");
   });
 
   it("launches an app on a ready attached device with an explicit relaunch choice", async () => {
