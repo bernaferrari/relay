@@ -1181,6 +1181,26 @@ describe("record, review, replay, and save", () => {
     expect(document.body.textContent).not.toContain("Save Test");
   });
 
+  it("clears a capture warning once canonical inspection confirms the saved step", async () => {
+    const healthy = state("recording", ["inspect", "record", "stop"]);
+    const fake = fakeService(healthy);
+    fake.service.captureFullPage = async () => ({
+      ...healthy,
+      status: "needs-attention",
+      recovery: {
+        code: "mutation-outcome-unknown",
+        title: "Checking the last step",
+        detail: "Awaiting confirmation",
+        recovery: "Inspect again",
+        retryable: true,
+      },
+    });
+    await renderJourney("/recordings/workflow-1", fake.service, platformWithStorage().platform);
+    await click(button("Full page"));
+    expect(document.querySelector(".relay-recording-problem")).toBeNull();
+    expect(button("Stop and review").disabled).toBe(false);
+  });
+
   it("clears a replay recovery warning when canonical inspection has reconciled it", async () => {
     const healthy = state("reviewing", ["inspect", "replay"], { replay: "failed" });
     const fake = fakeService(healthy);

@@ -132,9 +132,10 @@ function RecordingWorkspace({
       }
       return productService.stop();
     },
-    onSuccess: async (state, intent) => {
+    onSuccess: async (_state, intent) => {
       const canonical = await refreshRecording(queryClient, productService, workflowId);
-      if (state.recovery || canonical.recovery) return;
+      if (canonical.recovery) return;
+      action.reset();
       if (intent.action === "cancel" && canonical.snapshot?.stage === "cancelled") {
         await clearWorkflowPointerIfCurrent(platform, workflowId);
         queryClient.setQueryData(recordingQueryKeys.pointer, null);
@@ -151,6 +152,26 @@ function RecordingWorkspace({
       }
     },
   });
+
+  useEffect(() => {
+    if (
+      !action.isPending &&
+      action.data?.recovery &&
+      recording.data &&
+      !recording.data.recovery &&
+      !recording.isError &&
+      recording.dataUpdatedAt > action.submittedAt
+    )
+      action.reset();
+  }, [
+    action.isPending,
+    action.data,
+    action.submittedAt,
+    action.reset,
+    recording.data,
+    recording.dataUpdatedAt,
+    recording.isError,
+  ]);
 
   const snapshot = recording.data?.snapshot;
   const captureReady = recording.data?.status === "recording" && !recording.data.recovery;
@@ -607,6 +628,9 @@ function RecordingWorkspace({
                       recovery={action.data?.recovery ?? recording.data?.recovery}
                       onRetry={() => void recording.refetch()}
                       retrying={recording.isFetching}
+                      checking={
+                        action.isPending || snapshot?.progress.label === "Finishing interaction…"
+                      }
                     />
                   ) : (
                     <span />

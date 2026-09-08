@@ -59,6 +59,7 @@ export function RecordingProblem({
   error,
   onRetry,
   retrying = false,
+  checking = false,
   layout = "compact",
   className,
 }: {
@@ -66,10 +67,32 @@ export function RecordingProblem({
   error?: unknown;
   onRetry?: () => void;
   retrying?: boolean;
+  checking?: boolean;
   layout?: "compact" | "centered";
   className?: string;
 }) {
   if (!recovery && !error) return null;
+  if (recovery?.code === "mutation-outcome-unknown") {
+    return (
+      <div
+        className={`relay-recording-problem flex min-h-9 items-center justify-between gap-3 text-xs text-muted-foreground ${className ?? ""}`}
+        role="status"
+      >
+        <span>{checking ? "Checking step status…" : "Step status needs checking."}</span>
+        {!checking && onRetry ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={onRetry}
+            disabled={retrying}
+            title="Check whether the step was saved. This does not repeat the device action."
+          >
+            Check status
+          </Button>
+        ) : null}
+      </div>
+    );
+  }
   const projectedError = error ? projectError(error) : undefined;
   const publicRecovery = recovery
     ? recoveryCopy(recovery)
@@ -84,8 +107,7 @@ export function RecordingProblem({
       recovery={publicRecovery?.recovery}
       layout={layout}
       action={
-        onRetry &&
-        (recovery?.code === "mutation-outcome-unknown" || (recovery?.retryable ?? true)) ? (
+        onRetry && (recovery?.retryable ?? true) ? (
           <Button size="sm" variant="outline" onClick={onRetry} disabled={retrying}>
             <RotateCcw aria-hidden="true" />
             {retrying ? "Trying again…" : "Try again"}
@@ -104,14 +126,6 @@ function recoveryCopy(
       title: "Recording stopped when Relay restarted",
       detail: "Your steps are saved. Choose Review saved steps to open them.",
       recovery: "",
-    };
-  }
-  if (recovery.code === "mutation-outcome-unknown") {
-    return {
-      title: "Checking the last step",
-      detail:
-        "Relay hasn’t confirmed whether the last interaction finished. Your recorded steps are still available.",
-      recovery: "Refresh the recording to check its progress before continuing.",
     };
   }
   if (recovery.code === "raw-evidence-recapture-required") {
