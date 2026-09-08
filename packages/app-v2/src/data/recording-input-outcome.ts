@@ -147,6 +147,20 @@ export function parseRecordingLedger(raw: string | null | undefined): RecordingR
             message: "Relay couldn’t read the device screen size.",
           };
         }
+        // Older renderers sent unbounded swipes. The gesture planner rejected
+        // this exact trajectory before invoking native input; there is no device
+        // mutation to reconcile. Do not apply this migration to supervised IDs.
+        if (
+          mutation.kind === "unknown" &&
+          mutation.mutationId?.startsWith("recording-mutation-") &&
+          rejectedGestureBeforeDispatch(mutation.message)
+        ) {
+          return {
+            ...mutation,
+            kind: "not-dispatched" as const,
+            message: "The scroll exceeded the screen bounds.",
+          };
+        }
         return mutation;
       }),
     };
@@ -199,6 +213,12 @@ export function recordingReconcileServerOutcome(
   if (observed === "applied") return "applied";
   if (observed === "not-observed") return "not-applied";
   return "ambiguous";
+}
+
+export function rejectedGestureBeforeDispatch(message: string): boolean {
+  return /^Step 1 \(swipe[^\n]*\): Gesture trajectory does not fit inside the viewport(?: |$)/u.test(
+    message,
+  );
 }
 
 /** Only thrown before a device mutation is dispatched. */

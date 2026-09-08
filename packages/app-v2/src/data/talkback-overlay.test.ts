@@ -37,6 +37,23 @@ describe("talkBackOverlayBox", () => {
     expect(box).toEqual({ left: 27, top: 60, width: 54, height: 30 });
   });
 
+  it("scales full-resolution accessibility bounds independently of reduced video", () => {
+    const canvas = {
+      width: 496,
+      height: 1080,
+      getBoundingClientRect: () => rect(100, 50, 270, 585),
+    };
+    const parent = { getBoundingClientRect: () => rect(0, 0, 470, 700) };
+    expect(
+      talkBackOverlayBox(
+        canvas,
+        parent,
+        { x: 108, y: 234, width: 216, height: 120 },
+        { width: 1080, height: 2340 },
+      ),
+    ).toEqual({ left: 127, top: 108.5, width: 54, height: 30 });
+  });
+
   it("ignores empty geometry", () => {
     const canvas = {
       width: 100,

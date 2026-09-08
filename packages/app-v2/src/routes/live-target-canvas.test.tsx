@@ -54,6 +54,30 @@ function mountCanvas(
 }
 
 describe("LiveTargetCanvas", () => {
+  it("keeps a large wheel gesture inside the preview", async () => {
+    const send = vi.fn(async () => true);
+    const host = mountCanvas([
+      { title: "Phone", detail: "Android", targetPlatform: "android", send },
+    ]);
+    const canvas = host.querySelector("canvas")!;
+    canvas.width = 500;
+    canvas.height = 1000;
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 500, height: 1000 }) as DOMRect;
+    await act(async () => {
+      const wheelEvent = new WheelEvent("wheel", { bubbles: true, deltaY: 2000 });
+      Object.defineProperties(wheelEvent, { clientX: { value: 250 }, clientY: { value: 600 } });
+      canvas.dispatchEvent(wheelEvent);
+      await new Promise((resolve) => setTimeout(resolve, 170));
+    });
+    expect(send).toHaveBeenCalledWith({
+      kind: "scroll",
+      x: 250,
+      y: 600,
+      scrollX: 0,
+      scrollY: -599,
+    });
+  });
+
   it("groups Android navigation and sends distinct Back, Home, and Recents commands", async () => {
     const send = vi.fn(async () => true);
     const host = mountCanvas([

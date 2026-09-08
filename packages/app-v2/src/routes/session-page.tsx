@@ -422,6 +422,7 @@ export function SessionPage() {
                       <TalkBackOverlay
                         canvasRef={canvas}
                         items={talkBack.inspection.overlayItems}
+                        bounds={talkBack.inspection.bounds}
                         mode={talkBack.mode}
                       />
                     ) : null

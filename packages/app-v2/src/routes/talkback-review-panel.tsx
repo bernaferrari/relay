@@ -1,7 +1,8 @@
 /** @jsxImportSource react */
 import type { TalkBackReview, TalkBackReviewItem } from "@relay/protocol";
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
-import { ScanText, Check } from "lucide-react";
+import { Scan, Check } from "lucide-react";
+import { Button } from "@relay/ui-react/components/button";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -11,7 +12,6 @@ import {
 import type { Platform } from "../platform/types";
 import {
   ACCESSIBILITY_LABELS_STORAGE_KEY,
-  ACCESSIBILITY_LABEL_MODE_OPTIONS,
   accessibilityObservationId,
   currentAccessibilityInspection,
   retainAccessibilityObservation,
@@ -29,11 +29,6 @@ export type { AccessibilityInspection };
 
 export type { TalkBackCaptureResult, AccessibilityLabelMode };
 
-const MODE_OPTIONS = ACCESSIBILITY_LABEL_MODE_OPTIONS.map((option) => ({
-  value: option.value,
-  label: option.label,
-}));
-
 export function TalkBackModeSelect({
   mode,
   loading,
@@ -48,26 +43,24 @@ export function TalkBackModeSelect({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
+        render={<Button variant="ghost" size="icon-sm" />}
         disabled={disabled || loading}
-        aria-label={`Accessibility labels: ${mode === "off" ? "hidden" : mode === "hover" ? "on hover" : "visible"}`}
-        className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring ${mode !== "off" ? "bg-muted text-foreground" : ""}`}
+        aria-label="Inspect elements"
+        title="Inspect elements"
       >
-        <ScanText className="size-4" aria-hidden="true" /> {loading ? "Reading labels…" : "Labels"}
+        <Scan className="size-4" aria-hidden="true" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start">
-        {MODE_OPTIONS.map((option) => (
-          <DropdownMenuItem
-            key={option.value}
-            onClick={() => onModeChange(validAccessibilityLabelMode(option.value))}
-          >
-            <span className="flex-1">
-              {option.value === "off"
-                ? "Hide labels"
-                : option.value === "hover"
-                  ? "Show on hover"
-                  : "Always show labels"}
-            </span>
-            {mode === option.value ? <Check className="size-3.5" aria-hidden="true" /> : null}
+        {(
+          [
+            ["hover", "Show on hover"],
+            ["always", "Show all with labels"],
+            ["off", "Never show"],
+          ] as const
+        ).map(([value, label]) => (
+          <DropdownMenuItem key={value} onClick={() => onModeChange(value)}>
+            <span className="flex-1">{label}</span>
+            {mode === value ? <Check className="size-3.5" aria-hidden="true" /> : null}
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>
@@ -78,10 +71,12 @@ export function TalkBackModeSelect({
 export function TalkBackOverlay({
   canvasRef,
   items,
+  bounds,
   mode,
 }: {
   canvasRef: RefObject<HTMLCanvasElement | null>;
   items: readonly TalkBackReviewItem[];
+  bounds?: { width: number; height: number };
   mode: Exclude<AccessibilityLabelMode, "off">;
 }) {
   const [boxes, setBoxes] = useState<
@@ -102,7 +97,7 @@ export function TalkBackOverlay({
     const mapBoxes = () => {
       const mapped = items.flatMap((item) => {
         if (!item.rect) return [];
-        const box = talkBackOverlayBox(canvas, parent, item.rect);
+        const box = talkBackOverlayBox(canvas, parent, item.rect, bounds);
         return box ? [{ item, box }] : [];
       });
       setBoxes(mapped);
@@ -113,13 +108,9 @@ export function TalkBackOverlay({
     observer?.observe(canvas);
     observer?.observe(parent);
     return () => observer?.disconnect();
-  }, [canvasRef, items]);
+  }, [canvasRef, items, bounds]);
 
   useEffect(() => {
-    if (mode !== "hover") {
-      setHoveredId(undefined);
-      return;
-    }
     const canvas = canvasRef.current;
     const parent = canvas?.parentElement;
     if (!canvas || !parent) return;
@@ -143,27 +134,27 @@ export function TalkBackOverlay({
   const visible = mode === "always" ? boxes : boxes.filter((entry) => entry.item.id === hoveredId);
   if (!visible.length && mode === "always") return null;
   return (
-    <div className="pointer-events-none absolute inset-0 z-10 overflow-hidden" aria-hidden="true">
-      {visible.map(({ item, box }) => {
-        const problem = item.issues.some((issue) => issue.severity === "error");
-        return (
-          <span
-            key={item.id}
-            className={`absolute max-w-[46%] truncate rounded-sm px-1 py-0.5 text-[10px] font-medium leading-tight shadow-sm ${
-              problem
-                ? "bg-destructive text-destructive-foreground"
-                : "bg-background/90 text-foreground"
-            }`}
-            style={{
-              left: box.left,
-              top: Math.max(0, box.top - 18),
-              maxWidth: Math.max(72, box.width),
-            }}
-          >
-            {item.announcement || "Unnamed"}
-          </span>
-        );
-      })}
+    <div className="pointer-events-none absolute inset-0 z-10 overflow-visible" aria-hidden="true">
+      {visible.map(({ item, box }) => (
+        <div
+          key={item.id}
+          className={`absolute rounded-[3px] border border-blue-500/50 ${item.id === hoveredId ? "border-blue-500 bg-blue-500/15 ring-1 ring-blue-500" : "bg-blue-500/[0.03]"}`}
+          style={{ left: box.left, top: box.top, width: box.width, height: box.height }}
+        >
+          {mode === "always" || item.id === hoveredId ? (
+            <span className="absolute start-0 top-0 flex max-w-64 -translate-y-full items-center gap-1.5 whitespace-nowrap rounded-md bg-popover px-2 py-1 text-xs font-medium text-popover-foreground shadow-md ring-1 ring-border">
+              <span className="truncate">
+                {item.name || item.text || item.description || "No label"}
+              </span>
+              {item.role ? (
+                <code className="shrink-0 rounded bg-muted px-1 py-0.5 text-[10px] font-normal text-muted-foreground">
+                  {item.role}
+                </code>
+              ) : null}
+            </span>
+          ) : null}
+        </div>
+      ))}
     </div>
   );
 }
@@ -229,7 +220,7 @@ export function useTalkBackReview(input: {
   refreshKey?: number;
   platform?: Platform;
 }) {
-  const [mode, setStoredMode] = useState<AccessibilityLabelMode>("off");
+  const [mode, setStoredMode] = useState<AccessibilityLabelMode>("hover");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<TalkBackCaptureResult>();
   const [issue, setIssue] = useState<string>();
@@ -242,7 +233,7 @@ export function useTalkBackReview(input: {
     let active = true;
     void Promise.resolve(input.platform.storage.get(ACCESSIBILITY_LABELS_STORAGE_KEY))
       .then((stored) => {
-        if (active) setStoredMode(validAccessibilityLabelMode(stored));
+        if (active) setStoredMode(stored == null ? "hover" : validAccessibilityLabelMode(stored));
       })
       .catch(() => undefined);
     return () => {

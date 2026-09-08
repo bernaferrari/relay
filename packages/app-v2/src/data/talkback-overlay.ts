@@ -46,6 +46,7 @@ export function talkBackItemAtPoint<T extends { box: OverlayBox }>(
 }
 
 export type TalkBackCaptureResult = {
+  bounds?: { width: number; height: number };
   inspectable: boolean;
   review: TalkBackReview;
   message?: string;
@@ -63,6 +64,7 @@ export function accessibilityObservationId(input: {
 }
 
 export type AccessibilityInspection = {
+  bounds?: { width: number; height: number };
   overlayItems: readonly TalkBackReviewItem[];
   review?: TalkBackReview;
   inspectable?: boolean;
@@ -92,6 +94,7 @@ export function currentAccessibilityInspection(
   }
   return {
     overlayItems: result.review.items,
+    bounds: result.bounds,
     review: result.review,
     inspectable: result.inspectable,
     ...(result.message ? { message: result.message } : {}),
@@ -130,15 +133,18 @@ export function talkBackOverlayBox(
   canvas: { width: number; height: number; getBoundingClientRect(): DOMRect },
   parent: { getBoundingClientRect(): DOMRect },
   rect: { x: number; y: number; width: number; height: number },
+  bounds?: { width: number; height: number },
 ): OverlayBox | undefined {
   if (canvas.width <= 0 || canvas.height <= 0) return undefined;
   if (rect.width <= 0 || rect.height <= 0) return undefined;
   const box = canvas.getBoundingClientRect();
   const frame = parent.getBoundingClientRect();
-  const scale = Math.min(box.width / canvas.width, box.height / canvas.height);
+  const source = bounds ?? canvas;
+  if (source.width <= 0 || source.height <= 0) return undefined;
+  const scale = Math.min(box.width / source.width, box.height / source.height);
   if (!Number.isFinite(scale) || scale <= 0) return undefined;
-  const drawnWidth = canvas.width * scale;
-  const drawnHeight = canvas.height * scale;
+  const drawnWidth = source.width * scale;
+  const drawnHeight = source.height * scale;
   const padX = (box.width - drawnWidth) / 2;
   const padY = (box.height - drawnHeight) / 2;
   return {

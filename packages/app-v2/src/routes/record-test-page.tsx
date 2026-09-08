@@ -45,12 +45,7 @@ import { reviewDocumentLocation } from "../data/test-document-surface";
 import { clearWorkflowPointerIfCurrent, writeWorkflowPointer } from "../data/workflow-pointer";
 import { LiveTargetCanvas } from "./live-target-canvas";
 import { PageLoading, RecordingProblem, errorMessage, targetLabel } from "./recording-shared";
-import {
-  TalkBackIssueList,
-  TalkBackModeSelect,
-  TalkBackOverlay,
-  useTalkBackReview,
-} from "./talkback-review-panel";
+import { TalkBackModeSelect, TalkBackOverlay, useTalkBackReview } from "./talkback-review-panel";
 
 const testRouteApi = getRouteApi("/tests/$testId/record");
 const recordingRouteApi = getRouteApi("/recordings/$recordingId");
@@ -144,6 +139,7 @@ function RecordingWorkspace({
 
   const snapshot = recording.data?.snapshot;
   const captureReady = recording.data?.status === "recording" && !recording.data.recovery;
+  const previewAvailable = Boolean(snapshot && snapshot.stage !== "cancelled");
   const allowed = new Set(captureReady ? (snapshot?.allowedNextActions ?? []) : []);
   const recordedActions = snapshot?.review?.actions ?? [];
 
@@ -191,7 +187,7 @@ function RecordingWorkspace({
 
   useEffect(() => {
     const createLiveTarget = productService.liveTarget;
-    if (!captureReady || !selectedTarget || !liveCanvas.current || !createLiveTarget) {
+    if (!previewAvailable || !selectedTarget || !liveCanvas.current || !createLiveTarget) {
       setLiveStatus("idle");
       setLiveIssue(undefined);
       return;
@@ -230,7 +226,7 @@ function RecordingWorkspace({
       if (liveSession.current === mountedSession) liveSession.current = undefined;
       mountedSession?.close();
     };
-  }, [captureReady, platform, productService, selectedTargetId]);
+  }, [previewAvailable, platform, productService, selectedTargetId]);
 
   const liveInputOutcome = useRef<Promise<RecordingInputOutcome>>(
     Promise.resolve({ kind: "confirmed" }),
@@ -445,7 +441,7 @@ function RecordingWorkspace({
   }
 
   return (
-    <section className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden bg-card">
+    <section className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-card">
       <div className="min-w-0">
         <Dialog open={exitOpen} onOpenChange={setExitOpen}>
           <DialogContent showCloseButton={false}>
@@ -469,31 +465,10 @@ function RecordingWorkspace({
             </div>
           </DialogContent>
           <AuthoringHeader
-            phase="record"
             title={
               recording.isError || recording.data?.recovery
                 ? "Recording interrupted"
                 : "Record test"
-            }
-            description={
-              <span className="inline-flex items-center gap-2 text-sm">
-                <span
-                  className={
-                    captureReady
-                      ? "size-2 rounded-full bg-red-500"
-                      : "size-2 rounded-full bg-muted-foreground"
-                  }
-                  aria-hidden="true"
-                />
-                {captureReady
-                  ? "Recording"
-                  : recording.isPending
-                    ? "Opening recording…"
-                    : "Recording paused"}
-                {selectedTarget
-                  ? ` · ${targetLabel(targetPresentation.data?.[0] ?? selectedTarget).title}`
-                  : ""}
-              </span>
             }
             back={
               <DialogTrigger
@@ -525,7 +500,7 @@ function RecordingWorkspace({
         </Dialog>
       </div>
 
-      <div className="min-h-0 overflow-auto">
+      <div className="flex min-h-0 flex-col overflow-auto">
         {recording.isPending ? <PageLoading label="Restoring the recording…" /> : null}
         {(recording.isError || recording.data?.recovery) && !snapshot ? (
           <div className="mx-auto grid max-w-md gap-4 rounded-xl border border-border bg-card p-6">
@@ -545,6 +520,7 @@ function RecordingWorkspace({
           </div>
         ) : (
           <RecordingProblem
+            className="mx-4 mb-3 shrink-0"
             error={recording.error ?? action.error}
             recovery={action.data?.recovery ?? recording.data?.recovery}
             onRetry={() => void recording.refetch()}
@@ -552,7 +528,7 @@ function RecordingWorkspace({
           />
         )}
 
-        {!recording.isPending && snapshot && captureReady ? (
+        {!recording.isPending && snapshot && previewAvailable ? (
           <AuthoringWorkspace
             tools={
               <aside
@@ -589,7 +565,7 @@ function RecordingWorkspace({
                       canvasRef={liveCanvas}
                       status={liveStatus}
                       issue={recoveryKind === "unknown" ? undefined : liveIssue}
-                      busy={liveInputBusy}
+                      busy={liveInputBusy || !captureReady}
                       targetTitle={
                         targetLabel(targetPresentation.data?.[0] ?? selectedTarget).title
                       }
@@ -599,34 +575,42 @@ function RecordingWorkspace({
                       browserContext={browserContext}
                       showTargetDetails={false}
                       targetPlatform={selectedTarget?.platform}
-                      helpText="Click the app to record a step. Drag to scroll."
+                      helpText=""
                       send={sendLiveInput}
                       overlay={
                         talkBack.on && talkBack.mode !== "off" ? (
                           <TalkBackOverlay
                             canvasRef={liveCanvas}
                             items={talkBack.inspection.overlayItems}
+                            bounds={talkBack.inspection.bounds}
                             mode={talkBack.mode}
                           />
                         ) : null
                       }
                       toolbar={
-                        <TalkBackModeSelect
-                          mode={talkBack.mode}
-                          loading={talkBack.loading}
-                          onModeChange={(mode) => talkBack.setMode(mode)}
-                        />
+                        <>
+                          <TalkBackModeSelect
+                            mode={talkBack.mode}
+                            loading={talkBack.loading}
+                            onModeChange={(mode) => talkBack.setMode(mode)}
+                          />
+                          <RecordingScreenCapture
+                            open={checkpointOpen}
+                            onOpenChange={setCheckpointOpen}
+                            disabled={
+                              !allowed.has("checkpoint") ||
+                              action.isPending ||
+                              liveInputBusy ||
+                              recoveryKind === "unknown"
+                            }
+                            pending={action.isPending}
+                            label={checkpointLabel}
+                            onLabelChange={setCheckpointLabel}
+                            onSubmit={saveCheckpoint}
+                          />
+                        </>
                       }
                     />
-                    {talkBack.on ? (
-                      <div className="border-t border-border px-3 py-3">
-                        <TalkBackIssueList
-                          review={talkBack.inspection.review}
-                          inspectable={talkBack.inspection.inspectable}
-                          message={talkBack.issue ?? talkBack.inspection.message}
-                        />
-                      </div>
-                    ) : null}
                   </>
                 ) : null}
               </div>
@@ -635,7 +619,7 @@ function RecordingWorkspace({
         ) : null}
       </div>
 
-      {captureReady ? (
+      {captureReady && (recoveryKind === "unknown" || recoveryKind === "refresh-failed") ? (
         <footer
           className="flex flex-wrap items-center justify-end gap-3 border-t border-border px-5 py-3"
           aria-label="Recording controls"
@@ -644,7 +628,7 @@ function RecordingWorkspace({
             <RecordingInputRecovery
               issue={liveIssue}
               failure={unresolvedRecordingMutation(recordingLedger.current, "unknown")}
-              busy={liveInputBusy}
+              busy={liveInputBusy || !captureReady}
               onObserve={observeLastUnknownMutation}
             />
           ) : null}
@@ -657,20 +641,6 @@ function RecordingWorkspace({
               Refresh recording
             </Button>
           ) : null}
-          <RecordingScreenCapture
-            open={checkpointOpen}
-            onOpenChange={setCheckpointOpen}
-            disabled={
-              !allowed.has("checkpoint") ||
-              action.isPending ||
-              liveInputBusy ||
-              recoveryKind === "unknown"
-            }
-            pending={action.isPending}
-            label={checkpointLabel}
-            onLabelChange={setCheckpointLabel}
-            onSubmit={saveCheckpoint}
-          />
         </footer>
       ) : null}
     </section>

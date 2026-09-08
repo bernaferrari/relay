@@ -33,9 +33,14 @@ export function RecordingScreenCapture({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTrigger
         render={
-          <Button variant="outline" disabled={disabled}>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            disabled={disabled}
+            aria-label="Save screenshot"
+            title="Save screenshot"
+          >
             <Camera aria-hidden="true" />
-            Capture screen
           </Button>
         }
       />
@@ -43,10 +48,10 @@ export function RecordingScreenCapture({
         showCloseButton={false}
         className="max-h-[min(720px,calc(100dvh-32px))] overflow-auto"
       >
-        <DialogTitle>Capture this screen</DialogTitle>
+        <DialogTitle>Save screenshot</DialogTitle>
         <DialogDescription>
-          Save a named screenshot in this recording for review. This does not add a pass/fail check
-          when the Test runs.
+          Screenshots are saved automatically with each step. Save an extra image here without
+          interacting with the app.
         </DialogDescription>
         <form onSubmit={onSubmit}>
           <Field>

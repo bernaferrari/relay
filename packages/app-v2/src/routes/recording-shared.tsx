@@ -84,7 +84,8 @@ export function RecordingProblem({
       recovery={publicRecovery?.recovery}
       layout={layout}
       action={
-        onRetry && (recovery?.retryable ?? true) ? (
+        onRetry &&
+        (recovery?.code === "mutation-outcome-unknown" || (recovery?.retryable ?? true)) ? (
           <Button size="sm" variant="outline" onClick={onRetry} disabled={retrying}>
             <RotateCcw aria-hidden="true" />
             {retrying ? "Trying again…" : "Try again"}
@@ -98,6 +99,14 @@ export function RecordingProblem({
 function recoveryCopy(
   recovery: ProductRecovery,
 ): Pick<ProductRecovery, "title" | "detail" | "recovery"> {
+  if (recovery.code === "mutation-outcome-unknown") {
+    return {
+      title: "Checking the last step",
+      detail:
+        "Relay hasn’t confirmed whether the last interaction finished. Your recorded steps are still available.",
+      recovery: "Refresh the recording to check its progress before continuing.",
+    };
+  }
   if (recovery.code === "raw-evidence-recapture-required") {
     return {
       title: "Relay needs a fresh capture of the starting screen",

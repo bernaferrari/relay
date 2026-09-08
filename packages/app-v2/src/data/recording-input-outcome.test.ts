@@ -22,6 +22,25 @@ import {
 } from "./recording-input-outcome";
 
 describe("recording input outcome", () => {
+  it("recovers only legacy local swipes rejected by the gesture planner", () => {
+    const message =
+      "Step 1 (swipe ↑ 832,1785 → 649,-130): Gesture trajectory does not fit inside the viewport Inspect the canonical Authoring Session";
+    const ledger = parseRecordingLedger(
+      JSON.stringify({
+        mutations: [
+          { kind: "unknown", mutationId: "recording-mutation-old", message },
+          { kind: "unknown", mutationId: "ios-input-123", message },
+          { kind: "unknown", mutationId: "recording-mutation-other", message: "Connection lost" },
+        ],
+      }),
+    );
+    expect(ledger.mutations.map((entry) => entry.kind)).toEqual([
+      "not-dispatched",
+      "unknown",
+      "unknown",
+    ]);
+  });
+
   it("treats a successful send and refresh as confirmed", async () => {
     const outcome = await dispatchRecordingInput({
       send: async () => undefined,

@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
-import { ArrowLeft, Circle, Square, MonitorSmartphone } from "lucide-react";
+import { ChevronLeft, Circle, Square, MonitorSmartphone } from "lucide-react";
 import {
   useEffect,
   useRef,
@@ -83,13 +83,25 @@ export function LiveTargetCanvas({
     if (!canvas) return { x: 0, y: 0 };
     const bounds = canvas.getBoundingClientRect();
     return {
-      x: Math.round(((event.clientX - bounds.left) / Math.max(bounds.width, 1)) * canvas.width),
-      y: Math.round(((event.clientY - bounds.top) / Math.max(bounds.height, 1)) * canvas.height),
+      x: Math.max(
+        0,
+        Math.min(
+          canvas.width - 1,
+          Math.round(((event.clientX - bounds.left) / Math.max(bounds.width, 1)) * canvas.width),
+        ),
+      ),
+      y: Math.max(
+        0,
+        Math.min(
+          canvas.height - 1,
+          Math.round(((event.clientY - bounds.top) / Math.max(bounds.height, 1)) * canvas.height),
+        ),
+      ),
     };
   }
 
   function pointerDown(event: PointerEvent<HTMLCanvasElement>) {
-    if (!streaming) return;
+    if (!streaming || busy) return;
     event.currentTarget.focus({ preventScroll: true });
     event.currentTarget.setPointerCapture(event.pointerId);
     pointerStart.current = point(event);
@@ -97,7 +109,7 @@ export function LiveTargetCanvas({
 
   function pointerUp(event: PointerEvent<HTMLCanvasElement>) {
     const start = pointerStart.current;
-    if (!streaming || !start) return;
+    if (!streaming || busy || !start) return;
     const end = point(event);
     pointerStart.current = undefined;
     const dx = end.x - start.x;
@@ -110,7 +122,7 @@ export function LiveTargetCanvas({
   }
 
   function wheelTarget(event: WheelEvent<HTMLCanvasElement>) {
-    if (!streaming) return;
+    if (!streaming || busy) return;
     event.preventDefault();
     const origin = point(event);
     const pending = wheel.current ?? { point: origin, x: 0, y: 0 };
@@ -122,12 +134,16 @@ export function LiveTargetCanvas({
       const gesture = wheel.current;
       wheel.current = undefined;
       if (!gesture || Math.hypot(gesture.x, gesture.y) < 2) return;
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const endX = Math.max(1, Math.min(canvas.width - 1, gesture.point.x + gesture.x));
+      const endY = Math.max(1, Math.min(canvas.height - 1, gesture.point.y + gesture.y));
       void send({
         kind: "scroll",
         x: gesture.point.x,
         y: gesture.point.y,
-        scrollX: gesture.x,
-        scrollY: gesture.y,
+        scrollX: endX - gesture.point.x,
+        scrollY: endY - gesture.point.y,
       });
     }, 140);
   }
@@ -187,7 +203,7 @@ export function LiveTargetCanvas({
         className={
           rail
             ? "relative flex min-h-[320px] flex-1 items-center justify-center overflow-hidden bg-muted/40"
-            : "relative flex min-h-0 items-center justify-center overflow-hidden"
+            : "relative flex min-h-0 items-center justify-center overflow-visible p-3"
         }
       >
         <canvas
@@ -267,7 +283,7 @@ export function LiveTargetCanvas({
             ) : null}
           </div>
         ) : null}
-        <div className="flex w-full items-end gap-3">
+        <div className="flex w-full items-center gap-2">
           {targetPlatform === "android" ? (
             <div
               role="group"
@@ -276,7 +292,7 @@ export function LiveTargetCanvas({
             >
               {(
                 [
-                  { key: "back", label: "Back", icon: ArrowLeft, help: "Go back in Android" },
+                  { key: "back", label: "Back", icon: ChevronLeft, help: "Go back in Android" },
                   { key: "home", label: "Home", icon: Circle, help: "Go to the home screen" },
                   { key: "recents", label: "Recents", icon: Square, help: "Show recent apps" },
                 ] as const

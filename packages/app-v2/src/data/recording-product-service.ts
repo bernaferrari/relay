@@ -1,3 +1,7 @@
+import {
+  RecordingInputNotSentError,
+  rejectedGestureBeforeDispatch,
+} from "./recording-input-outcome";
 import type {
   ProductRecordingBeginInput,
   ProductRecordingState,
@@ -272,6 +276,9 @@ export function createRecordingProductService(
         onInteraction: async (interaction) => {
           const state = await recording.journey.record(interaction);
           if (state.recovery) {
+            if (rejectedGestureBeforeDispatch(state.recovery.detail)) {
+              throw new RecordingInputNotSentError("The scroll exceeded the screen bounds.");
+            }
             throw new Error(`${state.recovery.detail} ${state.recovery.recovery}`.trim());
           }
         },
@@ -306,6 +313,7 @@ export function createRecordingProductService(
       return {
         inspectable,
         review: reviewAndroidTalkBack(snapshot.nodes ?? []),
+        bounds: snapshot.bounds,
         ...(inspectable
           ? {}
           : {
