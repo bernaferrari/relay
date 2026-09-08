@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added: `replay export` converts recorded `home` actions to Maestro `pressKey: Home`, allowing
+  app-to-home-to-app journeys to be exported.
 - Added: polling `wait` timeouts (`wait <selector>`, `wait text`, `wait @ref`, and `wait absent`
   after a readable capture) carry a per-poll timeline in `error.details` (`captures`, `polls[]`
   with `startedMs`, `durationMs`, and a typed `outcome`: readable, unreadable, deadline,
