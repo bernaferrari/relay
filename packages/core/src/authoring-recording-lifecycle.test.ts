@@ -210,3 +210,44 @@ test("finish lifecycle seals video before endpoint capture and appends a raw sto
   );
   assert.deepEqual(session.take?.revisions.at(-1)?.videoClip, { startMs: 0, endMs: 100 });
 });
+
+test("full-page capture retains document evidence without replacing viewport geometry", async () => {
+  let tick = 100;
+  const order: string[] = [];
+  const result = await recordAuthoringInteraction(
+    recordingSession(),
+    { kind: "screenshot", fullPage: true },
+    {
+      async captureFullPage() {
+        order.push("survey");
+        return { evidence: [evidence("full-page", 120)], label: "Capture full page" };
+      },
+      async execute() {
+        throw new Error("must not replay survey gestures as user actions");
+      },
+      async observe() {
+        order.push("viewport");
+        return "restored";
+      },
+    },
+    dependencies({
+      now: () => ++tick,
+      async persistObservation() {
+        return {
+          observation: observation("restored", 130),
+          evidence: [evidence("evidence-restored", 130)],
+        };
+      },
+      async persistEvidence() {
+        throw new Error("unused");
+      },
+      async writeSession() {},
+    }),
+  );
+  const revision = result.take!.revisions.at(-1)!;
+  assert.deepEqual(order, ["survey", "viewport"]);
+  assert.equal(revision.actions[0]?.label, "Capture full page");
+  assert.ok(revision.actions[0]?.evidenceIds.includes("full-page"));
+  assert.equal(revision.after?.id, "restored");
+  assert.ok(!revision.after?.evidenceIds.includes("full-page"));
+});

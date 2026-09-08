@@ -215,10 +215,8 @@ function durableAuthorSnapshot(
     });
   }
   const uncertain =
-    record.status === "needs-attention" ||
-    record.lastTransition.endsWith("-requested") ||
-    record.lastTransition.endsWith("-outcome-unknown");
-  return snapshotFromAuthoringSession({
+    record.status === "needs-attention" || record.lastTransition.endsWith("-outcome-unknown");
+  const snapshot = snapshotFromAuthoringSession({
     workflow,
     frozen,
     session,
@@ -237,6 +235,16 @@ function durableAuthorSnapshot(
         }
       : {}),
   });
+  // An active request is still executing; inspection must not turn it into
+  // an uncertain outcome or offer a second mutation before its receipt.
+  if (record.status === "active" && record.lastTransition.endsWith("-requested")) {
+    return {
+      ...snapshot,
+      allowedNextActions: ["inspect"],
+      progress: { label: "Finishing interaction…" },
+    };
+  }
+  return snapshot;
 }
 
 function durableTransitionInput(

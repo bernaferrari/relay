@@ -245,11 +245,6 @@ export function LiveTargetCanvas({
           </div>
         ) : null}
         {overlay}
-        {busy ? (
-          <span className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-background/90 px-3 py-1 text-xs text-muted-foreground shadow-sm">
-            {recording ? "Recording interaction…" : "Sending interaction…"}
-          </span>
-        ) : null}
       </div>
       {streaming && issue ? (
         <p role="status" className="border-t border-border px-3 py-2 text-sm">

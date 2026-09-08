@@ -34,7 +34,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { recordingQueryKeys, refreshRecording } from "../data/recording-queries";
 import { clearWorkflowPointerIfCurrent } from "../data/workflow-pointer";
-import { PageLoading, RecordingProblem } from "./recording-shared";
+import { PageLoading, RecordingProblem, targetLabel } from "./recording-shared";
 import { RecordingActionsPanel, RecordingEvidencePanel } from "./recording-review-panels";
 import { replayDetail, useEvidenceObjectUrl } from "./recording-review-presentation";
 
@@ -130,6 +130,16 @@ export function ReviewRecordingPage({
 
   const state = recording.data;
   const snapshot = state?.snapshot;
+  const replayTarget = snapshot?.frozen?.target;
+  const replayPresentation = useQuery({
+    queryKey: recordingQueryKeys.targetPresentation(replayTarget?.targetId ?? "unselected"),
+    queryFn: () => productService.presentTargets([replayTarget!]),
+    enabled: Boolean(replayTarget),
+    staleTime: 30_000,
+  });
+  const replayDeviceName = replayTarget
+    ? targetLabel(replayPresentation.data?.[0] ?? replayTarget).title
+    : "recorded device";
   const review = snapshot?.review;
   const reviewReady = Boolean(
     snapshot && !state?.recovery && !recording.error && !transition.data?.recovery,
@@ -331,7 +341,7 @@ export function ReviewRecordingPage({
                   disabled={transition.isPending}
                 >
                   <RotateCcw aria-hidden="true" />
-                  {transition.isPending ? "Replaying…" : "Replay recording"}
+                  {transition.isPending ? "Replaying…" : `Replay on ${replayDeviceName}`}
                 </Button>
               ) : null}
 
@@ -380,7 +390,9 @@ export function ReviewRecordingPage({
             >
               {canApprove
                 ? "Recording captured. Ready to save."
-                : replayDetail(review?.latestReplay?.outcome, canApprove)}
+                : review?.latestReplay
+                  ? replayDetail(review.latestReplay.outcome, canApprove)
+                  : `Replay runs these steps on ${replayDeviceName} before saving.`}
             </p>
           </div>
         ) : null}
@@ -388,6 +400,8 @@ export function ReviewRecordingPage({
 
       {recording.isPending ? <PageLoading label="Loading the reviewed recording…" /> : null}
       <RecordingProblem
+        layout={reviewReady ? "compact" : "centered"}
+        className={reviewReady ? "mx-4" : "m-auto flex-1 w-full !max-w-none !mt-0"}
         error={recording.error ?? transition.error ?? leaveDraft.error}
         recovery={transition.data?.recovery ?? state?.recovery}
         onRetry={() => void recording.refetch()}

@@ -113,6 +113,7 @@ export function assertAuthoringInteraction(value: unknown): void {
       return;
     case "observe":
     case "screenshot":
+      if (interaction.fullPage !== undefined) boolean(interaction.fullPage, "fullPage");
       if (interaction.label !== undefined) string(interaction.label, "observe label");
       return;
     case "reusable":

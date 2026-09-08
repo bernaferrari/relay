@@ -180,7 +180,11 @@ export function redactAuthoringRawInteraction(
     case "observe":
       return { kind: "observe", ...(interaction.label ? { hasLabel: true } : {}) };
     case "screenshot":
-      return { kind: "screenshot", ...(interaction.label ? { hasLabel: true } : {}) };
+      return {
+        kind: "screenshot",
+        ...(interaction.label ? { hasLabel: true } : {}),
+        ...(interaction.fullPage ? { fullPage: true } : {}),
+      };
     case "reusable":
       return {
         kind: "reusable",

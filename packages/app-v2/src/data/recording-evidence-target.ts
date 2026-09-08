@@ -72,7 +72,7 @@ export function projectRecordingEvidenceControls(
         ? `Matched the visible name “${label}”.`
         : `Matched the visible text “${value}”.`;
     controls.push({
-      id: identifier ?? `${label ?? value}:${Math.round(rect.x)}:${Math.round(rect.y)}`,
+      id: `${identifier ?? label ?? value}:${index}`,
       name,
       ...(role ? { role } : {}),
       rect,

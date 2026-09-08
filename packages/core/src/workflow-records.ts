@@ -384,7 +384,16 @@ export async function transitionDurableWorkflow(
   return withControlStore((store) => {
     const current = readFromStore(store, input, input.workflowId);
     if (!current) return { status: "missing" } as const;
-    if (current.record.status === "terminal") return { status: "terminal", current } as const;
+    const recoveringFailedAuthoring =
+      current.record.kind === "author-test" &&
+      current.record.lastTransition === "authoring-failed" &&
+      input.transition === "authoring-review-recovered" &&
+      input.status === "active" &&
+      current.record.resource?.kind === "authoring-session" &&
+      input.resource?.kind === "authoring-session" &&
+      input.resource.id === current.record.resource.id;
+    if (current.record.status === "terminal" && !recoveringFailedAuthoring)
+      return { status: "terminal", current } as const;
     if (current.record.status === "expired") return { status: "expired", current } as const;
     if (current.record.expiresAt <= input.at) {
       const version = current.record.version + 1;

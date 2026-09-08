@@ -177,3 +177,5 @@ export * from "./app-map-compiler.js";
 export * from "./app-map-run-history.js";
 export * from "./repeat-result-review.js";
 export * from "./graph-exploration.js";
+
+export { captureAuthoringFullPage } from "./authoring-full-page-capture.js";

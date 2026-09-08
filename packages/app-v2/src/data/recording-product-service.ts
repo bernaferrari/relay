@@ -75,6 +75,8 @@ export type RecordingProductService = {
   ): Promise<RecordingEvidencePreview | null>;
   recordCurrent(): Promise<ProductRecordingState>;
   checkpoint(label?: string): Promise<ProductRecordingState>;
+  captureFullPage?(): Promise<ProductRecordingState>;
+  recoverForReview?(sessionId: string): Promise<ProductRecordingState>;
   stop(): Promise<ProductRecordingState>;
   cancel?(): Promise<ProductRecordingState>;
   edit(edit: AuthoringRecordingEdit): Promise<ProductRecordingState>;
@@ -243,6 +245,18 @@ export function createRecordingProductService(
     },
     async recordCurrent() {
       return (await product()).journey.record({ kind: "observe" });
+    },
+    async recoverForReview(sessionId) {
+      const recording = await product();
+      await recording.client.invoke("authoring.session.observe", { sessionId });
+      return recording.journey.inspect();
+    },
+    async captureFullPage() {
+      return (await product()).journey.record({
+        kind: "screenshot",
+        fullPage: true,
+        label: "Capture full page",
+      });
     },
     async checkpoint(label) {
       return (await product()).journey.checkpoint(label);

@@ -5,6 +5,7 @@ import {
   AuthoringStateError,
   authoringSessions,
   captureScreenshot,
+  captureAuthoringFullPage,
   captureSnapshot,
   cleanupScreenshot,
   createDeviceForTarget,
@@ -463,6 +464,11 @@ export function createAuthoringRuntime(): AuthoringRuntime {
     });
   };
   return {
+    async captureFullPage(session) {
+      return runWithTargetContext(targetContext(session.target), () =>
+        captureAuthoringFullPage(session),
+      );
+    },
     async observe(session) {
       return captureAuthoringObservation(session);
     },

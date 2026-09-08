@@ -25,6 +25,9 @@ import { semanticTargetForRecording } from "./authoring-tap-target.js";
 
 /** The narrow runtime surface needed while one Take is actively recording. */
 export type AuthoringRecordingRuntime<Captured> = {
+  captureFullPage?(
+    session: AuthoringSession,
+  ): Promise<{ evidence: AuthoringEvidence[]; label: string }>;
   observe(session: AuthoringSession): Promise<Captured>;
   execute(session: AuthoringSession, interaction: AuthoringInteraction): Promise<void>;
   settle?(ms: number): Promise<void>;
@@ -185,8 +188,14 @@ export async function recordAuthoringInteraction<Captured>(
       await writeSession(session);
     }
   };
+  let fullPage: { evidence: AuthoringEvidence[]; label: string } | undefined;
   let nativeDispatchCompleted = false;
   try {
+    if (interaction.kind === "screenshot" && interaction.fullPage) {
+      if (!runtime.captureFullPage)
+        throw new AuthoringStateError("Full-page capture is unavailable.");
+      fullPage = await runtime.captureFullPage(session);
+    }
     if (
       !["reusable", "observe", "screenshot", "wait"].includes(interaction.kind) &&
       !("applied" in interaction && interaction.applied)
@@ -229,7 +238,7 @@ export async function recordAuthoringInteraction<Captured>(
     startedAt,
     finishedAt,
     steps: stepsForInteraction(executable, actionId, session.group),
-    evidenceIds: captured.evidence.map((item) => item.id),
+    evidenceIds: [...(fullPage?.evidence ?? []), ...captured.evidence].map((item) => item.id),
     ...(entrance
       ? {
           entranceObservationId: entrance.id,
@@ -237,13 +246,15 @@ export async function recordAuthoringInteraction<Captured>(
           proofStatus: authoringTransitionProofStatus(entrance, captured.observation),
         }
       : {}),
-    ...(targetName
-      ? { label: `Tap “${targetName}”` }
-      : (interaction.kind === "observe" || interaction.kind === "screenshot") && interaction.label
-        ? { label: interaction.label }
-        : interaction.kind === "steps" && interaction.label
+    ...(fullPage
+      ? { label: fullPage.label }
+      : targetName
+        ? { label: `Tap “${targetName}”` }
+        : (interaction.kind === "observe" || interaction.kind === "screenshot") && interaction.label
           ? { label: interaction.label }
-          : {}),
+          : interaction.kind === "steps" && interaction.label
+            ? { label: interaction.label }
+            : {}),
     ...(interaction.kind === "tap" && interaction.browserResolution
       ? { browserResolution: interaction.browserResolution }
       : {}),
@@ -256,7 +267,12 @@ export async function recordAuthoringInteraction<Captured>(
     return {
       ...revision,
       actions: [...revision.actions, action],
-      evidence: [...revision.evidence, ...entranceEvidence, ...captured.evidence],
+      evidence: [
+        ...revision.evidence,
+        ...entranceEvidence,
+        ...(fullPage?.evidence ?? []),
+        ...captured.evidence,
+      ],
       observations,
       after: captured.observation,
     };

@@ -99,6 +99,13 @@ export function RecordingProblem({
 function recoveryCopy(
   recovery: ProductRecovery,
 ): Pick<ProductRecovery, "title" | "detail" | "recovery"> {
+  if (/Relay restarted during device capture/u.test(recovery.detail)) {
+    return {
+      title: "Recording stopped when Relay restarted",
+      detail: "Your steps are saved. Choose Review saved steps to open them.",
+      recovery: "",
+    };
+  }
   if (recovery.code === "mutation-outcome-unknown") {
     return {
       title: "Checking the last step",

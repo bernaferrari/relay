@@ -234,7 +234,7 @@ export type AuthoringInteraction =
   | { kind: "key"; key: "back" | "home" | "recents"; applied?: boolean }
   | { kind: "wait"; ms: number }
   | { kind: "observe"; label?: string }
-  | { kind: "screenshot"; label?: string }
+  | { kind: "screenshot"; label?: string; fullPage?: boolean }
   | { kind: "reusable"; recipeId: string; bindings?: Record<string, string> }
   | { kind: "steps"; steps: RecipeStep[]; label?: string; applied?: boolean };
 
@@ -375,7 +375,7 @@ export type AuthoringRawInteraction =
   | { kind: "key"; key: "back" | "home" | "recents"; applied?: boolean }
   | { kind: "wait"; ms: number }
   | { kind: "observe"; hasLabel?: boolean }
-  | { kind: "screenshot"; hasLabel?: boolean }
+  | { kind: "screenshot"; hasLabel?: boolean; fullPage?: boolean }
   | { kind: "reusable"; hasRecipe?: boolean; bindingCount: number }
   | { kind: "steps"; stepCount: number; hasLabel?: boolean; applied?: boolean };
 

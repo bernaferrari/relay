@@ -24,10 +24,7 @@ export function AuthoringHeader({
           <div className="flex min-w-0 items-center gap-3">
             <h1 className="truncate text-base font-semibold tracking-tight">{title}</h1>
             {phase ? (
-              <ol
-                className="flex shrink-0 items-center text-xs text-muted-foreground max-[600px]:sr-only"
-                aria-label="Recording progress"
-              >
+              <ol className="sr-only" aria-label="Recording progress">
                 {(
                   [
                     ["setup", "Set up"],

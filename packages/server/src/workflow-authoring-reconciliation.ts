@@ -330,6 +330,25 @@ export async function reconcileAuthoring(
     });
     if (uncertain.status === "updated") workflow = uncertain.workflow;
     else if ("current" in uncertain) workflow = uncertain.current;
+  } else if (
+    workflow.record.status === "terminal" &&
+    session.state === "reviewing" &&
+    !session.archive
+  ) {
+    // Explicit target observation can recover a failed take for review.
+    const recovered = await runtime.transitionWorkflow({
+      organizationId: scope.organizationId,
+      projectId: scope.projectId,
+      workflowId: workflow.record.workflowId,
+      expectedVersion: workflow.record.version,
+      actorId,
+      transition: "authoring-review-recovered",
+      status: "active",
+      resource: { kind: "authoring-session", id: session.id },
+      at,
+    });
+    if (recovered.status === "updated") workflow = recovered.workflow;
+    else if ("current" in recovered) workflow = recovered.current;
   } else if (authoringIsTerminal(session) && workflow.record.status !== "terminal") {
     const terminal = await runtime.transitionWorkflow({
       organizationId: scope.organizationId,

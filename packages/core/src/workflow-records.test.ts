@@ -383,3 +383,54 @@ test("legacy v1 adoption parses bounded identity and retains only its digest", (
   assert.equal(JSON.stringify(adoption).includes(legacyRef), false);
   assert.equal(parseLegacyWorkflowAdoption(`${legacyRef}x`.repeat(10_000)), undefined);
 });
+
+test("a failed authoring workflow can reopen only its same recovered session", async () => {
+  await withStateRoot(async () => {
+    await createDurableWorkflow({
+      ...scope,
+      workflowId: "failed-author",
+      kind: "author-test",
+      frozenIdentity: {},
+      resource: { kind: "authoring-session", id: "session-1" },
+      actorId: "agent:author",
+      at: 100,
+      expiresAt: 10_000,
+    });
+    await transitionDurableWorkflow({
+      ...scope,
+      workflowId: "failed-author",
+      expectedVersion: 1,
+      actorId: "agent:author",
+      transition: "authoring-failed",
+      status: "terminal",
+      at: 200,
+    });
+    const input = {
+      ...scope,
+      workflowId: "failed-author",
+      expectedVersion: 2,
+      actorId: "agent:author",
+      transition: "authoring-review-recovered",
+      status: "active" as const,
+      at: 300,
+    };
+    assert.equal(
+      (
+        await transitionDurableWorkflow({
+          ...input,
+          resource: { kind: "authoring-session", id: "different" },
+        })
+      ).status,
+      "terminal",
+    );
+    assert.equal(
+      (
+        await transitionDurableWorkflow({
+          ...input,
+          resource: { kind: "authoring-session", id: "session-1" },
+        })
+      ).status,
+      "updated",
+    );
+  });
+});

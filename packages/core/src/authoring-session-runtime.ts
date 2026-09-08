@@ -1,5 +1,6 @@
 import type {
   AuthoringAction,
+  AuthoringEvidence,
   AuthoringInteraction,
   AuthoringSession,
   RecipeStep,
@@ -7,6 +8,9 @@ import type {
 import type { CapturedAuthoringObservation } from "./authoring-observation-capture.js";
 
 export type AuthoringRuntime = {
+  captureFullPage?(
+    session: AuthoringSession,
+  ): Promise<{ evidence: AuthoringEvidence[]; label: string }>;
   observe(session: AuthoringSession): Promise<CapturedAuthoringObservation>;
   execute(session: AuthoringSession, interaction: AuthoringInteraction): Promise<void>;
   replay(session: AuthoringSession, steps: RecipeStep[]): Promise<void>;

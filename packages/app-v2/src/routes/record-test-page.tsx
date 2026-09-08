@@ -1,3 +1,4 @@
+import { ScanLine, LoaderCircle } from "lucide-react";
 import { AuthoringWorkspace } from "./authoring-workspace";
 import { AuthoringHeader } from "./authoring-header";
 import { RecordingActionList } from "./recording-action-list";
@@ -51,6 +52,8 @@ const testRouteApi = getRouteApi("/tests/$testId/record");
 const recordingRouteApi = getRouteApi("/recordings/$recordingId");
 
 type CaptureAction =
+  | { action: "full-page" }
+  | { action: "recover" }
   | { action: "checkpoint"; label?: string }
   | { action: "stop" }
   | { action: "cancel" };
@@ -98,6 +101,8 @@ function RecordingWorkspace({
     // Focus can return while native input or a capture is being committed.
     // Those operations explicitly refresh once their durable result exists.
     refetchOnWindowFocus: false,
+    refetchInterval: (query) =>
+      query.state.data?.snapshot?.progress.label === "Finishing interaction…" ? 750 : false,
   });
 
   useEffect(() => {
@@ -109,6 +114,16 @@ function RecordingWorkspace({
 
   const action = useMutation({
     mutationFn: async (intent: CaptureAction) => {
+      if (intent.action === "recover") {
+        const sessionId = recording.data?.snapshot?.authoring?.sessionId;
+        if (!sessionId || !productService.recoverForReview)
+          throw new Error("The saved recording is unavailable.");
+        return productService.recoverForReview(sessionId);
+      }
+      if (intent.action === "full-page") {
+        if (!productService.captureFullPage) throw new Error("Full-page capture is unavailable.");
+        return productService.captureFullPage();
+      }
       if (intent.action === "checkpoint") return productService.checkpoint(intent.label);
       if (intent.action === "cancel") {
         if (!productService.cancel) throw new Error("Cancel recording is unavailable.");
@@ -127,6 +142,16 @@ function RecordingWorkspace({
         await navigate({ to: "/tests" });
         return;
       }
+      if (intent.action === "recover") {
+        const sessionId = recording.data?.snapshot?.authoring?.sessionId;
+        if (!sessionId || !productService.recoverForReview)
+          throw new Error("The saved recording is unavailable.");
+        return productService.recoverForReview(sessionId);
+      }
+      if (intent.action === "full-page") {
+        if (!productService.captureFullPage) throw new Error("Full-page capture is unavailable.");
+        return productService.captureFullPage();
+      }
       if (intent.action === "checkpoint") {
         setCheckpointLabel("");
         setCheckpointOpen(false);
@@ -139,7 +164,11 @@ function RecordingWorkspace({
 
   const snapshot = recording.data?.snapshot;
   const captureReady = recording.data?.status === "recording" && !recording.data.recovery;
-  const previewAvailable = Boolean(snapshot && snapshot.stage !== "cancelled");
+  const previewAvailable = Boolean(
+    snapshot &&
+    snapshot.stage !== "cancelled" &&
+    (snapshot.frozen?.target || recording.data?.selectedTarget || snapshot.review?.actionCount),
+  );
   const allowed = new Set(captureReady ? (snapshot?.allowedNextActions ?? []) : []);
   const recordedActions = snapshot?.review?.actions ?? [];
 
@@ -489,10 +518,25 @@ function RecordingWorkspace({
                   className="relay-electron-no-drag [-webkit-app-region:no-drag]"
                   variant="default"
                   size="sm"
-                  onClick={() => void stopAfterInputDrain()}
-                  disabled={!allowed.has("stop") || action.isPending || stopWaitingForInput}
+                  onClick={() =>
+                    snapshot?.stage === "failed"
+                      ? action.mutate({ action: "recover" })
+                      : void stopAfterInputDrain()
+                  }
+                  disabled={
+                    (!allowed.has("stop") &&
+                      !(snapshot?.stage === "failed" && productService.recoverForReview)) ||
+                    action.isPending ||
+                    stopWaitingForInput
+                  }
                 >
-                  {stopWaitingForInput ? "Finishing interaction…" : "Stop and review"}
+                  {snapshot?.stage === "failed"
+                    ? action.isPending
+                      ? "Opening saved steps…"
+                      : "Review saved steps"
+                    : stopWaitingForInput
+                      ? "Finishing interaction…"
+                      : "Stop and review"}
                 </Button>
               </>
             }
@@ -502,12 +546,11 @@ function RecordingWorkspace({
 
       <div className="flex min-h-0 flex-col overflow-auto">
         {recording.isPending ? <PageLoading label="Restoring the recording…" /> : null}
-        {(recording.isError || recording.data?.recovery) && !snapshot ? (
-          <div className="mx-auto grid max-w-md gap-4 rounded-xl border border-border bg-card p-6">
-            <h2 className="text-lg font-semibold">Let’s get back to your recording</h2>
+        {(recording.isError || recording.data?.recovery) && !previewAvailable ? (
+          <div className="m-auto grid w-full max-w-sm justify-items-center gap-3 px-6 py-10 text-center">
+            <h2 className="text-lg font-semibold">Connection lost</h2>
             <p className="text-sm leading-relaxed text-muted-foreground">
-              Relay couldn’t reopen this session. Retry the connection, or return to your Tests.
-              Previously captured steps remain saved.
+              Reconnect to reopen your recording and saved steps.
             </p>
             <div className="flex gap-2">
               <Button disabled={recording.isFetching} onClick={() => void recording.refetch()}>
@@ -518,31 +561,43 @@ function RecordingWorkspace({
               </Button>
             </div>
           </div>
-        ) : (
-          <RecordingProblem
-            className="mx-4 mb-3 shrink-0"
-            error={recording.error ?? action.error}
-            recovery={action.data?.recovery ?? recording.data?.recovery}
-            onRetry={() => void recording.refetch()}
-            retrying={recording.isFetching}
-          />
-        )}
+        ) : null}
 
         {!recording.isPending && snapshot && previewAvailable ? (
           <AuthoringWorkspace
             tools={
               <aside
-                className="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-lg border border-border bg-card h-full"
+                className="grid min-h-0 min-w-0 grid-rows-[auto_auto_minmax(0,1fr)] overflow-hidden rounded-lg border border-border bg-card h-full"
                 aria-labelledby="capture-timeline-title"
               >
                 <div className="flex items-center justify-between gap-3 border-b border-border p-3.5">
                   <h2 id="capture-timeline-title" className="text-[13px] font-medium">
                     Recorded steps
+                    {liveInputBusy || action.isPending ? (
+                      <LoaderCircle
+                        className="ms-2 inline size-3.5 animate-spin text-muted-foreground motion-reduce:animate-none"
+                        aria-label="Saving step"
+                      />
+                    ) : null}
                   </h2>
                   <span className="text-xs tabular-nums text-muted-foreground">
                     {recordedActions.length}
                   </span>
                 </div>
+                {recording.error ||
+                action.error ||
+                action.data?.recovery ||
+                recording.data?.recovery ? (
+                  <RecordingProblem
+                    className="m-3"
+                    error={recording.error ?? action.error}
+                    recovery={action.data?.recovery ?? recording.data?.recovery}
+                    onRetry={() => void recording.refetch()}
+                    retrying={recording.isFetching}
+                  />
+                ) : (
+                  <span />
+                )}
                 {recordedActions.length ? (
                   <ScrollArea className="min-h-0">
                     <RecordingActionList actions={recordedActions} />
@@ -565,7 +620,7 @@ function RecordingWorkspace({
                       canvasRef={liveCanvas}
                       status={liveStatus}
                       issue={recoveryKind === "unknown" ? undefined : liveIssue}
-                      busy={liveInputBusy || !captureReady}
+                      busy={liveInputBusy || action.isPending || !allowed.has("record")}
                       targetTitle={
                         targetLabel(targetPresentation.data?.[0] ?? selectedTarget).title
                       }
@@ -594,6 +649,20 @@ function RecordingWorkspace({
                             loading={talkBack.loading}
                             onModeChange={(mode) => talkBack.setMode(mode)}
                           />
+                          {selectedTarget.kind === "device" && productService.captureFullPage ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              title="Capture the scrollable page and return to this position"
+                              disabled={!allowed.has("record") || action.isPending || liveInputBusy}
+                              onClick={() => action.mutate({ action: "full-page" })}
+                            >
+                              <ScanLine className="size-4" aria-hidden="true" />
+                              {action.isPending && action.variables?.action === "full-page"
+                                ? "Capturing…"
+                                : "Full page"}
+                            </Button>
+                          ) : null}
                           <RecordingScreenCapture
                             open={checkpointOpen}
                             onOpenChange={setCheckpointOpen}
@@ -628,7 +697,7 @@ function RecordingWorkspace({
             <RecordingInputRecovery
               issue={liveIssue}
               failure={unresolvedRecordingMutation(recordingLedger.current, "unknown")}
-              busy={liveInputBusy || !captureReady}
+              busy={liveInputBusy || action.isPending || !allowed.has("record")}
               onObserve={observeLastUnknownMutation}
             />
           ) : null}
