@@ -44,6 +44,10 @@
   are unchanged at schema v2. Two notes for mixed installations: a daemon older than this release
   reads a v3 file as an unreadable claim record and fails closed rather than clearing it, and
   `devices` reports no `claimedBy` for such a device until the managed-inventory filter lands.
+- Added the `harmonyos-instance` lease contract and CLI/runtime plumbing as a prerequisite for
+  HarmonyOS proxy support; provider/daemon allocation remains gated until its end-to-end lifecycle
+  is implemented and validated (#2266).
+
 - Fixed: `settings airplane on|off` now takes an Android device offline. It is applied through
   the connectivity service (`cmd connectivity airplane-mode`), which drives the radios, instead of
   writing `airplane_mode_on` and broadcasting `ACTION_AIRPLANE_MODE_CHANGED` — a broadcast Android
