@@ -574,20 +574,44 @@ function RecordingWorkspace({
                     {recordedActions.length}
                   </span>
                 </div>
-                {recording.error ||
-                action.error ||
-                action.data?.recovery ||
-                recording.data?.recovery ? (
-                  <RecordingProblem
-                    className="m-3"
-                    error={recording.error ?? action.error}
-                    recovery={action.data?.recovery ?? recording.data?.recovery}
-                    onRetry={() => void recording.refetch()}
-                    retrying={recording.isFetching}
-                  />
-                ) : (
-                  <span />
-                )}
+                <div>
+                  {captureReady &&
+                  (recoveryKind === "unknown" || recoveryKind === "refresh-failed") ? (
+                    <div className="m-3 grid gap-3" aria-label="Recording controls">
+                      {recoveryKind === "unknown" ? (
+                        <RecordingInputRecovery
+                          issue={liveIssue}
+                          failure={unresolvedRecordingMutation(recordingLedger.current, "unknown")}
+                          busy={liveInputBusy || action.isPending || !allowed.has("record")}
+                          onObserve={observeLastUnknownMutation}
+                        />
+                      ) : null}
+                      {recoveryKind === "refresh-failed" ? (
+                        <Button
+                          variant="outline"
+                          disabled={liveInputBusy}
+                          onClick={() => void recoverRecordingRefreshOnly()}
+                        >
+                          Refresh recording
+                        </Button>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  {recording.error ||
+                  action.error ||
+                  action.data?.recovery ||
+                  recording.data?.recovery ? (
+                    <RecordingProblem
+                      className="m-3"
+                      error={recording.error ?? action.error}
+                      recovery={action.data?.recovery ?? recording.data?.recovery}
+                      onRetry={() => void recording.refetch()}
+                      retrying={recording.isFetching}
+                    />
+                  ) : (
+                    <span />
+                  )}
+                </div>
                 {recordedActions.length ? (
                   <ScrollArea className="min-h-0">
                     <RecordingActionList actions={recordedActions} />
@@ -677,31 +701,6 @@ function RecordingWorkspace({
           />
         ) : null}
       </div>
-
-      {captureReady && (recoveryKind === "unknown" || recoveryKind === "refresh-failed") ? (
-        <footer
-          className="flex flex-wrap items-center justify-end gap-3 border-t border-border px-5 py-3"
-          aria-label="Recording controls"
-        >
-          {recoveryKind === "unknown" ? (
-            <RecordingInputRecovery
-              issue={liveIssue}
-              failure={unresolvedRecordingMutation(recordingLedger.current, "unknown")}
-              busy={liveInputBusy || action.isPending || !allowed.has("record")}
-              onObserve={observeLastUnknownMutation}
-            />
-          ) : null}
-          {recoveryKind === "refresh-failed" ? (
-            <Button
-              variant="outline"
-              disabled={liveInputBusy}
-              onClick={() => void recoverRecordingRefreshOnly()}
-            >
-              Refresh recording
-            </Button>
-          ) : null}
-        </footer>
-      ) : null}
     </section>
   );
 }

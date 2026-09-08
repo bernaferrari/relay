@@ -255,7 +255,7 @@ export function recordingInputRecoveryMessage(outcome: RecordingInputOutcome): s
   if (outcome.kind === "refresh-failed") {
     return "The interaction reached the app, but Relay could not refresh the recording. Refresh the steps instead of tapping again.";
   }
-  return "Recording paused: Relay lost confirmation of the last interaction. Check the app preview below before continuing; sending it again could repeat the action.";
+  return "Recording paused: Relay lost confirmation of the last interaction. Check the preview before continuing.";
 }
 
 export function recordingRecoveryBlocksSend(ledger: RecordingRecoveryLedger | undefined): boolean {

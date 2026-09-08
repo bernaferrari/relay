@@ -18,7 +18,7 @@ export function RecordingInputRecovery({
 }) {
   return (
     <div
-      className="mr-auto grid w-full min-w-0 gap-3 rounded-lg border border-amber-500/25 bg-amber-500/5 p-4"
+      className="mr-auto grid w-full min-w-0 gap-3 rounded-md bg-amber-500/5 p-3"
       role="group"
       aria-label="Check the last interaction"
     >
@@ -26,15 +26,25 @@ export function RecordingInputRecovery({
         {issue ?? recordingInputRecoveryMessage({ kind: "unknown", message: "" })}
       </p>
       <div className="flex flex-wrap gap-2">
-        <Button variant="outline" disabled={busy} onClick={() => void onObserve("applied")}>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={busy}
+          onClick={() => void onObserve("applied")}
+        >
           It applied
         </Button>
-        <Button variant="outline" disabled={busy} onClick={() => void onObserve("not-observed")}>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={busy}
+          onClick={() => void onObserve("not-observed")}
+        >
           It did not apply
         </Button>
       </div>
       <p className="text-xs text-muted-foreground">
-        If you can’t tell, leave the recording paused. No further actions will be sent.
+        Not sure? Keep it paused to avoid repeating the action.
       </p>
       <details className="text-xs text-muted-foreground">
         <summary className="cursor-pointer">Technical details</summary>
