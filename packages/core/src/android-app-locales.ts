@@ -14,6 +14,19 @@ function validPackageName(value: string): boolean {
   return /^[A-Za-z0-9._-]+$/.test(value);
 }
 
+/** Package Manager also returns named system APKs, such as SecSettings.apk. */
+export function androidBaseApkPath(packagePaths: string): string | undefined {
+  const paths = packagePaths
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith("package:/") && line.endsWith(".apk"))
+    .map((line) => line.slice("package:".length));
+  return (
+    paths.find((apk) => path.posix.basename(apk) === "base.apk") ??
+    paths.find((apk) => !path.posix.basename(apk).startsWith("split_"))
+  );
+}
+
 export function parseAndroidLocaleConfig(input: {
   manifest: string;
   resources: string;
@@ -51,11 +64,7 @@ export async function listAndroidAppLocales(
       ["-s", serial, "shell", "pm", "path", packageName],
       { maxBuffer: MAX_APK_TOOL_OUTPUT },
     );
-    const remoteApk = String(packagePaths)
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .find((line) => line.startsWith("package:") && line.endsWith("/base.apk"))
-      ?.slice("package:".length);
+    const remoteApk = androidBaseApkPath(String(packagePaths));
     if (!remoteApk) throw new Error(`${packageName} is not installed on ${serial}`);
     await execFileAsync(adb, ["-s", serial, "pull", remoteApk, apk], {
       maxBuffer: MAX_APK_TOOL_OUTPUT,
@@ -69,9 +78,9 @@ export async function listAndroidAppLocales(
         ).stdout,
       );
     const manifest = await runAapt(["dump", "xmltree", "--file", "AndroidManifest.xml", apk]);
-    const resources = await runAapt(["dump", "resources", apk]);
     const resourceId = manifest.match(/android:localeConfig[^\n]*=@(0x[0-9a-f]+)/i)?.[1];
     if (!resourceId) return [];
+    const resources = await runAapt(["dump", "resources", apk]);
     const escaped = resourceId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const resourceName = resources.match(
       new RegExp(`resource\\s+${escaped}\\s+xml\\/([A-Za-z0-9_.-]+)`, "i"),

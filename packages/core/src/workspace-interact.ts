@@ -55,7 +55,7 @@ export type InteractInput =
       to: { x: number; y: number };
       durationMs?: number;
     }
-  | { kind: "key"; key: "enter" | "backspace" | "back" | "home" }
+  | { kind: "key"; key: "enter" | "backspace" | "back" | "home" | "recents" }
   | { kind: "type"; text: string }
   | {
       kind: "replace";

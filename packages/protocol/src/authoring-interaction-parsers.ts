@@ -105,8 +105,8 @@ export function assertAuthoringInteraction(value: unknown): void {
         fail("swipe duration", "must be non-negative");
       return;
     case "key":
-      if (interaction.key !== "back" && interaction.key !== "home")
-        fail("authoring key", "must be back or home");
+      if (interaction.key !== "back" && interaction.key !== "home" && interaction.key !== "recents")
+        fail("authoring key", "must be back, home, or recents");
       return;
     case "wait":
       if (number(interaction.ms, "wait ms") < 0) fail("wait ms", "must be non-negative");

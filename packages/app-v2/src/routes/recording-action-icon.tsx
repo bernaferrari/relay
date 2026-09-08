@@ -1,4 +1,14 @@
-import { ArrowLeft, Camera, Clock, Hand, Keyboard, MoveUpRight, CircleDot } from "lucide-react";
+import {
+  ArrowLeft,
+  Camera,
+  Clock,
+  Hand,
+  Keyboard,
+  MoveUpRight,
+  CircleDot,
+  Circle,
+  Square,
+} from "lucide-react";
 import type { ReviewAction } from "./recording-review-presentation";
 
 export function RecordingActionIcon({ action }: { action: ReviewAction }) {
@@ -13,10 +23,14 @@ export function RecordingActionIcon({ action }: { action: ReviewAction }) {
             ? Keyboard
             : action.kind === "key" && /back/iu.test(action.intent)
               ? ArrowLeft
-              : action.kind === "key"
-                ? Keyboard
-                : action.kind === "wait-for"
-                  ? Clock
-                  : CircleDot;
+              : action.kind === "key" && /recent/iu.test(action.intent)
+                ? Square
+                : action.kind === "key" && /home/iu.test(action.intent)
+                  ? Circle
+                  : action.kind === "key"
+                    ? Keyboard
+                    : action.kind === "wait-for"
+                      ? Clock
+                      : CircleDot;
   return <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />;
 }

@@ -20,6 +20,7 @@ function mountCanvas(
   entries: Array<{
     title: string;
     detail: string;
+    targetPlatform?: string;
     browserContext?: LiveTargetBrowserContext;
     send: (input: LiveTargetInput) => Promise<boolean>;
   }>,
@@ -40,6 +41,7 @@ function mountCanvas(
             busy={false}
             targetTitle={entry.title}
             targetDetail={entry.detail}
+            targetPlatform={entry.targetPlatform}
             browserContext={entry.browserContext}
             send={entry.send}
             recording={false}
@@ -52,6 +54,21 @@ function mountCanvas(
 }
 
 describe("LiveTargetCanvas", () => {
+  it("groups Android navigation and sends distinct Back, Home, and Recents commands", async () => {
+    const send = vi.fn(async () => true);
+    const host = mountCanvas([
+      { title: "Phone", detail: "Android", targetPlatform: "android", send },
+    ]);
+    const navigation = host.querySelector('[aria-label="Android navigation"]')!;
+    expect(navigation).not.toBeNull();
+    for (const label of ["Back", "Home", "Recents"]) {
+      await act(async () => {
+        navigation.querySelector<HTMLButtonElement>(`[aria-label="Android ${label}"]`)!.click();
+      });
+      expect(send).toHaveBeenLastCalledWith({ kind: "key", key: label.toLowerCase() });
+    }
+  });
+
   it("shows only known current browser facts beside the correct live target", () => {
     const host = mountCanvas([
       {

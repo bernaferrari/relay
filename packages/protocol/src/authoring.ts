@@ -231,7 +231,7 @@ export type AuthoringInteraction =
       durationMs?: number;
       applied?: boolean;
     }
-  | { kind: "key"; key: "back" | "home"; applied?: boolean }
+  | { kind: "key"; key: "back" | "home" | "recents"; applied?: boolean }
   | { kind: "wait"; ms: number }
   | { kind: "observe"; label?: string }
   | { kind: "screenshot"; label?: string }
@@ -372,7 +372,7 @@ export type AuthoringRawInteraction =
       durationMs?: number;
       applied?: boolean;
     }
-  | { kind: "key"; key: "back" | "home"; applied?: boolean }
+  | { kind: "key"; key: "back" | "home" | "recents"; applied?: boolean }
   | { kind: "wait"; ms: number }
   | { kind: "observe"; hasLabel?: boolean }
   | { kind: "screenshot"; hasLabel?: boolean }

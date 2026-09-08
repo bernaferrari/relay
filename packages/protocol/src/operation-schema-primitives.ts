@@ -195,7 +195,7 @@ export const authoringInteraction = z.discriminatedUnion("kind", [
   z
     .object({
       kind: z.literal("key"),
-      key: z.enum(["back", "home"]),
+      key: z.enum(["back", "home", "recents"]),
       applied: z.boolean().optional(),
     })
     .strict(),

@@ -169,7 +169,7 @@ const interactInput = z.discriminatedUnion("kind", [
   z
     .object({
       kind: z.literal("key"),
-      key: z.enum(["enter", "backspace", "back", "home"]),
+      key: z.enum(["enter", "backspace", "back", "home", "recents"]),
     })
     .strict(),
   z.object({ kind: z.literal("type"), text: z.string() }).strict(),

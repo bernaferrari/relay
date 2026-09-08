@@ -1,5 +1,4 @@
 import type { ReactNode } from "react";
-import { ChevronRight } from "lucide-react";
 
 /** The same navigation and action hierarchy follows a test through authoring. */
 export function AuthoringHeader({
@@ -18,15 +17,15 @@ export function AuthoringHeader({
   children?: ReactNode;
 }) {
   return (
-    <header className="shrink-0 border-b border-border/60">
-      <div className="flex min-h-16 items-center justify-between gap-4 px-4 py-3">
+    <header className="shrink-0">
+      <div className="flex min-h-14 items-center justify-between gap-4 px-5 py-3">
         <div className="flex min-w-0 items-center gap-3">
           {back}
-          <div className="grid min-w-0 gap-1">
+          <div className="flex min-w-0 items-center gap-3">
             <h1 className="truncate text-base font-semibold tracking-tight">{title}</h1>
             {phase ? (
               <ol
-                className="flex items-center gap-1.5 text-xs text-muted-foreground"
+                className="flex shrink-0 items-center text-xs text-muted-foreground max-[600px]:sr-only"
                 aria-label="Recording progress"
               >
                 {(
@@ -38,15 +37,14 @@ export function AuthoringHeader({
                 ).map(([id, label], index) => (
                   <li
                     key={id}
-                    className="flex items-center gap-1.5"
+                    className={phase === id ? "flex items-center gap-3" : "sr-only"}
                     aria-current={phase === id ? "step" : undefined}
                   >
-                    {index ? (
-                      <ChevronRight className="size-3 opacity-50" aria-hidden="true" />
-                    ) : null}
-                    <span className={phase === id ? "font-medium text-foreground" : ""}>
-                      {label}
+                    <span aria-hidden="true" className="text-border">
+                      /
                     </span>
+                    <span>{label}</span>
+                    <span className="sr-only">Step {index + 1} of 3</span>
                   </li>
                 ))}
               </ol>

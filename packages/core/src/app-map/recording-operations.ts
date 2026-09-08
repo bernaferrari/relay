@@ -767,6 +767,7 @@ function recordedConnectionLabel(input: AppMapRecordingInput, actions: ActionSpe
   const key = reversed.find((step) => step.kind === "key");
   if (key?.kind === "key") {
     const title = observedDestinationTitle(input);
+    if (key.key === "recents") return "Open recent apps";
     return key.key === "back" ? (title ? `Back to ${title}` : "Go back") : "Go home";
   }
   const app = reversed.find((step) => step.kind === "app");

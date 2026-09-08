@@ -943,6 +943,42 @@ describe("record, review, replay, and save", () => {
     expect(button("Start recording").disabled).toBe(false);
   });
 
+  it("replaces an unavailable remembered emulator with the connected phone among browsers", async () => {
+    const fake = fakeService();
+    const phone = { kind: "device", platform: "android", targetId: "samsung-phone" } as const;
+    const browser = { kind: "browser", platform: "browser", targetId: "browser-one" } as const;
+    fake.service.connect = async () => ({
+      status: "target-selection",
+      targets: [browser, phone, { ...browser, targetId: "browser-two" }],
+    });
+    fake.service.presentTargets = async (targets) =>
+      targets.map((target) => ({ ...target, name: target.targetId, detail: "Ready" }));
+    const storage = platformWithStorage({
+      newTestDraft: JSON.stringify({ appId: "app-1", targetId: "old-emulator" }),
+    });
+    await renderJourney("/tests/new", fake.service, storage.platform);
+    expect(document.querySelector('[aria-label="Record on"]')?.textContent).toContain(
+      "samsung-phone",
+    );
+    expect(document.body.textContent).not.toContain("Your selected device isn’t ready");
+    await click(button("Start recording"));
+    expect(
+      fake.calls.some((call) => call.startsWith("begin:") && call.endsWith(":samsung-phone")),
+    ).toBe(true);
+  });
+
+  it("does not replace an explicitly requested unavailable device with a different phone", async () => {
+    const fake = fakeService();
+    await renderJourney(
+      "/tests/new?app=app-1&target=other-phone",
+      fake.service,
+      platformWithStorage().platform,
+    );
+    expect(document.body.textContent).toContain("Your selected device isn’t ready");
+    expect(button("Start recording").disabled).toBe(true);
+    expect(fake.calls.some((call) => call.startsWith("begin:"))).toBe(false);
+  });
+
   it("uses the route parameter to adopt a recording after refresh", async () => {
     const fake = fakeService();
     const storage = platformWithStorage();

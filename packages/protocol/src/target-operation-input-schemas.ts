@@ -120,7 +120,7 @@ export const targetOperationInputSchemas = {
       query: z.string().min(1).optional(),
       match: z.string().min(1).optional(),
       key: z
-        .enum(["enter", "backspace", "back", "home"])
+        .enum(["enter", "backspace", "back", "home", "recents"])
         .optional()
         .describe("Required when kind is 'key': which system key to send"),
       target: z

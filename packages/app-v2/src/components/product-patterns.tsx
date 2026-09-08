@@ -147,7 +147,7 @@ export function RecoveryState({
         role="alert"
       >
         <EmptyHeader>
-          <EmptyMedia>
+          <EmptyMedia variant="icon">
             <CircleAlert />
           </EmptyMedia>
           <EmptyTitle>{title}</EmptyTitle>

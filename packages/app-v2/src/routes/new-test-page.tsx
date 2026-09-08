@@ -53,6 +53,7 @@ export function NewTestPage() {
   const [fallbackAppId, setAppId] = useState(requestedAppId ?? "");
   const appId = requestedAppId ?? fallbackAppId;
   const [targetId, setTargetId] = useState(requestedTargetId ?? "");
+  const [draftRestored, setDraftRestored] = useState(false);
   const previewCanvas = useRef<HTMLCanvasElement>(null);
   const previewSession = useRef<LiveTargetSession | undefined>(undefined);
   const [previewStatus, setPreviewStatus] = useState<LiveTargetStatus>("idle");
@@ -114,15 +115,36 @@ export function NewTestPage() {
     if (!appId && apps.data?.length === 1) setAppId(apps.data[0]!.id);
   }, [appId, apps.data]);
   useEffect(() => {
-    if (!targetId && targets.data?.targetOptions.length === 1) {
-      setTargetId(targets.data.targetOptions[0]!.targetId);
+    if (draftRestored || !draft.isFetched || !targets.isSuccess) return;
+    if (!requestedAppId && !appId && draft.data?.appId) setAppId(draft.data.appId);
+    // A remembered device is a convenience, not an explicit request to wait
+    // for hardware that may no longer be connected.
+    if (!requestedTargetId && !targetId) {
+      const saved = targets.data.targetOptions.find(
+        (target) => target.targetId === draft.data?.targetId,
+      );
+      if (saved) setTargetId(saved.targetId);
     }
-  }, [targetId, targets.data?.targetOptions]);
+    setDraftRestored(true);
+  }, [
+    appId,
+    draft.data,
+    draft.isFetched,
+    draftRestored,
+    requestedAppId,
+    requestedTargetId,
+    targetId,
+    targets.data,
+    targets.isSuccess,
+  ]);
   useEffect(() => {
-    if (!draft.data) return;
-    if (!requestedAppId && !appId && draft.data.appId) setAppId(draft.data.appId);
-    if (!requestedTargetId && !targetId && draft.data.targetId) setTargetId(draft.data.targetId);
-  }, [appId, draft.data, requestedAppId, requestedTargetId, targetId]);
+    if (!draftRestored || targetId || !targets.data) return;
+    const available = targets.data.targetOptions;
+    const devices = available.filter((target) => target.kind === "device");
+    const preferred =
+      devices.length === 1 ? devices[0] : available.length === 1 ? available[0] : undefined;
+    if (preferred) setTargetId(preferred.targetId);
+  }, [draftRestored, targetId, targets.data]);
   const activePointer = useQuery({
     queryKey: recordingQueryKeys.reconciledPointer,
     queryFn: async () => {
@@ -150,11 +172,11 @@ export function NewTestPage() {
   });
 
   useEffect(() => {
-    if (!draft.isFetched) return;
+    if (!draftRestored) return;
     void Promise.resolve(
       platform.storage.set(NEW_TEST_DRAFT_KEY, JSON.stringify({ appId, targetId })),
     );
-  }, [appId, draft.isFetched, platform, targetId]);
+  }, [appId, draftRestored, platform, targetId]);
 
   const selectedTarget = targets.data?.targetOptions.find((target) => target.targetId === targetId);
   useEffect(() => {
@@ -293,20 +315,10 @@ export function NewTestPage() {
         <AuthoringHeader
           phase="setup"
           title="New test"
-          back={
-            <Button nativeButton={false} render={<Link to="/tests" />} variant="ghost">
+          actions={
+            <Button nativeButton={false} render={<Link to="/tests" />} variant="ghost" size="sm">
               Cancel
             </Button>
-          }
-          actions={
-            setupOpen ? (
-              <>
-                <Button type="submit" disabled={!formReady} title={startHint}>
-                  <Play aria-hidden="true" />
-                  {begin.isPending ? "Starting…" : "Start recording"}
-                </Button>
-              </>
-            ) : null
           }
         />
 
@@ -343,6 +355,8 @@ export function NewTestPage() {
 
         {loading ? <PageLoading label="Finding your apps and ready devices…" /> : null}
         <RecordingProblem
+          layout={setupOpen ? "compact" : "centered"}
+          className={setupOpen ? undefined : "!mt-0 !max-w-none min-h-0 w-full flex-1"}
           error={apps.error ?? targets.error ?? pathContext.error ?? begin.error}
           recovery={begin.data?.recovery ?? targets.data?.recovery}
           onRetry={
@@ -411,6 +425,10 @@ export function NewTestPage() {
                   })}
                   onChange={setTargetId}
                 />
+                <Button type="submit" disabled={!formReady} title={startHint} className="w-full">
+                  <Play aria-hidden="true" />
+                  {begin.isPending ? "Starting…" : "Start recording"}
+                </Button>
               </aside>
             }
             stage={

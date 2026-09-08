@@ -397,12 +397,15 @@ function classifyLeaf(accumulator: RiskAccumulator, step: RecipeStep, stepId: st
       }
       return;
     case "key":
-      if (step.key === "home") {
-        accumulator.addBoundary("system-home");
+      if (step.key === "home" || step.key === "recents") {
+        if (step.key === "home") accumulator.addBoundary("system-home");
         accumulator.addRisk({
           level: "guarded",
           code: EXECUTION_RISK_CODES.externalApp,
-          explanation: "The Test leaves the foreground application for the system home surface.",
+          explanation:
+            step.key === "home"
+              ? "The Test leaves the foreground application for the system home surface."
+              : "The Test opens the Android recent apps surface.",
           stepId,
           externalEffects: ["external-app"],
         });

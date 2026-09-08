@@ -51,7 +51,11 @@ function semanticIntent(
   if (step.kind === "screenshot") return "Checkpoint";
   if (step.kind === "launch") return "Open app";
   if (step.kind === "swipe") return "Swipe";
-  if (step.kind === "key") return `Press ${String(step.key ?? "key")}`;
+  if (step.kind === "key") {
+    if (step.key === "home") return "Go to home screen";
+    if (step.key === "recents") return "Open recent apps";
+    return `Press ${String(step.key ?? "key")}`;
+  }
   return "Recorded action";
 }
 

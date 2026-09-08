@@ -205,6 +205,9 @@ export function campaignCoverageForbiddenEffect(step: RecipeStep): string | unde
   if (step.kind === "key" && step.key === "home") {
     return "device Home is a setup/navigation reset effect";
   }
+  if (step.kind === "key" && step.key === "recents") {
+    return "device Recents leaves the foreground application";
+  }
   return undefined;
 }
 

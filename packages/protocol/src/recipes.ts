@@ -297,7 +297,7 @@ export type RecipeStep = RecipeStepMetadata &
         to: StepPoint;
         durationMs?: number;
       }
-    | { kind: "key"; key: "back" | "home" }
+    | { kind: "key"; key: "back" | "home" | "recents" }
     | { kind: "sleep"; ms: number }
     | {
         kind: "wait-for";

@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
-import { ArrowLeft, MonitorSmartphone } from "lucide-react";
+import { ArrowLeft, Circle, Square, MonitorSmartphone } from "lucide-react";
 import {
   useEffect,
   useRef,
@@ -269,16 +269,32 @@ export function LiveTargetCanvas({
         ) : null}
         <div className="flex w-full items-end gap-3">
           {targetPlatform === "android" ? (
-            <Button
-              size="sm"
-              variant="ghost"
-              aria-label="Android Back"
-              title="Go back in Android"
-              disabled={busy || !streaming}
-              onClick={() => void send({ kind: "key", key: "back" })}
+            <div
+              role="group"
+              aria-label="Android navigation"
+              className="flex shrink-0 items-center gap-0.5 rounded-lg bg-muted/50 p-0.5"
             >
-              <ArrowLeft aria-hidden="true" /> Back
-            </Button>
+              {(
+                [
+                  { key: "back", label: "Back", icon: ArrowLeft, help: "Go back in Android" },
+                  { key: "home", label: "Home", icon: Circle, help: "Go to the home screen" },
+                  { key: "recents", label: "Recents", icon: Square, help: "Show recent apps" },
+                ] as const
+              ).map(({ key, label, icon: Icon, help }) => (
+                <Button
+                  key={key}
+                  type="button"
+                  size="icon-sm"
+                  variant="ghost"
+                  aria-label={`Android ${label}`}
+                  title={`${label} — ${help}`}
+                  disabled={busy || !streaming}
+                  onClick={() => void send({ kind: "key", key })}
+                >
+                  <Icon aria-hidden="true" className="size-4" />
+                </Button>
+              ))}
+            </div>
           ) : null}
           {toolbar}
           <label className="relay-visually-hidden sr-only" htmlFor={textInputId}>

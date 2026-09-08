@@ -1,6 +1,26 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseAndroidLocaleConfig, setAndroidAppLocaleOnDevice } from "./android-app-locales.js";
+import {
+  androidBaseApkPath,
+  parseAndroidLocaleConfig,
+  setAndroidAppLocaleOnDevice,
+} from "./android-app-locales.js";
+
+test("finds named system APKs and prefers the base over locale splits", () => {
+  assert.equal(
+    androidBaseApkPath("package:/system/priv-app/SecSettings/SecSettings.apk\r\n"),
+    "/system/priv-app/SecSettings/SecSettings.apk",
+  );
+  assert.equal(
+    androidBaseApkPath(
+      "package:/data/app/example/split_config.en.apk\npackage:/data/app/example/base.apk",
+    ),
+    "/data/app/example/base.apk",
+  );
+  assert.equal(androidBaseApkPath(""), undefined);
+  assert.equal(androidBaseApkPath("Error: package not found"), undefined);
+  assert.equal(androidBaseApkPath("package:/data/app/example/split_config.en.apk"), undefined);
+});
 
 test("reads the app-declared Android locales without product-specific seeds", () => {
   assert.deepEqual(

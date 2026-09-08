@@ -966,7 +966,21 @@ export async function typeText(device: Device, text: string): Promise<void> {
   );
 }
 
-export async function pressKey(device: Device, key: "back" | "home"): Promise<void> {
+export async function pressKey(device: Device, key: "back" | "home" | "recents"): Promise<void> {
+  if (key === "recents") {
+    if (currentTargetContext().kind === "browser" || selectedPlatform() !== "android") {
+      throw new Error("Recents is only available on Android devices.");
+    }
+    const serial = targetIdentity();
+    await controlled(() =>
+      mutateCurrentTarget(() =>
+        raceCancel(
+          execAndroidAdb(["-s", serial, "shell", "input", "keyevent", "KEYCODE_APP_SWITCH"]),
+        ),
+      ),
+    );
+    return;
+  }
   if (key === "back") {
     await controlledMutation("back", () => nativeDevice(device).command.back({ ...base() }));
   } else {

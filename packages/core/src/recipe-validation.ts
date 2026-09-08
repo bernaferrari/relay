@@ -106,8 +106,8 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
         break;
       }
       case "key": {
-        if (raw.key !== "back" && raw.key !== "home") {
-          throw stepErr(index, 'key requires key: "back" | "home"');
+        if (raw.key !== "back" && raw.key !== "home" && raw.key !== "recents") {
+          throw stepErr(index, 'key requires key: "back" | "home" | "recents"');
         }
         const step: Extract<RecipeStep, { kind: "key" }> = {
           kind: "key",
