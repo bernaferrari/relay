@@ -2,6 +2,7 @@ import type {
   AppMap,
   AppMapScenarioTestStep,
   Connection,
+  ConnectionSourceAnchor,
   OperationInput,
   Proposal,
   Screen,
@@ -36,6 +37,8 @@ export type ProductMapPath = {
   readonly fromTitle: string;
   readonly toTitle?: string;
   readonly coveringTests: readonly { readonly id: string; readonly name: string }[];
+  /** Only projected when the anchor's before frame matches the source screenshot. */
+  readonly sourceAnchor?: ConnectionSourceAnchor;
 };
 
 export type ProductMapProposal = Pick<
@@ -149,7 +152,7 @@ function projectMap(map: AppMap): ProductMapOverview {
       ...(screen.description ? { description: text(screen.description, "") } : {}),
       ...(screen.position ? { position: { x: screen.position.x, y: screen.position.y } } : {}),
       screenshotUri: screen.variantIds
-        .map((id) => map.screenVariants[id])
+        .map((id) => map.screenVariants?.[id])
         .filter((variant) => Boolean(variant?.screenshotUri))
         .sort((a, b) => b!.updatedAt - a!.updatedAt)[0]?.screenshotUri,
       variantCount: screen.variantIds.length,
@@ -163,6 +166,16 @@ function projectMap(map: AppMap): ProductMapOverview {
         ? map.screens[connection.destination.screenId]
         : undefined;
     const source = map.screens[connection.fromScreenId];
+    const sourceScreenshotUri = screens.find(
+      (screen) => screen.id === connection.fromScreenId,
+    )?.screenshotUri;
+    const capturedSourceUri = connection.recordingSource?.frames?.find(
+      (frame) => frame.role === "before",
+    )?.uri;
+    const sourceAnchor =
+      connection.sourceAnchor && sourceScreenshotUri && capturedSourceUri === sourceScreenshotUri
+        ? connection.sourceAnchor
+        : undefined;
     return {
       id: connection.id,
       label: text(
@@ -174,6 +187,7 @@ function projectMap(map: AppMap): ProductMapOverview {
       fromTitle: text(source?.title, "Known screen"),
       ...(destination ? { toTitle: text(destination.title, "Known screen") } : {}),
       coveringTests: testByConnection.get(connection.id) ?? [],
+      ...(sourceAnchor ? { sourceAnchor } : {}),
     } satisfies ProductMapPath;
   });
   return {

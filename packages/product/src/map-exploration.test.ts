@@ -83,6 +83,56 @@ test("map projection handles realistic empty maps without inventing paths", () =
   assert.equal(overview.paths.length, 0);
 });
 
+test("map projection exposes source anchors only for their matching before screenshot", () => {
+  const base = {
+    id: "app-anchors",
+    name: "Anchors",
+    revision: 1,
+    screens: { home: { id: "home", title: "Home", variantIds: ["home-v1"] } },
+    screenVariants: {
+      "home-v1": { id: "home-v1", screenshotUri: "relay-evidence://same", updatedAt: 1 },
+    },
+    tests: {},
+    targetResults: {},
+  };
+  const connection = {
+    id: "tap",
+    fromScreenId: "home",
+    destination: { kind: "end" },
+    state: "ready",
+    actions: [],
+    sourceAnchor: { point: { x: 0.25, y: 0.75 } },
+    recordingSource: {
+      schemaVersion: 1,
+      takeId: "take",
+      takeRevision: 1,
+      capture: {
+        schemaVersion: 1,
+        mode: "control-and-record",
+        origin: "relay-control",
+        proof: "relay-controlled",
+      },
+      evidenceIds: ["same"],
+      frames: [{ evidenceId: "same", uri: "relay-evidence://same", role: "before" }],
+    },
+  };
+  const matching = projectProductMap({ ...base, connections: { tap: connection } } as never);
+  assert.deepEqual(matching.paths[0]?.sourceAnchor, { point: { x: 0.25, y: 0.75 } });
+  const mismatched = projectProductMap({
+    ...base,
+    connections: {
+      tap: {
+        ...connection,
+        recordingSource: {
+          ...connection.recordingSource,
+          frames: [{ ...connection.recordingSource.frames[0], uri: "relay-evidence://other" }],
+        },
+      },
+    },
+  } as never);
+  assert.equal(mismatched.paths[0]?.sourceAnchor, undefined);
+});
+
 test("map drilldowns reuse the canonical App Map snapshot and fail closed for unknown ids", async () => {
   const map = {
     id: "app-1",

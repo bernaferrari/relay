@@ -6,14 +6,17 @@ export function MapScreenPreview({
   uri,
   load,
   title,
+  onImageDimensions,
 }: {
   uri?: string;
   load?: (uri: string) => Promise<Blob>;
   title: string;
+  onImageDimensions?: (dimensions: { width: number; height: number }) => void;
 }) {
   const container = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
   const [image, setImage] = useState<{ blob: Blob; url: string }>();
+  const reportedDimensions = useRef<{ width: number; height: number } | undefined>(undefined);
   useEffect(() => {
     if (!container.current) return;
     const observer = new IntersectionObserver(
@@ -42,7 +45,7 @@ export function MapScreenPreview({
   return (
     <div
       ref={container}
-      className="flex h-full min-h-0 w-full items-center justify-center overflow-hidden rounded-md bg-muted/40"
+      className="flex h-full min-h-0 w-full items-center justify-center overflow-hidden bg-muted/40"
     >
       {url ? (
         <img
@@ -51,6 +54,19 @@ export function MapScreenPreview({
           alt={title}
           className="h-full w-full object-contain"
           loading="lazy"
+          onLoad={(event) => {
+            const dimensions = {
+              width: event.currentTarget.naturalWidth,
+              height: event.currentTarget.naturalHeight,
+            };
+            if (
+              reportedDimensions.current?.width === dimensions.width &&
+              reportedDimensions.current?.height === dimensions.height
+            )
+              return;
+            reportedDimensions.current = dimensions;
+            onImageDimensions?.(dimensions);
+          }}
         />
       ) : uri && load && !preview.isError ? (
         <div

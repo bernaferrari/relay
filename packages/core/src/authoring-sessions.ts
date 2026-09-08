@@ -152,6 +152,9 @@ export class AuthoringSessionStore {
       ...(input.testName?.trim() ? { testName: input.testName.trim() } : {}),
       state: "preparing",
       target: clone(input.target),
+      ...(input.originApplication?.trim()
+        ? { originApplication: input.originApplication.trim() }
+        : {}),
       captureProvenance: { ...CONTROL_AND_RECORD_PROVENANCE },
       ...(input.debugOrigin ? { debugOrigin: structuredClone(input.debugOrigin) } : {}),
       leaseId: input.leaseId,

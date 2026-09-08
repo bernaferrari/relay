@@ -87,6 +87,9 @@ export function createRelayRecordingOutcomeJobs(
         title: intent.title,
         appMapId,
         target,
+        ...(intent.originApplication?.trim()
+          ? { originApplication: intent.originApplication.trim() }
+          : {}),
         leaseId,
         revision: "current",
         ...recordingPathContext(intent),

@@ -9,6 +9,7 @@ import {
   mapContentBounds,
   type MapPoint,
   type MapTransform,
+  type ImageDimensions,
 } from "./map-canvas-geometry";
 export * from "./map-canvas-geometry";
 import { ScreenInspector } from "./map-screen-inspector";
@@ -77,6 +78,10 @@ export function InfiniteMapCanvas({
   const [screenSearch, setScreenSearch] = useState("");
   const [showScreens, setShowScreens] = useState(true);
   const [handTool, setHandTool] = useState(false);
+  const [showInteractionTargets, setShowInteractionTargets] = useState(false);
+  const [imageDimensions, setImageDimensions] = useState<Map<string, ImageDimensions>>(
+    () => new Map(),
+  );
   const [spacePan, setSpacePan] = useState(false);
   const panningTool = handTool || spacePan;
   const [focusScreenId, setFocusScreenId] = useState<string>();
@@ -455,6 +460,12 @@ export function InfiniteMapCanvas({
             icon={PanelLeftOpen}
             onClick={() => setShowScreens(!showScreens)}
           />
+          <MapControl
+            label={showInteractionTargets ? "Hide interaction targets" : "Show interaction targets"}
+            icon={MousePointer2}
+            pressed={showInteractionTargets}
+            onClick={() => setShowInteractionTargets((value) => !value)}
+          />
           <Button
             size="icon-sm"
             variant={handTool ? "ghost" : "secondary"}
@@ -528,6 +539,9 @@ export function InfiniteMapCanvas({
               positions={positions}
               markerId={markerId}
               selectedScreenId={selectedScreenId}
+              showInteractionTargets={showInteractionTargets}
+              screens={visibleScreens}
+              imageDimensions={imageDimensions}
             />
             {visibleScreens.map((screen) => {
               const position = positions.get(screen.id) ?? { x: 0, y: 0 };
@@ -535,7 +549,7 @@ export function InfiniteMapCanvas({
               return (
                 <button
                   type="button"
-                  className={`relay-map-screen absolute flex flex-col justify-center gap-2 rounded-lg border border-border bg-card p-4 text-left shadow-sm transition-[border-color,box-shadow] hover:border-ring focus-visible:outline-2 focus-visible:outline-ring${selectedNode ? " ring-2 ring-primary" : ""}`}
+                  className={`relay-map-screen absolute flex flex-col gap-2 text-left focus-visible:outline-2 focus-visible:outline-ring${selectedNode ? " ring-2 ring-primary" : ""}`}
                   key={screen.id}
                   aria-pressed={selectedNode}
                   onClick={() => {
@@ -598,25 +612,28 @@ export function InfiniteMapCanvas({
                     height: MAP_NODE_HEIGHT,
                   }}
                 >
-                  <div className="h-[300px] w-full shrink-0">
+                  <span className="line-clamp-2 h-10 shrink-0 text-sm font-medium leading-tight">
+                    {screen.title}
+                  </span>
+                  <div className="h-[300px] w-full shrink-0 overflow-hidden bg-muted/30">
                     <MapScreenPreview
                       uri={screen.screenshotUri}
                       load={loadScreenshot}
                       title={screen.title}
+                      onImageDimensions={(dimensions) => {
+                        setImageDimensions((current) => {
+                          if (
+                            current.get(screen.id)?.width === dimensions.width &&
+                            current.get(screen.id)?.height === dimensions.height
+                          )
+                            return current;
+                          const next = new Map(current);
+                          next.set(screen.id, dimensions);
+                          return next;
+                        });
+                      }}
                     />
                   </div>
-                  <span className="line-clamp-2 text-sm font-medium leading-tight">
-                    {screen.title}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {screen.coveringTests.length
-                      ? `${screen.coveringTests.length} ${screen.coveringTests.length === 1 ? "test" : "tests"}`
-                      : "Not covered yet"}
-                  </span>
-                  <span
-                    className={`text-xs text-muted-foreground${screen.coveringTests.length ? " text-emerald-600" : ""}`}
-                    aria-hidden="true"
-                  />
                 </button>
               );
             })}
@@ -644,15 +661,25 @@ function MapControl({
   label,
   icon: Icon,
   onClick,
+  pressed,
 }: {
   label: string;
   icon: typeof Plus;
   onClick: () => void;
+  pressed?: boolean;
 }) {
   return (
     <Tooltip>
       <TooltipTrigger
-        render={<Button size="icon-sm" variant="ghost" aria-label={label} onClick={onClick} />}
+        render={
+          <Button
+            size="icon-sm"
+            variant={pressed ? "secondary" : "ghost"}
+            aria-label={label}
+            aria-pressed={pressed}
+            onClick={onClick}
+          />
+        }
       >
         <Icon aria-hidden="true" />
       </TooltipTrigger>

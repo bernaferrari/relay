@@ -92,6 +92,7 @@ import {
   assertProviderTargetJobAdmission,
   captureProviderDriverRegistry,
   prepareSessionTarget,
+  runColdAppMapStartup,
   runProviderTargetJobIfNeeded,
   type ProviderSessionExecution,
 } from "./session-provider-execution.js";
@@ -577,12 +578,26 @@ async function executeJob(id: string, workerInstanceId?: string): Promise<void> 
 
   if (
     await runProviderTargetJobIfNeeded(job, (providerExecution) =>
-      executeJobOnTarget(job, workerInstanceId, providerExecution),
+      executeJobOnTarget(
+        job,
+        workerInstanceId,
+        providerExecution,
+        executionIntent.status === "valid" ? executionIntent.intent.plan.startup.mode : undefined,
+        executionIntent.status === "valid"
+          ? executionIntent.intent.plan.originApplication
+          : undefined,
+      ),
     )
   )
     return;
 
-  await executeJobOnTarget(job, workerInstanceId);
+  await executeJobOnTarget(
+    job,
+    workerInstanceId,
+    undefined,
+    executionIntent.status === "valid" ? executionIntent.intent.plan.startup.mode : undefined,
+    executionIntent.status === "valid" ? executionIntent.intent.plan.originApplication : undefined,
+  );
 }
 
 /** Execute the generic lifecycle after a target-specific boundary has chosen
@@ -591,6 +606,8 @@ async function executeJobOnTarget(
   job: TestJob,
   workerInstanceId?: string,
   providerExecution?: ProviderSessionExecution,
+  startupMode?: "warm" | "cold" | "verified-checkpoint",
+  originApplication?: string,
 ): Promise<void> {
   const id = job.id;
   ensureControl(id);
@@ -697,6 +714,7 @@ async function executeJobOnTarget(
     evidence = await startRunEvidence(job, device, pushLog, evidence, {
       physicalIos: target.physicalIos,
     });
+    await runColdAppMapStartup(job, device, startupMode, originApplication, pushLog);
 
     // Heartbeat: surface cancel even during long SDK calls; hard-stop session.
     const durableHeartbeat = workerInstanceId

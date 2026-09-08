@@ -75,6 +75,9 @@ const MAX_COMPILED_STEPS = 4_096;
 const DESTINATION_SURVEY_MAX_SCROLLS = 4;
 
 export type AppMapTestCompileOptions = {
+  /** Run-scoped startup choice. Warm preserves the current target; cold
+   * requires and launches the frozen Test origin application. */
+  startupMode?: "warm" | "cold";
   /** Frozen saved profile used to choose one reviewed Test implementation. */
   runtimeTargetProfile?: import("@relay/protocol").AppMapCompiledRuntimeTargetProfile;
   /** Run-scoped cache bypass for selected full-surface Test bindings. */
@@ -838,7 +841,10 @@ export function compileAppMapScenarioTest(
     performance: compiledPerformance(rootRecipeId, graph),
     startup: options.entryCheckpointScreenId
       ? { mode: "verified-checkpoint", screenId: options.entryCheckpointScreenId }
-      : { mode: "cold" },
+      : { mode: options.startupMode ?? "cold" },
+    ...(authoredTest.originApplication
+      ? { originApplication: authoredTest.originApplication }
+      : {}),
     ...(omittedSteps.length ? { omittedSteps } : {}),
   };
   return { root, graph, plan };

@@ -421,6 +421,7 @@ export function assertScenarioTest(test: AppMapScenarioTest, label: string): voi
       "kind",
       "intentSchemaVersion",
       "steps",
+      "originApplication",
       "family",
       "capture",
       "surfaceBindings",

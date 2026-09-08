@@ -78,7 +78,13 @@ export async function commitAuthoringSessionMap(input: {
           ),
         },
         ...(session.commitTestId
-          ? { testId: session.commitTestId, testName: session.testName! }
+          ? {
+              testId: session.commitTestId,
+              testName: session.testName!,
+              ...(session.originApplication
+                ? { originApplication: session.originApplication }
+                : {}),
+            }
           : {}),
       },
       {

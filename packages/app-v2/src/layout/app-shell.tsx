@@ -8,7 +8,7 @@ import {
   useRouter,
   type RouterHistory,
 } from "@tanstack/react-router";
-import { ArrowLeft, ArrowRight, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, Search } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Platform } from "../platform/types";
 import { parentPathForPath, routeContractForPath } from "../router/route-contract";
@@ -64,11 +64,13 @@ export function AppShell({ platform }: { platform: Platform }) {
       >
         Skip to content
       </a>
-      {!immersive ? <Sidebar desktop={platform.platform === "desktop"} /> : null}
-      <div className="relay-workspace flex min-h-0 min-w-0 flex-1 flex-col bg-sidebar">
+      {!immersive ? <Sidebar /> : null}
+      <div
+        className={`relay-workspace flex min-h-0 min-w-0 flex-1 flex-col bg-sidebar ${!immersive ? "min-[861px]:pt-[54px]" : ""}`}
+      >
         {!immersive ? (
           <header
-            className={`${!navigationOpen && platform.platform === "desktop" ? "pl-[82px]" : ""} relay-desktop-toolbar relay-electron-drag [-webkit-app-region:drag] hidden min-h-[54px] items-center gap-4 bg-sidebar px-2.5 py-1.5 min-[861px]:flex`}
+            className={`${platform.platform === "desktop" ? "pl-[82px]" : "pl-2.5"} relay-desktop-toolbar relay-electron-drag [-webkit-app-region:drag] fixed inset-x-0 top-0 z-30 hidden h-[54px] items-center gap-2 bg-sidebar pr-2.5 py-1.5 min-[861px]:flex`}
             aria-label="Window navigation"
           >
             <SidebarTrigger
@@ -85,7 +87,7 @@ export function AppShell({ platform }: { platform: Platform }) {
                 onClick={goBack}
                 disabled={!canGoBack}
               >
-                <ArrowLeft aria-hidden="true" />
+                <ChevronLeft aria-hidden="true" />
               </Button>
               <Button
                 size="icon-sm"
@@ -95,7 +97,7 @@ export function AppShell({ platform }: { platform: Platform }) {
                 onClick={() => router.history.forward()}
                 disabled={!historyAvailability.canGoForward}
               >
-                <ArrowRight aria-hidden="true" />
+                <ChevronRight aria-hidden="true" />
               </Button>
             </div>
             <button
@@ -134,9 +136,9 @@ export function AppShell({ platform }: { platform: Platform }) {
             onClick={goBack}
             disabled={!canGoBack}
           >
-            <ArrowLeft aria-hidden="true" />
+            <ChevronLeft aria-hidden="true" />
           </Button>
-          <span className="relay-mobile-title text-sm font-semibold">Relay</span>
+
           <div className="ml-auto inline-flex items-center">
             <DeviceDestinationButton />
           </div>

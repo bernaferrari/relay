@@ -4,6 +4,7 @@ import type {
   AuthoringCaptureMode,
   AuthoringCaptureProof,
   AuthoringEvidence,
+  AuthoringFullPageCapture,
   AuthoringCaptureProvenance,
   AuthoringDebugOrigin,
   AuthoringRecordingEdit,
@@ -78,6 +79,8 @@ export type AuthorTestIntent = RecordingPathContext & {
   title: string;
   appMapId: string;
   target: AuthoringTarget;
+  /** Exact package/bundle selected during recording setup. */
+  originApplication?: string;
   leaseId: string;
   revision?: "current" | { exact: number };
   /** Stable before dispatch so response loss can reconcile one session. */
@@ -257,6 +260,7 @@ export type AuthoringReview = {
     evidenceIds?: readonly string[];
     evidenceCount?: number;
     evidenceKinds?: readonly AuthoringEvidence["kind"][];
+    fullPage?: AuthoringFullPageCapture;
     proofStatus?: "verified" | "pixels-only" | "unresolved";
     /** Origin truth before replay; inferred/instrumented actions remain
      * explicitly unproved until this exact revision passes replay. */
@@ -436,6 +440,8 @@ export type RecordTestOutcomeIntent = OutcomeTargetSelection &
     kind: "record-test";
     appMapId?: string;
     title: string;
+    /** Exact package/bundle selected during recording setup. */
+    originApplication?: string;
     /** Recording controls a target. This explicit consent permits Relay to
      * acquire a new lease, but never to take over somebody else's lease. */
     confirmControl: true;

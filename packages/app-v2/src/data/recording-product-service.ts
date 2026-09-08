@@ -34,6 +34,11 @@ export type RecordingEvidencePreview = {
   bytes: Uint8Array;
   mime: string;
   controls?: readonly RecordingEvidenceControl[];
+  fullPage?: NonNullable<
+    NonNullable<
+      import("@relay/workflows").AuthorTestSnapshot["review"]
+    >["actions"][number]["fullPage"]
+  >;
 };
 
 /** Named review edits exposed to the React product surface.
@@ -233,14 +238,85 @@ export function createRecordingProductService(
       const match = /^relay-evidence:\/\/([a-f\d]{64})$/iu.exec(evidence.uri);
       if (!match) return null;
       const mime = evidence.mime?.startsWith("image/") ? evidence.mime : "image/png";
+      const action = revision?.actions?.find((candidate) =>
+        candidate.evidenceIds.includes(evidenceId),
+      );
+      let fullPage = action?.fullPage;
+      // Backward-compatible decoding for captures written before the action
+      // descriptor existed. The snapshot is content-addressed evidence and
+      // remains the source of truth for frame offsets and merged semantics.
+      if (!fullPage && action) {
+        const snapshotEvidence = revision?.evidence.find(
+          (candidate) => action.evidenceIds.includes(candidate.id) && candidate.kind === "snapshot",
+        );
+        const snapshotHash = snapshotEvidence?.uri.match(
+          /^relay-evidence:\/\/([a-f\d]{64})$/iu,
+        )?.[1];
+        if (snapshotHash) {
+          try {
+            const raw = await client.binaryResource(
+              `/authoring-evidence/${encodeURIComponent(snapshotHash)}?mime=application%2Fjson`,
+            );
+            const parsed = JSON.parse(new TextDecoder().decode(raw.bytes)) as Record<
+              string,
+              unknown
+            >;
+            const frames = Array.isArray(parsed.frames) ? parsed.frames : [];
+            const screenshots =
+              revision?.evidence.filter(
+                (candidate) =>
+                  action.evidenceIds.includes(candidate.id) && candidate.kind === "screenshot",
+              ) ?? [];
+            if (parsed.kind !== "full-page-capture") throw new Error("not full-page evidence");
+            fullPage = {
+              status: parsed.status === "completed" ? "completed" : "stopped",
+              reason: typeof parsed.reason === "string" ? parsed.reason : "unknown",
+              message:
+                typeof parsed.message === "string" ? parsed.message : "Review the retained frames.",
+              frames: frames
+                .map((frame, index) => ({
+                  index: Number((frame as Record<string, unknown>).index ?? index),
+                  offsetY: Number((frame as Record<string, unknown>).offsetY ?? 0),
+                  evidenceId: screenshots[index]?.id ?? "",
+                }))
+                .filter((frame) => frame.evidenceId),
+              diagnosticFrames: screenshots.slice(frames.length).map((candidate, index) => ({
+                index: frames.length + index,
+                offsetY: 0,
+                evidenceId: candidate.id,
+              })),
+              mergedNodes: Array.isArray(parsed.mergedNodes)
+                ? (parsed.mergedNodes as Array<Record<string, unknown>>)
+                : [],
+            };
+          } catch {
+            fullPage = undefined;
+          }
+        }
+      }
       const resource = await client.binaryResource(
         `/authoring-evidence/${encodeURIComponent(match[1]!)}?mime=${encodeURIComponent(mime)}`,
       );
-      const controls = controlsForAuthoringEvidence(revision, evidenceId);
+      let controls = controlsForAuthoringEvidence(revision, evidenceId);
+      if (fullPage) {
+        const frame = fullPage.frames.find((candidate) => candidate.evidenceId === evidenceId);
+        // Diagnostic rasters are review-only and never inherit logical
+        // surface controls. Accepted frames alone have a document offset.
+        if (frame) {
+          const nodes = fullPage.mergedNodes as Record<string, unknown>[];
+          controls = projectRecordingEvidenceControls(nodes).map((control) => ({
+            ...control,
+            rect: { ...control.rect, y: control.rect.y - frame.offsetY },
+          }));
+        } else {
+          controls = [];
+        }
+      }
       return {
         bytes: resource.bytes,
         mime: resource.headers.get("content-type")?.split(";")[0] ?? mime,
-        ...(controls.length ? { controls } : {}),
+        ...(fullPage ? { controls } : controls.length ? { controls } : {}),
+        ...(fullPage ? { fullPage } : {}),
       };
     },
     async recordCurrent() {

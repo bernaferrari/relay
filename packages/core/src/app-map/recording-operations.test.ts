@@ -8,6 +8,7 @@ import type {
   TargetProfile,
 } from "@relay/protocol";
 import { observeScreenIdentity } from "../screen-identity.js";
+import { compileAppMapScenarioTest } from "../app-map-test-compiler.js";
 import {
   commitAppMapRecording as commitAppMapRecordingUnsafe,
   commitAppMapScreenCapture,
@@ -618,6 +619,9 @@ test("commits a recording as one immutable App Map revision", () => {
     input,
     {
       sessionId: "session-1",
+      originApplication: "com.example.recorded-origin",
+      testId: "test-1",
+      testName: "Recorded origin",
       target: { kind: "device", platform: "android", targetId: "pixel-8" },
       takeId: "take-1",
       takeRevision: 1,
@@ -645,6 +649,10 @@ test("commits a recording as one immutable App Map revision", () => {
   assert.equal(Object.keys(result.appMap.screens).length, 2);
   assert.equal(Object.keys(result.appMap.screenVariants).length, 2);
   const connection = result.appMap.connections[result.connectionId]!;
+  const savedTest = result.appMap.tests[result.testId!];
+  assert.equal(savedTest?.originApplication, "com.example.recorded-origin");
+  const compiled = compileAppMapScenarioTest(result.appMap, savedTest!);
+  assert.equal(compiled.plan.originApplication, "com.example.recorded-origin");
   const source = result.appMap.screens[connection.fromScreenId]!;
   assert.equal(connection.destination.kind, "screen");
   const destination =

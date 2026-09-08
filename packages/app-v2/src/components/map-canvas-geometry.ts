@@ -3,13 +3,34 @@ export const MAP_MIN_SCALE = 0.08;
 export const MAP_MAX_SCALE = 2.2;
 export const MAP_NODE_WIDTH = 208;
 export const MAP_NODE_HEIGHT = 388;
+export const MAP_NODE_TITLE_HEIGHT = 40;
+export const MAP_NODE_GAP = 8;
+export const MAP_NODE_IMAGE_HEIGHT = 300;
 
 export type MapTransform = { x: number; y: number; scale: number };
 export type MapPoint = { x: number; y: number };
 export type MapBounds = { minX: number; minY: number; maxX: number; maxY: number };
+export type ImageDimensions = { width: number; height: number };
 
 export const INITIAL_TRANSFORM: MapTransform = { x: 48, y: 64, scale: 1 };
 const MAP_PADDING = 72;
+
+/** The rendered image area for object-contain, excluding the letterbox. */
+export function containedImageRect(
+  box: { x: number; y: number; width: number; height: number },
+  image: ImageDimensions,
+): { x: number; y: number; width: number; height: number } | undefined {
+  if (image.width <= 0 || image.height <= 0 || box.width <= 0 || box.height <= 0) return undefined;
+  const scale = Math.min(box.width / image.width, box.height / image.height);
+  const width = image.width * scale;
+  const height = image.height * scale;
+  return {
+    x: box.x + (box.width - width) / 2,
+    y: box.y + (box.height - height) / 2,
+    width,
+    height,
+  };
+}
 
 export function clampMapScale(scale: number): number {
   return Math.min(MAP_MAX_SCALE, Math.max(MAP_MIN_SCALE, scale));

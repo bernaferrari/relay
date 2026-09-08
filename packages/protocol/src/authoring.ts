@@ -117,6 +117,18 @@ export type AuthoringObservation = {
 
 export type AuthoringActionSource = "captured" | "manual" | "reusable";
 
+export type AuthoringFullPageCapture = {
+  status: "completed" | "stopped";
+  reason: string;
+  message: string;
+  /** Accepted frame rasters and their document offsets. */
+  frames: { index: number; offsetY: number; evidenceId: string }[];
+  /** Rasters retained for diagnosis, excluded from the logical surface. */
+  diagnosticFrames: { index: number; offsetY: number; evidenceId: string }[];
+  stitchedEvidenceId?: string;
+  mergedNodes: Array<Record<string, unknown>>;
+};
+
 export type AuthoringVideoClip = { startMs: number; endMs: number };
 
 export type AuthoringAction = {
@@ -138,6 +150,7 @@ export type AuthoringAction = {
   /** Exact server-side Browser Device target resolution retained with the
    * reviewed action for later authoring inspection and replay diagnosis. */
   browserResolution?: BrowserDeviceInputResolution;
+  fullPage?: AuthoringFullPageCapture;
 };
 
 /** Whether one replay action ran, failed, or could only be observed as part
@@ -543,6 +556,8 @@ export type AuthoringSession = {
   testName?: string;
   state: AuthoringSessionState;
   target: AuthoringTarget;
+  /** Frozen package/bundle selected before this recording began. */
+  originApplication?: string;
   /** Immutable origin of this recording. Optional only for legacy sessions,
    * which normalize to the historical Relay control path at read time. */
   captureProvenance?: AuthoringCaptureProvenance;
@@ -584,6 +599,8 @@ export type CreateAuthoringSessionInput = {
    * requested; low-level screen captures may omit it. */
   testName?: string;
   target: AuthoringTarget;
+  /** Explicit package/bundle selected during recording setup. */
+  originApplication?: string;
   leaseId: string;
   expectedAppMapRevision: number;
   sourceScreenId?: string;

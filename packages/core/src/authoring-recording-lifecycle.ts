@@ -25,9 +25,11 @@ import { semanticTargetForRecording } from "./authoring-tap-target.js";
 
 /** The narrow runtime surface needed while one Take is actively recording. */
 export type AuthoringRecordingRuntime<Captured> = {
-  captureFullPage?(
-    session: AuthoringSession,
-  ): Promise<{ evidence: AuthoringEvidence[]; label: string }>;
+  captureFullPage?(session: AuthoringSession): Promise<{
+    evidence: AuthoringEvidence[];
+    label: string;
+    fullPage?: import("@relay/protocol").AuthoringFullPageCapture;
+  }>;
   observe(session: AuthoringSession): Promise<Captured>;
   execute(session: AuthoringSession, interaction: AuthoringInteraction): Promise<void>;
   settle?(ms: number): Promise<void>;
@@ -188,7 +190,13 @@ export async function recordAuthoringInteraction<Captured>(
       await writeSession(session);
     }
   };
-  let fullPage: { evidence: AuthoringEvidence[]; label: string } | undefined;
+  let fullPage:
+    | {
+        evidence: AuthoringEvidence[];
+        label: string;
+        fullPage?: import("@relay/protocol").AuthoringFullPageCapture;
+      }
+    | undefined;
   let nativeDispatchCompleted = false;
   try {
     if (interaction.kind === "screenshot" && interaction.fullPage) {
@@ -255,6 +263,7 @@ export async function recordAuthoringInteraction<Captured>(
           : interaction.kind === "steps" && interaction.label
             ? { label: interaction.label }
             : {}),
+    ...(fullPage?.fullPage ? { fullPage: fullPage.fullPage } : {}),
     ...(interaction.kind === "tap" && interaction.browserResolution
       ? { browserResolution: interaction.browserResolution }
       : {}),

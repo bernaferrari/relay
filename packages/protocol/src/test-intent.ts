@@ -206,6 +206,9 @@ export type AppMapScenarioTest = AppMapEntity & {
   kind: "scenario";
   intentSchemaVersion: typeof APP_MAP_TEST_INTENT_SCHEMA_VERSION;
   steps: AppMapScenarioTestStep[];
+  /** Exact package/bundle selected during recording setup for this Test. It
+   * is frozen into compiled runs; runtime must never derive it from AX. */
+  originApplication?: string;
   /** Absent means an intentionally unjoined, legacy single-surface family. */
   family?: AppMapTestFamily;
   capture?: AppMapCapturePolicy;
@@ -374,6 +377,7 @@ export type AppMapTestDeferredScheduleBranch = {
  * first suffix operation and stops on a mismatch instead of recovering with a
  * cold app launch. */
 export type AppMapTestStartup =
+  | { mode: "warm" }
   | { mode: "cold" }
   | { mode: "verified-checkpoint"; screenId: string };
 
@@ -543,6 +547,8 @@ export type AppMapCompiledTest = {
     destinationProofCount: number;
   };
   startup: AppMapTestStartup;
+  /** Explicit recording origin application, when the Test has one. */
+  originApplication?: string;
   omittedSteps?: Array<{
     stepId: string;
     intent: string;

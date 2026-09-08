@@ -17,7 +17,7 @@ import { PageLoading, RecordingProblem } from "./recording-shared";
 const routeApi = getRouteApi("/apps/$appId/map");
 
 export function MapPage() {
-  const { mapService, queryClient } = useRouteContext({ from: "__root__" });
+  const { mapService, queryClient, platform } = useRouteContext({ from: "__root__" });
   const { appId } = routeApi.useParams();
   const [view, setView] = useState<"map" | "paths">("map");
   const [pathSearch, setPathSearch] = useState("");
@@ -89,8 +89,10 @@ export function MapPage() {
 
   return (
     <section className="relative flex h-full min-h-0 w-full flex-col overflow-hidden bg-background">
-      <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border px-4">
-        <div className="flex min-w-0 items-center gap-3">
+      <header
+        className={`[-webkit-app-region:drag] flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border px-4 ${platform.platform === "desktop" ? "pl-[82px]" : ""}`}
+      >
+        <div className="[-webkit-app-region:no-drag] flex min-w-0 items-center gap-3">
           <Button
             size="icon-sm"
             variant="ghost"
@@ -104,7 +106,7 @@ export function MapPage() {
           <span className="text-sm text-muted-foreground">/</span>
           <h1 className="shrink-0 text-sm">App map</h1>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="[-webkit-app-region:no-drag] flex shrink-0 items-center gap-3">
           <div className="inline-flex rounded-lg bg-muted p-0.5" aria-label="Map view">
             <Button
               size="sm"

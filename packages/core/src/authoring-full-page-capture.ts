@@ -15,25 +15,42 @@ export async function captureAuthoringFullPage(session: AuthoringSession) {
   });
   const capturedAt = Date.now();
   const evidence = [];
+  let stitchedEvidenceId: string | undefined;
   if (survey.stitched) {
-    evidence.push(
-      await persistAuthoringEvidence({
-        kind: "screenshot",
-        capturedAt,
-        data: Buffer.from(survey.stitched.base64, "base64"),
-        mime: "image/png",
-      }),
-    );
+    const stitchedEvidence = await persistAuthoringEvidence({
+      kind: "screenshot",
+      capturedAt,
+      data: Buffer.from(survey.stitched.base64, "base64"),
+      mime: "image/png",
+    });
+    evidence.push(stitchedEvidence);
+    stitchedEvidenceId = stitchedEvidence.id;
   }
-  for (const frame of [...survey.frames, ...survey.diagnosticFrames]) {
-    evidence.push(
-      await persistAuthoringEvidence({
-        kind: "screenshot",
-        capturedAt: frame.screenshot.capturedAt,
-        data: Buffer.from(frame.screenshot.base64, "base64"),
-        mime: "image/png",
-      }),
-    );
+  const frameEvidence = [];
+  for (const frame of survey.frames) {
+    const item = await persistAuthoringEvidence({
+      kind: "screenshot",
+      capturedAt: frame.screenshot.capturedAt,
+      data: Buffer.from(frame.screenshot.base64, "base64"),
+      mime: "image/png",
+    });
+    evidence.push(item);
+    frameEvidence.push({ index: frame.index, offsetY: frame.offsetY, evidenceId: item.id });
+  }
+  const diagnosticFrameEvidence = [];
+  for (const frame of survey.diagnosticFrames) {
+    const item = await persistAuthoringEvidence({
+      kind: "screenshot",
+      capturedAt: frame.screenshot.capturedAt,
+      data: Buffer.from(frame.screenshot.base64, "base64"),
+      mime: "image/png",
+    });
+    evidence.push(item);
+    diagnosticFrameEvidence.push({
+      index: frame.index,
+      offsetY: frame.offsetY,
+      evidenceId: item.id,
+    });
   }
   evidence.push(
     await persistAuthoringEvidence({
@@ -59,5 +76,14 @@ export async function captureAuthoringFullPage(session: AuthoringSession) {
   return {
     evidence,
     label: survey.status === "completed" ? "Capture full page" : "Capture page · partial",
+    fullPage: {
+      status: survey.status,
+      reason: survey.reason,
+      message: survey.message,
+      frames: frameEvidence,
+      diagnosticFrames: diagnosticFrameEvidence,
+      ...(stitchedEvidenceId ? { stitchedEvidenceId } : {}),
+      mergedNodes: survey.mergedNodes,
+    },
   };
 }

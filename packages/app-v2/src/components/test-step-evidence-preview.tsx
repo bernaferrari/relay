@@ -17,6 +17,8 @@ export function TestStepEvidencePreview({
   hasRuns: boolean;
   loading: boolean;
 }) {
+  const matches = report?.stepEvidence?.filter((item) => item.testStepId === step.id) ?? [];
+  const [selectedOccurrence, setSelectedOccurrence] = useState(matches[0]?.occurrence ?? 1);
   if (!hasRuns && step.recordingFrames?.length) {
     return (
       <SavedRecordingPreview
@@ -26,14 +28,17 @@ export function TestStepEvidencePreview({
       />
     );
   }
-  const matches = report?.stepEvidence?.filter((item) => item.testStepId === step.id) ?? [];
+  const selected = matches.find((item) => item.occurrence === selectedOccurrence) ?? matches[0];
+  const timelineItem = selected
+    ? report?.timeline.find((item) => item.index === selected.traceStepIndex)
+    : undefined;
   const titleId = `step-evidence-${step.id}`;
 
   const screenshotItems =
     report?.evidence.find((section) => section.id === "screenshot")?.items ?? [];
 
   return (
-    <section className="h-full min-h-0 min-w-0 overflow-y-auto p-4" aria-labelledby={titleId}>
+    <section className="h-full min-h-0 min-w-0 overflow-hidden p-4" aria-labelledby={titleId}>
       <header className="flex items-start justify-between gap-3">
         <h3 id={titleId} className="text-[13px] font-medium text-muted-foreground">
           Step result
@@ -74,32 +79,57 @@ export function TestStepEvidencePreview({
           Relay cannot safely assign a screenshot to this step.
         </p>
       ) : null}
-      {matches.length ? (
-        <ol className="mt-3 grid gap-2 p-0" aria-label={`Evidence for ${step.intent}`}>
-          {matches.map((item) => (
-            <li
-              className="grid gap-1 border-t border-border pt-2 text-xs"
-              key={`${item.traceStepId}:${item.occurrence}`}
+      {selected ? (
+        <div className="mt-3 grid min-h-0 gap-2" aria-label={`Evidence for ${step.intent}`}>
+          {matches.length > 1 ? (
+            <div className="flex flex-wrap gap-1" aria-label="Step occurrences">
+              {matches.map((item) => (
+                <button
+                  className={`min-h-9 rounded-md px-2 text-xs ${item.occurrence === selected.occurrence ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}
+                  key={`${item.traceStepId}:${item.occurrence}`}
+                  type="button"
+                  onClick={() => setSelectedOccurrence(item.occurrence)}
+                >
+                  Occurrence {item.occurrence}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          <div className="flex items-center justify-between gap-2 text-xs">
+            <strong>Outcome</strong>
+            <span
+              className={
+                timelineItem?.state === "failed" ? "text-destructive" : "text-muted-foreground"
+              }
             >
-              <strong>Occurrence {item.occurrence}</strong>
-              <span className="text-muted-foreground">{evidenceSummary(item.evidence)}</span>
-              {item.evidence.framePaths.length ? (
-                <div className="grid gap-2">
-                  {item.evidence.framePaths.map((framePath) => {
-                    const frame = screenshotItems.find((candidate) => candidate.id === framePath);
-                    return frame?.media ? (
-                      <EvidenceImage key={framePath} frame={frame} />
-                    ) : (
-                      <span key={framePath} className="text-xs text-muted-foreground">
-                        Screenshot not retained for <code>{framePath}</code>.
-                      </span>
-                    );
-                  })}
-                </div>
-              ) : null}
-            </li>
-          ))}
-        </ol>
+              {timelineItem?.state === "failed"
+                ? "Failed"
+                : timelineItem?.state === "pending"
+                  ? "Blocked"
+                  : timelineItem?.state === "passed"
+                    ? "Passed"
+                    : "Recorded"}
+            </span>
+          </div>
+          {selected.evidence.framePaths.length ? (
+            <div className="grid min-h-0 gap-2">
+              {[selected.evidence.framePaths[0]!].map((framePath) => {
+                const frame = screenshotItems.find((candidate) => candidate.id === framePath);
+                return frame?.media ? (
+                  <EvidenceImage key={framePath} frame={frame} />
+                ) : (
+                  <span key={framePath} className="text-xs text-muted-foreground">
+                    Screenshot not retained for <code>{framePath}</code>.
+                  </span>
+                );
+              })}
+            </div>
+          ) : null}
+          <details className="text-xs text-muted-foreground">
+            <summary>Technical evidence</summary>
+            <p className="mt-1">{evidenceSummary(selected.evidence)}</p>
+          </details>
+        </div>
       ) : null}
     </section>
   );
@@ -120,7 +150,7 @@ function EvidenceImage({
   }
   return (
     <ReportImage
-      className="block h-auto max-h-[65vh] w-full rounded-md border border-border object-contain"
+      className="block h-auto max-h-[45vh] w-full object-contain"
       media={frame.media}
       alt={frame.title}
       width={frame.media.width}

@@ -1,6 +1,9 @@
 import { RecordingActionIcon } from "./recording-action-icon";
 /** @jsxImportSource react */
-import type { AuthoringRawOptimizationProposalResponse } from "@relay/protocol";
+import type {
+  AuthoringFullPageCapture,
+  AuthoringRawOptimizationProposalResponse,
+} from "@relay/protocol";
 import { ScrollArea } from "@relay/ui-react/components/scroll-area";
 import { Checkbox } from "@relay/ui-react/components/checkbox";
 import { Button } from "@relay/ui-react/components/button";
@@ -27,6 +30,8 @@ export function RecordingEvidencePanel({
   evidenceRole,
   previewUrl,
   onEvidenceRoleChange,
+  onEvidenceSelect,
+  fullPage,
   controls = [],
   exactMoment = true,
 }: {
@@ -36,6 +41,8 @@ export function RecordingEvidencePanel({
   evidenceRole: "entrance" | "exit";
   previewUrl: string | null;
   onEvidenceRoleChange(role: "entrance" | "exit"): void;
+  onEvidenceSelect?(evidenceId: string): void;
+  fullPage?: AuthoringFullPageCapture;
 }) {
   const [showElements, setShowElements] = useState(false);
   const [hovered, setHovered] = useState<RecordingEvidenceControl>();
@@ -92,6 +99,43 @@ export function RecordingEvidencePanel({
           </Button>
         </div>
       </div>
+      {fullPage ? (
+        <div className="mt-2 grid gap-2 rounded-md border border-border bg-muted/40 p-2 text-xs">
+          <div className="flex items-center justify-between gap-2">
+            <strong>Full page · {fullPage.status === "completed" ? "complete" : "partial"}</strong>
+          </div>
+          <p className="text-muted-foreground">{fullPage.message}</p>
+          <div className="flex flex-wrap gap-1">
+            {fullPage.frames.map((frame) => (
+              <Button
+                key={frame.evidenceId}
+                size="sm"
+                variant="outline"
+                onClick={() => onEvidenceSelect?.(frame.evidenceId)}
+              >
+                Part {frame.index + 1}
+              </Button>
+            ))}
+            {fullPage.diagnosticFrames.map((frame) => (
+              <Button
+                key={frame.evidenceId}
+                size="sm"
+                variant="ghost"
+                disabled
+                title="Rejected diagnostic frame"
+              >
+                Diagnostic part {frame.index + 1}
+              </Button>
+            ))}
+          </div>
+          {fullPage.status === "stopped" ? (
+            <details className="text-muted-foreground">
+              <summary>Why this is partial</summary>
+              <p className="mt-1">{fullPage.message}</p>
+            </details>
+          ) : null}
+        </div>
+      ) : null}
       <div className="mt-3 flex min-h-0 items-center justify-center overflow-hidden rounded-lg bg-background/40 p-2">
         {previewUrl ? (
           <div

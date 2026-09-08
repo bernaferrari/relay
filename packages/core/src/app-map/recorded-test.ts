@@ -13,6 +13,7 @@ export function attachRecordedTest(input: {
   map: AppMap;
   testId: string;
   testName: string;
+  originApplication?: string;
   sessionId: string;
   connection: Connection;
   connections?: Connection[];
@@ -32,6 +33,7 @@ export function attachRecordedTest(input: {
     ...scope,
     id: input.testId,
     name: input.testName.trim(),
+    ...(input.originApplication ? { originApplication: input.originApplication } : {}),
     kind: "scenario",
     intentSchemaVersion: APP_MAP_TEST_INTENT_SCHEMA_VERSION,
     capture: { mode: "final-screen" },

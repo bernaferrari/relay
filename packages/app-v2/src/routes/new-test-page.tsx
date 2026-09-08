@@ -48,11 +48,14 @@ export function NewTestPage() {
   const requestedAppId = typeof search.app === "string" ? search.app : undefined;
   const requestedPathId = typeof search.path === "string" ? search.path : undefined;
   const requestedTargetId = typeof search.target === "string" ? search.target : undefined;
+  const requestedOriginApplication =
+    typeof search.originApplication === "string" ? search.originApplication : undefined;
   const startsFromPath = search.view === "path" && Boolean(requestedAppId && requestedPathId);
   const navigate = useNavigate();
   const [fallbackAppId, setAppId] = useState(requestedAppId ?? "");
   const appId = requestedAppId ?? fallbackAppId;
   const [targetId, setTargetId] = useState(requestedTargetId ?? "");
+  const [originApplication, setOriginApplication] = useState(requestedOriginApplication ?? "");
   const [draftRestored, setDraftRestored] = useState(false);
   const previewCanvas = useRef<HTMLCanvasElement>(null);
   const previewSession = useRef<LiveTargetSession | undefined>(undefined);
@@ -268,6 +271,7 @@ export function NewTestPage() {
         title: suggestedName,
         appMapId: appId,
         targetId,
+        ...(originApplication.trim() ? { originApplication: originApplication.trim() } : {}),
         ...(pathContext.data
           ? {
               sourceScreenId: pathContext.data.fromScreenId,
@@ -450,6 +454,24 @@ export function NewTestPage() {
                   })}
                   onChange={setTargetId}
                 />
+                {selectedTarget?.kind === "device" ? (
+                  <details className="text-xs text-muted-foreground">
+                    <summary className="cursor-pointer py-2">Advanced launch settings</summary>
+                    <div className="grid gap-1.5 py-2">
+                      <Label htmlFor="recording-origin-application">App package or bundle ID</Label>
+                      <Input
+                        id="recording-origin-application"
+                        value={originApplication}
+                        onChange={(event) => setOriginApplication(event.target.value)}
+                        placeholder="Package or bundle ID, for example com.android.settings"
+                        autoComplete="off"
+                      />
+                      <p className="text-xs leading-relaxed text-muted-foreground">
+                        Used when restarting the app for a test run.
+                      </p>
+                    </div>
+                  </details>
+                ) : null}
                 <Button type="submit" disabled={!formReady} title={startHint} className="w-full">
                   <Play aria-hidden="true" />
                   {begin.isPending ? "Starting…" : "Start recording"}

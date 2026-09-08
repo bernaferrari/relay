@@ -232,6 +232,7 @@ function reviewForSession(session: AuthoringSession): AuthorTestSnapshot["review
         evidenceCount: linkedEvidence.evidenceIds.length,
         evidenceKinds: [...new Set(linkedEvidence.evidence.map((item) => item.kind))],
         evidence: linkedEvidence.evidence,
+        ...(action.fullPage ? { fullPage: structuredClone(action.fullPage) } : {}),
         ...(action.proofStatus ? { proofStatus: action.proofStatus } : {}),
         captureProof: captureProofForAuthoring(captureProvenance, approvedReplay),
       };

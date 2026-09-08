@@ -408,6 +408,9 @@ export class CanonicalAuthoringWorkflow {
         appMapId: intent.appMapId,
         testName: intent.title.trim(),
         target: { ...intent.target },
+        ...(intent.originApplication?.trim()
+          ? { originApplication: intent.originApplication.trim() }
+          : {}),
         leaseId: intent.leaseId,
         expectedAppMapRevision: revision,
         ...(intent.sourceScreenId ? { sourceScreenId: intent.sourceScreenId } : {}),

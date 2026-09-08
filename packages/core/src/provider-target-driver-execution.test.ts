@@ -14,6 +14,88 @@ import type { Recipe } from "./recipes.js";
 import { readPersistedRun } from "./runs.js";
 import { prepareJobBatch, runJobSync, waitForJobCompletion } from "./session.js";
 import { TargetDriverRegistry, runWithTargetDriverRegistry } from "./target-driver-registry.js";
+import { runColdAppMapStartup } from "./session-provider-execution.js";
+
+test("cold App Map startup fails with an actionable error when origin app is unbound", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-cold-startup-origin-"));
+  const previousRoot = process.env.RELAY_WORKSPACE_ROOT;
+  process.env.RELAY_WORKSPACE_ROOT = root;
+  try {
+    await assert.rejects(
+      runColdAppMapStartup(
+        {
+          targetKind: "device",
+          targetContext: { kind: "device", platform: "android", serial: "cold-origin" },
+        } as never,
+        {} as never,
+        "cold",
+        undefined,
+        () => undefined,
+      ),
+      /no saved origin application.*Open the mapped origin explicitly.*remember it/u,
+    );
+  } finally {
+    if (previousRoot === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
+    else process.env.RELAY_WORKSPACE_ROOT = previousRoot;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("cold App Map startup launches the frozen Test origin instead of target last-app state", async () => {
+  const launched: string[] = [];
+  const logs: string[] = [];
+  await runColdAppMapStartup(
+    {
+      targetKind: "device",
+      targetContext: { kind: "device", platform: "android", serial: "cold-origin" },
+    } as never,
+    {} as never,
+    "cold",
+    "com.example.origin-a",
+    (line) => logs.push(line),
+    async (_device, app) => {
+      launched.push(app);
+    },
+  );
+  assert.deepEqual(launched, ["com.example.origin-a"]);
+  assert.match(logs[0] ?? "", /com\.example\.origin-a/u);
+});
+
+test("verified checkpoint startup does not relaunch the frozen Test origin", async () => {
+  let launches = 0;
+  await runColdAppMapStartup(
+    {
+      targetKind: "device",
+      targetContext: { kind: "device", platform: "android", serial: "cold-origin" },
+    } as never,
+    {} as never,
+    "verified-checkpoint",
+    "com.example.origin-a",
+    () => undefined,
+    async () => {
+      launches += 1;
+    },
+  );
+  assert.equal(launches, 0);
+});
+
+test("warm startup preserves the current target and does not require an origin", async () => {
+  let launches = 0;
+  await runColdAppMapStartup(
+    {
+      targetKind: "device",
+      targetContext: { kind: "device", platform: "android", serial: "cold-origin" },
+    } as never,
+    {} as never,
+    "warm",
+    undefined,
+    () => undefined,
+    async () => {
+      launches += 1;
+    },
+  );
+  assert.equal(launches, 0);
+});
 
 test("a registered provider session executes through driver control and capture without legacy device fallback", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-provider-driver-execution-"));

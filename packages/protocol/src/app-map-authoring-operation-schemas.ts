@@ -38,6 +38,7 @@ export const appMapAuthoringOperationSchemas = {
       appMapId: identifier("App Map identifier"),
       ...mutationIdentity,
       target: authoringTarget,
+      originApplication: z.string().trim().min(1).optional(),
       leaseId: identifier("Exclusive control lease"),
       title: z.string().optional(),
       position: point.optional(),

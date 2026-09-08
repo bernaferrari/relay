@@ -205,13 +205,164 @@ describe("recording edit adapter", () => {
     );
     expect(preview?.controls).toEqual([
       {
-        id: "com.app:id/language",
+        id: "com.app:id/language:0",
         name: "Language",
         rect: { x: 40, y: 200, width: 280, height: 56 },
         target: { identifier: "com.app:id/language" },
         why: "Matched the stable identifier com.app:id/language.",
       },
     ]);
+  });
+
+  it("decodes legacy full-page evidence and maps merged controls to an accepted frame", async () => {
+    const frame = "d".repeat(64);
+    const diagnostic = "e".repeat(64);
+    const extra = "1".repeat(64);
+    const tree = "f".repeat(64);
+    client.invoke.mockClear();
+    client.binaryResource.mockReset();
+    client.invoke.mockResolvedValueOnce({
+      session: {
+        take: {
+          currentRevision: 1,
+          revisions: [
+            {
+              revision: 1,
+              evidence: [
+                { id: "frame", kind: "screenshot", uri: `relay-evidence://${frame}` },
+                { id: "diag", kind: "screenshot", uri: `relay-evidence://${diagnostic}` },
+                { id: "extra", kind: "screenshot", uri: `relay-evidence://${extra}` },
+                { id: "full-page-tree", kind: "snapshot", uri: `relay-evidence://${tree}` },
+              ],
+              actions: [
+                {
+                  id: "capture",
+                  evidenceIds: ["frame", "diag", "extra", "full-page-tree"],
+                  steps: [{ kind: "screenshot", fullPage: true }],
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
+    client.binaryResource
+      .mockResolvedValueOnce({
+        bytes: new TextEncoder().encode(
+          JSON.stringify({
+            kind: "full-page-capture",
+            status: "stopped",
+            reason: "seam-ambiguous",
+            message: "Review frames.",
+            frames: [
+              { index: 0, offsetY: 0, snapshot: {} },
+              { index: 1, offsetY: 1000, snapshot: {} },
+            ],
+            mergedNodes: [
+              {
+                identifier: "app:continue",
+                label: "Continue",
+                rect: { x: 10, y: 1100, width: 100, height: 40 },
+              },
+            ],
+          }),
+        ),
+        headers: new Headers({ "content-type": "application/json" }),
+      })
+      .mockResolvedValueOnce({
+        bytes: new Uint8Array([1]),
+        headers: new Headers({ "content-type": "image/png" }),
+      });
+    const preview = await createRecordingProductService(platform).getEvidencePreview(
+      "session-1",
+      "frame",
+    );
+    expect(preview?.fullPage?.diagnosticFrames[0]?.evidenceId).toBe("extra");
+    expect(preview?.controls?.[0]?.rect.y).toBe(1100);
+    expect(preview?.fullPage?.frames[1]?.evidenceId).toBe("diag");
+  });
+
+  it("does not project controls for a diagnostic full-page raster", async () => {
+    const shot = "2".repeat(64);
+    client.invoke.mockReset();
+    client.binaryResource.mockReset();
+    client.invoke.mockResolvedValueOnce({
+      session: {
+        take: {
+          currentRevision: 1,
+          revisions: [
+            {
+              revision: 1,
+              evidence: [
+                { id: "accepted", kind: "screenshot", uri: `relay-evidence://${shot}` },
+                { id: "diagnostic", kind: "screenshot", uri: `relay-evidence://${"3".repeat(64)}` },
+                { id: "tree", kind: "snapshot", uri: `relay-evidence://${"4".repeat(64)}` },
+              ],
+              actions: [
+                {
+                  id: "capture",
+                  evidenceIds: ["accepted", "diagnostic", "tree"],
+                  fullPage: {
+                    status: "stopped",
+                    reason: "seam-ambiguous",
+                    message: "Review frames.",
+                    frames: [{ index: 0, offsetY: 0, evidenceId: "accepted" }],
+                    diagnosticFrames: [{ index: 1, offsetY: 100, evidenceId: "diagnostic" }],
+                    mergedNodes: [],
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
+    client.binaryResource.mockResolvedValueOnce({
+      bytes: new Uint8Array([1]),
+      headers: new Headers({ "content-type": "image/png" }),
+    });
+    const preview = await createRecordingProductService(platform).getEvidencePreview(
+      "session-1",
+      "diagnostic",
+    );
+    expect(preview?.controls).toEqual([]);
+  });
+
+  it("keeps screenshot preview usable when a legacy full-page snapshot is unavailable", async () => {
+    const screenshot = "5".repeat(64);
+    client.invoke.mockReset();
+    client.binaryResource.mockReset();
+    client.invoke.mockResolvedValueOnce({
+      session: {
+        take: {
+          currentRevision: 1,
+          revisions: [
+            {
+              revision: 1,
+              evidence: [
+                { id: "shot", kind: "screenshot", uri: `relay-evidence://${screenshot}` },
+                { id: "tree", kind: "snapshot", uri: `relay-evidence://${"6".repeat(64)}` },
+              ],
+              actions: [
+                {
+                  id: "capture",
+                  evidenceIds: ["shot", "tree"],
+                  steps: [{ kind: "screenshot", fullPage: true }],
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
+    client.binaryResource.mockRejectedValueOnce(new Error("missing"));
+    client.binaryResource.mockResolvedValueOnce({
+      bytes: new Uint8Array([2]),
+      headers: new Headers({ "content-type": "image/png" }),
+    });
+    await expect(
+      createRecordingProductService(platform).getEvidencePreview("session-1", "shot"),
+    ).resolves.toMatchObject({ bytes: new Uint8Array([2]) });
   });
 
   it("projects TalkBack names from a live Android snapshot without enabling audio", async () => {

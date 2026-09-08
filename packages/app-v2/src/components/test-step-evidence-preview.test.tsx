@@ -1,6 +1,7 @@
 /** @jsxImportSource react */
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ProductRunReportOverview } from "../data/run-product-service";
 import { TestStepEvidencePreview } from "./test-step-evidence-preview";
@@ -65,12 +66,14 @@ function render(report: ProductRunReportOverview | undefined = baseReport) {
   roots.push(root);
   act(() =>
     root.render(
-      <TestStepEvidencePreview
-        step={{ id: "step-2", intent: "Verify checkout" }}
-        report={report}
-        hasRuns
-        loading={false}
-      />,
+      <QueryClientProvider client={new QueryClient()}>
+        <TestStepEvidencePreview
+          step={{ id: "step-2", intent: "Verify checkout" }}
+          report={report}
+          hasRuns
+          loading={false}
+        />
+      </QueryClientProvider>,
     ),
   );
   return host;

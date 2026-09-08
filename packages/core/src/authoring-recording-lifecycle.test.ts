@@ -220,7 +220,18 @@ test("full-page capture retains document evidence without replacing viewport geo
     {
       async captureFullPage() {
         order.push("survey");
-        return { evidence: [evidence("full-page", 120)], label: "Capture full page" };
+        return {
+          evidence: [evidence("full-page", 120)],
+          label: "Capture full page",
+          fullPage: {
+            status: "stopped",
+            reason: "seam-ambiguous",
+            message: "Review the retained frames.",
+            frames: [{ index: 0, offsetY: 0, evidenceId: "full-page" }],
+            diagnosticFrames: [{ index: 1, offsetY: 100, evidenceId: "diagnostic" }],
+            mergedNodes: [{ label: "Continue", rect: { x: 1, y: 2, width: 3, height: 4 } }],
+          },
+        };
       },
       async execute() {
         throw new Error("must not replay survey gestures as user actions");
@@ -248,6 +259,12 @@ test("full-page capture retains document evidence without replacing viewport geo
   assert.deepEqual(order, ["survey", "viewport"]);
   assert.equal(revision.actions[0]?.label, "Capture full page");
   assert.ok(revision.actions[0]?.evidenceIds.includes("full-page"));
+  assert.deepEqual(revision.actions[0]?.fullPage?.frames, [
+    { index: 0, offsetY: 0, evidenceId: "full-page" },
+  ]);
+  assert.deepEqual(revision.actions[0]?.fullPage?.diagnosticFrames, [
+    { index: 1, offsetY: 100, evidenceId: "diagnostic" },
+  ]);
   assert.equal(revision.after?.id, "restored");
   assert.ok(!revision.after?.evidenceIds.includes("full-page"));
 });

@@ -330,6 +330,10 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
         forceRecaptureSurfaceScreenIds: body.surfaceCapture?.forceRecaptureScreenIds,
         entryCheckpointScreenId:
           body.startup?.mode === "verified-checkpoint" ? body.startup.screenId : undefined,
+        startupMode:
+          body.startup?.mode === "cold" || body.startup?.mode === "warm"
+            ? body.startup.mode
+            : "warm",
         reviewedDocumentOrigins,
         runtimeTargetProfile,
       });

@@ -65,6 +65,7 @@ export function ReviewRecordingPage({
   const [actionIntent, setActionIntent] = useState("");
   const [splitAfterStep, setSplitAfterStep] = useState(1);
   const [evidenceRole, setEvidenceRole] = useState<"entrance" | "exit">("exit");
+  const [selectedEvidenceId, setSelectedEvidenceId] = useState<string>();
   const [trimStartMs, setTrimStartMs] = useState(0);
   const [trimEndMs, setTrimEndMs] = useState(0);
   const [undoStack, setUndoStack] = useState<readonly number[]>([]);
@@ -194,6 +195,7 @@ export function ReviewRecordingPage({
     (candidate) => candidate.kind === "screenshot" && candidate.roles.includes(evidenceRole),
   );
   const evidence =
+    selectedAction?.evidence?.find((candidate) => candidate.id === selectedEvidenceId) ??
     matchingEvidence ??
     selectedAction?.evidence?.find((candidate) => candidate.kind === "screenshot");
   const evidencePreview = useQuery({
@@ -482,6 +484,8 @@ export function ReviewRecordingPage({
                 controls={evidencePreview.data?.controls ?? []}
                 evidenceRole={evidenceRole}
                 previewUrl={evidenceUrl}
+                fullPage={evidencePreview.data?.fullPage}
+                onEvidenceSelect={(id) => setSelectedEvidenceId(id)}
                 onEvidenceRoleChange={setEvidenceRole}
               />
             }

@@ -53,6 +53,8 @@ export type AppMapRecordingInput = {
   testId?: string;
   /** Canonical reviewed Test name, required whenever testId is present. */
   testName?: string;
+  /** Explicit package/bundle selected during recording setup. */
+  originApplication?: string;
   /** Server-reviewed capture origin. It never changes the executable steps. */
   captureReview?: AuthoringCaptureReview;
 };
@@ -827,6 +829,7 @@ export function commitAppMapRecording(
           map,
           testId: input.testId,
           testName: input.testName,
+          ...(input.originApplication ? { originApplication: input.originApplication } : {}),
           sessionId: input.sessionId,
           connection,
           connections,

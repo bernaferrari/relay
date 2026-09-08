@@ -57,6 +57,7 @@ export type ProductRecordingBeginInput = RecordingPathContext & {
   title: string;
   appMapId?: string;
   targetId?: string;
+  originApplication?: string;
 };
 
 export type ProductRecordingJourney = {
@@ -269,6 +270,9 @@ export function createProductRecordingJourney(input: {
         ...(input.appMapId ? { appMapId: input.appMapId } : {}),
         ...((input.targetId ?? current.selectedTarget?.targetId)
           ? { targetId: input.targetId ?? current.selectedTarget?.targetId }
+          : {}),
+        ...(input.originApplication?.trim()
+          ? { originApplication: input.originApplication.trim() }
           : {}),
         ...(input.sourceScreenId ? { sourceScreenId: input.sourceScreenId } : {}),
         ...(input.pendingConnectionId ? { pendingConnectionId: input.pendingConnectionId } : {}),

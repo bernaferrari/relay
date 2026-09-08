@@ -102,26 +102,13 @@ export function SidebarContent({ label = "Primary" }: { label?: string }) {
   );
 }
 
-export function Sidebar({ desktop = false }: { desktop?: boolean }) {
+export function Sidebar() {
   return (
     <SharedSidebar
       className="relay-sidebar border-r-0! hidden h-full min-w-[var(--relay-sidebar-width)] w-[var(--relay-sidebar-width)] bg-sidebar min-[861px]:flex"
       aria-label="Relay navigation"
     >
-      <SidebarHeader
-        className={`relay-sidebar-head relay-electron-drag [-webkit-app-region:drag] flex min-h-[52px] items-center px-4${desktop ? " min-h-[60px] pl-[82px]" : ""}`}
-      >
-        <div
-          className="relay-brand inline-flex items-center gap-[9px] text-sm font-semibold tracking-[-0.01em]"
-          aria-label="Relay"
-        >
-          <span
-            className="relay-brand-mark h-[18px] w-[18px] rounded-[var(--radius-md)] bg-[var(--button-primary-base)] bg-[image:linear-gradient(135deg,transparent_42%,var(--button-primary-foreground)_43%_55%,transparent_56%)] shadow-[var(--shadow-xs)]"
-            aria-hidden="true"
-          />
-          <span>Relay</span>
-        </div>
-      </SidebarHeader>
+      <SidebarHeader aria-hidden="true" className="h-[54px] shrink-0 p-0" />
       <SidebarContent />
     </SharedSidebar>
   );

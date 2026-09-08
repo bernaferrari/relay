@@ -41,6 +41,30 @@ export type ProviderSessionExecution = Readonly<{
   deviceName: string;
 }>;
 
+/** Establish the saved application origin for a cold App Map Test before its
+ * first strict screen assertion. The application binding is workspace state
+ * recorded by an explicit launch; deriving one from AX identifiers would turn
+ * a screen observation into an unreviewed navigation instruction. */
+export async function runColdAppMapStartup(
+  job: TestJob,
+  device: Device,
+  startupMode: "warm" | "cold" | "verified-checkpoint" | undefined,
+  originApplication: string | undefined,
+  log: (line: string) => void,
+  launch: (device: Device, app: string) => Promise<void> = (target, app) =>
+    openApp(target, app, { relaunch: true }),
+): Promise<void> {
+  if (startupMode !== "cold" || job.targetKind === "browser") return;
+  const app = originApplication;
+  if (!app) {
+    throw new Error(
+      "Cold App Map startup has no saved origin application. Open the mapped origin explicitly, then retry so Relay can remember it.",
+    );
+  }
+  await launch(device, app);
+  log(`startup: launched saved origin application ${app}`);
+}
+
 /** Target discovery is separated from acquiring a Device so the coordinator
  * can publish its normal started event before potentially slow local setup. */
 export type PreparedSessionTarget = Readonly<{
