@@ -27,6 +27,8 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   MousePointer2,
+  Scan,
+  X,
 } from "lucide-react";
 import {
   useEffect,
@@ -75,6 +77,9 @@ export function InfiniteMapCanvas({
   const [screenSearch, setScreenSearch] = useState("");
   const [showScreens, setShowScreens] = useState(true);
   const [handTool, setHandTool] = useState(false);
+  const [spacePan, setSpacePan] = useState(false);
+  const panningTool = handTool || spacePan;
+  const [focusScreenId, setFocusScreenId] = useState<string>();
   const [selectedScreenId, setSelectedScreenId] = useState<string>();
   const selected = visibleScreens.find((screen) => screen.id === selectedScreenId);
   const viewportRef = useRef<HTMLElement>(null);
@@ -127,6 +132,52 @@ export function InfiniteMapCanvas({
     );
     viewportRef.current?.focus({ preventScroll: true });
   }
+
+  function focusScreen(screenId: string) {
+    setSelectedScreenId(screenId);
+    setFocusScreenId(screenId);
+  }
+
+  useEffect(() => {
+    if (!focusScreenId) return;
+    let focusFrame = 0;
+    // Let the inspector resize the viewport before centering the selected screen.
+    const frame = requestAnimationFrame(() => {
+      focusFrame = requestAnimationFrame(() => {
+        const position = positions.get(focusScreenId);
+        if (position)
+          applyTransform(
+            fitMapToBounds(
+              {
+                minX: position.x,
+                minY: position.y,
+                maxX: position.x + MAP_NODE_WIDTH,
+                maxY: position.y + MAP_NODE_HEIGHT,
+              },
+              viewportSize(),
+            ),
+          );
+        setFocusScreenId(undefined);
+      });
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      cancelAnimationFrame(focusFrame);
+    };
+  }, [focusScreenId]);
+
+  useEffect(() => {
+    const release = () => setSpacePan(false);
+    const keyup = (event: globalThis.KeyboardEvent) => {
+      if (event.code === "Space") release();
+    };
+    window.addEventListener("keyup", keyup);
+    window.addEventListener("blur", release);
+    return () => {
+      window.removeEventListener("keyup", keyup);
+      window.removeEventListener("blur", release);
+    };
+  }, []);
 
   function revealScreen(screenId: string) {
     const position = positions.get(screenId);
@@ -202,7 +253,7 @@ export function InfiniteMapCanvas({
   function handlePointerDown(event: PointerEvent<HTMLElement>) {
     if (
       (event.button !== 0 && event.button !== 1) ||
-      (!handTool && (event.target as HTMLElement).closest("button, a, input"))
+      (!panningTool && (event.target as HTMLElement).closest("button, a, input"))
     )
       return;
     dragRef.current = {
@@ -255,6 +306,15 @@ export function InfiniteMapCanvas({
   function handleKeyDown(event: KeyboardEvent<HTMLElement>) {
     if ((event.target as HTMLElement).closest("input, textarea, select")) return;
     event.stopPropagation();
+    if (
+      event.code === "Space" &&
+      (event.target === viewportRef.current ||
+        (event.target as HTMLElement).closest(".relay-map-screen"))
+    ) {
+      event.preventDefault();
+      setSpacePan(true);
+      return;
+    }
     if (event.key === "Escape") {
       setSelectedScreenId(undefined);
       return;
@@ -292,7 +352,8 @@ export function InfiniteMapCanvas({
       resetView();
     } else if (event.key.toLowerCase() === "f") {
       event.preventDefault();
-      fitContent();
+      if (event.shiftKey && selectedScreenId) focusScreen(selectedScreenId);
+      else fitContent();
     }
   }
 
@@ -325,18 +386,40 @@ export function InfiniteMapCanvas({
               placeholder="Find screen…"
               value={screenSearch}
               onChange={(event) => setScreenSearch(event.target.value)}
-              className="h-9 w-full rounded-md border border-input bg-background pl-7 pr-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onKeyDown={(event) => {
+                if (event.key === "Escape") setScreenSearch("");
+                if (event.key === "Enter") {
+                  const match = visibleScreens.find((screen) =>
+                    screen.title
+                      .toLocaleLowerCase()
+                      .includes(screenSearch.trim().toLocaleLowerCase()),
+                  );
+                  if (match) focusScreen(match.id);
+                }
+              }}
+              className="h-9 w-full rounded-md border border-input bg-background pl-7 pr-8 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
+            {screenSearch ? (
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                aria-label="Clear screen search"
+                className="absolute right-0.5 top-0.5"
+                onClick={() => setScreenSearch("")}
+              >
+                <X />
+              </Button>
+            ) : null}
           </div>
           <div className="min-h-0 flex-1 overflow-auto px-2 pb-3">
             {!visibleScreens.some((screen) =>
-              screen.title.toLocaleLowerCase().includes(screenSearch.toLocaleLowerCase()),
+              screen.title.toLocaleLowerCase().includes(screenSearch.trim().toLocaleLowerCase()),
             ) ? (
               <p className="p-3 text-xs text-muted-foreground">No matching screens</p>
             ) : null}
             {visibleScreens
               .filter((screen) =>
-                screen.title.toLocaleLowerCase().includes(screenSearch.toLocaleLowerCase()),
+                screen.title.toLocaleLowerCase().includes(screenSearch.trim().toLocaleLowerCase()),
               )
               .map((screen) => (
                 <button
@@ -358,7 +441,7 @@ export function InfiniteMapCanvas({
           </div>
           <div className="border-t border-border p-3 text-xs text-muted-foreground">
             {paths.length} paths ·{" "}
-            {screens.filter((screen) => screen.coveringTests.length > 0).length} screens tested
+            {screens.filter((screen) => screen.coveringTests.length > 0).length} screens in tests
           </div>
         </aside>
       ) : null}
@@ -401,17 +484,24 @@ export function InfiniteMapCanvas({
           </span>
           <MapControl label="Zoom in" icon={Plus} onClick={() => zoomBy(1.18)} />
           <span className="mx-1 h-5 w-px bg-border" aria-hidden="true" />
-          <MapControl label="Fit map" icon={Focus} onClick={fitContent} />
+          <MapControl label="Fit map (F)" icon={Focus} onClick={fitContent} />
+          {selectedScreenId ? (
+            <MapControl
+              label="Focus screen (Shift F)"
+              icon={Scan}
+              onClick={() => focusScreen(selectedScreenId)}
+            />
+          ) : null}
           <MapControl label="Reset view" icon={RotateCcw} onClick={resetView} />
         </div>
         <p
           className="pointer-events-none absolute left-4 top-4 z-10 text-[11px] text-muted-foreground"
           id="map-interaction-help"
         >
-          Scroll to pan · Pinch to zoom
+          Scroll to pan · Pinch to zoom · Double-click to focus
         </p>
         <section
-          data-tool={handTool ? "hand" : "select"}
+          data-tool={panningTool ? "hand" : "select"}
           className="relay-map-canvas data-[tool=hand]:cursor-grab relative h-full min-h-0 w-full flex-1 overflow-hidden bg-[radial-gradient(var(--border)_1px,transparent_1px)] [background-size:20px_20px]"
           aria-label="Screens and verified paths"
           aria-describedby="map-interaction-help map-keyboard-help"
@@ -425,8 +515,8 @@ export function InfiniteMapCanvas({
           onKeyDown={handleKeyDown}
         >
           <span className="relay-visually-hidden sr-only" id="map-keyboard-help">
-            Use arrow keys to move, plus and minus to zoom, F to fit the map, or 0 to reset the
-            view. Tab to visit each screen.
+            Use arrow keys to move, plus and minus to zoom, F to fit the map, Shift F to focus a
+            selected screen, Space to pan, or 0 to reset the view. Tab to visit each screen.
           </span>
           <div
             className="relay-map-world absolute inset-0 origin-top-left"
@@ -449,10 +539,13 @@ export function InfiniteMapCanvas({
                   key={screen.id}
                   aria-pressed={selectedNode}
                   onClick={() => {
-                    if (!handTool) setSelectedScreenId(screen.id);
+                    if (!panningTool) setSelectedScreenId(screen.id);
+                  }}
+                  onDoubleClick={() => {
+                    if (!panningTool) focusScreen(screen.id);
                   }}
                   onPointerDown={(event) => {
-                    if (handTool || !onUpdateScreen || saving || event.button !== 0) return;
+                    if (panningTool || !onUpdateScreen || saving || event.button !== 0) return;
                     event.stopPropagation();
                     event.preventDefault();
                     event.currentTarget.setPointerCapture(event.pointerId);
@@ -479,8 +572,16 @@ export function InfiniteMapCanvas({
                     const drag = nodeDrag.current;
                     nodeDrag.current = undefined;
                     event.currentTarget.releasePointerCapture(event.pointerId);
-                    if (drag?.moved && dragged && onUpdateScreen) {
-                      void onUpdateScreen(screen.id, { position: dragged.position })
+                    if (drag?.moved && onUpdateScreen) {
+                      const position = {
+                        x:
+                          drag.position.x +
+                          (event.clientX - drag.start.x) / transformRef.current.scale,
+                        y:
+                          drag.position.y +
+                          (event.clientY - drag.start.y) / transformRef.current.scale,
+                      };
+                      void onUpdateScreen(screen.id, { position })
                         .catch(() => undefined)
                         .finally(() => setDragged(undefined));
                     }
@@ -523,7 +624,7 @@ export function InfiniteMapCanvas({
         </section>
       </div>
       <ScreenInspector
-        appId={appId}
+        onFocusScreen={() => selectedScreenId && focusScreen(selectedScreenId)}
         loadScreenshot={loadScreenshot}
         screen={selected}
         paths={visiblePaths}

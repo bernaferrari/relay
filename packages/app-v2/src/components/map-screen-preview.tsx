@@ -52,6 +52,12 @@ export function MapScreenPreview({
           className="h-full w-full object-contain"
           loading="lazy"
         />
+      ) : uri && load && !preview.isError ? (
+        <div
+          className="h-full w-full animate-pulse rounded-md bg-muted motion-reduce:animate-none"
+          role="status"
+          aria-label="Loading screenshot"
+        />
       ) : (
         <div className="grid justify-items-center gap-2 p-3 text-center text-xs text-muted-foreground">
           <ImageOff className="size-5" aria-hidden="true" />

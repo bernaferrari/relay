@@ -146,7 +146,7 @@ describe("Map exploration", () => {
       "Back to app",
     );
     expect(document.querySelector('[aria-label="Screens and verified paths"]')).not.toBeNull();
-    expect(document.body.textContent).toContain("1 screens tested");
+    expect(document.body.textContent).toContain("1 screens in tests");
     expect(document.body.textContent).not.toContain("Combine");
     expect(document.body.textContent).not.toContain("targetProfile");
     expect(document.querySelector('a[href="/tests/new?app=shop"]')).not.toBeNull();
@@ -216,6 +216,33 @@ describe("Map exploration", () => {
     expect(history.location.search).toContain("path=home-cart");
   }, 15_000);
 
+  it("temporarily pans with Space and explains connection direction", async () => {
+    await render();
+    const canvas = document.querySelector<HTMLElement>(".relay-map-canvas")!;
+    await act(async () =>
+      canvas.dispatchEvent(
+        new KeyboardEvent("keydown", { key: " ", code: "Space", bubbles: true, cancelable: true }),
+      ),
+    );
+    expect(canvas.dataset.tool).toBe("hand");
+    await act(async () =>
+      window.dispatchEvent(new KeyboardEvent("keyup", { key: " ", code: "Space" })),
+    );
+    expect(canvas.dataset.tool).toBe("select");
+    const home = document.querySelector<HTMLButtonElement>(".relay-map-screen")!;
+    await act(async () => home.click());
+    const inspector = document.querySelector('[aria-label="Screen details"]')!;
+    expect(inspector.textContent).toContain("Continue to");
+    expect(inspector.textContent).not.toContain("Arrive from");
+    const connection = [...inspector.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Open cart"),
+    )!;
+    await act(async () => connection.click());
+    expect(inspector.textContent).toContain("Arrive from");
+    expect(inspector.textContent).not.toContain("Continue to");
+    expect(inspector.textContent).not.toContain("Record test");
+  });
+
   it("searches paths beyond the former 24-row limit and clears empty results", async () => {
     await render({
       get: async () => ({
@@ -247,8 +274,8 @@ describe("Map exploration", () => {
       button.textContent?.includes("Cart"),
     );
     await act(async () => cart?.click());
-    expect(document.body.textContent).toContain("Tests");
-    expect(document.body.textContent).toContain("No saved Test covers this screen yet.");
+    expect(document.body.textContent).toContain("Used in tests");
+    expect(document.body.textContent).toContain("No saved test includes this screen.");
     expect(document.body.textContent).toContain("Recent failures");
     expect(document.querySelector('a[href="/runs/run-1"]')).not.toBeNull();
     expect(document.body.textContent).toContain("Review map changes");
