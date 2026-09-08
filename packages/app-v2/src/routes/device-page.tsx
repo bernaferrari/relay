@@ -263,6 +263,7 @@ export function DevicePage() {
                     search={{
                       ...(returnTo?.appId ? { app: returnTo.appId } : {}),
                       target: target.data?.targetId ?? device.data.serial,
+                      ...(appIdentifier ? { originApplication: appIdentifier } : {}),
                     }}
                   />
                 }

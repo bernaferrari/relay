@@ -347,7 +347,11 @@ export function NewTestPage() {
     void navigate({
       to: "/tests/new",
       replace: true,
-      search: { app: nextAppId, ...(targetId ? { target: targetId } : {}) },
+      search: {
+        app: nextAppId,
+        ...(targetId ? { target: targetId } : {}),
+        ...(originApplication ? { originApplication } : {}),
+      },
     });
   }
 

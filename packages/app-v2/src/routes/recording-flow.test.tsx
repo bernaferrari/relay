@@ -622,6 +622,17 @@ describe("record, review, replay, and save", () => {
     );
   });
 
+  it("opens setup with a starting app carried from the device", async () => {
+    const fake = fakeService();
+    await renderJourney(
+      "/tests/new?target=emulator-5554&originApplication=com.android.settings",
+      fake.service,
+      platformWithStorage().platform,
+    );
+    expect(document.body.textContent).toContain("Recording setup");
+    expect(document.body.textContent).not.toContain("This page couldn’t load");
+  });
+
   it("creates an app inline without losing the chosen device or starting recording", async () => {
     const fake = fakeService();
     const createdNames: string[] = [];

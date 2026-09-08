@@ -148,6 +148,7 @@ export const ROUTE_DEFINITIONS = [
     "view",
     "path",
     "target",
+    "originApplication",
   ]),
   d("/tests/:testId", "/tests", "Test", "Test", "tests", "run-test", [
     "view",
