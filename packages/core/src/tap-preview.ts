@@ -78,18 +78,25 @@ function drawRect(
   thickness: number,
   color: { r: number; g: number; b: number; a: number },
 ): void {
-  const x0 = Math.round(rect.x);
-  const y0 = Math.round(rect.y);
-  const x1 = Math.round(rect.x + rect.width);
-  const y1 = Math.round(rect.y + rect.height);
-  for (let t = 0; t < thickness; t += 1) {
-    for (let x = x0; x <= x1; x += 1) {
-      mixPixel(png, x, y0 + t, color.r, color.g, color.b, color.a);
-      mixPixel(png, x, y1 - t, color.r, color.g, color.b, color.a);
-    }
-    for (let y = y0; y <= y1; y += 1) {
-      mixPixel(png, x0 + t, y, color.r, color.g, color.b, color.a);
-      mixPixel(png, x1 - t, y, color.r, color.g, color.b, color.a);
+  const radius = Math.min(10, rect.width / 4, rect.height / 4);
+  const halfWidth = rect.width / 2,
+    halfHeight = rect.height / 2;
+  for (
+    let y = Math.max(0, Math.floor(rect.y - 1));
+    y <= Math.min(png.height - 1, Math.ceil(rect.y + rect.height + 1));
+    y += 1
+  ) {
+    for (
+      let x = Math.max(0, Math.floor(rect.x - 1));
+      x <= Math.min(png.width - 1, Math.ceil(rect.x + rect.width + 1));
+      x += 1
+    ) {
+      const qx = Math.abs(x - rect.x - halfWidth) - halfWidth + radius;
+      const qy = Math.abs(y - rect.y - halfHeight) - halfHeight + radius;
+      const distance =
+        Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - radius;
+      const coverage = Math.max(0, Math.min(1, thickness / 2 + 0.5 - Math.abs(distance)));
+      if (coverage) mixPixel(png, x, y, color.r, color.g, color.b, color.a * coverage);
     }
   }
 }
@@ -127,7 +134,39 @@ function drawRing(
   for (let y = y0; y <= y1; y += 1) {
     for (let x = x0; x <= x1; x += 1) {
       const d = Math.hypot(x - cx, y - cy);
-      if (d <= outer && d >= inner) mixPixel(png, x, y, color.r, color.g, color.b, color.a);
+      const coverage = Math.min(1, Math.max(0, outer + 0.5 - d), Math.max(0, d - inner + 0.5));
+      if (coverage > 0) mixPixel(png, x, y, color.r, color.g, color.b, color.a * coverage);
+    }
+  }
+}
+
+function drawPathLine(
+  png: PNG,
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+  width: number,
+  color: { r: number; g: number; b: number; a: number },
+): void {
+  const dx = to.x - from.x,
+    dy = to.y - from.y;
+  const lengthSquared = dx * dx + dy * dy;
+  if (!lengthSquared) return;
+  for (
+    let y = Math.max(0, Math.floor(Math.min(from.y, to.y) - width));
+    y <= Math.min(png.height - 1, Math.ceil(Math.max(from.y, to.y) + width));
+    y += 1
+  ) {
+    for (
+      let x = Math.max(0, Math.floor(Math.min(from.x, to.x) - width));
+      x <= Math.min(png.width - 1, Math.ceil(Math.max(from.x, to.x) + width));
+      x += 1
+    ) {
+      const t = Math.max(0, Math.min(1, ((x - from.x) * dx + (y - from.y) * dy) / lengthSquared));
+      const coverage = Math.max(
+        0,
+        Math.min(1, width / 2 + 0.5 - Math.hypot(x - from.x - t * dx, y - from.y - t * dy)),
+      );
+      if (coverage) mixPixel(png, x, y, color.r, color.g, color.b, color.a * coverage);
     }
   }
 }
@@ -152,8 +191,9 @@ export function annotateTapPreview(
 ): Buffer {
   const png = PNG.sync.read(pngBytes);
   const preview = asMark(mark);
-  const ink = { r: 255, g: 80, b: 60, a: 230 };
-  const radius = Math.max(16, Math.round(Math.min(png.width, png.height) * 0.028));
+  const ink = { r: 59, g: 130, b: 246, a: 230 };
+  const scale = Math.max(1, Math.min(png.width, png.height) / 400);
+  const radius = 5 * scale;
   if (preview.bounds && preview.bounds.width > 2 && preview.bounds.height > 2) {
     const topLeft = mapTapPreviewToPixels(
       { x: preview.bounds.x, y: preview.bounds.y },
@@ -171,25 +211,43 @@ export function annotateTapPreview(
     drawRect(
       png,
       {
-        x: topLeft.x,
-        y: topLeft.y,
-        width: Math.max(2, bottomRight.x - topLeft.x),
-        height: Math.max(2, bottomRight.y - topLeft.y),
+        x: topLeft.x - 3 * scale,
+        y: topLeft.y - 3 * scale,
+        width: Math.max(2, bottomRight.x - topLeft.x) + 6 * scale,
+        height: Math.max(2, bottomRight.y - topLeft.y) + 6 * scale,
       },
-      Math.max(3, Math.round(radius * 0.16)),
+      Math.max(1, Math.round(scale)),
       ink,
     );
   }
-  const points = [...(preview.point ? [preview.point] : []), ...(preview.points ?? [])];
-  for (const point of points) {
-    const mapped = mapTapPreviewToPixels(point, png, logical);
-    drawRing(png, mapped.x, mapped.y, radius, Math.max(3, Math.round(radius * 0.18)), ink);
-    drawRing(png, mapped.x, mapped.y, Math.max(4, Math.round(radius * 0.22)), 2, {
-      r: 255,
-      g: 255,
-      b: 255,
-      a: 240,
-    });
+  const path = (preview.points ?? []).map((point) => mapTapPreviewToPixels(point, png, logical));
+  if (path.length > 1) {
+    for (let index = 1; index < path.length; index += 1) {
+      drawPathLine(png, path[index - 1]!, path[index]!, scale, ink);
+    }
+    const end = path.at(-1)!;
+    const start = path.at(-2)!;
+    const angle = Math.atan2(end.y - start.y, end.x - start.x);
+    for (const offset of [-0.65, 0.65]) {
+      drawPathLine(
+        png,
+        end,
+        {
+          x: end.x - 8 * scale * Math.cos(angle + offset),
+          y: end.y - 8 * scale * Math.sin(angle + offset),
+        },
+        scale,
+        ink,
+      );
+    }
+    drawRing(png, path[0]!.x, path[0]!.y, 2 * scale, scale / 2, ink);
+  } else if (preview.point) {
+    const mapped = mapTapPreviewToPixels(preview.point, png, logical);
+    // Small, high-contrast center with a fine accent outline. Avoid covering
+    // the control's label with a large warning-colored ring.
+    drawRing(png, mapped.x, mapped.y, radius, scale * 0.7, { r: 15, g: 23, b: 42, a: 170 });
+    drawRing(png, mapped.x, mapped.y, radius, scale * 0.45, ink);
+    drawRing(png, mapped.x, mapped.y, 1.5 * scale, 1.5 * scale, { r: 255, g: 255, b: 255, a: 245 });
   }
   return PNG.sync.write(png);
 }
@@ -202,9 +260,9 @@ export function annotateVisitedRows(
 ): Buffer {
   if (!rows.length) return pngBytes;
   const png = PNG.sync.read(pngBytes);
-  const wash = { r: 220, g: 28, b: 36, a: 78 };
-  const ink = { r: 255, g: 72, b: 64, a: 230 };
-  const thickness = Math.max(3, Math.round(Math.min(png.width, png.height) * 0.004));
+  const wash = { r: 59, g: 130, b: 246, a: 18 };
+  const ink = { r: 59, g: 130, b: 246, a: 145 };
+  const thickness = Math.max(1, Math.round(Math.min(png.width, png.height) / 400));
   for (const row of rows) {
     if (row.bounds.width < 2 || row.bounds.height < 2) continue;
     const topLeft = mapTapPreviewToPixels({ x: row.bounds.x, y: row.bounds.y }, png, logical);

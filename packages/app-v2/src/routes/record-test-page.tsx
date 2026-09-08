@@ -100,6 +100,9 @@ function RecordingWorkspace({
     queryKey: recordingQueryKeys.workflow(workflowId),
     queryFn: () => productService.inspect(workflowId),
     staleTime: 0,
+    // Focus can return while native input or a capture is being committed.
+    // Those operations explicitly refresh once their durable result exists.
+    refetchOnWindowFocus: false,
   });
 
   useEffect(() => {
@@ -524,7 +527,7 @@ function RecordingWorkspace({
 
       <div className="min-h-0 overflow-auto">
         {recording.isPending ? <PageLoading label="Restoring the recording…" /> : null}
-        {recording.isError || recording.data?.recovery ? (
+        {(recording.isError || recording.data?.recovery) && !snapshot ? (
           <div className="mx-auto grid max-w-md gap-4 rounded-xl border border-border bg-card p-6">
             <h2 className="text-lg font-semibold">Let’s get back to your recording</h2>
             <p className="text-sm leading-relaxed text-muted-foreground">

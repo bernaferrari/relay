@@ -21,11 +21,13 @@ import {
   appendAuthoringRawStop,
 } from "./authoring-raw-recording.js";
 import { authoringTransitionProofStatus } from "./authoring-transition-proof.js";
+import { semanticTargetForRecording } from "./authoring-tap-target.js";
 
 /** The narrow runtime surface needed while one Take is actively recording. */
 export type AuthoringRecordingRuntime<Captured> = {
   observe(session: AuthoringSession): Promise<Captured>;
   execute(session: AuthoringSession, interaction: AuthoringInteraction): Promise<void>;
+  settle?(ms: number): Promise<void>;
   stopVideo?(
     session: AuthoringSession,
   ): Promise<{ data?: Uint8Array; mime?: string; warning?: string }>;
@@ -126,7 +128,28 @@ export async function recordAuthoringInteraction<Captured>(
 ): Promise<AuthoringSession> {
   const { now, persistObservation, nextRevision, writeSession } = input;
   const revisionAtEntrance = currentRevision(session);
-  const entrance = revisionAtEntrance.after ?? revisionAtEntrance.before;
+  const startedAt = now();
+  let entrance = revisionAtEntrance.after ?? revisionAtEntrance.before;
+  let entranceEvidence: AuthoringEvidence[] = [];
+  let executable = interaction;
+  let targetName: string | undefined;
+  if (
+    session.target.kind === "device" &&
+    interaction.kind === "tap" &&
+    interaction.target.point &&
+    !interaction.applied
+  ) {
+    // The last endpoint can predate a transition or a user's external input.
+    // Never derive a semantic selector from that potentially stale tree.
+    const fresh = await persistObservation(await runtime.observe(session));
+    entrance = fresh.observation;
+    entranceEvidence = fresh.evidence;
+    const semantic = semanticTargetForRecording(interaction.target, entrance);
+    if (semantic) {
+      executable = { ...interaction, target: semantic.target };
+      targetName = semantic.name;
+    }
+  }
   const retainedEntrance = retainAuthoringObservations(revisionAtEntrance.observations, [entrance]);
   // Reserve an endpoint before issuing input. Losing a source/exit link after
   // a successful tap would make the durable revision misleading.
@@ -135,7 +158,6 @@ export async function recordAuthoringInteraction<Captured>(
       `A Take can retain at most ${MAX_AUTHORING_RETAINED_OBSERVATIONS} action observations; stop and trim it before recording another action`,
     );
   }
-  const startedAt = now();
   const intent = appendAuthoringRawInteractionIntent(session.take!, {
     target: session.target,
     interaction,
@@ -169,8 +191,11 @@ export async function recordAuthoringInteraction<Captured>(
       !["reusable", "observe", "screenshot", "wait"].includes(interaction.kind) &&
       !("applied" in interaction && interaction.applied)
     ) {
-      await runtime.execute(session, interaction);
+      await runtime.execute(session, executable);
       nativeDispatchCompleted = true;
+      // Native input acknowledgement precedes the navigation animation. Allow
+      // the new screen to arrive before freezing its screenshot and tree.
+      await runtime.settle?.(400);
     } else if (interaction.kind === "wait" && interaction.ms > 0) {
       await runtime.execute(session, interaction);
       nativeDispatchCompleted = true;
@@ -203,7 +228,7 @@ export async function recordAuthoringInteraction<Captured>(
     recordedAt: startedAt,
     startedAt,
     finishedAt,
-    steps: stepsForInteraction(interaction, actionId, session.group),
+    steps: stepsForInteraction(executable, actionId, session.group),
     evidenceIds: captured.evidence.map((item) => item.id),
     ...(entrance
       ? {
@@ -212,11 +237,13 @@ export async function recordAuthoringInteraction<Captured>(
           proofStatus: authoringTransitionProofStatus(entrance, captured.observation),
         }
       : {}),
-    ...((interaction.kind === "observe" || interaction.kind === "screenshot") && interaction.label
-      ? { label: interaction.label }
-      : interaction.kind === "steps" && interaction.label
+    ...(targetName
+      ? { label: `Tap “${targetName}”` }
+      : (interaction.kind === "observe" || interaction.kind === "screenshot") && interaction.label
         ? { label: interaction.label }
-        : {}),
+        : interaction.kind === "steps" && interaction.label
+          ? { label: interaction.label }
+          : {}),
     ...(interaction.kind === "tap" && interaction.browserResolution
       ? { browserResolution: interaction.browserResolution }
       : {}),
@@ -229,7 +256,7 @@ export async function recordAuthoringInteraction<Captured>(
     return {
       ...revision,
       actions: [...revision.actions, action],
-      evidence: [...revision.evidence, ...captured.evidence],
+      evidence: [...revision.evidence, ...entranceEvidence, ...captured.evidence],
       observations,
       after: captured.observation,
     };

@@ -15,7 +15,12 @@ export async function refreshRecording(
   service: RecordingProductService,
   workflowId: string,
 ) {
-  await queryClient.invalidateQueries({ queryKey: recordingQueryKeys.workflow(workflowId) });
+  // One canonical read after a mutation. invalidate's default active refetch
+  // followed by fetchQuery issued two competing inspections of the session.
+  await queryClient.invalidateQueries({
+    queryKey: recordingQueryKeys.workflow(workflowId),
+    refetchType: "none",
+  });
   return queryClient.fetchQuery({
     queryKey: recordingQueryKeys.workflow(workflowId),
     queryFn: () => service.inspect(workflowId),

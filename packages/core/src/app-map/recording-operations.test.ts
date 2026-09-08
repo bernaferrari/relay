@@ -1234,3 +1234,50 @@ test("new branch flows retain the complete path from the map entry", () => {
   assert.equal(branch?.startScreenId, "start");
   assert.deepEqual(branch?.connectionIds, ["enter", result.connectionId]);
 });
+
+test("a recorded tour retains intermediate screens and revisits in one atomic commit", () => {
+  const first = observation("first", beforeFingerprint, "first-pixels");
+  const second = observation("second", afterFingerprint, "second-pixels");
+  const third = observation("third", "c".repeat(64), "third-pixels");
+  const endpoints = [first, second, third, first];
+  const actions = endpoints.slice(1).map((exit, index) => ({
+    ...action(),
+    id: `tour-action-${index}`,
+    label: `Visit ${index + 1}`,
+    entranceObservationId: endpoints[index]!.id,
+    exitObservationId: exit.id,
+  }));
+  const { appMap } = commitAppMapRecording(
+    mapFixture(),
+    {
+      sessionId: "tour",
+      target: { kind: "device", platform: "android", targetId: "pixel" },
+      takeId: "tour-take",
+      takeRevision: 1,
+      actions,
+      observations: [first, second, third],
+      before: first,
+      after: first,
+      evidenceIds: [],
+      testId: "tour-test",
+      testName: "Tour",
+    },
+    context("tour-commit"),
+  );
+  assert.equal(appMap.revision, 1);
+  assert.equal(Object.keys(appMap.screens).length, 3);
+  assert.equal(Object.keys(appMap.connections).length, 3);
+  const saved = appMap.tests["tour-test"]!;
+  assert.equal(saved.kind, "scenario");
+  if (saved.kind !== "scenario") return;
+  assert.equal(saved.steps.length, 3);
+  const connections = Object.values(appMap.connections);
+  assert.deepEqual(
+    connections.map((connection) => connection.label),
+    ["Visit 1", "Visit 2", "Visit 3"],
+  );
+  assert.deepEqual(connections[2]!.destination, {
+    kind: "screen",
+    screenId: connections[0]!.fromScreenId,
+  });
+});

@@ -15,6 +15,7 @@ export function attachRecordedTest(input: {
   testName: string;
   sessionId: string;
   connection: Connection;
+  connections?: Connection[];
   sourceTitle: string;
   destinationTitle: string;
   at: number;
@@ -34,23 +35,19 @@ export function attachRecordedTest(input: {
     kind: "scenario",
     intentSchemaVersion: APP_MAP_TEST_INTENT_SCHEMA_VERSION,
     capture: { mode: "final-screen" },
-    steps: [
-      {
-        id: stepId(input.sessionId),
-        kind: "instruction",
-        intent: [input.sourceTitle, input.destinationTitle].some((title) =>
-          /^(?:Start|Next screen)$/u.test(title),
-        )
-          ? (input.connection.label ?? "Continue")
-          : `Go from ${input.sourceTitle} to ${input.destinationTitle}`,
-        capture: true,
-        binding: {
-          status: "resolved",
-          kind: "connections",
-          connectionIds: [input.connection.id],
-        },
+    steps: (input.connections ?? [input.connection]).map((connection, index) => ({
+      id: stepId(`${input.sessionId}:${index}`),
+      kind: "instruction",
+      intent:
+        connection.label ??
+        `Go to ${connection.destination.kind === "screen" ? (input.map.screens[connection.destination.screenId]?.title ?? "screen") : "finish"}`,
+      capture: true,
+      binding: {
+        status: "resolved",
+        kind: "connections",
+        connectionIds: [connection.id],
       },
-    ],
+    })),
     createdAt: input.at,
     updatedAt: input.at,
   };

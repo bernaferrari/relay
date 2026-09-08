@@ -42,6 +42,7 @@ export type AppMapRecordingInput = {
   takeId: string;
   takeRevision: number;
   actions: AuthoringAction[];
+  observations?: AuthoringObservation[];
   before?: AuthoringObservation;
   after?: AuthoringObservation;
   evidenceIds: string[];
@@ -95,12 +96,20 @@ function entityScope(map: AppMap) {
 }
 
 function findObservedScreen(map: AppMap, observation?: AuthoringObservation): Screen | undefined {
-  const fingerprint = observation?.screen.fingerprint;
-  if (!fingerprint) return undefined;
-  return Object.values(map.screens).find(
-    (screen) =>
-      screen.identity?.fingerprint === fingerprint ||
-      screen.identity?.aliases?.includes(fingerprint),
+  const semantic =
+    hasCurrentAuthoringSemantics(observation?.proof) && (observation?.nodes?.length ?? 0) >= 5
+      ? semanticObservation(observation)?.fingerprint
+      : undefined;
+  const fingerprints = [observation?.screen.fingerprint, semantic].filter(
+    (value): value is string => Boolean(value),
+  );
+  if (!fingerprints.length) return undefined;
+  return Object.values(map.screens).find((screen) =>
+    fingerprints.some(
+      (fingerprint) =>
+        screen.identity?.fingerprint === fingerprint ||
+        screen.identity?.aliases?.includes(fingerprint),
+    ),
   );
 }
 
@@ -485,10 +494,20 @@ function observedDestinationTitle(input: AppMapRecordingInput): string | undefin
     .flatMap((node, index) => {
       const role =
         typeof node.role === "string" ? node.role : typeof node.type === "string" ? node.type : "";
-      if (!/navigation\s*bar|header/i.test(role)) return [];
+      if (
+        !/navigation\s*bar|header/i.test(role) &&
+        !(
+          typeof node.identifier === "string" &&
+          /:id\/(?:collapsing_toolbar|toolbar_title)$/u.test(node.identifier)
+        )
+      )
+        return [];
       const depth = typeof node.depth === "number" && Number.isFinite(node.depth) ? node.depth : 0;
+      const androidToolbar =
+        typeof node.identifier === "string" &&
+        /:id\/(?:collapsing_toolbar|toolbar_title)$/u.test(node.identifier);
       const title =
-        typeof node.identifier === "string" && node.identifier.trim()
+        !androidToolbar && typeof node.identifier === "string" && node.identifier.trim()
           ? node.identifier.trim()
           : typeof node.label === "string" && node.label.trim()
             ? node.label.trim()
@@ -731,6 +750,8 @@ function humanizeIdentifier(identifier: string): string {
 
 function recordedConnectionLabel(input: AppMapRecordingInput, actions: ActionSpec[]): string {
   if (actions[0]?.kind === "passive") return "Observe";
+  const active = input.actions.filter((action) => action.steps.length > 0);
+  if (active.length === 1 && active[0]!.label?.trim()) return active[0]!.label!.trim();
   const steps = input.actions.flatMap((action) => action.steps);
   const reversed = [...steps].reverse();
   const tap = reversed.find((step) => step.kind === "tap");
@@ -744,7 +765,10 @@ function recordedConnectionLabel(input: AppMapRecordingInput, actions: ActionSpe
     }
   }
   const key = reversed.find((step) => step.kind === "key");
-  if (key?.kind === "key") return key.key === "back" ? "Go back" : "Go home";
+  if (key?.kind === "key") {
+    const title = observedDestinationTitle(input);
+    return key.key === "back" ? (title ? `Back to ${title}` : "Go back") : "Go home";
+  }
   const app = reversed.find((step) => step.kind === "app");
   if (app?.kind === "app" && app.action === "open") return `Open ${app.app ?? "app"}`;
   if (steps.some((step) => step.kind === "type")) return "Enter text";
@@ -768,106 +792,25 @@ export function commitAppMapRecording(
       summary: "Committed a reviewed recording",
     },
     (map) => {
-      const pending = input.pendingConnectionId
-        ? map.connections[input.pendingConnectionId]
-        : undefined;
-      if (input.pendingConnectionId && !pending) {
-        appMapFail("missing-reference", "Pending connection no longer exists");
-      }
-      const requestedSourceId = input.sourceScreenId ?? pending?.fromScreenId;
-      let source = requestedSourceId
-        ? map.screens[requestedSourceId]
-        : findObservedScreen(map, input.before);
-      if (requestedSourceId && !source) {
-        appMapFail("missing-reference", "Source screen no longer exists");
-      }
-      source ??= createScreen(
-        map,
-        stableId("screen", `${input.sessionId}:source`),
-        "Start",
-        context.at,
-      );
-      observeScreen({
-        map,
-        screen: source,
-        observation: input.before,
-        target: input.target,
-        evidenceUrisById: input.evidenceUrisById,
-        evidenceKindsById: input.evidenceKindsById,
-        evidenceById: input.evidenceById,
-        at: context.at,
-      });
-
-      const requestedDestination = input.destination;
-      let destination: Connection["destination"];
-      if (requestedDestination?.kind === "end") {
-        destination = { kind: "end" };
-      } else {
-        const forceNewScreen = requestedDestination?.kind === "new-screen";
-        const requestedDestinationId =
-          requestedDestination?.kind === "screen"
-            ? requestedDestination.screenId
-            : !forceNewScreen && pending?.destination.kind === "screen"
-              ? pending.destination.screenId
-              : undefined;
-        // new-screen is an explicit operator decision: do not merge into a
-        // parent that is still visible behind a sheet or overlay.
-        let screen = requestedDestinationId
-          ? map.screens[requestedDestinationId]
-          : forceNewScreen
-            ? undefined
-            : findObservedScreen(map, input.after);
-        if (requestedDestinationId && !screen) {
-          appMapFail("missing-reference", "Destination screen no longer exists");
-        }
-        if (!screen) {
-          screen = createScreen(
+      const segments = recordingSegments(input);
+      const connections: Connection[] = [];
+      for (const [index, segment] of segments.entries()) {
+        const previous = connections.at(-1);
+        if (previous?.destination.kind === "screen")
+          segment.sourceScreenId = previous.destination.screenId;
+        connections.push(
+          applyRecordedConnection(
             map,
-            stableId("screen", `${input.sessionId}:destination`),
-            requestedDestination?.kind === "new-screen" && requestedDestination.title?.trim()
-              ? requestedDestination.title.trim()
-              : (observedDestinationTitle(input) ?? "Next screen"),
-            context.at,
-          );
-          const sourceGroup = Object.values(map.groups).find((group) =>
-            group.screenIds.includes(source.id),
-          );
-          if (sourceGroup) {
-            sourceGroup.screenIds = [...new Set([...sourceGroup.screenIds, screen.id])];
-            sourceGroup.updatedAt = context.at;
-          }
-        }
-        observeScreen({
-          map,
-          screen,
-          observation: input.after,
-          target: input.target,
-          evidenceUrisById: input.evidenceUrisById,
-          evidenceKindsById: input.evidenceKindsById,
-          evidenceById: input.evidenceById,
-          at: context.at,
-        });
-        destination = { kind: "screen", screenId: screen.id };
+            segment,
+            context,
+            index === 0
+              ? connectionId
+              : stableId("connection", `${value.id}:${input.sessionId}:${index}`),
+          ),
+        );
       }
-
-      const actions = recordedActions(input);
-      const recordingSource = recordingSourceForCommit(input, actions);
-      const sourceAnchor = recordedSourceAnchor(input);
-      const connection: Connection = {
-        ...entityScope(map),
-        id: connectionId,
-        fromScreenId: source.id,
-        destination,
-        label: pending?.label ?? recordedConnectionLabel(input, actions),
-        state: "ready",
-        actions,
-        ...(sourceAnchor ? { sourceAnchor } : {}),
-        ...(recordingSource ? { recordingSource } : {}),
-        createdAt: pending?.createdAt ?? context.at,
-        updatedAt: context.at,
-      };
-      map.connections[connection.id] = connection;
-      attachToFlow(map, source.id, connection.id, context.at);
+      const connection = connections[0]!;
+      const source = map.screens[connection.fromScreenId]!;
       if (input.testId) {
         if (!input.testName?.trim()) {
           appMapFail("invalid-map", "A canonical Test name is required with testId");
@@ -882,6 +825,7 @@ export function commitAppMapRecording(
           testName: input.testName,
           sessionId: input.sessionId,
           connection,
+          connections,
           sourceTitle: source.title.trim() || "Start",
           destinationTitle,
           at: context.at,
@@ -890,4 +834,154 @@ export function commitAppMapRecording(
     },
   );
   return { appMap, connectionId, ...(input.testId ? { testId: input.testId } : {}) };
+}
+
+function applyRecordedConnection(
+  map: AppMap,
+  input: AppMapRecordingInput,
+  context: AppMapMutationContext,
+  connectionId: string,
+): Connection {
+  const pending = input.pendingConnectionId
+    ? map.connections[input.pendingConnectionId]
+    : undefined;
+  if (input.pendingConnectionId && !pending) {
+    appMapFail("missing-reference", "Pending connection no longer exists");
+  }
+  const requestedSourceId = input.sourceScreenId ?? pending?.fromScreenId;
+  let source = requestedSourceId
+    ? map.screens[requestedSourceId]
+    : findObservedScreen(map, input.before);
+  if (requestedSourceId && !source) {
+    appMapFail("missing-reference", "Source screen no longer exists");
+  }
+  source ??= createScreen(
+    map,
+    stableId("screen", `${input.sessionId}:source`),
+    "Start",
+    context.at,
+  );
+  observeScreen({
+    map,
+    screen: source,
+    observation: input.before,
+    target: input.target,
+    evidenceUrisById: input.evidenceUrisById,
+    evidenceKindsById: input.evidenceKindsById,
+    evidenceById: input.evidenceById,
+    at: context.at,
+  });
+
+  const requestedDestination = input.destination;
+  let destination: Connection["destination"];
+  if (requestedDestination?.kind === "end") {
+    destination = { kind: "end" };
+  } else {
+    const forceNewScreen = requestedDestination?.kind === "new-screen";
+    const requestedDestinationId =
+      requestedDestination?.kind === "screen"
+        ? requestedDestination.screenId
+        : !forceNewScreen && pending?.destination.kind === "screen"
+          ? pending.destination.screenId
+          : undefined;
+    // new-screen is an explicit operator decision: do not merge into a
+    // parent that is still visible behind a sheet or overlay.
+    let screen = requestedDestinationId
+      ? map.screens[requestedDestinationId]
+      : forceNewScreen
+        ? undefined
+        : findObservedScreen(map, input.after);
+    if (requestedDestinationId && !screen) {
+      appMapFail("missing-reference", "Destination screen no longer exists");
+    }
+    if (!screen) {
+      screen = createScreen(
+        map,
+        stableId("screen", `${input.sessionId}:destination`),
+        requestedDestination?.kind === "new-screen" && requestedDestination.title?.trim()
+          ? requestedDestination.title.trim()
+          : (observedDestinationTitle(input) ?? "Next screen"),
+        context.at,
+      );
+      const sourceGroup = Object.values(map.groups).find((group) =>
+        group.screenIds.includes(source.id),
+      );
+      if (sourceGroup) {
+        sourceGroup.screenIds = [...new Set([...sourceGroup.screenIds, screen.id])];
+        sourceGroup.updatedAt = context.at;
+      }
+    }
+    observeScreen({
+      map,
+      screen,
+      observation: input.after,
+      target: input.target,
+      evidenceUrisById: input.evidenceUrisById,
+      evidenceKindsById: input.evidenceKindsById,
+      evidenceById: input.evidenceById,
+      at: context.at,
+    });
+    destination = { kind: "screen", screenId: screen.id };
+  }
+
+  const actions = recordedActions(input);
+  const recordingSource = recordingSourceForCommit(input, actions);
+  const sourceAnchor = recordedSourceAnchor(input);
+  const connection: Connection = {
+    ...entityScope(map),
+    id: connectionId,
+    fromScreenId: source.id,
+    destination,
+    label: pending?.label ?? recordedConnectionLabel(input, actions),
+    state: "ready",
+    actions,
+    ...(sourceAnchor ? { sourceAnchor } : {}),
+    ...(recordingSource ? { recordingSource } : {}),
+    createdAt: pending?.createdAt ?? context.at,
+    updatedAt: context.at,
+  };
+  map.connections[connection.id] = connection;
+  attachToFlow(map, source.id, connection.id, context.at);
+  return connection;
+}
+
+/** Keep the reviewed action order while retaining each observed transition.
+ * Edited recordings without endpoint links retain their single reviewed path. */
+function recordingSegments(input: AppMapRecordingInput): AppMapRecordingInput[] {
+  if (
+    !input.observations?.length ||
+    input.pendingConnectionId ||
+    input.actions.some((action) => !action.exitObservationId)
+  )
+    return [input];
+  const observations = new Map(
+    input.observations.map((observation) => [observation.id, observation]),
+  );
+  if (input.before) observations.set(input.before.id, input.before);
+  if (input.after) observations.set(input.after.id, input.after);
+  const segments: AppMapRecordingInput[] = [];
+  for (const action of input.actions) {
+    const after = observations.get(action.exitObservationId!);
+    if (!after) return [input];
+    const previous = segments.at(-1);
+    if (!action.steps.length && previous) {
+      previous.actions.push(action);
+      previous.after = after;
+      continue;
+    }
+    segments.push({
+      ...input,
+      sessionId: `${input.sessionId}:${segments.length}`,
+      pendingConnectionId: undefined,
+      destination: undefined,
+      sourceScreenId: segments.length ? undefined : input.sourceScreenId,
+      actions: [action],
+      before: observations.get(action.entranceObservationId!) ?? input.before,
+      after,
+    });
+  }
+  if (!segments.length) return [input];
+  segments.at(-1)!.destination = input.destination;
+  segments.at(-1)!.after = input.after ?? segments.at(-1)!.after;
+  return segments;
 }

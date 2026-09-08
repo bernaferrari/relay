@@ -58,6 +58,7 @@ export async function commitAuthoringSessionMap(input: {
         takeId: session.take!.id,
         takeRevision: revision.revision,
         actions: revision.actions,
+        observations: revision.observations,
         before: revision.before,
         // A reviewed replay is authoritative for edited actions.
         after: input.approvedAfter ?? revision.after,
