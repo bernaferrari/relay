@@ -1053,6 +1053,75 @@ test("low-level Authoring state cannot prove a durable mutation without its exac
   });
 });
 
+test("explicit observation recovers an interrupted recording for review without confirming its input", async () => {
+  await withServer(async ({ port, authoringSessions, authoringTransitionCalls }) => {
+    const actor = client(port, "agent:first");
+    const created = await actor.invoke(
+      "workflow.create",
+      {
+        kind: "author-test",
+        frozenIdentity: frozenAuthor("review-after-restart"),
+        expiresAt: 50_000,
+      },
+      { requestId: "review-after-restart" },
+    );
+    const workflowId = created.workflow.record.workflowId;
+    const started = await actor.invoke("workflow.transition", {
+      workflowId,
+      expectedVersion: 1,
+      action: "start-authoring",
+      leaseId: "lease-1",
+    });
+    const sessionId = started.session!.id as string;
+    const original = authoringSessions.get(sessionId)!;
+    await transitionDurableWorkflow({
+      ...project,
+      workflowId,
+      expectedVersion: 3,
+      actorId: "agent:first",
+      transition: "authoring-record-requested",
+      status: "active",
+      at: 2_000,
+    });
+    authoringSessions.set(sessionId, {
+      ...original,
+      state: "failed",
+      recoveredAt: 2_100,
+      recoverable: true,
+      error: "Restarted during capture",
+    });
+    const uncertain = await actor.invoke("workflow.get", { workflowId });
+    assert.equal(uncertain.workflow.record.status, "needs-attention");
+    // A state change alone is not evidence of the user's recovery observation.
+    authoringSessions.set(sessionId, { ...original, state: "reviewing", recoveredAt: 2_100 });
+    assert.equal(
+      (await actor.invoke("workflow.get", { workflowId })).workflow.record.status,
+      "needs-attention",
+    );
+    const rawEvents = [
+      {
+        id: "recovery-observation",
+        sequence: 1,
+        kind: "observation",
+        recordedAt: 2_200,
+        source: { kind: "authoring-runtime", target: original.target },
+        observation: { id: "current-screen", evidenceIds: [] },
+      },
+    ];
+    authoringSessions.set(sessionId, {
+      ...original,
+      state: "reviewing",
+      recoveredAt: 2_100,
+      take: { rawCaptureVersion: 2, rawEvents } as unknown as NonNullable<AuthoringSession["take"]>,
+    });
+    const recovered = await actor.invoke("workflow.get", { workflowId });
+    assert.equal(recovered.workflow.record.status, "active");
+    assert.equal(recovered.workflow.record.lastTransition, "authoring-review-recovered");
+    assert.deepEqual(authoringSessions.get(sessionId)!.take!.rawEvents, rawEvents);
+    assert.deepEqual(authoringTransitionCalls, []);
+  });
+});
+
 test("foreign Authoring transitions do not reveal or mutate stale or expired state", async () => {
   await withServer(async ({ port }) => {
     const owner = client(port, "agent:first");

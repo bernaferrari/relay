@@ -291,6 +291,7 @@ export async function reconcileAuthoring(
   }
   if (!session) return { workflow };
   const pending = pendingAuthoringMutation(workflow.record);
+  const latestRawEvent = session.take?.rawEvents?.at(-1);
   // A GET is allowed to recover an interrupted dispatch, never to race one
   // still executing in this process. Its completion will commit the receipt.
   if (authoringDispatchIsActive(scope, workflow.record.workflowId)) return { workflow, session };
@@ -331,11 +332,20 @@ export async function reconcileAuthoring(
     if (uncertain.status === "updated") workflow = uncertain.workflow;
     else if ("current" in uncertain) workflow = uncertain.current;
   } else if (
-    workflow.record.status === "terminal" &&
+    (workflow.record.status === "terminal" ||
+      (workflow.record.status === "needs-attention" &&
+        pending?.action === "authoring-record" &&
+        session.recoveredAt !== undefined &&
+        !session.error &&
+        !session.recoverable &&
+        latestRawEvent?.kind === "observation" &&
+        latestRawEvent.recordedAt >= session.recoveredAt)) &&
     session.state === "reviewing" &&
     !session.archive
   ) {
     // Explicit target observation can recover a failed take for review.
+    // This abandons the interrupted recording dispatch; it neither confirms
+    // its input nor manufactures a receipt for the unmatched raw intent.
     const recovered = await runtime.transitionWorkflow({
       organizationId: scope.organizationId,
       projectId: scope.projectId,

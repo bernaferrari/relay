@@ -1170,6 +1170,52 @@ describe("record, review, replay, and save", () => {
     expect(document.body.textContent).not.toContain("Save Test");
   });
 
+  it("clears a replay recovery warning when canonical inspection has reconciled it", async () => {
+    const healthy = state("reviewing", ["inspect", "replay"], { replay: "failed" });
+    const fake = fakeService(healthy);
+    fake.service.replay = async () => ({
+      ...healthy,
+      status: "needs-attention",
+      recovery: {
+        code: "transport",
+        title: "Checking the last step",
+        detail: "Awaiting confirmation",
+        recovery: "Inspect again",
+        retryable: true,
+      },
+    });
+    await renderJourney(
+      "/recordings/workflow-1/review",
+      fake.service,
+      platformWithStorage().platform,
+    );
+    await click(button("Replay on Pixel 9 Pro"));
+    expect(document.body.textContent).toContain("2 steps");
+    expect(document.body.textContent).not.toContain("Checking the last step");
+  });
+
+  it("keeps steps and repair controls visible after a known replay failure", async () => {
+    const failed: ProductRecordingState = {
+      ...state("reviewing", ["inspect", "edit", "replay"], { replay: "failed" }),
+      recovery: {
+        code: "operation-unavailable",
+        title: "Replay did not prove the reviewed recording",
+        detail: "Return to the recorded source",
+        recovery: "Repair and replay",
+        retryable: true,
+      },
+    };
+    const fake = fakeService(failed);
+    await renderJourney(
+      "/recordings/workflow-1/review",
+      fake.service,
+      platformWithStorage().platform,
+    );
+    expect(document.body.textContent).toContain("2 steps");
+    expect(button("Replay on Pixel 9 Pro").disabled).toBe(false);
+    expect(document.body.textContent).toContain("Replay did not prove");
+  });
+
   it("keeps an unfinished recording as a resumable draft without approving it", async () => {
     const fake = fakeService(state("reviewing", ["inspect", "replay"], { replay: "failed" }));
     const storage = platformWithStorage({ activeRecordingWorkflowId: "workflow-1" });

@@ -1,3 +1,4 @@
+import type { ProductRecordingState } from "../data/recording-product-service";
 import { AuthoringHeader } from "./authoring-header";
 import { RecordingReviewLayout } from "./recording-review-layout";
 import { RecordingTrimPanel } from "./recording-trim-panel";
@@ -52,6 +53,18 @@ type ReviewTransitionIntent =
       history?: { kind: "new" | "undo" | "redo"; fromRevision: number };
     };
 
+function blocksReview(state: ProductRecordingState | undefined): boolean {
+  if (!state?.recovery) return false;
+  const snapshot = state.snapshot;
+  // A proved replay failure is actionable review feedback, not lost transport.
+  return !(
+    state.recovery.code === "operation-unavailable" &&
+    snapshot?.stage === "reviewing" &&
+    snapshot.phase !== "needs-attention" &&
+    snapshot.allowedNextActions.includes("replay")
+  );
+}
+
 export function ReviewRecordingPage({
   recordingId: recordingIdProp,
 }: { recordingId?: string } = {}) {
@@ -86,9 +99,11 @@ export function ReviewRecordingPage({
       if (intent.action === "edit") return productService.edit(intent.edit);
       return productService.approve(intent.testName);
     },
-    onSuccess: async (state, intent) => {
+    onSuccess: async (_state, intent) => {
       const canonical = await refreshRecording(queryClient, productService, workflowId);
-      if (state.recovery || canonical.recovery) return;
+      if (blocksReview(canonical)) return;
+      // The fresh durable snapshot supersedes a transient transport warning.
+      transition.reset();
       if (intent.action === "edit") {
         const nextIds = canonical.snapshot?.review?.actions.map((action) => action.id) ?? [];
         setSelectedActionIds((current) => current.filter((id) => nextIds.includes(id)).slice(0, 1));
@@ -121,7 +136,7 @@ export function ReviewRecordingPage({
     mutationFn: async () => {
       await nameWrites.current;
       const persisted = await productService.inspect(workflowId);
-      if (persisted.recovery || !persisted.snapshot?.review)
+      if (blocksReview(persisted) || !persisted.snapshot?.review)
         throw new Error("Could not confirm the saved draft. Keep this page open and try again.");
       return persisted;
     },
@@ -144,7 +159,7 @@ export function ReviewRecordingPage({
     : "recorded device";
   const review = snapshot?.review;
   const reviewReady = Boolean(
-    snapshot && !state?.recovery && !recording.error && !transition.data?.recovery,
+    snapshot && !blocksReview(state) && !recording.error && !blocksReview(transition.data),
   );
   const allowed = new Set(reviewReady ? (snapshot?.allowedNextActions ?? []) : []);
   const actions = useMemo(() => review?.actions ?? [], [review?.actions]);
@@ -436,7 +451,11 @@ export function ReviewRecordingPage({
         className={reviewReady ? "mx-4" : "m-auto flex-1 w-full !max-w-none !mt-0"}
         error={recording.error ?? transition.error ?? leaveDraft.error}
         recovery={transition.data?.recovery ?? state?.recovery}
-        onRetry={() => void recording.refetch()}
+        onRetry={() => {
+          void recording.refetch().then((result) => {
+            if (!result.error && result.data && !blocksReview(result.data)) transition.reset();
+          });
+        }}
         retrying={recording.isFetching}
       />
 
