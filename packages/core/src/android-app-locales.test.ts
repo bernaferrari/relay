@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   androidBaseApkPath,
   parseAndroidLocaleConfig,
+  parseAndroidResourceLocales,
   setAndroidAppLocaleOnDevice,
 } from "./android-app-locales.js";
 
@@ -40,6 +41,23 @@ test("reads the app-declared Android locales without product-specific seeds", ()
 
 test("an app without LocaleConfig remains a manual Variable", () => {
   assert.deepEqual(parseAndroidLocaleConfig({ manifest: "", resources: "", localeXml: "" }), []);
+});
+
+test("extracts only language resource qualifiers as actual APK locales", () => {
+  assert.deepEqual(
+    parseAndroidResourceLocales(
+      [
+        "      (pt) (array) size=2",
+        "      (en-rCA) (array) size=2",
+        "      (b+zh+Hans) (array) size=2",
+        "      (night) (array) size=2",
+        "      (rUS) (array) size=2",
+        '      () "CPU (CPU) DNS (DNS) USB (USB) You (You)"',
+        "      (en-land) (array) size=2",
+      ].join("\n"),
+    ),
+    ["en", "en-CA", "pt", "zh-Hans"],
+  );
 });
 
 test("setAndroidAppLocaleOnDevice rejects before adb when inputs are unusable", async () => {

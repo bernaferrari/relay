@@ -29,6 +29,7 @@ export type ProductDeviceRecovery = {
 
 export type ProductLaunchedApp = OperationOutput<"target.app.launch">["launched"];
 export type ProductInstalledApp = OperationOutput<"target.app.list">["apps"][number];
+export type ProductAppLocales = OperationOutput<"target.app.locales">;
 
 export type DeviceProductService = {
   list(): Promise<readonly ProductDevice[]>;
@@ -44,6 +45,12 @@ export type DeviceProductService = {
    * canonical target operation; managed browsers remain a separate target. */
   launchApp?(deviceId: string, app: string, relaunch?: boolean): Promise<ProductLaunchedApp>;
   listInstalledApps?(serial: string): Promise<readonly ProductInstalledApp[]>;
+  listAppLocales?(serial: string, packageName: string): Promise<ProductAppLocales>;
+  setAppLocale?(
+    serial: string,
+    packageName: string,
+    locale: string,
+  ): Promise<OperationOutput<"target.app.locale.set">>;
 };
 
 export const deviceQueryKeys = {
@@ -223,6 +230,16 @@ export function createDeviceProductService(platform: Platform): DeviceProductSer
     async listInstalledApps(serial) {
       const result = await (await client()).invoke("target.app.list", { serial });
       return result.apps;
+    },
+    async listAppLocales(serial, packageName) {
+      return (await client()).invoke("target.app.locales", { serial, package: packageName });
+    },
+    async setAppLocale(serial, packageName, locale) {
+      return (await client()).invoke("target.app.locale.set", {
+        serial,
+        package: packageName,
+        locale,
+      });
     },
   };
 }

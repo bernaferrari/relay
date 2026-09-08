@@ -9,11 +9,17 @@ import {
   useNavigate,
 } from "@tanstack/react-router";
 import { RotateCcw } from "lucide-react";
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, type FormEvent, type RefObject } from "react";
 import { LibraryPage, PageHeader } from "../components/page-layout";
 import { EmptyState, RecoveryState } from "../components/product-patterns";
 import { deviceSummaryLine } from "../data/device-label";
-import { deviceQueryKeys, type ProductDevice } from "../data/device-product-service";
+import {
+  deviceQueryKeys,
+  type DeviceProductService,
+  type ProductDevice,
+} from "../data/device-product-service";
+import { InstalledAppChoice } from "../components/installed-app-choice";
+import { SelectField } from "../components/filter-select";
 import { readSetupContinuation } from "../data/setup-continuation";
 import type {
   LiveTargetBrowserContext,
@@ -39,6 +45,17 @@ function deviceDescription(device: ProductDevice): string {
   return deviceSummaryLine(device);
 }
 
+function localeLabel(locale: string): string {
+  try {
+    const english = new Intl.DisplayNames(["en"], { type: "language" }).of(locale);
+    const native = new Intl.DisplayNames([locale], { type: "language" }).of(locale);
+    if (english && native && english !== native) return `${native} · ${english} (${locale})`;
+    return `${english ?? locale} (${locale})`;
+  } catch {
+    return locale;
+  }
+}
+
 export function DevicePage() {
   const { deviceId } = routeApi.useParams();
   const navigate = useNavigate();
@@ -59,8 +76,9 @@ export function DevicePage() {
   const [liveAttempt, setLiveAttempt] = useState(0);
   const [talkBackRefresh, setTalkBackRefresh] = useState(0);
   const [appIdentifier, setAppIdentifier] = useState("");
-  const [appIdentifierError, setAppIdentifierError] = useState<string>();
-  const [relaunchApp, setRelaunchApp] = useState(false);
+  const [localeSuccess, setLocaleSuccess] = useState<string>();
+  const [selectedLocale, setSelectedLocale] = useState("");
+  const localeSelectionRef = useRef({ serial: "", packageName: "" });
   const device = useQuery({
     queryKey: deviceQueryKeys.device(deviceId),
     queryFn: () => deviceService.get(deviceId),
@@ -90,13 +108,31 @@ export function DevicePage() {
       setLiveAttempt((value) => value + 1);
     },
   });
-  const appLaunch = useMutation({
-    mutationFn: async () => {
-      if (!device.data) throw new TypeError("This device is no longer available.");
-      if (!deviceService.launchApp) {
-        throw new TypeError("App launch is not available from this Relay host.");
-      }
-      return deviceService.launchApp(device.data.id, appIdentifier.trim(), relaunchApp);
+  const appLocales = useQuery({
+    queryKey: ["device-app-locales", device.data?.serial, appIdentifier],
+    queryFn: () => deviceService.listAppLocales!(device.data!.serial, appIdentifier),
+    enabled: Boolean(device.data?.serial && appIdentifier && deviceService.listAppLocales),
+    retry: false,
+  });
+  const localeChange = useMutation({
+    mutationFn: ({
+      locale,
+      serial,
+      packageName,
+    }: {
+      locale: string;
+      serial: string;
+      packageName: string;
+    }) => deviceService.setAppLocale!(serial, packageName, locale),
+    onSuccess: (result, variables) => {
+      if (
+        localeSelectionRef.current.serial !== variables.serial ||
+        localeSelectionRef.current.packageName !== variables.packageName
+      )
+        return;
+      setLiveAttempt((value) => value + 1);
+      setSelectedLocale(variables.locale);
+      setLocaleSuccess(result.observedLocale ?? "Locale updated");
     },
   });
   const target = useQuery({
@@ -115,22 +151,12 @@ export function DevicePage() {
     enabled: Boolean(device.data && device.data.status !== "needs-attention"),
     staleTime: 5_000,
   });
-  const appLaunchSupported = Boolean(
-    device.data?.status === "ready" &&
-    (device.data.platform === "android" || device.data.platform === "ios") &&
-    deviceService.launchApp,
+  const appControlsSupported = Boolean(
+    device.data?.runnable &&
+    device.data.platform === "android" &&
+    deviceService.launchApp &&
+    deviceService.listInstalledApps,
   );
-
-  function submitAppLaunch(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const identifier = appIdentifier.trim();
-    if (!identifier) {
-      setAppIdentifierError("Enter an app name, package, or bundle identifier.");
-      return;
-    }
-    setAppIdentifierError(undefined);
-    appLaunch.mutate();
-  }
 
   useEffect(() => {
     const createPreview = productService.previewTarget;
@@ -298,6 +324,101 @@ export function DevicePage() {
               {recover.data.summary}
             </p>
           ) : null}
+          {device.data.platform === "android" ? (
+            <section className="grid gap-4" aria-labelledby="device-launch-title">
+              <div className="grid gap-2 text-sm leading-relaxed text-text-weak">
+                <h2 className="font-semibold text-text-strong" id="device-launch-title">
+                  App and language
+                </h2>
+                <p>Choose an installed app, open it, and set one of its supported languages.</p>
+              </div>
+              <div className="grid gap-4">
+                <div className="relay-form-field grid min-w-0 gap-2 text-sm [&>label]:font-medium">
+                  {appControlsSupported ? (
+                    <InstalledAppChoice
+                      service={deviceService}
+                      serial={device.data.serial}
+                      value={appIdentifier}
+                      onChange={(value) => {
+                        setAppIdentifier(value);
+                        setSelectedLocale("");
+                        setLocaleSuccess(undefined);
+                        localeSelectionRef.current = {
+                          serial: device.data!.serial,
+                          packageName: value,
+                        };
+                      }}
+                      onOpened={() => setLiveAttempt((value) => value + 1)}
+                    />
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      App controls are unavailable on this host. Reconnect the device and try again.
+                    </p>
+                  )}
+                </div>
+                {appIdentifier ? (
+                  appLocales.isPending ? (
+                    <p className="text-sm text-muted-foreground" role="status">
+                      Loading supported languages…
+                    </p>
+                  ) : appLocales.isError ? (
+                    <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                      <span>Supported languages could not be loaded.</span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => void appLocales.refetch()}
+                      >
+                        Try again
+                      </Button>
+                    </div>
+                  ) : appLocales.data?.locales.length ? (
+                    <div className="grid max-w-sm gap-2">
+                      <SelectField
+                        label="Language"
+                        value={selectedLocale}
+                        placeholder="Choose a language"
+                        options={appLocales.data.locales.map((locale) => ({
+                          value: locale,
+                          label: localeLabel(locale),
+                        }))}
+                        onValueChange={(locale) =>
+                          localeChange.mutate({
+                            locale,
+                            serial: device.data!.serial,
+                            packageName: appIdentifier,
+                          })
+                        }
+                        disabled={localeChange.isPending}
+                      />
+                      {localeSuccess ? (
+                        <p className="text-sm text-emerald-700 dark:text-emerald-400" role="status">
+                          Language updated: {localeLabel(localeSuccess)}
+                        </p>
+                      ) : null}
+                      {localeChange.error ? (
+                        <p className="text-sm text-destructive" role="alert">
+                          Language could not be updated. Try again.
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      This app has no selectable languages available.
+                    </p>
+                  )
+                ) : null}
+              </div>
+            </section>
+          ) : null}
+          {device.data.platform === "ios" && device.data.runnable && deviceService.launchApp ? (
+            <IOSAppLaunchForm
+              service={deviceService}
+              deviceId={device.data.id}
+              deviceName={device.data.name}
+            />
+          ) : null}
           {device.data.status !== "needs-attention" ? (
             <DeviceLivePreview
               canvas={canvas}
@@ -314,91 +435,80 @@ export function DevicePage() {
               talkBack={talkBack}
             />
           ) : null}
-
-          {appLaunchSupported ? (
-            <section className="grid gap-4" aria-labelledby="device-launch-title">
-              <div className="grid gap-2 text-sm leading-relaxed text-text-weak">
-                <h2 className="font-semibold text-text-strong" id="device-launch-title">
-                  Launch an app
-                </h2>
-                <p>Open an installed app by name, package, or bundle identifier.</p>
-              </div>
-              <form
-                className="relay-device-launch-form grid gap-4"
-                onSubmit={submitAppLaunch}
-                noValidate
-              >
-                <div className="relay-form-field grid min-w-0 gap-2 text-sm [&>label]:font-medium">
-                  <label htmlFor="device-app-identifier">App/package/bundle identifier</label>
-                  <input
-                    id="device-app-identifier"
-                    className="relay-input min-h-9 w-full rounded-[var(--radius-md)] border border-[var(--border-base)] bg-[var(--background-strong)] px-3 text-base text-[var(--text-strong)] shadow-[0_1px_2px_color-mix(in_srgb,black_5%,transparent)] placeholder:text-[var(--text-weaker)] focus-visible:border-[var(--relay-focus-ring)] focus-visible:outline-3 focus-visible:outline-[color-mix(in_srgb,var(--relay-focus-ring)_24%,transparent)] focus-visible:outline-offset-1"
-                    type="text"
-                    value={appIdentifier}
-                    placeholder="com.example.app"
-                    autoComplete="off"
-                    spellCheck={false}
-                    required
-                    aria-invalid={appIdentifierError ? true : undefined}
-                    aria-describedby={
-                      appIdentifierError
-                        ? "device-app-identifier-error"
-                        : "device-app-identifier-help"
-                    }
-                    onChange={(event) => {
-                      setAppIdentifier(event.target.value);
-                      if (appIdentifierError) setAppIdentifierError(undefined);
-                      if (appLaunch.error || appLaunch.data) appLaunch.reset();
-                    }}
-                  />
-                  <p id="device-app-identifier-help">Use the package or bundle identifier.</p>
-                  {appIdentifierError ? (
-                    <p
-                      id="device-app-identifier-error"
-                      className="relay-settings-error mt-3 text-sm leading-relaxed text-destructive"
-                      role="alert"
-                    >
-                      {appIdentifierError}
-                    </p>
-                  ) : null}
-                </div>
-                <label className="relay-device-launch-relaunch flex min-h-11 items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={relaunchApp}
-                    onChange={(event) => setRelaunchApp(event.target.checked)}
-                  />
-                  <span>Relaunch if the app is already open</span>
-                </label>
-                <Button type="submit" variant="default" disabled={appLaunch.isPending}>
-                  {appLaunch.isPending ? "Launching…" : "Launch app"}
-                </Button>
-                {appLaunch.error ? (
-                  <p
-                    className="relay-settings-error mt-3 text-sm leading-relaxed text-destructive"
-                    role="alert"
-                  >
-                    {friendlyAppLaunchIssue(appLaunch.error)}
-                  </p>
-                ) : null}
-                {appLaunch.data ? (
-                  <div
-                    className="relay-device-launch-result rounded-xl border border-border bg-card p-5"
-                    role="status"
-                    aria-live="polite"
-                  >
-                    <strong>Launch requested</strong>
-                    <p>
-                      Relay launched {appLaunch.data.app} on {device.data.name}.
-                    </p>
-                  </div>
-                ) : null}
-              </form>
-            </section>
-          ) : null}
         </div>
       ) : null}
     </LibraryPage>
+  );
+}
+
+function IOSAppLaunchForm({
+  service,
+  deviceId,
+  deviceName,
+}: {
+  service: DeviceProductService;
+  deviceId: string;
+  deviceName: string;
+}) {
+  const [identifier, setIdentifier] = useState("");
+  const [relaunch, setRelaunch] = useState(false);
+  const launch = useMutation({
+    mutationFn: () => service.launchApp!(deviceId, identifier.trim(), relaunch),
+  });
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!identifier.trim()) return;
+    launch.mutate();
+  }
+  return (
+    <section
+      className="grid gap-4 border-t border-border pt-6"
+      aria-labelledby="device-launch-title"
+    >
+      <div className="grid gap-1 text-sm">
+        <h2 className="font-semibold" id="device-launch-title">
+          Launch an app
+        </h2>
+        <p className="text-muted-foreground">Open an app by package or bundle identifier.</p>
+      </div>
+      <form className="grid max-w-xl gap-4" onSubmit={submit} noValidate>
+        <label className="grid gap-1.5 text-sm font-medium" htmlFor="device-app-identifier">
+          App or bundle identifier
+          <input
+            id="device-app-identifier"
+            className="min-h-11 rounded-md border border-input bg-background px-3 text-base font-normal focus-visible:outline-2 focus-visible:outline-ring"
+            value={identifier}
+            onChange={(event) => {
+              setIdentifier(event.target.value);
+              launch.reset();
+            }}
+            autoComplete="off"
+            spellCheck={false}
+          />
+        </label>
+        <label className="flex min-h-11 items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={relaunch}
+            onChange={(event) => setRelaunch(event.target.checked)}
+          />
+          Relaunch if the app is already open
+        </label>
+        <Button type="submit" className="w-fit" disabled={launch.isPending || !identifier.trim()}>
+          {launch.isPending ? "Launching…" : "Launch app"}
+        </Button>
+        {launch.error ? (
+          <p className="text-sm text-destructive" role="alert">
+            {friendlyAppLaunchIssue(launch.error)}
+          </p>
+        ) : null}
+        {launch.data ? (
+          <p className="text-sm text-muted-foreground" role="status">
+            Launch requested for {launch.data.app} on {deviceName}.
+          </p>
+        ) : null}
+      </form>
+    </section>
   );
 }
 

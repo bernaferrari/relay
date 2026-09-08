@@ -45,6 +45,26 @@ export function parseAndroidLocaleConfig(input: {
   return [...new Set(tags.filter((tag) => /^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(tag)))];
 }
 
+/** Extract locales from APK resource configuration qualifiers when the app
+ * has no LocaleConfig XML. Only language-bearing qualifiers are accepted;
+ * density/night/region-only configurations are ignored. */
+export function parseAndroidResourceLocales(resources: string): string[] {
+  const locales = new Set<string>();
+  for (const match of resources.matchAll(
+    /^\s+\((b\+[A-Za-z0-9+]+|[A-Za-z]{2,3}(?:-r[A-Za-z]{2,3})?)(?:-[^)]+)?\)\s+\(/gm,
+  )) {
+    const qualifier = match[1]!;
+    let locale: string | undefined;
+    if (/^b\+[A-Za-z]{2,3}(?:\+[A-Za-z0-9]{2,8})*$/i.test(qualifier)) {
+      locale = qualifier.slice(2).split("+").join("-");
+    } else if (/^(?!r[A-Z]{2,3}$)[A-Za-z]{2,3}(?:-r[A-Za-z]{2,3})?$/u.test(qualifier)) {
+      locale = qualifier.replace(/-r([A-Za-z]{2,3})$/u, "-$1");
+    }
+    if (locale) locales.add(locale);
+  }
+  return [...locales].sort();
+}
+
 /** Read the locale list the installed Android app itself declares. No product
  * preset is involved; any package using Android's LocaleConfig can reuse it. */
 export async function listAndroidAppLocales(
@@ -79,7 +99,9 @@ export async function listAndroidAppLocales(
       );
     const manifest = await runAapt(["dump", "xmltree", "--file", "AndroidManifest.xml", apk]);
     const resourceId = manifest.match(/android:localeConfig[^\n]*=@(0x[0-9a-f]+)/i)?.[1];
-    if (!resourceId) return [];
+    if (!resourceId) {
+      return parseAndroidResourceLocales(await runAapt(["dump", "resources", apk]));
+    }
     const resources = await runAapt(["dump", "resources", apk]);
     const escaped = resourceId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const resourceName = resources.match(
