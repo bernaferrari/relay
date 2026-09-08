@@ -157,3 +157,22 @@ test("an uncertain durable Authoring decision is inspected and never retried", a
     ["workflow.transition", "workflow.get"],
   );
 });
+
+test("durable recording retains typed pre-dispatch proof after inspecting the failed decision", async () => {
+  const error = Object.assign(new Error("Target inspection failed before tap"), {
+    body: { code: "input-not-dispatched", dispatched: false },
+  });
+  const scripted = createScriptedRelayClient([
+    { id: "workflow.transition", error },
+    { id: "workflow.get", output: { workflow: workflow(5, "authoring-record-failed"), session } },
+  ]);
+  const state = await createRelayWorkflows(scripted.client).advanceAuthoring({
+    workflowId: "author-workflow",
+    expectedVersion: 3,
+    action: "record",
+    interaction: { kind: "tap", target: { label: "Continue" } },
+  });
+  assert.equal(state.problems.at(-1)?.code, "input-not-dispatched");
+  assert.ok(state.allowedNextActions.includes("record"));
+  assert.equal(scripted.invocations.filter((call) => call.id === "workflow.transition").length, 1);
+});

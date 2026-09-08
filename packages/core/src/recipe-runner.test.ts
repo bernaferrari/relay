@@ -1,3 +1,4 @@
+import { InputNotDispatchedError } from "./input-not-dispatched.js";
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -6156,4 +6157,47 @@ describe("runRecipeStep expect-screen mapped prelude", () => {
       false,
     );
   });
+});
+
+it("marks only a failed pre-tap snapshot as not dispatched", async () => {
+  let presses = 0;
+  const device = stubDevice({
+    snapshot: async () => {
+      throw new Error("helper retirement failed");
+    },
+    press: async () => {
+      presses++;
+      return {};
+    },
+  });
+  await assert.rejects(
+    runRecipeStep(device, { kind: "tap", target: { label: "Rede e Internet" } }, noLog),
+    InputNotDispatchedError,
+  );
+  assert.equal(presses, 0);
+});
+it("does not label an attempted tap failure as not dispatched", async () => {
+  let presses = 0;
+  const device = stubDevice({
+    snapshot: async () => ({
+      nodes: [
+        {
+          role: "button",
+          label: "Continue",
+          enabled: true,
+          hittable: true,
+          rect: { x: 10, y: 20, width: 100, height: 40 },
+        },
+      ],
+    }),
+    press: async () => {
+      presses++;
+      throw new Error("helper retirement failed after tap");
+    },
+  });
+  await assert.rejects(
+    runRecipeStep(device, { kind: "tap", target: { label: "Continue" } }, noLog),
+    (error) => !(error instanceof InputNotDispatchedError),
+  );
+  assert.ok(presses > 0);
 });

@@ -1,3 +1,4 @@
+import { RecordingInputNotSentError } from "./recording-input-outcome";
 import { describe, expect, it, vi } from "vitest";
 import type { AuthoringInteraction, AuthoringRecordingEdit } from "@relay/protocol";
 import type { ProductRecordingState } from "./recording-product-service";
@@ -7,7 +8,7 @@ import {
 } from "./recording-product-service";
 
 const journeyEdit = vi.hoisted(() => vi.fn());
-const journey = vi.hoisted(() => ({ edit: journeyEdit }));
+const journey = vi.hoisted(() => ({ edit: journeyEdit, record: vi.fn() }));
 const client = vi.hoisted(() => ({ invoke: vi.fn(), binaryResource: vi.fn() }));
 
 vi.mock("./product-client", () => ({
@@ -504,3 +505,33 @@ describe("recording edit adapter", () => {
 // Keep this assertion close to the adapter tests so a future protocol edit
 // change cannot silently make the React adapter's interaction input unsafe.
 void (interaction satisfies AuthoringInteraction);
+
+it("live recording preserves only typed pre-dispatch recovery", async () => {
+  const service = createRecordingProductService(platform);
+  const live = await service.liveTarget!({
+    kind: "device",
+    platform: "android",
+    targetId: "emulator-test",
+  });
+  journey.record.mockResolvedValue({
+    recovery: {
+      code: "input-not-dispatched",
+      detail: "Inspection failed before tapping",
+      recovery: "Reconnect",
+    },
+  });
+  await expect(live.input({ kind: "tap", target: { label: "Continue" } })).rejects.toBeInstanceOf(
+    RecordingInputNotSentError,
+  );
+  journey.record.mockResolvedValue({
+    recovery: {
+      code: "mutation-outcome-unknown",
+      detail: "Inspection failed after tapping",
+      recovery: "Inspect",
+    },
+  });
+  await expect(
+    live.input({ kind: "tap", target: { label: "Continue" } }),
+  ).rejects.not.toBeInstanceOf(RecordingInputNotSentError);
+  await live.close();
+});

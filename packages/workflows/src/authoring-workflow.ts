@@ -37,6 +37,23 @@ function unavailableProblem(stage: string, error: unknown): WorkflowProblem {
 }
 
 function mutationUnknownProblem(action: string, error: unknown): WorkflowProblem {
+  const body = error && typeof error === "object" && "body" in error ? error.body : undefined;
+  if (
+    body &&
+    typeof body === "object" &&
+    "code" in body &&
+    body.code === "input-not-dispatched" &&
+    "dispatched" in body &&
+    body.dispatched === false
+  ) {
+    return {
+      code: "input-not-dispatched",
+      title: "The interaction was not sent",
+      detail: errorDetail(error),
+      recovery: "Reconnect the device, then try again.",
+      retryable: true,
+    };
+  }
   return {
     code: "mutation-outcome-unknown",
     title: `Relay cannot prove whether ${action}`,
@@ -616,6 +633,28 @@ export class CanonicalAuthoringWorkflow {
         session: output.session,
       });
     } catch (error) {
+      const body = error && typeof error === "object" && "body" in error ? error.body : undefined;
+      if (
+        body &&
+        typeof body === "object" &&
+        "code" in body &&
+        body.code === "input-not-dispatched" &&
+        "dispatched" in body &&
+        body.dispatched === false
+      ) {
+        return {
+          ...current,
+          problems: [
+            {
+              code: "input-not-dispatched",
+              title: "The interaction was not sent",
+              detail: errorDetail(error),
+              recovery: "Reconnect the device, then try again.",
+              retryable: true,
+            },
+          ],
+        };
+      }
       return {
         ...current,
         phase: "needs-attention",

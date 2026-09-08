@@ -1,3 +1,4 @@
+import { InputNotDispatchedError } from "./input-not-dispatched.js";
 import type { Device } from "./device.js";
 import { createHash } from "node:crypto";
 import { resolveStepPoint, type StepPoint } from "@relay/protocol";
@@ -359,7 +360,18 @@ async function tapTarget(
   // An immediately preceding expect-screen already paid for and verified this
   // exact tree. Reuse it until the first mutation; fallback strategies still
   // take a fresh snapshot when the cached tree cannot resolve the target.
-  let nodes = verifiedNodes?.length ? verifiedNodes : await snapshot(device);
+  const readBeforeTap = async () => {
+    try {
+      return await snapshot(device);
+    } catch (error) {
+      if (isCancel(error)) throw error;
+      throw new InputNotDispatchedError(
+        "Relay could not inspect the target before tapping. Reconnect the device, then try again.",
+        { cause: error },
+      );
+    }
+  };
+  let nodes = verifiedNodes?.length ? verifiedNodes : await readBeforeTap();
   let namedOutcome = resolveNamedControlOutcome(nodes, namedTarget);
   let named = namedOutcome.status === "resolved" ? namedOutcome.resolution : undefined;
   if (
@@ -373,7 +385,7 @@ async function tapTarget(
     for (let attempt = 0; attempt < 5 && !named; attempt += 1) {
       await cooperativeCheckpoint();
       await sleep(250, device);
-      nodes = await snapshot(device);
+      nodes = await readBeforeTap();
       namedOutcome = resolveNamedControlOutcome(nodes, namedTarget);
       named = namedOutcome.status === "resolved" ? namedOutcome.resolution : undefined;
     }
@@ -606,6 +618,8 @@ async function tapRecordedTarget(
     } catch (error) {
       rethrowIosMutationOutcomeUnknown(error);
       if (isCancel(error)) throw error;
+      // A later candidate cannot erase an earlier attempt's uncertain outcome.
+      if (index === 0 && error instanceof InputNotDispatchedError) throw error;
       const message = error instanceof Error ? error.message : String(error);
       failures.push({ target: structuredClone(candidate), error: message });
       const attempt = {

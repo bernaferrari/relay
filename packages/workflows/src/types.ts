@@ -141,6 +141,7 @@ export type WorkflowProblem = {
     | "revision-changed"
     | "malformed-response"
     | "mutation-outcome-unknown"
+    | "input-not-dispatched"
     | "stale-workflow-version"
     | "invalid-workflow-ref"
     | "unknown-job-status"

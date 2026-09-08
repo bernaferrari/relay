@@ -1,3 +1,4 @@
+import { InputNotDispatchedError } from "@relay/core";
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -837,7 +838,7 @@ test("a conclusively failed Authoring interaction keeps the durable workflow usa
           ],
         } as unknown as NonNullable<AuthoringSession["take"]>,
       });
-      throw new Error("The selected point was outside the controllable target");
+      throw new InputNotDispatchedError("Target inspection failed before tap");
     };
 
     await assert.rejects(
@@ -853,7 +854,9 @@ test("a conclusively failed Authoring interaction keeps the durable workflow usa
         error.body &&
         typeof error.body === "object" &&
         "code" in error.body &&
-        error.body.code === "AUTHORING_INTERACTION_FAILED",
+        error.body.code === "input-not-dispatched" &&
+        "dispatched" in error.body &&
+        error.body.dispatched === false,
     );
     runtime.transitionAuthoringSession = transition;
 

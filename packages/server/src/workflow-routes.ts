@@ -1,3 +1,4 @@
+import { InputNotDispatchedError } from "@relay/core";
 import type http from "node:http";
 import {
   cancelJob,
@@ -617,7 +618,11 @@ export async function handleWorkflowRoute(input: {
               422,
               error instanceof Error ? error.message : "The target interaction failed",
               {
-                code: "AUTHORING_INTERACTION_FAILED",
+                code:
+                  error instanceof InputNotDispatchedError
+                    ? "input-not-dispatched"
+                    : "AUTHORING_INTERACTION_FAILED",
+                ...(error instanceof InputNotDispatchedError ? { dispatched: false } : {}),
                 workflow: failed.workflow,
                 session: failedSession,
               },

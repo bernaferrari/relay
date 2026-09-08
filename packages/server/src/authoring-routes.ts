@@ -1,3 +1,4 @@
+import { InputNotDispatchedError } from "@relay/core";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import type http from "node:http";
@@ -455,6 +456,7 @@ export function createAuthoringRuntime(): AuthoringRuntime {
           await runRecipeStep(device, step, { log: () => undefined, variables, artifacts });
         } catch (error) {
           if (error instanceof IosMutationOutcomeUnknownError) throw error;
+          if (index === 0 && error instanceof InputNotDispatchedError) throw error;
           const message = error instanceof Error ? error.message : String(error);
           throw new Error(`Step ${index + 1} (${describeRecipeStep(step)}): ${message}`, {
             cause: error,
@@ -683,6 +685,9 @@ async function body<T>(request: http.IncomingMessage): Promise<T> {
 }
 
 function mapError(error: unknown): never {
+  if (error instanceof InputNotDispatchedError) {
+    throw new HttpError(409, error.message, { code: error.code, dispatched: false });
+  }
   if (error instanceof IosMutationOutcomeUnknownError) {
     throw iosMutationOutcomeUnknownHttpError(error);
   }

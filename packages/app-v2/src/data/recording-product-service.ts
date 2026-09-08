@@ -366,6 +366,9 @@ export function createRecordingProductService(
         onInteraction: async (interaction) => {
           const state = await recording.journey.record(interaction);
           if (state.recovery) {
+            if (state.recovery.code === "input-not-dispatched") {
+              throw new RecordingInputNotSentError(state.recovery.detail);
+            }
             if (rejectedGestureBeforeDispatch(state.recovery.detail)) {
               throw new RecordingInputNotSentError("The scroll exceeded the screen bounds.");
             }
