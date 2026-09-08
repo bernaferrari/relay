@@ -48,7 +48,13 @@ import type { EnqueueJobInput, TestJob } from "./session-contract.js";
 import { isTargetUnavailableError } from "./target-unavailable.js";
 import { humanInterventionNeedsReproof } from "./job-intervention.js";
 import { captureAutomaticState } from "./session-automatic-evidence.js";
-import { appendStepLog, finishStep, observeStepActions, openStep } from "./session-trace-steps.js";
+import {
+  appendStepLog,
+  finishCheckedStep,
+  finishStep,
+  observeStepActions,
+  openStep,
+} from "./session-trace-steps.js";
 import {
   createSessionJob,
   prepareSameConfigurationReplay,
@@ -516,6 +522,7 @@ async function runRecipeSteps(
       const evidencePhases = automaticEvidencePhases(resolvedStep);
       if (evidencePhases.includes("before"))
         await captureAutomaticState(job, device, ts, "before", pushLog, runtime);
+      const artifactStart = job.artifacts.length;
       await runRecipeStep(device, resolvedStep, {
         log: pushLog,
         job,
@@ -524,7 +531,7 @@ async function runRecipeSteps(
       });
       if (evidencePhases.includes("after"))
         await captureAutomaticState(job, device, ts, "after", pushLog, runtime);
-      finishStep(ts, "ok");
+      finishCheckedStep(ts, resolvedStep.check?.id, job.artifacts.slice(artifactStart));
     } catch (err) {
       // A failure frame remains useful when passive-step evidence is suppressed.
       // Cancellation hard-stops the native session before it reaches this

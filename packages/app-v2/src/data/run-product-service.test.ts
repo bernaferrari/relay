@@ -8,6 +8,19 @@ import {
 } from "./run-product-service";
 
 describe("run report projection", () => {
+  it("does not report successful evidence capture as a passed blocked interaction", () => {
+    const report = projectRunReport(
+      "blocked-check",
+      {
+        artifacts: [
+          { kind: "campaign-check-result", data: { id: "tap-network", status: "blocked" } },
+        ],
+        steps: [{ title: "Screenshot · step:tap-network:Tap Network", status: "ok" }],
+      },
+      { channels: {} },
+    );
+    expect(report.timeline[0]?.state).toBe("failed");
+  });
   it("projects workflow-less active jobs without inventing workflow identity", () => {
     const state = projectWorkflowlessExecution(
       {

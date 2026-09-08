@@ -49,6 +49,29 @@ export function finishStep(step: TraceStep, status: TraceStep["status"], extraLo
   if (extraLog) step.log = step.log ? `${step.log}\n${extraLog}` : extraLog;
 }
 
+export function finishCheckedStep(
+  step: TraceStep,
+  checkId: string | undefined,
+  artifacts: readonly { kind: string; data: unknown }[],
+): void {
+  // Campaign checks deliberately return after a failure so independent checks
+  // can continue. Returning is not proof that this particular check passed.
+  const result = checkId
+    ? [...artifacts].reverse().find((artifact) => {
+        if (artifact.kind !== "campaign-check-result") return false;
+        const data = artifact.data;
+        return data !== null && typeof data === "object" && "id" in data && data.id === checkId;
+      })?.data
+    : undefined;
+  const passed =
+    !checkId ||
+    (result !== null &&
+      typeof result === "object" &&
+      "status" in result &&
+      result.status === "passed");
+  finishStep(step, passed ? "ok" : "error");
+}
+
 export function appendStepLog(step: TraceStep | undefined, line: string): void {
   if (!step) return;
   step.log = step.log ? `${step.log}\n${line}` : line;

@@ -272,12 +272,25 @@ function evidenceItems(
 function reportTimeline(rawRun: unknown): ReportTimelineItem[] {
   const recipe = record(record(rawRun)?.recipeSnapshot);
   const recipeSteps = array(recipe?.steps);
+  const checkStatuses = new Map<string, string>();
+  for (const value of array(record(rawRun)?.artifacts)) {
+    const artifact = record(value);
+    if (artifact?.kind !== "campaign-check-result") continue;
+    const data = record(artifact.data);
+    const id = text(data?.id);
+    const status = text(data?.status);
+    if (id && status) checkStatuses.set(id, status);
+  }
   return array(record(rawRun)?.steps).flatMap((value, fallbackIndex) => {
     const step = record(value);
     if (!step) return [];
     const title = humanStepTitle(step.title);
     if (!title) return [];
-    const status = text(step.status);
+    // Authored-step screenshot traces measure evidence capture, not whether
+    // the preceding interaction passed. Use its retained check verdict.
+    const checkId = /^Screenshot · step:([^:]+):/u.exec(text(step.title) ?? "")?.[1];
+    const checkStatus = checkId ? checkStatuses.get(checkId) : undefined;
+    const status = checkStatus ? (checkStatus === "passed" ? "ok" : "error") : text(step.status);
     const tone = text(step.tone);
     const recipeStep = text(step.recipeStepId)
       ? recipeSteps.find((candidate) => {
