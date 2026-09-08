@@ -79,6 +79,9 @@ function frozenIdentity(intent: AuthorTestIntent, revision: number): FrozenAutho
     appMapId: intent.appMapId,
     appMapRevision: revision,
     target: { ...intent.target },
+    ...(intent.originApplication?.trim()
+      ? { originApplication: intent.originApplication.trim() }
+      : {}),
     ...(intent.sourceScreenId ? { sourceScreenId: intent.sourceScreenId } : {}),
     ...(intent.pendingConnectionId ? { pendingConnectionId: intent.pendingConnectionId } : {}),
     ...(intent.group?.trim() ? { group: intent.group.trim() } : {}),
@@ -94,6 +97,7 @@ function frozenIdentityFromSession(session: AuthoringSession): FrozenAuthorTestI
     appMapId: session.appMapId,
     appMapRevision: session.expectedAppMapRevision,
     target: { ...session.target },
+    ...(session.originApplication ? { originApplication: session.originApplication } : {}),
     ...(session.sourceScreenId ? { sourceScreenId: session.sourceScreenId } : {}),
     ...(session.pendingConnectionId ? { pendingConnectionId: session.pendingConnectionId } : {}),
     ...(session.group?.trim() ? { group: session.group.trim() } : {}),
@@ -141,6 +145,7 @@ function validStartedSession(
     session.expectedAppMapRevision === revision &&
     session.leaseId === intent.leaseId &&
     sameTarget(session.target, intent.target) &&
+    session.originApplication === (intent.originApplication?.trim() || undefined) &&
     session.sourceScreenId === intent.sourceScreenId &&
     session.pendingConnectionId === intent.pendingConnectionId &&
     session.testName === intent.title.trim() &&
@@ -731,6 +736,7 @@ export class CanonicalAuthoringWorkflow {
       session.appMapId === reference.frozen.appMapId &&
       session.expectedAppMapRevision === reference.frozen.appMapRevision &&
       canonicalTestName(session) === reference.frozen.title &&
+      session.originApplication === reference.frozen.originApplication &&
       sameTarget(session.target, reference.frozen.target)
     );
   }

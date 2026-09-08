@@ -65,6 +65,7 @@ function authoringFrozenIdentityFromSession(
     (!allowApprovedTitle && session.testName !== frozen.title) ||
     session.sourceScreenId !== frozen.sourceScreenId ||
     session.pendingConnectionId !== frozen.pendingConnectionId ||
+    session.originApplication !== frozen.originApplication ||
     (session.group?.trim() || undefined) !==
       (typeof frozen.group === "string" ? frozen.group.trim() || undefined : undefined) ||
     !sameTarget(frozen, session)

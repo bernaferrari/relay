@@ -368,6 +368,21 @@ export function ReviewRecordingPage({
               >
                 {editing ? "Done editing" : "Edit steps"}
               </Button>
+              {allowed.has("replay") ? (
+                <Button
+                  variant={canApprove ? "ghost" : "default"}
+                  title={
+                    snapshot?.frozen?.originApplication
+                      ? "Reopen the starting app and replay these steps"
+                      : undefined
+                  }
+                  onClick={() => transition.mutate({ action: "replay" })}
+                  disabled={transition.isPending}
+                >
+                  <RotateCcw aria-hidden="true" />
+                  {transition.isPending ? "Replaying…" : `Replay on ${replayDeviceName}`}
+                </Button>
+              ) : null}
               {canApprove ? (
                 <Button
                   variant="default"
@@ -380,15 +395,6 @@ export function ReviewRecordingPage({
                   {transition.isPending && transition.variables?.action === "approve"
                     ? "Saving…"
                     : "Save Test"}
-                </Button>
-              ) : allowed.has("replay") ? (
-                <Button
-                  variant="default"
-                  onClick={() => transition.mutate({ action: "replay" })}
-                  disabled={transition.isPending}
-                >
-                  <RotateCcw aria-hidden="true" />
-                  {transition.isPending ? "Replaying…" : `Replay on ${replayDeviceName}`}
                 </Button>
               ) : null}
 

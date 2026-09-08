@@ -11,6 +11,7 @@ const frozen = {
   appMapId: "settings",
   appMapRevision: 7,
   target,
+  originApplication: "com.android.settings",
   workflowRequestId: "author-request-1",
 } as const;
 const session = {
@@ -25,6 +26,7 @@ const session = {
   testName: "Settings localization",
   state: "recording",
   target,
+  originApplication: "com.android.settings",
   captureProvenance: { schemaVersion: 1, mode: "control-and-record", origin: "relay-control" },
   leaseId: "lease-1",
   expectedAppMapRevision: 7,
@@ -62,6 +64,7 @@ function intent(): AuthorTestIntent {
     title: "Settings localization",
     appMapId: "settings",
     target,
+    originApplication: "com.android.settings",
     leaseId: "lease-1",
     revision: { exact: 7 },
     workflowRequestId: "author-request-1",
@@ -96,6 +99,7 @@ test("durable Authoring reserves before control and returns only workflow id plu
 
   const snapshot = await createRelayWorkflows(scripted.client).start(intent());
 
+  assert.equal(snapshot.frozen?.originApplication, "com.android.settings");
   assert.equal(snapshot.stage, "recording");
   assert.equal(snapshot.title, "Settings localization");
   assert.equal(snapshot.capture?.provenance.mode, "control-and-record");

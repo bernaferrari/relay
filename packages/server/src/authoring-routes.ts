@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import type http from "node:http";
 import {
   AuthoringStateError,
+  authoringReplaySourceSteps,
   authoringSessions,
   captureScreenshot,
   captureAuthoringFullPage,
@@ -490,8 +491,8 @@ export function createAuthoringRuntime(): AuthoringRuntime {
       await executeSteps(session, steps);
     },
     async prepareReplaySource(session) {
-      if (session.target.kind !== "browser") return;
-      await executeSteps(session, [{ kind: "key", key: "home" }]);
+      const steps = authoringReplaySourceSteps(session);
+      if (steps.length) await executeSteps(session, steps);
     },
     async replayAction(session, action: AuthoringAction) {
       await executeSteps(session, action.steps);

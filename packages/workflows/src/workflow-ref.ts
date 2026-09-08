@@ -147,7 +147,12 @@ export function decodeAuthoringWorkflowRef(
     ) {
       return undefined;
     }
-    for (const field of ["sourceScreenId", "pendingConnectionId", "group"] as const) {
+    for (const field of [
+      "sourceScreenId",
+      "pendingConnectionId",
+      "group",
+      "originApplication",
+    ] as const) {
       if (frozen[field] !== undefined && !nonEmptyString(frozen[field])) return undefined;
     }
     return {

@@ -17,8 +17,8 @@ export type AuthoringRuntime = {
   /**
    * Returns a runtime with a deterministic reset primitive to the recorded
    * source before Relay captures replay evidence. Managed browser targets use
-   * this to navigate to their configured start URL. Physical targets omit it:
-   * Relay must not guess how to reset a person's device or application.
+   * this to navigate to their configured start URL. Android recordings use
+   * only their explicitly saved starting app; legacy recordings omit reset.
    */
   prepareReplaySource?(session: AuthoringSession): Promise<void>;
   /** Executes one authored action as an atomic batch. When present, the store
@@ -56,3 +56,13 @@ export type AuthoringRecoveryScope = {
 export type AuthoringCommitFault = (
   boundary: "before-verify" | "after-verify" | "before-rename" | "before-persist" | "after-rename",
 ) => void;
+
+/** Reset only from saved user intent. Endpoint identity is checked after these
+ * steps, so opening an app never counts as proof of reaching a nested source. */
+export function authoringReplaySourceSteps(session: AuthoringSession): RecipeStep[] {
+  if (session.target.kind === "browser") return [{ kind: "key", key: "home" }];
+  if (session.target.platform === "android" && session.originApplication) {
+    return [{ kind: "app", action: "open", app: session.originApplication, relaunch: true }];
+  }
+  return [];
+}

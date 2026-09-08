@@ -175,6 +175,7 @@ export type FrozenRunTestIdentity = {
 };
 
 export type FrozenAuthorTestIdentity = RecordingPathContext & {
+  originApplication?: string;
   title: string;
   actorId: string;
   appMapId: string;

@@ -76,6 +76,7 @@ function runJob(id = "job-1", status = "running", requestId = "run-request-1"): 
 function frozenAuthor(requestId = "author-request-1") {
   return {
     title: "Settings localization",
+    originApplication: "com.android.settings",
     actorId: "agent:first",
     appMapId: "settings",
     appMapRevision: 7,
@@ -141,6 +142,7 @@ async function withServer(
         appMapId: value.appMapId,
         workflowRequestId: value.workflowRequestId,
         testName: value.testName,
+        originApplication: value.originApplication,
         state: "recording",
         target: value.target,
         captureProvenance: {
@@ -592,6 +594,7 @@ test("durable Authoring preserves identity and provenance across restart and cli
     });
     assert.equal(started.workflow.record.version, 3);
     assert.equal(started.session?.testName, "Settings localization");
+    assert.equal(started.session?.originApplication, "com.android.settings");
     assert.equal(started.session?.workflowRequestId, "author-request-1");
     assert.equal(
       (started.session?.captureProvenance as { mode?: unknown } | undefined)?.mode,

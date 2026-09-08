@@ -406,6 +406,8 @@ export async function handleWorkflowRoute(input: {
           if (
             typeof frozen.workflowRequestId !== "string" ||
             typeof frozen.title !== "string" ||
+            (frozen.originApplication !== undefined &&
+              (typeof frozen.originApplication !== "string" || !frozen.originApplication.trim())) ||
             typeof frozen.appMapId !== "string" ||
             typeof frozen.appMapRevision !== "number" ||
             !Number.isSafeInteger(frozen.appMapRevision) ||
@@ -438,6 +440,9 @@ export async function handleWorkflowRoute(input: {
                 appMapId: frozen.appMapId,
                 workflowRequestId: frozen.workflowRequestId,
                 testName: frozen.title,
+                ...(typeof frozen.originApplication === "string"
+                  ? { originApplication: frozen.originApplication }
+                  : {}),
                 target: {
                   kind: target.kind,
                   platform: target.platform as "android" | "ios" | "browser",
