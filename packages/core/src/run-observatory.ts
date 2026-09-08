@@ -228,8 +228,8 @@ function performanceSamples(
   limit: number,
 ): RunEvidencePerformanceSample[] {
   return artifacts
-    .filter(
-      (artifact) => artifact.kind === "performance-start" || artifact.kind === "performance-end",
+    .filter((artifact) =>
+      ["performance-start", "performance-end", "performance-sample"].includes(artifact.kind),
     )
     .map((artifact, index) => {
       const input = record(artifact.data);
@@ -238,11 +238,27 @@ function performanceSamples(
       for (const [key, value] of Object.entries(source)) {
         const normalized = metricValue(value);
         if (normalized !== undefined) metrics[key] = normalized;
+        // Native CPU/memory/frame measurements are grouped under metrics.
+        // Retain finite measurements with their group and unit-bearing names.
+        if (value && typeof value === "object" && !Array.isArray(value)) {
+          const group = record(value);
+          if (group.available === false) continue;
+          for (const [field, measurement] of Object.entries(group)) {
+            if (typeof measurement === "number" && Number.isFinite(measurement)) {
+              metrics[`${key}.${field}`] = measurement;
+            }
+          }
+        }
       }
       return {
         id: `performance-${index + 1}`,
         at: artifact.capturedAt,
-        phase: artifact.kind === "performance-start" ? "start" : "end",
+        phase:
+          artifact.kind === "performance-start"
+            ? "start"
+            : artifact.kind === "performance-end"
+              ? "end"
+              : "sample",
         metrics,
       } satisfies RunEvidencePerformanceSample;
     })
@@ -362,9 +378,14 @@ function evidenceEvents(input: {
   const artifactEvents = input.artifacts
     .filter(
       (artifact) =>
-        !["logs", "network", "crash", "performance-start", "performance-end"].includes(
-          artifact.kind,
-        ),
+        ![
+          "logs",
+          "network",
+          "crash",
+          "performance-start",
+          "performance-end",
+          "performance-sample",
+        ].includes(artifact.kind),
     )
     .map(
       (artifact, index): RunEvidenceEvent => ({

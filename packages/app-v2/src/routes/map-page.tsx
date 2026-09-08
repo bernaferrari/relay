@@ -10,7 +10,7 @@ import {
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useRouteContext } from "@tanstack/react-router";
 import { InfiniteMapCanvas } from "../components/infinite-map-canvas";
-import { PageHeader } from "../components/page-layout";
+import { ChevronLeft, Plus } from "lucide-react";
 import { EmptyState } from "../components/product-patterns";
 import { PageLoading, RecordingProblem } from "./recording-shared";
 
@@ -57,6 +57,27 @@ export function MapPage() {
       await queryClient.invalidateQueries({ queryKey: ["map", appId, "proposals"] });
     },
   });
+  const updateScreen = useMutation({
+    mutationFn: async ({
+      screenId,
+      patch,
+    }: {
+      screenId: string;
+      patch: { title?: string; position?: { x: number; y: number } };
+    }) => {
+      if (!map.data || !mapService.updateScreen) throw new Error("Screen editing is unavailable.");
+      return mapService.updateScreen({
+        appMapId: appId,
+        screenId,
+        expectedRevision: map.data.revision,
+        input: { patch },
+      });
+    },
+    onSuccess: (next) => queryClient.setQueryData(["map", appId], next),
+    onError: () => {
+      void map.refetch();
+    },
+  });
   const matchingPaths = (map.data?.paths ?? []).filter((path) =>
     [path.label, path.fromTitle, path.toTitle, ...path.coveringTests.map((test) => test.name)]
       .join(" ")
@@ -67,16 +88,24 @@ export function MapPage() {
   const visiblePaths = map.data?.paths.slice(0, 500) ?? [];
 
   return (
-    <section className="relay-page mx-auto w-full px-[clamp(20px,3vw,40px)] pt-7 pb-10 h-full min-h-0">
-      <PageHeader
-        crumbs={[
-          { label: "Tests", to: "/tests" },
-          { label: map.data?.appName ?? "App", to: "/apps/$appId", params: { appId } },
-        ]}
-        title="App map"
-        description="Explore recorded screens and the paths between them."
-        actions={
-          <div className="inline-flex rounded-lg bg-muted p-1" aria-label="Map view">
+    <section className="relative flex h-full min-h-0 w-full flex-col overflow-hidden bg-background">
+      <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border px-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            nativeButton={false}
+            render={<Link to="/apps/$appId" params={{ appId }} />}
+            aria-label="Back to app"
+          >
+            <ChevronLeft />
+          </Button>
+          <span className="truncate text-sm font-medium">{map.data?.appName ?? "App"}</span>
+          <span className="text-sm text-muted-foreground">/</span>
+          <h1 className="shrink-0 text-sm">App map</h1>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="inline-flex rounded-lg bg-muted p-0.5" aria-label="Map view">
             <Button
               size="sm"
               variant={view === "map" ? "secondary" : "ghost"}
@@ -94,11 +123,25 @@ export function MapPage() {
               Paths
             </Button>
           </div>
-        }
-      />
+          <Button
+            size="sm"
+            nativeButton={false}
+            render={<Link to="/tests/new" search={{ app: appId }} />}
+          >
+            <Plus />
+            Record test
+          </Button>
+        </div>
+      </header>
       {map.isPending ? <PageLoading label="Loading known screens…" /> : null}
       <RecordingProblem
-        error={map.error ?? proposals.error ?? decideProposal.error}
+        layout={map.data ? "compact" : "centered"}
+        className={
+          map.data
+            ? "!absolute right-4 top-16 z-30 !mt-0 !max-w-sm rounded-lg border bg-card p-4 shadow-md"
+            : "!mt-0 !max-w-none flex-1"
+        }
+        error={map.error ?? proposals.error ?? decideProposal.error ?? updateScreen.error}
         onRetry={() => {
           void map.refetch();
           void proposals.refetch();
@@ -107,39 +150,22 @@ export function MapPage() {
       />
       {map.data ? (
         <>
-          <div
-            className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-muted-foreground"
-            aria-label="Map coverage"
-          >
-            <span>
-              <strong className="font-medium tabular-nums text-foreground">
-                {map.data.screens.length}
-              </strong>{" "}
-              screens
-            </span>
-            <span>
-              <strong className="font-medium tabular-nums text-foreground">
-                {map.data.paths.length}
-              </strong>{" "}
-              paths
-            </span>
-            <span>
-              <strong className="font-medium tabular-nums text-foreground">
-                {map.data.coverage.testCount}
-              </strong>{" "}
-              saved tests
-            </span>
-            <span>
-              <strong className="font-medium tabular-nums text-foreground">
-                {map.data.coverage.coveredScreenCount}
-              </strong>{" "}
-              screens covered by tests
-            </span>
-          </div>
           {view === "map" ? (
             <>
               {map.data.screens.length ? (
-                <InfiniteMapCanvas appId={appId} screens={visibleScreens} paths={visiblePaths} />
+                <InfiniteMapCanvas
+                  loadScreenshot={mapService.loadScreenshot}
+                  saving={updateScreen.isPending}
+                  onUpdateScreen={
+                    mapService.updateScreen
+                      ? (screenId, patch) =>
+                          updateScreen.mutateAsync({ screenId, patch }).then(() => undefined)
+                      : undefined
+                  }
+                  appId={appId}
+                  screens={visibleScreens}
+                  paths={visiblePaths}
+                />
               ) : (
                 <EmptyState
                   title="No known screens yet"
@@ -158,10 +184,7 @@ export function MapPage() {
             </>
           ) : null}
           {view === "paths" ? (
-            <section
-              className="rounded-xl border border-border bg-card p-5"
-              aria-labelledby="paths-title"
-            >
+            <section className="min-h-0 flex-1 overflow-auto p-5" aria-labelledby="paths-title">
               <div className="flex items-end justify-between gap-5 max-[620px]:items-start max-[620px]:gap-3">
                 <div>
                   <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
@@ -237,69 +260,74 @@ export function MapPage() {
               </ul>
             </section>
           ) : null}
-          <Collapsible className="mt-4">
-            <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 py-2 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
-              Review map changes
-            </CollapsibleTrigger>
-            <CollapsibleContent className="space-y-3 border-t pt-3 text-sm">
-              <p>
-                Editing known screens and paths changes the saved verification source. Open this
-                mode only when you intend to review a proposal.
-              </p>
-              <p>
-                {map.data.pendingProposalCount
-                  ? `${map.data.pendingProposalCount} proposal${map.data.pendingProposalCount === 1 ? "" : "s"} await review.`
-                  : "There are no pending proposals."}
-              </p>
-              {proposals.data?.some((proposal) => proposal.status === "pending") ? (
-                <ul className="list-none space-y-2 p-0">
-                  {proposals.data
-                    .filter((proposal) => proposal.status === "pending")
-                    .map((proposal) => (
-                      <li key={proposal.id}>
-                        <div>
-                          <strong>{proposal.title}</strong>
-                          <p>
-                            {proposal.description ??
-                              "Review this proposed change to the saved Map."}
-                          </p>
-                          <small>Based on revision {proposal.baseRevision}</small>
-                        </div>
-                        <div>
-                          <Button
-                            size="sm"
-                            variant="default"
-                            disabled={decideProposal.isPending}
-                            onClick={() =>
-                              decideProposal.mutate({
-                                proposalId: proposal.id,
-                                decision: "approve",
-                              })
-                            }
-                          >
-                            Approve
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            disabled={decideProposal.isPending}
-                            onClick={() =>
-                              decideProposal.mutate({ proposalId: proposal.id, decision: "reject" })
-                            }
-                          >
-                            Reject
-                          </Button>
-                        </div>
-                      </li>
-                    ))}
-                </ul>
-              ) : (
-                <p className="relay-context-empty rounded-lg border border-dashed border-border p-5 text-sm text-muted-foreground">
-                  No proposal needs a decision.
+          {map.data.pendingProposalCount > 0 ? (
+            <Collapsible className="absolute bottom-16 left-4 z-20 max-h-[60vh] w-80 overflow-auto rounded-lg border bg-card p-3 shadow-md">
+              <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 py-2 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
+                Review map changes
+              </CollapsibleTrigger>
+              <CollapsibleContent className="space-y-3 border-t pt-3 text-sm">
+                <p>
+                  Editing known screens and paths changes the saved verification source. Open this
+                  mode only when you intend to review a proposal.
                 </p>
-              )}
-            </CollapsibleContent>
-          </Collapsible>
+                <p>
+                  {map.data.pendingProposalCount
+                    ? `${map.data.pendingProposalCount} proposal${map.data.pendingProposalCount === 1 ? "" : "s"} await review.`
+                    : "There are no pending proposals."}
+                </p>
+                {proposals.data?.some((proposal) => proposal.status === "pending") ? (
+                  <ul className="list-none space-y-2 p-0">
+                    {proposals.data
+                      .filter((proposal) => proposal.status === "pending")
+                      .map((proposal) => (
+                        <li key={proposal.id}>
+                          <div>
+                            <strong>{proposal.title}</strong>
+                            <p>
+                              {proposal.description ??
+                                "Review this proposed change to the saved Map."}
+                            </p>
+                            <small>Based on revision {proposal.baseRevision}</small>
+                          </div>
+                          <div>
+                            <Button
+                              size="sm"
+                              variant="default"
+                              disabled={decideProposal.isPending}
+                              onClick={() =>
+                                decideProposal.mutate({
+                                  proposalId: proposal.id,
+                                  decision: "approve",
+                                })
+                              }
+                            >
+                              Approve
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              disabled={decideProposal.isPending}
+                              onClick={() =>
+                                decideProposal.mutate({
+                                  proposalId: proposal.id,
+                                  decision: "reject",
+                                })
+                              }
+                            >
+                              Reject
+                            </Button>
+                          </div>
+                        </li>
+                      ))}
+                  </ul>
+                ) : (
+                  <p className="relay-context-empty rounded-lg border border-dashed border-border p-5 text-sm text-muted-foreground">
+                    No proposal needs a decision.
+                  </p>
+                )}
+              </CollapsibleContent>
+            </Collapsible>
+          ) : null}
         </>
       ) : null}
       {map.data &&

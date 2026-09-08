@@ -2023,3 +2023,11 @@ test("descriptor invariants catch duplicates and unsafe cancellation metadata", 
 // Compile-time contract: known operation inputs are inferred from the registry map.
 const validInput: OperationInput<"job.start"> = { recipe: "smoke" };
 assert.equal(validInput.recipe, "smoke");
+
+test("full-page recording flags survive the canonical interaction schema", () => {
+  const input = {
+    sessionId: "authoring-full-page",
+    interaction: { kind: "screenshot", fullPage: true, label: "Capture full page" },
+  };
+  assert.deepEqual(operationDefinition("authoring.session.interact").input.parse(input), input);
+});

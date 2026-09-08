@@ -5,7 +5,12 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
 import { RelayV2App } from "../app";
-import { MAP_MAX_SCALE, fitMapToBounds, zoomMapAtPoint } from "../components/infinite-map-canvas";
+import {
+  MAP_MAX_SCALE,
+  fitMapToBounds,
+  zoomMapAtPoint,
+  layoutMapScreens,
+} from "../components/infinite-map-canvas";
 import type { MapProductService } from "../data/map-product-service";
 import type { RecordingProductService } from "../data/recording-product-service";
 import type { Platform } from "../platform/types";
@@ -94,6 +99,28 @@ async function render(mapService: MapProductService = { get: async () => overvie
 }
 
 describe("Map exploration", () => {
+  it("lays out connected screens in reading order without cycling", () => {
+    const screens = ["a", "b", "c"].map((id) => ({
+      ...overview.screens[0]!,
+      id,
+      position: undefined,
+    }));
+    const paths = [
+      ["a", "b"],
+      ["b", "c"],
+      ["c", "a"],
+    ].map(([fromScreenId, toScreenId], index) => ({
+      ...overview.paths[0]!,
+      id: String(index),
+      fromScreenId: fromScreenId!,
+      toScreenId,
+    }));
+    const positions = layoutMapScreens(screens, paths);
+    expect(positions.get("a")!.x).toBeLessThan(positions.get("b")!.x);
+    expect(positions.get("b")!.x).toBeLessThan(positions.get("c")!.x);
+    expect(new Set([...positions.values()].map((point) => `${point.x},${point.y}`)).size).toBe(3);
+  });
+
   it("keeps cursor-centered zoom and fit math stable and bounded", () => {
     const point = { x: 120, y: 80 };
     const before = { x: 20, y: 30, scale: 1 };
@@ -115,13 +142,14 @@ describe("Map exploration", () => {
   it("is route-addressable, keyboard focusable, and keeps map controls restrained", async () => {
     const { history } = await render();
     expect(history.location.pathname).toBe("/apps/shop/map");
-    expect(document.querySelector('a[href="/apps/shop"]')?.textContent).toBe("Shopping");
-    expect(document.body.textContent).toContain("Known screens and verified paths");
-    expect(document.body.textContent).toContain("1 of 2 screens covered");
+    expect(document.querySelector('a[href="/apps/shop"]')?.getAttribute("aria-label")).toBe(
+      "Back to app",
+    );
+    expect(document.querySelector('[aria-label="Screens and verified paths"]')).not.toBeNull();
+    expect(document.body.textContent).toContain("1 screens tested");
     expect(document.body.textContent).not.toContain("Combine");
     expect(document.body.textContent).not.toContain("targetProfile");
-    expect(document.querySelector('a[href="/tests/new?app=shop&view=path"]')).not.toBeNull();
-    expect(document.querySelector('a[href*="path=home-cart"]')).not.toBeNull();
+    expect(document.querySelector('a[href="/tests/new?app=shop"]')).not.toBeNull();
 
     const canvas = document.querySelector<HTMLElement>(".relay-map-canvas");
     const world = document.querySelector<HTMLElement>(".relay-map-world");
@@ -181,6 +209,7 @@ describe("Map exploration", () => {
     );
     expect(world?.style.transform).not.toBe(beforeWheel);
 
+    await act(async () => button("Paths").click());
     const pathLink = document.querySelector<HTMLAnchorElement>('a[href*="path=home-cart"]');
     await act(async () => pathLink?.click());
     expect(history.location.pathname).toBe("/tests/new");
@@ -199,6 +228,7 @@ describe("Map exploration", () => {
         })),
       }),
     });
+    await act(async () => button("Paths").click());
     expect(document.querySelector('a[href*="path=path-29"]')).not.toBeNull();
     const input = document.querySelector<HTMLInputElement>("#map-path-search")!;
     const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
@@ -217,12 +247,12 @@ describe("Map exploration", () => {
       button.textContent?.includes("Cart"),
     );
     await act(async () => cart?.click());
-    expect(document.body.textContent).toContain("Covering Tests");
+    expect(document.body.textContent).toContain("Tests");
     expect(document.body.textContent).toContain("No saved Test covers this screen yet.");
     expect(document.body.textContent).toContain("Recent failures");
     expect(document.querySelector('a[href="/runs/run-1"]')).not.toBeNull();
-    expect(document.body.textContent).toContain("Edit Map · Developer Mode");
-    const developerMode = button("Edit Map · Developer Mode");
+    expect(document.body.textContent).toContain("Review map changes");
+    const developerMode = button("Review map changes");
     expect(developerMode.getAttribute("aria-expanded")).toBe("false");
     await act(async () => developerMode.click());
     expect(developerMode.getAttribute("aria-expanded")).toBe("true");
@@ -254,7 +284,7 @@ describe("Map exploration", () => {
         return { ...overview, revision: 5, pendingProposalCount: 0 };
       },
     });
-    await act(async () => button("Edit Map · Developer Mode").click());
+    await act(async () => button("Review map changes").click());
     expect(document.body.textContent).toContain("Add checkout path");
     await act(async () => button("Approve").click());
     expect(decisions).toEqual([

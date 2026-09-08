@@ -423,3 +423,27 @@ test("buildRunEvidence does not relabel a typed partial packet parse as session-
   assert.doesNotMatch(evidence.networkCapture.label, /session-log/u);
   assert.equal(evidence.network.length, 1);
 });
+
+test("continuous native performance retains nested measurements without unavailable values", () => {
+  const result = buildRunEvidence(
+    run({
+      artifacts: [
+        {
+          kind: "performance-sample",
+          capturedAt: 50,
+          data: {
+            metrics: {
+              cpu: { available: true, usagePercent: 12.5 },
+              memory: { available: true, totalPssKb: 42000 },
+              fps: { available: false, droppedFramePercent: 99 },
+            },
+          },
+        },
+      ],
+    }),
+  );
+  assert.equal(result.performance[0]?.phase, "sample");
+  assert.equal(result.performance[0]?.metrics["cpu.usagePercent"], 12.5);
+  assert.equal(result.performance[0]?.metrics["memory.totalPssKb"], 42000);
+  assert.equal(result.performance[0]?.metrics["fps.droppedFramePercent"], undefined);
+});

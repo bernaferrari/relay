@@ -6,7 +6,7 @@ import type {
 import type { Platform } from "../platform/types";
 import { productClientForPlatform } from "./product-client";
 
-export type MapProductService = ProductMapService;
+export type MapProductService = ProductMapService & { loadScreenshot?(uri: string): Promise<Blob> };
 
 export function createMapProductService(platform: Platform): MapProductService {
   let servicePromise: Promise<ProductMapService> | undefined;
@@ -18,6 +18,20 @@ export function createMapProductService(platform: Platform): MapProductService {
     return servicePromise;
   }
   return {
+    async loadScreenshot(uri) {
+      const match = /^relay-evidence:\/\/([a-f\d]{64})$/iu.exec(uri);
+      if (!match) throw new Error("This screen has no supported retained screenshot.");
+      const { client } = await productClientForPlatform(platform);
+      const resource = await client.binaryResource(
+        `/authoring-evidence/${match[1]}?mime=image/png`,
+      );
+      return new Blob([new Uint8Array(resource.bytes)], { type: "image/png" });
+    },
+    updateScreen: (input) =>
+      service().then((item) => {
+        if (!item.updateScreen) throw new TypeError("Screen editing is unavailable.");
+        return item.updateScreen(input);
+      }),
     get: (appMapId) => service().then((item) => item.get(appMapId)),
     getScreen: (appMapId, screenId) =>
       service().then((item) => item.getScreen?.(appMapId, screenId)),

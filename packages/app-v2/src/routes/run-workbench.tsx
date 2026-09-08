@@ -1,4 +1,5 @@
 /** @jsxImportSource react */
+import { RunPerformancePanel } from "../components/run-performance-panel";
 import { traceVideoInterval } from "../data/run-report-media";
 import { EvidenceImageViewer } from "../components/evidence-image-viewer";
 import { ReportVideoInspector } from "../components/report-video-inspector";
@@ -172,6 +173,22 @@ export function RunWorkbench({
               interval={traceVideoInterval(step, report.video.clock)}
             />
           </div>
+        ) : null}
+        {report.performance?.length ? (
+          <RunPerformancePanel
+            series={report.performance}
+            step={step}
+            onSeek={(at) => {
+              const index = report.timeline.findIndex(
+                (item) =>
+                  item.startedAt !== undefined &&
+                  item.finishedAt !== undefined &&
+                  at >= item.startedAt &&
+                  at <= item.finishedAt,
+              );
+              if (index >= 0) onSelectStep(index);
+            }}
+          />
         ) : null}
         <dl className="grid gap-5 border-t border-border px-5 py-4 sm:grid-cols-2">
           <div>

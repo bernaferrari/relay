@@ -142,16 +142,6 @@ function RecordingWorkspace({
         await navigate({ to: "/tests" });
         return;
       }
-      if (intent.action === "recover") {
-        const sessionId = recording.data?.snapshot?.authoring?.sessionId;
-        if (!sessionId || !productService.recoverForReview)
-          throw new Error("The saved recording is unavailable.");
-        return productService.recoverForReview(sessionId);
-      }
-      if (intent.action === "full-page") {
-        if (!productService.captureFullPage) throw new Error("Full-page capture is unavailable.");
-        return productService.captureFullPage();
-      }
       if (intent.action === "checkpoint") {
         setCheckpointLabel("");
         setCheckpointOpen(false);

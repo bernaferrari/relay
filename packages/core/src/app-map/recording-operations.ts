@@ -343,6 +343,10 @@ function observeScreen(input: {
   at: number;
 }): void {
   const { map, screen } = input;
+  if (/^(?:Start|Next screen|Known screen)$/u.test(screen.title)) {
+    const title = capturedScreenTitle(input.observation);
+    if (title) screen.title = title;
+  }
   const variant = captureAppMapScreenVariant(input);
   if (!variant) return;
   map.screenVariants[variant.id] = variant;
@@ -489,33 +493,32 @@ function createScreen(map: AppMap, id: string, title: string, at: number): Scree
   return screen;
 }
 
+function capturedScreenTitle(observation?: AuthoringObservation): string | undefined {
+  const candidates = (observation?.nodes ?? []).flatMap((node, index) => {
+    const role = String(node.role ?? node.type ?? "");
+    const identifier = typeof node.identifier === "string" ? node.identifier : "";
+    const heading =
+      /navigation\s*bar|header|heading/i.test(role) ||
+      node.heading === true ||
+      node.isHeading === true;
+    const parent = observation?.nodes?.find((candidate) => candidate.index === node.parentIndex);
+    const parentId = typeof parent?.identifier === "string" ? parent.identifier : "";
+    const toolbar =
+      /:id\/(?:collapsing_toolbar|(?:custom_)?toolbar_title|action_bar_title)$/u.test(identifier) ||
+      /:id\/(?:toolbar|action_bar)$/u.test(parentId);
+    if (!heading && !toolbar) return [];
+    if (node.bundleId === "com.android.systemui" || node.visibleToUser === false) return [];
+    const title = [node.label, node.text, node.value].find(
+      (value) => typeof value === "string" && value.trim(),
+    ) as string | undefined;
+    if (!title || title.length > 120 || /^(?:back|navigate up)$/iu.test(title.trim())) return [];
+    return [{ title: title.trim(), rank: toolbar ? 0 : heading ? 1 : 2, index }];
+  });
+  return candidates.sort((a, b) => a.rank - b.rank || a.index - b.index)[0]?.title;
+}
+
 function observedDestinationTitle(input: AppMapRecordingInput): string | undefined {
-  const navigationTitles = (input.after?.nodes ?? [])
-    .flatMap((node, index) => {
-      const role =
-        typeof node.role === "string" ? node.role : typeof node.type === "string" ? node.type : "";
-      if (
-        !/navigation\s*bar|header/i.test(role) &&
-        !(
-          typeof node.identifier === "string" &&
-          /:id\/(?:collapsing_toolbar|toolbar_title)$/u.test(node.identifier)
-        )
-      )
-        return [];
-      const depth = typeof node.depth === "number" && Number.isFinite(node.depth) ? node.depth : 0;
-      const androidToolbar =
-        typeof node.identifier === "string" &&
-        /:id\/(?:collapsing_toolbar|toolbar_title)$/u.test(node.identifier);
-      const title =
-        !androidToolbar && typeof node.identifier === "string" && node.identifier.trim()
-          ? node.identifier.trim()
-          : typeof node.label === "string" && node.label.trim()
-            ? node.label.trim()
-            : undefined;
-      return title ? [{ title, depth, index }] : [];
-    })
-    .sort((left, right) => right.depth - left.depth || right.index - left.index);
-  const observed = navigationTitles[0]?.title;
+  const observed = capturedScreenTitle(input.after);
   if (observed) return observed;
 
   for (const action of [...input.actions].reverse()) {

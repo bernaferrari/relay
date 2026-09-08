@@ -201,7 +201,13 @@ export const authoringInteraction = z.discriminatedUnion("kind", [
     .strict(),
   z.object({ kind: z.literal("wait"), ms: natural("Wait duration in milliseconds") }).strict(),
   z.object({ kind: z.literal("observe"), label: z.string().optional() }).strict(),
-  z.object({ kind: z.literal("screenshot"), label: z.string().optional() }).strict(),
+  z
+    .object({
+      kind: z.literal("screenshot"),
+      label: z.string().optional(),
+      fullPage: z.boolean().optional(),
+    })
+    .strict(),
   z
     .object({
       kind: z.literal("reusable"),

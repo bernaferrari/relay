@@ -1,3 +1,4 @@
+import { sampleRunPerformance } from "./run-performance-sampling.js";
 import { join } from "node:path";
 import type {
   AndroidPacketCaptureProvenance,
@@ -72,6 +73,7 @@ export type RunEvidenceHandle = {
   androidPacketCapture?: AndroidEmulatorNetworkCaptureHandle;
   androidPacketCaptureFailure?: Extract<AndroidPacketCaptureProvenance, { status: "failed" }>;
   androidPacketRuntime?: AndroidEmulatorNetworkCaptureRuntime;
+  performanceSampler?: { stop(): Promise<void> };
   stopped: boolean;
   manifest: EvidenceManifest;
 };
@@ -424,6 +426,25 @@ export async function startRunEvidence(
         data: redactValue(performanceResult),
       });
       event(handle, "performance", "sample", performanceResult);
+      handle.performanceSampler = sampleRunPerformance({
+        probe: () =>
+          withTimeout(device.observability.perf({ ...base() }), 5_000, "Performance sample"),
+        retain: (data, capturedAt) => {
+          channel(handle, "performance").entries += 1;
+          addArtifact(job, { kind: "performance-sample", capturedAt, data: redactValue(data) });
+          event(handle, "performance", "sample", data);
+        },
+        onLimit: () => {
+          channel(handle, "performance").status = "partial";
+          channel(handle, "performance").message =
+            "Continuous sampling reached its 900-sample limit.";
+        },
+        onError: (error) => {
+          channel(handle, "performance").status = "partial";
+          channel(handle, "performance").message =
+            `Continuous sampling stopped: ${messageOf(error)}`;
+        },
+      });
     },
     options.physicalIos ? "not available from the physical iOS runner" : missingAndroidAppSession,
   );
@@ -623,6 +644,7 @@ export async function stopRunEvidence(
 ): Promise<void> {
   if (!handle || handle.stopped) return;
   handle.stopped = true;
+  await handle.performanceSampler?.stop();
 
   let packetResult: AndroidEmulatorNetworkCaptureResult | undefined;
   let packetCapture: AndroidPacketCaptureProvenance | undefined =
@@ -685,7 +707,8 @@ export async function stopRunEvidence(
           "performance capture",
         );
         const record = channel(handle, "performance");
-        record.status = record.status === "failed" ? "partial" : "captured";
+        record.status =
+          record.status === "failed" || record.status === "partial" ? "partial" : "captured";
         record.entries += 1;
         record.finishedAt = now();
         addArtifact(job, {

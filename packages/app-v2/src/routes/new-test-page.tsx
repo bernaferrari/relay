@@ -161,6 +161,14 @@ export function NewTestPage() {
     },
     staleTime: Infinity,
   });
+  const activeRecording = useQuery({
+    queryKey: recordingQueryKeys.workflow(activePointer.data ?? ""),
+    queryFn: () => productService.inspect(activePointer.data!),
+    enabled: Boolean(activePointer.data),
+  });
+  const blocksNewRecording = Boolean(
+    activePointer.data && activeRecording.data?.snapshot?.stage !== "reviewing",
+  );
   const pathContext = useQuery({
     queryKey: ["map", requestedAppId, "recording-path", requestedPathId],
     queryFn: async () => {
@@ -285,7 +293,7 @@ export function NewTestPage() {
   const loading = apps.isPending || activePointer.isPending;
   const noTargets = Boolean(targets.data && targets.data.targetOptions.length === 0);
   const setupOpen =
-    !loading && !apps.isError && !targets.isError && !targets.data?.recovery && !activePointer.data;
+    !loading && !apps.isError && !targets.isError && !targets.data?.recovery && !blocksNewRecording;
   const formReady = Boolean(appId && selectedTarget && !begin.isPending && !creatingApp);
   if (search.view === "review") {
     if (activePointer.isPending) return <PageLoading label="Opening the reviewed recording…" />;
@@ -322,7 +330,7 @@ export function NewTestPage() {
           }
         />
 
-        {activePointer.data ? (
+        {blocksNewRecording ? (
           <Alert className="relay-resume-recording max-w-3xl" variant="default">
             <CircleDot />
             <AlertTitle>
@@ -374,7 +382,7 @@ export function NewTestPage() {
         !apps.isError &&
         !targets.isError &&
         !targets.data?.recovery &&
-        !activePointer.data ? (
+        !blocksNewRecording ? (
           <AuthoringWorkspace
             tools={
               <aside

@@ -398,7 +398,16 @@ function formatEvidenceTime(value: number): string {
   }).format(value);
 }
 function humanMetricName(value: string): string {
-  return sentenceCase(value.replace(/[._-]+/gu, " "));
+  const names: Record<string, string> = {
+    "cpu.usagePercent": "CPU (%)",
+    "memory.totalPssKb": "Memory · PSS (kB)",
+    "memory.totalRssKb": "Memory · RSS (kB)",
+    "fps.droppedFramePercent": "Dropped frames (%)",
+  };
+  return (
+    names[value] ??
+    sentenceCase(value.replace(/([a-z])([A-Z])/gu, "$1 $2").replace(/[._-]+/gu, " "))
+  );
 }
 function sentenceCase(value: string): string {
   return value ? value[0]!.toLocaleUpperCase() + value.slice(1) : value;
@@ -583,6 +592,23 @@ export function projectRunReport(
     ...(text(run.appVersion) ? { appVersion: text(run.appVersion) } : {}),
   };
   const video = reportVideoMedia(runId, rawRun);
+  const metricSeries = new Map<string, { at: number; value: number }[]>();
+  for (const raw of array(evidence?.performance)) {
+    const sample = record(raw);
+    const at = finite(sample?.at);
+    const metrics = record(sample?.metrics);
+    if (at === undefined || !metrics) continue;
+    for (const [name, value] of Object.entries(metrics)) {
+      if (typeof value !== "number" || !Number.isFinite(value)) continue;
+      const points = metricSeries.get(name) ?? [];
+      points.push({ at, value });
+      metricSeries.set(name, points);
+    }
+  }
+  const performance = [...metricSeries].map(([name, points]) => ({
+    name: humanMetricName(name),
+    points: points.sort((a, b) => a.at - b.at),
+  }));
   const diagnostics = mapDiagnosticEventsToVideo(
     reportDiagnosticEvents(rawEvidence),
     video?.clock ?? {},
@@ -605,6 +631,7 @@ export function projectRunReport(
     evidence: sections,
     ...(video ? { video } : {}),
     diagnostics,
+    performance,
     ...(stepEvidence === undefined ? {} : { stepEvidence }),
     ...(Object.keys(executionContext).length ? { executionContext } : {}),
     ...(evidenceUnavailable ? { evidenceUnavailable: true as const } : {}),

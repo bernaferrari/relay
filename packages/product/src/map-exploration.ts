@@ -22,6 +22,7 @@ export type ProductMapScreen = {
   readonly title: string;
   readonly description?: string;
   readonly position?: { readonly x: number; readonly y: number };
+  readonly screenshotUri?: string;
   readonly variantCount: number;
   readonly coveringTests: readonly { readonly id: string; readonly name: string }[];
   readonly recentFailures: readonly ProductMapFailure[];
@@ -70,6 +71,7 @@ export type ProductMapOverview = {
 
 export type ProductMapService = {
   get(appMapId: string): Promise<ProductMapOverview>;
+  updateScreen?(input: OperationInput<"app-map.screen.update">): Promise<ProductMapOverview>;
   /** Bounded drilldown over the same canonical App Map snapshot as `get`. */
   getScreen?(appMapId: string, screenId: string): Promise<ProductMapScreen | undefined>;
   getPath?(appMapId: string, pathId: string): Promise<ProductMapPath | undefined>;
@@ -146,6 +148,10 @@ function projectMap(map: AppMap): ProductMapOverview {
       title: text(screen.title, "Known screen"),
       ...(screen.description ? { description: text(screen.description, "") } : {}),
       ...(screen.position ? { position: { x: screen.position.x, y: screen.position.y } } : {}),
+      screenshotUri: screen.variantIds
+        .map((id) => map.screenVariants[id])
+        .filter((variant) => Boolean(variant?.screenshotUri))
+        .sort((a, b) => b!.updatedAt - a!.updatedAt)[0]?.screenshotUri,
       variantCount: screen.variantIds.length,
       coveringTests: [...covering.values()],
       recentFailures: (failuresByScreen.get(screen.id) ?? []).slice(0, 8),
@@ -212,6 +218,10 @@ export function createProductMapService(client: RelayInvokeClient): ProductMapSe
   }
   return {
     get: getOverview,
+    async updateScreen(input) {
+      const { appMap } = await operations.invoke("app-map.screen.update", input);
+      return projectMap(appMap);
+    },
     async getScreen(appMapId, screenId) {
       return (await getOverview(appMapId)).screens.find((screen) => screen.id === screenId);
     },

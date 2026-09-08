@@ -61,7 +61,13 @@ export type ReportTimelineItem = {
   observed?: string;
 };
 
+export type ReportPerformanceSeries = {
+  name: string;
+  points: readonly { at: number; value: number }[];
+};
+
 export type ProductRunReportOverview = {
+  performance?: readonly ReportPerformanceSeries[];
   runId: string;
   testId?: string;
   title: string;
