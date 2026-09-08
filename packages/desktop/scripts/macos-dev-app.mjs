@@ -1,6 +1,7 @@
 import { copyFileSync, existsSync, renameSync, rmSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
+import { writeDevAppEntry } from "./dev-app-entry.mjs";
 
 function run(command, args) {
   const result = spawnSync(command, args, { encoding: "utf8" });
@@ -15,7 +16,7 @@ function run(command, args) {
  * preserves Electron's complete, working bundle without physically duplicating
  * its frameworks, then Relay supplies its own identity and icon.
  */
-export function prepareMacOSDevApp(electronCliPath, desktopRoot) {
+export function prepareMacOSDevApp(electronCliPath, desktopRoot, environment = {}) {
   const electronRoot = dirname(electronCliPath);
   const electronApp = resolve(electronRoot, "dist/Electron.app");
   const relayApp = resolve(desktopRoot, "out/Relay.app");
@@ -36,6 +37,7 @@ export function prepareMacOSDevApp(electronCliPath, desktopRoot) {
   run("/usr/bin/plutil", ["-replace", "CFBundleIconFile", "-string", "Relay.icns", plist]);
   renameSync(electronExecutable, relayExecutable);
   copyFileSync(icon, resolve(relayApp, "Contents/Resources/Relay.icns"));
+  writeDevAppEntry(resolve(relayApp, "Contents/Resources"), desktopRoot, environment);
   run("/usr/bin/touch", [relayApp]);
 
   return relayExecutable;

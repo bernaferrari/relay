@@ -87,9 +87,19 @@ async function main() {
   console.log(`[desktop] inspector ${debugUrl}`);
 
   const electronCliPath = resolveElectronCli();
+  const launchEnvironment = {
+    RELAY_DEV_NODE: process.execPath,
+    ELECTRON_RENDERER_URL: rendererUrl,
+    RELAY_DESKTOP_ROOT: root,
+    RELAY_URL: relayUrl,
+    RELAY_DEBUG_PORT: String(debugPort),
+    RELAY_ALLOWED_BROWSER_ORIGINS: relayBrowserOrigins.join(","),
+  };
   const executable =
-    process.platform === "darwin" ? prepareMacOSDevApp(electronCliPath, root) : process.execPath;
-  const args = process.platform === "darwin" ? ["."] : [electronCliPath, "."];
+    process.platform === "darwin"
+      ? prepareMacOSDevApp(electronCliPath, root, launchEnvironment)
+      : process.execPath;
+  const args = process.platform === "darwin" ? [] : [electronCliPath, "."];
   if (process.platform === "darwin") {
     console.log(`[desktop] macOS app ${resolve(root, "out/Relay.app")}`);
   }
@@ -97,11 +107,8 @@ async function main() {
     cwd: root,
     env: {
       ...process.env,
-      ELECTRON_RENDERER_URL: rendererUrl,
-      RELAY_DESKTOP_ROOT: root,
-      RELAY_URL: relayUrl,
-      RELAY_DEBUG_PORT: String(debugPort),
-      RELAY_ALLOWED_BROWSER_ORIGINS: relayBrowserOrigins.join(","),
+      ELECTRON_RUN_AS_NODE: undefined,
+      ...launchEnvironment,
     },
     stdio: "inherit",
   });
