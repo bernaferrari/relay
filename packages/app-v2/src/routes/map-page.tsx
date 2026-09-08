@@ -19,6 +19,7 @@ const routeApi = getRouteApi("/apps/$appId/map");
 export function MapPage() {
   const { mapService, queryClient } = useRouteContext({ from: "__root__" });
   const { appId } = routeApi.useParams();
+  const [view, setView] = useState<"map" | "paths">("map");
   const [pathSearch, setPathSearch] = useState("");
   const map = useQuery({
     queryKey: ["map", appId],
@@ -72,8 +73,28 @@ export function MapPage() {
           { label: "Tests", to: "/tests" },
           { label: map.data?.appName ?? "App", to: "/apps/$appId", params: { appId } },
         ]}
-        title="Explore"
-        description="Known screens and verified paths."
+        title="App map"
+        description="Explore recorded screens and the paths between them."
+        actions={
+          <div className="inline-flex rounded-lg bg-muted p-1" aria-label="Map view">
+            <Button
+              size="sm"
+              variant={view === "map" ? "secondary" : "ghost"}
+              aria-pressed={view === "map"}
+              onClick={() => setView("map")}
+            >
+              Map
+            </Button>
+            <Button
+              size="sm"
+              variant={view === "paths" ? "secondary" : "ghost"}
+              aria-pressed={view === "paths"}
+              onClick={() => setView("paths")}
+            >
+              Paths
+            </Button>
+          </div>
+        }
       />
       {map.isPending ? <PageLoading label="Loading known screens…" /> : null}
       <RecordingProblem
@@ -86,124 +107,139 @@ export function MapPage() {
       />
       {map.data ? (
         <>
-          <section
-            className="flex items-center justify-between gap-4"
-            aria-labelledby="map-summary-title"
+          <div
+            className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-muted-foreground"
+            aria-label="Map coverage"
           >
-            <div>
-              <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
-                Coverage
-              </p>
-              <h2 id="map-summary-title">
-                {map.data.coverage.coveredScreenCount} of {map.data.coverage.screenCount} screens
-                covered
-              </h2>
-              <p>
-                {map.data.coverage.coveredPathCount} of {map.data.coverage.pathCount} paths are
-                covered by saved Tests.
-              </p>
-            </div>
-            <dl>
-              <div>
-                <dt>Saved Tests</dt>
-                <dd>{map.data.coverage.testCount}</dd>
-              </div>
-              <div>
-                <dt>Known paths</dt>
-                <dd>{map.data.paths.length}</dd>
-              </div>
-            </dl>
-          </section>
-          {map.data.screens.length ? (
-            <InfiniteMapCanvas appId={appId} screens={visibleScreens} paths={visiblePaths} />
-          ) : (
-            <EmptyState
-              title="No known screens yet"
-              detail="Record a Test to give Relay a starting point for exploration."
-              action={
+            <span>
+              <strong className="font-medium tabular-nums text-foreground">
+                {map.data.screens.length}
+              </strong>{" "}
+              screens
+            </span>
+            <span>
+              <strong className="font-medium tabular-nums text-foreground">
+                {map.data.paths.length}
+              </strong>{" "}
+              paths
+            </span>
+            <span>
+              <strong className="font-medium tabular-nums text-foreground">
+                {map.data.coverage.testCount}
+              </strong>{" "}
+              saved tests
+            </span>
+            <span>
+              <strong className="font-medium tabular-nums text-foreground">
+                {map.data.coverage.coveredScreenCount}
+              </strong>{" "}
+              screens covered by tests
+            </span>
+          </div>
+          {view === "map" ? (
+            <>
+              {map.data.screens.length ? (
+                <InfiniteMapCanvas appId={appId} screens={visibleScreens} paths={visiblePaths} />
+              ) : (
+                <EmptyState
+                  title="No known screens yet"
+                  detail="Record a Test to give Relay a starting point for exploration."
+                  action={
+                    <Link
+                      className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
+                      to="/tests/new"
+                      search={{ app: appId }}
+                    >
+                      Record a Test
+                    </Link>
+                  }
+                />
+              )}
+            </>
+          ) : null}
+          {view === "paths" ? (
+            <section
+              className="rounded-xl border border-border bg-card p-5"
+              aria-labelledby="paths-title"
+            >
+              <div className="flex items-end justify-between gap-5 max-[620px]:items-start max-[620px]:gap-3">
+                <div>
+                  <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+                    Journeys
+                  </p>
+                  <h2 id="paths-title" className="text-base font-semibold">
+                    Recorded paths
+                  </h2>
+                </div>
                 <Link
                   className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
                   to="/tests/new"
-                  search={{ app: appId }}
+                  search={{ app: appId, view: "path" }}
                 >
-                  Record a Test
+                  Create a Test from a path
                 </Link>
-              }
-            />
-          )}
-          <section className="" aria-labelledby="paths-title">
-            <div className="flex items-end justify-between gap-5 max-[620px]:items-start max-[620px]:gap-3">
-              <div>
-                <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
-                  Journeys
-                </p>
-                <h2 id="paths-title">Verified paths</h2>
               </div>
-              <Link
-                className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
-                to="/tests/new"
-                search={{ app: appId, view: "path" }}
-              >
-                Create a Test from a path
-              </Link>
-            </div>
-            <label className="mb-2 block text-sm font-medium" htmlFor="map-path-search">
-              Search known paths
-            </label>
-            <Input
-              type="search"
-              className="max-w-lg"
-              id="map-path-search"
-              value={pathSearch}
-              onChange={(event) => setPathSearch(event.target.value)}
-              placeholder="Screen, path, or test name"
-            />
-            <p className="my-3 text-xs text-muted-foreground" role="status">
-              {matchingPaths.length} of {map.data.paths.length} known paths
-            </p>
-            {matchingPaths.length === 0 ? (
-              <EmptyState
-                title={pathSearch ? "No matching paths" : "No known paths yet"}
-                detail={
-                  pathSearch
-                    ? "Try another screen or test name."
-                    : "Record a test to add a known path."
-                }
-                action={
-                  pathSearch ? (
-                    <Button variant="outline" onClick={() => setPathSearch("")}>
-                      Clear search
-                    </Button>
-                  ) : undefined
-                }
+              <label className="mb-2 block text-sm font-medium" htmlFor="map-path-search">
+                Search known paths
+              </label>
+              <Input
+                type="search"
+                className="max-w-lg"
+                id="map-path-search"
+                value={pathSearch}
+                onChange={(event) => setPathSearch(event.target.value)}
+                placeholder="Screen, path, or test name"
               />
-            ) : null}
-            <ul>
-              {matchingPaths.map((path) => (
-                <li key={path.id}>
-                  <Link
-                    className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
-                    to="/tests/new"
-                    search={{
-                      app: appId,
-                      view: "path",
-                      path: path.id,
-                    }}
+              <p className="my-3 text-xs text-muted-foreground" role="status">
+                {matchingPaths.length} of {map.data.paths.length} known paths
+              </p>
+              {matchingPaths.length === 0 ? (
+                <EmptyState
+                  title={pathSearch ? "No matching paths" : "No known paths yet"}
+                  detail={
+                    pathSearch
+                      ? "Try another screen or test name."
+                      : "Record a test to add a known path."
+                  }
+                  action={
+                    pathSearch ? (
+                      <Button variant="outline" onClick={() => setPathSearch("")}>
+                        Clear search
+                      </Button>
+                    ) : undefined
+                  }
+                />
+              ) : null}
+              <ul>
+                {matchingPaths.map((path) => (
+                  <li
+                    key={path.id}
+                    className="flex items-center justify-between gap-4 border-t border-border py-3 text-sm"
                   >
-                    {path.fromTitle} → {path.toTitle ?? "Finish"}
-                  </Link>
-                  <span>
-                    {path.coveringTests.length
-                      ? `${path.coveringTests.length} covering Test${path.coveringTests.length === 1 ? "" : "s"}`
-                      : "No covering Test yet"}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </section>
+                    <Link
+                      className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
+                      to="/tests/new"
+                      search={{
+                        app: appId,
+                        view: "path",
+                        path: path.id,
+                      }}
+                    >
+                      {path.fromTitle} → {path.toTitle ?? "Finish"}
+                    </Link>
+                    <span>
+                      {path.coveringTests.length
+                        ? `${path.coveringTests.length} covering Test${path.coveringTests.length === 1 ? "" : "s"}`
+                        : "No covering Test yet"}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
           <Collapsible className="mt-4">
             <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 py-2 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
-              Edit Map · Developer Mode
+              Review map changes
             </CollapsibleTrigger>
             <CollapsibleContent className="space-y-3 border-t pt-3 text-sm">
               <p>
