@@ -87,7 +87,7 @@ export function DevicePage() {
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: deviceQueryKeys.devices });
-      await queryClient.invalidateQueries({ queryKey: deviceQueryKeys.device(deviceId) });
+      setLiveAttempt((value) => value + 1);
     },
   });
   const appLaunch = useMutation({
@@ -307,11 +307,10 @@ export function DevicePage() {
               issue={liveIssue}
               busy={liveBusy}
               reconnect={() => {
-                void target.refetch();
-                setLiveAttempt((value) => value + 1);
+                recover.mutate();
               }}
               send={send}
-              pending={target.isPending}
+              pending={target.isPending || recover.isPending}
               talkBack={talkBack}
             />
           ) : null}

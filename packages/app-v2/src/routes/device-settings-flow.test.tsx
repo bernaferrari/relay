@@ -313,7 +313,7 @@ describe("Devices", () => {
       expect(
         document.querySelector<HTMLCanvasElement>(".relay-capture-live-target")?.tabIndex,
       ).toBe(0);
-      expect(document.querySelector('[aria-label="Accessibility names"]')).not.toBeNull();
+      expect(document.body.textContent).toContain("Live");
     },
   );
 

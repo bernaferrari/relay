@@ -187,6 +187,16 @@ export function NewTestPage() {
   }, [appId, draftRestored, platform, targetId]);
 
   const selectedTarget = targets.data?.targetOptions.find((target) => target.targetId === targetId);
+  const reconnectPreview = useMutation({
+    mutationFn: async (serial: string) => deviceService.recover(serial, "connect"),
+    onSuccess: (_result, serial) => {
+      if (serial === targetId) setPreviewAttempt((value) => value + 1);
+    },
+    onError: (_error, serial) => {
+      if (serial === targetId)
+        setPreviewIssue("Could not connect to this device. Keep it running, then try again.");
+    },
+  });
   useEffect(() => {
     if (search.view === "review") return;
     if (!selectedTarget || !previewCanvas.current || !productService.previewTarget) {
@@ -294,7 +304,14 @@ export function NewTestPage() {
   const noTargets = Boolean(targets.data && targets.data.targetOptions.length === 0);
   const setupOpen =
     !loading && !apps.isError && !targets.isError && !targets.data?.recovery && !blocksNewRecording;
-  const formReady = Boolean(appId && selectedTarget && !begin.isPending && !creatingApp);
+  const formReady = Boolean(
+    appId &&
+    selectedTarget &&
+    !begin.isPending &&
+    !creatingApp &&
+    !previewIssue &&
+    !reconnectPreview.isPending,
+  );
   if (search.view === "review") {
     if (activePointer.isPending) return <PageLoading label="Opening the reviewed recording…" />;
     if (activePointer.data) return <ReviewRecordingPage recordingId={activePointer.data} />;
@@ -455,9 +472,18 @@ export function NewTestPage() {
                           type="button"
                           variant="ghost"
                           size="sm"
-                          onClick={() => setPreviewAttempt((value) => value + 1)}
+                          disabled={reconnectPreview.isPending}
+                          onClick={() => {
+                            if (
+                              selectedTarget.platform === "android" ||
+                              selectedTarget.platform === "ios"
+                            )
+                              reconnectPreview.mutate(selectedTarget.targetId);
+                            else setPreviewAttempt((value) => value + 1);
+                          }}
                         >
-                          <RotateCcw aria-hidden="true" /> Try again
+                          <RotateCcw aria-hidden="true" />{" "}
+                          {reconnectPreview.isPending ? "Connecting…" : "Connect device"}
                         </Button>
                       ) : null}
                     </div>

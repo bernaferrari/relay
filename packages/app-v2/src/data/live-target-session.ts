@@ -261,6 +261,7 @@ export function createLiveTargetSession(input: {
   let browserFrame: BrowserDeviceFrame | undefined;
   let streamTask: Promise<void> | undefined;
   let closed = false;
+  let firstFrameTimer: ReturnType<typeof setTimeout> | undefined;
 
   function browserContext(session: BrowserDeviceSession): LiveTargetBrowserContext {
     const previous = current.browserContext;
@@ -284,6 +285,8 @@ export function createLiveTargetSession(input: {
   }
 
   function publish(next: Omit<LiveTargetSnapshot, "target">): void {
+    if (next.status === "streaming" || next.status === "closed" || next.status === "offline")
+      clearTimeout(firstFrameTimer);
     const previous = current;
     current = { target, ...next };
     const previousContext = previous.browserContext;
@@ -435,6 +438,13 @@ export function createLiveTargetSession(input: {
     if (streamTask) return;
     controller = new AbortController();
     publish({ status: "connecting" });
+    firstFrameTimer = setTimeout(() => {
+      if (!closed && current.status === "connecting")
+        publish({
+          status: "degraded",
+          issue: "The device has not sent a preview yet. Connect again to reopen the live view.",
+        });
+    }, 20_000);
     streamTask = (target.kind === "browser" ? pollBrowser() : streamTarget()).catch(fail);
   }
 
@@ -445,7 +455,7 @@ export function createLiveTargetSession(input: {
     }
     let authoredValue = value;
     if (
-      input.onInteraction &&
+      (input.onInteraction || value.kind === "scroll") &&
       target.kind !== "browser" &&
       (value.kind === "touch" || value.kind === "scroll")
     ) {
@@ -576,12 +586,16 @@ export function createLiveTargetSession(input: {
     } else if (value.kind === "scroll") {
       if (!canvas?.width || !canvas.height)
         throw new RecordingInputNotSentError("Wait for the live preview to connect.");
-      await input.client.invoke("target.scroll", {
+      if (authoredValue.kind !== "scroll") return;
+      await input.client.invoke("target.interact", {
         serial: target.targetId,
-        x: value.x / canvas.width,
-        y: value.y / canvas.height,
-        scrollX: value.scrollX / canvas.width,
-        scrollY: value.scrollY / canvas.height,
+        kind: "swipe",
+        from: { x: authoredValue.x, y: authoredValue.y },
+        to: {
+          x: authoredValue.x + authoredValue.scrollX,
+          y: authoredValue.y + authoredValue.scrollY,
+        },
+        durationMs: 300,
       });
     }
   }
@@ -603,6 +617,7 @@ export function createLiveTargetSession(input: {
     close() {
       if (closed) return;
       closed = true;
+      clearTimeout(firstFrameTimer);
       controller?.abort();
       canvas = undefined;
       publish({ status: "closed" });

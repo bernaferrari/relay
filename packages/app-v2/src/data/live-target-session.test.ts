@@ -387,3 +387,27 @@ it("uses pixel dimensions without accessibility and refuses input if both are un
   expect(refresh).not.toHaveBeenCalled();
   live.close();
 });
+
+it("sends preview drags as touch swipes in device pixels, not mouse wheel events", async () => {
+  const invoke = vi.fn(async (_operation: string) => ({ bounds: { width: 1080, height: 2400 } }));
+  const live = createLiveTargetSession({
+    client: {
+      connection: { url: "http://relay.test" },
+      invoke,
+      openStream: () => new Promise(() => {}),
+      binaryResource: vi.fn(),
+    } as never,
+    target: { kind: "device", platform: "android", targetId: "emulator-5554" },
+  });
+  live.mount({ width: 540, height: 1200 } as HTMLCanvasElement);
+  await live.input({ kind: "scroll", x: 270, y: 1000, scrollX: 0, scrollY: -600 });
+  expect(invoke).toHaveBeenLastCalledWith("target.interact", {
+    serial: "emulator-5554",
+    kind: "swipe",
+    from: { x: 540, y: 2000 },
+    to: { x: 540, y: 800 },
+    durationMs: 300,
+  });
+  expect(invoke.mock.calls.some(([operation]) => operation === "target.scroll")).toBe(false);
+  live.close();
+});

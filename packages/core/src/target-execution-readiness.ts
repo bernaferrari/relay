@@ -105,7 +105,21 @@ export function targetExecutionReadiness(
     readiness.semanticControl,
     readiness.evidenceCapture,
   ];
-  if (capabilities.some((capability) => capability.freshness === "stale")) {
+  // A new screen invalidates its old semantic observation, not the connected
+  // device. Interaction binding captures a fresh tree before using a selector.
+  // Keep unexplained stale runtime proofs blocked.
+  if (
+    capabilities.some(
+      (capability) =>
+        capability.freshness === "stale" &&
+        !(
+          capability === readiness.semanticControl &&
+          capability.state === "proven" &&
+          (capability.invalidated?.reason === "input-changed" ||
+            capability.invalidated?.reason === "visual-changed")
+        ),
+    )
+  ) {
     return blockedTarget(
       "stale-readiness",
       "Refresh the target observation before retrying this execution.",
