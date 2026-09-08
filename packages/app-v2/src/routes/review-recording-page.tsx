@@ -71,6 +71,7 @@ export function ReviewRecordingPage({
   const [redoStack, setRedoStack] = useState<readonly number[]>([]);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [selecting, setSelecting] = useState(false);
   const historyInitialized = useRef(false);
 
   const recording = useQuery({
@@ -189,10 +190,12 @@ export function ReviewRecordingPage({
     queryFn: () => productService.getOptimization(sessionId!),
     enabled: false,
   });
+  const matchingEvidence = selectedAction?.evidence?.find(
+    (candidate) => candidate.kind === "screenshot" && candidate.roles.includes(evidenceRole),
+  );
   const evidence =
-    selectedAction?.evidence?.find(
-      (candidate) => candidate.kind === "screenshot" && candidate.roles.includes(evidenceRole),
-    ) ?? selectedAction?.evidence?.find((candidate) => candidate.kind === "screenshot");
+    matchingEvidence ??
+    selectedAction?.evidence?.find((candidate) => candidate.kind === "screenshot");
   const evidencePreview = useQuery({
     queryKey: ["recording-evidence-preview", sessionId ?? "unselected", evidence?.id ?? "none"],
     queryFn: () => productService.getEvidencePreview(sessionId!, evidence!.id),
@@ -318,8 +321,35 @@ export function ReviewRecordingPage({
         actions={
           reviewReady ? (
             <>
-              <Button variant="ghost" onClick={() => setEditing((open) => !open)}>
-                {editing ? "Done" : "Edit"}
+              {editing ? (
+                <div className="flex items-center gap-2" aria-label="Edit history">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => restore("undo")}
+                    disabled={!canEdit || undoStack.length === 0}
+                  >
+                    <Undo2 aria-hidden="true" /> Undo
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => restore("redo")}
+                    disabled={!canEdit || redoStack.length === 0}
+                  >
+                    <Redo2 aria-hidden="true" /> Redo
+                  </Button>
+                </div>
+              ) : null}
+              <Button
+                variant="ghost"
+                aria-pressed={editing}
+                onClick={() => {
+                  setEditing((open) => !open);
+                  setSelecting(false);
+                }}
+              >
+                {editing ? "Done editing" : "Edit steps"}
               </Button>
               {canApprove ? (
                 <Button
@@ -429,10 +459,18 @@ export function ReviewRecordingPage({
                 }}
                 canOptimize={Boolean(sessionId)}
                 editing={editing}
+                selecting={selecting}
+                onSelectionModeChange={(active) => {
+                  setSelecting(active);
+                  if (active) {
+                    setEditing(true);
+                    setSelectedActionIds([]);
+                  }
+                }}
                 onOptimize={() => void optimization.refetch()}
                 onSelect={(actionId) => {
-                  setSelectedActionIds([actionId]);
-                  setEditing(true);
+                  if (selecting) toggleAction(actionId, !selectedActionIds.includes(actionId));
+                  else setSelectedActionIds([actionId]);
                 }}
                 onToggle={toggleAction}
               />
@@ -440,6 +478,8 @@ export function ReviewRecordingPage({
             stage={
               <RecordingEvidencePanel
                 action={selectedAction}
+                exactMoment={Boolean(matchingEvidence)}
+                controls={evidencePreview.data?.controls ?? []}
                 evidenceRole={evidenceRole}
                 previewUrl={evidenceUrl}
                 onEvidenceRoleChange={setEvidenceRole}
@@ -461,24 +501,6 @@ export function ReviewRecordingPage({
                               ? "Step details"
                               : `${selectedActions.length} steps selected`}
                         </h2>
-                      </div>
-                      <div className="flex items-center gap-2" aria-label="Edit history">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => restore("undo")}
-                          disabled={!canEdit || undoStack.length === 0}
-                        >
-                          <Undo2 aria-hidden="true" /> Undo
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => restore("redo")}
-                          disabled={!canEdit || redoStack.length === 0}
-                        >
-                          <Redo2 aria-hidden="true" /> Redo
-                        </Button>
                       </div>
                     </div>
 
@@ -678,6 +700,16 @@ export function ReviewRecordingPage({
           {editing && review?.timeline ? (
             <RecordingTrimPanel
               durationMs={review.timeline.durationMs}
+              moments={actions.map((action) => ({
+                id: action.id,
+                label: action.intent,
+                timeMs: Math.max(
+                  0,
+                  (action.startedAt ?? review.timeline!.startedAt) - review.timeline!.startedAt,
+                ),
+              }))}
+              selectedId={selectedAction?.id}
+              onSelect={(id) => setSelectedActionIds([id])}
               savedStartMs={review.videoClip?.startMs}
               savedEndMs={review.videoClip?.endMs}
               trimStartMs={trimStartMs}

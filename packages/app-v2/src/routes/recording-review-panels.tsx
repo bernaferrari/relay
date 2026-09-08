@@ -4,7 +4,13 @@ import type { AuthoringRawOptimizationProposalResponse } from "@relay/protocol";
 import { ScrollArea } from "@relay/ui-react/components/scroll-area";
 import { Checkbox } from "@relay/ui-react/components/checkbox";
 import { Button } from "@relay/ui-react/components/button";
-import { MoreHorizontal, Sparkles, Target } from "lucide-react";
+import { useState } from "react";
+import {
+  pickRecordingEvidenceControl,
+  imagePointFromClick,
+  type RecordingEvidenceControl,
+} from "../data/recording-evidence-target";
+import { MoreHorizontal, Sparkles, Target, ScanLine } from "lucide-react";
 import { EmptyState } from "../components/product-patterns";
 import {
   recordedMomentCount,
@@ -21,12 +27,19 @@ export function RecordingEvidencePanel({
   evidenceRole,
   previewUrl,
   onEvidenceRoleChange,
+  controls = [],
+  exactMoment = true,
 }: {
+  exactMoment?: boolean;
+  controls?: readonly RecordingEvidenceControl[];
   action?: ReviewAction;
   evidenceRole: "entrance" | "exit";
   previewUrl: string | null;
   onEvidenceRoleChange(role: "entrance" | "exit"): void;
 }) {
+  const [showElements, setShowElements] = useState(false);
+  const [hovered, setHovered] = useState<RecordingEvidenceControl>();
+  const [imageSize, setImageSize] = useState({ width: 1, height: 1 });
   return (
     <section
       className="grid h-full min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] self-start p-3 text-card-foreground"
@@ -50,12 +63,22 @@ export function RecordingEvidencePanel({
           <Button
             size="sm"
             variant="ghost"
+            aria-pressed={showElements}
+            title="Show captured accessibility elements"
+            onClick={() => setShowElements(!showElements)}
+          >
+            <ScanLine className="size-4" />
+            Elements
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
             type="button"
             aria-pressed={evidenceRole === "entrance"}
             onClick={() => onEvidenceRoleChange("entrance")}
             className="text-xs text-muted-foreground aria-pressed:bg-card aria-pressed:text-foreground aria-pressed:shadow-sm"
           >
-            Before
+            Before step
           </Button>
           <Button
             size="sm"
@@ -65,17 +88,64 @@ export function RecordingEvidencePanel({
             onClick={() => onEvidenceRoleChange("exit")}
             className="text-xs text-muted-foreground aria-pressed:bg-card aria-pressed:text-foreground aria-pressed:shadow-sm"
           >
-            After
+            After step
           </Button>
         </div>
       </div>
       <div className="mt-3 flex min-h-0 items-center justify-center overflow-hidden rounded-lg bg-background/40 p-2">
         {previewUrl ? (
-          <img
-            className="h-full max-h-full max-w-full rounded-md object-contain"
-            src={previewUrl}
-            alt={`${evidenceRole} evidence for ${action?.intent}`}
-          />
+          <div
+            className="relative max-h-full max-w-full"
+            onPointerLeave={() => setHovered(undefined)}
+            onPointerMove={(event) => {
+              const img = event.currentTarget.querySelector("img");
+              if (!img) return;
+              const point = imagePointFromClick(event, img);
+              setHovered(point ? pickRecordingEvidenceControl(controls, point) : undefined);
+            }}
+          >
+            {!exactMoment ? (
+              <span className="absolute start-2 top-2 z-10 rounded-md bg-popover px-2 py-1 text-xs text-muted-foreground">
+                Captured screenshot · timing unavailable
+              </span>
+            ) : null}
+            <img
+              className="max-h-[65vh] max-w-full rounded-md object-contain"
+              src={previewUrl}
+              alt={`${evidenceRole === "entrance" ? "Before" : "After"} the step: ${action?.intent}`}
+              onLoad={(event) => {
+                setImageSize({
+                  width: event.currentTarget.naturalWidth,
+                  height: event.currentTarget.naturalHeight,
+                });
+                setHovered(undefined);
+              }}
+            />
+            {(showElements ? controls : hovered ? [hovered] : []).map((control) => (
+              <div
+                key={control.id}
+                className="pointer-events-none absolute rounded-sm border border-blue-500 bg-blue-500/5"
+                style={{
+                  left: `${(control.rect.x / imageSize.width) * 100}%`,
+                  top: `${(control.rect.y / imageSize.height) * 100}%`,
+                  width: `${(control.rect.width / imageSize.width) * 100}%`,
+                  height: `${(control.rect.height / imageSize.height) * 100}%`,
+                }}
+              >
+                {hovered?.id === control.id ? (
+                  <span className="absolute bottom-full start-0 mb-1 flex max-w-64 items-center gap-2 rounded-md border border-border bg-popover px-2 py-1 text-xs text-popover-foreground shadow-sm">
+                    <span className="truncate">{control.name}</span>
+                    <code className="text-[10px] text-muted-foreground">{control.role}</code>
+                  </span>
+                ) : null}
+              </div>
+            ))}
+            {showElements && !controls.length ? (
+              <span className="absolute inset-x-2 bottom-2 rounded-md bg-popover p-2 text-center text-xs text-muted-foreground">
+                No accessibility elements were captured with this screenshot.
+              </span>
+            ) : null}
+          </div>
         ) : (
           <div className="grid max-w-[22ch] justify-items-center gap-2 p-6 text-center text-muted-foreground">
             <Target aria-hidden="true" />
@@ -100,6 +170,8 @@ export function RecordingActionsPanel({
   optimization,
   canOptimize,
   editing,
+  selecting = false,
+  onSelectionModeChange,
   onOptimize,
   onSelect,
   onToggle,
@@ -113,6 +185,8 @@ export function RecordingActionsPanel({
   };
   canOptimize: boolean;
   editing: boolean;
+  selecting?: boolean;
+  onSelectionModeChange?(active: boolean): void;
   onOptimize(): void;
   onSelect(actionId: string): void;
   onToggle(actionId: string, checked: boolean): void;
@@ -128,15 +202,24 @@ export function RecordingActionsPanel({
           <h2 id="recording-actions-title">{recordedMomentCount(actions.length)}</h2>
         </div>
         <div className="flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2">
+          <Button
+            size="sm"
+            variant="ghost"
+            aria-pressed={selecting}
+            onClick={() => onSelectionModeChange?.(!selecting)}
+          >
+            {selecting ? "Done selecting" : "Select steps"}
+          </Button>
           {editing ? (
             <Button
               size="sm"
               variant="ghost"
+              title="Review suggestions for simplifying the recorded steps"
               onClick={onOptimize}
               disabled={!canOptimize || optimization.isFetching}
             >
               <Sparkles aria-hidden="true" />
-              {optimization.isFetching ? "Checking…" : "Find cleanup"}
+              {optimization.isFetching ? "Checking…" : "Suggest improvements"}
             </Button>
           ) : null}
         </div>
@@ -149,10 +232,10 @@ export function RecordingActionsPanel({
         >
           <div className="grid gap-0.5">
             <strong className="text-xs">
-              {optimization.suggestions.length} review-only suggestions
+              {optimization.suggestions.length} suggested improvements
             </strong>
             <span className="text-[11px] text-muted-foreground">
-              Relay will never apply these automatically.
+              Select a suggestion to inspect its step.
             </span>
           </div>
           {optimization.suggestions.map((suggestion) => (
@@ -168,7 +251,7 @@ export function RecordingActionsPanel({
         </div>
       ) : editing && optimization.isFetched ? (
         <p className="border-b border-border p-3 text-[11px] text-muted-foreground" role="status">
-          No safe cleanup suggestions for this revision.
+          No improvements suggested for these steps.
         </p>
       ) : null}
 
@@ -184,7 +267,7 @@ export function RecordingActionsPanel({
                   className={`relay-review-step grid min-h-[52px] grid-cols-[auto_28px_minmax(0,1fr)] items-center gap-2 border-t border-border py-2 ${selected ? "bg-muted/60" : ""}`}
                   key={step.id}
                 >
-                  {editing ? (
+                  {selecting ? (
                     <Checkbox
                       checked={selected}
                       onCheckedChange={(checked) => onToggle(step.id, checked)}
