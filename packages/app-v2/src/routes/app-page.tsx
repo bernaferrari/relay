@@ -39,11 +39,24 @@ export function AppPage() {
     void app.refetch();
   };
 
+  if (error && !app.data) {
+    return (
+      <LibraryPage className="flex min-h-full flex-col justify-center !py-8">
+        <RecordingProblem
+          layout="centered"
+          error={error}
+          onRetry={retry}
+          retrying={app.isFetching}
+        />
+      </LibraryPage>
+    );
+  }
+
   return (
     <LibraryPage className="max-w-[1040px]">
       {loading ? <PageLoading label="Loading app overview…" /> : null}
       <RecordingProblem error={error} onRetry={retry} retrying={app.isFetching} />
-      {app.data && !error ? (
+      {app.data ? (
         <>
           <PageHeader
             context="App overview"

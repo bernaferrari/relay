@@ -42,6 +42,8 @@ import { currentVerifiedScreen } from "./recipe-runner-context.js";
 import { rethrowIosMutationOutcomeUnknown } from "./ios-mutation-policy.js";
 import { iosSnapshotInputEpoch } from "./ios-snapshot-flight.js";
 import { currentTargetContext } from "./target-context.js";
+import { getRecipeAndroidLocalization } from "./recipe-localization.js";
+import { resolveLocalizedRecipeTarget } from "./recipe-localized-target.js";
 
 function snapshotBounds(nodes: SnapshotNode[]): { width: number; height: number } | undefined {
   let width = 0;
@@ -321,11 +323,13 @@ async function tapTarget(
   mirrorPoints = false,
   expectedApp?: string,
   verifiedNodes?: SnapshotNode[],
+  context?: RecipeStepContext,
 ): Promise<{
   strategy: string;
   method?: string;
   bounds?: { x: number; y: number; width: number; height: number };
   point?: { x: number; y: number };
+  localizedTarget?: { label?: string; text?: string; locale: string };
 }> {
   const repeated =
     repetitions > 1
@@ -348,7 +352,7 @@ async function tapTarget(
     selectedPlatform() !== "android" ||
     !hasSemanticTarget ||
     target.point?.fallbackPolicy === "reviewed";
-  const namedTarget = {
+  let namedTarget = {
     ...(target.identifier ? { identifier: target.identifier } : {}),
     ...(target.label ? { label: target.label } : {}),
     ...(target.role ? { role: target.role } : {}),
@@ -373,6 +377,26 @@ async function tapTarget(
   };
   let nodes = verifiedNodes?.length ? verifiedNodes : await readBeforeTap();
   let namedOutcome = resolveNamedControlOutcome(nodes, namedTarget);
+  let localizedTarget: { label?: string; text?: string; locale: string } | undefined;
+  let localizedPackage: string | undefined;
+  if (namedOutcome.status === "absent" && selectedPlatform() === "android" && context) {
+    const localization = await getRecipeAndroidLocalization(context, nodes);
+    const localized =
+      localization && resolveLocalizedRecipeTarget(nodes, namedTarget, localization);
+    if (localized) {
+      localizedPackage = localization.packageName;
+      namedTarget = localized.target;
+      namedOutcome = localized.outcome;
+      localizedTarget = {
+        ...(localized.target.label ? { label: localized.target.label } : {}),
+        ...(localized.target.text ? { text: localized.target.text } : {}),
+        locale: localization.locale,
+      };
+      log(
+        `locator: ${target.label ?? target.text} → ${localized.target.label ?? localized.target.text} (${localization.locale})`,
+      );
+    }
+  }
   let named = namedOutcome.status === "resolved" ? namedOutcome.resolution : undefined;
   if (
     !named &&
@@ -386,7 +410,10 @@ async function tapTarget(
       await cooperativeCheckpoint();
       await sleep(250, device);
       nodes = await readBeforeTap();
-      namedOutcome = resolveNamedControlOutcome(nodes, namedTarget);
+      namedOutcome = resolveNamedControlOutcome(
+        localizedPackage ? nodes.filter((node) => node.bundleId === localizedPackage) : nodes,
+        namedTarget,
+      );
       named = namedOutcome.status === "resolved" ? namedOutcome.resolution : undefined;
     }
   }
@@ -410,6 +437,7 @@ async function tapTarget(
       method: named.method,
       bounds: named.bounds,
       point: named.point,
+      ...(localizedTarget ? { localizedTarget } : {}),
     };
   }
   if (
@@ -559,6 +587,7 @@ async function tapRecordedTarget(
         isRightToLeftRun(ctx.job?.resolvedInputs ?? ctx.variables),
         input.expectedApp,
         verifiedNodes,
+        ctx,
       );
       const resolution = {
         kind: "target-resolution" as const,
@@ -569,6 +598,7 @@ async function tapRecordedTarget(
           ...(hit.bounds ? { bounds: hit.bounds } : {}),
           ...(hit.point ? { point: hit.point } : {}),
           target: candidate,
+          ...(hit.localizedTarget ? { localizedTarget: hit.localizedTarget } : {}),
         },
       };
       ctx.job?.artifacts.push(resolution);

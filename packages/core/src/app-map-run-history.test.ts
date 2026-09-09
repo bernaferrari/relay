@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import type { AppMapScenarioTest } from "@relay/protocol";
 import { createAppMap, mutateStoredAppMap, readAppMap } from "./collaboration.js";
 import { resetControlDatabaseCache } from "./collaboration-db.js";
-import { projectPersistedAppMapRun } from "./app-map-run-history.js";
+import { planScreenSteps, projectPersistedAppMapRun } from "./app-map-run-history.js";
 import type { PersistedRun } from "./runs.js";
 
 function testEntity(updatedAt = 10): AppMapScenarioTest {
@@ -24,7 +24,10 @@ function testEntity(updatedAt = 10): AppMapScenarioTest {
   };
 }
 
-function run(revision: number, outcome: PersistedRun["outcome"] = "passed"): PersistedRun {
+function validationRun(
+  revision: number,
+  outcome: PersistedRun["outcome"] = "passed",
+): PersistedRun {
   return {
     schemaVersion: 5,
     id: "run-validation",
@@ -54,6 +57,191 @@ function run(revision: number, outcome: PersistedRun["outcome"] = "passed"): Per
   };
 }
 
+test("App Map capture joins module frames only to the final destination screen", () => {
+  const run = {
+    artifacts: [
+      {
+        kind: "app-map-test-plan",
+        data: {
+          rootRecipeId: "root",
+          recipes: {
+            root: {
+              steps: [
+                {
+                  kind: "module",
+                  id: "module-a",
+                  recipeId: "module-recipe",
+                },
+                {
+                  kind: "module",
+                  id: "module-b",
+                  recipeId: "module-recipe",
+                },
+              ],
+            },
+            "module-recipe": {
+              steps: [
+                { kind: "expect-screen", id: "origin", screenId: "screen-origin" },
+                { kind: "expect-screen", id: "destination", screenId: "screen-destination" },
+                { kind: "module", id: "cycle", recipeId: "module-recipe" },
+              ],
+            },
+          },
+        },
+      },
+    ],
+  } as unknown as PersistedRun;
+  assert.deepEqual(planScreenSteps(run), [
+    { id: "module-a", screenId: "screen-destination" },
+    { id: "module-b", screenId: "screen-destination" },
+  ]);
+});
+
+test(
+  "promotes localized screen captures to their logical screens without replacing baselines",
+  { concurrency: false },
+  async () => {
+    const root = await mkdtemp(join(tmpdir(), "relay-map-capture-promotion-"));
+    const previous = process.env.RELAY_STATE_DIR;
+    process.env.RELAY_STATE_DIR = root;
+    resetControlDatabaseCache();
+    try {
+      await createAppMap({
+        organizationId: "org",
+        projectId: "project",
+        serial: "golden",
+        platform: "browser",
+        appMapId: "map",
+        name: "Map",
+      });
+      const saved = await mutateStoredAppMap("project", "map", (map) => ({
+        ...map,
+        tests: { checkout: testEntity() },
+        screens: {
+          origin: {
+            organizationId: "org",
+            projectId: "project",
+            appMapId: "map",
+            id: "origin",
+            title: "Origin",
+            identity: { schemaVersion: 1, fingerprint: "a".repeat(64) },
+            variantIds: [],
+            createdAt: 1,
+            updatedAt: 1,
+          },
+          destination: {
+            organizationId: "org",
+            projectId: "project",
+            appMapId: "map",
+            id: "destination",
+            title: "Destination",
+            identity: { schemaVersion: 1, fingerprint: "b".repeat(64) },
+            variantIds: ["destination-baseline"],
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        },
+        screenVariants: {
+          "destination-baseline": {
+            organizationId: "org",
+            projectId: "project",
+            appMapId: "map",
+            id: "destination-baseline",
+            screenId: "destination",
+            targetProfile: {
+              id: "browser:golden",
+              targetId: "golden",
+              source: "browser",
+              platform: "browser",
+              name: "Golden",
+              capabilities: [],
+              observedAt: 1,
+            },
+            evidenceIds: ["baseline-image"],
+            evidenceUris: ["relay-evidence://baseline-image"],
+            screenshotUri: "relay-evidence://baseline-image",
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        },
+        revision: map.revision + 1,
+      }));
+      await writeFile(join(root, "origin.png"), Buffer.from("origin-image"));
+      await writeFile(join(root, "destination.png"), Buffer.from("destination-image"));
+      const run: PersistedRun = {
+        ...validationRun(saved.revision),
+        id: "run-localized-capture",
+        projectId: "project",
+        serial: "golden",
+        platform: "browser",
+        dir: root,
+        finishedAt: 20,
+        resolvedInputs: { language: "pt-BR" },
+        artifacts: [
+          {
+            kind: "app-map-test-plan",
+            capturedAt: 10,
+            data: {
+              appMapId: "map",
+              appMapRevision: saved.revision,
+              test: { id: "checkout" },
+              rootRecipeId: "root",
+              recipes: {
+                root: {
+                  steps: [
+                    { kind: "expect-screen", id: "origin-step", screenId: "origin" },
+                    { kind: "expect-screen", id: "destination-step", screenId: "destination" },
+                  ],
+                },
+              },
+            },
+          },
+        ],
+        steps: [
+          {
+            ...({} as PersistedRun["steps"][number]),
+            id: "origin-step",
+            recipeStepId: "origin-step",
+            index: 0,
+            frames: [{ path: "origin.png", caption: "origin", capturedAt: 11 }],
+          },
+          {
+            ...({} as PersistedRun["steps"][number]),
+            id: "destination-step",
+            recipeStepId: "destination-step",
+            index: 1,
+            frames: [{ path: "destination.png", caption: "destination", capturedAt: 12 }],
+          },
+        ],
+      };
+      assert.equal(await projectPersistedAppMapRun(run), true);
+      const projected = await readAppMap("project", "map");
+      const originVariants = projected!.screens.origin!.variantIds;
+      const destinationVariants = projected!.screens.destination!.variantIds;
+      assert.equal(originVariants.length, 1);
+      assert.equal(destinationVariants.length, 2);
+      const origin = projected!.screenVariants[originVariants[0]!]!;
+      const destination =
+        projected!.screenVariants[
+          destinationVariants.find((id) => id !== "destination-baseline")!
+        ]!;
+      assert.equal(origin.captureProvenance?.locale, "pt-BR");
+      assert.equal(destination.captureProvenance?.locale, "pt-BR");
+      assert.notEqual(origin.screenshotUri, destination.screenshotUri);
+      assert.equal(
+        projected!.screenVariants["destination-baseline"]!.screenshotUri,
+        "relay-evidence://baseline-image",
+      );
+      assert.equal(await projectPersistedAppMapRun(run), false);
+      assert.equal((await readAppMap("project", "map"))!.screens.destination!.variantIds.length, 2);
+    } finally {
+      if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+      else process.env.RELAY_STATE_DIR = previous;
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+);
+
 test(
   "successful exact Test run writes one validation receipt and duplicate projection is idempotent",
   { concurrency: false },
@@ -77,12 +265,12 @@ test(
         };
       });
       const before = saved.revision;
-      assert.equal(await projectPersistedAppMapRun(run(before)), true);
+      assert.equal(await projectPersistedAppMapRun(validationRun(before)), true);
       const validated = await readAppMap("project", "map");
       assert.equal(validated?.tests.checkout?.validation?.status, "passed");
       assert.equal(Object.values(validated?.activity ?? {}).at(-1)?.eventType, "test.validated");
       const afterFirst = validated?.revision;
-      assert.equal(await projectPersistedAppMapRun(run(before)), false);
+      assert.equal(await projectPersistedAppMapRun(validationRun(before)), false);
       const afterDuplicate = await readAppMap("project", "map");
       assert.equal(afterDuplicate?.revision, afterFirst);
     } finally {
@@ -115,7 +303,7 @@ test(
           revision: map.revision + 1,
         };
       });
-      assert.equal(await projectPersistedAppMapRun(run(saved.revision)), true);
+      assert.equal(await projectPersistedAppMapRun(validationRun(saved.revision)), true);
       const edited = await mutateStoredAppMap("project", "map", (map) => {
         const test = map.tests.checkout!;
         return {
@@ -135,8 +323,11 @@ test(
           revision: map.revision + 1,
         };
       });
-      assert.equal(await projectPersistedAppMapRun(run(saved.revision)), false);
-      assert.equal(await projectPersistedAppMapRun(run(edited.revision, "product-failure")), false);
+      assert.equal(await projectPersistedAppMapRun(validationRun(saved.revision)), false);
+      assert.equal(
+        await projectPersistedAppMapRun(validationRun(edited.revision, "product-failure")),
+        false,
+      );
       const current = await readAppMap("project", "map");
       assert.equal(current?.tests.checkout?.validation?.status, "needs-validation");
     } finally {

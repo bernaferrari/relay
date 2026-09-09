@@ -118,6 +118,125 @@ describe("run report projection", () => {
     expect(framePathsForTraceStep(evidence, 1)).toEqual([]);
   });
 
+  it("projects authored capture onto the visible screenshot leaf by test-step identity", () => {
+    const report = projectRunReport(
+      "run-localized",
+      {
+        steps: [
+          {
+            id: "trace-module",
+            index: 0,
+            title: "Run saved Test",
+            status: "ok",
+            frames: [{ path: "frames/002.png" }],
+          },
+          {
+            id: "trace-shot",
+            index: 1,
+            title: "Screenshot · step:test-step:Tap Network",
+            status: "ok",
+            frames: [],
+          },
+        ],
+        testStepEvidence: [
+          {
+            schemaVersion: 1,
+            testStepId: "test-step",
+            recipeId: "recipe",
+            recipeStepId: "module",
+            traceStepId: "trace-module",
+            traceStepIndex: 0,
+            occurrence: 1,
+            evidence: {
+              framePaths: ["frames/002.png"],
+              eventSequences: [],
+              artifactKinds: ["screenshot"],
+            },
+          },
+        ],
+      },
+      { channels: { screenshot: { entries: 1 } } },
+    );
+    expect(report.timeline).toHaveLength(1);
+    expect(report.timeline[0]?.framePaths).toEqual(["frames/002.png"]);
+  });
+
+  it("falls through an empty leaf trace row without crossing Test step identity", () => {
+    const report = projectRunReport(
+      "run-localized",
+      {
+        steps: [
+          {
+            id: "module-a",
+            index: 0,
+            title: "Run saved Test",
+            status: "ok",
+            frames: [{ path: "frames/a.png" }],
+          },
+          {
+            id: "leaf-a",
+            index: 1,
+            title: "Screenshot · step:test-a:Tap Network",
+            status: "ok",
+            frames: [],
+          },
+          {
+            id: "leaf-b",
+            index: 2,
+            title: "Screenshot · step:test-b:Tap Other",
+            status: "ok",
+            frames: [],
+          },
+        ],
+        testStepEvidence: [
+          {
+            schemaVersion: 1,
+            testStepId: "test-a",
+            recipeId: "recipe",
+            recipeStepId: "module-a",
+            traceStepId: "module-a",
+            traceStepIndex: 0,
+            occurrence: 1,
+            evidence: {
+              framePaths: ["frames/a.png"],
+              eventSequences: [],
+              artifactKinds: ["screenshot"],
+            },
+          },
+          {
+            schemaVersion: 1,
+            testStepId: "test-a",
+            recipeId: "recipe",
+            recipeStepId: "leaf-a",
+            traceStepId: "leaf-a",
+            traceStepIndex: 1,
+            occurrence: 2,
+            evidence: { framePaths: [], eventSequences: [], artifactKinds: [] },
+          },
+          {
+            schemaVersion: 1,
+            testStepId: "test-b",
+            recipeId: "recipe",
+            recipeStepId: "leaf-b",
+            traceStepId: "leaf-b",
+            traceStepIndex: 2,
+            occurrence: 1,
+            evidence: {
+              framePaths: ["frames/b.png"],
+              eventSequences: [],
+              artifactKinds: ["screenshot"],
+            },
+          },
+        ],
+      },
+      { channels: { screenshot: { entries: 2 } } },
+    );
+    expect(report.timeline.map((item) => item.framePaths)).toEqual([
+      ["frames/a.png"],
+      ["frames/b.png"],
+    ]);
+  });
+
   it("keeps the canonical outcome and human target while omitting empty evidence", () => {
     const report = projectRunReport(
       "run-1",

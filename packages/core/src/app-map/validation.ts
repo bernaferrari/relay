@@ -80,7 +80,9 @@ function assertVariants(map: AppMap): void {
           `Screen ${screen.id} references missing variant ${variantId}`,
         );
       }
-      const key = `${screen.id}\u0000${variant.targetProfile.id}`;
+      // Localized historical captures may share a physical target profile;
+      // their explicit capture provenance keeps the locale dimension distinct.
+      const key = `${screen.id}\u0000${variant.targetProfile.id}\u0000${variant.captureProvenance?.locale ?? ""}`;
       if (targetKeys.has(key)) {
         appMapFail(
           "duplicate-id",

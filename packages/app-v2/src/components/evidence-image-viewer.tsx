@@ -16,9 +16,11 @@ import type { ReportEvidenceItem } from "../data/run-product-service";
 export function EvidenceImageViewer({
   frame,
   onError,
+  className,
 }: {
   frame: ReportEvidenceItem;
   onError(): void;
+  className?: string;
 }) {
   const [zoom, setZoom] = useState(0);
   const [open, setOpen] = useState(false);
@@ -30,7 +32,7 @@ export function EvidenceImageViewer({
         alt={frame.title}
         width={frame.media.width}
         height={frame.media.height}
-        className="max-h-[28rem] w-full max-w-full object-contain"
+        className={className ?? "max-h-[28rem] w-full max-w-full object-contain"}
         onError={onError}
       />
       <Dialog

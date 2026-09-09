@@ -93,14 +93,22 @@ export type ProductRunReportOverview = {
   };
 };
 
-/** Join authored-step evidence by its persisted trace index. Never infer a
- * relationship from array position: hidden or repeated trace steps make that
- * association unsafe. */
+/** Join authored-step evidence by its persisted trace identity. The numeric
+ * fallback is retained for legacy callers and old reports only. */
 export function framePathsForTraceStep(
   stepEvidence: readonly RunTestStepEvidence[] | undefined,
-  traceStepIndex: number,
+  traceStepIdOrIndex: string | number,
+  legacyTraceStepIndex?: number,
 ): readonly string[] {
+  const match =
+    typeof traceStepIdOrIndex === "string"
+      ? stepEvidence?.find((item) => item.traceStepId === traceStepIdOrIndex)
+      : stepEvidence?.find((item) => item.traceStepIndex === traceStepIdOrIndex);
   return (
-    stepEvidence?.find((item) => item.traceStepIndex === traceStepIndex)?.evidence.framePaths ?? []
+    match?.evidence.framePaths ??
+    (legacyTraceStepIndex === undefined
+      ? []
+      : (stepEvidence?.find((item) => item.traceStepIndex === legacyTraceStepIndex)?.evidence
+          .framePaths ?? []))
   );
 }

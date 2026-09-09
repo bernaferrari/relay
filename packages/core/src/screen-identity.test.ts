@@ -341,3 +341,14 @@ test("heads-up notification banners never re-key screen identity", () => {
   ] as never);
   assert.notEqual(settingsRow.fingerprint, quiet.fingerprint);
 });
+
+test("Japanese calendar dates retain the same volatile date identity as English dates", () => {
+  const english = observeScreenIdentity([{ role: "text", label: "Aug 11 – Sep 8" }]);
+  const japanese = observeScreenIdentity([{ role: "text", label: "8月11日~9月8日" }]);
+  assert.equal(japanese.fingerprint, english.fingerprint);
+  assert.ok(japanese.volatileSignals.some((signal) => signal.kind === "date"));
+  assert.notEqual(
+    observeScreenIdentity([{ role: "text", label: "Version 8.11" }]).fingerprint,
+    japanese.fingerprint,
+  );
+});

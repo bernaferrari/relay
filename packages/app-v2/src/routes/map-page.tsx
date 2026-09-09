@@ -21,6 +21,7 @@ export function MapPage() {
   const { appId } = routeApi.useParams();
   const [view, setView] = useState<"map" | "paths">("map");
   const [pathSearch, setPathSearch] = useState("");
+  const [inspectedPathId, setInspectedPathId] = useState<string>();
   const map = useQuery({
     queryKey: ["map", appId],
     queryFn: () => mapService.get(appId),
@@ -156,6 +157,7 @@ export function MapPage() {
             <>
               {map.data.screens.length ? (
                 <InfiniteMapCanvas
+                  initialPathId={inspectedPathId}
                   loadScreenshot={mapService.loadScreenshot}
                   saving={updateScreen.isPending}
                   onUpdateScreen={
@@ -241,17 +243,16 @@ export function MapPage() {
                     key={path.id}
                     className="flex items-center justify-between gap-4 border-t border-border py-3 text-sm"
                   >
-                    <Link
+                    <button
+                      type="button"
                       className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
-                      to="/tests/new"
-                      search={{
-                        app: appId,
-                        view: "path",
-                        path: path.id,
+                      onClick={() => {
+                        setInspectedPathId(path.id);
+                        setView("map");
                       }}
                     >
                       {path.fromTitle} → {path.toTitle ?? "Finish"}
-                    </Link>
+                    </button>
                     <span>
                       {path.coveringTests.length
                         ? `${path.coveringTests.length} covering Test${path.coveringTests.length === 1 ? "" : "s"}`

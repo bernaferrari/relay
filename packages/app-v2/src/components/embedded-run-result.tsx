@@ -16,7 +16,7 @@ export function EmbeddedRunResult({ report }: { report: ProductRunReportOverview
         ? "Run cancelled"
         : "Run couldn’t finish";
   const detail = mismatch
-    ? "The app was on a different screen than this recording expected. Compare it with the recorded screen before running again."
+    ? "Relay couldn’t recognize the taught screen in this capture. Compare it with the recorded screen before running again."
     : passed
       ? undefined
       : "Open the full report to inspect where the run stopped.";
@@ -50,9 +50,6 @@ export function EmbeddedRunResult({ report }: { report: ProductRunReportOverview
             alt="Screen captured during this run"
             className="min-h-0 flex-1 rounded-md object-contain"
           />
-          <figcaption className="text-xs text-muted-foreground">
-            Captured during this run
-          </figcaption>
         </figure>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 text-muted-foreground">

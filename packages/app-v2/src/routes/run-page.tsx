@@ -22,7 +22,6 @@ import { useEffect, useRef, useState } from "react";
 
 import { EmptyState } from "../components/product-patterns";
 import { IssueDraftButton } from "../components/issue-draft-button";
-import { RunConfigurationComposer } from "../components/run-configuration-composer";
 import {
   firstSentence,
   formatDuration,
@@ -108,6 +107,9 @@ export function RunInspection({
     initialData: restoredState,
     staleTime: 0,
     retry: false,
+    // Streaming is an optimization. A dropped terminal event or development
+    // restart must not leave the saved run displaying Running indefinitely.
+    refetchInterval: (query) => (isTerminal(query.state.data?.status) ? false : 3_000),
   });
   const state = run.data ?? restoredState ?? execution.data;
   const restorePending = restoreEnabled && !restore.isFetched;
@@ -176,6 +178,10 @@ export function RunInspection({
         if (isTerminal(next.status)) {
           void queryClient.invalidateQueries({ queryKey: runQueryKeys.report(runId) });
         }
+      })
+      .catch(() => {
+        if (!controller.signal.aborted)
+          void queryClient.invalidateQueries({ queryKey: runQueryKeys.workflow(activeWorkflowId) });
       });
     return () => controller.abort();
   }, [activeWorkflowId, queryClient, runId, runService, shouldWatch]);
@@ -248,7 +254,7 @@ export function RunInspection({
 
   const problemView = (
     <RecordingProblem
-      className="relay-run-recovery mt-4"
+      className="relay-run-recovery"
       error={problem}
       recovery={recovery}
       onRetry={retry}
@@ -260,7 +266,7 @@ export function RunInspection({
   if (problem || recovery) {
     if (embedded) return problemView;
     return (
-      <WorkbenchPage className="max-w-[1120px]">
+      <WorkbenchPage className="flex min-h-full max-w-[1120px] flex-col">
         <PageHeader
           crumbs={[{ label: "Runs", to: "/runs" }, { label: "Run" }]}
           title={snapshot?.title ?? "Run unavailable"}
@@ -287,41 +293,40 @@ export function RunInspection({
 
   if (embedded) {
     return (
-      <section className="grid gap-4" aria-label="Attached run">
+      <section
+        className="flex h-full min-h-0 items-center justify-center p-6"
+        aria-label="Attached run"
+      >
         {snapshot ? (
-          <section
-            className="rounded-xl border border-border bg-card p-4"
-            aria-label="Run progress"
-          >
-            <p className="text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
-              Running
-            </p>
-            <h2 className="mt-1 text-sm font-semibold" role="status">
-              {snapshot.progress.label}
-            </h2>
-            {snapshot.progress.total !== undefined ? (
-              <Progress
-                className="mt-3"
-                value={snapshot.progress.completed ?? 0}
-                max={snapshot.progress.total}
-              >
-                <ProgressLabel>Completed steps</ProgressLabel>
-                <ProgressValue>
-                  {() => `${snapshot.progress.completed ?? 0} of ${snapshot.progress.total}`}
-                </ProgressValue>
-              </Progress>
-            ) : null}
-            {canCancel ? (
-              <Button
-                className="mt-3"
-                variant="outline"
-                size="sm"
-                onClick={() => cancel.mutate()}
-                disabled={cancel.isPending}
-              >
-                {cancel.isPending ? "Cancelling…" : "Cancel Run"}
-              </Button>
-            ) : null}
+          <section className="flex w-full items-center justify-center" aria-label="Run progress">
+            <div className="flex w-full max-w-sm flex-col items-center text-center">
+              <h2 className="mt-1 text-base font-semibold" role="status">
+                {snapshot.progress.label}
+              </h2>
+              {snapshot.progress.total !== undefined ? (
+                <Progress
+                  className="mt-4 w-full text-left"
+                  value={snapshot.progress.completed ?? 0}
+                  max={snapshot.progress.total}
+                >
+                  <ProgressLabel>Completed steps</ProgressLabel>
+                  <ProgressValue>
+                    {() => `${snapshot.progress.completed ?? 0} of ${snapshot.progress.total}`}
+                  </ProgressValue>
+                </Progress>
+              ) : null}
+              {canCancel ? (
+                <Button
+                  className="mt-4"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => cancel.mutate()}
+                  disabled={cancel.isPending}
+                >
+                  {cancel.isPending ? "Cancelling…" : "Cancel run"}
+                </Button>
+              ) : null}
+            </div>
           </section>
         ) : null}
       </section>
@@ -404,6 +409,7 @@ function RunReport({
   const failure = report.outcome && report.outcome !== "passed" ? report.cause : undefined;
   const firstEvidenceIsDistinct = Boolean(
     report.firstEvidence &&
+    !report.timeline.some((step) => step.title === report.firstEvidence?.label) &&
     (!failure ||
       firstSentence(report.firstEvidence.label).toLocaleLowerCase() !==
         firstSentence(failure).toLocaleLowerCase()),
@@ -551,7 +557,7 @@ function RunReport({
         ) : null}
 
         <Collapsible className="grid gap-3">
-          <CollapsibleTrigger className="group flex w-full items-center justify-between gap-3 rounded-lg border border-border bg-muted/30 px-4 py-3 text-left text-sm font-semibold text-foreground transition-colors hover:bg-muted/60">
+          <CollapsibleTrigger className="group flex w-full items-center justify-between gap-3 py-3 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
             Recorded configuration
             <ChevronRight
               aria-hidden="true"
@@ -559,19 +565,29 @@ function RunReport({
             />
           </CollapsibleTrigger>
           <CollapsibleContent>
-            <RunConfigurationComposer
-              configuration={{
-                frozen: true,
-                validated: true,
-                values: {
-                  sourceRevision: report.executionContext?.sourceRevision,
-                  buildId: report.executionContext?.buildId,
-                  targetProfileId: report.executionContext?.targetProfileId,
-                  targetName: report.targetName,
-                  browserProfile: report.executionContext?.browser,
-                },
-              }}
-            />
+            <dl className="grid gap-x-8 gap-y-4 px-1 py-3 sm:grid-cols-2">
+              {[
+                ["Device", report.targetName],
+                ["Build", report.executionContext?.buildId],
+                ["Profile", report.executionContext?.targetProfileId],
+                ["Source revision", report.executionContext?.sourceRevision],
+              ]
+                .filter(([, value]) => value)
+                .map(([label, value]) => (
+                  <div key={label} className="min-w-0">
+                    <dt className="text-xs text-muted-foreground">{label}</dt>
+                    <dd className="mt-1 break-words text-sm">{value}</dd>
+                  </div>
+                ))}
+              {report.executionContext?.browser ? (
+                <div className="sm:col-span-2">
+                  <dt className="text-xs text-muted-foreground">Browser</dt>
+                  <dd className="mt-1 break-words font-mono text-xs">
+                    {report.executionContext.browser}
+                  </dd>
+                </div>
+              ) : null}
+            </dl>
           </CollapsibleContent>
         </Collapsible>
 

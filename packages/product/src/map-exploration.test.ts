@@ -133,6 +133,65 @@ test("map projection exposes source anchors only for their matching before scree
   assert.equal(mismatched.paths[0]?.sourceAnchor, undefined);
 });
 
+test("map projection exposes selectable variants only for canonical screenshot evidence", () => {
+  const map = {
+    id: "app-variants",
+    name: "Variants",
+    revision: 3,
+    screens: { home: { id: "home", title: "Home", variantIds: ["old", "new", "unretained"] } },
+    connections: {},
+    tests: {},
+    screenVariants: {
+      old: {
+        id: "old",
+        screenshotUri: "relay-evidence://old",
+        evidenceIds: ["old-shot", "old-tree"],
+        evidenceUris: ["relay-evidence://old", "relay-evidence://old-tree"],
+        rawAccessibilityTree: {
+          id: "old-tree",
+          uri: "relay-evidence://old-tree",
+          sha256: "a".repeat(64),
+          mime: "application/json",
+          bytes: 10,
+          capturedAt: 100,
+        },
+        baseline: {
+          approvedAt: 101,
+          approvedBy: "qa",
+          source: { kind: "run", targetResultId: "old-result", evidenceId: "old-shot" },
+        },
+        updatedAt: 1,
+      },
+      new: {
+        id: "new",
+        screenshotUri: "relay-evidence://new",
+        evidenceIds: ["new-shot"],
+        evidenceUris: ["relay-evidence://new"],
+        updatedAt: 2,
+      },
+      unretained: { id: "unretained", screenshotUri: "relay-evidence://unretained", updatedAt: 3 },
+    },
+    targetResults: {
+      "old-result": {
+        id: "old-result",
+        runId: "run-old",
+        evidenceIds: ["old-shot"],
+      },
+    },
+  };
+  const overview = projectProductMap(map as never);
+  assert.deepEqual(overview.screens[0]?.variants, [
+    { id: "new", screenshotUri: "relay-evidence://new" },
+    {
+      id: "old",
+      screenshotUri: "relay-evidence://old",
+      capturedAt: 100,
+      sourceRunId: "run-old",
+    },
+  ]);
+  assert.equal(overview.screens[0]?.screenshotUri, "relay-evidence://unretained");
+});
+
 test("map drilldowns reuse the canonical App Map snapshot and fail closed for unknown ids", async () => {
   const map = {
     id: "app-1",

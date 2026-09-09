@@ -4,6 +4,9 @@ import { Link } from "@tanstack/react-router";
 import type { ProductTestStep } from "@relay/product/catalog";
 import { SavedRecordingPreview } from "./saved-recording-preview";
 import { useState } from "react";
+import { ImageOff, Info } from "lucide-react";
+import { Button } from "@relay/ui-react/components/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@relay/ui-react/components/popover";
 import type { ProductRunReportOverview } from "../data/run-product-service";
 
 export function TestStepEvidencePreview({
@@ -17,7 +20,9 @@ export function TestStepEvidencePreview({
   hasRuns: boolean;
   loading: boolean;
 }) {
-  const matches = report?.stepEvidence?.filter((item) => item.testStepId === step.id) ?? [];
+  const allMatches = report?.stepEvidence?.filter((item) => item.testStepId === step.id) ?? [];
+  const captures = allMatches.filter((item) => item.evidence.framePaths.length > 0);
+  const matches = captures.length ? captures : allMatches;
   const [selectedOccurrence, setSelectedOccurrence] = useState(matches[0]?.occurrence ?? 1);
   if (!hasRuns && step.recordingFrames?.length) {
     return (
@@ -39,14 +44,75 @@ export function TestStepEvidencePreview({
     report?.evidence.find((section) => section.id === "screenshot")?.items ?? [];
 
   return (
-    <section className="h-full min-h-0 min-w-0 overflow-hidden p-4" aria-labelledby={titleId}>
-      <header className="flex items-start justify-between gap-3">
-        <h3 id={titleId} className="text-[13px] font-medium text-muted-foreground">
-          Step result
+    <section
+      className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden p-4"
+      aria-labelledby={titleId}
+    >
+      <header className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5">
+        <h3
+          id={titleId}
+          className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground"
+        >
+          {step.label ?? step.intent}
         </h3>
+        {selected ? (
+          <Popover>
+            <PopoverTrigger
+              render={<Button variant="ghost" size="icon-sm" aria-label="Capture details" />}
+            >
+              <Info className="size-4" />
+            </PopoverTrigger>
+            <PopoverContent align="end" side="bottom" className="w-64 space-y-3 p-4">
+              <h4 className="text-sm font-medium">Capture details</h4>
+              <p className="text-xs leading-5 text-muted-foreground">
+                {evidenceSummary(selected.evidence)}
+              </p>
+              {report ? (
+                <Link
+                  to="/runs/$runId"
+                  params={{ runId: report.runId }}
+                  search={{ view: "evidence" }}
+                  className="text-xs underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-ring"
+                >
+                  Inspect in report
+                </Link>
+              ) : null}
+            </PopoverContent>
+          </Popover>
+        ) : null}
+        {selected && matches.length > 1 ? (
+          <div className="flex shrink-0 items-center gap-1" aria-label="Step occurrences">
+            <span className="sr-only">Occurrence</span>
+            {matches.map((item) => (
+              <button
+                className={`min-h-8 min-w-8 rounded-md px-2 text-xs ${item.occurrence === selected.occurrence ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/70"}`}
+                key={`${item.traceStepId}:${item.occurrence}`}
+                type="button"
+                onClick={() => setSelectedOccurrence(item.occurrence)}
+                aria-label={`Occurrence ${item.occurrence}`}
+                aria-pressed={item.occurrence === selected.occurrence}
+              >
+                {item.occurrence}
+              </button>
+            ))}
+          </div>
+        ) : null}
+        {selected ? (
+          <span
+            className={`w-[8ch] shrink-0 text-center text-xs ${timelineItem?.state === "failed" ? "text-destructive" : "text-muted-foreground"}`}
+          >
+            {timelineItem?.state === "failed"
+              ? "Failed"
+              : timelineItem?.state === "pending"
+                ? "Blocked"
+                : timelineItem?.state === "passed"
+                  ? "Passed"
+                  : "Recorded"}
+          </span>
+        ) : null}
         {report ? (
           <Link
-            className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
+            className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-8 items-center text-xs font-semibold text-[var(--text-interactive-base)] underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
             to="/runs/$runId"
             params={{ runId: report.runId }}
             search={{ view: "evidence" }}
@@ -81,57 +147,32 @@ export function TestStepEvidencePreview({
         </p>
       ) : null}
       {selected ? (
-        <div className="mt-3 grid min-h-0 gap-2" aria-label={`Evidence for ${step.intent}`}>
-          {matches.length > 1 ? (
-            <div className="flex flex-wrap gap-1" aria-label="Step occurrences">
-              {matches.map((item) => (
-                <button
-                  className={`min-h-9 rounded-md px-2 text-xs ${item.occurrence === selected.occurrence ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}
-                  key={`${item.traceStepId}:${item.occurrence}`}
-                  type="button"
-                  onClick={() => setSelectedOccurrence(item.occurrence)}
-                >
-                  Occurrence {item.occurrence}
-                </button>
-              ))}
-            </div>
-          ) : null}
-          <div className="flex items-center justify-between gap-2 text-xs">
-            <strong>Outcome</strong>
-            <span
-              className={
-                timelineItem?.state === "failed" ? "text-destructive" : "text-muted-foreground"
-              }
-            >
-              {timelineItem?.state === "failed"
-                ? "Failed"
-                : timelineItem?.state === "pending"
-                  ? "Blocked"
-                  : timelineItem?.state === "passed"
-                    ? "Passed"
-                    : "Recorded"}
-            </span>
-          </div>
+        <div
+          className="mt-3 flex min-h-0 flex-1 flex-col gap-2"
+          aria-label={`Evidence for ${step.intent}`}
+        >
           {selected.evidence.framePaths.length ? (
-            <div className="grid min-h-0 gap-2">
-              {[selected.evidence.framePaths[0]!].map((framePath) => {
+            <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-md bg-muted/20">
+              {[selected.evidence.framePaths.at(-1)!].map((framePath) => {
                 const frame = screenshotItems.find((candidate) => candidate.id === framePath);
                 return frame?.media ? (
                   <EvidenceImage key={framePath} frame={frame} />
                 ) : (
-                  <span key={framePath} className="text-xs text-muted-foreground">
+                  <span key={framePath} className="px-3 text-xs text-muted-foreground">
                     Screenshot not retained for <code>{framePath}</code>.
                   </span>
                 );
               })}
             </div>
-          ) : null}
-          <details className="w-fit max-w-full text-xs text-muted-foreground">
-            <summary className="cursor-pointer rounded-md px-1 py-1.5 hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring">
-              Evidence details
-            </summary>
-            <p className="px-1 pb-1">{evidenceSummary(selected.evidence)}</p>
-          </details>
+          ) : (
+            <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
+              <ImageOff className="size-6 text-muted-foreground" aria-hidden="true" />
+              <p className="text-sm font-medium">No screenshot for this step</p>
+              <p className="max-w-xs text-xs leading-5 text-muted-foreground">
+                The run saved the result without a screen capture.
+              </p>
+            </div>
+          )}
         </div>
       ) : null}
     </section>
@@ -153,7 +194,7 @@ function EvidenceImage({
   }
   return (
     <ReportImage
-      className="block h-auto max-h-[45vh] w-full object-contain"
+      className="block max-h-full w-full object-contain"
       media={frame.media}
       alt={frame.title}
       width={frame.media.width}

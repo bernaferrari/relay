@@ -350,6 +350,23 @@ async function click(element: HTMLElement) {
   await settle();
 }
 
+async function openRunSettings() {
+  const trigger = [...document.querySelectorAll<HTMLButtonElement>("button")].find((item) =>
+    item.textContent?.includes("Run settings"),
+  );
+  if (!trigger) throw new Error("Run settings trigger not found");
+  await click(trigger);
+}
+
+async function selectOption(label: string, option: string) {
+  await click(document.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!);
+  const item = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((candidate) =>
+    candidate.textContent?.trim().includes(option),
+  );
+  if (!item) throw new Error(`Option not found: ${label} / ${option}`);
+  await click(item);
+}
+
 describe("Run and Report", () => {
   it("waits for every data dimension before previewing and labels the selected target", async () => {
     const fake = fakeRunService(runState("running", ["inspect"]));
@@ -391,10 +408,7 @@ describe("Run and Report", () => {
       platformWithStorage().platform,
       runAcross,
     );
-
-    const target = document.querySelector<HTMLInputElement>('input[value="browser-golden"]');
-    if (!target) throw new Error("Browser target option not found");
-    await click(target);
+    await selectOption("Device or browser", "Checkout browser");
     expect(preview).not.toHaveBeenCalled();
     expect(document.body.textContent).toContain("Choose values for the remaining data groups");
 
@@ -423,28 +437,26 @@ describe("Run and Report", () => {
       },
     ];
     await renderRun("/tests/test-1", fake.service, platformWithStorage().platform);
+    await openRunSettings();
 
-    expect(document.querySelector<HTMLInputElement>('input[value="browser-golden"]')?.checked).toBe(
-      true,
-    );
+    expect(
+      document.querySelector<HTMLButtonElement>('button[aria-label="Device or browser"]')
+        ?.textContent,
+    ).toContain("Checkout browser");
     expect(button("Run Test").disabled).toBe(false);
   });
 
   it("submits the visible build and cold-start choices", async () => {
     const fake = fakeRunService();
     await renderRun("/tests/test-1", fake.service, platformWithStorage().platform);
-    const build = document.querySelector<HTMLSelectElement>("select");
-    if (!build) throw new Error("Build selector not found");
-    await act(async () => {
-      build.value = "build-android-1";
-      build.dispatchEvent(new Event("change", { bubbles: true }));
-    });
-    await click(document.querySelector<HTMLInputElement>('input[value="browser-golden"]')!);
-    const cold = [...document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].find(
-      (input) => input.parentElement?.textContent?.includes("cold app launch"),
+    await openRunSettings();
+    await selectOption("Build", "Android QA · abcdef123456");
+    await selectOption("Device or browser", "Checkout browser");
+    const cold = [...document.querySelectorAll<HTMLElement>('[role="checkbox"]')].find((input) =>
+      input.parentElement?.textContent?.includes("Restart app before running"),
     );
     if (!cold) throw new Error("Cold-start selector not found");
-    await click(cold);
+    await click(cold.closest("label") ?? cold);
     await click(button("Run Test"));
     expect(fake.startInputs[0]).toMatchObject({
       sourceRevision: { vcs: "git", sha: "abcdef1234567", buildId: "build-android-1" },
@@ -463,16 +475,11 @@ describe("Run and Report", () => {
       },
     ];
     await renderRun("/tests/test-1", fake.service, platformWithStorage().platform);
+    await openRunSettings();
 
-    await click(document.querySelector<HTMLInputElement>('input[value="emulator-5554"]')!);
-    const profile = document.querySelector<HTMLSelectElement>("select");
-    if (!profile) throw new Error("Saved profile selector not found");
-    await act(async () => {
-      profile.value = "profile-android";
-      profile.dispatchEvent(new Event("change", { bubbles: true }));
-    });
-    await click(document.querySelector<HTMLInputElement>('input[value="browser-golden"]')!);
-    expect(profile.value).toBe("profile-android");
+    await selectOption("Device or browser", "Pixel 9 Pro");
+    await selectOption("Profile", "Pixel 9 reviewed");
+    await selectOption("Device or browser", "Checkout browser");
     expect(document.body.textContent).toContain("saved for another destination");
     await click(button("Fix setup"));
     expect(fake.startInputs).toHaveLength(0);
@@ -506,14 +513,15 @@ describe("Run and Report", () => {
       })]: saved,
     });
     await renderRun("/tests/test-1", fake.service, storage.platform);
+    await openRunSettings();
 
-    expect(document.querySelector<HTMLInputElement>('input[value="browser-golden"]')?.checked).toBe(
-      true,
-    );
-    expect(document.querySelector<HTMLInputElement>('input[value="emulator-5554"]')?.checked).toBe(
-      false,
-    );
-    expect(document.querySelector<HTMLSelectElement>("select")?.value).toBe("profile-member");
+    expect(
+      document.querySelector<HTMLButtonElement>('button[aria-label="Device or browser"]')
+        ?.textContent,
+    ).toContain("Checkout browser");
+    expect(
+      document.querySelector<HTMLButtonElement>('button[aria-label="Profile"]')?.textContent,
+    ).toContain("Member · Member");
   });
 
   it("applies a toolbar destination serial once and keeps a later in-page target", async () => {
@@ -522,21 +530,45 @@ describe("Run and Report", () => {
       [WORKSPACE_DESTINATION_KEY]: JSON.stringify({ targetId: "emulator-5554" }),
     });
     await renderRun("/tests/test-1", fake.service, storage.platform);
+    await openRunSettings();
 
-    expect(document.querySelector<HTMLInputElement>('input[value="emulator-5554"]')?.checked).toBe(
-      true,
-    );
-    await click(document.querySelector<HTMLInputElement>('input[value="browser-golden"]')!);
-    expect(document.querySelector<HTMLInputElement>('input[value="browser-golden"]')?.checked).toBe(
-      true,
-    );
-    await settle();
-    expect(document.querySelector<HTMLInputElement>('input[value="browser-golden"]')?.checked).toBe(
-      true,
-    );
-    expect(document.querySelector<HTMLInputElement>('input[value="emulator-5554"]')?.checked).toBe(
-      false,
-    );
+    expect(
+      document.querySelector<HTMLButtonElement>('button[aria-label="Device or browser"]')
+        ?.textContent,
+    ).toContain("Pixel 9 Pro");
+    await selectOption("Device or browser", "Checkout browser");
+    expect(
+      document.querySelector<HTMLButtonElement>('button[aria-label="Device or browser"]')
+        ?.textContent,
+    ).toContain("Checkout browser");
+  });
+
+  it("moves step selection and focus with overview keyboard controls", async () => {
+    const fake = fakeRunService();
+    await renderRun("/tests/test-1", fake.service, platformWithStorage().platform);
+
+    const heading = document.querySelector<HTMLElement>("#test-overview-title");
+    const steps = [...document.querySelectorAll<HTMLButtonElement>("button[data-step-id]")];
+    if (!heading || steps.length !== 3) throw new Error("Test overview controls not found");
+    expect(heading.tabIndex).toBe(0);
+    heading.focus();
+    expect(document.activeElement).toBe(heading);
+
+    const press = async (key: string) => {
+      await act(async () => {
+        heading.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+      });
+      await settle();
+    };
+    await press("ArrowDown");
+    expect(document.activeElement).toBe(steps[1]);
+    expect(steps[1]?.getAttribute("aria-pressed")).toBe("true");
+    await press("Home");
+    expect(document.activeElement).toBe(steps[0]);
+    expect(steps[0]?.getAttribute("aria-pressed")).toBe("true");
+    await press("End");
+    expect(document.activeElement).toBe(steps[2]);
+    expect(steps[2]?.getAttribute("aria-pressed")).toBe("true");
   });
 
   it("starts one canonical Run, follows progress, and renders only real evidence", async () => {
@@ -544,13 +576,14 @@ describe("Run and Report", () => {
     const storage = platformWithStorage();
     const { history } = await renderRun("/tests/test-1", fake.service, storage.platform);
 
-    expect(button("Run Test").disabled).toBe(true);
-    expect(document.body.textContent?.match(/Run Test/g)).toHaveLength(1);
+    expect(button("Set up Run").disabled).toBe(false);
+    expect(document.body.textContent?.match(/Set up Run/g)).toHaveLength(1);
+    await openRunSettings();
     expect(document.body.textContent).toContain("Checkout browser");
     expect(document.body.textContent).toContain("Pixel 9 Pro");
     expect(document.body.textContent).not.toContain("browser-golden");
     expect(document.body.textContent).not.toContain("emulator-5554");
-    expect(document.body.textContent).toContain("Evidence for this step");
+    expect(document.body.textContent).toContain("Run this test to see its result here.");
     const savedSteps = [
       ...document.querySelectorAll<HTMLButtonElement>(".relay-test-readable-steps button"),
     ];
@@ -558,7 +591,8 @@ describe("Run and Report", () => {
     expect(savedSteps[0]?.getAttribute("aria-pressed")).toBe("true");
     await click(savedSteps[1]!);
     expect(savedSteps[1]?.getAttribute("aria-pressed")).toBe("true");
-    await click(document.querySelector<HTMLInputElement>('input[value="browser-golden"]')!);
+    await openRunSettings();
+    await selectOption("Device or browser", "Checkout browser");
     expect(button("Run Test").disabled).toBe(false);
     await click(button("Run Test"));
 
@@ -566,22 +600,17 @@ describe("Run and Report", () => {
     expect(history.location.pathname).toBe("/tests/test-1");
     expect(String(history.location.search)).toContain("run=run-1");
     expect(document.body.textContent).toContain("Checking Language");
-    expect(button("Cancel Run").disabled).toBe(false);
     expect(storage.values.has("activeRunWorkflow")).toBe(true);
 
     await act(async () => fake.complete());
     await settle();
 
     expect(history.location.pathname).toBe("/tests/test-1");
-    expect(document.body.textContent).toContain("This Test passed on Pixel 9.");
+    expect(document.body.textContent).toContain("Test passed");
     expect(document.body.textContent).not.toContain("Draft issue");
     expect(document.body.textContent).toContain("Open full report");
     expect(document.body.textContent).not.toContain("Investigate this failure");
-    expect(document.body.textContent).toContain("1.6 s");
-    expect(document.body.textContent).toContain("Language checkpoint passed");
-    expect(document.body.textContent).toContain("What Relay verified");
-    expect(document.body.textContent).toContain("Passed");
-    expect(document.body.textContent).not.toContain("Timeline");
+    expect(document.body.textContent).toMatch(/\d+(?:\.\d+)?s/);
     expect(document.querySelectorAll('[role="tab"]')).toHaveLength(0);
     expect(storage.values.has("activeRunWorkflow")).toBe(false);
 
@@ -591,7 +620,7 @@ describe("Run and Report", () => {
     if (!fullReport) throw new Error("Open full report not found");
     await click(fullReport);
     expect(history.location.pathname).toBe("/runs/run-1");
-    expect(document.body.textContent).toContain("This Test passed on Pixel 9.");
+    expect(document.body.textContent).toContain("Test passed");
     expect(document.body.textContent).toContain("Language settings");
     expect(document.querySelector<HTMLImageElement>(".relay-evidence-image-frame img")?.src).toBe(
       "data:image/png;base64,iVBORw0KGgo=",
@@ -750,7 +779,7 @@ describe("Run and Report", () => {
     history.push("/tests/test-2");
     await settle();
     expect(document.body.textContent).not.toContain("Checking Language");
-    expect(document.body.textContent).toContain("Run Test");
+    expect(document.body.textContent).toContain("Set up Run");
 
     history.push("/tests/test-1");
     await settle();
@@ -788,7 +817,7 @@ describe("Run and Report", () => {
     await renderRun("/runs/run-1", fake.service, platformWithStorage().platform);
     expect(fake.calls).toContain("restore:run-1");
     expect(fake.calls).toContain("report:run-1");
-    expect(document.body.textContent).toContain("This Test passed on Pixel 9.");
+    expect(document.body.textContent).toContain("Test passed");
   });
 
   it("restores a workflow-less active job with progress and explicit cancellation", async () => {
@@ -828,7 +857,7 @@ describe("Run and Report", () => {
     await renderRun("/runs/run-raw-terminal", fake.service, platformWithStorage().platform);
 
     expect(fake.calls).toContain("report:run-raw-terminal");
-    expect(document.body.textContent).toContain("This Test passed on Pixel 9.");
+    expect(document.body.textContent).toContain("Test passed");
   });
 
   it("shows only one centered recovery state when an in-progress Run disconnects", async () => {
@@ -871,7 +900,7 @@ describe("Run and Report", () => {
 
     expect(document.body.textContent).toContain("Checking Language");
     expect(
-      [...document.querySelectorAll("button")].some((item) => item.textContent === "Run Test"),
+      [...document.querySelectorAll("button")].some((item) => item.textContent === "Set up Run"),
     ).toBe(false);
     expect(
       [...document.querySelectorAll("a")].some((item) =>
@@ -885,14 +914,14 @@ describe("Run and Report", () => {
     await settle();
     expect(history.location.pathname).toBe("/tests/test-1");
     expect(storage.values.has("activeRunWorkflow")).toBe(false);
-    expect(document.body.textContent).toContain("This Test passed on Pixel 9.");
+    expect(document.body.textContent).toContain("Test passed");
     expect(
       [...document.querySelectorAll("a")].some((item) =>
         item.textContent?.includes("Open full report"),
       ),
     ).toBe(true);
     expect(
-      [...document.querySelectorAll("button")].some((item) => item.textContent === "Run Test"),
+      [...document.querySelectorAll("button")].some((item) => item.textContent === "Set up Run"),
     ).toBe(true);
   });
 
@@ -935,7 +964,7 @@ describe("Run and Report", () => {
 
     expect(fake.calls).not.toContain("inspect:workflow-run-1");
     expect(fake.calls).toContain("report:run-1");
-    expect(document.body.textContent).toContain("This Test passed on Pixel 9.");
+    expect(document.body.textContent).toContain("Test passed");
     expect(document.body.textContent).not.toContain("Draft issue");
   });
 
@@ -944,7 +973,7 @@ describe("Run and Report", () => {
     await renderRun("/runs/run-1?view=evidence", fake.service, platformWithStorage().platform);
 
     expect(document.body.textContent).toContain("Language settings");
-    expect(document.body.textContent).toContain("This Test passed on Pixel 9.");
+    expect(document.body.textContent).toContain("Test passed");
     expect(document.querySelector('[aria-label="Run evidence"]')).not.toBeNull();
     expect(document.querySelectorAll('[role="tab"]')).toHaveLength(0);
   });
@@ -1042,11 +1071,10 @@ describe("Run and Report", () => {
       ] as never;
     await renderRun("/tests/test-1", fake.service, platformWithStorage().platform);
 
-    expect(document.body.textContent).toContain("Recent stability");
-    expect(document.body.textContent).toContain("Partial history");
-    expect(document.body.textContent).toContain(
-      "Rates stay hidden until complete history is available.",
-    );
+    expect(document.body.textContent).not.toContain("Run history");
+    await click(button("History"));
+    expect(document.body.textContent).toContain("Run history");
+    expect(document.body.textContent).toContain("Showing loaded runs. Totals may be incomplete.");
   });
 
   it("labels Test reliability complete only when the explicit complete-history read is available", async () => {
@@ -1075,7 +1103,9 @@ describe("Run and Report", () => {
     fake.service.listTestRunsComplete = async () => history;
     await renderRun("/tests/test-1", fake.service, platformWithStorage().platform);
 
-    expect(document.body.textContent).toContain("Complete history");
+    await click(button("History"));
+    expect(document.body.textContent).toContain("Run history");
+    expect(document.body.textContent).not.toContain("Totals may be incomplete");
   });
 
   it("keeps unavailable evidence calm without weakening the saved outcome", async () => {
@@ -1091,7 +1121,7 @@ describe("Run and Report", () => {
     });
     await renderRun("/runs/run-1", fake.service, platformWithStorage().platform);
 
-    expect(document.body.textContent).toContain("This Test passed on Pixel 9.");
+    expect(document.body.textContent).toContain("Test passed");
     expect(document.body.textContent).not.toContain("Draft issue");
     expect(document.body.textContent).toContain("Evidence details are temporarily unavailable");
     expect(document.body.textContent).toContain("saved outcome above is unchanged");

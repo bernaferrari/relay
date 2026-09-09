@@ -18,6 +18,7 @@ import { MapScreenPreview } from "./map-screen-preview";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@relay/ui-react/components/tooltip";
 import type { ProductMapPath, ProductMapScreen } from "@relay/product/map-exploration";
 import { Button } from "@relay/ui-react/components/button";
+import { Link } from "@tanstack/react-router";
 import {
   Focus,
   Hand,
@@ -49,7 +50,9 @@ export function InfiniteMapCanvas({
   loadScreenshot,
   onUpdateScreen,
   saving = false,
+  initialPathId,
 }: {
+  initialPathId?: string;
   saving?: boolean;
   onUpdateScreen?: (
     screenId: string,
@@ -84,8 +87,14 @@ export function InfiniteMapCanvas({
   );
   const [spacePan, setSpacePan] = useState(false);
   const panningTool = handTool || spacePan;
-  const [focusScreenId, setFocusScreenId] = useState<string>();
-  const [selectedScreenId, setSelectedScreenId] = useState<string>();
+  const [selectedPathId, setSelectedPathId] = useState(initialPathId);
+  const selectedPath = visiblePaths.find((path) => path.id === selectedPathId);
+  const [focusScreenId, setFocusScreenId] = useState<string | undefined>(
+    selectedPath?.fromScreenId,
+  );
+  const [selectedScreenId, setSelectedScreenId] = useState<string | undefined>(
+    selectedPath?.fromScreenId,
+  );
   const selected = visibleScreens.find((screen) => screen.id === selectedScreenId);
   const viewportRef = useRef<HTMLElement>(null);
   const worldRef = useRef<HTMLDivElement>(null);
@@ -505,12 +514,60 @@ export function InfiniteMapCanvas({
           ) : null}
           <MapControl label="Reset view" icon={RotateCcw} onClick={resetView} />
         </div>
-        <p
-          className="pointer-events-none absolute left-4 top-4 z-10 text-[11px] text-muted-foreground"
-          id="map-interaction-help"
-        >
-          Scroll to pan · Pinch to zoom · Double-click to focus
-        </p>
+        {selectedPath ? (
+          <div
+            className="absolute left-3 right-3 top-3 z-20 flex flex-wrap items-center gap-2 rounded-lg bg-card p-2 shadow-md"
+            aria-label="Selected path"
+          >
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => focusScreen(selectedPath.fromScreenId)}
+            >
+              {selectedPath.fromTitle}
+            </Button>
+            <span className="text-xs text-muted-foreground">→ {selectedPath.label} →</span>
+            {selectedPath.toScreenId ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => focusScreen(selectedPath.toScreenId!)}
+              >
+                {selectedPath.toTitle}
+              </Button>
+            ) : (
+              <span className="text-xs">Finish</span>
+            )}
+            <Button
+              size="sm"
+              variant="outline"
+              nativeButton={false}
+              render={
+                <Link
+                  to="/tests/new"
+                  search={{ app: appId, view: "path", path: selectedPath.id }}
+                />
+              }
+            >
+              Create test
+            </Button>
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              aria-label="Close path inspection"
+              onClick={() => setSelectedPathId(undefined)}
+            >
+              <X />
+            </Button>
+          </div>
+        ) : (
+          <p
+            className="pointer-events-none absolute left-4 top-4 z-10 text-[11px] text-muted-foreground"
+            id="map-interaction-help"
+          >
+            Scroll to pan · Pinch to zoom · Double-click to focus
+          </p>
+        )}
         <section
           data-tool={panningTool ? "hand" : "select"}
           className="relay-map-canvas data-[tool=hand]:cursor-grab relative h-full min-h-0 w-full flex-1 overflow-hidden bg-[radial-gradient(var(--border)_1px,transparent_1px)] [background-size:20px_20px]"
@@ -535,6 +592,7 @@ export function InfiniteMapCanvas({
             style={{ transform: "translate3d(48px, 64px, 0) scale(1)" }}
           >
             <MapEdges
+              selectedPathId={selectedPathId}
               paths={visiblePaths}
               positions={positions}
               markerId={markerId}

@@ -39,10 +39,7 @@ export function RawEvidenceDisclosure({
       <CollapsibleContent className="border-t pt-3">
         <div className="grid gap-3">
           <div className="flex items-start justify-between gap-3">
-            <p>
-              Technical evidence for forensic review. It may include internal identifiers and
-              captured content.
-            </p>
+            <p className="text-xs text-muted-foreground">Saved run data · JSON</p>
             {evidence.data !== undefined ? (
               <Button
                 size="sm"
@@ -68,15 +65,24 @@ export function RawEvidenceDisclosure({
               className="flex items-center justify-between gap-3 rounded-md border border-red-500/30 bg-red-500/5 p-3 text-sm"
               role="alert"
             >
-              <p>Audit details could not be loaded. The Report outcome above is unchanged.</p>
+              <p className="text-xs text-muted-foreground">
+                Audit details could not be loaded. The Report outcome above is unchanged.
+              </p>
               <Button size="sm" variant="outline" onClick={() => void evidence.refetch()}>
                 Try again
               </Button>
             </div>
           ) : null}
           {evidence.data !== undefined ? (
-            <ScrollArea className="max-h-[420px] overflow-auto rounded-md border border-border">
-              <pre tabIndex={0} aria-label="Raw evidence JSON">
+            <ScrollArea
+              className="h-[min(420px,55dvh)] rounded-lg bg-muted/30"
+              viewportProps={{ className: "overscroll-auto", "aria-label": "Audit JSON" }}
+            >
+              <pre
+                className="p-4 font-mono text-xs leading-6 whitespace-pre-wrap break-all"
+                tabIndex={0}
+                aria-label="Raw evidence JSON"
+              >
                 <code>{highlightJson(readableJson(evidence.data))}</code>
               </pre>
             </ScrollArea>

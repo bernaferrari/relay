@@ -1,6 +1,7 @@
 import type { ProductRunReport } from "@relay/product/run-journey";
 import type { EvidenceChannel, EvidenceChannelRecord, RunOutcome } from "@relay/protocol";
 import { parseOptionalRunTestStepEvidence } from "@relay/protocol";
+import type { RunTestStepEvidence } from "@relay/protocol";
 import { runOutcome } from "./run-outcome";
 import {
   frameImageMedia,
@@ -269,7 +270,10 @@ function evidenceItems(
   }
   return output;
 }
-function reportTimeline(rawRun: unknown): ReportTimelineItem[] {
+function reportTimeline(
+  rawRun: unknown,
+  stepEvidence?: readonly RunTestStepEvidence[],
+): ReportTimelineItem[] {
   const recipe = record(record(rawRun)?.recipeSnapshot);
   const recipeSteps = array(recipe?.steps);
   const checkStatuses = new Map<string, string>();
@@ -315,6 +319,16 @@ function reportTimeline(rawRun: unknown): ReportTimelineItem[] {
             : status === "running"
               ? "running"
               : "pending";
+    const exactFramePaths = stepEvidence?.find((item) => item.traceStepId === text(step.id))
+      ?.evidence.framePaths;
+    const authoredFramePaths =
+      exactFramePaths && exactFramePaths.length > 0
+        ? exactFramePaths
+        : checkId
+          ? stepEvidence
+              ?.filter((item) => item.testStepId === checkId)
+              .flatMap((item) => item.evidence.framePaths)
+          : exactFramePaths;
     return [
       {
         id: text(step.id) ?? `step-${fallbackIndex}`,
@@ -326,10 +340,12 @@ function reportTimeline(rawRun: unknown): ReportTimelineItem[] {
         ...(finite(step.startedAt) === undefined ? {} : { startedAt: finite(step.startedAt) }),
         ...(finite(step.finishedAt) === undefined ? {} : { finishedAt: finite(step.finishedAt) }),
         evidenceCount: array(step.frames).length,
-        framePaths: array(step.frames).flatMap((frame) => {
-          const path = text(record(frame)?.path);
-          return path ? [path] : [];
-        }),
+        framePaths:
+          authoredFramePaths ??
+          array(step.frames).flatMap((frame) => {
+            const path = text(record(frame)?.path);
+            return path ? [path] : [];
+          }),
         ...(text(step.log) ? { observed: text(step.log) } : {}),
         ...(text(step.log) ? { log: text(step.log) } : {}),
         ...(expected ? { expected } : {}),
@@ -640,7 +656,7 @@ export function projectRunReport(
       : outcome !== "passed" && cause
         ? { firstEvidence: { label: cause } }
         : {}),
-    timeline: reportTimeline(rawRun),
+    timeline: reportTimeline(rawRun, stepEvidence),
     evidence: sections,
     ...(video ? { video } : {}),
     diagnostics,

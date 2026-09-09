@@ -92,6 +92,37 @@ describe("TestStepEvidencePreview", () => {
     expect(host.querySelector('img[src="/wrong.png"]')).toBeNull();
   });
 
+  it("shows the final linked capture instead of the earlier transition frame", () => {
+    const host = render({
+      ...baseReport,
+      stepEvidence: baseReport.stepEvidence!.map((item) => ({
+        ...item,
+        evidence: { ...item.evidence, framePaths: ["frame-1", "frame-2"] },
+      })),
+    });
+    expect(host.querySelector('img[src="/right.png"]')).not.toBeNull();
+    expect(host.querySelector('img[src="/wrong.png"]')).toBeNull();
+  });
+
+  it("keeps bookkeeping-only occurrences from replacing the captured screen", () => {
+    const host = render({
+      ...baseReport,
+      stepEvidence: [
+        ...baseReport.stepEvidence!,
+        {
+          ...baseReport.stepEvidence![0]!,
+          occurrence: 2,
+          traceStepId: "completion",
+          evidence: { framePaths: [], eventSequences: [2], artifactKinds: ["completion"] },
+        },
+      ],
+    });
+    expect(host.querySelector('img[src="/right.png"]')).not.toBeNull();
+    expect(host.querySelector('[aria-label="Occurrence 2"]')).toBeNull();
+    expect(host.querySelector("details")).toBeNull();
+    expect(host.querySelector('[aria-label="Capture details"]')).not.toBeNull();
+  });
+
   it("shows the trace outcome when timeline indexes are unavailable", () => {
     const host = render({
       ...baseReport,

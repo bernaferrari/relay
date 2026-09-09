@@ -35,6 +35,7 @@ const overview: ProductMapOverview = {
       title: "Home",
       position: { x: 24, y: 24 },
       variantCount: 1,
+      variants: [],
       coveringTests: [{ id: "browse", name: "Browse products" }],
       recentFailures: [],
     },
@@ -43,6 +44,7 @@ const overview: ProductMapOverview = {
       title: "Cart",
       position: { x: 280, y: 24 },
       variantCount: 1,
+      variants: [],
       coveringTests: [],
       recentFailures: [{ id: "failure", outcome: "product-failure", runId: "run-1" }],
     },
@@ -210,6 +212,9 @@ describe("Map exploration", () => {
     expect(world?.style.transform).not.toBe(beforeWheel);
 
     await act(async () => button("Paths").click());
+    await act(async () => button("Home → Cart").click());
+    expect(history.location.pathname).toBe("/apps/shop/map");
+    expect(document.querySelector('[aria-label="Selected path"]')).not.toBeNull();
     const pathLink = document.querySelector<HTMLAnchorElement>('a[href*="path=home-cart"]');
     await act(async () => pathLink?.click());
     expect(history.location.pathname).toBe("/tests/new");
@@ -243,6 +248,34 @@ describe("Map exploration", () => {
     expect(inspector.textContent).not.toContain("Record test");
   });
 
+  it("switches retained captures and their source runs without changing the screen", async () => {
+    await render({
+      get: async () => ({
+        ...overview,
+        screens: [
+          {
+            ...overview.screens[0]!,
+            variantCount: 2,
+            variants: [
+              { id: "new", screenshotUri: "relay-evidence://new", sourceRunId: "new-run" },
+              { id: "old", screenshotUri: "relay-evidence://old", sourceRunId: "old-run" },
+            ],
+          },
+          overview.screens[1]!,
+        ],
+      }),
+    });
+    await act(async () => button("1Home").click());
+    const picker = document.querySelector<HTMLSelectElement>("#map-screen-capture")!;
+    expect(picker.value).toBe("new");
+    await act(async () => {
+      picker.value = "old";
+      picker.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(document.querySelector('a[href="/runs/old-run"]')).not.toBeNull();
+    expect(document.querySelector('[aria-label="Screen details"] h3')?.textContent).toBe("Home");
+  });
+
   it("searches paths beyond the former 24-row limit and clears empty results", async () => {
     await render({
       get: async () => ({
@@ -256,7 +289,7 @@ describe("Map exploration", () => {
       }),
     });
     await act(async () => button("Paths").click());
-    expect(document.querySelector('a[href*="path=path-29"]')).not.toBeNull();
+    expect(button("Screen 29 → Cart")).toBeDefined();
     const input = document.querySelector<HTMLInputElement>("#map-path-search")!;
     const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
     await act(async () => {
@@ -265,7 +298,7 @@ describe("Map exploration", () => {
     });
     expect(document.body.textContent).toContain("No matching paths");
     await act(async () => button("Clear search").click());
-    expect(document.querySelector('a[href*="path=path-29"]')).not.toBeNull();
+    expect(button("Screen 29 → Cart")).toBeDefined();
   });
 
   it("focuses a screen into its Tests and failure evidence, with repair gated", async () => {

@@ -4,6 +4,7 @@ import { traceVideoInterval } from "../data/run-report-media";
 import { EvidenceImageViewer } from "../components/evidence-image-viewer";
 import { ReportVideoInspector } from "../components/report-video-inspector";
 import { Button } from "@relay/ui-react/components/button";
+import { ScrollArea } from "@relay/ui-react/components/scroll-area";
 import { Check, Circle, CircleAlert, ImageOff } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import {
@@ -24,10 +25,12 @@ export function RunWorkbench({
   onSelectStep(index: number): void;
   renderEvidence?(section: Report["evidence"][number]): ReactNode;
 }) {
+  const [panel, setPanel] = useState<"screen" | "performance" | "details">("screen");
   const step = report.timeline[selectedStepIndex] ?? report.timeline[0];
   const authoredFrames = framePathsForTraceStep(
     report.stepEvidence,
-    step?.index ?? selectedStepIndex,
+    step?.id ?? selectedStepIndex,
+    step?.index,
   );
   const framePaths = new Set(authoredFrames.length ? authoredFrames : (step?.framePaths ?? []));
   const failureIndexes = report.timeline.flatMap((item, index) =>
@@ -87,49 +90,54 @@ export function RunWorkbench({
     );
   return (
     <section
-      className="grid min-w-0 overflow-hidden rounded-xl border border-border bg-card min-[721px]:grid-cols-[12rem_minmax(0,1fr)] min-[1280px]:grid-cols-[16rem_minmax(0,1fr)]"
+      className="grid h-[max(32rem,75dvh)] min-h-0 min-w-0 overflow-hidden rounded-xl border border-border bg-card max-[720px]:grid-rows-[10rem_minmax(0,1fr)] min-[721px]:grid-cols-[12rem_minmax(0,1fr)] min-[1280px]:grid-cols-[16rem_minmax(0,1fr)]"
       aria-label="Run workbench"
     >
-      <aside className="min-w-0 border-b border-border bg-muted/20 min-[721px]:border-r min-[721px]:border-b-0">
+      <aside className="flex min-h-0 min-w-0 flex-col border-b border-border bg-muted/20 min-[721px]:border-r min-[721px]:border-b-0">
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <h2 className="text-sm font-semibold">Steps</h2>
           <span className="text-xs tabular-nums text-muted-foreground">
             {report.timeline.length}
           </span>
         </div>
-        <ol className="relay-test-readable-steps max-h-40 overflow-y-auto p-2 min-[721px]:max-h-[36rem]">
-          {report.timeline.map((item, index) => {
-            const Icon =
-              item.state === "passed" || item.state === "recovered"
-                ? Check
-                : item.state === "failed"
-                  ? CircleAlert
-                  : Circle;
-            return (
-              <li key={item.id}>
-                <button
-                  type="button"
-                  aria-current={index === selectedStepIndex ? "step" : undefined}
-                  aria-pressed={index === selectedStepIndex}
-                  className={`grid min-h-16 w-full grid-cols-[1rem_minmax(0,1fr)_1rem] items-start gap-2 rounded-lg px-3 py-3 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring ${index === selectedStepIndex ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/60"}`}
-                  onClick={() => onSelectStep(index)}
-                >
-                  <span className="pt-0.5 text-xs tabular-nums">{index + 1}</span>
-                  <span className="min-w-0">
-                    <strong className="block text-sm font-medium leading-5">{item.title}</strong>
-                    <span className="mt-1 block text-xs">{timelineStateLabel(item.state)}</span>
-                  </span>
-                  <Icon
-                    aria-hidden="true"
-                    className={`mt-0.5 size-4 ${item.state === "failed" ? "text-[var(--text-critical-base)]" : item.state === "passed" ? "text-[var(--text-success-base)]" : ""}`}
-                  />
-                </button>
-              </li>
-            );
-          })}
-        </ol>
+        <ScrollArea
+          className="min-h-0 flex-1"
+          viewportProps={{ "aria-label": "Recorded steps", className: "overscroll-auto" }}
+        >
+          <ol className="relay-test-readable-steps p-2 pb-4">
+            {report.timeline.map((item, index) => {
+              const Icon =
+                item.state === "passed" || item.state === "recovered"
+                  ? Check
+                  : item.state === "failed"
+                    ? CircleAlert
+                    : Circle;
+              return (
+                <li key={item.id}>
+                  <button
+                    type="button"
+                    aria-current={index === selectedStepIndex ? "step" : undefined}
+                    aria-pressed={index === selectedStepIndex}
+                    className={`grid min-h-16 w-full grid-cols-[1rem_minmax(0,1fr)_1rem] items-start gap-2 rounded-lg px-3 py-3 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring ${index === selectedStepIndex ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/60"}`}
+                    onClick={() => onSelectStep(index)}
+                  >
+                    <span className="pt-0.5 text-xs tabular-nums">{index + 1}</span>
+                    <span className="min-w-0">
+                      <strong className="block text-sm font-medium leading-5">{item.title}</strong>
+                      <span className="mt-1 block text-xs">{timelineStateLabel(item.state)}</span>
+                    </span>
+                    <Icon
+                      aria-hidden="true"
+                      className={`mt-0.5 size-4 ${item.state === "failed" ? "text-[var(--text-critical-base)]" : item.state === "passed" ? "text-[var(--text-success-base)]" : ""}`}
+                    />
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
+        </ScrollArea>
       </aside>
-      <div className="min-w-0">
+      <div className="flex min-h-0 min-w-0 flex-col">
         <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
           <div className="min-w-0">
             <p className="text-xs text-muted-foreground">
@@ -164,59 +172,89 @@ export function RunWorkbench({
             </div>
           ) : null}
         </header>
-        <StepMedia key={`${report.runId}:${step.id}`} frames={frames} />
-        {report.video ? (
-          <div className="border-t border-border p-5">
-            <ReportVideoInspector
-              video={report.video}
-              diagnostics={report.diagnostics}
-              interval={traceVideoInterval(step, report.video.clock)}
-            />
-          </div>
-        ) : null}
-        {report.performance?.length ? (
-          <RunPerformancePanel
-            series={report.performance}
-            step={step}
-            onSeek={(at) => {
-              const index = report.timeline.findIndex(
-                (item) =>
-                  item.startedAt !== undefined &&
-                  item.finishedAt !== undefined &&
-                  at >= item.startedAt &&
-                  at <= item.finishedAt,
-              );
-              if (index >= 0) onSelectStep(index);
-            }}
-          />
-        ) : null}
-        <dl className="grid gap-5 border-t border-border px-5 py-4 sm:grid-cols-2">
-          <div>
-            <dt className="text-xs font-medium text-muted-foreground">Expected</dt>
-            <dd className="mt-1 text-sm leading-6">
-              {step.expected ?? "No saved expectation is available for this step."}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs font-medium text-muted-foreground">Observed</dt>
-            <dd className="mt-1 text-sm leading-6">
-              {step.observed ?? timelineStateLabel(step.state)}
-              {step.durationMs === undefined ? "" : ` · ${(step.durationMs / 1000).toFixed(1)}s`}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs font-medium text-muted-foreground">Trace interval</dt>
-            <dd className="mt-1 text-sm leading-6">
-              {formatTraceInterval(step.startedAt, step.finishedAt)}
-            </dd>
-          </div>
-          {step.log ? (
-            <div>
-              <dt className="text-xs font-medium text-muted-foreground">Run log</dt>
-              <dd className="mt-1 whitespace-pre-wrap text-sm leading-6">{step.log}</dd>
+        <div className="flex shrink-0 gap-1 px-4 py-2" aria-label="Step views">
+          {(
+            [
+              ["screen", "Screenshots"],
+              ...(report.performance?.length ? [["performance", "Performance"]] : []),
+              ["details", "Step details"],
+            ] as const
+          ).map(([value, label]) => (
+            <Button
+              key={value}
+              size="sm"
+              variant={panel === value ? "secondary" : "ghost"}
+              aria-pressed={panel === value}
+              onClick={() => setPanel(value as typeof panel)}
+            >
+              {label}
+            </Button>
+          ))}
+        </div>
+        <ScrollArea
+          className="min-h-0 flex-1"
+          viewportProps={{ "aria-label": "Step report", className: "overscroll-auto" }}
+        >
+          {panel === "screen" ? (
+            <StepMedia key={`${report.runId}:${step.id}`} frames={frames} fill />
+          ) : null}
+          {panel === "screen" && report.video ? (
+            <div className="border-t border-border p-5">
+              <ReportVideoInspector
+                video={report.video}
+                diagnostics={report.diagnostics}
+                interval={traceVideoInterval(step, report.video.clock)}
+              />
             </div>
           ) : null}
-        </dl>
+          {panel === "performance" && report.performance?.length ? (
+            <RunPerformancePanel
+              series={report.performance}
+              step={step}
+              onSeek={(at) => {
+                const index = report.timeline.findIndex(
+                  (item) =>
+                    item.startedAt !== undefined &&
+                    item.finishedAt !== undefined &&
+                    at >= item.startedAt &&
+                    at <= item.finishedAt,
+                );
+                if (index >= 0) onSelectStep(index);
+              }}
+            />
+          ) : null}
+          {panel === "details" ? (
+            <dl className="grid gap-5 px-5 py-4 sm:grid-cols-2">
+              <div>
+                <dt className="text-xs font-medium text-muted-foreground">Expected</dt>
+                <dd className="mt-1 text-sm leading-6">
+                  {step.expected ?? "No saved expectation is available for this step."}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs font-medium text-muted-foreground">Observed</dt>
+                <dd className="mt-1 text-sm leading-6">
+                  {step.observed ?? timelineStateLabel(step.state)}
+                  {step.durationMs === undefined
+                    ? ""
+                    : ` · ${(step.durationMs / 1000).toFixed(1)}s`}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs font-medium text-muted-foreground">Trace interval</dt>
+                <dd className="mt-1 text-sm leading-6">
+                  {formatTraceInterval(step.startedAt, step.finishedAt)}
+                </dd>
+              </div>
+              {step.log ? (
+                <div>
+                  <dt className="text-xs font-medium text-muted-foreground">Run log</dt>
+                  <dd className="mt-1 whitespace-pre-wrap text-sm leading-6">{step.log}</dd>
+                </div>
+              ) : null}
+            </dl>
+          ) : null}
+        </ScrollArea>
       </div>
     </section>
   );
@@ -232,18 +270,29 @@ function formatTraceInterval(startedAt?: number, finishedAt?: number): string {
 function StepMedia({
   frames,
   unlinked = false,
+  fill = false,
 }: {
   frames: readonly ReportEvidenceItem[];
   unlinked?: boolean;
+  fill?: boolean;
 }) {
-  const [selected, setSelected] = useState(0);
+  const [selected, setSelected] = useState(Math.max(0, frames.length - 1));
   const [failed, setFailed] = useState(false);
   const frame = frames[selected] ?? frames[0];
   return (
-    <div className="relay-evidence-image-frame overflow-hidden bg-card">
-      <div className="relative flex min-h-64 items-center justify-center bg-muted/30 p-5">
+    <div
+      className={`relay-evidence-image-frame overflow-hidden bg-card ${fill ? "flex h-[calc(max(32rem,75dvh)-9rem)] min-h-64 flex-col" : ""}`}
+    >
+      <div
+        className={`relative flex items-center justify-center p-5 ${fill ? "min-h-0 flex-1" : "min-h-64"}`}
+      >
         {frame?.media && !failed ? (
-          <EvidenceImageViewer key={frame.id} frame={frame} onError={() => setFailed(true)} />
+          <EvidenceImageViewer
+            key={frame.id}
+            frame={frame}
+            className={fill ? "h-full w-full object-contain" : undefined}
+            onError={() => setFailed(true)}
+          />
         ) : (
           <div className="max-w-sm py-10 text-center">
             <ImageOff className="mx-auto mb-3 size-6 text-muted-foreground" aria-hidden="true" />
@@ -269,7 +318,7 @@ function StepMedia({
           </div>
         )}
       </div>
-      {frames.length ? (
+      {frames.length > 1 ? (
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-5 py-3">
           <p className="text-xs text-muted-foreground">{frame?.title}</p>
           <div className="flex flex-wrap gap-1" aria-label="Step screenshots">

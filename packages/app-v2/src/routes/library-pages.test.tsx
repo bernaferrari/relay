@@ -227,6 +227,7 @@ describe("App overview", () => {
             id: "home",
             title: "Home",
             variantCount: 1,
+            variants: [],
             coveringTests: [],
             recentFailures: [],
           },

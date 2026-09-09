@@ -77,9 +77,6 @@ export function SavedRecordingPreview({
           </div>
         )}
       </div>
-      <p className="shrink-0 text-xs text-muted-foreground">
-        Captured while recording. Run the test to see a new result.
-      </p>
     </section>
   );
 }

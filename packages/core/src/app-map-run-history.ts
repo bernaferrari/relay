@@ -3,9 +3,13 @@ import type {
   ConnectionExecutionObservation,
   TargetProfile,
 } from "@relay/protocol";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { mutateStoredAppMap, readAppMap } from "./collaboration.js";
 import { listPersistedRuns, type PersistedRun } from "./runs.js";
 import { recordAppMapRun, recordAppMapTestValidation } from "./app-map/run-operations.js";
+import { persistAuthoringEvidence } from "./authoring-evidence.js";
+import { readFrameTreeNodes } from "./run-frame-tree.js";
 
 function compiledPlan(run: PersistedRun): AppMapCompiledFlow | null {
   const value = run.artifacts.find((artifact) => artifact.kind === "app-map-flow-plan")?.data;
@@ -67,6 +71,190 @@ function compiledTestProvenance(
         testId: candidate.test.id,
       }
     : undefined;
+}
+
+function runLocale(run: PersistedRun): string | undefined {
+  for (const key of ["language", "locale", "app_locale"]) {
+    const value = run.resolvedInputs[key]?.trim();
+    if (value) return value;
+  }
+  return undefined;
+}
+
+export function planScreenSteps(run: PersistedRun): Array<{ id: string; screenId: string }> {
+  const artifact = run.artifacts.find((item) => item.kind === "app-map-test-plan")?.data;
+  if (!artifact || typeof artifact !== "object" || Array.isArray(artifact)) return [];
+  const plan = artifact as {
+    rootRecipeId?: unknown;
+    recipes?: Record<string, { steps?: unknown[] }>;
+  };
+  const result: Array<{ id: string; screenId: string }> = [];
+  const visit = (
+    items: unknown[],
+    traceId?: string,
+    active = new Set<string>(),
+  ): string | undefined => {
+    let lastScreen: string | undefined;
+    for (const value of items) {
+      if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+      const step = value as Record<string, unknown>;
+      if (
+        step.kind === "expect-screen" &&
+        typeof step.id === "string" &&
+        typeof step.screenId === "string"
+      ) {
+        if (!traceId && active.size === 0) result.push({ id: step.id, screenId: step.screenId });
+        lastScreen = step.screenId;
+      }
+      if (
+        step.kind === "module" &&
+        typeof step.id === "string" &&
+        typeof step.recipeId === "string"
+      ) {
+        if (!active.has(step.recipeId)) {
+          const nestedActive = new Set(active).add(step.recipeId);
+          const nestedLast = visit(
+            plan.recipes?.[step.recipeId]?.steps ?? [],
+            undefined,
+            nestedActive,
+          );
+          if (nestedLast) {
+            result.push({ id: step.id, screenId: nestedLast });
+            lastScreen = nestedLast;
+          }
+        }
+      }
+      for (const key of ["thenSteps", "elseSteps", "steps"]) {
+        if (Array.isArray(step[key])) {
+          const nestedLast = visit(step[key] as unknown[], traceId);
+          if (nestedLast) lastScreen = nestedLast;
+        }
+      }
+    }
+    return lastScreen;
+  };
+  visit(plan.recipes?.[String(plan.rootRecipeId)]?.steps ?? []);
+  return result;
+}
+
+async function promoteSuccessfulTestCaptures(
+  run: PersistedRun,
+  appMapId: string,
+  targetProfile: TargetProfile | null,
+): Promise<void> {
+  if (run.outcome !== "passed" || !targetProfile || !run.dir) return;
+  const locale = runLocale(run);
+  const expected = planScreenSteps(run);
+  const captures: Array<{ screenId: string; frame: PersistedRun["frames"][number] }> = [];
+  for (const item of expected) {
+    const trace = run.steps.find((step) => step.recipeStepId === item.id);
+    for (const frame of trace?.frames ?? []) captures.push({ screenId: item.screenId, frame });
+  }
+  if (!captures.length) return;
+  const latestByScreen = new Map<string, (typeof captures)[number]>();
+  for (const capture of captures) {
+    const previous = latestByScreen.get(capture.screenId);
+    if (!previous || capture.frame.capturedAt >= previous.frame.capturedAt)
+      latestByScreen.set(capture.screenId, capture);
+  }
+  const promoted = [] as Array<{ screenId: string; variant: Record<string, unknown> }>;
+  for (const capture of latestByScreen.values()) {
+    const png = await readFile(join(run.dir, capture.frame.path)).catch(() => undefined);
+    if (!png) continue;
+    const screenshot = await persistAuthoringEvidence({
+      kind: "screenshot",
+      capturedAt: capture.frame.capturedAt,
+      data: png,
+      mime: "image/png",
+    });
+    const nodes = await readFrameTreeNodes(run.dir, capture.frame.path);
+    const tree = nodes?.length
+      ? await persistAuthoringEvidence({
+          kind: "snapshot",
+          capturedAt: capture.frame.capturedAt,
+          data: JSON.stringify({ nodes }),
+          mime: "application/json",
+        })
+      : undefined;
+    promoted.push({
+      screenId: capture.screenId,
+      variant: {
+        id: `run-${run.id}-${capture.screenId}-${capture.frame.path.replace(/[^a-z0-9]/gi, "-")}`,
+        organizationId: "",
+        projectId: run.projectId ?? "",
+        appMapId,
+        screenId: capture.screenId,
+        targetProfile: structuredClone(targetProfile),
+        evidenceIds: [screenshot.id, ...(tree ? [tree.id] : [])],
+        evidenceUris: [screenshot.uri, ...(tree ? [tree.uri] : [])],
+        screenshotUri: screenshot.uri,
+        ...(tree
+          ? {
+              rawAccessibilityTree: {
+                id: tree.id,
+                uri: tree.uri,
+                sha256: tree.sha256!,
+                mime: "application/json",
+                bytes: tree.bytes!,
+                capturedAt: capture.frame.capturedAt,
+              },
+            }
+          : {}),
+        captureProvenance: {
+          kind: "run",
+          runId: run.id,
+          capturedAt: capture.frame.capturedAt,
+          ...(locale ? { locale } : {}),
+          screenshotEvidenceId: screenshot.id,
+          ...(tree ? { accessibilityEvidenceId: tree.id } : {}),
+        },
+        createdAt: capture.frame.capturedAt,
+        updatedAt: capture.frame.capturedAt,
+      },
+    });
+  }
+  if (!promoted.length) return;
+  await mutateStoredAppMap(run.projectId!, appMapId, (map) => {
+    const scope = {
+      organizationId: map.organizationId,
+      projectId: map.projectId,
+      appMapId: map.id,
+    };
+    const additions = promoted.filter(({ screenId }) => {
+      const screen = map.screens[screenId];
+      return Boolean(
+        screen &&
+        !screen.variantIds.some((id) => {
+          const existing = map.screenVariants[id];
+          return (
+            existing?.targetProfile.id === targetProfile.id &&
+            (existing.captureProvenance?.locale ?? "") === (locale ?? "")
+          );
+        }) &&
+        !screen.variantIds.some(
+          (id) =>
+            map.screenVariants[id]?.captureProvenance?.kind === "run" &&
+            map.screenVariants[id]?.captureProvenance?.runId === run.id,
+        ),
+      );
+    });
+    if (!additions.length) return map;
+    const next = structuredClone(map);
+    for (const { screenId, variant } of additions) {
+      const complete = { ...variant, ...scope } as (typeof next.screenVariants)[string];
+      next.screenVariants[complete.id] = complete;
+      next.screens[screenId]!.variantIds = [
+        ...next.screens[screenId]!.variantIds,
+        complete.id,
+      ].sort();
+    }
+    next.revision += 1;
+    next.updatedAt = Math.max(
+      next.updatedAt,
+      ...additions.map(({ variant }) => Number(variant.updatedAt)),
+    );
+    return next;
+  });
 }
 
 async function recordSuccessfulTestValidation(
@@ -150,7 +338,14 @@ export function connectionObservationsFromPersistedRun(
 export async function projectPersistedAppMapRun(run: PersistedRun): Promise<boolean> {
   const testProvenance = compiledTestProvenance(run);
   if (testProvenance && !compiledPlan(run)) {
-    return recordSuccessfulTestValidation(run, testProvenance);
+    const projected = await recordSuccessfulTestValidation(run, testProvenance);
+    if (projected)
+      await promoteSuccessfulTestCaptures(
+        run,
+        testProvenance.appMapId,
+        run.targetProfile ?? fallbackProfile(run),
+      );
+    return projected;
   }
   const plan = compiledPlan(run);
   const targetProfile = run.targetProfile ?? fallbackProfile(run);
@@ -187,6 +382,7 @@ export async function projectPersistedAppMapRun(run: PersistedRun): Promise<bool
       },
     );
   });
+  await promoteSuccessfulTestCaptures(run, plan.appMapId, targetProfile);
   return true;
 }
 

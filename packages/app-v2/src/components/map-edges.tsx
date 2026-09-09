@@ -15,6 +15,7 @@ export function MapEdges({
   positions,
   markerId,
   selectedScreenId,
+  selectedPathId,
   showInteractionTargets = false,
   screens,
   imageDimensions,
@@ -23,6 +24,7 @@ export function MapEdges({
   positions: ReadonlyMap<string, MapPoint>;
   markerId: string;
   selectedScreenId?: string;
+  selectedPathId?: string;
   showInteractionTargets?: boolean;
   screens: readonly { id: string; screenshotUri?: string }[];
   imageDimensions: ReadonlyMap<string, ImageDimensions>;
@@ -204,11 +206,15 @@ export function MapEdges({
         <g
           key={geometry.path.id}
           opacity={
-            selectedScreenId &&
-            geometry.path.fromScreenId !== selectedScreenId &&
-            geometry.path.toScreenId !== selectedScreenId
-              ? 0.15
-              : 1
+            selectedPathId
+              ? geometry.path.id === selectedPathId
+                ? 1
+                : 0.12
+              : selectedScreenId &&
+                  geometry.path.fromScreenId !== selectedScreenId &&
+                  geometry.path.toScreenId !== selectedScreenId
+                ? 0.15
+                : 1
           }
           className="relay-map-edge [&>path]:fill-none [&>path]:stroke-[color-mix(in_srgb,var(--text-weaker)_58%,var(--border-weak-base))] [&>path]:[stroke-linecap:round] [&>path]:stroke-[1.5] [&>path]:[vector-effect:non-scaling-stroke] [&>rect]:fill-[var(--surface-raised-stronger-non-alpha)] [&>rect]:stroke-[var(--border-weak-base)] [&>rect]:stroke-1 [&>rect]:[vector-effect:non-scaling-stroke] [&_text]:fill-[var(--text-weak)] [&_text]:font-sans [&_text]:text-[10.5px] [&_text]:font-semibold"
         >

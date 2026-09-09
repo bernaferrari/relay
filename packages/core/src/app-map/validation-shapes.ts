@@ -325,6 +325,21 @@ export function assertVariant(variant: ScreenVariant, scope: AppMapScope, label:
   if (variant.scrollCapturePolicy !== undefined) {
     assertScrollSurfaceCapturePolicy(variant.scrollCapturePolicy, `${label}.scrollCapturePolicy`);
   }
+  if (variant.captureProvenance !== undefined) {
+    const provenance = variant.captureProvenance;
+    if (provenance.kind !== "run")
+      appMapFail("invalid-map", `${label}.captureProvenance.kind is unsupported`);
+    identifier(provenance.runId, `${label}.captureProvenance.runId`);
+    finiteTimestamp(provenance.capturedAt, `${label}.captureProvenance.capturedAt`);
+    if (provenance.locale !== undefined)
+      requiredText(provenance.locale, `${label}.captureProvenance.locale`, 128);
+    identifier(provenance.screenshotEvidenceId, `${label}.captureProvenance.screenshotEvidenceId`);
+    if (provenance.accessibilityEvidenceId !== undefined)
+      identifier(
+        provenance.accessibilityEvidenceId,
+        `${label}.captureProvenance.accessibilityEvidenceId`,
+      );
+  }
   if (variant.baseline) assertBaseline(variant.baseline, `${label}.baseline`);
 }
 

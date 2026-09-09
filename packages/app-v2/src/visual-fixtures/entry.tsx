@@ -291,6 +291,7 @@ const mapService: MapProductService = {
               title: "Cart",
               position: { x: 24, y: 24 },
               variantCount: 1,
+              variants: [],
               coveringTests: [{ id: "test-checkout", name: "Complete checkout" }],
               recentFailures: [],
             },
@@ -299,6 +300,7 @@ const mapService: MapProductService = {
               title: "Order confirmation",
               position: { x: 350, y: 24 },
               variantCount: 1,
+              variants: [],
               coveringTests: [],
               recentFailures: [
                 { id: "failure", outcome: "product-failure", runId: "run-checkout" },

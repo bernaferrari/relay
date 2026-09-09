@@ -76,6 +76,8 @@ export type ScreenIdentityResolutionOptions = {
 
 const CLOCK = /\b(?:[01]?\d|2[0-3]):[0-5]\d(?::[0-5]\d)?(?:\s*[ap]\.?m\.?)?\b/giu;
 const ISO_DATE = /\b(?:19|20)\d{2}[-/.](?:0?[1-9]|1[0-2])[-/.](?:0?[1-9]|[12]\d|3[01])\b/gu;
+const EAST_ASIAN_DATE =
+  /(?<!\d)(?:(?:19|20)\d{2}年\s*)?(?:0?[1-9]|1[0-2])月\s*(?:0?[1-9]|[12]\d|3[01])日/gu;
 const NUMERIC_DATE =
   /\b(?:0?[1-9]|[12]\d|3[01])[-/.](?:0?[1-9]|1[0-2])[-/.](?:\d{2}|(?:19|20)\d{2})\b/gu;
 const NAMED_DATE =
@@ -124,8 +126,10 @@ function normalizeText(value: string | undefined, field: SemanticField): Mutable
   if (field !== "identifier") {
     replaceVolatile(state, CLOCK, "<clock>", "clock");
     replaceVolatile(state, ISO_DATE, "<date>", "date");
+    replaceVolatile(state, EAST_ASIAN_DATE, "<date>", "date");
     replaceVolatile(state, NUMERIC_DATE, "<date>", "date");
     replaceVolatile(state, NAMED_DATE, "<date>", "date");
+    state.value = state.value.replace(/<date>\s*[~〜～–—-]\s*<date>/gu, "<date> – <date>");
     replaceVolatile(state, PERCENTAGE, "<percentage>", "percentage");
     replaceVolatile(state, RELATIVE_TIME, "<relative-time>", "relative-time");
     replaceVolatile(state, PAGE_COUNTER, "$1 <count> $2 <count>", "counter");

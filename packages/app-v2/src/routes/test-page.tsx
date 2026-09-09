@@ -9,16 +9,16 @@ import {
   useRunConfigurationKey,
 } from "../data/use-persisted-run-configuration";
 import { WorkbenchPage } from "../components/page-layout";
-import { Badge } from "@relay/ui-react/components/badge";
 import { Button } from "@relay/ui-react/components/button";
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@relay/ui-react/components/collapsible";
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+} from "@relay/ui-react/components/dialog";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, ChevronRight, History } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ProductTestStep } from "@relay/product/catalog";
 import { EmptyState, OutcomeMark } from "../components/product-patterns";
@@ -56,6 +56,7 @@ export function TestPage() {
   const runSetupRef = useRef<HTMLElement>(null);
 
   const [showRecording, setShowRecording] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [evidenceStepId, setEvidenceStepId] = useState("");
   const searchRunId = typeof search.run === "string" ? search.run : undefined;
@@ -303,6 +304,11 @@ export function TestPage() {
                 Open full report
               </Button>
             ) : null}
+            {recentRuns.data?.length ? (
+              <Button variant="ghost" size="sm" onClick={() => setHistoryOpen(true)}>
+                <History /> History
+              </Button>
+            ) : null}
             <Button
               nativeButton={false}
               render={<Link to="/tests/$testId/edit" params={{ testId }} />}
@@ -350,9 +356,40 @@ export function TestPage() {
             <section
               className="relay-test-overview min-w-0 p-3"
               aria-labelledby="test-overview-title"
+              onKeyDown={(event) => {
+                if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+                const buttons = [
+                  ...event.currentTarget.querySelectorAll<HTMLButtonElement>(
+                    "button[data-step-id]",
+                  ),
+                ];
+                if (!buttons.length) return;
+                event.preventDefault();
+                const focused = buttons.findIndex((button) => button === document.activeElement);
+                const selected = buttons.findIndex(
+                  (button) => button.dataset.stepId === selectedEvidenceStep?.id,
+                );
+                const current = focused >= 0 ? focused : selected;
+                const next =
+                  event.key === "Home"
+                    ? 0
+                    : event.key === "End"
+                      ? buttons.length - 1
+                      : Math.max(
+                          0,
+                          Math.min(
+                            buttons.length - 1,
+                            current + (event.key === "ArrowDown" ? 1 : -1),
+                          ),
+                        );
+                buttons[next]!.focus({ preventScroll: true });
+                buttons[next]!.click();
+                buttons[next]!.scrollIntoView({ block: "nearest" });
+              }}
             >
               <h2
                 id="test-overview-title"
+                tabIndex={0}
                 className="mb-2 text-[13px] font-medium text-muted-foreground"
               >
                 {outlineCopy.title}
@@ -570,121 +607,80 @@ export function TestPage() {
         />
       ) : null}
 
-      {!loading && test.data && recentRuns.data?.length ? (
-        <Collapsible className="mx-3 mt-6 mb-3 border-t border-border px-1 pt-3">
-          <CollapsibleTrigger className="flex min-h-11 w-full items-center justify-between gap-4 rounded-md py-1 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/40">
-            <span>
-              <span className="block text-sm font-semibold text-foreground">Recent runs</span>
-              <span className="sr-only">
-                Recent stability ·{" "}
-                {stabilityHistoryComplete ? "Complete history" : "Partial history"}
-                {stability?.signals.length
-                  ? stability.signals.map((signal) => signal.summary).join(" ")
-                  : " Rates stay hidden until complete history is available."}
-              </span>
-            </span>
-            <span className="flex items-center gap-2 text-xs">
-              <Badge variant="secondary">
-                {stabilityHistoryComplete ? "Complete history" : "Partial history"}
-              </Badge>
-              <span>Show history</span>
-            </span>
-          </CollapsibleTrigger>
-          <CollapsibleContent className="pt-3">
-            <div className="grid gap-5 md:grid-cols-2">
-              <section className="min-w-0" aria-labelledby="test-stability-title">
-                <div className="flex items-end justify-between gap-5 max-[620px]:items-start max-[620px]:gap-3">
-                  <div>
-                    <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
-                      Reliability
-                    </p>
-                    <h2 id="test-stability-title">Recent stability</h2>
+      <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
+        <DialogContent className="flex max-h-[min(720px,85dvh)] w-[min(640px,calc(100vw-32px))] max-w-none flex-col gap-0 overflow-hidden p-0">
+          <header className="space-y-1 px-6 pt-6 pb-4 pr-12">
+            <DialogTitle>Run history</DialogTitle>
+            <DialogDescription className="truncate">{test.data?.name}</DialogDescription>
+          </header>
+          <div className="min-h-0 overflow-y-auto px-6">
+            {stability ? (
+              <dl className="mb-5 grid grid-cols-3 gap-4 rounded-lg bg-muted/40 p-4">
+                {[
+                  ["Runs", stability.sampleCount],
+                  ["Passed", stability.passedCount],
+                  ["Product issues", stability.failedCount],
+                ].map(([label, value]) => (
+                  <div key={label} className="space-y-1">
+                    <dt className="text-xs text-muted-foreground">{label}</dt>
+                    <dd className="text-xl font-medium tabular-nums">{value}</dd>
                   </div>
-                  <Badge
-                    variant="secondary"
-                    className={
-                      stability?.signals.length
-                        ? "bg-amber-500/15 text-amber-800 dark:text-amber-300"
-                        : undefined
-                    }
-                  >
-                    {stabilityHistoryComplete ? "Complete history" : "Partial history"}
-                  </Badge>
-                </div>
-                <dl className="mt-4 grid grid-cols-3 gap-2">
-                  <div>
-                    <dt>Observed Runs</dt>
-                    <dd>{stability?.sampleCount ?? 0}</dd>
-                  </div>
-                  <div>
-                    <dt>Verified passes</dt>
-                    <dd>{stability?.passedCount ?? 0}</dd>
-                  </div>
-                  <div>
-                    <dt>Product failures</dt>
-                    <dd>{stability?.failedCount ?? 0}</dd>
-                  </div>
-                </dl>
-                {stability?.signals.length ? (
-                  <ul className="mt-3 grid gap-1.5 pl-4 text-xs text-muted-foreground">
-                    {stability.signals.map((signal) => (
-                      <li key={`${signal.kind}:${signal.environmentId ?? "all"}`}>
-                        {signal.summary}
-                      </li>
-                    ))}
-                    {stability.recommendations.map((item) => (
-                      <li key={item.id}>{item.summary}</li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p>
-                    Relay has not found a repeated stability signal in the loaded Runs. Rates stay
-                    hidden until complete history is available.
-                  </p>
-                )}
-              </section>
-
-              <section className="min-w-0" aria-labelledby="test-runs-title">
-                <div className="flex items-end justify-between gap-5 max-[620px]:items-start max-[620px]:gap-3">
-                  <div>
-                    <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
-                      Reports
-                    </p>
-                    <h2 id="test-runs-title">Recent Runs</h2>
-                  </div>
-                  <Link
-                    className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
-                    to="/runs"
-                    search={{ view: "all", test: testId }}
-                  >
-                    View all Runs
-                  </Link>
-                </div>
-                <ul className="mt-4 grid list-none gap-0 p-0">
-                  {[...recentRuns.data]
-                    .sort(
-                      (left, right) =>
-                        (right.finishedAt ?? right.startedAt ?? right.queuedAt) -
-                        (left.finishedAt ?? left.startedAt ?? left.queuedAt),
-                    )
-                    .slice(0, 4)
-                    .map((run) => (
-                      <li key={run.id}>
-                        <Link to="/runs/$runId" params={{ runId: run.id }}>
-                          <OutcomeMark outcome={run.outcome ?? run.phase} />
-                          <span>{run.targetName ?? "Saved target"}</span>
-                          <small>
-                            {formatRunDate(run.finishedAt ?? run.startedAt ?? run.queuedAt)}
-                          </small>
-                        </Link>
-                      </li>
-                    ))}
-                </ul>
-              </section>
-            </div>
-          </CollapsibleContent>
-        </Collapsible>
-      ) : null}
+                ))}
+              </dl>
+            ) : null}
+            {!stabilityHistoryComplete ? (
+              <p className="mb-3 text-xs text-muted-foreground">
+                Showing loaded runs. Totals may be incomplete.
+              </p>
+            ) : null}
+            <ul className="divide-y divide-border">
+              {[...(recentRuns.data ?? [])]
+                .sort(
+                  (left, right) =>
+                    (right.finishedAt ?? right.startedAt ?? right.queuedAt) -
+                    (left.finishedAt ?? left.startedAt ?? left.queuedAt),
+                )
+                .slice(0, 20)
+                .map((run) => (
+                  <li key={run.id}>
+                    <Link
+                      to="/runs/$runId"
+                      params={{ runId: run.id }}
+                      onClick={() => setHistoryOpen(false)}
+                      className="group flex min-h-16 items-center gap-4 rounded-md px-2 py-3 hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
+                    >
+                      <div className="min-w-0 flex-1 space-y-1.5">
+                        <OutcomeMark outcome={run.outcome ?? run.phase} />
+                        {run.targetName ? (
+                          <p className="truncate text-xs text-muted-foreground">{run.targetName}</p>
+                        ) : null}
+                      </div>
+                      <time
+                        className="shrink-0 text-xs tabular-nums text-muted-foreground"
+                        dateTime={new Date(
+                          run.finishedAt ?? run.startedAt ?? run.queuedAt,
+                        ).toISOString()}
+                      >
+                        {formatRunDate(run.finishedAt ?? run.startedAt ?? run.queuedAt)}
+                      </time>
+                      <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                    </Link>
+                  </li>
+                ))}
+            </ul>
+          </div>
+          <footer className="mt-2 flex justify-end border-t border-border px-6 py-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              nativeButton={false}
+              render={<Link to="/runs" search={{ view: "all", test: testId }} />}
+            >
+              View all runs <ChevronRight />
+            </Button>
+          </footer>
+        </DialogContent>
+      </Dialog>
     </WorkbenchPage>
   );
 }
@@ -712,6 +708,7 @@ function ReadableStep({
         className="min-w-0 rounded-md px-1 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
         type="button"
         aria-pressed={selectedId === step.id}
+        data-step-id={step.id}
         onClick={() => onSelect(step.id)}
       >
         <strong className="block text-[13px] font-medium">{step.label ?? step.intent}</strong>

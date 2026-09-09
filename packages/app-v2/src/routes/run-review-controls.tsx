@@ -1,4 +1,5 @@
 /** @jsxImportSource react */
+import { ChevronRight } from "lucide-react";
 import { Button } from "@relay/ui-react/components/button";
 import {
   Collapsible,
@@ -51,18 +52,15 @@ export function RunReviewControls({
 
   if (!service.review && !service.compareVisual) return null;
   return (
-    <Collapsible className="relay-report-review-controls rounded-lg border border-border bg-card p-4">
-      <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 py-2 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
+    <Collapsible className="relay-report-review-controls">
+      <CollapsibleTrigger className="group flex w-full items-center justify-between gap-2 py-3 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
         Review and visual decisions
+        <ChevronRight aria-hidden="true" className="size-4 group-aria-expanded:rotate-90" />
       </CollapsibleTrigger>
-      <CollapsibleContent className="space-y-3 border-t pt-3 text-sm">
-        <p>
-          Save a durable human decision for this Run, or compare its captured frames with the
-          approved baseline.
-        </p>
+      <CollapsibleContent className="grid gap-4 py-3 text-sm sm:grid-cols-2">
         {service.review ? (
           <div
-            className="relay-report-review-actions flex flex-wrap gap-2"
+            className="relay-report-review-actions flex flex-wrap items-center gap-2"
             aria-label="Run review decision"
           >
             <Button
@@ -92,7 +90,7 @@ export function RunReviewControls({
           </div>
         ) : null}
         {service.compareVisual ? (
-          <div className="relay-report-visual-review grid gap-3">
+          <div className="relay-report-visual-review grid content-start justify-items-start gap-3">
             <Button
               size="sm"
               variant="outline"
@@ -102,14 +100,14 @@ export function RunReviewControls({
               {compare.isPending ? "Comparing…" : "Compare visual evidence"}
             </Button>
             {compare.data ? (
-              <div className="relay-report-visual-result grid gap-2 rounded-lg border border-border bg-muted/30 p-3">
+              <div className="relay-report-visual-result grid gap-2 py-2">
                 <strong>{visualComparisonLabel(compare.data.code)}</strong>
                 <span>
                   {compare.data.diff.changedFrames} changed · {compare.data.diff.addedFrames} added
                   · {compare.data.diff.removedFrames} removed
                 </span>
                 <div
-                  className="relay-report-review-actions flex flex-wrap gap-2"
+                  className="relay-report-review-actions flex flex-wrap items-center gap-2"
                   aria-label="Visual review decision"
                 >
                   <Button

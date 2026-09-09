@@ -25,8 +25,21 @@ export type ProductMapScreen = {
   readonly position?: { readonly x: number; readonly y: number };
   readonly screenshotUri?: string;
   readonly variantCount: number;
+  /** Retained screenshot choices backed by canonical map evidence. */
+  readonly variants: readonly ProductMapScreenVariant[];
   readonly coveringTests: readonly { readonly id: string; readonly name: string }[];
   readonly recentFailures: readonly ProductMapFailure[];
+};
+
+export type ProductMapScreenVariant = {
+  readonly id: string;
+  readonly screenshotUri: string;
+  /** Present only when the retained evidence carries capture-time metadata. */
+  readonly capturedAt?: number;
+  /** Present only when baseline provenance binds this evidence to a run. */
+  readonly sourceRunId?: string;
+  /** Present only when canonical evidence explicitly records a locale. */
+  readonly locale?: string;
 };
 
 export type ProductMapPath = {
@@ -104,6 +117,60 @@ function connectionIds(steps: readonly AppMapScenarioTestStep[], output = new Se
   return output;
 }
 
+function canonicalScreenshotUri(
+  variant: AppMap["screenVariants"][string] | undefined,
+): string | undefined {
+  const uri = variant?.screenshotUri;
+  return uri && uri.startsWith("relay-evidence://") && variant.evidenceUris?.includes(uri)
+    ? uri
+    : undefined;
+}
+
+function projectScreenVariants(screen: Screen, map: AppMap): readonly ProductMapScreenVariant[] {
+  return screen.variantIds
+    .map((id) => map.screenVariants?.[id])
+    .filter((variant): variant is NonNullable<typeof variant> => Boolean(variant))
+    .map((variant) => {
+      const screenshotUri = canonicalScreenshotUri(variant);
+      if (!screenshotUri) return undefined;
+      const raw = variant.rawAccessibilityTree;
+      const provenance = variant.captureProvenance;
+      const capturedAt =
+        provenance?.capturedAt ??
+        (raw?.capturedAt !== undefined &&
+        raw.uri.startsWith("relay-evidence://") &&
+        variant.evidenceUris?.includes(raw.uri)
+          ? raw.capturedAt
+          : undefined);
+      let sourceRunId: string | undefined;
+      const source = variant.baseline?.source;
+      if (source?.kind === "run" && source.evidenceId) {
+        const targetResult = map.targetResults?.[source.targetResultId];
+        if (
+          targetResult?.runId &&
+          variant.evidenceIds.includes(source.evidenceId) &&
+          targetResult.evidenceIds.includes(source.evidenceId)
+        ) {
+          sourceRunId = targetResult.runId;
+        }
+      }
+      if (provenance?.kind === "run") sourceRunId = provenance.runId;
+      return {
+        id: variant.id,
+        screenshotUri,
+        ...(capturedAt === undefined ? {} : { capturedAt }),
+        ...(sourceRunId === undefined ? {} : { sourceRunId }),
+        ...(provenance?.locale ? { locale: provenance.locale } : {}),
+      } satisfies ProductMapScreenVariant;
+    })
+    .filter((variant): variant is ProductMapScreenVariant => Boolean(variant))
+    .sort((left, right) => {
+      const leftUpdatedAt = map.screenVariants[left.id]?.updatedAt ?? 0;
+      const rightUpdatedAt = map.screenVariants[right.id]?.updatedAt ?? 0;
+      return rightUpdatedAt - leftUpdatedAt || left.id.localeCompare(right.id);
+    });
+}
+
 function projectMap(map: AppMap): ProductMapOverview {
   const tests = Object.values(map.tests);
   const testByConnection = new Map<string, { id: string; name: string }[]>();
@@ -138,6 +205,7 @@ function projectMap(map: AppMap): ProductMapOverview {
       ]);
   }
   const screens = Object.values(map.screens).map((screen: Screen) => {
+    const variants = projectScreenVariants(screen, map);
     const covering = new Map<string, { id: string; name: string }>();
     for (const connection of Object.values(map.connections)) {
       const reachesScreen =
@@ -156,6 +224,7 @@ function projectMap(map: AppMap): ProductMapOverview {
         .filter((variant) => Boolean(variant?.screenshotUri))
         .sort((a, b) => b!.updatedAt - a!.updatedAt)[0]?.screenshotUri,
       variantCount: screen.variantIds.length,
+      variants,
       coveringTests: [...covering.values()],
       recentFailures: (failuresByScreen.get(screen.id) ?? []).slice(0, 8),
     } satisfies ProductMapScreen;

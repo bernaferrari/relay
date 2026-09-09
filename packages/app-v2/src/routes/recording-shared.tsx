@@ -101,14 +101,19 @@ export function RecordingProblem({
       : undefined;
   return (
     <RecoveryState
-      className={`relay-recording-problem mt-7 max-w-[640px]${className ? ` ${className}` : ""}`}
+      className={`relay-recording-problem ${layout === "centered" ? "m-0 w-full max-w-none flex-1 justify-center border-0" : "mt-7 max-w-[640px]"}${className ? ` ${className}` : ""}`}
       title={publicRecovery?.title ?? "Relay could not complete this request"}
       detail={publicRecovery?.detail ?? errorMessage(error)}
       recovery={publicRecovery?.recovery}
       layout={layout}
       action={
         onRetry && (recovery?.retryable ?? true) ? (
-          <Button size="sm" variant="outline" onClick={onRetry} disabled={retrying}>
+          <Button
+            size={layout === "centered" ? "default" : "sm"}
+            variant={layout === "centered" ? "default" : "outline"}
+            onClick={onRetry}
+            disabled={retrying}
+          >
             <RotateCcw aria-hidden="true" />
             {retrying ? "Trying again…" : "Try again"}
           </Button>

@@ -2,6 +2,7 @@ import type { ProductMapPath, ProductMapScreen } from "@relay/product/map-explor
 import { Button } from "@relay/ui-react/components/button";
 import { ArrowDownLeft, ArrowUpRight, ChevronRight, Scan, X } from "lucide-react";
 import { Link } from "@tanstack/react-router";
+import { useState } from "react";
 import { MapScreenPreview } from "./map-screen-preview";
 
 export function ScreenInspector({
@@ -23,7 +24,17 @@ export function ScreenInspector({
   screen: ProductMapScreen | undefined;
   onClose(): void;
 }) {
+  const [captureSelection, setCaptureSelection] = useState<{
+    screenId: string;
+    variantId: string;
+  }>();
   if (!screen) return null;
+  const variants = screen.variants ?? [];
+  const selectedCapture =
+    variants.find(
+      (variant) =>
+        captureSelection?.screenId === screen.id && variant.id === captureSelection.variantId,
+    ) ?? variants[0];
   const incoming = paths.filter(
     (path) => path.toScreenId === screen.id && path.fromScreenId !== screen.id,
   );
@@ -70,12 +81,12 @@ export function ScreenInspector({
           )}
           <button
             type="button"
-            className="block h-60 w-full rounded-md focus-visible:outline-2 focus-visible:outline-ring"
+            className="block h-[min(42vh,360px)] w-full focus-visible:outline-2 focus-visible:outline-ring"
             aria-label={`Focus ${screen.title} on canvas`}
             onClick={onFocusScreen}
           >
             <MapScreenPreview
-              uri={screen.screenshotUri}
+              uri={selectedCapture?.screenshotUri ?? screen.screenshotUri}
               load={loadScreenshot}
               title={screen.title}
             />
@@ -92,10 +103,42 @@ export function ScreenInspector({
           {screen.description ? (
             <p className="text-xs leading-relaxed text-muted-foreground">{screen.description}</p>
           ) : null}
-          {screen.variantCount > 1 ? (
-            <p className="text-xs text-muted-foreground">
-              {screen.variantCount} captured variants · Latest shown
-            </p>
+          {variants.length > 1 ? (
+            <div className="space-y-2">
+              <label htmlFor="map-screen-capture" className="block text-xs font-medium">
+                Capture <span className="text-muted-foreground">· {variants.length}</span>
+              </label>
+              <select
+                id="map-screen-capture"
+                value={selectedCapture?.id}
+                className="h-9 w-full rounded-md border border-input bg-background px-2 text-xs focus-visible:outline-2 focus-visible:outline-ring"
+                onChange={(event) =>
+                  setCaptureSelection({ screenId: screen.id, variantId: event.target.value })
+                }
+              >
+                {variants.map((variant, index) => (
+                  <option key={variant.id} value={variant.id}>
+                    {variant.locale ? `${variant.locale} · ` : ""}
+                    {variant.capturedAt !== undefined
+                      ? new Date(variant.capturedAt).toLocaleString(undefined, {
+                          dateStyle: "medium",
+                          timeStyle: "short",
+                        })
+                      : `Capture ${variants.length - index}`}
+                    {index === 0 ? " · Latest" : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
+          {selectedCapture?.sourceRunId ? (
+            <Link
+              to="/runs/$runId"
+              params={{ runId: selectedCapture.sourceRunId }}
+              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+            >
+              Open source run <ArrowUpRight className="size-3.5" />
+            </Link>
           ) : null}
         </div>
         <section className="space-y-2" aria-label="Connected screens">

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { ReportPerformanceSeries, ReportTimelineItem } from "../data/run-report-model";
 
 export function RunPerformancePanel({
@@ -9,88 +10,135 @@ export function RunPerformancePanel({
   step?: ReportTimelineItem;
   onSeek(at: number): void;
 }) {
-  if (!series.length)
-    return (
-      <p className="p-5 text-sm text-muted-foreground">
-        No numeric performance samples were retained for this run.
-      </p>
-    );
+  const available = series.filter((metric) => metric.points.length);
+  const [metricName, setMetricName] = useState("");
+  const [selectedAt, setSelectedAt] = useState<number>();
+  const metric =
+    available.find((item) => item.name === metricName) ??
+    available.find((item) => /cpu/i.test(item.name)) ??
+    available[0];
+  if (!metric) return null;
+  const first = metric.points[0]!.at;
+  const last = metric.points.at(-1)!.at;
+  const peak = Math.max(...metric.points.map((point) => point.value));
+  const low = Math.min(0, ...metric.points.map((point) => point.value));
+  const selected = metric.points.find((point) => point.at === selectedAt);
+  const x = (at: number) =>
+    16 + Math.max(0, Math.min(568, ((at - first) / Math.max(1, last - first)) * 568));
+  const y = (value: number) => 108 - ((value - low) / Math.max(1, peak - low)) * 92;
+  const inspect = (index: number) => {
+    const point = metric.points[index]!;
+    setSelectedAt(point.at);
+    onSeek(point.at);
+  };
   return (
-    <section className="grid gap-4 border-t border-border p-5" aria-label="Performance timeline">
-      <div>
+    <section className="space-y-3 border-t border-border p-5" aria-label="Performance timeline">
+      <header className="flex flex-wrap items-center justify-between gap-3">
         <h3 className="text-sm font-medium">Performance</h3>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Select a sample to inspect its recorded step.
-        </p>
+        <select
+          aria-label="Performance metric"
+          className="h-8 max-w-full rounded-md border border-input bg-background px-2 text-xs"
+          value={metric.name}
+          onChange={(event) => {
+            setMetricName(event.target.value);
+            setSelectedAt(undefined);
+          }}
+        >
+          {available.map((item) => (
+            <option key={item.name} value={item.name}>
+              {metricLabel(item.name)}
+            </option>
+          ))}
+        </select>
+      </header>
+      <div className="flex min-h-5 items-center justify-between gap-3 text-xs tabular-nums">
+        <span className="text-muted-foreground">
+          {selected
+            ? `At +${((selected.at - first) / 1000).toFixed(1)} s`
+            : "Select a point to view its step"}
+        </span>
+        <span className="font-mono">
+          {selected ? selected.value.toLocaleString() : `Peak ${peak.toLocaleString()}`}
+        </span>
       </div>
-      {series.map((metric) => {
-        const first = metric.points[0]!.at;
-        const last = metric.points.at(-1)!.at;
-        const peak = Math.max(...metric.points.map((p) => p.value));
-        const low = Math.min(0, ...metric.points.map((p) => p.value));
-        const x = (at: number) =>
-          Math.max(0, Math.min(600, ((at - first) / Math.max(1, last - first)) * 600));
-        const y = (value: number) => 64 - ((value - low) / Math.max(1, peak - low)) * 56;
-        return (
-          <div key={metric.name} className="min-w-0 rounded-lg bg-muted/40 p-3">
-            <div className="mb-2 flex justify-between gap-4 text-xs">
-              <span className="font-medium">{metric.name}</span>
-              <span className="font-mono tabular-nums text-muted-foreground">
-                Peak {peak.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-              </span>
-            </div>
-            <svg
-              viewBox="0 0 600 72"
-              className="h-20 w-full overflow-visible"
-              role="img"
-              aria-label={`${metric.name}, ${metric.points.length} recorded samples`}
-            >
-              {step?.startedAt !== undefined && step.finishedAt !== undefined ? (
-                <rect
-                  x={x(step.startedAt)}
-                  y="0"
-                  width={Math.max(0, x(step.finishedAt) - x(step.startedAt))}
-                  height="72"
-                  fill="currentColor"
-                  opacity=".07"
-                />
-              ) : null}
-              <polyline
-                points={metric.points.map((p) => `${x(p.at)},${y(p.value)}`).join(" ")}
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                vectorEffect="non-scaling-stroke"
-              />
-              {metric.points.map((point, index) => (
-                <circle
-                  key={`${point.at}:${index}`}
-                  cx={x(point.at)}
-                  cy={y(point.value)}
-                  r="4"
-                  fill="currentColor"
-                >
-                  <title>{`${metric.name}: ${point.value} at ${new Date(point.at).toLocaleTimeString()}`}</title>
-                </circle>
-              ))}
-            </svg>
-            <input
-              type="range"
-              className="mt-2 h-5 w-full accent-current"
-              aria-label={`Inspect ${metric.name} sample`}
-              min={0}
-              max={Math.max(0, metric.points.length - 1)}
-              defaultValue={0}
-              disabled={metric.points.length < 2}
-              onChange={(event) => onSeek(metric.points[Number(event.currentTarget.value)]!.at)}
+      <svg
+        viewBox="0 0 600 124"
+        className="h-36 w-full overflow-visible"
+        aria-label={`${metricLabel(metric.name)}, ${metric.points.length} samples`}
+      >
+        {[16, 62, 108].map((line) => (
+          <line
+            key={line}
+            x1="16"
+            x2="584"
+            y1={line}
+            y2={line}
+            stroke="currentColor"
+            opacity=".08"
+          />
+        ))}
+        {step?.startedAt !== undefined && step.finishedAt !== undefined ? (
+          <rect
+            x={x(step.startedAt)}
+            y="8"
+            width={Math.max(0, x(step.finishedAt) - x(step.startedAt))}
+            height="108"
+            fill="currentColor"
+            opacity=".06"
+          />
+        ) : null}
+        <polyline
+          points={metric.points.map((point) => `${x(point.at)},${y(point.value)}`).join(" ")}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          vectorEffect="non-scaling-stroke"
+          className="text-primary"
+        />
+        {metric.points.map((point, index) => (
+          <g
+            key={`${point.at}:${index}`}
+            role="button"
+            tabIndex={0}
+            aria-label={`${metricLabel(metric.name)}: ${point.value}, ${((point.at - first) / 1000).toFixed(1)} seconds into samples`}
+            aria-pressed={selectedAt === point.at}
+            className="cursor-pointer outline-none [&:focus-visible>circle:last-child]:stroke-ring [&:focus-visible>circle:last-child]:stroke-[3]"
+            onClick={() => inspect(index)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                inspect(index);
+              }
+            }}
+          >
+            <circle cx={x(point.at)} cy={y(point.value)} r="12" fill="transparent" />
+            <circle
+              cx={x(point.at)}
+              cy={y(point.value)}
+              r={selectedAt === point.at ? 5 : 3}
+              fill="currentColor"
             />
-            <div className="flex justify-between font-mono text-xs tabular-nums text-muted-foreground">
-              <span>{new Date(first).toLocaleTimeString()}</span>
-              <span>{new Date(last).toLocaleTimeString()}</span>
-            </div>
-          </div>
-        );
-      })}
+          </g>
+        ))}
+      </svg>
+      <div className="flex justify-between text-[11px] tabular-nums text-muted-foreground">
+        <span>0:00</span>
+        <span>
+          {Math.floor((last - first) / 60000)}:
+          {String(Math.floor((last - first) / 1000) % 60).padStart(2, "0")}
+        </span>
+      </div>
     </section>
   );
+}
+
+function metricLabel(name: string): string {
+  return name
+    .replace(/^Fps total Frame Count$/i, "Frames rendered")
+    .replace(/^Fps dropped Frame Count$/i, "Dropped frames")
+    .replace(/^Fps sample Window Ms$/i, "Frame sample interval (ms)")
+    .replace(/^Fps frame Deadline Ms$/i, "Frame deadline (ms)")
+    .replace(/^Fps refresh Rate Hz$/i, "Refresh rate (Hz)")
+    .replace(/^Startup last Duration Ms$/i, "App startup (ms)")
+    .replace(/^Startup sample Count$/i, "Startup samples");
 }

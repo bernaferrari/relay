@@ -39,6 +39,11 @@ import {
 } from "./destination-survey.js";
 import { rethrowIosMutationOutcomeUnknown } from "./ios-mutation-policy.js";
 import type { DestinationRepairHint } from "./repair-proposal.js";
+import {
+  getRecipeAndroidLocalization,
+  localizeExpectedObservation,
+  type RecipeAndroidLocalization,
+} from "./recipe-localization.js";
 
 const DEFAULT_EXPECT_TIMEOUT_MS = 5_000;
 const MAX_WAIT_MS = 15 * 60 * 1_000;
@@ -103,6 +108,11 @@ type ExpectScreenDependencies = {
   captureScreenshot?: typeof captureScreenshot;
   /** Test seam for the automatic destination evidence survey. */
   captureSurvey?: DestinationSurveyDependencies["captureSurvey"];
+  /** Test seam and shared runtime hook for APK-backed expected-label translation. */
+  getLocalization?: (
+    ctx: RecipeStepContext,
+    nodes: SnapshotNode[],
+  ) => Promise<RecipeAndroidLocalization | undefined>;
 };
 function ownsAndroidDestinationEvidence(
   step: Extract<RecipeStep, { kind: "expect-screen" }>,
@@ -233,11 +243,43 @@ export async function runExpectScreenStep(
       Boolean(step.expectedApp) &&
       foregroundApplicationBundle(nodes) === step.expectedApp &&
       handoffShellIdentityMatch(observed, step.observations ?? []);
+    let localizedSemanticMatch = false;
+    let hasLocalizedExpectation = false;
+    // The translated expectation retains the taught app's resource ownership.
+    // expectedApp is only populated for handoffs, so ordinary in-app screens
+    // must derive ownership from their retained resource identifiers.
+    if (
+      !screenIdentityMatches(expected, observed.fingerprint) &&
+      (!step.expectedApp || foregroundApplicationBundle(nodes) === step.expectedApp)
+    ) {
+      const localization = await (dependencies.getLocalization ?? getRecipeAndroidLocalization)(
+        ctx,
+        nodes,
+      );
+      if (localization && (!step.expectedApp || localization.packageName === step.expectedApp)) {
+        // Freeze the observed app locale into the run evidence. Matrix inputs
+        // can omit it when the platform locale was selected outside Relay.
+        if (ctx.job) ctx.job.resolvedInputs.app_locale = localization.locale;
+        localizedSemanticMatch = (step.observations ?? []).some((observation) => {
+          const localized = localizeExpectedObservation(observation, localization, observed);
+          if (localized) hasLocalizedExpectation = true;
+          return (
+            localized !== undefined &&
+            compareScreenIdentity(observed, localized).decision === "match"
+          );
+        });
+        if (localizedSemanticMatch)
+          ctx.log(
+            `screen: verified ${step.screenTitle} using ${localization.locale} app resources`,
+          );
+      }
+    }
     if (
       screenIdentityMatches(expected, observed.fingerprint) ||
-      semanticMatch ||
-      resilientMatch ||
-      handoffShellMatch
+      (!hasLocalizedExpectation && semanticMatch) ||
+      localizedSemanticMatch ||
+      (!hasLocalizedExpectation && resilientMatch) ||
+      (!hasLocalizedExpectation && handoffShellMatch)
     ) {
       reached = true;
       verifiedNodes = nodes;

@@ -1,10 +1,7 @@
+import { ScrollArea } from "@relay/ui-react/components/scroll-area";
 import type { ReactNode } from "react";
 import { Button } from "@relay/ui-react/components/button";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@relay/ui-react/components/collapsible";
+import { Popover, PopoverContent, PopoverTrigger } from "@relay/ui-react/components/popover";
 import { ChevronDown, SlidersHorizontal } from "lucide-react";
 import { AuthoringWorkspace } from "./authoring-workspace";
 
@@ -28,14 +25,15 @@ export function SavedTestWorkspace({
       stage={stage}
       tools={
         <div className="flex h-full min-h-0 flex-col rounded-lg bg-card">
-          <div className="min-h-0 flex-1 overflow-y-auto">{outline}</div>
+          <ScrollArea
+            className="min-h-0 flex-1"
+            viewportProps={{ "aria-label": "Test steps", className: "overscroll-auto" }}
+          >
+            {outline}
+          </ScrollArea>
           {inspector ? (
-            <Collapsible
-              open={settingsOpen}
-              onOpenChange={onSettingsOpenChange}
-              className="shrink-0 border-t border-border/50"
-            >
-              <CollapsibleTrigger
+            <Popover open={settingsOpen} onOpenChange={onSettingsOpenChange}>
+              <PopoverTrigger
                 render={
                   <Button
                     variant="ghost"
@@ -51,11 +49,16 @@ export function SavedTestWorkspace({
                 <ChevronDown
                   className={`size-3.5 text-muted-foreground ${settingsOpen ? "rotate-180" : ""}`}
                 />
-              </CollapsibleTrigger>
-              <CollapsibleContent className="max-h-[50vh] overflow-y-auto">
+              </PopoverTrigger>
+              <PopoverContent
+                side="top"
+                align="end"
+                className="max-h-[min(640px,80dvh)] w-80 max-w-[calc(100vw-2rem)] overflow-y-auto p-0"
+                aria-label="Run settings"
+              >
                 {inspector}
-              </CollapsibleContent>
-            </Collapsible>
+              </PopoverContent>
+            </Popover>
           ) : null}
         </div>
       }
