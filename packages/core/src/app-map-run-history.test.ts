@@ -76,6 +76,12 @@ test("App Map capture joins module frames only to the final destination screen",
                   kind: "module",
                   id: "module-b",
                   recipeId: "module-recipe",
+                  check: {
+                    transitionDependencies: [
+                      { destination: { kind: "screen", screenId: "screen-intermediate" } },
+                      { destination: { kind: "screen", screenId: "screen-compiled" } },
+                    ],
+                  },
                 },
               ],
             },
@@ -93,7 +99,7 @@ test("App Map capture joins module frames only to the final destination screen",
   } as unknown as PersistedRun;
   assert.deepEqual(planScreenSteps(run), [
     { id: "module-a", screenId: "screen-destination" },
-    { id: "module-b", screenId: "screen-destination" },
+    { id: "module-b", screenId: "screen-compiled" },
   ]);
 });
 
@@ -187,8 +193,26 @@ test(
               recipes: {
                 root: {
                   steps: [
-                    { kind: "expect-screen", id: "origin-step", screenId: "origin" },
-                    { kind: "expect-screen", id: "destination-step", screenId: "destination" },
+                    {
+                      kind: "module",
+                      id: "origin-step",
+                      recipeId: "origin-module",
+                      check: {
+                        transitionDependencies: [
+                          { destination: { kind: "screen", screenId: "origin" } },
+                        ],
+                      },
+                    },
+                    {
+                      kind: "module",
+                      id: "destination-step",
+                      recipeId: "destination-module",
+                      check: {
+                        transitionDependencies: [
+                          { destination: { kind: "screen", screenId: "destination" } },
+                        ],
+                      },
+                    },
                   ],
                 },
               },

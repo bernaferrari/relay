@@ -130,6 +130,25 @@ export function planScreenSteps(run: PersistedRun): Array<{ id: string; screenId
         typeof step.id === "string" &&
         typeof step.recipeId === "string"
       ) {
+        const check = step.check;
+        const dependencies =
+          check && typeof check === "object" && !Array.isArray(check)
+            ? (check as Record<string, unknown>).transitionDependencies
+            : undefined;
+        const terminalDestination = Array.isArray(dependencies)
+          ? dependencies.at(-1)?.destination
+          : undefined;
+        if (
+          terminalDestination &&
+          typeof terminalDestination === "object" &&
+          !Array.isArray(terminalDestination) &&
+          terminalDestination.kind === "screen" &&
+          typeof terminalDestination.screenId === "string"
+        ) {
+          result.push({ id: step.id, screenId: terminalDestination.screenId });
+          lastScreen = terminalDestination.screenId;
+          continue;
+        }
         if (!active.has(step.recipeId)) {
           const nestedActive = new Set(active).add(step.recipeId);
           const nestedLast = visit(
