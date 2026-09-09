@@ -35,8 +35,7 @@ export function TestStepEvidencePreview({
   }
   const selected = matches.find((item) => item.occurrence === selectedOccurrence) ?? matches[0];
   const timelineItem = selected
-    ? (report?.timeline.find((item) => item.id === selected.traceStepId) ??
-      report?.timeline.find((item) => item.index === selected.traceStepIndex))
+    ? report?.timeline.find((item) => item.id === selected.traceStepId)
     : undefined;
   const titleId = `step-evidence-${step.id}`;
 
@@ -109,7 +108,11 @@ export function TestStepEvidencePreview({
                   ? "Blocked"
                   : timelineItem?.state === "passed"
                     ? "Passed"
-                    : "Recorded"}
+                    : timelineItem?.state === "running"
+                      ? "Running"
+                      : timelineItem?.state === "recovered"
+                        ? "Recovered"
+                        : "Captured"}
           </span>
         ) : null}
         {report ? (

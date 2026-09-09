@@ -490,6 +490,39 @@ describe("Devices", () => {
   });
 });
 
+describe("Current app language", () => {
+  it("shows the observed device language without changing it", async () => {
+    const service = fakeDeviceService();
+    service.get = async () => productDevice("phone", "QA phone", "ready", "android");
+    service.listInstalledApps = async () => [{ package: "com.android.settings", name: "Settings" }];
+    service.launchApp = async () => ({
+      serial: "phone",
+      app: "com.android.settings",
+      platform: "android",
+      launchedAt: 1,
+    });
+    service.listAppLocales = async () => ({
+      packageName: "com.android.settings",
+      locales: ["en", "ko"],
+      currentLocale: "ko-KR",
+      source: "android-device-locale",
+    });
+    let changes = 0;
+    service.setAppLocale = async () => {
+      changes++;
+      return { packageName: "com.android.settings", locale: "en" };
+    };
+    await renderPath("/devices/phone", { deviceService: service });
+    await click(document.querySelector<HTMLButtonElement>('[aria-label="Starting app"]')!);
+    const settings = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((item) =>
+      item.textContent?.includes("com.android.settings"),
+    )!;
+    await click(settings);
+    expect(document.querySelector('[aria-label="Language"]')?.textContent).toContain("Korean");
+    expect(changes).toBe(0);
+  });
+});
+
 describe("Settings", () => {
   it("keeps stable route navigation and saves evidence choices through the product service", async () => {
     const service = fakeSettingsService();

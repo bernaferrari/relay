@@ -397,6 +397,50 @@ test("requires a profile choice when a known locale Variant still lacks raw evid
   assert.equal(report.findings[0]?.code, "raw-evidence-variant-selection-required");
 });
 
+test("keeps authored raw proof selected after a localized run promotes a same-profile Variant", async () => {
+  const authored = rawTree(
+    "authored-voice",
+    buttonTree({ identifier: "settings.voice", label: "Voice" }),
+  );
+  const promoted = rawTree("promoted-voice-ko", buttonTree({ label: "음성" }));
+  const localizedVariant = {
+    ...englishProfileVariant,
+    id: "run-ko-voice",
+    captureProvenanceKind: "run" as const,
+  };
+  const compiled = scopedSelectorPlan({
+    sources: [
+      boundSource(authored, englishProfileVariant, 10),
+      boundSource(promoted, localizedVariant, 20),
+    ],
+    variants: [englishProfileVariant, localizedVariant],
+    targetProfiles: [
+      {
+        id: englishProfileVariant.targetProfileId,
+        targetId: englishProfileVariant.targetId,
+        platform: englishProfileVariant.platform,
+        viewport: englishProfileVariant.viewport,
+      },
+    ],
+    target: { identifier: "settings.voice", role: "XCUIElementTypeButton" },
+  });
+  const evidence = await loadFrozenRawAccessibilityEvidence(compiled, {
+    readEvidence: async (sha256) =>
+      sha256 === authored.reference.sha256
+        ? authored.bytes
+        : sha256 === promoted.reference.sha256
+          ? promoted.bytes
+          : null,
+  });
+  const report = preflightCompiledAppMapTestOffline(compiled, evidence, {
+    targetProfileId: englishProfileVariant.targetProfileId,
+  });
+  const selector = report.selectors[0]!;
+  assert.equal(selector.status, "resolved");
+  assert.equal(selector.resolution?.provenance?.variant?.id, englishProfileVariant.id);
+  assert.equal(report.findings.length, 0);
+});
+
 test("uses the compiled Test-wide profile ledger when this screen only has English evidence", async () => {
   const english = rawTree("profile-global-en-only-voice", buttonTree({ label: "Voice" }));
   const compiled = scopedSelectorPlan({

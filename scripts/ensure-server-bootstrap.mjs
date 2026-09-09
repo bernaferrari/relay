@@ -181,7 +181,9 @@ export function isExactRelayWatcher(
   ];
   return expectedCommands.some((expectedArgs) => {
     const expected = [nodeExecutable, ...expectedArgs];
-    return actual.length === expected.length && actual.every((value, index) => value === expected[index]);
+    return (
+      actual.length === expected.length && actual.every((value, index) => value === expected[index])
+    );
   });
 }
 

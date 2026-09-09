@@ -3,9 +3,11 @@ import { Skeleton } from "@relay/ui-react/components/skeleton";
 import { Button } from "@relay/ui-react/components/button";
 import { projectError } from "@relay/product/errors";
 import { RotateCcw } from "lucide-react";
+import type { ReactNode } from "react";
 import { RecoveryState } from "../components/product-patterns";
 type ProductRecovery = {
   code?: string;
+  sourceCode?: string;
   title: string;
   detail: string;
   recovery: string;
@@ -62,6 +64,7 @@ export function RecordingProblem({
   checking = false,
   layout = "compact",
   className,
+  action,
 }: {
   recovery?: ProductRecovery;
   error?: unknown;
@@ -70,6 +73,7 @@ export function RecordingProblem({
   checking?: boolean;
   layout?: "compact" | "centered";
   className?: string;
+  action?: ReactNode;
 }) {
   if (!recovery && !error) return null;
   if (recovery?.code === "mutation-outcome-unknown") {
@@ -107,7 +111,8 @@ export function RecordingProblem({
       recovery={publicRecovery?.recovery}
       layout={layout}
       action={
-        onRetry && (recovery?.retryable ?? true) ? (
+        action ??
+        (onRetry && (recovery?.retryable ?? true) ? (
           <Button
             size={layout === "centered" ? "default" : "sm"}
             variant={layout === "centered" ? "default" : "outline"}
@@ -117,7 +122,7 @@ export function RecordingProblem({
             <RotateCcw aria-hidden="true" />
             {retrying ? "Trying again…" : "Try again"}
           </Button>
-        ) : undefined
+        ) : undefined)
       }
     />
   );
@@ -126,6 +131,14 @@ export function RecordingProblem({
 function recoveryCopy(
   recovery: ProductRecovery,
 ): Pick<ProductRecovery, "title" | "detail" | "recovery"> {
+  if (recovery.sourceCode === "raw-evidence-variant-recapture-required") {
+    return {
+      title: "Saved controls need review",
+      detail:
+        "This screen capture does not contain every control the test expects. Review the steps before running again.",
+      recovery: "",
+    };
+  }
   if (/Relay restarted during device capture/u.test(recovery.detail)) {
     return {
       title: "Recording stopped when Relay restarted",

@@ -368,6 +368,38 @@ async function selectOption(label: string, option: string) {
 }
 
 describe("Run and Report", () => {
+  it("offers step review when saved capture controls block compilation", async () => {
+    const fake = fakeRunService();
+    fake.service.start = async () => ({
+      status: "failed",
+      recovery: {
+        code: "compile-blocked",
+        sourceCode: "raw-evidence-variant-recapture-required",
+        title: "The Test has 5 compile blockers",
+        detail: "workflow compile raw selector proof failed",
+        recovery: "Review selector bindings",
+        retryable: false,
+      },
+    });
+    fake.service.listTargets = async () => [
+      {
+        kind: "device",
+        platform: "android",
+        targetId: "emulator-5554",
+        name: "QA phone",
+        detail: "Android emulator",
+      },
+    ];
+    await renderRun("/tests/test-1", fake.service, platformWithStorage().platform);
+    await click(button("Run Test"));
+    expect(document.body.textContent).toContain("Saved controls need review");
+    expect(document.body.textContent).not.toContain("restore this work");
+    const review = [
+      ...document.querySelectorAll<HTMLAnchorElement>('a[href="/tests/test-1/edit"]'),
+    ].find((link) => link.textContent === "Review steps");
+    expect(review).toBeDefined();
+  });
+
   it("opens Run settings directly from a library setup link", async () => {
     const fake = fakeRunService();
     await renderRun("/tests/test-1?setup=run", fake.service, platformWithStorage().platform);
@@ -376,6 +408,22 @@ describe("Run and Report", () => {
       document.body.textContent ?? "",
     ).not.toBeNull();
     expect(document.querySelector('button[aria-label="Device or browser"]')).not.toBeNull();
+  });
+
+  it("dismisses setup after launch and keeps it closed when the run completes", async () => {
+    const fake = fakeRunService();
+    const { history } = await renderRun(
+      "/tests/test-1?setup=run",
+      fake.service,
+      platformWithStorage().platform,
+    );
+    await selectOption("Device or browser", "Checkout browser");
+    await click(button("Run Test"));
+    expect(String(history.location.search)).not.toContain("setup=run");
+    await act(async () => fake.complete());
+    await settle();
+    expect(document.querySelector("#test-run-setup")).toBeNull();
+    expect(document.body.textContent).toContain("Test passed");
   });
 
   it("waits for every data dimension before previewing and labels the selected target", async () => {

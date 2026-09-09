@@ -8,6 +8,7 @@ import {
   type RunTestIntent,
 } from "./index.js";
 import { createScriptedRelayClient, type ScriptedRelayStep } from "./testing.js";
+import { parseCanonicalJob } from "./job-projection.js";
 
 const target = { kind: "device", platform: "android", targetId: "pixel-9" } as const;
 const browserTarget = { kind: "browser", platform: "browser", targetId: "browser-golden" } as const;
@@ -538,6 +539,59 @@ test("inspect reconstructs terminal progress and immutable evidence from the can
   assert.deepEqual(snapshot.progress, { label: "Test completed", completed: 8 });
   assert.deepEqual(snapshot.evidenceRefs, [{ kind: "run", id: "run-9" }]);
   assert.deepEqual(snapshot.allowedNextActions, ["inspect"]);
+});
+
+test("projects authored Test progress instead of counting internal trace steps", async () => {
+  const scripted = createScriptedRelayClient([
+    compileStep(5),
+    runStep(5),
+    {
+      id: "job.get",
+      output: {
+        job: job("running", {
+          steps: [
+            { recipeStepId: "relay-test-step-a-1", status: "ok" },
+            { recipeStepId: "relay-test-step-a-2", status: "ok" },
+            { recipeStepId: "relay-test-step-b-1", status: "running" },
+          ],
+          artifacts: [{ kind: "campaign-check-result", data: { id: "a", status: "passed" } }],
+          recipeSnapshot: {
+            steps: [
+              { kind: "module", id: "relay-test-step-a-1", check: { id: "a", title: "Observe" } },
+              { kind: "screenshot", id: "relay-test-step-a-2" },
+              {
+                kind: "module",
+                id: "relay-test-step-b-1",
+                check: { id: "b", title: "Tap Network" },
+              },
+              { kind: "screenshot", id: "relay-test-step-b-2" },
+              { kind: "sleep", id: "internal" },
+            ],
+          },
+        }),
+      },
+    },
+  ]);
+  const workflows = createRelayWorkflows(scripted.client);
+  const started = await workflows.start(intent({ revision: { exact: 5 } }));
+  assert.ok(started.ref);
+  const snapshot = await workflows.inspect(started.ref);
+  assert.deepEqual(snapshot.progress, {
+    label: "Running test · Tap Network",
+    completed: 1,
+    total: 2,
+  });
+});
+
+test("rejects malformed nested progress metadata without throwing", () => {
+  assert.equal(parseCanonicalJob({ ...job("running"), recipeSnapshot: null }), undefined);
+  assert.equal(
+    parseCanonicalJob({
+      ...job("running"),
+      recipeSnapshot: { steps: [{ kind: "module", check: null }] },
+    }),
+    undefined,
+  );
 });
 
 test("uses the canonical job id as the Run id when the adapter omits a redundant runId", async () => {

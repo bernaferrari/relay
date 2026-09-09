@@ -30,7 +30,7 @@ import type {
 import { LiveTargetCanvas } from "./live-target-canvas";
 import { PageLoading, errorMessage } from "./recording-shared";
 import { TalkBackModeSelect, TalkBackOverlay, useTalkBackReview } from "./talkback-review-panel";
-import { localeLabel } from "../lib/locale-label";
+import { localeLabel, supportedLocaleChoice } from "../lib/locale-label";
 
 const routeApi = getRouteApi("/devices/$deviceId");
 
@@ -70,7 +70,6 @@ export function DevicePage() {
   const setAppIdentifier = (value: string) =>
     queryClient.setQueryData(["device-app-choice", deviceId], value);
   const [localeSuccess, setLocaleSuccess] = useState<string>();
-  const [selectedLocale, setSelectedLocale] = useState("");
   const localeSelectionRef = useRef({ serial: "", packageName: "" });
   const device = useQuery({
     queryKey: deviceQueryKeys.device(deviceId),
@@ -107,6 +106,8 @@ export function DevicePage() {
     enabled: Boolean(device.data?.serial && appIdentifier && deviceService.listAppLocales),
     retry: false,
   });
+  localeSelectionRef.current = { serial: device.data?.serial ?? "", packageName: appIdentifier };
+  useEffect(() => setLocaleSuccess(undefined), [deviceId, appIdentifier]);
   const localeChange = useMutation({
     mutationFn: ({
       locale,
@@ -117,15 +118,15 @@ export function DevicePage() {
       serial: string;
       packageName: string;
     }) => deviceService.setAppLocale!(serial, packageName, locale),
-    onSuccess: (result, variables) => {
+    onSuccess: async (result, variables) => {
       if (
         localeSelectionRef.current.serial !== variables.serial ||
         localeSelectionRef.current.packageName !== variables.packageName
       )
         return;
       setLiveAttempt((value) => value + 1);
-      setSelectedLocale(variables.locale);
-      setLocaleSuccess(result.observedLocale ?? "Locale updated");
+      setLocaleSuccess(result.observedLocale ?? variables.locale);
+      await appLocales.refetch();
     },
   });
   const target = useQuery({
@@ -401,7 +402,6 @@ export function DevicePage() {
                         value={appIdentifier}
                         onChange={(value) => {
                           setAppIdentifier(value);
-                          setSelectedLocale("");
                           setLocaleSuccess(undefined);
                           localeSelectionRef.current = {
                             serial: device.data!.serial,
@@ -439,7 +439,14 @@ export function DevicePage() {
                         <SelectField
                           label="Language"
                           value={
-                            localeChange.isPending ? localeChange.variables.locale : selectedLocale
+                            localeChange.isPending &&
+                            localeChange.variables.serial === device.data.serial &&
+                            localeChange.variables.packageName === appIdentifier
+                              ? localeChange.variables.locale
+                              : supportedLocaleChoice(
+                                  appLocales.data.currentLocale,
+                                  appLocales.data.locales,
+                                )
                           }
                           placeholder="Choose a language"
                           options={appLocales.data.locales.map((locale) => ({

@@ -17,6 +17,13 @@ export type CanonicalJob = {
   frameCount?: number;
   runId?: string;
   error?: string;
+  recipeSnapshot?: {
+    steps?: readonly {
+      kind?: string;
+      check?: { id?: string; title?: string };
+    }[];
+  };
+  artifacts?: readonly { kind: string; data?: unknown }[];
 };
 
 export function parseCanonicalJob(value: unknown): CanonicalJob | undefined {
@@ -39,6 +46,38 @@ export function parseCanonicalJob(value: unknown): CanonicalJob | undefined {
   }
   if (job.runId !== undefined && typeof job.runId !== "string") return undefined;
   if (job.error !== undefined && typeof job.error !== "string") return undefined;
+  if (
+    job.recipeSnapshot !== undefined &&
+    (!job.recipeSnapshot ||
+      typeof job.recipeSnapshot !== "object" ||
+      Array.isArray(job.recipeSnapshot) ||
+      !Array.isArray((job.recipeSnapshot as { steps?: unknown }).steps) ||
+      (job.recipeSnapshot as { steps: unknown[] }).steps.some(
+        (step) =>
+          !step ||
+          typeof step !== "object" ||
+          ((step as { kind?: unknown }).kind !== undefined &&
+            typeof (step as { kind?: unknown }).kind !== "string") ||
+          ((step as { check?: unknown }).check !== undefined &&
+            (!(step as { check?: unknown }).check ||
+              typeof (step as { check?: unknown }).check !== "object" ||
+              Array.isArray((step as { check?: unknown }).check) ||
+              typeof (step as { check: { id?: unknown } }).check.id !== "string" ||
+              typeof (step as { check: { title?: unknown } }).check.title !== "string")),
+      ))
+  )
+    return undefined;
+  if (
+    job.artifacts !== undefined &&
+    (!Array.isArray(job.artifacts) ||
+      job.artifacts.some(
+        (artifact) =>
+          !artifact ||
+          typeof artifact !== "object" ||
+          typeof (artifact as { kind?: unknown }).kind !== "string",
+      ))
+  )
+    return undefined;
   return job as CanonicalJob;
 }
 
@@ -62,6 +101,7 @@ export function workflowVersionForJob(job: CanonicalJob): string {
       job.frameCount,
       job.runId,
       job.error,
+      authoredProgress(job),
     ]),
   )}`;
 }
@@ -79,6 +119,10 @@ function jobPhase(job: CanonicalJob): RunTestSnapshot["phase"] {
 function progressLabel(job: CanonicalJob, phase: RunTestSnapshot["phase"]): string {
   if (phase === "queued") return "Waiting for the selected target";
   if (phase === "running") {
+    const authored = authoredProgress(job);
+    if (authored) {
+      return `Running test · ${authored.title}`;
+    }
     return job.frameCount ? `Running test · ${job.frameCount} frames captured` : "Running test";
   }
   if (phase === "paused") return "Run paused";
@@ -86,6 +130,32 @@ function progressLabel(job: CanonicalJob, phase: RunTestSnapshot["phase"]): stri
   if (phase === "failed") return "Test failed";
   if (phase === "cancelled") return "Run cancelled";
   return `Relay reported an unknown job status: ${job.status}`;
+}
+
+function authoredProgress(
+  job: CanonicalJob,
+): { completed: number; total: number; title: string } | undefined {
+  const planned = job.recipeSnapshot?.steps
+    ?.filter((step) => step.kind === "module" && step.check?.id && step.check.title)
+    .map((step) => ({ id: step.check!.id!, title: step.check!.title! }));
+  if (!planned?.length) return undefined;
+  const completedIds = new Set(
+    (job.artifacts ?? [])
+      .filter((artifact) => artifact.kind === "campaign-check-result")
+      .flatMap((artifact) => {
+        const data = artifact.data;
+        if (!data || typeof data !== "object" || Array.isArray(data)) return [];
+        const result = data as { id?: unknown; status?: unknown };
+        return typeof result.id === "string" && result.status === "passed" ? [result.id] : [];
+      }),
+  );
+  const completed = planned.findIndex((step) => !completedIds.has(step.id));
+  const index = completed < 0 ? planned.length : completed;
+  return {
+    completed: index,
+    total: planned.length,
+    title: planned[Math.min(index, planned.length - 1)]!.title,
+  };
 }
 
 export function snapshotFromJob(input: {
@@ -121,6 +191,7 @@ export function snapshotFromJob(input: {
     });
   }
   const active = phase === "queued" || phase === "running" || phase === "paused";
+  const authored = phase === "running" ? authoredProgress(job) : undefined;
   return {
     schemaVersion: 1,
     kind: "run-test",
@@ -135,7 +206,11 @@ export function snapshotFromJob(input: {
     execution: { jobId: job.id, runId },
     progress: {
       label: progressLabel(job, phase),
-      ...(typeof job.frameCount === "number" ? { completed: job.frameCount } : {}),
+      ...(authored
+        ? { completed: authored.completed, total: authored.total }
+        : typeof job.frameCount === "number"
+          ? { completed: job.frameCount }
+          : {}),
     },
     allowedNextActions: active ? ["inspect", "cancel"] : ["inspect"],
     problems,

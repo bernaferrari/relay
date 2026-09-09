@@ -144,4 +144,16 @@ describe("TestStepEvidencePreview", () => {
     });
     expect(host.textContent).toContain("Screenshot not retained");
   });
+
+  it("does not borrow another trace verdict at the same index", () => {
+    const host = render({
+      ...baseReport,
+      timeline: [
+        { id: "different-trace", index: 1, title: "Other step", state: "passed", evidenceCount: 0 },
+      ],
+    });
+    expect(host.textContent).toContain("Captured");
+    expect(host.textContent).not.toContain("Passed");
+    expect(host.textContent).not.toContain("Recorded");
+  });
 });

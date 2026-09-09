@@ -104,10 +104,7 @@ function healthMatchesListener(health, probe) {
 }
 
 async function bootstrap() {
-  const browserOrigins = resolveBrowserOrigins(
-    stateDir,
-    process.env.RELAY_ALLOWED_BROWSER_ORIGINS,
-  );
+  const browserOrigins = resolveBrowserOrigins(stateDir, process.env.RELAY_ALLOWED_BROWSER_ORIGINS);
   const serverEnvironment = { ...process.env };
   if (browserOrigins.length) {
     serverEnvironment.RELAY_ALLOWED_BROWSER_ORIGINS = browserOrigins.join(",");

@@ -386,6 +386,12 @@ export type AppMapTestStartup =
  * not translated labels, select a runtime evidence scope. */
 export type AppMapCompiledRawAccessibilityVariant = {
   id: string;
+  /** Historical provenance keeps run promotions from replacing an authored
+   * default source when both share one runtime profile. */
+  captureProvenanceKind?: "run";
+  /** Optional capture locale, retained so a later localized run cannot win
+   * default selection merely because its variant id sorts first. */
+  locale?: string;
   /** This is the explicit target/locale source key. Relay never infers a
    * locale from visible text. */
   targetProfileId: string;

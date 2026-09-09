@@ -411,7 +411,11 @@ const targetAppLocalesOutputParser = objectParser<OperationOutput<"target.app.lo
     if (!Array.isArray(input.locales)) fail("target app locales", "must be an array");
     for (const locale of input.locales) string(locale, "target app locale");
     if (input.currentLocale !== undefined) string(input.currentLocale, "target app current locale");
-    if (input.source !== undefined && input.source !== "android-locale-manager" && input.source !== "android-device-locale")
+    if (
+      input.source !== undefined &&
+      input.source !== "android-locale-manager" &&
+      input.source !== "android-device-locale"
+    )
       fail("target app locale source", "must be an Android locale source");
   },
 );

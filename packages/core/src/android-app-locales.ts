@@ -82,7 +82,13 @@ export async function listAndroidAppLocales(
   const aapt2 = await resolveAndroidSdkTool("aapt2");
   const adb = await resolveAndroidSdkTool("adb");
   const current = await execFileAsync(adb, [
-    "-s", serial, "shell", "cmd", "locale", "get-app-locales", packageName,
+    "-s",
+    serial,
+    "shell",
+    "cmd",
+    "locale",
+    "get-app-locales",
+    packageName,
   ]).catch(() => ({ stdout: "" }));
   let currentLocale = parseAndroidLocaleOutput(String(current.stdout ?? ""));
   let source: "android-locale-manager" | "android-device-locale" | undefined = currentLocale
@@ -90,7 +96,12 @@ export async function listAndroidAppLocales(
     : undefined;
   if (!currentLocale) {
     const device = await execFileAsync(adb, [
-      "-s", serial, "shell", "cmd", "locale", "get-device-locale",
+      "-s",
+      serial,
+      "shell",
+      "cmd",
+      "locale",
+      "get-device-locale",
     ]).catch(() => ({ stdout: "" }));
     currentLocale = parseAndroidLocaleOutput(String(device.stdout ?? ""));
     if (currentLocale) source = "android-device-locale";

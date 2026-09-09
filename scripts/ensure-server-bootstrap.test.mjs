@@ -182,7 +182,10 @@ test("watcher excludes tests and fixtures while accepting the previous authorize
     "--port",
     String(port),
   ].join(" ");
-  assert.equal(isExactRelayWatcher(identity(101, 1, legacy), { root, tsx, port, nodeExecutable }), true);
+  assert.equal(
+    isExactRelayWatcher(identity(101, 1, legacy), { root, tsx, port, nodeExecutable }),
+    true,
+  );
   assert.equal(
     isExactRelayWatcher(identity(102, 1, `${legacy} --exclude ../core/src/**/*.test.*`), {
       root,

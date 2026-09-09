@@ -355,7 +355,14 @@ export function scopeRawSourcesToRuntimeVariant(input: {
   const selectedVariants = knownVariants.filter((variant) =>
     variantMatchesRawTargetProfile(variant, selectedProfile),
   );
-  const selected = selectedVariants[0];
+  // A run promotion is evidence for the run's locale, not a replacement for
+  // the authored/default source. When several captures share one runtime
+  // profile, keep the locale-neutral authored Variant as the default. A
+  // localized Variant remains in the ledger and can still be selected by an
+  // explicit source/profile binding.
+  const selected =
+    selectedVariants.find((variant) => variant.captureProvenanceKind !== "run") ??
+    selectedVariants[0];
 
   const stable = stableSelector(input.target);
   const selectedSources = sources.filter(

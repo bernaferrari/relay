@@ -177,10 +177,11 @@ export function TestPage() {
       }
       const runId = state.run?.runId;
       if (runId && startedForTestId.current === testIdRef.current) {
+        setSettingsOpen(false);
         setShowRecording(false);
         setPinnedRunId(runId);
         void navigate({
-          search: (previous) => ({ ...previous, run: runId }),
+          search: (previous) => ({ ...previous, setup: undefined, run: runId }),
           replace: true,
         });
       }
@@ -333,6 +334,18 @@ export function TestPage() {
       <RecordingProblem
         error={test.error ?? targets.error ?? start.error}
         recovery={start.data?.recovery}
+        action={
+          start.data?.recovery?.sourceCode === "raw-evidence-variant-recapture-required" ? (
+            <Button
+              nativeButton={false}
+              variant="outline"
+              size="sm"
+              render={<Link to="/tests/$testId/edit" params={{ testId }} />}
+            >
+              Review steps
+            </Button>
+          ) : undefined
+        }
         onRetry={() => {
           void test.refetch();
           void targets.refetch();

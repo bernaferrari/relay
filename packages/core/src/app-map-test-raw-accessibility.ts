@@ -41,6 +41,8 @@ function sourceVariant(
   const profile = appMapRuntimeTargetProfileFromSaved(variant.targetProfile);
   return {
     id: variant.id,
+    ...(variant.captureProvenance?.kind === "run" ? { captureProvenanceKind: "run" as const } : {}),
+    ...(variant.captureProvenance?.locale ? { locale: variant.captureProvenance.locale } : {}),
     targetProfileId: profile.id,
     targetId: profile.targetId,
     platform: profile.platform,
