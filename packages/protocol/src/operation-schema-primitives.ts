@@ -256,7 +256,7 @@ export const authoringRecordingEdit = z.discriminatedUnion("kind", [
     .strict(),
   z
     .object({
-      kind: z.literal("replace"),
+      kind: z.enum(["replace", "insert-before"]),
       actionId: identifier("Authoring action identifier"),
       interaction: authoringInteraction,
     })

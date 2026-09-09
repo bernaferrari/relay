@@ -15,7 +15,7 @@ import type { Recipe } from "./recipes.js";
 import { replayInputFromPersistedRun } from "./session-job-factory.js";
 import { enqueueJob } from "./session.js";
 
-function fixture() {
+function fixture(originApplication?: string) {
   const root: Recipe = {
     id: "app-map:settings:test:smoke:root",
     title: "Smoke",
@@ -42,6 +42,7 @@ function fixture() {
       destinationProofCount: 0,
     },
     startup: { mode: "cold" },
+    ...(originApplication ? { originApplication } : {}),
   } satisfies AppMapCompiledTest;
   const recipeGraph = { [root.id]: root };
   const preflight: OfflineTestPreflightReport = {
@@ -321,5 +322,14 @@ test("the canonical queue rejects an unscoped historical Test even after a malfo
           }),
       ),
     /needs review/u,
+  );
+});
+
+test("packet attribution binds the validated Test origin even without explicit app steps", async () => {
+  const { proofApplicationId } = await import("./run-evidence-network.js");
+  const { source } = fixture("com.android.settings");
+  assert.equal(
+    proofApplicationId(source as unknown as import("./session.js").TestJob),
+    "com.android.settings",
   );
 });

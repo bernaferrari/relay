@@ -387,10 +387,11 @@ type ParsedPacket = {
 type ParsedCapture = {
   packets: ParsedPacket[];
   dropped: number;
+  skippedNonIp?: number;
   parseFailure?: string;
 };
 
-function parseEthernetPacket(frame: Buffer, at: number): ParsedPacket | undefined {
+function parseEthernetPacket(frame: Buffer, at: number): ParsedPacket | null | undefined {
   if (frame.length < 14) return undefined;
   let etherType = frame.readUInt16BE(12);
   let offset = 14;
@@ -416,7 +417,15 @@ function parseEthernetPacket(frame: Buffer, at: number): ParsedPacket | undefine
     destination = addressV6(frame, offset + 24);
     offset += 40;
   } else {
-    return undefined;
+    // ARP is normal neighbour discovery, not a corrupt IP packet. Validate
+    // its declared address sizes before excluding it from transport flows.
+    if (
+      etherType === 0x0806 &&
+      (frame.length < offset + 8 ||
+        frame.length < offset + 8 + 2 * (frame[offset + 4]! + frame[offset + 5]!))
+    )
+      return undefined;
+    return null;
   }
   if (transport !== 6 && transport !== 17) {
     return {
@@ -496,6 +505,8 @@ function parsePcap(bytes: Buffer): ParsedCapture {
   const nanos = little ? littleMagic === 0xa1b23c4d : bigMagic === 0xa1b23c4d;
   const packets: ParsedPacket[] = [];
   let dropped = 0;
+  let skippedNonIp = 0;
+  let parseFailure: string | undefined;
   let offset = 24;
   while (offset < bytes.length) {
     if (offset + 16 > bytes.length) {
@@ -522,19 +533,15 @@ function parsePcap(bytes: Buffer): ParsedCapture {
       frame,
       seconds * 1_000 + fraction / (nanos ? 1_000_000 : 1_000),
     );
-    if (!packet) {
+    if (packet === null) skippedNonIp += 1;
+    else if (!packet) {
       dropped += 1;
-      return {
-        packets,
-        dropped,
-        parseFailure: "Emulator packet capture contains an unsupported or malformed frame",
-      };
-    }
-    if (packets.length >= MAX_PARSED_PACKETS) dropped += 1;
+      parseFailure = "Emulator packet capture contains a malformed Ethernet or IP frame";
+    } else if (packets.length >= MAX_PARSED_PACKETS) dropped += 1;
     else packets.push(packet);
     offset += 16 + capturedLength;
   }
-  return { packets, dropped };
+  return { packets, dropped, skippedNonIp, ...(parseFailure ? { parseFailure } : {}) };
 }
 
 function attribution(
@@ -620,6 +627,11 @@ function summarizeCapture(input: {
   }
   const dropped = parsed.dropped;
   const limitations = [
+    ...(parsed.skippedNonIp
+      ? [
+          `Skipped ${parsed.skippedNonIp} non-IP Ethernet frame(s), including neighbour discovery; these are not transport flows`,
+        ]
+      : []),
     "The emulator console captures only QEMU cellular/WAN traffic on Emulator 36.5 and newer; netsim Wi-Fi traffic may be absent",
     "Encrypted HTTP methods, status codes, headers, and bodies are not visible in packet metadata",
     ...(!locals.size

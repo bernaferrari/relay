@@ -42,6 +42,7 @@ import { replayDetail, useEvidenceObjectUrl } from "./recording-review-presentat
 import { reviewPersistence } from "../data/recording-review-persistence";
 import { tryReviewTarget } from "../data/recording-try-target";
 import { useRecordingNameDraft } from "../data/use-recording-name-draft";
+import { RecordingWaitPicker } from "./recording-wait-picker";
 import { RecordingTargetPicker } from "./recording-target-picker";
 
 type ReviewTransitionIntent =
@@ -517,17 +518,20 @@ export function ReviewRecordingPage({
             inspector={
               editing ? (
                 <aside
-                  className="flex min-w-0 flex-col gap-4 bg-card p-4 text-card-foreground"
+                  className="flex min-w-0 flex-col gap-3 px-3 py-4 text-card-foreground"
                   aria-label="Edit steps"
                 >
-                  <section className="grid gap-3.5" aria-labelledby="review-editor-title">
+                  <section className="grid gap-3" aria-labelledby="review-editor-title">
                     <div className="flex flex-wrap items-center justify-between gap-3.5">
                       <div>
-                        <h2 id="review-editor-title">
+                        <h2
+                          id="review-editor-title"
+                          className="text-xs font-medium text-muted-foreground"
+                        >
                           {selectedActions.length === 0
                             ? "Select a step"
                             : selectedActions.length === 1
-                              ? "Step details"
+                              ? `Step ${selectedIndex + 1}`
                               : `${selectedActions.length} steps selected`}
                         </h2>
                       </div>
@@ -536,7 +540,9 @@ export function ReviewRecordingPage({
                     {selectedAction ? (
                       <>
                         <Field>
-                          <FieldLabel htmlFor="review-action-intent">Instruction</FieldLabel>
+                          <FieldLabel htmlFor="review-action-intent" className="sr-only">
+                            Instruction
+                          </FieldLabel>
                           <Input
                             id="review-action-intent"
                             value={actionIntent}
@@ -544,12 +550,11 @@ export function ReviewRecordingPage({
                             maxLength={240}
                             disabled={!canEdit}
                           />
-                          <FieldDescription>
-                            Describe the outcome in plain language.
-                          </FieldDescription>
                         </Field>
                         <Button
                           size="sm"
+                          variant="secondary"
+                          className="justify-self-start"
                           onClick={() =>
                             edit({
                               kind: "rename",
@@ -565,43 +570,55 @@ export function ReviewRecordingPage({
                         >
                           Save instruction
                         </Button>
-                        {selectedAction.kind === "tap" ? (
-                          <RecordingTargetPicker
-                            controls={evidencePreview.data?.controls ?? []}
+                        <div className="flex flex-wrap items-center gap-1">
+                          {selectedAction.kind === "tap" ? (
+                            <RecordingTargetPicker
+                              controls={evidencePreview.data?.controls ?? []}
+                              canEdit={canEdit}
+                              previewUrl={evidenceUrl}
+                              onTry={(control) =>
+                                tryReviewTarget({
+                                  previewTarget: productService.previewTarget,
+                                  selectedTarget: state?.selectedTarget,
+                                  control,
+                                  confirmStartingState: async () =>
+                                    state?.selectedTarget
+                                      ? { ok: true }
+                                      : {
+                                          ok: false,
+                                          detail:
+                                            "Restore the recording Device before trying this target.",
+                                        },
+                                  observe: async () => {
+                                    if (!productService.observeTarget || !state?.selectedTarget) {
+                                      return [];
+                                    }
+                                    return productService.observeTarget(state.selectedTarget);
+                                  },
+                                })
+                              }
+                              onKeep={(target) =>
+                                edit({
+                                  kind: "replace",
+                                  actionId: selectedAction.id,
+                                  interaction: { kind: "tap", target },
+                                })
+                              }
+                            />
+                          ) : null}
+                          <RecordingWaitPicker
                             canEdit={canEdit}
-                            previewUrl={evidenceUrl}
-                            onTry={(control) =>
-                              tryReviewTarget({
-                                previewTarget: productService.previewTarget,
-                                selectedTarget: state?.selectedTarget,
-                                control,
-                                confirmStartingState: async () =>
-                                  state?.selectedTarget
-                                    ? { ok: true }
-                                    : {
-                                        ok: false,
-                                        detail:
-                                          "Restore the recording Device before trying this target.",
-                                      },
-                                observe: async () => {
-                                  if (!productService.observeTarget || !state?.selectedTarget) {
-                                    return [];
-                                  }
-                                  return productService.observeTarget(state.selectedTarget);
-                                },
-                              })
-                            }
-                            onKeep={(target) =>
+                            onInsert={(interaction) =>
                               edit({
-                                kind: "replace",
+                                kind: "insert-before",
                                 actionId: selectedAction.id,
-                                interaction: { kind: "tap", target },
+                                interaction,
                               })
                             }
                           />
-                        ) : null}
+                        </div>
                         <div
-                          className="flex flex-wrap items-center gap-2"
+                          className="flex flex-wrap items-center gap-1"
                           aria-label="Reorder action"
                         >
                           <Button
@@ -686,7 +703,7 @@ export function ReviewRecordingPage({
                             <Button
                               size="sm"
                               variant="ghost"
-                              className="text-destructive"
+                              className="justify-self-start text-muted-foreground hover:text-destructive"
                               disabled={!canEdit}
                             />
                           }

@@ -152,7 +152,7 @@ export function replayDetail(
   if (outcome === "passed" && canApprove) {
     return "Relay verified this exact reviewed version. It can now be saved.";
   }
-  if (outcome === "passed") return "Relay verified this exact reviewed version.";
+  if (outcome === "passed") return "Steps changed. Replay this version before saving.";
   if (outcome === "failed") {
     return "Relay could not verify the recorded steps. Check the Device, then replay it again.";
   }

@@ -7,7 +7,7 @@ import {
   type IosMutationOperation,
 } from "./ios-mutation-policy.js";
 import { cooperativeCheckpoint, raceCancel, throwIfCancelled } from "./control.js";
-import { withRetry } from "./retry.js";
+import { withRetry, type RetryOptions } from "./retry.js";
 import { currentTargetContext, selectedPlatform } from "./target-context.js";
 
 /** Dispatcher-private native transport; physical input stays below the exact-once dispatcher. */
@@ -52,7 +52,10 @@ export function iosNonHittablePressFields(point?: {
  * {@link controlledMutation} so a lost acknowledgement never becomes a
  * second tap, swipe, or text entry.
  */
-export async function controlled<T>(op: () => Promise<T>): Promise<T> {
+export async function controlled<T>(
+  op: () => Promise<T>,
+  retryOptions: RetryOptions = {},
+): Promise<T> {
   return withRetry(
     async () => {
       await cooperativeCheckpoint();
@@ -60,8 +63,9 @@ export async function controlled<T>(op: () => Promise<T>): Promise<T> {
       return await raceCancel(op());
     },
     {
-      attempts: Number(process.env.RELAY_RETRY_ATTEMPTS ?? 3),
-      baseDelayMs: Number(process.env.RELAY_RETRY_DELAY_MS ?? 350),
+      attempts: retryOptions.attempts ?? Number(process.env.RELAY_RETRY_ATTEMPTS ?? 3),
+      baseDelayMs: retryOptions.baseDelayMs ?? Number(process.env.RELAY_RETRY_DELAY_MS ?? 350),
+      ...(retryOptions.onRetry ? { onRetry: retryOptions.onRetry } : {}),
     },
   );
 }

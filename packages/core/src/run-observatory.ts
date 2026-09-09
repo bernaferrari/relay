@@ -227,6 +227,7 @@ function performanceSamples(
   artifacts: Array<{ kind: string; capturedAt: number; data: unknown }>,
   limit: number,
 ): RunEvidencePerformanceSample[] {
+  const startupMeasurements = new Set<string>();
   return artifacts
     .filter((artifact) =>
       ["performance-start", "performance-end", "performance-sample"].includes(artifact.kind),
@@ -243,7 +244,29 @@ function performanceSamples(
         if (value && typeof value === "object" && !Array.isArray(value)) {
           const group = record(value);
           if (group.available === false) continue;
+          const startupMeasurement =
+            key === "startup" && typeof group.lastMeasuredAt === "string"
+              ? group.lastMeasuredAt
+              : undefined;
+          const repeatedStartupMeasurement =
+            startupMeasurement !== undefined && startupMeasurements.has(startupMeasurement);
+          if (startupMeasurement !== undefined) startupMeasurements.add(startupMeasurement);
           for (const [field, measurement] of Object.entries(group)) {
+            // The Android provider reports the last app-open roundtrip on
+            // every later perf sample. Keep the first observation only so a
+            // stale startup duration cannot look like a fresh measurement.
+            if (repeatedStartupMeasurement && field === "lastDurationMs") continue;
+            // Android dumpsys cpuinfo returns zero with no matching process
+            // when the app is gone. Zero is an unavailable observation here,
+            // not evidence that the app consumed no CPU.
+            if (
+              key === "cpu" &&
+              field === "usagePercent" &&
+              measurement === 0 &&
+              Array.isArray(group.matchedProcesses) &&
+              group.matchedProcesses.length === 0
+            )
+              continue;
             if (typeof measurement === "number" && Number.isFinite(measurement)) {
               metrics[`${key}.${field}`] = measurement;
             }

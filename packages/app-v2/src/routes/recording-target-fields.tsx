@@ -11,7 +11,7 @@ export function RecordingTargetFields({
   canEdit: boolean;
   onKeep(target: StepTarget): void;
 }) {
-  const [method, setMethod] = useState("label");
+  const [method, setMethod] = useState("identifier");
   const [value, setValue] = useState("");
   const [x, setX] = useState("");
   const [y, setY] = useState("");
@@ -28,8 +28,8 @@ export function RecordingTargetFields({
           value={method}
           onChange={(event) => setMethod(event.target.value)}
         >
-          <option value="label">Accessibility label</option>
           <option value="identifier">Accessibility identifier</option>
+          <option value="label">Accessibility label</option>
           <option value="text">Visible text</option>
           <option value="point">Screen coordinates</option>
         </select>

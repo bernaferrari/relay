@@ -5,21 +5,25 @@ import type { ProductRunReportOverview } from "../data/run-report-model";
 /** A result in the test workspace. The separate report owns diagnostics. */
 export function EmbeddedRunResult({ report }: { report: ProductRunReportOverview }) {
   const passed = report.outcome === "passed";
-  const mismatch = /expect-screen:/iu.test(
-    [report.cause, ...report.timeline.map((step) => step.log)].join(" "),
-  );
+  const diagnostic = [report.cause, ...report.timeline.map((step) => step.log)].join(" ");
+  const inspectionUnavailable = /screen-inspection-unavailable:/iu.test(diagnostic);
+  const mismatch = !inspectionUnavailable && /expect-screen:/iu.test(diagnostic);
   const title = passed
     ? "Test passed"
+    : inspectionUnavailable
+      ? "Screen inspection unavailable"
+      : mismatch
+        ? "Screen didn’t match"
+        : report.outcome === "cancelled"
+          ? "Run cancelled"
+          : "Run couldn’t finish";
+  const detail = inspectionUnavailable
+    ? "Relay couldn’t read the device’s controls. Reconnect the device, then run the test again. This does not confirm a screen mismatch."
     : mismatch
-      ? "Screen didn’t match"
-      : report.outcome === "cancelled"
-        ? "Run cancelled"
-        : "Run couldn’t finish";
-  const detail = mismatch
-    ? "Relay couldn’t recognize the taught screen in this capture. Compare it with the recorded screen before running again."
-    : passed
-      ? undefined
-      : "Open the full report to inspect where the run stopped.";
+      ? "Relay couldn’t recognize the taught screen in this capture. Compare it with the recorded screen before running again."
+      : passed
+        ? undefined
+        : "Open the full report to inspect where the run stopped.";
   const frame = report.evidence
     .find((section) => section.id === "screenshot")
     ?.items.filter((item) => item.media)

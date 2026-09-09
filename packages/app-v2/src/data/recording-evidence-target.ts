@@ -51,11 +51,19 @@ export function projectRecordingEvidenceControls(
   nodes: readonly Record<string, unknown>[] | undefined,
 ): RecordingEvidenceControl[] {
   const controls: RecordingEvidenceControl[] = [];
+  const identifierCounts = new Map<string, number>();
+  for (const node of nodes ?? []) {
+    if (node.visibleToUser === false || !rectOf(node.rect)) continue;
+    const id = text(node.identifier);
+    if (id) identifierCounts.set(id, (identifierCounts.get(id) ?? 0) + 1);
+  }
   for (const [index, node] of (nodes ?? []).entries()) {
     if (node.visibleToUser === false) continue;
     const rect = rectOf(node.rect);
     if (!rect) continue;
-    const identifier = text(node.identifier);
+    const rawIdentifier = text(node.identifier);
+    const identifier =
+      rawIdentifier && identifierCounts.get(rawIdentifier) === 1 ? rawIdentifier : undefined;
     const label = text(node.label);
     const value = text(node.text ?? node.value);
     if (!identifier && !label && !value) continue;
@@ -85,7 +93,7 @@ export function projectRecordingEvidenceControls(
   );
 }
 
-/** Smallest control that contains the click. */
+/** Prefer a unique identifier under the click, then the smallest named control. */
 export function pickRecordingEvidenceControl(
   controls: readonly RecordingEvidenceControl[],
   point: { x: number; y: number },
@@ -95,7 +103,9 @@ export function pickRecordingEvidenceControl(
   for (const control of controls) {
     if (!contains(control.rect, point)) continue;
     const next = control.rect.width * control.rect.height;
-    if (next < area) {
+    const stable = Boolean(control.target.identifier);
+    const currentStable = Boolean(match?.target.identifier);
+    if (!match || (stable && !currentStable) || (stable === currentStable && next < area)) {
       match = control;
       area = next;
     }

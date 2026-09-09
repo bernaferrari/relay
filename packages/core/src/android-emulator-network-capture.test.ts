@@ -862,3 +862,56 @@ test(
     }
   },
 );
+
+test("non-IP Ethernet frames do not discard later TCP evidence", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "relay-pcap-non-ip-"));
+  try {
+    const commands: string[][] = [];
+    const handle = await startAndroidEmulatorNetworkCapture(
+      { runId: "run-non-ip", serial: "emulator-5566", avdName: "medium_phone" },
+      runtime(directory, commands, 1000),
+    );
+    const arp = Buffer.alloc(42);
+    arp.writeUInt16BE(0x0806, 12);
+    arp[18] = 6;
+    arp[19] = 4;
+    await writeFile(handle.sourcePath, Buffer.concat([pcapForFrame(arp), tcpPcap().subarray(24)]));
+    const result = await stopAndroidEmulatorNetworkCapture(
+      handle,
+      {},
+      runtime(directory, commands, 2000),
+    );
+    assert.equal(result.summary.parseFailure, undefined);
+    assert.equal(result.summary.packets, 1);
+    assert.equal(result.summary.flows[0]?.protocol, "tls");
+    assert.match(result.summary.limitations.join(" "), /1 non-IP Ethernet frame/u);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("malformed frame reports partial evidence but does not discard later valid packets", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "relay-pcap-malformed-frame-"));
+  try {
+    const commands: string[][] = [];
+    const handle = await startAndroidEmulatorNetworkCapture(
+      { runId: "run-malformed-frame", serial: "emulator-5566", avdName: "medium_phone" },
+      runtime(directory, commands, 1000),
+    );
+    await writeFile(
+      handle.sourcePath,
+      Buffer.concat([pcapForFrame(Buffer.alloc(5)), tcpPcap().subarray(24)]),
+    );
+    const result = await stopAndroidEmulatorNetworkCapture(
+      handle,
+      {},
+      runtime(directory, commands, 2000),
+    );
+    assert.match(result.summary.parseFailure?.message ?? "", /malformed Ethernet or IP frame/u);
+    assert.equal(result.summary.packets, 1);
+    assert.equal(result.summary.dropped, 1);
+    assert.equal(result.summary.flows[0]?.protocol, "tls");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});

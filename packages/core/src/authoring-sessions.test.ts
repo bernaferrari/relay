@@ -2024,3 +2024,70 @@ test("raw Takes preserve append-only source facts across review edits", async ()
     assert.equal(session.take?.rawCaptureVersion, AUTHORING_RAW_CAPTURE_VERSION);
   });
 });
+
+test("insert-before creates an immutable unproved action without changing the App Map", async () => {
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    let session = await createReadySession(store, runtime, appMapId);
+    session = await store.start(session.id, runtime);
+    session = await store.interact(
+      session.id,
+      { kind: "tap", target: { label: "Start" } },
+      runtime,
+    );
+    session = await store.interact(session.id, { kind: "tap", target: { label: "Stop" } }, runtime);
+    session = await store.stop(session.id, runtime);
+    const before = structuredClone(session.take!.revisions.at(-1)!);
+    const mapBefore = await readAppMap("project-a", appMapId);
+    const stop = before.actions.at(-1)!;
+    session = await store.edit(session.id, {
+      kind: "insert-before",
+      actionId: stop.id,
+      interaction: {
+        kind: "steps",
+        label: "Wait for timer",
+        steps: [
+          { kind: "wait-for", id: stop.steps[0]!.id, target: { label: "Stop" }, timeoutMs: 10000 },
+        ],
+      },
+    });
+    const after = session.take!.revisions.at(-1)!;
+    assert.equal(after.actions.length, before.actions.length + 1);
+    assert.deepEqual(
+      after.actions
+        .filter((action) => before.actions.some((old) => old.id === action.id))
+        .map((action) => action.id),
+      before.actions.map((action) => action.id),
+    );
+    const inserted = after.actions.at(-2)!;
+    assert.equal(after.actions.at(-1)!.id, stop.id);
+    assert.equal(inserted.steps[0]?.kind, "wait-for");
+    assert.notEqual(inserted.steps[0]?.id, stop.steps[0]?.id);
+    assert.equal(inserted.source, "manual");
+    assert.deepEqual(inserted.evidenceIds, []);
+    assert.ok(
+      after.actions.every((action) => !action.proofStatus && !action.entranceObservationId),
+    );
+    assert.equal(after.revision, before.revision + 1);
+    assert.deepEqual(
+      session.take!.revisions.find((revision) => revision.revision === before.revision),
+      before,
+    );
+    assert.deepEqual(await readAppMap("project-a", appMapId), mapBefore);
+    await assert.rejects(
+      store.edit(session.id, {
+        kind: "insert-before",
+        actionId: "unknown",
+        interaction: { kind: "wait", ms: 5000 },
+      }),
+      /outside this Take/u,
+    );
+    await assert.rejects(
+      store.edit(session.id, {
+        kind: "insert-before",
+        actionId: stop.id,
+        interaction: { kind: "observe" },
+      }),
+      /replayable step/u,
+    );
+  });
+});

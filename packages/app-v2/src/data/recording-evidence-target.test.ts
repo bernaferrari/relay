@@ -70,3 +70,29 @@ describe("recording evidence target pick", () => {
     ).toEqual(["English", "Preferred language", "Language"]);
   });
 });
+
+it("picks a uniquely identified parent before a translated text child", () => {
+  const controls = projectRecordingEvidenceControls([
+    { identifier: "app:id/settings", rect: { x: 0, y: 0, width: 300, height: 60 } },
+    { text: "設定", rect: { x: 10, y: 10, width: 60, height: 24 } },
+  ]);
+  expect(pickRecordingEvidenceControl(controls, { x: 20, y: 20 })?.target).toEqual({
+    identifier: "app:id/settings",
+  });
+});
+
+it("does not offer repeated resource IDs as unique bindings", () => {
+  const controls = projectRecordingEvidenceControls([
+    {
+      identifier: "android:id/title",
+      label: "Internet",
+      rect: { x: 0, y: 0, width: 300, height: 60 },
+    },
+    {
+      identifier: "android:id/title",
+      label: "Bluetooth",
+      rect: { x: 0, y: 70, width: 300, height: 60 },
+    },
+  ]);
+  expect(controls.map((c) => c.target)).toEqual([{ label: "Internet" }, { label: "Bluetooth" }]);
+});

@@ -38,6 +38,7 @@ import {
   type DestinationSurveyDependencies,
 } from "./destination-survey.js";
 import { rethrowIosMutationOutcomeUnknown } from "./ios-mutation-policy.js";
+import { isTransientError } from "./retry.js";
 import type { DestinationRepairHint } from "./repair-proposal.js";
 import {
   getRecipeAndroidLocalization,
@@ -114,6 +115,8 @@ type ExpectScreenDependencies = {
     ctx: RecipeStepContext,
     nodes: SnapshotNode[],
   ) => Promise<RecipeAndroidLocalization | undefined>;
+  /** Test seam for the bounded semantic re-observation after a transient AX failure. */
+  observeSnapshot?: (device: Device) => Promise<SnapshotNode[]>;
 };
 function ownsAndroidDestinationEvidence(
   step: Extract<RecipeStep, { kind: "expect-screen" }>,
@@ -135,19 +138,34 @@ async function observeDestinationAttempt(
   device: Device,
   reusable: FreshDeviceObservation | undefined,
   captureRaster: (() => Promise<Awaited<ReturnType<typeof captureScreenshot>>>) | undefined,
+  observeSnapshot: (device: Device) => Promise<SnapshotNode[]> = (target) =>
+    snapshot(target, { retryAttempts: 1 }),
 ): Promise<{
   nodes: SnapshotNode[];
   observedAt: number;
+  inspectionUnavailable?: boolean;
   screenshot?: Awaited<ReturnType<typeof captureScreenshot>>;
 }> {
   const raster = captureRaster?.().then(
     (screenshot) => ({ screenshot }),
     (error: unknown) => ({ error }),
   );
-  const semantics = (reusable?.nodes ? Promise.resolve(reusable.nodes) : snapshot(device)).then(
-    (nodes) => ({ nodes }),
-    (error: unknown) => ({ error }),
-  );
+  const semantics = (async () => {
+    if (reusable?.nodes) return { nodes: reusable.nodes };
+    try {
+      return { nodes: await observeSnapshot(device) };
+    } catch (error) {
+      // A single transient AX timeout must not consume the normal three-read
+      // budget. Re-observe once through the same transport, then fail closed
+      // with an empty tree if the target remains unavailable.
+      if (!isTransientError(error)) return { error };
+      try {
+        return { nodes: await observeSnapshot(device) };
+      } catch (retryError) {
+        return { error: retryError };
+      }
+    }
+  })();
   const [semanticResult, rasterResult] = await Promise.all([
     semantics,
     raster ?? Promise.resolve({ screenshot: undefined }),
@@ -156,10 +174,12 @@ async function observeDestinationAttempt(
     throw semanticResult.error;
   }
   if ("error" in rasterResult && isCancellation(rasterResult.error)) throw rasterResult.error;
-  const nodes = "nodes" in semanticResult ? semanticResult.nodes : [];
+  const nodes =
+    "nodes" in semanticResult && Array.isArray(semanticResult.nodes) ? semanticResult.nodes : [];
   return {
     nodes,
     observedAt: reusable?.observedAt ?? now(),
+    ...(nodes.length === 0 ? { inspectionUnavailable: true } : {}),
     ...("screenshot" in rasterResult && rasterResult.screenshot
       ? { screenshot: rasterResult.screenshot }
       : {}),
@@ -205,6 +225,7 @@ export async function runExpectScreenStep(
   let mismatchObservedFingerprint: string | undefined;
   let mismatchNodeCount = 0;
   let mismatchResolutionMethod = "a11y";
+  let inspectionUnavailable = false;
   do {
     // A recovery mutation makes pixels from the preceding attempt stale.
     const reusable = firstAttempt ? priorObservation : undefined;
@@ -222,9 +243,11 @@ export async function runExpectScreenStep(
               includeScreenMatch: false,
             })
         : undefined,
+      dependencies.observeSnapshot,
     );
     verifiedScreenshot = reusable?.screenshot ?? attempt.screenshot;
     const nodes = attempt.nodes;
+    inspectionUnavailable = attempt.inspectionUnavailable === true;
     const observedAt = attempt.observedAt;
     const chrome = describeSnapshotChrome(nodes);
     observedTitle = chrome.header ?? chrome.app ?? "unknown";
@@ -320,7 +343,10 @@ export async function runExpectScreenStep(
       );
     }
     if (visualFingerprint) mismatchResolutionMethod = "a11y+visual";
-    if (screenIdentityMatches(expected, observed.fingerprint, visualFingerprint)) {
+    if (
+      !inspectionUnavailable &&
+      screenIdentityMatches(expected, observed.fingerprint, visualFingerprint)
+    ) {
       reached = true;
       verifiedNodes = nodes;
       verifiedObservedAt = observedAt;
@@ -374,6 +400,11 @@ export async function runExpectScreenStep(
       capturedAt: now(),
       data: { schemaVersion: 1, ...hint },
     });
+    if (inspectionUnavailable) {
+      throw new Error(
+        `screen-inspection-unavailable: accessibility inspection unavailable; screen identity unproven (expected “${step.screenTitle}”)`,
+      );
+    }
     if (step.returnRequirement) {
       throw new Error(
         `return-edge ${step.returnRequirement.connectionId}: reviewed inverse is required for ${step.returnRequirement.destinationScreenId} → ${step.returnRequirement.fromScreenId} (observed “${observedTitle}”; no Back was attempted)`,
@@ -403,6 +434,7 @@ export async function runExpectScreenStep(
                   includeScreenMatch: false,
                 })
             : undefined,
+          dependencies.observeSnapshot,
         );
         return {
           nodes: observation.nodes,

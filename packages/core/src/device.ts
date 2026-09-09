@@ -216,7 +216,13 @@ export async function sleep(ms: number, device: Device = createDevice()): Promis
 
 export async function snapshot(
   device: Device,
-  opts?: { interactiveOnly?: boolean; raw?: boolean; timeoutMs?: number },
+  opts?: {
+    interactiveOnly?: boolean;
+    raw?: boolean;
+    timeoutMs?: number;
+    /** Override the normal read retry budget for latency-sensitive callers. */
+    retryAttempts?: number;
+  },
 ): Promise<SnapshotNode[]> {
   const run = () =>
     device.capture.snapshot({
@@ -235,7 +241,10 @@ export async function snapshot(
   if (context?.kind === "device" && context.platform === "ios") {
     return await captureIosSnapshot(context, opts?.interactiveOnly ?? false, run, opts?.timeoutMs);
   }
-  const result = await controlled(run);
+  const result = await controlled(
+    run,
+    opts?.retryAttempts !== undefined ? { attempts: opts.retryAttempts } : {},
+  );
   return (result.nodes ?? []) as SnapshotNode[];
 }
 

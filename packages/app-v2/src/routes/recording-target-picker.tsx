@@ -63,7 +63,7 @@ export function RecordingTargetPicker({
     <>
       <Button
         size="sm"
-        variant="outline"
+        variant="ghost"
         disabled={!canEdit}
         onClick={() => {
           setOpen(true);

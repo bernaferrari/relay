@@ -2042,3 +2042,31 @@ test("full-page recording flags survive the canonical interaction schema", () =>
   };
   assert.deepEqual(operationDefinition("authoring.session.interact").input.parse(input), input);
 });
+
+test("recording insertion reuses the validated interaction contract", () => {
+  const input = {
+    sessionId: "session",
+    edit: {
+      kind: "insert-before",
+      actionId: "stop",
+      interaction: {
+        kind: "steps",
+        label: "Wait for timer",
+        steps: [{ kind: "wait-for", target: { label: "Stop" }, timeoutMs: 10000 }],
+      },
+    },
+  };
+  assert.deepEqual(operationDefinition("authoring.take.edit").input.parse(input), input);
+  assert.throws(() =>
+    operationDefinition("authoring.take.edit").input.parse({
+      ...input,
+      edit: { ...input.edit, actionId: "" },
+    }),
+  );
+  assert.throws(() =>
+    operationDefinition("authoring.take.edit").input.parse({
+      ...input,
+      edit: { ...input.edit, interaction: { kind: "unsupported" } },
+    }),
+  );
+});

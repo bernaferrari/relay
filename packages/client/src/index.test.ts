@@ -497,3 +497,69 @@ test("HTTP errors prefer doctor check text over 503 Service Unavailable", async 
       !/Service Unavailable/.test(error.message),
   );
 });
+
+test("app launch has a dedicated acknowledgement budget while ordinary requests stay short", async (t) => {
+  const budgets: number[] = [];
+  t.mock.method(AbortSignal, "timeout", (ms: number) => {
+    budgets.push(ms);
+    return new AbortController().signal;
+  });
+  const connection = {
+    url: "https://relay.test",
+    auth: { type: "none" as const },
+    organizationId: "local",
+    projectId: "default",
+    actorId: "human:test",
+    actorKind: "human" as const,
+  };
+  const fetcher: typeof fetch = async (input) =>
+    new Response(
+      JSON.stringify(
+        String(input).endsWith("/device/app/launch")
+          ? {
+              launched: {
+                serial: "emulator-5554",
+                app: "com.google.android.deskclock",
+                platform: "android",
+                launchedAt: 1,
+              },
+              observed: { matched: false },
+            }
+          : health,
+      ),
+    );
+  const client = new RelayClient(connection, { fetch: fetcher });
+  const result = await client.invoke("target.app.launch", {
+    serial: "emulator-5554",
+    app: "com.google.android.deskclock",
+  });
+  assert.equal(result.launched.app, "com.google.android.deskclock");
+  await client.invoke("system.health.get", {});
+  const explicit = new RelayClient(connection, { fetch: fetcher, timeoutMs: 1234 });
+  await explicit.invoke("target.app.launch", {
+    serial: "emulator-5554",
+    app: "com.google.android.deskclock",
+  });
+  assert.deepEqual(budgets, [90000, 20000, 1234]);
+});
+
+test("a rejected app launch remains a failure under its longer deadline", async () => {
+  const client = new RelayClient(
+    {
+      url: "https://relay.test",
+      auth: { type: "none" },
+      organizationId: "local",
+      projectId: "default",
+      actorId: "human:test",
+      actorKind: "human",
+    },
+    {
+      fetch: async () =>
+        new Response(JSON.stringify({ error: "App is not installed" }), { status: 409 }),
+    },
+  );
+  await assert.rejects(
+    client.invoke("target.app.launch", { serial: "emulator-5554", app: "missing" }),
+    (error: unknown) => error instanceof ApiError && error.status === 409,
+  );
+});

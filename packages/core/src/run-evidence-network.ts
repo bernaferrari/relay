@@ -1,3 +1,4 @@
+import { parseAppMapTestExecutionIntentArtifact } from "./app-map-test-execution-intent.js";
 import type { AndroidPacketCaptureProvenance, EvidenceConsentGrant } from "@relay/protocol";
 import { join } from "node:path";
 import { hasSensitiveEvidenceConsent } from "./evidence-policy.js";
@@ -24,7 +25,24 @@ export function proofApplicationId(job: TestJob): string | undefined {
     const value = artifact.data.applicationId;
     if (typeof value === "string" && value.trim()) return value.trim();
   }
-  return undefined;
+  for (const artifact of job.artifacts) {
+    const application = parseAppMapTestExecutionIntentArtifact(artifact)?.plan.originApplication;
+    if (application) return application;
+  }
+  const packages = new Set<string>();
+  const recipes = job.recipeGraph
+    ? Object.values(job.recipeGraph)
+    : job.recipeSnapshot
+      ? [job.recipeSnapshot]
+      : [];
+  // Only explicit frozen app steps bind attribution. Never infer a package
+  // from display titles, URLs, foreground state, or arbitrary packet hosts.
+  for (const recipe of recipes) {
+    for (const step of recipe.steps) {
+      if (step.kind === "app" && step.app?.trim()) packages.add(step.app.trim());
+    }
+  }
+  return packages.size === 1 ? [...packages][0] : undefined;
 }
 
 export function combinedNetworkResult(

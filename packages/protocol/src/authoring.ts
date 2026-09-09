@@ -633,6 +633,7 @@ export type AuthoringRecordingEdit =
   | { kind: "remove"; actionIds: string[] }
   | { kind: "reorder"; actionIds: string[] }
   | { kind: "replace"; actionId: string; interaction: AuthoringInteraction }
+  | { kind: "insert-before"; actionId: string; interaction: AuthoringInteraction }
   | { kind: "merge"; actionIds: string[]; intent?: string }
   | { kind: "split"; actionId: string; atStep: number }
   | { kind: "rename"; actionId: string; intent: string };

@@ -234,3 +234,32 @@ test("identity is revalidated immediately before every signal", async () => {
   });
   assert.deepEqual(signals, []);
 });
+
+test("replacement owns exact dormant watchers across Node installations", () => {
+  const relay = identity(200, 100, `${nodeExecutable} src/index.ts --port ${port}`);
+  const current = identity(100, 1, watcherCommand);
+  const legacyArgs = `${tsx} watch --clear-screen=false --include ../core/src --include ../protocol/src src/index.ts --port ${port}`;
+  const vite = identity(
+    101,
+    1,
+    `/home/user/.local/share/vite-plus/js_runtime/node/24.20.0/bin/node ${legacyArgs}`,
+  );
+  const hermes = identity(102, 1, `/home/user/.hermes/node/bin/node ${legacyArgs}`);
+  const nonNode = identity(103, 1, `/usr/bin/python ${legacyArgs}`);
+  const rows = [relay, current, vite, hermes, nonNode];
+  const authorization = authorizeRelayShutdown({
+    root,
+    tsx,
+    port,
+    nodeExecutable,
+    portProbe: { known: true, pids: ["200"] },
+    relayHealth: { ok: true, product: "relay", pid: 200 },
+    leasePreparation: { allowed: true, mode: "replace-known-local-relay" },
+    processRows: rows,
+    observe: (pid) => rows.find((row) => row.pid === pid),
+  });
+  assert.deepEqual(
+    authorization.map((entry) => entry.identity.pid),
+    [200, 100, 101, 102],
+  );
+});

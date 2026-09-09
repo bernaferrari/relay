@@ -3432,17 +3432,121 @@ describe("runRecipeStep expect-screen", () => {
           },
           {
             log: () => {},
+            job: { id: "retry-ax", platform: "android" } as TestJob,
             runtime: {},
             observeVisualFingerprint: async () => "newer-pixels",
           },
         ),
       ),
-      /expect-screen/u,
+      /screen-inspection-unavailable:|expect-screen/u,
     );
     assert.equal(snapshotCalls, 1, "post-tap expect must not overlap the old XCTest read");
 
     releasePreTapTree({ nodes });
     await assert.rejects(delayedRead, IosSnapshotStaleAfterInputError);
+  });
+
+  it("re-observes once after a transient Android AX timeout without retrying the transport three times", async () => {
+    let snapshotCalls = 0;
+    const device = stubDevice({
+      snapshot: () => Promise.reject(new Error("unused device snapshot")),
+    });
+
+    await runWithTargetContext(
+      { kind: "device", platform: "android", serial: "android-ax-retry" },
+      () =>
+        runExpectScreenStep(
+          device,
+          {
+            kind: "expect-screen",
+            screenId: "settings",
+            screenTitle: "Settings",
+            fingerprint,
+            timeoutMs: 0,
+          },
+          {
+            log: () => {},
+            runtime: {},
+          },
+          {
+            captureScreenshot: async () => screenshot("retry"),
+            observeSnapshot: async () => {
+              snapshotCalls += 1;
+              if (snapshotCalls === 1) throw new Error("snapshot timed out");
+              return nodes;
+            },
+          },
+        ),
+    );
+
+    assert.equal(snapshotCalls, 2);
+  });
+
+  it("does not re-observe a permanent Android AX failure", async () => {
+    let snapshotCalls = 0;
+    const device = stubDevice({ snapshot: () => Promise.reject(new Error("permission denied")) });
+
+    await assert.rejects(
+      runWithTargetContext(
+        { kind: "device", platform: "android", serial: "android-ax-permanent" },
+        () =>
+          runExpectScreenStep(
+            device,
+            {
+              kind: "expect-screen",
+              screenId: "settings",
+              screenTitle: "Settings",
+              fingerprint,
+              timeoutMs: 0,
+            },
+            {
+              log: () => {},
+              job: { id: "permanent-ax", platform: "android" } as TestJob,
+              runtime: {},
+            },
+            {
+              captureScreenshot: async () => screenshot("permanent"),
+              observeSnapshot: async () => {
+                snapshotCalls += 1;
+                throw new Error("permission denied");
+              },
+            },
+          ),
+      ),
+      /screen-inspection-unavailable:.*screen identity unproven/u,
+    );
+    assert.equal(snapshotCalls, 1);
+  });
+
+  it("never accepts a visual match when the semantic tree is empty", async () => {
+    const device = stubDevice({ snapshot: () => Promise.resolve({ nodes: [] }) });
+
+    await assert.rejects(
+      runWithTargetContext(
+        { kind: "device", platform: "android", serial: "android-empty-ax" },
+        () =>
+          runExpectScreenStep(
+            device,
+            {
+              kind: "expect-screen",
+              screenId: "settings",
+              screenTitle: "Settings",
+              fingerprint,
+              timeoutMs: 0,
+            },
+            {
+              log: () => {},
+              job: { id: "empty-ax", platform: "android" } as TestJob,
+              runtime: {},
+              observeVisualFingerprint: async () => fingerprint,
+            },
+            {
+              observeSnapshot: async () => [],
+            },
+          ),
+      ),
+      /screen-inspection-unavailable:/u,
+    );
   });
 
   it("persists immutable lineage after a fresh selective-repair checkpoint matches", async () => {
@@ -3678,7 +3782,9 @@ describe("runRecipeStep expect-screen", () => {
       { kind: "device", platform: "android", serial: "visual-fallback" },
       () =>
         runExpectScreenStep(
-          stubDevice({ snapshot: () => Promise.resolve({ nodes: [] }) }),
+          stubDevice({
+            snapshot: () => Promise.resolve({ nodes: [{ role: "text", label: "other" }] }),
+          }),
           {
             kind: "expect-screen",
             screenId: "canvas",
@@ -3754,7 +3860,9 @@ describe("runRecipeStep expect-screen", () => {
     const visualFingerprint = "b".repeat(64);
     const lines: string[] = [];
     await runRecipeStep(
-      stubDevice({ snapshot: () => Promise.resolve({ nodes: [] }) }),
+      stubDevice({
+        snapshot: () => Promise.resolve({ nodes: [{ role: "text", label: "other" }] }),
+      }),
       {
         kind: "expect-screen",
         screenId: "canvas",

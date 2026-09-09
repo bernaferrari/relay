@@ -447,3 +447,36 @@ test("continuous native performance retains nested measurements without unavaila
   assert.equal(result.performance[0]?.metrics["memory.totalPssKb"], 42000);
   assert.equal(result.performance[0]?.metrics["fps.droppedFramePercent"], undefined);
 });
+
+test("performance projection does not report missing Android CPU as zero or repeat startup timing", () => {
+  const result = buildRunEvidence(
+    run({
+      artifacts: [
+        {
+          kind: "performance-sample",
+          capturedAt: 50,
+          data: {
+            metrics: {
+              startup: { available: true, lastDurationMs: 11_455, lastMeasuredAt: "open-1" },
+              cpu: { available: true, usagePercent: 0, matchedProcesses: [] },
+            },
+          },
+        },
+        {
+          kind: "performance-sample",
+          capturedAt: 60,
+          data: {
+            metrics: {
+              startup: { available: true, lastDurationMs: 11_455, lastMeasuredAt: "open-1" },
+              cpu: { available: true, usagePercent: 0, matchedProcesses: [] },
+            },
+          },
+        },
+      ],
+    }),
+  );
+  assert.equal(result.performance[0]?.metrics["cpu.usagePercent"], undefined);
+  assert.equal(result.performance[1]?.metrics["cpu.usagePercent"], undefined);
+  assert.equal(result.performance[0]?.metrics["startup.lastDurationMs"], 11_455);
+  assert.equal(result.performance[1]?.metrics["startup.lastDurationMs"], undefined);
+});

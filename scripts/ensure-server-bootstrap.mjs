@@ -8,7 +8,7 @@
  */
 import { execFileSync as nodeExecFileSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 export class EnsureServerBootstrapLockedError extends Error {
@@ -175,12 +175,21 @@ export function isExactRelayWatcher(
 ) {
   if (!identity || resolve(identity.cwd) !== resolve(join(root, "packages/server"))) return false;
   const actual = identity.command.trim().split(/\s+/u);
+  // Toolchains install independent Node binaries. A watcher belongs to this
+  // bootstrap by its exact script, arguments, port, and cwd, not by whichever
+  // Node installation happens to invoke ensure-server today.
+  const executable = actual[0];
+  if (
+    executable !== nodeExecutable &&
+    (!isAbsolute(executable ?? "") || !["node", "node.exe"].includes(basename(executable)))
+  )
+    return false;
   const expectedCommands = [
     relayWatcherArguments({ tsx, port }),
     legacyRelayWatcherArguments({ tsx, port }),
   ];
   return expectedCommands.some((expectedArgs) => {
-    const expected = [nodeExecutable, ...expectedArgs];
+    const expected = [executable, ...expectedArgs];
     return (
       actual.length === expected.length && actual.every((value, index) => value === expected[index])
     );
@@ -253,7 +262,9 @@ export function authorizeRelayShutdown({
       continue;
     const identity = observe(row.pid);
     if (!isExactRelayWatcher(identity, { root, tsx, port, nodeExecutable })) continue;
-    if (hasVerifiedLiveRelay && !isProcessAncestor(row.pid, healthPid, processRows)) continue;
+    // Dormant watchers may have lost the port race. Leaving them alive lets
+    // the next source edit replace the winning server during a device Run.
+    // Exact workspace/command identity authorizes them even without ancestry.
     authorized.push(frozenAuthorization("repo-watcher", identity));
   }
 

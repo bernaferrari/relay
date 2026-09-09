@@ -183,6 +183,7 @@ export class RelayClient {
   readonly connection: ServerConnection;
   private readonly fetcher: typeof fetch;
   private readonly timeoutMs: number;
+  private readonly launchTimeoutMs: number;
 
   constructor(connection: ServerConnection, options: RelayClientOptions = {}) {
     this.connection = normalizeConnection(connection);
@@ -191,6 +192,9 @@ export class RelayClient {
     // receiver-free even though it is stored on the client instance.
     this.fetcher = (input, init) => fetcher(input, init);
     this.timeoutMs = options.timeoutMs ?? 20_000;
+    // Cold app launch can take over 20 seconds before the OS acknowledges activation.
+    // Keep explicit caller budgets authoritative and other operations short.
+    this.launchTimeoutMs = options.timeoutMs ?? 90_000;
   }
 
   /** Authenticated binary transport for product artifacts. */
@@ -217,7 +221,7 @@ export class RelayClient {
     path: string,
     init: RequestInit = {},
     accept = "application/json",
-    options: { timeout?: boolean } = {},
+    options: { timeout?: boolean; timeoutMs?: number } = {},
   ): Promise<Response> {
     const headers = new Headers(init.headers);
     headers.set("Accept", accept);
@@ -230,7 +234,9 @@ export class RelayClient {
       headers.set("Authorization", `Bearer ${this.connection.auth.token}`);
     }
     const timeoutSignal =
-      options.timeout === false ? undefined : AbortSignal.timeout(this.timeoutMs);
+      options.timeout === false
+        ? undefined
+        : AbortSignal.timeout(options.timeoutMs ?? this.timeoutMs);
     const signal = timeoutSignal
       ? init.signal
         ? AbortSignal.any([init.signal, timeoutSignal])
@@ -243,8 +249,12 @@ export class RelayClient {
     });
   }
 
-  private async requestUnknown(path: string, init: RequestInit = {}): Promise<unknown> {
-    const response = await this.requestResponse(path, init);
+  private async requestUnknown(
+    path: string,
+    init: RequestInit = {},
+    timeoutMs?: number,
+  ): Promise<unknown> {
+    const response = await this.requestResponse(path, init, "application/json", { timeoutMs });
     const text = await response.text();
     let body: unknown;
     try {
@@ -441,11 +451,15 @@ export class RelayClient {
   ): Promise<OperationOutput<Id>> {
     const definition = operationDefinition(id);
     const request = operationRequest(id, input);
-    const body = await this.requestUnknown(request.path, {
-      ...request.init,
-      headers: this.operationHeaders(id, options),
-      ...(options.signal ? { signal: options.signal } : {}),
-    });
+    const body = await this.requestUnknown(
+      request.path,
+      {
+        ...request.init,
+        headers: this.operationHeaders(id, options),
+        ...(options.signal ? { signal: options.signal } : {}),
+      },
+      id === "target.app.launch" ? this.launchTimeoutMs : undefined,
+    );
     try {
       return definition.output.parse(body);
     } catch (error) {

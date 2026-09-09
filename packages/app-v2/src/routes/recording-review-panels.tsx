@@ -238,7 +238,7 @@ export function RecordingActionsPanel({
   let actionOrdinal = 0;
   return (
     <section
-      className="min-w-0 overflow-hidden rounded-lg border border-border bg-card text-card-foreground"
+      className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden text-card-foreground"
       aria-labelledby="recording-actions-title"
     >
       <div className="flex min-h-12 min-w-0 flex-wrap items-center justify-between gap-3.5 border-b border-border px-4 py-3">
@@ -300,7 +300,7 @@ export function RecordingActionsPanel({
       ) : null}
 
       {actions.length ? (
-        <ScrollArea className="max-h-[min(62vh,700px)]">
+        <ScrollArea className="min-h-0 flex-1">
           <ol className="px-4" aria-label="Recorded actions">
             {actions.map((step) => {
               const copy = reviewActionCopy(step);

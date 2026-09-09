@@ -90,6 +90,48 @@ export function editAuthoringTakeRevision(input: {
       actions: ordered.map((action) => invalidateAuthoringActionProof(clone(action))),
     };
   }
+  if (edit.kind === "insert-before") {
+    const anchor = requireActions([edit.actionId], 1)[0]!;
+    const baseId = `${anchor.id}-insert-${revision.revision + 1}`;
+    let actionId = baseId;
+    const existingStepIds = revision.actions.flatMap((action) =>
+      action.steps.map((step) => step.id ?? ""),
+    );
+    for (
+      let suffix = 1;
+      byId.has(actionId) || existingStepIds.some((id) => id.startsWith(`${actionId}-step-`));
+      suffix += 1
+    )
+      actionId = `${baseId}-${suffix}`;
+    const steps = stepsForInteraction(edit.interaction, actionId, input.group).map(
+      (step, index) => ({
+        ...step,
+        id: `${actionId}-step-${index + 1}`,
+      }),
+    );
+    if (!steps.length)
+      throw new AuthoringStateError("An inserted action must contain a replayable step");
+    const inserted: AuthoringAction = {
+      id: actionId,
+      source: edit.interaction.kind === "reusable" ? "reusable" : "manual",
+      // This edit has not run. Position it at the selected action without
+      // inventing execution duration, observations, or captured evidence.
+      recordedAt: anchor.startedAt,
+      startedAt: anchor.startedAt,
+      finishedAt: anchor.startedAt,
+      steps,
+      evidenceIds: [],
+      ...(edit.interaction.kind === "steps" && edit.interaction.label
+        ? { label: edit.interaction.label }
+        : {}),
+    };
+    return {
+      ...revision,
+      actions: revision.actions
+        .flatMap((action) => (action.id === anchor.id ? [inserted, action] : [action]))
+        .map(invalidateAuthoringActionProof),
+    };
+  }
   if (edit.kind === "replace") {
     requireActions([edit.actionId], 1);
     return {
