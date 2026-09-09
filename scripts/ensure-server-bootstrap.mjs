@@ -140,6 +140,29 @@ export function relayWatcherArguments({ tsx, port }) {
     "../core/src",
     "--include",
     "../protocol/src",
+    "--exclude",
+    "../core/src/**/*.test.*",
+    "--exclude",
+    "../protocol/src/**/*.test.*",
+    "--exclude",
+    "../core/src/**/fixtures/**",
+    "--exclude",
+    "../protocol/src/**/fixtures/**",
+    "src/index.ts",
+    "--port",
+    String(port),
+  ];
+}
+
+function legacyRelayWatcherArguments({ tsx, port }) {
+  return [
+    tsx,
+    "watch",
+    "--clear-screen=false",
+    "--include",
+    "../core/src",
+    "--include",
+    "../protocol/src",
     "src/index.ts",
     "--port",
     String(port),
@@ -152,10 +175,14 @@ export function isExactRelayWatcher(
 ) {
   if (!identity || resolve(identity.cwd) !== resolve(join(root, "packages/server"))) return false;
   const actual = identity.command.trim().split(/\s+/u);
-  const expected = [nodeExecutable, ...relayWatcherArguments({ tsx, port })];
-  return (
-    actual.length === expected.length && actual.every((value, index) => value === expected[index])
-  );
+  const expectedCommands = [
+    relayWatcherArguments({ tsx, port }),
+    legacyRelayWatcherArguments({ tsx, port }),
+  ];
+  return expectedCommands.some((expectedArgs) => {
+    const expected = [nodeExecutable, ...expectedArgs];
+    return actual.length === expected.length && actual.every((value, index) => value === expected[index]);
+  });
 }
 
 /**

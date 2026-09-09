@@ -166,6 +166,34 @@ test("genuine repo-local stray watchers require the exact command and cwd", () =
   );
 });
 
+test("watcher excludes tests and fixtures while accepting the previous authorized shape", () => {
+  assert.ok(relayWatcherArguments({ tsx, port }).includes("../core/src/**/*.test.*"));
+  assert.ok(relayWatcherArguments({ tsx, port }).includes("../core/src/**/fixtures/**"));
+  const legacy = [
+    nodeExecutable,
+    tsx,
+    "watch",
+    "--clear-screen=false",
+    "--include",
+    "../core/src",
+    "--include",
+    "../protocol/src",
+    "src/index.ts",
+    "--port",
+    String(port),
+  ].join(" ");
+  assert.equal(isExactRelayWatcher(identity(101, 1, legacy), { root, tsx, port, nodeExecutable }), true);
+  assert.equal(
+    isExactRelayWatcher(identity(102, 1, `${legacy} --exclude ../core/src/**/*.test.*`), {
+      root,
+      tsx,
+      port,
+      nodeExecutable,
+    }),
+    false,
+  );
+});
+
 test("a listener that appears after preflight is never signalled", async () => {
   const relay = identity(200, 100, `${nodeExecutable} server-child`);
   const authorization = Object.freeze([
