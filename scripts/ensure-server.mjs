@@ -23,6 +23,7 @@ import {
   prepareDefaultRelayStateDirectory,
   prepareLeaseForFreshServer,
 } from "./ensure-server-lease-recovery.mjs";
+import { resolveBrowserOrigins } from "./relay-browser-origins.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const port = Number(process.env.RELAY_PORT || 8787);
@@ -103,6 +104,14 @@ function healthMatchesListener(health, probe) {
 }
 
 async function bootstrap() {
+  const browserOrigins = resolveBrowserOrigins(
+    stateDir,
+    process.env.RELAY_ALLOWED_BROWSER_ORIGINS,
+  );
+  const serverEnvironment = { ...process.env };
+  if (browserOrigins.length) {
+    serverEnvironment.RELAY_ALLOWED_BROWSER_ORIGINS = browserOrigins.join(",");
+  }
   const tsx = resolveTsx();
   const stateDirectoryPreparation = prepareDefaultRelayStateDirectory({
     configuredStateDirectory: process.env.RELAY_STATE_DIR,
@@ -183,7 +192,7 @@ async function bootstrap() {
     cwd: join(root, "packages/server"),
     detached: true,
     stdio: ["ignore", logFd, logFd],
-    env: process.env,
+    env: serverEnvironment,
   });
   closeSync(logFd);
   if (!Number.isSafeInteger(child.pid))
