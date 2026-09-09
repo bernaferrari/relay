@@ -44,8 +44,14 @@ export function EvidenceImageViewer({
       >
         <DialogTrigger
           render={
-            <Button className="absolute right-3 bottom-3" variant="outline" size="sm">
-              <Expand aria-hidden="true" /> Inspect screenshot
+            <Button
+              className="absolute right-3 top-3 bg-background/70 text-muted-foreground hover:text-foreground"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Inspect screenshot"
+              title="Inspect screenshot"
+            >
+              <Expand aria-hidden="true" />
             </Button>
           }
         />

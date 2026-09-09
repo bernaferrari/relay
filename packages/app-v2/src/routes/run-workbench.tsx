@@ -150,62 +150,46 @@ export function RunWorkbench({
           actionBounds={step.actionBounds}
           beforeFramePath={step.beforeFramePath}
           fill
-        />
-        {step ? (
-          <div
-            key={step.id}
-            className="pointer-events-none absolute inset-x-3 bottom-16 z-10 flex justify-center motion-safe:animate-in motion-safe:fade-in motion-safe:duration-200"
-            role="status"
-          >
-            <div className="flex max-w-full items-center gap-2 rounded-lg bg-background/95 px-3 py-2 text-sm shadow-lg ring-1 ring-border">
-              <StepActionIcon title={step.title} />
-              <span>{step.title}</span>
+          controls={
+            <div className="flex shrink-0 items-center gap-1" aria-label="Step playback">
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                aria-label="Previous step"
+                disabled={selectedStepIndex === 0}
+                onClick={() => {
+                  setPlaying(false);
+                  onSelectStep(selectedStepIndex - 1);
+                }}
+              >
+                <ChevronLeft />
+              </Button>
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                onClick={() => {
+                  if (!playing && selectedStepIndex === report.timeline.length - 1) onSelectStep(0);
+                  setPlaying(!playing);
+                }}
+                aria-label={playing ? "Pause step playback" : "Play steps"}
+              >
+                {playing ? <Pause /> : <Play />}
+              </Button>
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                aria-label="Next step"
+                disabled={selectedStepIndex === report.timeline.length - 1}
+                onClick={() => {
+                  setPlaying(false);
+                  onSelectStep(selectedStepIndex + 1);
+                }}
+              >
+                <ChevronRight />
+              </Button>
             </div>
-          </div>
-        ) : null}
-
-        <div
-          className="flex shrink-0 items-center justify-center gap-2 border-t border-border/50 px-3 py-2"
-          aria-label="Step playback"
-        >
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            aria-label="Previous step"
-            disabled={selectedStepIndex === 0}
-            onClick={() => {
-              setPlaying(false);
-              onSelectStep(selectedStepIndex - 1);
-            }}
-          >
-            <ChevronLeft />
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => {
-              if (!playing && selectedStepIndex === report.timeline.length - 1) onSelectStep(0);
-              setPlaying(!playing);
-            }}
-            aria-label={playing ? "Pause step playback" : "Play steps"}
-          >
-            {playing ? <Pause /> : <Play />}
-            {playing ? "Pause" : "Play steps"}
-          </Button>
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            aria-label="Next step"
-            disabled={selectedStepIndex === report.timeline.length - 1}
-            onClick={() => {
-              setPlaying(false);
-              onSelectStep(selectedStepIndex + 1);
-            }}
-          >
-            <ChevronRight />
-          </Button>
-          <span className="text-xs text-muted-foreground">1 step / second</span>
-        </div>
+          }
+        />
       </div>
       <div className="flex min-h-0 min-w-0 flex-col">
         <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
@@ -392,12 +376,14 @@ function StepMedia({
   fill = false,
   actionBounds,
   beforeFramePath,
+  controls,
 }: {
   frames: readonly ReportEvidenceItem[];
   unlinked?: boolean;
   fill?: boolean;
   actionBounds?: Report["timeline"][number]["actionBounds"];
   beforeFramePath?: string;
+  controls?: ReactNode;
 }) {
   const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
   const [selected, setSelected] = useState(() => {
@@ -468,35 +454,37 @@ function StepMedia({
           </div>
         )}
       </div>
-      {frames.length > 1 ? (
-        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-5 py-3">
-          <p className="text-xs text-muted-foreground">{frame?.title}</p>
-          <div className="flex flex-wrap gap-1" aria-label="Step screenshots">
-            {frames.map((item, index) => (
-              <Button
-                key={item.id}
-                size="sm"
-                variant={index === selected ? "secondary" : "ghost"}
-                aria-label={`Screenshot ${index + 1}: ${item.title}`}
-                aria-pressed={index === selected}
-                onClick={() => {
-                  setSelected(index);
-                  setFailed(false);
-                }}
-              >
-                {item.phase
-                  ? item.phase === "before"
-                    ? "Before"
-                    : "After"
-                  : beforeFramePath
-                    ? item.id === beforeFramePath
-                      ? "Before"
-                      : frames.length === 2
-                        ? "After"
-                        : `After ${index}`
-                    : index + 1}
-              </Button>
-            ))}
+      {frames.length > 1 || controls ? (
+        <div className="flex min-h-12 shrink-0 flex-wrap items-center justify-between gap-2 border-t border-border/50 px-3 py-1.5">
+          {controls}
+          <div className="flex flex-wrap gap-0.5" aria-label="Step screenshots">
+            {frames.length > 1
+              ? frames.map((item, index) => (
+                  <Button
+                    key={item.id}
+                    size="sm"
+                    variant={index === selected ? "secondary" : "ghost"}
+                    aria-label={`Screenshot ${index + 1}: ${item.title}`}
+                    aria-pressed={index === selected}
+                    onClick={() => {
+                      setSelected(index);
+                      setFailed(false);
+                    }}
+                  >
+                    {item.phase
+                      ? item.phase === "before"
+                        ? "Before"
+                        : "After"
+                      : beforeFramePath
+                        ? item.id === beforeFramePath
+                          ? "Before"
+                          : frames.length === 2
+                            ? "After"
+                            : `After ${index}`
+                        : index + 1}
+                  </Button>
+                ))
+              : null}
           </div>
         </div>
       ) : null}

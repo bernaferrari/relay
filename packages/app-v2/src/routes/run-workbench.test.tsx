@@ -293,8 +293,8 @@ describe("RunWorkbench", () => {
   it("opens the selected frame for inspection and zooms without substituting media", async () => {
     const host = render(2);
     const selectedSource = host.querySelector("img")?.getAttribute("src");
-    const inspect = [...host.querySelectorAll("button")].find((button) =>
-      button.textContent?.includes("Inspect screenshot"),
+    const inspect = [...host.querySelectorAll("button")].find(
+      (button) => button.getAttribute("aria-label") === "Inspect screenshot",
     )!;
     await act(async () => {
       inspect.click();
