@@ -5,7 +5,18 @@ import { EvidenceImageViewer } from "../components/evidence-image-viewer";
 import { ReportVideoInspector } from "../components/report-video-inspector";
 import { Button } from "@relay/ui-react/components/button";
 import { ScrollArea } from "@relay/ui-react/components/scroll-area";
-import { Check, Circle, CircleAlert, ImageOff } from "lucide-react";
+import {
+  Check,
+  Circle,
+  CircleAlert,
+  ImageOff,
+  Hand,
+  ArrowLeft,
+  Camera,
+  Clock,
+  Keyboard,
+  MoveUpRight,
+} from "lucide-react";
 import { useState, type ReactNode } from "react";
 import {
   framePathsForTraceStep,
@@ -25,7 +36,11 @@ export function RunWorkbench({
   onSelectStep(index: number): void;
   renderEvidence?(section: Report["evidence"][number]): ReactNode;
 }) {
-  const [panel, setPanel] = useState<"screen" | "performance" | "details">("screen");
+  const [panel, setPanel] = useState<"steps" | "performance" | "details" | "video" | "logs">(
+    "steps",
+  );
+  const [logFilter, setLogFilter] = useState("");
+  const logs = report.evidence.find((section) => section.id === "logs")?.items ?? [];
   const step = report.timeline[selectedStepIndex] ?? report.timeline[0];
   const authoredFrames = framePathsForTraceStep(
     report.stepEvidence,
@@ -90,60 +105,32 @@ export function RunWorkbench({
     );
   return (
     <section
-      className="grid h-[max(32rem,75dvh)] min-h-0 min-w-0 overflow-hidden rounded-xl border border-border bg-card max-[720px]:grid-rows-[10rem_minmax(0,1fr)] min-[721px]:grid-cols-[12rem_minmax(0,1fr)] min-[1280px]:grid-cols-[16rem_minmax(0,1fr)]"
+      className="grid h-[max(32rem,75dvh)] min-h-0 min-w-0 overflow-hidden rounded-xl bg-card max-[720px]:h-auto max-[720px]:grid-rows-[32rem_30rem] min-[721px]:grid-cols-[minmax(0,45%)_minmax(0,1fr)]"
       aria-label="Run workbench"
     >
-      <aside className="flex min-h-0 min-w-0 flex-col border-b border-border bg-muted/20 min-[721px]:border-r min-[721px]:border-b-0">
-        <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <h2 className="text-sm font-semibold">Steps</h2>
-          <span className="text-xs tabular-nums text-muted-foreground">
-            {report.timeline.length}
+      <div className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-background/40">
+        <div className="flex h-11 shrink-0 items-center justify-between px-4 text-xs text-muted-foreground">
+          <span>
+            Step {selectedStepIndex + 1} of {report.timeline.length}
+          </span>
+          <span>
+            {step.durationMs === undefined
+              ? timelineStateLabel(step.state)
+              : `${(step.durationMs / 1000).toFixed(1)}s · ${timelineStateLabel(step.state)}`}
           </span>
         </div>
-        <ScrollArea
-          className="min-h-0 flex-1"
-          viewportProps={{ "aria-label": "Recorded steps", className: "overscroll-auto" }}
-        >
-          <ol className="relay-test-readable-steps p-2 pb-4">
-            {report.timeline.map((item, index) => {
-              const Icon =
-                item.state === "passed" || item.state === "recovered"
-                  ? Check
-                  : item.state === "failed"
-                    ? CircleAlert
-                    : Circle;
-              return (
-                <li key={item.id}>
-                  <button
-                    type="button"
-                    aria-current={index === selectedStepIndex ? "step" : undefined}
-                    aria-pressed={index === selectedStepIndex}
-                    className={`grid min-h-16 w-full grid-cols-[1rem_minmax(0,1fr)_1rem] items-start gap-2 rounded-lg px-3 py-3 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring ${index === selectedStepIndex ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/60"}`}
-                    onClick={() => onSelectStep(index)}
-                  >
-                    <span className="pt-0.5 text-xs tabular-nums">{index + 1}</span>
-                    <span className="min-w-0">
-                      <strong className="block text-sm font-medium leading-5">{item.title}</strong>
-                      <span className="mt-1 block text-xs">{timelineStateLabel(item.state)}</span>
-                    </span>
-                    <Icon
-                      aria-hidden="true"
-                      className={`mt-0.5 size-4 ${item.state === "failed" ? "text-[var(--text-critical-base)]" : item.state === "passed" ? "text-[var(--text-success-base)]" : ""}`}
-                    />
-                  </button>
-                </li>
-              );
-            })}
-          </ol>
-        </ScrollArea>
-      </aside>
+        <StepMedia key={`${report.runId}:${step.id}`} frames={frames} fill />
+      </div>
       <div className="flex min-h-0 min-w-0 flex-col">
         <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
           <div className="min-w-0">
             <p className="text-xs text-muted-foreground">
               Step {selectedStepIndex + 1} · {timelineStateLabel(step.state)}
             </p>
-            <h2 className="mt-1 text-base font-semibold">{step.title}</h2>
+            <h2 className="mt-1 flex items-center gap-2 text-base font-semibold">
+              <StepActionIcon title={step.title} />
+              {step.title}
+            </h2>
           </div>
           {previousFailure !== undefined || nextFailure !== undefined ? (
             <div className="flex items-center gap-1">
@@ -175,9 +162,11 @@ export function RunWorkbench({
         <div className="flex shrink-0 gap-1 px-4 py-2" aria-label="Step views">
           {(
             [
-              ["screen", "Screenshots"],
+              ["steps", "Steps"],
               ...(report.performance?.length ? [["performance", "Performance"]] : []),
               ["details", "Step details"],
+              ["logs", "Logs"],
+              ...(report.video ? [["video", "Video"]] : []),
             ] as const
           ).map(([value, label]) => (
             <Button
@@ -191,14 +180,79 @@ export function RunWorkbench({
             </Button>
           ))}
         </div>
+        {panel === "steps" ? (
+          <aside className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <div className="flex items-center justify-between border-b border-border px-4 py-3">
+              <h2 className="text-sm font-semibold">Steps</h2>
+              <span className="text-xs tabular-nums text-muted-foreground">
+                {report.timeline.length}
+              </span>
+            </div>
+            <ScrollArea
+              className="min-h-0 flex-1"
+              viewportProps={{ "aria-label": "Recorded steps", className: "overscroll-auto" }}
+            >
+              <ol className="relay-test-readable-steps p-2 pb-4">
+                {report.timeline.map((item, index) => {
+                  const Icon =
+                    item.state === "passed" || item.state === "recovered"
+                      ? Check
+                      : item.state === "failed"
+                        ? CircleAlert
+                        : Circle;
+                  return (
+                    <li key={item.id}>
+                      <button
+                        type="button"
+                        aria-current={index === selectedStepIndex ? "step" : undefined}
+                        aria-pressed={index === selectedStepIndex}
+                        className={`grid min-h-12 w-full grid-cols-[1rem_minmax(0,1fr)_1rem] items-start gap-2 rounded-md px-3 py-2.5 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring ${index === selectedStepIndex ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/60"}`}
+                        onClick={() => onSelectStep(index)}
+                        onKeyDown={(event) => {
+                          const next =
+                            event.key === "ArrowDown"
+                              ? Math.min(report.timeline.length - 1, index + 1)
+                              : event.key === "ArrowUp"
+                                ? Math.max(0, index - 1)
+                                : event.key === "Home"
+                                  ? 0
+                                  : event.key === "End"
+                                    ? report.timeline.length - 1
+                                    : undefined;
+                          if (next === undefined) return;
+                          event.preventDefault();
+                          onSelectStep(next);
+                          const buttons = event.currentTarget
+                            .closest("ol")
+                            ?.querySelectorAll("button");
+                          buttons?.[next]?.focus();
+                        }}
+                      >
+                        <span className="pt-0.5 text-xs tabular-nums">{index + 1}</span>
+                        <span className="min-w-0">
+                          <strong className="flex items-start gap-2 text-sm font-medium leading-5">
+                            <StepActionIcon title={item.title} />
+                            <span>{item.title}</span>
+                          </strong>
+                          <span className="sr-only">{timelineStateLabel(item.state)}</span>
+                        </span>
+                        <Icon
+                          aria-hidden="true"
+                          className={`mt-0.5 size-4 ${item.state === "failed" ? "text-[var(--text-critical-base)]" : item.state === "passed" ? "text-[var(--text-success-base)]" : ""}`}
+                        />
+                      </button>
+                    </li>
+                  );
+                })}
+              </ol>
+            </ScrollArea>
+          </aside>
+        ) : null}
         <ScrollArea
-          className="min-h-0 flex-1"
+          className={panel === "steps" ? "hidden" : "min-h-0 flex-1"}
           viewportProps={{ "aria-label": "Step report", className: "overscroll-auto" }}
         >
-          {panel === "screen" ? (
-            <StepMedia key={`${report.runId}:${step.id}`} frames={frames} fill />
-          ) : null}
-          {panel === "screen" && report.video ? (
+          {panel === "video" && report.video ? (
             <div className="border-t border-border p-5">
               <ReportVideoInspector
                 video={report.video}
@@ -222,6 +276,51 @@ export function RunWorkbench({
                 if (index >= 0) onSelectStep(index);
               }}
             />
+          ) : null}
+          {panel === "logs" ? (
+            <section className="p-5" aria-label="Run logs">
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <p className="text-xs text-muted-foreground">
+                  All retained run logs · {logs.length}
+                </p>
+                {logs.length ? (
+                  <input
+                    aria-label="Filter logs"
+                    placeholder="Filter logs…"
+                    value={logFilter}
+                    onChange={(event) => setLogFilter(event.target.value)}
+                    className="h-8 rounded-md border border-input bg-transparent px-3 text-sm"
+                  />
+                ) : null}
+              </div>
+              {logs.length ? (
+                <ul className="divide-y divide-border/50">
+                  {logs
+                    .filter((item) =>
+                      item.title.toLocaleLowerCase().includes(logFilter.toLocaleLowerCase()),
+                    )
+                    .map((item) => (
+                      <li key={item.id} className="py-3">
+                        <p className="mb-1 text-xs text-muted-foreground">{item.meta}</p>
+                        <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-5">
+                          {item.title}
+                        </pre>
+                      </li>
+                    ))}
+                  {!logs.some((item) =>
+                    item.title.toLocaleLowerCase().includes(logFilter.toLocaleLowerCase()),
+                  ) ? (
+                    <li className="py-8 text-center text-sm text-muted-foreground">
+                      No logs match this filter.
+                    </li>
+                  ) : null}
+                </ul>
+              ) : (
+                <p className="py-16 text-center text-sm text-muted-foreground">
+                  No device logs were retained for this run.
+                </p>
+              )}
+            </section>
           ) : null}
           {panel === "details" ? (
             <dl className="grid gap-5 px-5 py-4 sm:grid-cols-2">
@@ -276,12 +375,12 @@ function StepMedia({
   unlinked?: boolean;
   fill?: boolean;
 }) {
-  const [selected, setSelected] = useState(Math.max(0, frames.length - 1));
+  const [selected, setSelected] = useState(0);
   const [failed, setFailed] = useState(false);
   const frame = frames[selected] ?? frames[0];
   return (
     <div
-      className={`relay-evidence-image-frame overflow-hidden bg-card ${fill ? "flex h-[calc(max(32rem,75dvh)-9rem)] min-h-64 flex-col" : ""}`}
+      className={`relay-evidence-image-frame overflow-hidden bg-card ${fill ? "flex min-h-0 flex-1 flex-col" : ""}`}
     >
       <div
         className={`relative flex items-center justify-center p-5 ${fill ? "min-h-0 flex-1" : "min-h-64"}`}
@@ -384,4 +483,21 @@ export function RunContextFacts({
       ))}
     </dl>
   );
+}
+
+function StepActionIcon({ title }: { title: string }) {
+  const Icon = /^tap\b/i.test(title)
+    ? Hand
+    : /^back\b/i.test(title)
+      ? ArrowLeft
+      : /^observe\b/i.test(title)
+        ? Camera
+        : /^(wait|pause)\b/i.test(title)
+          ? Clock
+          : /^(type|input)\b/i.test(title)
+            ? Keyboard
+            : /^swipe\b/i.test(title)
+              ? MoveUpRight
+              : Circle;
+  return <Icon aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-muted-foreground" />;
 }

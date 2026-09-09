@@ -1,3 +1,4 @@
+import { Button } from "@relay/ui-react/components/button";
 import { useState } from "react";
 import type { ReportPerformanceSeries, ReportTimelineItem } from "../data/run-report-model";
 
@@ -11,6 +12,7 @@ export function RunPerformancePanel({
   onSeek(at: number): void;
 }) {
   const available = series.filter((metric) => metric.points.length);
+  const [showAll, setShowAll] = useState(false);
   const [metricName, setMetricName] = useState("");
   const [selectedAt, setSelectedAt] = useState<number>();
   const metric =
@@ -22,35 +24,52 @@ export function RunPerformancePanel({
   const last = metric.points.at(-1)!.at;
   const peak = Math.max(...metric.points.map((point) => point.value));
   const low = Math.min(0, ...metric.points.map((point) => point.value));
+  const ceiling = peak > low ? peak : low + 1;
+  const primary = available.filter((item) =>
+    /cpu|rss|dropped frames \(%\)|total frame count/i.test(item.name),
+  );
+  const visibleMetrics = showAll || !primary.length ? available : primary;
   const selected = metric.points.find((point) => point.at === selectedAt);
   const x = (at: number) =>
-    16 + Math.max(0, Math.min(568, ((at - first) / Math.max(1, last - first)) * 568));
-  const y = (value: number) => 108 - ((value - low) / Math.max(1, peak - low)) * 92;
+    44 + Math.max(0, Math.min(540, ((at - first) / Math.max(1, last - first)) * 540));
+  const y = (value: number) => 108 - ((value - low) / (ceiling - low)) * 92;
   const inspect = (index: number) => {
     const point = metric.points[index]!;
     setSelectedAt(point.at);
     onSeek(point.at);
   };
   return (
-    <section className="space-y-3 border-t border-border p-5" aria-label="Performance timeline">
+    <section className="space-y-4 p-5" aria-label="Performance timeline">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <h3 className="text-sm font-medium">Performance</h3>
-        <select
-          aria-label="Performance metric"
-          className="h-8 max-w-full rounded-md border border-input bg-background px-2 text-xs"
-          value={metric.name}
-          onChange={(event) => {
-            setMetricName(event.target.value);
-            setSelectedAt(undefined);
-          }}
-        >
-          {available.map((item) => (
-            <option key={item.name} value={item.name}>
-              {metricLabel(item.name)}
-            </option>
-          ))}
-        </select>
+        <span className="text-xs text-muted-foreground">{metric.points.length} samples</span>
       </header>
+      <div className="flex flex-wrap gap-1" aria-label="Performance metric">
+        {visibleMetrics.map((item) => (
+          <Button
+            key={item.name}
+            size="sm"
+            variant={item.name === metric.name ? "secondary" : "ghost"}
+            aria-pressed={item.name === metric.name}
+            onClick={() => {
+              setMetricName(item.name);
+              setSelectedAt(undefined);
+            }}
+          >
+            {metricLabel(item.name)}
+          </Button>
+        ))}
+        {primary.length > 0 && primary.length < available.length ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setShowAll(!showAll)}
+            aria-expanded={showAll}
+          >
+            {showAll ? "Fewer metrics" : "More metrics"}
+          </Button>
+        ) : null}
+      </div>
       <div className="flex min-h-5 items-center justify-between gap-3 text-xs tabular-nums">
         <span className="text-muted-foreground">
           {selected
@@ -63,19 +82,32 @@ export function RunPerformancePanel({
       </div>
       <svg
         viewBox="0 0 600 124"
-        className="h-36 w-full overflow-visible"
+        className="h-52 w-full overflow-visible"
         aria-label={`${metricLabel(metric.name)}, ${metric.points.length} samples`}
       >
-        {[16, 62, 108].map((line) => (
-          <line
-            key={line}
-            x1="16"
-            x2="584"
-            y1={line}
-            y2={line}
-            stroke="currentColor"
-            opacity=".08"
-          />
+        {[16, 62, 108].map((line, index) => (
+          <g key={line}>
+            <text
+              x="36"
+              y={line + 3}
+              textAnchor="end"
+              fill="currentColor"
+              className="text-[9px] text-muted-foreground"
+            >
+              {(low + (ceiling - low) * (1 - index / 2)).toLocaleString(undefined, {
+                maximumFractionDigits: 1,
+              })}
+            </text>
+            <line
+              key={line}
+              x1="44"
+              x2="584"
+              y1={line}
+              y2={line}
+              stroke="currentColor"
+              opacity=".12"
+            />
+          </g>
         ))}
         {step?.startedAt !== undefined && step.finishedAt !== undefined ? (
           <rect
@@ -87,13 +119,19 @@ export function RunPerformancePanel({
             opacity=".06"
           />
         ) : null}
+        <polygon
+          points={`44,108 ${metric.points.map((point) => `${x(point.at)},${y(point.value)}`).join(" ")} 584,108`}
+          fill="currentColor"
+          opacity=".08"
+          className="text-[var(--text-info-base)]"
+        />
         <polyline
           points={metric.points.map((point) => `${x(point.at)},${y(point.value)}`).join(" ")}
           fill="none"
           stroke="currentColor"
-          strokeWidth="1.5"
+          strokeWidth="2"
           vectorEffect="non-scaling-stroke"
-          className="text-primary"
+          className="text-[var(--text-info-base)]"
         />
         {metric.points.map((point, index) => (
           <g

@@ -2,9 +2,15 @@
 import type { RunTestStepEvidence } from "@relay/protocol";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ProductRunReportOverview } from "../data/run-product-service";
 import { RunWorkbench } from "./run-workbench";
+
+vi.mock("../components/report-image", () => ({
+  ReportImage: ({ media, ...props }: { media: { src: string } }) => (
+    <img {...props} src={media.src} />
+  ),
+}));
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -152,6 +158,28 @@ function render(selectedStepIndex = 0) {
 }
 
 describe("RunWorkbench", () => {
+  it("keeps the selected screenshot mounted while inspecting details and logs", () => {
+    const host = render();
+    const image = host.querySelector("img");
+    for (const label of ["Step details", "Logs", "Steps"]) {
+      const button = [...host.querySelectorAll("button")].find(
+        (item) => item.textContent === label,
+      )!;
+      act(() => button.click());
+      expect(host.querySelector("img")).toBe(image);
+    }
+  });
+
+  it("moves through steps with arrow keys", () => {
+    const host = render();
+    const selected = host.querySelector('[aria-current="step"]')!;
+    act(() =>
+      selected.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true })),
+    );
+    expect(host.querySelector('[aria-current="step"]')?.textContent).toContain("Submit the order");
+    expect(host.querySelector('img[alt="Checkout submitted"]')).not.toBeNull();
+  });
+
   it("shows unlinked artifacts for a legacy Run with no timeline", () => {
     const host = document.createElement("div");
     document.body.append(host);
@@ -196,6 +224,11 @@ describe("RunWorkbench", () => {
     const host = render();
     expect(host.querySelector('[aria-current="step"]')?.textContent).toContain("Open the cart");
     expect(host.querySelector('img[alt="Cart ready"]')).not.toBeNull();
+    act(() =>
+      [...host.querySelectorAll("button")]
+        .find((button) => button.textContent === "Step details")!
+        .click(),
+    );
     expect(host.textContent).toContain("Expected");
     expect(host.textContent).toContain("Cart is visible");
   });
@@ -208,6 +241,11 @@ describe("RunWorkbench", () => {
     expect(stepButton).toBeDefined();
     act(() => stepButton!.click());
     expect(host.querySelector('img[alt="Confirmation missing"]')).not.toBeNull();
+    act(() =>
+      [...host.querySelectorAll("button")]
+        .find((button) => button.textContent === "Step details")!
+        .click(),
+    );
     expect(host.textContent).toContain("Confirmation text and order number are visible");
     expect(host.textContent).toContain("Confirmation text was not visible");
     const secondFrame = host.querySelector<HTMLButtonElement>(
@@ -239,6 +277,11 @@ describe("RunWorkbench", () => {
           onSelectStep={(index) => selected.push(index)}
         />,
       ),
+    );
+    act(() =>
+      [...host.querySelectorAll("button")]
+        .find((button) => button.textContent === "Step details")!
+        .click(),
     );
     expect(host.textContent).toContain("Trace interval");
     expect(host.textContent).toContain("1970-01-01T00:00:03.000Z");

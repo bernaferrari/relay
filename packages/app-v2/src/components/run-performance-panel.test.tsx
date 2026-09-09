@@ -32,11 +32,11 @@ it("inspects samples directly and switches metrics without rendering settings sl
       .dispatchEvent(new MouseEvent("click", { bubbles: true })),
   );
   expect(seek).toHaveBeenCalledWith(2000);
-  const picker = host.querySelector("select")!;
-  act(() => {
-    picker.value = "Fps total Frame Count";
-    picker.dispatchEvent(new Event("change", { bubbles: true }));
-  });
+  act(() =>
+    [...host.querySelectorAll("button")]
+      .find((button) => button.textContent === "Frames rendered")!
+      .click(),
+  );
   expect(host.querySelector("svg")?.getAttribute("aria-label")).toBe("Frames rendered, 1 samples");
   act(() => root.unmount());
   host.remove();
