@@ -234,6 +234,7 @@ async function promoteSuccessfulTestCaptures(
                 sha256: tree.sha256!,
                 mime: "application/json",
                 bytes: tree.bytes!,
+                observationId: `run-${run.id}-${capture.screenId}-${capture.frame.capturedAt}`,
                 capturedAt: capture.frame.capturedAt,
               },
             }

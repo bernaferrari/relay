@@ -172,6 +172,11 @@ test(
       }));
       await writeFile(join(root, "origin.png"), Buffer.from("origin-image"));
       await writeFile(join(root, "destination.png"), Buffer.from("destination-image"));
+      await writeFile(join(root, "origin.json"), JSON.stringify({ nodes: [{ role: "screen" }] }));
+      await writeFile(
+        join(root, "destination.json"),
+        JSON.stringify({ nodes: [{ role: "screen" }] }),
+      );
       const run: PersistedRun = {
         ...validationRun(saved.revision),
         id: "run-localized-capture",
@@ -256,6 +261,11 @@ test(
         ]!;
       assert.equal(origin.captureProvenance?.locale, "pt-BR");
       assert.equal(destination.captureProvenance?.locale, "pt-BR");
+      assert.equal(origin.rawAccessibilityTree?.observationId, "run-run-localized-capture-origin-11");
+      assert.equal(
+        destination.rawAccessibilityTree?.observationId,
+        "run-run-localized-capture-destination-12",
+      );
       assert.notEqual(origin.screenshotUri, destination.screenshotUri);
       assert.equal(
         projected!.screenVariants["destination-baseline"]!.screenshotUri,
