@@ -36,12 +36,14 @@ export function RunWorkbench({
   onSelectStep(index: number): void;
   renderEvidence?(section: Report["evidence"][number]): ReactNode;
 }) {
-  const [panel, setPanel] = useState<"steps" | "performance" | "details" | "video" | "logs">(
-    "steps",
-  );
+  const [requestedPanel, setPanel] = useState<
+    "steps" | "performance" | "details" | "video" | "logs"
+  >("steps");
   const [logFilter, setLogFilter] = useState("");
   const logs = report.evidence.find((section) => section.id === "logs")?.items ?? [];
   const step = report.timeline[selectedStepIndex] ?? report.timeline[0];
+  const hasChecks = Boolean(step?.expected?.trim());
+  const panel = requestedPanel === "details" && !hasChecks ? "steps" : requestedPanel;
   const authoredFrames = framePathsForTraceStep(
     report.stepEvidence,
     step?.id ?? selectedStepIndex,
@@ -164,7 +166,7 @@ export function RunWorkbench({
             [
               ["steps", "Steps"],
               ...(report.performance?.length ? [["performance", "Performance"]] : []),
-              ["details", "Step details"],
+              ...(hasChecks ? [["details", "Checks"]] : []),
               ["logs", "Logs"],
               ...(report.video ? [["video", "Video"]] : []),
             ] as const
@@ -319,31 +321,20 @@ export function RunWorkbench({
             </section>
           ) : null}
           {panel === "details" ? (
-            <dl className="grid gap-5 px-5 py-4 sm:grid-cols-2">
+            <dl className="grid gap-5 px-5 py-4">
               <div>
                 <dt className="text-xs font-medium text-muted-foreground">Expected</dt>
-                <dd className="mt-1 text-sm leading-6">
-                  {step.expected ?? "No saved expectation is available for this step."}
-                </dd>
+                <dd className="mt-1 text-sm leading-6">{step.expected}</dd>
               </div>
               <div>
                 <dt className="text-xs font-medium text-muted-foreground">Observed</dt>
                 <dd className="mt-1 text-sm leading-6">
-                  {step.observed ?? timelineStateLabel(step.state)}
-                  {step.durationMs === undefined
-                    ? ""
-                    : ` · ${(step.durationMs / 1000).toFixed(1)}s`}
+                  {step.observed?.trim() || "No observation was retained for this check."}
                 </dd>
               </div>
-              <div>
-                <dt className="text-xs font-medium text-muted-foreground">Trace interval</dt>
-                <dd className="mt-1 text-sm leading-6">
-                  {formatTraceInterval(step.startedAt, step.finishedAt)}
-                </dd>
-              </div>
-              {step.log ? (
+              {step.state === "failed" && step.log?.trim() && step.log !== step.observed ? (
                 <div>
-                  <dt className="text-xs font-medium text-muted-foreground">Run log</dt>
+                  <dt className="text-xs font-medium text-muted-foreground">Failure details</dt>
                   <dd className="mt-1 whitespace-pre-wrap text-sm leading-6">{step.log}</dd>
                 </div>
               ) : null}
@@ -353,13 +344,6 @@ export function RunWorkbench({
       </div>
     </section>
   );
-}
-
-function formatTraceInterval(startedAt?: number, finishedAt?: number): string {
-  if (startedAt === undefined && finishedAt === undefined) return "Not recorded";
-  const start = startedAt === undefined ? "Unknown start" : new Date(startedAt).toISOString();
-  const end = finishedAt === undefined ? "Unknown end" : new Date(finishedAt).toISOString();
-  return `${start} → ${end}`;
 }
 
 function StepMedia({

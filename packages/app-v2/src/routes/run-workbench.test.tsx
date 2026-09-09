@@ -187,7 +187,7 @@ describe("RunWorkbench", () => {
   it("keeps the selected screenshot mounted while inspecting details and logs", () => {
     const host = render();
     const image = host.querySelector("img");
-    for (const label of ["Step details", "Logs", "Steps"]) {
+    for (const label of ["Checks", "Logs", "Steps"]) {
       const button = [...host.querySelectorAll("button")].find(
         (item) => item.textContent === label,
       )!;
@@ -252,7 +252,7 @@ describe("RunWorkbench", () => {
     expect(host.querySelector('img[alt="Cart ready"]')).not.toBeNull();
     act(() =>
       [...host.querySelectorAll("button")]
-        .find((button) => button.textContent === "Step details")!
+        .find((button) => button.textContent === "Checks")!
         .click(),
     );
     expect(host.textContent).toContain("Expected");
@@ -269,7 +269,7 @@ describe("RunWorkbench", () => {
     expect(host.querySelector('img[alt="Confirmation missing"]')).not.toBeNull();
     act(() =>
       [...host.querySelectorAll("button")]
-        .find((button) => button.textContent === "Step details")!
+        .find((button) => button.textContent === "Checks")!
         .click(),
     );
     expect(host.textContent).toContain("Confirmation text and order number are visible");
@@ -282,7 +282,7 @@ describe("RunWorkbench", () => {
     expect(host.querySelector('img[alt="Confirmation error"]')).not.toBeNull();
   });
 
-  it("shows persisted trace interval and navigates between failures", () => {
+  it("shows checks and navigates between failures", () => {
     const failureReport = {
       ...report,
       timeline: [
@@ -306,11 +306,11 @@ describe("RunWorkbench", () => {
     );
     act(() =>
       [...host.querySelectorAll("button")]
-        .find((button) => button.textContent === "Step details")!
+        .find((button) => button.textContent === "Checks")!
         .click(),
     );
-    expect(host.textContent).toContain("Trace interval");
-    expect(host.textContent).toContain("1970-01-01T00:00:03.000Z");
+    expect(host.textContent).not.toContain("Trace interval");
+    expect(host.textContent).not.toContain("1970-01-01T00:00:03.000Z");
     expect(host.textContent).toContain("Confirmation text was not visible");
     act(() => host.querySelector<HTMLButtonElement>('[aria-label="Next failure"]')?.click());
     expect(selected).toEqual([3]);
