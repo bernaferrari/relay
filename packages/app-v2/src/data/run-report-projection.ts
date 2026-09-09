@@ -135,9 +135,9 @@ function evidenceItems(
       return {
         id: text(frame.path) ?? `screenshot-${index}`,
         title: publicFrameCaption(frame.caption) ?? `Screenshot ${index + 1}`,
-        ...(/^before · /u.test(text(frame.caption) ?? "")
+        ...((text(frame.caption) ?? "").startsWith("before · ")
           ? { phase: "before" as const }
-          : /^after · /u.test(text(frame.caption) ?? "")
+          : (text(frame.caption) ?? "").startsWith("after · ")
             ? { phase: "after" as const }
             : {}),
         ...(media ? { media } : {}),
