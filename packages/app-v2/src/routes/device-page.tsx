@@ -58,6 +58,8 @@ export function DevicePage() {
   const [liveStatus, setLiveStatus] = useState<LiveTargetStatus>("idle");
   const [browserContext, setBrowserContext] = useState<LiveTargetBrowserContext>();
   const [liveIssue, setLiveIssue] = useState<string>();
+  const [inputIssue, setInputIssue] = useState<string>();
+  const inputPending = useRef(false);
   const [liveBusy, setLiveBusy] = useState(false);
   const [liveAttempt, setLiveAttempt] = useState(0);
   const [talkBackRefresh, setTalkBackRefresh] = useState(0);
@@ -165,6 +167,7 @@ export function DevicePage() {
     let unsubscribe: (() => void) | undefined;
     let mounted: LiveTargetSession | undefined;
     setLiveIssue(undefined);
+    setInputIssue(undefined);
     setLiveStatus("connecting");
     setBrowserContext(undefined);
     void createPreview(target.data)
@@ -199,16 +202,21 @@ export function DevicePage() {
       setLiveIssue("The live view is still connecting.");
       return false;
     }
+    if (inputPending.current) return false;
+    inputPending.current = true;
     setLiveBusy(true);
-    setLiveIssue(undefined);
     try {
       await session.current.input(input);
+      setInputIssue(undefined);
       setTalkBackRefresh((count) => count + 1);
       return true;
-    } catch (error) {
-      setLiveIssue(friendlyLiveIssue(errorMessage(error)));
+    } catch {
+      setInputIssue(
+        "The interaction could not be completed. Reconnect the live view before trying again.",
+      );
       return false;
     } finally {
+      inputPending.current = false;
       setLiveBusy(false);
     }
   }
@@ -359,7 +367,7 @@ export function DevicePage() {
               target={target.data ?? undefined}
               browserContext={browserContext}
               status={liveStatus}
-              issue={liveIssue}
+              issue={inputIssue ?? liveIssue}
               busy={liveBusy}
               reconnect={() => {
                 recover.mutate();
@@ -622,10 +630,16 @@ function DeviceLivePreview({
   if (!target) {
     return (
       <RecoveryState
+        layout="centered"
+        className="min-h-64"
         title="Live view is not connected"
-        detail="Keep the device awake and connected, then reconnect."
+        detail={
+          platform === "browser"
+            ? "Reconnect to bring this browser back into Relay."
+            : "Keep the device awake and connected, then reconnect."
+        }
         action={
-          <Button size="sm" variant="ghost" onClick={reconnect}>
+          <Button size="sm" onClick={reconnect}>
             <RotateCcw aria-hidden="true" /> Reconnect
           </Button>
         }

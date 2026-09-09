@@ -18,6 +18,7 @@ afterEach(async () => {
 
 function mountCanvas(
   entries: Array<{
+    issue?: string;
     title: string;
     detail: string;
     targetPlatform?: string;
@@ -37,7 +38,7 @@ function mountCanvas(
             key={entry.title}
             canvasRef={{ current: null }}
             status="streaming"
-            issue={undefined}
+            issue={entry.issue}
             busy={false}
             targetTitle={entry.title}
             targetDetail={entry.detail}
@@ -54,6 +55,21 @@ function mountCanvas(
 }
 
 describe("LiveTargetCanvas", () => {
+  it("keeps interaction errors over the preview instead of adding a layout row", () => {
+    const host = mountCanvas([
+      {
+        title: "Browser",
+        detail: "Chromium",
+        issue: "Interaction failed",
+        send: async () => false,
+      },
+    ]);
+    const message = host.querySelector('[role="status"]')!;
+    const stage = host.querySelector("canvas")!.parentElement!;
+    expect(stage.contains(message)).toBe(true);
+    expect(message.parentElement!.classList.contains("absolute")).toBe(true);
+  });
+
   it("keeps a large wheel gesture inside the preview", async () => {
     const send = vi.fn(async () => true);
     const host = mountCanvas([

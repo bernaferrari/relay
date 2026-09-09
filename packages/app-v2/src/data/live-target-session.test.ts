@@ -2,7 +2,7 @@ import { dispatchRecordingInput } from "./recording-input-outcome";
 import { ApiError } from "@relay/client";
 import type { BrowserDeviceSession } from "@relay/protocol";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createLiveTargetSession } from "./live-target-session";
+import { browserPreviewInput, createLiveTargetSession } from "./live-target-session";
 
 const target = { kind: "browser", platform: "browser", targetId: "browser-1" } as const;
 
@@ -481,4 +481,35 @@ it("does not reopen an Android stream after close during retry backoff", async (
   live.close();
   await new Promise((resolve) => setTimeout(resolve, 700));
   expect(openStream).toHaveBeenCalledOnce();
+});
+
+describe("browser preview gestures", () => {
+  const frame = { sessionId: "session", pageId: "page", sequence: 42 };
+  const binding = { sessionId: "session", pageId: "page", expectedSequence: 42 };
+  it("binds canvas clicks, typing and scrolling to the painted frame", () => {
+    expect(browserPreviewInput({ kind: "touch", action: "up", x: 20, y: 30 }, frame)).toEqual({
+      ...binding,
+      kind: "click",
+      x: 20,
+      y: 30,
+    });
+    expect(browserPreviewInput({ kind: "key", key: "enter", text: "hello" }, frame)).toEqual({
+      ...binding,
+      kind: "text",
+      text: "hello",
+    });
+    expect(browserPreviewInput({ kind: "key", key: "enter" }, frame)).toEqual({
+      ...binding,
+      kind: "key",
+      key: "Enter",
+    });
+    expect(
+      browserPreviewInput({ kind: "scroll", x: 20, y: 30, scrollX: 0, scrollY: -100 }, frame),
+    ).toEqual({ ...binding, kind: "wheel", x: 20, y: 30, deltaX: -0, deltaY: 100 });
+  });
+  it("does not silently approve coordinate fallback", () => {
+    expect(
+      browserPreviewInput({ kind: "touch", action: "up", x: 20, y: 30 }, frame),
+    ).not.toHaveProperty("coordinateFallback");
+  });
 });

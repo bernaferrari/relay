@@ -583,7 +583,7 @@ export function createLiveTargetSession(input: {
     if (target.kind === "browser") {
       await input.client.invoke("target.browser-device.control", {
         targetId: target.targetId,
-        input: value as BrowserDeviceInput,
+        input: browserPreviewInput(value, browserFrame!),
       });
       return;
     }
@@ -760,4 +760,37 @@ export async function createLiveTargetSessionFromPlatform(input: {
     target: input.target,
     ...(input.identity ? { identity: input.identity } : {}),
   });
+}
+
+/** Translate canvas gestures using the frame the user actually saw. */
+export function browserPreviewInput(
+  value: LiveTargetInput,
+  frame: Pick<BrowserDeviceFrame, "sessionId" | "pageId" | "sequence">,
+): BrowserDeviceInput {
+  if ("sessionId" in value) return value;
+  const binding = {
+    sessionId: frame.sessionId,
+    pageId: frame.pageId,
+    expectedSequence: frame.sequence,
+  };
+  if (value.kind === "touch" && value.action === "up") {
+    return { ...binding, kind: "click", x: value.x, y: value.y };
+  }
+  if (value.kind === "scroll") {
+    return {
+      ...binding,
+      kind: "wheel",
+      x: value.x,
+      y: value.y,
+      deltaX: -value.scrollX,
+      deltaY: -value.scrollY,
+    };
+  }
+  if (value.kind === "key") {
+    if (value.text) return { ...binding, kind: "text", text: value.text };
+    if (value.key === "enter") return { ...binding, kind: "key", key: "Enter" };
+    if (value.key === "backspace") return { ...binding, kind: "key", key: "Backspace" };
+    if (value.key === "back") return { ...binding, kind: "history", direction: "back" };
+  }
+  throw new RecordingInputNotSentError("This gesture is not supported in the browser preview.");
 }

@@ -245,12 +245,17 @@ export function LiveTargetCanvas({
           </div>
         ) : null}
         {overlay}
+        {streaming && issue ? (
+          <div className="pointer-events-none absolute inset-x-3 bottom-3 z-20 flex justify-center">
+            <p
+              role="status"
+              className="max-w-md rounded-lg bg-background/95 px-4 py-3 text-center text-sm shadow-sm ring-1 ring-border"
+            >
+              {issue}
+            </p>
+          </div>
+        ) : null}
       </div>
-      {streaming && issue ? (
-        <p role="status" className="border-t border-border px-3 py-2 text-sm">
-          {issue}
-        </p>
-      ) : null}
 
       <div
         className={

@@ -263,6 +263,8 @@ describe("Devices", () => {
         },
       } as BrowserSpacesProductService,
     });
+    expect(document.querySelector(".relay-recovery-state--centered")).not.toBeNull();
+    expect(document.body.textContent).toContain("Reconnect to bring this browser back into Relay.");
     await click(button("Reconnect"));
     expect(opened).toEqual(["browser"]);
     expect(devices.recoveryCalls).toEqual([]);
