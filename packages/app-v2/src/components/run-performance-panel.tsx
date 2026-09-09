@@ -120,8 +120,8 @@ export function RunPerformancePanel({
       ) : (
         <>
           <svg
-            viewBox="0 0 600 162"
-            className="h-52 w-full overflow-visible"
+            viewBox="0 0 600 180"
+            className="block h-auto w-full overflow-visible"
             aria-label={`${metricLabel(metric.name)}, ${isStartup ? "Launch measurement" : `${metric.points.length} samples`}`}
           >
             {[16, 62, 108].map((line, index) => (
@@ -244,7 +244,7 @@ export function RunPerformancePanel({
                     />
                     <rect
                       x={x(item.startedAt) - 9}
-                      y={index % 2 ? 140 : 120}
+                      y={index % 2 ? 154 : 134}
                       width="18"
                       height="18"
                       rx="4"
@@ -253,7 +253,7 @@ export function RunPerformancePanel({
                     />
                     <text
                       x={x(item.startedAt)}
-                      y={index % 2 ? 153 : 133}
+                      y={index % 2 ? 167 : 147}
                       textAnchor="middle"
                       fill="currentColor"
                       fontSize="10"
@@ -264,14 +264,26 @@ export function RunPerformancePanel({
                 ),
               )}
             </g>
-          </svg>
-          <div className="flex justify-between text-[11px] tabular-nums text-muted-foreground">
-            <span>0:00</span>
-            <span>
+            <text
+              x="44"
+              y="121"
+              textAnchor="start"
+              fill="currentColor"
+              className="text-[10px] text-muted-foreground"
+            >
+              0:00
+            </text>
+            <text
+              x="584"
+              y="121"
+              textAnchor="end"
+              fill="currentColor"
+              className="text-[10px] text-muted-foreground"
+            >
               {Math.floor((last - first) / 60000)}:
               {String(Math.floor((last - first) / 1000) % 60).padStart(2, "0")}
-            </span>
-          </div>
+            </text>
+          </svg>
         </>
       )}
       {selected ? (
