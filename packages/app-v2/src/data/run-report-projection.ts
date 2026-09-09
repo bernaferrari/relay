@@ -276,6 +276,7 @@ function reportTimeline(
 ): ReportTimelineItem[] {
   const recipe = record(record(rawRun)?.recipeSnapshot);
   const recipeSteps = array(recipe?.steps);
+  const checkTimes = new Map<string, { start: number; end: number }>();
   const checkStatuses = new Map<string, string>();
   for (const value of array(record(rawRun)?.artifacts)) {
     const artifact = record(value);
@@ -284,6 +285,8 @@ function reportTimeline(
     const id = text(data?.id);
     const status = text(data?.status);
     if (id && status) checkStatuses.set(id, status);
+    if (id && finite(data?.startedAt) !== undefined && finite(data?.finishedAt) !== undefined)
+      checkTimes.set(id, { start: finite(data?.startedAt)!, end: finite(data?.finishedAt)! });
   }
   return array(record(rawRun)?.steps).flatMap((value, fallbackIndex) => {
     const step = record(value);
@@ -333,8 +336,42 @@ function reportTimeline(
               ?.filter((item) => item.testStepId === checkId)
               .flatMap((item) => item.evidence.framePaths)
           : exactFramePaths;
+    const times = checkId ? checkTimes.get(checkId) : undefined;
+    const resolutions = array(record(rawRun)?.artifacts)
+      .map(record)
+      .filter(
+        (item) =>
+          item?.kind === "target-resolution" &&
+          times &&
+          finite(item.capturedAt)! >= times.start &&
+          finite(item.capturedAt)! <= times.end,
+      );
+    const resolution = resolutions.length === 1 ? resolutions[0] : undefined;
+    const bounds = record(record(resolution?.data)?.bounds);
+    const validBounds =
+      bounds &&
+      ["x", "y", "width", "height"].every((key) => finite(bounds[key]) !== undefined) &&
+      Number(bounds.width) > 0 &&
+      Number(bounds.height) > 0;
+    const before = resolution
+      ? array(record(rawRun)?.frames)
+          .map(record)
+          .filter((frame) => finite(frame?.capturedAt)! <= finite(resolution.capturedAt)!)
+          .sort((a, b) => Number(b?.capturedAt) - Number(a?.capturedAt))[0]
+      : undefined;
     return [
       {
+        ...(validBounds && text(before?.path)
+          ? {
+              actionBounds: {
+                x: Number(bounds.x),
+                y: Number(bounds.y),
+                width: Number(bounds.width),
+                height: Number(bounds.height),
+              },
+              beforeFramePath: text(before?.path),
+            }
+          : {}),
         id: text(step.id) ?? `step-${fallbackIndex}`,
         index: finite(step.index) ?? fallbackIndex,
         title,

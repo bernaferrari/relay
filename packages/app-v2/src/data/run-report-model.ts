@@ -54,6 +54,8 @@ export type ReportTimelineItem = {
   finishedAt?: number;
   log?: string;
   evidenceCount: number;
+  actionBounds?: { x: number; y: number; width: number; height: number };
+  beforeFramePath?: string;
   /** Screenshot paths retained directly on the persisted trace step. */
   framePaths?: readonly string[];
   /** Present only when the backend provides an authored assertion join. */

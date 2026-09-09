@@ -26,6 +26,7 @@
     "@relay/workflows": "workspace:*",
     "@tanstack/react-query": "5.102.8",
     "@tanstack/react-router": "1.170.32",
+    "@tanstack/react-virtual": "^3.14.11",
     "@yume-chan/scrcpy": "2.3.0",
     "@yume-chan/scrcpy-decoder-webcodecs": "2.5.3",
     "lucide-react": "1.39.0",

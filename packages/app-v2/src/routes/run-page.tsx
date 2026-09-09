@@ -457,6 +457,21 @@ function RunReport({
   const heading = resultHeading(report.outcome);
   const actions = (
     <>
+      <Dialog open={rawEvidenceOpen} onOpenChange={setRawEvidenceOpen}>
+        <DialogTrigger render={<Button size="sm" variant="ghost" />}>Audit</DialogTrigger>
+        <DialogContent className="max-h-[85dvh] overflow-y-auto">
+          <DialogTitle>Audit details</DialogTitle>
+          <DialogDescription>Saved technical evidence for this run.</DialogDescription>
+          <RawEvidenceDisclosure
+            runId={report.runId}
+            runService={runService}
+            open={rawEvidenceOpen}
+            onOpenChange={setRawEvidenceOpen}
+          />
+        </DialogContent>
+      </Dialog>
+
+      <RunReviewControls runId={report.runId} service={runService} />
       <Dialog>
         <DialogTrigger render={<Button size="sm" variant="ghost" />}>Configuration</DialogTrigger>
         <DialogContent>
@@ -565,7 +580,7 @@ function RunReport({
         </p>
       ) : null}
 
-      <section className="mt-4 grid gap-6" aria-label="Run evidence">
+      <section className="mt-3 flex min-h-0 flex-1 flex-col gap-3" aria-label="Run evidence">
         {report.timeline.length || report.evidence.length ? (
           <RunWorkbench
             report={report}
@@ -593,8 +608,6 @@ function RunReport({
           />
         ) : null}
 
-        <RunReviewControls runId={report.runId} service={runService} />
-
         {firstEvidenceIsDistinct && report.firstEvidence ? (
           <section
             className="mt-5 rounded-xl border border-border bg-card p-5"
@@ -616,13 +629,6 @@ function RunReport({
             Evidence details are temporarily unavailable. The saved outcome above is unchanged.
           </p>
         ) : null}
-
-        <RawEvidenceDisclosure
-          runId={report.runId}
-          runService={runService}
-          open={rawEvidenceOpen}
-          onOpenChange={setRawEvidenceOpen}
-        />
       </section>
       {report.outcome === "product-failure" ||
       report.outcome === "harness-failure" ||
@@ -637,7 +643,7 @@ function RunReport({
   if (embedded) return <EmbeddedRunResult report={report} />;
 
   return (
-    <WorkbenchPage className="max-w-[1280px]">
+    <WorkbenchPage className="flex h-full min-h-0 flex-col !pt-3 !pb-3">
       <PageHeader
         crumbs={[
           { label: "Runs", to: "/runs" },

@@ -1,3 +1,4 @@
+import { RunLogPanel } from "../components/run-log-panel";
 /** @jsxImportSource react */
 import { RunPerformancePanel, performanceStepAt } from "../components/run-performance-panel";
 import { traceVideoInterval } from "../data/run-report-media";
@@ -52,7 +53,6 @@ export function RunWorkbench({
     }, 1000);
     return () => clearTimeout(timer);
   }, [playing, selectedStepIndex, report.timeline.length, onSelectStep]);
-  const [logFilter, setLogFilter] = useState("");
   const logs = report.evidence.find((section) => section.id === "logs")?.items ?? [];
   const step = report.timeline[selectedStepIndex] ?? report.timeline[0];
   const hasChecks = Boolean(step?.expected?.trim());
@@ -72,6 +72,15 @@ export function RunWorkbench({
     report.evidence
       .find((section) => section.id === "screenshot")
       ?.items.filter((item) => framePaths.has(item.id) && item.media) ?? [];
+  const beforeFrame = report.evidence
+    .find((section) => section.id === "screenshot")
+    ?.items.find((item) => item.id === step?.beforeFramePath && item.media);
+  const actionFrames = beforeFrame
+    ? [
+        { ...beforeFrame, title: "Before action · previous saved frame" },
+        ...frames.filter((item) => item.id !== beforeFrame.id),
+      ]
+    : frames;
   if (!step)
     return (
       <section
@@ -120,10 +129,10 @@ export function RunWorkbench({
     );
   return (
     <section
-      className="grid h-[max(32rem,75dvh)] min-h-0 min-w-0 overflow-hidden rounded-xl bg-card max-[720px]:h-auto max-[720px]:grid-rows-[32rem_30rem] min-[721px]:grid-cols-[minmax(0,45%)_minmax(0,1fr)]"
+      className="grid h-full min-h-0 flex-1 min-w-0 overflow-hidden rounded-xl bg-card max-[720px]:h-auto max-[720px]:grid-rows-[32rem_30rem] min-[721px]:grid-cols-[minmax(0,45%)_minmax(0,1fr)]"
       aria-label="Run workbench"
     >
-      <div className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-background/40">
+      <div className="relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-background/40">
         <div className="flex h-11 shrink-0 items-center justify-between px-4 text-xs text-muted-foreground">
           <span>
             Step {selectedStepIndex + 1} of {report.timeline.length}
@@ -134,7 +143,26 @@ export function RunWorkbench({
               : `${(step.durationMs / 1000).toFixed(1)}s · ${timelineStateLabel(step.state)}`}
           </span>
         </div>
-        <StepMedia key={`${report.runId}:${step.id}`} frames={frames} fill />
+        <StepMedia
+          key={`${report.runId}:${step.id}`}
+          frames={actionFrames}
+          actionBounds={step.actionBounds}
+          beforeFramePath={step.beforeFramePath}
+          fill
+        />
+        {step ? (
+          <div
+            key={step.id}
+            className="pointer-events-none absolute inset-x-3 bottom-16 z-10 flex justify-center motion-safe:animate-in motion-safe:fade-in motion-safe:duration-200"
+            role="status"
+          >
+            <div className="flex max-w-full items-center gap-2 rounded-lg bg-background/95 px-3 py-2 text-sm shadow-lg ring-1 ring-border">
+              <StepActionIcon title={step.title} />
+              <span>{step.title}</span>
+            </div>
+          </div>
+        ) : null}
+
         <div
           className="flex shrink-0 items-center justify-center gap-2 border-t border-border/50 px-3 py-2"
           aria-label="Step playback"
@@ -305,8 +333,9 @@ export function RunWorkbench({
             </ScrollArea>
           </aside>
         ) : null}
+        {panel === "logs" ? <RunLogPanel logs={logs} /> : null}
         <ScrollArea
-          className={panel === "steps" ? "hidden" : "min-h-0 flex-1"}
+          className={panel === "steps" || panel === "logs" ? "hidden" : "min-h-0 flex-1"}
           viewportProps={{ "aria-label": "Step report", className: "overscroll-auto" }}
         >
           {panel === "video" && report.video ? (
@@ -329,51 +358,6 @@ export function RunWorkbench({
                 if (index >= 0) onSelectStep(index);
               }}
             />
-          ) : null}
-          {panel === "logs" ? (
-            <section className="p-5" aria-label="Run logs">
-              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                <p className="text-xs text-muted-foreground">
-                  All retained run logs · {logs.length}
-                </p>
-                {logs.length ? (
-                  <input
-                    aria-label="Filter logs"
-                    placeholder="Filter logs…"
-                    value={logFilter}
-                    onChange={(event) => setLogFilter(event.target.value)}
-                    className="h-8 rounded-md border border-input bg-transparent px-3 text-sm"
-                  />
-                ) : null}
-              </div>
-              {logs.length ? (
-                <ul className="divide-y divide-border/50">
-                  {logs
-                    .filter((item) =>
-                      item.title.toLocaleLowerCase().includes(logFilter.toLocaleLowerCase()),
-                    )
-                    .map((item) => (
-                      <li key={item.id} className="py-3">
-                        <p className="mb-1 text-xs text-muted-foreground">{item.meta}</p>
-                        <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-5">
-                          {item.title}
-                        </pre>
-                      </li>
-                    ))}
-                  {!logs.some((item) =>
-                    item.title.toLocaleLowerCase().includes(logFilter.toLocaleLowerCase()),
-                  ) ? (
-                    <li className="py-8 text-center text-sm text-muted-foreground">
-                      No logs match this filter.
-                    </li>
-                  ) : null}
-                </ul>
-              ) : (
-                <p className="py-16 text-center text-sm text-muted-foreground">
-                  No device logs were retained for this run.
-                </p>
-              )}
-            </section>
           ) : null}
           {panel === "details" ? (
             <dl className="grid gap-5 px-5 py-4">
@@ -405,12 +389,17 @@ function StepMedia({
   frames,
   unlinked = false,
   fill = false,
+  actionBounds,
+  beforeFramePath,
 }: {
   frames: readonly ReportEvidenceItem[];
   unlinked?: boolean;
   fill?: boolean;
+  actionBounds?: Report["timeline"][number]["actionBounds"];
+  beforeFramePath?: string;
 }) {
-  const [selected, setSelected] = useState(0);
+  const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
+  const [selected, setSelected] = useState(beforeFramePath && frames.length > 1 ? 1 : 0);
   const [failed, setFailed] = useState(false);
   const frame = frames[selected] ?? frames[0];
   return (
@@ -418,8 +407,31 @@ function StepMedia({
       className={`relay-evidence-image-frame overflow-hidden bg-card ${fill ? "flex min-h-0 flex-1 flex-col" : ""}`}
     >
       <div
+        onLoadCapture={(event) => {
+          const img = event.target;
+          if (img instanceof HTMLImageElement)
+            setImageSize({ width: img.naturalWidth, height: img.naturalHeight });
+        }}
         className={`relative flex items-center justify-center p-5 ${fill ? "min-h-0 flex-1" : "min-h-64"}`}
       >
+        {actionBounds && frame?.id === beforeFramePath && imageSize.width > 0 ? (
+          <svg
+            aria-label="Recorded tap target"
+            className="pointer-events-none absolute inset-5 z-10 h-[calc(100%-2.5rem)] w-[calc(100%-2.5rem)]"
+            viewBox={`0 0 ${imageSize.width} ${imageSize.height}`}
+            preserveAspectRatio="xMidYMid meet"
+          >
+            <rect
+              {...actionBounds}
+              fill="#3b82f6"
+              fillOpacity=".16"
+              stroke="#3b82f6"
+              strokeWidth="3"
+              vectorEffect="non-scaling-stroke"
+              rx="6"
+            />
+          </svg>
+        ) : null}
         {frame?.media && !failed ? (
           <EvidenceImageViewer
             key={frame.id}
@@ -468,7 +480,13 @@ function StepMedia({
                   setFailed(false);
                 }}
               >
-                {index + 1}
+                {beforeFramePath
+                  ? item.id === beforeFramePath
+                    ? "Before"
+                    : frames.length === 2
+                      ? "After"
+                      : `After ${index}`
+                  : index + 1}
               </Button>
             ))}
           </div>

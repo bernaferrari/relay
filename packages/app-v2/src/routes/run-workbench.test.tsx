@@ -91,6 +91,8 @@ const report: ProductRunReportOverview = {
       id: "submit-order",
       index: 1,
       title: "Submit the order",
+      beforeFramePath: "cart",
+      actionBounds: { x: 10, y: 20, width: 50, height: 30 },
       state: "passed",
       evidenceCount: 1,
       expected: "Order submission completes",
@@ -167,6 +169,21 @@ function render(selectedStepIndex = 0) {
 }
 
 describe("RunWorkbench", () => {
+  it("defaults to the result and keeps the tap target on the explicit before frame", () => {
+    const host = render(1);
+    expect(host.querySelector('img[alt="Checkout submitted"]')).not.toBeNull();
+    const before = [...host.querySelectorAll("button")].find(
+      (button) => button.textContent === "Before",
+    )!;
+    act(() => before.click());
+    expect(host.querySelector('img[alt="Before action · previous saved frame"]')).not.toBeNull();
+    const after = [...host.querySelectorAll("button")].find(
+      (button) => button.textContent === "After",
+    )!;
+    act(() => after.click());
+    expect(host.querySelector('img[alt="Checkout submitted"]')).not.toBeNull();
+  });
+
   it("plays saved steps and pauses without running the device", () => {
     vi.useFakeTimers();
     try {

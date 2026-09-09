@@ -1,11 +1,13 @@
 /** @jsxImportSource react */
-import { ChevronRight } from "lucide-react";
+
 import { Button } from "@relay/ui-react/components/button";
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@relay/ui-react/components/collapsible";
+  Dialog,
+  DialogTrigger,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+} from "@relay/ui-react/components/dialog";
 import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import type { RunProductService } from "../data/run-product-service";
@@ -52,12 +54,13 @@ export function RunReviewControls({
 
   if (!service.review && !service.compareVisual) return null;
   return (
-    <Collapsible className="relay-report-review-controls">
-      <CollapsibleTrigger className="group flex w-full items-center justify-between gap-2 py-3 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
-        Review and visual decisions
-        <ChevronRight aria-hidden="true" className="size-4 group-aria-expanded:rotate-90" />
-      </CollapsibleTrigger>
-      <CollapsibleContent className="grid gap-4 py-3 text-sm sm:grid-cols-2">
+    <Dialog>
+      <DialogTrigger render={<Button size="sm" variant="ghost" />}>Review run</DialogTrigger>
+      <DialogContent className="max-h-[85dvh] overflow-y-auto">
+        <DialogTitle>Review run</DialogTitle>
+        <DialogDescription>
+          Save your review decision or compare screenshots with the approved baseline.
+        </DialogDescription>
         {service.review ? (
           <div
             className="relay-report-review-actions flex flex-wrap items-center gap-2"
@@ -69,7 +72,7 @@ export function RunReviewControls({
               disabled={review.isPending}
               onClick={() => review.mutate("approve")}
             >
-              Approve Run
+              Approve run
             </Button>
             <Button
               size="sm"
@@ -97,7 +100,7 @@ export function RunReviewControls({
               disabled={compare.isPending}
               onClick={() => compare.mutate()}
             >
-              {compare.isPending ? "Comparing…" : "Compare visual evidence"}
+              {compare.isPending ? "Comparing…" : "Compare screenshots"}
             </Button>
             {compare.data ? (
               <div className="relay-report-visual-result grid gap-2 py-2">
@@ -155,8 +158,8 @@ export function RunReviewControls({
             {errorMessage(problem)}
           </p>
         ) : null}
-      </CollapsibleContent>
-    </Collapsible>
+      </DialogContent>
+    </Dialog>
   );
 }
 
