@@ -30,7 +30,7 @@ import {
   packetRetentionOptions,
   proofApplicationId,
 } from "./run-evidence-network.js";
-import { withTimeout } from "./run-evidence-timeout.js";
+import { withTimeout, withTimeoutAndDrain } from "./run-evidence-timeout.js";
 import {
   byteCount,
   droppedCount,
@@ -428,7 +428,13 @@ export async function startRunEvidence(
       event(handle, "performance", "sample", performanceResult);
       handle.performanceSampler = sampleRunPerformance({
         probe: () =>
-          withTimeout(device.observability.perf({ ...base() }), 5_000, "Performance sample"),
+          withTimeoutAndDrain(
+            device.observability.perf({ ...base() }),
+            5_000,
+            "Performance sample",
+          ),
+        shouldRetry: (error) =>
+          error instanceof Error && error.message === "Performance sample timed out",
         retain: (data, capturedAt) => {
           channel(handle, "performance").entries += 1;
           addArtifact(job, { kind: "performance-sample", capturedAt, data: redactValue(data) });
@@ -442,7 +448,7 @@ export async function startRunEvidence(
         onError: (error) => {
           channel(handle, "performance").status = "partial";
           channel(handle, "performance").message =
-            `Continuous sampling stopped: ${messageOf(error)}`;
+            `Performance sampling has gaps: ${messageOf(error)}`;
         },
       });
     },

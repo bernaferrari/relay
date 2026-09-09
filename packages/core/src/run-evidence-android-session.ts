@@ -1,12 +1,12 @@
 import { captureAndroidForegroundApp } from "./android-ui-snapshot.js";
-import { hardStopDeviceSession } from "./control.js";
 import { base, bindAndroidAppSession, type Device } from "./device.js";
 import type { TestJob } from "./session.js";
-import { withTimeout, withTimeoutAndDrain } from "./run-evidence-timeout.js";
+import { withTimeout } from "./run-evidence-timeout.js";
 
-/** Android observability is session-scoped in agent-device. Warm the exact
- * app/session before starting those collectors; the snapshot is transport
- * setup and is never presented as proof evidence. */
+/** Android observability needs an app-bound SDK session, not a UI tree.
+ * Snapshotting here unnecessarily acquires UiAutomation and lets a slow
+ * accessibility capture disable otherwise independent diagnostics. Actual
+ * run checkpoints collect their own screen evidence. */
 export async function primeAndroidEvidenceSession(
   job: TestJob,
   device: Device,
@@ -59,27 +59,14 @@ export async function primeAndroidEvidenceSession(
       log(`evidence: Android app session bound to ${appPackage}`);
       appSessionBound = true;
     }
-    const result = await withTimeoutAndDrain(
-      device.capture.snapshot({ ...base(), interactiveOnly: false }),
-      5_000,
-      "Android evidence session",
-      () => hardStopDeviceSession(job.targetContext),
-    );
-    const nodes = Array.isArray(result?.nodes) ? result.nodes.length : 0;
-    recordEvent("session.primed", { platform: "android", nodes });
-    log(
-      nodes > 0
-        ? `evidence: Android session ready (${nodes} UI nodes observed)`
-        : "evidence: Android session ready (UI tree unavailable)",
-    );
   } catch (error) {
     log(
       `warn: Android evidence session could not be primed: ${
         error instanceof Error ? error.message : String(error)
       }`,
     );
-    // Timeout cleanup may have terminated the bound session. Dependent
-    // optional collectors cannot use it, even if binding initially succeeded.
+    // Collectors require confirmed binding; failed app discovery/binding must
+    // remain unavailable rather than being reported as successful collection.
     return "unavailable";
   }
   return appSessionBound ? "app-bound" : "surface-only";

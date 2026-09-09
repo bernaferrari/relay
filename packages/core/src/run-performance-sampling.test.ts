@@ -47,3 +47,44 @@ test("a failing performance probe ends sampling without repeated failures", asyn
   assert.equal(calls, 1);
   assert.equal(errors.length, 1);
 });
+
+test("a transient performance timeout resumes sampling after the probe settles", async () => {
+  let calls = 0;
+  const retained: unknown[] = [];
+  const errors: unknown[] = [];
+  const sampler = sampleRunPerformance({
+    intervalMs: 1,
+    limit: 1,
+    shouldRetry: (error) =>
+      error instanceof Error && error.message === "Performance sample timed out",
+    probe: async () => {
+      calls++;
+      if (calls === 1) throw new Error("Performance sample timed out");
+      return { cpu: 12 };
+    },
+    retain: (value) => retained.push(value),
+    onError: (error) => errors.push(error),
+  });
+  await delay(25);
+  await sampler.stop();
+  assert.equal(calls, 2);
+  assert.equal(errors.length, 1);
+  assert.deepEqual(retained, [{ cpu: 12 }]);
+});
+
+test("repeated transient failures exhaust a bounded retry budget", async () => {
+  let calls = 0;
+  const sampler = sampleRunPerformance({
+    intervalMs: 1,
+    shouldRetry: () => true,
+    probe: async () => {
+      calls++;
+      throw new Error("timeout");
+    },
+    retain: () => assert.fail("no invented samples"),
+    onError: () => undefined,
+  });
+  await delay(40);
+  await sampler.stop();
+  assert.equal(calls, 3);
+});

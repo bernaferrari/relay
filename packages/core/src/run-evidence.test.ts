@@ -147,7 +147,7 @@ test("managed-emulator packet evidence brackets the Run and survives cancelled a
     );
 
     assert.equal(events[0], "packet-start");
-    assert.ok(events.indexOf("packet-start") < events.indexOf("prime"));
+    assert.ok(!events.includes("prime"), "packet evidence must not acquire UI automation");
     assert.equal(events.at(-1), "packet-stop");
     const artifact = job.artifacts.find((item) => item.kind === "network");
     assert.ok(artifact);
@@ -275,7 +275,7 @@ test("managed-emulator packet start failure remains partial when the session log
   assert.match(handle.manifest.channels.network.message ?? "", /AVD directory disappeared/u);
 });
 
-test("run evidence records video and performance without affecting the run", async () => {
+test("bound Android diagnostics do not depend on a responsive UI snapshot", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-evidence-"));
   const previous = process.env.RELAY_RUNS_DIR;
   process.env.RELAY_RUNS_DIR = root;
@@ -290,7 +290,7 @@ test("run evidence records video and performance without affecting the run", asy
     capture: {
       snapshot: async () => {
         calls.push("prime");
-        return { nodes: [{ label: "screen" }] };
+        throw new Error("Android evidence session timed out");
       },
     },
     observability: {
@@ -342,7 +342,7 @@ test("run evidence records video and performance without affecting the run", asy
 
     // Release the encoder before collecting the final performance sample so
     // slow recorder shutdown cannot consume the evidence-stop deadline.
-    assert.deepEqual(calls, ["bind", "prime", "perf", "start", "stop", "perf"]);
+    assert.deepEqual(calls, ["bind", "perf", "start", "stop", "perf"]);
     assert.ok(job.artifacts.some((item) => item.kind === "performance-start"));
     const video = job.artifacts.find((item) => item.kind === "video");
     assert.ok(video);
