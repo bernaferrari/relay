@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added: `replay export` supports flows that switch apps and return, preserving each
+  `open <appId>` target as an explicit Maestro `launchApp.appId`.
 - Added: `replay export` converts recorded `home` actions to Maestro `pressKey: Home`, allowing
   app-to-home-to-app journeys to be exported.
 - Added: polling `wait` timeouts (`wait <selector>`, `wait text`, `wait @ref`, and `wait absent`

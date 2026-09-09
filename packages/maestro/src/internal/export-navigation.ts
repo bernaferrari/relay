@@ -30,11 +30,10 @@ function convertOpenAction(action: SessionAction): ConvertedAction {
 }
 
 function buildLaunchAppCommand(action: SessionAction, appId: string): MaestroExportCommand {
-  const options = buildLaunchAppOptions(action);
-  return options ? { launchApp: { appId, ...options } } : 'launchApp';
+  return { launchApp: { appId, ...buildLaunchAppOptions(action) } };
 }
 
-function buildLaunchAppOptions(action: SessionAction): Record<string, unknown> | undefined {
+function buildLaunchAppOptions(action: SessionAction): Record<string, unknown> {
   const launchArgs = action.flags?.launchArgs;
   const options: Record<string, unknown> = {};
   if (action.flags?.relaunch === true) options.stopApp = true;
@@ -42,7 +41,7 @@ function buildLaunchAppOptions(action: SessionAction): Record<string, unknown> |
   if (Array.isArray(launchArgs) && launchArgs.length > 0) {
     options.launchArguments = launchArgs;
   }
-  return Object.keys(options).length > 0 ? options : undefined;
+  return options;
 }
 
 function convertKeyboardAction(action: SessionAction): ConvertedAction {

@@ -18,7 +18,11 @@ test.each(['android', 'ios'] as const)(
 
     expect(parseYamlDocs(result.yaml)).toEqual([
       { appId: 'com.example.app' },
-      ['launchApp', { pressKey: 'Home' }, 'launchApp'],
+      [
+        { launchApp: { appId: 'com.example.app' } },
+        { pressKey: 'Home' },
+        { launchApp: { appId: 'com.example.app' } },
+      ],
     ]);
     expect(result.warnings).toEqual([]);
 
@@ -43,6 +47,55 @@ test.each(['android', 'ios'] as const)(
 
     expect(outcome).toMatchObject({ ok: true, replayed: 3 });
     expect(calls).toEqual(['open com.example.app', 'home', 'open com.example.app']);
+  },
+);
+
+test.each(['android', 'ios'] as const)(
+  'exports app switches, relaunch options, and deep links in order on %s',
+  async (platform) => {
+    const result = exportReplayActionsToMaestro(
+      [
+        action('open', ['com.example.shop']),
+        action('open', ['com.example.auth']),
+        {
+          ...action('open', ['com.example.auth', 'example://approve']),
+          flags: { relaunch: true, clearAppState: true },
+        },
+        action('open', ['com.example.shop']),
+      ],
+      { resolveSelector: () => null },
+    );
+
+    expect(parseYamlDocs(result.yaml)[0]).toEqual({ appId: 'com.example.shop' });
+    expect(result.warnings).toEqual([]);
+
+    const calls: unknown[] = [];
+    const port = createMaestroRuntimePort(
+      makeOperations({
+        platform,
+        launchApp: async (input) => {
+          calls.push({ launchApp: input });
+        },
+        openLink: async (input) => {
+          calls.push({ openLink: input });
+        },
+      }),
+    );
+    const outcome = await executeMaestroFlow(inspectMaestroFlow(result.yaml, 'apps.yaml'), port, {
+      platform,
+      readSource: () => {
+        throw new Error('unexpected flow include');
+      },
+    });
+
+    expect(outcome).toMatchObject({ ok: true, replayed: 5 });
+    expect(calls).toEqual([
+      { launchApp: { appId: 'com.example.shop' } },
+      { launchApp: { appId: 'com.example.auth' } },
+      { launchApp: { appId: 'com.example.auth', stopApp: true, clearState: true } },
+      { openLink: { link: 'example://approve' } },
+      { launchApp: { appId: 'com.example.shop' } },
+    ]);
   },
 );
 

@@ -68,7 +68,7 @@ export function exportReplayActionsToMaestro(
         appendWarnings(context, converted.warnings, action, line);
         break;
       case 'config':
-        assignAppId(context, converted.appId, action, line);
+        context.config.appId ??= converted.appId;
         commands.push(...converted.commands);
         appendWarnings(context, converted.warnings, action, line);
         break;
@@ -433,26 +433,6 @@ function withTapOptions(target: unknown, options: Record<string, unknown>): Maes
     return { tapOn: { ...(target as Record<string, unknown>), ...options } };
   }
   return { tapOn: target };
-}
-
-function assignAppId(
-  context: ExportContext,
-  appId: string,
-  action: SessionAction,
-  line: number,
-): void {
-  if (!context.config.appId) {
-    context.config.appId = appId;
-    return;
-  }
-  if (context.config.appId === appId) return;
-  context.unsupported.push({
-    line,
-    action: formatActionForMessage(action),
-    message:
-      `multiple app ids cannot be represented in one Maestro config ` +
-      `(${context.config.appId} vs ${appId})`,
-  });
 }
 
 function readBackspaceCount(text: string): number | null {
