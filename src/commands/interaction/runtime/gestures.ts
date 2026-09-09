@@ -16,7 +16,7 @@ import {
   resolveScrollExecutionOptions,
 } from '@agent-device/contracts/scroll-command';
 import { AppError } from '@agent-device/kernel/errors';
-import { SELECTOR_PIPELINE_POLICIES } from '../../../core/selector-pipeline-policy.ts';
+import { SELECTOR_PIPELINE_POLICIES } from '@agent-device/selectors/selector-pipeline-policy';
 import type { Point, Rect, SnapshotNode } from '@agent-device/kernel/snapshot';
 import type { AgentDeviceRuntime, CommandContext } from '../../../runtime-contract.ts';
 import {
@@ -128,10 +128,7 @@ export type { HoverCommandResult };
 export type GestureDirection = ScrollDirection;
 // The input vocabulary lives in contracts/scroll-gesture.ts beside the other scroll vocabularies,
 // so the public API can declare `ScrollOptions` without depending on this command runtime.
-export {
-  SCROLL_INPUT_DIRECTIONS,
-  type ScrollInputDirection,
-} from '@agent-device/contracts/scroll-gesture';
+export { type ScrollInputDirection } from '@agent-device/contracts/scroll-gesture';
 
 export type ScrollTarget =
   | InteractionTarget
