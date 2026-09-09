@@ -390,11 +390,11 @@ describe("Suite and Environment routes", () => {
     expect(document.body.textContent).not.toContain("cookie");
     expect(document.body.textContent).not.toContain("← Back to recording");
     await clickButton("More");
-    await clickButton("Open in system browser");
+    await clickButton("Open browser window");
     expect(calls.open).toBe(1);
-    expect(openExternal).toHaveBeenCalledWith(space.startUrl);
+    expect(openExternal).not.toHaveBeenCalled();
 
-    await clickButton("Open");
+    await clickButton("Open in Relay");
     expect(calls.open).toBe(2);
     expect(history.location.pathname).toBe(`/devices/${space.id}`);
     await act(async () => {

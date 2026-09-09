@@ -47,7 +47,7 @@ function signInStatus(fixture: { revokedAt?: number; expiresAt?: number }): stri
 }
 
 export function EnvironmentPage() {
-  const { browserSpacesService, suiteProfileService, platform, queryClient } = useRouteContext({
+  const { browserSpacesService, suiteProfileService, queryClient } = useRouteContext({
     from: "__root__",
   });
   const { profileId } = routeApi.useParams();
@@ -86,7 +86,6 @@ export function EnvironmentPage() {
   });
   const openExternal = useMutation({
     mutationFn: () => browserSpacesService.openSpace(profileId),
-    onSuccess: (session) => platform.openExternal?.(session.url),
   });
   const saveAccount = useMutation({
     mutationFn: () =>
@@ -194,7 +193,7 @@ export function EnvironmentPage() {
                   </Button>
                 ) : null}
                 <Button variant="default" onClick={() => open.mutate()} disabled={open.isPending}>
-                  {open.isPending ? "Opening…" : "Open"}
+                  {open.isPending ? "Opening…" : "Open in Relay"}
                 </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger
@@ -207,7 +206,7 @@ export function EnvironmentPage() {
                       onClick={() => openExternal.mutate()}
                       disabled={openExternal.isPending}
                     >
-                      {openExternal.isPending ? "Opening…" : "Open in system browser"}
+                      {openExternal.isPending ? "Opening…" : "Open browser window"}
                     </DropdownMenuItem>
                     <DropdownMenuItem variant="destructive" onClick={() => setRemoveOpen(true)}>
                       Remove
