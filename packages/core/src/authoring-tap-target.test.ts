@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { AuthoringObservation } from "@relay/protocol";
 import { semanticTargetForRecording } from "./authoring-tap-target.js";
+import { resolveNamedControlOutcome } from "./device-target-resolution.js";
 
 function observation(): AuthoringObservation {
   return {
@@ -46,6 +47,34 @@ test("a unique identifier takes priority over localized text", () => {
   assert.deepEqual(semanticTargetForRecording({ point: { x: 70, y: 120 } }, capture)?.target, {
     identifier: "app:id/internet",
   });
+});
+test("a containing control identifier wins over its nested label and resolves after translation and movement", () => {
+  const capture = observation();
+  capture.nodes!.push({
+    identifier: "app:id/open_internet",
+    type: "button",
+    enabled: true,
+    rect: { x: 10, y: 90, width: 300, height: 90 },
+  });
+  const recorded = semanticTargetForRecording({ point: { x: 70, y: 120 } }, capture);
+  assert.deepEqual(recorded?.target, { identifier: "app:id/open_internet" });
+  const replay = resolveNamedControlOutcome(
+    [
+      {
+        identifier: "app:id/open_internet",
+        label: "インターネット",
+        type: "button",
+        enabled: true,
+        rect: { x: 30, y: 250, width: 330, height: 110 },
+      },
+    ],
+    recorded!.target,
+  );
+  assert.equal(replay.status, "resolved");
+  if (replay.status === "resolved") {
+    assert.equal(replay.resolution.method, "identifier");
+    assert.deepEqual(replay.resolution.bounds, { x: 30, y: 250, width: 330, height: 110 });
+  }
 });
 test("stale trees and ambiguous labels do not replace a coordinate click", () => {
   const capture = observation();

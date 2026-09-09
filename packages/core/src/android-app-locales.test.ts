@@ -1,11 +1,101 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { writeFile } from "node:fs/promises";
 import {
   androidBaseApkPath,
+  clearAndroidAppLocaleCache,
+  listAndroidAppLocales,
   parseAndroidLocaleConfig,
   parseAndroidResourceLocales,
   setAndroidAppLocaleOnDevice,
 } from "./android-app-locales.js";
+
+test("discovers LocaleConfig through the callsite cache without caching current locale", async () => {
+  clearAndroidAppLocaleCache();
+  let currentLocale = "en-US";
+  let build = { versionCode: "42", lastUpdateTime: "2026-09-09 01:00:00" };
+  let apkLocales = ["en", "de"];
+  const calls: string[][] = [];
+  const command = async (file: string, args: readonly string[]) => {
+    calls.push([file, ...args]);
+    if (args.includes("get-app-locales"))
+      return { stdout: `Locales for app for user 0 are [${currentLocale}]` };
+    if (args.includes("get-device-locale")) return { stdout: "" };
+    if (args.includes("pm") && args.includes("path"))
+      return { stdout: "package:/data/app/example/base.apk\n" };
+    if (args.includes("dumpsys"))
+      return {
+        stdout: `versionCode=${build.versionCode}\nversionName=1.0\nlastUpdateTime=${build.lastUpdateTime}\n`,
+      };
+    if (args.includes("pull")) {
+      await writeFile(args.at(-1)!, "fake apk");
+      return { stdout: "" };
+    }
+    if (args[0] === "dump" && args[1] === "xmltree" && args[3] === "AndroidManifest.xml")
+      return { stdout: "A: android:localeConfig=@0x7f16000e" };
+    if (args[0] === "dump" && args[1] === "resources")
+      return { stdout: "resource 0x7f16000e xml/locales_config" };
+    if (args[0] === "dump" && args[1] === "xmltree")
+      return {
+        stdout: apkLocales
+          .map((locale) => `A: android:name="${locale}" (Raw: "${locale}")`)
+          .join("\n"),
+      };
+    throw new Error(`unexpected fake command: ${args.join(" ")}`);
+  };
+  const options = { command, resolveTool: async (tool: "adb" | "aapt2") => tool };
+
+  const first = await listAndroidAppLocales("pixel-1", "com.example", options);
+  assert.deepEqual(first, {
+    locales: ["en", "de"],
+    currentLocale: "en-US",
+    source: "android-locale-manager",
+  });
+  const extractionCalls = calls.length;
+  currentLocale = "de-DE";
+  const second = await listAndroidAppLocales("pixel-1", "com.example", options);
+  assert.deepEqual(second, {
+    locales: ["en", "de"],
+    currentLocale: "de-DE",
+    source: "android-locale-manager",
+  });
+  assert.equal(
+    calls.length,
+    extractionCalls + 3,
+    "cache hit still reads locale, path, and build metadata",
+  );
+
+  build = { versionCode: "43", lastUpdateTime: "2026-09-09 02:00:00" };
+  apkLocales = ["en", "fr"];
+  const third = await listAndroidAppLocales("pixel-1", "com.example", options);
+  assert.deepEqual(third.locales, ["en", "fr"]);
+  assert.ok(calls.length > extractionCalls + 3, "changed APK identity must re-extract resources");
+});
+
+test("does not cache APK locales when package build identity is unavailable", async () => {
+  clearAndroidAppLocaleCache();
+  let pulls = 0;
+  const command = async (file: string, args: readonly string[]) => {
+    if (args.includes("get-app-locales")) return { stdout: "Locales for app for user 0 are [en]" };
+    if (args.includes("pm") && args.includes("path"))
+      return { stdout: "package:/data/app/example/base.apk" };
+    if (args.includes("dumpsys")) throw new Error("dumpsys unavailable");
+    if (args.includes("pull")) {
+      pulls++;
+      await writeFile(args.at(-1)!, "fake apk");
+      return { stdout: "" };
+    }
+    if (args[0] === "dump" && args[1] === "xmltree" && args[3] === "AndroidManifest.xml")
+      return { stdout: "" };
+    if (args[0] === "dump" && args[1] === "resources")
+      return { stdout: "      (en) (array) size=1" };
+    throw new Error(`unexpected fake command: ${args.join(" ")}`);
+  };
+  const options = { command, resolveTool: async (tool: "adb" | "aapt2") => tool };
+  await listAndroidAppLocales("pixel-1", "com.example", options);
+  await listAndroidAppLocales("pixel-1", "com.example", options);
+  assert.equal(pulls, 2);
+});
 
 test("finds named system APKs and prefers the base over locale splits", () => {
   assert.equal(

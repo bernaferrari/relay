@@ -10,6 +10,55 @@ import { runWithTargetContext } from "./target-context.js";
 
 const execFileAsync = promisify(execFile);
 const MAX_APK_TOOL_OUTPUT = 64 * 1024 * 1024;
+const MAX_LOCALE_CACHE_ENTRIES = 32;
+const localeCache = new Map<string, string[]>();
+type LocaleDiscoveryCommand = (
+  file: string,
+  args: readonly string[],
+  options?: { maxBuffer?: number },
+) => Promise<{ stdout?: string }>;
+type LocaleDiscoveryToolResolver = (tool: "adb" | "aapt2") => Promise<string>;
+
+export function androidLocaleCacheKey(input: {
+  serial: string;
+  packageName: string;
+  baseApkPath: string;
+  versionCode?: string;
+  versionName?: string;
+  lastUpdateTime?: string;
+}): string {
+  return JSON.stringify([
+    input.serial,
+    input.packageName,
+    input.baseApkPath,
+    input.versionCode ?? "",
+    input.versionName ?? "",
+    input.lastUpdateTime ?? "",
+  ]);
+}
+
+function cachedLocales(key: string): string[] | undefined {
+  const locales = localeCache.get(key);
+  if (!locales) return undefined;
+  localeCache.delete(key);
+  localeCache.set(key, locales);
+  return [...locales];
+}
+
+function cacheLocales(key: string, locales: string[]): void {
+  localeCache.delete(key);
+  localeCache.set(key, [...locales]);
+  while (localeCache.size > MAX_LOCALE_CACHE_ENTRIES) {
+    const oldest = localeCache.keys().next().value;
+    if (oldest === undefined) break;
+    localeCache.delete(oldest);
+  }
+}
+
+/** Test and host lifecycle seam; observed current locale is never cached. */
+export function clearAndroidAppLocaleCache(): void {
+  localeCache.clear();
+}
 
 function validPackageName(value: string): boolean {
   return /^[A-Za-z0-9._-]+$/.test(value);
@@ -71,6 +120,10 @@ export function parseAndroidResourceLocales(resources: string): string[] {
 export async function listAndroidAppLocales(
   serial: string,
   packageName: string,
+  options: {
+    command?: LocaleDiscoveryCommand;
+    resolveTool?: LocaleDiscoveryToolResolver;
+  } = {},
 ): Promise<{
   locales: string[];
   currentLocale?: string;
@@ -79,9 +132,14 @@ export async function listAndroidAppLocales(
   if (!serial.trim()) throw new Error("device serial is required");
   if (!validPackageName(packageName))
     throw new Error("app package name contains unsupported characters");
-  const aapt2 = await resolveAndroidSdkTool("aapt2");
-  const adb = await resolveAndroidSdkTool("adb");
-  const current = await execFileAsync(adb, [
+  const resolveTool = options.resolveTool ?? resolveAndroidSdkTool;
+  const command: LocaleDiscoveryCommand =
+    options.command ??
+    ((file, args, commandOptions) =>
+      execFileAsync(file, [...args], commandOptions) as Promise<{ stdout?: string }>);
+  const aapt2 = await resolveTool("aapt2");
+  const adb = await resolveTool("adb");
+  const current = await command(adb, [
     "-s",
     serial,
     "shell",
@@ -95,7 +153,7 @@ export async function listAndroidAppLocales(
     ? "android-locale-manager"
     : undefined;
   if (!currentLocale) {
-    const device = await execFileAsync(adb, [
+    const device = await command(adb, [
       "-s",
       serial,
       "shell",
@@ -109,20 +167,46 @@ export async function listAndroidAppLocales(
   const workspace = await mkdtemp(path.join(tmpdir(), "relay-app-locales-"));
   const apk = path.join(workspace, "base.apk");
   try {
-    const { stdout: packagePaths } = await execFileAsync(
+    const { stdout: packagePaths } = await command(
       adb,
       ["-s", serial, "shell", "pm", "path", packageName],
       { maxBuffer: MAX_APK_TOOL_OUTPUT },
     );
     const remoteApk = androidBaseApkPath(String(packagePaths));
     if (!remoteApk) throw new Error(`${packageName} is not installed on ${serial}`);
-    await execFileAsync(adb, ["-s", serial, "pull", remoteApk, apk], {
+    const packageDump = await command(
+      adb,
+      ["-s", serial, "shell", "dumpsys", "package", packageName],
+      {
+        maxBuffer: MAX_APK_TOOL_OUTPUT,
+      },
+    ).catch(() => ({ stdout: "" }));
+    const dump = String(packageDump.stdout ?? "");
+    const versionCode = dump.match(/versionCode=([^\s]+)/u)?.[1];
+    const versionName = dump.match(/versionName=([^\r\n]+)/u)?.[1]?.trim();
+    const lastUpdateTime = dump.match(/lastUpdateTime=([^\r\n]+)/u)?.[1]?.trim();
+    // A cache entry is safe only when package-manager metadata identifies the
+    // installed build. A path alone can remain stable across APK updates.
+    const cacheKey =
+      versionCode && lastUpdateTime
+        ? androidLocaleCacheKey({
+            serial,
+            packageName,
+            baseApkPath: remoteApk,
+            versionCode,
+            ...(versionName ? { versionName } : {}),
+            lastUpdateTime,
+          })
+        : undefined;
+    const cached = cacheKey ? cachedLocales(cacheKey) : undefined;
+    if (cached) return { locales: cached, ...(currentLocale ? { currentLocale, source } : {}) };
+    await command(adb, ["-s", serial, "pull", remoteApk, apk], {
       maxBuffer: MAX_APK_TOOL_OUTPUT,
     });
     const runAapt = async (args: string[]) =>
       String(
         (
-          await execFileAsync(aapt2, args, {
+          await command(aapt2, args, {
             maxBuffer: MAX_APK_TOOL_OUTPUT,
           })
         ).stdout,
@@ -130,8 +214,10 @@ export async function listAndroidAppLocales(
     const manifest = await runAapt(["dump", "xmltree", "--file", "AndroidManifest.xml", apk]);
     const resourceId = manifest.match(/android:localeConfig[^\n]*=@(0x[0-9a-f]+)/i)?.[1];
     if (!resourceId) {
+      const locales = parseAndroidResourceLocales(await runAapt(["dump", "resources", apk]));
+      if (cacheKey) cacheLocales(cacheKey, locales);
       return {
-        locales: parseAndroidResourceLocales(await runAapt(["dump", "resources", apk])),
+        locales,
         ...(currentLocale ? { currentLocale, source } : {}),
       };
     }
@@ -140,11 +226,13 @@ export async function listAndroidAppLocales(
     const resourceName = resources.match(
       new RegExp(`resource\\s+${escaped}\\s+xml\\/([A-Za-z0-9_.-]+)`, "i"),
     )?.[1];
-    if (!resourceName)
+    if (!resourceName) {
+      if (cacheKey) cacheLocales(cacheKey, []);
       return {
         locales: [],
         ...(currentLocale ? { currentLocale, source } : {}),
       };
+    }
     const localeXml = await runAapt([
       "dump",
       "xmltree",
@@ -152,8 +240,10 @@ export async function listAndroidAppLocales(
       `res/xml/${resourceName}.xml`,
       apk,
     ]);
+    const locales = parseAndroidLocaleConfig({ manifest, resources, localeXml });
+    if (cacheKey) cacheLocales(cacheKey, locales);
     return {
-      locales: parseAndroidLocaleConfig({ manifest, resources, localeXml }),
+      locales,
       ...(currentLocale ? { currentLocale, source } : {}),
     };
   } finally {

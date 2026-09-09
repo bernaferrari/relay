@@ -29,14 +29,15 @@ export function semanticTargetForRecording(
         contains(node.rect),
     )
     .sort((a, b) => a.rect!.width * a.rect!.height - b.rect!.width * b.rect!.height);
-  for (const node of candidates) {
-    // A full-screen container's name is not the control the person clicked.
-    if (
-      node.rect!.width * node.rect!.height >
-      (observation.bounds.width * observation.bounds.height) / 3
-    )
-      continue;
-    for (const key of ["identifier", "label"] as const) {
+  // Search every hit control for a unique ID before considering translated labels.
+  for (const key of ["identifier", "label"] as const) {
+    for (const node of candidates) {
+      // A full-screen container's name is not the control the person clicked.
+      if (
+        node.rect!.width * node.rect!.height >
+        (observation.bounds.width * observation.bounds.height) / 3
+      )
+        continue;
       const value = node[key]?.trim();
       if (!value) continue;
       const selector = { [key]: value };
