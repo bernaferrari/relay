@@ -15,6 +15,7 @@
   "@agent-device/contracts/app-state-runtime",
   "@agent-device/contracts/app-switcher-runtime",
   "@agent-device/contracts/apple-runner-request",
+  "@agent-device/contracts/apple-session-observation",
   "@agent-device/contracts/application-lifecycle-interaction",
   "@agent-device/contracts/application-lifecycle-runtime",
   "@agent-device/contracts/application-lifecycle-runtime-plan",
