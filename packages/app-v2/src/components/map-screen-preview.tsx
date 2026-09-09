@@ -43,16 +43,13 @@ export function MapScreenPreview({
   }, [preview.data]);
   const url = image?.blob === preview.data ? image?.url : undefined;
   return (
-    <div
-      ref={container}
-      className="flex h-full min-h-0 w-full items-center justify-center overflow-hidden bg-muted/40"
-    >
+    <div ref={container} className="flex h-full min-h-0 w-full items-center justify-center">
       {url ? (
         <img
           draggable={false}
           src={url}
           alt={title}
-          className="h-full w-full object-contain"
+          className="max-h-full w-auto max-w-full object-contain"
           loading="lazy"
           onLoad={(event) => {
             const dimensions = {

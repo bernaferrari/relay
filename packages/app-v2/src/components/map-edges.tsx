@@ -216,7 +216,15 @@ export function MapEdges({
                 ? 0.15
                 : 1
           }
-          className="relay-map-edge [&>path]:fill-none [&>path]:stroke-[color-mix(in_srgb,var(--text-weaker)_58%,var(--border-weak-base))] [&>path]:[stroke-linecap:round] [&>path]:stroke-[1.5] [&>path]:[vector-effect:non-scaling-stroke] [&>rect]:fill-[var(--surface-raised-stronger-non-alpha)] [&>rect]:stroke-[var(--border-weak-base)] [&>rect]:stroke-1 [&>rect]:[vector-effect:non-scaling-stroke] [&_text]:fill-[var(--text-weak)] [&_text]:font-sans [&_text]:text-[10.5px] [&_text]:font-semibold"
+          style={{
+            color:
+              selectedPathId === geometry.path.id ||
+              selectedScreenId === geometry.path.fromScreenId ||
+              selectedScreenId === geometry.path.toScreenId
+                ? "var(--color-sky-400)"
+                : "var(--text-weak)",
+          }}
+          className="relay-map-edge [&>path]:fill-none [&>path]:stroke-current [&>path]:[stroke-linecap:round] [&>path]:stroke-[1.5] [&>path]:[vector-effect:non-scaling-stroke] [&>rect]:fill-[var(--surface-raised-stronger-non-alpha)] [&>rect]:stroke-[var(--border-weak-base)] [&>rect]:stroke-1 [&>rect]:[vector-effect:non-scaling-stroke] [&_text]:fill-[var(--text-weak)] [&_text]:font-sans [&_text]:text-[10.5px] [&_text]:font-semibold"
         >
           {geometry.anchor ? (
             <>

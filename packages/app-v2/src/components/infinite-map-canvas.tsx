@@ -607,7 +607,7 @@ export function InfiniteMapCanvas({
               return (
                 <button
                   type="button"
-                  className={`relay-map-screen absolute flex flex-col gap-2 text-left focus-visible:outline-2 focus-visible:outline-ring${selectedNode ? " ring-2 ring-primary" : ""}`}
+                  className={`relay-map-screen absolute flex flex-col gap-2 text-left focus-visible:outline-2 focus-visible:outline-ring${selectedNode ? " [&_img]:outline-2 [&_img]:outline-sky-400 [&_img]:outline-offset-4" : ""}`}
                   key={screen.id}
                   aria-pressed={selectedNode}
                   onClick={() => {
@@ -673,7 +673,7 @@ export function InfiniteMapCanvas({
                   <span className="line-clamp-2 h-10 shrink-0 text-sm font-medium leading-tight">
                     {screen.title}
                   </span>
-                  <div className="h-[300px] w-full shrink-0 overflow-hidden bg-muted/30">
+                  <div className="h-[300px] w-full shrink-0">
                     <MapScreenPreview
                       uri={screen.screenshotUri}
                       load={loadScreenshot}

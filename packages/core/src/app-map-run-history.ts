@@ -81,6 +81,25 @@ function runLocale(run: PersistedRun): string | undefined {
   return undefined;
 }
 
+async function hasValidationReceipt(
+  run: PersistedRun,
+  provenance: { appMapId: string; appMapRevision: number; testId: string },
+): Promise<boolean> {
+  if (!run.projectId) return false;
+  const map = await readAppMap(run.projectId, provenance.appMapId);
+  if (
+    !map ||
+    map.tests[provenance.testId]?.validation?.appMapRevision !== provenance.appMapRevision
+  )
+    return false;
+  const receipt = map.activity[`test-validated-${run.id}`];
+  return Boolean(
+    receipt?.eventType === "test.validated" &&
+    receipt.subject.kind === "test" &&
+    receipt.subject.id === provenance.testId,
+  );
+}
+
 export function planScreenSteps(run: PersistedRun): Array<{ id: string; screenId: string }> {
   const artifact = run.artifacts.find((item) => item.kind === "app-map-test-plan")?.data;
   if (!artifact || typeof artifact !== "object" || Array.isArray(artifact)) return [];
@@ -141,8 +160,8 @@ async function promoteSuccessfulTestCaptures(
   run: PersistedRun,
   appMapId: string,
   targetProfile: TargetProfile | null,
-): Promise<void> {
-  if (run.outcome !== "passed" || !targetProfile || !run.dir) return;
+): Promise<boolean> {
+  if (run.outcome !== "passed" || !targetProfile || !run.dir) return false;
   const locale = runLocale(run);
   const expected = planScreenSteps(run);
   const captures: Array<{ screenId: string; frame: PersistedRun["frames"][number] }> = [];
@@ -150,7 +169,7 @@ async function promoteSuccessfulTestCaptures(
     const trace = run.steps.find((step) => step.recipeStepId === item.id);
     for (const frame of trace?.frames ?? []) captures.push({ screenId: item.screenId, frame });
   }
-  if (!captures.length) return;
+  if (!captures.length) return false;
   const latestByScreen = new Map<string, (typeof captures)[number]>();
   for (const capture of captures) {
     const previous = latestByScreen.get(capture.screenId);
@@ -213,7 +232,23 @@ async function promoteSuccessfulTestCaptures(
       },
     });
   }
-  if (!promoted.length) return;
+  if (!promoted.length) return false;
+  const current = await readAppMap(run.projectId!, appMapId);
+  if (!current) return false;
+  const hasAdditions = promoted.some(({ screenId }) => {
+    const screen = current.screens[screenId];
+    return Boolean(
+      screen &&
+      !screen.variantIds.some((id) => {
+        const existing = current.screenVariants[id];
+        return (
+          existing?.targetProfile.id === targetProfile.id &&
+          (existing.captureProvenance?.locale ?? "") === (locale ?? "")
+        );
+      }),
+    );
+  });
+  if (!hasAdditions) return false;
   await mutateStoredAppMap(run.projectId!, appMapId, (map) => {
     const scope = {
       organizationId: map.organizationId,
@@ -255,6 +290,7 @@ async function promoteSuccessfulTestCaptures(
     );
     return next;
   });
+  return true;
 }
 
 async function recordSuccessfulTestValidation(
@@ -339,13 +375,17 @@ export async function projectPersistedAppMapRun(run: PersistedRun): Promise<bool
   const testProvenance = compiledTestProvenance(run);
   if (testProvenance && !compiledPlan(run)) {
     const projected = await recordSuccessfulTestValidation(run, testProvenance);
-    if (projected)
-      await promoteSuccessfulTestCaptures(
-        run,
-        testProvenance.appMapId,
-        run.targetProfile ?? fallbackProfile(run),
-      );
-    return projected;
+    const recovered =
+      !projected && run.outcome === "passed" && (await hasValidationReceipt(run, testProvenance));
+    const promoted =
+      projected || recovered
+        ? await promoteSuccessfulTestCaptures(
+            run,
+            testProvenance.appMapId,
+            run.targetProfile ?? fallbackProfile(run),
+          )
+        : false;
+    return projected || promoted;
   }
   const plan = compiledPlan(run);
   const targetProfile = run.targetProfile ?? fallbackProfile(run);

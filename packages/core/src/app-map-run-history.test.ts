@@ -109,8 +109,6 @@ test(
       await createAppMap({
         organizationId: "org",
         projectId: "project",
-        serial: "golden",
-        platform: "browser",
         appMapId: "map",
         name: "Map",
       });
@@ -214,6 +212,13 @@ test(
           },
         ],
       };
+      // Model a crash after the validation receipt commit and before capture promotion.
+      assert.equal(await projectPersistedAppMapRun({ ...run, steps: [] }), true);
+      const receiptMap = await readAppMap("project", "map");
+      assert.deepEqual(receiptMap?.activity[`test-validated-${run.id}`]?.subject, {
+        kind: "test",
+        id: "checkout",
+      });
       assert.equal(await projectPersistedAppMapRun(run), true);
       const projected = await readAppMap("project", "map");
       const originVariants = projected!.screens.origin!.variantIds;
