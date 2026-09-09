@@ -184,6 +184,50 @@ function scenario(): AppMapScenarioTest {
   };
 }
 
+test("initial passive self-loop keeps destination proof and later source proof", () => {
+  const current = fixture();
+  current.connections.observe = {
+    ...current.connections["open-cart"]!,
+    id: "observe",
+    fromScreenId: "home",
+    destination: { kind: "screen", screenId: "home" },
+    label: "Observe",
+    actions: [{ id: "observe", kind: "passive", reason: "observe-only" }],
+  };
+  const base = scenario();
+  const work = {
+    ...base,
+    capture: { mode: "every-screen" as const },
+    steps: [
+      {
+        id: "observe",
+        kind: "instruction" as const,
+        intent: "Observe",
+        capture: true,
+        binding: { status: "resolved" as const, kind: "connections" as const, connectionIds: ["observe"] },
+      },
+      ...base.steps,
+    ],
+  };
+  const compiled = compileAppMapTest(current, work);
+  const root = compiled.graph[compiled.plan.rootRecipeId]!;
+  const observeModule = root.steps[0];
+  assert.equal(observeModule?.kind, "module");
+  if (observeModule?.kind !== "module") throw new Error("observe module was not compiled");
+  const observeRecipe = compiled.graph[observeModule.recipeId]!;
+  assert.equal(observeRecipe.steps.some((step) => step.id?.startsWith("relay-source-")), false);
+  assert.equal(observeRecipe.steps.some((step) => step.id?.startsWith("relay-destination-")), true);
+  const firstTapModule = root.steps.find((step) => step.id?.includes("navigate"));
+  assert.equal(firstTapModule?.kind, "module");
+  if (firstTapModule?.kind !== "module") throw new Error("first tap module was not compiled");
+  const firstTapRecipe = compiled.graph[firstTapModule!.recipeId]!;
+  assert.equal(firstTapRecipe.steps.some((step) => step.id === "relay-action-tap-cart"), true);
+  assert.equal(
+    firstTapRecipe.steps.some((step) => step.id?.startsWith("relay-destination-")),
+    true,
+  );
+});
+
 test("proposes monotonic document order only inside a proven Settings segment", () => {
   const current = fixture();
   current.screenVariants.settings = {

@@ -570,6 +570,24 @@ export function compileAppMapScenarioTest(
               ];
             }),
           });
+          // The initial saved-origin check already proves the screen before a
+          // passive self-loop. Retain its destination check and capture, while
+          // preserving source proofs for every mutating or later transition.
+          if (suffix === "root" && start === 0 && plan.connections.length === 1) {
+            const connection = map.connections[plan.connections[0]!.connectionId];
+            const selfLoop =
+              connection?.destination.kind === "screen" &&
+              connection.fromScreenId === connection.destination.screenId &&
+              connection.actions.every((action) => action.kind === "passive");
+            const rootRecipe = instructionGraph[plan.rootRecipeId];
+            if (
+              selfLoop &&
+              rootRecipe?.steps[0]?.kind === "expect-screen" &&
+              rootRecipe.steps[0].id?.startsWith("relay-source-")
+            ) {
+              rootRecipe.steps = rootRecipe.steps.slice(1);
+            }
+          }
           for (const [recipeKey, recipe] of Object.entries(instructionGraph)) {
             instructionGraph[recipeKey] = decorateRecipe(recipe);
           }
