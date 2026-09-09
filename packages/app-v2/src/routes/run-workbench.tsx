@@ -10,6 +10,10 @@ import {
   Circle,
   CircleAlert,
   ImageOff,
+  Play,
+  Pause,
+  ChevronLeft,
+  ChevronRight,
   Hand,
   ArrowLeft,
   Camera,
@@ -17,7 +21,7 @@ import {
   Keyboard,
   MoveUpRight,
 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   framePathsForTraceStep,
   type ProductRunReportOverview,
@@ -39,6 +43,15 @@ export function RunWorkbench({
   const [requestedPanel, setPanel] = useState<
     "steps" | "performance" | "details" | "video" | "logs"
   >("steps");
+  const [playing, setPlaying] = useState(false);
+  useEffect(() => {
+    if (!playing) return;
+    const timer = setTimeout(() => {
+      if (selectedStepIndex >= report.timeline.length - 1) setPlaying(false);
+      else onSelectStep(selectedStepIndex + 1);
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [playing, selectedStepIndex, report.timeline.length, onSelectStep]);
   const [logFilter, setLogFilter] = useState("");
   const logs = report.evidence.find((section) => section.id === "logs")?.items ?? [];
   const step = report.timeline[selectedStepIndex] ?? report.timeline[0];
@@ -122,6 +135,48 @@ export function RunWorkbench({
           </span>
         </div>
         <StepMedia key={`${report.runId}:${step.id}`} frames={frames} fill />
+        <div
+          className="flex shrink-0 items-center justify-center gap-2 border-t border-border/50 px-3 py-2"
+          aria-label="Step playback"
+        >
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            aria-label="Previous step"
+            disabled={selectedStepIndex === 0}
+            onClick={() => {
+              setPlaying(false);
+              onSelectStep(selectedStepIndex - 1);
+            }}
+          >
+            <ChevronLeft />
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => {
+              if (!playing && selectedStepIndex === report.timeline.length - 1) onSelectStep(0);
+              setPlaying(!playing);
+            }}
+            aria-label={playing ? "Pause step playback" : "Play steps"}
+          >
+            {playing ? <Pause /> : <Play />}
+            {playing ? "Pause" : "Play steps"}
+          </Button>
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            aria-label="Next step"
+            disabled={selectedStepIndex === report.timeline.length - 1}
+            onClick={() => {
+              setPlaying(false);
+              onSelectStep(selectedStepIndex + 1);
+            }}
+          >
+            <ChevronRight />
+          </Button>
+          <span className="text-xs text-muted-foreground">1 step / second</span>
+        </div>
       </div>
       <div className="flex min-h-0 min-w-0 flex-col">
         <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">

@@ -167,6 +167,27 @@ function render(selectedStepIndex = 0) {
 }
 
 describe("RunWorkbench", () => {
+  it("plays saved steps and pauses without running the device", () => {
+    vi.useFakeTimers();
+    try {
+      const host = render();
+      act(() => host.querySelector<HTMLButtonElement>('[aria-label="Play steps"]')!.click());
+      act(() => vi.advanceTimersByTime(1000));
+      expect(host.querySelector('[aria-current="step"]')?.textContent).toContain(
+        "Submit the order",
+      );
+      act(() =>
+        host.querySelector<HTMLButtonElement>('[aria-label="Pause step playback"]')!.click(),
+      );
+      act(() => vi.advanceTimersByTime(2000));
+      expect(host.querySelector('[aria-current="step"]')?.textContent).toContain(
+        "Submit the order",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("links the performance peak to its step and saved screenshot", () => {
     const host = render();
     act(() =>

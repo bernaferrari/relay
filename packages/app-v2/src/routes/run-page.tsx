@@ -17,7 +17,13 @@ import {
   useNavigate,
   useRouteContext,
 } from "@tanstack/react-router";
-import { ChevronRight } from "lucide-react";
+import {
+  Dialog,
+  DialogTrigger,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+} from "@relay/ui-react/components/dialog";
 import { useEffect, useRef, useState } from "react";
 
 import { EmptyState } from "../components/product-patterns";
@@ -451,6 +457,37 @@ function RunReport({
   const heading = resultHeading(report.outcome);
   const actions = (
     <>
+      <Dialog>
+        <DialogTrigger render={<Button size="sm" variant="ghost" />}>Configuration</DialogTrigger>
+        <DialogContent>
+          <DialogTitle>Recorded configuration</DialogTitle>
+          <DialogDescription>Environment saved with this run.</DialogDescription>
+          <dl className="grid gap-x-8 gap-y-4 px-1 py-3 sm:grid-cols-2">
+            {[
+              ["Device", report.targetName],
+              ["Build", report.executionContext?.buildId],
+              ["Profile", report.executionContext?.targetProfileId],
+              ["Source revision", report.executionContext?.sourceRevision],
+            ]
+              .filter(([, value]) => value)
+              .map(([label, value]) => (
+                <div key={label} className="min-w-0">
+                  <dt className="text-xs text-muted-foreground">{label}</dt>
+                  <dd className="mt-1 break-words text-sm">{value}</dd>
+                </div>
+              ))}
+            {report.executionContext?.browser ? (
+              <div className="sm:col-span-2">
+                <dt className="text-xs text-muted-foreground">Browser</dt>
+                <dd className="mt-1 break-words font-mono text-xs">
+                  {report.executionContext.browser}
+                </dd>
+              </div>
+            ) : null}
+          </dl>
+        </DialogContent>
+      </Dialog>
+
       {runService.exportEvidence ? (
         <RunEvidenceExport runId={report.runId} exportEvidence={runService.exportEvidence} />
       ) : null}
@@ -555,41 +592,6 @@ function RunReport({
             }}
           />
         ) : null}
-
-        <Collapsible className="grid gap-3">
-          <CollapsibleTrigger className="group flex w-full items-center justify-between gap-3 py-3 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
-            Recorded configuration
-            <ChevronRight
-              aria-hidden="true"
-              className="size-4 shrink-0 group-aria-expanded:rotate-90"
-            />
-          </CollapsibleTrigger>
-          <CollapsibleContent>
-            <dl className="grid gap-x-8 gap-y-4 px-1 py-3 sm:grid-cols-2">
-              {[
-                ["Device", report.targetName],
-                ["Build", report.executionContext?.buildId],
-                ["Profile", report.executionContext?.targetProfileId],
-                ["Source revision", report.executionContext?.sourceRevision],
-              ]
-                .filter(([, value]) => value)
-                .map(([label, value]) => (
-                  <div key={label} className="min-w-0">
-                    <dt className="text-xs text-muted-foreground">{label}</dt>
-                    <dd className="mt-1 break-words text-sm">{value}</dd>
-                  </div>
-                ))}
-              {report.executionContext?.browser ? (
-                <div className="sm:col-span-2">
-                  <dt className="text-xs text-muted-foreground">Browser</dt>
-                  <dd className="mt-1 break-words font-mono text-xs">
-                    {report.executionContext.browser}
-                  </dd>
-                </div>
-              ) : null}
-            </dl>
-          </CollapsibleContent>
-        </Collapsible>
 
         <RunReviewControls runId={report.runId} service={runService} />
 
