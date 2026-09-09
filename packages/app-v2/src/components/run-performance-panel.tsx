@@ -50,6 +50,17 @@ export function RunPerformancePanel({
   const selected = metric.points.find((point) => point.at === selectedAt);
   const x = (at: number) =>
     44 + Math.max(0, Math.min(540, ((at - first) / Math.max(1, last - first)) * 540));
+  const markerRows: number[][] = [];
+  const markerY = timeline.map((item) => {
+    if (item.startedAt === undefined) return 114;
+    const center = x(item.startedAt);
+    // Reserve the top lane near the endpoint time labels only.
+    let row = center < 86 || center > 542 ? 1 : 0;
+    while (markerRows[row]?.some((other) => Math.abs(other - center) < 22)) row++;
+    (markerRows[row] ??= []).push(center);
+    return 114 + row * 22;
+  });
+  const chartHeight = Math.max(152, ...markerY.map((top) => top + 24));
   const y = (value: number) => 108 - ((value - low) / (ceiling - low)) * 92;
   const inspect = (index: number) => {
     const point = metric.points[index]!;
@@ -120,7 +131,7 @@ export function RunPerformancePanel({
       ) : (
         <>
           <svg
-            viewBox="0 0 600 180"
+            viewBox={`0 0 600 ${chartHeight}`}
             className="block h-auto w-full overflow-visible"
             aria-label={`${metricLabel(metric.name)}, ${isStartup ? "Launch measurement" : `${metric.points.length} samples`}`}
           >
@@ -236,15 +247,15 @@ export function RunPerformancePanel({
                     <line
                       x1={x(item.startedAt)}
                       x2={x(item.startedAt)}
-                      y1={step?.id === item.id ? 8 : (index % 2 ? 154 : 134) - 6}
-                      y2={index % 2 ? 154 : 134}
+                      y1="8"
+                      y2={markerY[index]}
                       stroke="currentColor"
                       opacity={step?.id === item.id ? ".45" : ".12"}
                       strokeDasharray="2 3"
                     />
                     <rect
                       x={x(item.startedAt) - 9}
-                      y={index % 2 ? 154 : 134}
+                      y={markerY[index]}
                       width="18"
                       height="18"
                       rx="4"
@@ -253,7 +264,7 @@ export function RunPerformancePanel({
                     />
                     <text
                       x={x(item.startedAt)}
-                      y={index % 2 ? 167 : 147}
+                      y={markerY[index]! + 13}
                       textAnchor="middle"
                       fill="currentColor"
                       fontSize="10"
