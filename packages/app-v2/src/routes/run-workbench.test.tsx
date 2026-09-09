@@ -175,9 +175,9 @@ describe("RunWorkbench", () => {
         .click(),
     );
     act(() =>
-      [...host.querySelectorAll("button")]
-        .find((button) => button.textContent === "Inspect peak")!
-        .click(),
+      host
+        .querySelectorAll<SVGElement>('svg [role="button"]')[1]!
+        .dispatchEvent(new MouseEvent("click", { bubbles: true })),
     );
     expect(host.textContent).toContain("Check the order confirmation");
     expect(host.querySelector('img[alt="Confirmation missing"]')).not.toBeNull();

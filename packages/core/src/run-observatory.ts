@@ -1,3 +1,5 @@
+import { open, realpath } from "node:fs/promises";
+import { join, sep } from "node:path";
 import type {
   AndroidPacketCaptureProvenance,
   EvidenceChannel,
@@ -564,4 +566,51 @@ export function buildRunEvidence(
     limits: { requested, applied, bodiesIncluded },
     notes: [...new Set(notes)],
   };
+}
+
+/** Hydrate only the bounded, run-owned log file, never a provider's external path. */
+export async function loadRunEvidence(
+  run: PersistedRun,
+  options: Parameters<typeof buildRunEvidence>[1] = {},
+) {
+  const artifacts = await Promise.all(
+    run.artifacts.map(async (artifact) => {
+      if (artifact.kind !== "logs" || record(artifact.data).path !== "logs/app.log")
+        return artifact;
+      const data = record(artifact.data);
+      if (arrayFrom(data, ["entries", "logs", "lines", "items"]).length) return artifact;
+      try {
+        const root = await realpath(run.dir);
+        const path = await realpath(join(root, "logs/app.log"));
+        if (!path.startsWith(root + sep)) return artifact;
+        const file = await open(path, "r");
+        try {
+          const info = await file.stat();
+          if (!info.isFile()) return artifact;
+          const length = Math.min(info.size, 512 * 1024);
+          const buffer = Buffer.alloc(length);
+          const offset = info.size - length;
+          const { bytesRead } = await file.read(buffer, 0, length, offset);
+          const content = buffer.subarray(0, bytesRead).toString("utf8");
+          const lines = content.split(/\r?\n/);
+          if (offset) lines.shift();
+          return {
+            ...artifact,
+            data: {
+              ...data,
+              entries: lines
+                .filter(Boolean)
+                .slice(-(options.limit ?? 500))
+                .map((message) => ({ message, source: "Device log" })),
+            },
+          };
+        } finally {
+          await file.close();
+        }
+      } catch {
+        return artifact;
+      }
+    }),
+  );
+  return buildRunEvidence({ ...run, artifacts }, options);
 }

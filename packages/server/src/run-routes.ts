@@ -14,7 +14,7 @@ import {
   compareEvidenceMetrics,
   campaignCheckRepairInput,
   campaignRepairProposal,
-  buildRunEvidence,
+  loadRunEvidence,
   createRunShare,
   currentOperationContext,
   enqueueJob,
@@ -578,7 +578,7 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
     const includeBodies = url.searchParams.get("includeBodies") === "true";
     const testStepId = url.searchParams.get("testStepId")?.trim() || undefined;
     json(response, 200, {
-      evidence: buildRunEvidence(run, {
+      evidence: await loadRunEvidence(run, {
         limit,
         includeBodies,
         ...(testStepId ? { testStepId } : {}),

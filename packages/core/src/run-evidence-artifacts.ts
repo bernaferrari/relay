@@ -37,7 +37,13 @@ export async function materializeCaptureArtifact(
   const relativePath = "logs/app.log";
   await ensureOwnedDirectory(join(runDir, "logs"));
   await writeOwnedFile(join(runDir, relativePath), bounded.text);
-  return { ...redacted, path: relativePath, bytes: Buffer.byteLength(bounded.text) };
+  return {
+    ...redacted,
+    path: relativePath,
+    bytes: Buffer.byteLength(bounded.text),
+    retainedEntries: bounded.text.split(/\r?\n/).filter(Boolean).length,
+    truncated: bounded.truncated,
+  };
 }
 
 async function writeJsonCaptureArtifact(
@@ -67,7 +73,9 @@ async function writeJsonCaptureArtifact(
   return { ...boundedData, bytes: Buffer.byteLength(serialized) };
 }
 
-async function readBoundedLog(path: string): Promise<{ text: string } | undefined> {
+async function readBoundedLog(
+  path: string,
+): Promise<{ text: string; truncated: boolean } | undefined> {
   let handle: Awaited<ReturnType<typeof open>> | undefined;
   try {
     const info = await stat(path);
@@ -82,6 +90,7 @@ async function readBoundedLog(path: string): Promise<{ text: string } | undefine
     );
     const content = typeof text === "string" ? text : String(text);
     return {
+      truncated: offset > 0,
       text: `${offset > 0 ? "[REDACTED: log prefix omitted]\n" : ""}${content}`,
     };
   } catch {

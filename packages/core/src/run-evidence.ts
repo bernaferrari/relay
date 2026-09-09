@@ -320,8 +320,21 @@ async function persistCaptureArtifact(
 ): Promise<void> {
   const data = await materializeCaptureArtifact(job, kind, result);
   addArtifact(job, { kind, capturedAt: now(), data });
-  record.entries = entryCount(result);
-  record.bytes = byteCount(data);
+  const retained =
+    data && typeof data === "object"
+      ? (data as { retainedEntries?: number; bytes?: number; truncated?: boolean })
+      : undefined;
+  record.entries =
+    kind === "logs" && retained?.retainedEntries !== undefined
+      ? retained.retainedEntries
+      : entryCount(result);
+  record.bytes =
+    kind === "logs" && retained?.bytes !== undefined ? retained.bytes : byteCount(data);
+  if (kind === "logs" && retained?.truncated) {
+    record.status = "partial";
+    record.message =
+      "The latest 512 KB of device logs were retained; older log lines were omitted.";
+  }
   record.dropped = dropped;
   if (dropped > 0) record.status = "partial";
   record.finishedAt = now();

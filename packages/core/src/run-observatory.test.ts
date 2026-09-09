@@ -480,3 +480,25 @@ test("performance projection does not report missing Android CPU as zero or repe
   assert.equal(result.performance[0]?.metrics["startup.lastDurationMs"], 11_455);
   assert.equal(result.performance[1]?.metrics["startup.lastDurationMs"], undefined);
 });
+
+test("loads retained log files instead of reporting an empty capture", async () => {
+  const { mkdtemp, mkdir, writeFile, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { loadRunEvidence } = await import("./run-observatory.js");
+  const dir = await mkdtemp(join(tmpdir(), "relay-log-query-"));
+  try {
+    await mkdir(join(dir, "logs"));
+    await writeFile(join(dir, "logs/app.log"), "first message\nsecond message\n");
+    const saved = run({
+      dir,
+      artifacts: [{ kind: "logs", capturedAt: 50, data: { path: "logs/app.log" } }],
+    });
+    assert.equal(buildRunEvidence(saved).logs.length, 0);
+    const result = await loadRunEvidence(saved, { limit: 1 });
+    assert.equal(result.logs.length, 1);
+    assert.equal(result.logs[0]?.message, "second message");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
