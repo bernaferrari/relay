@@ -11,6 +11,7 @@ export type ReportEvidenceSection = {
 };
 
 export type ReportEvidenceItem = {
+  phase?: "before" | "after";
   id: string;
   title: string;
   detail?: string;

@@ -184,6 +184,31 @@ describe("RunWorkbench", () => {
     expect(host.querySelector('img[alt="Checkout submitted"]')).not.toBeNull();
   });
 
+  it("prefers an explicit after capture over an earlier before capture", () => {
+    const screenshots = report.evidence.find((section) => section.id === "screenshot")!;
+    const cart = screenshots.items.find((item) => item.id === "cart")!;
+    const original = { ...cart };
+    const step = report.timeline[0];
+    const originalPaths = step.framePaths;
+    Object.assign(cart, { phase: "before" });
+    const after = { ...cart, id: "cart-after", title: "Cart after", phase: "after" as const };
+    const items = screenshots.items as (typeof cart)[];
+    items.push(after);
+    step.framePaths = ["cart", "cart-after"];
+    const joined = stepEvidence[0].evidence.framePaths as string[];
+    joined.push("cart-after");
+    try {
+      const host = render(0);
+      expect(host.querySelector('img[alt="Cart after"]')).not.toBeNull();
+    } finally {
+      items.pop();
+      joined.pop();
+      Object.assign(cart, original);
+      delete cart.phase;
+      step.framePaths = originalPaths;
+    }
+  });
+
   it("plays saved steps and pauses without running the device", () => {
     vi.useFakeTimers();
     try {

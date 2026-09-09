@@ -135,6 +135,11 @@ function evidenceItems(
       return {
         id: text(frame.path) ?? `screenshot-${index}`,
         title: publicFrameCaption(frame.caption) ?? `Screenshot ${index + 1}`,
+        ...(/^before · /u.test(text(frame.caption) ?? "")
+          ? { phase: "before" as const }
+          : /^after · /u.test(text(frame.caption) ?? "")
+            ? { phase: "after" as const }
+            : {}),
         ...(media ? { media } : {}),
         ...(finite(frame.capturedAt) === undefined
           ? {}

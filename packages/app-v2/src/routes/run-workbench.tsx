@@ -75,12 +75,13 @@ export function RunWorkbench({
   const beforeFrame = report.evidence
     .find((section) => section.id === "screenshot")
     ?.items.find((item) => item.id === step?.beforeFramePath && item.media);
-  const actionFrames = beforeFrame
-    ? [
-        { ...beforeFrame, title: "Before action · previous saved frame" },
-        ...frames.filter((item) => item.id !== beforeFrame.id),
-      ]
-    : frames;
+  const actionFrames =
+    beforeFrame && frames.length > 0
+      ? [
+          { ...beforeFrame, title: "Before action · previous saved frame" },
+          ...frames.filter((item) => item.id !== beforeFrame.id),
+        ]
+      : frames;
   if (!step)
     return (
       <section
@@ -399,7 +400,10 @@ function StepMedia({
   beforeFramePath?: string;
 }) {
   const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
-  const [selected, setSelected] = useState(beforeFramePath && frames.length > 1 ? 1 : 0);
+  const [selected, setSelected] = useState(() => {
+    const after = frames.findIndex((item) => item.phase === "after");
+    return after >= 0 ? after : beforeFramePath && frames.length > 1 ? 1 : 0;
+  });
   const [failed, setFailed] = useState(false);
   const frame = frames[selected] ?? frames[0];
   return (
@@ -480,13 +484,17 @@ function StepMedia({
                   setFailed(false);
                 }}
               >
-                {beforeFramePath
-                  ? item.id === beforeFramePath
+                {item.phase
+                  ? item.phase === "before"
                     ? "Before"
-                    : frames.length === 2
-                      ? "After"
-                      : `After ${index}`
-                  : index + 1}
+                    : "After"
+                  : beforeFramePath
+                    ? item.id === beforeFramePath
+                      ? "Before"
+                      : frames.length === 2
+                        ? "After"
+                        : `After ${index}`
+                    : index + 1}
               </Button>
             ))}
           </div>
