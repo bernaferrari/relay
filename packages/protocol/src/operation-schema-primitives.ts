@@ -93,6 +93,7 @@ export const stepTarget = z
     ref: z.string().min(1).optional(),
     label: z.string().min(1).optional(),
     text: z.string().min(1).optional(),
+    role: z.string().min(1).optional(),
     relation: z
       .object({
         kind: z.literal("following-row"),

@@ -49,9 +49,10 @@ export function DevicePage() {
     rawSearch && typeof rawSearch === "object" && "returnTo" in rawSearch
       ? readSetupContinuation(rawSearch.returnTo)
       : undefined;
-  const { deviceService, productService, queryClient, platform } = useRouteContext({
-    from: "__root__",
-  });
+  const { deviceService, productService, browserSpacesService, queryClient, platform } =
+    useRouteContext({
+      from: "__root__",
+    });
   const canvas = useRef<HTMLCanvasElement>(null);
   const session = useRef<LiveTargetSession | undefined>(undefined);
   const [liveStatus, setLiveStatus] = useState<LiveTargetStatus>("idle");
@@ -93,6 +94,10 @@ export function DevicePage() {
   const recover = useMutation({
     mutationFn: async () => {
       if (!device.data) throw new TypeError("This device is no longer available.");
+      if (device.data.platform === "browser") {
+        await browserSpacesService.openSpace(device.data.id);
+        return { ready: true, summary: "Browser is ready." };
+      }
       return deviceService.recover(device.data.serial, "connect");
     },
     onSuccess: async () => {
@@ -340,7 +345,13 @@ export function DevicePage() {
       ) : null}
 
       {device.data && !device.isError ? (
-        <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(240px,300px)] gap-6 max-[900px]:grid-cols-1 max-[900px]:overflow-y-auto">
+        <div
+          className={
+            device.data.platform === "browser"
+              ? "flex min-h-0 flex-1 flex-col gap-3"
+              : "grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(240px,300px)] gap-6 max-[900px]:grid-cols-1 max-[900px]:overflow-y-auto"
+          }
+        >
           {device.data.status !== "needs-attention" ? (
             <DeviceLivePreview
               platform={device.data.platform}
@@ -359,7 +370,11 @@ export function DevicePage() {
             />
           ) : null}
           <aside
-            className="grid min-w-0 content-start gap-5 overflow-y-auto py-2"
+            className={
+              device.data.platform === "browser" && !recover.error
+                ? "sr-only"
+                : "grid min-w-0 content-start gap-5 overflow-y-auto py-2"
+            }
             aria-label="Device controls"
           >
             {boot.error ? (

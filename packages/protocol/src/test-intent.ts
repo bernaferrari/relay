@@ -78,7 +78,10 @@ export type AppMapInstructionTestStep = TestStepBase & {
 };
 
 export type AppMapValidationRecipeStep =
-  | Extract<RecipeStep, { kind: "expect" | "expect-set" | "assert-content" | "assert-layout" }>
+  | Extract<
+      RecipeStep,
+      { kind: "expect" | "expect-set" | "assert-content" | "assert-layout" | "wait-response" }
+    >
   | Extract<RecipeStep, { kind: "evaluate-semantic" }>;
 
 export type AppMapValidationTestStep = TestStepBase & {

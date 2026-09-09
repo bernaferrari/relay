@@ -53,7 +53,13 @@ test(
         });
         targetId = target.id;
         const session = await openBrowserDeviceSession(target.id);
-        let observed = (await captureBrowserDeviceFrame(target.id)).frame;
+        const firstCapture = await captureBrowserDeviceFrame(target.id);
+        assert.equal(
+          firstCapture.session.issue,
+          undefined,
+          "a fresh local frame must not have epoch-sized latency",
+        );
+        let observed = firstCapture.frame;
         const samples: number[] = [];
         for (let index = 0; index < 20; index += 1) {
           const startedAt = performance.now();

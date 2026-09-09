@@ -241,6 +241,40 @@ test("initial passive self-loop keeps destination proof and later source proof",
   );
 });
 
+test("compiles a graph validation wait-response step with busy and idle guards", () => {
+  const current = fixture();
+  const work = scenario();
+  work.steps.push({
+    id: "wait-answer",
+    kind: "validation",
+    intent: "Wait for the generated answer to finish",
+    binding: {
+      status: "resolved",
+      kind: "recipe-step",
+      step: {
+        kind: "wait-response",
+        target: { role: "article", text: "ChatGPT said" },
+        busyTarget: { label: "Stop generating" },
+        idleTarget: { label: "Send message" },
+        timeoutMs: 5_000,
+        stableForMs: 500,
+      },
+    },
+  });
+  const compiled = compileAppMapTest(current, work);
+  const root = compiled.graph[compiled.plan.rootRecipeId]!;
+  const wait = root.steps.find((step) => step.kind === "wait-response");
+  assert.deepEqual(wait, {
+    kind: "wait-response",
+    target: { role: "article", text: "ChatGPT said" },
+    busyTarget: { label: "Stop generating" },
+    idleTarget: { label: "Send message" },
+    timeoutMs: 5_000,
+    stableForMs: 500,
+    id: "relay-test-wait-answer-1",
+  });
+});
+
 test("proposes monotonic document order only inside a proven Settings segment", () => {
   const current = fixture();
   current.screenVariants.settings = {

@@ -16,6 +16,50 @@ import {
 } from "./reviewed-document-origin.js";
 import { operationInputSchemas } from "./operation-input-schemas.js";
 import { operationOutputSchemas } from "./operation-output-schemas.js";
+import { graphTest } from "./app-map-test-operation-schemas.js";
+
+test("graph Test schema accepts wait-response and rejects unsafe timing bounds", () => {
+  const step = {
+    id: "wait-answer",
+    intent: "Wait for generated answer",
+    kind: "validation" as const,
+    binding: {
+      status: "resolved" as const,
+      kind: "recipe-step" as const,
+      step: {
+        kind: "wait-response" as const,
+        target: { role: "article", text: "ChatGPT said" },
+        busyTarget: { label: "Stop generating" },
+        idleTarget: { label: "Send message" },
+        timeoutMs: 5_000,
+        stableForMs: 500,
+      },
+    },
+  };
+  assert.doesNotThrow(() =>
+    graphTest.parse({
+      name: "ChatGPT response",
+      kind: "scenario",
+      intentSchemaVersion: 1,
+      steps: [step],
+    }),
+  );
+  assert.throws(
+    () =>
+      graphTest.parse({
+        name: "ChatGPT response",
+        kind: "scenario",
+        intentSchemaVersion: 1,
+        steps: [
+          {
+            ...step,
+            binding: { ...step.binding, step: { ...step.binding.step, stableForMs: 499 } },
+          },
+        ],
+      }),
+    /stableForMs/u,
+  );
+});
 
 test("operation descriptors have unique IDs, transports, and complete safety metadata", () => {
   assert.doesNotThrow(() => validateOperationDefinitions());

@@ -14,7 +14,9 @@ test("only Android can use the live scrcpy input transport", () => {
         error.status === 409 &&
         (platform === "ios"
           ? /canonical interaction/i.test(error.message)
-          : /attached Android/i.test(error.message)),
+          : platform === "browser"
+            ? /device interact with kind: type/i.test(error.message)
+            : /attached Android/i.test(error.message)),
     );
   }
 });

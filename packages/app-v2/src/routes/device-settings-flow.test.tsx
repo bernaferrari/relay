@@ -5,6 +5,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
 import { RelayV2App } from "../app";
+import type { BrowserSpacesProductService } from "../data/browser-spaces-product-service";
 import type { DeviceProductService, ProductDevice } from "../data/device-product-service";
 import type { LiveTargetSession } from "../data/live-target-session";
 import type { RecordingProductService } from "../data/recording-product-service";
@@ -178,6 +179,7 @@ function testPlatform(
 async function renderPath(
   path: string,
   options: {
+    browserSpacesService?: BrowserSpacesProductService;
     deviceService?: DeviceProductService;
     productService?: RecordingProductService;
     settingsService?: SettingsProductService;
@@ -195,6 +197,7 @@ async function renderPath(
         platform={options.platform ?? testPlatform()}
         history={history}
         productService={options.productService ?? ({} as RecordingProductService)}
+        browserSpacesService={options.browserSpacesService}
         deviceService={options.deviceService ?? fakeDeviceService()}
         settingsService={options.settingsService ?? fakeSettingsService()}
       />,
@@ -244,6 +247,28 @@ function input(label: string): HTMLElement {
 }
 
 describe("Devices", () => {
+  it("reopens a browser without invoking phone recovery", async () => {
+    const devices = fakeDeviceService();
+    const opened: string[] = [];
+    await renderPath("/devices/browser", {
+      deviceService: devices,
+      productService: {
+        connect: async () => ({ targets: [] }),
+        presentTargets: async () => [],
+      } as unknown as RecordingProductService,
+      browserSpacesService: {
+        openSpace: async (id: string) => {
+          opened.push(id);
+          return { targetId: id, name: "Browser", url: "https://example.com" };
+        },
+      } as BrowserSpacesProductService,
+    });
+    await click(button("Reconnect"));
+    expect(opened).toEqual(["browser"]);
+    expect(devices.recoveryCalls).toEqual([]);
+    expect(document.body.textContent).not.toContain("Device still needs attention");
+  });
+
   it("rediscovers the live target when reconnecting an unavailable preview", async () => {
     let connections = 0;
     const productService = {

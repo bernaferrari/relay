@@ -360,6 +360,22 @@ const validationRecipeStep = z.discriminatedUnion("kind", [
     .strict(),
   z
     .object({
+      kind: z.literal("wait-response"),
+      target: stepTarget,
+      busyTarget: stepTarget.optional(),
+      idleTarget: stepTarget.optional(),
+      timeoutMs: natural("Optional response timeout in milliseconds")
+        .min(1_000)
+        .max(900_000)
+        .optional(),
+      stableForMs: natural("Optional response stability window in milliseconds")
+        .min(500)
+        .max(30_000)
+        .optional(),
+    })
+    .strict(),
+  z
+    .object({
       kind: z.literal("evaluate-semantic"),
       input: text("Observed or extracted value"),
       criteria: z.array(text("Semantic criterion")).min(1).max(20),

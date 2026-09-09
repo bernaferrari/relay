@@ -396,7 +396,10 @@ describe("Suite and Environment routes", () => {
 
     await clickButton("Open");
     expect(calls.open).toBe(2);
-    expect(history.location.pathname).toBe(`/environments/${space.id}`);
+    expect(history.location.pathname).toBe(`/devices/${space.id}`);
+    await act(async () => {
+      history.back();
+    });
 
     await clickButton("Save sign-in");
     await fill("account-fixture-name", "QA member");

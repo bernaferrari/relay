@@ -16,5 +16,11 @@ export function assertAndroidLiveInputPlatform(
       "Live Android input is unavailable for iOS. Use Relay's canonical interaction action instead.",
     );
   }
+  if (platform === "browser") {
+    throw new HttpError(
+      409,
+      "This low-level input command is Android-only. For browser typing, use device interact with kind: type; use the browser live view for keyboard navigation.",
+    );
+  }
   throw new HttpError(409, "Live input requires an attached Android device.");
 }

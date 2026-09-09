@@ -332,7 +332,8 @@ async function capture(state: SessionState): Promise<BrowserDeviceFrame> {
   try {
     const buffer = await page.screenshot({ type: "jpeg", quality: 76, animations: "disabled" });
     const capturedAt = Date.now();
-    retainSample(state.frameCaptureMs, performance.now() - started);
+    const captureMs = performance.now() - started;
+    retainSample(state.frameCaptureMs, captureMs);
     state.frameTimesMs.push(performance.now());
     if (state.frameTimesMs.length > MAX_BROWSER_DEVICE_TELEMETRY_SAMPLES) {
       state.frameTimesMs.shift();
@@ -359,9 +360,9 @@ async function capture(state: SessionState): Promise<BrowserDeviceFrame> {
     };
     state.observedMutationVersion = state.runtime.mutationVersion();
     state.needsFreshFrame = false;
-    if (capturedAt - started > FRAME_DEGRADED_MS) {
+    if (captureMs > FRAME_DEGRADED_MS) {
       state.status = "degraded";
-      state.issue = `Browser frames are delayed (${capturedAt - started} ms). Input remains frame-checked.`;
+      state.issue = `Browser frames are delayed (${Math.round(captureMs)} ms). Input remains frame-checked.`;
     } else {
       state.status = "streaming";
       state.issue = undefined;
