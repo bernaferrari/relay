@@ -6427,7 +6427,11 @@ it("stops optional actions and campaign cleanup after an uncertain Android input
           ? {
               kind: "module",
               recipeId: "primary",
-              check: { id: "send", title: "Send", cleanup: { recipeId: "cleanup" } },
+              check: {
+                id: "send",
+                title: "Send",
+                cleanup: { recipeId: "cleanup", terminalScreenId: "home", onCancel: "skip" },
+              },
             }
           : { ...primary, optional: true },
         { ...noLog, recipeGraph, runtime: {} },
