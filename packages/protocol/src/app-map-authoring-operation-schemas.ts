@@ -44,6 +44,23 @@ export const appMapAuthoringOperationSchemas = {
       position: point.optional(),
     })
     .strict(),
+  "app-map.screen.refresh.prepare": z
+    .object({
+      appMapId: identifier("App Map identifier"),
+      screenId: identifier("Screen identifier"),
+      expectedRevision: natural("Current App Map revision"),
+      target: authoringTarget,
+      leaseId: identifier("Exclusive control lease"),
+    })
+    .strict(),
+  "app-map.screen.refresh.apply": z
+    .object({
+      appMapId: identifier("App Map identifier"),
+      screenId: identifier("Screen identifier"),
+      expectedRevision: natural("Current App Map revision"),
+      token: identifier("Prepared capture token"),
+    })
+    .strict(),
   "app-map.screen.alias-observe": z
     .object({
       appMapId: identifier("App Map identifier"),

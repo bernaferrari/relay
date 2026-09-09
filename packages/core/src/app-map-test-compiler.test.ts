@@ -2429,3 +2429,50 @@ test("a SuperGrok-starting Test compiles mapped home/settings inbound as prelude
   assert.ok("preludeStartFingerprint" in first);
   assert.equal(first.preludeStartFingerprint, "a".repeat(64));
 });
+
+test("manual screen refresh preserves a saved Test's frozen replay evidence profiles", () => {
+  const current = fixture();
+  const original: AppMap["screenVariants"][string] = {
+    ...scope,
+    id: "cart-saved",
+    screenId: "cart",
+    createdAt: at,
+    updatedAt: at,
+    evidenceIds: [],
+    targetProfile: {
+      id: "device:emulator-5554",
+      targetId: "emulator-5554",
+      source: "device",
+      platform: "android",
+      name: "Pixel",
+      capabilities: [],
+      observedAt: at,
+    },
+  };
+  current.screenVariants[original.id] = original;
+  current.screens.cart!.variantIds = [original.id];
+  const before = compileAppMapTest(current, scenario()).plan;
+  const refresh = {
+    ...structuredClone(original),
+    id: "cart-refresh",
+    refreshCapture: { captureId: "manual-capture", capturedAt: 2 },
+    targetProfile: {
+      ...original.targetProfile,
+      id: "device:emulator-5554-1080x2400",
+      viewport: { width: 1080, height: 2400 },
+    },
+  };
+  current.screenVariants[refresh.id] = refresh;
+  current.screens.cart!.variantIds.push(refresh.id);
+  const after = compileAppMapTest(current, scenario()).plan;
+  assert.deepEqual(after.rawAccessibilityTargetProfiles, before.rawAccessibilityTargetProfiles);
+  assert.deepEqual(
+    after.rawAccessibilityVariantsByScreenId,
+    before.rawAccessibilityVariantsByScreenId,
+  );
+  assert.deepEqual(
+    after.rawAccessibilitySourcesByScreenId,
+    before.rawAccessibilitySourcesByScreenId,
+  );
+  assert.equal(current.screenVariants[refresh.id]!.targetProfile.id, refresh.targetProfile.id);
+});

@@ -11,6 +11,7 @@ export { removeAppMapNote, saveAppMapNote } from "./app-map/note-operations.js";
 export { removeAppMapGroup, saveAppMapGroup } from "./app-map/group-operations.js";
 export {
   addAppMapScreen,
+  refreshAppMapScreen,
   removeAppMapScreen,
   updateAppMapScreen,
   observeAppMapScreenAlias,

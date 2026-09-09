@@ -353,7 +353,7 @@ export async function startRunEvidence(
   const handle = existing ?? initializeRunEvidence(job);
   const startedAt = handle.startedAt;
 
-  const avdName = job.targetProfile?.androidAvdName;
+  const avdName = job.targetProfile?.androidAvdName ?? job.targetProfile?.observedAndroidAvdName;
   if (
     job.targetKind !== "browser" &&
     job.platform === "android" &&

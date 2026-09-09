@@ -332,6 +332,7 @@ export function TestPage() {
 
       {loading ? <PageLoading label="Loading the Test and available devices…" /> : null}
       <RecordingProblem
+        operation="run"
         error={test.error ?? targets.error ?? start.error}
         recovery={start.data?.recovery}
         action={

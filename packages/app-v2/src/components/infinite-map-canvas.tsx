@@ -49,11 +49,13 @@ export function InfiniteMapCanvas({
   paths,
   loadScreenshot,
   onUpdateScreen,
+  onRefreshScreen,
   saving = false,
   initialPathId,
 }: {
   initialPathId?: string;
   saving?: boolean;
+  onRefreshScreen?: (screen: ProductMapScreen) => void;
   onUpdateScreen?: (
     screenId: string,
     patch: { title?: string; position?: MapPoint },
@@ -703,7 +705,8 @@ export function InfiniteMapCanvas({
         loadScreenshot={loadScreenshot}
         screen={selected}
         paths={visiblePaths}
-        onSelectScreen={setSelectedScreenId}
+        onSelectScreen={focusScreen}
+        onRefresh={onRefreshScreen && selected ? () => onRefreshScreen(selected) : undefined}
         onRename={onUpdateScreen ? (title) => onUpdateScreen(selected!.id, { title }) : undefined}
         saving={saving}
         onClose={() => {

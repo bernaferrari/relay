@@ -325,6 +325,10 @@ export function assertVariant(variant: ScreenVariant, scope: AppMapScope, label:
   if (variant.scrollCapturePolicy !== undefined) {
     assertScrollSurfaceCapturePolicy(variant.scrollCapturePolicy, `${label}.scrollCapturePolicy`);
   }
+  if (variant.refreshCapture !== undefined) {
+    identifier(variant.refreshCapture.captureId, `${label}.refreshCapture.captureId`);
+    finiteTimestamp(variant.refreshCapture.capturedAt, `${label}.refreshCapture.capturedAt`);
+  }
   if (variant.captureProvenance !== undefined) {
     const provenance = variant.captureProvenance;
     if (provenance.kind !== "run")

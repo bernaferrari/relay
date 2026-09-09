@@ -13,11 +13,16 @@ import { InfiniteMapCanvas } from "../components/infinite-map-canvas";
 import { ChevronLeft, Plus } from "lucide-react";
 import { EmptyState } from "../components/product-patterns";
 import { PageLoading, RecordingProblem } from "./recording-shared";
+import type { ProductMapScreen } from "@relay/product/map-exploration";
+import { MapScreenRefreshDialog } from "../components/map-screen-refresh-dialog";
 
 const routeApi = getRouteApi("/apps/$appId/map");
 
 export function MapPage() {
-  const { mapService, queryClient, platform } = useRouteContext({ from: "__root__" });
+  const { mapService, productService, queryClient, platform } = useRouteContext({
+    from: "__root__",
+  });
+  const [refresh, setRefresh] = useState<{ screen: ProductMapScreen; revision: number }>();
   const { appId } = routeApi.useParams();
   const [view, setView] = useState<"map" | "paths">("map");
   const [pathSearch, setPathSearch] = useState("");
@@ -169,6 +174,11 @@ export function MapPage() {
                   appId={appId}
                   screens={visibleScreens}
                   paths={visiblePaths}
+                  onRefreshScreen={
+                    mapService.prepareRefresh && mapService.applyRefresh
+                      ? (screen) => setRefresh({ screen, revision: map.data.revision })
+                      : undefined
+                  }
                 />
               ) : (
                 <EmptyState
@@ -340,6 +350,43 @@ export function MapPage() {
           Canvas shows the first {visibleScreens.length} screens and {visiblePaths.length} paths.
           Use the searchable path list to review all known paths.
         </p>
+      ) : null}
+      {refresh ? (
+        <MapScreenRefreshDialog
+          screen={refresh.screen}
+          loadScreenshot={mapService.loadScreenshot}
+          listTargets={async () => {
+            const connection = await productService.connect();
+            return productService.presentTargets(connection.targets);
+          }}
+          prepare={async (target) => {
+            const { name: _name, detail: _detail, ...captureTarget } = target;
+            const latest = await mapService.get(appId);
+            const screen = latest.screens.find((item) => item.id === refresh.screen.id);
+            if (!screen)
+              throw new Error(
+                "This screen was removed. Close this update and choose another screen.",
+              );
+            queryClient.setQueryData(["map", appId], latest);
+            setRefresh({ screen, revision: latest.revision });
+            return mapService.prepareRefresh!({
+              appMapId: appId,
+              screenId: refresh.screen.id,
+              expectedRevision: latest.revision,
+              target: captureTarget,
+            });
+          }}
+          apply={async (preview) => {
+            const next = await mapService.applyRefresh!({
+              appMapId: appId,
+              screenId: refresh.screen.id,
+              expectedRevision: refresh.revision,
+              token: preview.token,
+            });
+            queryClient.setQueryData(["map", appId], next);
+          }}
+          onClose={() => setRefresh(undefined)}
+        />
       ) : null}
     </section>
   );

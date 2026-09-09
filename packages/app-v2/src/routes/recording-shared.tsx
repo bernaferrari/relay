@@ -65,6 +65,7 @@ export function RecordingProblem({
   layout = "compact",
   className,
   action,
+  operation = "step",
 }: {
   recovery?: ProductRecovery;
   error?: unknown;
@@ -74,6 +75,7 @@ export function RecordingProblem({
   layout?: "compact" | "centered";
   className?: string;
   action?: ReactNode;
+  operation?: "step" | "run";
 }) {
   if (!recovery && !error) return null;
   if (recovery?.code === "mutation-outcome-unknown") {
@@ -82,14 +84,24 @@ export function RecordingProblem({
         className={`relay-recording-problem flex min-h-9 items-center justify-between gap-3 text-xs text-muted-foreground ${className ?? ""}`}
         role="status"
       >
-        <span>{checking ? "Checking step status…" : "Step status needs checking."}</span>
+        <span>
+          {checking
+            ? `Checking ${operation} status…`
+            : operation === "run"
+              ? "Run status needs checking."
+              : "Step status needs checking."}
+        </span>
         {!checking && onRetry ? (
           <Button
             size="sm"
             variant="ghost"
             onClick={onRetry}
             disabled={retrying}
-            title="Check whether the step was saved. This does not repeat the device action."
+            title={
+              operation === "run"
+                ? "Check whether the run started. This does not start another run."
+                : "Check whether the step was saved. This does not repeat the device action."
+            }
           >
             Check status
           </Button>

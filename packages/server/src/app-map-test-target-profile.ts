@@ -208,7 +208,14 @@ export function queuedAppMapTestTargetProfile(input: {
     source: input.target.kind,
     name: observed?.name ?? saved.targetId,
     ...(saved.model ? { model: saved.model } : {}),
-    ...(saved.androidAvdName ? { androidAvdName: saved.androidAvdName } : {}),
+    // Older saved Android profiles predate AVD identity. Preserve the fresh
+    // observed identity in the queued job so emulator evidence collectors can
+    // still select the exact AVD without weakening the frozen-profile guards.
+    ...(saved.androidAvdName
+      ? { androidAvdName: saved.androidAvdName }
+      : observed?.androidAvdName
+        ? { observedAndroidAvdName: observed.androidAvdName }
+        : {}),
     ...(saved.osVersion ? { osVersion: saved.osVersion } : {}),
     ...(saved.viewport ? { viewport: structuredClone(saved.viewport) } : {}),
     ...(saved.browserCaseProfile

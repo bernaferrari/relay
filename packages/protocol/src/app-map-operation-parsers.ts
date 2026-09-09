@@ -311,6 +311,35 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
     },
   );
 
+  const appMapScreenRefreshPrepareParser = objectParser<
+    AppMapOperationInput<"app-map.screen.refresh.prepare">
+  >("Screen refresh prepare", (input) => {
+    appMapScreenCaptureParser.parse(input);
+    string(input.screenId, "Screen refresh screenId");
+  });
+  const appMapScreenRefreshApplyParser = objectParser<
+    AppMapOperationInput<"app-map.screen.refresh.apply">
+  >("Screen refresh apply", (input) => {
+    string(input.appMapId, "Screen refresh appMapId");
+    string(input.screenId, "Screen refresh screenId");
+    number(input.expectedRevision, "Screen refresh expectedRevision");
+    string(input.token, "Screen refresh token");
+  });
+  const appMapScreenRefreshPrepareOutputParser = objectParser<
+    AppMapOperationOutput<"app-map.screen.refresh.prepare">
+  >("Screen refresh preview", (output) => {
+    string(output.token, "Screen refresh token");
+    string(output.screenshotUri, "Screen refresh screenshotUri");
+    number(output.expiresAt, "Screen refresh expiresAt");
+  });
+  const appMapScreenRefreshApplyOutputParser = objectParser<
+    AppMapOperationOutput<"app-map.screen.refresh.apply">
+  >("Screen refresh result", (output) => {
+    record(output.appMap, "Screen refresh appMap");
+    record(output.screen, "Screen refresh screen");
+    record(output.variant, "Screen refresh variant");
+  });
+
   const appMapScreenAliasObserveParser = objectParser<
     AppMapOperationInput<"app-map.screen.alias-observe">
   >("App Map screen alias observation", (input) => {
@@ -707,6 +736,10 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
   });
 
   return {
+    appMapScreenRefreshPrepareParser,
+    appMapScreenRefreshApplyParser,
+    appMapScreenRefreshPrepareOutputParser,
+    appMapScreenRefreshApplyOutputParser,
     appMapCommitParser,
     appMapCombinePreflightInputParser,
     appMapCombinePreflightOutputParser,

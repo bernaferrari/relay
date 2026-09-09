@@ -415,3 +415,48 @@ export function observeAppMapScreenAlias(
   );
   return { appMap, alias: { fingerprint, aliasesNow }, ...(variant ? { variant } : {}) };
 }
+
+/** Append reviewed evidence to exactly one screen without changing its identity or edges. */
+export function refreshAppMapScreen(
+  map: AppMap,
+  screenId: string,
+  variantId: string,
+  capture: Omit<AppMapScreenVariantCaptureInput, "map" | "screen" | "at">,
+  context: AppMapMutationContext,
+): AppMap {
+  return mutateAppMap(
+    map,
+    context,
+    {
+      eventType: "screen.updated",
+      subject: { kind: "screen", id: screenId },
+      summary: "Refreshed screen evidence",
+      touched: [screenId, variantId],
+    },
+    (draft) => {
+      const screen = draft.screens[screenId];
+      if (!screen) appMapFail("missing-reference", `Screen ${screenId} does not exist`);
+      if (draft.screenVariants[variantId])
+        appMapFail("duplicate-id", `Variant ${variantId} exists`);
+      // The shared capture builder learns aliases and reuses profile IDs. Isolate
+      // those mutations and retain every previously approved variant unchanged.
+      const captureScreen = { ...structuredClone(screen), variantIds: [] };
+      const variant = captureAppMapScreenVariant({
+        ...capture,
+        map: draft,
+        screen: captureScreen,
+        at: context.at,
+      });
+      if (!variant?.screenshotUri)
+        appMapFail("invalid-map", "Refresh requires captured screenshot evidence");
+      variant.id = variantId;
+      variant.refreshCapture = {
+        captureId: variantId,
+        capturedAt: capture.observation!.capturedAt,
+      };
+      draft.screenVariants[variantId] = variant;
+      screen.variantIds = [...screen.variantIds, variantId];
+      screen.updatedAt = context.at;
+    },
+  );
+}

@@ -1219,3 +1219,53 @@ test("an uncertain authoring mutation is not retried and permits inspection only
   assert.equal(inspected.kind === "author-test" ? inspected.review?.actionCount : undefined, 1);
   assert.equal(scripted.remaining(), 0);
 });
+
+test("screen refresh with a new observed profile preserves the saved Test runtime selection", async () => {
+  const { frozenRawAccessibilityTargetProfiles, frozenRawAccessibilityVariants } =
+    await import("../../core/src/app-map-test-raw-accessibility.js");
+  const original = {
+    id: "variant-current",
+    screenId: "screen-current",
+    targetProfile: {
+      id: "device:pixel-9-current",
+      targetId: target.targetId,
+      platform: target.platform,
+      source: "device",
+      name: "Pixel",
+      capabilities: [],
+      observedAt: 1,
+    },
+  };
+  const refreshed = {
+    ...original,
+    id: "variant-refresh",
+    refreshCapture: { captureId: "capture-refresh", capturedAt: 2 },
+    targetProfile: {
+      ...original.targetProfile,
+      id: "device:pixel-9-1080x2400",
+      viewport: { width: 1080, height: 2400 },
+      observedAt: 2,
+    },
+  };
+  const map = {
+    screens: { "screen-current": {} },
+    screenVariants: { original, refreshed },
+  } as unknown as import("@relay/protocol").AppMap;
+  const compile = deviceCompileStep();
+  const output =
+    compile.output as import("@relay/protocol").OperationOutput<"app-map.test.compile">;
+  output.plan.rawAccessibilityTargetProfiles = frozenRawAccessibilityTargetProfiles(map);
+  output.plan.rawAccessibilityVariantsByScreenId = frozenRawAccessibilityVariants(map);
+  assert.equal(output.plan.rawAccessibilityTargetProfiles.length, 1);
+  assert.deepEqual(
+    output.plan.rawAccessibilityVariantsByScreenId["screen-current"]?.map((v) => v.id),
+    [original.id],
+  );
+  const scripted = createScriptedRelayClient([compile, structuredClone(compile), runStep(7)]);
+  const snapshot = await createRelayWorkflows(scripted.client).start(
+    intent({ revision: { exact: 7 } }),
+  );
+  assert.equal(snapshot.phase, "queued");
+  assert.equal(snapshot.frozen?.targetProfileId, original.targetProfile.id);
+  assert.equal(map.screenVariants.refreshed!.targetProfile.id, "device:pixel-9-1080x2400");
+});

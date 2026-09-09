@@ -5,8 +5,16 @@ import type {
 } from "@relay/product/map-exploration";
 import type { Platform } from "../platform/types";
 import { productClientForPlatform } from "./product-client";
+import type { OperationInput, OperationOutput } from "@relay/protocol";
+import { createRelayOperationPort } from "@relay/workflows/operation-port";
+import { acquireOwnLease } from "@relay/workflows/target-catalog";
 
-export type MapProductService = ProductMapService & { loadScreenshot?(uri: string): Promise<Blob> };
+export type MapProductService = Omit<ProductMapService, "prepareRefresh"> & {
+  loadScreenshot?(uri: string): Promise<Blob>;
+  prepareRefresh?(
+    input: Omit<OperationInput<"app-map.screen.refresh.prepare">, "leaseId">,
+  ): Promise<OperationOutput<"app-map.screen.refresh.prepare">>;
+};
 
 export function createMapProductService(platform: Platform): MapProductService {
   let servicePromise: Promise<ProductMapService> | undefined;
@@ -18,6 +26,22 @@ export function createMapProductService(platform: Platform): MapProductService {
     return servicePromise;
   }
   return {
+    async prepareRefresh(input) {
+      const { client, actorId } = await productClientForPlatform(platform);
+      const leaseId = await acquireOwnLease(
+        createRelayOperationPort(client),
+        actorId,
+        input.target.targetId,
+      );
+      const item = await service();
+      if (!item.prepareRefresh) throw new Error("Screen updates are unavailable.");
+      return item.prepareRefresh({ ...input, leaseId });
+    },
+    async applyRefresh(input) {
+      const item = await service();
+      if (!item.applyRefresh) throw new Error("Screen updates are unavailable.");
+      return item.applyRefresh(input);
+    },
     async loadScreenshot(uri) {
       const match = /^relay-evidence:\/\/([a-f\d]{64})$/iu.exec(uri);
       if (!match) throw new Error("This screen has no supported retained screenshot.");

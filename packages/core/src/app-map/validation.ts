@@ -82,7 +82,7 @@ function assertVariants(map: AppMap): void {
       }
       // Localized historical captures may share a physical target profile;
       // their explicit capture provenance keeps the locale dimension distinct.
-      const key = `${screen.id}\u0000${variant.targetProfile.id}\u0000${variant.captureProvenance?.locale ?? ""}`;
+      const key = `${screen.id}\u0000${variant.targetProfile.id}\u0000${variant.captureProvenance?.locale ?? ""}\u0000${variant.refreshCapture?.captureId ?? ""}`;
       if (targetKeys.has(key)) {
         appMapFail(
           "duplicate-id",

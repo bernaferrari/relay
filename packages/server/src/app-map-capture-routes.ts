@@ -1,3 +1,4 @@
+import { handleAppMapScreenRefreshRoute } from "./app-map-screen-refresh-route.js";
 import {
   authoringSessions,
   commitAppMapScreenCapture,
@@ -38,6 +39,7 @@ import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
  * session lifecycle and only commits its reviewed capture after it is proven.
  */
 export async function handleAppMapCaptureRoute(input: AppMapRouteInput): Promise<boolean> {
+  if (await handleAppMapScreenRefreshRoute(input)) return true;
   const { method, pathname, request, response, scope } = input;
   const authoringRuntime = input.authoringRuntime ?? createAuthoringRuntime();
 

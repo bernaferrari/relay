@@ -78,7 +78,10 @@ afterEach(async () => {
   document.body.replaceChildren();
 });
 
-async function render(mapService: MapProductService = { get: async () => overview }) {
+async function render(
+  mapService: MapProductService = { get: async () => overview },
+  productService = {} as RecordingProductService,
+) {
   const history = createMemoryHistory({ initialEntries: ["/apps/shop/map"] });
   const host = document.createElement("div");
   document.body.append(host);
@@ -90,7 +93,7 @@ async function render(mapService: MapProductService = { get: async () => overvie
         platform={platform}
         history={history}
         mapService={mapService}
-        productService={{} as RecordingProductService}
+        productService={productService}
       />,
     );
   });
@@ -377,3 +380,60 @@ function pointerEvent(type: string, clientX: number, clientY: number) {
   Object.defineProperty(event, "pointerId", { value: 1 });
   return event;
 }
+
+it("prepares screen refresh with canonical target fields and waits for a visible preview", async () => {
+  const prepared: unknown[] = [];
+  await render(
+    {
+      get: async () => overview,
+      prepareRefresh: async (input) => {
+        prepared.push(input);
+        return {
+          token: "preview",
+          screenshotUri: "relay-evidence://capture",
+          expiresAt: Date.now() + 300000,
+        };
+      },
+      applyRefresh: async () => overview,
+    },
+    {
+      connect: async () => ({ targets: [] }),
+      presentTargets: async () => [
+        {
+          kind: "device",
+          platform: "android",
+          targetId: "emulator-1",
+          name: "Phone",
+          detail: "Android",
+        },
+      ],
+    } as unknown as RecordingProductService,
+  );
+  const click = async (text: string) => {
+    await act(async () => {
+      [...document.querySelectorAll("button")]
+        .find((button) => button.textContent?.trim() === text)!
+        .click();
+    });
+  };
+  await act(async () => document.querySelector<HTMLButtonElement>(".relay-map-screen")!.click());
+  await click("Update screen…");
+  for (let i = 0; i < 5; i++)
+    await act(async () => void (await new Promise((resolve) => setTimeout(resolve, 0))));
+  await click("Capture screen");
+  for (let i = 0; i < 5; i++)
+    await act(async () => void (await new Promise((resolve) => setTimeout(resolve, 0))));
+  expect(prepared).toEqual([
+    {
+      appMapId: "shop",
+      screenId: "home",
+      expectedRevision: 4,
+      target: { kind: "device", platform: "android", targetId: "emulator-1" },
+    },
+  ]);
+  expect(
+    [...document.querySelectorAll("button")].find(
+      (button) => button.textContent === "Update screen",
+    )!.disabled,
+  ).toBe(true);
+});

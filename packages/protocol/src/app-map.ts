@@ -204,6 +204,8 @@ export type ScreenVariant = AppMapEntity & {
   /** Missing means the conservative viewport-only default. */
   scrollCapturePolicy?: ScrollSurfaceCapturePolicy;
   baseline?: BaselineProvenance;
+  /** Explicitly reviewed manual capture retained alongside prior evidence. */
+  refreshCapture?: { captureId: string; capturedAt: number };
   /** Historical capture lineage. This is independent of reviewed baseline
    * approval and may describe a localized run retained for comparison. */
   captureProvenance?: {

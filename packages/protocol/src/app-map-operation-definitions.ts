@@ -16,6 +16,10 @@ export function createAppMapOperationDefinitions(parserDependencies: AppMapParse
     appMapRoutineImpactOutputParser,
   } = createAppMapImpactParsers(parserDependencies);
   const {
+    appMapScreenRefreshPrepareParser,
+    appMapScreenRefreshApplyParser,
+    appMapScreenRefreshPrepareOutputParser,
+    appMapScreenRefreshApplyOutputParser,
     appMapCommitParser,
     appMapCombinePreflightInputParser,
     appMapCombinePreflightOutputParser,
@@ -139,6 +143,30 @@ export function createAppMapOperationDefinitions(parserDependencies: AppMapParse
         lease: "exclusive",
         input: appMapScreenCaptureParser,
         output: appMapScreenCaptureOutputParser,
+      },
+    ),
+    command(
+      "app-map.screen.refresh.prepare",
+      "Preview a mapped screen refresh",
+      "POST",
+      "/app-maps/:appMapId/screens/:screenId/refresh/prepare",
+      {
+        category: "authoring",
+        targetCapabilities: ["snapshot", "screenshot"],
+        lease: "exclusive",
+        input: appMapScreenRefreshPrepareParser,
+        output: appMapScreenRefreshPrepareOutputParser,
+      },
+    ),
+    command(
+      "app-map.screen.refresh.apply",
+      "Apply a prepared mapped screen refresh",
+      "POST",
+      "/app-maps/:appMapId/screens/:screenId/refresh/apply",
+      {
+        category: "authoring",
+        input: appMapScreenRefreshApplyParser,
+        output: appMapScreenRefreshApplyOutputParser,
       },
     ),
     command(

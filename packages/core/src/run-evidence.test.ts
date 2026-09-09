@@ -78,7 +78,7 @@ test("managed-emulator packet evidence brackets the Run and survives cancelled a
       source: "device",
       platform: "android",
       name: "Medium phone",
-      androidAvdName: "medium_phone",
+      observedAndroidAvdName: "medium_phone",
       viewport: { width: 1080, height: 2400 },
       capabilities: ["screenshot", "snapshot"],
       observedAt: 1,

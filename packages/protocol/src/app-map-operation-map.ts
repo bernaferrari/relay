@@ -134,6 +134,20 @@ export type AppMapOperationMap = {
       reviewProposalId?: string;
     };
   };
+  "app-map.screen.refresh.prepare": {
+    input: {
+      appMapId: string;
+      screenId: string;
+      expectedRevision: number;
+      target: AuthoringTarget;
+      leaseId: string;
+    };
+    output: { token: string; screenshotUri: string; expiresAt: number };
+  };
+  "app-map.screen.refresh.apply": {
+    input: { appMapId: string; screenId: string; expectedRevision: number; token: string };
+    output: { appMap: AppMap; screen: Screen; variant: ScreenVariant };
+  };
   "app-map.screen.alias-observe": {
     input: {
       appMapId: string;

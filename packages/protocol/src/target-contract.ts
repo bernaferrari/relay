@@ -204,6 +204,8 @@ export type TargetProfile = {
   model?: string;
   /** Exact configured Android emulator identity, when the target is an AVD. */
   androidAvdName?: string;
+  /** Fresh collector routing hint; excluded from the frozen evidence identity. */
+  observedAndroidAvdName?: string;
   osVersion?: string;
   viewport?: { width: number; height: number };
   /** Exact managed-browser environment frozen with matrix selection. */

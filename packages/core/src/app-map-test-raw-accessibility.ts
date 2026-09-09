@@ -73,6 +73,9 @@ export function frozenRawAccessibilityTargetProfiles(
   for (const variant of Object.values(map.screenVariants).sort((left, right) =>
     left.id < right.id ? -1 : left.id > right.id ? 1 : 0,
   )) {
+    // Manual refresh is presentation history, not a newly reviewed replay
+    // environment or selector source. Keep its observed profile on the map.
+    if (variant.refreshCapture) continue;
     const profile = sourceTargetProfile(variant);
     const key = appMapRuntimeTargetProfileKey(profile);
     if (!profiles.has(key)) profiles.set(key, profile);
@@ -100,6 +103,9 @@ export function frozenRawAccessibilityVariants(
   for (const variant of Object.values(map.screenVariants).sort((left, right) =>
     left.id < right.id ? -1 : left.id > right.id ? 1 : 0,
   )) {
+    // Manual refresh is presentation history, not a newly reviewed replay
+    // environment or selector source. Keep its observed profile on the map.
+    if (variant.refreshCapture) continue;
     const variants = grouped.get(variant.screenId) ?? new Map();
     const frozen = sourceVariant(variant);
     variants.set(frozen.id, structuredClone(frozen));
@@ -127,6 +133,9 @@ export function frozenRawAccessibilitySources(
   for (const variant of Object.values(map.screenVariants).sort((left, right) =>
     left.id < right.id ? -1 : left.id > right.id ? 1 : 0,
   )) {
+    // Manual refresh is presentation history, not a newly reviewed replay
+    // environment or selector source. Keep its observed profile on the map.
+    if (variant.refreshCapture) continue;
     const variantSource = sourceVariant(variant);
     const sources: RawSource[] = variant.rawAccessibilityTree
       ? [

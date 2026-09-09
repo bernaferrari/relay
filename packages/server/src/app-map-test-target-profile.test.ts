@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AppMapCompiledRuntimeTargetProfile, TargetProfile } from "@relay/protocol";
+import { appMapRuntimeTargetProfileFromSaved, sameAppMapRuntimeTargetProfile } from "@relay/core";
 import { queuedAppMapTestTargetProfile } from "./app-map-test-target-profile.js";
 import { HttpError } from "./http.js";
 
@@ -58,5 +59,22 @@ test("queued Android emulator Tests require the exact frozen AVD behind a reusab
       }),
     (error: unknown) =>
       error instanceof HttpError && error.body?.code === "TARGET_PROFILE_TARGET_MISMATCH",
+  );
+});
+
+test("queued Android emulator Tests carry observed AVD identity for legacy saved profiles", () => {
+  const legacy = { ...frozen };
+  delete legacy.androidAvdName;
+  const accepted = queuedAppMapTestTargetProfile({
+    runtimeTargetProfile: legacy,
+    observedTargetProfile: observed("Pixel_9_API_36"),
+    target: { kind: "device", targetId: "emulator-5554", platform: "android" },
+  });
+  assert.equal(accepted?.androidAvdName, undefined);
+  assert.equal(accepted?.observedAndroidAvdName, "Pixel_9_API_36");
+  assert.ok(accepted);
+  assert.ok(
+    sameAppMapRuntimeTargetProfile(appMapRuntimeTargetProfileFromSaved(accepted), legacy),
+    "collector hints must not change the queue admission identity",
   );
 });

@@ -14,6 +14,7 @@ export function ScreenInspector({
   onSelectScreen,
   onFocusScreen,
   onRename,
+  onRefresh,
   saving,
   onClose,
 }: {
@@ -21,6 +22,7 @@ export function ScreenInspector({
   onSelectScreen(id: string): void;
   onFocusScreen(): void;
   onRename?: (title: string) => Promise<void>;
+  onRefresh?: () => void;
   saving: boolean;
   loadScreenshot?: (uri: string) => Promise<Blob>;
   screen: ProductMapScreen | undefined;
@@ -108,6 +110,11 @@ export function ScreenInspector({
             </Button>
             {screen.description ? (
               <p className="text-xs leading-relaxed text-muted-foreground">{screen.description}</p>
+            ) : null}
+            {onRefresh ? (
+              <Button variant="outline" size="sm" className="w-full" onClick={onRefresh}>
+                Update screen…
+              </Button>
             ) : null}
             {variants.length > 1 ? (
               <div className="space-y-2">

@@ -4,6 +4,7 @@ import type {
   Connection,
   ConnectionSourceAnchor,
   OperationInput,
+  OperationOutput,
   Proposal,
   Screen,
 } from "@relay/protocol";
@@ -86,6 +87,10 @@ export type ProductMapOverview = {
 };
 
 export type ProductMapService = {
+  prepareRefresh?(
+    input: OperationInput<"app-map.screen.refresh.prepare">,
+  ): Promise<OperationOutput<"app-map.screen.refresh.prepare">>;
+  applyRefresh?(input: OperationInput<"app-map.screen.refresh.apply">): Promise<ProductMapOverview>;
   get(appMapId: string): Promise<ProductMapOverview>;
   updateScreen?(input: OperationInput<"app-map.screen.update">): Promise<ProductMapOverview>;
   /** Bounded drilldown over the same canonical App Map snapshot as `get`. */
@@ -136,6 +141,7 @@ function projectScreenVariants(screen: Screen, map: AppMap): readonly ProductMap
       const raw = variant.rawAccessibilityTree;
       const provenance = variant.captureProvenance;
       const capturedAt =
+        variant.refreshCapture?.capturedAt ??
         provenance?.capturedAt ??
         (raw?.capturedAt !== undefined &&
         raw.uri.startsWith("relay-evidence://") &&
@@ -301,6 +307,13 @@ export function createProductMapService(client: RelayInvokeClient): ProductMapSe
   }
   return {
     get: getOverview,
+    prepareRefresh(input) {
+      return operations.invoke("app-map.screen.refresh.prepare", input);
+    },
+    async applyRefresh(input) {
+      const { appMap } = await operations.invoke("app-map.screen.refresh.apply", input);
+      return projectMap(appMap);
+    },
     async updateScreen(input) {
       const { appMap } = await operations.invoke("app-map.screen.update", input);
       return projectMap(appMap);
