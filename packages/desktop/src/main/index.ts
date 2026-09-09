@@ -11,7 +11,7 @@ import {
 import { registerIpcHandlers } from "./ipc.js";
 import { isCompatibleServer, waitForCompatibleServer } from "./server-readiness.js";
 import { DesktopUpdater } from "./updates.js";
-import { createMainWindow, loadRenderer, resolveAppIconPath } from "./windows.js";
+import { createMainWindow, loadRenderer } from "./windows.js";
 
 const DEFAULT_SERVER_URL = "http://127.0.0.1:8787";
 const PRODUCT_NAME = "Relay";
@@ -223,15 +223,6 @@ async function bootstrap(): Promise<void> {
   });
 
   await app.whenReady();
-
-  const iconPath = resolveAppIconPath();
-  if (iconPath && process.platform === "darwin") {
-    try {
-      app.dock?.setIcon(iconPath);
-    } catch (error) {
-      console.warn(`[desktop] could not set Dock icon from ${iconPath}`, error);
-    }
-  }
 
   serverUrl = await ensureServer();
 

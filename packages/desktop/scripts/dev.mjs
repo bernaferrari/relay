@@ -97,7 +97,7 @@ async function main() {
   };
   const executable =
     process.platform === "darwin"
-      ? prepareMacOSDevApp(electronCliPath, root, launchEnvironment)
+      ? await prepareMacOSDevApp(electronCliPath, root, launchEnvironment)
       : process.execPath;
   const args = process.platform === "darwin" ? [] : [electronCliPath, "."];
   if (process.platform === "darwin") {

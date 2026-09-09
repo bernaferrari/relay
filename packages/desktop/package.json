@@ -13,7 +13,7 @@
     "package": "node scripts/build.mjs && electron-builder --mac dir",
     "dist": "node scripts/build.mjs && electron-builder --mac dmg zip",
     "preview": "node scripts/build.mjs && electron .",
-    "test": "node --experimental-strip-types --test src/main/server-readiness.test.ts src/main/ios-preview-sidecar.test.ts src/main/window-state.test.ts src/main/windows-v2-launcher.test.ts && node --test scripts/dev-app-entry.test.mjs && node scripts/verify-server-bundle.mjs",
+    "test": "node --experimental-strip-types --test src/main/server-readiness.test.ts src/main/ios-preview-sidecar.test.ts src/main/window-state.test.ts src/main/windows-v2-launcher.test.ts && node --test scripts/dev-app-entry.test.mjs scripts/macos-icon-packaging.test.mjs && node scripts/verify-server-bundle.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
@@ -41,6 +41,7 @@
     "appId": "dev.relay.desktop",
     "productName": "Relay",
     "beforePack": "./scripts/before-pack-ios-preview-sidecar.mjs",
+    "afterPack": "./scripts/after-pack-macos-icon.mjs",
     "afterSign": "./scripts/after-sign-ios-preview-sidecar.mjs",
     "directories": {
       "output": "release"
