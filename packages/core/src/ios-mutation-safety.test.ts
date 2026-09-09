@@ -6,6 +6,7 @@ import {
   lastIosMutationAttemptDiagnostic,
   pressNamedControl,
   pressMatchingText,
+  pressLabel,
   pressPoint,
   runIosMutationOnce,
   snapshot,
@@ -314,25 +315,51 @@ test("a proven pressMatchingText selector miss still resolves through its curren
   assert.equal(lastIosMutationAttemptDiagnostic(serial)?.outcome, "completed");
 });
 
-test("Android keeps its bounded transient retry behaviour", async () => {
-  const previousDelay = process.env.RELAY_RETRY_DELAY_MS;
-  process.env.RELAY_RETRY_DELAY_MS = "1";
+test("Android physical mutations do not retry an uncertain press", async () => {
   let nativePresses = 0;
   const device = {
     interactions: {
       press: async () => {
         nativePresses += 1;
-        if (nativePresses < 3) throw new Error("connection reset");
+        throw new Error("connection reset");
       },
     },
   } as unknown as Device;
-  try {
-    await runWithTargetContext(android("android-retry"), () => pressPoint(device, 4, 8));
-  } finally {
-    if (previousDelay === undefined) delete process.env.RELAY_RETRY_DELAY_MS;
-    else process.env.RELAY_RETRY_DELAY_MS = previousDelay;
-  }
-  assert.equal(nativePresses, 3);
+
+  await assert.rejects(
+    runWithTargetContext(android("android-no-retry"), () => pressPoint(device, 4, 8)),
+    /connection reset/u,
+  );
+  assert.equal(nativePresses, 1);
+});
+
+test("Android named press does not fall through to a second point after transport loss", async () => {
+  let nativePresses = 0;
+  const device = {
+    capture: {
+      snapshot: async () => ({
+        nodes: [
+          {
+            type: "button",
+            label: "Send",
+            rect: { x: 10, y: 20, width: 100, height: 40 },
+          },
+        ],
+      }),
+    },
+    interactions: {
+      press: async () => {
+        nativePresses += 1;
+        throw new Error("connection reset");
+      },
+    },
+  } as unknown as Device;
+
+  await assert.rejects(
+    runWithTargetContext(android("android-named-no-fallback"), () => pressLabel(device, "Send")),
+    /connection reset/u,
+  );
+  assert.equal(nativePresses, 1);
 });
 
 test("a target-control denial is known pre-dispatch, not an ambiguous iOS mutation", async () => {

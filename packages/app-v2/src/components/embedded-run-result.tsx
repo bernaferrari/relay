@@ -1,3 +1,4 @@
+import { formatDuration } from "./run-report-formatters";
 import { ReportImage } from "./report-image";
 import { CheckCircle2, CircleAlert, ImageOff } from "lucide-react";
 import type { ProductRunReportOverview } from "../data/run-report-model";
@@ -43,7 +44,7 @@ export function EmbeddedRunResult({ report }: { report: ProductRunReportOverview
         </div>
         {report.durationMs !== undefined ? (
           <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-            {Math.round(report.durationMs / 1000)}s
+            {formatDuration(report.durationMs)}
           </span>
         ) : null}
       </header>

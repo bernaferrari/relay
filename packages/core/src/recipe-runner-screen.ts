@@ -28,7 +28,12 @@ import {
   observeVisualScreenFingerprint,
 } from "./screen-identity.js";
 import { writeFrameTree } from "./run-frame-tree.js";
-import { attachScreenshotPayload, captureScreenshot } from "./workspace-capture.js";
+import { captureSettledRaster } from "./visual-settling.js";
+import {
+  attachScreenshotPayload,
+  captureScreenshot,
+  cleanupScreenshot,
+} from "./workspace-capture.js";
 import {
   awaitStableDestinationEvidence,
   recordDestinationEvidenceTiming,
@@ -54,23 +59,39 @@ export async function captureRecipeScreenshot(
   device: Device,
   caption: string | undefined,
   ctx: RecipeStepContext,
+  dependencies: { captureScreenshot?: typeof captureScreenshot } = {},
 ): Promise<void> {
   const verified = currentVerifiedScreen(ctx.runtime);
   const observation = ctx.runtime?.observation;
   const nodes = observation?.nodes ?? verified?.nodes;
-  const retained = observation?.screenshot ?? verified?.screenshot;
-  const screenshot = retained
-    ? await attachScreenshotPayload(
-        retained,
-        ctx.job?.id,
-        caption ?? `screenshot · ${new Date().toISOString()}`,
-      )
-    : await captureScreenshot({
-        jobId: ctx.job?.id,
-        caption,
+  const capture = await captureSettledRaster({
+    capture: () =>
+      (dependencies.captureScreenshot ?? captureScreenshot)({
         device,
+        ephemeral: true,
+        includeScreenMatch: false,
         ...(nodes ? { semanticNodes: nodes } : {}),
-      });
+      }),
+    bytes: (frame) => Buffer.from(frame.base64, "base64"),
+    discard: (frame) => cleanupScreenshot(frame.path),
+    wait: (ms) => sleep(ms, device),
+  });
+  let screenshot;
+  try {
+    screenshot = await attachScreenshotPayload(
+      capture.value,
+      ctx.job?.id,
+      caption ?? `screenshot · ${new Date().toISOString()}`,
+    );
+  } finally {
+    await cleanupScreenshot(capture.value.path);
+  }
+  (ctx.job?.artifacts ?? ctx.artifacts)?.push({
+    kind: "visual-settling",
+    capturedAt: now(),
+    data: { settled: capture.settled, samples: capture.samples, framePath: screenshot.framePath },
+  });
+  if (!capture.settled) ctx.log("Screenshot retained while the screen was still changing.");
   if (observation) observation.screenshot = screenshot;
   if (verified) verified.screenshot = screenshot;
   // The tree that produced this frame is the only chance to read its text

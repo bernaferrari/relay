@@ -1,4 +1,4 @@
-import { InputNotDispatchedError } from "./input-not-dispatched.js";
+import { InputNotDispatchedError, InputOutcomeUnknownError } from "./input-not-dispatched.js";
 import type { Device } from "./device.js";
 import { createHash } from "node:crypto";
 import { resolveStepPoint, type StepPoint } from "@relay/protocol";
@@ -209,7 +209,11 @@ async function waitForResponseCompletion(
         ...(idleVisible ? ["idle-visible"] : []),
       ];
       const hasIndependentCompletionTarget = Boolean(step.busyTarget || step.idleTarget);
-      if (stable && (!hasIndependentCompletionTarget || busyGone || idleVisible)) {
+      // When both guards are supplied, a stale idle control must not outrank
+      // an explicitly visible busy control. Otherwise a response can pass as
+      // soon as its text pauses while generation is still in progress.
+      const completionSignal = step.busyTarget ? busyGone : idleVisible;
+      if (stable && (!hasIndependentCompletionTarget || completionSignal)) {
         record("complete", capturedAt, text);
         ctx.log(`response completion: complete · ${lastSignals.join(" + ")}`);
         return;
@@ -425,7 +429,6 @@ async function tapTarget(
         await pressResolvedControl(device, named, namedTarget, repeated);
       }
     } catch (error) {
-      rethrowIosMutationOutcomeUnknown(error);
       // A semantic control may intentionally open a system surface (for
       // example Grok's App Language row opens Android Settings). Keep the
       // recipe executor aligned with pressNamedControl: accept that completed
@@ -521,6 +524,12 @@ async function tapTarget(
         ...(attemptedPoint ? { point: attemptedPoint } : {}),
       };
     } catch (err) {
+      if (err instanceof InputOutcomeUnknownError) {
+        throw new InputOutcomeUnknownError(
+          `tap failed: ${describeTarget(target)}: ${err.message}`,
+          { cause: err },
+        );
+      }
       rethrowIosMutationOutcomeUnknown(err);
       if (isCancel(err)) throw err;
       // Losing the device lane is not a locator problem. Folding it into
@@ -563,6 +572,9 @@ async function tapRecordedTarget(
   intervalMs = 90,
 ): Promise<void> {
   const verifiedNodes = currentVerifiedScreen(ctx.runtime)?.nodes;
+  const beforeFramePath =
+    ctx.runtime?.observation?.screenshot?.framePath ??
+    currentVerifiedScreen(ctx.runtime)?.screenshot?.framePath;
   const candidates = [
     input.target,
     ...(input.fallbackTargets ?? []),
@@ -597,6 +609,7 @@ async function tapRecordedTarget(
           strategy: hit.strategy,
           ...(hit.bounds ? { bounds: hit.bounds } : {}),
           ...(hit.point ? { point: hit.point } : {}),
+          ...(beforeFramePath ? { beforeFramePath } : {}),
           target: candidate,
           ...(hit.localizedTarget ? { localizedTarget: hit.localizedTarget } : {}),
         },
@@ -647,6 +660,7 @@ async function tapRecordedTarget(
       return;
     } catch (error) {
       rethrowIosMutationOutcomeUnknown(error);
+      if (error instanceof InputOutcomeUnknownError) throw error;
       if (isCancel(error)) throw error;
       // A later candidate cannot erase an earlier attempt's uncertain outcome.
       if (index === 0 && error instanceof InputNotDispatchedError) throw error;

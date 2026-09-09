@@ -5,6 +5,7 @@
  * mutation safety are different concerns, and keeping them together makes it
  * too easy to reintroduce a generic retry around a tap.
  */
+import { InputOutcomeUnknownError } from "./input-not-dispatched.js";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { cooperativeCheckpoint, raceCancel, throwIfCancelled } from "./control.js";
@@ -257,7 +258,8 @@ export class IosMutationOutcomeUnknownError extends Error {
  * Keep this guard explicit at every catch-all recovery boundary.
  */
 export function rethrowIosMutationOutcomeUnknown(error: unknown): void {
-  if (error instanceof IosMutationOutcomeUnknownError) throw error;
+  if (error instanceof IosMutationOutcomeUnknownError || error instanceof InputOutcomeUnknownError)
+    throw error;
 }
 
 export function currentIosDeviceSerial(): string | undefined {

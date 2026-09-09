@@ -367,6 +367,7 @@ export async function pressLabel(
       } as never),
     );
   } catch (error) {
+    if (selectedPlatform() === "android" && !iosSelectorWasNotDispatched(error)) throw error;
     const fallback =
       selectedPlatform() === "ios"
         ? await iosSnapshotFallbackPoint(device, { label }, error, point)
@@ -391,6 +392,7 @@ export async function pressIdentifier(
       } as never),
     );
   } catch (error) {
+    if (selectedPlatform() === "android" && !iosSelectorWasNotDispatched(error)) throw error;
     const fallback =
       selectedPlatform() === "ios"
         ? await iosSnapshotFallbackPoint(device, { identifier }, error, point)
@@ -907,7 +909,9 @@ export async function typeText(device: Device, text: string): Promise<void> {
     if (typeof nativeDevice(device).command.clipboard !== "function") {
       const serial = targetIdentity();
       try {
-        await controlled(() => mutateCurrentTarget(() => pasteAndroidTextWithAdb(text, serial)));
+        await controlledMutation("type", () =>
+          mutateCurrentTarget(() => pasteAndroidTextWithAdb(text, serial)),
+        );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         if (!isAndroidClipboardTransportFailure(message)) throw error;
@@ -957,7 +961,9 @@ export async function typeText(device: Device, text: string): Promise<void> {
       // cancellation and unrelated session errors.
       if (isAndroidProviderTextInjectionUnavailable(message)) {
         try {
-          await controlled(() => mutateCurrentTarget(() => pasteAndroidTextWithAdb(text, serial)));
+          await controlledMutation("type", () =>
+            mutateCurrentTarget(() => pasteAndroidTextWithAdb(text, serial)),
+          );
           return;
         } catch (fallbackError) {
           const fallbackMessage =
@@ -966,7 +972,7 @@ export async function typeText(device: Device, text: string): Promise<void> {
         }
       }
       if (!isAndroidClipboardTransportFailure(message)) throw error;
-      await controlled(() => typeAndroidShellTextExactly(device, serial, text));
+      await controlledMutation("type", () => typeAndroidShellTextExactly(device, serial, text));
     }
     return;
   }

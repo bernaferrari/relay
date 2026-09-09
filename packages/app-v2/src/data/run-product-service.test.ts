@@ -8,6 +8,34 @@ import {
 } from "./run-product-service";
 
 describe("run report projection", () => {
+  it("uses the interaction interval for performance correlation rather than screenshot capture time", () => {
+    const report = projectRunReport(
+      "timed",
+      {
+        artifacts: [
+          {
+            kind: "campaign-check-result",
+            data: { id: "tap", status: "passed", startedAt: 1000, finishedAt: 2500 },
+          },
+        ],
+        steps: [
+          {
+            title: "Screenshot · step:tap:Tap Network",
+            status: "ok",
+            startedAt: 2600,
+            finishedAt: 2600,
+            durationMs: 0,
+          },
+        ],
+      },
+      { channels: {} },
+    );
+    expect(report.timeline[0]).toMatchObject({
+      startedAt: 1000,
+      finishedAt: 2500,
+      durationMs: 1500,
+    });
+  });
   it("does not report successful evidence capture as a passed blocked interaction", () => {
     const report = projectRunReport(
       "blocked-check",
@@ -256,6 +284,91 @@ describe("run report projection", () => {
       ["frames/a.png"],
       ["frames/b.png"],
     ]);
+  });
+
+  it("does not overlay target bounds on an unrelated timestamp-neighbor frame", () => {
+    const report = projectRunReport(
+      "run-frame-association",
+      {
+        steps: [
+          {
+            id: "trace-network",
+            index: 0,
+            title: "Screenshot · step:network:Tap Network",
+            status: "ok",
+            frames: [],
+          },
+        ],
+        frames: [
+          { path: "frames/preferences.png", caption: "Network preferences", capturedAt: 90 },
+        ],
+        artifacts: [
+          {
+            kind: "campaign-check-result",
+            data: { id: "network", status: "passed", startedAt: 80, finishedAt: 120 },
+          },
+          {
+            kind: "target-resolution",
+            capturedAt: 100,
+            data: { bounds: { x: 10, y: 20, width: 40, height: 30 }, target: { label: "Network" } },
+          },
+        ],
+      },
+      { channels: {} },
+    );
+    expect(report.timeline[0]).not.toHaveProperty("actionBounds");
+    expect(report.timeline[0]).not.toHaveProperty("beforeFramePath");
+  });
+
+  it("uses an explicitly associated before frame and preserves after phase", () => {
+    const report = projectRunReport(
+      "run-frame-association-explicit",
+      {
+        steps: [
+          {
+            id: "trace-network",
+            index: 0,
+            title: "Screenshot · step:network:Tap Network",
+            status: "ok",
+            frames: [],
+          },
+        ],
+        frames: [
+          { path: "frames/network-before.png", caption: "before · Tap Network", capturedAt: 90 },
+          {
+            path: "frames/network-after.png",
+            caption: "after · Network preferences",
+            capturedAt: 130,
+          },
+        ],
+        artifacts: [
+          {
+            kind: "campaign-check-result",
+            data: { id: "network", status: "passed", startedAt: 80, finishedAt: 140 },
+          },
+          {
+            kind: "target-resolution",
+            capturedAt: 100,
+            data: {
+              framePath: "frames/network-before.png",
+              bounds: { x: 10, y: 20, width: 40, height: 30 },
+              target: { label: "Network" },
+            },
+          },
+        ],
+      },
+      { channels: { screenshot: { entries: 2 } } },
+    );
+    expect(report.timeline[0]).toMatchObject({
+      beforeFramePath: "frames/network-before.png",
+      actionBounds: { x: 10, y: 20, width: 40, height: 30 },
+    });
+    expect(report.evidence.find((section) => section.id === "screenshot")?.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "frames/network-before.png", phase: "before" }),
+        expect.objectContaining({ id: "frames/network-after.png", phase: "after" }),
+      ]),
+    );
   });
 
   it("keeps the canonical outcome and human target while omitting empty evidence", () => {

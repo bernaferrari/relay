@@ -62,3 +62,11 @@ test("automatic evidence preserves causal frames without duplicating passive ste
     [],
   );
 });
+
+test("a module followed by an explicit screenshot does not duplicate destination capture", () => {
+  assert.deepEqual(
+    automaticEvidencePhases({ kind: "module", recipeId: "tour" }, { kind: "screenshot" }),
+    [],
+  );
+  assert.deepEqual(automaticEvidencePhases({ kind: "module", recipeId: "tour" }), ["after"]);
+});

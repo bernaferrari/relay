@@ -520,7 +520,7 @@ async function runRecipeSteps(
         capturedAt: now(),
         data: { stepId: ts.id, command: resolvedStep },
       });
-      const evidencePhases = automaticEvidencePhases(resolvedStep);
+      const evidencePhases = automaticEvidencePhases(resolvedStep, recipe.steps[stepIndex + 1]);
       if (evidencePhases.includes("before"))
         await captureAutomaticState(job, device, ts, "before", pushLog, runtime);
       const artifactStart = job.artifacts.length;

@@ -1,6 +1,9 @@
 import type { RecipeStep } from "./recipes.js";
 
-export function automaticEvidencePhases(step: RecipeStep): readonly ("before" | "after")[] {
+export function automaticEvidencePhases(
+  step: RecipeStep,
+  nextStep?: RecipeStep,
+): readonly ("before" | "after")[] {
   switch (step.kind) {
     // These steps already produce their own evidence or only orchestrate
     // nested steps. Capturing two additional device states adds latency and
@@ -17,6 +20,9 @@ export function automaticEvidencePhases(step: RecipeStep): readonly ("before" | 
     case "branch":
       return [];
     case "module":
+      // The following explicit capture owns the authored result. Do not take
+      // a second set of settled frames for the same destination first.
+      if (nextStep?.kind === "screenshot") return [];
       // A module executes nested recipe steps inside one outer TraceStep. The
       // nested runner updates the verified runtime observation, but it does
       // not append that observation to the outer Run's evidence channels.

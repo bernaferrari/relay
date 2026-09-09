@@ -9,6 +9,9 @@ import {
 import { cooperativeCheckpoint, raceCancel, throwIfCancelled } from "./control.js";
 import { withRetry, type RetryOptions } from "./retry.js";
 import { currentTargetContext, selectedPlatform } from "./target-context.js";
+import { InputOutcomeUnknownError } from "./input-not-dispatched.js";
+import { iosSelectorWasNotDispatched } from "./ios-mutation-policy.js";
+import { isTargetUnavailableError } from "./target-unavailable.js";
 
 /** Dispatcher-private native transport; physical input stays below the exact-once dispatcher. */
 export type DeviceTransport = Device & ReturnType<typeof bindNativeDeviceMutations>;
@@ -71,14 +74,32 @@ export async function controlled<T>(
 }
 
 /**
- * Android retains its existing bounded transient retry behaviour. Only a
- * connected iOS device takes the exact-once branch; cloud providers can opt
- * into an explicit idempotency contract when they implement one.
+ * Physical mutations are single-attempt on every platform. A transport error
+ * after dispatch has an unknown outcome, so the generic transient retry loop
+ * is unsafe for taps, clicks, text entry, and other input. Callers that have
+ * an explicit idempotency contract can use `controlled` directly.
  */
 export async function controlledMutation<T>(
   operation: IosMutationOperation,
   op: () => Promise<T>,
 ): Promise<T> {
   const serial = currentIosDeviceSerial();
-  return serial ? runIosMutationOnce(serial, operation, op) : controlled(op);
+  if (serial) return runIosMutationOnce(serial, operation, op);
+  await cooperativeCheckpoint();
+  throwIfCancelled();
+  try {
+    return await raceCancel(op());
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      (error.name === "JobCancelledError" ||
+        iosSelectorWasNotDispatched(error) ||
+        isTargetUnavailableError(error))
+    ) {
+      throw error;
+    }
+    throw new InputOutcomeUnknownError(error instanceof Error ? error.message : String(error), {
+      cause: error,
+    });
+  }
 }

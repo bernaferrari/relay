@@ -1,3 +1,4 @@
+import { captureSettledRaster } from "./visual-settling.js";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, mkdir, readFile, rm, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -88,7 +89,11 @@ export async function captureAutomaticState(
   const temporary = join(runDir, "frames", `.capture-${randomUUID()}.png`);
   try {
     const cachedScreenshot = observation?.screenshot;
-    if (cachedScreenshot && (await cachedScreenshotIsFresh(job, cachedScreenshot))) {
+    if (
+      phase === "before" &&
+      cachedScreenshot &&
+      (await cachedScreenshotIsFresh(job, cachedScreenshot))
+    ) {
       const existing = cachedScreenshot.framePath
         ? job.frames.find((frame) => frame.path === cachedScreenshot.framePath)
         : undefined;
@@ -103,18 +108,34 @@ export async function captureAutomaticState(
       }
       return;
     }
-    let bytes: Buffer;
-    if (job.platform === "ios" && job.serial) {
-      try {
-        await captureIosPngViaGoIos(job.serial, temporary);
-        bytes = await readFile(temporary);
-      } catch {
+    const captureRaster = async () => {
+      let bytes: Buffer;
+      if (job.platform === "ios" && job.serial) {
+        try {
+          await captureIosPngViaGoIos(job.serial, temporary);
+          bytes = await readFile(temporary);
+        } catch {
+          const result = await device.capture.screenshot({ ...base(), path: temporary });
+          bytes = result.base64 ? Buffer.from(result.base64, "base64") : await readFile(temporary);
+        }
+      } else {
         const result = await device.capture.screenshot({ ...base(), path: temporary });
         bytes = result.base64 ? Buffer.from(result.base64, "base64") : await readFile(temporary);
       }
-    } else {
-      const result = await device.capture.screenshot({ ...base(), path: temporary });
-      bytes = result.base64 ? Buffer.from(result.base64, "base64") : await readFile(temporary);
+      return bytes;
+    };
+    const captured =
+      phase === "after"
+        ? await captureSettledRaster({ capture: captureRaster, bytes: (value) => value })
+        : { value: await captureRaster(), settled: false, samples: 1 };
+    let bytes = captured.value;
+    if (phase === "after") {
+      job.artifacts.push({
+        kind: "visual-settling",
+        capturedAt: now(),
+        data: { stepId: step.id, phase, settled: captured.settled, samples: captured.samples },
+      });
+      if (!captured.settled) log("After screenshot retained while the screen was still changing.");
     }
     if (job.platform === "ios") {
       const geometry = snapshotNodes ? inferIosSnapshotGeometry(snapshotNodes) : undefined;

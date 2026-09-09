@@ -87,6 +87,7 @@ import {
   runTypeStep,
 } from "./recipe-runner-extended-steps.js";
 import { rethrowIosMutationOutcomeUnknown } from "./ios-mutation-policy.js";
+import { rethrowInputOutcomeUnknown } from "./input-not-dispatched.js";
 export { refMatchesRecordedTarget, screenIdentityMatches } from "./recipe-target-match.js";
 
 async function runRequiredRecipeStep(
@@ -842,6 +843,7 @@ export async function runRecipeStep(
     await runRequiredRecipeStep(device, step, ctx);
   } catch (error) {
     rethrowIosMutationOutcomeUnknown(error);
+    rethrowInputOutcomeUnknown(error);
     if (isCancel(error)) throw error;
     const message = error instanceof Error ? error.message : String(error);
     ctx.log(`optional ${step.kind}: skipped — ${message}`);

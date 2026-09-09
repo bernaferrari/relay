@@ -229,3 +229,40 @@ test("an advanced observation epoch invalidates the cache without sampling pixel
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("Android after evidence refreshes a cached before raster", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-after-fresh-"));
+  const previousRuns = process.env.RELAY_RUNS_DIR;
+  process.env.RELAY_RUNS_DIR = root;
+  const runtime = runtimeWithCachedRaster(fakePng("before").toString("base64"));
+  const job = { ...iosJob("android-test"), platform: "android" as const };
+  const resultStep = step("Tap Continue");
+  let captures = 0;
+  const device = {
+    capture: {
+      snapshot: async () => ({ nodes: [] }),
+      screenshot: async () => {
+        captures++;
+        return { base64: fakePng("after").toString("base64") };
+      },
+    },
+  } as unknown as Device;
+  try {
+    await runWithTargetContext(
+      { kind: "device", platform: "android", serial: "android-test" },
+      () => captureAutomaticState(job, device, resultStep, "after", () => {}, runtime),
+    );
+    assert.equal(captures, 2);
+    assert.equal(runtime.observation?.screenshot?.base64, fakePng("after").toString("base64"));
+    assert.ok(
+      job.artifacts.some(
+        (artifact) =>
+          artifact.kind === "visual-settling" && (artifact.data as { settled: boolean }).settled,
+      ),
+    );
+  } finally {
+    if (previousRuns === undefined) delete process.env.RELAY_RUNS_DIR;
+    else process.env.RELAY_RUNS_DIR = previousRuns;
+    await rm(root, { recursive: true, force: true });
+  }
+});

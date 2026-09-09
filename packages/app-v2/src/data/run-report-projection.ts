@@ -359,10 +359,7 @@ function reportTimeline(
       Number(bounds.width) > 0 &&
       Number(bounds.height) > 0;
     const before = resolution
-      ? array(record(rawRun)?.frames)
-          .map(record)
-          .filter((frame) => finite(frame?.capturedAt)! <= finite(resolution.capturedAt)!)
-          .sort((a, b) => Number(b?.capturedAt) - Number(a?.capturedAt))[0]
+      ? actionBeforeFrame(resolution, step, array(record(rawRun)?.frames))
       : undefined;
     return [
       {
@@ -381,10 +378,22 @@ function reportTimeline(
         index: finite(step.index) ?? fallbackIndex,
         title,
         state,
-        ...(finite(step.durationMs) === undefined ? {} : { durationMs: finite(step.durationMs) }),
+        ...(times
+          ? { durationMs: Math.max(0, times.end - times.start) }
+          : finite(step.durationMs) === undefined
+            ? {}
+            : { durationMs: finite(step.durationMs) }),
         ...(finite(step.attempt) === undefined ? {} : { attempt: finite(step.attempt) }),
-        ...(finite(step.startedAt) === undefined ? {} : { startedAt: finite(step.startedAt) }),
-        ...(finite(step.finishedAt) === undefined ? {} : { finishedAt: finite(step.finishedAt) }),
+        ...(times
+          ? { startedAt: times.start }
+          : finite(step.startedAt) === undefined
+            ? {}
+            : { startedAt: finite(step.startedAt) }),
+        ...(times
+          ? { finishedAt: times.end }
+          : finite(step.finishedAt) === undefined
+            ? {}
+            : { finishedAt: finite(step.finishedAt) }),
         evidenceCount: array(step.frames).length,
         framePaths:
           authoredFramePaths ??
@@ -398,6 +407,42 @@ function reportTimeline(
       },
     ];
   });
+}
+
+/**
+ * Resolve the raster on which a target was found without guessing from the
+ * global frame timeline. A target-resolution timestamp only says when the
+ * resolver finished; it does not identify which screen was visible then.
+ */
+function actionBeforeFrame(
+  resolution: Record<string, unknown>,
+  step: Record<string, unknown>,
+  rawFrames: readonly unknown[],
+): Record<string, unknown> | undefined {
+  const data = record(resolution.data);
+  const explicitPaths = [
+    text(data?.beforeFramePath),
+    text(data?.sourceFramePath),
+    text(data?.framePath),
+    text(record(data?.beforeFrame)?.path),
+    text(record(data?.sourceFrame)?.path),
+  ].filter((path): path is string => Boolean(path));
+  const frames = rawFrames
+    .map(record)
+    .filter((frame): frame is Record<string, unknown> => Boolean(frame));
+  const phaseBefore = (frame: Record<string, unknown> | undefined) =>
+    Boolean(frame && /^before\s+·/iu.test(text(frame.caption) ?? ""));
+  for (const path of explicitPaths) {
+    const frame = frames.find((candidate) => text(candidate.path) === path);
+    if (phaseBefore(frame)) return frame;
+  }
+
+  // New captures retain before/after frames directly on the trace step. This
+  // is an exact ownership relation; do not cross to a neighboring step.
+  const ownedBefore = array(step.frames)
+    .map(record)
+    .find((frame): frame is Record<string, unknown> => phaseBefore(frame));
+  return ownedBefore;
 }
 function array(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];

@@ -270,7 +270,7 @@ test("automatic failure evidence captures a fresh tree and raster after invalida
     );
 
     assert.equal(snapshots, 1, logs.join("; "));
-    assert.equal(screenshots, 1, logs.join("; "));
+    assert.equal(screenshots, 2, logs.join("; "));
     const treeArtifact = job.artifacts[0];
     assert.ok(treeArtifact, "fresh failure evidence includes a UI-tree artifact");
     assert.deepEqual((treeArtifact.data as { nodes: unknown }).nodes, freshNodes);

@@ -7,6 +7,7 @@ import {
 } from "./control.js";
 import { now } from "./events.js";
 import { IosMutationOutcomeUnknownError } from "./ios-mutation-policy.js";
+import { InputOutcomeUnknownError } from "./input-not-dispatched.js";
 import type { RecipeStep } from "./recipes.js";
 import type { RecipeStepContext } from "./recipe-runner-context.js";
 import {
@@ -275,7 +276,10 @@ export async function runCampaignCheck(
       ctx,
       error instanceof Error ? error.message : `Campaign check ${step.check.id} failed.`,
     );
-    if (error instanceof IosMutationOutcomeUnknownError) {
+    if (
+      error instanceof IosMutationOutcomeUnknownError ||
+      error instanceof InputOutcomeUnknownError
+    ) {
       // An iOS native command may already have landed. Evidence is read-only,
       // but cleanup would issue a second physical command against an unknown
       // state, so preserve the exact error and stop this recipe/tour here.
@@ -291,7 +295,10 @@ export async function runCampaignCheck(
     }
   } finally {
     const cleanup = step.check.cleanup;
-    if (primaryError instanceof IosMutationOutcomeUnknownError) {
+    if (
+      primaryError instanceof IosMutationOutcomeUnknownError ||
+      primaryError instanceof InputOutcomeUnknownError
+    ) {
       cleanupOutcome = "skipped";
       const capturedAt = now();
       if (cleanup) {
@@ -412,7 +419,10 @@ export async function runCampaignCheck(
         } catch (error) {
           cleanupError = error;
           const finishedAt = now();
-          if (error instanceof IosMutationOutcomeUnknownError) {
+          if (
+            error instanceof IosMutationOutcomeUnknownError ||
+            error instanceof InputOutcomeUnknownError
+          ) {
             // Cleanup is a physical recipe too. Its command may have landed,
             // so the campaign cannot turn that ambiguity into a normal failed
             // check, defer it, or begin a sibling check.

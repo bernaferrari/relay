@@ -12,6 +12,7 @@ export function rawScreenshot(path: string, serial?: string): void {
   const args = ["-s", serial, "exec-out", "screencap", "-p"];
   const buf = execFileSync(resolveAndroidSdkToolSync("adb"), args, {
     maxBuffer: 20 * 1024 * 1024,
+    timeout: 10_000,
   });
   writeFileSync(path, buf);
 }

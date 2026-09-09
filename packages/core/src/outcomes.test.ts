@@ -3,6 +3,17 @@ import assert from "node:assert/strict";
 import { classifyRunOutcome } from "./outcomes.js";
 
 describe("classifyRunOutcome", () => {
+  it("keeps unacknowledged mutations uncertain instead of declaring a product failure", () => {
+    for (const error of [
+      "Input outcome unknown: tap failed: connection reset",
+      "The iOS press may already have reached the device. Relay did not retry it.",
+    ]) {
+      assert.deepEqual(classifyRunOutcome({ status: "error", error }), {
+        outcome: "uncertain",
+        failureCategory: "action",
+      });
+    }
+  });
   it("separates product assertions from harness failures", () => {
     assert.deepEqual(
       classifyRunOutcome({ status: "error", error: "semantic assertion: wrong country" }),

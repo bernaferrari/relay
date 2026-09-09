@@ -1,4 +1,4 @@
-import { InputNotDispatchedError } from "./input-not-dispatched.js";
+import { InputNotDispatchedError, InputOutcomeUnknownError } from "./input-not-dispatched.js";
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -837,7 +837,9 @@ describe("runRecipeStep optional policy", () => {
   it("records a skipped best-effort action without hiding cancellation", async () => {
     const logs: string[] = [];
     const job = { artifacts: [] } as unknown as TestJob;
-    const device = stubDevice({ press: () => Promise.reject(new Error("not on this screen")) });
+    const device = stubDevice({
+      press: () => Promise.reject(new Error("Selector did not match an element")),
+    });
 
     await runRecipeStep(
       device,
@@ -1166,7 +1168,7 @@ describe("runRecipeStep campaign check policy", () => {
         const selector = String((options as { selector?: string }).selector);
         presses.push(selector);
         return selector.includes("primary")
-          ? Promise.reject(new Error("primary changed"))
+          ? Promise.reject(new Error("Selector did not match an element"))
           : Promise.resolve({});
       },
       snapshot: () => Promise.resolve({ nodes: [] }),
@@ -1558,8 +1560,8 @@ describe("runRecipeStep campaign check policy", () => {
         Promise.reject(
           new Error(
             String((options as { selector?: string }).selector).includes("primary")
-              ? "primary changed"
-              : "cleanup could not restore off",
+              ? "Selector did not match an element"
+              : "Selector did not match an element",
           ),
         ),
       snapshot: () => Promise.resolve({ nodes: [] }),
@@ -1803,7 +1805,7 @@ describe("runRecipeStep campaign check policy", () => {
       mode: "warm-transition" as const,
     };
     const device = stubDevice({
-      press: () => Promise.reject(new Error("row disappeared")),
+      press: () => Promise.reject(new Error("Selector did not match an element")),
       wait: async () => {
         waits.push(1);
       },
@@ -1955,7 +1957,7 @@ describe("runRecipeStep campaign check policy", () => {
       },
     };
     const device = stubDevice({
-      press: () => Promise.reject(new Error("SuperGrok was not resolved")),
+      press: () => Promise.reject(new Error("Selector did not match an element")),
       wait: async () => {},
     });
     const context = { log: (line: string) => logs.push(line), job, runtime, recipeGraph };
@@ -2088,7 +2090,7 @@ describe("runRecipeStep campaign check policy", () => {
       mode: "warm-transition" as const,
     };
     const device = stubDevice({
-      press: () => Promise.reject(new Error("row disappeared")),
+      press: () => Promise.reject(new Error("Selector did not match an element")),
       wait: async () => {
         waits.push(1);
       },
@@ -2161,7 +2163,7 @@ describe("runRecipeStep campaign check policy", () => {
       mode: "warm-transition" as const,
     };
     const device = stubDevice({
-      press: () => Promise.reject(new Error("row disappeared")),
+      press: () => Promise.reject(new Error("Selector did not match an element")),
       wait: async () => {},
     });
     const context = { log: (line: string) => logs.push(line), job, runtime, recipeGraph };
@@ -2222,7 +2224,7 @@ describe("runRecipeStep campaign check policy", () => {
     };
 
     await runRecipeStep(
-      stubDevice({ press: () => Promise.reject(new Error("row disappeared")) }),
+      stubDevice({ press: () => Promise.reject(new Error("Selector did not match an element")) }),
       {
         kind: "tap",
         target: { identifier: "missing" },
@@ -2405,7 +2407,9 @@ describe("runRecipeStep campaign check policy", () => {
         updatedAt: 1,
       },
     };
-    const device = stubDevice({ press: () => Promise.reject(new Error("origin unavailable")) });
+    const device = stubDevice({
+      press: () => Promise.reject(new Error("Selector did not match an element")),
+    });
     const context = { ...noLog, job, runtime, recipeGraph };
 
     await runRecipeStep(
@@ -2482,7 +2486,7 @@ describe("runRecipeStep campaign check policy", () => {
     const device = stubDevice({
       press: () => {
         settingsAttempts += 1;
-        return Promise.reject(new Error("settings_button was not resolved"));
+        return Promise.reject(new Error("Selector did not match an element"));
       },
       wait: async () => {},
     });
@@ -4930,7 +4934,8 @@ describe("runRecipeStep conversational evidence", () => {
       stubDevice({
         press: async (options) => {
           used.push(options);
-          if ((options as { ref?: string }).ref) throw new Error("stale ref");
+          if ((options as { ref?: string }).ref)
+            throw new Error("Selector did not match an element");
           return {};
         },
       }),
@@ -4966,7 +4971,8 @@ describe("runRecipeStep conversational evidence", () => {
       stubDevice({
         press: async (options) => {
           used.push(options);
-          if ((options as { ref?: string }).ref) throw new Error("not present");
+          if ((options as { ref?: string }).ref)
+            throw new Error("Selector did not match an element");
           return {};
         },
       }),
@@ -5200,6 +5206,46 @@ describe("runRecipeStep conversational evidence", () => {
     ]);
   });
 
+  it("does not let a stale idle control pass while a busy control remains visible", async () => {
+    const owner = job();
+    let sample = 0;
+    const device = stubDevice({
+      wait: () => new Promise((resolve) => setTimeout(resolve, 25)),
+      snapshot: () => {
+        sample += 1;
+        return Promise.resolve({
+          nodes:
+            sample === 1
+              ? [{ identifier: "send", label: "Send" }]
+              : [
+                  { ref: "@answer", label: "Assistant response", value: "still generating" },
+                  { identifier: "stop", label: "Stop generating" },
+                  { identifier: "send", label: "Send" },
+                ],
+        });
+      },
+    });
+
+    await assert.rejects(
+      () =>
+        runRecipeStep(
+          device,
+          {
+            kind: "wait-response",
+            target: { ref: "@answer" },
+            busyTarget: { identifier: "stop" },
+            idleTarget: { identifier: "send" },
+            timeoutMs: 300,
+            stableForMs: 100,
+          },
+          { log: () => {}, job: owner },
+        ),
+      /response completion: timed out/u,
+    );
+    const evidence = owner.artifacts.find((item) => item.kind === "response-completion");
+    assert.equal((evidence?.data as { status?: string } | undefined)?.status, "timeout");
+  });
+
   it("does not reuse an already-visible completion control from the previous response", async () => {
     const owner = job();
     const logs: string[] = [];
@@ -5386,6 +5432,7 @@ describe("runRecipeStep tour", () => {
   it("walks mapped fallback stops when the live tree is empty", async () => {
     const presses: unknown[] = [];
     const device = stubDevice({
+      scroll: () => Promise.resolve({}),
       snapshot: () => Promise.resolve({ nodes: [] }),
       press: (options) => {
         presses.push(options);
@@ -6308,4 +6355,85 @@ it("does not label an attempted tap failure as not dispatched", async () => {
     (error) => !(error instanceof InputNotDispatchedError),
   );
   assert.ok(presses > 0);
+});
+
+it("does not try a fallback target after an Android tap acknowledgement is lost", async () => {
+  let presses = 0;
+  const device = stubDevice({
+    snapshot: async () => ({
+      nodes: [
+        {
+          role: "button",
+          label: "Send",
+          enabled: true,
+          hittable: true,
+          rect: { x: 10, y: 20, width: 100, height: 40 },
+        },
+      ],
+    }),
+    press: async () => {
+      presses += 1;
+      throw new Error("connection reset");
+    },
+  });
+  await assert.rejects(
+    runWithTargetContext(
+      { kind: "device", platform: "android", serial: "android-candidate-no-retry" },
+      () =>
+        runRecipeStepWithoutContext(
+          device,
+          { kind: "tap", target: { label: "Send" }, fallbackTargets: [{ label: "Submit" }] },
+          noLog,
+        ),
+    ),
+    InputOutcomeUnknownError,
+  );
+  assert.equal(presses, 1);
+});
+
+it("stops optional actions and campaign cleanup after an uncertain Android input", async () => {
+  for (const campaign of [false, true]) {
+    let presses = 0;
+    const device = stubDevice({
+      snapshot: async () => ({ nodes: [] }),
+      press: async () => {
+        presses++;
+        throw new Error("acknowledgement lost");
+      },
+    });
+    const primary = { kind: "tap" as const, target: { identifier: "Send" } };
+    const recipeGraph = {
+      primary: {
+        id: "primary",
+        title: "Primary",
+        source: "custom" as const,
+        steps: [primary],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      cleanup: {
+        id: "cleanup",
+        title: "Cleanup",
+        source: "custom" as const,
+        steps: [primary],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    };
+    await assert.rejects(
+      runRecipeStep(
+        device,
+        campaign
+          ? {
+              kind: "module",
+              recipeId: "primary",
+              check: { id: "send", title: "Send", cleanup: { recipeId: "cleanup" } },
+            }
+          : { ...primary, optional: true },
+        { ...noLog, recipeGraph, runtime: {} },
+      ),
+      InputOutcomeUnknownError,
+    );
+    assert.equal(presses, 1, "neither optional handling nor cleanup may dispatch another input");
+  }
 });
