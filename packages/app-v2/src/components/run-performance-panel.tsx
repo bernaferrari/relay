@@ -5,10 +5,12 @@ import type { ReportPerformanceSeries, ReportTimelineItem } from "../data/run-re
 export function RunPerformancePanel({
   series,
   step,
+  timeline = [],
   onSeek,
 }: {
   series: readonly ReportPerformanceSeries[];
   step?: ReportTimelineItem;
+  timeline?: readonly ReportTimelineItem[];
   onSeek(at: number): void;
 }) {
   const available = series.filter((metric) => metric.points.length);
@@ -20,8 +22,14 @@ export function RunPerformancePanel({
     available.find((item) => /cpu/i.test(item.name)) ??
     available[0];
   if (!metric) return null;
-  const first = metric.points[0]!.at;
-  const last = metric.points.at(-1)!.at;
+  const first = Math.min(
+    metric.points[0]!.at,
+    ...timeline.flatMap((item) => (item.startedAt === undefined ? [] : [item.startedAt])),
+  );
+  const last = Math.max(
+    metric.points.at(-1)!.at,
+    ...timeline.flatMap((item) => (item.finishedAt === undefined ? [] : [item.finishedAt])),
+  );
   const peak = Math.max(...metric.points.map((point) => point.value));
   const low = Math.min(0, ...metric.points.map((point) => point.value));
   const ceiling = peak > low ? peak : low + 1;
@@ -29,6 +37,13 @@ export function RunPerformancePanel({
     /cpu|rss|dropped frames \(%\)|total frame count/i.test(item.name),
   );
   const visibleMetrics = showAll || !primary.length ? available : primary;
+  const selectedStep =
+    selectedAt === undefined ? undefined : performanceStepAt(timeline, selectedAt);
+  const exactStep =
+    selectedStep?.startedAt !== undefined &&
+    selectedStep.finishedAt !== undefined &&
+    selectedAt! >= selectedStep.startedAt &&
+    selectedAt! <= selectedStep.finishedAt;
   const selected = metric.points.find((point) => point.at === selectedAt);
   const x = (at: number) =>
     44 + Math.max(0, Math.min(540, ((at - first) / Math.max(1, last - first)) * 540));
@@ -74,14 +89,23 @@ export function RunPerformancePanel({
         <span className="text-muted-foreground">
           {selected
             ? `At +${((selected.at - first) / 1000).toFixed(1)} s`
-            : "Select a point to view its step"}
+            : "Select a sample to inspect"}
         </span>
         <span className="font-mono">
           {selected ? selected.value.toLocaleString() : `Peak ${peak.toLocaleString()}`}
         </span>
       </div>
+      <div className="flex items-center justify-between gap-3">
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => inspect(metric.points.findIndex((point) => point.value === peak))}
+        >
+          Inspect peak
+        </Button>
+      </div>
       <svg
-        viewBox="0 0 600 124"
+        viewBox="0 0 600 162"
         className="h-52 w-full overflow-visible"
         aria-label={`${metricLabel(metric.name)}, ${metric.points.length} samples`}
       >
@@ -133,6 +157,17 @@ export function RunPerformancePanel({
           vectorEffect="non-scaling-stroke"
           className="text-[var(--text-info-base)]"
         />
+        {selectedAt !== undefined ? (
+          <line
+            x1={x(selectedAt)}
+            x2={x(selectedAt)}
+            y1="8"
+            y2="116"
+            stroke="currentColor"
+            strokeDasharray="3 3"
+            opacity=".5"
+          />
+        ) : null}
         {metric.points.map((point, index) => (
           <g
             key={`${point.at}:${index}`}
@@ -158,6 +193,60 @@ export function RunPerformancePanel({
             />
           </g>
         ))}
+        <g aria-label="Steps on performance timeline">
+          {timeline.map((item, index) =>
+            item.startedAt === undefined || item.finishedAt === undefined ? null : (
+              <g
+                key={item.id}
+                role="button"
+                tabIndex={0}
+                aria-label={`Show step ${index + 1}: ${item.title}`}
+                aria-pressed={step?.id === item.id}
+                className="cursor-pointer outline-none [&:focus-visible>rect]:stroke-ring"
+                onClick={() => {
+                  setSelectedAt(undefined);
+                  onSeek(item.startedAt! + Math.max(0, item.finishedAt! - item.startedAt!) / 2);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    setSelectedAt(undefined);
+                    onSeek(item.startedAt! + Math.max(0, item.finishedAt! - item.startedAt!) / 2);
+                  }
+                }}
+              >
+                <title>{`Step ${index + 1}: ${item.title}`}</title>
+                <line
+                  x1={x(item.startedAt)}
+                  x2={x(item.startedAt)}
+                  y1="8"
+                  y2="120"
+                  stroke="currentColor"
+                  opacity={step?.id === item.id ? ".45" : ".12"}
+                  strokeDasharray="2 3"
+                />
+                <rect
+                  x={x(item.startedAt) - 9}
+                  y={index % 2 ? 140 : 120}
+                  width="18"
+                  height="18"
+                  rx="4"
+                  fill="currentColor"
+                  opacity={step?.id === item.id ? ".2" : ".06"}
+                />
+                <text
+                  x={x(item.startedAt)}
+                  y={index % 2 ? 153 : 133}
+                  textAnchor="middle"
+                  fill="currentColor"
+                  fontSize="10"
+                >
+                  {index + 1}
+                </text>
+              </g>
+            ),
+          )}
+        </g>
       </svg>
       <div className="flex justify-between text-[11px] tabular-nums text-muted-foreground">
         <span>0:00</span>
@@ -166,6 +255,15 @@ export function RunPerformancePanel({
           {String(Math.floor((last - first) / 1000) % 60).padStart(2, "0")}
         </span>
       </div>
+      {selected ? (
+        <p role="status" className="text-xs leading-5 text-muted-foreground">
+          {selectedStep
+            ? exactStep
+              ? "Showing the step’s saved screenshot, not an exact frame at the sample time."
+              : "Showing the nearest recorded step; no exact step interval was retained for this sample."
+            : "No timed step was retained for this sample. The preview has not changed."}
+        </p>
+      ) : null}
     </section>
   );
 }
@@ -179,4 +277,20 @@ function metricLabel(name: string): string {
     .replace(/^Fps refresh Rate Hz$/i, "Refresh rate (Hz)")
     .replace(/^Startup last Duration Ms$/i, "App startup (ms)")
     .replace(/^Startup sample Count$/i, "Startup samples");
+}
+
+// Sparse traces may retain only a step timestamp. Identify the nearest saved
+// step explicitly instead of implying an exact sample-to-frame correlation.
+export function performanceStepAt(timeline: readonly ReportTimelineItem[], at: number) {
+  const timed = timeline.filter(
+    (item) => item.startedAt !== undefined && item.finishedAt !== undefined,
+  );
+  return (
+    timed.find((item) => at >= item.startedAt! && at <= item.finishedAt!) ??
+    timed.reduce<ReportTimelineItem | undefined>((nearest, item) => {
+      const distance = (candidate: ReportTimelineItem) =>
+        Math.min(Math.abs(at - candidate.startedAt!), Math.abs(at - candidate.finishedAt!));
+      return !nearest || distance(item) < distance(nearest) ? item : nearest;
+    }, undefined)
+  );
 }

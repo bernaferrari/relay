@@ -62,6 +62,15 @@ const stepEvidence: readonly RunTestStepEvidence[] = [
 
 const report: ProductRunReportOverview = {
   runId: "run-checkout",
+  performance: [
+    {
+      name: "CPU (%)",
+      points: [
+        { at: 1500, value: 2 },
+        { at: 3500, value: 90 },
+      ],
+    },
+  ],
   testId: "test-checkout",
   title: "Complete checkout",
   outcome: "harness-failure",
@@ -158,6 +167,23 @@ function render(selectedStepIndex = 0) {
 }
 
 describe("RunWorkbench", () => {
+  it("links the performance peak to its step and saved screenshot", () => {
+    const host = render();
+    act(() =>
+      [...host.querySelectorAll("button")]
+        .find((button) => button.textContent === "Performance")!
+        .click(),
+    );
+    act(() =>
+      [...host.querySelectorAll("button")]
+        .find((button) => button.textContent === "Inspect peak")!
+        .click(),
+    );
+    expect(host.textContent).toContain("Check the order confirmation");
+    expect(host.querySelector('img[alt="Confirmation missing"]')).not.toBeNull();
+    expect(host.textContent).toContain("not an exact frame at the sample time");
+  });
+
   it("keeps the selected screenshot mounted while inspecting details and logs", () => {
     const host = render();
     const image = host.querySelector("img");

@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { RunPerformancePanel } from "../components/run-performance-panel";
+import { RunPerformancePanel, performanceStepAt } from "../components/run-performance-panel";
 import { traceVideoInterval } from "../data/run-report-media";
 import { EvidenceImageViewer } from "../components/evidence-image-viewer";
 import { ReportVideoInspector } from "../components/report-video-inspector";
@@ -264,15 +264,11 @@ export function RunWorkbench({
           {panel === "performance" && report.performance?.length ? (
             <RunPerformancePanel
               series={report.performance}
+              timeline={report.timeline}
               step={step}
               onSeek={(at) => {
-                const index = report.timeline.findIndex(
-                  (item) =>
-                    item.startedAt !== undefined &&
-                    item.finishedAt !== undefined &&
-                    at >= item.startedAt &&
-                    at <= item.finishedAt,
-                );
+                const matched = performanceStepAt(report.timeline, at);
+                const index = matched ? report.timeline.indexOf(matched) : -1;
                 if (index >= 0) onSelectStep(index);
               }}
             />
