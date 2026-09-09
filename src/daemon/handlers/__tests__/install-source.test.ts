@@ -364,11 +364,10 @@ function sourceRuntimeFacts(
       focusPoint: unavailable,
       typeText: unavailable,
       ...touchRuntimeOperationFacts({
+        unsupported: unavailable,
         tap: unavailable,
         longPress: unavailable,
-        hover: unavailable,
         fill: unavailable,
-        tapElementSelector: unavailable,
       }),
       ...gestureRuntimeOperationFacts({
         plan: unavailable,

@@ -385,6 +385,7 @@ function webRuntimeFacts(
       // interactor to drive (parity with the retired `type` overlay membership).
       ...typeTextRuntimeOperationFacts({ type: browserDevice }),
       ...touchRuntimeOperationFacts({
+        unsupported: readinessUnavailable,
         tap: browserDevice,
         tapRef: webOptionalOperationFact(interactor?.tapRef, browserDevice),
         longPress: readinessUnavailable,
@@ -392,7 +393,6 @@ function webRuntimeFacts(
         hoverRef: webOptionalOperationFact(interactor?.hoverRef, browserDevice),
         fill: browserDevice,
         fillRef: webOptionalOperationFact(interactor?.fillRef, browserDevice),
-        tapElementSelector: readinessUnavailable,
       }),
       // `scroll` is the one gesture-family command the web overlay admitted
       // (`WEB_INTERACTION_COMMANDS`), so it shares focus's `{ device: true }` cell. `gesture` and
