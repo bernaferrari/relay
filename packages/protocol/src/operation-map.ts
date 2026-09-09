@@ -613,7 +613,12 @@ type SpecificOperationMap = {
   };
   "target.app.locales": {
     input: { serial: string; package: string };
-    output: { packageName: string; locales: string[] };
+    output: {
+      packageName: string;
+      locales: string[];
+      currentLocale?: string;
+      source?: "android-locale-manager" | "android-device-locale";
+    };
   };
   "target.app.list": {
     input: { serial: string };

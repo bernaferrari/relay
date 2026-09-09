@@ -482,7 +482,11 @@ test("discovers every locale declared by an installed Android app", async () => 
       listAndroidAppLocales: async (serial, packageName) => {
         assert.equal(serial, "pixel-1");
         assert.equal(packageName, "com.example.app");
-        return ["en", "it", "pt-BR"];
+        return {
+          locales: ["en", "it", "pt-BR"],
+          currentLocale: "it",
+          source: "android-locale-manager",
+        };
       },
     },
   });
@@ -495,6 +499,8 @@ test("discovers every locale declared by an installed Android app", async () => 
     assert.deepEqual(await response.json(), {
       packageName: "com.example.app",
       locales: ["en", "it", "pt-BR"],
+      currentLocale: "it",
+      source: "android-locale-manager",
     });
   } finally {
     await server.close();

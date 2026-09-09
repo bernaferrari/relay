@@ -479,8 +479,8 @@ export async function handleTargetRuntimeRoute(context: {
     if (device.platform !== "android") {
       throw new HttpError(400, "App locale discovery currently requires Android");
     }
-    const locales = await runtime.listAndroidAppLocales(serial, packageName);
-    json(response, 200, { packageName, locales });
+    const result = await runtime.listAndroidAppLocales(serial, packageName);
+    json(response, 200, { packageName, ...result });
     return true;
   }
 

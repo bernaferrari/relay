@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { setAndroidAppLocale, type SetAndroidAppLocaleOptions } from "./android-app-build.js";
+import { parseAndroidLocaleOutput } from "./android-locale-tags.js";
 import { resolveAndroidSdkTool } from "./android-sdk-tools.js";
 import { runWithTargetContext } from "./target-context.js";
 
@@ -70,12 +71,30 @@ export function parseAndroidResourceLocales(resources: string): string[] {
 export async function listAndroidAppLocales(
   serial: string,
   packageName: string,
-): Promise<string[]> {
+): Promise<{
+  locales: string[];
+  currentLocale?: string;
+  source?: "android-locale-manager" | "android-device-locale";
+}> {
   if (!serial.trim()) throw new Error("device serial is required");
   if (!validPackageName(packageName))
     throw new Error("app package name contains unsupported characters");
   const aapt2 = await resolveAndroidSdkTool("aapt2");
   const adb = await resolveAndroidSdkTool("adb");
+  const current = await execFileAsync(adb, [
+    "-s", serial, "shell", "cmd", "locale", "get-app-locales", packageName,
+  ]).catch(() => ({ stdout: "" }));
+  let currentLocale = parseAndroidLocaleOutput(String(current.stdout ?? ""));
+  let source: "android-locale-manager" | "android-device-locale" | undefined = currentLocale
+    ? "android-locale-manager"
+    : undefined;
+  if (!currentLocale) {
+    const device = await execFileAsync(adb, [
+      "-s", serial, "shell", "cmd", "locale", "get-device-locale",
+    ]).catch(() => ({ stdout: "" }));
+    currentLocale = parseAndroidLocaleOutput(String(device.stdout ?? ""));
+    if (currentLocale) source = "android-device-locale";
+  }
   const workspace = await mkdtemp(path.join(tmpdir(), "relay-app-locales-"));
   const apk = path.join(workspace, "base.apk");
   try {
@@ -100,14 +119,21 @@ export async function listAndroidAppLocales(
     const manifest = await runAapt(["dump", "xmltree", "--file", "AndroidManifest.xml", apk]);
     const resourceId = manifest.match(/android:localeConfig[^\n]*=@(0x[0-9a-f]+)/i)?.[1];
     if (!resourceId) {
-      return parseAndroidResourceLocales(await runAapt(["dump", "resources", apk]));
+      return {
+        locales: parseAndroidResourceLocales(await runAapt(["dump", "resources", apk])),
+        ...(currentLocale ? { currentLocale, source } : {}),
+      };
     }
     const resources = await runAapt(["dump", "resources", apk]);
     const escaped = resourceId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const resourceName = resources.match(
       new RegExp(`resource\\s+${escaped}\\s+xml\\/([A-Za-z0-9_.-]+)`, "i"),
     )?.[1];
-    if (!resourceName) return [];
+    if (!resourceName)
+      return {
+        locales: [],
+        ...(currentLocale ? { currentLocale, source } : {}),
+      };
     const localeXml = await runAapt([
       "dump",
       "xmltree",
@@ -115,7 +141,10 @@ export async function listAndroidAppLocales(
       `res/xml/${resourceName}.xml`,
       apk,
     ]);
-    return parseAndroidLocaleConfig({ manifest, resources, localeXml });
+    return {
+      locales: parseAndroidLocaleConfig({ manifest, resources, localeXml }),
+      ...(currentLocale ? { currentLocale, source } : {}),
+    };
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
