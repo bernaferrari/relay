@@ -39,9 +39,7 @@ export function isRootPlatformRuntimeTarget(target: string): boolean {
 }
 
 /**
- * Measured on origin/main 6e22e266d7 for #2278: 14 production edges in 9 daemon files.
- * The ios-app-session-hint entry covers two edges (the import and the re-export of the
- * same symbol); every other entry is one edge.
+ * The current classified edges from the #2278 audit, ratcheted as owning interfaces land.
  */
 export const DAEMON_PLATFORM_RUNTIME_EDGES: readonly DaemonPlatformRuntimeEdge[] = [
   {
@@ -141,36 +139,30 @@ export const DAEMON_PLATFORM_RUNTIME_EDGES: readonly DaemonPlatformRuntimeEdge[]
   },
   {
     file: 'src/daemon/ios-app-session-hint.ts',
-    target: 'src/platform-runtime-open-target.ts',
-    symbols: ['resolveSoleForegroundIosApp'],
-    classification: 'leaked-platform-mechanics',
+    target: 'src/platform-runtime-apple-resources.ts',
+    symbols: ['appleSessionObservation'],
+    classification: 'daemon-policy-essential',
     rationale:
-      'the open-hint policy (daemon-owned: when to emit, length bound, never-guess) calls ' +
-      'the Apple foreground-app probe and re-exports it; the probe should arrive through ' +
-      'a semantic observation port instead of the mixed open-target module.',
-    deepenedBy: '#2332',
+      'daemon-owned hint composition and length limits consume the neutral foreground-app ' +
+      'observation; the Apple package owns ambiguity and probe mechanics.',
   },
   {
     file: 'src/daemon/request-recording-health.ts',
     target: 'src/platform-runtime-apple-resources.ts',
-    symbols: ['inspectAppleRunnerSession'],
-    classification: 'leaked-platform-mechanics',
+    symbols: ['appleSessionObservation'],
+    classification: 'daemon-policy-essential',
     rationale:
-      'recording-health refresh reads the Apple runner session mechanics directly; the ' +
-      'daemon needs a semantic runner-session observation (alive plus current session id), ' +
-      'not the runner probe.',
-    deepenedBy: '#2332',
+      'daemon-owned recording invalidation consumes only liveness and session identity ' +
+      'through the neutral observation contract; runner mechanics stay Apple-owned.',
   },
   {
     file: 'src/daemon/session-device-resolution.ts',
     target: 'src/platform-runtime-apple-resources.ts',
-    symbols: ['inspectAppleRunnerSession'],
-    classification: 'leaked-platform-mechanics',
+    symbols: ['appleSessionObservation'],
+    classification: 'daemon-policy-essential',
     rationale:
-      'device refresh uses a live runner session as simulator-boot evidence; the daemon ' +
-      'needs the same semantic runner-session observation as recording health, not the ' +
-      'runner probe.',
-    deepenedBy: '#2332',
+      'daemon-owned device refresh uses the neutral runner-session observation as boot ' +
+      'evidence; inventory selection and provider exclusions remain local policy.',
   },
   {
     file: 'src/daemon/handlers/session-selector-dispatch.ts',

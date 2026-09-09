@@ -10,41 +10,6 @@ import { loadAndroidMechanics } from './platform-runtime-android-mechanics.ts';
 
 const LINUX_SUPPORTED_SURFACES = new Set<SessionSurface>(['app', 'desktop', 'frontmost-app']);
 
-export type ResolvedForegroundIosApp = Readonly<{
-  device: DeviceInfo;
-  app: Readonly<{ bundleId: string }>;
-}>;
-
-/**
- * Read-only foreground discovery used solely to enrich a snapshot session-not-found hint. Actual
- * `open --foreground` target probing runs through the admitted Apple lifecycle binding instead.
- */
-export async function resolveSoleForegroundIosApp(
-  options: Readonly<{ simulatorSetPath?: string }> = {},
-): Promise<ResolvedForegroundIosApp | undefined> {
-  const { listLocalDeviceInventory, shouldPropagateDeviceInventoryProbeError } =
-    await import('@agent-device/device-selection/device-inventory-context');
-  try {
-    const booted = await listLocalDeviceInventory({
-      platform: 'ios',
-      iosSimulatorSetPath: options.simulatorSetPath,
-      kind: 'simulator',
-      booted: true,
-    });
-    if (booted.length !== 1) return undefined;
-    const [soleBootedDevice] = booted;
-    if (!soleBootedDevice) return undefined;
-
-    const { detectSoleRunningIosSimulatorApp } =
-      await import('@agent-device/platform-apple/app-resolution');
-    const app = await detectSoleRunningIosSimulatorApp(soleBootedDevice);
-    return app ? { device: soleBootedDevice, app } : undefined;
-  } catch (error) {
-    if (shouldPropagateDeviceInventoryProbeError(error)) throw error;
-    return undefined;
-  }
-}
-
 /**
  * Platform-owned surface classification for open. Daemon handlers retain only the public
  * error-response construction and session-policy choice of an existing surface.

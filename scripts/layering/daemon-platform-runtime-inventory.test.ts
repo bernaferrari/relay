@@ -30,6 +30,24 @@ test('R76 accepts a classified edge with the exact recorded symbols', () => {
   assert.deepEqual(edgeViolations(sources, 'src/daemon/device-ready.ts'), []);
 });
 
+for (const [file, target, symbol] of [
+  ['request-recording-health', 'apple-resources', 'inspectAppleRunnerSession'],
+  ['session-device-resolution', 'apple-resources', 'inspectAppleRunnerSession'],
+  ['ios-app-session-hint', 'open-target', 'resolveSoleForegroundIosApp'],
+]) {
+  test(`R76 rejects retired observation mechanics in ${file}`, () => {
+    const importer = `src/daemon/${file}.ts`;
+    const sources = {
+      [`src/platform-runtime-${target}.ts`]: `export function ${symbol}() {}\n`,
+      [importer]: `import { ${symbol} } from '../platform-runtime-${target}.ts';\nvoid ${symbol};\n`,
+    };
+    const found = edgeViolations(sources, importer);
+    assert.equal(found.length, 1);
+    assert.equal(found[0]!.rule, DAEMON_PLATFORM_RUNTIME_RULE);
+    assert.match(found[0]!.message, /unclassified daemon-to-root|classified symbols drifted/);
+  });
+}
+
 test('R76 reports every classified edge missing from the tree as stale, not the other way around', () => {
   const sources = {
     [DEVICE_READY_TARGET]: DEVICE_READY_STUB,
@@ -177,14 +195,13 @@ test('R76 rejects a namespace import alongside the recorded named binding on the
 
 test('R76 treats the import and re-export of one classified pair as one entry', () => {
   const sources = {
-    'src/platform-runtime-open-target.ts':
-      'export async function resolveSoleForegroundIosApp() { return undefined; }\n',
-    'src/daemon/ios-app-session-hint.ts':
-      "import { resolveSoleForegroundIosApp } from '../platform-runtime-open-target.ts';\n" +
-      "export { resolveSoleForegroundIosApp } from '../platform-runtime-open-target.ts';\n" +
-      'void resolveSoleForegroundIosApp;\n',
+    [DEVICE_READY_TARGET]: DEVICE_READY_STUB,
+    'src/daemon/device-ready.ts':
+      "import { ensureLocalPlatformDeviceReady } from '../platform-runtime-device-ready.ts';\n" +
+      "export { ensureLocalPlatformDeviceReady } from '../platform-runtime-device-ready.ts';\n" +
+      'void ensureLocalPlatformDeviceReady;\n',
   };
-  assert.deepEqual(edgeViolations(sources, 'src/daemon/ios-app-session-hint.ts'), []);
+  assert.deepEqual(edgeViolations(sources, 'src/daemon/device-ready.ts'), []);
 });
 
 test('R76 ignores test-shaped and non-daemon importers', () => {

@@ -6,13 +6,14 @@ import {
   refreshSessionDeviceIfNeeded,
   selectorTargetsSessionDevice,
 } from '../session-device-resolution.ts';
-import { getRunnerSessionSnapshot } from '@agent-device/platform-apple/runner/operations';
+import { appleSessionObservation } from '../../platform-runtime-apple-resources.ts';
 import { resolveTargetDevice } from '@agent-device/device-selection/dispatch-resolve';
 import { isActiveProviderDevice } from '../../provider-device-runtime.ts';
 import { ensureDeviceReady } from '../device-ready.ts';
 
-vi.mock('@agent-device/platform-apple/runner/operations', () => ({
-  getRunnerSessionSnapshot: vi.fn(async () => null),
+vi.mock('../../platform-runtime-apple-resources.ts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../platform-runtime-apple-resources.ts')>()),
+  appleSessionObservation: { observeRunnerSession: vi.fn() },
 }));
 vi.mock('@agent-device/device-selection/dispatch-resolve', () => ({
   resolveTargetDevice: vi.fn(),
@@ -24,14 +25,14 @@ vi.mock('../device-ready.ts', () => ({
   ensureDeviceReady: vi.fn(async () => {}),
 }));
 
-const mockGetRunnerSessionSnapshot = vi.mocked(getRunnerSessionSnapshot);
+const mockObserveRunnerSession = vi.mocked(appleSessionObservation.observeRunnerSession);
 const mockResolveTargetDevice = vi.mocked(resolveTargetDevice);
 const mockIsActiveProviderDevice = vi.mocked(isActiveProviderDevice);
 const mockEnsureDeviceReady = vi.mocked(ensureDeviceReady);
 
 beforeEach(() => {
-  mockGetRunnerSessionSnapshot.mockReset();
-  mockGetRunnerSessionSnapshot.mockResolvedValue(null);
+  mockObserveRunnerSession.mockReset();
+  mockObserveRunnerSession.mockResolvedValue(undefined);
   mockResolveTargetDevice.mockReset();
   mockIsActiveProviderDevice.mockReset();
   mockIsActiveProviderDevice.mockReturnValue(false);
@@ -109,10 +110,9 @@ test('refreshSessionDeviceIfNeeded keeps provider-owned iOS simulators out of lo
 });
 
 test('refreshSessionDeviceIfNeeded skips re-resolve while the iOS runner session is alive', async () => {
-  mockGetRunnerSessionSnapshot.mockResolvedValue({
+  mockObserveRunnerSession.mockResolvedValue({
     sessionId: 'sim-1:1234:1',
     alive: true,
-    ready: true,
   });
 
   const device = await withMockedPlatform('darwin', async () =>
@@ -124,10 +124,9 @@ test('refreshSessionDeviceIfNeeded skips re-resolve while the iOS runner session
 });
 
 test('refreshSessionDeviceIfNeeded re-resolves when the iOS runner session is gone', async () => {
-  mockGetRunnerSessionSnapshot.mockResolvedValue({
+  mockObserveRunnerSession.mockResolvedValue({
     sessionId: 'sim-1:1234:1',
     alive: false,
-    ready: false,
   });
   const resolved = { ...iosSimulatorSession.device, booted: true, name: 'renamed' };
   mockResolveTargetDevice.mockResolvedValue(resolved);
