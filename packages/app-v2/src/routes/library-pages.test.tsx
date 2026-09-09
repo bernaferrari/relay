@@ -247,8 +247,8 @@ describe("App overview", () => {
 
     await render("/apps/app-shop-internal", service, mapService);
 
-    expect(document.body.textContent).toContain("Open tests");
-    expect(document.body.textContent).toContain("Coverage map");
+    expect(document.body.textContent).toContain("Tests for this app");
+    expect(document.body.textContent).toContain("Coverage");
     expect(document.body.textContent).not.toContain("Saved tests");
     expect(document.body.textContent).not.toContain("Recent results");
     expect(document.body.textContent).not.toContain("Workspace resources");
@@ -285,7 +285,8 @@ describe("Tests library", () => {
     ).toContain("Review steps");
     await clickText("Run");
     expect(history.location.pathname).toBe("/tests/test-language-internal");
-    expect(history.location.hash).toBe("#test-run-setup");
+    expect(history.location.search).toBe("?setup=run");
+    expect(history.location.hash).toBe("");
     expect(document.querySelector(".relay-test-run-dialog")).toBeNull();
   });
 });
@@ -408,8 +409,8 @@ describe("Tests workspace", () => {
     });
 
     expect(productService.inspect).toHaveBeenCalledWith("workflow-shop");
-    expect(document.body.textContent).toContain("Finish the Test you started");
-    expect(document.body.textContent).toContain("Continue recording.");
+    expect(document.body.textContent).toContain("Continue your test");
+    expect(document.body.textContent).toContain("Continue recording");
     expect(
       document.querySelector<HTMLAnchorElement>('a[href="/recordings/workflow-shop"]'),
     ).not.toBeNull();
@@ -421,7 +422,7 @@ describe("Tests workspace", () => {
       productService: recordingInspect(),
     });
 
-    expect(document.body.textContent).toContain("Finish the Test you started");
+    expect(document.body.textContent).toContain("Continue your test");
     expect(
       document.querySelector<HTMLAnchorElement>('a[href="/recordings/workflow-unknown"]'),
     ).not.toBeNull();

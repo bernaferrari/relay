@@ -411,3 +411,74 @@ it("sends preview drags as touch swipes in device pixels, not mouse wheel events
   expect(invoke.mock.calls.some(([operation]) => operation === "target.scroll")).toBe(false);
   live.close();
 });
+
+it("recovers a transient Android stream connection failure within the retry budget", async () => {
+  let attempts = 0;
+  const payload = new Uint8Array([255]);
+  const packet = new Uint8Array(16 + payload.length);
+  packet[0] = 2; // JPEG packet
+  new DataView(packet.buffer).setUint32(12, payload.length);
+  packet.set(payload, 16);
+  const client = {
+    connection: { url: "http://relay.test" },
+    invoke: vi.fn(),
+    openStream: vi.fn(async () => {
+      attempts += 1;
+      if (attempts === 1) throw new TypeError("NetworkError when fetching live preview");
+      return {
+        body: new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(packet);
+            controller.close();
+          },
+        }),
+      } as Response;
+    }),
+  } as never;
+  vi.stubGlobal("createImageBitmap", async () => ({ width: 1, height: 1, close() {} }));
+  const canvas = {
+    width: 0,
+    height: 0,
+    getContext: () => ({ drawImage() {} }),
+  } as unknown as HTMLCanvasElement;
+  const live = createLiveTargetSession({
+    client,
+    target: { kind: "device", platform: "android", targetId: "emulator-5554" },
+  });
+  const statuses: string[] = [];
+  live.subscribe((snapshot) => statuses.push(snapshot.status));
+  live.mount(canvas);
+  await vi.waitFor(() => expect(statuses).toContain("streaming"));
+  expect(attempts).toBe(2);
+  expect(live.snapshot().status).toBe("offline");
+  live.close();
+});
+
+it("does not retry a permanent Android stream error", async () => {
+  const openStream = vi.fn(async () => {
+    throw new ApiError(403, "Preview forbidden");
+  });
+  const live = createLiveTargetSession({
+    client: { connection: { url: "http://relay.test" }, invoke: vi.fn(), openStream } as never,
+    target: { kind: "device", platform: "android", targetId: "emulator-5554" },
+  });
+  live.mount({ width: 1, height: 1 } as HTMLCanvasElement);
+  await vi.waitFor(() => expect(live.snapshot().status).toBe("degraded"));
+  expect(openStream).toHaveBeenCalledOnce();
+  live.close();
+});
+
+it("does not reopen an Android stream after close during retry backoff", async () => {
+  const openStream = vi.fn(async () => {
+    throw new TypeError("NetworkError when fetching live preview");
+  });
+  const live = createLiveTargetSession({
+    client: { connection: { url: "http://relay.test" }, invoke: vi.fn(), openStream } as never,
+    target: { kind: "device", platform: "android", targetId: "emulator-5554" },
+  });
+  live.mount({ width: 1, height: 1 } as HTMLCanvasElement);
+  await vi.waitFor(() => expect(openStream).toHaveBeenCalledOnce());
+  live.close();
+  await new Promise((resolve) => setTimeout(resolve, 700));
+  expect(openStream).toHaveBeenCalledOnce();
+});

@@ -410,7 +410,7 @@ function TestRow({ test }: { test: ProductTestSummary }) {
             test.status === "needs-review" ? (
               <Link to="/tests/$testId/edit" params={{ testId: test.id }} />
             ) : (
-              <Link to="/tests/$testId" params={{ testId: test.id }} hash="test-run-setup" />
+              <Link to="/tests/$testId" params={{ testId: test.id }} search={{ setup: "run" }} />
             )
           }
         >

@@ -42,6 +42,7 @@ import type { DestinationRepairHint } from "./repair-proposal.js";
 import {
   getRecipeAndroidLocalization,
   localizeExpectedObservation,
+  localizedScreenIdentityMatches,
   type RecipeAndroidLocalization,
 } from "./recipe-localization.js";
 
@@ -265,7 +266,8 @@ export async function runExpectScreenStep(
           if (localized) hasLocalizedExpectation = true;
           return (
             localized !== undefined &&
-            compareScreenIdentity(observed, localized).decision === "match"
+            (compareScreenIdentity(observed, localized).decision === "match" ||
+              localizedScreenIdentityMatches(observed, localized, observation, localization))
           );
         });
         if (localizedSemanticMatch)

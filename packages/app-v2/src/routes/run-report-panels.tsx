@@ -52,6 +52,7 @@ function timelineStateLabel(
 ): string {
   if (state === "passed") return "Passed";
   if (state === "failed") return "Failed";
+  if (state === "blocked") return "Blocked";
   if (state === "recovered") return "Recovered";
   if (state === "running") return "In progress";
   return "Not reached";

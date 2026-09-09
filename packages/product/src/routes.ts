@@ -110,6 +110,7 @@ export type RouteDefinition = {
     | "q"
     | "returnTo"
     | "run"
+    | "setup"
   )[];
   primaryAction: ContextualAction | null;
 };
@@ -152,6 +153,7 @@ export const ROUTE_DEFINITIONS = [
     "originApplication",
   ]),
   d("/tests/:testId", "/tests", "Test", "Test", "tests", "run-test", [
+    "setup",
     "view",
     "step",
     "screen",

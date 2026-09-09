@@ -438,7 +438,6 @@ describe("Devices", () => {
 
     const identifier = document.querySelector<HTMLInputElement>("#device-app-identifier");
     if (!identifier) throw new Error("App identifier input not found");
-    expect(identifier.required).toBe(true);
     expect(document.querySelector('input[type="checkbox"]')).not.toBeNull();
     await fillInput(identifier, "  com.example.shop  ");
     await click(document.querySelector('input[type="checkbox"]')!);
@@ -446,7 +445,9 @@ describe("Devices", () => {
 
     expect(launchCalls).toEqual([{ deviceId: "ipad", app: "com.example.shop", relaunch: true }]);
     expect(document.body.textContent).toContain("Launch requested");
-    expect(document.body.textContent).toContain("Relay launched com.example.shop on Design iPad.");
+    expect(document.body.textContent).toContain(
+      "Launch requested for com.example.shop on Design iPad.",
+    );
   });
 
   it("hides app launch on managed browsers", async () => {
@@ -475,7 +476,7 @@ describe("Devices", () => {
     expect(document.body.textContent).toContain("Design iPad");
   });
 
-  it("validates an empty app identifier before making an operation call", async () => {
+  it("disables app launch until an identifier is entered", async () => {
     const service = fakeDeviceService();
     const launchCalls: string[] = [];
     service.launchApp = async (deviceId) => {
@@ -483,11 +484,8 @@ describe("Devices", () => {
       return { serial: deviceId, app: "", platform: "ios", launchedAt: 10 };
     };
     await renderPath("/devices/ipad", { deviceService: service });
+    expect(button("Launch app").disabled).toBe(true);
     await click(button("Launch app"));
-
-    expect(document.querySelector('[role="alert"]')?.textContent).toContain(
-      "Enter an app name, package, or bundle identifier",
-    );
     expect(launchCalls).toEqual([]);
   });
 });

@@ -1,4 +1,9 @@
-import { observeScreenIdentity, type ScreenIdentityObservation } from "./screen-identity.js";
+import {
+  compareScreenIdentity,
+  observeScreenIdentity,
+  type ScreenIdentityComparison,
+  type ScreenIdentityObservation,
+} from "./screen-identity.js";
 import type { SnapshotNode } from "./device.js";
 import { currentTargetContext } from "./target-context.js";
 import type { RecipeStepContext } from "./recipe-runner-context.js";
@@ -180,6 +185,47 @@ export function localizeExpectedObservation(
       depth: node.depth,
     })),
   );
+}
+
+/**
+ * Android Settings detail pages contain live usage totals and an app list.
+ * Those values legitimately change between the English teaching capture and a
+ * localized replay, so an exact fingerprint is unavailable. Accept the
+ * localized identity only when the package-owned translated anchor is present
+ * at the same native node and the stable resource structure remains nearly
+ * identical. This policy is deliberately narrower than the general identity
+ * threshold and cannot match on text or visual similarity alone.
+ */
+export function localizedScreenIdentityMatches(
+  observed: ScreenIdentityObservation,
+  localized: ScreenIdentityObservation,
+  source: ScreenIdentityObservation,
+  localization: RecipeAndroidLocalization,
+): boolean {
+  const comparison: ScreenIdentityComparison = compareScreenIdentity(observed, localized);
+  const identifierOverlap = comparison.signals.find(
+    (signal) => signal.kind === "stable-identifier-overlap",
+  )?.strength;
+  if (identifierOverlap === undefined || identifierOverlap < 0.9) return false;
+  const exactTranslatedAnchor = source.nodes.some((node) => {
+    const owner = packageInIdentifier(node.identifier);
+    if (
+      owner !== localization.packageName ||
+      !node.identifier?.endsWith(":id/collapsing_toolbar") ||
+      !node.label
+    )
+      return false;
+    const translation = localization.lookup?.(node.label);
+    if (translation?.status !== "matched") return false;
+    return observed.nodes.some(
+      (live) =>
+        live.identifier === node.identifier &&
+        live.role === node.role &&
+        live.label !== undefined &&
+        normalized(live.label) === normalized(translation.target),
+    );
+  });
+  return exactTranslatedAnchor;
 }
 
 function runtimeKey(ctx: RecipeStepContext): object | undefined {

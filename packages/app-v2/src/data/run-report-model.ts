@@ -47,7 +47,7 @@ export type ReportTimelineItem = {
   id: string;
   index: number;
   title: string;
-  state: "passed" | "failed" | "running" | "recovered" | "pending";
+  state: "passed" | "failed" | "running" | "recovered" | "pending" | "blocked";
   durationMs?: number;
   attempt?: number;
   startedAt?: number;

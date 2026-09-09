@@ -368,6 +368,16 @@ async function selectOption(label: string, option: string) {
 }
 
 describe("Run and Report", () => {
+  it("opens Run settings directly from a library setup link", async () => {
+    const fake = fakeRunService();
+    await renderRun("/tests/test-1?setup=run", fake.service, platformWithStorage().platform);
+    expect(
+      document.querySelector("#test-run-setup"),
+      document.body.textContent ?? "",
+    ).not.toBeNull();
+    expect(document.querySelector('button[aria-label="Device or browser"]')).not.toBeNull();
+  });
+
   it("waits for every data dimension before previewing and labels the selected target", async () => {
     const fake = fakeRunService(runState("running", ["inspect"]));
     const preview = vi.fn((input) => ({

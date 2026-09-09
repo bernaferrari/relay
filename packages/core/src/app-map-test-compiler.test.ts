@@ -204,7 +204,11 @@ test("initial passive self-loop keeps destination proof and later source proof",
         kind: "instruction" as const,
         intent: "Observe",
         capture: true,
-        binding: { status: "resolved" as const, kind: "connections" as const, connectionIds: ["observe"] },
+        binding: {
+          status: "resolved" as const,
+          kind: "connections" as const,
+          connectionIds: ["observe"],
+        },
       },
       ...base.steps,
     ],
@@ -215,13 +219,22 @@ test("initial passive self-loop keeps destination proof and later source proof",
   assert.equal(observeModule?.kind, "module");
   if (observeModule?.kind !== "module") throw new Error("observe module was not compiled");
   const observeRecipe = compiled.graph[observeModule.recipeId]!;
-  assert.equal(observeRecipe.steps.some((step) => step.id?.startsWith("relay-source-")), false);
-  assert.equal(observeRecipe.steps.some((step) => step.id?.startsWith("relay-destination-")), true);
+  assert.equal(
+    observeRecipe.steps.some((step) => step.id?.startsWith("relay-source-")),
+    false,
+  );
+  assert.equal(
+    observeRecipe.steps.some((step) => step.id?.startsWith("relay-destination-")),
+    true,
+  );
   const firstTapModule = root.steps.find((step) => step.id?.includes("navigate"));
   assert.equal(firstTapModule?.kind, "module");
   if (firstTapModule?.kind !== "module") throw new Error("first tap module was not compiled");
   const firstTapRecipe = compiled.graph[firstTapModule!.recipeId]!;
-  assert.equal(firstTapRecipe.steps.some((step) => step.id === "relay-action-tap-cart"), true);
+  assert.equal(
+    firstTapRecipe.steps.some((step) => step.id === "relay-action-tap-cart"),
+    true,
+  );
   assert.equal(
     firstTapRecipe.steps.some((step) => step.id?.startsWith("relay-destination-")),
     true,

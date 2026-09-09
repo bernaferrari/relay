@@ -50,14 +50,22 @@ const routeApi = getRouteApi("/tests/$testId");
 export function TestPage() {
   const { runService, platform, queryClient } = useRouteContext({ from: "__root__" });
   const { testId } = routeApi.useParams();
-  const search = routeApi.useSearch() as { run?: unknown; step?: unknown; view?: unknown };
+  const search = routeApi.useSearch() as {
+    run?: unknown;
+    step?: unknown;
+    view?: unknown;
+    setup?: unknown;
+  };
   const reviewRecordingId = useTestDocumentReview(platform, search.view);
   const navigate = useNavigate({ from: "/tests/$testId" });
   const runSetupRef = useRef<HTMLElement>(null);
 
   const [showRecording, setShowRecording] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(search.setup === "run");
+  useEffect(() => {
+    setSettingsOpen(search.setup === "run");
+  }, [search.setup, testId]);
   const [evidenceStepId, setEvidenceStepId] = useState("");
   const searchRunId = typeof search.run === "string" ? search.run : undefined;
   const [pinnedRunId, setPinnedRunId] = useState<string | undefined>(searchRunId);
@@ -519,7 +527,7 @@ export function TestPage() {
                     const { targetProfileId: selectedTargetId, ...rest } = selection;
                     configuration.setSelection({ ...rest, targetId: selectedTargetId });
                   }}
-                  loading={configuration.loading}
+                  loading={configuration.loading || targets.isPending}
                   error={scope.error ?? configuration.error}
                   onRetry={scope.error ? scope.retry : configuration.retry}
                 >
@@ -575,7 +583,9 @@ export function TestPage() {
                     />
                     Restart app before running
                   </label>
-                  {!targets.data?.length ? (
+                  {targets.isPending ? (
+                    <PageLoading label="Finding devices…" />
+                  ) : !targets.data?.length ? (
                     <EmptyState
                       title="No device or browser is ready"
                       detail="Connect a target to continue with this Test."
@@ -589,17 +599,15 @@ export function TestPage() {
                       }
                     />
                   ) : null}
-                  {!targetReady || configuration.loading ? (
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Button
-                        variant="default"
-                        onClick={() => start.mutate()}
-                        disabled={!targetReady || configuration.loading || start.isPending}
-                      >
-                        {start.isPending ? "Starting…" : "Run Test"}
-                      </Button>
-                    </div>
-                  ) : null}
+                  <div className="flex justify-end border-t border-border pt-3">
+                    <Button
+                      variant="default"
+                      onClick={() => start.mutate()}
+                      disabled={!canStart || start.isPending}
+                    >
+                      {start.isPending ? "Starting…" : "Run Test"}
+                    </Button>
+                  </div>
                 </RunConfigurationComposer>
               </section>
             ) : undefined

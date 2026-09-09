@@ -103,11 +103,13 @@ export function TestStepEvidencePreview({
           >
             {timelineItem?.state === "failed"
               ? "Failed"
-              : timelineItem?.state === "pending"
+              : timelineItem?.state === "blocked"
                 ? "Blocked"
-                : timelineItem?.state === "passed"
-                  ? "Passed"
-                  : "Recorded"}
+                : timelineItem?.state === "pending"
+                  ? "Blocked"
+                  : timelineItem?.state === "passed"
+                    ? "Passed"
+                    : "Recorded"}
           </span>
         ) : null}
         {report ? (

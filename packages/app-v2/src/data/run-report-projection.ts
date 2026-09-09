@@ -288,6 +288,8 @@ function reportTimeline(
   return array(record(rawRun)?.steps).flatMap((value, fallbackIndex) => {
     const step = record(value);
     if (!step) return [];
+    // Final captures remain in evidence; they are not another authored action.
+    if (checkStatuses.size > 0 && text(step.title)?.startsWith("Screenshot · final:")) return [];
     const title = humanStepTitle(step.title);
     if (!title) return [];
     // Authored-step screenshot traces measure evidence capture, not whether
@@ -310,15 +312,17 @@ function reportTimeline(
           ? text(recipeStepRecord.screenTitle)
           : undefined;
     const state: ReportTimelineItem["state"] =
-      status === "error" || tone === "fail"
-        ? "failed"
-        : status === "healed" || tone === "heal"
-          ? "recovered"
-          : status === "ok" || tone === "pass"
-            ? "passed"
-            : status === "running"
-              ? "running"
-              : "pending";
+      checkStatus === "blocked"
+        ? "blocked"
+        : status === "error" || tone === "fail"
+          ? "failed"
+          : status === "healed" || tone === "heal"
+            ? "recovered"
+            : status === "ok" || tone === "pass"
+              ? "passed"
+              : status === "running"
+                ? "running"
+                : "pending";
     const exactFramePaths = stepEvidence?.find((item) => item.traceStepId === text(step.id))
       ?.evidence.framePaths;
     const authoredFramePaths =

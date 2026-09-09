@@ -1,0 +1,92 @@
+{
+  "sourceRunId": "3804a461-fba8-4c96-9800-4ccc87a2d383",
+  "expectedObservation": {
+    "fingerprint": "40e2fad24b82bd20c19314747a999936affac02a6bfd397111e4bb365b47b45c",
+    "nodes": [
+      { "role": "android.view.viewgroup", "identifier": "com.android.settings:id/action_bar" },
+      {
+        "role": "android.widget.framelayout",
+        "label": "non-carrier data usage",
+        "identifier": "com.android.settings:id/collapsing_toolbar"
+      },
+      {
+        "role": "android.widget.framelayout",
+        "label": "graph showing data usage between <date> and <date>.; <date>, <percentage>; <date> – 29, <percentage>; <date> – <date>, <percentage>; <date>, <percentage>",
+        "identifier": "com.android.settings:id/data_usage"
+      },
+      { "role": "android.widget.imagebutton", "label": "navigate up" },
+      {
+        "role": "android.widget.textview",
+        "label": "excludes data used by carrier networks",
+        "value": "excludes data used by carrier networks",
+        "identifier": "android:id/summary"
+      },
+      {
+        "role": "android.widget.textview",
+        "label": "app usage",
+        "value": "app usage",
+        "identifier": "android:id/title"
+      },
+      {
+        "role": "android.widget.textview",
+        "label": "google play store",
+        "value": "google play store",
+        "identifier": "android:id/title"
+      },
+      {
+        "role": "androidx.recyclerview.widget.recyclerview",
+        "identifier": "com.android.settings:id/recycler_view"
+      }
+    ]
+  },
+  "observedNodes": [
+    {
+      "role": "android.view.viewgroup",
+      "identifier": "com.android.settings:id/action_bar",
+      "bundleId": "com.android.settings"
+    },
+    {
+      "role": "android.widget.framelayout",
+      "label": "Datennutzung ohne Mobilfunkdaten",
+      "identifier": "com.android.settings:id/collapsing_toolbar",
+      "bundleId": "com.android.settings"
+    },
+    {
+      "role": "android.widget.framelayout",
+      "label": "Grafik zeigt Datennutzung zwischen dem 2. August und dem 30. August.; 2.–9. August, 0%; 9.–12. August, 26%; 12.–29. August, 72%; 29. August, 100%",
+      "identifier": "com.android.settings:id/data_usage",
+      "bundleId": "com.android.settings"
+    },
+    {
+      "role": "android.widget.imagebutton",
+      "label": "Nach oben navigieren",
+      "bundleId": "com.android.settings"
+    },
+    {
+      "role": "android.widget.textview",
+      "label": "beinhaltet keine im mobilfunknetz verbrauchten daten",
+      "value": "beinhaltet keine im mobilfunknetz verbrauchten daten",
+      "identifier": "android:id/summary",
+      "bundleId": "com.android.settings"
+    },
+    {
+      "role": "android.widget.textview",
+      "label": "App-Nutzung",
+      "value": "App-Nutzung",
+      "identifier": "android:id/title",
+      "bundleId": "com.android.settings"
+    },
+    {
+      "role": "android.widget.textview",
+      "label": "Google Play Store",
+      "value": "Google Play Store",
+      "identifier": "android:id/title",
+      "bundleId": "com.android.settings"
+    },
+    {
+      "role": "androidx.recyclerview.widget.recyclerview",
+      "identifier": "com.android.settings:id/recycler_view",
+      "bundleId": "com.android.settings"
+    }
+  ]
+}

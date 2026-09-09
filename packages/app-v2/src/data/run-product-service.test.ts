@@ -19,7 +19,28 @@ describe("run report projection", () => {
       },
       { channels: {} },
     );
-    expect(report.timeline[0]?.state).toBe("failed");
+    expect(report.timeline[0]?.state).toBe("blocked");
+  });
+  it("keeps final capture evidence without inventing another authored step", () => {
+    const report = projectRunReport(
+      "authored-run",
+      {
+        artifacts: [{ kind: "campaign-check-result", data: { id: "tap", status: "passed" } }],
+        steps: [
+          { title: "Screenshot · step:tap:Tap Network", status: "ok" },
+          {
+            title: "Screenshot · final:Network tour",
+            status: "ok",
+            frames: [{ path: "frames/final.png" }],
+          },
+        ],
+      },
+      { channels: { screenshot: { entries: 1 } } },
+    );
+    expect(report.timeline.map((step) => step.title)).toEqual(["Tap Network"]);
+    expect(report.evidence.find((section) => section.id === "screenshot")?.items).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: "frames/final.png" })]),
+    );
   });
   it("projects workflow-less active jobs without inventing workflow identity", () => {
     const state = projectWorkflowlessExecution(

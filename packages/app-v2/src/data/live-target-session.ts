@@ -87,6 +87,40 @@ type BinaryFrameMetadata = {
 };
 
 const FRAME_MAX_BYTES = 18 * 1024 * 1024;
+const STREAM_CONNECT_ATTEMPTS = 3;
+
+function transientStreamError(error: unknown): boolean {
+  if (error && typeof error === "object" && "status" in error) {
+    const status = (error as { status?: unknown }).status;
+    if (typeof status === "number") return status === 408 || status === 429 || status >= 500;
+  }
+  const message = errorText(error);
+  return /network|fetch|socket|connection|stream.*(?:ended|closed|reset)|timed? out/iu.test(
+    message,
+  );
+}
+
+async function waitForStreamRetry(
+  signal: AbortSignal | undefined,
+  delayMs: number,
+): Promise<boolean> {
+  if (signal?.aborted) return true;
+  return await new Promise<boolean>((resolve) => {
+    let settled = false;
+    const finish = (aborted: boolean) => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener("abort", onAbort);
+      resolve(aborted);
+    };
+    const onAbort = () => {
+      clearTimeout(timer);
+      finish(true);
+    };
+    const timer = setTimeout(() => finish(false), delayMs);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
 
 function bytesToBase64(bytes: Uint8Array): string {
   let binary = "";
@@ -384,10 +418,25 @@ export function createLiveTargetSession(input: {
   }
 
   async function streamTarget(): Promise<void> {
-    const response = await input.client.openStream(
-      `/device/stream?serial=${encodeURIComponent(target.targetId)}`,
-      { signal: controller?.signal },
-    );
+    let response: Response;
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        response = await input.client.openStream(
+          `/device/stream?serial=${encodeURIComponent(target.targetId)}`,
+          { signal: controller?.signal },
+        );
+        break;
+      } catch (error) {
+        if (
+          controller?.signal.aborted ||
+          !transientStreamError(error) ||
+          attempt >= STREAM_CONNECT_ATTEMPTS
+        )
+          throw error;
+        publish({ status: "connecting" });
+        if (await waitForStreamRetry(controller?.signal, 250 * attempt)) return;
+      }
+    }
     if (!response.body) throw new Error("Live target stream has no response body");
     publish({ status: "connecting" });
     let sequence = 0;

@@ -261,7 +261,10 @@ test(
         ]!;
       assert.equal(origin.captureProvenance?.locale, "pt-BR");
       assert.equal(destination.captureProvenance?.locale, "pt-BR");
-      assert.equal(origin.rawAccessibilityTree?.observationId, "run-run-localized-capture-origin-11");
+      assert.equal(
+        origin.rawAccessibilityTree?.observationId,
+        "run-run-localized-capture-origin-11",
+      );
       assert.equal(
         destination.rawAccessibilityTree?.observationId,
         "run-run-localized-capture-destination-12",

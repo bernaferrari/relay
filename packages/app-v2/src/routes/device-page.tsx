@@ -30,6 +30,7 @@ import type {
 import { LiveTargetCanvas } from "./live-target-canvas";
 import { PageLoading, errorMessage } from "./recording-shared";
 import { TalkBackModeSelect, TalkBackOverlay, useTalkBackReview } from "./talkback-review-panel";
+import { localeLabel } from "../lib/locale-label";
 
 const routeApi = getRouteApi("/devices/$deviceId");
 
@@ -38,17 +39,6 @@ function deviceDescription(device: ProductDevice): string {
     return "One step before this device is ready";
   }
   return deviceSummaryLine(device);
-}
-
-function localeLabel(locale: string): string {
-  try {
-    const english = new Intl.DisplayNames(["en"], { type: "language" }).of(locale);
-    const native = new Intl.DisplayNames([locale], { type: "language" }).of(locale);
-    if (english && native && english !== native) return `${native} · ${english} (${locale})`;
-    return `${english ?? locale} (${locale})`;
-  } catch {
-    return locale;
-  }
 }
 
 export function DevicePage() {
@@ -70,7 +60,15 @@ export function DevicePage() {
   const [liveBusy, setLiveBusy] = useState(false);
   const [liveAttempt, setLiveAttempt] = useState(0);
   const [talkBackRefresh, setTalkBackRefresh] = useState(0);
-  const [appIdentifier, setAppIdentifier] = useState("");
+  const selectedApp = useQuery<string>({
+    queryKey: ["device-app-choice", deviceId],
+    enabled: false,
+    initialData: "",
+    gcTime: Infinity,
+  });
+  const appIdentifier = selectedApp.data;
+  const setAppIdentifier = (value: string) =>
+    queryClient.setQueryData(["device-app-choice", deviceId], value);
   const [localeSuccess, setLocaleSuccess] = useState<string>();
   const [selectedLocale, setSelectedLocale] = useState("");
   const localeSelectionRef = useRef({ serial: "", packageName: "" });
@@ -209,6 +207,38 @@ export function DevicePage() {
     }
   }
 
+  if (device.data?.status === "needs-attention" && device.data.avdName) {
+    return (
+      <WorkbenchPage className="flex h-full min-h-0 flex-col">
+        <PageHeader
+          crumbs={[{ label: "Devices", to: "/devices" }, { label: device.data.name }]}
+          title={device.data.name}
+          description="Android emulator"
+        />
+        <div className="flex min-h-0 flex-1 items-center justify-center">
+          <EmptyState
+            title={boot.isPending ? "Starting emulator…" : "This emulator is stopped"}
+            detail={
+              boot.isPending
+                ? "The device will open here when it is ready."
+                : "Start it to open an app, choose a language, or record a test."
+            }
+            action={
+              <Button onClick={() => boot.mutate()} disabled={boot.isPending}>
+                {boot.isPending ? "Starting…" : "Start emulator"}
+              </Button>
+            }
+          />
+        </div>
+        {boot.error ? (
+          <p role="alert" className="py-3 text-center text-sm text-destructive">
+            {boot.error.message}
+          </p>
+        ) : null}
+      </WorkbenchPage>
+    );
+  }
+
   return (
     <WorkbenchPage className="flex h-full min-h-0 flex-col !pb-4 [&>header]:shrink-0">
       <PageHeader
@@ -248,7 +278,7 @@ export function DevicePage() {
                     ? "Reconnecting…"
                     : "Reconnect device"}
               </Button>
-            ) : device.data ? (
+            ) : device.data && !device.isError ? (
               <Button
                 variant="default"
                 nativeButton={false}
@@ -273,16 +303,27 @@ export function DevicePage() {
       {device.isPending ? <PageLoading label="Checking this device…" /> : null}
 
       {device.isError ? (
-        <EmptyState
-          title="Relay could not check this device"
-          detail="The connection may have changed. Check again without losing your place."
-          tone="notice"
-          action={
-            <Button variant="default" onClick={() => void device.refetch()}>
-              Try again
-            </Button>
-          }
-        />
+        <div className="flex min-h-0 flex-1 items-center justify-center">
+          <EmptyState
+            title="Relay could not check this device"
+            detail="The connection may have changed. Check again without losing your place."
+            tone="notice"
+            action={
+              <Button
+                variant="default"
+                disabled={device.isFetching}
+                onClick={async () => {
+                  await device.refetch();
+                  await target.refetch();
+                  if (appIdentifier) await appLocales.refetch();
+                  setLiveAttempt((value) => value + 1);
+                }}
+              >
+                {device.isFetching ? "Checking…" : "Try again"}
+              </Button>
+            }
+          />
+        </div>
       ) : null}
 
       {!device.isPending && !device.isError && !device.data ? (
@@ -297,7 +338,7 @@ export function DevicePage() {
         />
       ) : null}
 
-      {device.data ? (
+      {device.data && !device.isError ? (
         <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(240px,300px)] gap-6 max-[900px]:grid-cols-1 max-[900px]:overflow-y-auto">
           {device.data.status !== "needs-attention" ? (
             <DeviceLivePreview
@@ -397,22 +438,32 @@ export function DevicePage() {
                       <div className="grid max-w-sm gap-2">
                         <SelectField
                           label="Language"
-                          value={selectedLocale}
+                          value={
+                            localeChange.isPending ? localeChange.variables.locale : selectedLocale
+                          }
                           placeholder="Choose a language"
                           options={appLocales.data.locales.map((locale) => ({
                             value: locale,
                             label: localeLabel(locale),
                           }))}
-                          onValueChange={(locale) =>
+                          onValueChange={(locale) => {
+                            localeSelectionRef.current = {
+                              serial: device.data!.serial,
+                              packageName: appIdentifier,
+                            };
                             localeChange.mutate({
                               locale,
                               serial: device.data!.serial,
                               packageName: appIdentifier,
-                            })
-                          }
+                            });
+                          }}
                           disabled={localeChange.isPending}
                         />
-                        {localeSuccess ? (
+                        {localeChange.isPending ? (
+                          <p className="text-sm text-muted-foreground" role="status">
+                            Applying language…
+                          </p>
+                        ) : localeSuccess ? (
                           <p
                             className="text-sm text-emerald-700 dark:text-emerald-400"
                             role="status"
