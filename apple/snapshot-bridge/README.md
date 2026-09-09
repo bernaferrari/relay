@@ -8,7 +8,7 @@ and is never downloaded, pre-signed, or built by npm installation.
 
 The guest process uses the `XCTAccessibilityFramework` remote-access client
 from the simulator runtime and the `userTestingSnapshotForElement:options:error:`
-single-fetch API. Requests and responses are length-prefixed JSON frames:
+snapshot API. Requests and responses are length-prefixed JSON frames:
 
 ```text
 uint32 big-endian byte length
@@ -47,3 +47,19 @@ app tree. The existing route then uses XCTest, which owns system-modal
 resolution. Secondary owners such as the return-to-app status-bar control do
 not replace the native primary owner. The route's generation circuit remains
 disabled after fallback until that app relaunches.
+
+## Bounded depth recovery
+
+A healthy capture uses one native request. If native acquisition rejects it,
+`SnapshotBridgeCapture.m` retries supported native failure codes at lower depths
+and fetches withheld children from their accessibility elements. The completed
+tree keeps the original depth and node limits; partial trees disclose truncation.
+The traversal depth counts edges below the root; native requests count the root
+as one level. Each acquisition allows two lower-depth retries, and recovery
+allows at most 32 native requests within the existing capture deadline,
+checks foreground ownership on every request, and returns a failure when it
+cannot complete a continuation. Budget exhaustion and malformed continuations
+use non-launch failure codes, so the route falls back without launch re-polling.
+At each native fragment boundary, an absent or invalid child count means unknown
+completeness and fails closed. Natural leaves above that boundary need no
+continuation evidence. Unchanged native dictionaries and child arrays are reused.
