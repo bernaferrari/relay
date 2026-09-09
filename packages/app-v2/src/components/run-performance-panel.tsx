@@ -236,7 +236,7 @@ export function RunPerformancePanel({
                     <line
                       x1={x(item.startedAt)}
                       x2={x(item.startedAt)}
-                      y1="8"
+                      y1={step?.id === item.id ? 8 : (index % 2 ? 154 : 134) - 6}
                       y2={index % 2 ? 154 : 134}
                       stroke="currentColor"
                       opacity={step?.id === item.id ? ".45" : ".12"}
