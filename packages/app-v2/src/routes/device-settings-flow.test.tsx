@@ -383,7 +383,7 @@ describe("Devices", () => {
     expect(row).not.toBeNull();
     expect(row?.textContent).toContain("Design iPad");
     expect(row?.textContent).toContain("Apple device · Physical device");
-    expect(row?.querySelector('[data-slot="badge"]')?.textContent).toContain("Ready");
+    expect(row?.querySelector(".relay-library-row-status")?.textContent).toContain("Ready");
     expect(row?.querySelector(".relay-device-row-chevron")).not.toBeNull();
 
     await click(row!);

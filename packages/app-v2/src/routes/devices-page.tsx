@@ -10,15 +10,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "@relay/ui-react/components/tabs";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate, useRouteContext } from "@tanstack/react-router";
-import {
-  AppWindow,
-  ChevronRight,
-  CircleHelp,
-  CircleCheck,
-  CirclePause,
-  Smartphone,
-  Tablet,
-} from "lucide-react";
+import { AppWindow, ChevronRight, CircleHelp, Smartphone, Tablet } from "lucide-react";
 import { useDeferredValue, useEffect, useId, useState } from "react";
 import { LibrarySearch } from "../components/library-toolbar";
 import { LibraryPage, PageHeader } from "../components/page-layout";
@@ -115,24 +107,23 @@ function DeviceRow({ device, returnTo }: { device: ProductDevice; returnTo?: str
             </span>
           </span>
         </span>
-        <span className="relay-library-row-status flex justify-start">
-          <Badge
-            className={
-              !stopped && device.status === "needs-attention"
-                ? "bg-amber-500/15 text-amber-800 dark:text-amber-300"
-                : undefined
-            }
-            variant="secondary"
-          >
-            {stopped ? (
-              <CirclePause aria-hidden="true" />
-            ) : device.status === "needs-attention" ? (
-              <CircleHelp aria-hidden="true" />
-            ) : (
-              <CircleCheck aria-hidden="true" />
-            )}
-            {statusLabel(device)}
-          </Badge>
+        <span className="relay-library-row-status flex min-w-20 items-center gap-2 text-xs text-muted-foreground">
+          {!stopped && device.status === "needs-attention" ? (
+            <CircleHelp
+              className="size-3.5 text-amber-600 dark:text-amber-400"
+              aria-hidden="true"
+            />
+          ) : (
+            <span
+              aria-hidden="true"
+              className={
+                stopped
+                  ? "size-1.5 shrink-0 rounded-full border border-muted-foreground/60"
+                  : "size-1.5 shrink-0 rounded-full bg-emerald-600 dark:bg-emerald-400"
+              }
+            />
+          )}
+          {statusLabel(device)}
         </span>
         <ChevronRight
           className="relay-library-row-arrow relay-device-row-chevron size-4 text-muted-foreground transition-colors group-hover/device:text-foreground group-focus-visible/device:text-foreground"
