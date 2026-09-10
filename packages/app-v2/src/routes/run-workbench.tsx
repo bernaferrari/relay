@@ -194,47 +194,55 @@ export function RunWorkbench({
         />
       </div>
       <div className="flex min-h-0 min-w-0 flex-col">
-        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
-          <div className="min-w-0">
-            <p className="text-xs text-muted-foreground">
-              Step {selectedStepIndex + 1} · {timelineStateLabel(step.state)}
-            </p>
-            <h2 className="mt-1 flex items-center gap-2 text-base font-semibold">
-              <StepActionIcon title={step.title} />
-              {step.title}
-            </h2>
-          </div>
-          {previousFailure !== undefined || nextFailure !== undefined ? (
-            <div className="flex items-center gap-1">
-              <Button
-                size="sm"
-                variant="ghost"
-                aria-label="Previous failure"
-                disabled={previousFailure === undefined}
-                onClick={() => {
-                  if (previousFailure !== undefined) onSelectStep(previousFailure);
-                }}
-              >
-                Previous failure
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                aria-label="Next failure"
-                disabled={nextFailure === undefined}
-                onClick={() => {
-                  if (nextFailure !== undefined) onSelectStep(nextFailure);
-                }}
-              >
-                Next failure
-              </Button>
+        {panel !== "steps" ? (
+          <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
+            <div className="min-w-0">
+              <p className="text-xs text-muted-foreground">
+                Step {selectedStepIndex + 1} · {timelineStateLabel(step.state)}
+              </p>
+              <h2 className="mt-1 flex items-center gap-2 text-base font-semibold">
+                <StepActionIcon title={step.title} />
+                {step.title}
+              </h2>
             </div>
-          ) : null}
-        </header>
-        {step.state === "failed" && selectedStepIndex === failureIndexes.at(-1) && failureNotice ? (
+            {previousFailure !== undefined || nextFailure !== undefined ? (
+              <div className="flex items-center gap-1">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  aria-label="Previous failure"
+                  disabled={previousFailure === undefined}
+                  onClick={() => {
+                    if (previousFailure !== undefined) onSelectStep(previousFailure);
+                  }}
+                >
+                  Previous failure
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  aria-label="Next failure"
+                  disabled={nextFailure === undefined}
+                  onClick={() => {
+                    if (nextFailure !== undefined) onSelectStep(nextFailure);
+                  }}
+                >
+                  Next failure
+                </Button>
+              </div>
+            ) : null}
+          </header>
+        ) : null}
+        {panel !== "steps" &&
+        step.state === "failed" &&
+        selectedStepIndex === failureIndexes.at(-1) &&
+        failureNotice ? (
           <div className="shrink-0 px-4 pt-2">{failureNotice}</div>
         ) : null}
-        <div className="flex shrink-0 gap-1 px-4 py-2" aria-label="Step views">
+        <div
+          className="flex shrink-0 gap-1 border-b border-border px-4 py-2"
+          aria-label="Step views"
+        >
           {(
             [
               ["steps", "Steps"],
@@ -252,22 +260,21 @@ export function RunWorkbench({
               onClick={() => setPanel(value as typeof panel)}
             >
               {label}
+              {value === "steps" ? (
+                <span className="ml-1 text-xs tabular-nums text-muted-foreground">
+                  {report.timeline.length}
+                </span>
+              ) : null}
             </Button>
           ))}
         </div>
         {panel === "steps" ? (
           <aside className="flex min-h-0 min-w-0 flex-1 flex-col">
-            <div className="flex items-center justify-between border-b border-border px-4 py-3">
-              <h2 className="text-sm font-semibold">Steps</h2>
-              <span className="text-xs tabular-nums text-muted-foreground">
-                {report.timeline.length}
-              </span>
-            </div>
             <ScrollArea
               className="min-h-0 flex-1"
               viewportProps={{ "aria-label": "Recorded steps", className: "overscroll-auto" }}
             >
-              <ol className="relay-test-readable-steps p-2 pb-4">
+              <ol className="relay-test-readable-steps grid list-none gap-1 p-2 pb-4">
                 {report.timeline.map((item, index) => {
                   const Icon =
                     item.state === "passed" || item.state === "recovered"
@@ -281,7 +288,7 @@ export function RunWorkbench({
                         type="button"
                         aria-current={index === selectedStepIndex ? "step" : undefined}
                         aria-pressed={index === selectedStepIndex}
-                        className={`relay-interactive-row grid min-h-12 w-full grid-cols-[1rem_minmax(0,1fr)_1rem] items-start gap-2 rounded-md px-3 py-2.5 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring ${index === selectedStepIndex ? "bg-muted text-foreground" : "text-muted-foreground"}`}
+                        className={`relay-interactive-row relative grid min-h-12 w-full grid-cols-[1rem_minmax(0,1fr)_1rem] items-start gap-2 rounded-md px-3 py-2.5 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring ${index === selectedStepIndex ? "bg-accent text-foreground ring-1 ring-inset ring-border before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:bg-foreground" : "text-muted-foreground"}`}
                         onClick={() => onSelectStep(index)}
                         onKeyDown={(event) => {
                           const next =
@@ -316,6 +323,12 @@ export function RunWorkbench({
                           className={`mt-0.5 size-4 ${item.state === "failed" ? "text-[var(--text-critical-base)]" : item.state === "passed" ? "text-[var(--text-success-base)]" : ""}`}
                         />
                       </button>
+                      {index === selectedStepIndex &&
+                      item.state === "failed" &&
+                      index === failureIndexes.at(-1) &&
+                      failureNotice ? (
+                        <div className="px-3 pb-2 pt-1">{failureNotice}</div>
+                      ) : null}
                     </li>
                   );
                 })}
