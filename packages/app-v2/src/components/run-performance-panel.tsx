@@ -1,4 +1,12 @@
 import { Button } from "@relay/ui-react/components/button";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+} from "@relay/ui-react/components/dropdown-menu";
+import { ChevronDown } from "lucide-react";
 import { useState } from "react";
 import type { ReportPerformanceSeries, ReportTimelineItem } from "../data/run-report-model";
 
@@ -16,12 +24,12 @@ export function RunPerformancePanel({
   const available = series.filter(
     (metric) => metric.points.length && !/^Startup sample Count$/i.test(metric.name),
   );
-  const [showAll, setShowAll] = useState(false);
   const [metricName, setMetricName] = useState("");
   const [selectedAt, setSelectedAt] = useState<number>();
   const metric =
     available.find((item) => item.name === metricName) ??
     available.find((item) => /cpu/i.test(item.name)) ??
+    available.find((item) => /^Navigation duration$/i.test(item.name)) ??
     available[0];
   if (!metric) return null;
   const isStartup = /^Startup last Duration Ms$/i.test(metric.name);
@@ -36,10 +44,6 @@ export function RunPerformancePanel({
   const peak = Math.max(...metric.points.map((point) => point.value));
   const low = Math.min(0, ...metric.points.map((point) => point.value));
   const ceiling = peak > low ? peak : low + 1;
-  const primary = available.filter((item) =>
-    /cpu|rss|dropped frames \(%\)|total frame count/i.test(item.name),
-  );
-  const visibleMetrics = showAll || !primary.length ? available : primary;
   const selectedStep =
     selectedAt === undefined ? undefined : performanceStepAt(timeline, selectedAt);
   const exactStep =
@@ -70,37 +74,33 @@ export function RunPerformancePanel({
   return (
     <section className="space-y-4 p-5" aria-label="Performance timeline">
       <header className="flex flex-wrap items-center justify-between gap-3">
-        <h3 className="text-sm font-medium">Performance</h3>
-        <span className="text-xs text-muted-foreground">
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={<Button variant="outline" size="sm" />}
+            aria-label="Performance metric"
+          >
+            {metricLabel(metric.name)} <ChevronDown className="size-3.5 text-muted-foreground" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent className="max-h-80 w-72">
+            <DropdownMenuRadioGroup
+              value={metric.name}
+              onValueChange={(value) => {
+                setMetricName(value);
+                setSelectedAt(undefined);
+              }}
+            >
+              {available.map((item) => (
+                <DropdownMenuRadioItem key={item.name} value={item.name}>
+                  {metricLabel(item.name)}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <span className="text-xs text-muted-foreground tabular-nums">
           {isStartup ? "Launch measurement" : `${metric.points.length} samples`}
         </span>
       </header>
-      <div className="flex flex-wrap gap-1" aria-label="Performance metric">
-        {visibleMetrics.map((item) => (
-          <Button
-            key={item.name}
-            size="sm"
-            variant={item.name === metric.name ? "secondary" : "ghost"}
-            aria-pressed={item.name === metric.name}
-            onClick={() => {
-              setMetricName(item.name);
-              setSelectedAt(undefined);
-            }}
-          >
-            {metricLabel(item.name)}
-          </Button>
-        ))}
-        {primary.length > 0 && primary.length < available.length ? (
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => setShowAll(!showAll)}
-            aria-expanded={showAll}
-          >
-            {showAll ? "Fewer metrics" : "More metrics"}
-          </Button>
-        ) : null}
-      </div>
       {!isStartup ? (
         <div className="flex min-h-5 items-center justify-between gap-3 text-xs tabular-nums">
           <span className="text-muted-foreground">
@@ -312,13 +312,21 @@ export function RunPerformancePanel({
 
 function metricLabel(name: string): string {
   return name
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
     .replace(/^Fps total Frame Count$/i, "Frames rendered")
     .replace(/^Fps dropped Frame Count$/i, "Dropped frames")
     .replace(/^Fps sample Window Ms$/i, "Frame sample interval (ms)")
     .replace(/^Fps frame Deadline Ms$/i, "Frame deadline (ms)")
     .replace(/^Fps refresh Rate Hz$/i, "Refresh rate (Hz)")
     .replace(/^Startup last Duration Ms$/i, "App startup (ms)")
-    .replace(/^Startup sample Count$/i, "Startup samples");
+    .replace(/^Startup sample Count$/i, "Startup samples")
+    .replace(/^Navigation duration$/i, "Page load duration (ms)")
+    .replace(/^Navigation /, "")
+    .replace(
+      /\b(Start|End|Time|Worker|Router|Evaluation|Cache|Lookup|Domain|Connect|Secure|Fetch|Redirect)\b/g,
+      (word) => word.toLowerCase(),
+    )
+    .replace(/^./, (letter) => letter.toUpperCase());
 }
 
 // Sparse traces may retain only a step timestamp. Identify the nearest saved

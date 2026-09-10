@@ -16,7 +16,11 @@ import { errorMessage } from "./recording-shared";
 export function RunReviewControls({
   runId,
   service,
+  open,
+  onOpenChange,
 }: {
+  open?: boolean;
+  onOpenChange?(open: boolean): void;
   runId: string;
   service: RunProductService;
 }) {
@@ -54,8 +58,10 @@ export function RunReviewControls({
 
   if (!service.review && !service.compareVisual) return null;
   return (
-    <Dialog>
-      <DialogTrigger render={<Button size="sm" variant="ghost" />}>Review run</DialogTrigger>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      {open === undefined ? (
+        <DialogTrigger render={<Button size="sm" variant="ghost" />}>Review run</DialogTrigger>
+      ) : null}
       <DialogContent className="max-h-[85dvh] overflow-y-auto">
         <DialogTitle>Review run</DialogTitle>
         <DialogDescription>

@@ -32,12 +32,15 @@ it("inspects samples directly and switches metrics without rendering settings sl
       .dispatchEvent(new MouseEvent("click", { bubbles: true })),
   );
   expect(seek).toHaveBeenCalledWith(2000);
+  act(() => host.querySelector<HTMLButtonElement>('[aria-label="Performance metric"]')!.click());
   act(() =>
-    [...host.querySelectorAll("button")]
+    [...document.querySelectorAll<HTMLElement>('[role="menuitemradio"]')]
       .find((button) => button.textContent === "Frames rendered")!
       .click(),
   );
-  expect(host.querySelector("svg")?.getAttribute("aria-label")).toBe("Frames rendered, 1 samples");
+  expect(host.querySelector("svg[aria-label]")?.getAttribute("aria-label")).toBe(
+    "Frames rendered, 1 samples",
+  );
   act(() => root.unmount());
   host.remove();
 });
@@ -54,7 +57,7 @@ it("shows startup as a launch measurement rather than a timeline", () => {
       />,
     ),
   );
-  expect(host.querySelector("svg")).toBeNull();
+  expect(host.querySelector("svg[aria-label]")).toBeNull();
   expect(host.textContent).toContain("2.50");
   expect(host.textContent).toContain("does not measure when the first screen became interactive");
   expect(host.textContent).not.toContain("Peak");

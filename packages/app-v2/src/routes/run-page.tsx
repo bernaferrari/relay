@@ -2,6 +2,12 @@ import { PageHeader, WorkbenchPage } from "../components/page-layout";
 import { RawEvidenceDisclosure } from "./raw-evidence-disclosure";
 /** @jsxImportSource react */
 import { Button } from "@relay/ui-react/components/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+  DropdownMenuItem,
+} from "@relay/ui-react/components/dropdown-menu";
 import { Progress, ProgressLabel, ProgressValue } from "@relay/ui-react/components/progress";
 import { ScrollArea } from "@relay/ui-react/components/scroll-area";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -19,7 +25,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@relay/ui-react/components/dialog";
-import { CircleAlert } from "lucide-react";
+import { ChevronRight, CircleAlert, MoreHorizontal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { EmptyState } from "../components/product-patterns";
@@ -446,6 +452,7 @@ function RunReport({
   }
   const selectedStepIndex = embedded ? stepByRun.index : urlStepIndex;
   const [rawEvidenceOpen, setRawEvidenceOpen] = useState(false);
+  const [runDialog, setRunDialog] = useState<"review" | "configuration" | "export" | null>(null);
   const canInvestigate =
     report.outcome === "product-failure" ||
     report.outcome === "uncertain" ||
@@ -453,8 +460,29 @@ function RunReport({
   const heading = resultHeading(report.outcome);
   const actions = (
     <>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={<Button variant="ghost" size="sm" />}
+          aria-label="More run actions"
+        >
+          <MoreHorizontal className="size-4" aria-hidden="true" /> More
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-52">
+          <DropdownMenuItem onClick={() => setRawEvidenceOpen(true)}>Audit</DropdownMenuItem>
+          {runService.review || runService.compareVisual ? (
+            <DropdownMenuItem onClick={() => setRunDialog("review")}>Review run</DropdownMenuItem>
+          ) : null}
+          <DropdownMenuItem onClick={() => setRunDialog("configuration")}>
+            Configuration
+          </DropdownMenuItem>
+          {runService.exportEvidence ? (
+            <DropdownMenuItem onClick={() => setRunDialog("export")}>
+              Export evidence
+            </DropdownMenuItem>
+          ) : null}
+        </DropdownMenuContent>
+      </DropdownMenu>
       <Dialog open={rawEvidenceOpen} onOpenChange={setRawEvidenceOpen}>
-        <DialogTrigger render={<Button size="sm" variant="ghost" />}>Audit</DialogTrigger>
         <DialogContent className="max-h-[85dvh] overflow-y-auto">
           <DialogTitle>Audit details</DialogTitle>
           <DialogDescription>Saved technical evidence for this run.</DialogDescription>
@@ -465,11 +493,13 @@ function RunReport({
             onOpenChange={setRawEvidenceOpen}
           />
         </DialogContent>
-      </Dialog>
-
-      <RunReviewControls runId={report.runId} service={runService} />
-      <Dialog>
-        <DialogTrigger render={<Button size="sm" variant="ghost" />}>Configuration</DialogTrigger>
+      </Dialog>{" "}
+      <Dialog
+        open={runDialog === "configuration"}
+        onOpenChange={(open) => {
+          if (!open) setRunDialog(null);
+        }}
+      >
         <DialogContent>
           <DialogTitle>Recorded configuration</DialogTitle>
           <DialogDescription>Environment saved with this run.</DialogDescription>
@@ -498,10 +528,28 @@ function RunReport({
           </dl>
         </DialogContent>
       </Dialog>
-
-      {runService.exportEvidence ? (
-        <RunEvidenceExport runId={report.runId} exportEvidence={runService.exportEvidence} />
-      ) : null}
+      <RunReviewControls
+        runId={report.runId}
+        service={runService}
+        open={runDialog === "review"}
+        onOpenChange={(open) => {
+          if (!open) setRunDialog(null);
+        }}
+      />
+      <Dialog
+        open={runDialog === "export"}
+        onOpenChange={(open) => {
+          if (!open) setRunDialog(null);
+        }}
+      >
+        <DialogContent>
+          <DialogTitle>Export evidence</DialogTitle>
+          <DialogDescription>Download the saved evidence for this run.</DialogDescription>
+          {runService.exportEvidence ? (
+            <RunEvidenceExport runId={report.runId} exportEvidence={runService.exportEvidence} />
+          ) : null}
+        </DialogContent>
+      </Dialog>
       {embedded ? (
         <Button
           nativeButton={false}
@@ -542,39 +590,26 @@ function RunReport({
     </>
   );
   const failureNotice = failure ? (
-    <section
-      className="flex min-h-10 shrink-0 items-center gap-3 rounded-lg border border-border bg-muted/30 px-3 py-1.5"
-      aria-labelledby="causal-failure-title"
-    >
-      <CircleAlert className="size-4 shrink-0 text-destructive" aria-hidden="true" />
-      <h2
-        id="causal-failure-title"
-        className="min-w-0 flex-1 truncate text-sm font-medium"
-        title={`${heading}: ${failureTitle(failure, report.category)}`}
+    <Dialog>
+      <DialogTrigger
+        aria-label="Technical details"
+        className="relay-interactive-row flex min-h-10 w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-muted-foreground focus-visible:outline-2 focus-visible:outline-ring"
       >
-        {heading}
-        <span className="mx-2 text-muted-foreground" aria-hidden="true">
-          ·
-        </span>
-        <span className="font-normal text-muted-foreground">
-          {failureTitle(failure, report.category)}
-        </span>
-      </h2>
-      <Dialog>
-        <DialogTrigger render={<Button variant="ghost" size="sm" />}>
-          Technical details
-        </DialogTrigger>
-        <DialogContent className="sm:max-w-xl">
-          <DialogTitle>{failureTitle(failure, report.category)}</DialogTitle>
-          <DialogDescription>{nextAction(report.outcome)}</DialogDescription>
-          <ScrollArea className="max-h-[50vh] min-h-0">
-            <pre className="whitespace-pre-wrap break-words rounded-lg bg-muted p-4 text-xs leading-5 text-muted-foreground">
-              {failure}
-            </pre>
-          </ScrollArea>
-        </DialogContent>
-      </Dialog>
-    </section>
+        <CircleAlert className="size-4 shrink-0 text-destructive" aria-hidden="true" />
+        <span className="min-w-0 flex-1 truncate">{heading}</span>
+        <span className="text-xs">View details</span>
+        <ChevronRight className="size-3.5 shrink-0" aria-hidden="true" />
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-xl">
+        <DialogTitle>{failureTitle(failure, report.category)}</DialogTitle>
+        <DialogDescription>{nextAction(report.outcome)}</DialogDescription>
+        <ScrollArea className="max-h-[50vh] min-h-0">
+          <pre className="whitespace-pre-wrap break-words rounded-lg bg-muted p-4 text-xs leading-5 text-muted-foreground">
+            {failure}
+          </pre>
+        </ScrollArea>
+      </DialogContent>
+    </Dialog>
   ) : report.outcome && report.outcome !== "passed" ? (
     <p className="text-sm font-semibold" role="status">
       {heading}
@@ -591,6 +626,7 @@ function RunReport({
             report={report}
             selectedStepIndex={selectedStepIndex}
             failureNotice={failureNotice}
+            footer={canInvestigate ? <IssueDraftButton source={{ kind: "run", report }} /> : null}
             renderEvidence={(section) => <EvidencePreview section={section} />}
             onSelectStep={(index) => {
               const selected = report.timeline[index];
@@ -636,13 +672,6 @@ function RunReport({
           </p>
         ) : null}
       </section>
-      {report.outcome === "product-failure" ||
-      report.outcome === "harness-failure" ||
-      report.outcome === "uncertain" ? (
-        <div className="mt-6 flex justify-end border-t border-border pt-4">
-          <IssueDraftButton source={{ kind: "run", report }} />
-        </div>
-      ) : null}
     </>
   );
 

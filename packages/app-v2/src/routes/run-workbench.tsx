@@ -35,11 +35,13 @@ export function RunWorkbench({
   report,
   selectedStepIndex,
   failureNotice,
+  footer,
   onSelectStep,
 }: {
   report: Report;
   selectedStepIndex: number;
   failureNotice?: ReactNode;
+  footer?: ReactNode;
   onSelectStep(index: number): void;
   renderEvidence?(section: Report["evidence"][number]): ReactNode;
 }) {
@@ -68,8 +70,6 @@ export function RunWorkbench({
   const failureIndexes = report.timeline.flatMap((item, index) =>
     item.state === "failed" ? [index] : [],
   );
-  const previousFailure = failureIndexes.filter((index) => index < selectedStepIndex).at(-1);
-  const nextFailure = failureIndexes.find((index) => index > selectedStepIndex);
   const frames =
     report.evidence
       .find((section) => section.id === "screenshot")
@@ -135,11 +135,48 @@ export function RunWorkbench({
       className="grid h-full min-h-0 flex-1 min-w-0 overflow-hidden rounded-xl bg-card max-[720px]:h-auto max-[720px]:grid-rows-[32rem_30rem] min-[721px]:grid-cols-[minmax(0,45%)_minmax(0,1fr)]"
       aria-label="Run workbench"
     >
-      <div className="relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-background/40">
+      <div className="relative flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-muted/30">
         <div className="flex h-11 shrink-0 items-center justify-between px-4 text-xs text-muted-foreground">
           <span>
             Step {selectedStepIndex + 1} of {report.timeline.length}
           </span>
+          <div className="flex shrink-0 items-center gap-1" aria-label="Step playback">
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              aria-label="Previous step"
+              disabled={selectedStepIndex === 0}
+              onClick={() => {
+                setPlaying(false);
+                onSelectStep(selectedStepIndex - 1);
+              }}
+            >
+              <ChevronLeft />
+            </Button>
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              onClick={() => {
+                if (!playing && selectedStepIndex === report.timeline.length - 1) onSelectStep(0);
+                setPlaying(!playing);
+              }}
+              aria-label={playing ? "Pause step playback" : "Play steps"}
+            >
+              {playing ? <Pause /> : <Play />}
+            </Button>
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              aria-label="Next step"
+              disabled={selectedStepIndex === report.timeline.length - 1}
+              onClick={() => {
+                setPlaying(false);
+                onSelectStep(selectedStepIndex + 1);
+              }}
+            >
+              <ChevronRight />
+            </Button>
+          </div>
           <span>
             {step.durationMs === undefined
               ? timelineStateLabel(step.state)
@@ -152,93 +189,9 @@ export function RunWorkbench({
           actionBounds={step.actionBounds}
           beforeFramePath={step.beforeFramePath}
           fill
-          controls={
-            <div className="flex shrink-0 items-center gap-1" aria-label="Step playback">
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                aria-label="Previous step"
-                disabled={selectedStepIndex === 0}
-                onClick={() => {
-                  setPlaying(false);
-                  onSelectStep(selectedStepIndex - 1);
-                }}
-              >
-                <ChevronLeft />
-              </Button>
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                onClick={() => {
-                  if (!playing && selectedStepIndex === report.timeline.length - 1) onSelectStep(0);
-                  setPlaying(!playing);
-                }}
-                aria-label={playing ? "Pause step playback" : "Play steps"}
-              >
-                {playing ? <Pause /> : <Play />}
-              </Button>
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                aria-label="Next step"
-                disabled={selectedStepIndex === report.timeline.length - 1}
-                onClick={() => {
-                  setPlaying(false);
-                  onSelectStep(selectedStepIndex + 1);
-                }}
-              >
-                <ChevronRight />
-              </Button>
-            </div>
-          }
         />
       </div>
       <div className="flex min-h-0 min-w-0 flex-col">
-        {panel !== "steps" ? (
-          <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
-            <div className="min-w-0">
-              <p className="text-xs text-muted-foreground">
-                Step {selectedStepIndex + 1} · {timelineStateLabel(step.state)}
-              </p>
-              <h2 className="mt-1 flex items-center gap-2 text-base font-semibold">
-                <StepActionIcon title={step.title} />
-                {step.title}
-              </h2>
-            </div>
-            {previousFailure !== undefined || nextFailure !== undefined ? (
-              <div className="flex items-center gap-1">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  aria-label="Previous failure"
-                  disabled={previousFailure === undefined}
-                  onClick={() => {
-                    if (previousFailure !== undefined) onSelectStep(previousFailure);
-                  }}
-                >
-                  Previous failure
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  aria-label="Next failure"
-                  disabled={nextFailure === undefined}
-                  onClick={() => {
-                    if (nextFailure !== undefined) onSelectStep(nextFailure);
-                  }}
-                >
-                  Next failure
-                </Button>
-              </div>
-            ) : null}
-          </header>
-        ) : null}
-        {panel !== "steps" &&
-        step.state === "failed" &&
-        selectedStepIndex === failureIndexes.at(-1) &&
-        failureNotice ? (
-          <div className="shrink-0 px-4 pt-2">{failureNotice}</div>
-        ) : null}
         <div
           className="flex shrink-0 gap-1 border-b border-border px-4 py-2"
           aria-label="Step views"
@@ -288,7 +241,7 @@ export function RunWorkbench({
                         type="button"
                         aria-current={index === selectedStepIndex ? "step" : undefined}
                         aria-pressed={index === selectedStepIndex}
-                        className={`relay-interactive-row relative grid min-h-12 w-full grid-cols-[1rem_minmax(0,1fr)_1rem] items-start gap-2 rounded-md px-3 py-2.5 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring ${index === selectedStepIndex ? "bg-accent text-foreground ring-1 ring-inset ring-border before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:bg-foreground" : "text-muted-foreground"}`}
+                        className={`relay-interactive-row relative grid min-h-12 w-full grid-cols-[1rem_minmax(0,1fr)_1rem] items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring ${index === selectedStepIndex ? "bg-accent text-foreground ring-1 ring-inset ring-border" : "text-muted-foreground"}`}
                         onClick={() => onSelectStep(index)}
                         onKeyDown={(event) => {
                           const next =
@@ -306,13 +259,13 @@ export function RunWorkbench({
                           onSelectStep(next);
                           const buttons = event.currentTarget
                             .closest("ol")
-                            ?.querySelectorAll("button");
+                            ?.querySelectorAll<HTMLButtonElement>("button[aria-pressed]");
                           buttons?.[next]?.focus();
                         }}
                       >
-                        <span className="pt-0.5 text-xs tabular-nums">{index + 1}</span>
+                        <span className="text-xs tabular-nums">{index + 1}</span>
                         <span className="min-w-0">
-                          <strong className="flex items-start gap-2 text-sm font-medium leading-5">
+                          <strong className="flex items-center gap-2 text-sm font-medium leading-5">
                             <StepActionIcon title={item.title} />
                             <span>{item.title}</span>
                           </strong>
@@ -320,14 +273,14 @@ export function RunWorkbench({
                         </span>
                         <Icon
                           aria-hidden="true"
-                          className={`mt-0.5 size-4 ${item.state === "failed" ? "text-[var(--text-critical-base)]" : item.state === "passed" ? "text-[var(--text-success-base)]" : ""}`}
+                          className={`size-4 ${item.state === "failed" ? "text-[var(--text-critical-base)]" : item.state === "passed" ? "text-[var(--text-success-base)]" : ""}`}
                         />
                       </button>
                       {index === selectedStepIndex &&
                       item.state === "failed" &&
                       index === failureIndexes.at(-1) &&
                       failureNotice ? (
-                        <div className="px-3 pb-2 pt-1">{failureNotice}</div>
+                        <div className="pt-0.5">{failureNotice}</div>
                       ) : null}
                     </li>
                   );
@@ -383,6 +336,9 @@ export function RunWorkbench({
             </dl>
           ) : null}
         </ScrollArea>
+        {footer ? (
+          <div className="flex shrink-0 justify-end border-t border-border px-4 py-2">{footer}</div>
+        ) : null}
       </div>
     </section>
   );
@@ -412,7 +368,7 @@ function StepMedia({
   const frame = frames[selected] ?? frames[0];
   return (
     <div
-      className={`relay-evidence-image-frame overflow-hidden bg-card ${fill ? "flex min-h-0 flex-1 flex-col" : ""}`}
+      className={`relay-evidence-image-frame overflow-hidden bg-transparent ${fill ? "flex min-h-0 flex-1 flex-col" : ""}`}
     >
       <div
         onLoadCapture={(event) => {
@@ -566,5 +522,5 @@ function StepActionIcon({ title }: { title: string }) {
             : /^swipe\b/i.test(title)
               ? MoveUpRight
               : Circle;
-  return <Icon aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-muted-foreground" />;
+  return <Icon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />;
 }

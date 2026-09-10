@@ -1202,14 +1202,16 @@ describe("Run and Report", () => {
     await renderRun("/runs/run-1", fake.service, platformWithStorage().platform);
 
     expect(document.body.textContent).toContain("Could not complete");
-    expect(document.body.textContent).toContain("Browser connection");
     expect(document.body.textContent).not.toContain("The app took too long to respond");
-    expect(document.body.textContent).toContain("Technical details");
+    expect(document.querySelector('button[aria-label="Technical details"]')).not.toBeNull();
     expect(
       document.querySelector<HTMLAnchorElement>('a[href="/debug?runId=run-1"]'),
     ).not.toBeNull();
     expect(document.body.textContent).not.toContain("ERR_CONNECTION_REFUSED");
-    await click(button("Technical details"));
+    await click(
+      document.querySelector<HTMLButtonElement>('button[aria-label="Technical details"]')!,
+    );
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Browser connection");
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
       "Reconnect the device or browser",
     );
