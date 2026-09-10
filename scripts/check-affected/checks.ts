@@ -10,7 +10,6 @@
 // agent reads before skipping a check locally cannot go stale.
 
 import { ALL_CHECKS, type CheckId } from './model.ts';
-import { DEFAULT_VITEST_MAX_WORKERS } from '../lib/vitest-concurrency.ts';
 
 export type CheckKind =
   | { readonly type: 'script'; readonly script: string }
@@ -183,16 +182,7 @@ export function resolveCommand(
   changedFiles: readonly string[] = [],
 ): string[] {
   if (spec.kind.type === 'vitest-related') {
-    return [
-      'pnpm',
-      'exec',
-      'vitest',
-      'related',
-      '--run',
-      '--passWithNoTests',
-      `--maxWorkers=${DEFAULT_VITEST_MAX_WORKERS}`,
-      ...changedFiles,
-    ];
+    return ['pnpm', 'exec', 'vitest', 'related', '--run', '--passWithNoTests', ...changedFiles];
   }
   const { script } = spec.kind;
   if (!(script in scripts)) {
