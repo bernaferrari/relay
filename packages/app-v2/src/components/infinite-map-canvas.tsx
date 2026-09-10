@@ -71,11 +71,22 @@ export function InfiniteMapCanvas({
   const nodeDrag = useRef<
     { id: string; start: MapPoint; position: MapPoint; moved: boolean } | undefined
   >(undefined);
+  const [autoArrange, setAutoArrange] = useState(false);
+  const [arrangedEdits, setArrangedEdits] = useState<Map<string, MapPoint>>(() => new Map());
+  const [showReturns, setShowReturns] = useState(false);
   const positions = useMemo(() => {
-    const result = new Map(layoutMapScreens(visibleScreens, visiblePaths));
+    const result = new Map(
+      layoutMapScreens(
+        autoArrange
+          ? visibleScreens.map((screen) => ({ ...screen, position: undefined }))
+          : visibleScreens,
+        visiblePaths,
+      ),
+    );
+    if (autoArrange) for (const [id, point] of arrangedEdits) result.set(id, point);
     if (dragged) result.set(dragged.id, dragged.position);
     return result;
-  }, [visibleScreens, visiblePaths, dragged]);
+  }, [visibleScreens, visiblePaths, dragged, autoArrange, arrangedEdits]);
   const bounds = useMemo(
     () => mapContentBounds(visibleScreens, positions),
     [positions, visibleScreens],
@@ -471,12 +482,31 @@ export function InfiniteMapCanvas({
             icon={PanelLeftOpen}
             onClick={() => setShowScreens(!showScreens)}
           />
-          <MapControl
-            label={showInteractionTargets ? "Hide interaction targets" : "Show interaction targets"}
-            icon={MousePointer2}
-            pressed={showInteractionTargets}
+          <Button
+            size="sm"
+            variant={showInteractionTargets ? "secondary" : "ghost"}
+            aria-pressed={showInteractionTargets}
+            title="Connect from recorded click coordinates; screens without retained coordinates use their edge."
             onClick={() => setShowInteractionTargets((value) => !value)}
-          />
+          >
+            <Scan className="size-4" /> Click origins
+          </Button>
+          <Button
+            size="sm"
+            variant={showReturns ? "secondary" : "ghost"}
+            aria-pressed={showReturns}
+            onClick={() => setShowReturns((value) => !value)}
+          >
+            Return paths
+          </Button>
+          <Button
+            size="sm"
+            variant={autoArrange ? "secondary" : "ghost"}
+            aria-pressed={autoArrange}
+            onClick={() => setAutoArrange((value) => !value)}
+          >
+            Auto arrange
+          </Button>
           <Button
             size="icon-sm"
             variant={handTool ? "ghost" : "secondary"}
@@ -567,7 +597,13 @@ export function InfiniteMapCanvas({
             className="pointer-events-none absolute left-4 top-4 z-10 text-[11px] text-muted-foreground"
             id="map-interaction-help"
           >
-            Scroll to pan · Pinch to zoom · Double-click to focus
+            {showInteractionTargets &&
+            !visiblePaths.some(
+              (path) =>
+                path.sourceAnchor && (!selectedScreenId || path.fromScreenId === selectedScreenId),
+            )
+              ? "No recorded click coordinates for this selection · Connections use screen edges"
+              : "Scroll to pan · Pinch to zoom · Double-click to focus"}
           </p>
         )}
         <section
@@ -595,7 +631,12 @@ export function InfiniteMapCanvas({
           >
             <MapEdges
               selectedPathId={selectedPathId}
-              paths={visiblePaths}
+              paths={visiblePaths.filter(
+                (path) =>
+                  showReturns ||
+                  path.id === selectedPathId ||
+                  !/^(back|close|dismiss|return)\b/i.test(path.label),
+              )}
               positions={positions}
               markerId={markerId}
               selectedScreenId={selectedScreenId}
@@ -655,6 +696,8 @@ export function InfiniteMapCanvas({
                           drag.position.y +
                           (event.clientY - drag.start.y) / transformRef.current.scale,
                       };
+                      if (autoArrange)
+                        setArrangedEdits((current) => new Map(current).set(screen.id, position));
                       void onUpdateScreen(screen.id, { position })
                         .catch(() => undefined)
                         .finally(() => setDragged(undefined));

@@ -126,6 +126,33 @@ describe("Map exploration", () => {
     expect(new Set([...positions.values()].map((point) => `${point.x},${point.y}`)).size).toBe(3);
   });
 
+  it("aligns continuations and reserves separate rows for sibling subtrees", () => {
+    const screens = ["home", "settings", "appearance", "theme", "privacy", "data"].map((id) => ({
+      ...overview.screens[0]!,
+      id,
+      position: undefined,
+    }));
+    const paths = [
+      ["home", "settings"],
+      ["settings", "appearance"],
+      ["appearance", "theme"],
+      ["settings", "privacy"],
+      ["privacy", "data"],
+      ["data", "settings"],
+    ].map(([fromScreenId, toScreenId], index) => ({
+      ...overview.paths[0]!,
+      id: String(index),
+      label: index === 5 ? "Back to Settings" : "Open",
+      fromScreenId: fromScreenId!,
+      toScreenId,
+    }));
+    const positions = layoutMapScreens(screens, paths);
+    expect(positions.get("home")!.y).toBe(positions.get("settings")!.y);
+    expect(positions.get("appearance")!.y).toBe(positions.get("theme")!.y);
+    expect(positions.get("privacy")!.y).toBe(positions.get("data")!.y);
+    expect(positions.get("privacy")!.y).toBeGreaterThan(positions.get("appearance")!.y);
+  });
+
   it("keeps cursor-centered zoom and fit math stable and bounded", () => {
     const point = { x: 120, y: 80 };
     const before = { x: 20, y: 30, scale: 1 };

@@ -158,34 +158,45 @@ export function MapEdges({
       start.x = from.x;
       if (to) end.x = to.x + MAP_NODE_WIDTH;
     }
-    const bend = Math.max(64, Math.abs(end.x - start.x) * 0.48);
-    const direction = actualBackwards ? -1 : 1;
-    const controlOneX = start.x + bend * direction;
-    const controlTwoX = end.x - bend * direction;
-    const gap = Math.abs(end.x - start.x);
-    const reciprocal = paths.some(
-      (candidate) =>
-        candidate.fromScreenId === path.toScreenId && candidate.toScreenId === path.fromScreenId,
-    );
-    const labelY =
-      reciprocal && actualBackwards
-        ? Math.max(from.y, to?.y ?? from.y) + MAP_NODE_HEIGHT + 28
-        : gap < labelWidth + 24
-          ? Math.min(from.y, to?.y ?? from.y) - 18
-          : (start.y + end.y) / 2 - 11;
+    const lane = actualBackwards ? (index % 5) * 10 : 0;
+    const corridor = actualBackwards
+      ? Math.min(start.y, end.y, from.y, to.y) - 30 - lane
+      : undefined;
+    const points =
+      corridor === undefined
+        ? [
+            start,
+            { x: start.x + (end.x - start.x) * 0.5 + lane, y: start.y },
+            { x: start.x + (end.x - start.x) * 0.5 + lane, y: end.y },
+            end,
+          ]
+        : [
+            start,
+            { x: start.x - 24 - lane, y: start.y },
+            { x: start.x - 24 - lane, y: corridor },
+            { x: end.x + 24 + lane, y: corridor },
+            { x: end.x + 24 + lane, y: end.y },
+            end,
+          ];
     return [
       {
         path,
         id: `-${index}`,
         anchor,
         anchorRect,
-        d: `M ${start.x} ${start.y} C ${controlOneX} ${start.y}, ${controlTwoX} ${end.y}, ${end.x} ${end.y}`,
-        label: { x: (start.x + end.x) / 2, y: labelY, width: labelWidth },
+        d: roundedConnector(points),
+        label: {
+          x: actualBackwards
+            ? (start.x + end.x) / 2
+            : end.x - Math.min(100, Math.abs(end.x - start.x) / 2),
+          y: corridor === undefined ? end.y - 12 : corridor - 12,
+          width: labelWidth,
+        },
         bounds: {
-          minX: Math.min(start.x, end.x, controlOneX, controlTwoX) - 24,
-          minY: Math.min(start.y, end.y) - 40,
-          maxX: Math.max(start.x, end.x, controlOneX, controlTwoX) + 24,
-          maxY: Math.max(start.y, end.y) + 40,
+          minX: Math.min(...points.map((point) => point.x)) - 24,
+          minY: Math.min(...points.map((point) => point.y)) - 40,
+          maxX: Math.max(...points.map((point) => point.x)) + 24,
+          maxY: Math.max(...points.map((point) => point.y)) + 40,
         },
       },
     ];
@@ -201,7 +212,7 @@ export function MapEdges({
   );
   return (
     <svg
-      className="relay-map-edges pointer-events-none absolute z-10 overflow-visible [&_marker_path]:fill-[var(--text-weaker)]"
+      className="relay-map-edges pointer-events-none absolute z-10 overflow-visible"
       aria-hidden="true"
       viewBox={`${edgeBounds.minX} ${edgeBounds.minY} ${edgeBounds.maxX - edgeBounds.minX} ${edgeBounds.maxY - edgeBounds.minY}`}
       style={{
@@ -221,7 +232,14 @@ export function MapEdges({
           markerHeight="6"
           orient="auto-start-reverse"
         >
-          <path d="M 0 0 L 10 5 L 0 10 z" />
+          <path
+            d="M 1 1 L 8 5 L 1 9"
+            fill="none"
+            stroke="context-stroke"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
         </marker>
       </defs>
       {geometries.map((geometry) => (
@@ -262,11 +280,13 @@ export function MapEdges({
                   strokeWidth="1.5"
                 />
               ) : null}
-              <circle
-                cx={geometry.anchor.x}
-                cy={geometry.anchor.y}
-                r="5"
-                className="fill-blue-500 stroke-background"
+              <rect
+                x={geometry.anchor.x - 5}
+                y={geometry.anchor.y - 5}
+                width="10"
+                height="10"
+                rx="2"
+                style={{ fill: "var(--color-blue-500)", stroke: "var(--color-background)" }}
                 strokeWidth="2"
               />
             </>
@@ -301,4 +321,39 @@ export function MapEdges({
       ))}
     </svg>
   );
+}
+
+// Axis-aligned segments with bounded corner radii; straight continuations
+// remain straight instead of acquiring unnecessary bezier curvature.
+export function roundedConnector(points: readonly MapPoint[], radius = 12): string {
+  const clean = points.filter(
+    (point, index) =>
+      !index || point.x !== points[index - 1]!.x || point.y !== points[index - 1]!.y,
+  );
+  if (!clean.length) return "";
+  let d = `M ${clean[0]!.x} ${clean[0]!.y}`;
+  for (let i = 1; i < clean.length - 1; i++) {
+    const previous = clean[i - 1]!,
+      current = clean[i]!,
+      next = clean[i + 1]!;
+    const before = Math.hypot(current.x - previous.x, current.y - previous.y);
+    const after = Math.hypot(next.x - current.x, next.y - current.y);
+    const r = Math.min(radius, before / 2, after / 2);
+    const entry = {
+      x: current.x + ((previous.x - current.x) * r) / before,
+      y: current.y + ((previous.y - current.y) * r) / before,
+    };
+    const exit = {
+      x: current.x + ((next.x - current.x) * r) / after,
+      y: current.y + ((next.y - current.y) * r) / after,
+    };
+    if (
+      (current.x - previous.x) * (next.y - current.y) ===
+      (current.y - previous.y) * (next.x - current.x)
+    )
+      d += ` L ${current.x} ${current.y}`;
+    else d += ` L ${entry.x} ${entry.y} Q ${current.x} ${current.y} ${exit.x} ${exit.y}`;
+  }
+  if (clean.length > 1) d += ` L ${clean.at(-1)!.x} ${clean.at(-1)!.y}`;
+  return d;
 }
