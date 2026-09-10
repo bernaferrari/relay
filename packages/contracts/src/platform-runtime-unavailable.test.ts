@@ -48,8 +48,7 @@ const UNAVAILABLE_FACTS: UnavailablePlatformRuntimeFacts = {
   orientation: { available: false, reason: 'unsupported-provider-mode' },
   tvRemote: { available: false, reason: 'unsupported-provider-mode' },
   keyboard: { available: false, reason: 'unsupported-provider-mode' },
-  readClipboard: { available: false, reason: 'unsupported-provider-mode' },
-  writeClipboard: { available: false, reason: 'unsupported-provider-mode' },
+  clipboard: { available: false, reason: 'unsupported-provider-mode' },
   appSwitcher: { available: false, reason: 'unsupported-provider-mode' },
   triggerAppEvent: { available: false, reason: 'unsupported-provider-mode' },
   setSetting: { available: false, reason: 'unsupported-provider-mode' },
@@ -91,6 +90,12 @@ test('generic unavailable binding preserves exact provider ownership and mode', 
     reason: 'unsupported-provider-mode',
   });
   for (const operation of ['keyboardStatus', 'keyboardDismiss', 'keyboardEnter'] as const) {
+    assert.deepEqual(binding.facts.operations[operation], {
+      available: false,
+      reason: 'unsupported-provider-mode',
+    });
+  }
+  for (const operation of ['readClipboard', 'writeClipboard'] as const) {
     assert.deepEqual(binding.facts.operations[operation], {
       available: false,
       reason: 'unsupported-provider-mode',
