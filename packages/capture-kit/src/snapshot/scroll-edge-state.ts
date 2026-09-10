@@ -37,6 +37,18 @@ export async function captureScrollEdgeState(params: {
   }
 }
 
+/**
+ * Is there hidden content left at this edge? The same question `runScrollEdgePasses` loops on,
+ * exposed for callers with their own stop condition (`scroll --until`) so both read one signal.
+ */
+export async function canScrollFurtherAtEdge(
+  nodes: readonly (RawSnapshotNode | SnapshotNode)[],
+  edge: ScrollEdge,
+): Promise<boolean> {
+  const { analyzeScrollEdgeState } = await import('./scroll-edge-state/selection.ts');
+  return analyzeScrollEdgeState(nodes, edge).canScroll;
+}
+
 export async function runScrollEdgePasses<TResult>(params: {
   edge: ScrollEdge;
   captureState: (scope?: string) => Promise<ScrollEdgeState>;
@@ -56,7 +68,7 @@ export async function runScrollEdgePasses<TResult>(params: {
         'COMMAND_FAILED',
         `scroll ${edge} reached the safety limit before the snapshot showed the edge`,
         {
-          hint: 'The scoped scroll container still reports hidden content. Use a smaller manual scroll + snapshot loop to inspect the current state.',
+          hint: 'The scoped scroll container still reports hidden content. Run scroll <dir> --until <selector> to stop on the element you are after, or snapshot -i to inspect the current state.',
         },
       );
     }
@@ -69,19 +81,31 @@ export async function runScrollEdgePasses<TResult>(params: {
   return { passes, result };
 }
 
-export function formatScrollEdgeMessage(
-  direction: ScrollDirection,
-  edge: ScrollEdge | undefined,
-  passes: number,
-  amount: number | undefined,
-  pixels: number | undefined,
-): string {
+/**
+ * `honoredPixels` is the travel the gesture planner actually produced, which is not always the
+ * travel that was asked for: one gesture cannot cross more than the viewport axis minus its edge
+ * padding, so a large `amount` saturates. Naming the honored distance is what keeps
+ * `scroll down 3` from reporting a three-viewport scroll it never performed.
+ */
+export function formatScrollEdgeMessage(params: {
+  direction: ScrollDirection;
+  edge?: ScrollEdge | undefined;
+  passes: number;
+  amount?: number | undefined;
+  pixels?: number | undefined;
+  honoredPixels?: number | undefined;
+}): string {
+  const { direction, edge, passes, amount, pixels, honoredPixels } = params;
   if (edge && passes === 0) {
     return `Already at ${edge}; no hidden content ${edge === 'bottom' ? 'below' : 'above'} detected`;
   }
   if (edge) return `Scrolled to ${edge} with ${passes} ${direction} passes`;
-  if (pixels !== undefined) return `Scrolled ${direction} by ${pixels}px`;
-  if (amount !== undefined) return `Scrolled ${direction} by ${amount}`;
+  if (pixels !== undefined) return `Scrolled ${direction} by ${honoredPixels ?? pixels}px`;
+  if (amount !== undefined) {
+    return honoredPixels === undefined
+      ? `Scrolled ${direction} by ${amount}`
+      : `Scrolled ${direction} by ${amount} of the viewport (${honoredPixels}px)`;
+  }
   return `Scrolled ${direction}`;
 }
 

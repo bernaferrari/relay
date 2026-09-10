@@ -1,6 +1,8 @@
 import {
   assertExclusiveScrollDistanceInputs,
+  assertScrollUntilCompatible,
   honoredScrollDurationMs,
+  honoredScrollPixels,
   normalizeScrollDurationMs,
   resolveScrollExecutionOptions,
   type ResolvedScrollExecutionOptions,
@@ -22,6 +24,8 @@ import {
   type ScrollEdge,
   type ScrollEdgeState,
 } from '@agent-device/capture-kit/scroll-edge-state';
+import { formatScrollUntilMessage, runScrollUntilVisible } from './scroll-until.ts';
+import { publicPlatformString } from '@agent-device/kernel/device';
 import { withSuccessText } from '@agent-device/kernel/success-text';
 import type { DaemonCommandContext } from './context.ts';
 import { errorResponse } from './response.ts';
@@ -43,6 +47,7 @@ type BoundScrollDirection = BoundDeviceRuntime<
   Extract<ScrollRuntimePlan, { kind: 'direction' }>['use']
 >;
 type BoundScrollEdge = BoundDeviceRuntime<Extract<ScrollRuntimePlan, { kind: 'edge' }>['use']>;
+type BoundScrollUntil = BoundDeviceRuntime<Extract<ScrollRuntimePlan, { kind: 'until' }>['use']>;
 
 /** `scroll bottom` scrolls down to the edge; `scroll top` scrolls up to it. */
 function parseScrollTarget(input: string): ScrollTarget {
@@ -82,12 +87,18 @@ export async function resolveBoundScrollRuntime(
   const amount = params.positionals[1] ? Number(params.positionals[1]) : undefined;
   const pixels = params.context.pixels;
   const durationMs = params.context.durationMs;
+  const until = params.context.until;
   if (!directionInput) throw new AppError('INVALID_ARGS', 'scroll requires direction');
   assertScrollCommandInputs(amount, pixels, durationMs);
 
   const target = parseScrollTarget(directionInput);
+  const stopCondition = {
+    ...(target.edge === undefined ? {} : { edge: target.edge }),
+    ...(until === undefined ? {} : { until }),
+  };
+  assertScrollUntilCompatible(stopCondition);
   const options = resolveScrollExecutionOptions({ amount, pixels, durationMs }, target.edge);
-  const plan = resolveScrollRuntimePlan(target.edge === undefined ? {} : { edge: target.edge });
+  const plan = resolveScrollRuntimePlan(stopCondition);
   const admission = {
     command: 'scroll',
     device: params.device,
@@ -108,20 +119,51 @@ export async function resolveBoundScrollRuntime(
           ...admission,
           // The retired leaf refused an unsupported edge scroll by naming what the edge needs, so
           // the capture requirement keeps saying so rather than collapsing into "not supported".
-          unavailableResponse: (unavailable) => scrollEdgeUnsupported(edge, unavailable.hint),
+          unavailableResponse: (unavailable) =>
+            scrollCaptureUnsupported(
+              `scroll ${edge}, which verifies hidden content before scrolling,`,
+              unavailable.hint,
+            ),
           use: plan.use,
         },
         async (runtime, dispatchContext) =>
           await executeEdgeScroll(runtime, edge, target, options, dispatchContext),
       );
     }
+    case 'until': {
+      const selector = plan.until;
+      return await resolveBoundGenericRuntime(
+        {
+          ...admission,
+          unavailableResponse: (unavailable) =>
+            scrollCaptureUnsupported(
+              'scroll --until, which checks whether the selector became visible,',
+              unavailable.hint,
+            ),
+          use: plan.use,
+        },
+        async (runtime, dispatchContext) =>
+          await executeUntilScroll(
+            runtime,
+            params.device,
+            selector,
+            target,
+            options,
+            dispatchContext,
+          ),
+      );
+    }
   }
 }
 
-function scrollEdgeUnsupported(edge: ScrollEdge, hint: string | undefined) {
+/**
+ * Both verifying tiers refuse the same way and differ only in what they would have checked, so the
+ * refusal names that rather than collapsing into "not supported" — the shape the retired leaf had.
+ */
+function scrollCaptureUnsupported(subject: string, hint: string | undefined) {
   return errorResponse(
     'UNSUPPORTED_OPERATION',
-    `scroll ${edge} requires snapshot support to verify hidden content before scrolling`,
+    `${subject} requires snapshot support`,
     undefined,
     hint === undefined ? undefined : { hint },
   );
@@ -156,6 +198,39 @@ async function executeEdgeScroll(
     scroll: async () => await scrollOnce(runtime, target, options, context),
   });
   return scrollResult(target, options, edgeResult.passes, edgeResult.result ?? {});
+}
+
+/** Repeats the pass until the selector is on screen; every failure shape is owned by the loop. */
+async function executeUntilScroll(
+  runtime: BoundScrollUntil,
+  device: DeviceInfo,
+  selector: string,
+  target: ScrollTarget,
+  options: ResolvedScrollExecutionOptions,
+  context: DaemonCommandContext,
+): Promise<Record<string, unknown>> {
+  const untilResult = await runScrollUntilVisible({
+    selector,
+    direction: target.direction,
+    platform: publicPlatformString(device),
+    capture: async () =>
+      await runtime.operations.captureSnapshot({
+        options: context.appBundleId === undefined ? {} : { appBundleId: context.appBundleId },
+        execution: runtimeExecutionFromContext(context),
+      }),
+    scroll: async () => await scrollOnce(runtime, target, options, context),
+  });
+  return withSuccessText(
+    {
+      direction: target.direction,
+      until: selector,
+      passes: untilResult.passes,
+      ...(options.amount !== undefined ? { amount: options.amount } : {}),
+      ...(options.pixels !== undefined ? { pixels: options.pixels } : {}),
+      ...(untilResult.result ?? {}),
+    },
+    formatScrollUntilMessage(target.direction, selector, untilResult.passes),
+  );
 }
 
 async function captureEdgeState(
@@ -207,13 +282,14 @@ function scrollResult(
       ...(durationMs !== undefined ? { durationMs } : {}),
       ...interactionResult,
     },
-    formatScrollEdgeMessage(
-      target.direction,
-      target.edge,
-      completedPasses,
-      options.amount,
-      options.pixels,
-    ),
+    formatScrollEdgeMessage({
+      direction: target.direction,
+      edge: target.edge,
+      passes: completedPasses,
+      amount: options.amount,
+      pixels: options.pixels,
+      honoredPixels: honoredScrollPixels(interactionResult),
+    }),
   );
 }
 

@@ -47,6 +47,24 @@ export function assertExclusiveScrollDistanceInputs(
   }
 }
 
+/**
+ * `top`/`bottom` are scroll-to-extreme requests that already carry a stop condition, so pairing one
+ * with `--until` names two and the request has no single meaning. Rejected at the surface rather
+ * than resolved by precedence, so neither stop condition can silently win.
+ */
+export function assertScrollUntilCompatible(
+  input: Readonly<{ edge?: 'top' | 'bottom'; until?: string }>,
+): void {
+  if (input.until === undefined || input.edge === undefined) return;
+  throw new AppError(
+    'INVALID_ARGS',
+    `scroll ${input.edge} already scrolls to the ${input.edge} edge and cannot take --until`,
+    {
+      hint: `Use scroll ${input.edge === 'bottom' ? 'down' : 'up'} --until <selector> to stop at the target, or scroll ${input.edge} to reach the edge.`,
+    },
+  );
+}
+
 export function normalizeScrollDurationMs(
   durationMs: number | undefined,
   options: { field?: string; invalidMessage?: string; max?: number } = {},
@@ -62,6 +80,13 @@ export function normalizeScrollDurationMs(
     throw new AppError('INVALID_ARGS', `${field} must be a non-negative integer at most ${max}`);
   }
   return durationMs;
+}
+
+/** The travel the planner produced, which saturates below a large requested amount. */
+export function honoredScrollPixels(
+  result: Record<string, unknown> | undefined,
+): number | undefined {
+  return typeof result?.pixels === 'number' ? result.pixels : undefined;
 }
 
 export function honoredScrollDurationMs(
@@ -84,7 +109,9 @@ export type ScrollCommandResult = {
   direction: ScrollDirection;
   /** Set for `top`/`bottom` requests: the extreme being scrolled to. */
   edge?: 'top' | 'bottom';
-  /** Edge scrolls only: how many scroll-and-check passes ran. */
+  /** Set for `--until` requests: the selector the passes stopped on. */
+  until?: string;
+  /** Edge and until scrolls only: how many scroll-and-check passes ran. */
   passes?: number;
   amount?: number;
   pixels?: number;

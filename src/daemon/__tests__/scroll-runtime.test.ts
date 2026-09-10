@@ -338,3 +338,79 @@ test('the edge plan proves its capture statically and the direction plan cannot 
   expectTypeOf<keyof DirectionOperations>().toEqualTypeOf<'scrollDirection'>();
   expectTypeOf<RequiredKeys<DirectionOperations>>().toEqualTypeOf<'scrollDirection'>();
 });
+
+/** A row walked into the viewport, so the executor's pass count is observable. */
+function untilNodes(targetY: number, hiddenBelow: boolean) {
+  return [
+    {
+      index: 1,
+      depth: 0,
+      type: 'ScrollView',
+      label: 'Form',
+      ...(hiddenBelow ? { hiddenContentBelow: true } : {}),
+      rect: { x: 0, y: 0, width: 400, height: 800 },
+    },
+    {
+      index: 2,
+      depth: 1,
+      parentIndex: 1,
+      type: 'TextField',
+      label: 'Email',
+      rect: { x: 0, y: targetY, width: 400, height: 40 },
+    },
+  ];
+}
+
+/**
+ * Route-level only: the executor's result envelope, the parse rejection, and admission. The loop's
+ * own behavior — arrival, end-of-content, the pass budget, and every capture refusal — is covered
+ * against the module in `scroll-until.test.ts` rather than duplicated through this harness.
+ */
+test('bound scroll --until reports the passes it spent and the selector it stopped on', async () => {
+  const scrolls: string[] = [];
+  const frames = [untilNodes(2400, true), untilNodes(1200, true), untilNodes(300, true)];
+  const result = await runScroll(
+    ['down'],
+    { until: 'label=Email' },
+    {
+      captureSnapshot: async () => ({ nodes: frames[Math.min(scrolls.length, frames.length - 1)] }),
+      scroll: async (direction) => {
+        scrolls.push(direction);
+        return { pixels: 480 };
+      },
+    },
+  );
+
+  assert.equal(result.until, 'label=Email');
+  assert.equal(result.direction, 'down');
+  assert.equal(result.passes, 2);
+  assert.deepEqual(scrolls, ['down', 'down']);
+  assert.match(String(result.message), /Scrolled down 2 passes until label=Email was visible/);
+});
+
+test('bound scroll rejects --until on an edge direction before any device work', async () => {
+  await assert.rejects(
+    () =>
+      runScroll(
+        ['bottom'],
+        { until: 'label=Email' },
+        {
+          captureSnapshot: async () => ({ nodes: untilNodes(300, true) }),
+          scroll: async () => {
+            throw new Error('scroll should be rejected before the backend call');
+          },
+        },
+      ),
+    /cannot take --until/,
+  );
+});
+
+test('bound scroll --until is refused at admission when the owner declares no capture', async () => {
+  const resolved = await resolveBoundScrollRuntime({
+    device: IOS_SIMULATOR,
+    positionals: ['down'],
+    context: { until: 'label=Email' } as DaemonCommandContext,
+    ...bindings({ scroll: async () => ({}) }),
+  });
+  assert.equal(resolved.ok, false);
+});
