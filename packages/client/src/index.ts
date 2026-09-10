@@ -184,6 +184,7 @@ export class RelayClient {
   private readonly fetcher: typeof fetch;
   private readonly timeoutMs: number;
   private readonly launchTimeoutMs: number;
+  private readonly recoveryTimeoutMs: number;
 
   constructor(connection: ServerConnection, options: RelayClientOptions = {}) {
     this.connection = normalizeConnection(connection);
@@ -195,6 +196,7 @@ export class RelayClient {
     // Cold app launch can take over 20 seconds before the OS acknowledges activation.
     // Keep explicit caller budgets authoritative and other operations short.
     this.launchTimeoutMs = options.timeoutMs ?? 90_000;
+    this.recoveryTimeoutMs = options.timeoutMs ?? 180_000;
   }
 
   /** Authenticated binary transport for product artifacts. */
@@ -458,7 +460,11 @@ export class RelayClient {
         headers: this.operationHeaders(id, options),
         ...(options.signal ? { signal: options.signal } : {}),
       },
-      id === "target.app.launch" ? this.launchTimeoutMs : undefined,
+      id === "target.recover"
+        ? this.recoveryTimeoutMs
+        : id === "target.app.launch" || id === "target.snapshot.capture"
+          ? this.launchTimeoutMs
+          : undefined,
     );
     try {
       return definition.output.parse(body);

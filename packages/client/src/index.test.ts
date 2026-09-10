@@ -563,3 +563,27 @@ test("a rejected app launch remains a failure under its longer deadline", async 
     (error: unknown) => error instanceof ApiError && error.status === 409,
   );
 });
+
+test("recovery and accessibility reads have bounded cold-start budgets", async (t) => {
+  const budgets: number[] = [];
+  t.mock.method(AbortSignal, "timeout", (ms: number) => {
+    budgets.push(ms);
+    return new AbortController().signal;
+  });
+  const connection = {
+    url: "https://relay.test",
+    auth: { type: "none" as const },
+    organizationId: "local",
+    projectId: "default",
+    actorId: "human:test",
+    actorKind: "human" as const,
+  };
+  const fetcher: typeof fetch = async () =>
+    new Response(JSON.stringify({ error: "Unavailable" }), { status: 503 });
+  const client = new RelayClient(connection, { fetch: fetcher });
+  await assert.rejects(client.invoke("target.recover", { serial: "emulator-5554", force: true }));
+  await assert.rejects(client.invoke("target.snapshot.capture", { serial: "emulator-5554" }));
+  const explicit = new RelayClient(connection, { fetch: fetcher, timeoutMs: 1234 });
+  await assert.rejects(explicit.invoke("target.recover", { serial: "emulator-5554" }));
+  assert.deepEqual(budgets, [180000, 90000, 1234]);
+});

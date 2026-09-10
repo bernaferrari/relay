@@ -84,7 +84,10 @@ export function DevicePage() {
     staleTime: 5_000,
   });
   const talkBack = useTalkBackReview({
-    enabled: Boolean(device.data?.serial) && device.data?.platform !== "browser",
+    enabled:
+      liveStatus === "streaming" &&
+      Boolean(device.data?.serial) &&
+      device.data?.platform !== "browser",
     serial: device.data?.serial,
     capture: productService.reviewTalkBack,
     refreshKey: talkBackRefresh,
@@ -770,11 +773,26 @@ function DeviceLivePreview({
             ) : null
           }
           toolbar={
-            <TalkBackModeSelect
-              mode={talkBack.mode}
-              loading={talkBack.loading}
-              onModeChange={(mode) => talkBack.setMode(mode)}
-            />
+            <div className="flex items-center gap-2">
+              <TalkBackModeSelect
+                mode={talkBack.mode}
+                loading={talkBack.loading}
+                onModeChange={(mode) => talkBack.setMode(mode)}
+              />
+              {talkBack.on && platform !== "browser" ? (
+                <span
+                  className="text-xs text-muted-foreground"
+                  role="status"
+                  title={talkBack.issue ?? talkBack.inspection.message}
+                >
+                  {talkBack.loading
+                    ? "Reading labels…"
+                    : talkBack.issue || talkBack.inspection.message
+                      ? "Labels unavailable"
+                      : null}
+                </span>
+              ) : null}
+            </div>
           }
         />
       </div>

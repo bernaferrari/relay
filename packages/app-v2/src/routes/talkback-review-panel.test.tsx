@@ -52,7 +52,7 @@ describe("TalkBack review panel", () => {
         </div>,
       );
     });
-    expect(host.textContent).toMatch(/Always show|Accessibility names/);
+    expect(host.querySelector('[aria-label="Inspect elements"]')).not.toBeNull();
     expect(host.textContent).toContain("not a TalkBack or VoiceOver proof");
     expect(host.textContent).toContain("TalkBack has no name for this icon.");
     expect(host.textContent).toContain("Unnamed, Button");
@@ -201,4 +201,46 @@ describe("TalkBack review panel", () => {
       await Promise.resolve();
     });
   });
+});
+
+it("retries failed accessibility when selecting an enabled mode again", async () => {
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  roots.push(root);
+  let calls = 0;
+  function Harness() {
+    const review = useTalkBackReview({
+      enabled: true,
+      serial: "emulator-5554",
+      capture: async () => {
+        calls += 1;
+        if (calls === 1) throw new Error("Not ready");
+        return {
+          inspectable: true,
+          review: reviewAndroidTalkBack([
+            {
+              index: 0,
+              label: "Settings",
+              role: "button",
+              rect: { x: 0, y: 0, width: 40, height: 40 },
+            },
+          ]),
+        };
+      },
+    });
+    return (
+      <>
+        <button onClick={() => review.setMode("always")}>Always</button>
+        <span>{review.inspection.overlayItems.length}</span>
+      </>
+    );
+  }
+  await act(async () => root.render(<Harness />));
+  expect(calls).toBe(1);
+  await act(async () => host.querySelector("button")!.click());
+  expect(calls).toBe(2);
+  expect(host.querySelector("span")!.textContent).toBe("1");
+  await act(async () => host.querySelector("button")!.click());
+  expect(calls).toBe(3);
 });

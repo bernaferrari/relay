@@ -663,6 +663,8 @@ type SpecificOperationMap = {
   "target.recover": {
     input: {
       serial: string;
+      /** Admin-only recovery; uncertain input still requires reconciliation. */
+      force?: boolean;
       reason?: "connect" | "observe" | "control" | "record" | "auto";
       /** Optional, local-only request to release one interrupted durable
        * assignment after Relay captures a fresh pixel/semantic/pixel proof. */

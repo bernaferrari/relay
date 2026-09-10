@@ -178,6 +178,14 @@ async function recoverTargetRuntimeReserved(
         );
         if (nodes.length > 0) {
           const app = androidSnapshotApplication(nodes);
+          recordTargetSemanticSnapshot(
+            { serial, platform: "android" },
+            {
+              inspectable: true,
+              nodes,
+              ...(app ? { foregroundApp: app } : {}),
+            },
+          );
           return {
             serial,
             recovered: true,

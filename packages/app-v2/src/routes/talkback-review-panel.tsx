@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import type { TalkBackReview, TalkBackReviewItem } from "@relay/protocol";
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
-import { Scan, Check } from "lucide-react";
+import { Scan, Check, LoaderCircle } from "lucide-react";
 import { Button } from "@relay/ui-react/components/button";
 import {
   DropdownMenu,
@@ -44,11 +44,18 @@ export function TalkBackModeSelect({
     <DropdownMenu>
       <DropdownMenuTrigger
         render={<Button variant="ghost" size="icon-sm" />}
-        disabled={disabled || loading}
+        disabled={disabled}
         aria-label="Inspect elements"
         title="Inspect elements"
       >
-        <Scan className="size-4" aria-hidden="true" />
+        {loading ? (
+          <LoaderCircle
+            className="size-4 animate-spin motion-reduce:animate-none"
+            aria-hidden="true"
+          />
+        ) : (
+          <Scan className="size-4" aria-hidden="true" />
+        )}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start">
         {(
@@ -224,6 +231,7 @@ export function useTalkBackReview(input: {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<TalkBackCaptureResult>();
   const [issue, setIssue] = useState<string>();
+  const [selectionRevision, setSelectionRevision] = useState(0);
   const capture = useRef(input.capture);
   capture.current = input.capture;
   const on = mode !== "off";
@@ -244,6 +252,8 @@ export function useTalkBackReview(input: {
   useEffect(() => {
     if (!on || !input.enabled || !input.serial || !capture.current) {
       setResult(undefined);
+      setLoading(false);
+      setIssue(undefined);
       return;
     }
     const epoch = accessibilityObservationId({
@@ -282,7 +292,7 @@ export function useTalkBackReview(input: {
     return () => {
       cancelled = true;
     };
-  }, [on, input.enabled, input.serial, input.refreshKey]);
+  }, [on, input.enabled, input.serial, input.refreshKey, selectionRevision]);
 
   const epoch = accessibilityObservationId({
     targetId: input.serial,
@@ -298,6 +308,7 @@ export function useTalkBackReview(input: {
     issue,
     setMode(next: AccessibilityLabelMode) {
       setStoredMode(next);
+      if (next !== "off") setSelectionRevision((value) => value + 1);
       if (input.platform) {
         void Promise.resolve(input.platform.storage.set(ACCESSIBILITY_LABELS_STORAGE_KEY, next));
       }

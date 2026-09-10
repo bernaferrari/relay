@@ -96,6 +96,7 @@ export const coreTargetOperationInputSchemas = {
   "target.recover": z
     .object({
       ...targetReference,
+      force: z.boolean().optional(),
       reason: z.enum(["connect", "observe", "control", "record", "auto"]).optional(),
       recoveryFenceAssignmentId: identifier("Interrupted durable assignment identifier").optional(),
     })

@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { resolveAndroidSdkTool } from "./android-sdk-tools.js";
 import type { SnapshotNode } from "./device.js";
+import { recordTargetSemanticSnapshot } from "./target-runtime-readiness.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -592,6 +593,14 @@ export async function recoverAndroidInspection(serial: string): Promise<{
   const snapshot = await captureAndroidUiSnapshotWithState(serial);
   const app = androidSnapshotApplication(snapshot.nodes);
   const ready = snapshot.inspectionState === "active" && snapshot.nodes.length > 0;
+  recordTargetSemanticSnapshot(
+    { serial, platform: "android" },
+    {
+      inspectable: ready,
+      nodes: snapshot.nodes,
+      ...(app ? { foregroundApp: app } : {}),
+    },
+  );
   const detail = ready
     ? "Relay can read names on this screen."
     : snapshot.inspectionState === "keyguard"

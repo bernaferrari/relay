@@ -55,6 +55,7 @@ export function createTargetRecoveryOperationParsers(
     "target recovery input",
     (input) => {
       string(input.serial, "target recovery serial");
+      if (input.force !== undefined) boolean(input.force, "target recovery force");
       if (
         input.reason !== undefined &&
         (typeof input.reason !== "string" ||
