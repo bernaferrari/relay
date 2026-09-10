@@ -34,10 +34,12 @@ type Report = ProductRunReportOverview;
 export function RunWorkbench({
   report,
   selectedStepIndex,
+  failureNotice,
   onSelectStep,
 }: {
   report: Report;
   selectedStepIndex: number;
+  failureNotice?: ReactNode;
   onSelectStep(index: number): void;
   renderEvidence?(section: Report["evidence"][number]): ReactNode;
 }) {
@@ -229,6 +231,9 @@ export function RunWorkbench({
             </div>
           ) : null}
         </header>
+        {step.state === "failed" && selectedStepIndex === failureIndexes.at(-1) && failureNotice ? (
+          <div className="shrink-0 px-4 pt-2">{failureNotice}</div>
+        ) : null}
         <div className="flex shrink-0 gap-1 px-4 py-2" aria-label="Step views">
           {(
             [
@@ -276,7 +281,7 @@ export function RunWorkbench({
                         type="button"
                         aria-current={index === selectedStepIndex ? "step" : undefined}
                         aria-pressed={index === selectedStepIndex}
-                        className={`grid min-h-12 w-full grid-cols-[1rem_minmax(0,1fr)_1rem] items-start gap-2 rounded-md px-3 py-2.5 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring ${index === selectedStepIndex ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/60"}`}
+                        className={`relay-interactive-row grid min-h-12 w-full grid-cols-[1rem_minmax(0,1fr)_1rem] items-start gap-2 rounded-md px-3 py-2.5 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring ${index === selectedStepIndex ? "bg-muted text-foreground" : "text-muted-foreground"}`}
                         onClick={() => onSelectStep(index)}
                         onKeyDown={(event) => {
                           const next =

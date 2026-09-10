@@ -2,11 +2,6 @@ import { PageHeader, WorkbenchPage } from "../components/page-layout";
 import { RawEvidenceDisclosure } from "./raw-evidence-disclosure";
 /** @jsxImportSource react */
 import { Button } from "@relay/ui-react/components/button";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@relay/ui-react/components/collapsible";
 import { Progress, ProgressLabel, ProgressValue } from "@relay/ui-react/components/progress";
 import { ScrollArea } from "@relay/ui-react/components/scroll-area";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -24,6 +19,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@relay/ui-react/components/dialog";
+import { CircleAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { EmptyState } from "../components/product-patterns";
@@ -545,46 +541,56 @@ function RunReport({
       )}
     </>
   );
+  const failureNotice = failure ? (
+    <section
+      className="flex min-h-10 shrink-0 items-center gap-3 rounded-lg border border-border bg-muted/30 px-3 py-1.5"
+      aria-labelledby="causal-failure-title"
+    >
+      <CircleAlert className="size-4 shrink-0 text-destructive" aria-hidden="true" />
+      <h2
+        id="causal-failure-title"
+        className="min-w-0 flex-1 truncate text-sm font-medium"
+        title={`${heading}: ${failureTitle(failure, report.category)}`}
+      >
+        {heading}
+        <span className="mx-2 text-muted-foreground" aria-hidden="true">
+          ·
+        </span>
+        <span className="font-normal text-muted-foreground">
+          {failureTitle(failure, report.category)}
+        </span>
+      </h2>
+      <Dialog>
+        <DialogTrigger render={<Button variant="ghost" size="sm" />}>
+          Technical details
+        </DialogTrigger>
+        <DialogContent className="sm:max-w-xl">
+          <DialogTitle>{failureTitle(failure, report.category)}</DialogTitle>
+          <DialogDescription>{nextAction(report.outcome)}</DialogDescription>
+          <ScrollArea className="max-h-[50vh] min-h-0">
+            <pre className="whitespace-pre-wrap break-words rounded-lg bg-muted p-4 text-xs leading-5 text-muted-foreground">
+              {failure}
+            </pre>
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
+    </section>
+  ) : report.outcome && report.outcome !== "passed" ? (
+    <p className="text-sm font-semibold" role="status">
+      {heading}
+    </p>
+  ) : null;
+  const hasFailedStep = report.timeline.some((step) => step.state === "failed");
   const body = (
     <>
-      {failure ? (
-        <section
-          className="max-w-[60ch] rounded-xl border border-destructive/30 bg-destructive/5 p-5"
-          aria-labelledby="causal-failure-title"
-        >
-          <p className="text-[11px] font-semibold uppercase tracking-[0.04em] text-destructive">
-            {heading}
-          </p>
-          <h2 id="causal-failure-title" className="mt-1 text-[15px] font-medium text-foreground">
-            {failureTitle(failure, report.category)}
-          </h2>
-          <p className="mt-1 text-[13px] leading-5 text-muted-foreground">
-            {nextAction(report.outcome)}
-          </p>
-          <Collapsible className="mt-3">
-            <CollapsibleTrigger className="text-[13px] text-muted-foreground hover:text-foreground">
-              Technical details
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <ScrollArea className="mt-2 max-h-[180px] overflow-auto">
-                <pre className="whitespace-pre-wrap break-words text-[12px] leading-5 text-muted-foreground">
-                  {failure}
-                </pre>
-              </ScrollArea>
-            </CollapsibleContent>
-          </Collapsible>
-        </section>
-      ) : report.outcome && report.outcome !== "passed" ? (
-        <p className="text-sm font-semibold" role="status">
-          {heading}
-        </p>
-      ) : null}
+      {!hasFailedStep ? failureNotice : null}
 
       <section className="mt-3 flex min-h-0 flex-1 flex-col gap-3" aria-label="Run evidence">
         {report.timeline.length || report.evidence.length ? (
           <RunWorkbench
             report={report}
             selectedStepIndex={selectedStepIndex}
+            failureNotice={failureNotice}
             renderEvidence={(section) => <EvidencePreview section={section} />}
             onSelectStep={(index) => {
               const selected = report.timeline[index];

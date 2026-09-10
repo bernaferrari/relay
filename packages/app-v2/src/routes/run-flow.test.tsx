@@ -1186,7 +1186,7 @@ describe("Run and Report", () => {
     expect(document.body.textContent).not.toContain("run-1");
   });
 
-  it("keeps a failed Report human-readable and collapses the raw exception", async () => {
+  it("keeps a failed Report compact and opens technical details without expanding the page", async () => {
     const fake = fakeRunService();
     fake.service.getReport = async () => ({
       runId: "run-1",
@@ -1204,12 +1204,18 @@ describe("Run and Report", () => {
     expect(document.body.textContent).toContain("Could not complete");
     expect(document.body.textContent).toContain("Browser connection");
     expect(document.body.textContent).not.toContain("The app took too long to respond");
-    expect(document.body.textContent).toContain("Reconnect the device or browser");
     expect(document.body.textContent).toContain("Technical details");
     expect(
       document.querySelector<HTMLAnchorElement>('a[href="/debug?runId=run-1"]'),
     ).not.toBeNull();
     expect(document.body.textContent).not.toContain("ERR_CONNECTION_REFUSED");
+    await click(button("Technical details"));
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
+      "Reconnect the device or browser",
+    );
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
+      "ERR_CONNECTION_REFUSED",
+    );
     expect(document.body.textContent).not.toContain("Evidence at this point");
     expect(document.querySelector('[role="tab"]')).toBeNull();
   });
