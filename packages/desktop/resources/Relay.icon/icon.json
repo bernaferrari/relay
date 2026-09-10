@@ -4,8 +4,8 @@
     {
       "layers": [
         {
-          "image-name": "exec-798cbb19-c0f1-4131-a4fd-779a7ebf2d8a.png",
-          "name": "exec-798cbb19-c0f1-4131-a4fd-779a7ebf2d8a",
+          "image-name": "relay-loop.png",
+          "name": "Relay",
           "position": {
             "scale": 0.86,
             "translation-in-points": [0, 0]
