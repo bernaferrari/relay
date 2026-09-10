@@ -10,7 +10,15 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "@relay/ui-react/components/tabs";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate, useRouteContext } from "@tanstack/react-router";
-import { AppWindow, ChevronRight, CircleHelp, ListChecks, Smartphone, Tablet } from "lucide-react";
+import {
+  AppWindow,
+  ChevronRight,
+  CircleHelp,
+  CircleCheck,
+  CirclePause,
+  Smartphone,
+  Tablet,
+} from "lucide-react";
 import { useDeferredValue, useEffect, useId, useState } from "react";
 import { LibrarySearch } from "../components/library-toolbar";
 import { LibraryPage, PageHeader } from "../components/page-layout";
@@ -70,10 +78,11 @@ function DeviceRow({ device, returnTo }: { device: ProductDevice; returnTo?: str
     : /ipad|tablet/i.test(`${device.name} ${device.kind ?? ""}`)
       ? Tablet
       : Smartphone;
+  const stopped = device.device.booted === false;
   return (
     <li>
       <Item
-        className="relay-library-row relay-device-row grid min-h-16 min-w-0 grid-cols-[minmax(0,1fr)_auto_18px] items-center gap-3 px-3.5 py-2 text-[var(--text-base)] transition-colors duration-150 hover:bg-accent/50 focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2"
+        className="group/device relay-library-row relay-device-row grid min-h-16 min-w-0 grid-cols-[minmax(0,1fr)_auto_18px] items-center gap-3 px-3.5 py-2 text-[var(--text-base)] transition-colors duration-150 cursor-pointer hover:bg-accent focus-visible:bg-accent focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2"
         render={
           isBrowser(device) ? (
             <Link
@@ -92,7 +101,7 @@ function DeviceRow({ device, returnTo }: { device: ProductDevice; returnTo?: str
       >
         <span className="relay-library-row-main flex min-w-0 items-center gap-3">
           <span
-            className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/60 text-muted-foreground"
+            className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/60 text-muted-foreground transition-colors group-hover/device:bg-background group-hover/device:text-foreground group-focus-visible/device:bg-background group-focus-visible/device:text-foreground"
             aria-hidden="true"
           >
             <DeviceIcon className="size-5" strokeWidth={1.75} />
@@ -109,22 +118,24 @@ function DeviceRow({ device, returnTo }: { device: ProductDevice; returnTo?: str
         <span className="relay-library-row-status flex justify-start">
           <Badge
             className={
-              device.status === "needs-attention"
+              !stopped && device.status === "needs-attention"
                 ? "bg-amber-500/15 text-amber-800 dark:text-amber-300"
                 : undefined
             }
             variant="secondary"
           >
-            {device.status === "needs-attention" ? (
+            {stopped ? (
+              <CirclePause aria-hidden="true" />
+            ) : device.status === "needs-attention" ? (
               <CircleHelp aria-hidden="true" />
             ) : (
-              <ListChecks aria-hidden="true" />
+              <CircleCheck aria-hidden="true" />
             )}
             {statusLabel(device)}
           </Badge>
         </span>
         <ChevronRight
-          className="relay-library-row-arrow relay-device-row-chevron text-sm text-[var(--text-weaker)]"
+          className="relay-library-row-arrow relay-device-row-chevron size-4 text-muted-foreground transition-colors group-hover/device:text-foreground group-focus-visible/device:text-foreground"
           aria-hidden="true"
         />
       </Item>
@@ -146,26 +157,28 @@ function DeviceSection({
   const headingId = useId();
   return (
     <section
-      className="relay-library-results"
+      className={
+        bordered
+          ? "relay-library-results overflow-hidden rounded-xl border border-border bg-card"
+          : "relay-library-results"
+      }
       aria-labelledby={title ? headingId : undefined}
       aria-label={!title ? "Available devices" : undefined}
     >
       {title ? (
-        <div className="relay-library-results-heading flex min-h-8 items-center gap-2 px-0.5 pb-2.5">
+        <div className="relay-library-results-heading flex min-h-11 items-center gap-2 border-b border-border px-4 py-3">
           <h2 id={headingId} className="text-[13px] font-semibold">
             {title}
           </h2>
           <Badge
             variant="secondary"
-            className="h-5 min-w-5 justify-center px-1.5 text-[11px] tabular-nums"
+            className="h-auto bg-transparent px-0 text-xs font-normal tabular-nums text-muted-foreground"
           >
             {devices.length}
           </Badge>
         </div>
       ) : null}
-      <ul
-        className={`relay-library-list m-0 list-none overflow-hidden p-0 [&>li]:border-b [&>li]:border-border [&>li:last-child]:border-b-0 ${bordered ? "rounded-lg border border-border bg-card" : ""}`}
-      >
+      <ul className="relay-library-list m-0 list-none p-0 [&>li]:border-b [&>li]:border-border/60 [&>li:last-child]:border-b-0">
         {devices.map((device) => (
           <DeviceRow key={device.id} device={device} returnTo={returnTo} />
         ))}
@@ -191,8 +204,12 @@ function AvailableSection({
   }, [searchActive]);
   const headingId = useId();
   return (
-    <Collapsible open={open} onOpenChange={setOpen} className="grid gap-2">
-      <CollapsibleTrigger className="flex min-h-9 items-center gap-2 px-0.5 text-left text-[13px] font-semibold focus-visible:outline-2 focus-visible:outline-ring">
+    <Collapsible
+      open={open}
+      onOpenChange={setOpen}
+      className="overflow-hidden rounded-xl border border-border bg-card"
+    >
+      <CollapsibleTrigger className="flex min-h-11 w-full items-center gap-2 px-4 py-3 text-left text-[13px] font-semibold hover:bg-accent/40 focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-[-2px]">
         <ChevronRight
           className={`size-4 text-muted-foreground transition-transform duration-200 motion-reduce:transition-none ${open ? "rotate-90" : ""}`}
           aria-hidden="true"
@@ -200,12 +217,12 @@ function AvailableSection({
         <span id={headingId}>{title}</span>
         <Badge
           variant="secondary"
-          className="h-5 min-w-5 justify-center px-1.5 text-[11px] tabular-nums"
+          className="h-auto bg-transparent px-0 text-xs font-normal tabular-nums text-muted-foreground"
         >
           {devices.length}
         </Badge>
       </CollapsibleTrigger>
-      <CollapsibleContent>
+      <CollapsibleContent className="border-t border-border">
         <DeviceSection title="" devices={devices} returnTo={returnTo} bordered={false} />
       </CollapsibleContent>
     </Collapsible>
@@ -275,7 +292,7 @@ export function DevicesPage() {
     >
       <PageHeader
         title="Devices"
-        description="Connected phones, tablets, emulators, and browsers ready for a Test."
+        description="Choose a device or browser to inspect or record a test."
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Button
@@ -388,7 +405,7 @@ export function DevicesPage() {
       ) : null}
 
       {!devices.isPending && !devices.isError && visibleCount > 0 ? (
-        <div className="mt-3 grid gap-7" aria-live="polite">
+        <div className="mt-3 grid gap-4" aria-live="polite">
           {(["Physical devices", "Android emulators", "iOS simulators", "Browsers"] as const).map(
             (title) => {
               const devicesInSection = visibleDevices.filter(
