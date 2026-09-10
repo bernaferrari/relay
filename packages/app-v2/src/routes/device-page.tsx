@@ -29,6 +29,7 @@ import type {
   LiveTargetStatus,
 } from "../data/live-target-session";
 import { LiveTargetCanvas } from "./live-target-canvas";
+import { BrowserAddressBar } from "../components/browser-address-bar";
 import { PageLoading, errorMessage } from "./recording-shared";
 import { TalkBackModeSelect, TalkBackOverlay, useTalkBackReview } from "./talkback-review-panel";
 import { localeLabel, supportedLocaleChoice } from "../lib/locale-label";
@@ -423,7 +424,22 @@ export function DevicePage() {
                   : talkBack
               }
             />
-          ) : null}
+          ) : (
+            <RecoveryState
+              layout="centered"
+              className="min-h-64"
+              title={device.data.avdName ? "Emulator is not running" : "Device needs attention"}
+              detail="Connect the device to see its screen here."
+              action={
+                <Button
+                  onClick={() => (device.data?.avdName ? boot.mutate() : recover.mutate())}
+                  disabled={boot.isPending || recover.isPending}
+                >
+                  {device.data.avdName ? "Start emulator" : "Reconnect"}
+                </Button>
+              }
+            />
+          )}
           <aside
             className={
               device.data.platform === "browser" && !recover.error
@@ -442,7 +458,7 @@ export function DevicePage() {
                 className="relay-settings-error max-w-[60ch] text-[13px] leading-5 text-destructive"
                 role="alert"
               >
-                Reconnection did not finish. Keep the device awake and connected, then try again.
+                {friendlyLiveIssue(errorMessage(recover.error))}
               </p>
             ) : null}
             {recover.data ? (
@@ -677,8 +693,7 @@ function DeviceLivePreview({
   issueAction?: ReactNode;
   talkBack: ReturnType<typeof useTalkBackReview>;
 }) {
-  if (pending) return <PageLoading label="Opening the live device…" />;
-  if (!target) {
+  if (!target && !pending) {
     return (
       <RecoveryState
         layout="centered"
@@ -706,21 +721,28 @@ function DeviceLivePreview({
         <h2 className="text-[13px] font-medium" id="device-live-title">
           Live preview
         </h2>
-        {status === "streaming" || !issue ? (
+        {status === "streaming" || (status === "idle" && !pending) ? (
           <Button size="sm" variant="ghost" onClick={reconnect} disabled={reconnecting}>
             <RotateCcw aria-hidden="true" /> Reconnect
           </Button>
         ) : null}
       </div>
+      {platform === "browser" ? (
+        <BrowserAddressBar
+          url={browserContext?.pageUrl}
+          disabled={busy || status !== "streaming"}
+          send={send}
+        />
+      ) : null}
       <div className="min-h-0 flex-1">
         <LiveTargetCanvas
           canvasRef={canvas}
-          status={status}
+          status={pending ? "connecting" : status}
           issue={issue}
           issueAction={issueAction}
           busy={busy}
-          targetTitle={target.name}
-          targetDetail={target.detail}
+          targetTitle={target?.name ?? "Device"}
+          targetDetail={target?.detail ?? ""}
           browserContext={browserContext}
           send={send}
           recording={false}

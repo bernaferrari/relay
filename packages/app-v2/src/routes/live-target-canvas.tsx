@@ -1,7 +1,14 @@
 /** @jsxImportSource react */
 import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
-import { ArrowUp, ChevronLeft, Circle, Square, MonitorSmartphone } from "lucide-react";
+import {
+  ArrowUp,
+  ChevronLeft,
+  Circle,
+  Square,
+  MonitorSmartphone,
+  LoaderCircle,
+} from "lucide-react";
 import {
   useEffect,
   useRef,
@@ -243,7 +250,11 @@ export function LiveTargetCanvas({
                 className="mb-3 grid size-11 place-items-center rounded-full bg-muted text-muted-foreground [&>svg]:size-5"
                 aria-hidden="true"
               >
-                <MonitorSmartphone />
+                {issue ? (
+                  <MonitorSmartphone />
+                ) : (
+                  <LoaderCircle className="animate-spin motion-reduce:animate-none" />
+                )}
               </span>
               <h2 className="text-base font-medium">
                 {issue ? "Live view unavailable" : "Connecting to live view…"}

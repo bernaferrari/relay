@@ -8,7 +8,8 @@ import { recordAudit, resolveCommandActor, type RequestContext } from "./securit
  * A preview is intentionally not an input lease. A current, organization- and
  * project-scoped lease only proves that this attached target is being shared
  * by the requesting project; it does not need to belong to the viewer and it
- * is never returned to the browser or placed in a URL.
+ * is never returned to the browser or placed in a URL. Trusted local hosts
+ * may observe their attached devices before acquiring any control lease.
  */
 export async function livePreviewOperationContext(
   request: http.IncomingMessage,
@@ -36,7 +37,7 @@ export async function livePreviewOperationContext(
       lease.status === "leased" &&
       lease.expiresAt > at,
   );
-  if (!projectSharesTarget) {
+  if (!scope.localTrusted && !projectSharesTarget) {
     recordAudit(scope, {
       action: "target.preview.open",
       resource: "target",

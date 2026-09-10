@@ -50,6 +50,7 @@ export type LiveTargetSnapshot = {
 };
 
 export type LiveTargetBrowserContext = {
+  readonly pageUrl?: string;
   readonly engine: string;
   readonly viewport: { readonly width: number; readonly height: number };
   readonly locale: string;
@@ -60,6 +61,8 @@ export type LiveTargetMount = HTMLCanvasElement;
 
 export type LiveTargetInput =
   | BrowserDeviceInput
+  | { kind: "navigate"; url: string }
+  | { kind: "history"; direction: "back" | "forward" | "reload" }
   | { kind: "tap"; target: { identifier?: string; label?: string; text?: string } }
   | { kind: "touch"; action: "down" | "move" | "up" | "cancel"; x: number; y: number }
   | { kind: "key"; key: "enter" | "backspace" | "back" | "home" | "recents"; text?: string }
@@ -302,11 +305,15 @@ export function createLiveTargetSession(input: {
   let closed = false;
   let firstFrameTimer: ReturnType<typeof setTimeout> | undefined;
 
-  function browserContext(session: BrowserDeviceSession): LiveTargetBrowserContext {
+  function browserContext(
+    session: BrowserDeviceSession,
+    pageUrl?: string,
+  ): LiveTargetBrowserContext {
     const previous = current.browserContext;
     const profile = session.profile;
     if (
       previous?.engine === profile.engine &&
+      previous.pageUrl === pageUrl &&
       previous.locale === profile.locale &&
       previous.authenticationFixtureId === profile.authenticationFixtureId &&
       previous.viewport.width === profile.viewport.width &&
@@ -315,6 +322,7 @@ export function createLiveTargetSession(input: {
       return previous;
     return {
       engine: profile.engine,
+      ...(pageUrl ? { pageUrl } : {}),
       viewport: { ...profile.viewport },
       locale: session.profile.locale,
       ...(session.profile.authenticationFixtureId
@@ -433,7 +441,7 @@ export function createLiveTargetSession(input: {
           issue: session.issue,
           lastFrameAt: frame.capturedAt,
           frameSequence: frame.sequence,
-          browserContext: browserContext(session),
+          browserContext: browserContext(session, frame.pageUrl),
           accessibility,
         });
         // The binary endpoint normally waits for a newer sequence. Keep the
@@ -807,6 +815,7 @@ export function browserPreviewInput(
     pageId: frame.pageId,
     expectedSequence: frame.sequence,
   };
+  if (value.kind === "navigate" || value.kind === "history") return { ...binding, ...value };
   if (value.kind === "touch" && value.action === "up") {
     // A direct pointer gesture already selects a position on the painted
     // page. Prefer a stable control when available, but allow that position

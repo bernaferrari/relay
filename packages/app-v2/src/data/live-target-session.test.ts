@@ -117,6 +117,7 @@ describe("live target session", () => {
     expect(sessionController.snapshot()).not.toHaveProperty("frame");
     expect(snapshots.some((snapshot) => snapshot.status === "streaming")).toBe(true);
     expect(snapshots.find((snapshot) => snapshot.status === "streaming")?.browserContext).toEqual({
+      pageUrl: "https://relay.test",
       engine: "chromium",
       viewport: { width: 320, height: 240 },
       locale: "en-US",
@@ -487,6 +488,16 @@ describe("browser preview gestures", () => {
   const frame = { sessionId: "session", pageId: "page", sequence: 42 };
   const binding = { sessionId: "session", pageId: "page", expectedSequence: 42 };
   it("binds canvas clicks, typing and scrolling to the painted frame", () => {
+    expect(browserPreviewInput({ kind: "navigate", url: "https://example.com/" }, frame)).toEqual({
+      ...binding,
+      kind: "navigate",
+      url: "https://example.com/",
+    });
+    expect(browserPreviewInput({ kind: "history", direction: "forward" }, frame)).toEqual({
+      ...binding,
+      kind: "history",
+      direction: "forward",
+    });
     expect(browserPreviewInput({ kind: "touch", action: "up", x: 20, y: 30 }, frame)).toEqual({
       ...binding,
       coordinateFallback: "reviewed",
