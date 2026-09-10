@@ -677,6 +677,7 @@ export function InfiniteMapCanvas({
                   </span>
                   <div className="h-[300px] w-full shrink-0">
                     <MapScreenPreview
+                      align="top"
                       uri={screen.screenshotUri}
                       load={loadScreenshot}
                       title={screen.title}

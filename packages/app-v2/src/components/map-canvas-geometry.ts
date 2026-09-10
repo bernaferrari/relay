@@ -19,6 +19,7 @@ const MAP_PADDING = 72;
 export function containedImageRect(
   box: { x: number; y: number; width: number; height: number },
   image: ImageDimensions,
+  align: "center" | "top" = "center",
 ): { x: number; y: number; width: number; height: number } | undefined {
   if (image.width <= 0 || image.height <= 0 || box.width <= 0 || box.height <= 0) return undefined;
   const scale = Math.min(box.width / image.width, box.height / image.height);
@@ -26,7 +27,7 @@ export function containedImageRect(
   const height = image.height * scale;
   return {
     x: box.x + (box.width - width) / 2,
-    y: box.y + (box.height - height) / 2,
+    y: box.y + (align === "top" ? 0 : (box.height - height) / 2),
     width,
     height,
   };

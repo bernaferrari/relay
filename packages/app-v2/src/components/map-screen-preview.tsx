@@ -7,7 +7,9 @@ export function MapScreenPreview({
   load,
   title,
   onImageDimensions,
+  align = "center",
 }: {
+  align?: "center" | "top";
   uri?: string;
   load?: (uri: string) => Promise<Blob>;
   title: string;
@@ -43,7 +45,10 @@ export function MapScreenPreview({
   }, [preview.data]);
   const url = image?.blob === preview.data ? image?.url : undefined;
   return (
-    <div ref={container} className="flex h-full min-h-0 w-full items-center justify-center">
+    <div
+      ref={container}
+      className={`flex h-full min-h-0 w-full justify-center ${align === "top" ? "items-start" : "items-center"}`}
+    >
       {url ? (
         <img
           draggable={false}

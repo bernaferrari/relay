@@ -46,6 +46,7 @@ export function MapEdges({
             height: MAP_NODE_IMAGE_HEIGHT,
           },
           imageDimensions.get(path.fromScreenId) ?? { width: 0, height: 0 },
+          "top",
         )
       : undefined;
     const targetScreen = to ? screens.find((screen) => screen.id === path.toScreenId) : undefined;
@@ -58,6 +59,7 @@ export function MapEdges({
             height: MAP_NODE_IMAGE_HEIGHT,
           },
           imageDimensions.get(path.toScreenId!) ?? { width: 0, height: 0 },
+          "top",
         )
       : undefined;
     const anchor =
@@ -101,6 +103,26 @@ export function MapEdges({
             : to.y + MAP_NODE_HEIGHT / 2,
         }
       : { x: start.x + 116, y: start.y };
+    if (!to) {
+      const width = Math.min(240, Math.max(168, path.label.length * 6.2 + 24));
+      const left = start.x + 32;
+      return [
+        {
+          path,
+          id: `-${index}`,
+          anchor,
+          anchorRect,
+          d: `M ${start.x} ${start.y} L ${left} ${start.y}`,
+          label: { x: left + width / 2, y: start.y - 5, width },
+          bounds: {
+            minX: start.x - 24,
+            minY: start.y - 30,
+            maxX: left + width + 24,
+            maxY: start.y + 36,
+          },
+        },
+      ];
+    }
     const selfLoop = path.toScreenId === path.fromScreenId;
     const labelWidth = Math.min(180, Math.max(44, path.label.length * 6.2 + 18));
     if (selfLoop) {
@@ -249,17 +271,32 @@ export function MapEdges({
               />
             </>
           ) : null}
-          <path id={geometry.id} d={geometry.d} markerEnd={`url(#${markerId})`} />
+          <path
+            id={geometry.id}
+            d={geometry.d}
+            markerEnd={geometry.path.toScreenId ? `url(#${markerId})` : undefined}
+            strokeDasharray={geometry.path.toScreenId ? undefined : "3 4"}
+          />
           <rect
             x={geometry.label.x - geometry.label.width / 2}
             y={geometry.label.y - 14}
             width={geometry.label.width}
-            height="22"
+            height={geometry.path.toScreenId ? 22 : 44}
             rx="11"
           />
           <text x={geometry.label.x} y={geometry.label.y} textAnchor="middle">
             {geometry.path.label}
           </text>
+          {!geometry.path.toScreenId ? (
+            <text
+              x={geometry.label.x}
+              y={geometry.label.y + 17}
+              textAnchor="middle"
+              style={{ fontWeight: 400 }}
+            >
+              Destination not recorded
+            </text>
+          ) : null}
         </g>
       ))}
     </svg>
