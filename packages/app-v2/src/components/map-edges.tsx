@@ -223,24 +223,27 @@ export function MapEdges({
       }}
     >
       <defs>
-        <marker
-          id={markerId}
-          viewBox="0 0 10 10"
-          refX="8"
-          refY="5"
-          markerWidth="6"
-          markerHeight="6"
-          orient="auto-start-reverse"
-        >
-          <path
-            d="M 1 1 L 8 5 L 1 9"
-            fill="none"
-            stroke="context-stroke"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </marker>
+        {["neutral", "selected"].map((state) => (
+          <marker
+            key={state}
+            id={`${markerId}-${state}`}
+            viewBox="0 0 10 10"
+            refX="8"
+            refY="5"
+            markerWidth="6"
+            markerHeight="6"
+            orient="auto-start-reverse"
+          >
+            <path
+              d="M 1 1 L 8 5 L 1 9"
+              fill="none"
+              stroke={state === "selected" ? "var(--color-blue-400)" : "var(--text-weak)"}
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </marker>
+        ))}
       </defs>
       {geometries.map((geometry) => (
         <g
@@ -258,13 +261,9 @@ export function MapEdges({
           }
           style={{
             color:
-              selectedPathId === geometry.path.id ||
-              selectedScreenId === geometry.path.fromScreenId ||
-              selectedScreenId === geometry.path.toScreenId
-                ? "var(--color-sky-400)"
-                : "var(--text-weak)",
+              selectedPathId === geometry.path.id ? "var(--color-blue-400)" : "var(--text-weak)",
           }}
-          className="relay-map-edge [&>path]:fill-none [&>path]:stroke-current [&>path]:[stroke-linecap:round] [&>path]:stroke-[1.5] [&>path]:[vector-effect:non-scaling-stroke] [&>rect]:fill-[var(--surface-raised-stronger-non-alpha)] [&>rect]:stroke-[var(--border-weak-base)] [&>rect]:stroke-1 [&>rect]:[vector-effect:non-scaling-stroke] [&_text]:fill-[var(--text-weak)] [&_text]:font-sans [&_text]:text-[10.5px] [&_text]:font-semibold"
+          className="relay-map-edge [&>path]:fill-none [&>path]:stroke-current [&>path]:[stroke-linecap:round] [&>path]:stroke-[1.5] [&>path]:[vector-effect:non-scaling-stroke] [&>rect]:fill-[var(--surface-raised-stronger-non-alpha)] [&>rect]:stroke-[var(--border-weak-base)] [&>rect]:stroke-0 [&>rect]:[vector-effect:non-scaling-stroke] [&_text]:fill-[var(--text-weak)] [&_text]:font-sans [&_text]:text-[10.5px] [&_text]:font-normal"
         >
           {geometry.anchor ? (
             <>
@@ -294,7 +293,11 @@ export function MapEdges({
           <path
             id={geometry.id}
             d={geometry.d}
-            markerEnd={geometry.path.toScreenId ? `url(#${markerId})` : undefined}
+            markerEnd={
+              geometry.path.toScreenId
+                ? `url(#${markerId}-${selectedPathId === geometry.path.id ? "selected" : "neutral"})`
+                : undefined
+            }
             strokeDasharray={geometry.path.toScreenId ? undefined : "3 4"}
           />
           <rect
@@ -302,7 +305,7 @@ export function MapEdges({
             y={geometry.label.y - 14}
             width={geometry.label.width}
             height={geometry.path.toScreenId ? 22 : 44}
-            rx="11"
+            rx="4"
           />
           <text x={geometry.label.x} y={geometry.label.y} textAnchor="middle">
             {geometry.path.label}

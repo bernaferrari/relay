@@ -1,3 +1,4 @@
+import { MapAccessibilityOverlay } from "./map-accessibility-overlay";
 import { MapEdges } from "./map-edges";
 import {
   INITIAL_TRANSFORM,
@@ -48,6 +49,7 @@ export function InfiniteMapCanvas({
   screens,
   paths,
   loadScreenshot,
+  loadAccessibilityTree,
   onUpdateScreen,
   onRefreshScreen,
   saving = false,
@@ -61,6 +63,7 @@ export function InfiniteMapCanvas({
     patch: { title?: string; position?: MapPoint },
   ) => Promise<void>;
   loadScreenshot?: (uri: string) => Promise<Blob>;
+  loadAccessibilityTree?: (uri: string) => Promise<unknown>;
   appId: string;
   screens: readonly ProductMapScreen[];
   paths: readonly ProductMapPath[];
@@ -486,10 +489,10 @@ export function InfiniteMapCanvas({
             size="sm"
             variant={showInteractionTargets ? "secondary" : "ghost"}
             aria-pressed={showInteractionTargets}
-            title="Connect from recorded click coordinates; screens without retained coordinates use their edge."
+            title="Inspect saved accessibility controls and recorded click origins."
             onClick={() => setShowInteractionTargets((value) => !value)}
           >
-            <Scan className="size-4" /> Click origins
+            <Scan className="size-4" /> Accessibility
           </Button>
           <Button
             size="sm"
@@ -650,7 +653,7 @@ export function InfiniteMapCanvas({
               return (
                 <button
                   type="button"
-                  className={`relay-map-screen absolute flex flex-col gap-2 text-left focus-visible:outline-2 focus-visible:outline-ring${selectedNode ? " [&_img]:outline-2 [&_img]:outline-sky-400 [&_img]:outline-offset-4" : ""}`}
+                  className={`relay-map-screen absolute flex flex-col gap-2 text-left focus-visible:outline-2 focus-visible:outline-ring`}
                   key={screen.id}
                   aria-pressed={selectedNode}
                   onClick={() => {
@@ -715,12 +718,14 @@ export function InfiniteMapCanvas({
                     height: MAP_NODE_HEIGHT,
                   }}
                 >
-                  <span className="flex h-10 w-full shrink-0 items-end justify-center text-center text-[13px] font-medium leading-tight">
+                  <span
+                    className={`flex h-10 w-full shrink-0 items-end justify-center text-center text-[13px] font-medium leading-tight ${selectedNode ? "text-blue-400" : "text-muted-foreground"}`}
+                  >
                     <span className="line-clamp-2" title={screen.title}>
                       {screen.title}
                     </span>
                   </span>
-                  <div className="h-[300px] w-full shrink-0">
+                  <div className="relative h-[300px] w-full shrink-0">
                     <MapScreenPreview
                       align="top"
                       uri={screen.screenshotUri}
@@ -739,6 +744,13 @@ export function InfiniteMapCanvas({
                         });
                       }}
                     />
+                    {showInteractionTargets && selectedNode ? (
+                      <MapAccessibilityOverlay
+                        uri={screen.accessibilityTreeUri}
+                        load={loadAccessibilityTree}
+                        image={imageDimensions.get(screen.id)}
+                      />
+                    ) : null}
                   </div>
                 </button>
               );

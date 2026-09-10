@@ -25,6 +25,7 @@ export type ProductMapScreen = {
   readonly description?: string;
   readonly position?: { readonly x: number; readonly y: number };
   readonly screenshotUri?: string;
+  readonly accessibilityTreeUri?: string;
   readonly variantCount: number;
   /** Retained screenshot choices backed by canonical map evidence. */
   readonly variants: readonly ProductMapScreenVariant[];
@@ -229,6 +230,10 @@ function projectMap(map: AppMap): ProductMapOverview {
         .map((id) => map.screenVariants?.[id])
         .filter((variant) => Boolean(variant?.screenshotUri))
         .sort((a, b) => b!.updatedAt - a!.updatedAt)[0]?.screenshotUri,
+      accessibilityTreeUri: screen.variantIds
+        .map((id) => map.screenVariants?.[id])
+        .filter((variant) => Boolean(variant?.screenshotUri))
+        .sort((a, b) => b!.updatedAt - a!.updatedAt)[0]?.rawAccessibilityTree?.uri,
       variantCount: screen.variantIds.length,
       variants,
       coveringTests: [...covering.values()],

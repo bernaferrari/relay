@@ -11,6 +11,7 @@ import { acquireOwnLease } from "@relay/workflows/target-catalog";
 
 export type MapProductService = Omit<ProductMapService, "prepareRefresh"> & {
   loadScreenshot?(uri: string): Promise<Blob>;
+  loadAccessibilityTree?(uri: string): Promise<unknown>;
   prepareRefresh?(
     input: Omit<OperationInput<"app-map.screen.refresh.prepare">, "leaseId">,
   ): Promise<OperationOutput<"app-map.screen.refresh.prepare">>;
@@ -41,6 +42,15 @@ export function createMapProductService(platform: Platform): MapProductService {
       const item = await service();
       if (!item.applyRefresh) throw new Error("Screen updates are unavailable.");
       return item.applyRefresh(input);
+    },
+    async loadAccessibilityTree(uri) {
+      const match = /^relay-evidence:\/\/([a-f\d]{64})$/iu.exec(uri);
+      if (!match) throw new Error("No retained accessibility tree.");
+      const { client } = await productClientForPlatform(platform);
+      const resource = await client.binaryResource(
+        `/authoring-evidence/${match[1]}?mime=application/json`,
+      );
+      return JSON.parse(new TextDecoder().decode(new Uint8Array(resource.bytes))) as unknown;
     },
     async loadScreenshot(uri) {
       const match = /^relay-evidence:\/\/([a-f\d]{64})$/iu.exec(uri);

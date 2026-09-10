@@ -164,6 +164,7 @@ export function MapPage() {
                 <InfiniteMapCanvas
                   initialPathId={inspectedPathId}
                   loadScreenshot={mapService.loadScreenshot}
+                  loadAccessibilityTree={mapService.loadAccessibilityTree}
                   saving={updateScreen.isPending}
                   onUpdateScreen={
                     mapService.updateScreen

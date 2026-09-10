@@ -190,6 +190,7 @@ test("map projection exposes selectable variants only for canonical screenshot e
     },
   ]);
   assert.equal(overview.screens[0]?.screenshotUri, "relay-evidence://unretained");
+  assert.equal(overview.screens[0]?.accessibilityTreeUri, undefined);
 });
 
 test("map drilldowns reuse the canonical App Map snapshot and fail closed for unknown ids", async () => {
