@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fixed: `replay export` preserves deep links without `//`, including `tel:` and `mailto:`, as
+  Maestro `openLink` commands in both standalone and app-plus-link `open` actions.
 - Changed: a command whose synopsis is generated names each option with the label its declaration
   carries, so `snapshot` now shows `--depth, -d <depth>` and `--scope, -s <scope>` where it used to
   show the short aliases, and `--record` is documented under `Command flags:` instead of inside the
