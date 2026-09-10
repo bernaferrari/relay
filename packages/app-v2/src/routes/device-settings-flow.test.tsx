@@ -263,12 +263,42 @@ describe("Devices", () => {
         },
       } as BrowserSpacesProductService,
     });
-    expect(document.querySelector(".relay-recovery-state--centered")).not.toBeNull();
-    expect(document.body.textContent).toContain("Reconnect to bring this browser back into Relay.");
+    expect(document.body.textContent).toContain("Live preview");
     await click(button("Reconnect"));
     expect(opened).toEqual(["browser"]);
     expect(devices.recoveryCalls).toEqual([]);
     expect(document.body.textContent).not.toContain("Device still needs attention");
+  });
+
+  it("opens a known browser without scanning unrelated devices", async () => {
+    const selected = { kind: "browser", platform: "browser", targetId: "browser" } as const;
+    let previews = 0;
+    await renderPath("/devices/browser", {
+      productService: {
+        connect: async () => {
+          throw new Error("Must not scan physical devices");
+        },
+        presentTargets: async () => {
+          throw new Error("Must not rediscover known browser");
+        },
+        previewTarget: async (target: typeof selected): Promise<LiveTargetSession> => {
+          expect(target.targetId).toBe("browser");
+          previews++;
+          return {
+            snapshot: () => ({ status: "streaming", target: selected }),
+            subscribe: (listener) => {
+              listener({ status: "streaming", target: selected });
+              return () => undefined;
+            },
+            mount: () => () => undefined,
+            input: async () => undefined,
+            close: () => undefined,
+          };
+        },
+      } as unknown as RecordingProductService,
+    });
+    expect(previews).toBe(1);
+    expect(document.body.textContent).not.toContain("Opening the live device");
   });
 
   it("rediscovers the live target when reconnecting an unavailable preview", async () => {

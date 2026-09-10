@@ -1,3 +1,5 @@
+import { controlledMutation } from "./device-dispatch.js";
+import { InputNotDispatchedError } from "./input-not-dispatched.js";
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -42,7 +44,8 @@ test("browser mutation supervision persists completed and not-dispatched outcome
           },
         }),
       ),
-      /lease expired/u,
+      (error: unknown) =>
+        error instanceof InputNotDispatchedError && /lease expired/u.test(error.message),
     );
     assert.equal(dispatched, 0);
     assert.equal(store.health({ id: "browser-a", kind: "browser" }).input.state, "ready");
@@ -112,4 +115,31 @@ test("browser mutation supervision is required by default", async () => {
     }),
     BrowserSupervisionRequiredError,
   );
+});
+
+test("browser selector rejection remains not-dispatched through device control", async () => {
+  const store = new TargetSupervisorStore(":memory:");
+  let clicks = 0;
+  try {
+    await assert.rejects(
+      runWithTargetSupervisorStore(store, () =>
+        controlledMutation("press", () =>
+          runSupervisedBrowserMutation({
+            targetId: "ambiguous-browser",
+            intent: "New chat",
+            beforeDispatch: () => {
+              throw new Error("Browser locator was ambiguous for label");
+            },
+            dispatch: async () => {
+              clicks++;
+            },
+          }),
+        ),
+      ),
+      InputNotDispatchedError,
+    );
+    assert.equal(clicks, 0);
+  } finally {
+    store.close();
+  }
 });

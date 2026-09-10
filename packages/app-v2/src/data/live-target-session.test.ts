@@ -513,3 +513,82 @@ describe("browser preview gestures", () => {
     ).not.toHaveProperty("coordinateFallback");
   });
 });
+
+describe("browser accessibility frame alignment", () => {
+  it("drops old labels when the next visible page rejects inspection", async () => {
+    const currentSession = session();
+    let sequence = 0;
+    const invoke = vi.fn(async (id: string, value: { expectedSequence: number }) => {
+      if (id === "target.browser-device.open") return { session: currentSession };
+      if (id === "target.browser-device.frame")
+        return {
+          session: currentSession,
+          frame: {
+            sessionId: "session-1",
+            pageId: "page-1",
+            sequence: ++sequence,
+            pageUrl: "https://relay.test",
+            visualFingerprint: `page-${sequence}`,
+            capturedAt: sequence,
+            mime: "image/jpeg",
+            base64: "AQI=",
+            bytes: 2,
+            width: 320,
+            height: 240,
+          },
+        };
+      if (id === "target.browser-device.inspect") {
+        if (value.expectedSequence > 1) throw new Error("Page changed during inspection");
+        return {
+          overlay: {
+            sessionId: "session-1",
+            pageId: "page-1",
+            sequence: 1,
+            visualFingerprint: "page-1",
+            candidates: [
+              {
+                role: "button",
+                label: "Chat with ChatGPT",
+                rect: { x: 20, y: 30, width: 100, height: 30 },
+              },
+            ],
+          },
+        };
+      }
+      throw new Error(`Unexpected ${id}`);
+    });
+    const controller = createLiveTargetSession({
+      target,
+      client: {
+        connection: { url: "http://relay.test" },
+        invoke,
+        binaryResource: async () => {
+          throw new ApiError(404, "binary unavailable");
+        },
+        openStream: vi.fn(),
+      } as never,
+    });
+    vi.stubGlobal("createImageBitmap", async () => ({ width: 320, height: 240, close() {} }));
+    const frames: ReturnType<typeof controller.snapshot>[] = [];
+    controller.setAccessibilityInspection!(true);
+    controller.subscribe((snapshot) => {
+      if (snapshot.status === "streaming") frames.push(snapshot);
+      if (snapshot.frameSequence === 2) controller.close();
+    });
+    controller.mount({
+      width: 0,
+      height: 0,
+      getContext: () => ({ drawImage() {} }),
+    } as unknown as HTMLCanvasElement);
+    await vi.waitFor(() => expect(controller.snapshot().status).toBe("closed"));
+    expect(frames[0]?.accessibility?.review.items[0]?.name).toBe("Chat with ChatGPT");
+    expect(frames[1]?.accessibility).toBeUndefined();
+    expect(invoke).toHaveBeenCalledWith("target.browser-device.inspect", {
+      targetId: target.targetId,
+      sessionId: "session-1",
+      pageId: "page-1",
+      expectedSequence: 2,
+    });
+    expect(invoke.mock.calls.some(([id]) => id === "target.snapshot.capture")).toBe(false);
+  });
+});

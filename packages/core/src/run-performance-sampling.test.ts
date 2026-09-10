@@ -52,6 +52,10 @@ test("a transient performance timeout resumes sampling after the probe settles",
   let calls = 0;
   const retained: unknown[] = [];
   const errors: unknown[] = [];
+  let secondCall!: () => void;
+  const secondCallStarted = new Promise<void>((resolve) => {
+    secondCall = resolve;
+  });
   const sampler = sampleRunPerformance({
     intervalMs: 1,
     limit: 1,
@@ -62,10 +66,13 @@ test("a transient performance timeout resumes sampling after the probe settles",
       if (calls === 1) throw new Error("Performance sample timed out");
       return { cpu: 12 };
     },
-    retain: (value) => retained.push(value),
+    retain: (value) => {
+      retained.push(value);
+      secondCall();
+    },
     onError: (error) => errors.push(error),
   });
-  await delay(25);
+  await secondCallStarted;
   await sampler.stop();
   assert.equal(calls, 2);
   assert.equal(errors.length, 1);

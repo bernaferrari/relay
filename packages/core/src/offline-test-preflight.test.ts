@@ -34,6 +34,38 @@ const observation = {
   volatileSignals: [],
 };
 
+test("raw preflight defers only a unique disabled control after text entry", () => {
+  const send = {
+    role: "button",
+    label: "Send message",
+    enabled: false,
+    hittable: true,
+    rect: { x: 20, y: 100, width: 44, height: 44 },
+  };
+  function report(nodes: (typeof send)[], typed: boolean) {
+    return preflightCompiledAppMapTestOffline(
+      plan([
+        { kind: "expect-screen", screenId: "chat", screenTitle: "Chat", fingerprint: "chat" },
+        ...(typed ? [{ kind: "type" as const, text: "hello" }] : []),
+        { kind: "tap", target: { label: "Send message" } },
+      ]),
+      { rawObservationsByScreenId: { chat: [nodes] } },
+    );
+  }
+  const afterTyping = report([send], true);
+  assert.equal(afterTyping.summary.blockers, 0);
+  assert.equal(afterTyping.summary.warnings, 1);
+  assert.match(afterTyping.findings[0]!.message, /check it again before clicking/);
+  assert.equal(afterTyping.selectors[0]!.status, "absent");
+  assert.equal(report([send], false).summary.blockers, 1);
+  assert.equal(report([{ ...send, label: "Unrelated" }], true).summary.blockers, 1);
+  assert.equal(
+    report([send, { ...send, rect: { ...send.rect, y: 200 } }], true).summary.blockers,
+    1,
+  );
+  assert.equal(report([{ ...send, rect: { ...send.rect, width: 0 } }], true).summary.blockers, 1);
+});
+
 test("offline preflight blocks absent selectors but keeps flattened-tree ambiguity reviewable", () => {
   const report = preflightCompiledAppMapTestOffline(
     plan([

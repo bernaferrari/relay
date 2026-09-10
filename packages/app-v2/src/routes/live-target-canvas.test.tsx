@@ -2,7 +2,11 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { LiveTargetInput, LiveTargetBrowserContext } from "../data/live-target-session";
+import type {
+  LiveTargetInput,
+  LiveTargetBrowserContext,
+  LiveTargetStatus,
+} from "../data/live-target-session";
 import { LiveTargetCanvas } from "./live-target-canvas";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -19,6 +23,8 @@ afterEach(async () => {
 function mountCanvas(
   entries: Array<{
     issue?: string;
+    status?: LiveTargetStatus;
+    reconnect?: () => void;
     title: string;
     detail: string;
     targetPlatform?: string;
@@ -37,7 +43,7 @@ function mountCanvas(
           <LiveTargetCanvas
             key={entry.title}
             canvasRef={{ current: null }}
-            status="streaming"
+            status={entry.status ?? "streaming"}
             issue={entry.issue}
             busy={false}
             targetTitle={entry.title}
@@ -46,6 +52,10 @@ function mountCanvas(
             browserContext={entry.browserContext}
             send={entry.send}
             recording={false}
+            overlay={<span data-testid="inspection-overlay" />}
+            recoveryAction={
+              entry.reconnect ? <button onClick={entry.reconnect}>Reconnect</button> : undefined
+            }
           />
         ))}
       </div>,
@@ -55,6 +65,28 @@ function mountCanvas(
 }
 
 describe("LiveTargetCanvas", () => {
+  it("replaces stale-frame overlays with actionable connection recovery", async () => {
+    const reconnect = vi.fn();
+    const host = mountCanvas([
+      {
+        title: "Browser",
+        detail: "Chromium",
+        status: "degraded",
+        issue: "Failed to fetch",
+        send: async () => false,
+        reconnect,
+      },
+    ]);
+    expect(host.textContent).toContain("Reconnect to restore the live view");
+    expect(host.textContent).not.toContain("Failed to fetch");
+    expect(host.querySelector('[data-testid="inspection-overlay"]')).toBeNull();
+    expect(host.querySelector("canvas")!.tabIndex).toBe(-1);
+    await act(async () => {
+      host.querySelector<HTMLButtonElement>('[role="status"] button')!.click();
+    });
+    expect(reconnect).toHaveBeenCalledOnce();
+  });
+
   it("keeps interaction errors over the preview instead of adding a layout row", () => {
     const host = mountCanvas([
       {
@@ -176,7 +208,7 @@ describe("LiveTargetCanvas", () => {
       });
     }
     const button = [...host.querySelectorAll("button")].find(
-      (item) => item.textContent === "Type",
+      (item) => item.getAttribute("aria-label") === "Type text into app",
     )!;
     await fill("first draft");
     await act(async () => {

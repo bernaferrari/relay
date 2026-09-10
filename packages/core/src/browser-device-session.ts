@@ -25,10 +25,11 @@ import { resolveBrowserDeviceOpenIdentity } from "./browser-execution-identity.j
 import type { SnapshotNode } from "./device.js";
 import { runSupervisedBrowserMutation } from "./browser-mutation-supervision.js";
 import { runBrowserMutationAdmission } from "./browser-mutation-admission.js";
+import { InputNotDispatchedError } from "./input-not-dispatched.js";
 
 export type BrowserDeviceRuntimeSession = Omit<BrowserDeviceSession, "ownership">;
 
-export class BrowserDeviceConflictError extends Error {
+export class BrowserDeviceConflictError extends InputNotDispatchedError {
   constructor(
     readonly code:
       | "BROWSER_STALE_INPUT"

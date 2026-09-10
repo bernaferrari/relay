@@ -3,13 +3,14 @@ import { bindNativeDeviceMutations } from "./device-mutation-adapter.js";
 import * as observationDevice from "./device-observation-membrane.js";
 import {
   currentIosDeviceSerial,
+  IosMutationOutcomeUnknownError,
   runIosMutationOnce,
   type IosMutationOperation,
 } from "./ios-mutation-policy.js";
 import { cooperativeCheckpoint, raceCancel, throwIfCancelled } from "./control.js";
 import { withRetry, type RetryOptions } from "./retry.js";
 import { currentTargetContext, selectedPlatform } from "./target-context.js";
-import { InputOutcomeUnknownError } from "./input-not-dispatched.js";
+import { InputNotDispatchedError, InputOutcomeUnknownError } from "./input-not-dispatched.js";
 import { iosSelectorWasNotDispatched } from "./ios-mutation-policy.js";
 import { isTargetUnavailableError } from "./target-unavailable.js";
 
@@ -92,7 +93,10 @@ export async function controlledMutation<T>(
   } catch (error) {
     if (
       error instanceof Error &&
-      (error.name === "JobCancelledError" ||
+      (error instanceof IosMutationOutcomeUnknownError ||
+        error instanceof InputOutcomeUnknownError ||
+        error instanceof InputNotDispatchedError ||
+        error.name === "JobCancelledError" ||
         iosSelectorWasNotDispatched(error) ||
         isTargetUnavailableError(error))
     ) {

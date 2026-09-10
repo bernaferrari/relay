@@ -1,3 +1,5 @@
+import type { TalkBackCaptureResult } from "./talkback-overlay";
+import { reviewAndroidTalkBack } from "@relay/protocol";
 import { RecordingInputNotSentError } from "./recording-input-outcome";
 import type { BinaryResource, RelayClient } from "@relay/client";
 import type {
@@ -44,6 +46,7 @@ export type LiveTargetSnapshot = {
   readonly frameSequence?: number;
   /** Safe metadata from the current live browser session. Credentials are never included. */
   readonly browserContext?: LiveTargetBrowserContext;
+  readonly accessibility?: TalkBackCaptureResult;
 };
 
 export type LiveTargetBrowserContext = {
@@ -73,6 +76,7 @@ export type LiveTargetSession = {
   /** Start transport and paint the newest frames into the supplied canvas. */
   mount(canvas: LiveTargetMount): () => void;
   input(input: LiveTargetInput): Promise<void>;
+  setAccessibilityInspection?(enabled: boolean): void;
   close(): void;
 };
 
@@ -293,6 +297,7 @@ export function createLiveTargetSession(input: {
   let controller: AbortController | undefined;
   let browserSession: BrowserDeviceSession | undefined;
   let browserFrame: BrowserDeviceFrame | undefined;
+  let inspectAccessibility = false;
   let streamTask: Promise<void> | undefined;
   let closed = false;
   let firstFrameTimer: ReturnType<typeof setTimeout> | undefined;
@@ -396,14 +401,40 @@ export function createLiveTargetSession(input: {
           bytes = base64ToBytes(frame.base64);
         }
         browserSession = session;
-        browserFrame = frame;
+        let accessibility: TalkBackCaptureResult | undefined;
+        if (inspectAccessibility) {
+          try {
+            const { overlay } = await input.client.invoke("target.browser-device.inspect", {
+              targetId,
+              sessionId: frame.sessionId,
+              pageId: frame.pageId,
+              expectedSequence: frame.sequence,
+            });
+            if (
+              overlay.sessionId === frame.sessionId &&
+              overlay.pageId === frame.pageId &&
+              overlay.sequence === frame.sequence &&
+              overlay.visualFingerprint === frame.visualFingerprint
+            ) {
+              accessibility = {
+                inspectable: true,
+                bounds: { width: frame.width, height: frame.height },
+                review: reviewAndroidTalkBack(overlay.candidates),
+              };
+            }
+          } catch {
+            // A navigating page can reject inspection; show pixels without old labels.
+          }
+        }
         if (canvas) await drawJpeg(canvas, bytes);
+        browserFrame = frame;
         publish({
           status: "streaming",
           issue: session.issue,
           lastFrameAt: frame.capturedAt,
           frameSequence: frame.sequence,
           browserContext: browserContext(session),
+          accessibility,
         });
         // The binary endpoint normally waits for a newer sequence. Keep the
         // compatibility JSON path bounded as well when an older server returns
@@ -663,6 +694,9 @@ export function createLiveTargetSession(input: {
       };
     },
     input: send,
+    setAccessibilityInspection(enabled) {
+      inspectAccessibility = enabled;
+    },
     close() {
       if (closed) return;
       closed = true;

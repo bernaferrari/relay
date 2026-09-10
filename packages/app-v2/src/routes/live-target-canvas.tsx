@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
-import { ChevronLeft, Circle, Square, MonitorSmartphone } from "lucide-react";
+import { ArrowUp, ChevronLeft, Circle, Square, MonitorSmartphone } from "lucide-react";
 import {
   useEffect,
   useRef,
@@ -38,6 +38,8 @@ export function LiveTargetCanvas({
   toolbar,
   showTargetDetails = true,
   targetPlatform,
+  recoveryAction,
+  issueAction,
 }: {
   canvasRef: RefObject<HTMLCanvasElement | null>;
   status: LiveTargetStatus;
@@ -54,6 +56,8 @@ export function LiveTargetCanvas({
   toolbar?: ReactNode;
   showTargetDetails?: boolean;
   targetPlatform?: string;
+  recoveryAction?: ReactNode;
+  issueAction?: ReactNode;
 }) {
   const [text, setText] = useState("");
   const helpId = `${useId()}-help`;
@@ -231,28 +235,38 @@ export function LiveTargetCanvas({
         />
         {!streaming ? (
           <div
-            className="absolute inset-0 grid place-items-center content-center gap-3 bg-muted/60 p-6 text-center"
+            className="absolute inset-0 z-10 flex items-center justify-center bg-background p-8 text-center text-foreground"
             role="status"
           >
-            <span
-              className="grid size-12 place-items-center rounded-xl border border-border bg-background text-muted-foreground [&>svg]:size-6"
-              aria-hidden="true"
-            >
-              <MonitorSmartphone />
-            </span>
-            <h2>{issue ? "The live view needs attention" : "Connecting"}</h2>
-            <p>{issue ?? "The app will appear here when the Device is ready."}</p>
+            <div className="flex max-w-sm flex-col items-center gap-2">
+              <span
+                className="mb-3 grid size-11 place-items-center rounded-full bg-muted text-muted-foreground [&>svg]:size-5"
+                aria-hidden="true"
+              >
+                <MonitorSmartphone />
+              </span>
+              <h2 className="text-base font-medium">
+                {issue ? "Live view unavailable" : "Connecting to live view…"}
+              </h2>
+              <p className="text-sm leading-relaxed text-muted-foreground">
+                {issue && /failed to fetch|networkerror|load failed/iu.test(issue)
+                  ? "Relay lost the connection. Reconnect to restore the live view."
+                  : (issue ?? "The app will appear here once connected.")}
+              </p>
+              {issue && recoveryAction ? <div className="mt-4">{recoveryAction}</div> : null}
+            </div>
           </div>
         ) : null}
-        {overlay}
+        {streaming ? overlay : null}
         {streaming && issue ? (
           <div className="pointer-events-none absolute inset-x-3 bottom-3 z-20 flex justify-center">
-            <p
+            <div
               role="status"
-              className="max-w-md rounded-lg bg-background/95 px-4 py-3 text-center text-sm shadow-sm ring-1 ring-border"
+              className="pointer-events-auto flex max-w-lg items-center gap-3 rounded-lg bg-background px-4 py-3 text-sm shadow-sm ring-1 ring-border"
             >
-              {issue}
-            </p>
+              <p className="min-w-0 flex-1 leading-relaxed">{issue}</p>
+              {issueAction}
+            </div>
           </div>
         ) : null}
       </div>
@@ -317,6 +331,7 @@ export function LiveTargetCanvas({
             Text to type into the focused field
           </label>
           <Input
+            className="h-11 rounded-full pr-14"
             id={textInputId}
             value={text}
             onChange={(event) => setText(event.currentTarget.value)}
@@ -333,11 +348,14 @@ export function LiveTargetCanvas({
           />
           <Button
             type="button"
-            variant="outline"
+            size="icon-sm"
+            className="-ml-12 mr-1 size-9 shrink-0 rounded-full"
+            aria-label="Type text into app"
+            title="Type text into the focused field"
             disabled={!text || !streaming || busy}
             onClick={typeText}
           >
-            Type
+            <ArrowUp className="size-4" aria-hidden="true" />
           </Button>
         </div>
       </div>

@@ -6,6 +6,7 @@ import type { SnapshotNode } from "./device.js";
 import { isLegacyPositionalBrowserRef } from "./browser-locator-contract.js";
 
 export function nodeText(node: SnapshotNode): string[] {
+  if (node.content !== undefined) return node.content ? [node.content.trim()] : [];
   const type = (node.type ?? node.role ?? "").toLowerCase();
   const value = typeof node.value === "string" ? node.value.trim() : "";
   if (["textfield", "textview", "searchfield", "securetextfield"].includes(type)) {
@@ -35,7 +36,9 @@ export function nodeMatchesTarget(node: SnapshotNode, target: StepTarget): boole
   if (target.label && node.label === target.label) return true;
   if (target.text) {
     const query = target.text.toLowerCase();
-    return nodeText(node).some((value) => value.toLowerCase().includes(query));
+    return [...nodeText(node), ...(node.content !== undefined ? [node.label ?? ""] : [])].some(
+      (value) => value.toLowerCase().includes(query),
+    );
   }
   return false;
 }

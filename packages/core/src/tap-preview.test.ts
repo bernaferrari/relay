@@ -78,7 +78,8 @@ test("annotating a Retina frame lands its ring on the tapped control", () => {
   const marked = annotateTapPreview(original, { x: 40, y: 40 }, { width: 80, height: 80 });
   const before = PNG.sync.read(original);
   const after = PNG.sync.read(marked);
-  assert.notEqual(after.data[(160 * 80 + 96) << 2], before.data[(160 * 80 + 96) << 2]);
+  assert.notEqual(after.data[(160 * 80 + 80) << 2], before.data[(160 * 80 + 80) << 2]);
+  assert.equal(after.data[(160 * 40 + 40) << 2], before.data[(160 * 40 + 40) << 2]);
 });
 
 test("preview paints a ring without changing the rest of the frame", () => {
@@ -88,7 +89,7 @@ test("preview paints a ring without changing the rest of the frame", () => {
   const after = PNG.sync.read(marked);
   assert.equal(after.width, 80);
   assert.equal(after.height, 80);
-  const onRing = (80 * 40 + 56) << 2;
+  const onRing = (80 * 40 + 40) << 2;
   assert.notEqual(after.data[onRing], before.data[onRing]);
   const corner = (80 * 2 + 2) << 2;
   assert.equal(after.data[corner], before.data[corner]);
@@ -116,6 +117,7 @@ test("preview can outline a resolved control bounds", () => {
   });
   const before = PNG.sync.read(original);
   const after = PNG.sync.read(marked);
-  const edge = (80 * 20 + 30) << 2;
+  // The outline sits outside the control so it does not obscure its text.
+  const edge = (80 * 17 + 40) << 2;
   assert.notEqual(after.data[edge], before.data[edge]);
 });

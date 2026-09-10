@@ -148,6 +148,8 @@ async function waitForResponseCompletion(
   let stableSince: number | undefined = startedAt;
   let samples = 1;
   let lastSignals: string[] = startedAt ? ["response-started", "idle-visible"] : [];
+  const pollDiagnostics: Array<Record<string, unknown>> = [];
+  const firstPollDiagnostics: Array<Record<string, unknown>> = [];
 
   if (startedAt) {
     ctx.log(`response completion: content already complete (${initialText.length} characters)`);
@@ -170,6 +172,11 @@ async function waitForResponseCompletion(
         observedCharacters: text.length,
         usedBusyTarget: Boolean(step.busyTarget),
         usedIdleTarget: Boolean(step.idleTarget),
+        pollDiagnostics: [
+          ...new Map(
+            [...firstPollDiagnostics, ...pollDiagnostics].map((entry) => [entry.sample, entry]),
+          ).values(),
+        ],
       },
     });
   };
@@ -180,6 +187,19 @@ async function waitForResponseCompletion(
     const nodes = await snapshot(device);
     samples += 1;
     const text = textForTarget(nodes, step.target);
+    const matched = nodes.filter((node) => nodeMatchesTarget(node, step.target));
+    const diagnostic = {
+      sample: samples,
+      characters: text.length,
+      matchedCount: matched.length,
+      matchedNodes: matched.slice(0, 8).map((node) => ({
+        role: node.role ?? node.type,
+        ...(node.identifier ? { identifier: node.identifier } : {}),
+      })),
+    };
+    if (firstPollDiagnostics.length < 3) firstPollDiagnostics.push(diagnostic);
+    pollDiagnostics.push(diagnostic);
+    if (pollDiagnostics.length > 3) pollDiagnostics.shift();
     const changedFromInitial = text.length > 0 && text !== initialText;
     const idleVisible = step.idleTarget
       ? nodes.some((node) => nodeMatchesTarget(node, step.idleTarget!))

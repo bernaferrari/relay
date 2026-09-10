@@ -32,7 +32,7 @@ test("cold App Map startup fails with an actionable error when origin app is unb
         undefined,
         () => undefined,
       ),
-      /no saved origin application.*Open the mapped origin explicitly.*remember it/u,
+      /Choose a starting app in Test settings before using Restart app/u,
     );
   } finally {
     if (previousRoot === undefined) delete process.env.RELAY_WORKSPACE_ROOT;

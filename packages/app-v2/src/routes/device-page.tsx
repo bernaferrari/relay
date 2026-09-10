@@ -9,10 +9,11 @@ import {
   useNavigate,
 } from "@tanstack/react-router";
 import { RotateCcw } from "lucide-react";
-import { useEffect, useRef, useState, type FormEvent, type RefObject } from "react";
+import { useEffect, useRef, useState, type FormEvent, type RefObject, type ReactNode } from "react";
 import { WorkbenchPage, PageHeader } from "../components/page-layout";
 import { EmptyState, RecoveryState } from "../components/product-patterns";
 import { deviceSummaryLine } from "../data/device-label";
+import { liveInputRecovery } from "../data/live-input-recovery";
 import {
   deviceQueryKeys,
   type DeviceProductService,
@@ -56,9 +57,11 @@ export function DevicePage() {
   const canvas = useRef<HTMLCanvasElement>(null);
   const session = useRef<LiveTargetSession | undefined>(undefined);
   const [liveStatus, setLiveStatus] = useState<LiveTargetStatus>("idle");
+  const [browserAccessibility, setBrowserAccessibility] =
+    useState<import("../data/talkback-overlay").TalkBackCaptureResult>();
   const [browserContext, setBrowserContext] = useState<LiveTargetBrowserContext>();
   const [liveIssue, setLiveIssue] = useState<string>();
-  const [inputIssue, setInputIssue] = useState<string>();
+  const [inputIssue, setInputIssue] = useState<ReturnType<typeof liveInputRecovery>>();
   const inputPending = useRef(false);
   const [liveBusy, setLiveBusy] = useState(false);
   const [liveAttempt, setLiveAttempt] = useState(0);
@@ -80,7 +83,7 @@ export function DevicePage() {
     staleTime: 5_000,
   });
   const talkBack = useTalkBackReview({
-    enabled: Boolean(device.data?.serial),
+    enabled: Boolean(device.data?.serial) && device.data?.platform !== "browser",
     serial: device.data?.serial,
     capture: productService.reviewTalkBack,
     refreshKey: talkBackRefresh,
@@ -103,6 +106,7 @@ export function DevicePage() {
       return deviceService.recover(device.data.serial, "connect");
     },
     onSuccess: async () => {
+      setInputIssue(undefined);
       await queryClient.invalidateQueries({ queryKey: deviceQueryKeys.devices });
       setLiveAttempt((value) => value + 1);
     },
@@ -139,6 +143,15 @@ export function DevicePage() {
   const target = useQuery({
     queryKey: ["devices", deviceId, "live-target"],
     queryFn: async () => {
+      if (device.data?.platform === "browser") {
+        return {
+          kind: "browser" as const,
+          platform: "browser" as const,
+          targetId: device.data.id,
+          name: device.data.name,
+          detail: "Managed browser",
+        };
+      }
       const connected = await productService.connect();
       if (connected.recovery) return null;
       const options = await productService.presentTargets(connected.targets);
@@ -170,15 +183,18 @@ export function DevicePage() {
     setInputIssue(undefined);
     setLiveStatus("connecting");
     setBrowserContext(undefined);
+    setBrowserAccessibility(undefined);
     void createPreview(target.data)
       .then((next) => {
         if (disposed || !canvas.current) return next.close();
         mounted = next;
         session.current = next;
+        next.setAccessibilityInspection?.(talkBack.on);
         unsubscribe = next.subscribe((state) => {
           setLiveStatus(state.status);
           setLiveIssue(state.issue ? friendlyLiveIssue(state.issue) : undefined);
           setBrowserContext(state.browserContext);
+          setBrowserAccessibility(state.accessibility);
         });
         unmount = next.mount(canvas.current);
       })
@@ -197,6 +213,10 @@ export function DevicePage() {
     };
   }, [liveAttempt, productService, target.data]);
 
+  useEffect(() => {
+    session.current?.setAccessibilityInspection?.(talkBack.on);
+  }, [talkBack.on]);
+
   async function send(input: Parameters<LiveTargetSession["input"]>[0]) {
     if (!session.current) {
       setLiveIssue("The live view is still connecting.");
@@ -210,10 +230,8 @@ export function DevicePage() {
       setInputIssue(undefined);
       setTalkBackRefresh((count) => count + 1);
       return true;
-    } catch {
-      setInputIssue(
-        "The interaction could not be completed. Reconnect the live view before trying again.",
-      );
+    } catch (error) {
+      setInputIssue(liveInputRecovery(error));
       return false;
     } finally {
       inputPending.current = false;
@@ -367,14 +385,43 @@ export function DevicePage() {
               target={target.data ?? undefined}
               browserContext={browserContext}
               status={liveStatus}
-              issue={inputIssue ?? liveIssue}
+              issue={inputIssue?.message ?? liveIssue}
+              issueAction={
+                inputIssue ? (
+                  inputIssue.reconnect ? (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => recover.mutate()}
+                      disabled={recover.isPending}
+                    >
+                      {recover.isPending ? "Reconnecting…" : "Reconnect"}
+                    </Button>
+                  ) : (
+                    <Button size="sm" variant="ghost" onClick={() => setInputIssue(undefined)}>
+                      Dismiss
+                    </Button>
+                  )
+                ) : undefined
+              }
               busy={liveBusy}
               reconnect={() => {
                 recover.mutate();
               }}
               send={send}
-              pending={target.isPending || recover.isPending}
-              talkBack={talkBack}
+              pending={target.isPending}
+              reconnecting={recover.isPending}
+              talkBack={
+                device.data?.platform === "browser"
+                  ? {
+                      ...talkBack,
+                      inspection: {
+                        overlayItems: browserAccessibility?.review.items ?? [],
+                        bounds: browserAccessibility?.bounds,
+                      },
+                    }
+                  : talkBack
+              }
             />
           ) : null}
           <aside
@@ -612,6 +659,8 @@ function DeviceLivePreview({
   reconnect,
   send,
   pending,
+  reconnecting,
+  issueAction,
   talkBack,
 }: {
   platform: string;
@@ -624,6 +673,8 @@ function DeviceLivePreview({
   reconnect: () => void;
   send: (input: LiveTargetInput) => Promise<boolean>;
   pending: boolean;
+  reconnecting: boolean;
+  issueAction?: ReactNode;
   talkBack: ReturnType<typeof useTalkBackReview>;
 }) {
   if (pending) return <PageLoading label="Opening the live device…" />;
@@ -655,15 +706,18 @@ function DeviceLivePreview({
         <h2 className="text-[13px] font-medium" id="device-live-title">
           Live preview
         </h2>
-        <Button size="sm" variant="ghost" onClick={reconnect}>
-          <RotateCcw aria-hidden="true" /> Reconnect
-        </Button>
+        {status === "streaming" || !issue ? (
+          <Button size="sm" variant="ghost" onClick={reconnect} disabled={reconnecting}>
+            <RotateCcw aria-hidden="true" /> Reconnect
+          </Button>
+        ) : null}
       </div>
       <div className="min-h-0 flex-1">
         <LiveTargetCanvas
           canvasRef={canvas}
           status={status}
           issue={issue}
+          issueAction={issueAction}
           busy={busy}
           targetTitle={target.name}
           targetDetail={target.detail}
@@ -672,6 +726,11 @@ function DeviceLivePreview({
           recording={false}
           showTargetDetails={false}
           targetPlatform={platform}
+          recoveryAction={
+            <Button size="sm" onClick={reconnect} disabled={reconnecting}>
+              <RotateCcw aria-hidden="true" /> {reconnecting ? "Reconnecting…" : "Reconnect"}
+            </Button>
+          }
           helpText=""
           overlay={
             talkBack.on && talkBack.mode !== "off" ? (
@@ -697,6 +756,9 @@ function DeviceLivePreview({
 }
 
 function friendlyLiveIssue(message: string): string {
+  if (/failed to fetch|networkerror|load failed|browser device is not open/iu.test(message)) {
+    return "Relay lost the connection. Reconnect to restore the live view.";
+  }
   if (/locked|unlock|view only/iu.test(message)) return "Unlock the device, then reconnect.";
   if (/packet|transport|codec|decode|base64|operation|targetid/iu.test(message)) {
     return "Relay could not show the live view. Keep the device connected, then reconnect.";

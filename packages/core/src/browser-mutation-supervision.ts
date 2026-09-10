@@ -1,3 +1,4 @@
+import { InputNotDispatchedError } from "./input-not-dispatched.js";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomUUID } from "node:crypto";
 import { currentOperationContext } from "./operation-context.js";
@@ -105,7 +106,8 @@ export async function runSupervisedBrowserMutation<T>(input: {
         // The original pre-dispatch failure remains authoritative. A store
         // failure cannot turn it into permission to issue browser input.
       }
-      throw error;
+      if (error instanceof InputNotDispatchedError) throw error;
+      throw new InputNotDispatchedError(reason(error), { cause: error });
     }
     try {
       store.transition(target, {

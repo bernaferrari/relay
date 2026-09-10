@@ -142,6 +142,9 @@ export async function snapshotBrowserPage(page: Page, maxNodes = 256): Promise<S
         const role = element.getAttribute("role") || element.tagName.toLowerCase();
         const identifier = element.getAttribute("data-testid") || element.id || undefined;
         const hittable = element.matches(options.interactive);
+        const renderedText = html.innerText?.trim() ?? "";
+        const formControl = /^(INPUT|TEXTAREA|SELECT)$/u.test(element.tagName);
+        const renderedContent = formControl ? String(input.value ?? "") : renderedText;
         const label =
           element.getAttribute("aria-label") ||
           element.getAttribute("title") ||
@@ -155,7 +158,11 @@ export async function snapshotBrowserPage(page: Page, maxNodes = 256): Promise<S
           role,
           type: role,
           label: label.slice(0, 500),
-          value: input.type === "password" ? "••••••••" : String(input.value ?? "").slice(0, 500),
+          content: (input.type === "password" ? "••••••••" : renderedContent).slice(0, 500),
+          value:
+            input.type === "password"
+              ? "••••••••"
+              : String(formControl ? (input.value ?? "") : renderedText).slice(0, 500),
           identifier: identifier && identifierCounts.get(identifier) === 1 ? identifier : undefined,
           enabled: !(input.disabled || element.getAttribute("aria-disabled") === "true"),
           selected: element.getAttribute("aria-selected") === "true",

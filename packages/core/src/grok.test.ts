@@ -7,6 +7,7 @@ import type { Device } from "./device.js";
 import { loginGoogle, logout, postLoginNotifications } from "./grok.js";
 import { IosMutationOutcomeUnknownError } from "./ios-mutation-policy.js";
 import { runWithTargetContext } from "./target-context.js";
+import { InputNotDispatchedError } from "./input-not-dispatched.js";
 
 type PressCall = { selector?: string; x?: number; y?: number };
 type FindCall = { query?: string; action?: string };
@@ -153,7 +154,8 @@ test("logout never coordinate-presses after its fallback find becomes ambiguous"
   const { device, presses, finds } = grokDevice({
     labels: ["Menu", "Settings"],
     press: (call) => {
-      if (call.selector === 'label="Settings"') throw new Error("semantic label unavailable");
+      if (call.selector === 'label="Settings"')
+        throw new InputNotDispatchedError("semantic label unavailable");
     },
     click: (call) => {
       if (call.query === "Settings") throw unknownIosPress();
@@ -182,7 +184,7 @@ test("an ordinary notification label failure still uses its existing find fallba
     labels: ["Enable notifications", "Allow"],
     press: (call) => {
       if (call.selector === 'label="Enable notifications"') {
-        throw new Error("semantic label unavailable");
+        throw new InputNotDispatchedError("semantic label unavailable");
       }
     },
   });

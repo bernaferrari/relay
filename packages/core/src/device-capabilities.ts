@@ -76,6 +76,8 @@ export type Device = {
 export type SnapshotNode = {
   label?: string;
   value?: string;
+  /** Rendered browser text, separate from an accessible name in `label`. */
+  content?: string;
   /** Android content-desc. Distinct from visible text so TalkBack review can
    * tell what the screen reader will speak. */
   description?: string;

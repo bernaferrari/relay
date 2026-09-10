@@ -18,6 +18,7 @@ import { clearControl, JobCancelledError, requestCancel, runWithJobControl } fro
 import { captureFullSurfaceEvidence } from "./discovery-surface.js";
 import { dismissTowardParent } from "./explore.js";
 import { postLoginNotifications } from "./grok.js";
+import { InputNotDispatchedError } from "./input-not-dispatched.js";
 import { openPhysicalIosApp } from "./ios-app-open.js";
 import { runWithIosSupervisionMode } from "./ios-mutation-policy.js";
 import { runRecipeStep } from "./recipe-runner.js";
@@ -328,7 +329,7 @@ function grokNotificationDevice(
         );
         if (input.selector === 'label="Enable notifications"') {
           if (outcome === "unknown") throw unknownIosMutation("press");
-          throw new Error("semantic label unavailable");
+          throw new InputNotDispatchedError("semantic label unavailable");
         }
       },
       find: async (input: { query?: string; action?: string }) => {

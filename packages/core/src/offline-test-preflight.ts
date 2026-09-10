@@ -74,6 +74,7 @@ function selectorAssessment(input: {
   rawVariants?: readonly AppMapCompiledRawAccessibilityVariant[];
   rawTargetProfiles?: readonly AppMapCompiledRawAccessibilityTargetProfile[];
   selectedTargetProfileId?: string;
+  postTextMutation?: boolean;
 }): SelectorAssessment {
   const {
     recipeId,
@@ -88,6 +89,7 @@ function selectorAssessment(input: {
     rawVariants,
     rawTargetProfiles,
     selectedTargetProfileId,
+    postTextMutation = false,
   } = input;
   const target = step.target;
   const description = targetDescription(target);
@@ -348,6 +350,26 @@ function selectorAssessment(input: {
     const ambiguous = blockedAttempts.find((attempt) => attempt.code === "ambiguous");
     const headingOnly = blockedAttempts.find((attempt) => attempt.code === "heading-only-noop");
     const detail = ambiguous?.detail ?? headingOnly?.detail ?? blockedAttempts[0]?.detail;
+    const needsPostTextCheck =
+      postTextMutation &&
+      step.kind === "tap" &&
+      !ambiguous &&
+      !target.relation &&
+      attempts.some(({ source }) => {
+        if (variantScope.state === "selected" && !sourceIsSelectedVariant(source)) return false;
+        const matches = (source.nodes ?? []).filter(
+          (node) =>
+            matchesTarget([{ ...node, role: node.role ?? node.type ?? "" }], target).length > 0,
+        );
+        const candidate = matches.length === 1 ? matches[0] : undefined;
+        return Boolean(
+          candidate?.enabled === false &&
+          candidate.hittable === true &&
+          candidate.rect &&
+          candidate.rect.width > 0 &&
+          candidate.rect.height > 0,
+        );
+      });
     return {
       selector: {
         ...selectorBase,
@@ -360,12 +382,14 @@ function selectorAssessment(input: {
       },
       findings: [
         {
-          severity: hasReviewedFallback ? "warning" : "blocker",
+          severity: needsPostTextCheck || hasReviewedFallback ? "warning" : "blocker",
           code: ambiguous ? "selector-ambiguous" : "selector-absent",
           recipeId,
           ...(step.id ? { recipeStepId: step.id } : {}),
           ...(rawSourcesMetadata.length ? { evidence: rawSourcesMetadata } : {}),
-          message: `${description} cannot be activated from frozen raw accessibility evidence${detail ? `: ${detail}` : ""}${hasReviewedFallback ? "; a reviewed fallback needs live confirmation" : ""}.`,
+          message: needsPostTextCheck
+            ? `${description} is disabled in the saved initial screen. A preceding text entry may enable it; Relay must resolve and check it again before clicking.`
+            : `${description} cannot be activated from frozen raw accessibility evidence${detail ? `: ${detail}` : ""}${hasReviewedFallback ? "; a reviewed fallback needs live confirmation" : ""}.`,
         },
       ],
     };
@@ -677,8 +701,10 @@ export function preflightCompiledAppMapTestOffline(
     let observations: Array<{ nodes: NormalizedSemanticNode[] }> = [];
     let sourceScreenId: string | undefined;
     let sourceScreenTitle: string | undefined;
+    let postTextMutation = false;
     for (const [stepIndex, step] of recipe.steps.entries()) {
       if (step.kind === "expect-screen") {
+        postTextMutation = false;
         observations = step.observations ?? [];
         sourceScreenId = step.screenId;
         sourceScreenTitle = step.screenTitle;
@@ -777,9 +803,11 @@ export function preflightCompiledAppMapTestOffline(
             Object.hasOwn(evidence.rawEvidenceStatusByScreenId ?? {}, sourceScreenId))
             ? { rawEvidenceDeclared: true }
             : {}),
+          postTextMutation,
         });
         selectors.push(assessment.selector);
         findings.push(...assessment.findings);
+        if (step.kind === "tap" || step.kind === "reveal") postTextMutation = false;
         if (assessment.rawEvidenceRecapture && sourceScreenId) {
           recordRawEvidenceRecapture({
             screenId: sourceScreenId,
@@ -808,7 +836,9 @@ export function preflightCompiledAppMapTestOffline(
         }
         continue;
       }
+      if (step.kind === "type") postTextMutation = true;
       if (step.kind === "key" || step.kind === "swipe" || step.kind === "app") {
+        postTextMutation = false;
         cursorTimeline.push({
           recipeId: recipe.id,
           ...(step.id ? { recipeStepId: step.id } : {}),
