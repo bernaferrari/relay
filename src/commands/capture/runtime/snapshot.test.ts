@@ -82,6 +82,41 @@ test('runtime snapshot upgrades an absent truncation flag only for producers tha
   }
 });
 
+test('runtime snapshot recognizes equivalent bounds and still updates its baseline', async () => {
+  let stored: Parameters<CommandSessionStore['set']>[0] | undefined;
+  let rect = { x: 10, y: 20, width: 100, height: 40 };
+  const device = createAgentDevice({
+    backend: createSnapshotBackend(() => ({
+      snapshot: makeSnapshotState([{ index: 0, depth: 0, type: 'Button', label: 'Save', rect }], {
+        comparisonSafe: true,
+      }),
+    })),
+    artifacts: createLocalArtifactAdapter(),
+    sessions: {
+      get: () => stored,
+      set: (record) => {
+        stored = record;
+      },
+    },
+    policy: localCommandPolicy(),
+  });
+
+  await device.capture.snapshot({ session: 'default' });
+  rect = { height: 40, width: 100, y: 20, x: 10 };
+  const repeated = await device.capture.snapshot({ session: 'default' });
+
+  assert.equal(repeated.unchanged?.nodeCount, 1);
+  assert.equal(stored?.snapshot?.nodes, repeated.nodes);
+
+  const forced = await device.capture.snapshot({ session: 'default', forceFull: true });
+  assert.equal(forced.unchanged, undefined);
+
+  rect = { ...rect, x: 11 };
+  const moved = await device.capture.snapshot({ session: 'default' });
+  assert.equal(moved.unchanged, undefined);
+  assert.equal(stored?.snapshot?.nodes[0]?.rect?.x, 11);
+});
+
 test('runtime snapshot uses the Appium sparse-tree disclosure for Appium acquisition', async () => {
   const device = createSnapshotOnlyDevice({
     snapshot: {
