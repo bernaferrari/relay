@@ -2,9 +2,15 @@ import crypto from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { isMacOs, type DeviceInfo } from '@agent-device/kernel/device';
-import { AppError } from '@agent-device/kernel/errors';
+import {
+  AppError,
+  createRequestCanceledError,
+  isRequestCanceledError,
+} from '@agent-device/kernel/errors';
 import {
   createTtlMemo,
+  Deadline,
+  isCommandTimeoutError,
   isEnvTruthy,
   findProjectRoot,
   readVersion,
@@ -12,6 +18,7 @@ import {
   type TtlMemo,
 } from './host.ts';
 import {
+  COLD_TOOLCHAIN_PROBE_TIMEOUT_MS,
   resolveRunnerBuildDestinationFamily,
   resolveRunnerDerivedBaseName,
   resolveRunnerPlatformName,
@@ -24,7 +31,13 @@ const RUNNER_DERIVED_ROOT = path.join(os.homedir(), '.agent-device', 'apple-runn
 export const RUNNER_CACHE_METADATA_FILE = '.agent-device-runner-cache.json';
 const RUNNER_CACHE_SCHEMA_VERSION = 2;
 const RUNNER_CACHE_METADATA_VALUE_MAX_LENGTH = 300;
-const TOOLCHAIN_PROBE_TIMEOUT_MS = 5_000;
+
+/**
+ * Ceiling on the wall clock the whole toolchain fingerprint may spend, across all three
+ * probes and their retries, when the owning phase carries no shorter budget: one stalled
+ * probe, its warm retry, and the two probes still to run (#2422).
+ */
+const TOOLCHAIN_FINGERPRINT_BUDGET_MS = 45_000;
 const TOOLCHAIN_PROBE_MAX_BUFFER = 128 * 1024;
 const TOOLCHAIN_PROBE_DETAIL_MAX_LENGTH = 200;
 const TOOLCHAIN_PROBE_HINT =
@@ -52,6 +65,85 @@ type ToolchainProbeFailure = {
   reason: 'probe_error' | 'nonzero_exit' | 'empty_output' | 'unparsable_output';
   detail: string;
 };
+
+/**
+ * The one clock a runner phase spends, created once per phase and read with
+ * {@link requireRunnerPhaseRemainingMs}; `undefined` for a caller carrying no budget.
+ */
+export function createRunnerPhaseDeadline(timeoutMs: number | undefined): Deadline | undefined {
+  if (timeoutMs === undefined || !Number.isFinite(timeoutMs)) return undefined;
+  return Deadline.fromTimeoutMs(Math.max(0, timeoutMs));
+}
+
+/**
+ * What the phase has left for its next step, or `fallbackTimeoutMs` when it carries no
+ * deadline. Throws rather than returning zero, so a spent phase fails before it spawns.
+ */
+export function requireRunnerPhaseRemainingMs(
+  deadline: Deadline | undefined,
+  fallbackTimeoutMs: number | undefined,
+  phase: string,
+): number | undefined {
+  if (!deadline) return fallbackTimeoutMs;
+  const remainingMs = Math.floor(deadline.remainingMs());
+  if (remainingMs <= 0) throw runnerPhaseBudgetExhaustedError(phase);
+  return remainingMs;
+}
+
+/** Says the phase budget ran out, not that the step it would have run is broken. */
+function runnerPhaseBudgetExhaustedError(phase: string): AppError {
+  return new AppError('COMMAND_FAILED', 'The Apple runner budget ran out before this step began', {
+    phase,
+    reason: 'runner_phase_budget_exhausted',
+    retriable: true,
+  });
+}
+
+/**
+ * What the phase that wants a runner cache decision has left to spend on it. A caller
+ * with neither field still gets {@link TOOLCHAIN_FINGERPRINT_BUDGET_MS} as the ceiling.
+ */
+export type RunnerCacheProbeBudget = {
+  /** The owning phase's clock, shared with whatever the phase does next. */
+  deadline?: Deadline;
+  /** The owning request's cancellation signal, if it carries one. */
+  signal?: AbortSignal;
+};
+
+/**
+ * The remaining-time and cancellation view the probes consult: one per fingerprint read,
+ * so the three probes and their retries share a single budget.
+ *
+ * `spawnSync` cannot be interrupted once it has started, so cancellation is observed
+ * between attempts; the per-attempt cap is what bounds how long that takes.
+ */
+type ToolchainProbeClock = {
+  /** Milliseconds the next attempt may block for; 0 once the budget is spent. */
+  attemptTimeoutMs(): number;
+  /** Throws the owning request's cancellation error once it has aborted. */
+  throwIfCanceled(): void;
+};
+
+function createToolchainProbeClock(
+  budget: RunnerCacheProbeBudget | undefined,
+): ToolchainProbeClock {
+  const phaseDeadline = budget?.deadline;
+  const deadline = Deadline.fromTimeoutMs(
+    Math.min(
+      TOOLCHAIN_FINGERPRINT_BUDGET_MS,
+      phaseDeadline ? phaseDeadline.remainingMs() : Number.POSITIVE_INFINITY,
+    ),
+  );
+  return {
+    attemptTimeoutMs: () =>
+      Math.min(COLD_TOOLCHAIN_PROBE_TIMEOUT_MS, Math.floor(deadline.remainingMs())),
+    throwIfCanceled: () => {
+      if (budget?.signal?.aborted) {
+        throw createRequestCanceledError({ phase: 'apple_toolchain_probe' });
+      }
+    },
+  };
+}
 
 type ProbeResult<Value> =
   | { ok: true; value: Value }
@@ -125,13 +217,14 @@ export const IOS_RUNNER_CONTAINER_BUNDLE_IDS: string[] = resolveRunnerContainerB
 export function resolveExpectedRunnerCacheMetadata(
   device: DeviceInfo,
   projectRoot: string = findProjectRoot(),
+  budget?: RunnerCacheProbeBudget,
 ): RunnerXctestrunCacheMetadata {
   const platformName = resolveRunnerPlatformName(device);
   return {
     schemaVersion: RUNNER_CACHE_SCHEMA_VERSION,
     packageVersion: readVersion(projectRoot),
     runnerSourceFingerprint: computeRunnerSourceFingerprint(projectRoot),
-    ...requireRunnerToolchainFingerprint(resolveRunnerSdkName(platformName, device.kind)),
+    ...requireRunnerToolchainFingerprint(resolveRunnerSdkName(platformName, device.kind), budget),
     platformName,
     deviceKind: device.kind,
     target: device.target ?? 'mobile',
@@ -158,15 +251,19 @@ function toolchainFingerprintCache(): TtlMemo<string, RunnerToolchainFingerprint
 }
 
 /**
- * The toolchain half of the cache key, or a failure. A probe that timed out or
- * could not be read has no value to compare or persist, and the same
- * fingerprint also names the derived-data directory, so an unreadable
- * toolchain fails the cache decision instead of standing in for one.
+ * The toolchain half of the cache key. It also names the derived-data directory, so an
+ * unreadable toolchain fails the cache decision instead of standing in for one.
  */
-function requireRunnerToolchainFingerprint(sdkName: string): RunnerToolchainFingerprint {
+function requireRunnerToolchainFingerprint(
+  sdkName: string,
+  budget: RunnerCacheProbeBudget | undefined,
+): RunnerToolchainFingerprint {
+  // Before the cache, not just before the probes: a hit must not hide a cancellation.
+  const clock = createToolchainProbeClock(budget);
+  clock.throwIfCanceled();
   const cached = toolchainFingerprintCache().get(sdkName);
   if (cached) return cached;
-  const fingerprint = readRunnerToolchainFingerprint(sdkName);
+  const fingerprint = readRunnerToolchainFingerprint(sdkName, clock);
   if (!fingerprint.ok) throw unavailableToolchainError(fingerprint.failures);
   toolchainFingerprintCache().set(sdkName, fingerprint.value);
   return fingerprint.value;
@@ -174,16 +271,17 @@ function requireRunnerToolchainFingerprint(sdkName: string): RunnerToolchainFing
 
 function readRunnerToolchainFingerprint(
   sdkName: string,
+  clock: ToolchainProbeClock,
 ):
   | { ok: true; value: RunnerToolchainFingerprint }
   | { ok: false; failures: readonly ToolchainProbeFailure[] } {
-  const xcode = parseXcodeVersionOutput(runToolchainProbe('xcodebuild', ['-version']));
-  const sdkVersion = runToolchainProbe('xcrun', ['--sdk', sdkName, '--show-sdk-version']);
-  const sdkBuildVersion = runToolchainProbe('xcrun', [
-    '--sdk',
-    sdkName,
-    '--show-sdk-build-version',
-  ]);
+  const xcode = parseXcodeVersionOutput(runToolchainProbe('xcodebuild', ['-version'], clock));
+  const sdkVersion = runToolchainProbe('xcrun', ['--sdk', sdkName, '--show-sdk-version'], clock);
+  const sdkBuildVersion = runToolchainProbe(
+    'xcrun',
+    ['--sdk', sdkName, '--show-sdk-build-version'],
+    clock,
+  );
   if (!xcode.ok || !sdkVersion.ok || !sdkBuildVersion.ok) {
     return {
       ok: false,
@@ -219,16 +317,19 @@ function unavailableToolchainError(failures: readonly ToolchainProbeFailure[]): 
   );
 }
 
-function runToolchainProbe(cmd: string, args: string[]): ProbeResult<string> {
+function runToolchainProbe(
+  cmd: string,
+  args: string[],
+  clock: ToolchainProbeClock,
+): ProbeResult<string> {
   const probe = [cmd, ...args].join(' ');
   let output: { exitCode: number; stdout: string; stderr: string };
   try {
-    output = runCmdSync(cmd, args, {
-      allowFailure: true,
-      timeoutMs: TOOLCHAIN_PROBE_TIMEOUT_MS,
-      maxBuffer: TOOLCHAIN_PROBE_MAX_BUFFER,
-    });
+    output = runToolchainProbeCommand(cmd, args, clock);
   } catch (error) {
+    // A cancellation or a spent budget is the caller's error, not an unreadable toolchain.
+    clock.throwIfCanceled();
+    if (isRequestCanceledError(error) || isRunnerPhaseBudgetExhaustedError(error)) throw error;
     return probeFailure(probe, 'probe_error', error instanceof Error ? error.message : `${error}`);
   }
   if (output.exitCode !== 0) {
@@ -240,6 +341,44 @@ function runToolchainProbe(cmd: string, args: string[]): ProbeResult<string> {
   }
   const value = output.stdout.trim();
   return value ? { ok: true, value } : probeFailure(probe, 'empty_output', 'no output');
+}
+
+/**
+ * Retries exactly once, and only the exec layer's structured timeout: the stall
+ * {@link COLD_TOOLCHAIN_PROBE_TIMEOUT_MS} names clears on the next exec of the same tool,
+ * while a tool that failed on its own and said "timed out" in its output is not it.
+ */
+function runToolchainProbeCommand(
+  cmd: string,
+  args: string[],
+  clock: ToolchainProbeClock,
+): { exitCode: number; stdout: string; stderr: string } {
+  try {
+    return attemptToolchainProbe(cmd, args, clock);
+  } catch (error) {
+    if (!isCommandTimeoutError(error)) throw error;
+    return attemptToolchainProbe(cmd, args, clock);
+  }
+}
+
+/** The one guard site: cancellation and a spent budget both throw here, before any exec. */
+function attemptToolchainProbe(
+  cmd: string,
+  args: string[],
+  clock: ToolchainProbeClock,
+): { exitCode: number; stdout: string; stderr: string } {
+  clock.throwIfCanceled();
+  const timeoutMs = clock.attemptTimeoutMs();
+  if (timeoutMs <= 0) throw runnerPhaseBudgetExhaustedError('apple_toolchain_probe');
+  return runCmdSync(cmd, args, {
+    allowFailure: true,
+    timeoutMs,
+    maxBuffer: TOOLCHAIN_PROBE_MAX_BUFFER,
+  });
+}
+
+function isRunnerPhaseBudgetExhaustedError(error: unknown): boolean {
+  return error instanceof AppError && error.details?.reason === 'runner_phase_budget_exhausted';
 }
 
 function parseXcodeVersionOutput(
