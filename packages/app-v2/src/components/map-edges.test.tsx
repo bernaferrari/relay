@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it } from "vitest";
-import { MapEdges, roundedConnector } from "./map-edges";
+import { MapEdges, roundedConnector, returnConnector } from "./map-edges";
 
 it("labels an unrecorded destination instead of drawing a dangling arrow", () => {
   const markup = renderToStaticMarkup(
@@ -107,4 +107,25 @@ it("leaves breathing room at both preview edges", () => {
   );
   expect(markup).toContain("M 222 198");
   expect(markup).toContain("L 406 198");
+});
+
+it("routes same-row returns below previews with a separate bottom landing", () => {
+  const source = { x: 420, y: 48, width: 208, height: 300 };
+  const target = { x: 0, y: 48, width: 208, height: 300 };
+  const route = returnConnector(source, target);
+  expect(route.points[0]).toEqual({ x: 555.2, y: 362 });
+  expect(route.points.at(-1)).toEqual({ x: 72.8, y: 362 });
+  expect(route.points.every((p) => p.y > 348)).toBe(true);
+  expect(route.label.y).toBeGreaterThan(348);
+});
+
+it("routes lower branch returns directly to distinct bottom ports", () => {
+  const source = { x: 420, y: 484, width: 208, height: 300 };
+  const target = { x: 0, y: 48, width: 208, height: 300 };
+  const a = returnConnector(source, target, 0, 2);
+  const b = returnConnector(source, target, 1, 2);
+  expect(a.points.every((p) => p.y > target.y + target.height)).toBe(true);
+  expect(a.points.at(-1)?.x).not.toBe(b.points.at(-1)?.x);
+  expect(a.label).not.toEqual(b.label);
+  expect(roundedConnector(a.points)).not.toContain("NaN");
 });

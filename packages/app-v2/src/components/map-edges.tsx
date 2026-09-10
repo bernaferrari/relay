@@ -158,31 +158,45 @@ export function MapEdges({
         },
       ];
     }
-    const actualBackwards = end.x < start.x;
-    if (actualBackwards && !anchor && !imageRect) {
-      start.x = from.x - clearance;
-      if (to) end.x = to.x + MAP_NODE_WIDTH + clearance;
-    }
-    const lane = actualBackwards ? (index % 5) * 10 : 0;
-    const corridor = actualBackwards
-      ? Math.min(start.y, end.y, from.y, to.y) - 30 - lane
+    const isReturn = backwards || /^(back|close|dismiss|return|cancel|disable)\b/i.test(path.label);
+    const sourceBox = imageRect ?? {
+      x: from.x,
+      y: from.y + MAP_NODE_TITLE_HEIGHT + MAP_NODE_GAP,
+      width: MAP_NODE_WIDTH,
+      height: MAP_NODE_IMAGE_HEIGHT,
+    };
+    const targetBox = targetImageRect ?? {
+      x: to.x,
+      y: to.y + MAP_NODE_TITLE_HEIGHT + MAP_NODE_GAP,
+      width: MAP_NODE_WIDTH,
+      height: MAP_NODE_IMAGE_HEIGHT,
+    };
+    // Give each return to this destination a stable landing port. Ordering by
+    // source height keeps nearby branches from swapping lanes on selection.
+    const siblings = paths
+      .filter(
+        (candidate) =>
+          candidate.toScreenId === path.toScreenId &&
+          (positions.get(candidate.fromScreenId)?.x ?? Infinity) > to.x,
+      )
+      .sort(
+        (a, b) =>
+          (positions.get(a.fromScreenId)?.y ?? 0) - (positions.get(b.fromScreenId)?.y ?? 0) ||
+          a.id.localeCompare(b.id),
+      );
+    const slot = Math.max(
+      0,
+      siblings.findIndex((candidate) => candidate.id === path.id),
+    );
+    const returning = isReturn
+      ? returnConnector(sourceBox, targetBox, slot, siblings.length, anchor)
       : undefined;
-    const points =
-      corridor === undefined
-        ? [
-            start,
-            { x: start.x + (end.x - start.x) * 0.5 + lane, y: start.y },
-            { x: start.x + (end.x - start.x) * 0.5 + lane, y: end.y },
-            end,
-          ]
-        : [
-            start,
-            { x: start.x - 24 - lane, y: start.y },
-            { x: start.x - 24 - lane, y: corridor },
-            { x: end.x + 24 + lane, y: corridor },
-            { x: end.x + 24 + lane, y: end.y },
-            end,
-          ];
+    const points = returning?.points ?? [
+      start,
+      { x: (start.x + end.x) / 2, y: start.y },
+      { x: (start.x + end.x) / 2, y: end.y },
+      end,
+    ];
     return [
       {
         path,
@@ -191,10 +205,8 @@ export function MapEdges({
         anchorRect,
         d: roundedConnector(points),
         label: {
-          x: actualBackwards
-            ? (start.x + end.x) / 2
-            : end.x - Math.min(100, Math.abs(end.x - start.x) / 2),
-          y: corridor === undefined ? end.y - 12 : corridor - 12,
+          x: returning?.label.x ?? end.x - Math.min(100, Math.abs(end.x - start.x) / 2),
+          y: returning?.label.y ?? end.y - 12,
           width: labelWidth,
         },
         bounds: {
@@ -364,4 +376,45 @@ export function roundedConnector(points: readonly MapPoint[], radius = 12): stri
   }
   if (clean.length > 1) d += ` L ${clean.at(-1)!.x} ${clean.at(-1)!.y}`;
   return d;
+}
+
+type PreviewBox = { x: number; y: number; width: number; height: number };
+/** Returns use bottom ports, leaving the center lane for forward navigation. */
+export function returnConnector(
+  source: PreviewBox,
+  target: PreviewBox,
+  slot = 0,
+  count = 1,
+  anchor?: MapPoint,
+) {
+  const gap = 14;
+  const sourceBottom = source.y + source.height;
+  const targetBottom = target.y + target.height;
+  const end = {
+    x: target.x + target.width * (0.2 + (0.3 * (slot + 1)) / (Math.max(1, count) + 1)),
+    y: targetBottom + gap,
+  };
+  if (Math.abs(source.y - target.y) < 40) {
+    const start = anchor ?? { x: source.x + source.width * 0.65, y: sourceBottom + gap };
+    const y = Math.max(sourceBottom, targetBottom) + 44 + slot * 28;
+    return {
+      points: [start, { x: start.x, y }, { x: end.x, y }, end],
+      label: { x: (start.x + end.x) / 2, y: y - 12 },
+    };
+  }
+  // Unequal rows take the inter-column corridor directly, without first
+  // climbing above both previews and doubling back down the same corridor.
+  const leftward = source.x > target.x;
+  const start = anchor ?? {
+    x: leftward ? source.x - gap : source.x + source.width + gap,
+    y: source.y + source.height * 0.78,
+  };
+  const corridorX = leftward
+    ? (source.x + target.x + target.width) / 2 + 24 + Math.min(slot, 3) * 12
+    : (source.x + source.width + target.x) / 2 - 24 - Math.min(slot, 3) * 12;
+  const y = targetBottom + 44 + (slot / Math.max(1, count - 1)) * 48;
+  return {
+    points: [start, { x: corridorX, y: start.y }, { x: corridorX, y }, { x: end.x, y }, end],
+    label: { x: corridorX, y: Math.abs(start.y - y) > 100 ? (start.y + y) / 2 : start.y - 12 },
+  };
 }
