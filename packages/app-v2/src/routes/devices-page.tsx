@@ -10,7 +10,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "@relay/ui-react/components/tabs";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate, useRouteContext } from "@tanstack/react-router";
-import { ChevronRight, CircleHelp, ListChecks } from "lucide-react";
+import { AppWindow, ChevronRight, CircleHelp, ListChecks, Smartphone, Tablet } from "lucide-react";
 import { useDeferredValue, useEffect, useId, useState } from "react";
 import { LibrarySearch } from "../components/library-toolbar";
 import { LibraryPage, PageHeader } from "../components/page-layout";
@@ -65,6 +65,11 @@ function deviceGroup(device: ProductDevice): string {
 }
 
 function DeviceRow({ device, returnTo }: { device: ProductDevice; returnTo?: string }) {
+  const DeviceIcon = isBrowser(device)
+    ? AppWindow
+    : /ipad|tablet/i.test(`${device.name} ${device.kind ?? ""}`)
+      ? Tablet
+      : Smartphone;
   return (
     <li>
       <Item
@@ -85,12 +90,20 @@ function DeviceRow({ device, returnTo }: { device: ProductDevice; returnTo?: str
           )
         }
       >
-        <span className="relay-library-row-main grid min-w-0 gap-1">
-          <strong className="overflow-hidden text-ellipsis whitespace-nowrap text-sm font-semibold text-[var(--text-strong)]">
-            {device.name}
-          </strong>
-          <span className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-[var(--text-weak)]">
-            {deviceSummaryLine(device)}
+        <span className="relay-library-row-main flex min-w-0 items-center gap-3">
+          <span
+            className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/60 text-muted-foreground"
+            aria-hidden="true"
+          >
+            <DeviceIcon className="size-5" strokeWidth={1.75} />
+          </span>
+          <span className="grid min-w-0 gap-0.5">
+            <strong className="overflow-hidden text-ellipsis whitespace-nowrap text-sm font-medium text-[var(--text-strong)]">
+              {device.name}
+            </strong>
+            <span className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-[var(--text-weak)]">
+              {deviceSummaryLine(device)}
+            </span>
           </span>
         </span>
         <span className="relay-library-row-status flex justify-start">
