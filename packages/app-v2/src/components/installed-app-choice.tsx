@@ -179,7 +179,7 @@ export function InstalledAppChoice({
         </p>
       ) : null}
       <p className="text-xs leading-relaxed text-muted-foreground">
-        Choose a Starting app, then open it before recording.
+        Use the current screen, or choose an app to open.
       </p>
     </div>
   );

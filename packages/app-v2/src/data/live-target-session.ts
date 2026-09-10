@@ -557,14 +557,20 @@ export function createLiveTargetSession(input: {
           serial: target.targetId,
         });
         size = snapshot.bounds;
-        // Accessibility can be temporarily unavailable while pixels remain usable.
-        if (!size?.width || !size.height) {
+      } catch {
+        // A failed accessibility request must not skip the pixel fallback.
+      }
+      if (!size?.width || !size.height) {
+        try {
           size = await input.client.invoke("target.screenshot.capture", {
             serial: target.targetId,
+            ephemeral: true,
           });
+        } catch {
+          throw new RecordingInputNotSentError(
+            "Couldn’t read the screen dimensions. Reconnect the preview and try again.",
+          );
         }
-      } catch {
-        throw new RecordingInputNotSentError("Relay couldn’t read the device screen size.");
       }
       if (!size?.width || !size.height) {
         throw new RecordingInputNotSentError("Relay couldn’t read the device screen size.");

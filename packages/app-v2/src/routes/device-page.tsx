@@ -386,7 +386,11 @@ export function DevicePage() {
               target={target.data ?? undefined}
               browserContext={browserContext}
               status={liveStatus}
-              issue={inputIssue?.message ?? liveIssue}
+              issue={
+                inputIssue?.message ??
+                liveIssue ??
+                (recover.error ? "Couldn’t reconnect to the device." : undefined)
+              }
               issueAction={
                 inputIssue ? (
                   inputIssue.reconnect ? (
@@ -403,6 +407,15 @@ export function DevicePage() {
                       Dismiss
                     </Button>
                   )
+                ) : recover.error ? (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => recover.mutate()}
+                    disabled={recover.isPending}
+                  >
+                    {recover.isPending ? "Reconnecting…" : "Reconnect"}
+                  </Button>
                 ) : undefined
               }
               busy={liveBusy}
@@ -451,14 +464,6 @@ export function DevicePage() {
             {boot.error ? (
               <p role="alert" className="text-sm text-destructive">
                 {boot.error.message}
-              </p>
-            ) : null}
-            {recover.error ? (
-              <p
-                className="relay-settings-error max-w-[60ch] text-[13px] leading-5 text-destructive"
-                role="alert"
-              >
-                {friendlyLiveIssue(errorMessage(recover.error))}
               </p>
             ) : null}
             {recover.data ? (

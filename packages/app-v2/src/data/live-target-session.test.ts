@@ -359,9 +359,10 @@ it("sends a complete normalized Android tap from the non-recording canvas", asyn
 it("uses pixel dimensions without accessibility and refuses input if both are unavailable", async () => {
   const onInteraction = vi.fn();
   let pixelsAvailable = true;
-  const invoke = vi.fn(async (id: string) =>
-    id === "target.snapshot.capture" ? {} : pixelsAvailable ? { width: 1080, height: 2400 } : {},
-  );
+  const invoke = vi.fn(async (id: string) => {
+    if (id === "target.snapshot.capture") throw new Error("Accessibility unavailable");
+    return pixelsAvailable ? { width: 1080, height: 2400 } : {};
+  });
   const live = createLiveTargetSession({
     client: {
       connection: { url: "http://relay.test" },
