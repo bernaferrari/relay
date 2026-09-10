@@ -10,7 +10,7 @@ import {
 } from "@relay/ui-react/components/dropdown-menu";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useRouter, useRouteContext } from "@tanstack/react-router";
-import { Map } from "lucide-react";
+import { Map, ChevronDown } from "lucide-react";
 import { SidebarMenuButton } from "@relay/ui-react/components/sidebar";
 import { runQueryKeys } from "../data/run-queries";
 import { catalogQueryKeys } from "../data/catalog-queries";
@@ -210,17 +210,59 @@ export function AppSwitcher() {
           </DropdownMenuGroup>
         </DropdownMenuContent>
       </DropdownMenu>
-      {selectedAppId ? (
-        <nav aria-label="App navigation" className="pt-1.5">
+      <nav aria-label="App navigation" className="pt-1.5">
+        {selectedAppId ? (
           <SidebarMenuButton
             render={<Link to="/apps/$appId/map" params={{ appId: selectedAppId }} />}
+            isActive={/^\/apps\/[^/]+\/map/.test(location.pathname)}
+            aria-current={/^\/apps\/[^/]+\/map/.test(location.pathname) ? "page" : undefined}
             className="min-h-9 gap-2.5 px-[11px] text-[13px] font-medium"
           >
             <Map className="size-[17px] text-muted-foreground" aria-hidden="true" />
             App map
           </SidebarMenuButton>
-        </nav>
-      ) : null}
+        ) : (
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <SidebarMenuButton className="min-h-9 gap-2.5 px-[11px] text-[13px] font-medium" />
+              }
+              aria-label="App map"
+            >
+              <Map className="size-[17px] text-muted-foreground" aria-hidden="true" />
+              <span className="flex-1 text-left">App map</span>
+              <ChevronDown className="size-3 text-muted-foreground" aria-hidden="true" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-64 max-h-80">
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>Choose an app to map</DropdownMenuLabel>
+                {apps.data?.map((app) => (
+                  <DropdownMenuItem
+                    key={app.id}
+                    onClick={() => router.history.push(`/apps/${encodeURIComponent(app.id)}/map`)}
+                  >
+                    <Map className="size-4 text-muted-foreground" aria-hidden="true" />
+                    {app.name}
+                  </DropdownMenuItem>
+                ))}
+                {apps.isPending ? (
+                  <DropdownMenuItem disabled>Loading apps…</DropdownMenuItem>
+                ) : null}
+                {apps.isError ? (
+                  <DropdownMenuItem onClick={() => void apps.refetch()}>
+                    Couldn’t load apps · Retry
+                  </DropdownMenuItem>
+                ) : null}
+                {apps.isSuccess && !apps.data.length ? (
+                  <DropdownMenuItem onClick={() => router.history.push("/apps")}>
+                    Add an app
+                  </DropdownMenuItem>
+                ) : null}
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+      </nav>
     </>
   );
 }

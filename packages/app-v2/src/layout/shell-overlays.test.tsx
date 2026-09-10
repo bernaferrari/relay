@@ -433,6 +433,18 @@ describe("shell overlays", () => {
     expect(history.location.pathname).toBe("/tests/test-1");
   });
 
+  it("keeps App map visible without app context and opens its picker in place", async () => {
+    const history = await renderShell({});
+    const originalPath = history.location.pathname;
+    const trigger = document.querySelector<HTMLButtonElement>('button[aria-label="App map"]');
+    expect(trigger).not.toBeNull();
+    await act(async () => trigger!.click());
+    await settle();
+    expect(history.location.pathname).toBe(originalPath);
+    expect(document.querySelector('[role="menu"]')?.textContent).toContain("Choose an app to map");
+    expect(document.querySelector('[role="menu"]')?.textContent).toContain("Add an app");
+  });
+
   it("collapses stopped simulators and keeps the picker compact", async () => {
     const stopped = Array.from({ length: 38 }, (_, index) => ({
       ...productDevice(`sim-${index}`, `iPad ${index}`, "needs-attention", "ios"),
