@@ -147,9 +147,17 @@ describe("browser spaces and compare set product service", () => {
     expect(member.authenticationFixtureId).toBe(fixture.reference);
     expect(signedOut.signedOut).toBe(true);
     expect(calls.filter(({ id }) => id === "target.open").map(({ input }) => input)).toEqual([
-      { targetId: "space-1", authenticationFixtureReference: fixture.reference },
-      { targetId: "space-2", signedOut: true },
+      {
+        targetId: "space-1",
+        authenticationFixtureReference: fixture.reference,
+        presentation: "embedded",
+      },
+      { targetId: "space-2", signedOut: true, presentation: "embedded" },
     ]);
+    await service.openSpace({ spaceId: "space-1", presentation: "external" });
+    expect(calls.filter(({ id }) => id === "target.open").at(-1)?.input).toMatchObject({
+      presentation: "external",
+    });
   });
 
   it("keeps auth fixture operations versioned and metadata-only", async () => {

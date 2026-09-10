@@ -197,6 +197,7 @@ async function sessionFor(
     recordVideo?: boolean;
     projectId?: string;
     reuseMatchingIdentity?: boolean;
+    requirePresentationMatch?: boolean;
   } = {},
 ): Promise<BrowserSession> {
   const mode = options.mode ?? "authoring";
@@ -223,7 +224,7 @@ async function sessionFor(
     if (
       (mode === "authoring" || options.reuseMatchingIdentity) &&
       profileMatches &&
-      (options.reuseMatchingIdentity ||
+      ((options.reuseMatchingIdentity && !options.requirePresentationMatch) ||
         ((options.recordVideo === undefined || session.recordVideo === options.recordVideo) &&
           (options.headless === undefined || session.headless === options.headless)))
     )
@@ -338,7 +339,8 @@ export type OpenBrowserTargetResult = {
 };
 
 /**
- * Opens a visible Relay-owned browser profile so a person can complete login,
+ * Opens a Relay-owned browser profile, optionally without an external window.
+ * External presentation lets a person complete login,
  * consent, MFA, or any other setup that should not be encoded into a test.
  * The same isolated profile is reused by later app, CLI, and scheduled runs.
  */
@@ -348,6 +350,7 @@ export async function openBrowserTarget(
     projectId?: string;
     authenticationFixtureId?: string;
     signedOut?: true;
+    presentation?: "embedded" | "external";
   } = {},
 ): Promise<OpenBrowserTargetResult> {
   const target = await readTarget(targetId);
@@ -372,7 +375,8 @@ export async function openBrowserTarget(
       ? compileBrowserEnvironment(unsigned)
       : baseProfile;
   const session = await sessionFor(targetId, {
-    headless: false,
+    headless: options.presentation === "embedded",
+    requirePresentationMatch: true,
     mode: accountBound ? "proof" : "authoring",
     profile,
     ...(accountBound ? { reuseMatchingIdentity: true, projectId: options.projectId } : {}),
@@ -381,7 +385,7 @@ export async function openBrowserTarget(
   if (page.url() === "about:blank") {
     await page.goto(target.browser.startUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
   }
-  await page.bringToFront();
+  if (options.presentation !== "embedded") await page.bringToFront();
   return {
     targetId,
     name: target.name,

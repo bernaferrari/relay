@@ -172,12 +172,20 @@ export async function handleTargetRoute(context: TargetRouteContext): Promise<bo
     const body = (await parseJsonBody(req)) as {
       authenticationFixtureReference?: unknown;
       signedOut?: unknown;
+      presentation?: unknown;
     };
     const authenticationFixtureReference =
       typeof body.authenticationFixtureReference === "string"
         ? browserAuthenticationFixtureReferenceSchema.parse(body.authenticationFixtureReference)
         : undefined;
     const signedOut = body.signedOut === true;
+    if (
+      body.presentation !== undefined &&
+      body.presentation !== "embedded" &&
+      body.presentation !== "external"
+    ) {
+      throw new HttpError(400, "Choose embedded or external browser presentation.");
+    }
     if (authenticationFixtureReference && signedOut) {
       throw new HttpError(400, "Choose an account fixture or attested signed-out, not both.");
     }
@@ -207,6 +215,7 @@ export async function handleTargetRoute(context: TargetRouteContext): Promise<bo
     }
     const session = await openBrowserTarget(target.id, {
       projectId: scope.projectId,
+      ...(body.presentation ? { presentation: body.presentation } : {}),
       ...(authenticationFixtureReference
         ? { authenticationFixtureId: authenticationFixtureReference }
         : {}),

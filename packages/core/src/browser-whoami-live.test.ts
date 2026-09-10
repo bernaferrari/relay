@@ -105,6 +105,7 @@ test(
         const fixture = role === "signed-out" ? undefined : await saveRoleFixture(role);
         const opened = await openBrowserTarget(targetId, {
           projectId,
+          presentation: "embedded",
           ...(fixture ? { authenticationFixtureId: fixture.reference } : { signedOut: true }),
         });
         const live = await openBrowserLiveRuntime(targetId, {
@@ -124,6 +125,10 @@ test(
           `${role}: in-app Browser Device must attach to the target.open session, not authoring`,
         );
         const page = await live.activePage();
+        const cdp = await page.context().newCDPSession(page);
+        const command = await cdp.send("Browser.getVersion");
+        assert(command.userAgent.includes("HeadlessChrome"));
+        await cdp.detach();
         const visible = (await page.locator("#whoami").innerText()).trim();
         const adminOnlyHidden = await page.locator("#admin-only").isHidden();
         const application = (await page.evaluate(async () => {
@@ -134,6 +139,26 @@ test(
         assert.equal(application.role, role);
         assert.equal(adminOnlyHidden, role !== "admin");
         seen.set(role, { sessionId: opened.sessionId, role: visible, adminOnly: !adminOnlyHidden });
+        if (role === "admin" && fixture) {
+          const external = await openBrowserTarget(targetId, {
+            projectId,
+            authenticationFixtureId: fixture.reference,
+            presentation: "external",
+          });
+          assert.notEqual(external.sessionId, opened.sessionId);
+          const externalLive = await openBrowserLiveRuntime(targetId, {
+            projectId,
+            headless: true,
+            authenticationFixtureId: fixture.reference,
+          });
+          assert.equal(externalLive.sessionId, external.sessionId);
+          const externalPage = await externalLive.activePage();
+          assert.equal((await externalPage.locator("#whoami").innerText()).trim(), "admin");
+          const externalCdp = await externalPage.context().newCDPSession(externalPage);
+          const externalCommand = await externalCdp.send("Browser.getVersion");
+          assert(!externalCommand.userAgent.includes("HeadlessChrome"));
+          await externalCdp.detach();
+        }
       }
     } finally {
       await closeBrowserTarget(targetId).catch(() => undefined);

@@ -34,6 +34,7 @@ export const targetOperationInputSchemas = {
       targetId: identifier("Managed browser target identifier"),
       authenticationFixtureReference: browserAuthenticationFixtureReferenceSchema.optional(),
       signedOut: z.literal(true).optional(),
+      presentation: z.enum(["embedded", "external"]).optional(),
     })
     .strict()
     .superRefine((value, context) => {

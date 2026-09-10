@@ -91,6 +91,7 @@ export type BrowserSpacesProductService = {
       | string
       | {
           spaceId: string;
+          presentation?: "embedded" | "external";
           account?: { kind: "fixture"; reference: string } | { kind: "signed-out" };
         },
   ): Promise<{
@@ -273,6 +274,7 @@ export function createBrowserSpacesProductService(platform: Platform): BrowserSp
           await client()
         ).invoke("target.open", {
           targetId: request.spaceId,
+          presentation: request.presentation ?? "embedded",
           ...(account?.kind === "fixture"
             ? { authenticationFixtureReference: account.reference }
             : {}),
