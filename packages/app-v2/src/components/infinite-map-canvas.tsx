@@ -289,24 +289,8 @@ export function InfiniteMapCanvas({
     return () => cancelAnimationFrame(frame);
   }, [selectedScreenId, showScreens]);
 
-  useEffect(() => {
-    const viewport = viewportRef.current;
-    if (!viewport) return;
-    let previous = { width: viewport.clientWidth, height: viewport.clientHeight };
-    const observer = new ResizeObserver(() => {
-      const width = viewport.clientWidth;
-      const height = viewport.clientHeight;
-      const current = transformRef.current;
-      applyTransform({
-        ...current,
-        x: current.x + (width - previous.width) / 2,
-        y: current.y + (height - previous.height) / 2,
-      });
-      previous = { width, height };
-    });
-    observer.observe(viewport);
-    return () => observer.disconnect();
-  }, []);
+  // Inspector/sidebar changes resize the viewport, not the world. Keep the
+  // existing transform until the user explicitly pans, zooms, or focuses.
 
   function handlePointerDown(event: PointerEvent<HTMLElement>) {
     if (

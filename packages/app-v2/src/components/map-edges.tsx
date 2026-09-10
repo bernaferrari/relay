@@ -203,7 +203,7 @@ export function MapEdges({
         id: `-${index}`,
         anchor,
         anchorRect,
-        d: roundedConnector(points),
+        d: returning ? quadraticReturn(points) : roundedConnector(points),
         label: {
           x: returning?.label.x ?? end.x - Math.min(100, Math.abs(end.x - start.x) / 2),
           y: returning?.label.y ?? end.y - 12,
@@ -423,4 +423,16 @@ export function isRoutineReturn(path: Pick<ProductMapPath, "label" | "toScreenId
   return Boolean(
     path.toScreenId && /^(back|close|dismiss|return|cancel|disable)\b/i.test(path.label),
   );
+}
+
+/** A single shallow bend distinguishes a revealed return from forward elbows. */
+export function quadraticReturn(points: readonly MapPoint[]): string {
+  const start = points[0],
+    end = points.at(-1);
+  if (!start || !end) return "";
+  const aligned = Math.abs(start.y - end.y) < 40;
+  const control = aligned
+    ? { x: (start.x + end.x) / 2, y: Math.max(start.y, end.y) + 72 }
+    : { x: end.x, y: start.y };
+  return `M ${start.x} ${start.y} Q ${control.x} ${control.y} ${end.x} ${end.y}`;
 }

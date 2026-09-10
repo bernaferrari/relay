@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it } from "vitest";
-import { MapEdges, roundedConnector, returnConnector } from "./map-edges";
+import { MapEdges, roundedConnector, returnConnector, quadraticReturn } from "./map-edges";
 
 it("labels an unrecorded destination instead of drawing a dangling arrow", () => {
   const markup = renderToStaticMarkup(
@@ -128,4 +128,14 @@ it("routes lower branch returns directly to distinct bottom ports", () => {
   expect(a.points.at(-1)?.x).not.toBe(b.points.at(-1)?.x);
   expect(a.label).not.toEqual(b.label);
   expect(roundedConnector(a.points)).not.toContain("NaN");
+});
+
+it("uses one quadratic curve for a revealed back route", () => {
+  const d = quadraticReturn([
+    { x: 400, y: 362 },
+    { x: 100, y: 362 },
+  ]);
+  expect(d).toBe("M 400 362 Q 250 434 100 362");
+  expect(d).not.toContain("C");
+  expect(d).not.toContain("L");
 });
