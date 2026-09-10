@@ -489,6 +489,7 @@ describe("browser preview gestures", () => {
   it("binds canvas clicks, typing and scrolling to the painted frame", () => {
     expect(browserPreviewInput({ kind: "touch", action: "up", x: 20, y: 30 }, frame)).toEqual({
       ...binding,
+      coordinateFallback: "reviewed",
       kind: "click",
       x: 20,
       y: 30,
@@ -507,10 +508,9 @@ describe("browser preview gestures", () => {
       browserPreviewInput({ kind: "scroll", x: 20, y: 30, scrollX: 0, scrollY: -100 }, frame),
     ).toEqual({ ...binding, kind: "wheel", x: 20, y: 30, deltaX: -0, deltaY: 100 });
   });
-  it("does not silently approve coordinate fallback", () => {
-    expect(
-      browserPreviewInput({ kind: "touch", action: "up", x: 20, y: 30 }, frame),
-    ).not.toHaveProperty("coordinateFallback");
+  it("does not grant fallback to an authored browser command", () => {
+    const authored = { ...binding, kind: "click" as const, x: 20, y: 30 };
+    expect(browserPreviewInput(authored, frame)).not.toHaveProperty("coordinateFallback");
   });
 });
 

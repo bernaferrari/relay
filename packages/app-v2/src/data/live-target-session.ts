@@ -808,7 +808,11 @@ export function browserPreviewInput(
     expectedSequence: frame.sequence,
   };
   if (value.kind === "touch" && value.action === "up") {
-    return { ...binding, kind: "click", x: value.x, y: value.y };
+    // A direct pointer gesture already selects a position on the painted
+    // page. Prefer a stable control when available, but allow that position
+    // for custom controls. Recording and authored commands take separate
+    // paths and must not inherit this manual-click fallback.
+    return { ...binding, kind: "click", x: value.x, y: value.y, coordinateFallback: "reviewed" };
   }
   if (value.kind === "scroll") {
     return {
