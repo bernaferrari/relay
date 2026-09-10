@@ -1,8 +1,12 @@
-import { expect, test } from 'vitest';
+import { beforeEach, describe, expect, test } from 'vitest';
 import assert from 'node:assert/strict';
-import { AppError } from '@agent-device/kernel/errors';
+import { AppError, isRequestCanceledError } from '@agent-device/kernel/errors';
+import { resetAllProcessMemosForTests } from '@agent-device/kernel/ttl-memo';
 import { IOS_DEVICE, IOS_SIMULATOR, MACOS_DEVICE } from './device-fixtures.ts';
+import { appleRunnerTestHost } from '../test-host.ts';
+import type { ExecOptions } from '../host.ts';
 import {
+  createRunnerPhaseDeadline,
   diffComparableRunnerCacheMetadata,
   resolveRunnerBundleBuildSettings,
   resolveRunnerMaxConcurrentDestinationsFlag,
@@ -11,6 +15,7 @@ import {
   resolveRunnerSandboxBuildArgs,
   resolveExpectedRunnerCacheMetadata,
 } from '../runner-cache-metadata.ts';
+import { COLD_TOOLCHAIN_PROBE_TIMEOUT_MS } from '../apple-runner-platform.ts';
 import { appleToolchainProbeResult, stubAppleToolchainProbes } from './apple-toolchain-fixtures.ts';
 
 const runCmdSync = stubAppleToolchainProbes();
@@ -239,6 +244,221 @@ test('a timed-out probe leaves the toolchain unavailable instead of a comparable
 
   assert.deepEqual(unavailableProbes(), [{ probe: 'xcodebuild -version', reason: 'probe_error' }]);
 });
+
+// Apple's syspolicyd signature scan blocks the first xcodebuild/xcrun exec
+// after a fresh macOS host boots for roughly 18 to 19 seconds; the immediate
+// next exec of the same tool is instant (#2422). These cases exercise the
+// resulting one-retry policy, and the budget that bounds it, without waiting
+// on a real cold-start stall: the fake clock only moves when a probe actually
+// blocks for the timeout it was given, so a case that claims the budget was
+// spent had to spend it.
+describe('toolchain probe budget', () => {
+  // Failures are never memoized, but the recovery case below succeeds; each
+  // case starts from an empty toolchain fingerprint cache so none of them
+  // reads another's answer.
+  beforeEach(resetAllProcessMemosForTests);
+
+  test('a cold-start probe recovers on retry, and the stall it survived is charged to the budget', () => {
+    const clock = installFakeToolchainClock();
+    const xcodebuildTimeouts: number[] = [];
+    runCmdSync.mockImplementation((command: string, args: string[], options: ExecOptions) => {
+      if (command !== 'xcodebuild') return appleToolchainProbeResult(command, args);
+      xcodebuildTimeouts.push(options.timeoutMs ?? 0);
+      if (xcodebuildTimeouts.length > 1) return appleToolchainProbeResult(command, args);
+      throw blockForWholeTimeout(clock, command, args, options);
+    });
+    runCmdSync.mockClear();
+
+    const metadata = resolveExpectedRunnerCacheMetadata(IOS_DEVICE);
+
+    assert.equal(metadata.xcodeVersion, '26.2');
+    assert.equal(metadata.xcodeBuildVersion, '17C52');
+    // The retry runs on what the shared budget has left, not on a fresh
+    // per-call ceiling: 45 s total minus the 30 s the first attempt burned.
+    assert.deepEqual(xcodebuildTimeouts, [COLD_TOOLCHAIN_PROBE_TIMEOUT_MS, 15_000]);
+  });
+
+  test('a toolchain host that never returns stops at the shared budget instead of once per probe', () => {
+    const clock = installFakeToolchainClock();
+    runCmdSync.mockImplementation((command: string, args: string[], options: ExecOptions) => {
+      throw blockForWholeTimeout(clock, command, args, options);
+    });
+    runCmdSync.mockClear();
+
+    assert.throws(
+      () => resolveExpectedRunnerCacheMetadata(MACOS_DEVICE),
+      // A budget spent before the remaining probes could start is not an
+      // unreadable toolchain: nothing probed it, so the error says the budget
+      // ran out rather than pointing at `xcode-select`.
+      (error: unknown) => expectRunnerPhaseBudgetExhausted(error),
+    );
+    // 30 s + a 15 s retry spends the whole budget on the first probe; the two
+    // xcrun probes then fail on the budget instead of blocking for 30 s each.
+    assert.equal(runCmdSync.mock.calls.length, 2);
+    assert.equal(clock.nowMs, 45_000);
+  });
+
+  test('an owning phase with 4 s left gets one 4 s attempt and no retry', () => {
+    const clock = installFakeToolchainClock();
+    const phaseDeadline = createRunnerPhaseDeadline(4_000);
+    runCmdSync.mockImplementation((command: string, args: string[], options: ExecOptions) => {
+      throw blockForWholeTimeout(clock, command, args, options);
+    });
+    runCmdSync.mockClear();
+
+    assert.throws(
+      () =>
+        resolveExpectedRunnerCacheMetadata(IOS_SIMULATOR, undefined, { deadline: phaseDeadline }),
+      (error: unknown) => expectRunnerPhaseBudgetExhausted(error),
+    );
+    assert.equal(runCmdSync.mock.calls.length, 1);
+    // The one attempt was capped by the phase, not by the 30 s per-call ceiling.
+    assert.equal(runCmdSync.mock.calls[0]?.[2]?.timeoutMs, 4_000);
+    assert.equal(clock.nowMs, 4_000);
+  });
+
+  test('a request canceled while a probe blocked surfaces the cancellation instead of retrying', () => {
+    const clock = installFakeToolchainClock();
+    const request = new AbortController();
+    runCmdSync.mockImplementation((command: string, args: string[], options: ExecOptions) => {
+      const timeout = blockForWholeTimeout(clock, command, args, options);
+      request.abort();
+      throw timeout;
+    });
+    runCmdSync.mockClear();
+
+    assert.throws(
+      () =>
+        resolveExpectedRunnerCacheMetadata(IOS_SIMULATOR, undefined, { signal: request.signal }),
+      (error: unknown) => isRequestCanceledError(error),
+    );
+    assert.equal(runCmdSync.mock.calls.length, 1);
+  });
+
+  test('a non-timeout error that also cancels the request on the last probe surfaces cancellation, not an unavailable toolchain', () => {
+    const request = new AbortController();
+    runCmdSync.mockImplementation((command: string, args: string[]) => {
+      // The final probe: abort the request and fail with a plain command
+      // error, not the exec layer's structured timeout -- there is no next
+      // attempt left to catch the cancellation, so the catch here must.
+      if (command === 'xcrun' && args.includes('--show-sdk-build-version')) {
+        request.abort();
+        throw new AppError('COMMAND_FAILED', 'xcrun: unexpected error', {});
+      }
+      return appleToolchainProbeResult(command, args);
+    });
+    runCmdSync.mockClear();
+
+    assert.throws(
+      () =>
+        resolveExpectedRunnerCacheMetadata(IOS_SIMULATOR, undefined, { signal: request.signal }),
+      (error: unknown) => isRequestCanceledError(error),
+    );
+    assert.equal(runCmdSync.mock.calls.length, 3);
+  });
+
+  test('an already-canceled request runs no toolchain probe at all, cold or with the fingerprint cache warm', () => {
+    installFakeToolchainClock();
+    runCmdSync.mockClear();
+
+    assert.throws(
+      () =>
+        resolveExpectedRunnerCacheMetadata(IOS_SIMULATOR, undefined, {
+          signal: AbortSignal.abort(),
+        }),
+      (error: unknown) => isRequestCanceledError(error),
+    );
+    assert.equal(runCmdSync.mock.calls.length, 0);
+
+    // Warm the real fingerprint memo with an ordinary request, then repeat
+    // with an already-aborted signal: the cache-hit path must check
+    // cancellation before it returns the memoized value, not skip it (#2422).
+    resolveExpectedRunnerCacheMetadata(IOS_SIMULATOR);
+    runCmdSync.mockClear();
+
+    assert.throws(
+      () =>
+        resolveExpectedRunnerCacheMetadata(IOS_SIMULATOR, undefined, {
+          signal: AbortSignal.abort(),
+        }),
+      (error: unknown) => isRequestCanceledError(error),
+    );
+    assert.equal(runCmdSync.mock.calls.length, 0);
+  });
+
+  test('a probe that failed on its own and merely says "timed out" in its message is not retried', () => {
+    installFakeToolchainClock();
+    runCmdSync.mockImplementation((command: string, args: string[]) => {
+      if (command !== 'xcodebuild') return appleToolchainProbeResult(command, args);
+      // No `timeoutMs` detail: this is the tool reporting its own failure, not
+      // the exec layer killing it at a timeout we asked for.
+      throw new AppError('COMMAND_FAILED', 'xcodebuild timed out after 10ms', {
+        cmd: command,
+        args,
+      });
+    });
+    runCmdSync.mockClear();
+
+    assert.throws(
+      () => resolveExpectedRunnerCacheMetadata(IOS_SIMULATOR),
+      (error: unknown) => {
+        assert.ok(error instanceof AppError);
+        expect(error.message).toContain('xcodebuild timed out after 10ms');
+        return true;
+      },
+    );
+    expect(runCmdSync.mock.calls.filter(([command]) => command === 'xcodebuild')).toHaveLength(1);
+  });
+});
+
+/** The error a runner phase raises when a step is reached with nothing left to spend. */
+function expectRunnerPhaseBudgetExhausted(error: unknown): boolean {
+  assert.ok(error instanceof AppError);
+  assert.equal(error.code, 'COMMAND_FAILED');
+  assert.equal(error.details?.reason, 'runner_phase_budget_exhausted');
+  assert.equal(error.details?.phase, 'apple_toolchain_probe');
+  assert.equal(error.details?.retriable, true);
+  expect(error.message).toContain('budget ran out');
+  return true;
+}
+
+/**
+ * A clock the probes' own budget reads, advanced only by
+ * {@link blockForWholeTimeout}. Without it a mock that throws immediately
+ * proves nothing about a deadline: no time passes, so every budget looks
+ * untouched however many attempts run.
+ */
+function installFakeToolchainClock(): { nowMs: number } {
+  const clock = { nowMs: 0 };
+  appleRunnerTestHost.update({
+    deadlineFromTimeoutMs: (timeoutMs: number) => {
+      const startedAtMs = clock.nowMs;
+      const expiresAtMs = startedAtMs + Math.max(0, timeoutMs);
+      return {
+        remainingMs: () => Math.max(0, expiresAtMs - clock.nowMs),
+        elapsedMs: () => Math.max(0, clock.nowMs - startedAtMs),
+        isExpired: () => expiresAtMs - clock.nowMs <= 0,
+      };
+    },
+  });
+  return clock;
+}
+
+/** A probe that blocked for its whole timeout and was then killed, as the exec layer reports it. */
+function blockForWholeTimeout(
+  clock: { nowMs: number },
+  command: string,
+  args: string[],
+  options: ExecOptions,
+): AppError {
+  const timeoutMs = options.timeoutMs ?? 0;
+  clock.nowMs += timeoutMs;
+  return new AppError('COMMAND_FAILED', `${command} timed out after ${timeoutMs}ms`, {
+    cmd: command,
+    args,
+    timeoutMs,
+  });
+}
 
 test('a failing probe reports its exit status rather than a fabricated SDK version', () => {
   runCmdSync.mockImplementation((command: string, args: readonly string[]) =>

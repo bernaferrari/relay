@@ -20,6 +20,8 @@ import {
   type RunnerXctestrunCacheProductArtifact,
 } from './runner-cache-metadata.ts';
 export {
+  createRunnerPhaseDeadline,
+  requireRunnerPhaseRemainingMs,
   resolveExpectedRunnerCacheMetadata,
   resolveRunnerBundleBuildSettings,
   resolveRunnerDerivedPath,

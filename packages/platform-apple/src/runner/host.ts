@@ -149,6 +149,8 @@ export type AppleRunnerHost = {
     message: string,
     extra?: Record<string, unknown> | ((result: ExecResult) => Record<string, unknown>),
   ): ExecResult;
+  /** True only for the error the exec layer raises when it killed a command at `timeoutMs`. */
+  isCommandTimeoutError(error: unknown): boolean;
   // Diagnostics (@agent-device/host-kit/diagnostics)
   emitDiagnostic(event: DiagnosticEventInput): void;
   withDiagnosticTimer<T>(
@@ -277,6 +279,8 @@ export const runCmdBackground: AppleRunnerHost['runCmdBackground'] = (cmd, args,
   requireHost().runCmdBackground(cmd, args, options);
 export const requireExecSuccess: AppleRunnerHost['requireExecSuccess'] = (result, message, extra) =>
   requireHost().requireExecSuccess(result, message, extra);
+export const isCommandTimeoutError: AppleRunnerHost['isCommandTimeoutError'] = (error) =>
+  requireHost().isCommandTimeoutError(error);
 export const emitDiagnostic: AppleRunnerHost['emitDiagnostic'] = (event) =>
   requireHost().emitDiagnostic(event);
 export const withDiagnosticTimer = <T>(

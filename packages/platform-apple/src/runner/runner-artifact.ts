@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   runCmdStreaming,
+  type Deadline,
   type ExecBackgroundResult,
   withKeyedLock,
   emitRequestProgress,
@@ -19,9 +20,11 @@ import {
   assertSafeDerivedCleanup,
   cleanRunnerDerivedArtifacts,
   cleanRunnerDerivedBeforeEvaluation,
+  createRunnerPhaseDeadline,
   emitRunnerXctestrunDecision,
   emitRunnerXctestrunRebuildDecision,
   evaluateExistingXctestrun,
+  requireRunnerPhaseRemainingMs,
   resolveExpectedRunnerCacheMetadata,
   resolveRunnerBundleBuildSettings,
   resolveRunnerDerivedPath,
@@ -68,22 +71,31 @@ export type ExternalXctestRunnerOptions = {
   iosXctestEnvDir?: string;
 };
 
+/** What the build phase reads: its budget, where it logs, and how it is canceled. */
+type RunnerXctestrunBuildOptions = {
+  verbose?: boolean;
+  logPath?: string;
+  traceLogPath?: string;
+  buildTimeoutMs?: number;
+  signal?: AbortSignal;
+};
+
 export async function ensureXctestrunArtifact(
   device: DeviceInfo,
-  options: {
-    verbose?: boolean;
-    logPath?: string;
-    traceLogPath?: string;
-    buildTimeoutMs?: number;
+  options: RunnerXctestrunBuildOptions & {
     forceRunnerXctestrunRebuild?: boolean;
-    signal?: AbortSignal;
   } & ExternalXctestRunnerOptions,
 ): Promise<RunnerXctestrunArtifact> {
   const external = resolveExternalXctestrunArtifact(options);
   if (external) return external;
 
   const projectRoot = findProjectRoot();
-  const expectedCacheMetadata = resolveExpectedRunnerCacheMetadata(device, projectRoot);
+  // One clock for the whole build phase: the toolchain probes and the xcodebuild share it.
+  const phaseDeadline = createRunnerPhaseDeadline(options.buildTimeoutMs);
+  const expectedCacheMetadata = resolveExpectedRunnerCacheMetadata(device, projectRoot, {
+    deadline: phaseDeadline,
+    signal: options.signal,
+  });
   const derived = resolveRunnerDerivedPath(device, expectedCacheMetadata);
   return await withKeyedLock(runnerXctestrunBuildLocks, derived, async () => {
     const releaseCacheLock = await acquireRunnerXctestrunCacheLock(derived);
@@ -91,6 +103,7 @@ export async function ensureXctestrunArtifact(
       return await ensureXctestrunUnderCacheLock({
         device,
         options,
+        phaseDeadline,
         projectRoot,
         expectedCacheMetadata,
         derived,
@@ -147,19 +160,14 @@ function resolveExternalXctestDerivedDataPath(xctestrunPath: string): string {
 
 async function ensureXctestrunUnderCacheLock(params: {
   device: DeviceInfo;
-  options: {
-    verbose?: boolean;
-    logPath?: string;
-    traceLogPath?: string;
-    buildTimeoutMs?: number;
-    signal?: AbortSignal;
-  };
+  options: RunnerXctestrunBuildOptions;
+  phaseDeadline: Deadline | undefined;
   projectRoot: string;
   expectedCacheMetadata: RunnerXctestrunCacheMetadata;
   derived: string;
   forceRebuild: boolean;
 }): Promise<RunnerXctestrunArtifact> {
-  const { device, options, projectRoot, expectedCacheMetadata, derived } = params;
+  const { device, options, phaseDeadline, projectRoot, expectedCacheMetadata, derived } = params;
   cleanRunnerDerivedBeforeEvaluation(derived, params.forceRebuild);
   const existing = await evaluateExistingXctestrunForDevice({
     device,
@@ -187,6 +195,7 @@ async function ensureXctestrunUnderCacheLock(params: {
   return await buildXctestrunArtifact({
     device,
     options,
+    phaseDeadline,
     projectRoot,
     expectedCacheMetadata,
     derived,
@@ -223,33 +232,42 @@ async function resolveReusableXctestrunArtifact(params: {
 
 async function buildXctestrunArtifact(params: {
   device: DeviceInfo;
-  options: {
-    verbose?: boolean;
-    logPath?: string;
-    traceLogPath?: string;
-    buildTimeoutMs?: number;
-    signal?: AbortSignal;
-  };
+  options: RunnerXctestrunBuildOptions;
+  phaseDeadline: Deadline | undefined;
   projectRoot: string;
   expectedCacheMetadata: RunnerXctestrunCacheMetadata;
   derived: string;
   cache: RunnerXctestrunArtifact['cache'];
   reason: ExistingXctestrunState['reason'];
 }): Promise<RunnerXctestrunArtifact> {
-  const { device, options, projectRoot, expectedCacheMetadata, derived, cache, reason } = params;
+  const {
+    device,
+    options,
+    phaseDeadline,
+    projectRoot,
+    expectedCacheMetadata,
+    derived,
+    cache,
+    reason,
+  } = params;
   const projectPath = resolveAppleRunnerProjectPath(projectRoot);
 
   if (!fs.existsSync(projectPath)) {
     throw new AppError('COMMAND_FAILED', 'iOS runner project not found', { projectPath });
   }
 
+  const buildTimeoutMs = requireRunnerPhaseRemainingMs(
+    phaseDeadline,
+    options.buildTimeoutMs,
+    'runner_xctestrun_build',
+  );
   const buildStartedAt = Date.now();
   emitRequestProgress({
     type: 'command',
     status: 'progress',
     message: 'Building Apple runner...',
   });
-  await buildRunnerXctestrun(device, projectPath, derived, options);
+  await buildRunnerXctestrun(device, projectPath, derived, { ...options, buildTimeoutMs });
   const buildMs = Math.max(0, Date.now() - buildStartedAt);
 
   const built = findXctestrun(derived, device);
@@ -455,13 +473,7 @@ async function buildRunnerXctestrun(
   device: DeviceInfo,
   projectPath: string,
   derived: string,
-  options: {
-    verbose?: boolean;
-    logPath?: string;
-    traceLogPath?: string;
-    buildTimeoutMs?: number;
-    signal?: AbortSignal;
-  },
+  options: RunnerXctestrunBuildOptions,
 ): Promise<void> {
   const runnerBundleBuildSettings = resolveRunnerBundleBuildSettings(process.env);
   const signingBuildSettings = resolveRunnerSigningBuildSettings(
