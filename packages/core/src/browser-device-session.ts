@@ -67,6 +67,7 @@ type SessionState = {
   pageClosedAt: Map<string, number>;
   attached: WeakSet<Page>;
   frame?: BrowserDeviceFrame;
+  equivalentFrames: Map<number, number>;
   observedMutationVersion: number;
   needsFreshFrame: boolean;
   capture?: Promise<BrowserDeviceFrame>;
@@ -272,6 +273,7 @@ export async function openBrowserDeviceSession(
     needsFreshFrame: true,
     observedMutationVersion: runtime.mutationVersion(),
     frameCaptureMs: [],
+    equivalentFrames: new Map(),
     interactionMs: [],
     frameTimesMs: [],
   };
@@ -340,11 +342,22 @@ async function capture(state: SessionState): Promise<BrowserDeviceFrame> {
       state.frameTimesMs.shift();
     }
     const digest = createHash("sha256").update(buffer).digest("base64url");
-    // Sequence identifies an observation, not visual novelty. Two URLs or DOM
-    // states may paint identical pixels, so every successful capture retires
-    // the previously painted input boundary. The digest remains the stable
-    // visual identity used for deduplication and review.
+    // The next capture can finish before the renderer paints it. Preserve a
+    // bounded window of identical observations, but never across a mutation,
+    // navigation, page switch, or visual change (even if pixels later return).
+    if (
+      state.needsFreshFrame ||
+      state.observedMutationVersion !== state.runtime.mutationVersion() ||
+      state.frame?.pageId !== state.activePageId ||
+      state.frame?.pageUrl !== page.url().slice(0, 4_096) ||
+      state.frame?.visualFingerprint !== digest
+    )
+      state.equivalentFrames.clear();
     state.sequence += 1;
+    state.equivalentFrames.set(state.sequence, capturedAt);
+    if (state.equivalentFrames.size > 8) {
+      state.equivalentFrames.delete(state.equivalentFrames.keys().next().value!);
+    }
     const viewport = page.viewportSize() ?? state.runtime.profile.viewport;
     state.frame = {
       sessionId: state.runtime.sessionId,
@@ -474,8 +487,7 @@ function assertInspectableFrame(
     );
   }
   if (
-    input.expectedSequence !== state.sequence ||
-    input.expectedSequence !== frame.sequence ||
+    !state.equivalentFrames.has(input.expectedSequence) ||
     state.needsFreshFrame ||
     state.observedMutationVersion !== state.runtime.mutationVersion()
   ) {
@@ -501,7 +513,11 @@ function assertInspectableFrame(
       state.issue ?? "Browser page unavailable",
     );
   }
-  return frame;
+  return {
+    ...frame,
+    sequence: input.expectedSequence,
+    capturedAt: state.equivalentFrames.get(input.expectedSequence)!,
+  };
 }
 
 /**
@@ -582,7 +598,7 @@ function assertInput(state: SessionState, input: BrowserDeviceInput): Page {
     );
   }
   if (
-    input.expectedSequence !== state.sequence ||
+    !state.equivalentFrames.has(input.expectedSequence) ||
     state.needsFreshFrame ||
     state.observedMutationVersion !== state.runtime.mutationVersion()
   ) {

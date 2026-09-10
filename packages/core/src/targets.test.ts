@@ -9,6 +9,7 @@ import {
   BrowserDeviceConflictError,
   captureBrowserDeviceFrame,
   controlBrowserDevice,
+  inspectBrowserDevice,
   MAX_BROWSER_DEVICE_OPEN_POPUPS,
   MAX_BROWSER_DEVICE_PAGE_TOMBSTONES,
   openBrowserDeviceSession,
@@ -94,22 +95,49 @@ test("in-app Browser Device sequences frames and rejects stale page input", asyn
       const unchanged = await captureBrowserDeviceFrame(target.id);
       assert.equal(unchanged.frame.sequence, 2);
       assert.equal(unchanged.frame.visualFingerprint, first.frame.visualFingerprint);
+      const inspected = await inspectBrowserDevice(target.id, {
+        sessionId: opened.sessionId,
+        pageId: first.frame.pageId,
+        expectedSequence: first.frame.sequence,
+      });
+      assert.equal(inspected.overlay.sequence, first.frame.sequence);
+      assert.equal(inspected.overlay.capturedAt, first.frame.capturedAt);
+      const clicked = await controlBrowserDevice(target.id, {
+        sessionId: opened.sessionId,
+        pageId: first.frame.pageId,
+        expectedSequence: first.frame.sequence,
+        kind: "click",
+        x: 10,
+        y: 10,
+      });
+      assert.equal(clicked.resolution?.outcome, "semantic");
+      const ready = await captureBrowserDeviceFrame(target.id);
+      // Even when the pixels are unchanged, a completed input retires all of
+      // the earlier observations after the next capture as well.
       await assert.rejects(
-        controlBrowserDevice(target.id, {
+        inspectBrowserDevice(target.id, {
           sessionId: opened.sessionId,
           pageId: first.frame.pageId,
           expectedSequence: first.frame.sequence,
-          kind: "click",
-          x: 10,
-          y: 10,
         }),
         (error) =>
           error instanceof BrowserDeviceConflictError && error.code === "BROWSER_STALE_INPUT",
       );
+      for (let index = 0; index < 8; index++) await captureBrowserDeviceFrame(target.id);
+      await assert.rejects(
+        inspectBrowserDevice(target.id, {
+          sessionId: opened.sessionId,
+          pageId: ready.frame.pageId,
+          expectedSequence: ready.frame.sequence,
+        }),
+        (error) =>
+          error instanceof BrowserDeviceConflictError && error.code === "BROWSER_STALE_INPUT",
+      );
+      const current = await captureBrowserDeviceFrame(target.id);
       await controlBrowserDevice(target.id, {
         sessionId: opened.sessionId,
         pageId: unchanged.frame.pageId,
-        expectedSequence: unchanged.frame.sequence,
+        expectedSequence: current.frame.sequence,
         kind: "navigate",
         url: `${startUrl}/next`,
       });
@@ -126,7 +154,7 @@ test("in-app Browser Device sequences frames and rejects stale page input", asyn
           error instanceof BrowserDeviceConflictError && error.code === "BROWSER_STALE_INPUT",
       );
       const second = await captureBrowserDeviceFrame(target.id);
-      assert.equal(second.frame.sequence, 3);
+      assert.equal(second.frame.sequence, current.frame.sequence + 1);
       assert.match(second.frame.pageUrl, /\/next$/u);
       const device = await getBrowserDevice(target.id, { mode: "authoring" });
       await runWithTargetContext(
