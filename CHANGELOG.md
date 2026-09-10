@@ -11,6 +11,8 @@
   backend acquired, so every backend serves the request; the private AX declaration is now
   `regular-depth=presentation-cut` and an acquisition that stopped short of the cut keeps
   disclosing that through `truncated`/`effectiveDepth` as it does unscoped.
+- Fixed: repeated unfiltered Android snapshots stay compact when identical element bounds arrive
+  with a different property order. Changes to the bounds still re-emit the tree.
 - Added: `replay export` supports flows that switch apps and return, preserving each
   `open <appId>` target as an explicit Maestro `launchApp.appId`.
 - Added: `replay export` converts recorded `home` actions to Maestro `pressKey: Home`, allowing
