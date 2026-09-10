@@ -232,7 +232,7 @@ export const replayCommandFacet = defineCommandFacet({
   text: {
     summary: 'Replay a recorded session or Maestro flow',
     cliDetail:
-      'For Maestro YAML compatibility flows, use replay <flow.yaml> --maestro and keep the target binding such as --platform ios on the replay command. A script with no terminal close leaves its session (and daemon) running until you close it or it idle-reaps — no different from a session opened interactively. For native .ad scripts, --keep-session suppresses exactly an authored terminal close so you can continue interactively. replay export <file.ad> converts compatible actions to Maestro YAML locally, including app switches with explicit launchApp.appId targets and home as pressKey: Home.',
+      'For Maestro YAML compatibility flows, use replay <flow.yaml> --maestro and keep the target binding such as --platform ios on the replay command. A script with no terminal close leaves its session (and daemon) running until you close it or it idle-reaps — no different from a session opened interactively. For native .ad scripts, --keep-session suppresses exactly an authored terminal close so you can continue interactively. replay export <file.ad> converts compatible actions to Maestro YAML locally, including app switches with explicit launchApp.appId targets, deep links (including tel: and mailto:) as openLink, and home as pressKey: Home.',
   },
   metadata: replayCommandMetadata,
   run: (client, input) => client.replay.run(withCommandRuntimeHints(input)),
