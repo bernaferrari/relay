@@ -418,3 +418,9 @@ export function returnConnector(
     label: { x: corridorX, y: Math.abs(start.y - y) > 100 ? (start.y + y) / 2 : start.y - 12 },
   };
 }
+
+export function isRoutineReturn(path: Pick<ProductMapPath, "label" | "toScreenId">): boolean {
+  return Boolean(
+    path.toScreenId && /^(back|close|dismiss|return|cancel|disable)\b/i.test(path.label),
+  );
+}

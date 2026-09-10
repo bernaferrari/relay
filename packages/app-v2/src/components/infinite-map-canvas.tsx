@@ -1,6 +1,10 @@
 import { MapAccessibilityOverlay } from "./map-accessibility-overlay";
-import { MapEdges } from "./map-edges";
+import { MapEdges, isRoutineReturn } from "./map-edges";
 import {
+  containedImageRect,
+  MAP_NODE_TITLE_HEIGHT,
+  MAP_NODE_GAP,
+  MAP_NODE_IMAGE_HEIGHT,
   INITIAL_TRANSFORM,
   MAP_NODE_WIDTH,
   MAP_NODE_HEIGHT,
@@ -84,7 +88,6 @@ export function InfiniteMapCanvas({
   >(undefined);
   const [autoArrange, setAutoArrange] = useState(false);
   const [arrangedEdits, setArrangedEdits] = useState<Map<string, MapPoint>>(() => new Map());
-  const [showReturns, setShowReturns] = useState(false);
   const positions = useMemo(() => {
     const result = new Map(
       layoutMapScreens(
@@ -554,14 +557,6 @@ export function InfiniteMapCanvas({
           </Button>
           <Button
             size="sm"
-            variant={showReturns ? "secondary" : "ghost"}
-            aria-pressed={showReturns}
-            onClick={() => setShowReturns((value) => !value)}
-          >
-            Return paths
-          </Button>
-          <Button
-            size="sm"
             variant={autoArrange ? "secondary" : "ghost"}
             aria-pressed={autoArrange}
             onClick={() => setAutoArrange((value) => !value)}
@@ -713,10 +708,7 @@ export function InfiniteMapCanvas({
             <MapEdges
               selectedPathId={selectedPathId}
               paths={visiblePaths.filter(
-                (path) =>
-                  showReturns ||
-                  path.id === selectedPathId ||
-                  !/^(back|close|dismiss|return)\b/i.test(path.label),
+                (path) => path.id === selectedPathId || !isRoutineReturn(path),
               )}
               positions={positions}
               markerId={markerId}
@@ -871,6 +863,61 @@ export function InfiniteMapCanvas({
                     ) : null}
                   </div>
                 </button>
+              );
+            })}
+            {visibleScreens.map((screen) => {
+              const returns = visiblePaths.filter(
+                (path) => path.fromScreenId === screen.id && isRoutineReturn(path),
+              );
+              const position = positions.get(screen.id);
+              if (!position || !returns.length) return null;
+              const image = containedImageRect(
+                {
+                  x: position.x,
+                  y: position.y + MAP_NODE_TITLE_HEIGHT + MAP_NODE_GAP,
+                  width: MAP_NODE_WIDTH,
+                  height: MAP_NODE_IMAGE_HEIGHT,
+                },
+                imageDimensions.get(screen.id) ?? {
+                  width: MAP_NODE_WIDTH,
+                  height: MAP_NODE_IMAGE_HEIGHT,
+                },
+                "top",
+              );
+              if (!image) return null;
+              return (
+                <div
+                  key={`returns-${screen.id}`}
+                  className="absolute z-20 flex flex-col items-center gap-1"
+                  style={{
+                    left: position.x,
+                    top: image.y + image.height + 12,
+                    width: MAP_NODE_WIDTH,
+                  }}
+                >
+                  {returns.map((path) => (
+                    <button
+                      key={path.id}
+                      type="button"
+                      aria-label={`Inspect ${path.label} to ${path.toTitle ?? "previous screen"}`}
+                      aria-pressed={selectedPathId === path.id}
+                      className="flex max-w-full items-center gap-1 rounded px-2 py-1 text-[10px] text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring aria-pressed:bg-accent"
+                      onClick={() => {
+                        setSelectedPathId((current) => (current === path.id ? undefined : path.id));
+                        setSelectedScreenId(screen.id);
+                      }}
+                    >
+                      <RotateCcw className="size-3 shrink-0" aria-hidden="true" />
+                      <span className="truncate">
+                        {/^disable\b/i.test(path.label)
+                          ? path.label
+                          : path.toTitle
+                            ? `Back to ${path.toTitle}`
+                            : path.label}
+                      </span>
+                    </button>
+                  ))}
+                </div>
               );
             })}
           </div>

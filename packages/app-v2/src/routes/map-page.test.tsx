@@ -104,6 +104,36 @@ async function render(
 }
 
 describe("Map exploration", () => {
+  it("keeps routine returns local until explicitly inspected", async () => {
+    await render({
+      get: async () => ({
+        ...overview,
+        paths: [
+          ...overview.paths,
+          {
+            ...overview.paths[0]!,
+            id: "back",
+            label: "Back to Home",
+            fromScreenId: "cart",
+            toScreenId: "home",
+            fromTitle: "Cart",
+            toTitle: "Home",
+          },
+        ],
+      }),
+    });
+    expect(document.querySelectorAll(".relay-map-edge")).toHaveLength(1);
+    const control = document.querySelector<HTMLButtonElement>(
+      'button[aria-label="Inspect Back to Home to Home"]',
+    );
+    expect(control).not.toBeNull();
+    await act(async () => control?.click());
+    expect(document.querySelectorAll(".relay-map-edge")).toHaveLength(2);
+    expect(control?.getAttribute("aria-pressed")).toBe("true");
+    await act(async () => control?.click());
+    expect(document.querySelectorAll(".relay-map-edge")).toHaveLength(1);
+  });
+
   it("lays out connected screens in reading order without cycling", () => {
     const screens = ["a", "b", "c"].map((id) => ({
       ...overview.screens[0]!,
