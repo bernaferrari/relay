@@ -203,7 +203,7 @@ describe("Agent Debug route", () => {
   it("explains how to recover when no runnable target is available", async () => {
     await render({ devices: [productDevice("offline", "Offline iPad", false, "ios")] });
 
-    expect(document.body.textContent).toContain("No ready device is available.");
+    expect(document.body.textContent).toContain("No devices connected");
     expect(document.querySelector<HTMLAnchorElement>('a[href="/devices"]')).not.toBeNull();
   });
 
@@ -373,7 +373,7 @@ describe("Agent Debug route", () => {
 
     expect(document.body.textContent).toContain("Before step 1");
     expect(document.body.textContent).toContain("Build build-92");
-    expect(document.body.textContent).toContain("Restoring original configuration…");
+    expect(document.body.textContent).toContain("Ready to review");
     expect(debugBug).toHaveBeenCalledWith(
       expect.objectContaining({
         targetId: "serial-ready",

@@ -460,28 +460,6 @@ function RunReport({
   const heading = resultHeading(report.outcome);
   const actions = (
     <>
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          render={<Button variant="ghost" size="sm" />}
-          aria-label="More run actions"
-        >
-          <MoreHorizontal className="size-4" aria-hidden="true" /> More
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-52">
-          <DropdownMenuItem onClick={() => setRawEvidenceOpen(true)}>Audit</DropdownMenuItem>
-          {runService.review || runService.compareVisual ? (
-            <DropdownMenuItem onClick={() => setRunDialog("review")}>Review run</DropdownMenuItem>
-          ) : null}
-          <DropdownMenuItem onClick={() => setRunDialog("configuration")}>
-            Configuration
-          </DropdownMenuItem>
-          {runService.exportEvidence ? (
-            <DropdownMenuItem onClick={() => setRunDialog("export")}>
-              Export evidence
-            </DropdownMenuItem>
-          ) : null}
-        </DropdownMenuContent>
-      </DropdownMenu>
       <Dialog open={rawEvidenceOpen} onOpenChange={setRawEvidenceOpen}>
         <DialogContent className="max-h-[85dvh] overflow-y-auto">
           <DialogTitle>Audit details</DialogTitle>
@@ -587,6 +565,28 @@ function RunReport({
       ) : embedded ? null : (
         <RunReplayAction report={report} runService={runService} />
       )}
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={<Button variant="ghost" size="sm" />}
+          aria-label="More run actions"
+        >
+          <MoreHorizontal className="size-4" aria-hidden="true" /> More
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-52">
+          <DropdownMenuItem onClick={() => setRawEvidenceOpen(true)}>Audit</DropdownMenuItem>
+          {runService.review || runService.compareVisual ? (
+            <DropdownMenuItem onClick={() => setRunDialog("review")}>Review run</DropdownMenuItem>
+          ) : null}
+          <DropdownMenuItem onClick={() => setRunDialog("configuration")}>
+            Configuration
+          </DropdownMenuItem>
+          {runService.exportEvidence ? (
+            <DropdownMenuItem onClick={() => setRunDialog("export")}>
+              Export evidence
+            </DropdownMenuItem>
+          ) : null}
+        </DropdownMenuContent>
+      </DropdownMenu>
     </>
   );
   const failureNotice = failure ? (

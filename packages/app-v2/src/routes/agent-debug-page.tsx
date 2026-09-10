@@ -1,3 +1,4 @@
+import { DeviceDestinationButton } from "../layout/device-destination";
 /** @jsxImportSource react */
 import { Field, FieldError, FieldLabel } from "@relay/ui-react/components/field";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@relay/ui-react/components/alert";
@@ -179,18 +180,18 @@ export function AgentDebugPage() {
         }
         description={
           contextualRunId
-            ? "The original result stays unchanged. A substituted device is a new experiment."
+            ? "Review the failure, then choose a device to investigate."
             : "Name the problem, pick a device, and start capturing."
         }
       />
 
       {contextualRunId ? (
         <section
-          className="mb-6 grid w-full max-w-2xl gap-3 rounded-xl border border-border bg-card p-5"
+          className="mb-5 grid w-full max-w-2xl gap-4 rounded-lg bg-background/40 p-4"
           aria-label="Failed result"
         >
           <div className="flex items-center justify-between gap-3">
-            <h2 className="text-sm font-semibold">From this failed result</h2>
+            <h2 className="text-sm font-semibold">Failed run</h2>
             <Link
               className="text-sm text-muted-foreground underline-offset-4 hover:underline"
               to="/runs/$runId"
@@ -210,7 +211,7 @@ export function AgentDebugPage() {
             </p>
           ) : null}
           {report.data ? (
-            <dl className="grid gap-2 text-sm">
+            <dl className="grid gap-4 text-sm">
               <div>
                 <dt className="font-medium text-muted-foreground">Original result</dt>
                 <dd className="text-foreground">
@@ -218,10 +219,6 @@ export function AgentDebugPage() {
                     ? originalEnvironmentSummary(originalEnvironment)
                     : "Configuration from this result"}
                 </dd>
-              </div>
-              <div>
-                <dt className="font-medium text-muted-foreground">{reproductionCopy.title}</dt>
-                <dd className="text-foreground">{reproductionCopy.detail}</dd>
               </div>
               {!failureStep ? (
                 <div>
@@ -236,17 +233,17 @@ export function AgentDebugPage() {
                 </dd>
               </div>
               <div>
-                <dt className="font-medium text-muted-foreground">Observed</dt>
-                <dd className="text-foreground">
-                  {failureStep?.observed ?? report.data.cause ?? "Observed result from the report"}
-                </dd>
-              </div>
-              <div>
-                <dt className="font-medium text-muted-foreground">Evidence</dt>
-                <dd className="text-foreground">
-                  {report.data.evidence.length
-                    ? `${report.data.evidence.length} ${report.data.evidence.length === 1 ? "item" : "items"}`
-                    : "No evidence attached"}
+                <dt className="sr-only">Observed</dt>
+                <dd>
+                  <details className="group">
+                    <summary className="cursor-pointer rounded-md py-1 text-xs text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring">
+                      Failure details · {report.data.evidence.length}{" "}
+                      {report.data.evidence.length === 1 ? "item" : "items"}
+                    </summary>
+                    <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/40 p-3 font-mono text-xs leading-5">
+                      {failureStep?.observed ?? report.data.cause ?? "No observation retained"}
+                    </pre>
+                  </details>
                 </dd>
               </div>
             </dl>
@@ -255,11 +252,11 @@ export function AgentDebugPage() {
       ) : null}
       {start.isPending && !startSucceeded ? (
         <p className="mb-4 text-sm text-muted-foreground" role="status">
-          Starting investigation…
+          {contextualRunId ? reproductionCopy.title : "Starting investigation…"}
         </p>
       ) : null}
       {hideStartForm ? null : (
-        <form onSubmit={submit} className="grid max-w-2xl gap-6">
+        <form onSubmit={submit} className="grid max-w-2xl gap-4">
           {contextualRunId && report.data ? null : (
             <Field className="gap-2">
               <FieldLabel htmlFor="agent-debug-title">Name</FieldLabel>
@@ -281,6 +278,7 @@ export function AgentDebugPage() {
               </p>
             ) : null}
             <Select
+              disabled={readyDevices.length === 0}
               items={readyDevices.map((device) => ({
                 value: device.serial,
                 label: `${device.name} · ${device.platform}`,
@@ -299,16 +297,23 @@ export function AgentDebugPage() {
                 ))}
               </SelectContent>
             </Select>
-            {reproduction.kind === "original-unavailable" || reproduction.kind === "substituted" ? (
-              <p className="text-sm text-muted-foreground" role="status">
+            {contextualRunId ? (
+              <p className="text-xs leading-5 text-muted-foreground" role="status">
+                <span className="font-medium">{reproductionCopy.title}.</span>{" "}
                 {reproductionCopy.detail}
               </p>
             ) : null}
             {devices.data && !devices.data.some((device) => device.runnable) ? (
-              <FieldError>
-                No ready device is available. <Link to="/devices">Open devices</Link> to reconnect
-                one, then try again.
-              </FieldError>
+              <div
+                className="flex items-center justify-between gap-3 rounded-lg bg-background/40 px-3 py-2"
+                role="status"
+              >
+                <span className="text-sm text-muted-foreground">No devices connected</span>
+                <DeviceDestinationButton
+                  label="Choose device"
+                  onSelect={(device) => setTargetId(device.serial)}
+                />
+              </div>
             ) : null}
           </Field>
           {devices.isError ? (

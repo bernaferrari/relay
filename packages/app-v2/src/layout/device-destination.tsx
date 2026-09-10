@@ -44,7 +44,10 @@ function versionLabel(device: ProductDevice): string | undefined {
 }
 const rowClass = "min-h-8 gap-2.5 px-2 text-[13px]";
 
-export function DeviceDestinationButton() {
+export function DeviceDestinationButton({
+  label: triggerLabel,
+  onSelect,
+}: { label?: string; onSelect?(device: ProductDevice): void } = {}) {
   const router = useRouter();
   const { deviceService, platform, queryClient } = useRouteContext({ from: "__root__" });
   const devices = useQuery({
@@ -75,6 +78,7 @@ export function DeviceDestinationButton() {
   );
   const label = current?.name ?? summary.label;
   function select(device: ProductDevice) {
+    onSelect?.(device);
     const next = { targetId: destinationRunTargetId(device) };
     queryClient.setQueryData(workspaceDestinationQueryKey, next);
     void platform.storage.set(WORKSPACE_DESTINATION_KEY, JSON.stringify(next));
@@ -83,10 +87,10 @@ export function DeviceDestinationButton() {
     <DropdownMenu>
       <DropdownMenuTrigger
         className="relay-destination-trigger relay-electron-no-drag [-webkit-app-region:no-drag] inline-flex h-7 max-w-[12.5rem] items-center gap-1 rounded-md px-2.5 text-[13px] text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2"
-        aria-label={`Device or browser: ${label}`}
+        aria-label={triggerLabel ?? `Device or browser: ${label}`}
       >
         <MonitorSmartphone className="size-3.5 shrink-0" aria-hidden="true" />
-        <span className="min-w-0 truncate">{label}</span>
+        <span className="min-w-0 truncate">{triggerLabel ?? label}</span>
         <ChevronDown className="size-3 shrink-0 opacity-60" aria-hidden="true" />
       </DropdownMenuTrigger>
       <DropdownMenuContent
