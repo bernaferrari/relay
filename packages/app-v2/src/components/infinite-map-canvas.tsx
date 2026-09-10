@@ -672,8 +672,10 @@ export function InfiniteMapCanvas({
                     height: MAP_NODE_HEIGHT,
                   }}
                 >
-                  <span className="line-clamp-2 h-10 shrink-0 text-sm font-medium leading-tight">
-                    {screen.title}
+                  <span className="flex h-10 w-full shrink-0 items-end justify-center text-center text-[13px] font-medium leading-tight">
+                    <span className="line-clamp-2" title={screen.title}>
+                      {screen.title}
+                    </span>
                   </span>
                   <div className="h-[300px] w-full shrink-0">
                     <MapScreenPreview
