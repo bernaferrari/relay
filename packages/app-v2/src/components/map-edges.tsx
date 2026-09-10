@@ -103,6 +103,11 @@ export function MapEdges({
             : to.y + MAP_NODE_HEIGHT / 2,
         }
       : { x: start.x + 116, y: start.y };
+    // Leave an intentional gap around previews. Recorded click origins retain
+    // their exact position inside the source screenshot.
+    const clearance = 14;
+    if (!anchor) start.x += backwards ? -clearance : clearance;
+    if (to) end.x += backwards ? clearance : -clearance;
     if (!to) {
       const width = Math.min(240, Math.max(168, path.label.length * 6.2 + 24));
       const left = start.x + 32;
@@ -129,12 +134,12 @@ export function MapEdges({
       const loopTop = from.y - 74;
       const loopStart = anchor ?? {
         x: from.x + MAP_NODE_WIDTH * 0.72,
-        y: from.y,
+        y: from.y - clearance,
       };
       const loopEnd = anchor
         ? { x: from.x + MAP_NODE_WIDTH * 0.28, y: from.y + 4 }
         : imageRect
-          ? { x: imageRect.x, y: imageRect.y + imageRect.height / 2 }
+          ? { x: imageRect.x - clearance, y: imageRect.y + imageRect.height / 2 }
           : { x: from.x + MAP_NODE_WIDTH * 0.28, y: from.y };
       return [
         {
@@ -155,8 +160,8 @@ export function MapEdges({
     }
     const actualBackwards = end.x < start.x;
     if (actualBackwards && !anchor && !imageRect) {
-      start.x = from.x;
-      if (to) end.x = to.x + MAP_NODE_WIDTH;
+      start.x = from.x - clearance;
+      if (to) end.x = to.x + MAP_NODE_WIDTH + clearance;
     }
     const lane = actualBackwards ? (index % 5) * 10 : 0;
     const corridor = actualBackwards

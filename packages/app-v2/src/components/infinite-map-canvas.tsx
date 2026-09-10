@@ -71,8 +71,16 @@ export function InfiniteMapCanvas({
   const visibleScreens = useMemo(() => screens.slice(0, 500), [screens]);
   const visiblePaths = useMemo(() => paths.slice(0, 500), [paths]);
   const [dragged, setDragged] = useState<{ id: string; position: MapPoint }>();
+  const suppressNodeClick = useRef(false);
   const nodeDrag = useRef<
-    { id: string; start: MapPoint; position: MapPoint; moved: boolean } | undefined
+    | {
+        id: string;
+        start: MapPoint;
+        position: MapPoint;
+        moved: boolean;
+        members: Map<string, MapPoint>;
+      }
+    | undefined
   >(undefined);
   const [autoArrange, setAutoArrange] = useState(false);
   const [arrangedEdits, setArrangedEdits] = useState<Map<string, MapPoint>>(() => new Map());
@@ -86,8 +94,17 @@ export function InfiniteMapCanvas({
         visiblePaths,
       ),
     );
-    if (autoArrange) for (const [id, point] of arrangedEdits) result.set(id, point);
-    if (dragged) result.set(dragged.id, dragged.position);
+    for (const [id, point] of arrangedEdits) result.set(id, point);
+    if (dragged) {
+      const drag = nodeDrag.current;
+      if (drag)
+        for (const [id, origin] of drag.members)
+          result.set(id, {
+            x: origin.x + dragged.position.x - drag.position.x,
+            y: origin.y + dragged.position.y - drag.position.y,
+          });
+      else result.set(dragged.id, dragged.position);
+    }
     return result;
   }, [visibleScreens, visiblePaths, dragged, autoArrange, arrangedEdits]);
   const bounds = useMemo(
@@ -108,9 +125,15 @@ export function InfiniteMapCanvas({
   const [focusScreenId, setFocusScreenId] = useState<string | undefined>(
     selectedPath?.fromScreenId,
   );
-  const [selectedScreenId, setSelectedScreenId] = useState<string | undefined>(
+  const [selectedScreenId, setSingleScreenId] = useState<string | undefined>(
     selectedPath?.fromScreenId,
   );
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [marquee, setMarquee] = useState<{ x: number; y: number; width: number; height: number }>();
+  function setSelectedScreenId(id: string | undefined) {
+    setSingleScreenId(id);
+    setSelectedIds(new Set(id ? [id] : []));
+  }
   const selected = visibleScreens.find((screen) => screen.id === selectedScreenId);
   const viewportRef = useRef<HTMLElement>(null);
   const worldRef = useRef<HTMLDivElement>(null);
@@ -119,6 +142,8 @@ export function InfiniteMapCanvas({
   const dragRef = useRef<
     | {
         pointerId: number;
+        mode: "pan" | "select";
+        base: Set<string>;
         origin: MapPoint;
         transform: MapTransform;
       }
@@ -288,10 +313,12 @@ export function InfiniteMapCanvas({
       return;
     dragRef.current = {
       pointerId: event.pointerId,
+      mode: panningTool || event.button === 1 ? "pan" : "select",
+      base: event.shiftKey ? new Set(selectedIds) : new Set(),
       origin: { x: event.clientX, y: event.clientY },
       transform: transformRef.current,
     };
-    event.currentTarget.dataset.panning = "true";
+    if (dragRef.current.mode === "pan") event.currentTarget.dataset.panning = "true";
     event.currentTarget.setPointerCapture?.(event.pointerId);
     event.preventDefault();
   }
@@ -299,6 +326,30 @@ export function InfiniteMapCanvas({
   function handlePointerMove(event: PointerEvent<HTMLElement>) {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
+    if (drag.mode === "select") {
+      const viewport = event.currentTarget.getBoundingClientRect();
+      const box = {
+        x: Math.min(drag.origin.x, event.clientX) - viewport.left,
+        y: Math.min(drag.origin.y, event.clientY) - viewport.top,
+        width: Math.abs(event.clientX - drag.origin.x),
+        height: Math.abs(event.clientY - drag.origin.y),
+      };
+      setMarquee(box);
+      const ids = new Set(drag.base);
+      for (const [id, point] of positions) {
+        const left = point.x * drag.transform.scale + drag.transform.x;
+        const top = point.y * drag.transform.scale + drag.transform.y;
+        if (
+          left < box.x + box.width &&
+          left + MAP_NODE_WIDTH * drag.transform.scale > box.x &&
+          top < box.y + box.height &&
+          top + MAP_NODE_HEIGHT * drag.transform.scale > box.y
+        )
+          ids.add(id);
+      }
+      setSelectedIds(ids);
+      return;
+    }
     applyTransform({
       x: drag.transform.x + event.clientX - drag.origin.x,
       y: drag.transform.y + event.clientY - drag.origin.y,
@@ -309,6 +360,11 @@ export function InfiniteMapCanvas({
   function endPointerDrag(event: PointerEvent<HTMLElement>) {
     if (dragRef.current?.pointerId !== event.pointerId) return;
     const origin = dragRef.current.origin;
+    if (dragRef.current.mode === "select") {
+      setSingleScreenId(undefined);
+      setSelectedPathId(undefined);
+    }
+    setMarquee(undefined);
     if (
       Math.hypot(event.clientX - origin.x, event.clientY - origin.y) < 3 &&
       !(event.target as HTMLElement).closest("button")
@@ -347,6 +403,8 @@ export function InfiniteMapCanvas({
     }
     if (event.key === "Escape") {
       setSelectedScreenId(undefined);
+      setMarquee(undefined);
+      dragRef.current = undefined;
       return;
     }
     if (event.key.toLowerCase() === "h") {
@@ -606,7 +664,7 @@ export function InfiniteMapCanvas({
                 path.sourceAnchor && (!selectedScreenId || path.fromScreenId === selectedScreenId),
             )
               ? "No recorded click coordinates for this selection · Connections use screen edges"
-              : "Scroll to pan · Pinch to zoom · Double-click to focus"}
+              : "Drag to select · Space to pan · Pinch to zoom · Double-click to focus"}
           </p>
         )}
         <section
@@ -623,6 +681,26 @@ export function InfiniteMapCanvas({
           onWheel={handleWheel}
           onKeyDown={handleKeyDown}
         >
+          {marquee ? (
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute z-30 border border-blue-400 bg-blue-400/10"
+              style={{
+                left: marquee.x,
+                top: marquee.y,
+                width: marquee.width,
+                height: marquee.height,
+              }}
+            />
+          ) : null}
+          {selectedIds.size > 1 ? (
+            <span
+              role="status"
+              className="pointer-events-none absolute right-4 top-4 z-20 rounded-md bg-background/90 px-2 py-1 text-xs text-muted-foreground"
+            >
+              {selectedIds.size} screens selected
+            </span>
+          ) : null}
           <span className="relay-visually-hidden sr-only" id="map-keyboard-help">
             Use arrow keys to move, plus and minus to zoom, F to fit the map, Shift F to focus a
             selected screen, Space to pan, or 0 to reset the view. Tab to visit each screen.
@@ -649,21 +727,35 @@ export function InfiniteMapCanvas({
             />
             {visibleScreens.map((screen) => {
               const position = positions.get(screen.id) ?? { x: 0, y: 0 };
-              const selectedNode = selectedScreenId === screen.id;
+              const selectedNode = selectedScreenId === screen.id || selectedIds.has(screen.id);
               return (
                 <button
                   type="button"
                   className={`relay-map-screen absolute flex flex-col gap-2 text-left focus-visible:outline-2 focus-visible:outline-ring`}
                   key={screen.id}
                   aria-pressed={selectedNode}
-                  onClick={() => {
-                    if (!panningTool) setSelectedScreenId(screen.id);
+                  onClick={(event) => {
+                    if (suppressNodeClick.current) {
+                      suppressNodeClick.current = false;
+                      return;
+                    }
+                    if (panningTool) return;
+                    if (event.shiftKey) {
+                      setSingleScreenId(undefined);
+                      setSelectedIds((current) => {
+                        const next = new Set(current);
+                        if (next.has(screen.id)) next.delete(screen.id);
+                        else next.add(screen.id);
+                        return next;
+                      });
+                    } else setSelectedScreenId(screen.id);
                   }}
                   onDoubleClick={() => {
                     if (!panningTool) focusScreen(screen.id);
                   }}
                   onPointerDown={(event) => {
                     if (panningTool || !onUpdateScreen || saving || event.button !== 0) return;
+                    suppressNodeClick.current = false;
                     event.stopPropagation();
                     event.preventDefault();
                     event.currentTarget.setPointerCapture(event.pointerId);
@@ -672,6 +764,11 @@ export function InfiniteMapCanvas({
                       start: { x: event.clientX, y: event.clientY },
                       position,
                       moved: false,
+                      members: new Map(
+                        [...positions].filter(([id]) =>
+                          selectedIds.has(screen.id) ? selectedIds.has(id) : id === screen.id,
+                        ),
+                      ),
                     };
                   }}
                   onPointerMove={(event) => {
@@ -691,6 +788,7 @@ export function InfiniteMapCanvas({
                     nodeDrag.current = undefined;
                     event.currentTarget.releasePointerCapture(event.pointerId);
                     if (drag?.moved && onUpdateScreen) {
+                      suppressNodeClick.current = true;
                       const position = {
                         x:
                           drag.position.x +
@@ -699,10 +797,30 @@ export function InfiniteMapCanvas({
                           drag.position.y +
                           (event.clientY - drag.start.y) / transformRef.current.scale,
                       };
-                      if (autoArrange)
-                        setArrangedEdits((current) => new Map(current).set(screen.id, position));
-                      void onUpdateScreen(screen.id, { position })
-                        .catch(() => undefined)
+                      const updates = [...drag.members].map(
+                        ([id, origin]) =>
+                          [
+                            id,
+                            {
+                              x: origin.x + position.x - drag.position.x,
+                              y: origin.y + position.y - drag.position.y,
+                            },
+                          ] as const,
+                      );
+                      setArrangedEdits((current) => new Map([...current, ...updates]));
+                      void (async () => {
+                        for (const [id, position] of updates) {
+                          await onUpdateScreen(id, { position });
+                          drag.members.delete(id);
+                        }
+                      })()
+                        .catch(() =>
+                          setArrangedEdits((current) => {
+                            const next = new Map(current);
+                            for (const [id, origin] of drag.members) next.set(id, origin);
+                            return next;
+                          }),
+                        )
                         .finally(() => setDragged(undefined));
                     }
                   }}

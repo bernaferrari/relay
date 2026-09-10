@@ -72,3 +72,39 @@ it("starts a connection at its recorded click and paints a square target", () =>
   expect(markup).toContain("M 52 198");
   expect(markup).toContain('x="47" y="193" width="10" height="10"');
 });
+
+it("leaves breathing room at both preview edges", () => {
+  const markup = renderToStaticMarkup(
+    <MapEdges
+      paths={[
+        {
+          id: "next",
+          label: "Continue",
+          fromScreenId: "a",
+          toScreenId: "b",
+          fromTitle: "A",
+          coveringTests: [],
+        },
+      ]}
+      positions={
+        new Map([
+          ["a", { x: 0, y: 0 }],
+          ["b", { x: 420, y: 0 }],
+        ])
+      }
+      screens={[
+        { id: "a", screenshotUri: "a.png" },
+        { id: "b", screenshotUri: "b.png" },
+      ]}
+      imageDimensions={
+        new Map([
+          ["a", { width: 208, height: 300 }],
+          ["b", { width: 208, height: 300 }],
+        ])
+      }
+      markerId="gap"
+    />,
+  );
+  expect(markup).toContain("M 222 198");
+  expect(markup).toContain("L 406 198");
+});

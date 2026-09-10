@@ -1,4 +1,5 @@
 /** @jsxImportSource react */
+import type { ProductMapOverview } from "@relay/product/map-exploration";
 import { useState } from "react";
 import { Input } from "@relay/ui-react/components/input";
 import { Button } from "@relay/ui-react/components/button";
@@ -75,7 +76,9 @@ export function MapPage() {
       return mapService.updateScreen({
         appMapId: appId,
         screenId,
-        expectedRevision: map.data.revision,
+        expectedRevision:
+          queryClient.getQueryData<ProductMapOverview>(["map", appId])?.revision ??
+          map.data.revision,
         input: { patch },
       });
     },
