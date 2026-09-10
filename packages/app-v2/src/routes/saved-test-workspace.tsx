@@ -1,3 +1,4 @@
+import { workspaceToolsSurface } from "../components/workspace-surfaces";
 import { ScrollArea } from "@relay/ui-react/components/scroll-area";
 import type { ReactNode } from "react";
 import { Button } from "@relay/ui-react/components/button";
@@ -24,7 +25,7 @@ export function SavedTestWorkspace({
     <AuthoringWorkspace
       stage={stage}
       tools={
-        <div className="flex h-full min-h-0 flex-col rounded-lg bg-card">
+        <div className={`h-full ${workspaceToolsSurface}`}>
           <ScrollArea
             className="min-h-0 flex-1"
             viewportProps={{ "aria-label": "Test steps", className: "overscroll-auto" }}

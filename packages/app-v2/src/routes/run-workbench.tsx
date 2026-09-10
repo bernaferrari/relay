@@ -1,3 +1,4 @@
+import { workspacePreviewSurface, workspaceToolsSurface } from "../components/workspace-surfaces";
 import { RunLogPanel } from "../components/run-log-panel";
 /** @jsxImportSource react */
 import { RunPerformancePanel, performanceStepAt } from "../components/run-performance-panel";
@@ -132,10 +133,10 @@ export function RunWorkbench({
     );
   return (
     <section
-      className="grid h-full min-h-0 flex-1 min-w-0 overflow-hidden rounded-xl bg-card max-[720px]:h-auto max-[720px]:grid-rows-[32rem_30rem] min-[721px]:grid-cols-[minmax(0,45%)_minmax(0,1fr)]"
+      className="grid h-full min-h-0 flex-1 min-w-0 gap-3 p-3 overflow-hidden max-[720px]:h-auto max-[720px]:grid-rows-[32rem_30rem] min-[721px]:grid-cols-[minmax(0,45%)_minmax(0,1fr)]"
       aria-label="Run workbench"
     >
-      <div className="relative flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-muted/30">
+      <div className={`relative flex flex-col ${workspacePreviewSurface}`}>
         <div className="flex h-11 shrink-0 items-center justify-between px-4 text-xs text-muted-foreground">
           <span>
             Step {selectedStepIndex + 1} of {report.timeline.length}
@@ -191,7 +192,7 @@ export function RunWorkbench({
           fill
         />
       </div>
-      <div className="flex min-h-0 min-w-0 flex-col">
+      <div className={workspaceToolsSurface}>
         <div
           className="flex shrink-0 gap-1 border-b border-border px-4 py-2"
           aria-label="Step views"
@@ -241,7 +242,7 @@ export function RunWorkbench({
                         type="button"
                         aria-current={index === selectedStepIndex ? "step" : undefined}
                         aria-pressed={index === selectedStepIndex}
-                        className={`relay-interactive-row relative grid min-h-12 w-full grid-cols-[1rem_minmax(0,1fr)_1rem] items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring ${index === selectedStepIndex ? "bg-accent text-foreground ring-1 ring-inset ring-border" : "text-muted-foreground"}`}
+                        className={`relay-interactive-row relative grid min-h-12 w-full grid-cols-[1rem_minmax(0,1fr)_1rem] items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring ${index === selectedStepIndex ? "bg-accent text-foreground ring-1 ring-inset ring-border" : "text-muted-foreground"}`}
                         onClick={() => onSelectStep(index)}
                         onKeyDown={(event) => {
                           const next =
