@@ -159,6 +159,7 @@ export function RunAcrossPage() {
       {!loading && setup.data && !setup.error ? (
         <div className="grid gap-6">
           <RunConfigurationComposer
+            title={null}
             configuration={{
               values: {
                 targetProfileId: target?.targetId,

@@ -1,7 +1,6 @@
 /** @jsxImportSource react */
 import { useId, useState, type ReactNode } from "react";
 import { ScrollArea } from "@relay/ui-react/components/scroll-area";
-import { Languages } from "lucide-react";
 import { languagePresentation } from "../data/language-presentation";
 import { Button } from "@relay/ui-react/components/button";
 import { Checkbox } from "@relay/ui-react/components/checkbox";
@@ -51,6 +50,9 @@ export function RunConfigurationComposer({
   pairedWorkspaceLabel?: string;
 }) {
   const titleId = useId();
+  const languageChoices = Boolean(
+    dataSetOptions?.length && dataSetOptions.every((option) => option.locale),
+  );
   const [valueSearch, setValueSearch] = useState("");
   const filteredValues = dataSetOptions?.filter((option) =>
     `${option.label} ${option.detail ?? ""}`
@@ -80,14 +82,9 @@ export function RunConfigurationComposer({
   const optionCopy = (option: RunConfigurationOption) => (
     <span className="relay-config-option-copy grid min-w-0 flex-1 gap-[3px] wrap-anywhere [&_strong]:text-[13px] [&_strong]:font-medium [&_small]:text-xs [&_small]:text-muted-foreground">
       <strong data-slot="run-target-title" className="flex items-center gap-2">
-        {option.locale ? (
-          <span
-            aria-hidden="true"
-            className="flex size-5 shrink-0 items-center justify-center text-base"
-          >
-            {languagePresentation(option.locale, option.label).flag ?? (
-              <Languages className="size-4 text-muted-foreground" />
-            )}
+        {option.locale && languagePresentation(option.locale, option.label).flag ? (
+          <span aria-hidden="true" className="text-base">
+            {languagePresentation(option.locale, option.label).flag}
           </span>
         ) : null}
         {option.locale ? languagePresentation(option.locale, option.label).label : option.label}
@@ -100,9 +97,11 @@ export function RunConfigurationComposer({
       aria-label="Run configuration"
       className={`relay-run-configuration grid min-w-0 gap-3 ${variant === "panel" ? "rounded-xl border border-border bg-card p-5" : ""}`}
     >
-      <h2 id={titleId} className="text-[13px] font-medium text-muted-foreground">
-        {title ?? (configuration.frozen ? "Recorded configuration" : "Run on")}
-      </h2>
+      {title !== null ? (
+        <h2 id={titleId} className="text-[13px] font-medium text-muted-foreground">
+          {title ?? (configuration.frozen ? "Recorded configuration" : "Run on")}
+        </h2>
+      ) : null}
       {configuration.frozen ? (
         <dl className="relay-config-facts m-0 grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-4 [&_dt]:text-xs [&_dt]:text-muted-foreground [&_dd]:mt-1 [&_dd]:text-[13px] [&_dd]:wrap-anywhere">
           {facts.map(([label, value]) => (
@@ -169,7 +168,7 @@ export function RunConfigurationComposer({
           <legend className="w-full">
             <span className="flex items-center justify-between gap-3">
               <span>
-                Data set values{" "}
+                {languageChoices ? "Languages" : "Data set values"}{" "}
                 <span className="ml-2 text-xs font-normal text-muted-foreground">
                   {selection?.dataSetIds?.length ?? 0} selected
                 </span>
@@ -196,8 +195,8 @@ export function RunConfigurationComposer({
             </span>
           </legend>
           <input
-            aria-label="Find a language or value"
-            placeholder="Find a language or value…"
+            aria-label={languageChoices ? "Search languages" : "Search values"}
+            placeholder={languageChoices ? "Search languages…" : "Search values…"}
             value={valueSearch}
             onChange={(event) => setValueSearch(event.target.value)}
             className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
