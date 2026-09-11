@@ -69,8 +69,8 @@ it("starts a connection at its recorded click and paints a directional target", 
       showInteractionTargets
     />,
   );
-  expect(markup).toContain("M 52 190");
-  expect(markup).toContain("translate(52 190) rotate(0)");
+  expect(markup).toContain("M 52 178");
+  expect(markup).toContain("translate(52 178) rotate(0)");
   expect(markup).toContain("M 0 -5 A 5 5 0 1 0 0 5 L 7 0 Z");
 });
 
@@ -106,8 +106,8 @@ it("leaves breathing room at both preview edges", () => {
       markerId="gap"
     />,
   );
-  expect(markup).toContain("M 222 190");
-  expect(markup).toContain("L 406 190");
+  expect(markup).toContain("M 222 178");
+  expect(markup).toContain("L 406 178");
 });
 
 it("routes same-row returns below previews with a separate bottom landing", () => {
@@ -208,7 +208,7 @@ it("uses separated bottom and top ports for horizontal branches", () => {
       markerId="horizontal"
     />,
   );
-  expect(markup).toContain('d="M 104 354 L 104 586"');
+  expect(markup).toContain('d="M 104 342 L 104 586"');
 });
 
 it("joins upper and lower sibling branches at the same junction", () => {
@@ -306,8 +306,8 @@ it.each([-420, 420])("exits the control sideways toward a horizontal destination
     />,
   );
   const originX = x < 0 ? 52 : 156;
-  expect(markup).toContain(`M ${originX} 190 L ${x + 104 + (x < 0 ? 12 : -12)} 190`);
+  expect(markup).toContain(`M ${originX} 178 L ${x + 104 + (x < 0 ? 12 : -12)} 178`);
   const d = markup.match(/id="-0" d="([^"]+)"/)![1]!;
   expect(d.match(/Q/g)).toHaveLength(1);
-  expect(markup).toContain(`translate(${originX} 190) rotate(${x < 0 ? 180 : 0})`);
+  expect(markup).toContain(`translate(${originX} 178) rotate(${x < 0 ? 180 : 0})`);
 });

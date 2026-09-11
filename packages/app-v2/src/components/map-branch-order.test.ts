@@ -19,8 +19,16 @@ it("puts upper controls on the outside of horizontal branches", () => {
     for (let i = 1; i < side.length; i++)
       expect(side[i]!.sourceAnchor!.point.y).toBeGreaterThan(side[i - 1]!.sourceAnchor!.point.y);
 });
-it("preserves recorded order when any control position is unknown", () => {
+it("keeps unknown slots while ordering the controls that are available", () => {
   const incomplete = paths.map((p, i) => (i === 0 ? { ...p, sourceAnchor: undefined } : p));
-  expect(orderMapBranches(incomplete, true)).toEqual(incomplete);
+  expect(orderMapBranches(incomplete, false).map((p) => p.id)).toEqual([
+    "4",
+    "0",
+    "1",
+    "2",
+    "3",
+    "5",
+  ]);
+  expect(orderMapBranches(incomplete, true)[0]).toBe(incomplete[0]);
   expect(paths.map((p) => p.id)).toEqual(["4", "1", "3", "0", "5", "2"]);
 });

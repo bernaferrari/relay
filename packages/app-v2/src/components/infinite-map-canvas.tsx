@@ -1,3 +1,4 @@
+import { MapFrameTitle } from "./map-frame-title";
 import { separateMapScreens } from "./map-layout";
 import { useQueries } from "@tanstack/react-query";
 import { snapMapPreview, type AlignmentGuide } from "./map-alignment";
@@ -222,6 +223,23 @@ export function InfiniteMapCanvas({
       sourceAnchor: { point: { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }, rect },
     };
   });
+  // Resolve ordering as paired trees arrive, not only after a manual reset.
+  // Retain the ordering when the overlay is hidden; toggling it off must not
+  // move the map back to creation order. Manual positions still override it.
+  useEffect(() => {
+    if (!showControlOrigins || !autoArrange) return;
+    setLayoutAnchors((current) => {
+      const next = new Map(current);
+      let changed = false;
+      for (const path of originPaths) {
+        if (!path.sourceAnchor) continue;
+        if (JSON.stringify(current.get(path.id)) === JSON.stringify(path.sourceAnchor)) continue;
+        next.set(path.id, path.sourceAnchor);
+        changed = true;
+      }
+      return changed ? next : current;
+    });
+  }, [originPaths, showControlOrigins, autoArrange]);
   const viewportRef = useRef<HTMLElement>(null);
   const worldRef = useRef<HTMLDivElement>(null);
   const zoomLabelRef = useRef<HTMLSpanElement>(null);
@@ -1026,11 +1044,9 @@ export function InfiniteMapCanvas({
                   }}
                 >
                   <span
-                    className={`flex h-8 w-full shrink-0 items-end justify-center text-center text-[13px] font-medium leading-tight ${selectedNode ? "text-blue-400" : "text-muted-foreground"}`}
+                    className={`flex h-5 w-full shrink-0 items-end justify-center text-center text-[13px] font-medium leading-tight ${selectedNode ? "text-blue-400" : "text-muted-foreground"}`}
                   >
-                    <span className="line-clamp-2" title={screen.title}>
-                      {screen.title}
-                    </span>
+                    <MapFrameTitle title={screen.title} />
                   </span>
                   <div className="relative h-[300px] w-full shrink-0">
                     <MapScreenPreview
