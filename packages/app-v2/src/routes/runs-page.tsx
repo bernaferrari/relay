@@ -1,12 +1,11 @@
+import { libraryRowSurface, libraryRowContent } from "../components/library-row-styles";
 /** @jsxImportSource react */
 import type { ProductRunPhase, ProductRunSummary } from "@relay/product/catalog";
-import { Item } from "@relay/ui-react/components/item";
 import { Tabs, TabsList, TabsTrigger } from "@relay/ui-react/components/tabs";
 import { Button } from "@relay/ui-react/components/button";
 
 import { useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
-import { ChevronRight } from "lucide-react";
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { FilterSelect } from "../components/filter-select";
 import { LibrarySearch, LibraryToolbar } from "../components/library-toolbar";
@@ -252,9 +251,10 @@ function RunRow({
   const device = run.targetName ?? platformName(run.platform);
   const cause = runCause(run);
   return (
-    <Item
-      className="relay-library-row relay-run-row grid min-h-[78px] min-w-0 grid-cols-[minmax(0,1fr)_100px_18px] items-center gap-[18px] px-3.5 py-2 text-[var(--text-base)] transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 max-[720px]:grid-cols-[minmax(0,1fr)_auto]"
-      render={<Link to="/runs/$runId" params={{ runId: run.id }} />}
+    <Link
+      to="/runs/$runId"
+      params={{ runId: run.id }}
+      className={`relay-run-row ${libraryRowSurface} ${libraryRowContent} grid-cols-[minmax(0,1fr)_100px]`}
       {...interaction}
     >
       <span className="relay-library-row-main grid min-w-0 gap-1">
@@ -271,7 +271,7 @@ function RunRow({
           ) : null}
         </span>
       </span>
-      <span className="relay-library-row-recent grid min-w-0 justify-items-start gap-1">
+      <span className="relay-library-row-recent grid min-w-0 justify-items-start gap-1 tabular-nums">
         <strong className="text-xs font-semibold text-[var(--text-base)]">
           {run.durationMs === undefined ? phaseDetail(run) : formatDuration(run.durationMs)}
         </strong>
@@ -279,11 +279,7 @@ function RunRow({
           {relativeTime(run.finishedAt ?? run.startedAt ?? run.queuedAt)}
         </small>
       </span>
-      <ChevronRight
-        className="relay-library-row-arrow text-sm text-[var(--text-weaker)]"
-        aria-hidden="true"
-      />
-    </Item>
+    </Link>
   );
 }
 

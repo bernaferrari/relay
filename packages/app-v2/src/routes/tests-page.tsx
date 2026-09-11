@@ -1,3 +1,4 @@
+import { libraryRowSurface, libraryRowContent } from "../components/library-row-styles";
 /** @jsxImportSource react */
 import type { ProductTestSummary } from "@relay/product/catalog";
 import { Button } from "@relay/ui-react/components/button";
@@ -364,11 +365,13 @@ function TestRow({ test }: { test: ProductTestSummary }) {
   const recent = test.recentRun;
   return (
     <li>
-      <div className="group/test-row relative grid grid-cols-[minmax(0,1fr)_104px] items-center pr-3 transition-[background-color] duration-150 ease-out hover:bg-[color-mix(in_oklch,var(--surface-raised-strong)_94%,var(--text-strong)_6%)] focus-within:bg-[color-mix(in_oklch,var(--surface-raised-strong)_94%,var(--text-strong)_6%)] motion-reduce:transition-none">
+      <div
+        className={`group/test-row relative grid grid-cols-[minmax(0,1fr)_104px] items-center pr-3 ${libraryRowSurface}`}
+      >
         <Link
           to="/tests/$testId"
           params={{ testId: test.id }}
-          className="grid min-h-[76px] min-w-0 grid-cols-[minmax(180px,1fr)_minmax(94px,auto)_minmax(150px,.48fr)] items-center gap-5 px-4 py-3 text-[var(--text-base)] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring max-[720px]:grid-cols-[minmax(0,1fr)_auto]"
+          className={`${libraryRowContent} grid-cols-[minmax(180px,1fr)_minmax(94px,auto)_minmax(150px,.48fr)] max-[720px]:grid-cols-[minmax(0,1fr)_auto]`}
         >
           <span className="relay-library-row-main grid min-w-0 gap-1">
             <strong className="overflow-hidden text-ellipsis whitespace-nowrap text-sm font-semibold text-[var(--text-strong)]">

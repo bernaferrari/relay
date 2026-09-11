@@ -12,8 +12,8 @@ import {
 } from "react";
 
 export const RUN_HISTORY_VIRTUAL_THRESHOLD = 80;
-export const RUN_HISTORY_ROW_HEIGHT = 79;
-export const RUN_HISTORY_COMPACT_ROW_HEIGHT = 108;
+export const RUN_HISTORY_ROW_HEIGHT = 77;
+export const RUN_HISTORY_COMPACT_ROW_HEIGHT = 77;
 const OVERSCAN = 5;
 
 export type RunHistoryRowInteraction = {
