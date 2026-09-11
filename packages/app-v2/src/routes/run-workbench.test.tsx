@@ -430,7 +430,8 @@ describe("RunWorkbench", () => {
         <RunWorkbench report={missingReport} selectedStepIndex={1} onSelectStep={() => {}} />,
       ),
     );
-    expect(host.textContent).toContain("No screenshot for this step");
+    expect(host.textContent).toContain("No capture linked to this step");
+    expect(host.textContent).toContain("Other captures are available in this run.");
 
     act(() =>
       root.render(<RunWorkbench report={report} selectedStepIndex={2} onSelectStep={() => {}} />),
