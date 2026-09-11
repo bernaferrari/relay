@@ -166,40 +166,35 @@ export function RunConfigurationComposer({
           disabled={loading}
           className="relay-config-options grid min-w-0 gap-2 border-0 p-0 [&_legend]:mb-2.5 [&_legend]:text-[13px] [&_legend]:font-semibold"
         >
-          <legend>
-            Data set values{" "}
-            <span className="ml-2 text-xs font-normal text-muted-foreground">
-              {selection?.dataSetIds?.length ?? 0} selected
+          <legend className="w-full">
+            <span className="flex items-center justify-between gap-3">
+              <span>
+                Data set values{" "}
+                <span className="ml-2 text-xs font-normal text-muted-foreground">
+                  {selection?.dataSetIds?.length ?? 0} selected
+                </span>
+              </span>
+              <button
+                type="button"
+                className="rounded px-1 py-1 text-xs font-normal text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50"
+                disabled={!filteredValues?.length}
+                onClick={() => {
+                  const matchingIds = (filteredValues ?? []).map((option) => option.id);
+                  const chosen = new Set(selection?.dataSetIds ?? []);
+                  const allSelected = matchingIds.every((id) => chosen.has(id));
+                  matchingIds.forEach((id) => (allSelected ? chosen.delete(id) : chosen.add(id)));
+                  onSelectionChange({ ...selection, dataSetIds: [...chosen] });
+                }}
+              >
+                {filteredValues?.length &&
+                filteredValues.every((option) => selection?.dataSetIds?.includes(option.id))
+                  ? "Clear"
+                  : valueSearch.trim()
+                    ? "Select matches"
+                    : "Select all"}
+              </button>
             </span>
           </legend>
-          <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={!filteredValues?.length}
-              onClick={() =>
-                onSelectionChange({
-                  ...selection,
-                  dataSetIds: [
-                    ...new Set([
-                      ...(selection?.dataSetIds ?? []),
-                      ...(filteredValues ?? []).map((option) => option.id),
-                    ]),
-                  ],
-                })
-              }
-            >
-              {valueSearch.trim() ? "Select all matches" : "Select all"}
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={!selection?.dataSetIds?.length}
-              onClick={() => onSelectionChange({ ...selection, dataSetIds: [] })}
-            >
-              Clear selection
-            </Button>
-          </div>
           <input
             aria-label="Find a language or value"
             placeholder="Find a language or value…"

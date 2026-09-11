@@ -247,7 +247,7 @@ export function RunAcrossPage() {
                 Remove unavailable choices
               </Button>
             ) : null}
-            <footer className="sticky bottom-0 -mx-5 -mb-5 mt-2 flex flex-wrap items-center justify-between gap-3 border-t border-border bg-card px-5 py-4">
+            <footer className="sticky bottom-0 -mx-5 -mb-5 -mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-border bg-card px-5 py-4">
               {preview ? (
                 <div className="grid gap-1 text-sm" role="status">
                   <span>{preview.scopeLabel}</span>
