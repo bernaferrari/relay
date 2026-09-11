@@ -1,3 +1,4 @@
+import { layoutMapGraph } from "./map-layout";
 import type { ProductMapPath, ProductMapScreen } from "@relay/product/map-exploration";
 export const MAP_MIN_SCALE = 0.08;
 export const MAP_MAX_SCALE = 2.2;
@@ -75,53 +76,18 @@ export function layoutMapScreens(
   screens: readonly ProductMapScreen[],
   paths: readonly ProductMapPath[] = [],
 ): ReadonlyMap<string, MapPoint> {
-  const ids = new Set(screens.map((screen) => screen.id));
-  const children = new Map<string, string[]>();
-  const incoming = new Set<string>();
-  // Build a deterministic discovery forest. Return edges never assign a
-  // parent or move an already discovered screen into a different branch.
-  const visited = new Set<string>();
-  const roots: string[] = [];
-  const forward = paths.filter(
-    (path) =>
-      path.toScreenId &&
-      path.fromScreenId !== path.toScreenId &&
-      ids.has(path.fromScreenId) &&
-      ids.has(path.toScreenId) &&
-      !/^(back|close|dismiss|return)\b/i.test(path.label),
+  const positions = layoutMapGraph(
+    screens.map((screen) => screen.id),
+    paths
+      .filter(
+        (path) =>
+          path.toScreenId && !/^(back|close|dismiss|return|cancel|disable)\b/i.test(path.label),
+      )
+      .map((path) => ({ from: path.fromScreenId, to: path.toScreenId! })),
+    MAP_NODE_WIDTH + 160,
+    MAP_NODE_HEIGHT + 40,
   );
-  for (const path of forward) incoming.add(path.toScreenId!);
-  const candidates = [...screens.filter((screen) => !incoming.has(screen.id)), ...screens];
-  for (const root of candidates) {
-    if (visited.has(root.id)) continue;
-    roots.push(root.id);
-    visited.add(root.id);
-    const queue = [root.id];
-    for (let i = 0; i < queue.length; i++) {
-      const parent = queue[i]!;
-      for (const path of forward.filter((path) => path.fromScreenId === parent)) {
-        const child = path.toScreenId!;
-        if (visited.has(child)) continue;
-        visited.add(child);
-        children.set(parent, [...(children.get(parent) ?? []), child]);
-        queue.push(child);
-      }
-    }
-  }
-  const positions = new Map<string, MapPoint>();
-  const byId = new Map(screens.map((screen) => [screen.id, screen]));
-  let nextRow = 0;
-  function place(id: string, depth: number) {
-    const row = nextRow;
-    positions.set(id, byId.get(id)?.position ?? { x: depth * 420, y: row * 436 });
-    const descendants = children.get(id) ?? [];
-    if (!descendants.length) nextRow++;
-    else for (const child of descendants) place(child, depth + 1);
-  }
-  for (const root of roots) {
-    place(root, 0);
-    nextRow++;
-  }
+  for (const screen of screens) if (screen.position) positions.set(screen.id, screen.position);
 
   return positions;
 }

@@ -268,7 +268,16 @@ export function InfiniteMapCanvas({
   }
 
   function resetView() {
-    applyTransform(INITIAL_TRANSFORM);
+    setArrangedEdits(new Map());
+    const resetPositions = layoutMapScreens(
+      autoArrange
+        ? visibleScreens.map((screen) => ({ ...screen, position: undefined }))
+        : visibleScreens,
+      visiblePaths,
+    );
+    animateTransform(
+      fitMapToBounds(mapContentBounds(visibleScreens, resetPositions), viewportSize()),
+    );
     viewportRef.current?.focus({ preventScroll: true });
   }
 
@@ -717,7 +726,22 @@ export function InfiniteMapCanvas({
               >
                 Arrows from controls
               </DropdownMenuCheckboxItem>
-              <DropdownMenuCheckboxItem checked={autoArrange} onCheckedChange={setAutoArrange}>
+              <DropdownMenuCheckboxItem
+                checked={autoArrange}
+                onCheckedChange={(enabled) => {
+                  setAutoArrange(enabled);
+                  setArrangedEdits(new Map());
+                  const next = layoutMapScreens(
+                    enabled
+                      ? visibleScreens.map((screen) => ({ ...screen, position: undefined }))
+                      : visibleScreens,
+                    visiblePaths,
+                  );
+                  animateTransform(
+                    fitMapToBounds(mapContentBounds(visibleScreens, next), viewportSize()),
+                  );
+                }}
+              >
                 Auto arrange
               </DropdownMenuCheckboxItem>
               <DropdownMenuSeparator />
