@@ -136,7 +136,7 @@ export function RunAcrossPage() {
 
   const loading = setup.isPending || targets.isPending;
   return (
-    <FormPage>
+    <FormPage className="!pb-4">
       <PageHeader
         crumbs={[
           { label: "Tests", to: "/tests" },
@@ -217,6 +217,7 @@ export function RunAcrossPage() {
                     ? value.label
                     : `${dimension.name}: ${value.label}`,
                 detail: value.detail,
+                ...(dimension.kind === "language" ? { locale: value.id } : {}),
               })),
             )}
             selection={configuration.selection}
@@ -246,31 +247,29 @@ export function RunAcrossPage() {
                 Remove unavailable choices
               </Button>
             ) : null}
-            {preview ? (
-              <div
-                className="my-5 grid gap-1 rounded-lg border border-border bg-background p-3.5"
-                role="status"
+            <footer className="sticky bottom-0 -mx-5 -mb-5 mt-2 flex flex-wrap items-center justify-between gap-3 border-t border-border bg-card px-5 py-4">
+              {preview ? (
+                <div className="grid gap-1 text-sm" role="status">
+                  <span>{preview.scopeLabel}</span>
+                  <small className="text-muted-foreground">
+                    Review the first result, then continue the remaining cases.
+                  </small>
+                </div>
+              ) : (
+                <p className="relay-action-hint mt-3 text-sm leading-relaxed text-muted-foreground">
+                  {target && missingDimensions.length
+                    ? "Choose at least one value in each data group."
+                    : "Choose at least one value and one ready device or browser."}
+                </p>
+              )}
+              <Button
+                variant="default"
+                onClick={() => start.mutate()}
+                disabled={!preview || start.isPending || configuration.loading}
               >
-                <strong>Ready to start</strong>
-                <span>{preview.scopeLabel}</span>
-                <small>
-                  Relay starts with one representative case and pauses for review before the rest.
-                </small>
-              </div>
-            ) : (
-              <p className="relay-action-hint mt-3 text-sm leading-relaxed text-muted-foreground">
-                {target && missingDimensions.length
-                  ? "Choose at least one value in each data group."
-                  : "Choose at least one value and one ready device or browser."}
-              </p>
-            )}
-            <Button
-              variant="default"
-              onClick={() => start.mutate()}
-              disabled={!preview || start.isPending || configuration.loading}
-            >
-              {start.isPending ? "Starting first case…" : "Run first case"}
-            </Button>
+                {start.isPending ? "Starting first case…" : "Run first case"}
+              </Button>
+            </footer>
           </RunConfigurationComposer>
         </div>
       ) : null}

@@ -11,7 +11,12 @@ export type RunConfigurationValue = {
 };
 
 export type RunConfigurationBlocker = { id: string; label: string; detail?: string };
-export type RunConfigurationOption = { id: string; label: string; detail?: string };
+export type RunConfigurationOption = {
+  id: string;
+  label: string;
+  detail?: string;
+  locale?: string;
+};
 export type RunConfigurationSelection = {
   /** Runtime target id; distinct from a saved evidence profile id. */
   targetId?: string;

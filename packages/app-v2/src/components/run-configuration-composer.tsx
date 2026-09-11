@@ -1,5 +1,8 @@
 /** @jsxImportSource react */
-import { useId, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
+import { ScrollArea } from "@relay/ui-react/components/scroll-area";
+import { Languages } from "lucide-react";
+import { languagePresentation } from "../data/language-presentation";
 import { Button } from "@relay/ui-react/components/button";
 import { Checkbox } from "@relay/ui-react/components/checkbox";
 import { FieldLabel } from "@relay/ui-react/components/field";
@@ -48,6 +51,12 @@ export function RunConfigurationComposer({
   pairedWorkspaceLabel?: string;
 }) {
   const titleId = useId();
+  const [valueSearch, setValueSearch] = useState("");
+  const filteredValues = dataSetOptions?.filter((option) =>
+    `${option.label} ${option.detail ?? ""}`
+      .toLocaleLowerCase()
+      .includes(valueSearch.toLocaleLowerCase().trim()),
+  );
   const selectedTargets =
     selection?.targetProfileIds ?? (selection?.targetProfileId ? [selection.targetProfileId] : []);
   const facts = [
@@ -70,7 +79,19 @@ export function RunConfigurationComposer({
   }
   const optionCopy = (option: RunConfigurationOption) => (
     <span className="relay-config-option-copy grid min-w-0 flex-1 gap-[3px] wrap-anywhere [&_strong]:text-[13px] [&_strong]:font-medium [&_small]:text-xs [&_small]:text-muted-foreground">
-      <strong data-slot="run-target-title">{option.label}</strong>
+      <strong data-slot="run-target-title" className="flex items-center gap-2">
+        {option.locale ? (
+          <span
+            aria-hidden="true"
+            className="flex size-5 shrink-0 items-center justify-center text-base"
+          >
+            {languagePresentation(option.locale, option.label).flag ?? (
+              <Languages className="size-4 text-muted-foreground" />
+            )}
+          </span>
+        ) : null}
+        {option.locale ? languagePresentation(option.locale, option.label).label : option.label}
+      </strong>
       {option.detail ? <small>{option.detail}</small> : null}
     </span>
   );
@@ -145,24 +166,46 @@ export function RunConfigurationComposer({
           disabled={loading}
           className="relay-config-options grid min-w-0 gap-2 border-0 p-0 [&_legend]:mb-2.5 [&_legend]:text-[13px] [&_legend]:font-semibold"
         >
-          <legend>Data set values</legend>
-          {dataSetOptions.map((option) => (
-            <FieldLabel
-              key={option.id}
-              className="relay-config-option flex min-h-12 w-full min-w-0 cursor-pointer items-center gap-3 rounded-lg border border-border p-3 has-data-checked:border-ring has-data-checked:bg-accent"
-            >
-              {optionCopy(option)}
-              <Checkbox
-                checked={selection?.dataSetIds?.includes(option.id) ?? false}
-                onCheckedChange={(checked) => {
-                  const next = new Set(selection?.dataSetIds ?? []);
-                  if (checked === true) next.add(option.id);
-                  else next.delete(option.id);
-                  onSelectionChange({ ...selection, dataSetIds: [...next] });
-                }}
-              />
-            </FieldLabel>
-          ))}
+          <legend>
+            Data set values{" "}
+            <span className="ml-2 text-xs font-normal text-muted-foreground">
+              {selection?.dataSetIds?.length ?? 0} selected
+            </span>
+          </legend>
+          <input
+            aria-label="Find a language or value"
+            placeholder="Find a language or value…"
+            value={valueSearch}
+            onChange={(event) => setValueSearch(event.target.value)}
+            className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+          <ScrollArea
+            className="h-[42dvh] min-h-0"
+            viewportProps={{ "aria-label": "Available values", className: "overscroll-contain" }}
+          >
+            <div className="grid grid-cols-1 content-start gap-1 pr-3 sm:grid-cols-2">
+              {filteredValues?.map((option) => (
+                <FieldLabel
+                  key={option.id}
+                  className="relay-interactive-row flex min-h-11 w-full min-w-0 cursor-pointer items-center gap-3 rounded-md px-3 py-2 has-data-checked:bg-accent"
+                >
+                  {optionCopy(option)}
+                  <Checkbox
+                    checked={selection?.dataSetIds?.includes(option.id) ?? false}
+                    onCheckedChange={(checked) => {
+                      const next = new Set(selection?.dataSetIds ?? []);
+                      if (checked === true) next.add(option.id);
+                      else next.delete(option.id);
+                      onSelectionChange({ ...selection, dataSetIds: [...next] });
+                    }}
+                  />
+                </FieldLabel>
+              ))}
+              {!filteredValues?.length ? (
+                <p className="p-3 text-sm text-muted-foreground">No matching values.</p>
+              ) : null}
+            </div>
+          </ScrollArea>
         </fieldset>
       ) : null}
       {configuration.blockers?.length ? (
