@@ -1,3 +1,4 @@
+import { snapMapPreview, type AlignmentGuide } from "./map-alignment";
 import { MapAccessibilityOverlay, accessibilityControls } from "./map-accessibility-overlay";
 import { MapEdges, isRoutineReturn } from "./map-edges";
 import {
@@ -74,6 +75,7 @@ export function InfiniteMapCanvas({
 }) {
   const visibleScreens = useMemo(() => screens.slice(0, 500), [screens]);
   const visiblePaths = useMemo(() => paths.slice(0, 500), [paths]);
+  const [alignmentGuides, setAlignmentGuides] = useState<AlignmentGuide[]>([]);
   const [dragged, setDragged] = useState<{ id: string; position: MapPoint }>();
   const suppressNodeClick = useRef(false);
   const nodeDrag = useRef<
@@ -340,6 +342,34 @@ export function InfiniteMapCanvas({
 
   // Inspector/sidebar changes resize the viewport, not the world. Keep the
   // existing transform until the user explicitly pans, zooms, or focuses.
+
+  function alignedDragPosition(
+    drag: NonNullable<typeof nodeDrag.current>,
+    event: PointerEvent<HTMLElement>,
+  ) {
+    const scale = transformRef.current.scale;
+    const raw = {
+      x: drag.position.x + (event.clientX - drag.start.x) / scale,
+      y: drag.position.y + (event.clientY - drag.start.y) / scale,
+    };
+    if (event.altKey) return { position: raw, guides: [] };
+    const boxFor = (id: string, point: MapPoint) =>
+      containedImageRect(
+        {
+          x: point.x,
+          y: point.y + MAP_NODE_TITLE_HEIGHT + MAP_NODE_GAP,
+          width: MAP_NODE_WIDTH,
+          height: MAP_NODE_IMAGE_HEIGHT,
+        },
+        imageDimensions.get(id) ?? { width: MAP_NODE_WIDTH, height: MAP_NODE_IMAGE_HEIGHT },
+        "top",
+      )!;
+    const neighbors = [...positions]
+      .filter(([id]) => !drag.members.has(id))
+      .map(([id, point]) => boxFor(id, point));
+    const snap = snapMapPreview(boxFor(drag.id, raw), neighbors, scale);
+    return { position: { x: raw.x + snap.dx, y: raw.y + snap.dy }, guides: snap.guides };
+  }
 
   function handlePointerDown(event: PointerEvent<HTMLElement>) {
     if (
@@ -701,7 +731,7 @@ export function InfiniteMapCanvas({
                 path.sourceAnchor && (!selectedScreenId || path.fromScreenId === selectedScreenId),
             )
               ? "Select a screen with a saved matching control · Other arrows use screen edges"
-              : "Drag to select · Space to pan · Pinch to zoom · Double-click to focus"}
+              : "Drag to select · Alt to bypass snapping · Space to pan · Pinch to zoom"}
           </p>
         )}
         <section
@@ -747,6 +777,28 @@ export function InfiniteMapCanvas({
             ref={worldRef}
             style={{ transform: "translate3d(48px, 64px, 0) scale(1)" }}
           >
+            {alignmentGuides.map((guide, index) => (
+              <div
+                key={index}
+                aria-hidden="true"
+                className="pointer-events-none absolute z-30 bg-blue-400"
+                style={
+                  guide.axis === "x"
+                    ? {
+                        left: guide.value,
+                        top: guide.from,
+                        width: 1 / transformRef.current.scale,
+                        height: guide.to - guide.from,
+                      }
+                    : {
+                        left: guide.from,
+                        top: guide.value,
+                        width: guide.to - guide.from,
+                        height: 1 / transformRef.current.scale,
+                      }
+                }
+              />
+            ))}
             <MapEdges
               selectedPathId={selectedPathId}
               paths={originPaths.filter(
@@ -812,25 +864,18 @@ export function InfiniteMapCanvas({
                     const dy = (event.clientY - drag.start.y) / transformRef.current.scale;
                     if (!drag.moved && Math.hypot(dx, dy) < 4) return;
                     drag.moved = true;
-                    setDragged({
-                      id: screen.id,
-                      position: { x: drag.position.x + dx, y: drag.position.y + dy },
-                    });
+                    const aligned = alignedDragPosition(drag, event);
+                    setAlignmentGuides(aligned.guides);
+                    setDragged({ id: screen.id, position: aligned.position });
                   }}
                   onPointerUp={(event) => {
                     const drag = nodeDrag.current;
                     nodeDrag.current = undefined;
+                    setAlignmentGuides([]);
                     event.currentTarget.releasePointerCapture(event.pointerId);
                     if (drag?.moved && onUpdateScreen) {
                       suppressNodeClick.current = true;
-                      const position = {
-                        x:
-                          drag.position.x +
-                          (event.clientX - drag.start.x) / transformRef.current.scale,
-                        y:
-                          drag.position.y +
-                          (event.clientY - drag.start.y) / transformRef.current.scale,
-                      };
+                      const position = alignedDragPosition(drag, event).position;
                       const updates = [...drag.members].map(
                         ([id, origin]) =>
                           [
@@ -861,6 +906,7 @@ export function InfiniteMapCanvas({
                   onPointerCancel={() => {
                     nodeDrag.current = undefined;
                     setDragged(undefined);
+                    setAlignmentGuides([]);
                   }}
                   onFocus={() => revealScreen(screen.id)}
                   style={{
