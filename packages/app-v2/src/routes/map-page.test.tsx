@@ -437,7 +437,8 @@ describe("Map exploration", () => {
 
 function button(label: string) {
   const result = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
-    (candidate) => candidate.textContent?.trim() === label,
+    (candidate) =>
+      candidate.textContent?.trim() === label || candidate.getAttribute("aria-label") === label,
   );
   if (!result) throw new Error(`Button not found: ${label}`);
   return result;

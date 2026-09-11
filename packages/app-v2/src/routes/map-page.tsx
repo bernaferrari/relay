@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import type { ProductMapOverview } from "@relay/product/map-exploration";
 import { useState } from "react";
-import { Input } from "@relay/ui-react/components/input";
+import { MapPathsPanel } from "../components/map-paths-panel";
 import { Button } from "@relay/ui-react/components/button";
 import {
   Collapsible,
@@ -26,7 +26,6 @@ export function MapPage() {
   const [refresh, setRefresh] = useState<{ screen: ProductMapScreen; revision: number }>();
   const { appId } = routeApi.useParams();
   const [view, setView] = useState<"map" | "paths">("map");
-  const [pathSearch, setPathSearch] = useState("");
   const [inspectedPathId, setInspectedPathId] = useState<string>();
   const map = useQuery({
     queryKey: ["map", appId],
@@ -87,12 +86,6 @@ export function MapPage() {
       void map.refetch();
     },
   });
-  const matchingPaths = (map.data?.paths ?? []).filter((path) =>
-    [path.label, path.fromTitle, path.toTitle, ...path.coveringTests.map((test) => test.name)]
-      .join(" ")
-      .toLocaleLowerCase()
-      .includes(pathSearch.trim().toLocaleLowerCase()),
-  );
   const visibleScreens = map.data?.screens.slice(0, 500) ?? [];
   const visiblePaths = map.data?.paths.slice(0, 500) ?? [];
 
@@ -202,80 +195,16 @@ export function MapPage() {
             </>
           ) : null}
           {view === "paths" ? (
-            <section className="min-h-0 flex-1 overflow-auto p-5" aria-labelledby="paths-title">
-              <div className="flex items-end justify-between gap-5 max-[620px]:items-start max-[620px]:gap-3">
-                <div>
-                  <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
-                    Journeys
-                  </p>
-                  <h2 id="paths-title" className="text-base font-semibold">
-                    Recorded paths
-                  </h2>
-                </div>
-                <Link
-                  className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
-                  to="/tests/new"
-                  search={{ app: appId, view: "path" }}
-                >
-                  Create a Test from a path
-                </Link>
-              </div>
-              <label className="mb-2 block text-sm font-medium" htmlFor="map-path-search">
-                Search known paths
-              </label>
-              <Input
-                type="search"
-                className="max-w-lg"
-                id="map-path-search"
-                value={pathSearch}
-                onChange={(event) => setPathSearch(event.target.value)}
-                placeholder="Screen, path, or test name"
-              />
-              <p className="my-3 text-xs text-muted-foreground" role="status">
-                {matchingPaths.length} of {map.data.paths.length} known paths
-              </p>
-              {matchingPaths.length === 0 ? (
-                <EmptyState
-                  title={pathSearch ? "No matching paths" : "No known paths yet"}
-                  detail={
-                    pathSearch
-                      ? "Try another screen or test name."
-                      : "Record a test to add a known path."
-                  }
-                  action={
-                    pathSearch ? (
-                      <Button variant="outline" onClick={() => setPathSearch("")}>
-                        Clear search
-                      </Button>
-                    ) : undefined
-                  }
-                />
-              ) : null}
-              <ul>
-                {matchingPaths.map((path) => (
-                  <li
-                    key={path.id}
-                    className="flex items-center justify-between gap-4 border-t border-border py-3 text-sm"
-                  >
-                    <button
-                      type="button"
-                      className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
-                      onClick={() => {
-                        setInspectedPathId(path.id);
-                        setView("map");
-                      }}
-                    >
-                      {path.fromTitle} → {path.toTitle ?? "Finish"}
-                    </button>
-                    <span>
-                      {path.coveringTests.length
-                        ? `${path.coveringTests.length} covering Test${path.coveringTests.length === 1 ? "" : "s"}`
-                        : "No covering Test yet"}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </section>
+            <MapPathsPanel
+              appId={appId}
+              paths={map.data.paths}
+              screens={map.data.screens}
+              loadScreenshot={mapService.loadScreenshot}
+              onInspect={(id) => {
+                setInspectedPathId(id);
+                setView("map");
+              }}
+            />
           ) : null}
           {map.data.pendingProposalCount > 0 ? (
             <Collapsible className="absolute bottom-16 left-4 z-20 max-h-[60vh] w-80 overflow-auto rounded-lg border bg-card p-3 shadow-md">
