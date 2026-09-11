@@ -17,6 +17,7 @@ import { useState, type FormEvent } from "react";
 import { EmptyState, RecoveryState } from "../components/product-patterns";
 import { recordingQueryKeys } from "../data/recording-queries";
 import { PageLoading } from "./recording-shared";
+import { libraryRowSurface } from "../components/library-row-styles";
 import { LibraryPage, PageHeader } from "../components/page-layout";
 
 export function AppsPage() {
@@ -188,7 +189,7 @@ export function AppsPage() {
                 <Link
                   to="/apps/$appId"
                   params={{ appId: app.id }}
-                  className="group flex min-h-24 items-center gap-4 rounded-xl border border-border bg-card p-5 text-foreground transition-colors hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
+                  className={`${libraryRowSurface} group flex min-h-24 items-center gap-4 rounded-xl border border-border bg-card p-5 text-foreground focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring`}
                 >
                   <span
                     className="grid size-[38px] place-items-center rounded-md border border-border bg-background text-[13px] font-semibold text-foreground"
