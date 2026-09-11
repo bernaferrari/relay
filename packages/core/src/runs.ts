@@ -7,8 +7,7 @@ import { join, basename, isAbsolute, relative, sep } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import type { TestJob } from "./session.js";
 import type { TraceFrameRef, TraceStep } from "./trace.js";
-import { projectRunTestStepEvidence } from "./run-test-step-evidence.js";
-import { parseAppMapTestExecutionIntentArtifact } from "./app-map-test-execution-intent.js";
+import { executionIntentProvenance, projectRunTestStepEvidence } from "./run-test-step-evidence.js";
 import {
   assertExecutionTargetRef,
   parseBrowserCaseProfile,
@@ -342,16 +341,6 @@ function buildPersistedRun(job: TestJob, dir: string, writtenAt: number): Persis
   };
 }
 
-function executionIntentProvenance(
-  artifacts: TestJob["artifacts"],
-): import("@relay/protocol").AppMapTestStepProvenance[] {
-  const artifact = artifacts.find(
-    (candidate) => candidate?.kind === "app-map-test-execution-intent",
-  );
-  if (!artifact) return [];
-  return parseAppMapTestExecutionIntentArtifact(artifact)?.plan.stepProvenance ?? [];
-}
-
 const MAX_PROVENANCE_IDENTIFIER_LENGTH = 256;
 
 function persistedExecutionProvenance(job: TestJob): PersistedExecutionProvenance | undefined {
@@ -397,6 +386,14 @@ async function readCompletedRun(dir: string): Promise<PersistedRun | null> {
       const testStepEvidence = parseOptionalRunTestStepEvidence(parsed.testStepEvidence);
       if (testStepEvidence === undefined) delete parsed.testStepEvidence;
       else parsed.testStepEvidence = testStepEvidence;
+    }
+    if (parsed.testStepEvidence === undefined) {
+      const projected = projectRunTestStepEvidence({
+        steps: parsed.steps ?? [],
+        provenance: executionIntentProvenance(parsed.artifacts ?? []),
+        artifacts: parsed.artifacts ?? [],
+      });
+      if (projected.length) parsed.testStepEvidence = projected;
     }
     // Pre-v5 runs did not have an atomic commit marker. They remain readable
     // as historical single-manifest runs, while every current run must pass

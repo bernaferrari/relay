@@ -7,6 +7,7 @@ export function useLatestTestReport(runService: RunProductService, testId: strin
     queryFn: () => runService.listTestRuns!(testId),
     enabled: typeof runService.listTestRuns === "function",
     staleTime: 10_000,
+    refetchInterval: 3_000,
   });
   const latestRun = recentRuns.data?.slice().sort(latestRunFirst)[0];
   const latestReport = useQuery({

@@ -244,7 +244,7 @@ export function TestPage() {
     stepCount: test.data?.stepCount ?? 0,
     viewingHistoricalRun: Boolean(attachedRunId),
   });
-  const loading = test.isPending || targets.isPending || pointer.isPending;
+  const loading = test.isPending;
   const evidenceSteps = flattenSteps(test.data?.steps ?? []);
   const selectedEvidenceStep =
     evidenceSteps.find((step) => step.id === evidenceStepId) ?? evidenceSteps.at(0);

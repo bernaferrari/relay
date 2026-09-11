@@ -1,3 +1,5 @@
+import { parseAppMapCombineCellExecutionIntentArtifact } from "./app-map-combine-cell-intent.js";
+import { parseAppMapTestExecutionIntentArtifact } from "./app-map-test-execution-intent.js";
 import type { AppMapTestStepProvenance, EvidenceEvent, RunTestStepEvidence } from "@relay/protocol";
 import { parseRunTestStepEvidence } from "@relay/protocol";
 import type { TraceStep } from "./trace.js";
@@ -107,4 +109,19 @@ export function projectRunTestStepEvidence(input: {
     }
   }
   return result;
+}
+
+export function executionIntentProvenance(
+  artifacts: readonly { kind: string; data: unknown }[],
+): import("@relay/protocol").AppMapTestStepProvenance[] {
+  const artifact = artifacts.find(
+    (candidate) => candidate?.kind === "app-map-test-execution-intent",
+  );
+  if (artifact) return parseAppMapTestExecutionIntentArtifact(artifact)?.plan.stepProvenance ?? [];
+  const cell = artifacts.find(
+    (candidate) => candidate?.kind === "app-map-combine-cell-execution-intent",
+  );
+  return cell
+    ? (parseAppMapCombineCellExecutionIntentArtifact(cell)?.child.plan.stepProvenance ?? [])
+    : [];
 }

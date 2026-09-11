@@ -1,3 +1,4 @@
+import { executionIntentProvenance } from "./run-test-step-evidence.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import type {
@@ -643,6 +644,14 @@ test("outer Combine cell intent recomputes cellId and rejects a substituted chil
     ),
   });
   assert.equal(parseAppMapCombineCellExecutionIntent(intent)?.cell.cellId, intent.cell.cellId);
+  assert.deepEqual(
+    executionIntentProvenance([{ kind: intent.kind, data: intent }]),
+    child.plan.stepProvenance,
+  );
+  assert.deepEqual(
+    executionIntentProvenance([{ kind: intent.kind, data: { ...intent, digest: "invalid" } }]),
+    [],
+  );
   const tampered = structuredClone(intent);
   tampered.cell.values = { language: "it" };
   assert.equal(parseAppMapCombineCellExecutionIntent(tampered), undefined);

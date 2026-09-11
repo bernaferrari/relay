@@ -22,7 +22,14 @@ export function TestStepEvidencePreview({
 }) {
   const allMatches = report?.stepEvidence?.filter((item) => item.testStepId === step.id) ?? [];
   const captures = allMatches.filter((item) => item.evidence.framePaths.length > 0);
-  const matches = captures.length ? captures : allMatches;
+  const visibleCaptures = captures.filter((item) =>
+    report?.timeline.some((entry) => entry.id === item.traceStepId),
+  );
+  const matches = visibleCaptures.length
+    ? visibleCaptures
+    : captures.length
+      ? captures
+      : allMatches;
   const [selectedOccurrence, setSelectedOccurrence] = useState(matches[0]?.occurrence ?? 1);
   if (!hasRuns && step.recordingFrames?.length) {
     return (
@@ -47,7 +54,7 @@ export function TestStepEvidencePreview({
       className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden p-4"
       aria-labelledby={titleId}
     >
-      <header className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5">
+      <header className="flex min-h-8 shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5">
         <h3
           id={titleId}
           className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground"
@@ -70,7 +77,12 @@ export function TestStepEvidencePreview({
                 <Link
                   to="/runs/$runId"
                   params={{ runId: report.runId }}
-                  search={{ view: "evidence" }}
+                  search={{
+                    reportView: selected ? "steps" : "captures",
+                    ...(timelineItem && report
+                      ? { step: String(report.timeline.indexOf(timelineItem)) }
+                      : {}),
+                  }}
                   className="text-xs underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-ring"
                 >
                   Inspect in report
@@ -120,7 +132,12 @@ export function TestStepEvidencePreview({
             className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-8 items-center text-xs font-semibold text-[var(--text-interactive-base)] underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
             to="/runs/$runId"
             params={{ runId: report.runId }}
-            search={{ view: "evidence" }}
+            search={{
+              reportView: selected ? "steps" : "captures",
+              ...(timelineItem && report
+                ? { step: String(report.timeline.indexOf(timelineItem)) }
+                : {}),
+            }}
           >
             Open report
           </Link>
@@ -128,7 +145,9 @@ export function TestStepEvidencePreview({
       </header>
 
       {loading ? (
-        <p className="mt-2 text-xs leading-normal text-muted-foreground">Loading the latest Run…</p>
+        <p className="mt-2 text-xs leading-normal text-muted-foreground">
+          Loading the latest result…
+        </p>
       ) : null}
       {!loading && !hasRuns ? (
         <p className="mt-2 text-xs leading-normal text-muted-foreground">
@@ -147,8 +166,7 @@ export function TestStepEvidencePreview({
       ) : null}
       {!loading && report && report.stepEvidence === undefined ? (
         <p className="mt-2 text-xs leading-normal text-muted-foreground">
-          Screenshots are available in the run report. This run does not link captures to individual
-          steps.
+          This result has no saved link to this step. Open its captures to review them.
         </p>
       ) : null}
       {selected ? (
