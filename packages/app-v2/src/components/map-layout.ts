@@ -11,6 +11,7 @@ export function layoutMapGraph(
   edges: readonly LayoutEdge[],
   columnGap: number,
   rowGap: number,
+  staggered = false,
 ): Map<string, LayoutPoint> {
   const known = new Set(ids);
   const children = new Map<string, string[]>();
@@ -44,16 +45,24 @@ export function layoutMapGraph(
     const points = new Map<string, LayoutPoint>();
     const contours = new Map<number, { min: number; max: number }>();
     const childRows: number[] = [];
-    for (const child of children.get(id) ?? []) {
+    for (const [childIndex, child] of (children.get(id) ?? []).entries()) {
       const tree = build(child);
-      let shift = 0;
-      for (const [depth, range] of tree.contours) {
+      const columnOffset = columnGap + (staggered && childIndex % 2 ? columnGap / 2 : 0);
+      let shift = staggered && childRows.length ? childRows.at(-1)! + rowGap * 0.6 : 0;
+      if (staggered) {
+        for (const existing of points.values())
+          for (const point of tree.points.values()) {
+            if (Math.abs(existing.x - point.x - columnOffset) < 240)
+              shift = Math.max(shift, existing.y + rowGap - point.y);
+          }
+      }
+      for (const [depth, range] of staggered ? [] : tree.contours) {
         const previous = contours.get(depth + 1);
         if (previous) shift = Math.max(shift, previous.max + rowGap - range.min);
       }
       childRows.push(shift);
       for (const [key, point] of tree.points)
-        points.set(key, { x: point.x + columnGap, y: point.y + shift });
+        points.set(key, { x: point.x + columnOffset, y: point.y + shift });
       for (const [depth, range] of tree.contours) {
         const previous = contours.get(depth + 1);
         contours.set(depth + 1, {

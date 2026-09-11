@@ -53,3 +53,19 @@ it("keeps saved positions from colliding with automatically placed neighbors", (
         expect(Math.abs(a.y - b.y)).toBeGreaterThanOrEqual(420);
   expect(separateMapScreens(resolved, new Set(["saved"]), 208, 388)).toEqual(resolved);
 });
+
+it("staggers sibling subtrees while keeping their continuations aligned", () => {
+  const points = layoutMapGraph(
+    ["root", "a", "b", "child"],
+    [
+      { from: "root", to: "a" },
+      { from: "root", to: "b" },
+      { from: "b", to: "child" },
+    ],
+    560,
+    428,
+    true,
+  );
+  expect(points.get("b")!.x - points.get("a")!.x).toBe(280);
+  expect(points.get("b")!.y).toBe(points.get("child")!.y);
+});

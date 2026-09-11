@@ -75,6 +75,7 @@ export function fitMapToBounds(
 export function layoutMapScreens(
   screens: readonly ProductMapScreen[],
   paths: readonly ProductMapPath[] = [],
+  mode: "aligned" | "staggered" = "aligned",
 ): ReadonlyMap<string, MapPoint> {
   const positions = layoutMapGraph(
     screens.map((screen) => screen.id),
@@ -84,8 +85,9 @@ export function layoutMapScreens(
           path.toScreenId && !/^(back|close|dismiss|return|cancel|disable)\b/i.test(path.label),
       )
       .map((path) => ({ from: path.fromScreenId, to: path.toScreenId! })),
-    MAP_NODE_WIDTH + 160,
+    mode === "staggered" ? 560 : MAP_NODE_WIDTH + 160,
     MAP_NODE_HEIGHT + 40,
+    mode === "staggered",
   );
   // Dense branches need a wider routing corridor than a simple continuation.
   const columns = [...new Set([...positions.values()].map((point) => point.x))].sort(
@@ -108,7 +110,8 @@ export function layoutMapScreens(
     columnPositions.set(column, nextX);
     nextX += widths.get(column) ?? MAP_NODE_WIDTH + 160;
   }
-  for (const point of positions.values()) point.x = columnPositions.get(point.x)!;
+  if (mode === "aligned")
+    for (const point of positions.values()) point.x = columnPositions.get(point.x)!;
   for (const screen of screens) if (screen.position) positions.set(screen.id, screen.position);
 
   return separateMapScreens(

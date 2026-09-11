@@ -140,3 +140,44 @@ it("uses one quadratic curve for a revealed back route", () => {
   expect(d).not.toContain("C");
   expect(d).not.toContain("L");
 });
+
+it("orders destination exits across different sources sharing a corridor", () => {
+  const markup = renderToStaticMarkup(
+    <MapEdges
+      paths={[
+        {
+          id: "one",
+          fromScreenId: "a",
+          fromTitle: "A",
+          toScreenId: "c",
+          label: "One",
+          coveringTests: [],
+        },
+        {
+          id: "two",
+          fromScreenId: "b",
+          fromTitle: "B",
+          toScreenId: "d",
+          label: "Two",
+          coveringTests: [],
+        },
+      ]}
+      positions={
+        new Map([
+          ["a", { x: 0, y: 0 }],
+          ["b", { x: 0, y: 428 }],
+          ["c", { x: 600, y: 1000 }],
+          ["d", { x: 600, y: 1428 }],
+        ])
+      }
+      screens={[{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }]}
+      imageDimensions={new Map()}
+      markerId="ordered"
+    />,
+  );
+  const first = markup.match(/id="-0" d="([^"]+)"/)![1]!;
+  const second = markup.match(/id="-1" d="([^"]+)"/)![1]!;
+  const firstLane = Number(first.match(/Q ([\d.]+)/)![1]);
+  const secondLane = Number(second.match(/Q ([\d.]+)/)![1]);
+  expect(firstLane).toBeGreaterThan(secondLane);
+});

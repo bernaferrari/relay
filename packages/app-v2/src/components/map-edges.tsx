@@ -1,4 +1,4 @@
-import { forwardRoute } from "./map-forward-route";
+import { forwardRoute, avoidPreviewObstacles } from "./map-forward-route";
 import type { ProductMapPath } from "@relay/product/map-exploration";
 import {
   MAP_NODE_WIDTH,
@@ -192,29 +192,65 @@ export function MapEdges({
     const returning = isReturn
       ? returnConnector(sourceBox, targetBox, slot, siblings.length, anchor)
       : undefined;
-    const forwardSiblings = paths
-      .filter(
-        (candidate) =>
-          candidate.fromScreenId === path.fromScreenId &&
-          candidate.toScreenId &&
-          !isRoutineReturn(candidate) &&
-          (positions.get(candidate.toScreenId)?.x ?? -Infinity) > from.x,
-      )
-      .sort(
-        (a, b) =>
-          (positions.get(a.toScreenId!)?.y ?? 0) - (positions.get(b.toScreenId!)?.y ?? 0) ||
-          a.id.localeCompare(b.id),
-      );
-    const directionSiblings = forwardSiblings.filter(
-      (candidate) => (positions.get(candidate.toScreenId!)?.y ?? from.y) < from.y === to.y < from.y,
+    const portY = (screenId: string, fraction = 0.5) => {
+      const point = positions.get(screenId);
+      const dimensions = imageDimensions.get(screenId);
+      const height = dimensions
+        ? Math.min(MAP_NODE_IMAGE_HEIGHT, (MAP_NODE_WIDTH * dimensions.height) / dimensions.width)
+        : MAP_NODE_IMAGE_HEIGHT;
+      return (point?.y ?? 0) + MAP_NODE_TITLE_HEIGHT + MAP_NODE_GAP + height * fraction;
+    };
+    // Order the whole corridor, not each source independently. Otherwise two
+    // branching screens reuse the same lanes and their exits interleave.
+    const directionSiblings = paths
+      .filter((candidate) => {
+        const source = positions.get(candidate.fromScreenId);
+        const target = candidate.toScreenId ? positions.get(candidate.toScreenId) : undefined;
+        if (
+          !source ||
+          !target ||
+          source.x !== from.x ||
+          target.x <= source.x ||
+          isRoutineReturn(candidate)
+        )
+          return false;
+        const sourceY = portY(
+          candidate.fromScreenId,
+          showInteractionTargets ? candidate.sourceAnchor?.point.y : undefined,
+        );
+        return portY(candidate.toScreenId!) < sourceY === end.y < start.y;
+      })
+      .sort((a, b) => portY(a.toScreenId!) - portY(b.toScreenId!) || a.id.localeCompare(b.id));
+    const corridorEnd = Math.min(
+      end.x,
+      ...directionSiblings.map((candidate) => positions.get(candidate.toScreenId!)!.x - clearance),
     );
     const forwardSlot = Math.max(
       0,
       directionSiblings.findIndex((candidate) => candidate.id === path.id),
     );
-    const points =
+    let points =
       returning?.points ??
-      forwardRoute(start, end, from.x + MAP_NODE_WIDTH, forwardSlot, directionSiblings.length);
+      forwardRoute(
+        start,
+        end,
+        from.x + MAP_NODE_WIDTH,
+        forwardSlot,
+        directionSiblings.length,
+        corridorEnd,
+      );
+    if (!returning)
+      points = avoidPreviewObstacles(
+        points,
+        [...positions]
+          .filter(([id]) => id !== path.fromScreenId && id !== path.toScreenId)
+          .map(([, point]) => ({
+            x: point.x - 12,
+            y: point.y - 12,
+            width: MAP_NODE_WIDTH + 24,
+            height: MAP_NODE_HEIGHT + 24,
+          })),
+      );
     return [
       {
         path,

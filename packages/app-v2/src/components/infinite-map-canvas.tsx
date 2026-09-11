@@ -31,6 +31,8 @@ import {
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuCheckboxItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from "@relay/ui-react/components/dropdown-menu";
@@ -98,7 +100,8 @@ export function InfiniteMapCanvas({
       }
     | undefined
   >(undefined);
-  const [autoArrange, setAutoArrange] = useState(false);
+  const [layoutMode, setLayoutMode] = useState<"saved" | "aligned" | "staggered">("staggered");
+  const autoArrange = layoutMode !== "saved";
   const [arrangedEdits, setArrangedEdits] = useState<Map<string, MapPoint>>(() => new Map());
   const positions = useMemo(() => {
     let result = new Map(
@@ -107,6 +110,7 @@ export function InfiniteMapCanvas({
           ? visibleScreens.map((screen) => ({ ...screen, position: undefined }))
           : visibleScreens,
         visiblePaths,
+        layoutMode === "staggered" ? "staggered" : "aligned",
       ),
     );
     for (const [id, point] of arrangedEdits) result.set(id, point);
@@ -128,7 +132,7 @@ export function InfiniteMapCanvas({
       else result.set(dragged.id, dragged.position);
     }
     return result;
-  }, [visibleScreens, visiblePaths, dragged, autoArrange, arrangedEdits]);
+  }, [visibleScreens, visiblePaths, dragged, autoArrange, arrangedEdits, layoutMode]);
   const bounds = useMemo(
     () => mapContentBounds(visibleScreens, positions),
     [positions, visibleScreens],
@@ -282,6 +286,7 @@ export function InfiniteMapCanvas({
         ? visibleScreens.map((screen) => ({ ...screen, position: undefined }))
         : visibleScreens,
       visiblePaths,
+      layoutMode === "staggered" ? "staggered" : "aligned",
     );
     animateTransform(
       fitMapToBounds(mapContentBounds(visibleScreens, resetPositions), viewportSize()),
@@ -734,24 +739,29 @@ export function InfiniteMapCanvas({
               >
                 Arrows from controls
               </DropdownMenuCheckboxItem>
-              <DropdownMenuCheckboxItem
-                checked={autoArrange}
-                onCheckedChange={(enabled) => {
-                  setAutoArrange(enabled);
+              <DropdownMenuSeparator />
+              <DropdownMenuRadioGroup
+                value={layoutMode}
+                onValueChange={(value) => {
+                  const mode = value as "saved" | "aligned" | "staggered";
+                  setLayoutMode(mode);
                   setArrangedEdits(new Map());
                   const next = layoutMapScreens(
-                    enabled
-                      ? visibleScreens.map((screen) => ({ ...screen, position: undefined }))
-                      : visibleScreens,
+                    mode === "saved"
+                      ? visibleScreens
+                      : visibleScreens.map((screen) => ({ ...screen, position: undefined })),
                     visiblePaths,
+                    mode === "staggered" ? "staggered" : "aligned",
                   );
                   animateTransform(
                     fitMapToBounds(mapContentBounds(visibleScreens, next), viewportSize()),
                   );
                 }}
               >
-                Auto arrange
-              </DropdownMenuCheckboxItem>
+                <DropdownMenuRadioItem value="aligned">Aligned layout</DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="staggered">Staggered layout</DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="saved">Saved positions</DropdownMenuRadioItem>
+              </DropdownMenuRadioGroup>
               <DropdownMenuSeparator />
               {selectedScreenId ? (
                 <DropdownMenuItem onClick={() => focusScreen(selectedScreenId)}>
