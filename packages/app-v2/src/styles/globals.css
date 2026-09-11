@@ -88,3 +88,33 @@
     }
   }
 }
+
+/* Keep the canvas stationary while its inspector enters and leaves. */
+.relay-map-inspector {
+  transform: translateX(16px);
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    transform 150ms cubic-bezier(0.32, 0.72, 0, 1),
+    opacity 150ms ease-out,
+    visibility 0s 150ms;
+}
+.relay-map-inspector[data-open="true"] {
+  transform: translateX(0);
+  opacity: 1;
+  visibility: visible;
+  transition-duration: 200ms, 200ms, 0s;
+  transition-delay: 0s;
+}
+@starting-style {
+  .relay-map-inspector[data-open="true"] {
+    transform: translateX(16px);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .relay-map-inspector {
+    transition: none;
+    transform: none;
+  }
+}

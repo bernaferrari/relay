@@ -24,8 +24,17 @@ import { MapScreenPreview } from "./map-screen-preview";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@relay/ui-react/components/tooltip";
 import type { ProductMapPath, ProductMapScreen } from "@relay/product/map-exploration";
 import { Button } from "@relay/ui-react/components/button";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuCheckboxItem,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@relay/ui-react/components/dropdown-menu";
 import { Link } from "@tanstack/react-router";
 import {
+  SlidersHorizontal,
   Focus,
   Hand,
   Minus,
@@ -33,9 +42,7 @@ import {
   RotateCcw,
   Search,
   PanelLeftClose,
-  PanelLeftOpen,
   MousePointer2,
-  Scan,
   X,
 } from "lucide-react";
 import {
@@ -205,12 +212,45 @@ export function InfiniteMapCanvas({
   >(undefined);
   const markerId = `${useId().replaceAll(":", "")}`;
 
-  function applyTransform(next: MapTransform) {
+  const navigationFrame = useRef(0);
+  useEffect(() => () => cancelAnimationFrame(navigationFrame.current), []);
+
+  function applyTransform(next: MapTransform, navigating = false) {
+    if (!navigating) cancelAnimationFrame(navigationFrame.current);
     transformRef.current = next;
     if (worldRef.current) {
       worldRef.current.style.transform = `translate3d(${next.x}px, ${next.y}px, 0) scale(${next.scale})`;
     }
     if (zoomLabelRef.current) zoomLabelRef.current.textContent = `${Math.round(next.scale * 100)}%`;
+  }
+
+  function animateTransform(next: MapTransform) {
+    cancelAnimationFrame(navigationFrame.current);
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+      applyTransform(next);
+      return;
+    }
+    const start = transformRef.current;
+    const startedAt = performance.now();
+    const tick = (now: number) => {
+      const progress = Math.min(1, (now - startedAt) / 220);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      applyTransform(
+        {
+          x: start.x + (next.x - start.x) * eased,
+          y: start.y + (next.y - start.y) * eased,
+          scale: start.scale + (next.scale - start.scale) * eased,
+        },
+        true,
+      );
+      if (progress < 1) navigationFrame.current = requestAnimationFrame(tick);
+    };
+    navigationFrame.current = requestAnimationFrame(tick);
+  }
+
+  function navigationViewportSize() {
+    const size = viewportSize();
+    return { ...size, width: Math.max(240, size.width - 288) };
   }
 
   function viewportSize() {
@@ -250,12 +290,12 @@ export function InfiniteMapCanvas({
   useEffect(() => {
     if (!focusScreenId) return;
     let focusFrame = 0;
-    // Let the inspector resize the viewport before centering the selected screen.
+    // Wait for the selected screen to render before animating into view.
     const frame = requestAnimationFrame(() => {
       focusFrame = requestAnimationFrame(() => {
         const position = positions.get(focusScreenId);
         if (position)
-          applyTransform(
+          animateTransform(
             fitMapToBounds(
               {
                 minX: position.x,
@@ -263,7 +303,7 @@ export function InfiniteMapCanvas({
                 maxX: position.x + MAP_NODE_WIDTH,
                 maxY: position.y + MAP_NODE_HEIGHT,
               },
-              viewportSize(),
+              navigationViewportSize(),
             ),
           );
         setFocusScreenId(undefined);
@@ -291,7 +331,7 @@ export function InfiniteMapCanvas({
   function revealScreen(screenId: string) {
     const position = positions.get(screenId);
     if (!position) return;
-    const viewport = viewportSize();
+    const viewport = navigationViewportSize();
     const current = transformRef.current;
     const screen = {
       left: current.x + position.x * current.scale,
@@ -312,7 +352,7 @@ export function InfiniteMapCanvas({
     else if (screen.bottom > viewport.height - bottomInset) {
       y -= screen.bottom - (viewport.height - bottomInset);
     }
-    if (x !== current.x || y !== current.y) applyTransform({ ...current, x, y });
+    if (x !== current.x || y !== current.y) animateTransform({ ...current, x, y });
   }
 
   useEffect(() => {
@@ -372,6 +412,7 @@ export function InfiniteMapCanvas({
   }
 
   function handlePointerDown(event: PointerEvent<HTMLElement>) {
+    cancelAnimationFrame(navigationFrame.current);
     if (
       (event.button !== 0 && event.button !== 1) ||
       (!panningTool && (event.target as HTMLElement).closest("button, a, input"))
@@ -604,37 +645,6 @@ export function InfiniteMapCanvas({
           className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1 rounded-lg border border-border bg-card/95 p-1 shadow-sm"
           aria-label="Map controls"
         >
-          <MapControl
-            label={showScreens ? "Toggle screens" : "Show screens"}
-            icon={PanelLeftOpen}
-            onClick={() => setShowScreens(!showScreens)}
-          />
-          <Button
-            size="sm"
-            variant={showInteractionTargets ? "secondary" : "ghost"}
-            aria-pressed={showInteractionTargets}
-            title="Inspect control bounds from the selected screen’s saved accessibility tree."
-            onClick={() => setShowInteractionTargets((value) => !value)}
-          >
-            <Scan className="size-4" /> Accessibility
-          </Button>
-          <Button
-            size="sm"
-            variant={showControlOrigins ? "secondary" : "ghost"}
-            aria-pressed={showControlOrigins}
-            onClick={() => setShowControlOrigins((value) => !value)}
-            title="Start arrows at uniquely matched saved controls on the selected screen."
-          >
-            Control origins
-          </Button>
-          <Button
-            size="sm"
-            variant={autoArrange ? "secondary" : "ghost"}
-            aria-pressed={autoArrange}
-            onClick={() => setAutoArrange((value) => !value)}
-          >
-            Auto arrange
-          </Button>
           <Button
             size="icon-sm"
             variant={handTool ? "ghost" : "secondary"}
@@ -665,14 +675,42 @@ export function InfiniteMapCanvas({
           <MapControl label="Zoom in" icon={Plus} onClick={() => zoomBy(1.18)} />
           <span className="mx-1 h-5 w-px bg-border" aria-hidden="true" />
           <MapControl label="Fit map (F)" icon={Focus} onClick={fitContent} />
-          {selectedScreenId ? (
-            <MapControl
-              label="Focus screen (Shift F)"
-              icon={Scan}
-              onClick={() => focusScreen(selectedScreenId)}
-            />
-          ) : null}
-          <MapControl label="Reset view" icon={RotateCcw} onClick={resetView} />
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={<Button size="icon-sm" variant="ghost" />}
+              aria-label="Map view options"
+              title="Map view options"
+            >
+              <SlidersHorizontal />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="top" align="end" className="w-56">
+              <DropdownMenuCheckboxItem checked={showScreens} onCheckedChange={setShowScreens}>
+                Screen list
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem
+                checked={showInteractionTargets}
+                onCheckedChange={setShowInteractionTargets}
+              >
+                Accessibility bounds
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem
+                checked={showControlOrigins}
+                onCheckedChange={setShowControlOrigins}
+              >
+                Arrows from controls
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem checked={autoArrange} onCheckedChange={setAutoArrange}>
+                Auto arrange
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuSeparator />
+              {selectedScreenId ? (
+                <DropdownMenuItem onClick={() => focusScreen(selectedScreenId)}>
+                  Focus selected screen
+                </DropdownMenuItem>
+              ) : null}
+              <DropdownMenuItem onClick={resetView}>Reset view</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
         {selectedPath ? (
           <div
@@ -840,6 +878,7 @@ export function InfiniteMapCanvas({
                     if (!panningTool) focusScreen(screen.id);
                   }}
                   onPointerDown={(event) => {
+                    cancelAnimationFrame(navigationFrame.current);
                     if (panningTool || !onUpdateScreen || saving || event.button !== 0) return;
                     suppressNodeClick.current = false;
                     event.stopPropagation();

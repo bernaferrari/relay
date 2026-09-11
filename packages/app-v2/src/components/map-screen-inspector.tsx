@@ -1,6 +1,7 @@
+import { isRoutineReturn } from "./map-edges";
 import type { ProductMapPath, ProductMapScreen } from "@relay/product/map-exploration";
 import { Button } from "@relay/ui-react/components/button";
-import { ArrowDownLeft, ArrowUpRight, ChevronRight, Scan, X } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, ChevronRight, Scan, X, RefreshCw } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { MapScreenPreview } from "./map-screen-preview";
@@ -9,7 +10,7 @@ import { localeLabel } from "../lib/locale-label";
 
 export function ScreenInspector({
   loadScreenshot,
-  screen,
+  screen: activeScreen,
   paths,
   onSelectScreen,
   onFocusScreen,
@@ -32,6 +33,9 @@ export function ScreenInspector({
     screenId: string;
     variantId: string;
   }>();
+  const [retainedScreen, setRetainedScreen] = useState(activeScreen);
+  if (activeScreen && activeScreen !== retainedScreen) setRetainedScreen(activeScreen);
+  const screen = activeScreen ?? retainedScreen;
   if (!screen) return null;
   const variants = screen.variants ?? [];
   const selectedCapture =
@@ -45,30 +49,65 @@ export function ScreenInspector({
   const outgoing = paths.filter((path) => path.fromScreenId === screen.id);
   return (
     <aside
-      className="z-10 flex w-72 shrink-0 flex-col border-l border-border bg-card max-[1000px]:absolute max-[1000px]:right-0 max-[1000px]:inset-y-0 max-[1000px]:shadow-lg"
+      className="relay-map-inspector absolute inset-y-0 right-0 z-10 flex w-72 max-w-full flex-col border-l border-border bg-card shadow-lg"
+      data-open={Boolean(activeScreen)}
+      inert={!activeScreen}
+      aria-hidden={!activeScreen}
       aria-label="Screen details"
     >
-      <header className="flex h-12 shrink-0 items-center justify-between px-4">
-        <h2 className="text-xs font-medium">Screen details</h2>
-        <Button size="icon-sm" variant="ghost" aria-label="Close screen details" onClick={onClose}>
-          <X />
-        </Button>
+      <header className="flex h-12 shrink-0 items-center justify-between border-b border-border px-4">
+        <h2 className="text-xs font-medium text-muted-foreground">Screen</h2>
+        <div className="ml-auto flex items-center gap-1">
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            aria-label="Focus on canvas"
+            title="Focus on canvas"
+            onClick={onFocusScreen}
+          >
+            <Scan />
+          </Button>
+          {onRefresh ? (
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              aria-label="Update capture"
+              title="Update capture"
+              onClick={onRefresh}
+            >
+              <RefreshCw />
+            </Button>
+          ) : null}
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            aria-label="Close screen details"
+            onClick={onClose}
+          >
+            <X />
+          </Button>
+        </div>
       </header>
       <ScrollArea
         className="min-h-0 flex-1"
         viewportProps={{ "aria-label": "Screen information", className: "overscroll-auto" }}
       >
-        <div className="space-y-5 px-4 pb-5">
+        <div className="space-y-4 px-4 py-4">
           <div className="space-y-2">
             {onRename ? (
-              <input
+              <textarea
+                rows={1}
+                style={{ fieldSizing: "content" }}
                 key={`${screen.id}:${screen.title}`}
                 aria-label="Screen name"
                 defaultValue={screen.title}
                 disabled={saving}
-                className="w-full rounded-md border border-transparent bg-transparent px-2 py-1.5 text-sm font-medium outline-none hover:border-input focus:border-input focus:ring-2 focus:ring-ring"
+                className="w-full resize-none rounded-md border border-transparent bg-transparent px-1 py-1 text-sm font-medium leading-5 outline-none hover:border-input focus:border-input focus:ring-2 focus:ring-ring"
                 onKeyDown={(event) => {
-                  if (event.key === "Enter") event.currentTarget.blur();
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    event.currentTarget.blur();
+                  }
                   if (event.key === "Escape") {
                     event.currentTarget.value = screen.title;
                     event.currentTarget.blur();
@@ -89,7 +128,7 @@ export function ScreenInspector({
             )}
             <button
               type="button"
-              className="block h-[min(42vh,360px)] w-full focus-visible:outline-2 focus-visible:outline-ring"
+              className="mx-auto block h-48 max-h-[28vh] w-full rounded-md bg-muted/30 py-2 focus-visible:outline-2 focus-visible:outline-ring"
               aria-label={`Focus ${screen.title} on canvas`}
               onClick={onFocusScreen}
             >
@@ -99,22 +138,8 @@ export function ScreenInspector({
                 title={screen.title}
               />
             </button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="w-full text-muted-foreground"
-              onClick={onFocusScreen}
-            >
-              <Scan />
-              Focus on canvas
-            </Button>
             {screen.description ? (
               <p className="text-xs leading-relaxed text-muted-foreground">{screen.description}</p>
-            ) : null}
-            {onRefresh ? (
-              <Button variant="outline" size="sm" className="w-full" onClick={onRefresh}>
-                Update screen…
-              </Button>
             ) : null}
             {variants.length > 1 ? (
               <div className="space-y-2">
@@ -154,14 +179,25 @@ export function ScreenInspector({
               </Link>
             ) : null}
           </div>
-          <section className="space-y-2" aria-label="Connected screens">
+          <section className="space-y-4 border-t border-border pt-4" aria-label="Connected screens">
             <Connections
               title="Arrive from"
-              paths={incoming}
+              paths={incoming.filter((path) => !isRoutineReturn(path))}
               outgoing={false}
               onSelect={onSelectScreen}
             />
-            <Connections title="Continue to" paths={outgoing} outgoing onSelect={onSelectScreen} />
+            <Connections
+              title="Continue to"
+              paths={outgoing.filter((path) => !isRoutineReturn(path))}
+              outgoing
+              onSelect={onSelectScreen}
+            />
+            <Connections
+              title="Return to"
+              paths={outgoing.filter(isRoutineReturn)}
+              outgoing
+              onSelect={onSelectScreen}
+            />
             {!incoming.length && !outgoing.length ? (
               <p className="text-xs text-muted-foreground">No recorded connections yet.</p>
             ) : null}
@@ -190,6 +226,7 @@ export function ScreenInspector({
               <p className="text-xs text-muted-foreground">No saved test includes this screen.</p>
             )}
           </section>
+
           {screen.recentFailures.length ? (
             <section className="space-y-2 border-t border-border pt-4">
               <h3 className="text-xs font-medium">Recent failures</h3>
@@ -228,8 +265,8 @@ function Connections({
   if (!paths.length) return null;
   const Icon = outgoing ? ArrowUpRight : ArrowDownLeft;
   return (
-    <div className="space-y-1 pb-3">
-      <h3 className="flex items-center gap-2 text-xs font-medium">
+    <div className="space-y-1">
+      <h3 className="flex items-center gap-2 pb-1 text-[11px] font-medium text-muted-foreground">
         <Icon className="size-3.5 text-muted-foreground" />
         {title}
       </h3>
@@ -238,15 +275,22 @@ function Connections({
         const name = outgoing ? (path.toTitle ?? "Finish") : path.fromTitle;
         const content = (
           <>
-            <span className="block truncate font-medium">{name}</span>
-            <span className="mt-1 block truncate text-muted-foreground">{path.label}</span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate font-medium">{name}</span>
+              {!isRoutineReturn(path) && path.label !== name ? (
+                <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
+                  {path.label}
+                </span>
+              ) : null}
+            </span>
+            <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
           </>
         );
         return id ? (
           <button
             key={path.id}
             type="button"
-            className="w-full rounded-md px-2 py-2 text-left text-xs hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
+            className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-xs hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
             onClick={() => onSelect(id)}
           >
             {content}

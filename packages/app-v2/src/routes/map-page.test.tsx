@@ -491,7 +491,9 @@ it("prepares screen refresh with canonical target fields and waits for a visible
     });
   };
   await act(async () => document.querySelector<HTMLButtonElement>(".relay-map-screen")!.click());
-  await click("Update screen…");
+  await act(async () =>
+    document.querySelector<HTMLButtonElement>('button[aria-label="Update capture"]')!.click(),
+  );
   for (let i = 0; i < 5; i++)
     await act(async () => void (await new Promise((resolve) => setTimeout(resolve, 0))));
   await click("Capture screen");
