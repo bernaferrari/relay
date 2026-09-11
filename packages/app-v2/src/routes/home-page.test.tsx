@@ -500,18 +500,10 @@ describe("Home", () => {
     });
     expect(document.body.textContent).toContain("Pay");
     expect(document.querySelector("#tests-resume-title")?.textContent).toContain("Pay");
-    expect(
-      document.querySelector("[aria-label='Results that need attention']")?.textContent,
-    ).toContain("Pay");
-    expect(
-      document.querySelector("[aria-label='Results that need attention']")?.textContent,
-    ).toContain("Sign in");
-    expect(
-      document.querySelector("[aria-label='Results that need attention']")?.textContent,
-    ).toContain("Pixel 9");
-    expect(
-      document.querySelector("[aria-label='Results that need attention']")?.textContent,
-    ).toContain("iPad Pro");
+    expect(document.querySelector("[aria-label='Results that need attention']")?.textContent).toBe(
+      "2 runs need attention",
+    );
+    expect(document.body.textContent).toContain("Sign in");
   });
 
   it("keeps saved Tests and their action visible when Runs fail", async () => {

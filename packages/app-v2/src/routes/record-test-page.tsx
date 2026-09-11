@@ -642,7 +642,9 @@ function RecordingWorkspace({
                   </ScrollArea>
                 ) : (
                   <div className="grid min-h-[180px] place-items-center px-4 text-center text-sm text-muted-foreground">
-                    <p>Taps and typing appear here.</p>
+                    <p>
+                      {captureReady ? "Taps and typing appear here." : "No recorded steps yet."}
+                    </p>
                   </div>
                 )}
               </aside>

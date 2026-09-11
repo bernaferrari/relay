@@ -4,11 +4,11 @@ import { currentTestOutlineCopy, historicalRunCaption } from "./workbench-step-s
 describe("workbench step selection", () => {
   it("labels current Test steps separately from a historical Run", () => {
     expect(currentTestOutlineCopy({ stepCount: 4, viewingHistoricalRun: true })).toEqual({
-      title: "Current Test · 4 steps",
-      hint: "Selecting a current step does not change the historical Run.",
+      title: "4 steps",
+      hint: "",
     });
     expect(currentTestOutlineCopy({ stepCount: 1, viewingHistoricalRun: false })).toEqual({
-      title: "Current Test · 1 step",
+      title: "1 step",
     });
   });
 

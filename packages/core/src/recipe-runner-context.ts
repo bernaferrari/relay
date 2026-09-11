@@ -271,6 +271,13 @@ export type RecipeStepContext = {
    * TestJob merely to verify a proposal. */
   variables?: Record<string, string>;
   artifacts?: { kind: string; capturedAt: number; data: unknown }[];
+  /** Session host traces each reusable child with its frozen recipe identity. */
+  runChild?: (
+    step: RecipeStep,
+    index: number,
+    recipe: Recipe,
+    context: RecipeStepContext,
+  ) => Promise<void>;
   moduleStack?: string[];
   recipeGraph?: Readonly<Record<string, Recipe>>;
   runtime?: RecipeRuntimeState;

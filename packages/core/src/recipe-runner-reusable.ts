@@ -77,11 +77,10 @@ export async function runReusableRecipe(
     `↳ ${recipe.title} · ${recipe.steps.length} step(s)${parameters.length ? ` · ${Object.keys(resolved).length}/${parameters.length} inputs` : ""}`,
   );
   try {
-    for (const child of recipe.steps) {
-      await runStep(device, resolveRecipeStep(child, ctx.job?.resolvedInputs ?? {}), {
-        ...ctx,
-        moduleStack: [...stack, recipeId],
-      });
+    for (const [index, child] of recipe.steps.entries()) {
+      const context = { ...ctx, moduleStack: [...stack, recipeId] };
+      if (ctx.runChild) await ctx.runChild(child, index, recipe, context);
+      else await runStep(device, resolveRecipeStep(child, ctx.job?.resolvedInputs ?? {}), context);
     }
   } finally {
     if (current) {

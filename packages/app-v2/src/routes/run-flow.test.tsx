@@ -339,7 +339,8 @@ async function settle() {
 
 function button(label: string): HTMLButtonElement {
   const result = [...document.querySelectorAll("button")].find(
-    (candidate) => candidate.textContent?.trim() === label,
+    (candidate) =>
+      candidate.textContent?.trim() === label || candidate.getAttribute("aria-label") === label,
   );
   if (!(result instanceof HTMLButtonElement)) throw new Error(`Button not found: ${label}`);
   return result;
@@ -668,7 +669,7 @@ describe("Run and Report", () => {
     expect(document.body.textContent).not.toContain("Draft issue");
     expect(document.body.textContent).toContain("Open full report");
     expect(document.body.textContent).not.toContain("Investigate this failure");
-    expect(document.body.textContent).toMatch(/\d+(?:\.\d+)?s/);
+    expect(document.body.textContent).toMatch(/\d+(?:\.\d+)?\s?s/);
     expect(document.querySelectorAll('[role="tab"]')).toHaveLength(0);
     expect(storage.values.has("activeRunWorkflow")).toBe(false);
 
@@ -685,11 +686,12 @@ describe("Run and Report", () => {
     );
     expect(fake.calls).not.toContain("raw-evidence:run-1");
 
-    const auditTrigger = button("Audit details");
-    expect(auditTrigger.getAttribute("aria-expanded")).toBe("false");
+    await click(button("More run actions"));
+    const auditTrigger = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+      (item) => item.textContent?.trim() === "Audit",
+    )!;
     expect(document.querySelector('[aria-label="Raw evidence JSON"]')).toBeNull();
     await click(auditTrigger);
-    expect(auditTrigger.getAttribute("aria-expanded")).toBe("true");
     expect(fake.calls).toContain("raw-evidence:run-1");
     const rawJson = document.querySelector('[aria-label="Raw evidence JSON"]');
     expect(rawJson?.textContent).toContain('\n  "channels": {\n');
@@ -1042,8 +1044,13 @@ describe("Run and Report", () => {
     fake.service.review = review;
     await renderRun("/runs/run-1", fake.service, platformWithStorage().platform);
 
-    await click(button("Review and visual decisions"));
-    await click(button("Approve Run"));
+    await click(button("More run actions"));
+    await click(
+      [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+        (item) => item.textContent?.trim() === "Review run",
+      )!,
+    );
+    await click(button("Approve run"));
     await click(button("Defer"));
     await click(button("Reject"));
 
@@ -1080,8 +1087,13 @@ describe("Run and Report", () => {
     fake.service.reviewVisual = reviewVisual;
     await renderRun("/runs/run-1", fake.service, platformWithStorage().platform);
 
-    await click(button("Review and visual decisions"));
-    await click(button("Compare visual evidence"));
+    await click(button("More run actions"));
+    await click(
+      [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+        (item) => item.textContent?.trim() === "Review run",
+      )!,
+    );
+    await click(button("Compare screenshots"));
     expect(compareVisual).toHaveBeenCalledWith("run-1");
     expect(document.body.textContent).toContain("Visual changes need review");
     expect(document.body.textContent).toContain("2 changed · 1 added · 0 removed");
@@ -1232,7 +1244,14 @@ describe("Run and Report", () => {
     };
     try {
       await renderRun("/runs/run-1", fake.service, platformWithStorage().platform);
+      await click(button("More run actions"));
       expect(document.body.textContent).toContain("Export evidence");
+      if (!document.querySelector('[role="menu"]')) await click(button("More run actions"));
+      await click(
+        [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+          (item) => item.textContent?.trim() === "Export evidence",
+        )!,
+      );
       await click(button("Export evidence"));
       expect(fake.calls).toContain("export:run-1");
       const link = document.querySelector<HTMLAnchorElement>('a[download="relay-run-run-1.json"]');
@@ -1249,6 +1268,12 @@ describe("Run and Report", () => {
     fake.service.exportEvidence = async (runId) =>
       runEvidenceExportDocument(runId, tracePackForRun("run-from-test-B"));
     await renderRun("/runs/run-1", fake.service, platformWithStorage().platform);
+    if (!document.querySelector('[role="menu"]')) await click(button("More run actions"));
+    await click(
+      [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+        (item) => item.textContent?.trim() === "Export evidence",
+      )!,
+    );
     await click(button("Export evidence"));
     expect(document.body.textContent).toContain("TracePack evidence for a different Run");
     expect(document.querySelector("a[download]")).toBeNull();

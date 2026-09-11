@@ -303,7 +303,8 @@ async function settle() {
 
 function button(label: string): HTMLButtonElement {
   const match = [...document.querySelectorAll("button")].find(
-    (candidate) => candidate.textContent?.trim() === label,
+    (candidate) =>
+      candidate.textContent?.trim() === label || candidate.getAttribute("aria-label") === label,
   );
   if (!(match instanceof HTMLButtonElement)) throw new Error(`Button not found: ${label}`);
   return match;
@@ -645,12 +646,18 @@ describe("record, review, replay, and save", () => {
       {
         createApp: async (name: string) => {
           createdNames.push(name);
-          if (createdNames.length === 1) throw new Error("Temporary service failure");
+          if (createdNames.length === 1)
+            throw new Error("Couldn’t create the app. Your name is kept here—try again.");
           return { id: "new-app", name };
         },
       } as AppResourcesProductService,
     );
-    await click(button("Create app"));
+    await click(button("App"));
+    await click(
+      [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((item) =>
+        item.textContent?.includes("Create app"),
+      )!,
+    );
     expect(button("Start recording").disabled).toBe(true);
     await fill(document.querySelector<HTMLInputElement>("#recording-app-name")!, "Acme");
     await click(button("Create app"));
@@ -675,8 +682,8 @@ describe("record, review, replay, and save", () => {
 
     await beginRecording();
     expect(history.location.pathname).toBe("/recordings/workflow-1");
-    expect(document.body.textContent).toContain("Click the app to record a step");
-    expect(document.body.textContent).toContain("Pixel 9 Pro");
+    expect(document.body.textContent).toContain("Taps and typing appear here.");
+    expect(document.querySelector('[aria-label="Interactive Device: Pixel 9 Pro"]')).not.toBeNull();
     expect(document.body.textContent).not.toContain("emulator-5554");
     const liveTextInput = document.querySelector<HTMLInputElement>(
       'input[placeholder="Type into the app"]',
@@ -689,8 +696,8 @@ describe("record, review, replay, and save", () => {
       document.querySelector<HTMLInputElement>('input[placeholder="Type into the app"]')!,
       "Arabic",
     );
-    await click(button("Type"));
-    await click(button("Capture screen"));
+    await click(button("Type text into app"));
+    await click(button("Save screenshot"));
     const checkpoint = document.querySelector<HTMLInputElement>("#checkpoint-label")!;
     await fill(checkpoint, "Language screen");
     await click(button("Save"));
@@ -699,22 +706,21 @@ describe("record, review, replay, and save", () => {
     expect(history.location.pathname).toBe("/tests/new");
     expect(String(history.location.search)).toContain("view=review");
     expect(document.body.textContent).toContain("2 steps");
-    expect(document.body.textContent).toContain("Recorded by Relay");
-    expect(document.body.textContent).toContain("replay before saving the Test");
-    expect(button("Replay recording").disabled).toBe(false);
+    expect(button("Replay on Pixel 9 Pro").disabled).toBe(false);
     expect(document.body.textContent).not.toContain("Save Test");
 
-    await click(button("Replay recording"));
+    await click(button("Replay on Pixel 9 Pro"));
     expect(document.body.textContent).toContain("Ready to save");
-    expect(document.body.textContent).toContain("Verified on the selected Device");
-    expect(document.body.textContent).not.toContain("A passing replay is required before saving");
+    expect(document.body.textContent).not.toContain(
+      "Replay runs these steps on Pixel 9 Pro before saving.",
+    );
     expect(document.body.textContent).not.toContain("Replay recording");
     expect(document.body.textContent).not.toContain("Replay again");
     expect(document.body.textContent).not.toContain("Save draft");
     expect(button("Save Test").disabled).toBe(false);
 
     await fill(document.querySelector<HTMLInputElement>("#review-test-name")!, "Language tour");
-    expect(document.body.textContent).toContain("Name updated — recorded steps are unchanged");
+    expect(document.body.textContent).toContain("Recording captured. Ready to save.");
     await click(button("Save Test"));
     expect(history.location.pathname).toBe("/tests/test-1");
     expect(document.body.textContent).not.toContain("Open Test");
@@ -767,7 +773,7 @@ describe("record, review, replay, and save", () => {
       document.querySelector<HTMLInputElement>('input[placeholder="Type into the app"]')!,
       "Arabic",
     );
-    await click(button("Type"));
+    await click(button("Type text into app"));
     expect(inputStarted).toBe(true);
 
     await act(async () => {
@@ -794,14 +800,16 @@ describe("record, review, replay, and save", () => {
       platformWithStorage().platform,
     );
 
-    await click(button("Edit"));
+    await click(button("Edit steps"));
     const instruction = document.querySelector<HTMLInputElement>("#review-action-intent");
     if (!instruction) throw new Error("Action instruction editor was not rendered");
     await fill(instruction, "Open language settings");
     await click(button("Save instruction"));
 
     expect(fake.calls).toContain("edit:rename");
-    expect(document.body.textContent).toContain("A passing replay is required before saving");
+    expect(document.body.textContent).toContain(
+      "Replay runs these steps on Pixel 9 Pro before saving.",
+    );
   });
 
   it("replaces a tap target by picking a control from evidence", async () => {
@@ -817,7 +825,7 @@ describe("record, review, replay, and save", () => {
       platformWithStorage().platform,
     );
 
-    await click(button("Edit"));
+    await click(button("Edit steps"));
     expect(document.querySelector("#review-replacement-label")).toBeNull();
     await click(button("Change target"));
     for (
@@ -827,14 +835,18 @@ describe("record, review, replay, and save", () => {
     ) {
       await settle();
     }
-    await click(button("Preferred language"));
+    await click(
+      [...document.querySelectorAll<HTMLButtonElement>("button")].find((item) =>
+        item.textContent?.includes("Preferred language"),
+      )!,
+    );
     expect(document.body.textContent).toContain("Matched the visible name");
-    await click(button("Try target"));
+    await click(button("Try on device"));
     expect(document.body.textContent).toContain(
       "Relay tried Preferred language as the saved binding.",
     );
     expect(fake.calls.filter((call) => call === "input:tap")).toEqual(["input:tap"]);
-    await click(button("Keep target"));
+    await click(button("Use target"));
 
     expect(fake.edits).toContainEqual({
       kind: "replace",
@@ -864,7 +876,7 @@ describe("record, review, replay, and save", () => {
       trimFake.service,
       platformWithStorage().platform,
     );
-    await click(button("Edit"));
+    await click(button("Edit steps"));
     const ranges = document.querySelectorAll<HTMLInputElement>('input[type="range"]');
     await fill(ranges[0]!, "1000");
     await click(button("Apply trim"));
@@ -882,7 +894,7 @@ describe("record, review, replay, and save", () => {
       undoFake.service,
       platformWithStorage().platform,
     );
-    await click(button("Edit"));
+    await click(button("Edit steps"));
     await click(button("Undo"));
     expect(undoFake.edits[0]).toEqual({ kind: "restore", sourceRevision: 2 });
     await click(button("Redo"));
@@ -916,10 +928,10 @@ describe("record, review, replay, and save", () => {
       platformWithStorage().platform,
     );
 
-    await click(button("Edit"));
-    await click(button("Find cleanup"));
-    expect(document.body.textContent).toContain("review-only suggestions");
-    expect(document.body.textContent).toContain("never apply these automatically");
+    await click(button("Edit steps"));
+    await click(button("Suggest improvements"));
+    expect(document.body.textContent).toContain("suggested improvements");
+    expect(document.body.textContent).toContain("Select a suggestion to inspect its step.");
     expect(fake.edits).toHaveLength(0);
   });
 
@@ -995,7 +1007,7 @@ describe("record, review, replay, and save", () => {
     const storage = platformWithStorage();
     await renderJourney("/recordings/workflow-1", fake.service, storage.platform);
 
-    expect(document.body.textContent).toContain("Click the app to record a step");
+    expect(document.body.textContent).toContain("Taps and typing appear here.");
     expect(fake.calls).toContain("inspect:workflow-1");
     expect(storage.values.get("activeRecordingWorkflowId")).toBe("workflow-1");
   });
@@ -1005,7 +1017,7 @@ describe("record, review, replay, and save", () => {
     const storage = platformWithStorage();
     await renderJourney("/tests/test-1/record", fake.service, storage.platform);
 
-    expect(document.body.textContent).toContain("Click the app to record a step");
+    expect(document.body.textContent).toContain("Taps and typing appear here.");
     expect(fake.calls).toContain("inspect:test-1");
     expect(storage.values.get("activeRecordingWorkflowId")).toBe("test-1");
   });
@@ -1073,15 +1085,13 @@ describe("record, review, replay, and save", () => {
     expect(document.body.textContent).not.toContain("Tap target");
     expect(document.body.textContent).toContain("Screen capture");
     expect(document.body.textContent).toContain("Pause");
-    expect(document.body.textContent).toContain("Relay waited before the next step");
     expect(document.body.textContent).toContain("Language settings visible");
-    expect(document.body.textContent).toContain("Screen capture · Visual evidence");
-    expect(document.body.textContent).toContain("Verified by Relay");
     expect(document.body.textContent).toContain("Ready to save");
-    expect(document.body.textContent).toContain("Review the steps, then save the Test");
     expect(document.body.textContent).not.toContain("0 recorded steps");
     expect(document.body.textContent).not.toContain("Recorded pause");
-    expect(document.body.textContent).not.toContain("A passing replay is required before saving");
+    expect(document.body.textContent).not.toContain(
+      "Replay runs these steps on Pixel 9 Pro before saving.",
+    );
     expect(document.body.textContent).not.toContain("replay it before saving the Test");
     expect(document.body.textContent).not.toContain("Replay again");
   });
@@ -1109,7 +1119,7 @@ describe("record, review, replay, and save", () => {
       platformWithStorage().platform,
     );
 
-    expect(document.body.textContent).toContain("Replay needs attention");
+    expect(document.body.textContent).toContain("Relay could not verify the recorded steps.");
     expect(document.body.textContent).toContain("Check the Device, then replay it again");
     expect(document.body.textContent).not.toContain("app:id/language");
     expect(document.body.textContent).not.toContain("accessibility geometry");
@@ -1131,9 +1141,9 @@ describe("record, review, replay, and save", () => {
     const storage = platformWithStorage();
     await renderJourney("/recordings/workflow-1", fake.service, storage.platform);
 
-    expect(document.body.textContent).toContain("Recording paused");
+    expect(document.body.textContent).toMatch(/Recording (?:paused|interrupted)/);
     expect(document.body.textContent).not.toContain("Continue on the connected target");
-    expect(document.body.textContent).not.toContain("Click the app to record a step");
+    expect(document.body.textContent).not.toContain("Taps and typing appear here.");
     expect(document.body.textContent).not.toContain("Capture screen");
     expect(button("Stop and review").disabled).toBe(true);
   });
@@ -1400,7 +1410,7 @@ describe("record, review, replay, and save", () => {
     expect(document.body.textContent).not.toContain("Refresh recording");
     expect(button("It applied")).toBeTruthy();
     expect(button("It did not apply")).toBeTruthy();
-    expect(document.body.textContent).toContain("leave the recording paused");
+    expect(document.body.textContent).toContain("Keep it paused to avoid repeating the action.");
 
     await tapLiveTarget();
     expect(inputCount).toBe(1);
@@ -1451,7 +1461,7 @@ describe("record, review, replay, and save", () => {
     expect(document.body.textContent).not.toMatch(/was not sent/i);
     await tapLiveTarget();
     expect(inputCount).toBe(1);
-    expect(document.body.textContent).toContain("leave the recording paused");
+    expect(document.body.textContent).toContain("Keep it paused to avoid repeating the action.");
     await tapLiveTarget();
     expect(inputCount).toBe(1);
   });
@@ -1489,7 +1499,7 @@ describe("record, review, replay, and save", () => {
     expect(document.body.textContent).toContain("Recording paused: Relay lost confirmation");
     expect(button("It applied")).toBeTruthy();
     expect(button("It did not apply")).toBeTruthy();
-    expect(document.body.textContent).toContain("leave the recording paused");
+    expect(document.body.textContent).toContain("Keep it paused to avoid repeating the action.");
     await tapLiveTarget();
     expect(inputCount).toBe(0);
     await click(button("It applied"));

@@ -28,6 +28,7 @@ const { calls, invoke } = vi.hoisted(() => {
         ],
       };
     }
+    if (id === "target.avds.list") return { avds: [] };
     if (id === "target.app.launch") {
       return {
         launched: {
@@ -59,6 +60,7 @@ describe("device product operations", () => {
     );
     expect(calls).toEqual([
       { id: "target.devices.list", input: {} },
+      { id: "target.avds.list", input: {} },
       {
         id: "target.app.launch",
         input: { serial: "ios-serial", app: "com.example.shop", relaunch: true },
@@ -72,6 +74,6 @@ describe("device product operations", () => {
     await expect(service.launchApp!("browser-id", "https://example.test")).rejects.toThrow(
       /attached Android and iOS/iu,
     );
-    expect(calls.map(({ id }) => id)).toEqual(["target.devices.list"]);
+    expect(calls.map(({ id }) => id)).toEqual(["target.devices.list", "target.avds.list"]);
   });
 });

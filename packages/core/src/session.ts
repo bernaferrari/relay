@@ -22,7 +22,7 @@ import {
 } from "./control.js";
 import { readRecipe, freezeRecipeExecution, describeRecipeStep, glyphsForStep } from "./recipes.js";
 import { resolveRecipeStep, runRecipeStep } from "./recipe-runner.js";
-import type { RecipeRuntimeState } from "./recipe-runner-context.js";
+import type { RecipeRuntimeState, RecipeStepContext } from "./recipe-runner-context.js";
 import { finalizeDeferredChecksForJob } from "./session-campaign-finalization.js";
 import { classifyRunOutcome } from "./outcomes.js";
 import { redactPrivateValue } from "./private-inputs.js";
@@ -482,7 +482,7 @@ export function cancelActiveJob(targetId?: string): TestJob | null {
 }
 
 /** Run a frozen recipe as traced, cancellable device actions. */
-async function runRecipeSteps(
+export async function runRecipeSteps(
   job: TestJob,
   device: Device,
   pushLog: (line: string) => void,
@@ -496,14 +496,19 @@ async function runRecipeSteps(
   job.resolvedInputs = { ...recipe.variables, ...job.resolvedInputs };
   const runtime: RecipeRuntimeState = {};
   pushLog(`==> recipe: ${recipe.title} · ${recipe.steps.length} step(s)`);
-  for (const [stepIndex, step] of recipe.steps.entries()) {
+  const execute = async (
+    step: import("./recipes.js").RecipeStep,
+    stepIndex: number,
+    owner: typeof recipe,
+    context: RecipeStepContext,
+  ): Promise<void> => {
     await cooperativeCheckpoint(job.id);
     // The generated TraceStep id is intentionally opaque and changes on every
     // run. Carry the frozen recipe identity alongside it so persisted evidence
     // can join back to the authored Test provenance without guessing by UUID.
-    const recipeStepId = step.id?.trim() || `${recipeId}:${stepIndex + 1}`;
+    const recipeStepId = step.id?.trim() || `${owner.id}:${stepIndex + 1}`;
     const ts = openStep(job, {
-      recipeId,
+      recipeId: owner.id,
       recipeStepId,
       kind: "Replay",
       tone: "acc",
@@ -520,15 +525,19 @@ async function runRecipeSteps(
         capturedAt: now(),
         data: { stepId: ts.id, command: resolvedStep },
       });
-      const evidencePhases = automaticEvidencePhases(resolvedStep, recipe.steps[stepIndex + 1]);
+      const evidencePhases = automaticEvidencePhases(resolvedStep, owner.steps[stepIndex + 1]);
       if (evidencePhases.includes("before"))
         await captureAutomaticState(job, device, ts, "before", pushLog, runtime);
       const artifactStart = job.artifacts.length;
       await runRecipeStep(device, resolvedStep, {
-        log: pushLog,
-        job,
-        recipeGraph: job.recipeGraph,
-        runtime,
+        ...context,
+        runChild: async (child, index, childRecipe, childContext) => {
+          try {
+            await execute(child, index, childRecipe, childContext);
+          } finally {
+            setCurrentStep(ts);
+          }
+        },
       });
       if (evidencePhases.includes("after"))
         await captureAutomaticState(job, device, ts, "after", pushLog, runtime);
@@ -545,8 +554,17 @@ async function runRecipeSteps(
         // Proposal generation is advisory: never let it mask the original
         // step failure propagating from the catch below.
       });
+      finishStep(ts, "error");
       throw err;
     }
+  };
+  for (const [index, step] of recipe.steps.entries()) {
+    await execute(step, index, recipe, {
+      log: pushLog,
+      job,
+      recipeGraph: job.recipeGraph,
+      runtime,
+    });
   }
   finalizeDeferredChecksForJob(job, pushLog, runtime);
   setCurrentStep(undefined);

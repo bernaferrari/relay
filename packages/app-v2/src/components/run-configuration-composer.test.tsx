@@ -21,12 +21,11 @@ describe("run configuration", () => {
     expect(runConfigurationReady({ values: {} })).toBe(false);
   });
 
-  it("is the shared setup composer for Test, Suite, dataset, and report run surfaces", () => {
+  it("is the shared setup composer for Test, Suite, and dataset setup surfaces", () => {
     const surfaces = [
       "../routes/test-page.tsx",
       "../routes/suite-page.tsx",
       "../routes/run-across-page.tsx",
-      "../routes/run-page.tsx",
     ];
     for (const relative of surfaces) {
       const source = readFileSync(join(here, relative), "utf8");
