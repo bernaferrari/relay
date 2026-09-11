@@ -54,6 +54,8 @@ export type ProductMapPath = {
   readonly coveringTests: readonly { readonly id: string; readonly name: string }[];
   /** Only projected when the anchor's before frame matches the source screenshot. */
   readonly sourceAnchor?: ConnectionSourceAnchor;
+  /** Saved action selector; UI may locate its unique control in the paired tree. */
+  readonly sourceTarget?: { label?: string; identifier?: string; text?: string };
 };
 
 export type ProductMapProposal = Pick<
@@ -233,7 +235,8 @@ function projectMap(map: AppMap): ProductMapOverview {
       accessibilityTreeUri: screen.variantIds
         .map((id) => map.screenVariants?.[id])
         .filter((variant) => Boolean(variant?.screenshotUri))
-        .sort((a, b) => b!.updatedAt - a!.updatedAt)[0]?.rawAccessibilityTree?.uri,
+        .sort((a, b) => b!.updatedAt - a!.updatedAt)
+        .map((variant) => variant?.rawAccessibilityTree?.uri)[0],
       variantCount: screen.variantIds.length,
       variants,
       coveringTests: [...covering.values()],
@@ -268,6 +271,7 @@ function projectMap(map: AppMap): ProductMapOverview {
       ...(destination ? { toTitle: text(destination.title, "Known screen") } : {}),
       coveringTests: testByConnection.get(connection.id) ?? [],
       ...(sourceAnchor ? { sourceAnchor } : {}),
+      sourceTarget: connection.actions?.find((action) => action.kind === "tap")?.target,
     } satisfies ProductMapPath;
   });
   return {

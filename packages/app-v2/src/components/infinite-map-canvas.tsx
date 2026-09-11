@@ -1,4 +1,4 @@
-import { MapAccessibilityOverlay } from "./map-accessibility-overlay";
+import { MapAccessibilityOverlay, accessibilityControls } from "./map-accessibility-overlay";
 import { MapEdges, isRoutineReturn } from "./map-edges";
 import {
   containedImageRect,
@@ -118,6 +118,8 @@ export function InfiniteMapCanvas({
   const [showScreens, setShowScreens] = useState(true);
   const [handTool, setHandTool] = useState(false);
   const [showInteractionTargets, setShowInteractionTargets] = useState(false);
+  const [showControlOrigins, setShowControlOrigins] = useState(false);
+  const [originTree, setOriginTree] = useState<{ uri: string; value: unknown }>();
   const [imageDimensions, setImageDimensions] = useState<Map<string, ImageDimensions>>(
     () => new Map(),
   );
@@ -138,6 +140,53 @@ export function InfiniteMapCanvas({
     setSelectedIds(new Set(id ? [id] : []));
   }
   const selected = visibleScreens.find((screen) => screen.id === selectedScreenId);
+  useEffect(() => {
+    if (!showControlOrigins || !selected?.accessibilityTreeUri || !loadAccessibilityTree) return;
+    let cancelled = false;
+    const uri = selected.accessibilityTreeUri;
+    void loadAccessibilityTree(uri)
+      .then((value) => {
+        if (!cancelled) setOriginTree({ uri, value });
+      })
+      .catch(() => {
+        if (!cancelled) setOriginTree(undefined);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [showControlOrigins, selected?.accessibilityTreeUri, loadAccessibilityTree]);
+  const originPaths = visiblePaths.map((path) => {
+    if (
+      !showControlOrigins ||
+      path.sourceAnchor ||
+      path.fromScreenId !== selected?.id ||
+      originTree?.uri !== selected?.accessibilityTreeUri
+    )
+      return path;
+    const dimensions = imageDimensions.get(path.fromScreenId);
+    const target = path.sourceTarget;
+    if (!dimensions || !target) return path;
+    const controls = accessibilityControls(originTree?.value, dimensions);
+    const matches = controls.filter((control) =>
+      target.identifier
+        ? control.identifier === target.identifier
+        : control.label === (target.label ?? target.text),
+    );
+    const unique = [
+      ...new Map(
+        matches.map((control) => [
+          `${control.x},${control.y},${control.width},${control.height}`,
+          control,
+        ]),
+      ).values(),
+    ];
+    if (unique.length !== 1) return path;
+    const rect = unique[0]!;
+    return {
+      ...path,
+      sourceAnchor: { point: { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }, rect },
+    };
+  });
   const viewportRef = useRef<HTMLElement>(null);
   const worldRef = useRef<HTMLDivElement>(null);
   const zoomLabelRef = useRef<HTMLSpanElement>(null);
@@ -534,10 +583,19 @@ export function InfiniteMapCanvas({
             size="sm"
             variant={showInteractionTargets ? "secondary" : "ghost"}
             aria-pressed={showInteractionTargets}
-            title="Inspect saved accessibility controls and recorded click origins."
+            title="Inspect control bounds from the selected screen’s saved accessibility tree."
             onClick={() => setShowInteractionTargets((value) => !value)}
           >
             <Scan className="size-4" /> Accessibility
+          </Button>
+          <Button
+            size="sm"
+            variant={showControlOrigins ? "secondary" : "ghost"}
+            aria-pressed={showControlOrigins}
+            onClick={() => setShowControlOrigins((value) => !value)}
+            title="Start arrows at uniquely matched saved controls on the selected screen."
+          >
+            Control origins
           </Button>
           <Button
             size="sm"
@@ -637,12 +695,12 @@ export function InfiniteMapCanvas({
             className="pointer-events-none absolute left-4 top-4 z-10 text-[11px] text-muted-foreground"
             id="map-interaction-help"
           >
-            {showInteractionTargets &&
-            !visiblePaths.some(
+            {showControlOrigins &&
+            !originPaths.some(
               (path) =>
                 path.sourceAnchor && (!selectedScreenId || path.fromScreenId === selectedScreenId),
             )
-              ? "No recorded click coordinates for this selection · Connections use screen edges"
+              ? "Select a screen with a saved matching control · Other arrows use screen edges"
               : "Drag to select · Space to pan · Pinch to zoom · Double-click to focus"}
           </p>
         )}
@@ -691,13 +749,13 @@ export function InfiniteMapCanvas({
           >
             <MapEdges
               selectedPathId={selectedPathId}
-              paths={visiblePaths.filter(
+              paths={originPaths.filter(
                 (path) => path.id === selectedPathId || !isRoutineReturn(path),
               )}
               positions={positions}
               markerId={markerId}
               selectedScreenId={selectedScreenId}
-              showInteractionTargets={showInteractionTargets}
+              showInteractionTargets={showControlOrigins}
               screens={visibleScreens}
               imageDimensions={imageDimensions}
             />
@@ -821,6 +879,7 @@ export function InfiniteMapCanvas({
                   </span>
                   <div className="relative h-[300px] w-full shrink-0">
                     <MapScreenPreview
+                      selected={selectedNode}
                       align="top"
                       uri={screen.screenshotUri}
                       load={loadScreenshot}

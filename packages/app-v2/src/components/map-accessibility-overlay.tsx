@@ -7,7 +7,14 @@ import {
   MAP_NODE_IMAGE_HEIGHT,
 } from "./map-canvas-geometry";
 
-type Control = { label: string; x: number; y: number; width: number; height: number };
+type Control = {
+  identifier?: string;
+  label: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
 export function accessibilityControls(value: unknown, image: ImageDimensions): Control[] {
   if (!value || typeof value !== "object") return [];
   const root = value as Record<string, unknown>;
@@ -33,7 +40,13 @@ export function accessibilityControls(value: unknown, image: ImageDimensions): C
     const label = [node.label, node.identifier, node.value].find(
       (text) => typeof text === "string" && text.trim(),
     );
-    if (!rect || typeof label !== "string" || node.visible === false) continue;
+    if (
+      !rect ||
+      typeof label !== "string" ||
+      node.visible === false ||
+      node.visibleToUser === false
+    )
+      continue;
     const { x, y, width: w, height: h } = rect;
     if (![x, y, w, h].every((n) => typeof n === "number" && Number.isFinite(n))) continue;
     const r = {
@@ -52,7 +65,11 @@ export function accessibilityControls(value: unknown, image: ImageDimensions): C
       r.width * r.height > 0.6
     )
       continue;
-    controls.push({ label, ...r });
+    controls.push({
+      label,
+      ...(typeof node.identifier === "string" ? { identifier: node.identifier } : {}),
+      ...r,
+    });
   }
   return controls;
 }

@@ -8,8 +8,10 @@ export function MapScreenPreview({
   title,
   onImageDimensions,
   align = "center",
+  selected = false,
 }: {
   align?: "center" | "top";
+  selected?: boolean;
   uri?: string;
   load?: (uri: string) => Promise<Blob>;
   title: string;
@@ -54,7 +56,7 @@ export function MapScreenPreview({
           draggable={false}
           src={url}
           alt={title}
-          className="max-h-full w-auto max-w-full object-contain"
+          className={`max-h-full w-auto max-w-full object-contain ${selected ? "outline outline-1 outline-blue-400 outline-offset-4" : ""}`}
           loading="lazy"
           onLoad={(event) => {
             const dimensions = {
