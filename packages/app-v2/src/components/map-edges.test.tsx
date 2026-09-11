@@ -181,3 +181,32 @@ it("orders destination exits across different sources sharing a corridor", () =>
   const secondLane = Number(second.match(/Q ([\d.]+)/)![1]);
   expect(firstLane).toBeGreaterThan(secondLane);
 });
+
+it("uses separated bottom and top ports for horizontal branches", () => {
+  const markup = renderToStaticMarkup(
+    <MapEdges
+      horizontal
+      paths={[
+        {
+          id: "next",
+          label: "Next",
+          fromScreenId: "a",
+          toScreenId: "b",
+          fromTitle: "A",
+          toTitle: "B",
+          coveringTests: [],
+        },
+      ]}
+      positions={
+        new Map([
+          ["a", { x: 0, y: 0 }],
+          ["b", { x: 0, y: 600 }],
+        ])
+      }
+      screens={[{ id: "a" }, { id: "b" }]}
+      imageDimensions={new Map()}
+      markerId="horizontal"
+    />,
+  );
+  expect(markup).toContain('d="M 104 362 L 104 586"');
+});

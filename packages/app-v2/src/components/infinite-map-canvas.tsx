@@ -100,7 +100,9 @@ export function InfiniteMapCanvas({
       }
     | undefined
   >(undefined);
-  const [layoutMode, setLayoutMode] = useState<"saved" | "aligned" | "staggered">("staggered");
+  const [layoutMode, setLayoutMode] = useState<"saved" | "aligned" | "staggered" | "horizontal">(
+    "staggered",
+  );
   const autoArrange = layoutMode !== "saved";
   const [arrangedEdits, setArrangedEdits] = useState<Map<string, MapPoint>>(() => new Map());
   const positions = useMemo(() => {
@@ -110,7 +112,7 @@ export function InfiniteMapCanvas({
           ? visibleScreens.map((screen) => ({ ...screen, position: undefined }))
           : visibleScreens,
         visiblePaths,
-        layoutMode === "staggered" ? "staggered" : "aligned",
+        layoutMode === "saved" ? "aligned" : layoutMode,
       ),
     );
     for (const [id, point] of arrangedEdits) result.set(id, point);
@@ -286,7 +288,7 @@ export function InfiniteMapCanvas({
         ? visibleScreens.map((screen) => ({ ...screen, position: undefined }))
         : visibleScreens,
       visiblePaths,
-      layoutMode === "staggered" ? "staggered" : "aligned",
+      layoutMode === "saved" ? "aligned" : layoutMode,
     );
     animateTransform(
       fitMapToBounds(mapContentBounds(visibleScreens, resetPositions), viewportSize()),
@@ -743,7 +745,7 @@ export function InfiniteMapCanvas({
               <DropdownMenuRadioGroup
                 value={layoutMode}
                 onValueChange={(value) => {
-                  const mode = value as "saved" | "aligned" | "staggered";
+                  const mode = value as "saved" | "aligned" | "staggered" | "horizontal";
                   setLayoutMode(mode);
                   setArrangedEdits(new Map());
                   const next = layoutMapScreens(
@@ -751,7 +753,7 @@ export function InfiniteMapCanvas({
                       ? visibleScreens
                       : visibleScreens.map((screen) => ({ ...screen, position: undefined })),
                     visiblePaths,
-                    mode === "staggered" ? "staggered" : "aligned",
+                    mode === "saved" ? "aligned" : mode,
                   );
                   animateTransform(
                     fitMapToBounds(mapContentBounds(visibleScreens, next), viewportSize()),
@@ -759,7 +761,12 @@ export function InfiniteMapCanvas({
                 }}
               >
                 <DropdownMenuRadioItem value="aligned">Aligned layout</DropdownMenuRadioItem>
-                <DropdownMenuRadioItem value="staggered">Staggered layout</DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="staggered">
+                  Staggered · Vertical
+                </DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="horizontal">
+                  Staggered · Horizontal
+                </DropdownMenuRadioItem>
                 <DropdownMenuRadioItem value="saved">Saved positions</DropdownMenuRadioItem>
               </DropdownMenuRadioGroup>
               <DropdownMenuSeparator />
@@ -885,6 +892,7 @@ export function InfiniteMapCanvas({
               />
             ))}
             <MapEdges
+              horizontal={layoutMode === "horizontal"}
               selectedPathId={selectedPathId}
               paths={originPaths.filter(
                 (path) => path.id === selectedPathId || !isRoutineReturn(path),

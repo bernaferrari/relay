@@ -13,6 +13,7 @@ import {
 } from "./map-canvas-geometry";
 export function MapEdges({
   paths,
+  horizontal = false,
   positions,
   markerId,
   selectedScreenId,
@@ -21,6 +22,7 @@ export function MapEdges({
   screens,
   imageDimensions,
 }: {
+  horizontal?: boolean;
   paths: readonly ProductMapPath[];
   positions: ReadonlyMap<string, MapPoint>;
   markerId: string;
@@ -172,6 +174,42 @@ export function MapEdges({
       width: MAP_NODE_WIDTH,
       height: MAP_NODE_IMAGE_HEIGHT,
     };
+    if (horizontal) {
+      const upward = to.y < from.y;
+      const origin = anchor ?? {
+        x: sourceBox.x + sourceBox.width / 2,
+        y: upward ? from.y - clearance : sourceBox.y + sourceBox.height + clearance,
+      };
+      const destination = {
+        x: targetBox.x + targetBox.width / 2,
+        y: upward ? targetBox.y + targetBox.height + clearance : to.y - clearance,
+      };
+      const lane = upward ? destination.y + 80 : destination.y - 80;
+      const points =
+        Math.abs(origin.x - destination.x) < 1
+          ? [origin, destination]
+          : [origin, { x: origin.x, y: lane }, { x: destination.x, y: lane }, destination];
+      return [
+        {
+          path,
+          id: `-${index}`,
+          anchor,
+          anchorRect,
+          d: roundedConnector(points),
+          label: {
+            x: (origin.x + destination.x) / 2,
+            y: points.length === 2 ? (origin.y + destination.y) / 2 : lane - 12,
+            width: labelWidth,
+          },
+          bounds: {
+            minX: Math.min(...points.map((p) => p.x)) - labelWidth / 2,
+            minY: Math.min(...points.map((p) => p.y)) - 40,
+            maxX: Math.max(...points.map((p) => p.x)) + labelWidth / 2,
+            maxY: Math.max(...points.map((p) => p.y)) + 40,
+          },
+        },
+      ];
+    }
     // Give each return to this destination a stable landing port. Ordering by
     // source height keeps nearby branches from swapping lanes on selection.
     const siblings = paths
@@ -392,7 +430,7 @@ export function MapEdges({
             {geometry.anchor ? (
               <path
                 d="M 0 -5 A 5 5 0 1 0 0 5 L 7 0 Z"
-                transform={`translate(${geometry.anchor.x} ${geometry.anchor.y}) rotate(${(positions.get(geometry.path.toScreenId ?? "")?.x ?? Infinity) < (positions.get(geometry.path.fromScreenId)?.x ?? 0) ? 180 : 0})`}
+                transform={`translate(${geometry.anchor.x} ${geometry.anchor.y}) rotate(${horizontal ? ((positions.get(geometry.path.toScreenId ?? "")?.y ?? Infinity) < (positions.get(geometry.path.fromScreenId)?.y ?? 0) ? -90 : 90) : (positions.get(geometry.path.toScreenId ?? "")?.x ?? Infinity) < (positions.get(geometry.path.fromScreenId)?.x ?? 0) ? 180 : 0})`}
                 style={{
                   fill: "var(--color-blue-500)",
                   stroke: "var(--background)",

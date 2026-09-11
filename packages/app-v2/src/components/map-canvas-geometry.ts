@@ -75,7 +75,7 @@ export function fitMapToBounds(
 export function layoutMapScreens(
   screens: readonly ProductMapScreen[],
   paths: readonly ProductMapPath[] = [],
-  mode: "aligned" | "staggered" = "aligned",
+  mode: "aligned" | "staggered" | "horizontal" = "aligned",
 ): ReadonlyMap<string, MapPoint> {
   const positions = layoutMapGraph(
     screens.map((screen) => screen.id),
@@ -85,10 +85,21 @@ export function layoutMapScreens(
           path.toScreenId && !/^(back|close|dismiss|return|cancel|disable)\b/i.test(path.label),
       )
       .map((path) => ({ from: path.fromScreenId, to: path.toScreenId! })),
-    mode === "staggered" ? 560 : MAP_NODE_WIDTH + 160,
-    MAP_NODE_HEIGHT + 40,
-    mode === "staggered",
+    mode === "horizontal" ? 600 : mode === "staggered" ? 560 : MAP_NODE_WIDTH + 160,
+    mode === "horizontal" ? MAP_NODE_WIDTH + 112 : MAP_NODE_HEIGHT + 40,
+    mode !== "aligned",
   );
+  if (mode === "horizontal") {
+    // Exchange flow and branch axes without rotating the portrait captures.
+    for (const [id, point] of positions) positions.set(id, { x: point.y, y: point.x });
+    for (const screen of screens) if (screen.position) positions.set(screen.id, screen.position);
+    return separateMapScreens(
+      positions,
+      new Set(screens.filter((s) => s.position).map((s) => s.id)),
+      MAP_NODE_WIDTH,
+      MAP_NODE_HEIGHT,
+    );
+  }
   // Dense branches need a wider routing corridor than a simple continuation.
   const columns = [...new Set([...positions.values()].map((point) => point.x))].sort(
     (a, b) => a - b,
