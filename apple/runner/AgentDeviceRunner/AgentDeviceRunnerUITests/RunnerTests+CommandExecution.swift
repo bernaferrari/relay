@@ -986,6 +986,8 @@ extension RunnerTests {
 
   struct ActiveCommandContext {
     let app: XCUIApplication
+    /// Set when `app` is a system surface served in place over the still-bound session app (#2438).
+    var systemSurface: SystemSurfaceHost? = nil
   }
 
   enum ActiveCommandPreparation {
@@ -1342,7 +1344,11 @@ extension RunnerTests {
     case .response(let response):
       return response
     case .context(let context):
-      return try executeSnapshotPrepared(command: command, activeApp: context.app)
+      return try executeSnapshotPrepared(
+        command: command,
+        activeApp: context.app,
+        systemSurface: context.systemSurface
+      )
     }
   }
 
@@ -1364,14 +1370,24 @@ extension RunnerTests {
     )
   }
 
-  private func executeSnapshotPrepared(command: Command, activeApp: XCUIApplication) throws -> Response {
+  private func executeSnapshotPrepared(
+    command: Command,
+    activeApp: XCUIApplication,
+    systemSurface: SystemSurfaceHost? = nil
+  ) throws -> Response {
     let options = Self.presentationOptions(from: command)
     do {
-      let payload: DataPayload
+      var payload: DataPayload
       if options.raw {
         payload = try snapshotRaw(app: activeApp, options: options)
       } else {
         payload = try snapshotFast(app: activeApp, options: options)
+      }
+      if let systemSurface {
+        payload.systemSurface = SystemSurfaceProvenancePayload(
+          bundleId: systemSurface.bundleId,
+          kind: systemSurface.kind.rawValue
+        )
       }
       setNeedsPostSnapshotInteractionDelay()
       return Response(ok: true, data: payload)
@@ -1575,10 +1591,20 @@ extension RunnerTests {
     routeToSpringboard: Bool = false
   ) -> ActiveCommandPreparation {
     var activeApp = currentApp ?? app
+    var systemSurface: SystemSurfaceHost? = nil
     if routeToSpringboard {
       activeApp = springboard
     } else if shouldSkipAppActivationPreflight(command) {
       activeApp = resolveAppWithoutActivation(command: command)
+    } else if let presented = presentedSystemSurfaceHost() {
+      // Serve and drive the presented surface IN PLACE: never activate it (that cancels what it
+      // presents) and never adopt it as the cached session target, so once it is gone the next
+      // command resolves back to the still-bound session app (#2438).
+      activeApp = presented.app
+      systemSurface = presented.host
+      if isInteractionCommand(command.command) {
+        applyInteractionStabilizationIfNeeded()
+      }
     } else if !isRunnerLifecycleCommand(command.command) {
       let normalizedBundleId = command.appBundleId?
         .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1639,7 +1665,25 @@ extension RunnerTests {
         applyInteractionStabilizationIfNeeded()
       }
     }
-    return .context(ActiveCommandContext(app: activeApp))
+    return .context(ActiveCommandContext(app: activeApp, systemSurface: systemSurface))
+  }
+
+  /// A registered system surface host that is genuinely on screen, or nil. Presence is foreground
+  /// state, not tree content: a torn-down host still serves a rich tree, and it can only be
+  /// foreground-with-a-stale-tree if something activated it, which the open guard refuses. `state`
+  /// never activates and is cheap when the host is absent. See docs/adr/0004.
+  private func presentedSystemSurfaceHost() -> (host: SystemSurfaceHost, app: XCUIApplication)? {
+#if os(iOS)
+    for host in SystemSurfaceHostRegistry.hosts {
+      let candidate = XCUIApplication(bundleIdentifier: host.bundleId)
+      if candidate.state == .runningForeground {
+        return (host, candidate)
+      }
+    }
+    return nil
+#else
+    return nil
+#endif
   }
 
   func executeOnMainPrepared(
