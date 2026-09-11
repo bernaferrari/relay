@@ -568,39 +568,6 @@ function timelineStateLabel(state: Report["timeline"][number]["state"]): string 
   return "Not reached";
 }
 
-export function RunContextFacts({
-  report,
-  duration,
-  compact = false,
-}: {
-  report: Report;
-  duration: string;
-  compact?: boolean;
-}) {
-  const context = report.executionContext;
-  const facts = [
-    ["Device or browser", report.targetName ?? "Not recorded"],
-    ["Duration", duration],
-    ["Build", context?.buildId],
-    ["App version", context?.appVersion],
-    ["Source revision", context?.sourceRevision],
-    ["Browser", context?.browser],
-    ["Target profile", context?.targetProfileId],
-  ].filter((entry): entry is [string, string] => typeof entry[1] === "string");
-  return (
-    <dl
-      className={`flex flex-wrap gap-x-6 gap-y-3 ${compact ? "" : "mt-4 border-y border-border py-3"}`}
-    >
-      {(compact ? facts.slice(0, 2) : facts).map(([label, value]) => (
-        <div key={label} className="min-w-0 max-w-full">
-          <dt className="text-xs text-muted-foreground">{label}</dt>
-          <dd className="mt-1 break-all text-sm font-medium tabular-nums">{value}</dd>
-        </div>
-      ))}
-    </dl>
-  );
-}
-
 function StepActionIcon({ title }: { title: string }) {
   const Icon = /^tap\b/i.test(title)
     ? Hand

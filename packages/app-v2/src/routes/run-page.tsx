@@ -43,7 +43,7 @@ import { runQueryKeys } from "../data/run-queries";
 import { clearRunPointerIfCurrent, readRunPointer } from "../data/run-pointer";
 import { PageLoading, RecordingProblem, targetLabel } from "./recording-shared";
 import { RunReviewControls } from "./run-review-controls";
-import { RunWorkbench, RunContextFacts } from "./run-workbench";
+import { RunWorkbench } from "./run-workbench";
 import { EvidencePreview } from "./run-report-panels";
 import { RunReplayAction, RunReplayStatus } from "./run-replay";
 import { RunEvidenceExport } from "./run-evidence-export";
@@ -688,17 +688,22 @@ function RunReport({
           { label: report.title },
         ]}
         title={report.title}
-        description={outcomeSentence(report.outcome, target)}
+        description={
+          <>
+            {outcomeSentence(report.outcome, target)}
+            {report.durationMs !== undefined ? (
+              <span className="whitespace-nowrap tabular-nums">
+                <span aria-hidden="true" className="mx-2">
+                  ·
+                </span>
+                <span className="sr-only">Duration: </span>
+                {formatDuration(report.durationMs)}
+              </span>
+            ) : null}
+          </>
+        }
         actions={actions}
-      >
-        <RunContextFacts
-          report={report}
-          duration={
-            report.durationMs === undefined ? "Not recorded" : formatDuration(report.durationMs)
-          }
-          compact
-        />
-      </PageHeader>
+      />
       <RunReplayStatus runService={runService} />
       {body}
     </WorkbenchPage>
