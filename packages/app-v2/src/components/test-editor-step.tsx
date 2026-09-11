@@ -246,10 +246,10 @@ export function SelectedStepEditor({
       <FieldLabel className="relay-editor-check flex min-h-14 min-w-0 cursor-pointer items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50">
         <span className="grid min-w-0 flex-1 gap-0.5">
           <span className="text-sm font-medium text-foreground">
-            Capture evidence after this step
+            Save screenshot after this step
           </span>
           <span className="text-xs leading-snug text-muted-foreground">
-            Keep a screenshot with the next Run’s report.
+            Include this moment in Results, for each language or data value.
           </span>
         </span>
         <Checkbox

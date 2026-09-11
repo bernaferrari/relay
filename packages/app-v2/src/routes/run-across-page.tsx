@@ -143,8 +143,8 @@ export function RunAcrossPage() {
           { label: setup.data?.testName ?? "Test" },
           { label: "Run with data" },
         ]}
-        title="Run across languages or data"
-        description="Run one selected case first, then review its Report before continuing with the rest."
+        title="Run across"
+        description="Repeat this Test for each selected value, including screenshots at every capture step."
       />
       {loading ? <PageLoading label="Loading saved data and available devices…" /> : null}
       <RecordingProblem

@@ -70,3 +70,61 @@ it("retains a parent capture when its nested wait has no screenshot", () => {
   expect(result.timeline[initialRunStep(result.timeline)]?.framePaths).toEqual(["welcome.png"]);
   expect(result.timeline[0]?.title).toBe("Captured result");
 });
+
+it("omits skipped conditional targets from the action timeline", () => {
+  const result = projectRunReport(
+    "run",
+    {
+      steps: [
+        {
+          id: "skipped",
+          title: 'Tap button label "Business"',
+          status: "ok",
+          log: 'conditional tap: skipped — button label "Business" is absent',
+          frames: [{ path: "unchanged.png" }],
+        },
+        {
+          id: "actual",
+          title: 'Tap button label "Empresarial"',
+          status: "ok",
+          frames: [{ path: "business.png" }],
+        },
+      ],
+    },
+    {},
+  );
+  expect(result.timeline.map((step) => step.id)).toEqual(["actual"]);
+});
+
+it("does not repeat a wrapper capture when the same authored step has visible capture evidence", () => {
+  const result = projectRunReport(
+    "run",
+    {
+      steps: [
+        { id: "parent", title: "Run saved Test", status: "ok", frames: [{ path: "parent.png" }] },
+        {
+          id: "capture",
+          title: "Screenshot · Individual",
+          status: "ok",
+          frames: [{ path: "individual.png" }],
+        },
+      ],
+      testStepEvidence: ["parent", "capture"].map((id, index) => ({
+        schemaVersion: 1,
+        testStepId: "individual",
+        recipeId: "recipe",
+        recipeStepId: id,
+        traceStepId: id,
+        traceStepIndex: index,
+        occurrence: index + 1,
+        evidence: {
+          framePaths: [id === "parent" ? "parent.png" : "individual.png"],
+          eventSequences: [],
+          artifactKinds: [],
+        },
+      })),
+    },
+    {},
+  );
+  expect(result.timeline.map((step) => step.id)).toEqual(["capture"]);
+});
