@@ -1,4 +1,4 @@
-import { forwardRoute, avoidPreviewObstacles } from "./map-forward-route";
+import { forwardRoute, avoidPreviewObstacles, routeCrossesBox } from "./map-forward-route";
 import type { ProductMapPath } from "@relay/product/map-exploration";
 import {
   MAP_NODE_WIDTH,
@@ -176,7 +176,12 @@ export function MapEdges({
     };
     if (horizontal) {
       const upward = to.y < from.y;
-      const origin = anchor ?? {
+      const leavesRight = targetBox.x + targetBox.width / 2 >= sourceBox.x + sourceBox.width / 2;
+      const controlOrigin = anchor && {
+        x: anchorRect ? anchorRect.x + (leavesRight ? anchorRect.width : 0) : anchor.x,
+        y: anchor.y,
+      };
+      const origin = controlOrigin ?? {
         x: sourceBox.x + sourceBox.width / 2,
         y: upward ? from.y - clearance : sourceBox.y + sourceBox.height + clearance,
       };
@@ -184,21 +189,66 @@ export function MapEdges({
         x: targetBox.x + targetBox.width / 2,
         y: upward ? targetBox.y + targetBox.height + clearance : to.y - clearance,
       };
-      const lane = upward ? destination.y + 80 : destination.y - 80;
-      const points =
-        Math.abs(origin.x - destination.x) < 1
-          ? [origin, destination]
-          : [origin, { x: origin.x, y: lane }, { x: destination.x, y: lane }, destination];
+      // All siblings branch before the nearest destination. Choosing a lane
+      // per destination sends the farther trunks through nearer captures.
+      const siblingRows = paths
+        .filter(
+          (candidate) =>
+            candidate.fromScreenId === path.fromScreenId && !isRoutineReturn(candidate),
+        )
+        .flatMap((candidate) => {
+          const target = positions.get(candidate.toScreenId ?? "");
+          return target && target.y < from.y === upward ? [target.y] : [];
+        });
+      const lane = upward
+        ? Math.max(destination.y, ...siblingRows.map((y) => y + MAP_NODE_HEIGHT + clearance)) + 80
+        : Math.min(destination.y, ...siblingRows.map((y) => y - clearance)) - 80;
+      const exitX = leavesRight ? sourceBox.x + sourceBox.width + 24 : sourceBox.x - 24;
+      const direct = [origin, { x: destination.x, y: origin.y }, destination];
+      const directClear =
+        controlOrigin &&
+        Math.abs(destination.x - origin.x) > 24 &&
+        [...positions].every(
+          ([id, point]) =>
+            id === path.fromScreenId ||
+            id === path.toScreenId ||
+            direct.slice(1).every(
+              (end, index) =>
+                !routeCrossesBox(direct[index]!, end, {
+                  x: point.x - 14,
+                  y: point.y - 14,
+                  width: MAP_NODE_WIDTH + 28,
+                  height: MAP_NODE_HEIGHT + 28,
+                }),
+            ),
+        );
+      const points = directClear
+        ? direct
+        : controlOrigin
+          ? [
+              origin,
+              { x: exitX, y: origin.y },
+              { x: exitX, y: lane },
+              { x: destination.x, y: lane },
+              destination,
+            ]
+          : Math.abs(origin.x - destination.x) < 1
+            ? [origin, destination]
+            : [origin, { x: origin.x, y: lane }, { x: destination.x, y: lane }, destination];
       return [
         {
           path,
           id: `-${index}`,
-          anchor,
+          anchor: controlOrigin,
           anchorRect,
           d: roundedConnector(points),
           label: {
-            x: (origin.x + destination.x) / 2,
-            y: points.length === 2 ? (origin.y + destination.y) / 2 : lane - 12,
+            x: destination.x,
+            y: directClear
+              ? destination.y - 20
+              : points.length === 2
+                ? (origin.y + destination.y) / 2
+                : lane - 12,
             width: labelWidth,
           },
           bounds: {
@@ -447,7 +497,7 @@ export function MapEdges({
             {geometry.anchor ? (
               <path
                 d="M 0 -5 A 5 5 0 1 0 0 5 L 7 0 Z"
-                transform={`translate(${geometry.anchor.x} ${geometry.anchor.y}) rotate(${horizontal ? ((positions.get(geometry.path.toScreenId ?? "")?.y ?? Infinity) < (positions.get(geometry.path.fromScreenId)?.y ?? 0) ? -90 : 90) : (positions.get(geometry.path.toScreenId ?? "")?.x ?? Infinity) < (positions.get(geometry.path.fromScreenId)?.x ?? 0) ? 180 : 0})`}
+                transform={`translate(${geometry.anchor.x} ${geometry.anchor.y}) rotate(${(positions.get(geometry.path.toScreenId ?? "")?.x ?? Infinity) < (positions.get(geometry.path.fromScreenId)?.x ?? 0) ? 180 : 0})`}
                 style={{
                   fill: "var(--color-blue-500)",
                   stroke: "var(--background)",

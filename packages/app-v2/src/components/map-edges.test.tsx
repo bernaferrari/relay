@@ -242,3 +242,72 @@ it("joins upper and lower sibling branches at the same junction", () => {
   expect(upper).toBe(lower);
   expect(route(1)).not.toContain("Q");
 });
+
+it("routes farther horizontal siblings above the nearer capture", () => {
+  const markup = renderToStaticMarkup(
+    <MapEdges
+      horizontal
+      paths={["near", "left", "right"].map((id) => ({
+        id,
+        fromScreenId: "source",
+        fromTitle: "Source",
+        toScreenId: id,
+        label: id,
+        coveringTests: [],
+      }))}
+      positions={
+        new Map([
+          ["source", { x: 320, y: 0 }],
+          ["near", { x: 320, y: 600 }],
+          ["left", { x: 0, y: 900 }],
+          ["right", { x: 640, y: 900 }],
+        ])
+      }
+      screens={["source", "near", "left", "right"].map((id) => ({ id }))}
+      imageDimensions={new Map()}
+      markerId="clear-horizontal"
+    />,
+  );
+  for (const index of [1, 2]) {
+    const d = markup.match(new RegExp(`id="-${index}" d="([^"]+)"`))![1]!;
+    const firstBendY = Number(d.match(/Q [\d.]+ ([\d.]+)/)![1]);
+    expect(firstBendY).toBeLessThan(600 - 14);
+  }
+});
+
+it.each([-420, 420])("exits the control sideways toward a horizontal destination at %s", (x) => {
+  const markup = renderToStaticMarkup(
+    <MapEdges
+      horizontal
+      showInteractionTargets
+      paths={[
+        {
+          id: "tap",
+          fromScreenId: "home",
+          fromTitle: "Home",
+          toScreenId: "next",
+          label: "Tap",
+          coveringTests: [],
+          sourceAnchor: {
+            point: { x: 0.5, y: 0.5 },
+            rect: { x: 0.25, y: 0.4, width: 0.5, height: 0.2 },
+          },
+        },
+      ]}
+      positions={
+        new Map([
+          ["home", { x: 0, y: 0 }],
+          ["next", { x, y: 600 }],
+        ])
+      }
+      screens={[{ id: "home", screenshotUri: "home.png" }, { id: "next" }]}
+      imageDimensions={new Map([["home", { width: 208, height: 300 }]])}
+      markerId="sideways"
+    />,
+  );
+  const originX = x < 0 ? 52 : 156;
+  expect(markup).toContain(`M ${originX} 198 L ${x + 104 + (x < 0 ? 12 : -12)} 198`);
+  const d = markup.match(/id="-0" d="([^"]+)"/)![1]!;
+  expect(d.match(/Q/g)).toHaveLength(1);
+  expect(markup).toContain(`translate(${originX} 198) rotate(${x < 0 ? 180 : 0})`);
+});
