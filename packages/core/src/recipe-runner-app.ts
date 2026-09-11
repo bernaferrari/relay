@@ -24,6 +24,18 @@ export async function observeForegroundApplication(
   expectedApp: string,
 ): Promise<ForegroundAppObservation> {
   const context = currentTargetContext();
+  if (context.kind === "browser") {
+    try {
+      const state = await device.command.appState();
+      const actual = "activity" in state ? state.activity : undefined;
+      if (!actual) return { status: "unavailable" };
+      return new URL(actual).href === new URL(expectedApp).href
+        ? { status: "matched", app: actual }
+        : { status: "mismatch", app: actual };
+    } catch {
+      return { status: "unavailable" };
+    }
+  }
   let foregroundApp: string | undefined;
   try {
     foregroundApp =
@@ -72,17 +84,19 @@ export async function openAppAndVerifyForeground(
     context.kind === "device" && context.platform === "ios"
       ? resolveIosLaunchBundleId(requestedApp)
       : requestedApp;
-  const namesTheForeground = context.kind === "device" && context.platform === "android";
+  const namesTheForeground =
+    context.kind === "browser" || (context.kind === "device" && context.platform === "android");
+  const attempts = context.kind === "browser" ? 1 : 2;
   let lastObservation: ForegroundAppObservation = { status: "unavailable" };
 
-  for (let attempt = 1; attempt <= 2; attempt += 1) {
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
     await launch(device, requestedApp, options);
     lastObservation = await observe(device, expectedApp);
     if (lastObservation.status === "matched") {
       if (attempt > 1) log(`app open: ${expectedApp} foreground verified after retry`);
       return;
     }
-    if (attempt === 1) {
+    if (attempt < attempts) {
       log(
         `app open: ${expectedApp} not verified in foreground (observed ${
           lastObservation.status === "mismatch" ? lastObservation.app : "unavailable"
@@ -99,6 +113,6 @@ export async function openAppAndVerifyForeground(
   }
   const observed = lastObservation.status === "mismatch" ? lastObservation.app : "unavailable";
   throw new Error(
-    `app open: expected ${expectedApp} in foreground after 2 attempts; observed ${observed}`,
+    `app open: expected ${expectedApp} in foreground after ${attempts} attempts; observed ${observed}`,
   );
 }

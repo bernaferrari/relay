@@ -1,3 +1,5 @@
+import { compareCapturedContent } from "./combine-evidence-content.js";
+import { comparisonHtml } from "./combine-evidence-comparison.js";
 /**
  * Exporting a Combine batch as a pack a person can open.
  *
@@ -341,6 +343,9 @@ export async function readCombineEvidenceBatchJobs(
   batchId: string,
 ): Promise<CombineEvidenceCase[]> {
   const byId = new Map<string, CombineEvidenceCase>();
+  for (const run of await listPersistedRuns(MAX_BATCH_CASES, undefined, batchId)) {
+    byId.set(run.id, { ...run, runDir: run.dir });
+  }
   for (const prefix of BATCH_ACTION_PREFIXES) {
     const persisted = await listPersistedRuns(MAX_BATCH_CASES, `${prefix}${batchId}`);
     for (const run of persisted.reverse()) {
@@ -500,7 +505,7 @@ async function composeFullPageFromDestinationFrames(
 async function writePackFullPage(
   job: CombineEvidenceCase,
   dest: {
-    locale: string;
+    directory: string;
     screenshotDir: string;
     accessibilityDir: string;
     frames: string[];
@@ -520,7 +525,7 @@ async function writePackFullPage(
   const nodes = existing.nodes ?? composed.nodes;
   if (png) {
     await writeFile(join(dest.screenshotDir, "full.png"), png);
-    dest.frames.push(`${slugEvidencePathSegment(dest.locale)}/screenshots/full.png`);
+    dest.frames.push(`${dest.directory}/screenshots/full.png`);
   }
   if (nodes?.length) {
     await mkdir(dest.accessibilityDir, { recursive: true });
@@ -545,9 +550,18 @@ export async function exportCombineEvidencePack(input: {
 
   const cases: CombineEvidencePackManifest["cases"] = [];
   const captures: CombineEvidenceCapture[] = [];
+  const directoryCounts = new Map<string, number>();
+  for (const job of input.jobs) {
+    const key = slugEvidencePathSegment(evidenceCaseLocale(job));
+    directoryCounts.set(key, (directoryCounts.get(key) ?? 0) + 1);
+  }
   for (const job of input.jobs) {
     const locale = evidenceCaseLocale(job);
-    const localeDir = join(rootDir, slugEvidencePathSegment(locale));
+    const repeatedLocale = (directoryCounts.get(slugEvidencePathSegment(locale)) ?? 0) > 1;
+    const directory = repeatedLocale
+      ? `${slugEvidencePathSegment(locale)}/${slugEvidencePathSegment(job.id)}`
+      : slugEvidencePathSegment(locale);
+    const localeDir = join(rootDir, directory);
     const screenshotDir = join(localeDir, "screenshots");
     const accessibilityDir = join(localeDir, "accessibility");
     await mkdir(screenshotDir, { recursive: true });
@@ -581,7 +595,7 @@ export async function exportCombineEvidencePack(input: {
           const destName = `${String(index + 1).padStart(3, "0")}-${name}`;
           const bytes = await readFile(join(frameDir, name));
           await writeFile(join(screenshotDir, destName), bytes);
-          const packPath = `${slugEvidencePathSegment(locale)}/screenshots/${destName}`;
+          const packPath = `${directory}/screenshots/${destName}`;
           frames.push(packPath);
           const observation = observations.get(name);
           const nodes = await readFrameTreeNodes(job.runDir, `frames/${name}`);
@@ -607,7 +621,7 @@ export async function exportCombineEvidencePack(input: {
       } catch {
         // frames optional
       }
-      await writePackFullPage(job, { locale, screenshotDir, accessibilityDir, frames });
+      await writePackFullPage(job, { directory, screenshotDir, accessibilityDir, frames });
     }
     cases.push({
       locale,
@@ -630,7 +644,31 @@ export async function exportCombineEvidencePack(input: {
   });
   const framesByPath = new Map(frames.map((frame) => [frame.path, frame]));
 
+  const content = compareCapturedContent(captures);
+  for (const page of content.pages) {
+    if (!page.text) continue;
+    const textPath = page.path
+      .replace("/screenshots/", "/accessibility/")
+      .replace(/\.png$/iu, ".txt");
+    await writeFile(join(rootDir, textPath), page.text, "utf8");
+  }
   const manifest: CombineEvidencePackManifest = {
+    content: {
+      ...content,
+      pages: content.pages.map((page) => ({
+        ...page,
+        ...(page.text
+          ? {
+              textPath: page.path
+                .replace("/screenshots/", "/accessibility/")
+                .replace(/\.png$/iu, ".txt"),
+              accessibilityPath: page.path
+                .replace("/screenshots/", "/accessibility/")
+                .replace(/\.png$/iu, ".json"),
+            }
+          : {}),
+      })),
+    },
     schemaVersion: 2,
     batchId,
     recipeId: input.recipeId ?? input.jobs[0]?.recipeId ?? "unknown",
@@ -649,7 +687,15 @@ export async function exportCombineEvidencePack(input: {
     analysisCoverage: coverage,
   };
   await writeFile(join(rootDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
-  await writeFile(join(rootDir, "index.html"), portablePackHtml(manifest), "utf8");
+  await writeFile(
+    join(rootDir, "index.html"),
+    portablePackHtml(manifest).replace(
+      "<main>",
+      '<main><p><a href="comparison.html">Compare screens side by side</a></p>',
+    ),
+    "utf8",
+  );
+  await writeFile(join(rootDir, "comparison.html"), comparisonHtml(manifest), "utf8");
   await writeFile(
     join(rootDir, "README.md"),
     [

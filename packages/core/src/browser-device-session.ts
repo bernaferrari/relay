@@ -1,3 +1,4 @@
+import { waitForBrowserContent } from "./browser-readiness.js";
 import { createHash } from "node:crypto";
 import type { Locator, Page } from "playwright-core";
 import type {
@@ -651,6 +652,7 @@ async function applyInput(
       throw new Error("Browser Device navigation requires an http or https URL");
     }
     await page.goto(destination.href, { waitUntil: "domcontentloaded" });
+    await waitForBrowserContent(page);
   } else if (input.kind === "history") {
     if (input.direction === "back") await page.goBack();
     else if (input.direction === "forward") await page.goForward();

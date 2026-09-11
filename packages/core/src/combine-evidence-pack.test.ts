@@ -116,6 +116,35 @@ test("a batch is analyzed from its persisted runs once the registry has let go",
   }
 });
 
+test("native Test batches remain exportable after the job registry is gone", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "relay-native-batch-disk-"));
+  const previousRuns = process.env.RELAY_RUNS_DIR;
+  process.env.RELAY_RUNS_DIR = directory;
+  try {
+    const runDir = join(directory, "2026-01-01_cell-native_web_en");
+    await mkdir(runDir, { recursive: true });
+    const job = localeCase({ locale: "en", runDir });
+    await writeFile(
+      join(runDir, "run.json"),
+      JSON.stringify({
+        ...job,
+        schemaVersion: 4,
+        id: "native-job",
+        batchId: "native-batch",
+        action: "cell-native",
+        runDir: undefined,
+      }),
+    );
+    const report = await analyzeCombineEvidenceBatch("native-batch");
+    assert.equal(report.cases.length, 1);
+    assert.equal(report.cases[0]?.jobId, "native-job");
+  } finally {
+    if (previousRuns === undefined) delete process.env.RELAY_RUNS_DIR;
+    else process.env.RELAY_RUNS_DIR = previousRuns;
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("an exported Combine pack carries findings beside the frames that produced them", async () => {
   const directory = await mkdtemp(join(tmpdir(), "relay-combine-evidence-"));
   const previousWorkspace = process.env.RELAY_WORKSPACE_ROOT;
@@ -567,6 +596,32 @@ test("a run that already holds a stitched full page ships it even without destin
   } finally {
     if (previousWorkspace === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
     else process.env.RELAY_WORKSPACE_ROOT = previousWorkspace;
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("multiple runs of one locale retain separate original image files", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "relay-pack-same-locale-"));
+  const previous = process.env.RELAY_WORKSPACE_ROOT;
+  process.env.RELAY_WORKSPACE_ROOT = directory;
+  try {
+    const jobs = [];
+    for (const id of ["first", "second"]) {
+      const runDir = join(directory, id);
+      await mkdir(join(runDir, "frames"), { recursive: true });
+      await writeFile(join(runDir, "frames", "001.png"), id);
+      jobs.push({ ...localeCase({ locale: "en", runDir }), id });
+    }
+    const pack = await exportCombineEvidencePack({ batchId: "same-locale", jobs });
+    const paths = pack.manifest.cases.flatMap((c) => c.frames);
+    assert.equal(new Set(paths).size, 2);
+    assert.equal(await readFile(join(pack.rootDir, paths[0]!), "utf8"), "first");
+    assert.equal(await readFile(join(pack.rootDir, paths[1]!), "utf8"), "second");
+    assert.equal(pack.manifest.content?.inspectedPages, 0);
+    assert.match(await readFile(join(pack.rootDir, "comparison.html"), "utf8"), /Left capture/);
+  } finally {
+    if (previous === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
+    else process.env.RELAY_WORKSPACE_ROOT = previous;
     await rm(directory, { recursive: true, force: true });
   }
 });

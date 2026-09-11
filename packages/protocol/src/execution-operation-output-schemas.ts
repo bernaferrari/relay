@@ -237,6 +237,30 @@ const combineEvidencePackFrameSchema = z
   .strict();
 const combineEvidencePackManifestSchema = z
   .object({
+    content: z
+      .object({
+        method: z.literal("ordered-nfc-text-v1"),
+        inspectedPages: z.number().int().nonnegative(),
+        uniquePages: z.number().int().nonnegative(),
+        duplicateGroups: z.array(z.array(z.string())),
+        pages: z.array(
+          z
+            .object({
+              path: z.string(),
+              jobId: z.string(),
+              locale: z.string(),
+              canonicalKey: z.string(),
+              screenshotSha256: z.string().optional(),
+              textSha256: z.string().optional(),
+              text: z.string().optional(),
+              textPath: z.string().optional(),
+              accessibilityPath: z.string().optional(),
+            })
+            .strict(),
+        ),
+      })
+      .strict()
+      .optional(),
     schemaVersion: z.literal(2),
     batchId: z.string(),
     recipeId: z.string(),

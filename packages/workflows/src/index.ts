@@ -127,3 +127,8 @@ export type {
   IntentPathStep,
   IntentRepeatDimension,
 } from "./intent-document.js";
+export { createBrowserWorkflow, type BrowserInspection } from "./browser-workflow.js";
+export {
+  createBrowserCaptureWorkflow,
+  type BrowserCapturePlan,
+} from "./browser-capture-workflow.js";

@@ -226,6 +226,19 @@ function summarizePackExport(response: Record<string, unknown>): unknown {
       locales: manifest.locales,
       generatedAt: manifest.generatedAt,
       analysisCoverage: manifest.analysisCoverage,
+      ...(object(manifest.content)
+        ? {
+            content: {
+              method: object(manifest.content)?.method,
+              inspectedPages: object(manifest.content)?.inspectedPages,
+              uniquePages: object(manifest.content)?.uniquePages,
+              duplicateGroupCount: Array.isArray(object(manifest.content)?.duplicateGroups)
+                ? (object(manifest.content)!.duplicateGroups as unknown[]).length
+                : 0,
+              comparison: "comparison.html",
+            },
+          }
+        : {}),
       cases: cases.map((value) => {
         const item = object(value);
         return {

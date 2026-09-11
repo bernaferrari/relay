@@ -1,3 +1,4 @@
+import { waitForBrowserContent } from "./browser-readiness.js";
 import assert from "node:assert/strict";
 import { access, mkdtemp, rm } from "node:fs/promises";
 import http from "node:http";
@@ -106,7 +107,43 @@ test("browser QA fixture covers localized responsive chat actions and generated 
         try {
           if (locale === "en-US") {
             const runtime = await openBrowserAuthoringRuntime(target.id, { headless: true });
-            const nodes = await snapshotBrowserPage(await runtime.activePage());
+            const page = await runtime.activePage();
+            await page.evaluate(() => {
+              document.body.setAttribute("aria-busy", "true");
+              setTimeout(() => {
+                document.body.removeAttribute("aria-busy");
+                const button = document.createElement("button");
+                button.id = "hydrated-control";
+                button.textContent = "Hydrated";
+                button.onclick = () => {
+                  button.textContent = "Clicked once";
+                };
+                document.body.append(button);
+              }, 150);
+            });
+            await waitForBrowserContent(page, { timeoutMs: 1_500, stableForMs: 30 });
+            await interact(
+              { kind: "identifier", identifier: "hydrated-control" },
+              { serial: target.id },
+            );
+            assert.equal(await page.locator("#hydrated-control").innerText(), "Clicked once");
+            await page.evaluate(() => {
+              setTimeout(() => {
+                const button = document.createElement("button");
+                button.id = "late-control";
+                button.textContent = "Late control";
+                button.onclick = () => {
+                  button.textContent = "Reached late control";
+                };
+                document.body.append(button);
+              }, 150);
+            });
+            await interact(
+              { kind: "identifier", identifier: "late-control" },
+              { serial: target.id },
+            );
+            assert.equal(await page.locator("#late-control").innerText(), "Reached late control");
+            const nodes = await snapshotBrowserPage(page);
             assert.ok(nodes.some((node) => node.content?.includes("Plain feature copy")));
             assert.ok(nodes.some((node) => node.content === "Translated detail"));
             await interact({ kind: "identifier", identifier: "below" }, { serial: target.id });

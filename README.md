@@ -244,17 +244,20 @@ Managed browsers use the same Relay server, leases, and evidence store as device
 browser target, inspect the current page, and act on the control's accessible name:
 
 ```bash
-relay browser open <target-id>
-relay browser navigate <target-id> https://example.com/plans
-relay browser snapshot <target-id> --json
-relay browser click <target-id> "Business"
-relay browser screenshot <target-id> --file business.png
+pnpm relay browser open <target-id>
+pnpm relay browser navigate <target-id> https://example.com/plans
+pnpm relay browser snapshot <target-id> --json
+pnpm relay browser click <target-id> "Business"
+pnpm relay browser screenshot <target-id> --file business.png
 ```
 
 A nested text span does not make its enclosing button ambiguous; two separate controls with the
 same name still require an identifier or an inspected point. Snapshots include visible static copy
 as well as controls, so plan features and other translated text remain available for comparison.
-Use `relay screen capture <map-id>` to retain screenshots and accessibility evidence in the App Map.
+Use `pnpm relay screen capture <map-id>` to retain screenshots and accessibility evidence in the App Map.
+
+See [Browser capture and comparison](docs/BROWSER_CAPTURE.md) for reusable language capture plans,
+frame-bound inspection, and portable side-by-side comparison.
 
 ## Evidence, privacy, and control
 

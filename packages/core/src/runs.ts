@@ -491,6 +491,7 @@ export function persistRun(job: TestJob): Promise<PersistedRun> {
 export async function listPersistedRuns(
   limit = 40,
   actionPrefix?: string,
+  batchId?: string,
 ): Promise<PersistedRun[]> {
   const root = runsRoot();
   let entries: string[] = [];
@@ -509,6 +510,7 @@ export async function listPersistedRuns(
       const parsed = await readCompletedRun(dir);
       if (!parsed) continue;
       if (actionPrefix && !parsed.action.startsWith(actionPrefix)) continue;
+      if (batchId && parsed.batchId !== batchId) continue;
       parsed.dir = dir;
       runs.push(parsed);
     } catch {

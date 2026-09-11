@@ -310,3 +310,22 @@ test("failed job summaries stay bounded and point to durable evidence and repair
   assert.ok((result.job?.error?.length ?? 0) <= 4_000);
   assert.ok(JSON.stringify(result).length < 75_000);
 });
+
+test("pack summaries expose duplicate counts and viewer path without dumping page text", () => {
+  const summary = summarizeExecutionOperationResult("job.combine.export", {
+    rootDir: "/tmp/pack",
+    manifest: {
+      cases: [],
+      content: {
+        method: "ordered-nfc-text-v1",
+        inspectedPages: 4,
+        uniquePages: 3,
+        duplicateGroups: [["a", "b"]],
+        pages: [{ text: "large captured content" }],
+      },
+    },
+  }) as { manifest: { content: Record<string, unknown> } };
+  assert.equal(summary.manifest.content.duplicateGroupCount, 1);
+  assert.equal(summary.manifest.content.comparison, "comparison.html");
+  assert.equal(summary.manifest.content.pages, undefined);
+});

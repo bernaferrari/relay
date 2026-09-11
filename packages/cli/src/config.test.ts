@@ -1007,3 +1007,23 @@ test("outcome commands resolve ordinary intent without raw JSON mechanics", () =
   );
   assert.throws(() => parseCli(["run", "smoke", "--input", "{}"], {}), /do not accept --input/u);
 });
+
+test("browser capture-plan uses shared connection and JSON input parsing", () => {
+  const parsed = parseCli(
+    [
+      "browser",
+      "capture-plan",
+      "plans",
+      "capture",
+      "--input",
+      '{"name":"Plans","expectedRevision":3}',
+      "--json",
+    ],
+    {},
+  );
+  assert.equal(parsed.command, "browser-capture-plan");
+  if (parsed.command !== "browser-capture-plan") throw new Error("Wrong command");
+  assert.equal(parsed.input.appMapId, "plans");
+  assert.equal(parsed.input.id, "capture");
+  assert.equal(parsed.config.output, "json");
+});

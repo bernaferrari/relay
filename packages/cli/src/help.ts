@@ -226,6 +226,22 @@ function renderDetails(descriptor: CommandPathDescriptor): string {
 }
 
 function renderFamilyHelp(family: string): string {
+  if (family === "browser")
+    return `Relay browser commands
+
+  relay browser open <target-id>
+  relay browser navigate <target-id> <url>
+  relay browser snapshot <target-id> --json
+  relay browser click <target-id> <accessible-name>
+  relay browser screenshot <target-id> --file <image.png>
+  relay browser capture-plan <map-id> <test-id> --input-file <plan.json>
+
+Capture plans contain name, expectedRevision, language (observed options and
+reviewed picker navigation), and views (id, name, steps). Each view ends with
+a screenshot. Run the saved Test with --in <test-id>-language=en,fr, then use
+combine export <batch-id> for screenshots, trees and side-by-side comparison.
+
+${globalOptions}`;
   if (family === "db") return dbHelp();
   if (family === "report") {
     return `Relay report commands

@@ -29,6 +29,7 @@ export type GlobalConfig = {
 };
 
 export type ParsedCli =
+  | { config: GlobalConfig; command: "browser-capture-plan"; input: Record<string, unknown> }
   | {
       config: GlobalConfig;
       command: "help";
@@ -705,6 +706,25 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
   }
 
   const input = readInput(tokens, env);
+  if (group === "browser" && action === "capture-plan") {
+    if (!operationId || extra.length !== 1)
+      throw new UsageError(
+        "Expected: relay browser capture-plan <map-id> <test-id> --input-file <plan.json>",
+      );
+    return {
+      command: "browser-capture-plan",
+      config: {
+        connection,
+        credentialSource,
+        output,
+        quiet: tokens.switches.has("--quiet"),
+        timeoutMs,
+        wait,
+        ensureLocalServer,
+      },
+      input: { ...input, appMapId: operationId, id: extra[0] },
+    };
+  }
   const resource = resolveResourceCommand(tokens.positionals, input);
   if (resource) {
     screenshotOutput(tokens, output, {});

@@ -54,6 +54,24 @@ export type CombineEvidenceAnalysisReport = {
 };
 
 export type CombineEvidencePackManifest = {
+  /** Content equality does not certify translation quality. Missing trees are excluded. */
+  content?: {
+    method: "ordered-nfc-text-v1";
+    inspectedPages: number;
+    uniquePages: number;
+    duplicateGroups: string[][];
+    pages: Array<{
+      path: string;
+      jobId: string;
+      locale: string;
+      canonicalKey: string;
+      screenshotSha256?: string;
+      textSha256?: string;
+      text?: string;
+      textPath?: string;
+      accessibilityPath?: string;
+    }>;
+  };
   schemaVersion: 2;
   batchId: string;
   recipeId: string;

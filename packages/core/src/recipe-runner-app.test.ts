@@ -98,3 +98,36 @@ describe("openAppAndVerifyForeground", () => {
     );
   });
 });
+
+it("verifies a browser URL once and does not replay a redirected navigation", async () => {
+  let launches = 0;
+  const browser = {
+    command: {
+      appState: async () => ({
+        platform: "android",
+        package: "managed-browser",
+        activity: "https://example.com/plans",
+      }),
+    },
+  } as unknown as Device;
+  await runWithTargetContext(
+    { kind: "browser", platform: "browser", targetId: "web" },
+    async () => {
+      await openAppAndVerifyForeground(browser, "https://example.com/plans", undefined, () => {}, {
+        open: async () => {
+          launches++;
+        },
+      });
+      assert.equal(launches, 1);
+      await assert.rejects(
+        openAppAndVerifyForeground(browser, "https://example.com/other", undefined, () => {}, {
+          open: async () => {
+            launches++;
+          },
+        }),
+        /after 1 attempts/,
+      );
+      assert.equal(launches, 2);
+    },
+  );
+});

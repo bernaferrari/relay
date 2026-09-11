@@ -1,4 +1,5 @@
 #!/usr/bin/env tsx
+import { createBrowserCaptureWorkflow, type BrowserCapturePlan } from "@relay/workflows";
 import { pathToFileURL } from "node:url";
 import { targetExecutionReadiness } from "@relay/core";
 import { type RelayOutcomeJobs, type WorkflowSnapshot } from "@relay/workflows";
@@ -494,6 +495,19 @@ export async function runCli(
     output = new CliOutput(parsed.config.output, parsed.config.quiet, streams);
     if (parsed.command === "help") {
       streams.stdout.write(renderHelp(parsed.helpFamily));
+      return ExitCode.success;
+    }
+    if (parsed.command === "browser-capture-plan") {
+      const client = (dependencies.createClient ?? createClient)(parsed.config);
+      const result = await createBrowserCaptureWorkflow({
+        invoke: (id, input) => client.invoke(id, input as never),
+      }).save(parsed.input as BrowserCapturePlan);
+      output.result("browser.capture-plan", {
+        appMapId: result.appMap.id,
+        revision: result.appMap.revision,
+        testId: result.testId,
+        variableId: result.variableId,
+      });
       return ExitCode.success;
     }
     operationId =
