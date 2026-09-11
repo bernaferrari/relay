@@ -52,7 +52,7 @@ export function useCollectionReturnFocus(
         if (!anchor) return;
         const main = document.querySelector<HTMLElement>(".relay-main");
         if (main) main.scrollTop = saved.scrollTop;
-        anchor.focus();
+        anchor.focus({ preventScroll: true });
         pending.current = undefined;
         try {
           sessionStorage.removeItem(storageKey);

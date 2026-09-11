@@ -88,3 +88,9 @@ describe("React route contract", () => {
     expect(review && "chrome" in review ? review.chrome : undefined).toBeUndefined();
   });
 });
+
+it("accepts restored report tabs and captures", () => {
+  expect(() =>
+    assertAllowedRouteSearch("/runs/run-1", { reportView: "captures", capture: "2" }),
+  ).not.toThrow();
+});

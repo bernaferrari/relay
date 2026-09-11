@@ -39,15 +39,23 @@ export function RunWorkbench({
   failureNotice,
   footer,
   onSelectStep,
+  view,
+  onViewChange,
+  captureIndex,
+  onCaptureChange,
 }: {
   report: Report;
+  view?: string;
+  onViewChange?(view: string): void;
+  captureIndex?: number;
+  onCaptureChange?(index: number): void;
   selectedStepIndex: number;
   failureNotice?: ReactNode;
   footer?: ReactNode;
   onSelectStep(index: number): void;
   renderEvidence?(section: Report["evidence"][number]): ReactNode;
 }) {
-  const [requestedPanel, setPanel] = useState<
+  const [requestedPanel, setRequestedPanel] = useState<
     "steps" | "captures" | "performance" | "details" | "video" | "logs"
   >(() =>
     report.timeline.some((item) => item.framePaths?.length) ||
@@ -58,12 +66,32 @@ export function RunWorkbench({
       ? "steps"
       : "captures",
   );
-  const [selectedCapture, setSelectedCapture] = useState(0);
+  const setPanel = (value: typeof requestedPanel) => {
+    setRequestedPanel(value);
+    onViewChange?.(value);
+  };
+  const [localCapture, setLocalCapture] = useState(0);
+  const requestedCapture =
+    Number.isInteger(captureIndex) && captureIndex! >= 0 ? captureIndex! : localCapture;
+  const setSelectedCapture = (index: number) => {
+    setLocalCapture(index);
+    onCaptureChange?.(index);
+  };
+  const [showSetup, setShowSetup] = useState(false);
+  const setupCount = report.timeline.filter((item) => item.phase === "setup").length;
+  const setupVisible =
+    showSetup ||
+    setupCount === report.timeline.length ||
+    report.timeline[selectedStepIndex]?.phase === "setup";
+  const visibleIndexes = report.timeline.flatMap((item, index) =>
+    item.phase !== "setup" || setupVisible ? [index] : [],
+  );
   const allFrames =
     report.evidence
       .find((section) => section.id === "screenshot")
       ?.items.filter((item) => item.media) ?? [];
-  const capture = allFrames[selectedCapture] ?? allFrames[0];
+  const selectedCapture = Math.min(requestedCapture, Math.max(0, allFrames.length - 1));
+  const capture = allFrames[selectedCapture];
   const [playing, setPlaying] = useState(false);
   useEffect(() => {
     if (!playing || requestedPanel === "captures") return;
@@ -76,7 +104,12 @@ export function RunWorkbench({
   const logs = report.evidence.find((section) => section.id === "logs")?.items ?? [];
   const step = report.timeline[selectedStepIndex] ?? report.timeline[0];
   const hasChecks = Boolean(step?.expected?.trim());
-  const panel = requestedPanel === "details" && !hasChecks ? "steps" : requestedPanel;
+  const requestedView = ["steps", "captures", "performance", "details", "video", "logs"].includes(
+    view ?? "",
+  )
+    ? (view as typeof requestedPanel)
+    : requestedPanel;
+  const panel = requestedView === "details" && !hasChecks ? "steps" : requestedView;
   const authoredFrames = framePathsForTraceStep(
     report.stepEvidence,
     step?.id ?? selectedStepIndex,
@@ -156,7 +189,9 @@ export function RunWorkbench({
           <span>
             {panel === "captures"
               ? `Capture ${selectedCapture + 1} of ${allFrames.length}`
-              : `Step ${selectedStepIndex + 1} of ${report.timeline.length}`}
+              : step.phase === "test"
+                ? `Test step ${report.timeline.slice(0, selectedStepIndex + 1).filter((item) => item.phase === "test").length} of ${report.timeline.filter((item) => item.phase === "test").length}`
+                : `Step ${selectedStepIndex + 1} of ${report.timeline.length}`}
           </span>
           <div
             className={panel === "captures" ? "hidden" : "flex shrink-0 items-center gap-1"}
@@ -276,7 +311,7 @@ export function RunWorkbench({
               {label}
               {value === "steps" ? (
                 <span className="ml-1 text-xs tabular-nums text-muted-foreground">
-                  {report.timeline.length}
+                  {report.timeline.length - setupCount || report.timeline.length}
                 </span>
               ) : null}
             </Button>
@@ -288,8 +323,24 @@ export function RunWorkbench({
               className="min-h-0 flex-1"
               viewportProps={{ "aria-label": "Recorded steps", className: "overscroll-auto" }}
             >
+              {setupCount && setupCount < report.timeline.length ? (
+                <button
+                  type="button"
+                  className="mx-2 mt-2 flex min-h-10 items-center gap-2 rounded-md px-3 text-xs text-muted-foreground hover:bg-muted focus-visible:outline-2"
+                  aria-expanded={setupVisible}
+                  onClick={() => {
+                    setShowSetup(!setupVisible);
+                    if (setupVisible && report.timeline[selectedStepIndex]?.phase === "setup")
+                      onSelectStep(report.timeline.findIndex((item) => item.phase !== "setup"));
+                  }}
+                >
+                  {setupVisible ? "Hide setup" : "Show setup"}
+                  <span className="tabular-nums">{setupCount} steps</span>
+                </button>
+              ) : null}
               <ol className="relay-test-readable-steps grid list-none gap-1 p-2 pb-4">
                 {report.timeline.map((item, index) => {
+                  if (!visibleIndexes.includes(index)) return null;
                   const Icon =
                     item.state === "passed" || item.state === "recovered"
                       ? Check
@@ -300,6 +351,7 @@ export function RunWorkbench({
                     <li key={item.id}>
                       <button
                         type="button"
+                        data-step-index={index}
                         aria-current={index === selectedStepIndex ? "step" : undefined}
                         aria-pressed={index === selectedStepIndex}
                         className={`relay-interactive-row relative grid min-h-12 w-full grid-cols-[1rem_minmax(0,1fr)_1rem] items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring ${index === selectedStepIndex ? "bg-accent text-foreground ring-1 ring-inset ring-border" : "text-muted-foreground"}`}
@@ -307,13 +359,18 @@ export function RunWorkbench({
                         onKeyDown={(event) => {
                           const next =
                             event.key === "ArrowDown"
-                              ? Math.min(report.timeline.length - 1, index + 1)
+                              ? visibleIndexes[
+                                  Math.min(
+                                    visibleIndexes.length - 1,
+                                    visibleIndexes.indexOf(index) + 1,
+                                  )
+                                ]
                               : event.key === "ArrowUp"
-                                ? Math.max(0, index - 1)
+                                ? visibleIndexes[Math.max(0, visibleIndexes.indexOf(index) - 1)]
                                 : event.key === "Home"
-                                  ? 0
+                                  ? visibleIndexes[0]
                                   : event.key === "End"
-                                    ? report.timeline.length - 1
+                                    ? visibleIndexes.at(-1)
                                     : undefined;
                           if (next === undefined) return;
                           event.preventDefault();
@@ -321,10 +378,18 @@ export function RunWorkbench({
                           const buttons = event.currentTarget
                             .closest("ol")
                             ?.querySelectorAll<HTMLButtonElement>("button[aria-pressed]");
-                          buttons?.[next]?.focus();
+                          Array.from(buttons ?? [])
+                            .find((button) => button.dataset.stepIndex === String(next))
+                            ?.focus();
                         }}
                       >
-                        <span className="text-xs tabular-nums">{index + 1}</span>
+                        <span className="text-xs tabular-nums">
+                          {item.phase === "test"
+                            ? report.timeline
+                                .slice(0, index + 1)
+                                .filter((step) => step.phase === "test").length
+                            : index + 1}
+                        </span>
                         <span className="min-w-0">
                           <strong className="flex items-center gap-2 text-sm font-medium leading-5">
                             <StepActionIcon title={item.title} />

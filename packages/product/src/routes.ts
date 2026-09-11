@@ -219,6 +219,8 @@ export const ROUTE_DEFINITIONS = [
     "attempt",
     "screen",
     "replayJob",
+    "reportView",
+    "capture",
   ]),
   d("/batches/:batchId", "/runs", "Batch", "Report", "runs", "review-batch", ["status", "view"]),
   d("/changes", "/home", "Changes", "Change", "changes", "verify-change", [

@@ -45,6 +45,7 @@ export type ReportDiagnosticEvent = {
 };
 
 export type ReportTimelineItem = {
+  phase?: "setup" | "test";
   id: string;
   index: number;
   title: string;

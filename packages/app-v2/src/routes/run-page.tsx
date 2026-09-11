@@ -1,3 +1,4 @@
+import { initialRunStep } from "../data/run-timeline-selection";
 import { PageHeader, WorkbenchPage } from "../components/page-layout";
 import { RawEvidenceDisclosure } from "./raw-evidence-disclosure";
 /** @jsxImportSource react */
@@ -41,8 +42,9 @@ import {
 import type { ProductRunState, RunProductService } from "../data/run-product-service";
 import { runQueryKeys } from "../data/run-queries";
 import { clearRunPointerIfCurrent, readRunPointer } from "../data/run-pointer";
-import { PageLoading, RecordingProblem, targetLabel } from "./recording-shared";
+import { RecordingProblem, targetLabel } from "./recording-shared";
 import { RunReviewControls } from "./run-review-controls";
+import { RunLoading } from "./run-loading";
 import { RunWorkbench } from "./run-workbench";
 import { EvidencePreview } from "./run-report-panels";
 import { RunReplayAction, RunReplayStatus } from "./run-replay";
@@ -286,13 +288,13 @@ export function RunInspection({
   }
 
   if (loading) {
-    const loadingView = <PageLoading label="Loading the Run…" />;
+    const loadingView = <RunLoading />;
     if (embedded) return loadingView;
     return (
       <WorkbenchPage className="max-w-[1120px]">
         <PageHeader
-          crumbs={[{ label: "Runs", to: "/runs" }, { label: "In progress" }]}
-          title={snapshot?.title ?? "Loading Run"}
+          crumbs={[{ label: "Runs", to: "/runs" }, { label: "Run" }]}
+          title={snapshot?.title ?? "Run details"}
         />
         {loadingView}
       </WorkbenchPage>
@@ -347,7 +349,7 @@ export function RunInspection({
         crumbs={[
           { label: "Runs", to: "/runs" },
           ...(activePointer ? [{ label: snapshot?.title ?? "Test" }] : []),
-          { label: "In progress" },
+          { label: "Run" },
         ]}
         title={snapshot?.title ?? "Running Test"}
         description={
@@ -427,6 +429,8 @@ function RunReport({
     step?: unknown;
     at?: unknown;
     attempt?: unknown;
+    reportView?: unknown;
+    capture?: unknown;
   };
   const navigate = useNavigate();
   const requestedStep = typeof search.step === "string" ? Number.parseInt(search.step, 10) : 0;
@@ -442,10 +446,7 @@ function RunReport({
       ? Math.min(requestedStep - 1, Math.max(0, report.timeline.length - 1))
       : contextStepIndex >= 0
         ? contextStepIndex
-        : Math.max(
-            0,
-            report.timeline.findIndex((item) => item.state === "failed"),
-          );
+        : initialRunStep(report.timeline);
   const [stepByRun, setStepByRun] = useState({ runId: report.runId, index: urlStepIndex });
   if (stepByRun.runId !== report.runId) {
     setStepByRun({ runId: report.runId, index: urlStepIndex });
@@ -623,7 +624,30 @@ function RunReport({
       <section className="mt-3 flex min-h-0 flex-1 flex-col gap-3" aria-label="Run evidence">
         {report.timeline.length || report.evidence.length ? (
           <RunWorkbench
+            key={report.runId}
             report={report}
+            view={typeof search.reportView === "string" ? search.reportView : undefined}
+            captureIndex={typeof search.capture === "string" ? Number(search.capture) : undefined}
+            onViewChange={(reportView) => {
+              if (!embedded)
+                void navigate({
+                  to: "/runs/$runId",
+                  params: { runId: report.runId },
+                  replace: true,
+                  resetScroll: false,
+                  search: (previous) => ({ ...previous, reportView }),
+                });
+            }}
+            onCaptureChange={(capture) => {
+              if (!embedded)
+                void navigate({
+                  to: "/runs/$runId",
+                  params: { runId: report.runId },
+                  replace: true,
+                  resetScroll: false,
+                  search: (previous) => ({ ...previous, capture: String(capture) }),
+                });
+            }}
             selectedStepIndex={selectedStepIndex}
             failureNotice={failureNotice}
             footer={canInvestigate ? <IssueDraftButton source={{ kind: "run", report }} /> : null}
@@ -638,6 +662,7 @@ function RunReport({
                 to: "/runs/$runId",
                 params: { runId: report.runId },
                 replace: true,
+                resetScroll: false,
                 search: (previous) => ({
                   ...previous,
                   view: undefined,

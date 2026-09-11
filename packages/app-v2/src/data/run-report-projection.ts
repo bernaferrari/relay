@@ -279,6 +279,11 @@ function reportTimeline(
   rawRun: unknown,
   stepEvidence?: readonly RunTestStepEvidence[],
 ): ReportTimelineItem[] {
+  const combine = array(record(rawRun)?.artifacts)
+    .map(record)
+    .find((item) => item?.kind === "app-map-combine-cell-execution-intent");
+  const childGraph = record(record(record(combine?.data)?.child)?.recipeGraph);
+  const authoredRecipes = childGraph ? new Set(Object.keys(childGraph)) : undefined;
   const recipe = record(record(rawRun)?.recipeSnapshot);
   const recipeSteps = array(recipe?.steps);
   const checkTimes = new Map<string, { start: number; end: number }>();
@@ -298,7 +303,10 @@ function reportTimeline(
     if (!step) return [];
     // Final captures remain in evidence; they are not another authored action.
     if (checkStatuses.size > 0 && text(step.title)?.startsWith("Screenshot · final:")) return [];
-    const title = humanStepTitle(step.title);
+    const failed = step.status === "error" || step.tone === "fail";
+    const generatedBranch = (text(step.title) ?? "").startsWith("Branch when ");
+    if (generatedBranch && !failed) return [];
+    const title = humanStepTitle(step.title) ?? (failed ? "Step could not finish" : undefined);
     if (!title) return [];
     // Authored-step screenshot traces measure evidence capture, not whether
     // the preceding interaction passed. Use its retained check verdict.
@@ -372,6 +380,13 @@ function reportTimeline(
                 height: Number(bounds.height),
               },
               beforeFramePath: text(before?.path),
+            }
+          : {}),
+        ...(authoredRecipes
+          ? {
+              phase: authoredRecipes.has(text(step.recipeId) ?? "")
+                ? ("test" as const)
+                : ("setup" as const),
             }
           : {}),
         id: text(step.id) ?? `step-${fallbackIndex}`,
