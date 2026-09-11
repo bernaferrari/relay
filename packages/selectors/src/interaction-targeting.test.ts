@@ -16,6 +16,7 @@ import {
   ELEMENT14_DISTINCT_SUBTREE_NODES,
   EQUIVALENT_WRAPPER_CHAIN_NODES,
   INDEXED_PARITY_POLICY_NODES,
+  UNVERIFIED_HITTABILITY_WRAPPER_CHAIN_NODES,
 } from './interaction-targeting.fixtures.ts';
 
 test('collapses one same-label wrapper chain to its shared actionable node', () => {
@@ -320,4 +321,119 @@ test('the batch resolver preserves every actionability policy branch', () => {
       [10, 'overly-broad-ancestor'],
     ],
   );
+});
+
+test('collapses a wrapper chain whose hittability is unverified and whose rects differ sub-pixel', () => {
+  const snapshot = makeSnapshotState(UNVERIFIED_HITTABILITY_WRAPPER_CHAIN_NODES);
+
+  const result = classifyActionableTouchCandidates(
+    snapshot.nodes,
+    snapshot.nodes.filter((node) => node.identifier === 'scoring_home_button'),
+  );
+
+  assert.equal(result.kind, 'equivalent');
+  if (result.kind === 'equivalent') {
+    assert.equal(result.node.index, 1);
+    assert.equal(result.node.type, 'XCUIElementTypeButton');
+  }
+});
+
+test('keeps a wrapper chain that reports hittability evidence on the existing rules', () => {
+  const snapshot = makeSnapshotState([
+    {
+      index: 0,
+      depth: 1,
+      type: 'XCUIElementTypeOther',
+      identifier: 'profile',
+      rect: { x: 20, y: 63, width: 36, height: 36 },
+      hittable: false,
+    },
+    {
+      index: 1,
+      depth: 2,
+      parentIndex: 0,
+      type: 'XCUIElementTypeButton',
+      identifier: 'profile',
+      rect: { x: 20.666666666666668, y: 63, width: 35, height: 36 },
+      hittable: true,
+    },
+  ]);
+
+  const result = classifyActionableTouchCandidates(snapshot.nodes, snapshot.nodes);
+
+  assert.equal(result.kind, 'ambiguous');
+  if (result.kind === 'ambiguous')
+    assert.deepEqual(
+      result.candidates.map((node) => node.index),
+      [0, 1],
+    );
+});
+
+test('refuses a wrapper chain whose rects differ beyond sub-pixel slack', () => {
+  const snapshot = makeSnapshotState([
+    {
+      index: 0,
+      depth: 1,
+      type: 'XCUIElementTypeOther',
+      identifier: 'profile',
+      rect: { x: 20, y: 63, width: 60, height: 36 },
+    },
+    {
+      index: 1,
+      depth: 2,
+      parentIndex: 0,
+      type: 'XCUIElementTypeButton',
+      identifier: 'profile',
+      rect: { x: 20, y: 63, width: 36, height: 36 },
+    },
+  ]);
+
+  assert.equal(classifyActionableTouchCandidates(snapshot.nodes, snapshot.nodes).kind, 'ambiguous');
+});
+
+test('refuses a wrapper chain of two real controls that share one rect', () => {
+  // A cell and the button inside it share an identifier and their rects agree
+  // within slack. Both are actionable, so collapsing to the descendant would
+  // silently press the wrong control; the ambiguity refusal must survive.
+  const snapshot = makeSnapshotState([
+    {
+      index: 0,
+      depth: 1,
+      type: 'XCUIElementTypeCell',
+      identifier: 'row_action',
+      rect: { x: 20, y: 63, width: 36, height: 36 },
+    },
+    {
+      index: 1,
+      depth: 2,
+      parentIndex: 0,
+      type: 'XCUIElementTypeButton',
+      identifier: 'row_action',
+      rect: { x: 20.5, y: 63, width: 35, height: 36 },
+    },
+  ]);
+
+  assert.equal(classifyActionableTouchCandidates(snapshot.nodes, snapshot.nodes).kind, 'ambiguous');
+});
+
+test('refuses a wrapper chain whose deepest candidate is not a touch target', () => {
+  const snapshot = makeSnapshotState([
+    {
+      index: 0,
+      depth: 1,
+      type: 'XCUIElementTypeOther',
+      identifier: 'banner',
+      rect: { x: 20, y: 63, width: 36, height: 36 },
+    },
+    {
+      index: 1,
+      depth: 2,
+      parentIndex: 0,
+      type: 'XCUIElementTypeOther',
+      identifier: 'banner',
+      rect: { x: 20, y: 63, width: 36, height: 36 },
+    },
+  ]);
+
+  assert.equal(classifyActionableTouchCandidates(snapshot.nodes, snapshot.nodes).kind, 'ambiguous');
 });
