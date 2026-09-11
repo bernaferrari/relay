@@ -127,6 +127,7 @@ export function AppPage() {
                     className="text-sm font-medium text-[var(--text-interactive-base)] underline underline-offset-4"
                     to="/apps/$appId/map"
                     params={{ appId }}
+                    search={{ view: "screens" }}
                   >
                     View all {app.data.screens.length} screens
                   </Link>

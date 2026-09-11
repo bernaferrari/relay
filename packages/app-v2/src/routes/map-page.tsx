@@ -1,3 +1,4 @@
+import { MapScreensPanel } from "../components/map-screens-panel";
 /** @jsxImportSource react */
 import type { ProductMapOverview } from "@relay/product/map-exploration";
 import { useState } from "react";
@@ -25,7 +26,10 @@ export function MapPage() {
   });
   const [refresh, setRefresh] = useState<{ screen: ProductMapScreen; revision: number }>();
   const { appId } = routeApi.useParams();
-  const [view, setView] = useState<"map" | "paths">("map");
+  const view = routeApi.useSearch().view ?? "map";
+  const navigate = routeApi.useNavigate();
+  const setView = (view: "map" | "paths" | "screens") =>
+    void navigate({ search: { view }, replace: true });
   const [inspectedPathId, setInspectedPathId] = useState<string>();
   const map = useQuery({
     queryKey: ["map", appId],
@@ -120,6 +124,14 @@ export function MapPage() {
             </Button>
             <Button
               size="sm"
+              variant={view === "screens" ? "secondary" : "ghost"}
+              aria-pressed={view === "screens"}
+              onClick={() => setView("screens")}
+            >
+              Screens
+            </Button>
+            <Button
+              size="sm"
               variant={view === "paths" ? "secondary" : "ghost"}
               aria-pressed={view === "paths"}
               onClick={() => setView("paths")}
@@ -193,6 +205,12 @@ export function MapPage() {
                 />
               )}
             </>
+          ) : null}
+          {view === "screens" ? (
+            <MapScreensPanel
+              screens={map.data.screens}
+              loadScreenshot={mapService.loadScreenshot}
+            />
           ) : null}
           {view === "paths" ? (
             <MapPathsPanel
@@ -276,7 +294,8 @@ export function MapPage() {
           ) : null}
         </>
       ) : null}
-      {map.data &&
+      {view === "map" &&
+      map.data &&
       (map.data.screens.length > visibleScreens.length ||
         map.data.paths.length > visiblePaths.length) ? (
         <p className="relay-action-hint mt-2 text-xs leading-5 text-muted-foreground">

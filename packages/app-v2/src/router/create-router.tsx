@@ -242,6 +242,9 @@ const accountsRoute = createRoute({
 const appMapRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/apps/$appId/map",
+  validateSearch: (search: Record<string, unknown>): { view?: "map" | "paths" | "screens" } => ({
+    view: search.view === "screens" || search.view === "paths" ? search.view : undefined,
+  }),
   component: MapPage,
 });
 const testsRoute = createRoute({

@@ -81,8 +81,9 @@ afterEach(async () => {
 async function render(
   mapService: MapProductService = { get: async () => overview },
   productService = {} as RecordingProductService,
+  initialEntry = "/apps/shop/map",
 ) {
-  const history = createMemoryHistory({ initialEntries: ["/apps/shop/map"] });
+  const history = createMemoryHistory({ initialEntries: [initialEntry] });
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
@@ -513,4 +514,16 @@ it("prepares screen refresh with canonical target fields and waits for a visible
       (button) => button.textContent === "Update screen",
     )!.disabled,
   ).toBe(true);
+});
+
+it("opens every captured screen in a directly linked gallery with in-place previews", async () => {
+  const { history } = await render(undefined, undefined, "/apps/shop/map?view=screens");
+  expect(document.querySelector(".relay-map-canvas")).toBeNull();
+  expect(document.querySelector('[aria-label="Captured screens"]')).not.toBeNull();
+  expect(document.querySelectorAll('button[aria-label^="Preview "]')).toHaveLength(
+    overview.screens.length,
+  );
+  await act(async () => button("Preview Home").click());
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Home");
+  expect(history.location.search).toContain("view=screens");
 });
