@@ -278,7 +278,7 @@ export function RunInspection({
     return (
       <WorkbenchPage className="flex min-h-full max-w-[1120px] flex-col">
         <PageHeader
-          crumbs={[{ label: "Runs", to: "/runs" }, { label: "Run" }]}
+          crumbs={[{ label: "Results", to: "/runs" }, { label: "Run" }]}
           title={snapshot?.title ?? "Run unavailable"}
           titleHidden
         />
@@ -293,7 +293,7 @@ export function RunInspection({
     return (
       <WorkbenchPage className="max-w-[1120px]">
         <PageHeader
-          crumbs={[{ label: "Runs", to: "/runs" }, { label: "Run" }]}
+          crumbs={[{ label: "Results", to: "/runs" }, { label: "Run" }]}
           title={snapshot?.title ?? "Run details"}
         />
         {loadingView}
@@ -347,7 +347,7 @@ export function RunInspection({
     <WorkbenchPage className="max-w-[1120px]">
       <PageHeader
         crumbs={[
-          { label: "Runs", to: "/runs" },
+          { label: "Results", to: "/runs" },
           ...(activePointer ? [{ label: snapshot?.title ?? "Test" }] : []),
           { label: "Run" },
         ]}
@@ -703,12 +703,12 @@ function RunReport({
   if (embedded) return <EmbeddedRunResult report={report} />;
 
   return (
-    <WorkbenchPage className="flex h-full min-h-0 flex-col !pt-3 !pb-3">
+    <WorkbenchPage className="flex h-full min-h-0 flex-col !pt-3 !pb-3 max-[720px]:h-auto [&>header]:shrink-0">
       <PageHeader
         crumbs={[
-          { label: "Runs", to: "/runs" },
+          { label: "Results", to: "/runs" },
           ...(testId
-            ? [{ label: "View test", to: "/tests/$testId" as const, params: { testId } }]
+            ? [{ label: "View Test", to: "/tests/$testId" as const, params: { testId } }]
             : []),
           { label: report.title },
         ]}

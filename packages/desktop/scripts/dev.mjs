@@ -9,6 +9,7 @@ import { createServer } from "vite";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { bundleElectron } from "./bundle-electron.mjs";
+import { ensureDevService } from "./ensure-dev-service.mjs";
 import { prepareMacOSDevApp } from "./macos-dev-app.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -78,6 +79,7 @@ async function main() {
 
   const relayUrl = process.env.RELAY_URL?.trim() || "http://127.0.0.1:8787";
   console.log(`[desktop] Relay server ${relayUrl}`);
+  await ensureDevService(root, relayUrl, new URL(rendererUrl).origin);
 
   // The dev app exposes Chromium's loopback-only DevTools Protocol so visual
   // inspection drives the real Electron renderer (preload, IPC, and all), not

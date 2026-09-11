@@ -40,6 +40,7 @@ export function AppShell({ platform }: { platform: Platform }) {
   const routeContract = routeContractForPath(location.pathname);
   const immersive =
     routeContract && "chrome" in routeContract && routeContract.chrome === "immersive";
+  const runWorkspace = /^\/runs\/[^/]+$/.test(location.pathname);
   const parentPath = parentPathForPath(location.pathname);
   const canGoBack = historyAvailability.canGoBack || Boolean(parentPath);
 
@@ -148,7 +149,9 @@ export function AppShell({ platform }: { platform: Platform }) {
         </header>
         <main
           id="main-content"
-          className={`relay-main min-h-0 min-w-0 flex-1 bg-card focus:outline-none ${immersive ? "overflow-hidden" : "mr-2 mb-2 overflow-auto rounded-xl overscroll-contain [scrollbar-gutter:stable]"}`}
+          className={`relay-main ${runWorkspace ? "min-[721px]:overflow-hidden" : ""} min-h-0 min-w-0 flex-1 bg-card focus:outline-none ${immersive ? "overflow-hidden" : "mr-2 mb-2 overflow-auto rounded-xl overscroll-contain [scrollbar-gutter:stable]"}`}
+          data-run-workspace={runWorkspace || undefined}
+          style={runWorkspace ? { scrollbarGutter: "auto" } : undefined}
           tabIndex={-1}
         >
           <Outlet />

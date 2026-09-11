@@ -106,6 +106,8 @@ export type RouteDefinition = {
     | "session"
     | "section"
     | "replayJob"
+    | "reportView"
+    | "capture"
     | "type"
     | "q"
     | "returnTo"
@@ -211,7 +213,7 @@ export const ROUTE_DEFINITIONS = [
     "review-recording",
     ["view", "step", "screen"],
   ),
-  d("/runs", "/home", "Runs", "Run", "runs", "review-run", ["status", "app", "view", "q"]),
+  d("/runs", "/home", "Results", "Run", "runs", "review-run", ["status", "app", "view", "q"]),
   d("/runs/:runId", "/runs", "Run", "Run", "runs", "inspect-run", [
     "view",
     "step",

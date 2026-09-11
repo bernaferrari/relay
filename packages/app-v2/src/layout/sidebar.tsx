@@ -18,7 +18,7 @@ import { ActiveWork } from "./active-work";
 
 const mainItems = [
   { to: "/tests", label: "Tests", icon: FlaskConical },
-  { to: "/runs", label: "Runs", icon: History },
+  { to: "/runs", label: "Results", icon: History },
   { to: "/devices", label: "Devices", icon: MonitorSmartphone },
 ] as const;
 

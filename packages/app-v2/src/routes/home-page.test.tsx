@@ -501,7 +501,7 @@ describe("Home", () => {
     expect(document.body.textContent).toContain("Pay");
     expect(document.querySelector("#tests-resume-title")?.textContent).toContain("Pay");
     expect(document.querySelector("[aria-label='Results that need attention']")?.textContent).toBe(
-      "2 runs need attention",
+      "2 results need attention",
     );
     expect(document.body.textContent).toContain("Sign in");
   });

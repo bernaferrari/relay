@@ -172,7 +172,7 @@ export function TestsPage() {
     >
       <PageHeader
         title="Tests"
-        description="Run a saved Test, or record a new one."
+        description="Reusable steps that check your app. Run a Test to get a result."
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <nav className="flex items-center gap-1 text-sm" aria-label="Library">
@@ -252,7 +252,7 @@ export function TestsPage() {
       {attentionRuns.length > 1 ? (
         <p className="mb-4 text-sm text-muted-foreground" aria-label="Results that need attention">
           <Link to="/runs" className="hover:underline">
-            {attentionRuns.length} runs need attention
+            {attentionRuns.length} results need attention
           </Link>
         </p>
       ) : null}

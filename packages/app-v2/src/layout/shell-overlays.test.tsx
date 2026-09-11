@@ -422,10 +422,10 @@ describe("shell overlays", () => {
     expect(history.location.search).toBe(search);
   });
 
-  it("View test opens the Test without substituting browser Back", async () => {
+  it("View Test opens the Test without substituting browser Back", async () => {
     const history = await renderShell({ initialEntries: ["/tests", "/runs/run-1"] });
     const link = [...document.querySelectorAll<HTMLAnchorElement>("a")].find((item) =>
-      item.textContent?.includes("View test"),
+      item.textContent?.includes("View Test"),
     );
     expect(link?.getAttribute("href")).toBe("/tests/test-1");
     await act(async () => link!.click());

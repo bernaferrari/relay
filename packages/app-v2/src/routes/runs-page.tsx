@@ -124,7 +124,7 @@ export function RunsPage() {
       className="relay-library-page relay-runs-page mx-auto flex min-h-full w-full max-w-[1040px] flex-col"
       onClickCapture={returnFocus.onClickCapture}
     >
-      <PageHeader context="Runs" title="Runs" description="See what passed or failed." />
+      <PageHeader title="Results" description="See what happened each time you ran a Test." />
 
       <LibraryToolbar
         label="Filter Runs"
@@ -222,7 +222,7 @@ export function RunsPage() {
         ) : (
           <div className="flex flex-1 items-center justify-center">
             <EmptyState
-              title="No Runs yet"
+              title="No results yet"
               detail="Open a saved Test and run it on a Device or Browser."
               action={
                 <Link

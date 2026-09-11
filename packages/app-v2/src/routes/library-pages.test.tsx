@@ -394,7 +394,9 @@ describe("Tests workspace", () => {
 
   it("does not invent Suites from Test checkboxes", async () => {
     await render("/tests");
-    expect(document.body.textContent).toContain("Run a saved Test, or record a new one.");
+    expect(document.body.textContent).toContain(
+      "Reusable steps that check your app. Run a Test to get a result.",
+    );
     expect(document.querySelectorAll(".relay-library-row-select")).toHaveLength(0);
     expect(document.body.textContent).not.toContain("Create Suite");
     expect(document.body.textContent).not.toContain("Save Suite");
