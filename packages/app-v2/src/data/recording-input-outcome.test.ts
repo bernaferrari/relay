@@ -294,7 +294,12 @@ describe("recording input outcome", () => {
       },
     });
     expect(calls).toEqual([
-      { serial: "emulator-5554", mutationId: "ios-input-reviewed", outcome: "applied" },
+      expect.objectContaining({
+        serial: "emulator-5554",
+        mutationId: "ios-input-reviewed",
+        outcome: "applied",
+        resolutionId: expect.any(String),
+      }),
     ]);
     expect(applied.mutations[0]).toMatchObject({
       kind: "unknown",

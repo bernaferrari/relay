@@ -1,3 +1,4 @@
+import { runTestSource } from "./run-test-source.js";
 import type { RunSummary } from "@relay/protocol";
 import { catalogSummaryPage, rebuildRunCatalog } from "./run-catalog.js";
 import type { PersistedRun } from "./runs.js";
@@ -57,6 +58,7 @@ export type PersistedRunSummaryPageInput = RunSummaryPageInput & {
 
 function persistedSummary(run: PersistedRun): RunSummary {
   return {
+    ...(runTestSource(run) ? { sourceTest: runTestSource(run) } : {}),
     id: run.id,
     action: run.action,
     ...(run.title ? { title: run.title } : {}),
@@ -150,13 +152,14 @@ export async function listRunSummariesPageAtRoot(
   let page = await catalogSummaryPage(
     root,
     limit,
-    appMapId ? `app-map:${appMapId}:` : undefined,
+    undefined,
     cursor && { writtenAt: cursor.writtenAt, id: cursor.id },
+    appMapId,
   );
   if (!cursor && page.totalCount === 0) {
     const catalog = await rebuildRunCatalog(root);
     if (catalog.indexed > 0) {
-      page = await catalogSummaryPage(root, limit, appMapId ? `app-map:${appMapId}:` : undefined);
+      page = await catalogSummaryPage(root, limit, undefined, undefined, appMapId);
     }
   }
   const next = page.nextCursor;
@@ -195,15 +198,19 @@ export async function listPersistedRunSummariesPageAtRoot(
   const cursor = input.cursor
     ? decodeRunListCursor(input.cursor, { projectId, appMapId, ownerId })
     : undefined;
-  const loaded = await input.loadRuns(
-    MAX_PERSISTED_RUN_SCAN + 1,
-    appMapId ? `app-map:${appMapId}:` : undefined,
-  );
+  const loaded = await input.loadRuns(MAX_PERSISTED_RUN_SCAN + 1, undefined);
   if (loaded.length > MAX_PERSISTED_RUN_SCAN) {
     throw new RunListCursorError("Run list is too large for the bounded server scan");
   }
   const filtered = loaded
-    .filter((run) => run.projectId === projectId && run.ownerId === ownerId)
+    .filter(
+      (run) =>
+        run.projectId === projectId &&
+        run.ownerId === ownerId &&
+        (!appMapId ||
+          runTestSource(run)?.appMapId === appMapId ||
+          run.action.startsWith(`app-map:${appMapId}:`)),
+    )
     .sort((left, right) => right.writtenAt - left.writtenAt || right.id.localeCompare(left.id));
   const remaining = cursor
     ? filtered.filter(

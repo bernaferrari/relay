@@ -79,7 +79,7 @@ test("Admin and Member on the same browser are distinct Live session keys", () =
   );
 });
 
-test("live identity reuse ignores viewport and matches the fixture", () => {
+test("live identity reuse matches the complete requested profile", () => {
   assert.equal(
     browserLiveIdentityMatches(
       { engine: "chromium", authenticationFixtureId: "authfx:admin:4" },
@@ -281,4 +281,33 @@ test("a missing saved engine cannot fully bind a fixture account", () => {
   });
   assert.equal(bound.status, "blocked");
   assert.match((bound as { reason: string }).reason, /engine/i);
+});
+
+test("configuration identity distinguishes environment and fixture revisions", () => {
+  const base = {
+    targetId: "browser",
+    engine: "chromium" as const,
+    authenticationFixtureId: "authfx:member:7",
+    viewport: { width: 390, height: 844 },
+    locale: "en",
+    colorScheme: "light" as const,
+  };
+  for (const change of [
+    { authenticationFixtureId: "authfx:member:8" },
+    { viewport: { width: 1440, height: 900 } },
+    { locale: "ar" },
+    { colorScheme: "dark" as const },
+  ]) {
+    assert.notEqual(
+      browserRuntimeConfigurationDigest(base),
+      browserRuntimeConfigurationDigest({ ...base, ...change }),
+    );
+    assert.equal(browserLiveIdentityMatches(base, { ...base, ...change }), false);
+  }
+  assert.equal(
+    browserRuntimeConfigurationDigest(base),
+    browserRuntimeConfigurationDigest(
+      Object.fromEntries(Object.entries(base).reverse()) as typeof base,
+    ),
+  );
 });

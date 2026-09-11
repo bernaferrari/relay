@@ -1,3 +1,4 @@
+import { runTestSource } from "./run-test-source.js";
 import { DatabaseSync } from "node:sqlite";
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
@@ -76,12 +77,15 @@ function database(root: string): DatabaseSync {
   if (!columns.some((column) => column.name === "storage_bytes")) {
     db.exec("ALTER TABLE runs ADD COLUMN storage_bytes INTEGER NOT NULL DEFAULT 0");
   }
-  db.exec("PRAGMA user_version=2");
+  if (!columns.some((column) => column.name === "source_test_json"))
+    db.exec("ALTER TABLE runs ADD COLUMN source_test_json TEXT");
+  db.exec("PRAGMA user_version=3");
   return db;
 }
 
 function rowToRecord(row: Record<string, unknown>): CatalogRecord {
   return {
+    ...(row.source_test_json ? { sourceTest: JSON.parse(String(row.source_test_json)) } : {}),
     id: String(row.id),
     dir: String(row.dir),
     action: String(row.action),
@@ -204,8 +208,8 @@ export async function indexRun(root: string, run: Record<string, unknown>): Prom
       INSERT INTO runs (
         id, dir, action, title, status, outcome, review_json, platform, serial, batch_id,
         queued_at, started_at, finished_at, duration_ms, written_at, frame_count,
-        artifact_count, artifact_bytes, storage_bytes, evidence_complete, source_revision_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        artifact_count, artifact_bytes, storage_bytes, evidence_complete, source_revision_json, source_test_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         dir=excluded.dir, action=excluded.action, title=excluded.title, status=excluded.status,
         outcome=excluded.outcome, review_json=excluded.review_json, platform=excluded.platform, serial=excluded.serial,
@@ -214,7 +218,7 @@ export async function indexRun(root: string, run: Record<string, unknown>): Prom
         written_at=excluded.written_at, frame_count=excluded.frame_count,
         artifact_count=excluded.artifact_count, artifact_bytes=excluded.artifact_bytes,
         storage_bytes=excluded.storage_bytes, evidence_complete=excluded.evidence_complete,
-        source_revision_json=excluded.source_revision_json
+        source_revision_json=excluded.source_revision_json, source_test_json=excluded.source_test_json
     `).run(
       String(run.id),
       String(run.dir),
@@ -237,6 +241,7 @@ export async function indexRun(root: string, run: Record<string, unknown>): Prom
       storageBytes,
       evidence?.finishedAt ? 1 : 0,
       run.sourceRevision == null ? null : JSON.stringify(run.sourceRevision),
+      JSON.stringify(runTestSource(run)) ?? null,
     );
     db.prepare("DELETE FROM surface_comparisons WHERE run_id=?").run(String(run.id));
     const insertSurfaceComparison = db.prepare(`
@@ -316,19 +321,34 @@ export async function catalogSummaryPage(
   limit = 40,
   actionPrefix?: string,
   cursor?: CatalogSummaryCursor,
+  appMapId?: string,
 ): Promise<CatalogSummaryPage> {
   await mkdir(root, { recursive: true });
-  const db = database(root);
+  let db = database(root);
+  if (!db.prepare("SELECT value FROM metadata WHERE key='test-source-v1'").get()) {
+    db.close();
+    await rebuildRunCatalog(root, { preserveExisting: true });
+    db = database(root);
+    db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('test-source-v1','1')").run();
+  }
   try {
-    const filter = actionPrefix ? " WHERE substr(action, 1, ?) = ?" : "";
+    const filter = appMapId
+      ? " WHERE (json_extract(source_test_json, '$.appMapId') = ? OR substr(action, 1, ?) = ?)"
+      : actionPrefix
+        ? " WHERE substr(action, 1, ?) = ?"
+        : "";
     const cursorFilter = cursor
       ? `${filter ? " AND" : " WHERE"} (written_at < ? OR (written_at = ? AND id < ?))`
       : "";
-    const args: Array<string | number> = actionPrefix ? [actionPrefix.length, actionPrefix] : [];
+    const args: Array<string | number> = appMapId
+      ? [appMapId, `app-map:${appMapId}:`.length, `app-map:${appMapId}:`]
+      : actionPrefix
+        ? [actionPrefix.length, actionPrefix]
+        : [];
     if (cursor) args.push(cursor.writtenAt, cursor.writtenAt, cursor.id);
     const totalRow = db
       .prepare(`SELECT COUNT(*) AS count FROM runs${filter}`)
-      .get(...args.slice(0, actionPrefix ? 2 : 0)) as {
+      .get(...args.slice(0, appMapId ? 3 : actionPrefix ? 2 : 0)) as {
       count?: number;
     };
     const rows = db
@@ -382,11 +402,14 @@ export async function setRunPinned(root: string, id: string, pinned: boolean): P
 
 export async function rebuildRunCatalog(
   root: string,
+  options: { preserveExisting?: boolean } = {},
 ): Promise<{ indexed: number; incomplete: number }> {
   await mkdir(root, { recursive: true });
   const db = database(root);
-  db.exec("DELETE FROM runs");
-  db.exec("DELETE FROM surface_comparisons");
+  if (!options.preserveExisting) {
+    db.exec("DELETE FROM runs");
+    db.exec("DELETE FROM surface_comparisons");
+  }
   db.close();
   let indexed = 0;
   let incomplete = 0;

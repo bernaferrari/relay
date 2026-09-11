@@ -9,6 +9,7 @@ import {
   catalogRunDirectory,
   catalogSurfaceComparisons,
   catalogSummaries,
+  catalogSummaryPage,
   rebuildRunCatalog,
 } from "./run-catalog.js";
 
@@ -135,6 +136,37 @@ test("run catalog filters an App Map before applying its history limit", async (
       (await catalogSummaries(root, 1, "app-map:settings:")).map((run) => run.id),
       ["run-0"],
     );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Run Across retains its Test identity in rebuilt history and scoped pages", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-catalog-native-"));
+  const dir = join(root, "native");
+  await mkdir(dir);
+  const run = {
+    schemaVersion: 4,
+    id: "native",
+    dir,
+    action: "cell-abc",
+    status: "ok",
+    queuedAt: 1,
+    writtenAt: 2,
+    frames: [],
+    artifacts: [
+      {
+        kind: "app-map-combine-cell-execution-intent",
+        data: { child: { sourcePlan: { appMapId: "plans", testId: "capture" } } },
+      },
+    ],
+  };
+  await writeFile(join(dir, "run.json"), JSON.stringify(run));
+  try {
+    const page = await catalogSummaryPage(root, 1, undefined, undefined, "plans");
+    assert.equal(page.totalCount, 1);
+    assert.deepEqual(page.summaries[0]?.sourceTest, { appMapId: "plans", testId: "capture" });
+    assert.equal((await catalogSummaryPage(root, 1, undefined, undefined, "other")).totalCount, 0);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

@@ -482,6 +482,7 @@ type SpecificOperationMap = {
     input: {
       serial: string;
       mutationId: string;
+      resolutionId?: string;
       outcome: "applied" | "not-applied" | "ambiguous";
     };
     output: {

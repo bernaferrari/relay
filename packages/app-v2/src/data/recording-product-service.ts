@@ -104,6 +104,7 @@ export type RecordingProductService = {
   reconcileInput?(input: {
     serial: string;
     mutationId: string;
+    resolutionId?: string;
     outcome: "applied" | "not-applied" | "ambiguous";
   }): Promise<{
     mutationId: string;
@@ -422,6 +423,7 @@ export function createRecordingProductService(
       const result = await client.invoke("target.input.reconcile", {
         serial: input.serial,
         mutationId: input.mutationId,
+        ...(input.resolutionId ? { resolutionId: input.resolutionId } : {}),
         outcome: input.outcome,
       });
       const pending = result.health?.input?.pendingMutationId;

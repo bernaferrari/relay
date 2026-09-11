@@ -28,6 +28,8 @@ import {
   currentTargetSupervisorStore,
   readReconcileReceipt,
   rememberReconcileReceipt,
+  completeReconcileReceipt,
+  serializeReconciliation,
   openApp,
   recoverSupervisedTargetRuntime,
   targetRuntimeReadiness,
@@ -354,65 +356,109 @@ export async function handleTargetRuntimeRoute(context: {
       throw new HttpError(400, "outcome must be applied, not-applied, or ambiguous");
     }
     await runtime.assertTargetControl(scope, serial);
-    const stored = readReconcileReceipt({ serial, mutationId });
-    if (stored) {
-      json(response, 200, {
-        health: stored.healthSnapshot ?? {
-          input: stored.health ?? { state: "ready" },
-          visibility: "project",
+    return serializeReconciliation(serial, async () => {
+      const receiptScope = { organizationId: scope.organizationId, projectId: scope.projectId };
+      const latest = readReconcileReceipt({ ...receiptScope, serial, mutationId });
+      const stored = body.resolutionId
+        ? (readReconcileReceipt({
+            ...receiptScope,
+            serial,
+            mutationId,
+            resolutionId: body.resolutionId,
+          }) ?? (latest?.outcome !== "ambiguous" ? latest : undefined))
+        : latest;
+      if (stored) {
+        // A prepared decision survives a crash between persistence and transition.
+        // Recover the fence only; never replay input or take another observation.
+        if (!stored.healthSnapshot) {
+          const target = await resolveSupervisedRuntimeTarget({ serial, runtime });
+          const current = runtime.readTargetHealth(target.id, target.platform);
+          if (current.input.pendingMutationId && current.input.pendingMutationId !== mutationId) {
+            throw new HttpError(
+              409,
+              "A newer input needs review before this decision can be recovered",
+            );
+          }
+          const health =
+            current.input.state === "uncertain" && current.input.pendingMutationId === mutationId
+              ? runtime.reconcileTargetInput(target.id, target.platform, {
+                  mutationId,
+                  observationId: stored.observationId!,
+                  outcome: stored.outcome,
+                })
+              : current;
+          const completed = completeReconcileReceipt({
+            ...receiptScope,
+            receipt: stored,
+            health: health.input,
+            healthSnapshot: { ...health, visibility: "project" },
+          });
+          Object.assign(stored, completed);
+        }
+        json(response, 200, {
+          health: stored.healthSnapshot ?? {
+            input: stored.health ?? { state: "ready" },
+            visibility: "project",
+          },
+          ...(stored.observation ? { observation: stored.observation } : {}),
+          mutationId: stored.mutationId,
+          outcome: stored.outcome,
+          resolutionId: stored.resolutionId,
+        });
+        return true;
+      }
+      const resolved = await resolveSupervisedRuntimeTarget({ serial, runtime });
+      const before = runtime.readTargetHealth(resolved.id, resolved.platform);
+      if (before.input.state !== "uncertain" || before.input.pendingMutationId !== mutationId) {
+        throw new HttpError(409, "The target has no matching uncertain mutation to reconcile", {
+          code: "TARGET_INPUT_RECONCILIATION_STALE",
+        });
+      }
+      // Capture after authority and pending-id checks, but before releasing the
+      // exact mutation fence. The reviewed decision is therefore bound to a
+      // fresh immutable observation rather than a caller-supplied evidence id.
+      const observation = await runtime.captureTargetObservation(serial);
+      const prepared = rememberReconcileReceipt({
+        ...receiptScope,
+        serial,
+        mutationId,
+        ...(body.resolutionId ? { resolutionId: body.resolutionId } : {}),
+        outcome: body.outcome,
+        observationId: durableObservationId(observation),
+        observation,
+      });
+      const health = runtime.reconcileTargetInput(resolved.id, resolved.platform, {
+        mutationId,
+        observationId: durableObservationId(observation),
+        outcome: body.outcome,
+      });
+      recordAudit(scope, {
+        action: "target.input.reconcile",
+        resource: mutationId,
+        target: serial,
+        result: body.outcome === "ambiguous" ? "deny" : "allow",
+      });
+      const receipt = completeReconcileReceipt({
+        ...receiptScope,
+        receipt: prepared,
+        health: {
+          state: health.input.state,
+          ...(health.input.pendingMutationId
+            ? { pendingMutationId: health.input.pendingMutationId }
+            : {}),
+          ...(health.input.reason ? { reason: health.input.reason } : {}),
         },
-        ...(stored.observation ? { observation: stored.observation } : {}),
-        mutationId: stored.mutationId,
-        outcome: stored.outcome,
-        resolutionId: stored.resolutionId,
+        healthSnapshot: { ...health, visibility: "project" },
+      });
+      json(response, 200, {
+        health: { ...health, visibility: "project" },
+        observation,
+        mutationId: receipt.mutationId,
+        outcome: receipt.outcome,
+        resolutionId: receipt.resolutionId,
       });
       return true;
-    }
-    const resolved = await resolveSupervisedRuntimeTarget({ serial, runtime });
-    const before = runtime.readTargetHealth(resolved.id, resolved.platform);
-    if (before.input.state !== "uncertain" || before.input.pendingMutationId !== mutationId) {
-      throw new HttpError(409, "The target has no matching uncertain mutation to reconcile", {
-        code: "TARGET_INPUT_RECONCILIATION_STALE",
-      });
-    }
-    // Capture after authority and pending-id checks, but before releasing the
-    // exact mutation fence. The reviewed decision is therefore bound to a
-    // fresh immutable observation rather than a caller-supplied evidence id.
-    const observation = await runtime.captureTargetObservation(serial);
-    const health = runtime.reconcileTargetInput(resolved.id, resolved.platform, {
-      mutationId,
-      observationId: durableObservationId(observation),
-      outcome: body.outcome,
     });
-    recordAudit(scope, {
-      action: "target.input.reconcile",
-      resource: mutationId,
-      target: serial,
-      result: body.outcome === "ambiguous" ? "deny" : "allow",
-    });
-    const receipt = rememberReconcileReceipt({
-      serial,
-      mutationId,
-      outcome: body.outcome,
-      observationId: durableObservationId(observation),
-      health: {
-        state: health.input.state,
-        ...(health.input.pendingMutationId
-          ? { pendingMutationId: health.input.pendingMutationId }
-          : {}),
-        ...(health.input.reason ? { reason: health.input.reason } : {}),
-      },
-      healthSnapshot: { ...health, visibility: "project" },
-      observation,
-    });
-    json(response, 200, {
-      health: { ...health, visibility: "project" },
-      observation,
-      mutationId: receipt.mutationId,
-      outcome: receipt.outcome,
-      resolutionId: receipt.resolutionId,
-    });
-    return true;
   }
 
   if (method === "GET" && pathname === "/device/input/receipt") {
@@ -422,11 +468,18 @@ export async function handleTargetRuntimeRoute(context: {
     const resolutionId = url.searchParams.get("resolutionId")?.trim() ?? "";
     if (!serial && !resolutionId) throw new HttpError(400, "serial or resolutionId is required");
     const receipt = readReconcileReceipt({
+      organizationId: scope.organizationId,
+      projectId: scope.projectId,
       ...(resolutionId ? { resolutionId } : {}),
       ...(serial ? { serial } : {}),
       ...(mutationId ? { mutationId } : {}),
     });
     if (!receipt) throw new HttpError(404, "No durable reconciliation receipt for that mutation");
+    if (!receipt.healthSnapshot)
+      throw new HttpError(
+        409,
+        "Reconciliation is still completing. Retry the same reconciliation attempt.",
+      );
     json(response, 200, {
       receipt: {
         resolutionId: receipt.resolutionId,

@@ -273,6 +273,24 @@ function runtimeFromSession(targetId: string, session: BrowserSession): BrowserA
   };
 }
 
+/** Attach only to an existing runtime; never create or replace a session on lookup. */
+export async function attachBrowserRuntime(
+  targetId: string,
+  sessionId: string,
+): Promise<BrowserAuthoringRuntime> {
+  for (const [key, pending] of sessions) {
+    if (
+      key !== `authoring:${targetId}` &&
+      key !== `proof:${targetId}` &&
+      !key.startsWith(`live:${targetId}:`)
+    )
+      continue;
+    const session = await pending;
+    if (session.sessionId === sessionId) return runtimeFromSession(targetId, session);
+  }
+  throw new Error("This browser session is no longer available. Open the browser again.");
+}
+
 export async function openBrowserAuthoringRuntime(
   targetId: string,
   options: { headless: boolean; profile?: BrowserCaseProfile },
@@ -300,13 +318,16 @@ export async function openBrowserLiveRuntime(
     projectId?: string;
   },
 ): Promise<BrowserAuthoringRuntime> {
+  const target = await readTarget(targetId);
+  if (!target?.browser) throw new Error(`managed browser target not found: ${targetId}`);
+  const baseProfile = options.profile ?? browserCaseProfileForTarget(target);
   const fixtureId = options.authenticationFixtureId?.trim();
-  const { authenticationFixtureId: _ignored, ...unsigned } = options.profile ?? {};
+  const { authenticationFixtureId: _ignored, ...unsigned } = baseProfile;
   const profile = fixtureId
-    ? compileBrowserEnvironment({ ...options.profile, authenticationFixtureId: fixtureId })
+    ? compileBrowserEnvironment({ ...baseProfile, authenticationFixtureId: fixtureId })
     : options.signedOut
       ? compileBrowserEnvironment(unsigned)
-      : options.profile;
+      : baseProfile;
   const session = await sessionFor(targetId, {
     mode: "proof",
     headless: options.headless,
@@ -394,8 +415,7 @@ export async function openBrowserTarget(
     sessionId: session.sessionId,
     configurationDigest: browserRuntimeConfigurationDigest({
       targetId,
-      engine: profile.engine,
-      authenticationFixtureId: fixtureId,
+      ...session.profile,
       signedOut: options.signedOut,
     }),
   };

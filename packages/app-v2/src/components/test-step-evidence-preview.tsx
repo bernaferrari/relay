@@ -147,8 +147,8 @@ export function TestStepEvidencePreview({
       ) : null}
       {!loading && report && report.stepEvidence === undefined ? (
         <p className="mt-2 text-xs leading-normal text-muted-foreground">
-          This legacy Run has no step-level evidence mapping. Its report remains available, but
-          Relay cannot safely assign a screenshot to this step.
+          Screenshots are available in the run report. This run does not link captures to individual
+          steps.
         </p>
       ) : null}
       {selected ? (

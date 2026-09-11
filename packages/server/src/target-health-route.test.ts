@@ -308,11 +308,12 @@ test("remote projects cannot probe global target health without a scoped lease",
   }
 });
 
-test("uncertain target input reconciles only after a fresh durable observation", async () => {
+test("a prepared reconciliation recovers after a failed transition without another observation", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-target-input-reconcile-"));
   const previousStateDir = process.env.RELAY_STATE_DIR;
   process.env.RELAY_STATE_DIR = root;
   const calls: string[] = [];
+  let failTransition = true;
   const observation = {
     schemaVersion: 1,
     target: { kind: "device", platform: "ios", targetId: target.serial },
@@ -373,11 +374,29 @@ test("uncertain target input reconciles only after a fresh durable observation",
           observationId: `sha256:${"a".repeat(64)}`,
           outcome: "applied",
         });
+        if (failTransition) {
+          failTransition = false;
+          throw new Error("simulated interruption after decision persistence");
+        }
         return after;
       },
     },
   });
   try {
+    const first = await fetch(`http://127.0.0.1:${server.port}/device/input/reconcile`, {
+      method: "POST",
+      headers: {
+        ...headers(),
+        "content-type": "application/json",
+        "x-relay-operation-id": "target.input.reconcile",
+      },
+      body: JSON.stringify({
+        serial: target.serial,
+        mutationId: "ios-input-reviewed",
+        outcome: "applied",
+      }),
+    });
+    assert.equal(first.status, 500);
     const response = await fetch(`http://127.0.0.1:${server.port}/device/input/reconcile`, {
       method: "POST",
       headers: {
@@ -392,7 +411,7 @@ test("uncertain target input reconciles only after a fresh durable observation",
       }),
     });
     assert.equal(response.status, 200, await response.text());
-    assert.deepEqual(calls, ["observe", "reconcile"]);
+    assert.deepEqual(calls, ["observe", "reconcile", "reconcile"]);
   } finally {
     await server.close();
     if (previousStateDir === undefined) delete process.env.RELAY_STATE_DIR;

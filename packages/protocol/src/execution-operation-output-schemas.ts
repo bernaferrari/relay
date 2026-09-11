@@ -126,6 +126,7 @@ const campaignCheckSchema = z
   .strict();
 const jobSummarySchema = z
   .object({
+    sourceTest: z.object({ appMapId: z.string(), testId: z.string() }).strict().optional(),
     id: z.string(),
     workflowId: z.string().optional(),
     action: z.string(),

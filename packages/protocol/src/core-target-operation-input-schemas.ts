@@ -74,6 +74,7 @@ export const coreTargetOperationInputSchemas = {
     .object({
       ...targetReference,
       mutationId: identifier("Uncertain mutation identifier"),
+      resolutionId: identifier("Idempotent reconciliation attempt identifier").optional(),
       outcome: z.enum(["applied", "not-applied", "ambiguous"]),
     })
     .strict(),

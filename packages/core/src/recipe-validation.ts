@@ -1,7 +1,7 @@
 /**
  * Pure recipe validation and step parsing — no filesystem I/O.
  */
-import { isActionId } from "./actions.js";
+import { isActionId } from "./action-ids.js";
 import {
   MAX_WAIT_MS,
   PARAMETER_NAME,

@@ -53,6 +53,7 @@ export type RecordingReconcileAuthority = {
   reconcile: (input: {
     serial: string;
     mutationId: string;
+    resolutionId?: string;
     outcome: RecordingReconcileServerOutcome;
   }) => Promise<RecordingReconcileAuthorityReceipt>;
   fetchReceipt?: (input: {
@@ -434,11 +435,26 @@ export async function reconcileRecordingMutationAuthoritatively(input: {
   authority: RecordingReconcileAuthority;
   now?: number;
 }): Promise<RecordingRecoveryLedger> {
-  const receipt = await input.authority.reconcile({
-    serial: input.authority.serial,
-    mutationId: input.mutationId,
-    outcome: recordingReconcileServerOutcome(input.observed),
-  });
+  const resolutionId = crypto.randomUUID();
+  const receipt = await input.authority
+    .reconcile({
+      resolutionId,
+      serial: input.authority.serial,
+      mutationId: input.mutationId,
+      outcome: recordingReconcileServerOutcome(input.observed),
+    })
+    .catch(async (error) => {
+      if (!input.authority.fetchReceipt) throw error;
+      try {
+        return await fetchRecordingReconcileReceipt({
+          authority: input.authority,
+          mutationId: input.mutationId,
+          resolutionId,
+        });
+      } catch {
+        throw error;
+      }
+    });
   if (receipt.mutationId !== input.mutationId) {
     throw new TypeError("Relay reconciled a different mutation.");
   }

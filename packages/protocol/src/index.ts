@@ -193,6 +193,7 @@ export type EvidenceManifest = {
 };
 
 export type JobSummary = {
+  sourceTest?: { appMapId: string; testId: string };
   id: string;
   /** Durable continuation identity, when the job was started through a workflow. */
   workflowId?: string;

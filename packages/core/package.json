@@ -11,6 +11,7 @@
     "./play-store": "./src/play-store.ts",
     "./grok": "./src/grok.ts",
     "./actions": "./src/actions.ts",
+    "./recipe-validation": "./src/recipe-validation.ts",
     "./recipes": "./src/recipes.ts",
     "./recipe-yaml": "./src/recipe-yaml.ts",
     "./recipe-runner": "./src/recipe-runner.ts",

@@ -82,7 +82,7 @@ function render(report: ProductRunReportOverview | undefined = baseReport) {
 describe("TestStepEvidencePreview", () => {
   it("keeps legacy reports visible instead of leaving a blank panel", () => {
     const host = render({ ...baseReport, stepEvidence: undefined });
-    expect(host.textContent).toContain("no step-level evidence mapping");
+    expect(host.textContent).toContain("does not link captures to individual steps");
     expect(host.textContent).toContain("Open report");
   });
 

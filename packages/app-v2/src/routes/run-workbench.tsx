@@ -1,3 +1,4 @@
+import { ReportImage } from "../components/report-image";
 import { workspacePreviewSurface, workspaceToolsSurface } from "../components/workspace-surfaces";
 import { RunLogPanel } from "../components/run-log-panel";
 /** @jsxImportSource react */
@@ -47,17 +48,31 @@ export function RunWorkbench({
   renderEvidence?(section: Report["evidence"][number]): ReactNode;
 }) {
   const [requestedPanel, setPanel] = useState<
-    "steps" | "performance" | "details" | "video" | "logs"
-  >("steps");
+    "steps" | "captures" | "performance" | "details" | "video" | "logs"
+  >(() =>
+    report.timeline.some((item) => item.framePaths?.length) ||
+    report.stepEvidence?.some((item) => item.evidence.framePaths.length) ||
+    !report.evidence.some(
+      (section) => section.id === "screenshot" && section.items.some((item) => item.media),
+    )
+      ? "steps"
+      : "captures",
+  );
+  const [selectedCapture, setSelectedCapture] = useState(0);
+  const allFrames =
+    report.evidence
+      .find((section) => section.id === "screenshot")
+      ?.items.filter((item) => item.media) ?? [];
+  const capture = allFrames[selectedCapture] ?? allFrames[0];
   const [playing, setPlaying] = useState(false);
   useEffect(() => {
-    if (!playing) return;
+    if (!playing || requestedPanel === "captures") return;
     const timer = setTimeout(() => {
       if (selectedStepIndex >= report.timeline.length - 1) setPlaying(false);
       else onSelectStep(selectedStepIndex + 1);
     }, 1000);
     return () => clearTimeout(timer);
-  }, [playing, selectedStepIndex, report.timeline.length, onSelectStep]);
+  }, [playing, selectedStepIndex, report.timeline.length, onSelectStep, requestedPanel]);
   const logs = report.evidence.find((section) => section.id === "logs")?.items ?? [];
   const step = report.timeline[selectedStepIndex] ?? report.timeline[0];
   const hasChecks = Boolean(step?.expected?.trim());
@@ -139,9 +154,14 @@ export function RunWorkbench({
       <div className={`relative flex flex-col ${workspacePreviewSurface}`}>
         <div className="flex h-11 shrink-0 items-center justify-between px-4 text-xs text-muted-foreground">
           <span>
-            Step {selectedStepIndex + 1} of {report.timeline.length}
+            {panel === "captures"
+              ? `Capture ${selectedCapture + 1} of ${allFrames.length}`
+              : `Step ${selectedStepIndex + 1} of ${report.timeline.length}`}
           </span>
-          <div className="flex shrink-0 items-center gap-1" aria-label="Step playback">
+          <div
+            className={panel === "captures" ? "hidden" : "flex shrink-0 items-center gap-1"}
+            aria-label="Step playback"
+          >
             <Button
               size="icon-sm"
               variant="ghost"
@@ -178,17 +198,56 @@ export function RunWorkbench({
               <ChevronRight />
             </Button>
           </div>
+          {panel !== "captures" && failureIndexes.length > 1 ? (
+            <div className="flex items-center gap-1" aria-label="Failure navigation">
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                aria-label="Previous failure"
+                disabled={!failureIndexes.some((index) => index < selectedStepIndex)}
+                onClick={() => {
+                  setPlaying(false);
+                  onSelectStep(failureIndexes.filter((index) => index < selectedStepIndex).at(-1)!);
+                }}
+              >
+                <ChevronLeft />
+              </Button>
+              <span className="text-xs">Failures</span>
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                aria-label="Next failure"
+                disabled={!failureIndexes.some((index) => index > selectedStepIndex)}
+                onClick={() => {
+                  setPlaying(false);
+                  onSelectStep(failureIndexes.find((index) => index > selectedStepIndex)!);
+                }}
+              >
+                <ChevronRight />
+              </Button>
+            </div>
+          ) : null}
           <span>
-            {step.durationMs === undefined
-              ? timelineStateLabel(step.state)
-              : `${(step.durationMs / 1000).toFixed(1)}s · ${timelineStateLabel(step.state)}`}
+            {panel === "captures"
+              ? "Saved screenshot"
+              : step.durationMs === undefined
+                ? timelineStateLabel(step.state)
+                : `${(step.durationMs / 1000).toFixed(1)}s · ${timelineStateLabel(step.state)}`}
           </span>
         </div>
         <StepMedia
-          key={`${report.runId}:${step.id}`}
-          frames={actionFrames}
-          actionBounds={step.actionBounds}
-          beforeFramePath={step.beforeFramePath}
+          key={`${report.runId}:${panel === "captures" ? capture?.id : step.id}`}
+          frames={panel === "captures" ? (capture ? [capture] : []) : actionFrames}
+          controls={
+            panel !== "captures" && !actionFrames.length && allFrames.length ? (
+              <Button size="sm" variant="ghost" onClick={() => setPanel("captures")}>
+                View all captures ({allFrames.length})
+              </Button>
+            ) : undefined
+          }
+          unlinked={panel === "captures"}
+          actionBounds={panel === "captures" ? undefined : step.actionBounds}
+          beforeFramePath={panel === "captures" ? undefined : step.beforeFramePath}
           fill
         />
       </div>
@@ -200,6 +259,7 @@ export function RunWorkbench({
           {(
             [
               ["steps", "Steps"],
+              ...(allFrames.length ? [["captures", "Captures"]] : []),
               ...(report.performance?.length ? [["performance", "Performance"]] : []),
               ...(hasChecks ? [["details", "Checks"]] : []),
               ["logs", "Logs"],
@@ -295,6 +355,38 @@ export function RunWorkbench({
           className={panel === "steps" || panel === "logs" ? "hidden" : "min-h-0 flex-1"}
           viewportProps={{ "aria-label": "Step report", className: "overscroll-auto" }}
         >
+          {panel === "captures" ? (
+            <div className="p-2">
+              <p className="px-3 py-2 text-xs text-muted-foreground">
+                All screenshots saved during this run.
+              </p>
+              <ul className="grid list-none gap-1">
+                {allFrames.map((item, index) => (
+                  <li key={item.id}>
+                    <button
+                      type="button"
+                      aria-pressed={index === selectedCapture}
+                      className={`relay-interactive-row flex min-h-20 w-full items-center gap-3 rounded-md p-3 text-left focus-visible:outline-2 focus-visible:outline-ring ${index === selectedCapture ? "bg-accent ring-1 ring-inset ring-border" : ""}`}
+                      onClick={() => setSelectedCapture(index)}
+                    >
+                      {item.media ? (
+                        <ReportImage
+                          media={item.media}
+                          alt=""
+                          className="h-16 w-20 rounded-sm object-contain"
+                          loading="lazy"
+                        />
+                      ) : null}
+                      <span className="grid min-w-0 gap-1">
+                        <span className="text-sm font-medium">{item.title}</span>
+                        <span className="text-xs text-muted-foreground">Capture {index + 1}</span>
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           {panel === "video" && report.video ? (
             <div className="border-t border-border p-5">
               <ReportVideoInspector

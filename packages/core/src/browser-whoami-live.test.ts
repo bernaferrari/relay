@@ -139,6 +139,50 @@ test(
         assert.equal(application.role, role);
         assert.equal(adminOnlyHidden, role !== "admin");
         seen.set(role, { sessionId: opened.sessionId, role: visible, adminOnly: !adminOnlyHidden });
+        if (role === "member" && fixture) {
+          const configured = await openBrowserLiveRuntime(targetId, {
+            projectId,
+            headless: true,
+            authenticationFixtureId: fixture.reference,
+            profile: {
+              ...live.profile,
+              viewport: { width: 390, height: 844 },
+              locale: "ar",
+              colorScheme: "dark",
+            },
+          });
+          assert.notEqual(configured.sessionId, live.sessionId);
+          const configuredPage = await configured.activePage();
+          assert.equal(configuredPage.viewportSize()?.width, 390);
+          assert.deepEqual(
+            await configuredPage.evaluate(() => ({
+              language: navigator.language,
+              dark: matchMedia("(prefers-color-scheme: dark)").matches,
+            })),
+            { language: "ar", dark: true },
+          );
+          const attached = await openBrowserDeviceSession(targetId, undefined, {
+            projectId,
+            sessionId: configured.sessionId,
+          });
+          assert.equal(attached.sessionId, configured.sessionId);
+          await assert.rejects(
+            openBrowserDeviceSession(targetId, undefined, {
+              projectId,
+              sessionId: "expired-session",
+            }),
+            /no longer available/,
+          );
+          assert.equal(
+            (
+              await openBrowserDeviceSession(targetId, undefined, {
+                projectId,
+                sessionId: configured.sessionId,
+              })
+            ).sessionId,
+            configured.sessionId,
+          );
+        }
         if (role === "admin" && fixture) {
           const external = await openBrowserTarget(targetId, {
             projectId,

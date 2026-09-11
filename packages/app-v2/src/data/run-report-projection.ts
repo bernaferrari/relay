@@ -633,8 +633,14 @@ function sourceTestIdentity(rawRun: unknown): { appMapId?: string; testId?: stri
   if (!Array.isArray(artifacts)) return {};
   for (const value of artifacts) {
     const artifact = record(value);
-    if (artifact?.kind !== "app-map-test-execution-intent") continue;
-    const data = record(artifact.data);
+    if (
+      artifact?.kind !== "app-map-test-execution-intent" &&
+      artifact?.kind !== "app-map-combine-cell-execution-intent"
+    )
+      continue;
+    const parent = record(artifact.data);
+    const data =
+      artifact.kind === "app-map-combine-cell-execution-intent" ? record(parent?.child) : parent;
     const sourcePlan = record(data?.sourcePlan);
     const appMapId = text(sourcePlan?.appMapId);
     const testId = text(sourcePlan?.testId);

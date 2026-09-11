@@ -146,20 +146,20 @@ const report: ProductRunReportOverview = {
   ],
 };
 
-function render(selectedStepIndex = 0) {
+function render(selectedStepIndex = 0, value = report) {
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
   roots.push(root);
   const onSelectStep = (index: number) => {
     root.render(
-      <RunWorkbench report={report} selectedStepIndex={index} onSelectStep={onSelectStep} />,
+      <RunWorkbench report={value} selectedStepIndex={index} onSelectStep={onSelectStep} />,
     );
   };
   act(() => {
     root.render(
       <RunWorkbench
-        report={report}
+        report={value}
         selectedStepIndex={selectedStepIndex}
         onSelectStep={onSelectStep}
       />,
@@ -169,6 +169,28 @@ function render(selectedStepIndex = 0) {
 }
 
 describe("RunWorkbench", () => {
+  it("shows unlinked captures without assigning them to a step", () => {
+    const value = {
+      ...report,
+      stepEvidence: [],
+      timeline: report.timeline.map((step) => ({ ...step, framePaths: [] })),
+    };
+    const host = render(0, value);
+    expect(host.textContent).toContain("Capture 1 of");
+    const steps = [...host.querySelectorAll("button")].find((button) =>
+      button.textContent?.startsWith("Steps"),
+    )!;
+    act(() => steps.click());
+    expect(host.textContent).toContain("View all captures");
+    expect(host.querySelector('img[alt="Cart"]')).toBeNull();
+  });
+
+  it("keeps Steps available when the run has no captures", () => {
+    const host = render(0, { ...report, stepEvidence: [], evidence: [] });
+    expect(host.textContent).toContain("Open the cart");
+    expect(host.textContent).not.toContain("Capture 1 of");
+  });
+
   it("defaults to the result and keeps the tap target on the explicit before frame", () => {
     const host = render(1);
     expect(host.querySelector('img[alt="Checkout submitted"]')).not.toBeNull();
@@ -251,8 +273,8 @@ describe("RunWorkbench", () => {
     const host = render();
     const image = host.querySelector("img");
     for (const label of ["Checks", "Logs", "Steps"]) {
-      const button = [...host.querySelectorAll("button")].find(
-        (item) => item.textContent === label,
+      const button = [...host.querySelectorAll("button")].find((item) =>
+        item.textContent?.startsWith(label),
       )!;
       act(() => button.click());
       expect(host.querySelector("img")).toBe(image);

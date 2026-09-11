@@ -1,3 +1,5 @@
+import type { BrowserCaseProfile } from "@relay/protocol";
+
 /** Bind a requested Browser account/engine to a saved profile, or reject.
  * Recording the request is not the same as executing it. */
 
@@ -29,18 +31,28 @@ export function fixtureRevisionFromReference(reference: string | undefined): str
   return parseCanonicalFixtureReference(reference)?.revision;
 }
 
-export function browserRuntimeConfigurationDigest(input: {
-  targetId: string;
-  engine?: string;
-  authenticationFixtureId?: string;
-  signedOut?: boolean;
-}): string {
-  const identity = input.signedOut
-    ? "signed-out"
-    : (parseCanonicalFixtureReference(input.authenticationFixtureId)?.fixtureId ??
-      input.authenticationFixtureId ??
-      "authoring");
-  return `${input.targetId}:${input.engine ?? ""}:${identity}:${input.signedOut ? "out" : "in"}`;
+/** Canonical environment identity includes fixture revision and every runtime setting. */
+function canonical(value: unknown): string {
+  if (Array.isArray(value)) return JSON.stringify(value.map((item) => JSON.parse(canonical(item))));
+  if (value && typeof value === "object")
+    return JSON.stringify(
+      Object.fromEntries(
+        Object.entries(value)
+          .filter(([, v]) => v !== undefined)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([key, v]) => [key, JSON.parse(canonical(v))]),
+      ),
+    );
+  return JSON.stringify(value);
+}
+
+export function browserRuntimeConfigurationDigest(
+  input: Partial<BrowserCaseProfile> & {
+    targetId: string;
+    signedOut?: boolean;
+  },
+): string {
+  return canonical(input);
 }
 
 /** Close other live identities for this target. Keep authoring and the
@@ -73,7 +85,7 @@ export function browserLiveSessionKey(input: {
  * does not match an existing session. */
 export function browserSessionProfileMatches(existing: unknown, requested: unknown): boolean {
   if (requested === undefined) return false;
-  return JSON.stringify(existing) === JSON.stringify(requested);
+  return canonical(existing) === canonical(requested);
 }
 
 /** Explicit request wins. Otherwise attach to an already-open live identity
@@ -112,16 +124,12 @@ export function accountFixtureIdsFromListed(
   return map;
 }
 
-/** Live reuse compares account/engine identity, not viewport or headless. */
+/** Configuration requests reuse only an equal environment. Exact attachment is separate. */
 export function browserLiveIdentityMatches(
-  existing: { engine?: string; authenticationFixtureId?: string } | undefined,
-  requested: { engine?: string; authenticationFixtureId?: string } | undefined,
+  existing: Partial<BrowserCaseProfile> | undefined,
+  requested: Partial<BrowserCaseProfile> | undefined,
 ): boolean {
-  if (!existing || !requested) return false;
-  return (
-    (existing.engine ?? "") === (requested.engine ?? "") &&
-    (existing.authenticationFixtureId ?? "") === (requested.authenticationFixtureId ?? "")
-  );
+  return Boolean(existing && requested && browserSessionProfileMatches(existing, requested));
 }
 
 export function bindRequestedBrowserIdentity(input: {

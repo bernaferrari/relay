@@ -259,6 +259,7 @@ function projectStep(step: AppMapScenarioTestStep, app: AppMap): ProductTestStep
 }
 
 function identityFromRun(run: RunSummary): ProductRunIdentity {
+  if (run.sourceTest) return { runId: run.id, ...run.sourceTest };
   const matrix = run.matrixCase;
   const action = run.action.match(/^app-map:([^:]+):test:([^:]+)(?::|$)/u);
   const artifacts = (run as RunSummary & { artifacts?: unknown[] }).artifacts;

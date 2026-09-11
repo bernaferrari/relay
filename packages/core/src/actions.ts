@@ -15,19 +15,8 @@ import {
 import { loginEmail, loginGoogle, loginX, logout } from "./grok.js";
 import { planForAction } from "./trace.js";
 
-export const ACTION_IDS = [
-  "update-last-alpha",
-  "install-last-alpha",
-  "reinstall-last-alpha",
-  "update-last-prod",
-  "install-last-prod",
-  "login-google",
-  "login-email",
-  "login-x",
-  "logout",
-] as const;
-
-export type ActionId = (typeof ACTION_IDS)[number];
+import { type ActionId } from "./action-ids.js";
+export { ACTION_IDS, isActionId, type ActionId } from "./action-ids.js";
 
 export type ActionCategory = "play-store" | "grok";
 
@@ -112,10 +101,6 @@ export const ACTIONS: readonly ActionMeta[] = [
 
 export function getAction(id: string): ActionMeta | undefined {
   return ACTIONS.find((a) => a.id === id);
-}
-
-export function isActionId(id: string): id is ActionId {
-  return (ACTION_IDS as readonly string[]).includes(id);
 }
 
 export type RunActionOptions = AccountFlowOptions & {

@@ -1,4 +1,4 @@
-import { validateRecipeSteps } from "@relay/core/recipes";
+import { validateRecipeSteps } from "@relay/core/recipe-validation";
 import { operationDefinition } from "@relay/protocol";
 import type { AppMapVariable, RecipeStep, OperationInput } from "@relay/protocol";
 import { createRelayOperationPort, type RelayInvokeClient } from "./operation-port.js";

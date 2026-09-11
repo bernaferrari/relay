@@ -14,6 +14,7 @@ import type {
 } from "@relay/protocol";
 import { summarizeBrowserDeviceTelemetry } from "@relay/protocol";
 import {
+  attachBrowserRuntime,
   closeBrowserTarget,
   browserPageVisualFingerprint,
   existingLiveBrowserIdentity,
@@ -223,9 +224,10 @@ export async function openBrowserDeviceSession(
 ): Promise<BrowserDeviceRuntimeSession> {
   const previous = states.get(targetId);
   if (
-    previous?.status === "crashed" ||
-    previous?.status === "closed" ||
-    (previous?.status === "degraded" && previous.needsFreshFrame)
+    !identity?.sessionId?.trim() &&
+    (previous?.status === "crashed" ||
+      previous?.status === "closed" ||
+      (previous?.status === "degraded" && previous.needsFreshFrame))
   ) {
     await closeBrowserDeviceSession(targetId);
   }
@@ -242,15 +244,17 @@ export async function openBrowserDeviceSession(
   const fixtureId = resolved.authenticationFixtureId;
   const signedOut = resolved.signedOut === true;
   const accountBound = Boolean(fixtureId || signedOut);
-  const runtime = accountBound
-    ? await openBrowserLiveRuntime(targetId, {
-        headless: true,
-        profile,
-        ...(fixtureId ? { authenticationFixtureId: fixtureId } : {}),
-        ...(signedOut ? { signedOut: true } : {}),
-        ...(identity?.projectId ? { projectId: identity.projectId } : {}),
-      })
-    : await openBrowserAuthoringRuntime(targetId, { headless: true, profile });
+  const runtime = identity?.sessionId?.trim()
+    ? await attachBrowserRuntime(targetId, identity.sessionId.trim())
+    : accountBound
+      ? await openBrowserLiveRuntime(targetId, {
+          headless: true,
+          profile,
+          ...(fixtureId ? { authenticationFixtureId: fixtureId } : {}),
+          ...(signedOut ? { signedOut: true } : {}),
+          ...(identity?.projectId ? { projectId: identity.projectId } : {}),
+        })
+      : await openBrowserAuthoringRuntime(targetId, { headless: true, profile });
   const requestedSessionId = identity?.sessionId?.trim();
   if (requestedSessionId && runtime.sessionId !== requestedSessionId) {
     throw new Error(
