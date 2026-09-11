@@ -2,9 +2,10 @@ import { useState } from "react";
 import type { ProductMapPath, ProductMapScreen } from "@relay/product/map-exploration";
 import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
-import { ArrowRight, ChevronRight, Route, Search } from "lucide-react";
+import { ArrowRight, Route, Search } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { MapScreenPreview } from "./map-screen-preview";
+import { libraryRowSurface } from "./library-row-styles";
 import { EmptyState } from "./product-patterns";
 
 export function MapPathsPanel({
@@ -85,55 +86,62 @@ export function MapPathsPanel({
             }
           />
         ) : null}
-        <div className="space-y-6">
+        <div className="space-y-10">
           {[...groups].map(([screenId, connections]) => {
             const screen = screenById.get(screenId);
             return (
               <section
                 key={screenId}
-                className="overflow-hidden rounded-xl border border-border"
+                className="grid grid-cols-[64px_minmax(0,1fr)] items-start gap-4 sm:grid-cols-[96px_minmax(0,1fr)] sm:gap-6"
                 aria-label={`Paths from ${connections[0]!.fromTitle}`}
               >
-                <header className="flex items-center gap-3 border-b border-border bg-muted/30 px-4 py-3">
-                  <div aria-hidden="true" className="h-10 w-9 shrink-0">
-                    <MapScreenPreview
-                      uri={screen?.screenshotUri}
-                      load={loadScreenshot}
-                      title={screen?.title ?? ""}
-                      thumbnail
-                    />
-                  </div>
-                  <h3 className="min-w-0 flex-1 truncate text-sm font-medium">
-                    {connections[0]!.fromTitle}
-                  </h3>
-                  <span className="text-xs tabular-nums text-muted-foreground">
-                    {connections.length} {connections.length === 1 ? "path" : "paths"}
-                  </span>
-                </header>
-                <ul className="divide-y divide-border">
-                  {connections.map((path) => (
-                    <li key={path.id}>
-                      <button
-                        type="button"
-                        aria-label={`${path.fromTitle} → ${path.toTitle ?? "Finish"}`}
-                        onClick={() => onInspect(path.id)}
-                        className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 text-left hover:bg-accent focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto]"
-                      >
-                        <span className="min-w-0 text-sm font-medium">{path.label}</span>
-                        <span className="col-start-1 flex min-w-0 items-center gap-2 text-xs text-muted-foreground sm:col-auto">
-                          <ArrowRight className="size-3.5 shrink-0" />
-                          <span className="truncate">{path.toTitle ?? "Finish"}</span>
-                        </span>
-                        <span className="hidden text-xs tabular-nums text-muted-foreground sm:block">
-                          {path.coveringTests.length
-                            ? `${path.coveringTests.length} ${path.coveringTests.length === 1 ? "test" : "tests"}`
-                            : "No tests"}
-                        </span>
-                        <ChevronRight className="col-start-2 row-start-1 size-3.5 text-muted-foreground sm:col-auto sm:row-auto" />
-                      </button>
-                    </li>
-                  ))}
-                </ul>
+                <div aria-hidden="true" className="h-24 w-16 sm:h-36 sm:w-24">
+                  <MapScreenPreview
+                    uri={screen?.screenshotUri}
+                    load={loadScreenshot}
+                    title={screen?.title ?? ""}
+                    align="top"
+                    thumbnail
+                  />
+                </div>
+                <div className="min-w-0">
+                  <header className="mb-2 flex min-h-8 items-center gap-3 px-3">
+                    <h3 className="min-w-0 flex-1 truncate text-sm font-medium">
+                      {connections[0]!.fromTitle}
+                    </h3>
+                    <span className="text-xs tabular-nums text-muted-foreground">
+                      {connections.length} {connections.length === 1 ? "path" : "paths"}
+                    </span>
+                  </header>
+                  <ul className="space-y-1">
+                    {connections.map((path) => (
+                      <li key={path.id}>
+                        <button
+                          type="button"
+                          aria-label={`${path.fromTitle} → ${path.toTitle ?? "Finish"}`}
+                          onClick={() => onInspect(path.id)}
+                          className={`${libraryRowSurface} grid min-h-14 w-full grid-cols-[16px_minmax(0,1fr)_64px] items-center gap-x-3 gap-y-1 rounded-md px-3 py-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:grid-cols-[minmax(0,1fr)_16px_minmax(0,1fr)_72px]`}
+                        >
+                          <span className="col-span-2 min-w-0 text-sm font-medium leading-5 sm:col-span-1">
+                            {path.label}
+                          </span>
+                          <ArrowRight
+                            className="col-start-1 row-start-2 size-4 text-muted-foreground sm:col-start-2 sm:row-start-1"
+                            aria-hidden="true"
+                          />
+                          <span className="col-start-2 row-start-2 min-w-0 text-xs leading-5 text-muted-foreground sm:col-start-3 sm:row-start-1">
+                            {path.toTitle ?? "Finish"}
+                          </span>
+                          <span className="col-start-3 row-span-2 row-start-1 text-right text-xs tabular-nums text-muted-foreground sm:col-start-4 sm:row-span-1">
+                            {path.coveringTests.length
+                              ? `${path.coveringTests.length} ${path.coveringTests.length === 1 ? "test" : "tests"}`
+                              : "No tests"}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               </section>
             );
           })}
