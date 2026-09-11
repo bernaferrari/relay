@@ -1,11 +1,9 @@
 /** @jsxImportSource react */
 import type { ProductTestSummary } from "@relay/product/catalog";
-import { Item } from "@relay/ui-react/components/item";
 import { Button } from "@relay/ui-react/components/button";
 import { useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
-import { ChevronRight } from "lucide-react";
 import { FilterSelect } from "../components/filter-select";
 import { LibrarySearch, LibraryToolbar } from "../components/library-toolbar";
 import { EmptyState, OutcomeMark, ReadinessMark } from "../components/product-patterns";
@@ -366,10 +364,11 @@ function TestRow({ test }: { test: ProductTestSummary }) {
   const recent = test.recentRun;
   return (
     <li>
-      <div className="relay-library-row-shell relative grid grid-cols-[minmax(0,1fr)_auto] items-center pr-3">
-        <Item
-          className="relay-library-row grid min-h-[78px] min-w-0 grid-cols-[minmax(180px,1fr)_minmax(94px,auto)_minmax(150px,.48fr)_18px] items-center gap-[18px] px-3.5 py-2 text-[var(--text-base)] transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 max-[720px]:grid-cols-[minmax(0,1fr)_auto]"
-          render={<Link to="/tests/$testId" params={{ testId: test.id }} />}
+      <div className="group/test-row relative grid grid-cols-[minmax(0,1fr)_104px] items-center pr-3 transition-[background-color] duration-150 ease-out hover:bg-[color-mix(in_oklch,var(--surface-raised-strong)_94%,var(--text-strong)_6%)] focus-within:bg-[color-mix(in_oklch,var(--surface-raised-strong)_94%,var(--text-strong)_6%)] motion-reduce:transition-none">
+        <Link
+          to="/tests/$testId"
+          params={{ testId: test.id }}
+          className="grid min-h-[76px] min-w-0 grid-cols-[minmax(180px,1fr)_minmax(94px,auto)_minmax(150px,.48fr)] items-center gap-5 px-4 py-3 text-[var(--text-base)] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring max-[720px]:grid-cols-[minmax(0,1fr)_auto]"
         >
           <span className="relay-library-row-main grid min-w-0 gap-1">
             <strong className="overflow-hidden text-ellipsis whitespace-nowrap text-sm font-semibold text-[var(--text-strong)]">
@@ -386,7 +385,9 @@ function TestRow({ test }: { test: ProductTestSummary }) {
             {recent ? (
               <>
                 <OutcomeMark outcome={recent.outcome ?? recent.phase} />
-                <small>{relativeTime(runTime(recent))}</small>
+                <small className="text-xs tabular-nums text-muted-foreground">
+                  {relativeTime(runTime(recent))}
+                </small>
               </>
             ) : (
               <>
@@ -396,16 +397,12 @@ function TestRow({ test }: { test: ProductTestSummary }) {
               </>
             )}
           </span>
-          <ChevronRight
-            className="relay-library-row-arrow text-sm text-[var(--text-weaker)]"
-            aria-hidden="true"
-          />
-        </Item>
+        </Link>
         <Button
           nativeButton={false}
           variant="ghost"
           size="sm"
-          className="relay-library-row-run"
+          className="relay-library-row-run min-h-9 justify-self-end rounded-md border border-transparent px-3 text-xs font-medium text-muted-foreground transition-[color,background-color,border-color] duration-150 group-hover/test-row:border-border group-hover/test-row:text-foreground hover:bg-background focus-visible:border-border motion-reduce:transition-none"
           render={
             test.status === "needs-review" ? (
               <Link to="/tests/$testId/edit" params={{ testId: test.id }} />
