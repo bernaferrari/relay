@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Fixed: Custom test reporters reject invalid exit codes, including values such as `256` that
+  could wrap to success and hide a failing suite. `getExitCode` accepts integers from `0` to `255`
+  or `undefined`; JSON output reports an invalid code as one `INVALID_ARGS` error.
 - Fixed: Android `record start` no longer refuses to begin after a reused emulator reassigned the
   previous recorder's pid. A completed recording's native marker is retired only once its recorder is
   proven gone, but only an absent pid counted as proof — a pid that now names an unrelated process,
