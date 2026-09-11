@@ -56,7 +56,7 @@ export function MapScreenPreview({
           draggable={false}
           src={url}
           alt={title}
-          className={`max-h-full w-auto max-w-full object-contain ${selected ? "outline outline-1 outline-blue-400 outline-offset-4" : ""}`}
+          className={`max-h-full w-auto max-w-full rounded-[4px] object-contain outline outline-1 outline-offset-2 ${selected ? "outline-blue-400" : "outline-transparent group-hover/map-screen:outline-blue-400/50 group-focus-visible/map-screen:outline-blue-400"}`}
           loading="lazy"
           onLoad={(event) => {
             const dimensions = {

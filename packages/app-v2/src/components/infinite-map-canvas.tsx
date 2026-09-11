@@ -817,7 +817,7 @@ export function InfiniteMapCanvas({
               return (
                 <button
                   type="button"
-                  className={`relay-map-screen absolute flex flex-col gap-2 text-left focus-visible:outline-2 focus-visible:outline-ring`}
+                  className={`relay-map-screen group/map-screen absolute flex flex-col gap-2 text-left focus-visible:outline-2 focus-visible:outline-ring`}
                   key={screen.id}
                   aria-pressed={selectedNode}
                   onClick={(event) => {
