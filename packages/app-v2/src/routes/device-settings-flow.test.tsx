@@ -429,33 +429,23 @@ describe("Devices", () => {
     ).toBe(false);
   });
 
-  it("restores status from the URL without exposing a manual density control", async () => {
-    const history = await renderPath("/devices?status=needs-attention");
-
+  it("shows every device regardless of old status URLs and exposes only search", async () => {
+    await renderPath("/devices?status=needs-attention");
     expect(document.body.textContent).toContain("QA phone");
-    expect(document.body.textContent).not.toContain("Design iPad");
-    expect(document.body.textContent).not.toContain("Checkout browser");
-    expect(button("Needs attention").getAttribute("aria-selected")).toBe("true");
-    expect(document.body.textContent).not.toContain("Comfortable");
-    expect(document.body.textContent).not.toContain("Compact");
-    expect(document.body.textContent).not.toMatch(/\b(?:lease|profile|inventory)\b/i);
-    expect(document.querySelectorAll('a[href^="/devices/phone"]')).toHaveLength(1);
-
-    await click(button("All"));
-    expect(history.location.search).toBe("");
     expect(document.body.textContent).toContain("Design iPad");
     expect(document.body.textContent).toContain("Checkout browser");
-    expect(document.body.textContent).toContain("Browsers");
+    expect(document.querySelector('[aria-label="Filter devices"]')).toBeNull();
+    expect(input("Search Devices and Browsers")).not.toBeNull();
   });
 
-  it("clears search and type filters from the empty state while preserving setup return context", async () => {
+  it("clears search from the empty state while preserving setup return context", async () => {
     const history = await renderPath("/devices?returnTo=%2Ftests%2Fnew");
 
     const searchInput = input("Search Devices and Browsers");
     if (!(searchInput instanceof HTMLInputElement)) throw new Error("Search input not found");
     await fillInput(searchInput, "does-not-exist");
 
-    expect(document.body.textContent).toContain("No devices match your filters");
+    expect(document.body.textContent).toContain("No devices match your search");
     await click(button("Show all devices"));
 
     expect(document.body.textContent).toContain("Design iPad");

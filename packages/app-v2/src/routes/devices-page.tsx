@@ -7,7 +7,6 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@relay/ui-react/components/collapsible";
-import { Tabs, TabsList, TabsTrigger } from "@relay/ui-react/components/tabs";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { AppWindow, ChevronRight, CircleHelp, Smartphone, Tablet } from "lucide-react";
@@ -16,22 +15,10 @@ import { LibrarySearch } from "../components/library-toolbar";
 import { LibraryPage, PageHeader } from "../components/page-layout";
 import { EmptyState, RecoveryState } from "../components/product-patterns";
 import { deviceSummaryLine } from "../data/device-label";
-import {
-  deviceQueryKeys,
-  type ProductDevice,
-  type ProductDeviceStatus,
-} from "../data/device-product-service";
+import { deviceQueryKeys, type ProductDevice } from "../data/device-product-service";
 import { readSetupContinuation } from "../data/setup-continuation";
 import { useCollectionReturnFocus } from "../hooks/use-collection-return-focus";
 import { PageLoading } from "./recording-shared";
-
-type DeviceFilter = "all" | Exclude<ProductDeviceStatus, "virtual">;
-
-const FILTERS: readonly { id: DeviceFilter; label: string }[] = [
-  { id: "all", label: "All" },
-  { id: "ready", label: "Ready" },
-  { id: "needs-attention", label: "Needs attention" },
-];
 
 function searchState(value: unknown): {
   status?: string;
@@ -41,10 +28,6 @@ function searchState(value: unknown): {
   return value && typeof value === "object"
     ? (value as { status?: string; returnTo?: string; q?: string })
     : {};
-}
-
-function deviceFilter(value: string | undefined): DeviceFilter {
-  return value === "ready" || value === "needs-attention" ? value : "all";
 }
 
 function isBrowser(device: ProductDevice): boolean {
@@ -212,7 +195,6 @@ export function DevicesPage() {
   const rawSearch = useLocation({ select: (state) => state.search });
   const search = searchState(rawSearch);
   const continuation = readSetupContinuation(search.returnTo);
-  const activeFilter = deviceFilter(search.status);
   const [query, setQuery] = useState(search.q ?? "");
   const deferredQuery = useDeferredValue(query.trim().toLocaleLowerCase());
   const devices = useQuery({
@@ -224,12 +206,10 @@ export function DevicesPage() {
   const visibleDevices =
     devices.data?.filter(
       (device) =>
-        (activeFilter === "all" ||
-          (activeFilter === "ready" ? device.runnable : device.status === activeFilter)) &&
-        (!deferredQuery ||
-          `${device.name} ${device.platform} ${device.osVersion ?? ""} ${device.kind ?? ""}`
-            .toLocaleLowerCase()
-            .includes(deferredQuery)),
+        !deferredQuery ||
+        `${device.name} ${device.platform} ${device.osVersion ?? ""} ${device.kind ?? ""}`
+          .toLocaleLowerCase()
+          .includes(deferredQuery),
     ) ?? [];
   const visibleCount = visibleDevices.length;
   const returnFocus = useCollectionReturnFocus("relay:focus:/devices", visibleDevices, "/devices/");
@@ -243,24 +223,11 @@ export function DevicesPage() {
     void navigate({
       to: "/devices",
       search: {
-        ...(activeFilter === "all" ? {} : { status: activeFilter }),
         ...(query.trim() ? { q: query.trim() } : {}),
         ...(search.returnTo ? { returnTo: search.returnTo } : {}),
       },
     });
-  }, [activeFilter, navigate, query, search.q, search.returnTo]);
-
-  function updateSearch(next: { status?: DeviceFilter }) {
-    const status = next.status ?? activeFilter;
-    void navigate({
-      to: "/devices",
-      search: {
-        ...(status === "all" ? {} : { status }),
-        ...(query.trim() ? { q: query.trim() } : {}),
-        ...(search.returnTo ? { returnTo: search.returnTo } : {}),
-      },
-    });
-  }
+  }, [navigate, query, search.q, search.returnTo]);
 
   return (
     <LibraryPage
@@ -298,7 +265,7 @@ export function DevicesPage() {
 
       <div
         className="flex flex-wrap items-center gap-3 border-b border-border pb-4"
-        aria-label="Filter devices"
+        aria-label="Search devices"
       >
         <LibrarySearch
           id="device-search"
@@ -307,18 +274,6 @@ export function DevicesPage() {
           placeholder="Search by name or platform"
           onChange={setQuery}
         />
-        <Tabs
-          value={activeFilter}
-          onValueChange={(value) => updateSearch({ status: value as DeviceFilter })}
-        >
-          <TabsList className="h-10" variant="default" aria-label="Filter devices">
-            {FILTERS.map((filter) => (
-              <TabsTrigger key={filter.id} value={filter.id}>
-                {filter.label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
       </div>
 
       {devices.isPending ? <PageLoading label="Checking Devices and Browsers…" /> : null}
@@ -361,8 +316,8 @@ export function DevicesPage() {
 
       {!devices.isPending && !devices.isError && devices.data?.length && visibleCount === 0 ? (
         <EmptyState
-          title="No devices match your filters"
-          detail="Choose another filter to see the devices Relay found."
+          title="No devices match your search"
+          detail="Try another device name or platform."
           action={
             <Button
               variant="ghost"
