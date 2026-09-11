@@ -1,5 +1,6 @@
 /** @jsxImportSource react */
 import { useId, useState, type ReactNode } from "react";
+import { Languages } from "lucide-react";
 import { ScrollArea } from "@relay/ui-react/components/scroll-area";
 import { languagePresentation } from "../data/language-presentation";
 import { Button } from "@relay/ui-react/components/button";
@@ -82,9 +83,14 @@ export function RunConfigurationComposer({
   const optionCopy = (option: RunConfigurationOption) => (
     <span className="relay-config-option-copy grid min-w-0 flex-1 gap-[3px] wrap-anywhere [&_strong]:text-[13px] [&_strong]:font-medium [&_small]:text-xs [&_small]:text-muted-foreground">
       <strong data-slot="run-target-title" className="flex items-center gap-2">
-        {option.locale && languagePresentation(option.locale, option.label).flag ? (
-          <span aria-hidden="true" className="text-base">
-            {languagePresentation(option.locale, option.label).flag}
+        {option.locale ? (
+          <span
+            aria-hidden="true"
+            className="flex size-5 shrink-0 items-center justify-center text-base"
+          >
+            {languagePresentation(option.locale, option.label).flag ?? (
+              <Languages className="size-4 text-muted-foreground" />
+            )}
           </span>
         ) : null}
         {option.locale ? languagePresentation(option.locale, option.label).label : option.label}
@@ -130,7 +136,7 @@ export function RunConfigurationComposer({
           {multipleTargets ? (
             <fieldset
               disabled={loading}
-              className="relay-config-options grid min-w-0 gap-2 border-0 p-0 [&_legend]:mb-2.5 [&_legend]:text-[13px] [&_legend]:font-semibold"
+              className="relay-config-options grid min-w-0 gap-2 border-0 p-0 [&_legend]:mb-1.5 [&_legend]:text-[13px] [&_legend]:font-semibold"
             >
               <legend>Where to run</legend>
               {targetOptions.map((option) => (
@@ -163,7 +169,7 @@ export function RunConfigurationComposer({
       {dataSetOptions && onSelectionChange ? (
         <fieldset
           disabled={loading}
-          className="relay-config-options grid min-w-0 gap-2 border-0 p-0 [&_legend]:mb-2.5 [&_legend]:text-[13px] [&_legend]:font-semibold"
+          className="relay-config-options grid min-w-0 gap-2 border-0 p-0 [&_legend]:mb-1.5 [&_legend]:text-[13px] [&_legend]:font-semibold"
         >
           <legend className="w-full">
             <span className="flex items-center justify-between gap-3">
@@ -175,7 +181,7 @@ export function RunConfigurationComposer({
               </span>
               <button
                 type="button"
-                className="rounded px-1 py-1 text-xs font-normal text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50"
+                className="relative rounded px-1 text-xs after:absolute after:-inset-y-1 after:inset-x-0 font-normal text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50"
                 disabled={!filteredValues?.length}
                 onClick={() => {
                   const matchingIds = (filteredValues ?? []).map((option) => option.id);
