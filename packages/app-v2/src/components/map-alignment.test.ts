@@ -36,3 +36,34 @@ it("ignores distant screens and chooses the closest alignment", () => {
     ).dy,
   ).toBe(-1);
 });
+
+it("shows both outer guides for equal heights without a redundant center guide", () => {
+  const result = snapMapPreview(
+    { x: 300, y: 103, width: 100, height: 200 },
+    [{ x: 0, y: 100, width: 100, height: 200 }],
+    1,
+  );
+  expect(result.guides.filter((guide) => guide.axis === "y").map((guide) => guide.value)).toEqual([
+    100, 300,
+  ]);
+});
+it("does not snap a center to an edge", () => {
+  const result = snapMapPreview(
+    { x: 300, y: 203, width: 100, height: 200 },
+    [{ x: 0, y: 100, width: 100, height: 200 }],
+    1,
+  );
+  expect(result.dy).toBe(0);
+  expect(result.guides.filter((guide) => guide.axis === "y")).toEqual([]);
+});
+it("shows both sides for matching widths", () => {
+  const result = snapMapPreview(
+    { x: 103, y: 300, width: 100, height: 100 },
+    [{ x: 100, y: 0, width: 100, height: 100 }],
+    1,
+  );
+  expect(result.dx).toBe(-3);
+  expect(result.guides.filter((guide) => guide.axis === "x").map((guide) => guide.value)).toEqual([
+    100, 200,
+  ]);
+});
