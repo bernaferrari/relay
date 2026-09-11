@@ -1026,7 +1026,7 @@ export function InfiniteMapCanvas({
                   }}
                 >
                   <span
-                    className={`flex h-10 w-full shrink-0 items-end justify-center text-center text-[13px] font-medium leading-tight ${selectedNode ? "text-blue-400" : "text-muted-foreground"}`}
+                    className={`flex h-8 w-full shrink-0 items-end justify-center text-center text-[13px] font-medium leading-tight ${selectedNode ? "text-blue-400" : "text-muted-foreground"}`}
                   >
                     <span className="line-clamp-2" title={screen.title}>
                       {screen.title}

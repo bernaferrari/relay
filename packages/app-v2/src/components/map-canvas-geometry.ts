@@ -4,8 +4,8 @@ import type { ProductMapPath, ProductMapScreen } from "@relay/product/map-explor
 export const MAP_MIN_SCALE = 0.08;
 export const MAP_MAX_SCALE = 2.2;
 export const MAP_NODE_WIDTH = 208;
-export const MAP_NODE_HEIGHT = 388;
-export const MAP_NODE_TITLE_HEIGHT = 40;
+export const MAP_NODE_HEIGHT = 380;
+export const MAP_NODE_TITLE_HEIGHT = 32;
 export const MAP_NODE_GAP = 8;
 export const MAP_NODE_IMAGE_HEIGHT = 300;
 
