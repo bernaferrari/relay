@@ -105,13 +105,24 @@ export function InfiniteMapCanvas({
   );
   const autoArrange = layoutMode !== "saved";
   const [arrangedEdits, setArrangedEdits] = useState<Map<string, MapPoint>>(() => new Map());
+  const [layoutAnchors, setLayoutAnchors] = useState<Map<string, ProductMapPath["sourceAnchor"]>>(
+    () => new Map(),
+  );
+  const arrangementPaths = useMemo(
+    () =>
+      visiblePaths.map((path) => ({
+        ...path,
+        sourceAnchor: layoutAnchors.get(path.id) ?? path.sourceAnchor,
+      })),
+    [visiblePaths, layoutAnchors],
+  );
   const positions = useMemo(() => {
     let result = new Map(
       layoutMapScreens(
         autoArrange
           ? visibleScreens.map((screen) => ({ ...screen, position: undefined }))
           : visibleScreens,
-        visiblePaths,
+        arrangementPaths,
         layoutMode === "saved" ? "aligned" : layoutMode,
       ),
     );
@@ -134,7 +145,7 @@ export function InfiniteMapCanvas({
       else result.set(dragged.id, dragged.position);
     }
     return result;
-  }, [visibleScreens, visiblePaths, dragged, autoArrange, arrangedEdits, layoutMode]);
+  }, [visibleScreens, arrangementPaths, dragged, autoArrange, arrangedEdits, layoutMode]);
   const bounds = useMemo(
     () => mapContentBounds(visibleScreens, positions),
     [positions, visibleScreens],
@@ -282,12 +293,13 @@ export function InfiniteMapCanvas({
   }
 
   function resetView() {
+    setLayoutAnchors(new Map(originPaths.map((path) => [path.id, path.sourceAnchor])));
     setArrangedEdits(new Map());
     const resetPositions = layoutMapScreens(
       autoArrange
         ? visibleScreens.map((screen) => ({ ...screen, position: undefined }))
         : visibleScreens,
-      visiblePaths,
+      originPaths,
       layoutMode === "saved" ? "aligned" : layoutMode,
     );
     animateTransform(
@@ -747,12 +759,15 @@ export function InfiniteMapCanvas({
                 onValueChange={(value) => {
                   const mode = value as "saved" | "aligned" | "staggered" | "horizontal";
                   setLayoutMode(mode);
+                  setLayoutAnchors(
+                    new Map(originPaths.map((path) => [path.id, path.sourceAnchor])),
+                  );
                   setArrangedEdits(new Map());
                   const next = layoutMapScreens(
                     mode === "saved"
                       ? visibleScreens
                       : visibleScreens.map((screen) => ({ ...screen, position: undefined })),
-                    visiblePaths,
+                    originPaths,
                     mode === "saved" ? "aligned" : mode,
                   );
                   animateTransform(

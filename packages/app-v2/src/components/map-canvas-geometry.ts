@@ -1,3 +1,4 @@
+import { orderMapBranches } from "./map-branch-order";
 import { layoutMapGraph, separateMapScreens, reserveStraightConnections } from "./map-layout";
 import type { ProductMapPath, ProductMapScreen } from "@relay/product/map-exploration";
 export const MAP_MIN_SCALE = 0.08;
@@ -79,7 +80,13 @@ export function layoutMapScreens(
 ): ReadonlyMap<string, MapPoint> {
   const positions = layoutMapGraph(
     screens.map((screen) => screen.id),
-    paths
+    orderMapBranches(
+      paths.filter(
+        (path) =>
+          path.toScreenId && !/^(back|close|dismiss|return|cancel|disable)\b/i.test(path.label),
+      ),
+      mode === "horizontal",
+    )
       .filter(
         (path) =>
           path.toScreenId && !/^(back|close|dismiss|return|cancel|disable)\b/i.test(path.label),

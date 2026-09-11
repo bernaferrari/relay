@@ -399,6 +399,10 @@ export function MapEdges({
       },
     ];
   });
+  // Paint selection last so crossing neutral routes cannot obscure it.
+  geometries.sort(
+    (a, b) => Number(a.path.id === selectedPathId) - Number(b.path.id === selectedPathId),
+  );
   const edgeBounds = geometries.reduce<MapBounds>(
     (result, geometry) => ({
       minX: Math.min(result.minX, geometry.bounds.minX),
