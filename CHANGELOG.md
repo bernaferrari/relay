@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Fixed: JUnit reports remain readable when replay results contain characters forbidden by XML 1.0,
+  replacing them with U+FFFD while preserving legal Unicode and whitespace. Original suite values
+  remain available in JSON and other reporters.
 - Fixed: `replay export` preserves deep links without `//`, including `tel:` and `mailto:`, as
   Maestro `openLink` commands in both standalone and app-plus-link `open` actions.
 - Changed: a command whose synopsis is generated names each option with the label its declaration
