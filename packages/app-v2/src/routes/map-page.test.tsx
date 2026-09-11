@@ -516,7 +516,7 @@ it("prepares screen refresh with canonical target fields and waits for a visible
   ).toBe(true);
 });
 
-it("opens every captured screen in a directly linked gallery with in-place previews", async () => {
+it("opens every captured screen in a directly linked gallery and focuses the chosen screen on the map", async () => {
   const { history } = await render(undefined, undefined, "/apps/shop/map?view=screens");
   expect(document.querySelector(".relay-map-canvas")).toBeNull();
   expect(document.querySelector('[aria-label="Captured screens"]')).not.toBeNull();
@@ -526,4 +526,19 @@ it("opens every captured screen in a directly linked gallery with in-place previ
   await act(async () => button("Preview Home").click());
   expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Home");
   expect(history.location.search).toContain("view=screens");
+  await act(async () => button("Open in map").click());
+  expect(document.querySelector(".relay-map-canvas")).not.toBeNull();
+  expect(history.location.search).not.toContain("view=screens");
+  expect(document.querySelector('[aria-label="Captured screens"]')).toBeNull();
+});
+
+it("opens a path screen preview without redundant caption text", async () => {
+  await render(undefined, undefined, "/apps/shop/map?view=paths");
+  await act(async () => button("Preview Home").click());
+  const dialog = document.querySelector('[role="dialog"]');
+  expect(dialog?.textContent).toContain("Home");
+  expect(dialog?.textContent).not.toContain("Captured screen");
+  expect(document.querySelector(".relay-map-canvas")).toBeNull();
+  await act(async () => button("Open in map").click());
+  expect(document.querySelector(".relay-map-canvas")).not.toBeNull();
 });

@@ -10,10 +10,12 @@ export function MapScreenPreview({
   align = "center",
   selected = false,
   thumbnail = false,
+  interactive = false,
 }: {
   align?: "center" | "top";
   selected?: boolean;
   thumbnail?: boolean;
+  interactive?: boolean;
   uri?: string;
   load?: (uri: string) => Promise<Blob>;
   title: string;
@@ -58,7 +60,7 @@ export function MapScreenPreview({
           draggable={false}
           src={url}
           alt={title}
-          className={`max-h-full w-auto max-w-full rounded-[4px] object-contain ${thumbnail ? "" : "outline outline-1 outline-offset-2"} ${thumbnail ? "" : selected ? "outline-blue-400" : "outline-transparent hover:outline-blue-400/50 group-focus-visible/map-screen:outline-blue-400"}`}
+          className={`max-h-full w-auto max-w-full rounded-[4px] object-contain ${thumbnail && !interactive ? "" : "outline outline-1 outline-offset-2"} ${thumbnail && !interactive ? "" : selected ? "outline-blue-400" : "outline-transparent hover:outline-blue-400/50 group-hover/map-screen:outline-blue-400/50 group-focus-visible/map-screen:outline-blue-400"}`}
           loading="lazy"
           onLoad={(event) => {
             const dimensions = {

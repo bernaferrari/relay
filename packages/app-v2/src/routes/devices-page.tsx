@@ -1,7 +1,7 @@
+import { libraryRowSurface, libraryRowContent } from "../components/library-row-styles";
 /** @jsxImportSource react */
 import { Badge } from "@relay/ui-react/components/badge";
 import { Button } from "@relay/ui-react/components/button";
-import { Item } from "@relay/ui-react/components/item";
 import {
   Collapsible,
   CollapsibleContent,
@@ -73,27 +73,15 @@ function DeviceRow({ device, returnTo }: { device: ProductDevice; returnTo?: str
   const stopped = device.device.booted === false;
   return (
     <li>
-      <Item
-        className="group/device relay-library-row relay-device-row grid min-h-16 min-w-0 grid-cols-[minmax(0,1fr)_auto_18px] items-center gap-3 px-3.5 py-2 text-[var(--text-base)] transition-colors duration-150 cursor-pointer hover:bg-accent focus-visible:bg-accent focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2"
-        render={
-          isBrowser(device) ? (
-            <Link
-              to="/environments/$profileId"
-              params={{ profileId: device.id }}
-              search={returnTo ? { returnTo } : undefined}
-            />
-          ) : (
-            <Link
-              to="/devices/$deviceId"
-              params={{ deviceId: device.id }}
-              search={returnTo ? { returnTo } : undefined}
-            />
-          )
-        }
+      <Link
+        to={isBrowser(device) ? "/environments/$profileId" : "/devices/$deviceId"}
+        params={isBrowser(device) ? { profileId: device.id } : { deviceId: device.id }}
+        search={returnTo ? { returnTo } : undefined}
+        className={`relay-device-row ${libraryRowSurface} ${libraryRowContent} grid-cols-[minmax(0,1fr)_auto]`}
       >
         <span className="relay-library-row-main flex min-w-0 items-center gap-3">
           <span
-            className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/60 text-muted-foreground transition-colors group-hover/device:bg-background group-hover/device:text-foreground group-focus-visible/device:bg-background group-focus-visible/device:text-foreground"
+            className="flex size-8 shrink-0 items-center justify-center text-muted-foreground"
             aria-hidden="true"
           >
             <DeviceIcon className="size-5" strokeWidth={1.75} />
@@ -125,11 +113,7 @@ function DeviceRow({ device, returnTo }: { device: ProductDevice; returnTo?: str
           )}
           {statusLabel(device)}
         </span>
-        <ChevronRight
-          className="relay-library-row-arrow relay-device-row-chevron size-4 text-muted-foreground transition-colors group-hover/device:text-foreground group-focus-visible/device:text-foreground"
-          aria-hidden="true"
-        />
-      </Item>
+      </Link>
     </li>
   );
 }
@@ -200,7 +184,9 @@ function AvailableSection({
       onOpenChange={setOpen}
       className="overflow-hidden rounded-xl border border-border bg-card"
     >
-      <CollapsibleTrigger className="flex min-h-11 w-full items-center gap-2 px-4 py-3 text-left text-[13px] font-semibold hover:bg-accent/40 focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-[-2px]">
+      <CollapsibleTrigger
+        className={`${libraryRowSurface} flex min-h-11 w-full items-center gap-2 px-4 py-3 text-left text-[13px] font-semibold outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring`}
+      >
         <ChevronRight
           className={`size-4 text-muted-foreground transition-transform duration-200 motion-reduce:transition-none ${open ? "rotate-90" : ""}`}
           aria-hidden="true"

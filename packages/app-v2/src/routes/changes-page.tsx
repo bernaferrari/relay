@@ -1,12 +1,12 @@
+import { libraryRowSurface, libraryRowContent } from "../components/library-row-styles";
 /** @jsxImportSource react */
 import type { ProductChange } from "@relay/product/change-journey";
 import { Badge } from "@relay/ui-react/components/badge";
-import { Item } from "@relay/ui-react/components/item";
 import { Tabs, TabsList, TabsTrigger } from "@relay/ui-react/components/tabs";
 import { Button } from "@relay/ui-react/components/button";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
-import { ChevronRight, RotateCcw } from "lucide-react";
+import { RotateCcw } from "lucide-react";
 import { useMemo } from "react";
 import { EmptyState, RecoveryState } from "../components/product-patterns";
 import { PageLoading, RecordingProblem } from "./recording-shared";
@@ -172,9 +172,10 @@ function ChangeRow({ change }: { change: ProductChange }) {
   const status = changeStatus(change);
   return (
     <li>
-      <Item
-        className="relay-library-row grid min-h-[78px] min-w-0 grid-cols-[minmax(220px,1fr)_minmax(118px,auto)_minmax(148px,.42fr)_18px] items-center gap-[18px] px-3.5 py-2 text-[var(--text-base)] transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 max-[720px]:grid-cols-[minmax(0,1fr)_auto]"
-        render={<Link to="/changes/$changeId" params={{ changeId: change.id }} />}
+      <Link
+        to="/changes/$changeId"
+        params={{ changeId: change.id }}
+        className={`${libraryRowSurface} ${libraryRowContent} grid-cols-[minmax(220px,1fr)_minmax(118px,auto)_minmax(148px,.42fr)] max-[720px]:grid-cols-[minmax(0,1fr)_auto]`}
       >
         <span className="relay-library-row-main grid min-w-0 gap-1">
           <strong className="overflow-hidden text-ellipsis whitespace-nowrap text-sm font-semibold text-[var(--text-strong)]">
@@ -193,7 +194,7 @@ function ChangeRow({ change }: { change: ProductChange }) {
             {status.label}
           </Badge>
         </span>
-        <span className="relay-library-row-recent grid min-w-0 justify-items-start gap-1">
+        <span className="relay-library-row-recent grid min-w-0 justify-items-start gap-1 tabular-nums">
           <strong className="text-xs font-semibold text-[var(--text-base)]">
             {relativeTime(change.updatedAt)}
           </strong>
@@ -201,11 +202,7 @@ function ChangeRow({ change }: { change: ProductChange }) {
             {coverageLabel(change)}
           </small>
         </span>
-        <ChevronRight
-          className="relay-library-row-arrow text-sm text-[var(--text-weaker)]"
-          aria-hidden="true"
-        />
-      </Item>
+      </Link>
     </li>
   );
 }

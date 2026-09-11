@@ -1,21 +1,18 @@
 import { useState } from "react";
 import type { ProductMapScreen } from "@relay/product/map-exploration";
 import { Input } from "@relay/ui-react/components/input";
-import {
-  Dialog,
-  DialogTrigger,
-  DialogContent,
-  DialogTitle,
-  DialogDescription,
-} from "@relay/ui-react/components/dialog";
+import { Dialog, DialogTrigger } from "@relay/ui-react/components/dialog";
+import { MapPreviewDialogContent } from "./map-preview-dialog-content";
 import { MapScreenPreview } from "./map-screen-preview";
 import { EmptyState } from "./product-patterns";
 
 export function MapScreensPanel({
   screens,
   loadScreenshot,
+  onOpenScreen,
 }: {
   screens: readonly ProductMapScreen[];
+  onOpenScreen(id: string): void;
   loadScreenshot?: (uri: string) => Promise<Blob>;
 }) {
   const [search, setSearch] = useState("");
@@ -42,44 +39,35 @@ export function MapScreensPanel({
           />
         </header>
         {matches.length ? (
-          <div className="grid grid-cols-2 gap-x-6 gap-y-8 md:grid-cols-3 xl:grid-cols-4">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,220px),1fr))] gap-6">
             {matches.map((screen) => (
               <article key={screen.id} className="min-w-0">
                 <Dialog>
                   <DialogTrigger
-                    className="group block w-full rounded-lg bg-muted/30 p-3 text-left transition-colors hover:bg-muted/60 focus-visible:outline-2 focus-visible:outline-ring motion-reduce:transition-none"
+                    className="group/map-screen block w-full rounded-xl bg-[color-mix(in_oklch,var(--card)_96%,var(--foreground)_4%)] p-4 text-center transition-[background-color,box-shadow] duration-150 ease-out hover:bg-[color-mix(in_oklch,var(--card)_93%,var(--foreground)_7%)] focus-visible:outline-2 focus-visible:outline-ring motion-reduce:transition-none"
                     aria-label={`Preview ${screen.title}`}
                   >
-                    <div className="h-56 sm:h-72">
+                    <div className="h-80">
                       <MapScreenPreview
                         uri={screen.screenshotUri}
                         load={loadScreenshot}
                         title={screen.title}
+                        interactive
                         thumbnail
                       />
                     </div>
-                    <div className="mt-4 space-y-1 px-1 pb-1">
+                    <div className="mt-4 space-y-1 px-1 pb-1 text-center">
                       <h3 className="truncate text-sm font-medium" title={screen.title}>
                         {screen.title}
                       </h3>
-                      <p className="text-xs text-muted-foreground">
-                        {screen.coveringTests.length}{" "}
-                        {screen.coveringTests.length === 1 ? "test" : "tests"}
-                        {screen.variantCount > 1 ? ` · ${screen.variantCount} captures` : ""}
-                      </p>
                     </div>
                   </DialogTrigger>
-                  <DialogContent className="sm:max-w-2xl">
-                    <DialogTitle className="pr-8">{screen.title}</DialogTitle>
-                    <DialogDescription>Captured screen</DialogDescription>
-                    <div className="h-[min(70dvh,760px)] min-h-0">
-                      <MapScreenPreview
-                        uri={screen.screenshotUri}
-                        load={loadScreenshot}
-                        title={screen.title}
-                      />
-                    </div>
-                  </DialogContent>
+                  <MapPreviewDialogContent
+                    title={screen.title}
+                    uri={screen.screenshotUri}
+                    load={loadScreenshot}
+                    onOpenMap={() => onOpenScreen(screen.id)}
+                  />
                 </Dialog>
               </article>
             ))}

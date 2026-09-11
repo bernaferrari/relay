@@ -384,7 +384,7 @@ describe("Devices", () => {
     expect(row?.textContent).toContain("Design iPad");
     expect(row?.textContent).toContain("Apple device · Physical device");
     expect(row?.querySelector(".relay-library-row-status")?.textContent).toContain("Ready");
-    expect(row?.querySelector(".relay-device-row-chevron")).not.toBeNull();
+    expect(row?.querySelector(".relay-device-row-chevron")).toBeNull();
 
     await click(row!);
     expect(history.location.pathname).toBe("/devices/ipad");

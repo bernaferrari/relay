@@ -4,6 +4,8 @@ import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
 import { ArrowRight, Route, Search } from "lucide-react";
 import { Link } from "@tanstack/react-router";
+import { Dialog, DialogTrigger } from "@relay/ui-react/components/dialog";
+import { MapPreviewDialogContent } from "./map-preview-dialog-content";
 import { MapScreenPreview } from "./map-screen-preview";
 import { libraryRowSurface } from "./library-row-styles";
 import { EmptyState } from "./product-patterns";
@@ -14,12 +16,14 @@ export function MapPathsPanel({
   screens,
   loadScreenshot,
   onInspect,
+  onOpenScreen,
 }: {
   appId: string;
   paths: readonly ProductMapPath[];
   screens: readonly ProductMapScreen[];
   loadScreenshot?: (uri: string) => Promise<Blob>;
   onInspect(id: string): void;
+  onOpenScreen(id: string): void;
 }) {
   const [search, setSearch] = useState("");
   const query = search.trim().toLocaleLowerCase();
@@ -95,15 +99,27 @@ export function MapPathsPanel({
                 className="grid grid-cols-[64px_minmax(0,1fr)] items-start gap-4 rounded-xl bg-[color-mix(in_oklch,var(--card)_96%,var(--foreground)_4%)] p-4 sm:grid-cols-[96px_minmax(0,1fr)] sm:gap-6 sm:p-5"
                 aria-label={`Paths from ${connections[0]!.fromTitle}`}
               >
-                <div aria-hidden="true" className="h-24 w-16 sm:h-36 sm:w-24">
-                  <MapScreenPreview
+                <Dialog>
+                  <DialogTrigger
+                    className="group/map-screen h-24 w-16 rounded outline-none sm:h-36 sm:w-24"
+                    aria-label={`Preview ${connections[0]!.fromTitle}`}
+                  >
+                    <MapScreenPreview
+                      uri={screen?.screenshotUri}
+                      load={loadScreenshot}
+                      title={screen?.title ?? ""}
+                      align="top"
+                      interactive
+                      thumbnail
+                    />
+                  </DialogTrigger>
+                  <MapPreviewDialogContent
+                    title={connections[0]!.fromTitle}
                     uri={screen?.screenshotUri}
                     load={loadScreenshot}
-                    title={screen?.title ?? ""}
-                    align="top"
-                    thumbnail
+                    onOpenMap={() => onOpenScreen(screenId)}
                   />
-                </div>
+                </Dialog>
                 <div className="min-w-0">
                   <header className="mb-3 flex min-h-8 items-center gap-3 border-b border-border/40 px-3 pb-3">
                     <h3 className="min-w-0 flex-1 truncate text-[15px] font-semibold">

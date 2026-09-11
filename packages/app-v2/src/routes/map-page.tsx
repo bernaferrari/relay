@@ -30,6 +30,12 @@ export function MapPage() {
   const navigate = routeApi.useNavigate();
   const setView = (view: "map" | "paths" | "screens") =>
     void navigate({ search: { view }, replace: true });
+  const [inspectedScreenId, setInspectedScreenId] = useState<string>();
+  const openScreen = (id: string) => {
+    setInspectedPathId(undefined);
+    setInspectedScreenId(id);
+    setView("map");
+  };
   const [inspectedPathId, setInspectedPathId] = useState<string>();
   const map = useQuery({
     queryKey: ["map", appId],
@@ -171,6 +177,7 @@ export function MapPage() {
               {map.data.screens.length ? (
                 <InfiniteMapCanvas
                   initialPathId={inspectedPathId}
+                  initialScreenId={inspectedScreenId}
                   loadScreenshot={mapService.loadScreenshot}
                   loadAccessibilityTree={mapService.loadAccessibilityTree}
                   saving={updateScreen.isPending}
@@ -208,17 +215,20 @@ export function MapPage() {
           ) : null}
           {view === "screens" ? (
             <MapScreensPanel
+              onOpenScreen={openScreen}
               screens={map.data.screens}
               loadScreenshot={mapService.loadScreenshot}
             />
           ) : null}
           {view === "paths" ? (
             <MapPathsPanel
+              onOpenScreen={openScreen}
               appId={appId}
               paths={map.data.paths}
               screens={map.data.screens}
               loadScreenshot={mapService.loadScreenshot}
               onInspect={(id) => {
+                setInspectedScreenId(undefined);
                 setInspectedPathId(id);
                 setView("map");
               }}

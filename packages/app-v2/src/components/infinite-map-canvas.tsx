@@ -72,8 +72,10 @@ export function InfiniteMapCanvas({
   onRefreshScreen,
   saving = false,
   initialPathId,
+  initialScreenId,
 }: {
   initialPathId?: string;
+  initialScreenId?: string;
   saving?: boolean;
   onRefreshScreen?: (screen: ProductMapScreen) => void;
   onUpdateScreen?: (
@@ -164,10 +166,10 @@ export function InfiniteMapCanvas({
   const [selectedPathId, setSelectedPathId] = useState(initialPathId);
   const selectedPath = visiblePaths.find((path) => path.id === selectedPathId);
   const [focusScreenId, setFocusScreenId] = useState<string | undefined>(
-    selectedPath?.fromScreenId,
+    initialScreenId ?? selectedPath?.fromScreenId,
   );
   const [selectedScreenId, setSingleScreenId] = useState<string | undefined>(
-    selectedPath?.fromScreenId,
+    initialScreenId ?? selectedPath?.fromScreenId,
   );
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [marquee, setMarquee] = useState<{ x: number; y: number; width: number; height: number }>();
