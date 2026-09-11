@@ -780,7 +780,7 @@ export function InfiniteMapCanvas({
                   Staggered · Vertical
                 </DropdownMenuRadioItem>
                 <DropdownMenuRadioItem value="horizontal">
-                  Staggered · Horizontal
+                  Aligned · Horizontal
                 </DropdownMenuRadioItem>
                 <DropdownMenuRadioItem value="saved">Saved positions</DropdownMenuRadioItem>
               </DropdownMenuRadioGroup>

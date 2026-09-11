@@ -94,7 +94,7 @@ export function layoutMapScreens(
       .map((path) => ({ from: path.fromScreenId, to: path.toScreenId! })),
     mode === "horizontal" ? 600 : mode === "staggered" ? 560 : MAP_NODE_WIDTH + 160,
     mode === "horizontal" ? MAP_NODE_WIDTH + 112 : MAP_NODE_HEIGHT + 40,
-    mode !== "aligned",
+    mode === "staggered",
   );
   if (mode === "horizontal") {
     // Exchange flow and branch axes without rotating the portrait captures.
