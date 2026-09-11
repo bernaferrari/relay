@@ -11,6 +11,9 @@
   route serves XCTest, which resolves remote elements, for the rest of that app generation — the
   same path 0.20.x used. The snapshot discloses the switch through its warning, and a relaunch
   re-enables the bridge.
+- Fixed: `test` expands relative globs from the caller's literal working directory, so directory
+  names containing glob characters no longer cause missing suites or select a different directory.
+  Missing non-glob inputs also retain their not-found error in these directories.
 - Fixed: JUnit reports remain readable when replay results contain characters forbidden by XML 1.0,
   replacing them with U+FFFD while preserving legal Unicode and whitespace. Original suite values
   remain available in JSON and other reporters.
