@@ -100,7 +100,7 @@ export function InfiniteMapCanvas({
       }
     | undefined
   >(undefined);
-  const [layoutMode, setLayoutMode] = useState<"saved" | "aligned" | "staggered">("aligned");
+  const [layoutMode, setLayoutMode] = useState<"saved" | "aligned" | "staggered">("staggered");
   const autoArrange = layoutMode !== "saved";
   const [arrangedEdits, setArrangedEdits] = useState<Map<string, MapPoint>>(() => new Map());
   const positions = useMemo(() => {

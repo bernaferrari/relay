@@ -41,20 +41,24 @@ export function layoutMapGraph(
       }
     }
   }
-  function build(id: string): Tree {
+  function build(id: string, firstBranch = true): Tree {
     const points = new Map<string, LayoutPoint>();
     const contours = new Map<number, { min: number; max: number }>();
     const childRows: number[] = [];
-    for (const [childIndex, child] of (children.get(id) ?? []).entries()) {
-      const tree = build(child);
-      const columnOffset = columnGap + (staggered && childIndex % 2 ? columnGap / 2 : 0);
+    const descendants = children.get(id) ?? [];
+    // Stagger only the first fan-out. Each destination owns a coherent branch
+    // beyond that point: siblings share a column and continuations stay level.
+    const staggerChildren = staggered && firstBranch && descendants.length > 1;
+    for (const [childIndex, child] of descendants.entries()) {
+      const tree = build(child, firstBranch && descendants.length <= 1);
+      const columnOffset = columnGap + (staggerChildren && childIndex % 2 ? columnGap / 2 : 0);
       let shift = staggered && childRows.length ? childRows.at(-1)! + rowGap : 0;
-      if (staggered) {
-        for (const existing of points.values())
-          for (const point of tree.points.values()) {
-            if (Math.abs(existing.x - point.x - columnOffset) < 240)
-              shift = Math.max(shift, existing.y + rowGap - point.y);
-          }
+      if (staggered && points.size) {
+        // Reserve the whole branch, including its connector corridors. Packing
+        // only image boxes lets unrelated branches cut through continuations.
+        const previousBottom = Math.max(...[...points.values()].map((point) => point.y));
+        const nextTop = Math.min(...[...tree.points.values()].map((point) => point.y));
+        shift = Math.max(shift, previousBottom + rowGap - nextTop);
       }
       for (const [depth, range] of staggered ? [] : tree.contours) {
         const previous = contours.get(depth + 1);

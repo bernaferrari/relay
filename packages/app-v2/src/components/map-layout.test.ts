@@ -80,3 +80,43 @@ it("moves an intervening branch out of a straight continuation", () => {
   expect(result.get("widget")!.y).toBe(result.get("add")!.y);
   expect(result.get("topup")!.y).toBeGreaterThan(result.get("widget")!.y + 194);
 });
+
+it("staggers destination groups while keeping each set of siblings in one column", () => {
+  const points = layoutMapGraph(
+    ["root", "a", "b", "a1", "a2", "b1", "b2"],
+    [
+      { from: "root", to: "a" },
+      { from: "root", to: "b" },
+      { from: "a", to: "a1" },
+      { from: "a", to: "a2" },
+      { from: "b", to: "b1" },
+      { from: "b", to: "b2" },
+    ],
+    560,
+    428,
+    true,
+  );
+  expect(points.get("b")!.x - points.get("a")!.x).toBe(280);
+  expect(points.get("a1")!.x).toBe(points.get("a2")!.x);
+  expect(points.get("b1")!.x).toBe(points.get("b2")!.x);
+  expect(points.get("b1")!.x - points.get("a1")!.x).toBe(280);
+});
+
+it("does not restart staggering in later branching columns", () => {
+  const edges = [
+    { from: "home", to: "settings" },
+    { from: "settings", to: "usage" },
+    { from: "settings", to: "data" },
+    { from: "data", to: "cloud" },
+    { from: "data", to: "delete" },
+    { from: "cloud", to: "filter" },
+    { from: "cloud", to: "details" },
+  ];
+  const ids = [...new Set(edges.flatMap(({ from, to }) => [from, to]))];
+  const points = layoutMapGraph(ids, edges, 560, 428, true);
+  expect(points.get("data")!.x - points.get("usage")!.x).toBe(280);
+  expect(points.get("cloud")!.x).toBe(points.get("delete")!.x);
+  expect(points.get("filter")!.x).toBe(points.get("details")!.x);
+  expect(points.get("filter")!.x - points.get("cloud")!.x).toBe(560);
+  expect(points.get("home")!.y).toBe(points.get("settings")!.y);
+});

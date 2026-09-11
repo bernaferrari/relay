@@ -220,7 +220,7 @@ describe("Map exploration", () => {
     expect(document.querySelector(".relay-map-edge text")?.textContent).toBe("Open cart");
     expect(document.querySelector(".relay-map-edge rect")).not.toBeNull();
     expect(
-      document.querySelector<HTMLElement>('.relay-map-screen[style*="left: 368px"]'),
+      document.querySelector<HTMLElement>('.relay-map-screen[style*="left: 560px"]'),
     ).not.toBeNull();
     expect(document.body.textContent).not.toContain("Pan right");
 
