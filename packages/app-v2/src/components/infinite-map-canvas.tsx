@@ -1,3 +1,4 @@
+import { separateMapScreens } from "./map-layout";
 import { useQueries } from "@tanstack/react-query";
 import { snapMapPreview, type AlignmentGuide } from "./map-alignment";
 import { MapAccessibilityOverlay, accessibilityControls } from "./map-accessibility-overlay";
@@ -100,7 +101,7 @@ export function InfiniteMapCanvas({
   const [autoArrange, setAutoArrange] = useState(false);
   const [arrangedEdits, setArrangedEdits] = useState<Map<string, MapPoint>>(() => new Map());
   const positions = useMemo(() => {
-    const result = new Map(
+    let result = new Map(
       layoutMapScreens(
         autoArrange
           ? visibleScreens.map((screen) => ({ ...screen, position: undefined }))
@@ -109,6 +110,13 @@ export function InfiniteMapCanvas({
       ),
     );
     for (const [id, point] of arrangedEdits) result.set(id, point);
+    if (arrangedEdits.size)
+      result = separateMapScreens(
+        result,
+        new Set(arrangedEdits.keys()),
+        MAP_NODE_WIDTH,
+        MAP_NODE_HEIGHT,
+      );
     if (dragged) {
       const drag = nodeDrag.current;
       if (drag)

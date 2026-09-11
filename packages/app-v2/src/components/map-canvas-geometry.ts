@@ -1,4 +1,4 @@
-import { layoutMapGraph } from "./map-layout";
+import { layoutMapGraph, separateMapScreens } from "./map-layout";
 import type { ProductMapPath, ProductMapScreen } from "@relay/product/map-exploration";
 export const MAP_MIN_SCALE = 0.08;
 export const MAP_MAX_SCALE = 2.2;
@@ -111,7 +111,12 @@ export function layoutMapScreens(
   for (const point of positions.values()) point.x = columnPositions.get(point.x)!;
   for (const screen of screens) if (screen.position) positions.set(screen.id, screen.position);
 
-  return positions;
+  return separateMapScreens(
+    positions,
+    new Set(screens.filter((screen) => screen.position).map((screen) => screen.id)),
+    MAP_NODE_WIDTH,
+    MAP_NODE_HEIGHT,
+  );
 }
 
 export function mapContentBounds(
