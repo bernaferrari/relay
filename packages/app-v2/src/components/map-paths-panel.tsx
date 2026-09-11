@@ -86,13 +86,13 @@ export function MapPathsPanel({
             }
           />
         ) : null}
-        <div className="space-y-10">
+        <div className="space-y-5">
           {[...groups].map(([screenId, connections]) => {
             const screen = screenById.get(screenId);
             return (
               <section
                 key={screenId}
-                className="grid grid-cols-[64px_minmax(0,1fr)] items-start gap-4 sm:grid-cols-[96px_minmax(0,1fr)] sm:gap-6"
+                className="grid grid-cols-[64px_minmax(0,1fr)] items-start gap-4 rounded-xl bg-[color-mix(in_oklch,var(--card)_96%,var(--foreground)_4%)] p-4 sm:grid-cols-[96px_minmax(0,1fr)] sm:gap-6 sm:p-5"
                 aria-label={`Paths from ${connections[0]!.fromTitle}`}
               >
                 <div aria-hidden="true" className="h-24 w-16 sm:h-36 sm:w-24">
@@ -105,11 +105,11 @@ export function MapPathsPanel({
                   />
                 </div>
                 <div className="min-w-0">
-                  <header className="mb-2 flex min-h-8 items-center gap-3 px-3">
-                    <h3 className="min-w-0 flex-1 truncate text-sm font-medium">
+                  <header className="mb-3 flex min-h-8 items-center gap-3 border-b border-border/40 px-3 pb-3">
+                    <h3 className="min-w-0 flex-1 truncate text-[15px] font-semibold">
                       {connections[0]!.fromTitle}
                     </h3>
-                    <span className="text-xs tabular-nums text-muted-foreground">
+                    <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
                       {connections.length} {connections.length === 1 ? "path" : "paths"}
                     </span>
                   </header>
@@ -120,9 +120,9 @@ export function MapPathsPanel({
                           type="button"
                           aria-label={`${path.fromTitle} → ${path.toTitle ?? "Finish"}`}
                           onClick={() => onInspect(path.id)}
-                          className={`${libraryRowSurface} grid min-h-14 w-full grid-cols-[16px_minmax(0,1fr)_64px] items-center gap-x-3 gap-y-1 rounded-md px-3 py-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:grid-cols-[minmax(0,1fr)_16px_minmax(0,1fr)_72px]`}
+                          className={`${libraryRowSurface} grid min-h-12 w-full grid-cols-[16px_minmax(0,1fr)_64px] items-center gap-x-3 gap-y-1 rounded-md px-3 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:grid-cols-[minmax(0,1fr)_16px_minmax(0,1fr)_72px]`}
                         >
-                          <span className="col-span-2 min-w-0 text-sm font-medium leading-5 sm:col-span-1">
+                          <span className="col-span-2 min-w-0 text-sm font-normal leading-5 sm:col-span-1">
                             {path.label}
                           </span>
                           <ArrowRight
