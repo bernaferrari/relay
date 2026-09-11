@@ -240,7 +240,7 @@ export function MapEdges({
       }}
     >
       <defs>
-        {["neutral", "selected"].map((state) => (
+        {["neutral", "selected", "muted"].map((state) => (
           <marker
             key={state}
             id={`${markerId}-${state}`}
@@ -254,7 +254,13 @@ export function MapEdges({
             <path
               d="M 1 1 L 8 5 L 1 9"
               fill="none"
-              stroke={state === "selected" ? "var(--color-blue-400)" : "var(--text-weak)"}
+              stroke={
+                state === "selected"
+                  ? "var(--color-blue-400)"
+                  : state === "muted"
+                    ? "color-mix(in oklch, var(--text-weak) 80%, var(--background) 20%)"
+                    : "var(--text-weak)"
+              }
               strokeWidth="1.5"
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -262,83 +268,83 @@ export function MapEdges({
           </marker>
         ))}
       </defs>
-      {geometries.map((geometry) => (
-        <g
-          key={geometry.path.id}
-          opacity={
-            selectedPathId
-              ? geometry.path.id === selectedPathId
-                ? 1
-                : 0.12
-              : selectedScreenId &&
-                  geometry.path.fromScreenId !== selectedScreenId &&
-                  geometry.path.toScreenId !== selectedScreenId
-                ? 0.15
-                : 1
-          }
-          style={{
-            color:
-              selectedPathId === geometry.path.id ? "var(--color-blue-400)" : "var(--text-weak)",
-          }}
-          className="relay-map-edge [&>path]:fill-none [&>path]:stroke-current [&>path]:[stroke-linecap:round] [&>path]:stroke-[1.5] [&>path]:[vector-effect:non-scaling-stroke] [&>rect]:fill-[var(--surface-raised-stronger-non-alpha)] [&>rect]:stroke-[var(--border-weak-base)] [&>rect]:stroke-0 [&>rect]:[vector-effect:non-scaling-stroke] [&_text]:fill-[var(--text-weak)] [&_text]:font-sans [&_text]:text-[10.5px] [&_text]:font-normal"
-        >
-          {geometry.anchor ? (
-            <>
-              {geometry.anchorRect ? (
+      {geometries.map((geometry) => {
+        const dimmed = selectedPathId
+          ? geometry.path.id !== selectedPathId
+          : Boolean(
+              selectedScreenId &&
+              geometry.path.fromScreenId !== selectedScreenId &&
+              geometry.path.toScreenId !== selectedScreenId,
+            );
+        const state =
+          selectedPathId === geometry.path.id ? "selected" : dimmed ? "muted" : "neutral";
+        return (
+          <g
+            key={geometry.path.id}
+            style={{
+              color:
+                state === "selected"
+                  ? "var(--color-blue-400)"
+                  : state === "muted"
+                    ? "color-mix(in oklch, var(--text-weak) 80%, var(--background) 20%)"
+                    : "var(--text-weak)",
+            }}
+            className="relay-map-edge [&>path]:fill-none [&>path]:stroke-current [&>path]:[stroke-linecap:round] [&>path]:stroke-[1.5] [&>path]:[vector-effect:non-scaling-stroke] [&>rect]:fill-[var(--surface-raised-stronger-non-alpha)] [&>rect]:stroke-[var(--border-weak-base)] [&>rect]:stroke-0 [&>rect]:[vector-effect:non-scaling-stroke] [&_text]:fill-current [&_text]:font-sans [&_text]:text-[10.5px] [&_text]:font-normal"
+          >
+            {geometry.anchor ? (
+              <>
+                {geometry.anchorRect ? (
+                  <rect
+                    x={geometry.anchorRect.x}
+                    y={geometry.anchorRect.y}
+                    width={geometry.anchorRect.width}
+                    height={geometry.anchorRect.height}
+                    rx="3"
+                    className="fill-blue-500/15 stroke-blue-500"
+                    style={{ fill: "rgba(59,130,246,0.15)", stroke: "#3b82f6" }}
+                    strokeWidth="1.5"
+                  />
+                ) : null}
                 <rect
-                  x={geometry.anchorRect.x}
-                  y={geometry.anchorRect.y}
-                  width={geometry.anchorRect.width}
-                  height={geometry.anchorRect.height}
-                  rx="3"
-                  className="fill-blue-500/15 stroke-blue-500"
-                  style={{ fill: "rgba(59,130,246,0.15)", stroke: "#3b82f6" }}
-                  strokeWidth="1.5"
+                  x={geometry.anchor.x - 5}
+                  y={geometry.anchor.y - 5}
+                  width="10"
+                  height="10"
+                  rx="2"
+                  style={{ fill: "var(--color-blue-500)", stroke: "var(--color-background)" }}
+                  strokeWidth="2"
                 />
-              ) : null}
-              <rect
-                x={geometry.anchor.x - 5}
-                y={geometry.anchor.y - 5}
-                width="10"
-                height="10"
-                rx="2"
-                style={{ fill: "var(--color-blue-500)", stroke: "var(--color-background)" }}
-                strokeWidth="2"
-              />
-            </>
-          ) : null}
-          <path
-            id={geometry.id}
-            d={geometry.d}
-            markerEnd={
-              geometry.path.toScreenId
-                ? `url(#${markerId}-${selectedPathId === geometry.path.id ? "selected" : "neutral"})`
-                : undefined
-            }
-            strokeDasharray={geometry.path.toScreenId ? undefined : "3 4"}
-          />
-          <rect
-            x={geometry.label.x - geometry.label.width / 2}
-            y={geometry.label.y - 14}
-            width={geometry.label.width}
-            height={geometry.path.toScreenId ? 22 : 44}
-            rx="4"
-          />
-          <text x={geometry.label.x} y={geometry.label.y} textAnchor="middle">
-            {geometry.path.label}
-          </text>
-          {!geometry.path.toScreenId ? (
-            <text
-              x={geometry.label.x}
-              y={geometry.label.y + 17}
-              textAnchor="middle"
-              style={{ fontWeight: 400 }}
-            >
-              Destination not recorded
+              </>
+            ) : null}
+            <path
+              id={geometry.id}
+              d={geometry.d}
+              markerEnd={geometry.path.toScreenId ? `url(#${markerId}-${state})` : undefined}
+              strokeDasharray={geometry.path.toScreenId ? undefined : "3 4"}
+            />
+            <rect
+              x={geometry.label.x - geometry.label.width / 2}
+              y={geometry.label.y - 14}
+              width={geometry.label.width}
+              height={geometry.path.toScreenId ? 22 : 44}
+              rx="4"
+            />
+            <text x={geometry.label.x} y={geometry.label.y} textAnchor="middle">
+              {geometry.path.label}
             </text>
-          ) : null}
-        </g>
-      ))}
+            {!geometry.path.toScreenId ? (
+              <text
+                x={geometry.label.x}
+                y={geometry.label.y + 17}
+                textAnchor="middle"
+                style={{ fontWeight: 400 }}
+              >
+                Destination not recorded
+              </text>
+            ) : null}
+          </g>
+        );
+      })}
     </svg>
   );
 }

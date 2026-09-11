@@ -1,7 +1,7 @@
 import { isRoutineReturn } from "./map-edges";
 import type { ProductMapPath, ProductMapScreen } from "@relay/product/map-exploration";
 import { Button } from "@relay/ui-react/components/button";
-import { ArrowDownLeft, ArrowUpRight, ChevronRight, Scan, X, RefreshCw } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, ChevronRight, X, RefreshCw } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { MapScreenPreview } from "./map-screen-preview";
@@ -58,15 +58,6 @@ export function ScreenInspector({
       <header className="flex h-12 shrink-0 items-center justify-between border-b border-border px-4">
         <h2 className="text-xs font-medium text-muted-foreground">Screen</h2>
         <div className="ml-auto flex items-center gap-1">
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            aria-label="Focus on canvas"
-            title="Focus on canvas"
-            onClick={onFocusScreen}
-          >
-            <Scan />
-          </Button>
           {onRefresh ? (
             <Button
               size="icon-sm"

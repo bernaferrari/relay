@@ -148,7 +148,7 @@ export function AppShell({ platform }: { platform: Platform }) {
         </header>
         <main
           id="main-content"
-          className="relay-main mr-2 mb-2 min-h-0 min-w-0 flex-1 overflow-auto rounded-xl bg-card overscroll-contain [scrollbar-gutter:stable] focus:outline-none"
+          className={`relay-main min-h-0 min-w-0 flex-1 bg-card focus:outline-none ${immersive ? "overflow-hidden" : "mr-2 mb-2 overflow-auto rounded-xl overscroll-contain [scrollbar-gutter:stable]"}`}
           tabIndex={-1}
         >
           <Outlet />
