@@ -7,9 +7,32 @@ import { writeFileSync } from "node:fs";
 import { adbSwipeInputArgs } from "./adb-input.js";
 import { resolveAndroidSdkToolSync } from "./android-sdk-tools.js";
 
+/** SurfaceFlinger IDs exceed JavaScript's safe integer range; keep them as strings. */
+export function primaryAndroidDisplay(displays: string): string | undefined {
+  const primary = displays.match(/^Display (\d+) \(HWC display 0\)/m)?.[1];
+  if (primary) return primary;
+  const ids = [...displays.matchAll(/^Display (\d+)/gm)].map((match) => match[1]!);
+  if (ids.length > 1) throw new Error("Cannot identify the primary Android display");
+  return ids[0];
+}
+
 export function rawScreenshot(path: string, serial?: string): void {
   if (!serial) throw new Error("Explicit Android target serial is required");
-  const args = ["-s", serial, "exec-out", "screencap", "-p"];
+  const adb = resolveAndroidSdkToolSync("adb");
+  const displays = execFileSync(
+    adb,
+    ["-s", serial, "shell", "dumpsys", "SurfaceFlinger", "--display-id"],
+    { encoding: "utf8", timeout: 5000 },
+  );
+  const displayId = primaryAndroidDisplay(displays);
+  const args = [
+    "-s",
+    serial,
+    "exec-out",
+    "screencap",
+    "-p",
+    ...(displayId ? ["-d", displayId] : []),
+  ];
   const buf = execFileSync(resolveAndroidSdkToolSync("adb"), args, {
     maxBuffer: 20 * 1024 * 1024,
     timeout: 10_000,

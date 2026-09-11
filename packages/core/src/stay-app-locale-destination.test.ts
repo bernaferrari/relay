@@ -119,10 +119,7 @@ test("post-relaunch readiness labels come from the first named destination", () 
       fingerprint: "",
     },
   ]);
-  assert.deepEqual(appLocaleExpectedLabels({ [tour.id]: tour }, tour.id, ["Italiano", "-"]), [
-    "Data Controls",
-    "Italiano",
-  ]);
+  assert.deepEqual(appLocaleExpectedLabels({ [tour.id]: tour }, tour.id), ["Data Controls"]);
 });
 
 test("explicit relaunch wins even when stay can be proved", () => {
@@ -138,4 +135,9 @@ test("explicit relaunch wins even when stay can be proved", () => {
   assert.equal(stayAppLocaleCanBeProved({ [tour.id]: tour }, tour.id), true);
   assert.equal(appLocaleShouldRelaunch({ relaunch: true }, { [tour.id]: tour }, tour.id), true);
   assert.equal(appLocaleShouldRelaunch({ relaunch: false }, { [tour.id]: tour }, tour.id), false);
+});
+
+test("capture-only locale tests do not wait for language names on the app screen", () => {
+  const capture = recipe("capture", [{ kind: "sleep", ms: 1000 }]);
+  assert.deepEqual(appLocaleExpectedLabels({ capture }, "capture"), []);
 });

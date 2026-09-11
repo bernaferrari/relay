@@ -41,7 +41,6 @@ export function nextExpectScreen(
 export function appLocaleExpectedLabels(
   graph?: Record<string, Recipe>,
   childRootId?: string,
-  optionLabels?: readonly (string | undefined)[],
 ): string[] {
   const screen = graph && childRootId ? nextExpectScreen(graph, childRootId) : undefined;
   return collectExpectedSemanticLabels({
@@ -49,7 +48,6 @@ export function appLocaleExpectedLabels(
     observationLabels: screen?.observations?.flatMap((observation) =>
       observation.nodes.map((node) => node.label),
     ),
-    optionLabels,
   });
 }
 

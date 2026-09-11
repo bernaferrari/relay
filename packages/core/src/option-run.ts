@@ -409,10 +409,7 @@ export function composeOptionRunRecipes(input: {
           app: set.apply.app,
           locale: `{{${set.id}}}`,
           relaunch: relaunch && !appLaunched,
-          expectedLabels: appLocaleExpectedLabels(graph, input.body.id, [
-            `{{${set.id}_label}}`,
-            `{{${set.id}_text}}`,
-          ]),
+          expectedLabels: appLocaleExpectedLabels(graph, input.body.id),
         }),
       );
       if (relaunch && !appLaunched) appLaunched = true;

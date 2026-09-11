@@ -209,10 +209,7 @@ export function composeAppMapCombineCellWrapper(input: {
           app: set.apply.app,
           locale: `{{${prefix}}}`,
           relaunch: relaunch && !appLaunched,
-          expectedLabels: appLocaleExpectedLabels(graph, input.childRootId, [
-            `{{${prefix}_label}}`,
-            `{{${prefix}_text}}`,
-          ]),
+          expectedLabels: appLocaleExpectedLabels(graph, input.childRootId),
         }),
       );
       if (relaunch && !appLaunched) appLaunched = true;

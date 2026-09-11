@@ -228,9 +228,8 @@ test("an Android app-language Variable uses stable locale ids instead of picker 
       action: "open",
       app: "ai.x.grok",
       relaunch: true,
-      expectedLabels: ["{{language_label}}", "{{language_text}}"],
     },
-    { kind: "device", action: "keyboard-dismiss" },
+    { kind: "sleep", ms: 1200 },
   ]);
   assert.ok(
     root.steps.some(
@@ -276,7 +275,7 @@ test("an app-locale relaunch waits on expected destination labels instead of sle
       action: "open",
       app: "ai.x.grok",
       relaunch: true,
-      expectedLabels: ["Settings", "{{language_label}}", "{{language_text}}"],
+      expectedLabels: ["Settings"],
     },
   ]);
   assert.equal(
