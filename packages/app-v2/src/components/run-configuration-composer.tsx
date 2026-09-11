@@ -172,6 +172,34 @@ export function RunConfigurationComposer({
               {selection?.dataSetIds?.length ?? 0} selected
             </span>
           </legend>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={!filteredValues?.length}
+              onClick={() =>
+                onSelectionChange({
+                  ...selection,
+                  dataSetIds: [
+                    ...new Set([
+                      ...(selection?.dataSetIds ?? []),
+                      ...(filteredValues ?? []).map((option) => option.id),
+                    ]),
+                  ],
+                })
+              }
+            >
+              {valueSearch.trim() ? "Select all matches" : "Select all"}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={!selection?.dataSetIds?.length}
+              onClick={() => onSelectionChange({ ...selection, dataSetIds: [] })}
+            >
+              Clear selection
+            </Button>
+          </div>
           <input
             aria-label="Find a language or value"
             placeholder="Find a language or value…"
