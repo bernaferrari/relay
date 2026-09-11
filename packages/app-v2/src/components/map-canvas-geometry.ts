@@ -87,6 +87,28 @@ export function layoutMapScreens(
     MAP_NODE_WIDTH + 160,
     MAP_NODE_HEIGHT + 40,
   );
+  // Dense branches need a wider routing corridor than a simple continuation.
+  const columns = [...new Set([...positions.values()].map((point) => point.x))].sort(
+    (a, b) => a - b,
+  );
+  const widths = new Map<number, number>();
+  for (const screen of screens) {
+    const x = positions.get(screen.id)!.x;
+    const count = paths.filter(
+      (path) =>
+        path.fromScreenId === screen.id &&
+        path.toScreenId &&
+        !/^(back|close|dismiss|return|cancel|disable)\b/i.test(path.label),
+    ).length;
+    widths.set(x, Math.max(widths.get(x) ?? 0, MAP_NODE_WIDTH + 160 + Math.max(0, count - 1) * 12));
+  }
+  const columnPositions = new Map<number, number>();
+  let nextX = 0;
+  for (const column of columns) {
+    columnPositions.set(column, nextX);
+    nextX += widths.get(column) ?? MAP_NODE_WIDTH + 160;
+  }
+  for (const point of positions.values()) point.x = columnPositions.get(point.x)!;
   for (const screen of screens) if (screen.position) positions.set(screen.id, screen.position);
 
   return positions;

@@ -43,7 +43,7 @@ it("keeps straight connections straight and rounds right-angle bends", () => {
   expect(bent).not.toContain("NaN");
 });
 
-it("starts a connection at its recorded click and paints a square target", () => {
+it("starts a connection at its recorded click and paints a directional target", () => {
   const markup = renderToStaticMarkup(
     <MapEdges
       paths={[
@@ -70,7 +70,8 @@ it("starts a connection at its recorded click and paints a square target", () =>
     />,
   );
   expect(markup).toContain("M 52 198");
-  expect(markup).toContain('x="47" y="193" width="10" height="10"');
+  expect(markup).toContain("translate(52 198) rotate(0)");
+  expect(markup).toContain("M 0 -5 A 5 5 0 1 0 0 5 L 7 0 Z");
 });
 
 it("leaves breathing room at both preview edges", () => {

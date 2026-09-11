@@ -1,3 +1,4 @@
+import { forwardRoute } from "./map-forward-route";
 import type { ProductMapPath } from "@relay/product/map-exploration";
 import {
   MAP_NODE_WIDTH,
@@ -191,12 +192,29 @@ export function MapEdges({
     const returning = isReturn
       ? returnConnector(sourceBox, targetBox, slot, siblings.length, anchor)
       : undefined;
-    const points = returning?.points ?? [
-      start,
-      { x: (start.x + end.x) / 2, y: start.y },
-      { x: (start.x + end.x) / 2, y: end.y },
-      end,
-    ];
+    const forwardSiblings = paths
+      .filter(
+        (candidate) =>
+          candidate.fromScreenId === path.fromScreenId &&
+          candidate.toScreenId &&
+          !isRoutineReturn(candidate) &&
+          (positions.get(candidate.toScreenId)?.x ?? -Infinity) > from.x,
+      )
+      .sort(
+        (a, b) =>
+          (positions.get(a.toScreenId!)?.y ?? 0) - (positions.get(b.toScreenId!)?.y ?? 0) ||
+          a.id.localeCompare(b.id),
+      );
+    const directionSiblings = forwardSiblings.filter(
+      (candidate) => (positions.get(candidate.toScreenId!)?.y ?? from.y) < from.y === to.y < from.y,
+    );
+    const forwardSlot = Math.max(
+      0,
+      directionSiblings.findIndex((candidate) => candidate.id === path.id),
+    );
+    const points =
+      returning?.points ??
+      forwardRoute(start, end, from.x + MAP_NODE_WIDTH, forwardSlot, directionSiblings.length);
     return [
       {
         path,
@@ -205,7 +223,9 @@ export function MapEdges({
         anchorRect,
         d: returning ? quadraticReturn(points) : roundedConnector(points),
         label: {
-          x: returning?.label.x ?? end.x - Math.min(100, Math.abs(end.x - start.x) / 2),
+          x:
+            returning?.label.x ??
+            end.x - Math.min(labelWidth / 2 + 4, Math.abs(end.x - points.at(-2)!.x) / 2),
           y: returning?.label.y ?? end.y - 12,
           width: labelWidth,
         },
@@ -305,15 +325,6 @@ export function MapEdges({
                     strokeWidth="1.5"
                   />
                 ) : null}
-                <rect
-                  x={geometry.anchor.x - 5}
-                  y={geometry.anchor.y - 5}
-                  width="10"
-                  height="10"
-                  rx="2"
-                  style={{ fill: "var(--color-blue-500)", stroke: "var(--color-background)" }}
-                  strokeWidth="2"
-                />
               </>
             ) : null}
             <path
@@ -322,6 +333,17 @@ export function MapEdges({
               markerEnd={geometry.path.toScreenId ? `url(#${markerId}-${state})` : undefined}
               strokeDasharray={geometry.path.toScreenId ? undefined : "3 4"}
             />
+            {geometry.anchor ? (
+              <path
+                d="M 0 -5 A 5 5 0 1 0 0 5 L 7 0 Z"
+                transform={`translate(${geometry.anchor.x} ${geometry.anchor.y}) rotate(${(positions.get(geometry.path.toScreenId ?? "")?.x ?? Infinity) < (positions.get(geometry.path.fromScreenId)?.x ?? 0) ? 180 : 0})`}
+                style={{
+                  fill: "var(--color-blue-500)",
+                  stroke: "var(--background)",
+                  strokeWidth: 1.5,
+                }}
+              />
+            ) : null}
             <rect
               x={geometry.label.x - geometry.label.width / 2}
               y={geometry.label.y - 14}

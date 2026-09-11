@@ -1,3 +1,4 @@
+import { useQueries } from "@tanstack/react-query";
 import { snapMapPreview, type AlignmentGuide } from "./map-alignment";
 import { MapAccessibilityOverlay, accessibilityControls } from "./map-accessibility-overlay";
 import { MapEdges, isRoutineReturn } from "./map-edges";
@@ -129,7 +130,6 @@ export function InfiniteMapCanvas({
   const [handTool, setHandTool] = useState(false);
   const [showInteractionTargets, setShowInteractionTargets] = useState(false);
   const [showControlOrigins, setShowControlOrigins] = useState(false);
-  const [originTree, setOriginTree] = useState<{ uri: string; value: unknown }>();
   const [imageDimensions, setImageDimensions] = useState<Map<string, ImageDimensions>>(
     () => new Map(),
   );
@@ -150,33 +150,33 @@ export function InfiniteMapCanvas({
     setSelectedIds(new Set(id ? [id] : []));
   }
   const selected = visibleScreens.find((screen) => screen.id === selectedScreenId);
-  useEffect(() => {
-    if (!showControlOrigins || !selected?.accessibilityTreeUri || !loadAccessibilityTree) return;
-    let cancelled = false;
-    const uri = selected.accessibilityTreeUri;
-    void loadAccessibilityTree(uri)
-      .then((value) => {
-        if (!cancelled) setOriginTree({ uri, value });
-      })
-      .catch(() => {
-        if (!cancelled) setOriginTree(undefined);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [showControlOrigins, selected?.accessibilityTreeUri, loadAccessibilityTree]);
+  const treeValues = useQueries({
+    queries: visibleScreens.map((screen) => ({
+      queryKey: ["map-accessibility", screen.accessibilityTreeUri],
+      queryFn: () => loadAccessibilityTree!(screen.accessibilityTreeUri!),
+      enabled: Boolean(showControlOrigins && screen.accessibilityTreeUri && loadAccessibilityTree),
+      staleTime: Infinity,
+      retry: false,
+    })),
+    combine: (results) => results.map((result) => result.data),
+  });
+  const controlsByScreen = useMemo(
+    () =>
+      new Map(
+        visibleScreens.map((screen, index) => {
+          const dimensions = imageDimensions.get(screen.id);
+          return [
+            screen.id,
+            dimensions ? accessibilityControls(treeValues[index], dimensions) : [],
+          ] as const;
+        }),
+      ),
+    [visibleScreens, treeValues, imageDimensions],
+  );
   const originPaths = visiblePaths.map((path) => {
-    if (
-      !showControlOrigins ||
-      path.sourceAnchor ||
-      path.fromScreenId !== selected?.id ||
-      originTree?.uri !== selected?.accessibilityTreeUri
-    )
-      return path;
-    const dimensions = imageDimensions.get(path.fromScreenId);
+    if (!showControlOrigins || path.sourceAnchor || !path.sourceTarget) return path;
     const target = path.sourceTarget;
-    if (!dimensions || !target) return path;
-    const controls = accessibilityControls(originTree?.value, dimensions);
+    const controls = controlsByScreen.get(path.fromScreenId) ?? [];
     const matches = controls.filter((control) =>
       target.identifier
         ? control.identifier === target.identifier
@@ -1011,7 +1011,7 @@ export function InfiniteMapCanvas({
                         });
                       }}
                     />
-                    {showInteractionTargets && selectedNode ? (
+                    {showInteractionTargets ? (
                       <MapAccessibilityOverlay
                         uri={screen.accessibilityTreeUri}
                         load={loadAccessibilityTree}
