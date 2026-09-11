@@ -16,7 +16,7 @@ export function forwardRoute(
   // For downward routes the longest line stays nearest the source; upward
   // routes reverse that order so horizontal exits do not cross sibling trunks.
   const index = end.y < start.y ? slot : count - slot - 1;
-  const lane = left + Math.max(0, index) * spacing;
+  const lane = right - Math.max(0, count - index - 1) * spacing;
   return [start, { x: lane, y: start.y }, { x: lane, y: end.y }, end];
 }
 
@@ -50,35 +50,16 @@ export function avoidPreviewObstacles(points: MapPoint[], obstacles: readonly Ro
     end = points.at(-1)!;
   const xs = new Set([
     start.x + 24,
+    end.x - 24,
     ...points.slice(1, -1).map((point) => point.x),
     ...obstacles.flatMap((box) => [box.x - 16, box.x + box.width + 16]),
   ]);
-  const ys = new Set(obstacles.flatMap((box) => [box.y - 16, box.y + box.height + 16]));
-  let best: MapPoint[] | undefined,
-    cost = Infinity;
-  for (const x of xs) {
-    if (x <= start.x || x >= end.x) continue;
-    for (const y of ys) {
-      const route = [
-        start,
-        { x, y: start.y },
-        { x, y },
-        { x: end.x - 24, y },
-        { x: end.x - 24, y: end.y },
-        end,
-      ];
-      const length = route
-        .slice(1)
-        .reduce(
-          (sum, point, index) =>
-            sum + Math.abs(point.x - route[index]!.x) + Math.abs(point.y - route[index]!.y),
-          0,
-        );
-      if (length < cost && clear(route)) {
-        best = route;
-        cost = length;
-      }
-    }
+  // A later elbow often clears the preview without adding any extra bends.
+  for (const x of [...xs].sort((a, b) => b - a)) {
+    if (x <= start.x || x > end.x - 24) continue;
+    const elbow = [start, { x, y: start.y }, { x, y: end.y }, end];
+    if (clear(elbow)) return elbow;
   }
-  return best ?? points;
+  // Layout owns clearance. Never hide a placement conflict behind a winding detour.
+  return points;
 }

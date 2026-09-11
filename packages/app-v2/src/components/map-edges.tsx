@@ -244,12 +244,32 @@ export function MapEdges({
         points,
         [...positions]
           .filter(([id]) => id !== path.fromScreenId && id !== path.toScreenId)
-          .map(([, point]) => ({
-            x: point.x - 12,
-            y: point.y - 12,
-            width: MAP_NODE_WIDTH + 24,
-            height: MAP_NODE_HEIGHT + 24,
-          })),
+          .flatMap(([id, point]) => {
+            const image = containedImageRect(
+              {
+                x: point.x,
+                y: point.y + MAP_NODE_TITLE_HEIGHT + MAP_NODE_GAP,
+                width: MAP_NODE_WIDTH,
+                height: MAP_NODE_IMAGE_HEIGHT,
+              },
+              imageDimensions.get(id) ?? { width: MAP_NODE_WIDTH, height: MAP_NODE_IMAGE_HEIGHT },
+              "top",
+            )!;
+            return [
+              {
+                x: image.x - 10,
+                y: image.y - 10,
+                width: image.width + 20,
+                height: image.height + 20,
+              },
+              {
+                x: point.x - 8,
+                y: point.y - 8,
+                width: MAP_NODE_WIDTH + 16,
+                height: MAP_NODE_TITLE_HEIGHT + 16,
+              },
+            ];
+          }),
       );
     return [
       {

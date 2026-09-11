@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { layoutMapGraph, separateMapScreens } from "./map-layout";
+import { layoutMapGraph, separateMapScreens, reserveStraightConnections } from "./map-layout";
 it("keeps continuations straight and centers branching screens", () => {
   const points = layoutMapGraph(
     ["home", "settings", "a", "b", "c"],
@@ -68,4 +68,15 @@ it("staggers sibling subtrees while keeping their continuations aligned", () => 
   );
   expect(points.get("b")!.x - points.get("a")!.x).toBe(280);
   expect(points.get("b")!.y).toBe(points.get("child")!.y);
+});
+
+it("moves an intervening branch out of a straight continuation", () => {
+  const points = new Map([
+    ["widget", { x: 0, y: 400 }],
+    ["add", { x: 1120, y: 400 }],
+    ["topup", { x: 560, y: 400 }],
+  ]);
+  const result = reserveStraightConnections(points, [{ from: "widget", to: "add" }], 208, 388);
+  expect(result.get("widget")!.y).toBe(result.get("add")!.y);
+  expect(result.get("topup")!.y).toBeGreaterThan(result.get("widget")!.y + 194);
 });

@@ -48,7 +48,7 @@ export function layoutMapGraph(
     for (const [childIndex, child] of (children.get(id) ?? []).entries()) {
       const tree = build(child);
       const columnOffset = columnGap + (staggered && childIndex % 2 ? columnGap / 2 : 0);
-      let shift = staggered && childRows.length ? childRows.at(-1)! + rowGap * 0.6 : 0;
+      let shift = staggered && childRows.length ? childRows.at(-1)! + rowGap : 0;
       if (staggered) {
         for (const existing of points.values())
           for (const point of tree.points.values()) {
@@ -122,4 +122,71 @@ export function separateMapScreens(
     placed.set(id, point);
   }
   return new Map([...points.keys()].map((id) => [id, placed.get(id)!]));
+}
+
+/** Preserve horizontal continuations by moving intervening branches, not bending the connection. */
+export function reserveStraightConnections(
+  input: ReadonlyMap<string, LayoutPoint>,
+  edges: readonly LayoutEdge[],
+  width: number,
+  height: number,
+  gap = 32,
+) {
+  const points = new Map([...input].map(([id, point]) => [id, { ...point }]));
+  const straight = edges.filter((edge) => {
+    const a = points.get(edge.from),
+      b = points.get(edge.to);
+    return a && b && b.x > a.x && Math.abs(a.y - b.y) < 1;
+  });
+  const group = new Map([...points.keys()].map((id) => [id, new Set([id])]));
+  for (const edge of straight) {
+    const members = new Set([...group.get(edge.from)!, ...group.get(edge.to)!]);
+    for (const id of members) group.set(id, members);
+  }
+  const moveBelow = (members: Set<string>, y: number) => {
+    let delta = Math.max(0, y - Math.min(...[...members].map((id) => points.get(id)!.y)));
+    // Move the entire continuation together, clearing occupied rows as a unit.
+    for (let pass = 0; pass < points.size; pass++) {
+      let extra = 0;
+      for (const id of members) {
+        const a = points.get(id)!;
+        for (const [other, b] of points) {
+          if (members.has(other)) continue;
+          if (
+            a.x < b.x + width + gap &&
+            a.x + width + gap > b.x &&
+            a.y + delta < b.y + height + gap &&
+            a.y + delta + height + gap > b.y
+          )
+            extra = Math.max(extra, b.y + height + gap - a.y - delta);
+        }
+      }
+      delta += extra;
+      if (!extra) break;
+    }
+    for (const id of members) points.get(id)!.y += delta;
+  };
+  for (let pass = 0; pass < points.size; pass++) {
+    let moved = false;
+    for (const edge of straight) {
+      const a = points.get(edge.from)!,
+        b = points.get(edge.to)!;
+      const y = a.y + height / 2;
+      for (const [id, box] of points) {
+        const members = group.get(id)!;
+        if (members.has(edge.from) || members.has(edge.to)) continue;
+        if (
+          box.x < b.x - gap &&
+          box.x + width > a.x + width + gap &&
+          box.y - gap < y &&
+          box.y + height + gap > y
+        ) {
+          moveBelow(members, y + gap);
+          moved = true;
+        }
+      }
+    }
+    if (!moved) break;
+  }
+  return points;
 }
