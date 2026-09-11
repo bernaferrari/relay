@@ -241,6 +241,8 @@ struct DataPayload: Codable {
   var truncated: Bool?
   var qualityPayload: SnapshotQualityPayload? = nil
   var snapshotQuality: SnapshotQuality?
+  /// Set when the capture describes an in-place system surface, not the app itself (#2438).
+  var systemSurface: SystemSurfaceProvenancePayload?
   var gestureStartUptimeMs: Double?
   var gestureEndUptimeMs: Double?
   var x: Double?
@@ -273,6 +275,12 @@ struct DataPayload: Codable {
   var completedSteps: Int?
   var failedStepIndex: Int?
   var sequenceResults: [SequenceStepResult]?
+}
+
+/// `kind` mirrors the TS `IosSystemSurfaceKind` (e.g. "web-auth").
+struct SystemSurfaceProvenancePayload: Codable {
+  let bundleId: String
+  let kind: String
 }
 
 struct SnapshotQualityPayload: Codable {
