@@ -305,8 +305,11 @@ function reportTimeline(
     if (checkStatuses.size > 0 && text(step.title)?.startsWith("Screenshot · final:")) return [];
     const failed = step.status === "error" || step.tone === "fail";
     const generatedBranch = (text(step.title) ?? "").startsWith("Branch when ");
-    if (generatedBranch && !failed) return [];
-    const title = humanStepTitle(step.title) ?? (failed ? "Step could not finish" : undefined);
+    const hasCapture = array(step.frames).some((frame) => text(record(frame)?.path));
+    if (generatedBranch && !failed && !hasCapture) return [];
+    const title =
+      humanStepTitle(step.title) ??
+      (failed ? "Step could not finish" : hasCapture ? "Captured result" : undefined);
     if (!title) return [];
     // Authored-step screenshot traces measure evidence capture, not whether
     // the preceding interaction passed. Use its retained check verdict.

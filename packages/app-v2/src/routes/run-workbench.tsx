@@ -569,14 +569,18 @@ function StepMedia({
                 ? "Screenshot unavailable"
                 : unlinked
                   ? "No saved screenshots"
-                  : "No screenshot for this step"}
+                  : controls
+                    ? "No capture linked to this step"
+                    : "No screenshot for this step"}
             </p>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
               {failed
                 ? "The saved image could not be loaded. The step result remains available."
                 : unlinked
                   ? "Review the other available evidence below."
-                  : "This run did not retain a screenshot linked to this step."}
+                  : controls
+                    ? "Other captures are available in this run. View them below."
+                    : "This step did not save a screenshot."}
             </p>
             {failed ? (
               <Button size="sm" variant="outline" className="mt-4" onClick={() => setFailed(false)}>

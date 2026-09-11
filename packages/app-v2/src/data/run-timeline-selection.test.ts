@@ -55,3 +55,18 @@ describe("readable run timeline", () => {
     expect(initialRunStep([])).toBe(0);
   });
 });
+
+it("retains a parent capture when its nested wait has no screenshot", () => {
+  const result = projectRunReport(
+    "run",
+    {
+      steps: [
+        { id: "parent", title: "Run saved Test", status: "ok", frames: [{ path: "welcome.png" }] },
+        { id: "wait", title: "Sleep 10000ms", status: "ok", frames: [] },
+      ],
+    },
+    {},
+  );
+  expect(result.timeline[initialRunStep(result.timeline)]?.framePaths).toEqual(["welcome.png"]);
+  expect(result.timeline[0]?.title).toBe("Captured result");
+});
