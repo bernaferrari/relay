@@ -42,6 +42,7 @@ import {
   RotateCcw,
   Search,
   PanelLeftClose,
+  PanelLeftOpen,
   MousePointer2,
   X,
 } from "lucide-react";
@@ -627,10 +628,18 @@ export function InfiniteMapCanvas({
                     revealScreen(screen.id);
                   }}
                 >
-                  <span className="flex size-6 shrink-0 items-center justify-center rounded border border-border bg-muted text-[10px] tabular-nums">
-                    {visibleScreens.indexOf(screen) + 1}
+                  <span
+                    aria-hidden="true"
+                    className="flex h-12 w-10 shrink-0 items-center justify-center rounded bg-muted/40 p-1"
+                  >
+                    <MapScreenPreview
+                      uri={screen.screenshotUri}
+                      load={loadScreenshot}
+                      title={screen.title}
+                      thumbnail
+                    />
                   </span>
-                  <span className="truncate">{screen.title}</span>
+                  <span className="min-w-0 line-clamp-2 leading-4">{screen.title}</span>
                 </button>
               ))}
           </div>
@@ -641,6 +650,15 @@ export function InfiniteMapCanvas({
         </aside>
       ) : null}
       <div className="relative h-full min-h-0 min-w-0 flex-1 overflow-hidden">
+        {!showScreens ? (
+          <div className="absolute left-3 top-3 z-20 rounded-md border border-border bg-card p-1 shadow-sm">
+            <MapControl
+              label="Show screens"
+              icon={PanelLeftOpen}
+              onClick={() => setShowScreens(true)}
+            />
+          </div>
+        ) : null}
         <div
           className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1 rounded-lg border border-border bg-card/95 p-1 shadow-sm"
           aria-label="Map controls"
@@ -714,7 +732,7 @@ export function InfiniteMapCanvas({
         </div>
         {selectedPath ? (
           <div
-            className="absolute left-3 right-3 top-3 z-20 flex flex-wrap items-center gap-2 rounded-lg bg-card p-2 shadow-md"
+            className={`absolute right-3 top-3 z-20 flex flex-wrap items-center gap-2 rounded-lg bg-card p-2 shadow-md ${showScreens ? "left-3" : "left-16"}`}
             aria-label="Selected path"
           >
             <Button
@@ -758,25 +776,12 @@ export function InfiniteMapCanvas({
               <X />
             </Button>
           </div>
-        ) : (
-          <p
-            className="pointer-events-none absolute left-4 top-4 z-10 text-[11px] text-muted-foreground"
-            id="map-interaction-help"
-          >
-            {showControlOrigins &&
-            !originPaths.some(
-              (path) =>
-                path.sourceAnchor && (!selectedScreenId || path.fromScreenId === selectedScreenId),
-            )
-              ? "Select a screen with a saved matching control · Other arrows use screen edges"
-              : "Drag to select · Alt to bypass snapping · Space to pan · Pinch to zoom"}
-          </p>
-        )}
+        ) : null}
         <section
           data-tool={panningTool ? "hand" : "select"}
           className="relay-map-canvas data-[tool=hand]:cursor-grab relative h-full min-h-0 w-full flex-1 overflow-hidden bg-[radial-gradient(var(--border)_1px,transparent_1px)] [background-size:20px_20px]"
           aria-label="Screens and verified paths"
-          aria-describedby="map-interaction-help map-keyboard-help"
+          aria-describedby="map-keyboard-help"
           tabIndex={0}
           ref={viewportRef}
           onPointerDown={handlePointerDown}

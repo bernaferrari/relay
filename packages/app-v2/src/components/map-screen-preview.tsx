@@ -9,9 +9,11 @@ export function MapScreenPreview({
   onImageDimensions,
   align = "center",
   selected = false,
+  thumbnail = false,
 }: {
   align?: "center" | "top";
   selected?: boolean;
+  thumbnail?: boolean;
   uri?: string;
   load?: (uri: string) => Promise<Blob>;
   title: string;
@@ -56,7 +58,7 @@ export function MapScreenPreview({
           draggable={false}
           src={url}
           alt={title}
-          className={`max-h-full w-auto max-w-full rounded-[4px] object-contain outline outline-1 outline-offset-2 ${selected ? "outline-blue-400" : "outline-transparent hover:outline-blue-400/50 group-focus-visible/map-screen:outline-blue-400"}`}
+          className={`max-h-full w-auto max-w-full rounded-[4px] object-contain ${thumbnail ? "" : "outline outline-1 outline-offset-2"} ${thumbnail ? "" : selected ? "outline-blue-400" : "outline-transparent hover:outline-blue-400/50 group-focus-visible/map-screen:outline-blue-400"}`}
           loading="lazy"
           onLoad={(event) => {
             const dimensions = {
@@ -80,12 +82,13 @@ export function MapScreenPreview({
         />
       ) : (
         <div className="grid justify-items-center gap-2 p-3 text-center text-xs text-muted-foreground">
-          <ImageOff className="size-5" aria-hidden="true" />
-          {preview.isFetching
-            ? "Loading screen…"
-            : preview.isError
-              ? "Screenshot unavailable"
-              : "No screenshot captured"}
+          <ImageOff className={thumbnail ? "size-3.5" : "size-5"} aria-hidden="true" />
+          {!thumbnail &&
+            (preview.isFetching
+              ? "Loading screen…"
+              : preview.isError
+                ? "Screenshot unavailable"
+                : "No screenshot captured")}
         </div>
       )}
     </div>

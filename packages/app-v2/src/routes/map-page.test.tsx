@@ -342,7 +342,7 @@ describe("Map exploration", () => {
         ],
       }),
     });
-    await act(async () => button("1Home").click());
+    await act(async () => button("Home").click());
     const picker = document.querySelector<HTMLSelectElement>("#map-screen-capture")!;
     expect(picker.value).toBe("new");
     await act(async () => {
