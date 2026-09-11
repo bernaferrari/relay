@@ -1052,6 +1052,7 @@ export function InfiniteMapCanvas({
                   </span>
                   <div className="relative h-[300px] w-full shrink-0">
                     <MapScreenPreview
+                      dimensions={imageDimensions.get(screen.id)}
                       selected={selectedNode}
                       align="top"
                       uri={screen.screenshotUri}
