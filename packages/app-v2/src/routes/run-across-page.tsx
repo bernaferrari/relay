@@ -143,7 +143,7 @@ export function RunAcrossPage() {
           { label: setup.data?.testName ?? "Test" },
           { label: "Run with data" },
         ]}
-        title="Choose data and where to run"
+        title="Run across languages or data"
         description="Run one selected case first, then review its Report before continuing with the rest."
       />
       {loading ? <PageLoading label="Loading saved data and available devices…" /> : null}
@@ -212,7 +212,10 @@ export function RunAcrossPage() {
             dataSetOptions={setup.data.dataSet.dimensions.flatMap((dimension) =>
               dimension.values.map((value) => ({
                 id: JSON.stringify([dimension.id, value.id]),
-                label: `${dimension.name}: ${value.label}`,
+                label:
+                  setup.data.dataSet.dimensions.length === 1
+                    ? value.label
+                    : `${dimension.name}: ${value.label}`,
                 detail: value.detail,
               })),
             )}

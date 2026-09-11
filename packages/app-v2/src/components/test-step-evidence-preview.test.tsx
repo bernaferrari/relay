@@ -118,9 +118,28 @@ describe("TestStepEvidencePreview", () => {
       ],
     });
     expect(host.querySelector('img[src="/right.png"]')).not.toBeNull();
-    expect(host.querySelector('[aria-label="Occurrence 2"]')).toBeNull();
+    expect(host.querySelector('[aria-label="Capture 2"]')).toBeNull();
     expect(host.querySelector("details")).toBeNull();
     expect(host.querySelector('[aria-label="Capture details"]')).not.toBeNull();
+  });
+
+  it("numbers intentional captures consecutively and omits incidental action previews", () => {
+    const host = render({
+      ...baseReport,
+      timeline: [
+        { id: "a", index: 0, title: "Screenshot · Individual", state: "passed", evidenceCount: 1 },
+        { id: "b", index: 1, title: "Tap Business", state: "passed", evidenceCount: 1 },
+        { id: "c", index: 2, title: "Screenshot · Business", state: "passed", evidenceCount: 1 },
+      ],
+      stepEvidence: ["a", "b", "c"].map((traceStepId, index) => ({
+        ...baseReport.stepEvidence![0]!,
+        traceStepId,
+        occurrence: index + 2,
+      })),
+    });
+    expect(host.querySelector('[aria-label="Capture 1"]')?.textContent).toBe("1");
+    expect(host.querySelector('[aria-label="Capture 2"]')?.textContent).toBe("2");
+    expect(host.querySelector('[aria-label="Capture 3"]')).toBeNull();
   });
 
   it("shows the trace outcome when timeline indexes are unavailable", () => {

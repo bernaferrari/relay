@@ -25,11 +25,18 @@ export function TestStepEvidencePreview({
   const visibleCaptures = captures.filter((item) =>
     report?.timeline.some((entry) => entry.id === item.traceStepId),
   );
-  const matches = visibleCaptures.length
-    ? visibleCaptures
-    : captures.length
-      ? captures
-      : allMatches;
+  const intentionalCaptures = visibleCaptures.filter((item) =>
+    report?.timeline
+      .find((entry) => entry.id === item.traceStepId)
+      ?.title.startsWith("Screenshot ·"),
+  );
+  const matches = intentionalCaptures.length
+    ? intentionalCaptures
+    : visibleCaptures.length
+      ? visibleCaptures
+      : captures.length
+        ? captures
+        : allMatches;
   const [selectedOccurrence, setSelectedOccurrence] = useState(matches[0]?.occurrence ?? 1);
   if (!hasRuns && step.recordingFrames?.length) {
     return (
@@ -92,18 +99,18 @@ export function TestStepEvidencePreview({
           </Popover>
         ) : null}
         {selected && matches.length > 1 ? (
-          <div className="flex shrink-0 items-center gap-1" aria-label="Step occurrences">
-            <span className="sr-only">Occurrence</span>
-            {matches.map((item) => (
+          <div className="flex shrink-0 items-center gap-1" aria-label="Step captures">
+            <span className="sr-only">Capture</span>
+            {matches.map((item, index) => (
               <button
                 className={`min-h-8 min-w-8 rounded-md px-2 text-xs ${item.occurrence === selected.occurrence ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/70"}`}
                 key={`${item.traceStepId}:${item.occurrence}`}
                 type="button"
                 onClick={() => setSelectedOccurrence(item.occurrence)}
-                aria-label={`Occurrence ${item.occurrence}`}
+                aria-label={`Capture ${index + 1}`}
                 aria-pressed={item.occurrence === selected.occurrence}
               >
-                {item.occurrence}
+                {index + 1}
               </button>
             ))}
           </div>

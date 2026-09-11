@@ -303,6 +303,16 @@ export function TestPage() {
                       : "Set up Run"}
               </Button>
             )}
+            {!activeRun && test.data ? (
+              <Button
+                nativeButton={false}
+                render={<Link to="/tests/$testId/run-across" params={{ testId }} />}
+                variant="outline"
+                size="sm"
+              >
+                Run across…
+              </Button>
+            ) : null}
             {attachedRunId ? (
               <Button
                 nativeButton={false}
