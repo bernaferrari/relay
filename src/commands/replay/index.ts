@@ -245,6 +245,8 @@ export const testCommandFacet = defineCommandFacet({
   name: TEST_COMMAND_NAME,
   text: {
     summary: 'Run replay test suites',
+    cliDetail:
+      'JUnit reports (--reporter junit:<path>) replace characters forbidden by XML 1.0 with U+FFFD and preserve legal Unicode and whitespace. JSON and other reporters retain the original suite values.',
   },
   metadata: testCommandMetadata,
   run: (client, input) => client.replay.test(withCommandRuntimeHints(input)),
