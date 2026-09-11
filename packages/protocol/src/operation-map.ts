@@ -602,7 +602,7 @@ type SpecificOperationMap = {
       launched: {
         serial: string;
         app: string;
-        platform: "android" | "ios";
+        platform: "android" | "ios" | "browser";
         launchedAt: number;
       };
       observed: {

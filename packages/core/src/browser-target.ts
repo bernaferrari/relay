@@ -457,6 +457,35 @@ async function locatorFor(page: Page, input: { ref?: string; selector?: string }
   }
   const parsed = input.selector ? quotedSelector(input.selector) : null;
   if (parsed) {
+    if (parsed.field === "label") {
+      // A control and its text child are one semantic target. Resolve named
+      // controls first; two distinct controls with the same name still fail.
+      const roles = [
+        "button",
+        "link",
+        "option",
+        "menuitem",
+        "menuitemradio",
+        "menuitemcheckbox",
+        "checkbox",
+        "radio",
+        "switch",
+        "tab",
+        "textbox",
+        "combobox",
+        "spinbutton",
+      ] as const;
+      const named = roles.map((role) =>
+        page.getByRole(role, { name: parsed.value, exact: parsed.match === "exact" }),
+      );
+      const controls = named
+        .slice(1)
+        .reduce((all, next) => all.or(next), named[0]!)
+        .filter({ visible: true });
+      const count = await controls.count();
+      if (count > 1) throw new Error("Browser locator was ambiguous for label");
+      if (count === 1) return controls;
+    }
     const locator =
       parsed.field === "identifier"
         ? page.locator(

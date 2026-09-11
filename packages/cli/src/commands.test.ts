@@ -756,3 +756,24 @@ test("root help documents exit codes, --confirm, and the machine envelopes", () 
   assert.match(help, /"type":"result","ok":true/u);
   assert.match(help, /"type":"error","ok":false/u);
 });
+
+test("browser commands reuse canonical navigation, capture, and semantic input", () => {
+  assert.equal(resolveCommand(["browser", "open", "web"]).operationId, "target.open");
+  assert.deepEqual(resolveCommand(["browser", "navigate", "web", "https://example.com"]).input, {
+    serial: "web",
+    app: "https://example.com",
+  });
+  assert.deepEqual(resolveCommand(["browser", "click", "web", "Business"]).input, {
+    serial: "web",
+    label: "Business",
+    kind: "label",
+  });
+  assert.equal(
+    resolveCommand(["browser", "snapshot", "web"]).operationId,
+    "target.snapshot.capture",
+  );
+  assert.equal(
+    resolveCommand(["browser", "screenshot", "web"]).operationId,
+    "target.screenshot.capture",
+  );
+});

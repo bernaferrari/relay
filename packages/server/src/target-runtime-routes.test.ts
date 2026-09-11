@@ -243,7 +243,7 @@ test("launches an arbitrary app through the leased target session", async () => 
   process.env.RELAY_STATE_DIR = root;
   const launched: Array<{
     serial: string;
-    platform: "android" | "ios";
+    platform: "android" | "ios" | "browser";
     app: string;
     relaunch: boolean;
   }> = [];
@@ -251,6 +251,16 @@ test("launches an arbitrary app through the leased target session", async () => 
     host: "127.0.0.1",
     port: 0,
     targetRuntime: {
+      listTargets: async () => [
+        {
+          id: "browser-1",
+          name: "Browser",
+          kind: "browser",
+          createdAt: 1,
+          updatedAt: 1,
+          browser: { startUrl: "https://example.com" },
+        },
+      ],
       listDevices: async () => [
         {
           id: "ipad",
@@ -327,6 +337,25 @@ test("launches an arbitrary app through the leased target session", async () => 
     );
     assert.equal(Number.isFinite(body.launched.launchedAt), true);
     assert.deepEqual(body.observed, { app: "Settings", matched: true });
+    const browserResponse = await fetch(`http://127.0.0.1:${server.port}/device/app/launch`, {
+      method: "POST",
+      headers: headers("target.app.launch"),
+      body: JSON.stringify({ serial: "browser-1", app: "https://example.com/plans" }),
+    });
+    assert.equal(browserResponse.status, 200);
+    assert.deepEqual(launched.at(-1), {
+      serial: "browser-1",
+      platform: "browser",
+      app: "https://example.com/plans",
+      relaunch: false,
+    });
+    const invalid = await fetch(`http://127.0.0.1:${server.port}/device/app/launch`, {
+      method: "POST",
+      headers: headers("target.app.launch"),
+      body: JSON.stringify({ serial: "browser-1", app: "javascript:alert(1)" }),
+    });
+    assert.equal(invalid.status, 400);
+    assert.equal(launched.length, 3);
   } finally {
     await server.close();
     if (previous === undefined) delete process.env.RELAY_STATE_DIR;

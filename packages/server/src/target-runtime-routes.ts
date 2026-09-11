@@ -14,6 +14,7 @@ import {
   executionTargetRefFromTargetContext,
   launchRegisteredBuild,
   createDevice,
+  getBrowserDevice,
   listDeviceLeases,
   listDevices,
   listTargets,
@@ -64,7 +65,7 @@ export type TargetRuntimeRouteRuntime = {
   assertTargetControl: typeof assertTargetControl;
   launchApp: (input: {
     serial: string;
-    platform: "android" | "ios";
+    platform: SupervisedRuntimePlatform;
     app: string;
     relaunch: boolean;
   }) => Promise<void>;
@@ -113,6 +114,12 @@ const defaultRuntime: TargetRuntimeRouteRuntime = {
   listTargetWorkers,
   assertTargetControl,
   launchApp: async ({ serial, platform, app, relaunch }) => {
+    if (platform === "browser") {
+      await runWithTargetContext({ kind: "browser", platform, targetId: serial }, async () =>
+        openApp(await getBrowserDevice(serial), app, { relaunch }),
+      );
+      return;
+    }
     await runWithTargetContext({ kind: "device", platform, serial }, () =>
       openApp(createDevice(), app, { relaunch }),
     );
@@ -532,10 +539,18 @@ export async function handleTargetRuntimeRoute(context: {
     if (!serial) throw new HttpError(400, "serial is required");
     if (!app) throw new HttpError(400, "app is required");
     await runtime.assertTargetControl(scope, serial);
-    const device = (await runtime.listDevices().catch(() => [])).find(
-      (candidate) => candidate.serial === serial,
-    );
-    if (!device) throw new HttpError(409, `Target ${serial} is not connected`);
+    const device = await resolveSupervisedRuntimeTarget({ serial, runtime });
+    if (device.platform === "browser") {
+      let destination: URL;
+      try {
+        destination = new URL(app);
+      } catch {
+        throw new HttpError(400, "Browser navigation requires an http or https URL");
+      }
+      if (destination.protocol !== "http:" && destination.protocol !== "https:") {
+        throw new HttpError(400, "Browser navigation requires an http or https URL");
+      }
+    }
     // Bringing an app to the foreground is the safe, unsurprising default.
     // Physical iOS devices can reject termination when the requested app is
     // not currently running, which previously made a normal launch fail.

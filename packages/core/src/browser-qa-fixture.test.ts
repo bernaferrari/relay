@@ -7,7 +7,13 @@ import test from "node:test";
 import { compileBrowserEnvironment } from "@relay/protocol";
 import { closeBrowserHostPool } from "./browser-host-pool.js";
 import { resetBrowserDeviceSessionsForTests } from "./browser-device-session.js";
-import { closeBrowserTarget, getBrowserDevice } from "./browser-target.js";
+import {
+  closeBrowserTarget,
+  getBrowserDevice,
+  openBrowserAuthoringRuntime,
+} from "./browser-target.js";
+import { interact } from "./workspace-interact.js";
+import { snapshotBrowserPage } from "./browser-target-evidence.js";
 import { runRecipeStep } from "./recipe-runner.js";
 import { runWithTargetContext } from "./target-context.js";
 import { runWithTargetSupervisorStore, TargetSupervisorStore } from "./target-supervisor-store.js";
@@ -64,9 +70,9 @@ test("browser QA fixture covers localized responsive chat actions and generated 
     response.setHeader("content-type", "text/html");
     response.end(`<!doctype html><html lang="${locale}" data-theme="${theme}" data-viewport="${viewport}">
       <style>html{font-size:${font}%}body{background:${theme === "dark" ? "#111" : "#fff"}}button,textarea{font:inherit}</style>
-      <main><h1 id="title">Chat</h1><textarea id="composer" aria-label="Message"></textarea>
-      <button id="send" aria-label="${send}">${send}</button><p id="assistant-output" role="status" aria-label="Assistant response" style="min-height:1em"></p>
-      <span id="generating" hidden>Generating</span></main>
+      <main><div>Plain feature copy <span>Translated detail</span></div><h1 id="title">Chat</h1><textarea id="composer" aria-label="Message"></textarea>
+      <button id="send" aria-label="${send}"><span>${send}</span></button><p id="assistant-output" role="status" aria-label="Assistant response" style="min-height:1em"></p>
+      <span id="generating" hidden>Generating</span><div style="height:80px;overflow:auto"><button id="below" style="margin-top:2000px" onclick="this.textContent='Reached'">Below fold</button></div></main>
       <script>send.onclick=()=>{generating.hidden=false;send.disabled=true;setTimeout(()=>{assistantOutput.textContent='${locale} response: Paris is in France.';generating.hidden=true;send.disabled=false},20)};const assistantOutput=document.getElementById('assistant-output')</script>
     </html>`);
   });
@@ -98,6 +104,17 @@ test("browser QA fixture covers localized responsive chat actions and generated 
           }),
         });
         try {
+          if (locale === "en-US") {
+            const runtime = await openBrowserAuthoringRuntime(target.id, { headless: true });
+            const nodes = await snapshotBrowserPage(await runtime.activePage());
+            assert.ok(nodes.some((node) => node.content?.includes("Plain feature copy")));
+            assert.ok(nodes.some((node) => node.content === "Translated detail"));
+            await interact({ kind: "identifier", identifier: "below" }, { serial: target.id });
+            const after = await snapshotBrowserPage(await runtime.activePage());
+            assert.ok(
+              after.some((node) => node.identifier === "below" && node.content === "Reached"),
+            );
+          }
           await runWithTargetContext(
             { kind: "browser", platform: "browser", targetId: target.id },
             async () => {
@@ -110,7 +127,10 @@ test("browser QA fixture covers localized responsive chat actions and generated 
               );
               await runRecipeStep(
                 device,
-                { kind: "tap", target: { identifier: "send" } },
+                {
+                  kind: "tap",
+                  target: locale === "en-US" ? { label: labels[locale] } : { identifier: "send" },
+                },
                 { log: () => {}, job: owner },
               );
               await runRecipeStep(
@@ -146,6 +166,15 @@ test("browser QA fixture covers localized responsive chat actions and generated 
                 { log: () => {}, job: owner },
               );
               assert.ok(String(owner.resolvedInputs.response).includes("Paris is in France"));
+              if (locale === "en-US") {
+                await interact({ kind: "identifier", identifier: "below" }, { device });
+                await runRecipeStep(
+                  device,
+                  { kind: "extract", as: "below", target: { identifier: "below" } },
+                  { log: () => {}, job: owner },
+                );
+                assert.equal(owner.resolvedInputs.below, "Reached");
+              }
             },
           );
         } finally {

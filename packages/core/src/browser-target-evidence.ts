@@ -122,7 +122,7 @@ async function captureResponseBody(response: Response, entry: BrowserNetworkEntr
 }
 
 export async function snapshotBrowserPage(page: Page, maxNodes = 256): Promise<SnapshotNode[]> {
-  return await page.locator(SEMANTIC_SNAPSHOT).evaluateAll(
+  return await page.locator(`${SEMANTIC_SNAPSHOT}, div, span, li, td, th, dt, dd`).evaluateAll(
     (elements, options) => {
       const identifierCounts = new Map<string, number>();
       for (const element of elements) {
@@ -131,6 +131,15 @@ export async function snapshotBrowserPage(page: Page, maxNodes = 256): Promise<S
           identifierCounts.set(identifier, (identifierCounts.get(identifier) ?? 0) + 1);
       }
       const visible = elements.filter((element) => {
+        // Plain feature copy is evidence too. Keep only text-bearing wrappers,
+        // not every layout div, so extra structure cannot exhaust the budget.
+        if (
+          !element.matches(options.semantic) &&
+          !Array.from(element.childNodes).some(
+            (node) => node.nodeType === Node.TEXT_NODE && node.textContent?.trim(),
+          )
+        )
+          return false;
         const rect = element.getBoundingClientRect();
         const style = window.getComputedStyle(element);
         return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden";
@@ -139,7 +148,9 @@ export async function snapshotBrowserPage(page: Page, maxNodes = 256): Promise<S
         const html = element as HTMLElement;
         const input = element as HTMLInputElement;
         const rect = element.getBoundingClientRect();
-        const role = element.getAttribute("role") || element.tagName.toLowerCase();
+        const role = element.matches(options.semantic)
+          ? element.getAttribute("role") || element.tagName.toLowerCase()
+          : "text";
         const identifier = element.getAttribute("data-testid") || element.id || undefined;
         const hittable = element.matches(options.interactive);
         const renderedText = html.innerText?.trim() ?? "";
@@ -173,7 +184,7 @@ export async function snapshotBrowserPage(page: Page, maxNodes = 256): Promise<S
         };
       });
     },
-    { limit: maxNodes, interactive: INTERACTIVE },
+    { limit: maxNodes, interactive: INTERACTIVE, semantic: SEMANTIC_SNAPSHOT },
   );
 }
 

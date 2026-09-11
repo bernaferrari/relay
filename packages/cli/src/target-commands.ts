@@ -62,10 +62,11 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
     }),
   ),
   mapped("target.list", path("target list")),
+  mapped("target.app.list", path("device apps", ["serial"])),
   mapped("target.create", path("target create")),
   mapped("target.delete", path("target delete", ["targetId"])),
   mapped("target.preflight", path("target preflight", ["targetId"])),
-  mapped("target.open", path("target open", ["targetId"])),
+  mapped("target.open", path("target open", ["targetId"]), path("browser open", ["targetId"])),
   mapped(
     "target.browser-auth.save",
     path("browser auth save", ["targetId"], undefined, {
@@ -138,6 +139,7 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
     "target.snapshot.capture",
     path("target observe", ["serial"]),
     path("target snapshot", ["serial"]),
+    path("browser snapshot", ["serial"], { visual: true }),
     path(
       "device observe",
       ["serial"],
@@ -190,6 +192,7 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
   mapped(
     "target.screenshot.capture",
     path("target screenshot", ["serial"], undefined, { behavior: "screenshot" }),
+    path("browser screenshot", ["serial"], undefined, { behavior: "screenshot" }),
     path("device screenshot", ["serial"], undefined, {
       summary: "Capture the current screen as PNG",
       argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],
@@ -242,6 +245,7 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
   mapped(
     "target.app.launch",
     path("target app launch", ["serial", "app"]),
+    path("browser navigate", ["serial", "app"]),
     path("device launch", ["serial", "app"], undefined, {
       summary: "Launch an app and make it the active device session",
       argumentHelp: [
@@ -352,6 +356,7 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
   mapped(
     "target.interact",
     path("target interact", ["serial"]),
+    path("browser click", ["serial", "label"], { kind: "label" }),
     path("device interact", ["serial"], undefined, {
       summary: "Perform a semantic device interaction",
       argumentHelp: [{ name: "serial", type: "string", description: "Connected device serial" }],

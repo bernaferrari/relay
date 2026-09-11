@@ -211,6 +211,11 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
     }),
   ),
   mapped(
+    "app-map.screen.refresh.prepare",
+    path("screen refresh prepare", ["appMapId", "screenId"]),
+  ),
+  mapped("app-map.screen.refresh.apply", path("screen refresh apply", ["appMapId", "screenId"])),
+  mapped(
     "app-map.screen.alias-observe",
     path("screen alias-observe", ["appMapId", "screenId"], undefined, {
       summary: "Approve the current target screen as the same mapped screen",

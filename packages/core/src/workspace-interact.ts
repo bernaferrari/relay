@@ -4,6 +4,8 @@
 import {
   findClick,
   pressNamedControl,
+  pressIdentifier,
+  pressLabel,
   type NamedControlResolution,
   pressMatchingText,
   pressKey,
@@ -489,6 +491,20 @@ export async function interact(
       }
       return result;
     };
+    if (context.kind === "browser" && (input.kind === "identifier" || input.kind === "label")) {
+      // Browser locators validate uniqueness and actionability at dispatch and
+      // scroll the correct ancestor into view. Device viewport-point matching
+      // cannot represent a control inside a clipped DOM scroll container.
+      await withSession(
+        target.device,
+        async () => {
+          if (input.kind === "identifier") await pressIdentifier(target.device, input.identifier);
+          else await pressLabel(target.device, input.label);
+        },
+        "interaction",
+      );
+      return afterInput({});
+    }
     if (context.kind === "device" && context.platform === "android") {
       // Direct manipulation should survive app/session changes. Semantic refs
       // still use the SDK below, but mirror gestures never need an active app.

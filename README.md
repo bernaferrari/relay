@@ -238,6 +238,24 @@ directory fails before it can recover jobs or touch a device; use `pnpm ensure:s
 local service deliberately, or give an isolated worker its own state directory. A state directory
 owned by another host also fails closed until a supervised multi-host lease is available.
 
+## Browser capture and control
+
+Managed browsers use the same Relay server, leases, and evidence store as devices. Open a saved
+browser target, inspect the current page, and act on the control's accessible name:
+
+```bash
+relay browser open <target-id>
+relay browser navigate <target-id> https://example.com/plans
+relay browser snapshot <target-id> --json
+relay browser click <target-id> "Business"
+relay browser screenshot <target-id> --file business.png
+```
+
+A nested text span does not make its enclosing button ambiguous; two separate controls with the
+same name still require an identifier or an inspected point. Snapshots include visible static copy
+as well as controls, so plan features and other translated text remain available for comparison.
+Use `relay screen capture <map-id>` to retain screenshots and accessibility evidence in the App Map.
+
 ## Evidence, privacy, and control
 
 Every consequential operation is attributed. A Run freezes the selected Test and generated topology
