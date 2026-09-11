@@ -267,15 +267,32 @@ export function MapEdges({
       0,
       directionSiblings.findIndex((candidate) => candidate.id === path.id),
     );
+    // Center-origin branches form one visual bus. Direction-specific lanes
+    // are only needed when the paths originate at different controls/screens.
+    const sourceBranches = anchor
+      ? []
+      : paths.filter(
+          (candidate) =>
+            candidate.fromScreenId === path.fromScreenId &&
+            candidate.toScreenId &&
+            !isRoutineReturn(candidate) &&
+            (positions.get(candidate.toScreenId)?.x ?? -Infinity) > from.x,
+        );
+    const sharedJunction = sourceBranches.length > 1;
+    const branchEnd = sharedJunction
+      ? Math.min(
+          ...sourceBranches.map((candidate) => positions.get(candidate.toScreenId!)!.x - clearance),
+        )
+      : corridorEnd;
     let points =
       returning?.points ??
       forwardRoute(
         start,
         end,
         from.x + MAP_NODE_WIDTH,
-        forwardSlot,
-        directionSiblings.length,
-        corridorEnd,
+        sharedJunction ? 0 : forwardSlot,
+        sharedJunction ? 1 : directionSiblings.length,
+        branchEnd,
       );
     if (!returning)
       points = avoidPreviewObstacles(

@@ -210,3 +210,35 @@ it("uses separated bottom and top ports for horizontal branches", () => {
   );
   expect(markup).toContain('d="M 104 362 L 104 586"');
 });
+
+it("joins upper and lower sibling branches at the same junction", () => {
+  const markup = renderToStaticMarkup(
+    <MapEdges
+      paths={["top", "middle", "bottom"].map((id) => ({
+        id,
+        fromScreenId: "source",
+        fromTitle: "Source",
+        toScreenId: id,
+        label: id,
+        coveringTests: [],
+      }))}
+      positions={
+        new Map([
+          ["source", { x: 0, y: 428 }],
+          ["top", { x: 600, y: 0 }],
+          ["middle", { x: 600, y: 428 }],
+          ["bottom", { x: 600, y: 856 }],
+        ])
+      }
+      screens={["source", "top", "middle", "bottom"].map((id) => ({ id }))}
+      imageDimensions={new Map()}
+      markerId="shared"
+    />,
+  );
+  const route = (index: number) =>
+    markup.match(new RegExp(`id="-${index}" d="([^" ]+[^"]*)"`))![1]!;
+  const upper = Number(route(0).match(/Q ([\d.]+)/)![1]);
+  const lower = Number(route(2).match(/Q ([\d.]+)/)![1]);
+  expect(upper).toBe(lower);
+  expect(route(1)).not.toContain("Q");
+});
