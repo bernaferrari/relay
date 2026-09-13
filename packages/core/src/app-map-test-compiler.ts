@@ -158,6 +158,7 @@ export function compileAppMapScenarioTest(
   }
   const graph: Record<string, Recipe> = {};
   const provenance: AppMapTestStepProvenance[] = [];
+  const destEndRecipeIds = new Set<string>();
   const omittedSteps: NonNullable<AppMapCompiledTest["omittedSteps"]> = [];
   const navigationDiagnostics: AppMapTestCompileDiagnostic[] = [];
   const navigationDiagnosticKeys = new Set<string>();
@@ -591,6 +592,12 @@ export function compileAppMapScenarioTest(
               updatedAt: map.updatedAt,
             };
           }
+          if (connections.some((connection) => connection.destination.kind === "end")) {
+            destEndRecipeIds.add(plan.rootRecipeId);
+            for (const recipe of Object.values(instructionGraph)) {
+              destEndRecipeIds.add(recipe.id);
+            }
+          }
           let cleanup: NonNullable<RecipeStep["check"]>["cleanup"];
           if (step.cleanup) {
             const compiledCleanup = compileAppMapRoutine(map, step.cleanup.routineId);
@@ -840,6 +847,9 @@ export function compileAppMapScenarioTest(
       ]),
     ),
     stepProvenance: provenance,
+    ...(destEndRecipeIds.size
+      ? { destEndRecipeIds: [...destEndRecipeIds].sort((left, right) => left.localeCompare(right)) }
+      : {}),
     performance: compiledPerformance(rootRecipeId, graph),
     startup: options.entryCheckpointScreenId
       ? { mode: "verified-checkpoint", screenId: options.entryCheckpointScreenId }

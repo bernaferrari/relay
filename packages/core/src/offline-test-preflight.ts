@@ -696,6 +696,7 @@ export function preflightCompiledAppMapTestOffline(
     }
   };
   let checkedSelectors = 0;
+  const destEndRecipes = new Set(plan.destEndRecipeIds ?? []);
   const recipes = Object.entries(plan.recipes).sort(([left], [right]) =>
     left < right ? -1 : left > right ? 1 : 0,
   );
@@ -704,6 +705,7 @@ export function preflightCompiledAppMapTestOffline(
     let sourceScreenId: string | undefined;
     let sourceScreenTitle: string | undefined;
     let postTextMutation = false;
+    const destEndRecipe = destEndRecipes.has(recipe.id);
     for (const [stepIndex, step] of recipe.steps.entries()) {
       if (step.kind === "expect-screen") {
         postTextMutation = false;
@@ -835,6 +837,14 @@ export function preflightCompiledAppMapTestOffline(
             reason:
               "A tap can change navigation; the cursor remains unknown until a later screen expectation is proved at runtime.",
           });
+          if (destEndRecipe) {
+            // Dest-end chrome stays on the origin identity. Later Speed/Submit
+            // selectors must use the dest-end destination tree or live wait-for,
+            // never the origin unique-variant raw tree.
+            sourceScreenId = undefined;
+            sourceScreenTitle = undefined;
+            observations = plan.destEndObservationsByRecipeId?.[recipe.id] ?? [];
+          }
         }
         continue;
       }

@@ -605,3 +605,90 @@ test("offline preflight exposes deterministic selector, cursor, return, and froz
     },
   ]);
 });
+
+test("dest-end after-tap selectors do not use origin unique-variant raw", () => {
+  const homeTree = [
+    {
+      index: 0,
+      type: "Application",
+      rect: { x: 0, y: 0, width: 1280, height: 800 },
+    },
+    {
+      index: 1,
+      parentIndex: 0,
+      type: "button",
+      label: "Imagine",
+      enabled: true,
+      visibleToUser: true,
+      hittable: true,
+      rect: { x: 20, y: 200, width: 80, height: 32 },
+    },
+  ];
+  const evidence = {
+    rawSourcesByScreenId: {
+      home: [{ source: { reference: "relay-evidence://home" }, nodes: homeTree }],
+    },
+  };
+  const steps = [
+    {
+      kind: "expect-screen" as const,
+      screenId: "home",
+      screenTitle: "Signed-in home",
+      fingerprint: "home",
+    },
+    { kind: "tap" as const, id: "tap-imagine", target: { label: "Imagine" } },
+    { kind: "wait-for" as const, id: "wait-speed", target: { label: "Speed" }, timeoutMs: 15_000 },
+    { kind: "tap" as const, id: "tap-speed", target: { label: "Speed" } },
+    { kind: "tap" as const, id: "tap-submit", target: { label: "Submit" } },
+  ];
+  const destScreenShaped = plan(steps);
+  const destEnd = { ...plan(steps), destEndRecipeIds: ["root"] };
+  const withDestTree = {
+    ...destEnd,
+    destEndObservationsByRecipeId: {
+      root: [
+        {
+          nodes: [
+            { role: "radio" as const, label: "Speed", hittable: true },
+            { role: "button" as const, label: "Submit", hittable: true },
+          ],
+        },
+      ],
+    },
+  };
+  const originShaped = preflightCompiledAppMapTestOffline(destScreenShaped, evidence);
+  const liveWaitFor = preflightCompiledAppMapTestOffline(destEnd, evidence);
+  const destTree = preflightCompiledAppMapTestOffline(withDestTree, evidence);
+
+  assert.equal(
+    originShaped.findings.some(
+      (finding) =>
+        finding.severity === "blocker" &&
+        finding.code === "selector-absent" &&
+        finding.recipeStepId === "tap-speed",
+    ),
+    true,
+  );
+  assert.equal(
+    liveWaitFor.findings.some((finding) => finding.severity === "blocker"),
+    false,
+  );
+  assert.deepEqual(
+    liveWaitFor.findings
+      .filter(
+        (finding) =>
+          finding.recipeStepId === "wait-speed" || finding.recipeStepId === "tap-speed",
+      )
+      .map((finding) => [finding.severity, finding.code]),
+    [
+      ["warning", "source-observation-missing"],
+      ["warning", "source-observation-missing"],
+    ],
+  );
+  assert.equal(
+    destTree.findings.some(
+      (finding) => finding.recipeStepId === "tap-speed" || finding.recipeStepId === "tap-submit",
+    ),
+    false,
+  );
+});

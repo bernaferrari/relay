@@ -1,5 +1,10 @@
 import type { BrowserEngine } from "./browser-case-profile.js";
-import type { AppMapCapturePolicy, AppMapEntity, AssertionSpec } from "./app-map.js";
+import type {
+  AppMapCapturePolicy,
+  AppMapEntity,
+  AssertionSpec,
+  NormalizedSemanticNode,
+} from "./app-map.js";
 import type { ReviewedActionIntentBinding, ReviewedLogicalStateBinding } from "./product-intent.js";
 import type { HumanCheckpointReason, RecipeStep, StepTarget } from "./recipes.js";
 import type { RawAccessibilityTreeEvidence, ScrollSurfaceTestBinding } from "./scroll-surface.js";
@@ -553,6 +558,14 @@ export type AppMapCompiledTest = {
     }
   >;
   stepProvenance: AppMapTestStepProvenance[];
+  /** Dest-end connections stay on the origin identity (in-place chrome). After
+   * the first dest-end tap, later selectors must use dest-end destination
+   * evidence or live wait-for — never the origin unique-variant tree. */
+  destEndRecipeIds?: string[];
+  /** Frozen dest-end destination observations keyed by compiled recipe id.
+   * Present only when dest-end chrome was captured without inventing a dest
+   * screen. */
+  destEndObservationsByRecipeId?: Record<string, Array<{ nodes: NormalizedSemanticNode[] }>>;
   /** Static scheduled root/module accounting for the frozen graph. Branch and
    * repeat bodies remain represented by their control operation; recovery/SOS
    * recipes are intentionally excluded because they execute only on drift. */

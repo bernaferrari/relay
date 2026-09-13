@@ -403,6 +403,8 @@ export function parseCanonicalAppMapTestPlan(value: unknown): AppMapCompiledTest
       "rootRecipeId",
       "recipes",
       "stepProvenance",
+      "destEndRecipeIds",
+      "destEndObservationsByRecipeId",
       "performance",
       "startup",
       "originApplication",
