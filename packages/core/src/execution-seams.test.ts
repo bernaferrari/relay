@@ -89,6 +89,35 @@ test("in-place chrome wait-for is a source-proven leaf", () => {
   assert.equal(independentlySourceProvenLeafRecipe(check, context), true);
 });
 
+test("leftover conversation dest-screen wait-for is a source-proven leaf", () => {
+  const check: NonNullable<RecipeStep["check"]> = {
+    id: "open-chat",
+    title: "Open chat",
+    recovery: {
+      groupId: "open-chat",
+      mode: "warm-transition",
+      recipeId: "warm-leaf",
+      transitionId: "home-to-conversation",
+    },
+    transitionDependencies: [
+      {
+        connectionId: "home-to-conversation",
+        originScreenId: "home",
+        destination: { kind: "screen", screenId: "conversation" },
+      },
+    ],
+  };
+  const context = {
+    log: () => undefined,
+    recipeGraph: {
+      "warm-leaf": {
+        steps: [{ kind: "wait-for", target: { label: "Library" }, timeoutMs: 5_000 }],
+      },
+    },
+  } as unknown as RecipeStepContext;
+  assert.equal(independentlySourceProvenLeafRecipe(check, context), true);
+});
+
 test("reusable flow scopes inherited inputs and delegates nested steps", async () => {
   const resolvedInputs = { inherited: "outside" };
   const artifacts: { kind: string; capturedAt: number; data: unknown }[] = [];

@@ -1,5 +1,6 @@
 import type { AppMap, Connection, RecipeStep } from "@relay/protocol";
 import { compileAppMapConnection } from "./app-map-compiler.js";
+import { leftoverConversationHomePrelude } from "./leftover-origin-recovery.js";
 import type { Recipe } from "./recipes.js";
 
 type MappedPreludeGesture = Extract<RecipeStep, { kind: "tap" | "key" | "swipe" | "scroll" }>;
@@ -183,18 +184,27 @@ export function attachMappedInboundPrelude(
   const screenId = seekDestinationScreenId(map, found.step);
   if (!screenId) return;
   const path = inboundConnectionPath(map, screenId);
-  if (!path.length) return;
-  const preludeSteps = compileInboundPrelude(map, path);
-  if (!preludeSteps.length) return;
-  const start = map.screens[path[0]!.fromScreenId];
+  if (path.length) {
+    const preludeSteps = compileInboundPrelude(map, path);
+    if (preludeSteps.length) {
+      const start = map.screens[path[0]!.fromScreenId];
+      found.recipe.steps[found.index] = {
+        ...found.step,
+        preludeSteps,
+        ...(start?.identity?.fingerprint
+          ? { preludeStartFingerprint: start.identity.fingerprint }
+          : {}),
+        ...(start?.identity?.aliases?.length
+          ? { preludeStartAliases: [...start.identity.aliases] }
+          : {}),
+      } as RecipeStep;
+      return;
+    }
+  }
+  const leftover = leftoverConversationHomePrelude(map, screenId);
+  if (!leftover) return;
   found.recipe.steps[found.index] = {
     ...found.step,
-    preludeSteps,
-    ...(start?.identity?.fingerprint
-      ? { preludeStartFingerprint: start.identity.fingerprint }
-      : {}),
-    ...(start?.identity?.aliases?.length
-      ? { preludeStartAliases: [...start.identity.aliases] }
-      : {}),
+    ...leftover,
   } as RecipeStep;
 }
