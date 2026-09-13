@@ -11,9 +11,9 @@ export const planRunCommandPath = path(
       { name: "combineId", type: "string", description: "Saved Plan (Combine identifier)" },
     ],
     examples: [
-      'relay plan run grok-web grok-web-daily --budget 3m --findings --input \'{"browserTargetId":"grok-com","targetKind":"browser"}\'',
+      'relay plan run grok-web grok-web-daily --budget 10m --findings --input \'{"browserTargetId":"grok-com","targetKind":"browser","defaultTargetProfileId":"browser:grok-com"}\'',
     ],
-    note: "Plans default to every selected case. --budget 3m is a run/watch budget, not a promise the pack finishes. --findings prints markdown after the wait; Confirm/Reject never auto-accept visual baselines.",
+    note: "Plans default to every selected case. --budget 10m is a watch timeout, not a pack-duration promise. --budget 3m is too tight for the eight-Test logged-out pack. Logged-out grok-web-daily must use defaultTargetProfileId browser:grok-com. --findings prints markdown after the wait; Confirm/Reject never auto-accept visual baselines.",
     behavior: "job-start-watch",
   },
 );

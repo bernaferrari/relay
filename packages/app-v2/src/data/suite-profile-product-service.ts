@@ -37,7 +37,9 @@ export type PlanStartProfileTarget = {
   };
 };
 
-function planTargetFromProfile(profile: ProductEnvironmentProfile): PlanStartProfileTarget["target"] {
+function planTargetFromProfile(
+  profile: ProductEnvironmentProfile,
+): PlanStartProfileTarget["target"] {
   if (profile.platform === "browser") {
     return { targetKind: "browser", browserTargetId: profile.targetId };
   }
@@ -403,21 +405,19 @@ function formatObservedDuration(ms: number): string {
   return `about ${rounded} min`;
 }
 
-function quotedExecution(quote: {
-  estimatedParallelDurationMs: number;
-  laneCount: number;
-  workItems: number;
-  observedDurationMs: number;
-}): {
-  duration: "quoted";
+function serialWithUnmeasuredParallel(
+  observed: AppMapCombineObservedDuration,
+  laneCount: number,
+): {
+  duration: "observed";
   estimatedDurationMs: number;
   detail: string;
 } {
-  const timing = formatObservedDuration(quote.estimatedParallelDurationMs);
+  const serial = observedExecution(observed);
+  const lanes = `${laneCount} browser account ${laneCount === 1 ? "lane" : "lanes"}`;
   return {
-    duration: "quoted",
-    estimatedDurationMs: quote.estimatedParallelDurationMs,
-    detail: `Quoted parallel ${timing} across ${quote.laneCount} browser account ${quote.laneCount === 1 ? "lane" : "lanes"} (${quote.workItems} cells) from observed serial ${formatObservedDuration(quote.observedDurationMs)}.`,
+    ...serial,
+    detail: `${serial.detail} ${lanes} selected; parallel wall-clock is unmeasured.`,
   };
 }
 
@@ -484,17 +484,22 @@ function previewFromPreflight(
             selectedProfileIds: environments.map((item) => item.id),
             capacity:
               environments.length === 1 ? ("single-target" as const) : ("multi-target" as const),
-            ...(accountCapacity && accountCapacity.laneCount > 1
-              ? quotedExecution(accountCapacity)
-              : environments.length === 1 && preflight.observedDuration
-                ? observedExecution(preflight.observedDuration)
-                : {
+            ...(accountCapacity && accountCapacity.laneCount > 1 && preflight.observedDuration
+              ? serialWithUnmeasuredParallel(preflight.observedDuration, accountCapacity.laneCount)
+              : accountCapacity && accountCapacity.laneCount > 1
+                ? {
                     duration: "unavailable" as const,
-                    detail:
-                      environments.length === 1
-                        ? "One canonical target is selected. Duration remains unreported until Relay returns observed timing evidence."
-                        : `Each selected Plan case can run against every selected environment (up to ${MAX_PLAN_PROFILE_TARGETS}). Duration stays unreported until Relay returns observed timing.`,
-                  }),
+                    detail: `${accountCapacity.laneCount} browser account lanes selected; parallel wall-clock is unmeasured.`,
+                  }
+                : environments.length === 1 && preflight.observedDuration
+                  ? observedExecution(preflight.observedDuration)
+                  : {
+                      duration: "unavailable" as const,
+                      detail:
+                        environments.length === 1
+                          ? "One canonical target is selected. Duration remains unreported until Relay returns observed timing evidence."
+                          : `Each selected Plan case can run against every selected environment (up to ${MAX_PLAN_PROFILE_TARGETS}). Duration stays unreported until Relay returns observed timing.`,
+                    }),
           },
         }
       : {}),
@@ -727,11 +732,19 @@ export function createSuiteProfileProductService(platform: Platform): SuiteProfi
           profileCount: selectedEnvironments.length,
           selectedProfileIds: selectedEnvironments.map((item) => item.id),
           capacity: "multi-target" as const,
-          ...(combinePreflight.accountCapacity && combinePreflight.accountCapacity.laneCount > 1
-            ? quotedExecution(combinePreflight.accountCapacity)
+          ...(combinePreflight.accountCapacity &&
+          combinePreflight.accountCapacity.laneCount > 1 &&
+          combinePreflight.preflight.observedDuration
+            ? serialWithUnmeasuredParallel(
+                combinePreflight.preflight.observedDuration,
+                combinePreflight.accountCapacity.laneCount,
+              )
             : {
                 duration: "unavailable" as const,
-                detail: `Each selected Plan case can run against every selected environment (up to ${MAX_PLAN_PROFILE_TARGETS}). Duration stays unreported until Relay returns observed timing.`,
+                detail:
+                  combinePreflight.accountCapacity && combinePreflight.accountCapacity.laneCount > 1
+                    ? `${combinePreflight.accountCapacity.laneCount} browser account lanes selected; parallel wall-clock is unmeasured.`
+                    : `Each selected Plan case can run against every selected environment (up to ${MAX_PLAN_PROFILE_TARGETS}). Duration stays unreported until Relay returns observed timing.`,
               }),
         },
       };
@@ -818,7 +831,8 @@ export function createSuiteProfileProductService(platform: Platform): SuiteProfi
         if (!profile) throw new TypeError("That browser or device is not available.");
         return profile;
       });
-      const profile = selectedProfiles[0] ?? availableEnvironments.find((item) => item.id === input.profileId);
+      const profile =
+        selectedProfiles[0] ?? availableEnvironments.find((item) => item.id === input.profileId);
       if (!profile) throw new TypeError("Choose a browser or device first.");
       const hour = Math.trunc(input.hour);
       if (!Number.isInteger(hour) || hour < 0 || hour > 23) {

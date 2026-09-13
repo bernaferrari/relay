@@ -436,7 +436,13 @@ describe("suite and environment product projections", () => {
       }
       if (operation === "target.preflight") {
         return {
-          preflight: { targetId: "browser-1", ok: true, checkedAt: 4, capabilities: [], checks: [] },
+          preflight: {
+            targetId: "browser-1",
+            ok: true,
+            checkedAt: 4,
+            capabilities: [],
+            checks: [],
+          },
         };
       }
       throw new Error(`Unexpected operation ${operation}`);
@@ -456,7 +462,7 @@ describe("suite and environment product projections", () => {
     expect(preview.execution?.detail).not.toMatch(/12/u);
   });
 
-  it("quotes parallel browser-account wall-clock from observed pack duration", async () => {
+  it("keeps Plan preview on observed serial when parallel wall-clock is unmeasured", async () => {
     const browserMap = { ...map, combines: { [combine.id]: combine } } as unknown as AppMap;
     const browser = target("browser-1", "browser");
     relay.invoke.mockReset().mockImplementation(async (operation: string) => {
@@ -491,7 +497,13 @@ describe("suite and environment product projections", () => {
       }
       if (operation === "target.preflight") {
         return {
-          preflight: { targetId: "browser-1", ok: true, checkedAt: 4, capabilities: [], checks: [] },
+          preflight: {
+            targetId: "browser-1",
+            ok: true,
+            checkedAt: 4,
+            capabilities: [],
+            checks: [],
+          },
         };
       }
       throw new Error(`Unexpected operation ${operation}`);
@@ -535,13 +547,14 @@ describe("suite and environment product projections", () => {
     });
     expect(preview.caseCount).toBe(3);
     expect(preview.execution).toMatchObject({
-      duration: "quoted",
+      duration: "observed",
       estimatedDurationMs: 14_868,
     });
-    expect(preview.execution?.detail).toMatch(/Quoted parallel about 15s across 3 browser account lanes/u);
-    expect(Math.abs((preview.execution?.estimatedDurationMs ?? 0) - 14_869) / 14_869).toBeLessThanOrEqual(
-      0.2,
+    expect(preview.execution?.detail).toMatch(/Observed serial about 15s/u);
+    expect(preview.execution?.detail).toMatch(
+      /3 browser account lanes selected; parallel wall-clock is unmeasured/u,
     );
+    expect(preview.execution?.detail).not.toMatch(/Quoted parallel/u);
   });
 
   it("previews up to four independently selected environments with a runnable multi-target plan", async () => {
