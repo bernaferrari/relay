@@ -791,3 +791,25 @@ test("in-place chrome actions keep wait-for as the origin proof", () => {
     ["wait-for", "type"],
   );
 });
+
+test("leftover conversation dest-screen still uses wait-for as the origin proof", () => {
+  const map = fixture();
+  map.connections["open-home"]!.caseStackId = undefined;
+  map.connections["open-home"]!.actions = [
+    {
+      id: "open-chat",
+      kind: "steps",
+      steps: [
+        { kind: "wait-for", target: { label: "Library" }, timeoutMs: 5_000 },
+        { kind: "tap", target: { label: "Older chat" } },
+      ],
+    },
+  ];
+  const plan = compileAppMapConnection(map, "open-home");
+  const steps = plan.recipes[plan.rootRecipeId]!.steps;
+  assert.deepEqual(
+    steps.map((step) => step.kind),
+    ["wait-for", "tap", "expect-screen"],
+  );
+  assert.equal(steps.at(-1)?.kind === "expect-screen" ? steps.at(-1).screenId : undefined, "home");
+});

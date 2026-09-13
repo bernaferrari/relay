@@ -95,6 +95,135 @@ test("sidebar history does not redefine signed-in home, even in the nav rail", (
   assert.ok(!second.nodes.some((node) => node.label === "generate 42 bird images"));
 });
 
+function openConversationChrome(transcript: string): SnapshotNode[] {
+  return [
+    { role: "a", label: "Home page", hittable: true, visibleToUser: true },
+    { role: "a", label: "Imagine", hittable: true, visibleToUser: true },
+    { role: "a", label: "Library", hittable: true, visibleToUser: true },
+    { role: "a", label: "Chat", identifier: "new-chat", hittable: true, visibleToUser: true },
+    { role: "button", label: "Attach", identifier: "attach-button", hittable: true, visibleToUser: true },
+    {
+      role: "button",
+      label: "Model select",
+      identifier: "model-select-trigger",
+      hittable: true,
+      visibleToUser: true,
+    },
+    { role: "button", label: "BF Bernardo Ferrari", hittable: true, visibleToUser: true },
+    {
+      role: "textbox",
+      label: "Ask Grok anything",
+      rect: { x: 400, y: 675, width: 726, height: 42 },
+      hittable: true,
+      visibleToUser: true,
+    },
+    {
+      role: "article",
+      label: "You",
+      value: transcript,
+      identifier: "user-message",
+      rect: { x: 400, y: 200, width: 200, height: 40 },
+      hittable: true,
+      visibleToUser: true,
+    },
+    {
+      role: "article",
+      label: "Grok",
+      value: `${transcript} reply`,
+      identifier: "assistant-message",
+      rect: { x: 200, y: 260, width: 400, height: 80 },
+      hittable: true,
+      visibleToUser: true,
+    },
+    {
+      role: "button",
+      label: "Copy response",
+      rect: { x: 200, y: 360, width: 120, height: 32 },
+      hittable: true,
+      visibleToUser: true,
+    },
+    {
+      role: "button",
+      label: "Regenerate",
+      rect: { x: 340, y: 360, width: 100, height: 32 },
+      hittable: true,
+      visibleToUser: true,
+    },
+  ];
+}
+
+test("an open chat is not empty signed-in home without using transcript text", () => {
+  const home = observe(signedInChrome(["Relay older Zinnia load"]));
+  const firstChat = observe(openConversationChrome("Relay older Zinnia load"));
+  const secondChat = observe(openConversationChrome("Paris is the capital of France"));
+  assert.notEqual(home.fingerprint, firstChat.fingerprint);
+  assert.notEqual(compareScreenIdentity(home, firstChat).decision, "match");
+  assert.ok(home.nodes.some((node) => node.label === "what should we explore?"));
+  assert.ok(!firstChat.nodes.some((node) => node.label === "what should we explore?"));
+  assert.ok(firstChat.nodes.some((node) => node.label === "copy response"));
+  assert.ok(firstChat.nodes.some((node) => node.identifier === "assistant-message"));
+  assert.ok(!firstChat.nodes.some((node) => (node.value ?? "").includes("zinnia")));
+  assert.ok(!firstChat.nodes.some((node) => (node.label ?? "").includes("zinnia")));
+  assert.equal(firstChat.fingerprint, secondChat.fingerprint);
+  assert.equal(compareScreenIdentity(firstChat, secondChat).decision, "match");
+});
+
+test("offscreen You/Grok articles do not put transcript text in identity", () => {
+  const chrome = openConversationChrome("Relay older Zinnia load");
+  const leaked: SnapshotNode[] = [
+    ...chrome,
+    {
+      role: "article",
+      label: "You",
+      value: "Relay older Zinnia load",
+      rect: { x: 900, y: -96, width: 200, height: 38 },
+      hittable: true,
+      visibleToUser: true,
+    },
+    {
+      role: "p",
+      label: "Relay older Zinnia load",
+      rect: { x: 400, y: 34, width: 400, height: 45 },
+      visibleToUser: true,
+    },
+    {
+      role: "div",
+      identifier: "last-reply-container",
+      label: "2+2\n\n4",
+      rect: { x: 416, y: 432, width: 400, height: 80 },
+      visibleToUser: true,
+    },
+    {
+      role: "div",
+      identifier: "response-c37ac99d-7d57-4f19-8fc4-adc626579178",
+      label: "Relay older Zinnia load",
+      rect: { x: 416, y: -96, width: 400, height: 82 },
+      visibleToUser: true,
+    },
+  ];
+  const other: SnapshotNode[] = leaked.map((node) => {
+    const next = { ...node };
+    if (next.value?.includes("Zinnia") || next.value === "2+2\n\n4") next.value = "Paris is the capital";
+    if (
+      (next.label?.includes("Zinnia") || next.label === "2+2\n\n4") &&
+      !/^(?:you|grok)$/iu.test(next.label ?? "")
+    ) {
+      next.label = "Paris is the capital";
+    }
+    return next;
+  });
+  const first = observe(leaked);
+  const second = observe(other);
+  assert.ok(first.nodes.some((node) => node.identifier === "last-reply-container"));
+  assert.ok(first.nodes.some((node) => node.label === "copy response"));
+  assert.ok(!first.nodes.some((node) => /zinnia|2\+2|paris/i.test(`${node.label ?? ""} ${node.value ?? ""}`)));
+  assert.equal(first.fingerprint, second.fingerprint);
+  assert.notEqual(
+    compareScreenIdentity(observe(signedInChrome(["Relay older Zinnia load"])), first).decision,
+    "match",
+  );
+});
+
 test("an attach menu is a different screen once history is ignored", () => {
   const home = observe(signedInChrome(["Paris capital of France"]));
   const attach = observe([

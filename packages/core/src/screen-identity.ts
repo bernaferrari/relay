@@ -9,8 +9,12 @@ import type {
 } from "@relay/protocol";
 import type { SnapshotNode } from "./device.js";
 import {
+  composerBands,
   conversationHistoryLabels,
   isConversationHistoryNode,
+  isConversationChromeNode,
+  isDynamicContentBody,
+  redactConversationTranscript,
 } from "./screen-identity-history.js";
 import { isTypeaheadOrAnnouncerNode, typedComposerValues } from "./screen-identity-typeahead.js";
 import { SYSTEM_INPUT_IDENTIFIER, systemInputNodeIndexes } from "./snapshot-app-content.js";
@@ -107,11 +111,6 @@ const COMPOSER_HINT =
   /\b(?:type [@/#] to [a-z0-9 ]+|type to (?:imagine|grok)\b|drag and drop [a-z0-9 ]+|switch to (?:build|ask) mode(?: to [a-z0-9 ]*)?|ask grok anything)\b/giu;
 const GENERATED_DOM_ID = /\bradix-_[a-z0-9_-]+/giu;
 const LANDMARK_DUMP_ROLE = /^(?:div|main|section)$/u;
-const COMPOSER_ROLE = /^(?:textbox|textarea|searchbox)$/u;
-const PAGE_TITLE_ROLE = /^(?:h1|heading)$/u;
-const HEADER_MAX_Y = 100;
-const NAV_RAIL_MAX_X = 88;
-const COMPOSER_BAND_PX = 110;
 const CONSENT_LABEL =
   /^(?:reject all(?: cookies)?|accept all(?: cookies)?|cookies? settings|dismiss cookie notice|cookie policy|cookie notice)$/iu;
 const CONSENT_IDENTIFIER = /cookie[-_]?(?:banner|notice|consent)/iu;
@@ -326,43 +325,6 @@ function isLandmarkDumpNode(node: SnapshotNode): boolean {
   return label.length >= 80 || (label.match(/\n/g)?.length ?? 0) >= 3;
 }
 
-function nodeRole(node: SnapshotNode): string {
-  return (node.role ?? node.type ?? "").trim().toLocaleLowerCase();
-}
-
-function composerBands(nodes: readonly SnapshotNode[]): Array<{ top: number; bottom: number }> {
-  return nodes.flatMap((node) => {
-    const rect = node.rect;
-    if (!rect || !COMPOSER_ROLE.test(nodeRole(node))) return [];
-    return [
-      {
-        top: rect.y - COMPOSER_BAND_PX,
-        bottom: rect.y + rect.height + COMPOSER_BAND_PX,
-      },
-    ];
-  });
-}
-
-/**
- * Scrollable transcript, suggestion chips, and gallery tiles. Chrome is the
- * header, page title, side rail, and the composer cluster. Nodes without a
- * rect stay in identity so callers that omit geometry do not lose controls.
- */
-function isDynamicContentBody(
-  node: SnapshotNode,
-  bands: Array<{ top: number; bottom: number }>,
-): boolean {
-  const rect = node.rect;
-  if (!rect || bands.length === 0) return false;
-  const role = nodeRole(node);
-  if (PAGE_TITLE_ROLE.test(role) || COMPOSER_ROLE.test(role)) return false;
-  if (rect.y < HEADER_MAX_Y) return false;
-  if (rect.x < NAV_RAIL_MAX_X && rect.width < 280) return false;
-  const mid = rect.y + rect.height / 2;
-  if (bands.some((band) => mid >= band.top && mid <= band.bottom)) return false;
-  return true;
-}
-
 export type ObserveScreenIdentityOptions = {
   ignoreRegions?: readonly ScreenIdentityIgnoreRegion[];
 };
@@ -456,6 +418,7 @@ export function observeScreenIdentity(
   const bodyBands = composerBands(candidateNodes);
   const typedValues = typedComposerValues(candidateNodes);
   const historyLabels = conversationHistoryLabels(candidateNodes);
+  const conversationOpen = candidateNodes.some(isConversationChromeNode);
   const identityNodes = candidateNodes.filter(
     (node) =>
       (includeDeviceState || !bannerNode(node)) &&
@@ -465,13 +428,14 @@ export function observeScreenIdentity(
       !isLandmarkDumpNode(node) &&
       !isTypeaheadOrAnnouncerNode(node, typedValues) &&
       !isConversationHistoryNode(node, historyLabels) &&
-      !isDynamicContentBody(node, bodyBands) &&
+      !isDynamicContentBody(node, bodyBands, conversationOpen) &&
       !nodeOverlapsIgnoreRegion(node, pixelIgnoreRegions(options?.ignoreRegions ?? [], nodes)),
   );
   const entries = nodes
     .filter((node) => identityNodes.includes(node))
     .filter((node) => node.index === undefined || !ignoredSystemInput.has(node.index))
     .filter((node) => node.visibleToUser !== false)
+    .map(redactConversationTranscript)
     .flatMap((node) => {
       const label = normalizeText(node.label, "label");
       const value = normalizeText(node.value, "value");

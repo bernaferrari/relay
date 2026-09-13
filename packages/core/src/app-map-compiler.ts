@@ -674,10 +674,10 @@ export function compileAppMapConnection(
     actions: connection.actions,
     ensureRoutine,
   });
-  // In-place (destination end) chrome actions prove presence with wait-for.
-  // Requiring the origin identity strands consecutive runs after a reply
-  // changes the screen, then SOS-recovers by replaying the same connection.
-  if (connection.destination.kind === "end" && compiled.steps[0]?.kind === "wait-for") {
+  // Wait-for as the first action is the origin proof. Requiring origin
+  // identity strands leftover conversation after a reply (open chat is no
+  // longer empty home), then SOS-recovers by replaying the same connection.
+  if (compiled.steps[0]?.kind === "wait-for") {
     root.steps = [];
     root.stepProvenance = [];
   }
