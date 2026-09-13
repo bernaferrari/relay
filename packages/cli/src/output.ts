@@ -77,6 +77,9 @@ function recoveryDetails(details: unknown): { message?: string; command?: string
 }
 
 export class CliOutput {
+  /** Last machine envelope written (result or error). Used by `--out`. */
+  terminal: unknown;
+
   constructor(
     private readonly mode: OutputMode,
     private readonly quiet: boolean,
@@ -163,6 +166,7 @@ export class CliOutput {
 
   result(operationId: string, result: unknown): void {
     const terminal = { type: "result", ok: true, operationId, result } as const;
+    this.terminal = terminal;
     if (this.mode === "json" || this.mode === "ndjson") line(this.streams.stdout, terminal);
     else {
       const verifyChange = formatVerifyChangeResult(result);
@@ -181,6 +185,7 @@ export class CliOutput {
         ...(error.details !== undefined ? { details: error.details } : {}),
       },
     } as const;
+    this.terminal = terminal;
     if (this.mode === "json" || this.mode === "ndjson") line(this.streams.stdout, terminal);
     if (!this.quiet) {
       this.streams.stderr.write(`relay: ${error.message}\n`);

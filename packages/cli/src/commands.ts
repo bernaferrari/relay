@@ -20,6 +20,7 @@ import { cliResourceDescriptors } from "./resource-commands.js";
 import { runEvidenceCommandDescriptors } from "./run-share-commands.js";
 import { proofCommandDescriptors } from "./proof-commands.js";
 import { targetCommandDescriptors } from "./target-commands.js";
+import { laneCommandDescriptors } from "./lane-commands.js";
 
 export type {
   CliExclusionReason,
@@ -121,6 +122,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     exclusion: "internal",
     reason: "Outcome commands own authorized CAS transitions for Runs and recordings.",
   },
+  ...laneCommandDescriptors,
 
   mapped("workspace.privacy.get", path("policy privacy get")),
   mapped("workspace.privacy.update", path("policy privacy update")),
@@ -410,6 +412,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
       examples: [
         'relay combine run grok-ios language-x-settings --cell ja --input \'{"serial":"<device>","platform":"ios"}\'',
         'relay combine run grok-ios language-x-settings --all --input \'{"serial":"<device>","platform":"ios"}\'',
+        "relay combine run grok-web grok-hourly --lane grok-lab --all",
       ],
       note: "Default is one cell. Pass --cell to choose a world, or --all to run every selected cell. A default serial/target fills missing cell bindings. Per-cell cellRuntimeProfiles and cellTargetBindings remain overrides. For a local multi-target campaign, pass cellTargetBindings plus the shared localAdmission object. Missing Variable, empty selection, or a Variable that cannot apply still return 409 and queue nothing.",
       behavior: "job-start-watch",
@@ -478,6 +481,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
           description: "World selector such as ja. Default without --all is one cell.",
         },
       ],
+      examples: ["relay combine run grok-web grok-hourly --lane grok-lab --all"],
       behavior: "job-start-watch",
     }),
     planRunCommandPath,
@@ -563,8 +567,11 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     "job.combine.export",
     path("combine export", ["batchId"], undefined, {
       summary: "Export a Combine screenshot pack",
-      examples: ["relay combine export <batch-id>"],
-      note: "Writes <locale>/screenshots/ plus <locale>/accessibility/*.json as a portable review folder.",
+      examples: [
+        "relay combine export <batch-id>",
+        "relay combine export <batch-id> --export ./review --todo ./todo.json",
+      ],
+      note: "Writes a portable review folder. index.html opens with a Test checklist (passed | check failed | could not run | todo), before/after PNGs, visual-comparison ids, and `relay run visual review <job>`. Confirm/Reject never accept a visual baseline. Optional --export copies the pack; --todo merges unbound/gated rows.",
     }),
     path("job combine export", ["batchId"], undefined, {
       summary: "Export a Combine screenshot pack",

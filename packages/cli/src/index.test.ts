@@ -936,6 +936,8 @@ test("root and family help are useful without creating a client", async () => {
         /Authoring\s+variable, test, combine, proposal, session/,
         /device screenshot <serial>/,
         /--binary/,
+        /--timeout <ms>.*default 180s/,
+        /--out <dir>/,
       ],
     },
     {
@@ -1398,6 +1400,47 @@ test("plan run defaults to every case and accepts a watch budget", () => {
   assert.equal(parsed.input.executionMode, "all");
   assert.equal(parsed.config.timeoutMs, 180_000);
   assert.equal(parsed.findings, true);
+});
+
+test("plan run --export and --todo stay on the invoke command", () => {
+  const parsed = parseCli(
+    [
+      "plan",
+      "run",
+      "grok-web",
+      "grok-hourly",
+      "--export",
+      "/tmp/hourly",
+      "--todo",
+      "todo.json",
+      "--input",
+      '{"browserTargetId":"grok-com","targetKind":"browser"}',
+    ],
+    {},
+  );
+  assert.equal(parsed.command, "invoke");
+  if (parsed.command !== "invoke") throw new Error("expected invoke");
+  assert.equal(parsed.exportDir, "/tmp/hourly");
+  assert.equal(parsed.todoFile, "todo.json");
+});
+
+test("combine export accepts --export and --todo", () => {
+  const parsed = parseCli(
+    ["combine", "export", "batch-1", "--export", "./review", "--todo", "./todo.json"],
+    {},
+  );
+  assert.equal(parsed.command, "invoke");
+  if (parsed.command !== "invoke") throw new Error("expected invoke");
+  assert.equal(parsed.operationId, "job.combine.export");
+  assert.equal(parsed.exportDir, "./review");
+  assert.equal(parsed.todoFile, "./todo.json");
+});
+
+test("--export is rejected on test run", () => {
+  assert.throws(
+    () => parseCli(["device", "screenshot", "phone", "--export", "/tmp/pack"], {}),
+    /--export is only valid on plan run, combine run, or combine export/,
+  );
 });
 
 test("test run --lens --cell --all without --in are usage errors", async () => {

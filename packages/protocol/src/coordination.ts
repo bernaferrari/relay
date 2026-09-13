@@ -39,6 +39,7 @@ export type ResourceKind =
   | "project"
   | "build"
   | "device-pool"
+  | "lane"
   | "lease"
   | "variables"
   | "app-map"

@@ -390,9 +390,17 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
         "relay lease create 00008110 --actor agent:mapper",
         'relay device interact 00008110 --actor agent:mapper --input \'{"kind":"label","label":"Continue"}\'',
         'relay device interact 00008110 --preview --file preview.png --input \'{"kind":"label","label":"Back"}\'',
+        'relay device interact --preview --lane grok-lab --file preview.png --input \'{"kind":"label","label":"Imagine"}\'',
         'relay device interact emulator-5554 --input \'{"kind":"swipe","from":{"x":540,"y":1800},"to":{"x":540,"y":650},"durationMs":300}\'',
       ],
-      note: "Device input requires an active exclusive lease owned by the same --actor. --preview paints the selection on a screenshot and does not tap.",
+      note: "Device input requires an active exclusive lease owned by the same --actor. --preview paints the selection on a screenshot and does not tap. --lane fills the target (and browser fixture overlay) so --input-file is not needed.",
+    }),
+    path("device interact", [], undefined, {
+      summary: "Interact using --lane instead of a positional serial",
+      examples: [
+        'relay device interact --preview --lane grok-lab --file preview.png --input \'{"kind":"label","label":"Back"}\'',
+      ],
+      note: "--lane or --input serial is required when the positional serial is omitted.",
     }),
   ),
   mapped(

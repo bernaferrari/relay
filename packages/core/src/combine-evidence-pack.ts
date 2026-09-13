@@ -27,7 +27,13 @@ import {
 } from "./combine-evidence-batch-analysis.js";
 import { jobOutcomeFindings, mergeJobOutcomeFindings } from "./combine-evidence-job-findings.js";
 import { readAccountReloginFindings } from "./plan-account-relogin-campaign.js";
-import { listPersistedRuns } from "./runs.js";
+import {
+  readVisualComparisonIdsByRunId,
+  reviewChecklistRows,
+  writeReviewChecklistFiles,
+  type ReviewChecklistTodoItem,
+} from "./combine-evidence-review-checklist.js";
+import { listPersistedRuns, runsRoot } from "./runs.js";
 import { slugEvidencePathSegment } from "./screen-identity.js";
 import { listJobs, type TestJob } from "./session.js";
 import { composeScrollSurveyFrames } from "./scrollable-survey.js";
@@ -557,6 +563,7 @@ export async function exportCombineEvidencePack(input: {
   jobs: CombineEvidenceCase[];
   title?: string;
   recipeId?: string;
+  todoItems?: readonly ReviewChecklistTodoItem[];
 }): Promise<{ rootDir: string; manifest: CombineEvidencePackManifest }> {
   const batchId = input.batchId.trim();
   if (!batchId) throw new Error("batchId is required");
@@ -650,13 +657,18 @@ export async function exportCombineEvidencePack(input: {
 
   const locales = [...new Set(cases.map((item) => item.locale))];
   const title = input.title ?? input.jobs[0]?.title ?? "Combine evidence";
-  const { analysis, byCanonicalKey, frames, coverage } = analyzeCombineEvidenceBatchData({
+  const analyzed = analyzeCombineEvidenceBatchData({
     batchId,
     title,
     locales,
     captures,
     compareText: comparesLanguage(input.jobs),
   });
+  const analysis = mergeJobOutcomeFindings(
+    analyzed.analysis,
+    jobOutcomeFindings(input.jobs, evidenceCaseLocale),
+  );
+  const { byCanonicalKey, frames, coverage } = analyzed;
   const framesByPath = new Map(frames.map((frame) => [frame.path, frame]));
 
   const content = compareCapturedContent(captures);
@@ -702,11 +714,21 @@ export async function exportCombineEvidencePack(input: {
     analysisCoverage: coverage,
   };
   await writeFile(join(rootDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+  const checklistRows = reviewChecklistRows({
+    cases: manifest.cases,
+    findings: analysis.findings,
+    visualComparisonByJobId: await readVisualComparisonIdsByRunId(runsRoot()),
+    todoItems: input.todoItems,
+  });
   await writeFile(
     join(rootDir, "index.html"),
-    portablePackHtml(manifest).replace(
-      "<main>",
-      '<main><p><a href="comparison.html">Compare screens side by side</a></p>',
+    await writeReviewChecklistFiles(
+      rootDir,
+      portablePackHtml(manifest).replace(
+        "<main>",
+        '<main><p><a href="comparison.html">Compare screens side by side</a></p>',
+      ),
+      checklistRows,
     ),
     "utf8",
   );
@@ -721,7 +743,7 @@ export async function exportCombineEvidencePack(input: {
       `Findings: ${analysis.findings.length} (${analysis.critical} critical) against ${analysis.baselineLocale}`,
       `Frames read: ${coverage.inspectedFrames} of ${coverage.frames} carried a UI tree`,
       "",
-      "Open index.html for a portable visual report. Each folder is one matrix case: screenshots/ are the rasters (full.png is the stitched long page when a destination survey or stitch was captured), accessibility/ holds the raw tree beside each PNG when one was captured.",
+      "Open index.html for the Test checklist (passed | check failed | could not run | todo) and the frame report. Confirm and Reject never accept a visual baseline; use `relay run visual review <job>`. Each folder is one matrix case: screenshots/ are the rasters (full.png is the stitched long page when a destination survey or stitch was captured), accessibility/ holds the raw tree beside each PNG when one was captured.",
       "manifest.json carries the same findings under `analysis`, and `byCanonicalKey` maps each one to the frame it came from.",
       "",
     ].join("\n"),

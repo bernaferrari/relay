@@ -8,6 +8,7 @@ export const combineStartOperationInputSchemas = {
   "job.combine.start": z
     .object({
       appMapId: identifier("App Map identifier"),
+      laneId: identifier("Saved Lane whose overlay the server applies").optional(),
       testId: identifier("Test identifier to run once").optional(),
       combineId: identifier("Saved Combine identifier").optional(),
       variableIds: z.array(identifier("Variable identifier")).optional(),
@@ -79,7 +80,26 @@ export const combineStartOperationInputSchemas = {
           path: ["testId"],
         });
       }
+      if (input.laneId) {
+        for (const key of [
+          "serial",
+          "platform",
+          "targetKind",
+          "browserTargetId",
+          "defaultTargetProfileId",
+          "profileTargets",
+        ] as const) {
+          if (input[key] !== undefined) {
+            context.addIssue({
+              code: "custom",
+              message: `${key} is filled from Lane ${input.laneId}; omit it`,
+              path: [key],
+            });
+          }
+        }
+      }
       if (
+        !input.laneId &&
         !input.serial &&
         !input.browserTargetId &&
         !input.cellTargetBindings?.length &&
@@ -87,7 +107,7 @@ export const combineStartOperationInputSchemas = {
       ) {
         context.addIssue({
           code: "custom",
-          message: "Choose serial, browserTargetId, or explicit cell target bindings",
+          message: "Choose serial, browserTargetId, explicit cell target bindings, or laneId",
           path: ["serial"],
         });
       }

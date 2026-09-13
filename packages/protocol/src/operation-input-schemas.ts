@@ -12,6 +12,7 @@ import { appMapAuthoringOperationSchemas } from "./app-map-authoring-operation-s
 import { executionOperationSchemas } from "./execution-operation-schemas.js";
 import { observationOperationSchemas } from "./observation-operation-schemas.js";
 import { workspaceOperationSchemas } from "./workspace-operation-schemas.js";
+import { laneOperationInputSchemas } from "./lane-operation-schemas.js";
 import { coreTargetOperationInputSchemas } from "./core-target-operation-input-schemas.js";
 import { combineStartOperationInputSchemas } from "./combine-start-operation-input-schema.js";
 import { workflowRecordOperationInputSchemas } from "./workflow-record-operation-schemas.js";
@@ -42,6 +43,7 @@ export type RelayToolInputSchema = z.ZodType<Record<string, unknown>>;
 export const operationInputSchemas = {
   ...reviewedDocumentOriginOperationSchemas,
   ...workspaceOperationSchemas,
+  ...laneOperationInputSchemas,
   ...appMapAuthoringOperationSchemas,
   ...observationOperationSchemas,
   ...executionOperationSchemas,

@@ -15,7 +15,6 @@ import {
   compileAppMapTest,
   findActiveCombineCampaignForCombine,
   frozenRawAccessibilityTargetProfiles,
-  createAppMapTestExecutionIntent,
   currentOperationContext,
   enqueueJob,
   listDevices,
@@ -43,12 +42,13 @@ import { assertTargetControl, targetLeaseBelongsToCaller } from "./access-contro
 import { executeCombineStart } from "./combine-start-route.js";
 import { applyAppMapMutation } from "./app-map-route-mutations.js";
 import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
-import { defaultJobRouteRuntime, type JobRouteRuntime } from "./job-routes.js";
+import { parseLaneAwareTestRunBody } from "./lane-run-route.js";
+import { defaultJobRouteRuntime } from "./job-routes.js";
 import {
   frozenTestRunTargetProfile,
   queuedAppMapTestTargetProfile,
 } from "./app-map-test-target-profile.js";
-import type { RequestContext } from "./security.js";
+import { defaultTestRunRuntime, type AppMapRunRouteContext } from "./app-map-test-run-runtime.js";
 import { assertRepeatWorkflowMutation } from "./repeat-workflow-receipt.js";
 import {
   assertReviewedBrowserTargetProfile,
@@ -56,70 +56,32 @@ import {
   frozenEvidenceTargetProfileForTarget,
   offlinePreflightProfileRecovery,
 } from "./app-map-run-target-admission.js";
-import {
-  appMapProofExecutionAdmission,
-  type AppMapProofExecutionAuthority,
-} from "./app-map-proof-execution-admission.js";
+import { appMapProofExecutionAdmission } from "./app-map-proof-execution-admission.js";
 
 export {
   frozenTestRunTargetProfile,
   queuedAppMapTestTargetProfile,
 } from "./app-map-test-target-profile.js";
-
-/** Small host seam for proving that a blocked Test run is entirely offline.
- * Normal callers use the production runtime; tests can make any device or
- * enqueue call fail loudly if preflight ordering regresses. */
-export type AppMapTestRunRouteRuntime = {
-  listDevices: typeof listDevices;
-  assertTargetControl: typeof assertTargetControl;
-  createAppMapTestExecutionIntent: typeof createAppMapTestExecutionIntent;
-  enqueueJob: typeof enqueueJob;
-  readBuild: typeof readBuild;
-  prepareBuildForProof: typeof prepareRegisteredBuildForProof;
-};
-
-const defaultTestRunRuntime: AppMapTestRunRouteRuntime = {
-  listDevices,
-  assertTargetControl,
-  createAppMapTestExecutionIntent,
-  enqueueJob,
-  readBuild,
-  prepareBuildForProof: prepareRegisteredBuildForProof,
-};
-
+export type {
+  AppMapRunRouteContext,
+  AppMapTestRunRouteRuntime,
+} from "./app-map-test-run-runtime.js";
 export {
   explicitTargetAvailability,
   frozenEvidenceTargetProfileForTarget,
   offlinePreflightProfileRecovery,
 } from "./app-map-run-target-admission.js";
-export type AppMapRunRouteContext = {
-  method: string;
-  pathname: string;
-  request: http.IncomingMessage;
-  response: http.ServerResponse;
-  scope: RequestContext;
-  /** Proof-only admission membrane. The canonical Test preflight must match
-   * the risk authority frozen by the calling Verification Cell before any
-   * target lease or job enqueue is attempted. */
-  proofExecutionAuthority?: AppMapProofExecutionAuthority & {
-    /** Proof execution also freezes the exact build/deployment identity. */
-    buildId?: string;
-    sourceSha?: string;
-    artifactDigest?: string;
-  };
-  runtime?: Partial<AppMapTestRunRouteRuntime>;
-  combineRuntime?: Partial<JobRouteRuntime>;
-};
 
 export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promise<boolean> {
   if (input.method !== "POST") return false;
   const runtime = { ...defaultTestRunRuntime, ...input.runtime };
   const testMatch = matchPath(input.pathname, "/app-maps/:appMapId/tests/:testId/run");
   if (testMatch) {
-    const body = (await parseJsonBody(input.request)) as Omit<
-      OperationInput<"app-map.test.run">,
-      "appMapId" | "testId"
-    >;
+    const body = await parseLaneAwareTestRunBody(
+      input.request,
+      input.scope.projectId,
+      testMatch.appMapId!,
+    );
     if (body.repeatRecovery?.workflowMutation) {
       await assertRepeatWorkflowMutation({
         scope: input.scope,

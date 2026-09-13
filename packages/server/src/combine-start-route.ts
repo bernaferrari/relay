@@ -51,6 +51,7 @@ import {
 } from "./app-map-combine-runtime-contract.js";
 import { queuedAppMapTestTargetProfile } from "./app-map-test-target-profile.js";
 import { HttpError, json, parseJsonBody } from "./http.js";
+import { applyLaneToCombineStartOrThrow } from "./lane-run-route.js";
 import type { JobRouteRuntime } from "./job-routes.js";
 import {
   admitAndStageLocalCombineCampaign,
@@ -71,6 +72,7 @@ type CombineStartRequest = {
   cellRuntimeProfiles?: AppMapCombineCellRuntimeProfile[];
   /** Explicit local execution target for every selected Test × world cell. */
   cellTargetBindings?: AppMapCombineCellTargetBinding[];
+  laneId?: string;
   profileTargets?: {
     profileId: string;
     targetProfileId?: string;
@@ -220,8 +222,9 @@ export async function handleCombineStartRoute(context: CombineStartRouteContext)
 export async function executeCombineStart(
   scope: RequestContext,
   runtime: JobRouteRuntime,
-  body: CombineStartRequest,
+  raw: CombineStartRequest,
 ): Promise<CombineStartResult> {
+  const body = await applyLaneToCombineStartOrThrow(scope.projectId, raw);
   const combineId = body.combineId?.trim();
   const appMapId = body.appMapId?.trim();
   const repeatTestId = body.repeatRecovery?.testId.trim();

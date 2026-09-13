@@ -31,7 +31,7 @@ import { currentTargetContext, runWithTargetContext } from "./target-context.js"
 import { verifyIosScreenChanged } from "./ios-app-launch.js";
 import { annotateTapPreview, tapPreviewLogicalBounds } from "./tap-preview.js";
 import { iosLogicalBoundsForSerial } from "./workspace-capture.js";
-import { resolveRuntimeTarget } from "./workspace-devices.js";
+import { resolveRuntimeTarget, type RuntimeTargetOverlay } from "./workspace-devices.js";
 import {
   lastIosSessionOperationDiagnostic,
   withSession,
@@ -315,7 +315,7 @@ export function resolveInteractPreview(
 
 export async function previewInteract(
   input: InteractInput,
-  opts?: { serial?: string },
+  opts?: { serial?: string; overlay?: RuntimeTargetOverlay },
 ): Promise<
   ScreenshotPayload & {
     preview: true;
@@ -323,64 +323,72 @@ export async function previewInteract(
     iosSessionLifecycle?: IosSessionOperationDiagnostic;
   }
 > {
-  const shot = await captureScreenshot({
-    serial: opts?.serial,
-    ephemeral: true,
-    includeScreenMatch: false,
-  });
-  let nodes: SnapshotNode[] = [];
-  let inspectable = false;
-  let iosSessionLifecycle: IosSessionOperationDiagnostic | undefined;
-  try {
-    const snap = await captureSnapshot({ serial: opts?.serial, iosOperation: "preview" });
-    nodes = snap.nodes;
-    inspectable = snap.inspectable !== false && snap.nodes.length > 0;
-    iosSessionLifecycle = snap.iosSessionLifecycle;
-  } catch {
-    inspectable = false;
-  }
-  const resolution = resolveInteractPreview(nodes, input);
-  const fallbackPoint =
-    input.kind === "point"
-      ? { x: input.x, y: input.y }
-      : input.kind === "swipe"
-        ? input.to
-        : "point" in input && input.point
-          ? input.point
-          : resolution?.point;
-  const markPoint = resolution?.point ?? fallbackPoint;
-  if (!markPoint) {
+  const target = await resolveRuntimeTarget(opts?.serial, undefined, opts?.overlay);
+  return runWithTargetContext(target.context, async () => {
+    const shot = await captureScreenshot({
+      serial: opts?.serial,
+      device: target.device,
+      ephemeral: true,
+      includeScreenMatch: false,
+    });
+    let nodes: SnapshotNode[] = [];
+    let inspectable = false;
+    let iosSessionLifecycle: IosSessionOperationDiagnostic | undefined;
+    try {
+      const snap = await captureSnapshot({
+        serial: opts?.serial,
+        device: target.device,
+        iosOperation: "preview",
+      });
+      nodes = snap.nodes;
+      inspectable = snap.inspectable !== false && snap.nodes.length > 0;
+      iosSessionLifecycle = snap.iosSessionLifecycle;
+    } catch {
+      inspectable = false;
+    }
+    const resolution = resolveInteractPreview(nodes, input);
+    const fallbackPoint =
+      input.kind === "point"
+        ? { x: input.x, y: input.y }
+        : input.kind === "swipe"
+          ? input.to
+          : "point" in input && input.point
+            ? input.point
+            : resolution?.point;
+    const markPoint = resolution?.point ?? fallbackPoint;
+    if (!markPoint) {
+      return {
+        ...shot,
+        inspectable,
+        preview: true as const,
+        ...(iosSessionLifecycle ? { iosSessionLifecycle } : {}),
+      };
+    }
+    let buf = Buffer.from(shot.base64, "base64");
+    const serial = opts?.serial ?? shot.serial;
+    buf = Buffer.from(
+      annotateTapPreview(
+        buf,
+        {
+          point: markPoint,
+          ...(input.kind === "swipe" ? { points: [input.from, input.to] } : {}),
+          ...(resolution?.bounds && resolution.bounds.width > 2 && resolution.bounds.height > 2
+            ? { bounds: resolution.bounds }
+            : {}),
+        },
+        serial ? tapPreviewLogicalBounds(buf, iosLogicalBoundsForSerial(serial)) : undefined,
+      ),
+    );
     return {
       ...shot,
+      base64: buf.toString("base64"),
+      bytes: buf.byteLength,
       inspectable,
-      preview: true as const,
+      preview: true,
       ...(iosSessionLifecycle ? { iosSessionLifecycle } : {}),
+      ...(resolution ? { resolution } : {}),
     };
-  }
-  let buf = Buffer.from(shot.base64, "base64");
-  const serial = opts?.serial ?? shot.serial;
-  buf = Buffer.from(
-    annotateTapPreview(
-      buf,
-      {
-        point: markPoint,
-        ...(input.kind === "swipe" ? { points: [input.from, input.to] } : {}),
-        ...(resolution?.bounds && resolution.bounds.width > 2 && resolution.bounds.height > 2
-          ? { bounds: resolution.bounds }
-          : {}),
-      },
-      serial ? tapPreviewLogicalBounds(buf, iosLogicalBoundsForSerial(serial)) : undefined,
-    ),
-  );
-  return {
-    ...shot,
-    base64: buf.toString("base64"),
-    bytes: buf.byteLength,
-    inspectable,
-    preview: true,
-    ...(iosSessionLifecycle ? { iosSessionLifecycle } : {}),
-    ...(resolution ? { resolution } : {}),
-  };
+  });
 }
 
 export async function interactOnDevice(
@@ -449,7 +457,12 @@ export async function interactOnDevice(
 
 export async function interact(
   input: InteractInput,
-  opts?: { serial?: string; verifyIosScreenChange?: boolean; device?: Device },
+  opts?: {
+    serial?: string;
+    verifyIosScreenChange?: boolean;
+    device?: Device;
+    overlay?: RuntimeTargetOverlay;
+  },
 ): Promise<InteractResult> {
   if (input.kind === "swipe") {
     const validPoint = (point: unknown): point is InteractPoint => {
@@ -469,7 +482,7 @@ export async function interact(
       throw new Error("Swipe durationMs must be between 50 and 5000.");
     }
   }
-  const target = await resolveRuntimeTarget(opts?.serial, opts?.device);
+  const target = await resolveRuntimeTarget(opts?.serial, opts?.device, opts?.overlay);
   return runWithTargetContext(target.context, async () => {
     const context = currentTargetContext();
     const previousIosMutationSequence =

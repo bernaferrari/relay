@@ -74,7 +74,8 @@ export const targetOperationInputSchemas = {
     .strict(),
   "target.interact": z
     .object({
-      ...targetReference,
+      serial: identifier("Connected device or managed target identifier").optional(),
+      laneId: identifier("Saved Lane whose overlay the server applies").optional(),
       kind: z.enum([
         "label",
         "identifier",
@@ -135,7 +136,16 @@ export const targetOperationInputSchemas = {
         .strict()
         .optional(),
     })
-    .strict(),
+    .strict()
+    .superRefine((input, context) => {
+      if (!input.serial && !input.laneId) {
+        context.addIssue({
+          code: "custom",
+          message: "serial or laneId is required",
+          path: ["serial"],
+        });
+      }
+    }),
   "target.ground": z
     .object({
       ...targetReference,

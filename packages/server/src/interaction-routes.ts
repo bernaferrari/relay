@@ -16,6 +16,7 @@ import {
 } from "@relay/core";
 import { assertTargetControl, assertTargetObservation } from "./access-control.js";
 import { HttpError, json, parseJsonBody } from "./http.js";
+import { applyLaneToInteractOrThrow } from "./lane-run-route.js";
 import type { RequestContext } from "./security.js";
 
 type InteractionRouteInput = {
@@ -198,14 +199,26 @@ export async function handleInteractionRoute(input: InteractionRouteInput): Prom
         "body.kind required (identifier|label|point|ref|find|text-match|swipe|key|type|replace)",
       );
     }
-    const { serial, preview, ...rest } = body as InteractInput & {
+    const { serial, preview, laneId, ...rest } = body as InteractInput & {
       serial?: string;
       preview?: unknown;
+      laneId?: string;
     };
+    const resolved = await applyLaneToInteractOrThrow({
+      projectId: scope.projectId,
+      ...(typeof laneId === "string" ? { laneId } : {}),
+      ...(typeof serial === "string" ? { serial } : {}),
+    });
+    const overlay = resolved.authenticationFixtureId
+      ? { authenticationFixtureId: resolved.authenticationFixtureId, projectId: scope.projectId }
+      : undefined;
     const interaction = rest as InteractInput;
     if (preview === true) {
-      assertTargetObservation(scope, serial);
-      const result = await previewInteract(interaction, { serial });
+      assertTargetObservation(scope, resolved.serial);
+      const result = await previewInteract(interaction, {
+        serial: resolved.serial,
+        ...(overlay ? { overlay } : {}),
+      });
       json(response, 200, {
         ok: true,
         preview: true,
@@ -219,11 +232,14 @@ export async function handleInteractionRoute(input: InteractionRouteInput): Prom
       });
       return true;
     }
-    assertNoRunningJob(serial);
-    await assertTargetControl(scope, serial);
+    assertNoRunningJob(resolved.serial);
+    await assertTargetControl(scope, resolved.serial);
     let result: InteractResult;
     try {
-      result = await interact(interaction, { serial });
+      result = await interact(interaction, {
+        serial: resolved.serial,
+        ...(overlay ? { overlay } : {}),
+      });
     } catch (error) {
       if (error instanceof IosMutationOutcomeUnknownError) {
         throw iosMutationOutcomeUnknownHttpError(error);

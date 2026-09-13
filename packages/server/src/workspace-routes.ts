@@ -3,8 +3,11 @@ import {
   authoringSessions,
   deleteSchedule,
   listAppMaps,
+  listLanes,
   listSchedules,
   readAuthoringEvidence,
+  removeLane,
+  saveLane,
   saveSchedule,
 } from "@relay/core";
 import { assertTargetControl } from "./access-control.js";
@@ -24,6 +27,33 @@ type WorkspaceRouteInput = {
  * Compiled execution plans intentionally have no public storage route. */
 export async function handleWorkspaceRoute(input: WorkspaceRouteInput): Promise<boolean> {
   const { method, pathname, url, request, response, scope } = input;
+  if (method === "GET" && pathname === "/lanes") {
+    json(response, 200, { lanes: await listLanes(scope.projectId) });
+    return true;
+  }
+  if (method === "POST" && pathname === "/lanes") {
+    const body = (await parseJsonBody(request)) as Parameters<typeof saveLane>[0];
+    try {
+      json(response, 201, {
+        lane: await saveLane({ ...body, projectId: scope.projectId }),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (/was not found/u.test(message)) throw new HttpError(404, message);
+      if (/must not persist|unique runtime profile/u.test(message)) {
+        throw new HttpError(409, message);
+      }
+      throw new HttpError(400, message);
+    }
+    return true;
+  }
+  const laneMatch = matchPath(pathname, "/lanes/:laneId");
+  if (method === "DELETE" && laneMatch) {
+    const removed = await removeLane(scope.projectId, laneMatch.laneId!);
+    if (!removed) throw new HttpError(404, "Lane not found");
+    json(response, 200, { ok: true });
+    return true;
+  }
   if (method === "GET" && pathname === "/schedules") {
     json(response, 200, {
       schedules: await listSchedules(

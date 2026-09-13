@@ -586,8 +586,10 @@ export type AppMapOperationMap = {
     input: {
       appMapId: string;
       testId: string;
-      expectedRevision: number;
-      target: AuthoringTarget;
+      /** Server calls resolveLaneExecution; omit revision/target overlay fields. */
+      laneId?: string;
+      expectedRevision?: number;
+      target?: AuthoringTarget;
       /** Optional explicit saved profile scope. Relay binds it to this exact
        * target before control, then preflights the same frozen plan it queues. */
       targetProfileId?: string;

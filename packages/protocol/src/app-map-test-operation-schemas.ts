@@ -46,12 +46,21 @@ export const sourceRevisionSchema = z
 /** The offline preview and the queued run share one evidence-scope vocabulary.
  * Keeping it here makes every transport as strict as the protocol contract,
  * rather than silently dropping a selected profile at a presentation boundary. */
+const testRunLaneOverlayKeys = [
+  "expectedRevision",
+  "target",
+  "targetProfileId",
+  "engine",
+  "account",
+] as const;
+
 export const appMapTestRunInputSchema = z
   .object({
     appMapId: identifier("App Map identifier"),
     testId: identifier("Graph-native Test identifier"),
-    expectedRevision: natural("Exact saved App Map revision to run"),
-    target: authoringTarget.describe("Explicit device or managed browser target"),
+    laneId: identifier("Saved Lane whose overlay the server applies").optional(),
+    expectedRevision: natural("Exact saved App Map revision to run").optional(),
+    target: authoringTarget.describe("Explicit device or managed browser target").optional(),
     targetProfileId: identifier("Saved runtime evidence profile to bind before control").optional(),
     engine: z.enum(["chromium", "firefox", "webkit"]).optional(),
     account: z
@@ -137,6 +146,32 @@ export const appMapTestRunInputSchema = z
   })
   .strict()
   .superRefine((input, context) => {
+    if (input.laneId) {
+      for (const key of testRunLaneOverlayKeys) {
+        if (input[key] !== undefined) {
+          context.addIssue({
+            code: "custom",
+            message: `${key} is filled from Lane ${input.laneId}; omit it`,
+            path: [key],
+          });
+        }
+      }
+    } else {
+      if (input.expectedRevision === undefined) {
+        context.addIssue({
+          code: "custom",
+          message: "expectedRevision is required unless laneId is set",
+          path: ["expectedRevision"],
+        });
+      }
+      if (input.target === undefined) {
+        context.addIssue({
+          code: "custom",
+          message: "target is required unless laneId is set",
+          path: ["target"],
+        });
+      }
+    }
     if (input.in === undefined) return;
     if (input.repeatRecovery) {
       const requestedIds = input.repeatRecovery.resolved.dimensions.map((item) => item.id);

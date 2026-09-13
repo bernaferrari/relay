@@ -198,6 +198,10 @@ test("an exported Combine pack carries findings beside the frames that produced 
     const html = await readFile(join(pack.rootDir, "index.html"), "utf8");
     assert.match(html, /POSSIBLE_UNTRANSLATED_TEXT/);
     assert.match(html, /1 finding \(0 critical\) against en/);
+    assert.match(html, /Review checklist/);
+    assert.match(html, /relay run visual review job-en/);
+    assert.match(html, /data-status="passed"/);
+    assert.doesNotMatch(html, /approve-new-baseline/);
     const readme = await readFile(join(pack.rootDir, "README.md"), "utf8");
     assert.match(readme, /Frames read: 2 of 2/);
     await assert.rejects(
@@ -375,6 +379,79 @@ test("cancelled SOS combine cells become HARNESS_FAILURE findings", () => {
   );
   assert.equal(report.cases[0]?.status, "cancelled");
   assert.equal(report.cases[1]?.status, "cancelled");
+});
+
+test("exported pack checklist classifies PRODUCT_ASSERTION, harness cancel, and todo", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "relay-review-checklist-"));
+  const previousWorkspace = process.env.RELAY_WORKSPACE_ROOT;
+  const previousRuns = process.env.RELAY_RUNS_DIR;
+  process.env.RELAY_WORKSPACE_ROOT = directory;
+  process.env.RELAY_RUNS_DIR = join(directory, "runs");
+  try {
+    const passedDir = join(directory, "runs", "home");
+    const failedDir = join(directory, "runs", "send");
+    await mkdir(join(passedDir, "frames"), { recursive: true });
+    await mkdir(join(failedDir, "frames"), { recursive: true });
+    await writeFile(join(passedDir, "frames", "001.png"), "before");
+    await writeFile(join(passedDir, "frames", "002.png"), "after");
+    await writeFile(join(failedDir, "frames", "001.png"), "failed");
+    await writeFile(
+      join(directory, "runs", ".visual-comparisons.json"),
+      JSON.stringify([
+        { id: "visual-comparison-home", latest: { runId: "job-home" }, comparedAt: 1 },
+      ]),
+    );
+    const passed = localeCase({ locale: "logged-out", runDir: passedDir });
+    passed.id = "job-home";
+    passed.title = "Open grok.com logged-out";
+    const failed = localeCase({ locale: "logged-out", runDir: failedDir });
+    failed.id = "job-send";
+    failed.status = "error";
+    failed.outcome = "product-failure";
+    failed.failureCategory = "deterministic-assertion";
+    failed.title = "Send hello while logged out";
+    failed.error = "expect-screen: on “unknown”, not “Logged-out continue conversation”";
+    const cancelled = localeCase({ locale: "logged-out", runDir: "/tmp/toolbar" });
+    cancelled.id = "job-toolbar";
+    cancelled.status = "cancelled";
+    cancelled.outcome = "cancelled";
+    cancelled.title = "Toolbar on existing chat";
+    cancelled.error = "Cancelled by user";
+    cancelled.artifacts.push({
+      kind: "campaign-recovery-intervention",
+      capturedAt: 3,
+      data: { reason: "SOS", checkTitle: "Open toolbar", transitionId: "toolbar" },
+    });
+    const pack = await exportCombineEvidencePack({
+      batchId: "review-batch",
+      jobs: [passed, failed, cancelled],
+      todoItems: [{ id: "chat-heavy", title: "Chat Heavy", note: "Gated" }],
+    });
+    const html = await readFile(join(pack.rootDir, "index.html"), "utf8");
+    assert.match(html, /data-status="passed"/);
+    assert.match(html, /data-status="check failed"/);
+    assert.match(html, /data-status="could not run"/);
+    assert.match(html, /data-status="todo"/);
+    assert.match(html, /visual-comparison-home/);
+    assert.match(html, /relay run visual review job-home/);
+    assert.match(html, /relay run visual review job-send/);
+    assert.match(html, /Chat Heavy/);
+    assert.equal(
+      pack.manifest.analysis.findings.some((item) => item.code === "PRODUCT_ASSERTION"),
+      true,
+    );
+    assert.equal(
+      pack.manifest.analysis.findings.some((item) => item.code === "HARNESS_FAILURE"),
+      true,
+    );
+    assert.doesNotMatch(html, /approve-new-baseline/);
+  } finally {
+    if (previousWorkspace === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
+    else process.env.RELAY_WORKSPACE_ROOT = previousWorkspace;
+    if (previousRuns === undefined) delete process.env.RELAY_RUNS_DIR;
+    else process.env.RELAY_RUNS_DIR = previousRuns;
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("a recipe product-failure is a finding even when locale analysis is empty", () => {

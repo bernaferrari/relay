@@ -3,12 +3,14 @@ import { coreOperationOutputSchemas } from "./core-operation-output-schemas.js";
 import { executionOperationOutputSchemas } from "./execution-operation-output-schemas.js";
 import { observationOperationOutputSchemas } from "./observation-operation-output-schemas.js";
 import { workspaceTargetOperationOutputSchemas } from "./workspace-target-operation-output-schemas.js";
+import { laneOperationOutputSchemas } from "./lane-operation-schemas.js";
 import { changeVerificationOperationOutputSchemas } from "./change-verification-operation-schemas.js";
 import { proofSetupOperationOutputSchemas } from "./proof-setup.js";
 
 /** Schema-first outputs for operation families that previously used OperationRecord. */
 export const operationFamilyOutputSchemas = {
   ...workspaceTargetOperationOutputSchemas,
+  ...laneOperationOutputSchemas,
   ...observationOperationOutputSchemas,
   ...executionOperationOutputSchemas,
   ...changeVerificationOperationOutputSchemas,

@@ -92,29 +92,33 @@ export function createAppMapTestRunParsers(dependencies: AppMapParserDependencie
     (input) => {
       string(input.appMapId, "Test run appMapId");
       string(input.testId, "Test run testId");
-      if (number(input.expectedRevision, "Test run expectedRevision") < 0) {
-        fail("Test run expectedRevision", "must be non-negative");
-      }
-      const target = record(input.target, "Test run target");
-      string(target.targetId, "Test run targetId");
-      if (target.kind !== "device" && target.kind !== "browser") {
-        fail("Test run target kind", "must be device or browser");
-      }
-      if (
-        target.platform !== "android" &&
-        target.platform !== "ios" &&
-        target.platform !== "browser"
-      ) {
-        fail("Test run target platform", "must be android, ios, or browser");
-      }
-      if (
-        (target.kind === "browser" && target.platform !== "browser") ||
-        (target.kind === "device" && target.platform === "browser")
-      ) {
-        fail("Test run target", "kind and platform do not describe the same target");
-      }
-      if (input.targetProfileId !== undefined) {
-        string(input.targetProfileId, "Test run targetProfileId");
+      const laneId =
+        input.laneId !== undefined ? string(input.laneId, "Test run laneId") : undefined;
+      if (!laneId) {
+        if (number(input.expectedRevision, "Test run expectedRevision") < 0) {
+          fail("Test run expectedRevision", "must be non-negative");
+        }
+        const target = record(input.target, "Test run target");
+        string(target.targetId, "Test run targetId");
+        if (target.kind !== "device" && target.kind !== "browser") {
+          fail("Test run target kind", "must be device or browser");
+        }
+        if (
+          target.platform !== "android" &&
+          target.platform !== "ios" &&
+          target.platform !== "browser"
+        ) {
+          fail("Test run target platform", "must be android, ios, or browser");
+        }
+        if (
+          (target.kind === "browser" && target.platform !== "browser") ||
+          (target.kind === "device" && target.platform === "browser")
+        ) {
+          fail("Test run target", "kind and platform do not describe the same target");
+        }
+        if (input.targetProfileId !== undefined) {
+          string(input.targetProfileId, "Test run targetProfileId");
+        }
       }
       if (input.surfaceCapture !== undefined) {
         const policy = record(input.surfaceCapture, "Test run surfaceCapture");

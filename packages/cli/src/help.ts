@@ -15,7 +15,10 @@ const familyGroups = [
   ["Proof", ["proof", "prove"]],
   ["Operate", ["device", "run", "report", "activity"]],
   ["Automation", ["schedule", "matrix"]],
-  ["Workspace", ["policy", "data", "workspace", "project", "build", "device-pool", "lease"]],
+  [
+    "Workspace",
+    ["policy", "data", "workspace", "project", "build", "device-pool", "lane", "lease"],
+  ],
 ] as const;
 
 const globalOptions = `Global options:
@@ -28,12 +31,14 @@ const globalOptions = `Global options:
   --input-file <path>              Read the same JSON object from a file
   --json | --ndjson                Machine-readable output
   --quiet                          Suppress stderr diagnostics
-  --timeout <ms>                   Request timeout (env RELAY_TIMEOUT_MS)
+  --timeout <ms>                   Request timeout (default 180s; env RELAY_TIMEOUT_MS). --budget on plan/combine run overrides watch unless --timeout is set
+  --out <dir>                      On run verbs: write result.json, stderr.log, and job PNGs
   --wait | --no-wait               Wait policy (env RELAY_WAIT)
   --target current                 Resolve the only connected Device for an advanced Test run
   --revision current               Resolve the latest saved topology revision for an advanced run
   --device <id>                    Choose a connected Device for an outcome command
   --map <id>                       Choose backing topology when more than one exists (advanced)
+  --lane <id>                      Saved who+where on test run, combine/plan run, or interact --preview. Server resolves revision and overlay; --input-file is not needed
 
 Screenshot and snapshot output:
   --file <path>                    Save screenshot PNG or snapshot JSON to a file

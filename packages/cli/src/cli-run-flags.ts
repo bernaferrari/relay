@@ -8,6 +8,7 @@ export type CliFlagBag = {
 };
 
 const BUDGET_PATTERN = /^(\d+)(ms|s|m|h)$/u;
+const EVIDENCE_PACK_OPERATIONS = new Set(["job.combine.start", "job.combine.export"]);
 
 /** Parse `3m`, `180s`, or `180000ms` into milliseconds. */
 export function parseBudgetMs(raw: string): number {
@@ -61,7 +62,7 @@ export function applyCombineRunFlags(
     if (cell) throw new UsageError("--cell requires --in variableId=value[,value]");
     if (all) throw new UsageError("--all requires --in variableId=value[,value]");
   }
-  if (!usesWorlds && !lens && !cell && !all) return input;
+  if (!usesWorlds && !lens && !cell && !all) return applyLaneFlag(operationId, input, tokens);
   const next = { ...input };
   if (usesWorlds) next.in = worlds;
   if (lens) {
@@ -75,7 +76,35 @@ export function applyCombineRunFlags(
   }
   if (cell) next.cell = cell;
   if (all) next.executionMode = "all";
-  return next;
+  return applyLaneFlag(operationId, next, tokens);
+}
+
+const LANE_OPERATIONS = new Set(["app-map.test.run", "job.combine.start", "target.interact"]);
+
+/** `--lane <id>` becomes operation `laneId`. The server calls resolveLaneExecution. */
+export function applyLaneFlag(
+  operationId: string,
+  input: Record<string, unknown>,
+  tokens: CliFlagBag,
+): Record<string, unknown> {
+  const raw = tokens.values.get("--lane");
+  if (raw === undefined) return input;
+  const laneId = raw.trim();
+  if (!laneId) throw new UsageError("--lane requires a Lane identifier");
+  if (!LANE_OPERATIONS.has(operationId)) {
+    throw new UsageError(
+      "--lane is only valid on test run, combine run, plan run, or device interact",
+    );
+  }
+  if (tokens.values.has("--target") || tokens.values.has("--revision")) {
+    throw new UsageError(
+      "--lane already resolves target and revision; omit --target and --revision",
+    );
+  }
+  if (typeof input.laneId === "string" && input.laneId !== laneId) {
+    throw new UsageError("Use either --lane or laneId in --input, not both");
+  }
+  return { ...input, laneId };
 }
 
 export function assertPlanCliFlags(operationId: string, tokens: CliFlagBag): void {
@@ -89,6 +118,54 @@ export function assertPlanCliFlags(operationId: string, tokens: CliFlagBag): voi
   ) {
     throw new UsageError("--findings is only valid on plan run, combine run, or plan findings");
   }
+  if (tokens.values.has("--export") && !EVIDENCE_PACK_OPERATIONS.has(operationId)) {
+    throw new UsageError("--export is only valid on plan run, combine run, or combine export");
+  }
+  if (tokens.values.has("--todo") && !EVIDENCE_PACK_OPERATIONS.has(operationId)) {
+    throw new UsageError("--todo is only valid on plan run, combine run, or combine export");
+  }
+}
+
+export function evidencePackCliFlags(
+  tokens: CliFlagBag,
+  operationId?: string,
+  wait?: boolean,
+): {
+  exportDir?: string;
+  todoFile?: string;
+} {
+  const exportDir = tokens.values.get("--export")?.trim();
+  const todoFile = tokens.values.get("--todo")?.trim();
+  if (tokens.values.has("--export") && !exportDir) {
+    throw new UsageError("--export requires a directory");
+  }
+  if (tokens.values.has("--todo") && !todoFile) {
+    throw new UsageError("--todo requires a file path");
+  }
+  if ((exportDir || todoFile) && wait === false && operationId === "job.combine.start") {
+    throw new UsageError("--export and --todo require waiting for the Plan to finish");
+  }
+  return {
+    ...(exportDir ? { exportDir } : {}),
+    ...(todoFile ? { todoFile } : {}),
+  };
+}
+
+export function parseRunOutDir(tokens: CliFlagBag, isRunVerb: boolean): string | undefined {
+  const dir = tokens.values.get("--out");
+  if (dir === undefined) return undefined;
+  if (!isRunVerb) {
+    throw new UsageError(
+      "--out is only valid on run verbs (test run, combine run, plan run, flow run, job watch)",
+    );
+  }
+  const trimmed = dir.trim();
+  if (!trimmed) throw new UsageError("--out requires a directory");
+  return trimmed;
+}
+
+export function assertNoOutDir(tokens: CliFlagBag): void {
+  parseRunOutDir(tokens, false);
 }
 
 export function startedPlanBatchId(response: unknown): string | undefined {

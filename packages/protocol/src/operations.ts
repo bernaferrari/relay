@@ -26,6 +26,7 @@ import { runEvidenceOperationDefinitions } from "./run-evidence-operation-defini
 import { parseActivityExportResponse, type ActivityExport } from "./activity.js";
 import { createAppMapOperationDefinitions } from "./app-map-operation-definitions.js";
 import { campaignCapacityOperationDefinitions } from "./campaign-capacity-operation-definitions.js";
+import { workspaceResourceOperationDefinitions } from "./workspace-resource-operation-definitions.js";
 import { durableOperationDefinitions } from "./durable-operation-definitions.js";
 import { scheduleOperationDefinitions } from "./schedule-operation-definitions.js";
 import { createDiscoveryOperationDefinitions } from "./discovery-operation-definitions.js";
@@ -612,48 +613,6 @@ const visualPolicyUpdateOutputParser = objectParser<OperationOutput<"run.visual-
   },
 );
 
-const buildPreflightInputParser = objectParser<OperationInput<"build.preflight">>(
-  "build preflight input",
-  (input) => {
-    string(input.buildId, "build preflight buildId");
-    if (input.serial !== undefined) string(input.serial, "build preflight serial");
-  },
-);
-
-const buildInstallInputParser = objectParser<OperationInput<"build.install">>(
-  "build install input",
-  (input) => {
-    string(input.buildId, "build install buildId");
-    string(input.serial, "build install serial");
-    if (input.launch !== undefined) boolean(input.launch, "build install launch");
-    if (input.applicationId !== undefined)
-      string(input.applicationId, "build install applicationId");
-  },
-);
-
-const buildInstallOutputParser = objectParser<OperationOutput<"build.install">>(
-  "build install response",
-  (input) => {
-    record(input.installed, "installed build");
-    if (input.launched !== undefined) record(input.launched, "launched build");
-  },
-);
-
-const buildLaunchInputParser = objectParser<OperationInput<"build.launch">>(
-  "build launch input",
-  (input) => {
-    string(input.buildId, "build launch buildId");
-    string(input.serial, "build launch serial");
-    if (input.applicationId !== undefined)
-      string(input.applicationId, "build launch applicationId");
-  },
-);
-
-const poolPreflightInputParser = objectParser<OperationInput<"device-pool.preflight">>(
-  "device pool preflight input",
-  (input) => string(input.poolId, "device pool preflight poolId"),
-);
-
 const generationInputParser = objectParser<GenerationRequestDto>("generation input", (input) => {
   if (input.purpose !== "variable" && input.purpose !== "test-plan") {
     fail("generation purpose", "must be variable or test-plan");
@@ -924,64 +883,7 @@ export const operationDefinitions = [
     targetCapabilities: ["observe"],
     lease: "shared",
   }),
-  query("project.list", "List projects", "/projects", {
-    input: emptyInputParser,
-    output: arrayFieldParser("projects response", "projects"),
-  }),
-  command("project.save", "Save project", "POST", "/projects", {
-    output: objectFieldParser("project response", "project"),
-  }),
-  query("build.list", "List builds", "/builds", {
-    input: emptyInputParser,
-    output: arrayFieldParser("builds response", "builds"),
-  }),
-  command("build.save", "Save build", "POST", "/builds", {
-    output: objectFieldParser("build response", "build"),
-  }),
-  command("build.preflight", "Preflight build", "POST", "/builds/:buildId/preflight", {
-    category: "target",
-    input: buildPreflightInputParser,
-    output: objectFieldParser<OperationOutput<"build.preflight">>(
-      "build preflight response",
-      "preflight",
-    ),
-  }),
-  command("build.install", "Install build", "POST", "/builds/:buildId/install", {
-    category: "target",
-    targetCapabilities: ["install"],
-    lease: "exclusive",
-    confirmation: "confirm",
-    input: buildInstallInputParser,
-    output: buildInstallOutputParser,
-  }),
-  command("build.launch", "Launch build", "POST", "/builds/:buildId/launch", {
-    category: "target",
-    targetCapabilities: ["launch"],
-    lease: "exclusive",
-    input: buildLaunchInputParser,
-    output: objectFieldParser<OperationOutput<"build.launch">>("build launch response", "launched"),
-  }),
-  query("device-pool.list", "List device pools", "/device-pools", {
-    input: emptyInputParser,
-    output: arrayFieldParser("device pools response", "pools"),
-  }),
-  command("device-pool.save", "Save device pool", "POST", "/device-pools", {
-    output: objectFieldParser("device pool response", "pool"),
-  }),
-  command(
-    "device-pool.preflight",
-    "Preflight device pool",
-    "POST",
-    "/device-pools/:poolId/preflight",
-    {
-      category: "target",
-      input: poolPreflightInputParser,
-      output: objectFieldParser<OperationOutput<"device-pool.preflight">>(
-        "device pool preflight response",
-        "preflight",
-      ),
-    },
-  ),
+  ...workspaceResourceOperationDefinitions,
   query("target-worker.list", "List target workers", "/target-workers", {
     category: "target",
     input: emptyInputParser,

@@ -4,7 +4,15 @@ import { isAbsolute, resolve } from "node:path";
 import { resolveCommand, resolveResourceCommand, type CommandBehavior } from "./commands.js";
 import { UsageError } from "./errors.js";
 import { parseOutcomeCliIntent, type OutcomeCliIntent } from "./outcome-command.js";
-import { applyCombineRunFlags, assertPlanCliFlags, parseBudgetMs } from "./cli-run-flags.js";
+import {
+  applyCombineRunFlags,
+  applyLaneFlag,
+  assertNoOutDir,
+  assertPlanCliFlags,
+  evidencePackCliFlags,
+  parseBudgetMs,
+  parseRunOutDir,
+} from "./cli-run-flags.js";
 
 export type OutputMode = "human" | "json" | "ndjson";
 export type CredentialSource = { type: "none" } | { type: "env"; name: string };
@@ -31,7 +39,7 @@ export type ParsedCli =
       command: "help";
       helpFamily?: string;
     }
-  | {
+  | ({
       config: GlobalConfig;
       command: "invoke";
       operationId: string;
@@ -43,7 +51,8 @@ export type ParsedCli =
       currentTarget?: boolean;
       currentRevision?: boolean;
       findings?: boolean;
-    }
+      outDir?: string;
+    } & ReturnType<typeof evidencePackCliFlags>)
   | {
       config: GlobalConfig;
       command: "resource";
@@ -113,17 +122,21 @@ const valueFlags = new Set([
   "--resume",
   "--lens",
   "--cell",
+  "--lane",
   "--target",
   "--revision",
   "--commit",
   "--pr",
   "--branch",
   "--budget",
+  "--out",
   "--device",
   "--map",
   "--base",
   "--config",
   "--config-file",
+  "--export",
+  "--todo",
 ]);
 const switchFlags = new Set([
   "-h",
@@ -502,6 +515,7 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
     if (group === "help" && operationId !== undefined) {
       throw new UsageError("Expected: relay help [family]");
     }
+    assertNoOutDir(tokens);
     return {
       config: {
         connection,
@@ -540,8 +554,11 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
       "--lens",
       "--cell",
       "--all",
+      "--lane",
       "--budget",
       "--findings",
+      "--export",
+      "--todo",
     ] as const) {
       if (tokens.values.has(friendlyOnly) || tokens.switches.has(friendlyOnly)) {
         throw new UsageError(
@@ -579,6 +596,7 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
       tokens,
     );
 
+    assertNoOutDir(tokens);
     return {
       config: {
         connection,
@@ -632,6 +650,7 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
     if (config && configFile) {
       throw new UsageError("Use only one of --config or --config-file");
     }
+    assertNoOutDir(tokens);
     const shared = {
       config: {
         connection,
@@ -663,6 +682,7 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
       throw new UsageError(
         "Expected: relay browser capture-plan <map-id> <test-id> --input-file <plan.json>",
       );
+    assertNoOutDir(tokens);
     return {
       command: "browser-capture-plan",
       config: {
@@ -684,7 +704,9 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
     applySurveyMaxScrolls("", {}, tokens);
     applySurveyRestore("", {}, tokens);
     applySnapshotPresentation("", {}, tokens, output);
+    applyLaneFlag("", {}, tokens);
 
+    assertNoOutDir(tokens);
     return {
       config: {
         connection,
@@ -713,6 +735,7 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
         "Outcome commands use named arguments and do not accept --input or --input-file",
       );
     }
+    assertNoOutDir(tokens);
     return {
       config: {
         connection,
@@ -816,6 +839,7 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
   const budgetMs = budgetRaw ? parseBudgetMs(budgetRaw) : undefined;
   const effectiveTimeout =
     budgetMs !== undefined && !tokens.values.has("--timeout") ? budgetMs : timeoutMs;
+  const outDir = parseRunOutDir(tokens, resolved.behavior?.includes("job") === true);
   return {
     config: {
       connection,
@@ -852,6 +876,8 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
     ...(targetShortcut === "current" ? { currentTarget: true } : {}),
     ...(revisionShortcut === "current" ? { currentRevision: true } : {}),
     ...(tokens.switches.has("--findings") ? { findings: true } : {}),
+    ...evidencePackCliFlags(tokens, resolved.operationId, wait),
+    ...(outDir ? { outDir } : {}),
   };
 }
 

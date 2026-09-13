@@ -7,11 +7,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { compileBrowserEnvironment, type TargetRuntimeReadiness } from "@relay/protocol";
 import { bootTarget, createDevice, type Device, type DevicePlatform } from "./device.js";
 import { getExecutingJobId } from "./control.js";
 import { runTargetMutation } from "./target-control.js";
 import { now, publish } from "./events.js";
 import { getBrowserDevice } from "./browser-target.js";
+import { browserCaseProfileForTarget } from "./browser-case-profile-target.js";
 import { resolveGoIosBinary } from "./ios-app-launch.js";
 import { readTarget } from "./targets.js";
 import {
@@ -27,7 +29,6 @@ import {
   type TargetContext,
 } from "./target-context.js";
 import { targetRuntimeReadiness } from "./target-runtime-readiness.js";
-import type { TargetRuntimeReadiness } from "@relay/protocol";
 import { androidAvdNameForSerial, observeAndroidAvdName } from "./android-avd.js";
 import { resolveAndroidSdkTool } from "./android-sdk-tools.js";
 
@@ -540,9 +541,33 @@ export async function resolveJobDevicePlatform(
   return (await devicePlatformForSerial(id)) ?? inferDevicePlatformFromSerial(id);
 }
 
+export type RuntimeTargetOverlay = {
+  authenticationFixtureId?: string;
+  projectId?: string;
+};
+
+async function browserDeviceForOverlay(
+  targetId: string,
+  overlay?: RuntimeTargetOverlay,
+): Promise<Device> {
+  const fixtureId = overlay?.authenticationFixtureId?.trim();
+  if (!fixtureId) return getBrowserDevice(targetId);
+  const target = await readTarget(targetId);
+  if (!target?.browser) return getBrowserDevice(targetId);
+  return getBrowserDevice(targetId, {
+    mode: "proof",
+    profile: compileBrowserEnvironment({
+      ...browserCaseProfileForTarget(target),
+      authenticationFixtureId: fixtureId,
+    }),
+    ...(overlay?.projectId ? { projectId: overlay.projectId } : {}),
+  });
+}
+
 export async function resolveRuntimeTarget(
   serial?: string,
   provided?: Device,
+  overlay?: RuntimeTargetOverlay,
 ): Promise<{ context: TargetContext; device: Device }> {
   if (provided) return { context: currentTargetContext(), device: provided };
   if (serial) {
@@ -550,7 +575,7 @@ export async function resolveRuntimeTarget(
       const context = { kind: "browser", platform: "browser", targetId: serial } as const;
       return {
         context,
-        device: await runWithTargetContext(context, () => getBrowserDevice(serial)),
+        device: await runWithTargetContext(context, () => browserDeviceForOverlay(serial, overlay)),
       };
     }
     // HTTP callers identify a device by serial, but they do not share the

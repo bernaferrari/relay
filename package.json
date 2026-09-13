@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "description": "Runtime proof for AI-authored changes across web, Android, and iOS",
+  "bin": {
+    "relay": "bin/relay"
+  },
   "type": "module",
   "scripts": {
     "dev": "node node_modules/tsx/dist/cli.mjs packages/cli/src/index.ts",

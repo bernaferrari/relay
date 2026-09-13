@@ -293,8 +293,9 @@ test("device and Combine help name the Test-run apply path and evidence folder",
   assert.match(device, /relay test run <map> <test> --in language=<tag>/u);
 
   const combine = renderHelp("combine");
-  assert.match(combine, /<locale>\/screenshots\/ plus <locale>\/accessibility\/\*\.json/u);
   assert.match(combine, /portable review folder/u);
+  assert.match(combine, /Test checklist/u);
+  assert.match(combine, /--lane grok-lab/u);
 });
 
 test("authoring vocabulary exposes Variables, Tests, and saved Combines", () => {
@@ -339,7 +340,7 @@ test("Test help exposes graph creation, semantic edits, and the required run tar
   assert.match(help, /intentSchemaVersion 1/);
   assert.match(help, /test\.patch, step\.add/);
   assert.match(help, /expectedRevision \(number, required\)/);
-  assert.match(help, /target \(object, required\)/);
+  assert.match(help, /Required unless --lane is set/);
   assert.match(help, /forceRecaptureScreenIds/);
   assert.match(help, /"kind":"browser","platform":"browser"/);
   assert.match(help, /freezes an exact revision and target/);
@@ -693,6 +694,9 @@ test("App Map vocabulary resolves to canonical granular operations", () => {
       "job.combine.start",
       { appMapId: "grok-ios", combineId: "language-x-settings" },
     ],
+    [["lane", "list"], "lane.list", {}],
+    [["lane", "save", "grok-daily"], "lane.save", { id: "grok-daily" }],
+    [["lane", "remove", "grok-lab"], "lane.remove", { laneId: "grok-lab" }],
   ] as const;
 
   for (const [argv, operationId, input] of cases) {

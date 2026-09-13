@@ -405,6 +405,70 @@ test("Test run accepts explicit current target and revision shortcuts", () => {
   );
 });
 
+test("--lane maps to laneId and does not require --input-file", () => {
+  const testRun = parseCli(["test", "run", "grok-web", "open-home", "--lane", "grok-daily"], {});
+  assert.equal(testRun.command, "invoke");
+  if (testRun.command !== "invoke") return;
+  assert.equal(testRun.operationId, "app-map.test.run");
+  assert.deepEqual(testRun.input, {
+    appMapId: "grok-web",
+    testId: "open-home",
+    laneId: "grok-daily",
+  });
+
+  const plan = parseCli(["plan", "run", "grok-web", "grok-web-daily", "--lane", "grok-daily"], {});
+  assert.equal(plan.command, "invoke");
+  if (plan.command !== "invoke") return;
+  assert.equal(plan.operationId, "job.combine.start");
+  assert.equal(plan.input.laneId, "grok-daily");
+  assert.equal(plan.input.executionMode, "all");
+
+  const combine = parseCli(
+    ["combine", "run", "grok-web", "grok-hourly", "--lane", "grok-lab", "--all"],
+    {},
+  );
+  assert.equal(combine.command, "invoke");
+  if (combine.command !== "invoke") return;
+  assert.equal(combine.operationId, "job.combine.start");
+  assert.equal(combine.input.laneId, "grok-lab");
+  assert.equal(combine.input.executionMode, "all");
+
+  const preview = parseCli(
+    [
+      "device",
+      "interact",
+      "--preview",
+      "--lane",
+      "grok-lab",
+      "--input",
+      '{"kind":"label","label":"Imagine"}',
+    ],
+    {},
+  );
+  assert.equal(preview.command, "invoke");
+  if (preview.command !== "invoke") return;
+  assert.equal(preview.operationId, "target.interact");
+  assert.deepEqual(preview.input, {
+    kind: "label",
+    label: "Imagine",
+    preview: true,
+    laneId: "grok-lab",
+  });
+
+  assert.throws(
+    () =>
+      parseCli(
+        ["test", "run", "grok-web", "open-home", "--lane", "grok-daily", "--revision", "current"],
+        {},
+      ),
+    /omit --target and --revision/,
+  );
+  assert.throws(
+    () => parseCli(["map", "list", "--lane", "grok-daily"], {}),
+    /only valid on test run/,
+  );
+});
+
 test("friendly aliases and lifecycle commands construct operation inputs", () => {
   const cases = [
     [["screen", "list", "map-1"], "app-map.get", { appMapId: "map-1" }],
@@ -493,6 +557,7 @@ test("operation invoke rejects friendly-command-only flags instead of dropping t
     ["operation", "invoke", "app-map.test.run", "--input", "{}", "--cell", "de"],
     ["operation", "invoke", "app-map.test.run", "--input", "{}", "--all"],
     ["operation", "invoke", "app-map.test.run", "--in", "language=de", "--lens", "visual"],
+    ["operation", "invoke", "app-map.test.run", "--input", "{}", "--lane", "grok-daily"],
   ]) {
     assert.throws(() => parseCli(argv, {}), /only supported by friendly commands/);
   }
@@ -1026,4 +1091,26 @@ test("browser capture-plan uses shared connection and JSON input parsing", () =>
   assert.equal(parsed.input.appMapId, "plans");
   assert.equal(parsed.input.id, "capture");
   assert.equal(parsed.config.output, "json");
+});
+
+test("--out is accepted on run verbs and rejected elsewhere", () => {
+  const run = parseCli(
+    ["test", "run", "checkout", "smoke", "--out", "/tmp/relay-out", "--json"],
+    {},
+  );
+  assert.equal(run.command, "invoke");
+  if (run.command !== "invoke") throw new Error("expected invoke");
+  assert.equal(run.outDir, "/tmp/relay-out");
+  const watch = parseCli(["job", "watch", "job-1", "--out", "/tmp/relay-out"], {});
+  assert.equal(watch.command, "invoke");
+  if (watch.command !== "invoke") throw new Error("expected invoke");
+  assert.equal(watch.outDir, "/tmp/relay-out");
+  assert.throws(
+    () => parseCli(["map", "list", "--out", "/tmp/relay-out"], {}),
+    /only valid on run verbs/,
+  );
+  assert.throws(
+    () => parseCli(["--help", "--out", "/tmp/relay-out"], {}),
+    /only valid on run verbs/,
+  );
 });

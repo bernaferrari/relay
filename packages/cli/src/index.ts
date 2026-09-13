@@ -27,6 +27,8 @@ import {
 } from "./invoke.js";
 import { protocolOperationInput } from "./protocol-input.js";
 import { CliOutput, type OutputStreams } from "./output.js";
+import { teeWritable, writeRunOutDir } from "./cli-out.js";
+import { exportWatchedCombinePack, finalizeCombineExportResult } from "./evidence-pack-cli.js";
 import { emitScreenshot, emitSnapshotFile } from "./screenshot.js";
 import { persistScrollSurvey, scrollSurveyPersistDigest } from "./survey-persist.js";
 import { runDbCommand } from "./db-commands.js";
@@ -483,10 +485,31 @@ export async function runCli(
   argv: readonly string[],
   dependencies: CliDependencies = {},
 ): Promise<number> {
-  const streams = dependencies.streams ?? processStreams;
+  let streams = dependencies.streams ?? processStreams;
   let output = new CliOutput(fallbackMode(argv), argv.includes("--quiet"), streams);
   let operationId: string | undefined;
   let findingsRequested = false;
+  let outDir: string | undefined;
+  let readStderr = (): string => "";
+  const persistOut = async (code: number): Promise<number> => {
+    if (!outDir) return code;
+    try {
+      await writeRunOutDir({
+        dir: outDir,
+        envelope: output.terminal ?? {
+          type: "error",
+          ok: false,
+          error: { message: "No CLI result" },
+        },
+        stderr: readStderr(),
+      });
+      return code;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      streams.stderr.write(`relay: could not write --out directory: ${message}\n`);
+      return code === ExitCode.success ? ExitCode.validation : code;
+    }
+  };
   try {
     if (firstPositional(argv) === "db") {
       return await runDbCommand(argv, streams, dependencies.env ?? process.env);
@@ -495,6 +518,12 @@ export async function runCli(
       return await runReportCommand(argv, streams, dependencies.env ?? process.env);
     }
     const parsed = parseCli(argv, dependencies.env ?? process.env);
+    if (parsed.command === "invoke" && parsed.outDir) {
+      outDir = parsed.outDir;
+      const tee = teeWritable(streams.stderr);
+      streams = { stdout: streams.stdout, stderr: tee.writable };
+      readStderr = tee.text;
+    }
     output = new CliOutput(parsed.config.output, parsed.config.quiet, streams);
     findingsRequested =
       parsed.command === "invoke" && "findings" in parsed && parsed.findings === true;
@@ -644,6 +673,14 @@ export async function runCli(
               : analysis,
           );
         }
+        await exportWatchedCombinePack({
+          operationId,
+          exportDir: "exportDir" in parsed ? parsed.exportDir : undefined,
+          todoFile: "todoFile" in parsed ? parsed.todoFile : undefined,
+          started,
+          invoke: (id, payload) => invoke(client, id, payload, abort.signal),
+          output,
+        });
       } else {
         const input = await resolveCurrentTestRunInput(client, parsed, abort.signal, output);
         const surveyDir = typeof input.dir === "string" ? input.dir : undefined;
@@ -671,10 +708,19 @@ export async function runCli(
             renderPlanFindingsMarkdown(result as Parameters<typeof renderPlanFindingsMarkdown>[0]),
           );
         } else {
-          output.result(operationId, summarizeResult(operationId, result, input, commandPath));
+          output.result(
+            operationId,
+            await finalizeCombineExportResult({
+              operationId,
+              result,
+              summarized: summarizeResult(operationId, result, input, commandPath),
+              exportDir: "exportDir" in parsed ? parsed.exportDir : undefined,
+              todoFile: "todoFile" in parsed ? parsed.todoFile : undefined,
+            }),
+          );
         }
       }
-      return ExitCode.success;
+      return await persistOut(ExitCode.success);
     } finally {
       if (dependencies.registerSignalHandlers !== false) {
         process.off("SIGINT", cancel);
@@ -688,7 +734,7 @@ export async function runCli(
       if (report) output.result("job.combine.analysis", renderPlanFindingsMarkdown(report));
     }
     output.error(classified, operationId);
-    return classified.exitCode;
+    return await persistOut(classified.exitCode);
   }
 }
 

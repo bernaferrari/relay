@@ -181,16 +181,20 @@ export const graphTestCommandDescriptors: readonly MappedOperationDescriptor[] =
       ],
       inputHelp: [
         {
+          name: "laneId",
+          type: "string",
+          description:
+            "Saved Lane. Server resolves expectedRevision, target, and account overlay. Use --lane; --input-file is not needed.",
+        },
+        {
           name: "expectedRevision",
           type: "number",
-          required: true,
-          description: "Exact saved App Map revision to run",
+          description: "Exact saved App Map revision to run. Required unless --lane is set.",
         },
         {
           name: "target",
           type: "object",
-          required: true,
-          description: "Explicit device or browser target",
+          description: "Explicit device or browser target. Required unless --lane is set.",
         },
         {
           name: "targetProfileId",
@@ -251,6 +255,7 @@ export const graphTestCommandDescriptors: readonly MappedOperationDescriptor[] =
         },
       ],
       examples: [
+        "relay test run grok-web grok-web-open --lane grok-daily",
         "relay test run grok-android-manual-v2 supergrok-locale-tour --in language=hu,ro --lens visual --target current --revision current",
         "relay combine export <batch-id>",
         "relay test run checkout smoke --target current --revision current",
@@ -259,7 +264,7 @@ export const graphTestCommandDescriptors: readonly MappedOperationDescriptor[] =
         'relay test run checkout smoke --input \'{"expectedRevision":7,"target":{"kind":"browser","platform":"browser","targetId":"checkout-web"}}\'',
         'relay test run checkout smoke --input \'{"expectedRevision":7,"target":{"kind":"device","platform":"ios","targetId":"DEVICE"}}\'',
       ],
-      note: "The run always freezes an exact revision and target. A person with one connected local device may resolve both explicitly with --target current --revision current; Relay prints the resolved facts before execution. Without --in this is one Test run. With --in, Relay upserts the Combine, fills default target bindings, and starts one cell unless --all is set. A paused job resumes its existing plan; a new run uses only the startup policy supplied here. Relay never turns a checkpoint mismatch into an implicit cold retry or relaunch.",
+      note: "The run always freezes an exact revision and target. Pass --lane to have the server resolve them from a saved Lane. A person with one connected local device may resolve both explicitly with --target current --revision current; Relay prints the resolved facts before execution. Without --in this is one Test run. With --in, Relay upserts the Combine, fills default target bindings, and starts one cell unless --all is set. A paused job resumes its existing plan; a new run uses only the startup policy supplied here. Relay never turns a checkpoint mismatch into an implicit cold retry or relaunch.",
       behavior: "job-start-watch",
     }),
   ),
