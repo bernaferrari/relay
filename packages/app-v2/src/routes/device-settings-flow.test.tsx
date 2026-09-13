@@ -578,6 +578,11 @@ describe("Settings", () => {
     });
 
     expect(document.querySelectorAll('[aria-label="Settings sections"] a')).toHaveLength(6);
+    expect(
+      [...document.querySelectorAll('[aria-label="Settings sections"] a')].map((item) =>
+        item.textContent?.trim(),
+      ),
+    ).toContain("Privacy");
     expect(document.body.textContent).toContain("Evidence");
     expect(document.body.textContent).not.toContain("Protect evidence before it is saved");
     expect(document.body.textContent).toContain("HTTP bodies");
@@ -622,6 +627,7 @@ describe("Settings", () => {
     await click(input("Light"));
     expect(document.documentElement.dataset.colorScheme).toBe("light");
     expect(platform.values.get("appearance.colorScheme")).toBe("light");
+    expect(window.localStorage.getItem("relay-color-scheme")).toBe("light");
     expect(document.body.textContent).toContain("Saved");
   });
 

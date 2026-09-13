@@ -163,7 +163,7 @@ function EvidenceSettings() {
       ) : null}
       {privacy.data && evidence.data ? (
         <>
-          <SettingsGroup id="privacy">
+          <SettingsGroup title="Privacy" id="privacy">
             <ToggleRow
               id="redact-sensitive-evidence"
               title="Redact sensitive evidence"
@@ -178,7 +178,7 @@ function EvidenceSettings() {
             />
           </SettingsGroup>
 
-          <SettingsGroup id="sensitive">
+          <SettingsGroup title="Optional collection" id="sensitive">
             {CHANNELS.map((channel) => (
               <ToggleRow
                 key={channel.id}
@@ -375,9 +375,8 @@ function AdvancedSettings() {
               </div>
               <FieldDescription>
                 Local Vite uses this same origin at /relay (for example
-                http://127.0.0.1:5175/relay). Direct http://127.0.0.1:8787 is for
-                desktop and curl — browsers that cannot call another loopback port
-                should keep the /relay address.
+                http://127.0.0.1:5175/relay). Direct http://127.0.0.1:8787 is for desktop and curl —
+                browsers that cannot call another loopback port should keep the /relay address.
               </FieldDescription>
               {connectionError ? (
                 <p role="alert">

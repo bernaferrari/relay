@@ -10,4 +10,5 @@ it("defines the public settings categories", () => {
     "/settings/advanced",
     "/settings/about",
   ]);
+  expect(settingsCategories.find((category) => category.id === "evidence")?.label).toBe("Privacy");
 });

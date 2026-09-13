@@ -74,6 +74,12 @@ describe("React router", () => {
     expect(router.state.location.pathname).toBe("/tests");
   });
 
+  it("redirects the retired Evidence tab to Results", async () => {
+    const router = testRouter(["/evidence"]);
+    await router.load();
+    expect(router.state.location.pathname).toBe("/runs");
+  });
+
   it.each([
     ["/apps/app-1/versions", "/versions"],
     ["/apps/app-1/accounts", "/accounts"],

@@ -167,7 +167,8 @@ const routePresentations = {
   "/settings/evidence": {
     path: "/settings/evidence",
     eyebrow: "Settings",
-    description: "Choose how Relay stores and presents run evidence.",
+    description:
+      "Choose what future Runs may capture. This is capture policy, not a QA Evidence tab.",
   },
   "/settings/integrations": {
     path: "/settings/integrations",

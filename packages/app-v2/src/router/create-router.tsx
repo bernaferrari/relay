@@ -368,6 +368,15 @@ const settingsEvidenceRoute = createRoute({
   path: "/settings/evidence",
   component: () => <SettingsPage category="evidence" />,
 });
+const legacyEvidenceRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/evidence",
+  beforeLoad: () => {
+    // Retired workspace Evidence tab. QA evidence lives on Result, Findings,
+    // and visual compare; capture policy remains /settings/evidence.
+    throw redirect({ to: "/runs", replace: true });
+  },
+});
 const settingsIntegrationsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/settings/integrations",
@@ -423,6 +432,7 @@ const routeTree = rootRoute.addChildren([
   agentDebugRoute,
   settingsGeneralRoute,
   settingsEvidenceRoute,
+  legacyEvidenceRoute,
   settingsIntegrationsRoute,
   settingsAppearanceRoute,
   settingsAdvancedRoute,

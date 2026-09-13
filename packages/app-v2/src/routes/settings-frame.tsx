@@ -14,7 +14,7 @@ const SETTINGS_COPY: Record<SettingsCategory, { title: string; description: stri
     description: "This computer’s connection and notifications.",
   },
   evidence: {
-    title: "Evidence",
+    title: "Privacy",
     description: "What future Runs may capture.",
   },
   integrations: {

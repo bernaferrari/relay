@@ -631,7 +631,13 @@ function RunReport({
           <RunWorkbench
             key={report.runId}
             report={report}
-            view={typeof search.reportView === "string" ? search.reportView : undefined}
+            view={
+              typeof search.reportView === "string"
+                ? search.reportView
+                : search.view === "evidence"
+                  ? "captures"
+                  : undefined
+            }
             captureIndex={typeof search.capture === "string" ? Number(search.capture) : undefined}
             onViewChange={(reportView) => {
               if (!embedded)
