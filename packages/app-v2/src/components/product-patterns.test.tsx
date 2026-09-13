@@ -41,12 +41,16 @@ describe("status marks", () => {
     const host = await render(
       <>
         <ReadinessMark status="ready" />
+        <ReadinessMark status="needs-review" />
         <OutcomeMark outcome="passed" />
+        <OutcomeMark outcome="uncertain" />
       </>,
     );
-    const [ready, passed] = [...host.querySelectorAll("[data-slot='badge']")];
+    const [ready, unbound, passed, needsReview] = [...host.querySelectorAll("[data-slot='badge']")];
     expect(ready?.textContent).toContain("Ready");
+    expect(unbound?.textContent).toContain("Unbound");
     expect(passed?.textContent).toContain("Passed");
+    expect(needsReview?.textContent).toContain("Needs review");
     expect(ready?.className).not.toBe(passed?.className);
     expect(ready?.querySelector("svg")?.getAttribute("class")).not.toBe(
       passed?.querySelector("svg")?.getAttribute("class"),

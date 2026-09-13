@@ -188,7 +188,7 @@ export function OutcomeMark({ outcome }: { outcome: OutcomeValue }) {
 export function ReadinessMark({ status }: { status: ReadinessValue }) {
   const presentation =
     status === "needs-review"
-      ? { label: "Needs review", icon: CircleHelp, tone: "notice" as const }
+      ? { label: "Unbound", icon: CircleHelp, tone: "notice" as const }
       : { label: "Ready", icon: ListChecks, tone: "quiet" as const };
   return (
     <Badge

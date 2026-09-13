@@ -745,7 +745,7 @@ function ReadableStep({
       >
         <strong className="block text-[13px] font-medium">{step.label ?? step.intent}</strong>
         {step.status === "needs-review" ? (
-          <small className="mt-0.5 block text-xs text-muted-foreground">Needs review</small>
+          <small className="mt-0.5 block text-xs text-muted-foreground">Unbound</small>
         ) : null}
       </button>
       {step.children?.length ? (

@@ -260,7 +260,7 @@ export function HomePage() {
                       </p>
                     </div>
                     <span className="shrink-0 text-xs text-muted-foreground">
-                      {test.status === "ready" ? "Ready" : "Needs review"}
+                      {test.status === "ready" ? "Ready" : "Unbound"}
                     </span>
                   </li>
                 ))}

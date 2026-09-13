@@ -554,7 +554,7 @@ export function SuitePage() {
                             {test.name}
                           </span>
                           <span className="truncate text-xs leading-snug text-muted-foreground">
-                            {test.status === "ready" ? "Ready" : "Needs review"}
+                            {test.status === "ready" ? "Ready" : "Unbound"}
                           </span>
                         </span>
                         <Checkbox

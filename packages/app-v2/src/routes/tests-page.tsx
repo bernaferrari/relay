@@ -122,7 +122,7 @@ export function TestsPage() {
   const statusOptions = [
     { value: "all", label: "All statuses" },
     { value: "ready", label: "Ready" },
-    { value: "needs-review", label: "Needs review" },
+    { value: "needs-review", label: "Unbound" },
   ] as const;
   const resultOptions = [
     { value: "all", label: "All results" },
@@ -445,7 +445,7 @@ function matchesResult(test: ProductTestSummary, result: ResultFilter): boolean 
 function resultContext(status: TestFilter, app: string, apps: readonly [string, string][]) {
   if (app) return apps.find(([id]) => id === app)?.[1] ?? "Selected app";
   if (status === "ready") return "Ready to run";
-  if (status === "needs-review") return "Needs review";
+  if (status === "needs-review") return "Unbound";
   return undefined;
 }
 

@@ -395,7 +395,7 @@ function BindingRepair({
                     kind: "step.unbind",
                     stepId: step.id,
                     reason:
-                      step.binding.status === "unresolved" ? step.binding.reason : "Needs review",
+                      step.binding.status === "unresolved" ? step.binding.reason : "Unbound",
                     ...(step.binding.status === "unresolved" && step.binding.candidates
                       ? { candidates: structuredClone(step.binding.candidates) }
                       : {}),
@@ -431,9 +431,9 @@ export function stepReadinessLabel(
 ): string {
   if (step.execution?.status === "disabled") return `Disabled · ${step.execution.reason}`;
   if (options?.unrecordedNative) {
-    return `${step.binding.status === "resolved" ? "Ready on Web" : "Needs review"} · Android/iOS disabled until recorded`;
+    return `${step.binding.status === "resolved" ? "Ready on Web" : "Unbound"} · Android/iOS disabled until recorded`;
   }
-  return step.binding.status === "resolved" ? "Ready" : "Needs review";
+  return step.binding.status === "resolved" ? "Ready" : "Unbound";
 }
 
 export function stepKindLabel(step: AppMapScenarioTestStep): string {
