@@ -140,7 +140,9 @@ describe("Batch review controls", () => {
     expect(reviewStatus).not.toBeNull();
     expect(reviewStatus).not.toBeInstanceOf(HTMLSelectElement);
     expect(document.body.textContent).toContain("No findings");
-    expect(document.body.textContent).toContain("rate-limit SOS is not a product pass");
+    expect(document.body.textContent).toContain(
+      "rate-limit SOS, or a Cloudflare block is not a product pass",
+    );
     expect(document.body.textContent).toContain("Check Sign-ins");
     expect(document.body.textContent).toContain("never accept a visual baseline");
     expect(document.body.textContent).toContain("Accept a baseline from a Report");

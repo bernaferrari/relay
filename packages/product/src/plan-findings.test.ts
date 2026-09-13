@@ -72,7 +72,7 @@ test("qualified findings propose Reject", () => {
 test("empty findings keep the morning review copy", () => {
   const markdown = renderPlanFindingsMarkdown(report([]));
   assert.match(markdown, /No findings/);
-  assert.match(markdown, /rate-limit SOS is not a product pass/);
+  assert.match(markdown, /rate-limit SOS, or a Cloudflare block is not a product pass/);
   assert.match(markdown, /relay run visual review/);
   assert.match(markdown, /Sign-ins/);
   assert.match(markdown, /Report/);

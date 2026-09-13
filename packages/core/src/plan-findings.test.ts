@@ -65,7 +65,7 @@ test("findings markdown names Confirm/Reject and forbids implied baseline accept
 test("empty findings stay explicit", () => {
   const markdown = renderPlanFindingsMarkdown(report([]));
   assert.match(markdown, /No findings/);
-  assert.match(markdown, /rate-limit SOS is not a product pass/);
+  assert.match(markdown, /rate-limit SOS, or a Cloudflare block is not a product pass/);
   assert.match(markdown, /relay run visual review/);
   assert.match(markdown, /Sign-ins/);
   assert.match(markdown, /Report/);
