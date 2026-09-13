@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { compiledGraphPlatformBlocker, recipeStepPlatformBlocker } from "./recipe-platform-support.js";
+import {
+  compiledGraphPlatformBlocker,
+  recipeStepPlatformBlocker,
+} from "./recipe-platform-support.js";
 
 test("blocks mobile-data, offline, iOS upload, and browser background at the platform seam", () => {
   assert.match(
@@ -35,6 +38,14 @@ test("blocks mobile-data, offline, iOS upload, and browser background at the pla
     recipeStepPlatformBlocker({ kind: "app", action: "background", app: "ai.x.grok" }, "browser") ??
       "",
     /browser/u,
+  );
+  assert.match(
+    recipeStepPlatformBlocker({ kind: "device", action: "lock" }, "ios") ?? "",
+    /not supported by this iOS runner/u,
+  );
+  assert.match(
+    recipeStepPlatformBlocker({ kind: "device", action: "unlock" }, "browser") ?? "",
+    /not supported on browser/u,
   );
 });
 

@@ -213,6 +213,57 @@ describe("daily QA recipe steps", () => {
     );
   });
 
+  it("fails evaluate-visual closed without OPENROUTER_API_KEY", async () => {
+    const previous = process.env.OPENROUTER_API_KEY;
+    delete process.env.OPENROUTER_API_KEY;
+    try {
+      await assert.rejects(
+        () =>
+          runWithTargetContext({ kind: "browser", platform: "browser", targetId: "grok-web" }, () =>
+            runRecipeStep(
+              stubBrowserDevice(),
+              { kind: "evaluate-visual", criteria: ["Composer is empty"] },
+              { log: () => {}, job: job() },
+            ),
+          ),
+        /visual judge unavailable: OPENROUTER_API_KEY is not configured/u,
+      );
+    } finally {
+      if (previous === undefined) delete process.env.OPENROUTER_API_KEY;
+      else process.env.OPENROUTER_API_KEY = previous;
+    }
+  });
+
+  it("rejects iOS lock at the platform seam", async () => {
+    await assert.rejects(
+      () =>
+        runWithTargetContext({ kind: "device", platform: "ios", serial: "ipad-lock" }, () =>
+          runRecipeStep(
+            stubBrowserDevice(),
+            { kind: "device", action: "lock" },
+            { log: () => {}, job: job() },
+          ),
+        ),
+      /not supported by this iOS runner/u,
+    );
+  });
+
+  it("rejects browser offline on Android at the platform seam", async () => {
+    await assert.rejects(
+      () =>
+        runWithTargetContext(
+          { kind: "device", platform: "android", serial: "emulator-offline" },
+          () =>
+            runRecipeStep(
+              stubBrowserDevice(),
+              { kind: "offline", state: "on" },
+              { log: () => {}, job: job() },
+            ),
+        ),
+      /browser/u,
+    );
+  });
+
   it("rejects browser background at the platform seam", async () => {
     await assert.rejects(
       () =>

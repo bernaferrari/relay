@@ -55,4 +55,35 @@ describe("semantic evaluation providers", () => {
       /semantic judge unavailable: provider is not configured \(missing-judge-provider\)/,
     );
   });
+
+  it("fails closed without OPENROUTER when no provider is selected", async () => {
+    const previous = process.env.OPENROUTER_API_KEY;
+    const previousProvider = process.env.RELAY_EVALUATION_PROVIDER;
+    delete process.env.OPENROUTER_API_KEY;
+    delete process.env.RELAY_EVALUATION_PROVIDER;
+    try {
+      await assert.rejects(
+        () =>
+          evaluateSemantic({
+            input: "Paris is in France.",
+            criteria: ["Names France"],
+          }),
+        /semantic judge unavailable/,
+      );
+      await assert.rejects(
+        () =>
+          evaluateSemantic({
+            input: "Paris is in France.",
+            criteria: ["Names France"],
+            provider: "openrouter",
+          }),
+        /semantic judge unavailable/,
+      );
+    } finally {
+      if (previous === undefined) delete process.env.OPENROUTER_API_KEY;
+      else process.env.OPENROUTER_API_KEY = previous;
+      if (previousProvider === undefined) delete process.env.RELAY_EVALUATION_PROVIDER;
+      else process.env.RELAY_EVALUATION_PROVIDER = previousProvider;
+    }
+  });
 });
