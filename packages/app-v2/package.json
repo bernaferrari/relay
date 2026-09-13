@@ -22,6 +22,7 @@
     "@relay/client": "workspace:*",
     "@relay/product": "workspace:*",
     "@relay/protocol": "workspace:*",
+    "@relay/ui": "workspace:*",
     "@relay/ui-react": "workspace:*",
     "@relay/workflows": "workspace:*",
     "@tanstack/react-query": "5.102.8",

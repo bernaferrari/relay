@@ -11,6 +11,7 @@
     "./package.json": "./package.json",
     "./*": "./src/components/*.tsx",
     "./theme": "./src/theme/index.ts",
+    "./theme/apply": "./src/theme/apply.ts",
     "./theme/*": "./src/theme/*.ts",
     "./theme/context": "./src/theme/context.tsx",
     "./theme/preload": "./src/theme/preload.js",

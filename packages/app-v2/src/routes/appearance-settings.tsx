@@ -18,8 +18,55 @@ import {
 } from "../data/talkback-overlay";
 import { SettingsFrame, SettingsGroup, type SaveState } from "./settings-frame";
 
+const schemes = [
+  { value: "system", title: "System", description: "Follow this computer" },
+  { value: "light", title: "Light", description: "Light surfaces" },
+  { value: "dark", title: "Dark", description: "Low-light surfaces" },
+] as const;
+
 const radioCardClassName =
-  "grid w-full min-w-0 cursor-pointer grid-cols-[minmax(0,1fr)_20px] gap-2 rounded-lg border border-border bg-card p-1.5 pb-3 text-card-foreground transition-colors outline-none hover:bg-muted/50 active:scale-[.98] has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50 max-[620px]:grid-cols-[minmax(0,1fr)_20px]";
+  "relative grid w-full min-w-0 cursor-pointer grid-cols-[minmax(0,1fr)_20px] gap-2 rounded-lg border border-border bg-card p-1.5 pb-3 text-card-foreground outline-none transition-[border-color,background-color,box-shadow,transform] duration-150 ease-out hover:bg-muted/50 active:scale-[0.96] has-data-checked:border-foreground has-data-checked:bg-muted has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50 max-[620px]:grid-cols-[minmax(0,1fr)_20px]";
+
+function SchemePreview({ value }: { value: ColorSchemePreference }) {
+  const pane = (tone: "light" | "dark") =>
+    tone === "dark"
+      ? "bg-[var(--relay-preview-dark-canvas)]"
+      : "bg-[var(--relay-preview-light-canvas)]";
+  const rail = (tone: "light" | "dark") =>
+    tone === "dark"
+      ? "bg-[var(--relay-preview-dark-panel)]"
+      : "bg-[var(--relay-preview-light-panel)]";
+  const line = (tone: "light" | "dark") =>
+    tone === "dark"
+      ? "bg-[var(--relay-preview-dark-line)]"
+      : "bg-[var(--relay-preview-light-line)]";
+  return (
+    <span
+      className="relative block h-[86px] w-full overflow-hidden rounded-[10px] border border-border"
+      aria-hidden="true"
+    >
+      {value === "system" ? (
+        <>
+          <span className={`absolute inset-y-0 left-0 w-1/2 ${pane("light")}`} />
+          <span className={`absolute inset-y-0 right-0 w-1/2 ${pane("dark")}`} />
+          <span className={`absolute inset-y-0 left-0 w-[18%] ${rail("light")}`} />
+          <span className={`absolute inset-y-0 left-1/2 w-[18%] ${rail("dark")}`} />
+          <span className={`absolute left-[22%] top-5 h-2 w-[22%] rounded-full ${line("light")}`} />
+          <span className={`absolute right-[8%] top-5 h-2 w-[22%] rounded-full ${line("dark")}`} />
+        </>
+      ) : (
+        <>
+          <span className={`absolute inset-0 ${pane(value)}`} />
+          <span className={`absolute inset-y-0 left-0 w-[30%] ${rail(value)}`} />
+          <span className={`absolute right-3 top-5 h-2 w-[48%] rounded-full ${line(value)}`} />
+          <span
+            className={`absolute right-3 top-9 h-[26px] w-[58%] rounded-[5px] ${rail(value)}`}
+          />
+        </>
+      )}
+    </span>
+  );
+}
 
 export function AppearanceSettings() {
   const { platform } = useRouteContext({ from: "__root__" });
@@ -108,48 +155,21 @@ export function AppearanceSettings() {
           name="appearance"
           value={preference}
           disabled={saveState === "saving"}
-          onValueChange={(next) => void chooseColor(next)}
+          onValueChange={(next) => {
+            if (next === "system" || next === "light" || next === "dark") void chooseColor(next);
+          }}
           aria-label="Color scheme"
         >
-          {(["system", "light", "dark"] as const).map((value) => (
-            <FieldLabel key={value} className={radioCardClassName}>
-              <span
-                className="col-span-2 flex w-full items-center justify-center rounded-md bg-transparent [&_svg]:size-4 [&_svg]:shrink-0"
-                aria-hidden="true"
-              >
-                <span
-                  className={`relative block h-[86px] w-full overflow-hidden rounded-[10px] shadow-[inset_0_0_0_1px_color-mix(in_srgb,black_10%,transparent)] ${
-                    value === "dark"
-                      ? "bg-slate-950"
-                      : value === "system"
-                        ? "bg-gradient-to-r from-slate-100 via-slate-100 via-50% to-slate-950"
-                        : "bg-slate-100"
-                  }`}
-                >
-                  <span
-                    className={`absolute inset-y-0 left-0 w-[30%] ${value === "dark" ? "bg-slate-800" : value === "system" ? "bg-slate-200" : "bg-white"}`}
-                  />
-                  <span
-                    className={`absolute right-3 top-5 h-2 w-[48%] rounded-full ${value === "dark" ? "bg-slate-600" : "bg-slate-300"}`}
-                  />
-                  <span
-                    className={`absolute right-3 top-9 h-[26px] w-[58%] rounded-[5px] ${value === "dark" ? "bg-slate-800" : "bg-white"}`}
-                  />
-                </span>
+          {schemes.map((scheme) => (
+            <FieldLabel key={scheme.value} className={radioCardClassName}>
+              <span className="col-span-2 flex w-full items-center justify-center rounded-md bg-transparent">
+                <SchemePreview value={scheme.value} />
               </span>
               <span className="grid min-w-0 gap-0.5 px-1">
-                <span className="truncate font-medium text-foreground">
-                  {value[0]!.toUpperCase() + value.slice(1)}
-                </span>
-                <span className="truncate text-muted-foreground">
-                  {value === "system"
-                    ? "Follow this computer"
-                    : value === "light"
-                      ? "Light surfaces"
-                      : "Low-light surfaces"}
-                </span>
+                <span className="truncate font-medium text-foreground">{scheme.title}</span>
+                <span className="truncate text-muted-foreground">{scheme.description}</span>
               </span>
-              <RadioGroupItem value={value} />
+              <RadioGroupItem value={scheme.value} />
             </FieldLabel>
           ))}
         </RadioGroup>

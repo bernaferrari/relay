@@ -3,7 +3,7 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-@custom-variant dark (&:is([data-color-scheme="dark"] *));
+@custom-variant dark (&:where([data-color-scheme="dark"], [data-color-scheme="dark"] *));
 
 @theme inline {
   --font-sans: "Inter Variable", Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
@@ -86,8 +86,8 @@
 }
 
 /* Shadcn Base Nova (b0) foundations mapped onto Relay's public semantic tokens. */
-:root,
-[data-color-scheme="light"] {
+html[data-color-scheme="light"] {
+  color-scheme: light;
   --background-base: oklch(1 0 0);
   --background-weak: oklch(0.985 0 0);
   --background-strong: oklch(1 0 0);
@@ -120,7 +120,7 @@
   --text-interactive-hover: oklch(0.145 0 0);
 }
 
-[data-color-scheme="dark"] {
+html[data-color-scheme="dark"] {
   color-scheme: dark;
   --background-base: oklch(0.145 0 0);
   --background-weak: oklch(0.205 0 0);

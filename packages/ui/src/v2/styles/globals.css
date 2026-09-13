@@ -396,7 +396,7 @@
   }
 */
   /* Explicit light mode via data attribute (overrides OS dark preference) */
-  [data-color-scheme="light"] {
+  html[data-color-scheme="light"] {
     color-scheme: light;
 
     --v2-background-bg-base: var(--v2-grey-50);
@@ -506,7 +506,7 @@
   }
 
   /* Explicit dark mode via data attribute (Storybook toggle, runtime JS) */
-  [data-color-scheme="dark"] {
+  html[data-color-scheme="dark"] {
     color-scheme: dark;
 
     --v2-background-bg-base: var(--v2-grey-1100);

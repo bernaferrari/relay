@@ -259,6 +259,9 @@ importers:
       '@relay/protocol':
         specifier: workspace:*
         version: link:../protocol
+      '@relay/ui':
+        specifier: workspace:*
+        version: link:../ui
       '@relay/ui-react':
         specifier: workspace:*
         version: link:../ui-react

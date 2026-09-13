@@ -19,6 +19,13 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/relay/, "") || "/",
         ws: true,
+        bypass(req) {
+          const url = req.url?.split("?")[0] ?? "";
+          // `/relay-theme-preload.js` and `/relay-icon.png` are Vite public
+          // files. Prefix-matching `/relay` would otherwise proxy them to :8787.
+          if (url === "/relay" || url.startsWith("/relay/")) return;
+          if (url.startsWith("/relay")) return url;
+        },
         configure(proxy) {
           proxy.on("proxyReq", (proxyReq) => {
             proxyReq.removeHeader("origin");
@@ -27,6 +34,9 @@ export default defineConfig({
         },
       },
     },
+  },
+  optimizeDeps: {
+    exclude: ["fsevents", "playwright-core"],
   },
   build: {
     target: "esnext",

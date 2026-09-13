@@ -13,6 +13,7 @@
     }
     var scheme =
       localStorage.getItem("relay-color-scheme") ||
+      localStorage.getItem("relay:appearance.colorScheme") ||
       localStorage.getItem("grok-device-color-scheme") ||
       "system";
     var isDark =
@@ -21,6 +22,8 @@
     var mode = isDark ? "dark" : "light";
     document.documentElement.dataset.theme = themeId;
     document.documentElement.dataset.colorScheme = mode;
+    document.documentElement.dataset.colorSchemePreference =
+      scheme === "light" || scheme === "dark" ? scheme : "system";
     document.documentElement.style.backgroundColor = isDark ? "#080808" : "#fafafa";
     var meta = document.querySelector("meta[name='theme-color']");
     if (meta) meta.setAttribute("content", isDark ? "#080808" : "#fafafa");
@@ -32,7 +35,9 @@
     var style = document.createElement("style");
     style.id = "relay-theme-preload";
     style.textContent =
-      ":root{color-scheme:" +
+      'html[data-color-scheme="' +
+      mode +
+      '"]{color-scheme:' +
       mode +
       ";--text-mix-blend-mode:" +
       (isDark ? "plus-lighter" : "multiply") +

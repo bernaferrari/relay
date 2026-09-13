@@ -6,6 +6,7 @@ import { createMemoryHistory } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { RelayV2App } from "../app";
+import { applyColorScheme, validColorScheme } from "../data/appearance-preference";
 import type { AppResourcesProductService } from "../data/app-resources-product-service";
 import type { CatalogProductService } from "../data/catalog-product-service";
 import type { ChangeProductService } from "../data/change-product-service";
@@ -29,6 +30,12 @@ import type { BrowserSpacesProductService } from "../data/browser-spaces-product
 import type { AgentDebugProductService } from "../data/agent-debug-product-service";
 import type { Platform } from "../platform/types";
 import "../styles/globals.css";
+
+try {
+  applyColorScheme(validColorScheme(window.localStorage.getItem("relay-color-scheme")));
+} catch {
+  applyColorScheme("system");
+}
 
 const FIXTURE_TIME = Date.UTC(2026, 8, 4, 12, 0, 0);
 const VISUAL_NOW = 1_788_390_000_000;

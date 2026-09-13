@@ -1,6 +1,7 @@
+import { applyRelayColorScheme, type RelayColorScheme } from "@relay/ui/theme/apply";
 import type { Platform } from "../platform/types";
 
-export type ColorSchemePreference = "system" | "light" | "dark";
+export type ColorSchemePreference = RelayColorScheme;
 
 export const APPEARANCE_STORAGE_KEY = "appearance.colorScheme";
 let appliedVersion = 0;
@@ -14,14 +15,7 @@ export function validColorScheme(value: string | null | undefined): ColorSchemeP
 
 export function applyColorScheme(value: ColorSchemePreference): void {
   appliedVersion += 1;
-  const resolved =
-    value === "system"
-      ? window.matchMedia("(prefers-color-scheme: dark)").matches
-        ? "dark"
-        : "light"
-      : value;
-  document.documentElement.dataset.colorScheme = resolved;
-  document.documentElement.dataset.colorSchemePreference = value;
+  applyRelayColorScheme(value);
 }
 
 export async function readColorScheme(platform: Platform): Promise<ColorSchemePreference> {
