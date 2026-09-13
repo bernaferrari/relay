@@ -14,7 +14,10 @@ import {
 import { now, publish } from "./events.js";
 import type { RecipeStep } from "./recipes.js";
 import type { RecipeStepContext } from "./recipe-runner-context.js";
-import { waitForIsIndependentlySourceProven } from "./leftover-origin-recovery.js";
+import {
+  sourceProofAfterLeftoverWarm,
+  waitForIsIndependentlySourceProven,
+} from "./leftover-origin-recovery.js";
 import { observeScreenIdentity } from "./screen-identity.js";
 import { captureScreenshot } from "./workspace.js";
 
@@ -193,10 +196,11 @@ export function independentlySourceProvenLeafRecipe(
     return false;
   }
   const frozen = ctx.recipeGraph?.[recovery.recipeId];
-  const sourceProof = frozen?.steps[0];
+  const sourceProof = sourceProofAfterLeftoverWarm(frozen?.steps);
   // Wait-for chrome (Library) is present on leftover conversation and empty
   // home. Dest-screen leftover used to fail closed here because only dest-end
   // counted, then SOS-replayed the same connection from an unknown cursor.
+  // Leftover New Chat may precede that wait-for on warm confirmation.
   if (waitForIsIndependentlySourceProven(sourceProof)) return true;
   return (
     sourceProof?.kind === "expect-screen" &&

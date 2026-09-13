@@ -4,6 +4,8 @@ import type { AppMap, AppMapScenarioTest, Connection, Screen } from "@relay/prot
 import { compileAppMapTest } from "./map-work.js";
 import {
   leftoverConversationHomePrelude,
+  leftoverWarmConfirmationSteps,
+  sourceProofAfterLeftoverWarm,
   waitForIsIndependentlySourceProven,
 } from "./leftover-origin-recovery.js";
 
@@ -106,6 +108,18 @@ const signOut = connection({
   label: "Sign Out",
   state: "ready",
   actions: [{ id: "tap-sign-out", kind: "tap", target: { label: "Sign Out" } }],
+});
+
+test("source proof skips leftover New Chat before wait-for", () => {
+  const waitFor = { kind: "wait-for" as const, target: { label: "Library" }, timeoutMs: 5_000 };
+  assert.equal(
+    sourceProofAfterLeftoverWarm([
+      { kind: "tap", target: { identifier: "new-chat", label: "Chat" } },
+      waitFor,
+    ]),
+    waitFor,
+  );
+  assert.equal(sourceProofAfterLeftoverWarm([waitFor]), waitFor);
 });
 
 test("wait-for is independently source-proven for dest-screen leftover", () => {
@@ -238,4 +252,53 @@ test("a home-starting Test compiles leftover New Chat prelude", () => {
     first && "preludeStartFingerprint" in first ? first.preludeStartFingerprint : undefined,
     conversationFingerprint,
   );
+});
+
+test("warm confirmation prepends leftover New Chat before replaying the connection", () => {
+  const map = mapWith({ "open-conversation": openConversation, "new-chat": newChat });
+  assert.deepEqual(leftoverWarmConfirmationSteps(map, "home"), [
+    { kind: "tap", target: { identifier: "new-chat", label: "Chat" } },
+  ]);
+  const work: AppMapScenarioTest = {
+    ...scope,
+    id: "open-from-home",
+    name: "Open conversation",
+    kind: "scenario",
+    intentSchemaVersion: 1,
+    steps: [
+      {
+        id: "on-home",
+        kind: "validation",
+        intent: "On signed-in home",
+        binding: {
+          status: "resolved",
+          kind: "assertion",
+          assertion: { kind: "screen", screenId: "home" },
+        },
+      },
+      {
+        id: "open",
+        kind: "instruction",
+        intent: "Open existing sidebar conversation",
+        binding: {
+          status: "resolved",
+          kind: "connections",
+          connectionIds: ["open-conversation"],
+        },
+      },
+    ],
+    createdAt: at,
+    updatedAt: at,
+  };
+  const compiled = compileAppMapTest(map, work);
+  const confirm = Object.values(compiled.graph).find((recipe) =>
+    recipe.title.includes("warm transition confirmation"),
+  );
+  assert.ok(confirm);
+  assert.equal(confirm.steps[0]?.kind, "tap");
+  assert.equal(
+    confirm.steps[0]?.kind === "tap" ? confirm.steps[0].target.identifier : undefined,
+    "new-chat",
+  );
+  assert.equal(confirm.steps[1]?.kind, "wait-for");
 });

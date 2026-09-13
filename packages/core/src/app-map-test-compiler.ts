@@ -29,6 +29,7 @@ import {
 } from "./app-map-test-raw-accessibility.js";
 import { proposeAppMapTestExecutionSchedule } from "./app-map-test-schedule.js";
 import { attachMappedInboundPrelude } from "./app-map-test-inbound-prelude.js";
+import { leftoverWarmConfirmationSteps } from "./leftover-origin-recovery.js";
 import type { Recipe } from "./recipes.js";
 import { testWithSelectedRouteVariant } from "./app-map-test-route-variants.js";
 import { resolveScenarioTestCompileRoute } from "./app-map-test-compile-route.js";
@@ -565,11 +566,15 @@ export function compileAppMapScenarioTest(
             }
             const connectionRoot = instructionGraph[connectionPlan.rootRecipeId]!;
             recoveryRecipeId = `${id}:confirm:${recoveryTransition.connectionId}`;
+            const leftoverWarmSteps = leftoverWarmConfirmationSteps(
+              map,
+              recoveryTransition.originScreenId,
+            );
             instructionGraph[recoveryRecipeId] = {
               id: recoveryRecipeId,
               title: `${connectionRoot.title} · warm transition confirmation`,
               source: "custom",
-              steps: structuredClone(connectionRoot.steps),
+              steps: [...leftoverWarmSteps, ...structuredClone(connectionRoot.steps)],
               createdAt: map.createdAt,
               updatedAt: map.updatedAt,
             };

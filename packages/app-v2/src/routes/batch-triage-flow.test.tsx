@@ -185,4 +185,59 @@ describe("Batch review controls", () => {
       ],
     ]);
   });
+
+  it("shows HARNESS_FAILURE for cancelled SOS cells instead of an empty Findings page", async () => {
+    await render({
+      getReport: async () => report,
+      getFailureClusters: async () => ({ campaignId: "batch-1", clusters: [] }),
+      getFindings: async () => ({
+        schemaVersion: 1,
+        batchId: "batch-1",
+        locales: ["logged-out"],
+        analysis: {
+          schemaVersion: 1,
+          sessionId: "s1",
+          generatedAt: 1,
+          baselineLocale: "logged-out",
+          findings: [
+            {
+              id: "harness-failure-099e8094-8018-4d44-b00b-73d2290b2f3f",
+              code: "HARNESS_FAILURE",
+              severity: "critical",
+              confidence: "high",
+              canonicalKey: "job:099e8094-8018-4d44-b00b-73d2290b2f3f",
+              screenLabel: "Toolbar on existing chat signed-in (no composer)",
+              locale: "logged-out",
+              baselineLocale: "logged-out",
+              detail: "SOS: cold recovery blocked — expect-set missing toolbar",
+            },
+          ],
+          critical: 1,
+          warnings: 0,
+          affectedScreens: 1,
+        },
+        coverage: { frames: 0, inspectedFrames: 0 },
+        cases: [
+          {
+            jobId: "099e8094-8018-4d44-b00b-73d2290b2f3f",
+            locale: "logged-out",
+            status: "cancelled",
+            frames: [],
+          },
+        ],
+      }),
+    } as unknown as RunAcrossProductService);
+    expect(document.body.textContent).toContain("HARNESS_FAILURE");
+    expect(document.body.textContent).toContain("finding to review");
+    expect(document.body.textContent).not.toContain("No findings. Passing cases");
+    expect(document.body.textContent).toContain("never accept a visual baseline");
+    const confirm = [...document.querySelectorAll("button")].find(
+      (button) => button.textContent?.trim() === "Confirm",
+    );
+    const reject = [...document.querySelectorAll("button")].find(
+      (button) => button.textContent?.trim() === "Reject",
+    );
+    expect(confirm).toBeInstanceOf(HTMLButtonElement);
+    expect(reject).toBeInstanceOf(HTMLButtonElement);
+  });
 });

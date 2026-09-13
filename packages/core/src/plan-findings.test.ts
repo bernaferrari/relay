@@ -88,6 +88,23 @@ test("empty findings do not hide a failed cell", () => {
   assert.doesNotMatch(markdown, /No findings\. Passing cases/);
 });
 
+test("empty findings do not hide a cancelled SOS cell", () => {
+  const markdown = renderPlanFindingsMarkdown({
+    ...report([]),
+    cases: [
+      {
+        jobId: "099e8094-8018-4d44-b00b-73d2290b2f3f",
+        locale: "logged-out",
+        status: "cancelled",
+        frames: [],
+      },
+    ],
+  });
+  assert.match(markdown, /QA bug, not a pass/);
+  assert.match(markdown, /SOS\/cancelled/);
+  assert.doesNotMatch(markdown, /No findings\. Passing cases/);
+});
+
 test("expect-screen product findings propose Confirm and never accept a baseline", () => {
   const proposal = proposePlanFinding({
     id: "f-product",

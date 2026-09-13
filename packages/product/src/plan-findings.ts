@@ -145,12 +145,18 @@ export const PLAN_FINDINGS_EMPTY_GUIDANCE = [
 
 /** Empty Findings plus a failed cell is a QA gap, never a pass. */
 export const PLAN_FINDINGS_FAILED_CELL_GUIDANCE = [
-  "This Result has failed cells and no findings. That is a QA bug, not a pass.",
-  "A recipe or expect-screen product-failure must appear here. Confirm and Reject never auto-pass.",
+  "This Result has failed or cancelled cells and no findings. That is a QA bug, not a pass.",
+  "A recipe product-failure or SOS/cancelled cell must appear here as a finding. Confirm and Reject never auto-pass.",
 ] as const;
 
 export function planFindingsHasFailedCases(report: CombineEvidenceAnalysisReport): boolean {
-  return report.cases.some((item) => item.status === "error" || item.status === "failed");
+  return report.cases.some(
+    (item) =>
+      item.status === "error" ||
+      item.status === "failed" ||
+      item.status === "cancelled" ||
+      item.status === "blocked",
+  );
 }
 
 export function planFindingsEmptyCopy(report: CombineEvidenceAnalysisReport): readonly string[] {

@@ -101,6 +101,43 @@ test("empty findings do not hide a failed cell", () => {
   assert.doesNotMatch(markdown, /No findings\. Passing cases/);
 });
 
+test("empty findings do not hide a cancelled SOS cell", () => {
+  const markdown = renderPlanFindingsMarkdown({
+    ...report([]),
+    cases: [
+      {
+        jobId: "099e8094-8018-4d44-b00b-73d2290b2f3f",
+        locale: "logged-out",
+        status: "cancelled",
+        frames: [],
+      },
+    ],
+  });
+  assert.match(markdown, /QA bug, not a pass/);
+  assert.match(markdown, /SOS\/cancelled/);
+  assert.doesNotMatch(markdown, /No findings\. Passing cases/);
+});
+
+test("HARNESS_FAILURE from SOS/cancelled proposes Reject and never accepts a baseline", () => {
+  const proposal = proposePlanFinding({
+    id: "harness-failure-099e8094-8018-4d44-b00b-73d2290b2f3f",
+    code: "HARNESS_FAILURE",
+    severity: "critical",
+    confidence: "high",
+    canonicalKey: "job:099e8094-8018-4d44-b00b-73d2290b2f3f",
+    screenLabel: "Toolbar on existing chat signed-in (no composer)",
+    locale: "logged-out",
+    baselineLocale: "logged-out",
+    detail:
+      "SOS: cold recovery blocked — Open first sidebar chat and assert toolbar — expect-set: options did not match",
+  });
+  assert.equal(proposal.verdict, "reject");
+  assert.match(proposal.reason, /Infra/);
+  assert.match(proposal.reason, /does not accept a visual baseline/);
+  assert.equal(planFindingReviewEffect("reject").visualReviewAction, null);
+  assert.equal(planFindingReviewEffect("confirm").visualReviewAction, null);
+});
+
 test("expect-screen product findings propose Confirm and never accept a baseline", () => {
   const proposal = proposePlanFinding({
     id: "f-product",

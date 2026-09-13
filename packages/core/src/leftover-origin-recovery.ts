@@ -174,3 +174,28 @@ export function leftoverConversationHomePrelude(
     ...(preludeStartAliases.length ? { preludeStartAliases } : {}),
   };
 }
+
+/** Warm confirmation used to replay wait-for + tap from leftover conversation.
+ * New Chat first makes leftover a safe origin instead of SOS-replaying the
+ * same connection from an unknown cursor. */
+export function leftoverWarmConfirmationSteps(
+  map: AppMap,
+  originScreenId: string,
+): MappedPreludeGesture[] {
+  return leftoverConversationHomePrelude(map, originScreenId)?.preludeSteps ?? [];
+}
+
+function isLeftoverWarmReturnTap(step: RecipeStep | undefined): boolean {
+  return step?.kind === "tap" && step.target.identifier === "new-chat";
+}
+
+/** New Chat return taps may precede wait-for on warm confirmation. The leaf
+ * stays independently source-proven — leftover conversation is a safe origin. */
+export function sourceProofAfterLeftoverWarm(
+  steps: readonly RecipeStep[] | undefined,
+): RecipeStep | undefined {
+  if (!steps?.length) return undefined;
+  let index = 0;
+  while (index < steps.length && isLeftoverWarmReturnTap(steps[index])) index += 1;
+  return steps[index];
+}

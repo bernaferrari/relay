@@ -9,14 +9,19 @@ export type JobOutcomeFindingSource = {
   error?: string;
   outcome?: string;
   failureCategory?: string;
+  artifacts?: readonly { kind?: string; data?: unknown }[];
 };
 
 const EXPECT_SCREEN_RE = /expect-screen:\s*on\s+[“"](.+?)[”"],\s*not\s+[“"](.+?)[”"]/u;
 
-const SKIP_STATUSES = new Set(["ok", "healed", "queued", "running", "cancelled"]);
+const SKIP_STATUSES = new Set(["ok", "healed", "queued", "running"]);
+
+export function isCancelledJobOutcome(job: JobOutcomeFindingSource): boolean {
+  return job.status === "cancelled" || job.outcome === "cancelled";
+}
 
 export function isHarnessJobOutcome(job: JobOutcomeFindingSource): boolean {
-  return job.outcome === "harness-failure";
+  return job.outcome === "harness-failure" || isCancelledJobOutcome(job);
 }
 
 export function isProductAssertionJob(job: JobOutcomeFindingSource): boolean {
@@ -24,6 +29,33 @@ export function isProductAssertionJob(job: JobOutcomeFindingSource): boolean {
   if (job.outcome === "product-failure") return true;
   if (job.failureCategory === "deterministic-assertion") return true;
   return /expect-screen/iu.test(job.error ?? "");
+}
+
+function sosInterventionDetail(job: JobOutcomeFindingSource): string | undefined {
+  for (const artifact of job.artifacts ?? []) {
+    if (artifact.kind !== "campaign-recovery-intervention") continue;
+    const data =
+      artifact.data && typeof artifact.data === "object" && !Array.isArray(artifact.data)
+        ? (artifact.data as { reason?: unknown; checkTitle?: unknown; transitionId?: unknown })
+        : undefined;
+    const parts = [data?.checkTitle, data?.reason, data?.transitionId]
+      .filter((part): part is string => typeof part === "string" && Boolean(part.trim()))
+      .map((part) => part.trim());
+    if (parts.length) return `SOS: cold recovery blocked — ${parts.join(" — ")}`;
+  }
+  return undefined;
+}
+
+function harnessDetail(job: JobOutcomeFindingSource): string {
+  const sos = sosInterventionDetail(job);
+  if (sos) return sos;
+  const error = job.error?.trim();
+  if (isCancelledJobOutcome(job)) {
+    return error
+      ? `Cancelled — ${error}. SOS/cancelled is Infra, not a product pass.`
+      : "Cancelled. SOS/cancelled is Infra, not a product pass.";
+  }
+  return error || "Harness failed this cell.";
 }
 
 function expectScreenSides(error: string | undefined): {
@@ -46,7 +78,7 @@ function screenLabelFor(job: JobOutcomeFindingSource, expected?: string): string
   return job.action;
 }
 
-/** One finding per recipe/expect-screen product-failure or harness-failure. */
+/** One finding per recipe/expect-screen product-failure, harness-failure, or SOS/cancelled cell. */
 export function jobOutcomeFindings(
   jobs: readonly JobOutcomeFindingSource[],
   localeFor: (job: JobOutcomeFindingSource) => string,
@@ -64,7 +96,7 @@ export function jobOutcomeFindings(
         screenLabel: screenLabelFor(job),
         locale,
         baselineLocale: locale,
-        detail: job.error?.trim() || "Harness failed this cell.",
+        detail: harnessDetail(job),
       });
       continue;
     }

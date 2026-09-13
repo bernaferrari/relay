@@ -329,6 +329,54 @@ test("a combine over a language variable is still compared as translations", () 
   assert.equal(report.analysis.findings.at(0)?.code, "POSSIBLE_UNTRANSLATED_TEXT");
 });
 
+test("cancelled SOS combine cells become HARNESS_FAILURE findings", () => {
+  const toolbar = localeCase({ locale: "logged-out", runDir: "/tmp/toolbar" });
+  toolbar.id = "099e8094-8018-4d44-b00b-73d2290b2f3f";
+  toolbar.status = "cancelled";
+  toolbar.outcome = "cancelled";
+  toolbar.title =
+    "Grok.com signed-in chrome visual · logged-out · Toolbar on existing chat signed-in (no composer)";
+  toolbar.error = "Cancelled by user";
+  toolbar.artifacts.push({
+    kind: "campaign-recovery-intervention",
+    capturedAt: 3,
+    data: {
+      reason:
+        "expect-set: options did not match within identifier grok-app-root (missing: Copy response, Dislike, Like, More actions, Regenerate; unexpected: none)",
+      checkTitle: "Open first sidebar chat and assert toolbar",
+      transitionId: "connection-grok-web-signed-in-toolbar-existing",
+    },
+  });
+  const opened = localeCase({ locale: "logged-out", runDir: "/tmp/open-conversation" });
+  opened.id = "8afe4558-5bdd-4fa9-baf3-9f8520cb720a";
+  opened.status = "cancelled";
+  opened.outcome = "cancelled";
+  opened.title =
+    "Grok.com signed-in chrome visual · logged-out · Open existing sidebar conversation signed-in";
+  opened.error = "Cancelled by user";
+  opened.artifacts.push({
+    kind: "campaign-recovery-intervention",
+    capturedAt: 3,
+    data: {
+      reason: "expect-screen: on “unknown”, not “Signed-in conversation”",
+      checkTitle: "Open existing sidebar conversation signed-in",
+      transitionId: "connection-grok-web-signed-in-open-conversation",
+    },
+  });
+  const report = analyzeCombineEvidenceJobs("6234c25a-e8ad-438f-bbd9-bee808172d10", [
+    toolbar,
+    opened,
+  ]);
+  assert.equal(report.analysis.findings.length, 2);
+  assert.equal(report.analysis.critical, 2);
+  assert.deepEqual(
+    report.analysis.findings.map((finding) => finding.code),
+    ["HARNESS_FAILURE", "HARNESS_FAILURE"],
+  );
+  assert.equal(report.cases[0]?.status, "cancelled");
+  assert.equal(report.cases[1]?.status, "cancelled");
+});
+
 test("a recipe product-failure is a finding even when locale analysis is empty", () => {
   const job = localeCase({ locale: "logged-out", runDir: "/tmp/send-hello" });
   job.id = "98a2abc2";

@@ -55,6 +55,80 @@ test("ok cells and harness failures stay typed", () => {
   );
 });
 
+test("cancelled SOS combine cells are HARNESS_FAILURE, not a silent empty page", () => {
+  const findings = jobOutcomeFindings(
+    [
+      {
+        id: "099e8094-8018-4d44-b00b-73d2290b2f3f",
+        action: "cell-c03c491650ffb1839a645c0054f0bc852",
+        status: "cancelled",
+        title:
+          "Grok.com signed-in chrome visual · logged-out · Toolbar on existing chat signed-in (no composer)",
+        error: "Cancelled by user",
+        outcome: "cancelled",
+        artifacts: [
+          {
+            kind: "campaign-recovery-intervention",
+            data: {
+              reason:
+                "expect-set: options did not match within identifier grok-app-root (missing: Copy response, Dislike, Like, More actions, Regenerate; unexpected: none)",
+              checkTitle: "Open first sidebar chat and assert toolbar",
+              transitionId: "connection-grok-web-signed-in-toolbar-existing",
+            },
+          },
+        ],
+      },
+      {
+        id: "8afe4558-5bdd-4fa9-baf3-9f8520cb720a",
+        action: "cell-c92ae660900c496eed0e859e94b983ab1",
+        status: "cancelled",
+        title:
+          "Grok.com signed-in chrome visual · logged-out · Open existing sidebar conversation signed-in",
+        error: "Cancelled by user",
+        outcome: "cancelled",
+        artifacts: [
+          {
+            kind: "campaign-recovery-intervention",
+            data: {
+              reason: "expect-screen: on “unknown”, not “Signed-in conversation”",
+              checkTitle: "Open existing sidebar conversation signed-in",
+              transitionId: "connection-grok-web-signed-in-open-conversation",
+            },
+          },
+        ],
+      },
+    ],
+    () => "logged-out",
+  );
+  assert.equal(findings.length, 2);
+  assert.deepEqual(
+    findings.map((finding) => finding.code),
+    ["HARNESS_FAILURE", "HARNESS_FAILURE"],
+  );
+  assert.match(findings[0]?.detail ?? "", /SOS: cold recovery blocked/);
+  assert.match(findings[0]?.detail ?? "", /expect-set/);
+  assert.match(findings[1]?.detail ?? "", /expect-screen/);
+  assert.match(findings[0]?.screenLabel ?? "", /Toolbar on existing chat/);
+  assert.match(findings[1]?.screenLabel ?? "", /Open existing sidebar conversation/);
+});
+
+test("cancelled without SOS artifacts is still Infra, never a product-pass", () => {
+  const findings = jobOutcomeFindings(
+    [
+      {
+        id: "cancelled-plain",
+        action: "cell-x",
+        status: "cancelled",
+        outcome: "cancelled",
+        error: "Cancelled by user",
+      },
+    ],
+    () => "en",
+  );
+  assert.equal(findings[0]?.code, "HARNESS_FAILURE");
+  assert.match(findings[0]?.detail ?? "", /Infra, not a product pass/u);
+});
+
 test("merge recounts critical findings so empty locale analysis cannot hide a failed cell", () => {
   const merged = mergeJobOutcomeFindings(
     { findings: [], critical: 0, warnings: 0, affectedScreens: 0 },
