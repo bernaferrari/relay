@@ -31,6 +31,8 @@ export type ProductMapScreen = {
   readonly variants: readonly ProductMapScreenVariant[];
   readonly coveringTests: readonly { readonly id: string; readonly name: string }[];
   readonly recentFailures: readonly ProductMapFailure[];
+  /** Authored identity-ignore region names. Visual baselines compare chrome only. */
+  readonly ignoreRegionNames?: readonly string[];
 };
 
 export type ProductMapScreenVariant = {
@@ -241,6 +243,13 @@ function projectMap(map: AppMap): ProductMapOverview {
       variants,
       coveringTests: [...covering.values()],
       recentFailures: (failuresByScreen.get(screen.id) ?? []).slice(0, 8),
+      ...(screen.identity?.ignoreRegions?.length
+        ? {
+            ignoreRegionNames: screen.identity.ignoreRegions.map(
+              (region) => region.name?.trim() || "dynamic region",
+            ),
+          }
+        : {}),
     } satisfies ProductMapScreen;
   });
   const paths = Object.values(map.connections).map((connection: Connection) => {

@@ -280,6 +280,7 @@ export const operationInputSchemas = {
             .strict(),
         ])
         .optional(),
+      authenticationFixtureReference: z.string().trim().min(1).optional(),
     })
     .strict(),
   "app-map.screen.update": z

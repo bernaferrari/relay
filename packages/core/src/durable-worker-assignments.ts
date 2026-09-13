@@ -746,7 +746,11 @@ export class DurableWorkerAssignmentStore {
             !assignment.recoveryFenceRelease),
       );
     const targetOwner = active.find(
-      (assignment) => assignment.executionTargetKey === candidate.executionTargetKey,
+      (assignment) =>
+        assignment.lane.workerId === candidate.lane.workerId ||
+        (assignment.executionTargetKey === candidate.executionTargetKey &&
+          assignment.executionTarget.kind !== "local-browser" &&
+          candidate.executionTarget.kind !== "local-browser"),
     );
     if (targetOwner) {
       throw new DurableWorkerAssignmentContentionError("target", candidate.id, targetOwner.id);

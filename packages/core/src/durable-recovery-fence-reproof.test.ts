@@ -10,6 +10,7 @@ import {
   assertDurableRecoveryFenceReproofEligible,
   captureDurableRecoveryFenceReproof,
   DurableRecoveryFenceReproofError,
+  type DurableRecoveryFenceTargetRef,
 } from "./durable-recovery-fence-reproof.js";
 import type { DurableWorkerAssignment } from "./durable-worker-assignments.js";
 import type { ScreenshotPayload, SnapshotPayload } from "./workspace-capture.js";
@@ -25,7 +26,9 @@ function target(serial = "emulator-5554"): LocalAgentDeviceExecutionTargetRef {
   };
 }
 
-function fencedAssignment(executionTarget = target()): DurableWorkerAssignment {
+function fencedAssignment(
+  executionTarget: DurableRecoveryFenceTargetRef = target(),
+): DurableWorkerAssignment {
   return {
     schemaVersion: 1,
     id: "interrupted-job",
@@ -219,6 +222,37 @@ test("rejects target mismatch before it can capture a reproof", () => {
       error instanceof DurableRecoveryFenceReproofError &&
       error.code === "DURABLE_RECOVERY_FENCE_TARGET_MISMATCH",
   );
+});
+
+test("releases a managed browser recovery fence from a fresh pixel-semantic-pixel bracket", async () => {
+  await withStateRoot(async () => {
+    const executionTarget: DurableRecoveryFenceTargetRef = {
+      schemaVersion: 1,
+      kind: "local-browser",
+      provider: { key: "relay.local.browser", scope: "local" },
+      targetId: "grok-com",
+      platform: "browser",
+      identity: { kind: "browser-target", value: "grok-com" },
+    };
+    const reproof = await captureDurableRecoveryFenceReproof({
+      assignment: fencedAssignment(executionTarget),
+      executionTarget,
+      capture: {
+        captureScreenshot: (() => {
+          let captures = 0;
+          return async () => screenshot("grok-com", captures++ === 0 ? 10 : 12);
+        })(),
+        captureSnapshot: async () => ({
+          ...snapshot("grok-com", 11),
+          source: "sdk",
+          readiness: undefined,
+        }),
+      },
+    });
+    assert.match(reproof.id, /^durable-recovery-fence-reproof:[a-f0-9]{64}$/u);
+    assert.equal(reproof.executionTarget.kind, "local-browser");
+    assert.equal(reproof.executionTarget.targetId, "grok-com");
+  });
 });
 
 test("rejects a changed pixel bracket rather than certifying a delayed semantic tree", async () => {

@@ -57,6 +57,8 @@ export type AppMapRecordingInput = {
   originApplication?: string;
   /** Server-reviewed capture origin. It never changes the executable steps. */
   captureReview?: AuthoringCaptureReview;
+  /** Frozen runtime identity. Browser recordings must include a case profile. */
+  targetProfile?: TargetProfile;
 };
 
 export type AppMapRecordingResult = { appMap: AppMap; connectionId: string; testId?: string };
@@ -217,23 +219,46 @@ function targetProfile(
   supplied?: TargetProfile,
   observation?: AuthoringObservation,
 ): TargetProfile {
-  if (supplied) {
-    return {
-      ...structuredClone(supplied),
-      ...(!supplied.viewport && observation?.bounds ? { viewport: { ...observation.bounds } } : {}),
-      observedAt: at,
-    };
+  const profile: TargetProfile = supplied
+    ? {
+        ...structuredClone(supplied),
+        ...(!supplied.viewport && observation?.bounds
+          ? { viewport: { ...observation.bounds } }
+          : {}),
+        observedAt: at,
+      }
+    : (() => {
+        const source: TargetProfile["source"] = target.kind === "browser" ? "browser" : "device";
+        return {
+          id: `${source}:${target.targetId}`,
+          targetId: target.targetId,
+          source,
+          platform: target.platform,
+          name: target.targetId,
+          capabilities: [],
+          ...(observation?.bounds ? { viewport: { ...observation.bounds } } : {}),
+          observedAt: at,
+        };
+      })();
+  if (target.kind === "browser" && !profile.browserCaseProfile) {
+    appMapFail(
+      "invalid-map",
+      "Browser recordings must freeze a complete browser case profile before they can be saved",
+    );
   }
-  const source = target.kind === "browser" ? "browser" : "device";
+  return profile;
+}
+
+function recordingCaptureFields(input: AppMapRecordingInput): Pick<
+  AppMapScreenVariantCaptureInput,
+  "target" | "targetProfile" | "evidenceUrisById" | "evidenceKindsById" | "evidenceById"
+> {
   return {
-    id: `${source}:${target.targetId}`,
-    targetId: target.targetId,
-    source,
-    platform: target.platform,
-    name: target.targetId,
-    capabilities: [],
-    ...(observation?.bounds ? { viewport: { ...observation.bounds } } : {}),
-    observedAt: at,
+    target: input.target,
+    ...(input.targetProfile ? { targetProfile: input.targetProfile } : {}),
+    ...(input.evidenceUrisById ? { evidenceUrisById: input.evidenceUrisById } : {}),
+    ...(input.evidenceKindsById ? { evidenceKindsById: input.evidenceKindsById } : {}),
+    ...(input.evidenceById ? { evidenceById: input.evidenceById } : {}),
   };
 }
 
@@ -872,10 +897,7 @@ function applyRecordedConnection(
     map,
     screen: source,
     observation: input.before,
-    target: input.target,
-    evidenceUrisById: input.evidenceUrisById,
-    evidenceKindsById: input.evidenceKindsById,
-    evidenceById: input.evidenceById,
+    ...recordingCaptureFields(input),
     at: context.at,
   });
 
@@ -922,10 +944,7 @@ function applyRecordedConnection(
       map,
       screen,
       observation: input.after,
-      target: input.target,
-      evidenceUrisById: input.evidenceUrisById,
-      evidenceKindsById: input.evidenceKindsById,
-      evidenceById: input.evidenceById,
+      ...recordingCaptureFields(input),
       at: context.at,
     });
     destination = { kind: "screen", screenId: screen.id };

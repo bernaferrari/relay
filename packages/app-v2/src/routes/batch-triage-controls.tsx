@@ -3,9 +3,15 @@ import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
 import type { CombineTriageStatus } from "@relay/protocol";
 import { useState } from "react";
+import { SelectField } from "../components/filter-select";
 import { batchTriageStatusLabel, resolveTriageActor } from "./batch-triage";
 
 const STATUSES: CombineTriageStatus[] = ["unreviewed", "investigating", "resolved", "wont-fix"];
+
+const STATUS_OPTIONS = STATUSES.map((status) => ({
+  value: status,
+  label: batchTriageStatusLabel(status),
+}));
 
 export function BatchTriageControls({
   selectedCount,
@@ -33,27 +39,15 @@ export function BatchTriageControls({
   return (
     <div className="grid gap-3" aria-label="Review ownership">
       <div className="flex flex-wrap items-end gap-2">
-        <label className="grid gap-1 text-sm">
-          <span className="text-xs text-muted-foreground">Review status</span>
-          <select
-            className="min-h-10 rounded-md border border-border bg-background px-3"
-            aria-label="Review status"
-            disabled={disabled}
-            defaultValue=""
-            onChange={(event) => {
-              const triageStatus = event.currentTarget.value as CombineTriageStatus;
-              event.currentTarget.value = "";
-              if (triageStatus) onStatus(triageStatus);
-            }}
-          >
-            <option value="">Review status</option>
-            {STATUSES.map((status) => (
-              <option key={status} value={status}>
-                {batchTriageStatusLabel(status)}
-              </option>
-            ))}
-          </select>
-        </label>
+        <SelectField
+          className="w-[11.5rem]"
+          label="Review status"
+          value=""
+          placeholder="Set status"
+          disabled={disabled}
+          options={STATUS_OPTIONS}
+          onValueChange={(status) => onStatus(status as CombineTriageStatus)}
+        />
         <Button variant="outline" disabled={disabled || !actor} onClick={onAssignToMe}>
           Assign to me
         </Button>

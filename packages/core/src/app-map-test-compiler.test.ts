@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { AppMap, AppMapScenarioTest, RecipeStep, Screen } from "@relay/protocol";
+import type {
+  AppMap,
+  AppMapScenarioTest,
+  RecipeStep,
+  Screen,
+  TargetProfile,
+} from "@relay/protocol";
 import { compileAppMapTest } from "./map-work.js";
 import { compileAppMapConnection } from "./app-map-compiler.js";
 import {
@@ -273,6 +279,84 @@ test("compiles a graph validation wait-response step with busy and idle guards",
     stableForMs: 500,
     id: "relay-test-wait-answer-1",
   });
+});
+
+test("compiles visual and semantic assertion steps", () => {
+  const current = fixture();
+  const work = scenario();
+  work.steps.push(
+    {
+      id: "visual-judge",
+      kind: "validation",
+      intent: "Composer chrome is intact",
+      binding: {
+        status: "resolved",
+        kind: "assertion",
+        assertion: {
+          kind: "visual",
+          criteria: ["Composer is visible"],
+          region: { x: 80, y: 200, width: 900, height: 1400 },
+        },
+      },
+    },
+    {
+      id: "semantic-judge",
+      kind: "validation",
+      intent: "Reply names a place",
+      binding: {
+        status: "resolved",
+        kind: "assertion",
+        assertion: {
+          kind: "semantic",
+          input: "reply",
+          criteria: ["Reply must mention a location"],
+        },
+      },
+    },
+    {
+      id: "ignore-reply",
+      kind: "validation",
+      intent: "Ignore the reply body for identity",
+      binding: {
+        status: "resolved",
+        kind: "recipe-step",
+        step: {
+          kind: "identity-ignore",
+          name: "reply body",
+          region: { x: 80, y: 200, width: 900, height: 1400 },
+        },
+      },
+    },
+  );
+  const compiled = compileAppMapTest(current, work);
+  const root = compiled.graph[compiled.plan.rootRecipeId]!;
+  assert.deepEqual(
+    root.steps.find((step) => step.kind === "evaluate-visual"),
+    {
+      kind: "evaluate-visual",
+      criteria: ["Composer is visible"],
+      region: { x: 80, y: 200, width: 900, height: 1400 },
+      id: "relay-test-visual-judge-1",
+    },
+  );
+  assert.deepEqual(
+    root.steps.find((step) => step.kind === "evaluate-semantic"),
+    {
+      kind: "evaluate-semantic",
+      input: "reply",
+      criteria: ["Reply must mention a location"],
+      id: "relay-test-semantic-judge-1",
+    },
+  );
+  assert.deepEqual(
+    root.steps.find((step) => step.kind === "identity-ignore"),
+    {
+      kind: "identity-ignore",
+      name: "reply body",
+      region: { x: 80, y: 200, width: 900, height: 1400 },
+      id: "relay-test-ignore-reply-1",
+    },
+  );
 });
 
 test("proposes monotonic document order only inside a proven Settings segment", () => {
@@ -1117,6 +1201,185 @@ test("instruction cleanup compiles an auditable always-run routine and terminal 
     ),
     true,
   );
+});
+
+test("compiles a product file upload as coverage, not a cold device reset", () => {
+  const map = fixture();
+  map.connections["upload-pdf"] = {
+    ...scope,
+    id: "upload-pdf",
+    fromScreenId: "home",
+    destination: { kind: "end" },
+    label: "Upload a file",
+    state: "ready",
+    actions: [
+      {
+        id: "upload-pdf",
+        kind: "steps",
+        steps: [
+          {
+            kind: "upload",
+            file: "tests/fixtures/sample.pdf",
+            target: { label: "Upload a file" },
+          },
+        ],
+      },
+    ],
+    createdAt: at,
+    updatedAt: at,
+  };
+  const work = scenario();
+  const instruction = structuredClone(work.steps[0]!);
+  assert.equal(instruction.kind, "instruction");
+  if (instruction.kind !== "instruction") {
+    throw new Error("Expected the first scenario step to be an instruction");
+  }
+  instruction.id = "upload";
+  instruction.intent = "Upload a fixture";
+  instruction.binding = {
+    status: "resolved",
+    kind: "connections",
+    connectionIds: ["upload-pdf"],
+  };
+  work.steps = [instruction];
+  const compiled = compileAppMapTest(map, work);
+  assert.equal(
+    Object.values(compiled.graph).some((recipe) =>
+      recipe.steps.some((step) => step.kind === "upload"),
+    ),
+    true,
+  );
+});
+
+test("iOS upload is a compile-time blocker, not a runtime surprise", () => {
+  const map = fixture();
+  const iosProfile = {
+    id: "ipad",
+    targetId: "ipad-1",
+    source: "device",
+    platform: "ios",
+    name: "iPad",
+    capabilities: ["tap", "screenshot"],
+    observedAt: at,
+  } satisfies TargetProfile;
+  map.screens.home = { ...map.screens.home!, variantIds: ["ios-home"] };
+  map.screenVariants["ios-home"] = {
+    ...scope,
+    id: "ios-home",
+    screenId: "home",
+    targetProfile: iosProfile,
+    evidenceIds: [],
+    createdAt: at,
+    updatedAt: at,
+  };
+  map.connections["upload-pdf"] = {
+    ...scope,
+    id: "upload-pdf",
+    fromScreenId: "home",
+    destination: { kind: "end" },
+    label: "Upload a file",
+    state: "ready",
+    actions: [
+      {
+        id: "upload-pdf",
+        kind: "steps",
+        steps: [
+          {
+            kind: "upload",
+            file: "tests/fixtures/sample.pdf",
+            target: { label: "Upload a file" },
+          },
+        ],
+      },
+    ],
+    createdAt: at,
+    updatedAt: at,
+  };
+  const work = scenario();
+  const instruction = structuredClone(work.steps[0]!);
+  assert.equal(instruction.kind, "instruction");
+  if (instruction.kind !== "instruction") {
+    throw new Error("Expected the first scenario step to be an instruction");
+  }
+  instruction.id = "upload";
+  instruction.intent = "Upload a fixture";
+  instruction.binding = {
+    status: "resolved",
+    kind: "connections",
+    connectionIds: ["upload-pdf"],
+  };
+  work.steps = [instruction];
+  assert.throws(
+    () =>
+      compileAppMapTest(map, work, {
+        runtimeTargetProfile: {
+          id: "ipad",
+          targetId: "ipad-1",
+          platform: "ios",
+          capabilities: ["screenshot", "tap"],
+        },
+      }),
+    (error: unknown) =>
+      error instanceof AppMapTestCompileError &&
+      error.code === "unsupported-platform" &&
+      /Files-app/u.test(error.message),
+  );
+});
+
+test("browser-recorded Tests compile Android as disabled, not invented routes", () => {
+  const map = fixture();
+  const browserProfile = {
+    id: "browser:grok-com",
+    targetId: "grok-com",
+    source: "browser",
+    platform: "browser",
+    name: "Grok.com",
+    capabilities: ["tap", "screenshot"],
+    observedAt: at,
+  } satisfies TargetProfile;
+  map.screens.home = { ...map.screens.home!, variantIds: ["web-home"] };
+  map.screenVariants["web-home"] = {
+    ...scope,
+    id: "web-home",
+    screenId: "home",
+    targetProfile: browserProfile,
+    evidenceIds: [],
+    createdAt: at,
+    updatedAt: at,
+  };
+  const work = scenario();
+  work.capture = { mode: "final-screen" };
+  const compiled = compileAppMapTest(map, work, {
+    runtimeTargetProfile: {
+      id: "pixel",
+      targetId: "pixel-1",
+      platform: "android",
+    },
+  });
+  assert.ok((compiled.plan.omittedSteps?.length ?? 0) >= 1);
+  assert.match(compiled.plan.omittedSteps?.[0]?.reason ?? "", /Grok Settings/u);
+  assert.equal(compiled.plan.performance.executableOperations, 0);
+  assert.equal(compiled.root.steps.filter((step) => step.kind === "screenshot").length, 0);
+});
+
+test("disabled steps stay in the document and are omitted from execution", () => {
+  const work = scenario();
+  const first = structuredClone(work.steps[0]!);
+  work.steps = [
+    {
+      ...first,
+      execution: {
+        status: "disabled",
+        reason: "No recorded Android route. Do not invent Grok Settings navigation.",
+        repairTargetId: "open-cart",
+        decidedBy: "reviewer",
+        decidedAt: at,
+      },
+    },
+  ];
+  const compiled = compileAppMapTest(fixture(), work);
+  assert.equal(compiled.plan.omittedSteps?.length, 1);
+  assert.match(compiled.plan.omittedSteps?.[0]?.reason ?? "", /Android/u);
 });
 
 test("nested cleanup cannot hide a cold app close in coverage", () => {

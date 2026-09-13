@@ -4,9 +4,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import type { AppMapScenarioTest } from "@relay/protocol";
+import { compileBrowserEnvironment } from "@relay/protocol";
 import { createAppMap, mutateStoredAppMap, readAppMap } from "./collaboration.js";
 import { resetControlDatabaseCache } from "./collaboration-db.js";
-import { planScreenSteps, projectPersistedAppMapRun } from "./app-map-run-history.js";
+import {
+  overlayHonestBrowserTargetProfile,
+  planScreenSteps,
+  projectPersistedAppMapRun,
+} from "./app-map-run-history.js";
 import type { PersistedRun } from "./runs.js";
 
 function testEntity(updatedAt = 10): AppMapScenarioTest {
@@ -379,3 +384,30 @@ test(
     }
   },
 );
+
+test("overlay fixtures do not keep the unsigned browser profile id", () => {
+  const unsigned = {
+    id: "browser:grok-com",
+    targetId: "grok-com",
+    source: "browser" as const,
+    platform: "browser" as const,
+    name: "grok-com",
+    capabilities: [] as const,
+    observedAt: 1,
+    browserCaseProfile: compileBrowserEnvironment({
+      engine: "chromium",
+      viewport: { width: 1280, height: 800 },
+    }),
+  };
+  assert.equal(overlayHonestBrowserTargetProfile(unsigned).id, "browser:grok-com");
+  const overlayed = overlayHonestBrowserTargetProfile({
+    ...unsigned,
+    browserCaseProfile: compileBrowserEnvironment({
+      engine: "chromium",
+      viewport: { width: 1280, height: 800 },
+      authenticationFixtureId: "authfx:7189423f-193e-45ed-b674-154505cc5107:1",
+    }),
+  });
+  assert.notEqual(overlayed.id, "browser:grok-com");
+  assert.match(overlayed.id, /^browser:grok-com-1280x800-[a-f0-9]{12}$/u);
+});

@@ -290,7 +290,7 @@ export async function preflightTarget(target: TargetDefinition): Promise<TargetP
         offline: environment.offline,
       });
       const page = await context.newPage();
-      await page.goto(target.browser.startUrl, { waitUntil: "domcontentloaded", timeout: 15_000 });
+      await page.goto(target.browser.startUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
       checks.push({
         id: "navigation",
         label: "Start page",

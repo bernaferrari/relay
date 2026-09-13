@@ -16,6 +16,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { Layers3, Plus, RotateCcw } from "lucide-react";
 import { useMemo, useState, type FormEvent } from "react";
+import { SelectField } from "../components/filter-select";
 import { LibraryPage, PageHeader } from "../components/page-layout";
 import { EmptyState, ReadinessMark, RecoveryState } from "../components/product-patterns";
 import { recordingQueryKeys } from "../data/recording-queries";
@@ -65,7 +66,7 @@ export function SuitesPage() {
   });
   const createSuite = useMutation({
     mutationFn: async () => {
-      if (!editor.data) throw new TypeError("Choose an App before saving this Suite.");
+      if (!editor.data) throw new TypeError("Choose an App before saving this Plan.");
       return suiteProfileService.saveSuite({
         appMapId: editor.data.appMapId,
         suiteId: suiteIdFor(name),
@@ -128,8 +129,8 @@ export function SuitesPage() {
     <LibraryPage className="max-w-[1080px]">
       <PageHeader
         context="Tests"
-        title="Suites"
-        description="Groups of Tests you can run together."
+        title="Plans"
+        description="Groups of Tests you can run together every day."
         actions={
           <>
             <nav className="flex items-center gap-1 text-sm" aria-label="Library">
@@ -140,7 +141,7 @@ export function SuitesPage() {
               >
                 Tests
               </Link>
-              <span className="rounded-md bg-muted px-2 py-1 font-semibold">Suites</span>
+              <span className="rounded-md bg-muted px-2 py-1 font-semibold">Plans</span>
             </nav>
             <Button nativeButton={false} render={<Link to="/environments" />} variant="outline">
               Browsers
@@ -154,40 +155,37 @@ export function SuitesPage() {
               }}
             >
               <DialogTrigger render={<Button variant="default" disabled={!apps.data?.length} />}>
-                <Plus aria-hidden="true" /> New Suite
+                <Plus aria-hidden="true" /> New Plan
               </DialogTrigger>
 
               <DialogContent
                 showCloseButton={false}
                 className="max-h-[min(760px,calc(100vh-32px))] w-[min(720px,calc(100vw-32px))] overflow-auto"
               >
-                <DialogTitle>New Suite</DialogTitle>
+                <DialogTitle>New Plan</DialogTitle>
                 <DialogDescription>
                   Choose an App, then pick the Tests to run together.
                 </DialogDescription>
                 <form onSubmit={submit}>
                   <Field>
-                    <FieldLabel htmlFor="suite-app">App</FieldLabel>
-                    <select
+                    <SelectField
                       id="suite-app"
-                      className="relay-native-select min-h-9 w-full rounded-[var(--radius-md)] border border-[var(--border-base)] bg-[var(--background-strong)] px-3 text-base text-[var(--text-strong)]"
+                      label="App"
+                      placeholder="Choose an App"
                       value={appId}
-                      onChange={(event) => {
-                        setAppId(event.currentTarget.value);
+                      options={(apps.data ?? []).map((app) => ({
+                        value: app.id,
+                        label: app.name,
+                      }))}
+                      onValueChange={(value) => {
+                        setAppId(value);
                         setTestIds(new Set());
                         setVariableIds(new Set());
                       }}
-                    >
-                      <option value="">Choose an App</option>
-                      {apps.data?.map((app) => (
-                        <option key={app.id} value={app.id}>
-                          {app.name}
-                        </option>
-                      ))}
-                    </select>
+                    />
                   </Field>
                   <Field>
-                    <FieldLabel htmlFor="suite-name">Suite name</FieldLabel>
+                    <FieldLabel htmlFor="suite-name">Plan name</FieldLabel>
                     <Input
                       id="suite-name"
                       value={name}
@@ -199,7 +197,7 @@ export function SuitesPage() {
                   {editor.isPending && appId ? <PageLoading label="Loading App Tests…" /> : null}
                   {editor.error ? (
                     <FieldError>
-                      Relay could not load this App’s Suite editor.{" "}
+                      Relay could not load this App’s Plan editor.{" "}
                       <Button
                         type="button"
                         variant="ghost"
@@ -270,7 +268,7 @@ export function SuitesPage() {
                     <FieldError>
                       {createSuite.error instanceof Error
                         ? createSuite.error.message
-                        : "Relay could not save this Suite."}
+                        : "Relay could not save this Plan."}
                     </FieldError>
                   ) : null}
                   <div className="relay-dialog-actions flex flex-wrap items-center justify-end gap-2.5">
@@ -288,7 +286,7 @@ export function SuitesPage() {
                         !editor.data || !name.trim() || !testIds.size || createSuite.isPending
                       }
                     >
-                      {createSuite.isPending ? "Saving…" : "Save Suite"}
+                      {createSuite.isPending ? "Saving…" : "Save Plan"}
                     </Button>
                   </div>
                 </form>
@@ -298,11 +296,11 @@ export function SuitesPage() {
         }
       />
 
-      {suites.isPending || apps.isPending ? <PageLoading label="Loading Suites…" /> : null}
+      {suites.isPending || apps.isPending ? <PageLoading label="Loading Plans…" /> : null}
       {suites.error || apps.error ? (
         <RecoveryState
           layout="centered"
-          title="Suites are unavailable"
+          title="Plans are unavailable"
           detail="Reconnect Relay, then try again."
           action={
             <Button
@@ -319,27 +317,23 @@ export function SuitesPage() {
       ) : null}
       {!suites.isPending && !suites.error && suites.data ? (
         <>
-          <label className="relay-filter-field mb-5 grid max-w-xs gap-2 text-sm font-medium">
-            <span>App</span>
-            <select
-              className="relay-native-select min-h-9 w-full rounded-[var(--radius-md)] border border-[var(--border-base)] bg-[var(--background-strong)] px-3 text-base text-[var(--text-strong)]"
-              value={requestedApp}
-              aria-label="Filter Suites by App"
-              onChange={(event) =>
-                void navigate({ search: { app: event.currentTarget.value || undefined } as never })
-              }
-            >
-              <option value="">All apps</option>
-              {apps.data?.map((app) => (
-                <option key={app.id} value={app.id}>
-                  {app.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <SelectField
+            className="mb-5 max-w-xs"
+            label="App"
+            value={requestedApp || "all-apps"}
+            options={[
+              { value: "all-apps", label: "All apps" },
+              ...(apps.data ?? []).map((app) => ({ value: app.id, label: app.name })),
+            ]}
+            onValueChange={(value) =>
+              void navigate({
+                search: { app: value === "all-apps" ? undefined : value } as never,
+              })
+            }
+          />
           <dl
             className="my-7 grid grid-cols-3 border-y border-border py-4 max-[560px]:grid-cols-1"
-            aria-label="Suite status"
+            aria-label="Plan status"
           >
             <div>
               <dt>Saved</dt>
@@ -354,7 +348,7 @@ export function SuitesPage() {
               <dd>{counts.review}</dd>
             </div>
           </dl>
-          <ul className="mt-5 grid list-none gap-2.5 p-0" aria-label="Suites">
+          <ul className="mt-5 grid list-none gap-2.5 p-0" aria-label="Plans">
             {suites.data.map((suite) => {
               const needsReview = suite.tests.some((test) => test.status === "needs-review");
               return (
@@ -395,10 +389,10 @@ export function SuitesPage() {
       {!suites.isPending && !suites.error && suites.data?.length === 0 ? (
         <EmptyState
           icon={Layers3}
-          title={requestedApp ? "No Suites for this App" : "No Suites yet"}
+          title={requestedApp ? "No Plans for this App" : "No Plans yet"}
           detail={
             requestedApp
-              ? "Clear the App filter or create a Suite for this App."
+              ? "Clear the App filter or create a Plan for this App."
               : "Group related Tests so you can run them together."
           }
           action={
@@ -411,7 +405,7 @@ export function SuitesPage() {
               </Button>
             ) : apps.data?.length ? (
               <Button variant="default" onClick={() => setDialogOpen(true)}>
-                New Suite
+                New Plan
               </Button>
             ) : (
               <Link

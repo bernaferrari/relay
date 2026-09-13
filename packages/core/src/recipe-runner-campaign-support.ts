@@ -193,6 +193,7 @@ export function independentlySourceProvenLeafRecipe(
   }
   const frozen = ctx.recipeGraph?.[recovery.recipeId];
   const sourceProof = frozen?.steps[0];
+  if (sourceProof?.kind === "wait-for" && leaf.destination.kind === "end") return true;
   return (
     sourceProof?.kind === "expect-screen" &&
     sourceProof.screenId === leaf.originScreenId &&

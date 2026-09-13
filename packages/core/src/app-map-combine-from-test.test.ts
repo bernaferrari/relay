@@ -198,6 +198,22 @@ test("a Variable can apply when it has In+Out, appLocale, or a toggle", () => {
     }),
     true,
   );
+  assert.equal(
+    variableCanApply({
+      kind: "account",
+      apply: { kind: "list" },
+      options: [{ id: "logged-out", label: "Logged out" }],
+    }),
+    true,
+  );
+  assert.equal(
+    variableCanApply({
+      kind: "language",
+      apply: { kind: "list" },
+      options: [{ id: "en" }],
+    }),
+    false,
+  );
 });
 
 test("upsert Combine from a Test revises the deterministic Combine instead of duplicating", () => {

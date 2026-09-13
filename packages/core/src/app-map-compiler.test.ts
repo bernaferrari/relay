@@ -153,6 +153,22 @@ test("compiles an App Map flow into frozen runner recipes and destination verifi
   assert.equal(root.stepProvenance[3]!.origin, "destination");
 });
 
+test("compiles authored screen ignore regions onto destination expect-screen", () => {
+  const map = fixture();
+  map.screens.home!.identity = {
+    schemaVersion: 1,
+    fingerprint: "b".repeat(64),
+    ignoreRegions: [{ name: "reply body", x: 0.07, y: 0.125, width: 0.93, height: 0.68 }],
+  };
+  const destination = compileAppMapFlow(map, "checkout").recipes[
+    "app-map:map-1:flow:checkout:r7"
+  ]!.steps.find((step) => step.kind === "expect-screen" && step.screenId === "home");
+  assert.deepEqual(destination?.kind === "expect-screen" ? destination.ignoreRegions : undefined, [
+    { name: "reply body", x: 0.07, y: 0.125, width: 0.93, height: 0.68 },
+  ]);
+  assert.doesNotThrow(() => validateRecipeSteps(destination ? [destination] : []));
+});
+
 test("bounds generated Recipe step ids for long authoring identities", () => {
   const map = fixture();
   const existing = map.connections["open-home"]!;
@@ -724,5 +740,54 @@ test("refuses to run when the flow entry screen has no approved identity", () =>
     () => compileAppMapFlow(map, "checkout"),
     (error: unknown) =>
       error instanceof AppMapCompileError && error.code === "missing-screen-identity",
+  );
+});
+
+test("compiles an authored upload connection without inventing a destination screen", () => {
+  const map = fixture();
+  map.connections["open-home"]!.destination = { kind: "end" };
+  map.connections["open-home"]!.caseStackId = undefined;
+  map.connections["open-home"]!.actions = [
+    {
+      id: "upload-fixture",
+      kind: "steps",
+      steps: [
+        { kind: "upload", file: "tests/fixtures/sample.pdf", target: { label: "Upload a file" } },
+      ],
+    },
+  ];
+  const plan = compileAppMapConnection(map, "open-home");
+  const steps = plan.recipes[plan.rootRecipeId]!.steps;
+  assert.deepEqual(
+    steps.map((step) => step.kind),
+    ["expect-screen", "upload"],
+  );
+  assert.equal(plan.connection.destination.kind, "end");
+  assert.equal(
+    steps[1]?.kind === "upload" ? steps[1].file : undefined,
+    "tests/fixtures/sample.pdf",
+  );
+  assert.equal(steps[1]?.kind === "upload" ? steps[1].target?.label : undefined, "Upload a file");
+});
+
+test("in-place chrome actions keep wait-for as the origin proof", () => {
+  const map = fixture();
+  map.connections["open-home"]!.destination = { kind: "end" };
+  map.connections["open-home"]!.caseStackId = undefined;
+  map.connections["open-home"]!.actions = [
+    {
+      id: "ask",
+      kind: "steps",
+      steps: [
+        { kind: "wait-for", target: { label: "Library" }, timeoutMs: 5_000 },
+        { kind: "type", text: "3*5", target: { identifier: "chat-input" } },
+      ],
+    },
+  ];
+  const plan = compileAppMapConnection(map, "open-home");
+  const steps = plan.recipes[plan.rootRecipeId]!.steps;
+  assert.deepEqual(
+    steps.map((step) => step.kind),
+    ["wait-for", "type"],
   );
 });

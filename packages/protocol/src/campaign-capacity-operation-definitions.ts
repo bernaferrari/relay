@@ -24,15 +24,19 @@ const campaignCapacityPreflightInputParser = objectParser<
   for (const [index, value] of input.targets.entries()) {
     const target = record(value, `campaign capacity target ${index}`);
     string(target.targetId, `campaign capacity target ${index} targetId`);
-    if (target.platform !== "android" && target.platform !== "ios") {
-      fail(`campaign capacity target ${index} platform`, "must be android or ios");
+    if (
+      target.platform !== "android" &&
+      target.platform !== "ios" &&
+      target.platform !== "browser"
+    ) {
+      fail(`campaign capacity target ${index} platform`, "must be android, ios, or browser");
     }
   }
   number(input.workItems, "campaign capacity workItems");
   const partition = record(input.workItemsByPlatform, "campaign capacity workItemsByPlatform");
   for (const platform of Object.keys(partition)) {
-    if (platform !== "android" && platform !== "ios") {
-      fail("campaign capacity workItemsByPlatform", "may contain only android and ios");
+    if (platform !== "android" && platform !== "ios" && platform !== "browser") {
+      fail("campaign capacity workItemsByPlatform", "may contain only android, ios, or browser");
     }
     number(partition[platform], `campaign capacity ${platform} workItems`);
   }
@@ -65,8 +69,8 @@ const campaignCapacityPreflightInputParser = objectParser<
 function assertDurationCohort(value: unknown, label: string): void {
   const cohort = record(value, label);
   string(cohort.targetId, `${label} targetId`);
-  if (cohort.platform !== "android" && cohort.platform !== "ios") {
-    fail(`${label} platform`, "must be android or ios");
+  if (cohort.platform !== "android" && cohort.platform !== "ios" && cohort.platform !== "browser") {
+    fail(`${label} platform`, "must be android, ios, or browser");
   }
   string(cohort.testId, `${label} testId`);
   string(cohort.action, `${label} action`);

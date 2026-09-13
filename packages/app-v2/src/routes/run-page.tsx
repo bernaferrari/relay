@@ -566,6 +566,11 @@ function RunReport({
       ) : embedded ? null : (
         <RunReplayAction report={report} runService={runService} />
       )}
+      {!embedded && (runService.compareVisual || runService.review) ? (
+        <Button variant="outline" size="sm" onClick={() => setRunDialog("review")}>
+          Review screenshots
+        </Button>
+      ) : null}
       <DropdownMenu>
         <DropdownMenuTrigger
           render={<Button variant="ghost" size="sm" />}

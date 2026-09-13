@@ -147,13 +147,16 @@ async function fill(label: string, value: string) {
   });
 }
 
-async function choose(label: string, value: string) {
-  const select = document.querySelector<HTMLSelectElement>(`select[aria-label="${label}"]`);
-  if (!select) throw new Error(`${label} not found`);
-  await act(async () => {
-    select.value = value;
-    select.dispatchEvent(new Event("change", { bubbles: true }));
-  });
+async function choose(label: string, option: string) {
+  const trigger = document.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
+  if (!trigger) throw new Error(`${label} not found`);
+  await act(async () => trigger.click());
+  await settle();
+  const item = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+    (candidate) => candidate.textContent?.trim() === option,
+  );
+  if (!item) throw new Error(`Option not found: ${label} / ${option}`);
+  await act(async () => item.click());
   await settle();
 }
 
@@ -183,16 +186,16 @@ describe("saved Browser and Account workspace", () => {
     await render(platform, browserService(openSpace));
 
     await fill("Pair name", "Admin desktop");
-    await choose("Browser", "chrome-1");
-    await choose("Account", adminFixtureId);
+    await choose("Browser", "Chrome");
+    await choose("Account", "Admin");
     await click("Add pair");
     await fill("Pair name", "Member desktop");
-    await choose("Browser", "firefox-1");
-    await choose("Account", memberFixtureId);
+    await choose("Browser", "Firefox");
+    await choose("Account", "Member");
     await click("Add pair");
     await fill("Pair name", "Signed out");
-    await choose("Browser", "webkit-1");
-    await choose("Account", "");
+    await choose("Browser", "WebKit");
+    await choose("Account", "Signed out");
     await click("Add pair");
 
     expect(document.body.textContent).toContain("Admin desktop");

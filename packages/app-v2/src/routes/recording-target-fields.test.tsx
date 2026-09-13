@@ -11,23 +11,25 @@ it("saves explicit screen pixels including zero, without inventing a reference s
   const onKeep = vi.fn();
   try {
     await act(async () => root.render(<RecordingTargetFields canEdit onKeep={onKeep} />));
-    const select = host.querySelector("select")!;
     await act(async () => {
-      select.value = "point";
-      select.dispatchEvent(new Event("change", { bubbles: true }));
+      host.querySelector<HTMLButtonElement>('[aria-label="Target by"]')!.click();
     });
-    const button = host.querySelector("button")!;
+    await act(async () => {
+      [...document.querySelectorAll<HTMLElement>('[role="option"]')]
+        .find((item) => item.textContent?.includes("Screen coordinates"))!
+        .click();
+    });
+    const button = [...host.querySelectorAll("button")].find((candidate) =>
+      candidate.textContent?.includes("Use target"),
+    )!;
     expect(button.disabled).toBe(true);
     expect(host.textContent).toContain("top-left of the full device screen");
-    const inputs = host.querySelectorAll("input");
+    const [x, y] = host.querySelectorAll<HTMLInputElement>('input[type="number"]');
     await act(async () => {
-      inputs.forEach((input, index) => {
-        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
-          input,
-          index === 0 ? "0" : "240",
-        );
-        input.dispatchEvent(new Event("input", { bubbles: true }));
-      });
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(x, "0");
+      x!.dispatchEvent(new Event("input", { bubbles: true }));
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(y, "240");
+      y!.dispatchEvent(new Event("input", { bubbles: true }));
     });
     await act(async () => button.click());
     expect(onKeep).toHaveBeenCalledWith({ point: { x: 0, y: 240 } });

@@ -82,12 +82,12 @@ const routePresentations = {
   "/suites": {
     path: "/suites",
     eyebrow: "Library",
-    description: "Group reviewed Tests and Data sets into reusable coverage plans.",
+    description: "Saved Tests and Data sets you run together as a Plan.",
   },
   "/apps/:appId/suites/:suiteId": {
     path: "/apps/$appId/suites/$suiteId",
-    eyebrow: "Suite",
-    description: "Review scope and readiness before running this saved coverage plan.",
+    eyebrow: "Plan",
+    description: "Review scope and readiness, then run every case.",
   },
   "/environments": {
     path: "/environments",

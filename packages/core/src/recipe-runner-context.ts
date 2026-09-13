@@ -64,6 +64,14 @@ export type RecipeRuntimeState = {
    * Destructive setup effects are firewalled after this boundary, including
    * when they are hidden inside reusable modules or graph routines. */
   campaignCoverageStarted?: boolean;
+  /** Run-local rectangles excluded from later screen-identity proofs. */
+  identityIgnoreRegions?: Array<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    name?: string;
+  }>;
 };
 
 function previousProof(
@@ -196,7 +204,8 @@ export function campaignCoverageForbiddenEffect(step: RecipeStep): string | unde
       return `app ${step.action} is a setup/reset effect`;
     }
   }
-  if (["rotate", "settings", "location", "permission"].includes(step.kind)) {
+  // Product file attach is coverage. Device-only mutations stay forbidden here.
+  if (["rotate", "settings", "location", "permission", "offline"].includes(step.kind)) {
     return `${step.kind} is a setup/device mutation effect`;
   }
   if (step.kind === "device" && ["lock", "unlock"].includes(step.action)) {
@@ -219,6 +228,7 @@ const checkpointBreakingSteps = new Set<RecipeStep["kind"]>([
   "expect-set",
   "extract",
   "evaluate-semantic",
+  "evaluate-visual",
   "pause",
   "review",
   "flow",
@@ -227,6 +237,8 @@ const checkpointBreakingSteps = new Set<RecipeStep["kind"]>([
   "device",
   "rotate",
   "settings",
+  "offline",
+  "upload",
   "location",
   "permission",
   "alert",

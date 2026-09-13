@@ -25,6 +25,7 @@ import {
   combineEvidenceCanonicalKey,
   type CombineEvidenceCapture,
 } from "./combine-evidence-batch-analysis.js";
+import { readAccountReloginFindings } from "./plan-account-relogin-campaign.js";
 import { listPersistedRuns } from "./runs.js";
 import { slugEvidencePathSegment } from "./screen-identity.js";
 import { listJobs, type TestJob } from "./session.js";
@@ -312,7 +313,13 @@ function authoredFrames(job: CombineEvidenceCase): CombineEvidenceCase["frames"]
 export async function analyzeCombineEvidenceBatch(
   batchId: string,
 ): Promise<CombineEvidenceAnalysisReport> {
-  return analyzeCombineEvidenceJobs(batchId, await readCombineEvidenceBatchJobs(batchId));
+  try {
+    return analyzeCombineEvidenceJobs(batchId, await readCombineEvidenceBatchJobs(batchId));
+  } catch (error) {
+    const preflight = await readAccountReloginFindings(batchId);
+    if (preflight) return preflight;
+    throw error;
+  }
 }
 
 /** A matrix batch names its recipe after itself, once per kind of matrix. */

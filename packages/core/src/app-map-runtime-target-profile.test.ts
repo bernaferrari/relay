@@ -5,6 +5,7 @@ import {
   appMapRuntimeTargetProfileFromSaved,
   parseAppMapRuntimeTargetProfile,
   sameAppMapRuntimeTargetProfile,
+  sameAppMapRuntimeTargetProfileIgnoringAccount,
 } from "./app-map-runtime-target-profile.js";
 
 const webkitPt = compileBrowserEnvironment({
@@ -49,6 +50,12 @@ test("runtime profile equality covers every browser field while legacy profiles 
     browserCaseProfile: { ...webkitPt, locale: "en-US" },
   });
   assert.equal(sameAppMapRuntimeTargetProfile(selected, changedLocale), false);
+  const changedAccount = appMapRuntimeTargetProfileFromSaved({
+    ...selected,
+    browserCaseProfile: { ...webkitPt, authenticationFixtureId: "guest-session" },
+  });
+  assert.equal(sameAppMapRuntimeTargetProfile(selected, changedAccount), false);
+  assert.equal(sameAppMapRuntimeTargetProfileIgnoringAccount(selected, changedAccount), true);
   assert.deepEqual(
     parseAppMapRuntimeTargetProfile({
       id: "browser:legacy",

@@ -13,7 +13,7 @@ repeatable journey), **Run** (one execution of a Test), **Change** (code claimin
 behavior), **Device** (where the product executes), and **Session** (a durable live browser or
 device workspace used for recording and debugging).
 
-Supporting public terms are **Suite** (saved Tests and Data sets run together), **Environment**
+Supporting public terms are **Plan** (saved Tests and Data sets run together), **Environment**
 (a reusable execution setup), **Checkpoint**, **Report**, **Proof**, **Recording**, **Data set**, and
 **Map**. Record, Repeat, Explore, and Verify are actions. Map is derived, optional App intelligence;
 creating a Map is never an opening toll.
@@ -67,8 +67,8 @@ Verification: Change → Verification plan → Runs → Evidence → merge decis
 
 Versions and Accounts are workspace resources. Their former app-specific URLs redirect to
 `/versions` and `/accounts`; an app selection does not imply ownership of those resources.
-Primary navigation is Home, Tests, Runs, Live, and Changes, with Devices & browsers and Settings
-for workspace setup. Suites belong in Tests, and app management belongs in the app selector.
+Primary navigation is Tests, Plans, Results, Devices, and Changes, with Settings
+for workspace setup. Plans are a first-class library, and app management belongs in the app selector.
 
 Selected entities and useful substate belong in the URL. Query state may include `status`, `app`,
 `view`, `step`, `screen`, `session`, `test`, `result`, and `section`. Every route has one parent, title, primary object, primary

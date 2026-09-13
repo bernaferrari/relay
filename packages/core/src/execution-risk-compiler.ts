@@ -285,6 +285,8 @@ function leafBounds(step: RecipeStep): Bounds {
     case "device":
     case "rotate":
     case "settings":
+    case "offline":
+    case "upload":
     case "location":
     case "permission":
       return { maximumActions: 1 };
@@ -339,6 +341,8 @@ function leafBounds(step: RecipeStep): Bounds {
     case "extract":
     case "assert-content":
     case "evaluate-semantic":
+    case "evaluate-visual":
+    case "identity-ignore":
     case "review":
     case "screenshot":
     case "network":
@@ -440,6 +444,19 @@ function classifyLeaf(accumulator: RiskAccumulator, step: RecipeStep, stepId: st
         cleanupRequired: true,
       });
       return;
+    case "offline":
+    case "upload":
+      accumulator.addRisk({
+        level: "guarded",
+        code: EXECUTION_RISK_CODES.deviceState,
+        explanation:
+          step.kind === "offline"
+            ? "The Test changes browser network availability."
+            : "The Test uploads a local file onto the target.",
+        stepId,
+        cleanupRequired: step.kind === "offline",
+      });
+      return;
     case "location":
       accumulator.addRisk({
         level: "guarded",
@@ -479,6 +496,7 @@ function classifyLeaf(accumulator: RiskAccumulator, step: RecipeStep, stepId: st
       });
       return;
     case "evaluate-semantic":
+    case "evaluate-visual":
       if (step.provider || step.secondProvider) {
         accumulator.addRisk({
           level: "guarded",
@@ -550,6 +568,7 @@ function classifyLeaf(accumulator: RiskAccumulator, step: RecipeStep, stepId: st
     case "review":
     case "screenshot":
     case "capture-surface":
+    case "identity-ignore":
       return;
     case "module":
     case "branch":

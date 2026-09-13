@@ -98,7 +98,11 @@ test(
         savedAuthentication.fixture.reference,
       );
       const fixtures = await client.invoke("target.browser-auth.list", { targetId: target.id });
-      assert.deepEqual(fixtures.fixtures, [savedAuthentication.fixture]);
+      assert.equal(fixtures.fixtures.length, 1);
+      const listed = fixtures.fixtures[0]!;
+      const { health, ...listedWithoutHealth } = listed;
+      assert.deepEqual(listedWithoutHealth, savedAuthentication.fixture);
+      assert.equal(health?.status, "ready");
       const agentClient = new RelayClient(
         {
           url: `http://127.0.0.1:${server.port}`,

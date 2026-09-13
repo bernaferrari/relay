@@ -2,19 +2,27 @@ import { waitForBrowserContent } from "./browser-readiness.js";
 import { mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { BrowserContext, Page, Request, Video } from "playwright-core";
-import { parseBrowserCaseProfile, type BrowserCaseProfile } from "@relay/protocol";
+import { compileBrowserEnvironment, parseBrowserCaseProfile, type BrowserCaseProfile } from "@relay/protocol";
 import type { Device, SnapshotNode } from "./device.js";
 import { createBrowserContextFactory, type BrowserContextPurpose } from "./browser-context.js";
 import {
   browserLiveIdentityMatches,
   browserLiveSessionKey,
+  browserProofSessionKey,
   browserRuntimeConfigurationDigest,
+  browserSessionBelongsToTarget,
   browserSessionProfileMatches,
+  browserSessionStoreKey,
   liveBrowserSessionKeysToClose,
 } from "./browser-execution-identity.js";
-import { compileBrowserEnvironment } from "@relay/protocol";
+import { bindBrowserLiveSession } from "./browser-live-handles.js";
+import { browserAccountSchedulingKey } from "./browser-account-lane.js";
 import { createDeviceObservationFacade } from "./device-observation-membrane.js";
-import { locatorFor } from "./browser-target-locator.js";
+import { fillBrowserLocator, locatorFor, performBrowserFind } from "./browser-target-locator.js";
+import {
+  dismissBrowserConsentIfPresent,
+  installBrowserConsentOverlayHandler,
+} from "./browser-consent-overlay.js";
 import { browserCaseProfileForTarget } from "./browser-case-profile-target.js";
 import { runSupervisedBrowserMutation } from "./browser-mutation-supervision.js";
 import { runBrowserMutationAdmission } from "./browser-mutation-admission.js";
@@ -159,37 +167,21 @@ async function createSession(
       await context.tracing.start({ screenshots: true, snapshots: true, sources: false });
       session.traceStarted = true;
     } catch {
-      // The evidence collector records the trace channel as partial when the
-      // host cannot start Playwright tracing. Other channels remain useful.
+      // Tracing is optional; other evidence channels remain useful.
     }
   }
   attachBrowserEvidence(session, page);
+  await installBrowserConsentOverlayHandler(page);
   if (page.url() === "about:blank") {
     await page.goto(target.browser.startUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
+    await waitForBrowserContent(page);
   }
   return session;
 }
 
-export async function performBrowserFind(
-  locator: { count: () => Promise<number>; click: () => Promise<unknown> },
-  query: string,
-  action?: string,
-): Promise<{ ok: true; exists?: true }> {
-  if (action === "exists") {
-    if ((await locator.count()) === 0) throw new Error(`No match for ${query}`);
-    return { ok: true, exists: true };
-  }
-  if (action === undefined || action === "press" || action === "click") {
-    const count = await locator.count();
-    if (count === 0) throw new Error(`No match for ${query}`);
-    if (count > 1) throw new Error(`Ambiguous browser match for ${query}`);
-    await locator.click();
-    return { ok: true };
-  }
-  throw new Error(`unsupported browser find action: ${action}`);
-}
+export { performBrowserFind } from "./browser-target-locator.js";
 
-async function sessionFor(
+export async function sessionFor(
   targetId: string,
   options: {
     headless?: boolean;
@@ -202,13 +194,12 @@ async function sessionFor(
   } = {},
 ): Promise<BrowserSession> {
   const mode = options.mode ?? "authoring";
-  const key = options.reuseMatchingIdentity
-    ? browserLiveSessionKey({
-        targetId,
-        authenticationFixtureId: options.profile?.authenticationFixtureId,
-        signedOut: !options.profile?.authenticationFixtureId,
-      })
-    : `${mode}:${targetId}`;
+  const key = browserSessionStoreKey({
+    targetId,
+    mode,
+    reuseMatchingIdentity: options.reuseMatchingIdentity,
+    authenticationFixtureId: options.profile?.authenticationFixtureId,
+  });
   const existing = sessions.get(key);
   if (existing) {
     const session = await existing;
@@ -241,9 +232,7 @@ async function sessionFor(
   return pending;
 }
 
-/** Narrow Playwright capability for the server-owned in-app Browser Device.
- * Server and renderer never receive this handle; they cross typed pixel and
- * input operations instead. */
+/** Server-owned Playwright handle; UI never receives it. */
 export type BrowserAuthoringRuntime = Readonly<{
   sessionId: string;
   targetId: string;
@@ -338,10 +327,7 @@ export async function openBrowserLiveRuntime(
   return runtimeFromSession(targetId, session);
 }
 
-/** Return the exact profile of the current authoring context when one exists;
- * otherwise return the deterministic saved-target profile. Captures use this
- * seam so a Browser Device viewport/environment override is not collapsed
- * back to mutable target defaults. */
+/** Authoring profile when an authoring session is open; otherwise the saved target. */
 export async function browserAuthoringCaseProfileForTarget(
   targetId: string,
 ): Promise<BrowserCaseProfile> {
@@ -360,12 +346,7 @@ export type OpenBrowserTargetResult = {
   configurationDigest: string;
 };
 
-/**
- * Opens a Relay-owned browser profile, optionally without an external window.
- * External presentation lets a person complete login,
- * consent, MFA, or any other setup that should not be encoded into a test.
- * The same isolated profile is reused by later app, CLI, and scheduled runs.
- */
+/** Opens a Relay-owned browser profile. External presentation is for human login. */
 export async function openBrowserTarget(
   targetId: string,
   options: {
@@ -446,11 +427,7 @@ export async function activePage(session: BrowserSession): Promise<Page> {
   return session.page;
 }
 
-/**
- * Read a bounded semantic view from the server-owned page. The page handle is
- * intentionally not serializable and this function is never exposed to the
- * renderer; Browser Device callers receive only validated candidate data.
- */
+/** Bounded semantic view from the server-owned page; never a Page handle. */
 export async function snapshotBrowserPageSemantics(
   page: Page,
   maxNodes = 128,
@@ -463,20 +440,16 @@ function unsupported(capability: string): never {
   throw new Error(`capability unavailable for managed browser: ${capability}`);
 }
 
-/**
- * Adapts a managed browser to Relay's existing device contract. This keeps the
- * canonical recipe IR target-neutral while richer TargetAdapter APIs evolve.
- */
+/** Adapt a managed browser to Relay's existing device contract. */
 export type BrowserDeviceOptions = {
   mode?: BrowserContextPurpose;
   profile?: BrowserCaseProfile;
   recordVideo?: boolean;
   projectId?: string;
+  headless?: boolean;
 };
 
-/** Capture the current persistent authoring state only after an explicit human
- * login/setup session exists. The returned value is execution-only and must be
- * passed directly to the encrypted fixture store, never to logs or evidence. */
+/** Persistent authoring storage state after an explicit human sign-in. */
 export async function captureBrowserAuthenticationStorageState(targetId: string): Promise<unknown> {
   const pending = sessions.get(`authoring:${targetId}`);
   if (!pending) {
@@ -492,36 +465,41 @@ export async function getBrowserDevice(
 ): Promise<Device> {
   const session = await sessionFor(targetId, options);
   const identifiers = { serial: targetId, appPath: "managed-browser" };
+  const accountLane = browserAccountSchedulingKey(
+    targetId,
+    session.profile.authenticationFixtureId,
+  );
   const mutatePrepared = <T>(
     intent: string,
     prepare: () => Promise<() => Promise<T>>,
   ): Promise<T> => {
     let prepared: (() => Promise<T>) | undefined;
-    return runBrowserMutationAdmission(targetId, () =>
-      runSupervisedBrowserMutation({
-        targetId,
-        intent,
-        beforeDispatch: async () => {
-          prepared = await prepare();
-        },
-        dispatch: async () => {
-          if (!prepared) throw new Error("Browser mutation was not prepared before dispatch");
-          session.mutationVersion += 1;
-          return prepared();
-        },
-      }),
+    return runBrowserMutationAdmission(accountLane, () =>
+        runSupervisedBrowserMutation({
+          targetId: accountLane,
+          intent,
+          beforeDispatch: async () => {
+            await dismissBrowserConsentIfPresent(await activePage(session));
+            prepared = await prepare();
+          },
+          dispatch: async () => {
+            if (!prepared) throw new Error("Browser mutation was not prepared before dispatch");
+            session.mutationVersion += 1;
+            return prepared();
+          },
+        }),
     );
   };
   const mutate = <T>(intent: string, dispatch: () => Promise<T>) =>
-    runBrowserMutationAdmission(targetId, () =>
-      runSupervisedBrowserMutation({
-        targetId,
-        intent,
-        dispatch: async () => {
-          session.mutationVersion += 1;
-          return dispatch();
-        },
-      }),
+    runBrowserMutationAdmission(accountLane, () =>
+        runSupervisedBrowserMutation({
+          targetId: accountLane,
+          intent,
+          dispatch: async () => {
+            session.mutationVersion += 1;
+            return dispatch();
+          },
+        }),
     );
   const api = {
     devices: {
@@ -629,7 +607,7 @@ export async function getBrowserDevice(
           if (input.ref || input.selector) {
             const locator = await locatorFor(page, input);
             return async () => {
-              await locator.fill(input.text);
+              await fillBrowserLocator(locator, input.text);
               return { ok: true };
             };
           }
@@ -648,7 +626,7 @@ export async function getBrowserDevice(
           const page = await activePage(session);
           const locator = input.ref || input.selector ? await locatorFor(page, input) : undefined;
           return async () => {
-            if (locator) await locator.fill(input.text);
+            if (locator) await fillBrowserLocator(locator, input.text);
             else await page.keyboard.insertText(input.text);
             return { ok: true };
           };
@@ -702,10 +680,17 @@ export async function getBrowserDevice(
         }),
     },
     command: {
-      wait: async (input: { durationMs?: number; text?: string; selector?: string }) => {
+      wait: async (input: {
+        durationMs?: number;
+        text?: string;
+        selector?: string;
+        timeoutMs?: number;
+      }) => {
         const page = await activePage(session);
-        if (input.text) await page.getByText(input.text, { exact: false }).first().waitFor();
-        else if (input.selector) await page.locator(input.selector).first().waitFor();
+        const timeout = input.timeoutMs;
+        if (input.text)
+          await page.getByText(input.text, { exact: false }).first().waitFor({ timeout });
+        else if (input.selector) await page.locator(input.selector).first().waitFor({ timeout });
         else await page.waitForTimeout(input.durationMs ?? 0);
         return { ok: true };
       },
@@ -869,27 +854,44 @@ export async function getBrowserDevice(
         }),
     },
   };
-  return createDeviceObservationFacade(api);
+  const device = createDeviceObservationFacade(api);
+  bindBrowserLiveSession(device, session);
+  return device;
 }
 
-export async function browserProofSessionForTarget(targetId: string): Promise<BrowserSession> {
-  const pending = sessions.get(`proof:${targetId}`);
-  if (!pending) throw new Error(`managed browser proof session is not open: ${targetId}`);
+export async function browserProofSessionForTarget(
+  targetId: string,
+  authenticationFixtureId?: string,
+): Promise<BrowserSession> {
+  const pending =
+    sessions.get(browserSessionStoreKey({ targetId, mode: "proof", authenticationFixtureId })) ??
+    sessions.get(`proof:${targetId}`) ??
+    sessions.get(
+      browserSessionStoreKey({
+        targetId,
+        mode: "proof",
+        reuseMatchingIdentity: true,
+        authenticationFixtureId,
+      }),
+    );
+  if (!pending) throw new Error(`managed browser session is not open: ${targetId}`);
   return pending;
 }
 
 export async function closeBrowserTarget(
   targetId?: string,
-  options: { mode?: BrowserContextPurpose } = {},
+  options: { mode?: BrowserContextPurpose; authenticationFixtureId?: string } = {},
 ): Promise<void> {
-  const entries = [...sessions.entries()].filter(([key]) => {
-    const [mode, id] = key.split(":");
-    return (
-      (targetId === undefined || id === targetId) &&
-      (options.mode === undefined || mode === options.mode)
-    );
-  });
-  for (const [key, pending] of entries) {
+  const proofKey =
+    options.mode === "proof" && targetId
+      ? browserProofSessionKey({
+          targetId,
+          authenticationFixtureId: options.authenticationFixtureId,
+        })
+      : undefined;
+  for (const [key, pending] of [...sessions.entries()].filter(([key]) =>
+    proofKey ? key === proofKey : browserSessionBelongsToTarget(key, targetId, options.mode),
+  )) {
     if (!pending) continue;
     sessions.delete(key);
     const session = await pending.catch(() => null);

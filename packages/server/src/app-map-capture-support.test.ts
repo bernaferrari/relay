@@ -6,6 +6,7 @@ import test from "node:test";
 import {
   BROWSER_TARGET_CAPABILITIES,
   digestAppMapTestExecutionValue,
+  readTarget,
   saveBrowserTarget,
 } from "@relay/core";
 import { compileBrowserEnvironment } from "@relay/protocol";
@@ -59,6 +60,39 @@ test("browser capture saves the complete active case profile", async () => {
     );
     assert.notEqual(secondProfile.id, profile.id);
     assert.deepEqual(secondProfile.browserCaseProfile, secondEnvironment);
+  } finally {
+    if (previousRoot === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
+    else process.env.RELAY_WORKSPACE_ROOT = previousRoot;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("proof-mode capture freezes a fixture overlay without rewriting the saved target", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-browser-capture-overlay-"));
+  const previousRoot = process.env.RELAY_WORKSPACE_ROOT;
+  process.env.RELAY_WORKSPACE_ROOT = root;
+  try {
+    const environment = compileBrowserEnvironment({
+      engine: "chromium",
+      viewport: { width: 1280, height: 800 },
+    });
+    await saveBrowserTarget({
+      id: "grok-com",
+      name: "grok.com",
+      startUrl: "https://grok.com",
+      environment,
+    });
+    const overlay = "authfx:7189423f-193e-45ed-b674-154505cc5107:1";
+    const profile = await profileForCapture(
+      { kind: "browser", targetId: "grok-com", platform: "browser" },
+      123,
+      environment.viewport,
+      {},
+      overlay,
+    );
+    assert.equal(profile.browserCaseProfile?.authenticationFixtureId, overlay);
+    const saved = await readTarget("grok-com");
+    assert.equal(saved?.browser?.environment?.authenticationFixtureId, undefined);
   } finally {
     if (previousRoot === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
     else process.env.RELAY_WORKSPACE_ROOT = previousRoot;

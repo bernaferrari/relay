@@ -269,6 +269,15 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
     string(input.appMapId, "Combine preflight appMapId");
     string(input.combineId, "Combine preflight combineId");
     if (input.serial !== undefined) string(input.serial, "Combine preflight serial");
+    if (input.browserTargetId !== undefined) {
+      string(input.browserTargetId, "Combine preflight browserTargetId");
+    }
+    if (input.targetKind !== undefined && input.targetKind !== "device" && input.targetKind !== "browser") {
+      fail("Combine preflight targetKind", "must be device or browser");
+    }
+    if (input.platform !== undefined && input.platform !== "android" && input.platform !== "ios") {
+      fail("Combine preflight platform", "must be android or ios");
+    }
     if (input.selected !== undefined) record(input.selected, "Combine preflight selected");
     if (
       input.strategy !== undefined &&
@@ -278,10 +287,20 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
     ) {
       fail("Combine preflight strategy", "must be zip, cartesian, or pairwise");
     }
+    if (input.profileTargets !== undefined) {
+      if (!Array.isArray(input.profileTargets)) {
+        fail("Combine preflight profileTargets", "must be an array");
+      }
+    }
   });
-  const appMapCombinePreflightOutputParser = objectFieldParser<
+  const appMapCombinePreflightOutputParser = objectParser<
     AppMapOperationOutput<"app-map.combine.preflight">
-  >("Combine preflight response", "preflight");
+  >("Combine preflight response", (input) => {
+    record(input.preflight, "Combine preflight response preflight");
+    if (input.accountCapacity !== undefined) {
+      record(input.accountCapacity, "Combine preflight response accountCapacity");
+    }
+  });
 
   const appMapScreenCaptureParser = objectParser<AppMapOperationInput<"app-map.screen.capture">>(
     "App Map screen capture",
@@ -303,6 +322,12 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
       }
       string(target.targetId, "App Map screen capture targetId");
       if (input.title !== undefined) string(input.title, "App Map screen capture title");
+      if (input.authenticationFixtureReference !== undefined) {
+        string(
+          input.authenticationFixtureReference,
+          "App Map screen capture authenticationFixtureReference",
+        );
+      }
       if (input.position !== undefined) {
         const position = record(input.position, "App Map screen capture position");
         number(position.x, "App Map screen capture position x");
@@ -588,6 +613,12 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
         string(input.fromScreenId, "App Map teach fromScreenId");
       if (input.title !== undefined) string(input.title, "App Map teach title");
       if (input.label !== undefined) string(input.label, "App Map teach label");
+      if (input.authenticationFixtureReference !== undefined) {
+        string(
+          input.authenticationFixtureReference,
+          "App Map teach authenticationFixtureReference",
+        );
+      }
       if (input.handoff !== undefined) {
         const handoff = record(input.handoff, "App Map teach handoff");
         string(handoff.expectedApp, "App Map teach handoff expectedApp");

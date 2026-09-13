@@ -37,6 +37,7 @@ import { compileOptionsForVisualSurface } from "./combine-visual-surface.js";
 import { createAppMapTestExecutionIntent } from "./app-map-test-execution-intent.js";
 import { loadFrozenRawAccessibilityEvidence } from "./frozen-raw-accessibility.js";
 import { compileAppMapTest } from "./map-work.js";
+import { parseUnrecordedNativeRuntimeProfile } from "./app-map-unrecorded-runtime-profile.js";
 import { preflightCompiledAppMapTestOffline } from "./offline-test-preflight.js";
 import {
   assertOptionSandwichReady,
@@ -194,6 +195,8 @@ export function resolveSavedAppMapRuntimeTargetProfile(input: {
   target: { targetId: string; platform: "android" | "ios" | "browser" };
 }): AppMapCompiledRuntimeTargetProfile {
   const targetProfileId = input.targetProfileId?.trim() ?? "";
+  const unrecorded = parseUnrecordedNativeRuntimeProfile(targetProfileId, input.target);
+  if (unrecorded) return unrecorded;
   if (!targetProfileId) {
     const candidates = savedAppMapTargetProfileIdsForTarget(input.map, input.target);
     if (candidates.length !== 1) {

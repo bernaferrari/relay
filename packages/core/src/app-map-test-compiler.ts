@@ -8,7 +8,6 @@ import type {
   AppMapTestStepProvenance,
   RecipeStep,
   ReviewedDocumentOriginProjection,
-  TargetProfile,
 } from "@relay/protocol";
 import { assertScenarioTest } from "./app-map/test-intent-validation.js";
 import {
@@ -31,43 +30,23 @@ import {
 import { proposeAppMapTestExecutionSchedule } from "./app-map-test-schedule.js";
 import { attachMappedInboundPrelude } from "./app-map-test-inbound-prelude.js";
 import type { Recipe } from "./recipes.js";
-import {
-  AppMapTestRouteSelectionError,
-  savedTestRouteTargetProfile,
-  selectReviewedTestRouteVariant,
-  testWithSelectedRouteVariant,
-} from "./app-map-test-route-variants.js";
+import { testWithSelectedRouteVariant } from "./app-map-test-route-variants.js";
+import { resolveScenarioTestCompileRoute } from "./app-map-test-compile-route.js";
 import { compiledTestFamilyProvenance } from "./app-map-test-family-provenance.js";
 import { appMapTestReturnRepairEndpoints } from "./app-map-test-return-repair.js";
-import { layoutAssertionRecipeStep } from "./app-map-test-layout-assertion.js";
+import { assertionRecipeStep } from "./app-map-test-assertion.js";
+import { compiledGraphPlatformBlocker } from "./recipe-platform-support.js";
+import {
+  AppMapTestCompileError,
+  type AppMapTestCompileErrorCode,
+} from "./app-map-test-compile-error.js";
 
 export { appMapTestReturnRepairEndpoints } from "./app-map-test-return-repair.js";
 export { proposeAppMapTestExecutionSchedule } from "./app-map-test-schedule.js";
-
-export type AppMapTestCompileErrorCode =
-  | "unresolved-step"
-  | "missing-reference"
-  | "draft-connection"
-  | "compiled-step-limit"
-  | "cold-coverage-effect"
-  | "unresolved-navigation"
-  | "target-surface-required"
-  | "target-profile-ambiguous"
-  | "route-variant-not-found"
-  | "route-variant-ambiguous";
-
-export class AppMapTestCompileError extends Error {
-  constructor(
-    readonly code: AppMapTestCompileErrorCode,
-    readonly testId: string,
-    readonly stepId: string,
-    message: string,
-    readonly diagnostics: readonly AppMapTestCompileDiagnostic[] = [],
-  ) {
-    super(message);
-    this.name = "AppMapTestCompileError";
-  }
-}
+export {
+  AppMapTestCompileError,
+  type AppMapTestCompileErrorCode,
+} from "./app-map-test-compile-error.js";
 
 const MAX_COMPILED_STEPS = 4_096;
 /** Bounded automatic survey using the `target.scroll-survey.capture` default, so an every-screen Test
@@ -159,25 +138,10 @@ export function compileAppMapScenarioTest(
 ): { root: Recipe; graph: Record<string, Recipe>; plan: AppMapCompiledTest } {
   validateAppMap(map);
   assertScenarioTest(authoredTest, `Test ${authoredTest.id}`);
-  let selectedRouteTargetProfile: TargetProfile | undefined;
-  let selectedRouteVariant: ReturnType<typeof selectReviewedTestRouteVariant>;
-  try {
-    selectedRouteTargetProfile = options.runtimeTargetProfile
-      ? savedTestRouteTargetProfile(map, options.runtimeTargetProfile)
-      : undefined;
-    selectedRouteVariant = selectReviewedTestRouteVariant(authoredTest, selectedRouteTargetProfile);
-  } catch (error) {
-    if (error instanceof AppMapTestRouteSelectionError) {
-      throw new AppMapTestCompileError(
-        error.code,
-        authoredTest.id,
-        authoredTest.steps[0]?.id ?? authoredTest.id,
-        error.message,
-      );
-    }
-    throw error;
-  }
-  const test = testWithSelectedRouteVariant(authoredTest, selectedRouteVariant);
+  const resolved = resolveScenarioTestCompileRoute(map, authoredTest, options.runtimeTargetProfile);
+  const selectedRouteTargetProfile = resolved.selectedRouteTargetProfile;
+  const selectedRouteVariant = resolved.selectedRouteVariant;
+  const test = testWithSelectedRouteVariant(resolved.test, selectedRouteVariant);
   assertScenarioTest(test, `Selected Test ${test.id}`);
   if (
     test.organizationId !== map.organizationId ||
@@ -780,7 +744,7 @@ export function compileAppMapScenarioTest(
         );
       }
     }
-    if (suffix === "root" && test.capture?.mode === "final-screen") {
+    if (suffix === "root" && test.capture?.mode === "final-screen" && recipeSteps.length) {
       recipeSteps.push({ kind: "screenshot", caption: `final:${test.name}` });
       compiledCount += 1;
     }
@@ -815,6 +779,21 @@ export function compileAppMapScenarioTest(
     );
   }
   attachMappedInboundPrelude(map, graph, rootRecipeId);
+
+  if (selectedRouteTargetProfile) {
+    const platformBlocker = compiledGraphPlatformBlocker(
+      graph,
+      selectedRouteTargetProfile.platform,
+    );
+    if (platformBlocker) {
+      throw new AppMapTestCompileError(
+        "unsupported-platform",
+        test.id,
+        test.steps[0]?.id ?? test.id,
+        platformBlocker.reason,
+      );
+    }
+  }
 
   const root = graph[rootRecipeId]!;
   const plan: AppMapCompiledTest = {
@@ -866,59 +845,4 @@ export function compileAppMapScenarioTest(
     ...(omittedSteps.length ? { omittedSteps } : {}),
   };
   return { root, graph, plan };
-}
-
-function assertionRecipeStep(
-  map: AppMap,
-  test: AppMapScenarioTest,
-  step: AppMapScenarioTestStep,
-  assertion: Extract<AppMapScenarioTestStep, { kind: "validation" }> extends { binding: infer B }
-    ? B extends { status: "resolved"; kind: "assertion"; assertion: infer A }
-      ? A
-      : never
-    : never,
-): RecipeStep {
-  if (assertion.kind === "screen") {
-    const screen = map.screens[assertion.screenId];
-    if (!screen)
-      fail("missing-reference", test, step, `Screen ${assertion.screenId} does not exist`);
-    if (!screen.identity) {
-      fail(
-        "missing-reference",
-        test,
-        step,
-        `Screen ${assertion.screenId} has no approved identity`,
-      );
-    }
-    const observations = screen.variantIds.flatMap((variantId) => {
-      const observation = map.screenVariants[variantId]?.observation;
-      return observation?.nodes.length ? [structuredClone(observation)] : [];
-    });
-    return {
-      kind: "expect-screen",
-      screenId: screen.id,
-      screenTitle: screen.title,
-      fingerprint: screen.identity.fingerprint,
-      timeoutMs: 5_000,
-      ...(screen.identity.aliases?.length ? { aliases: [...screen.identity.aliases] } : {}),
-      ...(observations.length ? { observations } : {}),
-    };
-  }
-  if (assertion.kind === "target") {
-    return {
-      kind: "expect",
-      target: structuredClone(assertion.target),
-      condition: assertion.condition,
-      ...(assertion.timeoutMs === undefined ? {} : { timeoutMs: assertion.timeoutMs }),
-    };
-  }
-  if (assertion.kind === "layout") {
-    return layoutAssertionRecipeStep(assertion);
-  }
-  return {
-    kind: "assert-content",
-    input: assertion.input,
-    expected: assertion.expected,
-    match: assertion.match,
-  };
 }

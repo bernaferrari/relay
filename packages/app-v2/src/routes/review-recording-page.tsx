@@ -42,6 +42,7 @@ import { replayDetail, useEvidenceObjectUrl } from "./recording-review-presentat
 import { reviewPersistence } from "../data/recording-review-persistence";
 import { tryReviewTarget } from "../data/recording-try-target";
 import { useRecordingNameDraft } from "../data/use-recording-name-draft";
+import { SelectField } from "../components/filter-select";
 import { RecordingWaitPicker } from "./recording-wait-picker";
 import { RecordingTargetPicker } from "./recording-target-picker";
 
@@ -639,27 +640,22 @@ export function ReviewRecordingPage({
                           </Button>
                         </div>
                         {selectedAction.stepCount > 1 ? (
-                          <label className="grid gap-1 text-sm">
-                            <span className="text-xs text-muted-foreground">
-                              Split after selected step
-                            </span>
-                            <select
-                              className="min-h-10 rounded-md border border-border bg-background px-3"
-                              value={Math.min(splitAfterStep, selectedAction.stepCount - 1)}
-                              onChange={(event) =>
-                                setSplitAfterStep(Number.parseInt(event.target.value, 10))
-                              }
+                          <div className="grid gap-1.5">
+                            <SelectField
+                              label="Split after selected step"
+                              value={String(Math.min(splitAfterStep, selectedAction.stepCount - 1))}
                               disabled={!canEdit}
-                            >
-                              {Array.from(
+                              options={Array.from(
                                 { length: selectedAction.stepCount - 1 },
-                                (_, index) => index + 1,
-                              ).map((step) => (
-                                <option key={step} value={step}>
-                                  After step {step}
-                                </option>
-                              ))}
-                            </select>
+                                (_, index) => ({
+                                  value: String(index + 1),
+                                  label: `After step ${index + 1}`,
+                                }),
+                              )}
+                              onValueChange={(value) =>
+                                setSplitAfterStep(Number.parseInt(value, 10))
+                              }
+                            />
                             <Button
                               size="sm"
                               variant="ghost"
@@ -674,7 +670,7 @@ export function ReviewRecordingPage({
                             >
                               <Scissors aria-hidden="true" /> Split action
                             </Button>
-                          </label>
+                          </div>
                         ) : null}
                       </>
                     ) : selectedActions.length > 1 ? (

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AppMapCompiledRuntimeTargetProfile, TargetProfile } from "@relay/protocol";
+import { compileBrowserEnvironment } from "@relay/protocol";
 import { appMapRuntimeTargetProfileFromSaved, sameAppMapRuntimeTargetProfile } from "@relay/core";
 import { queuedAppMapTestTargetProfile } from "./app-map-test-target-profile.js";
 import { HttpError } from "./http.js";
@@ -76,5 +77,61 @@ test("queued Android emulator Tests carry observed AVD identity for legacy saved
   assert.ok(
     sameAppMapRuntimeTargetProfile(appMapRuntimeTargetProfileFromSaved(accepted), legacy),
     "collector hints must not change the queue admission identity",
+  );
+});
+
+test("queued browser Tests overlay an account fixture onto an unsigned managed target", () => {
+  const unsigned = compileBrowserEnvironment({
+    engine: "chromium",
+    viewport: { width: 1280, height: 800 },
+    locale: "en-US",
+    timezoneId: "UTC",
+  });
+  const signedIn = compileBrowserEnvironment({
+    ...unsigned,
+    authenticationFixtureId: "authfx:7189423f-193e-45ed-b674-154505cc5107:1",
+  });
+  const runtimeTargetProfile = {
+    id: "browser:grok-com-1280x800-339a5a430a41",
+    targetId: "grok-com",
+    platform: "browser" as const,
+    viewport: signedIn.viewport,
+    browserCaseProfile: signedIn,
+  };
+  const observedTargetProfile: TargetProfile = {
+    id: "browser:grok-com",
+    targetId: "grok-com",
+    source: "browser",
+    platform: "browser",
+    name: "grok.com",
+    viewport: unsigned.viewport,
+    browserCaseProfile: unsigned,
+    capabilities: ["screenshot", "snapshot"],
+    observedAt: 1,
+  };
+  const queued = queuedAppMapTestTargetProfile({
+    runtimeTargetProfile,
+    observedTargetProfile,
+    target: { kind: "browser", targetId: "grok-com", platform: "browser" },
+  });
+  assert.equal(
+    queued?.browserCaseProfile?.authenticationFixtureId,
+    "authfx:7189423f-193e-45ed-b674-154505cc5107:1",
+  );
+  assert.throws(
+    () =>
+      queuedAppMapTestTargetProfile({
+        runtimeTargetProfile,
+        observedTargetProfile: {
+          ...observedTargetProfile,
+          browserCaseProfile: compileBrowserEnvironment({
+            ...unsigned,
+            engine: "webkit",
+          }),
+        },
+        target: { kind: "browser", targetId: "grok-com", platform: "browser" },
+      }),
+    (error: unknown) =>
+      error instanceof HttpError && error.body?.code === "TARGET_PROFILE_TARGET_MISMATCH",
   );
 });

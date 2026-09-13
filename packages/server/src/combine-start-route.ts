@@ -18,17 +18,25 @@ import {
   activeReviewedDocumentOriginsForAppMap,
   applyFullSurfaceDestinationBindings,
   combineCampaignCaseFromPreparedCell,
-  combineExecutionCaseId,
+  combineProfileTargetExecutionCaseId,
   savedAppMapTargetProfileIdsForTarget,
+  unrecordedNativeRuntimeProfileIdIfMissing,
+  unrecordedPreparedCombineReason,
   buildTargetProfiles,
   createCombineCampaign,
   currentOperationContext,
   findActiveCombineCampaignForCombine,
   findActiveRepeatCampaigns,
   accountFixtureIdsFromListed,
+  attachBrowserAuthenticationHealth,
   bindRequestedBrowserIdentity,
+  overlayRequestedBrowserAccountOnTargetProfile,
   listBrowserAuthenticationFixtures,
+  planAccountStartBlocker,
+  accountReloginFindingsReport,
+  persistAccountReloginPlanResult,
   prepareAppMapCombineCells,
+  queueablePreparedCombineCells,
   readAppMap,
   listTargets,
   resolveCombineCellSelector,
@@ -375,7 +383,13 @@ async function executeCombineStartUnlocked(
               });
               const targetProfileId =
                 profileTarget.targetProfileId ??
-                (runtimeProfileIds.length === 1 ? runtimeProfileIds[0] : undefined);
+                (runtimeProfileIds.length === 1
+                  ? runtimeProfileIds[0]
+                  : unrecordedNativeRuntimeProfileIdIfMissing({
+                      savedIds: runtimeProfileIds,
+                      platform: target.platform ?? "browser",
+                      targetId: profileTargetId,
+                    }));
               if (!targetProfileId) {
                 throw new HttpError(
                   409,
@@ -411,12 +425,52 @@ async function executeCombineStartUnlocked(
                       ? "browser"
                       : saved.platform),
                   accountFixtureIds: accountFixtureIdsFromListed(listed),
+                  listedFixtures: listed,
+                  listedFixtureAuthority: true,
                 });
                 if (bound.status === "blocked") {
                   throw new HttpError(409, bound.reason, {
                     code: "REQUESTED_ACCOUNT_MISMATCH",
                     recovery:
                       "Use the exact saved account fixture revision, or capture a matching runtime profile before running.",
+                  });
+                }
+                const accountBlocker = planAccountStartBlocker({
+                  account: profileTarget.account,
+                  savedFixtureReference: saved.authenticationFixtureId,
+                  fixtures: await attachBrowserAuthenticationHealth(listed),
+                });
+                if (accountBlocker) {
+                  const persisted = await persistAccountReloginPlanResult({
+                    projectId: scope.projectId,
+                    ownerId: currentOperationContext()?.actorId,
+                    appMapId: map.id,
+                    combineId: scopedCombine.id,
+                    appMapRevision: map.revision,
+                    testIds: scopedCombine.testIds,
+                    targetProfileId: profileTarget.profileId,
+                    detail: accountBlocker,
+                    ...(profileTarget.account ? { account: profileTarget.account } : {}),
+                    target:
+                      target.platform === "ios" || target.platform === "android"
+                        ? {
+                            kind: "device" as const,
+                            id: profileTargetId,
+                            platform: target.platform,
+                          }
+                        : {
+                            kind: "browser" as const,
+                            id: profileTargetId,
+                            platform: "browser",
+                          },
+                  }).catch(() => undefined);
+                  throw new HttpError(409, accountBlocker, {
+                    code: "ACCOUNT_NEEDS_RELOGIN",
+                    recovery: "Open Sign-ins, complete OAuth, then Refresh.",
+                    findings:
+                      persisted?.findings ??
+                      accountReloginFindingsReport({ detail: accountBlocker }),
+                    ...(persisted ? { batchId: persisted.batchId } : {}),
                   });
                 }
               }
@@ -431,26 +485,20 @@ async function executeCombineStartUnlocked(
                   targetId: profileTargetId,
                   platform: target.platform ?? "browser",
                 },
-              }).then((result) => ({ result, profileId: profileTarget.profileId }));
+              }).then((result) => ({ result, profileTarget }));
             });
             return Promise.all(profilePrepared).then((groups) => {
               const first = groups[0]!.result;
-              const cells = groups.flatMap(({ result, profileId }) =>
+              const cells = groups.flatMap(({ result, profileTarget }) =>
                 result.cells.map((cell) => ({
                   ...cell,
-                  executionCaseId: combineExecutionCaseId({
-                    cellId: cell.cellId,
-                    targetProfileId: profileId,
-                  }),
+                  executionCaseId: combineProfileTargetExecutionCaseId(cell.cellId, profileTarget),
                 })),
               );
-              const selectedCells = groups.flatMap(({ result, profileId }) =>
+              const selectedCells = groups.flatMap(({ result, profileTarget }) =>
                 result.selectedCells.map((cell) => ({
                   ...cell,
-                  executionCaseId: combineExecutionCaseId({
-                    cellId: cell.cellId,
-                    targetProfileId: profileId,
-                  }),
+                  executionCaseId: combineProfileTargetExecutionCaseId(cell.cellId, profileTarget),
                 })),
               );
               return {
@@ -502,9 +550,16 @@ async function executeCombineStartUnlocked(
     }
     const namedCells = Boolean(body.cell?.trim()) || Boolean(body.selectedCellIds?.length);
     const isPilotRun = body.executionMode !== "all" && !namedCells;
-    const selectedToQueue = isPilotRun ? selectedCells.slice(0, 1) : selectedCells;
+    const selectedToQueue = queueablePreparedCombineCells(
+      isPilotRun ? selectedCells.slice(0, 1) : selectedCells,
+    );
     if (!selectedToQueue.length) {
-      throw new HttpError(400, "No selected Combine cells to queue");
+      const reason = (isPilotRun ? selectedCells.slice(0, 1) : selectedCells)
+        .map((cell) => unrecordedPreparedCombineReason(cell))
+        .find(Boolean);
+      throw new HttpError(reason ? 409 : 400, reason ?? "No selected Combine cells to queue", {
+        ...(reason ? { code: "UNSUPPORTED_PLATFORM" } : {}),
+      });
     }
     if (hasExplicitCellTargets && !body.localAdmission) {
       throw new HttpError(
@@ -536,8 +591,8 @@ async function executeCombineStartUnlocked(
           : {}),
         targetForCell: (cell) => cell.executionTarget,
         operationContextForCell: acceptedAdmission?.operationContextForCell,
-        queuedTargetProfile: (cell, executionTarget) =>
-          queuedAppMapTestTargetProfile({
+        queuedTargetProfile: (cell, executionTarget) => {
+          const queued = queuedAppMapTestTargetProfile({
             runtimeTargetProfile: cell.selectedRuntimeTargetProfile,
             observedTargetProfile: observedTargetProfiles.find(
               (profile) =>
@@ -550,7 +605,14 @@ async function executeCombineStartUnlocked(
               targetId: executionTarget.targetId,
               platform: executionTarget.platform,
             },
-          }),
+          });
+          const profileTarget = body.profileTargets?.find(
+            (item) =>
+              (cell.executionCaseId ?? cell.cellId) ===
+              combineProfileTargetExecutionCaseId(cell.cellId, item),
+          );
+          return overlayRequestedBrowserAccountOnTargetProfile(queued, profileTarget?.account);
+        },
         projectId: scope.projectId,
         ownerId: currentOperationContext()!.actorId,
         sourceRevision: body.sourceRevision,
@@ -626,12 +688,7 @@ async function executeCombineStartUnlocked(
           isPilotRun &&
           executionId === (selectedToQueue[0]?.executionCaseId ?? selectedToQueue[0]?.cellId);
         const profileTarget = body.profileTargets?.find(
-          (item) =>
-            executionId ===
-            combineExecutionCaseId({
-              cellId: cell.cellId,
-              targetProfileId: item.profileId,
-            }),
+          (item) => executionId === combineProfileTargetExecutionCaseId(cell.cellId, item),
         );
         return {
           ...combineCampaignCaseFromPreparedCell(cell, {

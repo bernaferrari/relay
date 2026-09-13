@@ -20,6 +20,7 @@ import {
   type VisualRunSnapshot,
 } from "@relay/protocol";
 import type { PersistedRun } from "./runs.js";
+import { withIdentityIgnoreRegions } from "./visual-identity-ignore-regions.js";
 
 export { VISUAL_COMPARISON_CODES, VISUAL_REVIEW_ACTIONS } from "@relay/protocol";
 export type {
@@ -744,7 +745,11 @@ export async function compareVisualBaseline(
 ): Promise<VisualComparison> {
   const latest = await snapshotRun(run);
   const baseline = await getVisualBaseline(root, run.action, latest.targetKey, latest.projectKey);
-  const policy = await getVisualComparisonPolicy(root, run);
+  const policy = withIdentityIgnoreRegions(
+    await getVisualComparisonPolicy(root, run),
+    run.artifacts ?? [],
+    latest.frames,
+  );
   const expectedVariation = await hasExpectedVariation(root, baseline, latest);
   const diff = await buildDiff(
     root,

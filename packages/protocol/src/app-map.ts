@@ -76,7 +76,9 @@ export type VolatileSemanticKind =
   | "clock"
   | "counter"
   | "date"
+  | "generated-id"
   | "percentage"
+  | "placeholder"
   | "relative-time"
   | "uuid";
 
@@ -487,6 +489,15 @@ export type AppMapCombineCellState = {
   message?: string;
 };
 
+/** Measured serial wall-clock for one Combine shape. Parallel N is unquoted. */
+export type AppMapCombineObservedDuration = {
+  durationMs: number;
+  provenance: "observed-p50" | "observed-p95" | "observed-sample";
+  sampleCount: number;
+  workItemCount: number;
+  campaignIds: string[];
+};
+
 /** Exact run-plan projection shared by the canvas, server, and CLI. */
 export type AppMapCombinePreflight = {
   ok: boolean;
@@ -512,6 +523,9 @@ export type AppMapCombinePreflight = {
   deviceRuns: number;
   expectedScreenshots?: number;
   estimatedDurationMs?: number;
+  /** Wall-clock of completed Plan runs with the same cell count. Never a
+   * guessed recipe estimate. Parallel contexts stay unquoted here. */
+  observedDuration?: AppMapCombineObservedDuration;
   blockers: AppMapCombinePreflightIssue[];
   warnings: AppMapCombinePreflightIssue[];
   cells: AppMapCombineCellState[];

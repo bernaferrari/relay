@@ -9,11 +9,12 @@ import {
 } from "./durable-worker-assignments.js";
 import {
   prepareSessionJobBatch,
+  scheduledSessionJob,
   type SessionBatchAdmissionDependencies,
   type SessionBatchInput,
 } from "./session-batch-admission.js";
 import type { EnqueueJobInput, TestJob } from "./session-contract.js";
-import type { TargetWorkerStagedBatch } from "./target-worker.js";
+import { TargetWorkerScheduler, type TargetWorkerStagedBatch } from "./target-worker.js";
 
 function job(id: string): TestJob {
   return {
@@ -176,4 +177,82 @@ test("a pre-dispatch commit failure compensates registrations, reservations, and
     assert.equal(durableWorkerAssignmentStore().get("second")?.status, "cancelled");
     assert.doesNotThrow(() => batch.rollback());
   });
+});
+
+function deferred() {
+  let resolve!: () => void;
+  return {
+    promise: new Promise<void>((done) => {
+      resolve = done;
+    }),
+    resolve,
+  };
+}
+
+function browserFixtureJob(id: string, fixture: string): TestJob {
+  return {
+    id,
+    projectId: "project-batch-admission",
+    targetContext: { kind: "browser", targetId: "grok-com", platform: "browser" },
+    executionTarget: {
+      schemaVersion: 1,
+      kind: "local-browser",
+      provider: { key: "relay.local.browser", scope: "local" },
+      targetId: "grok-com",
+      platform: "browser",
+      identity: { kind: "browser-target", value: "grok-com" },
+    },
+    browserCaseProfile: { engine: "chromium", authenticationFixtureId: fixture },
+    action: "recipe:batch-admission",
+    recipeId: "recipe:batch-admission",
+    targetKind: "browser",
+    browserTargetId: "grok-com",
+    platform: "android",
+    workerId: `local:browser:target:grok-com%23${encodeURIComponent(fixture)}`,
+    workerCapacity: 1,
+    hostWorkerId: "local:browser:host",
+    hostWorkerCapacity: 8,
+    status: "queued",
+    queuedAt: 1_000,
+    logs: [],
+    attempts: 1,
+    steps: [],
+    frames: [],
+    glyphs: ["ai"],
+    kind: "Replay",
+    tone: "acc",
+    title: id,
+    artifacts: [],
+    resolvedInputs: {},
+    evidencePolicy: { schemaVersion: 1, sensitive: {} },
+  };
+}
+
+test("scheduled browser fixture jobs use distinct lanes and start concurrently", async () => {
+  const fixtures = ["authfx:a:1", "authfx:b:1", "authfx:c:1"] as const;
+  const jobs = fixtures.map((fixture, index) => browserFixtureJob(`job-${index}`, fixture));
+  const scheduled = jobs.map((job) => scheduledSessionJob({ job, run: async () => undefined }));
+  assert.deepEqual(
+    scheduled.map((work) => work.targetId),
+    ["grok-com#authfx:a:1", "grok-com#authfx:b:1", "grok-com#authfx:c:1"],
+  );
+  assert.equal(new Set(scheduled.map((work) => work.workerId)).size, 3);
+
+  const scheduler = new TargetWorkerScheduler();
+  const gates = [deferred(), deferred(), deferred()];
+  const started: string[] = [];
+  for (const [index, job] of jobs.entries()) {
+    scheduler.enqueue(
+      scheduledSessionJob({
+        job,
+        run: async () => {
+          started.push(job.id);
+          await gates[index]!.promise;
+        },
+      }),
+    );
+  }
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(started, ["job-0", "job-1", "job-2"]);
+  for (const gate of gates) gate.resolve();
 });

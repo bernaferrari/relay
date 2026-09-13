@@ -5,6 +5,7 @@ import {
   combineIdFor,
   combineLensName,
   isCombineLensInput,
+  variableCanApply,
 } from "./app-map-combine-id.js";
 
 test("Combine ids stay stable slugs of Variable then Test ids", () => {
@@ -25,4 +26,23 @@ test("visual and smoke map onto existing capture policies", () => {
   assert.equal(combineLensName("failures-only"), "smoke");
   assert.equal(isCombineLensInput("visual"), true);
   assert.equal(isCombineLensInput("checkpoints"), false);
+});
+
+test("logged-out account worlds apply without a recorded picker", () => {
+  assert.equal(
+    variableCanApply({
+      kind: "account",
+      apply: { kind: "list" },
+      options: [{ id: "logged-out" }],
+    }),
+    true,
+  );
+  assert.equal(
+    variableCanApply({
+      kind: "language",
+      apply: { kind: "list" },
+      options: [{ id: "en" }],
+    }),
+    false,
+  );
 });

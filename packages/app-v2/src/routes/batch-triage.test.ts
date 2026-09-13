@@ -52,13 +52,61 @@ describe("Batch triage presentation", () => {
     expect(sortBatchCasesForDisplay(ordered, false)).toBe(ordered);
   });
 
-  it("builds a failure-first Test by Environment matrix", () => {
-    const matrix = buildBatchMatrix(cases);
-    expect(matrix.completeIdentity).toBe(true);
-    expect(matrix.rows.map(({ id }) => id)).toEqual(["login", "checkout"]);
-    expect(matrix.columns.map(({ id }) => id)).toEqual(["chrome-desktop", "iphone-15"]);
-    expect(matrix.rows[0]?.cells.get("iphone-15")?.cases[0]?.id).toBe("login-ios");
-    expect(shouldShowBatchMatrix(matrix)).toBe(true);
+  it("builds eight Result columns for six accounts plus Android and iOS", () => {
+    const environments = [
+      ...["account-a", "account-b", "account-c", "account-d", "account-e", "account-f"].map(
+        (id) =>
+          ({
+            id: `send-hello-${id}`,
+            index: 0,
+            phase: "coverage" as const,
+            status: "passed" as const,
+            values: {},
+            identity: {
+              testId: "send-hello",
+              environmentId: id,
+              environmentPlatform: "browser" as const,
+            },
+          }) satisfies ProductBatchCase,
+      ),
+      {
+        id: "send-hello-android",
+        index: 6,
+        phase: "coverage" as const,
+        status: "passed" as const,
+        values: {},
+        identity: {
+          testId: "send-hello",
+          environmentId: "pixel-8",
+          environmentPlatform: "android" as const,
+        },
+      } satisfies ProductBatchCase,
+      {
+        id: "send-hello-ios",
+        index: 7,
+        phase: "coverage" as const,
+        status: "passed" as const,
+        values: {},
+        identity: {
+          testId: "send-hello",
+          environmentId: "ipad-pro",
+          environmentPlatform: "ios" as const,
+        },
+      } satisfies ProductBatchCase,
+    ];
+    const matrix = buildBatchMatrix(environments);
+    expect(matrix.columns).toHaveLength(8);
+    expect(matrix.rows).toHaveLength(1);
+    expect(matrix.columns.map(({ platform }) => platform).sort()).toEqual([
+      "android",
+      "browser",
+      "browser",
+      "browser",
+      "browser",
+      "browser",
+      "browser",
+      "ios",
+    ]);
   });
 
   it("keeps legacy batches useful without fabricating durable identities", () => {

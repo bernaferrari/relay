@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { evaluateSemantic, registerEvaluationProvider } from "./evaluation.js";
+import { evaluateSemantic, evaluationCostUsd, registerEvaluationProvider } from "./evaluation.js";
 
 describe("semantic evaluation providers", () => {
   it("uses registered providers without coupling execution to one model vendor", async () => {
@@ -36,5 +36,23 @@ describe("semantic evaluation providers", () => {
     } finally {
       unregister();
     }
+  });
+
+  it("reads USD cost from OpenRouter usage", () => {
+    assert.equal(evaluationCostUsd({ usage: { cost: 0.0012 } }), 0.0012);
+    assert.equal(evaluationCostUsd({ usage: { total_cost: 0.04 } }), 0.04);
+    assert.equal(evaluationCostUsd({}), undefined);
+  });
+
+  it("never silently passes when the requested judge is not configured", async () => {
+    await assert.rejects(
+      () =>
+        evaluateSemantic({
+          input: "Paris is in France.",
+          criteria: ["Names France"],
+          provider: "missing-judge-provider",
+        }),
+      /semantic judge unavailable: provider is not configured \(missing-judge-provider\)/,
+    );
   });
 });

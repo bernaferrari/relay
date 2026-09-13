@@ -17,7 +17,7 @@ export const DEFAULT_CAMPAIGN_DURATION_MIN_SAMPLES = 20;
 export const MIN_CAMPAIGN_DURATION_MIN_SAMPLES = 5;
 export const DEFAULT_CAMPAIGN_DURATION_MAX_SAMPLES = 200;
 
-export type CampaignDurationPlatform = "android" | "ios";
+export type CampaignDurationPlatform = "android" | "ios" | "browser";
 
 /**
  * The estimator only needs this narrow persisted-run projection. `PersistedRun`
@@ -220,6 +220,13 @@ function observedTargetId(
 ): string | Extract<CampaignDurationExclusionReason, "missing-target" | "incompatible-target"> {
   const target = run.executionTarget;
   if (target) {
+    if (target.kind === "local-browser") {
+      if (target.platform !== "browser" || target.identity.kind !== "browser-target") {
+        return "incompatible-target";
+      }
+      if (run.platform && target.platform !== run.platform) return "incompatible-target";
+      return target.targetId;
+    }
     if (
       target.kind !== "local-device" ||
       (target.platform !== "android" && target.platform !== "ios") ||
@@ -333,8 +340,8 @@ function normalizedCohort(
   if (!targetId || !testId || !cohortAction) {
     throw new Error("Campaign duration cohort requires targetId, testId, and action");
   }
-  if (cohort.platform !== "android" && cohort.platform !== "ios") {
-    throw new Error("Campaign duration cohort platform must be Android or iOS");
+  if (cohort.platform !== "android" && cohort.platform !== "ios" && cohort.platform !== "browser") {
+    throw new Error("Campaign duration cohort platform must be Android, iOS, or browser");
   }
   if (cohort.platform !== platform) {
     throw new Error("Campaign duration cohort platform must match the requested platform");

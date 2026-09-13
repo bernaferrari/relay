@@ -7,15 +7,17 @@ import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
-import { ArrowDown, ArrowUp, ChevronRight, GripVertical, Redo2, Undo2 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { Redo2, Undo2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { EmptyState } from "../components/product-patterns";
 import { TestEditorEvidencePanel } from "../components/test-editor-evidence-panel";
 import {
   SelectedStepEditor,
+  validationDraft,
   type EditTransaction,
   type StepEntry,
 } from "../components/test-editor-step";
+import { TestEditorStepOutline } from "../components/test-editor-step-list";
 import type {
   ProductTestEditorDocument,
   ProductTestRepair,
@@ -25,7 +27,7 @@ import { useLatestTestReport } from "../hooks/use-latest-test-report";
 import { LiveTestEditorPane } from "./live-test-editor-pane";
 import { PageLoading, RecordingProblem } from "./recording-shared";
 import { HistorySection, RepairSection } from "./test-editor-context-panels";
-import { branchLabel, collectStepEntries, stepKindLabel } from "./test-editor-route-helpers";
+import { collectStepEntries } from "./test-editor-route-helpers";
 import { useTestStepDrafts } from "./use-test-step-drafts";
 
 const routeApi = getRouteApi("/tests/$testId/edit");
@@ -125,10 +127,15 @@ function TestEditorDocument() {
             note: savedNote ?? "",
             capture: savedCapture,
             ...(edit.patch.binding?.status === "resolved" &&
-            edit.patch.binding.kind === "assertion" &&
-            (edit.patch.binding.assertion.kind === "screen" ||
-              edit.patch.binding.assertion.kind === "content")
-              ? { expected: edit.patch.binding.assertion }
+            (edit.patch.binding.kind === "assertion" || edit.patch.binding.kind === "recipe-step")
+              ? {
+                  expected: validationDraft({
+                    id: edit.stepId,
+                    kind: "validation",
+                    intent: savedIntent,
+                    binding: edit.patch.binding,
+                  }),
+                }
               : {}),
           });
         }
@@ -562,127 +569,18 @@ function TestEditorDocument() {
           <WorkbenchPanes
             inspectorKind={sessionId ? "device" : "form"}
             outline={
-              <section className="min-w-0" aria-labelledby="test-steps-title">
-                <div className="flex items-end justify-between gap-5 max-[620px]:items-start max-[620px]:gap-3">
-                  <div>
-                    <h2 id="test-steps-title">Steps</h2>
-                  </div>
-                  <div className="flex items-center gap-2.5">
-                    <span className="text-[11px] tabular-nums text-muted-foreground">
-                      {entries.length === 1 ? "1 step" : `${entries.length} steps`}
-                    </span>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={addStep}
-                      disabled={edit.isPending || repair.isPending}
-                    >
-                      Add step
-                    </Button>
-                  </div>
-                </div>
-                {entries.length ? (
-                  <ol className="mt-4 grid list-none gap-1.5 p-0">
-                    {entries.map((entry) => (
-                      <li
-                        key={entry.step.id}
-                        style={{ "--step-depth": entry.depth } as CSSProperties}
-                      >
-                        <div
-                          id={`test-step-${entry.step.id}`}
-                          className="grid min-h-14 min-w-0 grid-cols-[minmax(0,1fr)_36px] items-stretch rounded-lg border border-border bg-card transition-colors hover:border-input hover:bg-muted/40 data-[selected=true]:border-primary/40 data-[selected=true]:bg-primary/5 data-[selected=true]:shadow-[0_0_0_1px_color-mix(in_srgb,var(--primary)_10%,transparent)]"
-                          data-selected={selected?.step.id === entry.step.id}
-                          draggable={!edit.isPending}
-                          tabIndex={0}
-                          onDragStart={() => {
-                            draggedStepId.current = entry.step.id;
-                          }}
-                          onDragEnd={() => {
-                            draggedStepId.current = undefined;
-                          }}
-                          onDragOver={(event) => {
-                            if (
-                              draggedStepId.current &&
-                              entry.siblingIds.includes(draggedStepId.current)
-                            )
-                              event.preventDefault();
-                          }}
-                          onDrop={(event) => {
-                            event.preventDefault();
-                            const bounds = event.currentTarget.getBoundingClientRect();
-                            dropOn(entry, event.clientY > bounds.top + bounds.height / 2);
-                          }}
-                          onKeyDown={(event) => {
-                            if (!event.altKey) return;
-                            if (event.key === "ArrowUp" || event.key === "ArrowDown") {
-                              event.preventDefault();
-                              move(entry, event.key === "ArrowUp" ? -1 : 1);
-                            }
-                          }}
-                        >
-                          <button
-                            className="grid min-h-14 min-w-0 grid-cols-[14px_24px_minmax(0,1fr)_12px] items-center gap-1.5 border-0 bg-transparent p-2 text-left text-inherit"
-                            type="button"
-                            onClick={() => selectStep(entry.step.id)}
-                            aria-pressed={selected?.step.id === entry.step.id}
-                          >
-                            <GripVertical
-                              className="size-4 cursor-grab text-muted-foreground"
-                              aria-hidden="true"
-                            />
-                            <span className="grid size-7 place-items-center rounded-full border border-border bg-background text-[10px] tabular-nums text-muted-foreground">
-                              {entry.number}
-                            </span>
-                            <span className="min-w-0">
-                              <strong className="block overflow-hidden text-xs font-semibold break-words">
-                                {entry.step.intent}
-                              </strong>
-                              <small className="mt-0.5 block overflow-hidden text-[10px] text-muted-foreground break-words">
-                                {entry.placement ? `${branchLabel(entry.placement)} · ` : ""}
-                                {stepKindLabel(entry.step)} ·{" "}
-                                {entry.step.binding.status === "resolved"
-                                  ? "Ready"
-                                  : "Needs review"}
-                              </small>
-                            </span>
-                            <ChevronRight
-                              className="size-3.5 text-muted-foreground"
-                              aria-hidden="true"
-                            />
-                          </button>
-                          <span className="grid grid-cols-1 border-l border-border">
-                            <Button
-                              size="icon-sm"
-                              variant="ghost"
-                              onClick={() => move(entry, -1)}
-                              disabled={entry.index === 0 || edit.isPending}
-                              aria-label={`Move ${entry.step.intent} up`}
-                            >
-                              <ArrowUp aria-hidden="true" />
-                            </Button>
-                            <Button
-                              size="icon-sm"
-                              variant="ghost"
-                              onClick={() => move(entry, 1)}
-                              disabled={
-                                entry.index === entry.siblingIds.length - 1 || edit.isPending
-                              }
-                              aria-label={`Move ${entry.step.intent} down`}
-                            >
-                              <ArrowDown aria-hidden="true" />
-                            </Button>
-                          </span>
-                        </div>
-                      </li>
-                    ))}
-                  </ol>
-                ) : (
-                  <EmptyState
-                    title="This Test has no steps"
-                    detail="Record this Test again to give Relay steps to repeat."
-                  />
-                )}
-              </section>
+              <TestEditorStepOutline
+                test={editorDocument.test}
+                recordedPlatforms={editorDocument.recordedPlatforms}
+                entries={entries}
+                selectedStepId={selected?.step.id}
+                busy={edit.isPending || repair.isPending}
+                draggedStepId={draggedStepId}
+                onAdd={addStep}
+                onSelect={selectStep}
+                onMove={move}
+                onDrop={dropOn}
+              />
             }
             stage={
               <div className="grid min-w-0 gap-3.5">

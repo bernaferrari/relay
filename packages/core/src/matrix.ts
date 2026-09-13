@@ -7,8 +7,7 @@ import type {
   TargetSelector,
 } from "@relay/protocol";
 import type { ListedDevice } from "./workspace.js";
-import { BROWSER_TARGET_CAPABILITIES } from "./targets.js";
-import { browserCaseProfileForTarget } from "./browser-case-profile-target.js";
+import { managedBrowserTargetProfile } from "./browser-case-profile-target.js";
 
 const MOBILE_CAPABILITIES: Record<"android" | "ios", TargetCapability[]> = {
   android: [
@@ -66,20 +65,7 @@ export function buildTargetProfiles(input: {
   }));
   const browsers = input.targets
     .filter((target) => target.kind === "browser")
-    .map((target) => {
-      const browserCaseProfile = browserCaseProfileForTarget(target);
-      return {
-        id: `browser:${target.id}`,
-        targetId: target.id,
-        source: "browser" as const,
-        platform: "browser" as const,
-        name: target.name,
-        viewport: { ...browserCaseProfile.viewport },
-        browserCaseProfile,
-        capabilities: [...BROWSER_TARGET_CAPABILITIES],
-        observedAt,
-      };
-    });
+    .map((target) => managedBrowserTargetProfile(target, observedAt));
   return [...mobile, ...browsers].sort((left, right) => left.id.localeCompare(right.id));
 }
 

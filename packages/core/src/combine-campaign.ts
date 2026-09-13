@@ -248,6 +248,18 @@ async function campaignEntries(projectId: string): Promise<string[]> {
   }
 }
 
+/** Disk campaigns for one project. Callers that need live job status must project. */
+export async function listStoredCombineCampaigns(
+  projectId: string,
+): Promise<StoredCombineCampaign[]> {
+  const campaigns = await Promise.all(
+    (await campaignEntries(projectId)).map((campaignId) =>
+      readCombineCampaign(projectId, campaignId),
+    ),
+  );
+  return campaigns.filter((campaign): campaign is StoredCombineCampaign => Boolean(campaign));
+}
+
 /** Find unfinished work for one canonical Combine. This is used as a
  * server-side backstop when a browser loses its opaque workflow reference. */
 export async function findActiveCombineCampaignForCombine(
@@ -547,10 +559,17 @@ export async function projectCombineCampaign(
     (item) => item.status === "failed" || item.status === "blocked" || item.status === "cancelled",
   );
   const blocked = cases.some((item) => item.status === "blocked");
+  const preflightBlocked =
+    blocked &&
+    cases.every((item) => item.status === "blocked" && !item.jobId) &&
+    !active &&
+    pendingSelected.length === 0;
   const pilot = cases.find((item) => item.phase === "pilot");
   let status = campaign.status;
   if (campaign.status !== "cancelled") {
-    if (blocked) {
+    if (preflightBlocked) {
+      status = "completed-with-problems";
+    } else if (blocked) {
       status = "needs-review";
     } else if (pendingSelected.length) {
       if (pilot?.status === "queued" || pilot?.status === "running") status = "pilot-running";

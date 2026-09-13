@@ -2,11 +2,17 @@ import { createHash } from "node:crypto";
 import { PNG } from "pngjs";
 import type {
   NormalizedSemanticNode,
+  ScreenIdentityIgnoreRegion,
   ScreenIdentityObservation,
   SemanticField,
   VolatileSemanticKind,
 } from "@relay/protocol";
 import type { SnapshotNode } from "./device.js";
+import {
+  conversationHistoryLabels,
+  isConversationHistoryNode,
+} from "./screen-identity-history.js";
+import { isTypeaheadOrAnnouncerNode, typedComposerValues } from "./screen-identity-typeahead.js";
 import { SYSTEM_INPUT_IDENTIFIER, systemInputNodeIndexes } from "./snapshot-app-content.js";
 
 export type {
@@ -16,6 +22,7 @@ export type {
   VolatileSemanticKind,
   VolatileSemanticSignal,
 } from "@relay/protocol";
+export type { ScreenIdentityIgnoreRegion } from "@relay/protocol";
 
 export type ScreenIdentitySignalKind =
   | "exact-fingerprint"
@@ -96,6 +103,19 @@ const TRAILING_COUNTER = new RegExp(
 );
 const PAGE_COUNTER = /\b(page|step)\s+\d+\s+(of)\s+\d+\b/giu;
 const PURE_COUNTER = /^\s*\d+(?:[.,]\d+)?\s*$/u;
+const COMPOSER_HINT =
+  /\b(?:type [@/#] to [a-z0-9 ]+|type to (?:imagine|grok)\b|drag and drop [a-z0-9 ]+|switch to (?:build|ask) mode(?: to [a-z0-9 ]*)?|ask grok anything)\b/giu;
+const GENERATED_DOM_ID = /\bradix-_[a-z0-9_-]+/giu;
+const LANDMARK_DUMP_ROLE = /^(?:div|main|section)$/u;
+const COMPOSER_ROLE = /^(?:textbox|textarea|searchbox)$/u;
+const PAGE_TITLE_ROLE = /^(?:h1|heading)$/u;
+const HEADER_MAX_Y = 100;
+const NAV_RAIL_MAX_X = 88;
+const COMPOSER_BAND_PX = 110;
+const CONSENT_LABEL =
+  /^(?:reject all(?: cookies)?|accept all(?: cookies)?|cookies? settings|dismiss cookie notice|cookie policy|cookie notice)$/iu;
+const CONSENT_IDENTIFIER = /cookie[-_]?(?:banner|notice|consent)/iu;
+const CONSENT_COPY = /essential cookies|optional cookies help with performance/iu;
 
 type MutableNormalization = {
   value: string;
@@ -123,6 +143,7 @@ function normalizeText(value: string | undefined, field: SemanticField): Mutable
   if (!state.value) return state;
 
   replaceVolatile(state, UUID, "<uuid>", "uuid");
+  replaceVolatile(state, GENERATED_DOM_ID, "<generated-id>", "generated-id");
   if (field !== "identifier") {
     replaceVolatile(state, CLOCK, "<clock>", "clock");
     replaceVolatile(state, ISO_DATE, "<date>", "date");
@@ -135,6 +156,7 @@ function normalizeText(value: string | undefined, field: SemanticField): Mutable
     replaceVolatile(state, PAGE_COUNTER, "$1 <count> $2 <count>", "counter");
     replaceVolatile(state, LEADING_COUNTER, "<count> $1", "counter");
     replaceVolatile(state, TRAILING_COUNTER, "$1 <count>", "counter");
+    replaceVolatile(state, COMPOSER_HINT, "<placeholder>", "placeholder");
     if (PURE_COUNTER.test(state.value)) {
       state.value = "<count>";
       state.kinds.add("counter");
@@ -269,12 +291,145 @@ export function observeVisualScreenFingerprint(png: Uint8Array): string | undefi
   return digest(`relay-screen-visual:v1:${bits}`);
 }
 
+function compactCopy(value: string | undefined): string {
+  return (value ?? "").replace(/\s+/gu, " ").trim();
+}
+
+function isConsentChromeNode(node: SnapshotNode): boolean {
+  const role = (node.role ?? node.type ?? "").trim().toLocaleLowerCase();
+  const identifier = node.identifier ?? "";
+  if (CONSENT_IDENTIFIER.test(identifier)) return true;
+  const label = compactCopy(node.label);
+  const value = compactCopy(node.value);
+  if (role === "dialog" && /cookie|consent/iu.test(label)) return true;
+  if (CONSENT_COPY.test(label) || CONSENT_COPY.test(value)) return true;
+  return CONSENT_LABEL.test(label) || CONSENT_LABEL.test(value);
+}
+
+function isSvgPaintNode(node: SnapshotNode): boolean {
+  const role = (node.role ?? node.type ?? "").trim().toLocaleLowerCase();
+  return role === "g" || role === "path";
+}
+
+function isConsentOverlayAccessory(node: SnapshotNode): boolean {
+  const label = compactCopy(node.label).toLocaleLowerCase();
+  return label === "close" || label === "terms of service";
+}
+
+/** Named landmarks whose label is the page innerText dump, not a control. */
+function isLandmarkDumpNode(node: SnapshotNode): boolean {
+  const role = (node.role ?? node.type ?? "").trim().toLocaleLowerCase();
+  if (!LANDMARK_DUMP_ROLE.test(role) || node.hittable === true || !node.identifier?.trim()) {
+    return false;
+  }
+  const label = node.label ?? "";
+  return label.length >= 80 || (label.match(/\n/g)?.length ?? 0) >= 3;
+}
+
+function nodeRole(node: SnapshotNode): string {
+  return (node.role ?? node.type ?? "").trim().toLocaleLowerCase();
+}
+
+function composerBands(nodes: readonly SnapshotNode[]): Array<{ top: number; bottom: number }> {
+  return nodes.flatMap((node) => {
+    const rect = node.rect;
+    if (!rect || !COMPOSER_ROLE.test(nodeRole(node))) return [];
+    return [
+      {
+        top: rect.y - COMPOSER_BAND_PX,
+        bottom: rect.y + rect.height + COMPOSER_BAND_PX,
+      },
+    ];
+  });
+}
+
+/**
+ * Scrollable transcript, suggestion chips, and gallery tiles. Chrome is the
+ * header, page title, side rail, and the composer cluster. Nodes without a
+ * rect stay in identity so callers that omit geometry do not lose controls.
+ */
+function isDynamicContentBody(
+  node: SnapshotNode,
+  bands: Array<{ top: number; bottom: number }>,
+): boolean {
+  const rect = node.rect;
+  if (!rect || bands.length === 0) return false;
+  const role = nodeRole(node);
+  if (PAGE_TITLE_ROLE.test(role) || COMPOSER_ROLE.test(role)) return false;
+  if (rect.y < HEADER_MAX_Y) return false;
+  if (rect.x < NAV_RAIL_MAX_X && rect.width < 280) return false;
+  const mid = rect.y + rect.height / 2;
+  if (bands.some((band) => mid >= band.top && mid <= band.bottom)) return false;
+  return true;
+}
+
+export type ObserveScreenIdentityOptions = {
+  ignoreRegions?: readonly ScreenIdentityIgnoreRegion[];
+};
+
+function snapshotFrame(
+  nodes: readonly SnapshotNode[],
+): { width: number; height: number } | undefined {
+  let width = 0;
+  let height = 0;
+  for (const node of nodes) {
+    const rect = node.rect;
+    if (!rect) continue;
+    width = Math.max(width, rect.x + rect.width);
+    height = Math.max(height, rect.y + rect.height);
+  }
+  if (width <= 0 || height <= 0) return undefined;
+  return { width, height };
+}
+
+function pixelIgnoreRegions(
+  regions: readonly ScreenIdentityIgnoreRegion[],
+  nodes: readonly SnapshotNode[],
+): ScreenIdentityIgnoreRegion[] {
+  const frame = snapshotFrame(nodes);
+  return regions.map((region) => {
+    const unit =
+      region.x <= 1 &&
+      region.y <= 1 &&
+      region.width <= 1 &&
+      region.height <= 1 &&
+      region.x + region.width <= 1.000_001 &&
+      region.y + region.height <= 1.000_001;
+    if (!unit || !frame) return region;
+    return {
+      ...region,
+      x: region.x * frame.width,
+      y: region.y * frame.height,
+      width: region.width * frame.width,
+      height: region.height * frame.height,
+    };
+  });
+}
+
+function nodeOverlapsIgnoreRegion(
+  node: SnapshotNode,
+  regions: readonly ScreenIdentityIgnoreRegion[],
+): boolean {
+  const rect = node.rect;
+  if (!rect || regions.length === 0) return false;
+  const right = rect.x + rect.width;
+  const bottom = rect.y + rect.height;
+  return regions.some((region) => {
+    const regionRight = region.x + region.width;
+    const regionBottom = region.y + region.height;
+    return rect.x < regionRight && right > region.x && rect.y < regionBottom && bottom > region.y;
+  });
+}
+
 /**
  * Converts a native accessibility snapshot into stable, visible semantics.
  * Geometry, references, traversal indexes, and screenshots are intentionally
  * excluded: they are observations of a screen, not its identity.
  */
-export function observeScreenIdentity(nodes: readonly SnapshotNode[]): ScreenIdentityObservation {
+export function observeScreenIdentity(
+  nodes: readonly SnapshotNode[],
+  options?: ObserveScreenIdentityOptions,
+): ScreenIdentityObservation {
   const ignoredSystemInput = systemInputNodeIndexes(nodes);
   const applicationNodes = nodes.filter(
     (node) =>
@@ -296,9 +451,23 @@ export function observeScreenIdentity(nodes: readonly SnapshotNode[]): ScreenIde
     const label = node.label?.trim() ?? "";
     return /notifications?\s*:$/iu.test(label) || /^do\s+not\s+disturb\b/iu.test(label);
   };
-  const identityNodes = (
-    applicationNodes.some((node) => node.bundleId) ? applicationNodes : nodes
-  ).filter((node) => includeDeviceState || !bannerNode(node));
+  const candidateNodes = applicationNodes.some((node) => node.bundleId) ? applicationNodes : nodes;
+  const consentOverlay = candidateNodes.some((node) => isConsentChromeNode(node));
+  const bodyBands = composerBands(candidateNodes);
+  const typedValues = typedComposerValues(candidateNodes);
+  const historyLabels = conversationHistoryLabels(candidateNodes);
+  const identityNodes = candidateNodes.filter(
+    (node) =>
+      (includeDeviceState || !bannerNode(node)) &&
+      !isConsentChromeNode(node) &&
+      !isSvgPaintNode(node) &&
+      !(consentOverlay && isConsentOverlayAccessory(node)) &&
+      !isLandmarkDumpNode(node) &&
+      !isTypeaheadOrAnnouncerNode(node, typedValues) &&
+      !isConversationHistoryNode(node, historyLabels) &&
+      !isDynamicContentBody(node, bodyBands) &&
+      !nodeOverlapsIgnoreRegion(node, pixelIgnoreRegions(options?.ignoreRegions ?? [], nodes)),
+  );
   const entries = nodes
     .filter((node) => identityNodes.includes(node))
     .filter((node) => node.index === undefined || !ignoredSystemInput.has(node.index))

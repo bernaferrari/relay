@@ -278,6 +278,21 @@ export function assertActions(actions: ActionSpec[], label: string): void {
             )
           )
             appMapFail("invalid-map", `${item}.assertion.match is unsupported`);
+        } else if (assertion.kind === "visual") {
+          if (!Array.isArray(assertion.criteria) || assertion.criteria.length === 0) {
+            appMapFail(
+              "invalid-map",
+              `${item}.assertion.criteria must be a non-empty string array`,
+            );
+          }
+        } else if (assertion.kind === "semantic") {
+          requiredText(assertion.input, `${item}.assertion.input`);
+          if (!Array.isArray(assertion.criteria) || assertion.criteria.length === 0) {
+            appMapFail(
+              "invalid-map",
+              `${item}.assertion.criteria must be a non-empty string array`,
+            );
+          }
         } else appMapFail("invalid-map", `${item}.assertion.kind is unsupported`);
         break;
       }

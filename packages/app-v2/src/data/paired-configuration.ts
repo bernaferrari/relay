@@ -313,16 +313,51 @@ export function compileSuiteTargets(
       );
     });
     const claim = profile ? `${profile.id}:${configuration.accountId ?? "signed-out"}` : undefined;
-    if (profile && claim && !claimed.has(claim) && !profileIds.includes(profile.id)) {
-      profileIds.push(profile.id);
+    if (profile && claim && !claimed.has(claim)) {
       claimed.add(claim);
-    } else if (profile && profileIds.includes(profile.id)) {
-      unresolved.push(configuration.name);
+      if (!profileIds.includes(profile.id)) profileIds.push(profile.id);
     } else {
       unresolved.push(configuration.name);
     }
   }
   return { profileIds, unresolved };
+}
+
+export function compilePlanProfileAccounts(
+  workspace: PairedConfigurationWorkspace,
+  environments: readonly {
+    id: string;
+    targetId: string;
+    accountId?: string;
+    authenticationOptions?: readonly { id?: string; reference?: string }[];
+  }[],
+): { profileId: string; engine?: BrowserEngine; account: ProductRunAccountBinding }[] {
+  const accounts: { profileId: string; engine?: BrowserEngine; account: ProductRunAccountBinding }[] =
+    [];
+  const claimed = new Set<string>();
+  for (const configuration of compilePairedConfigurations(workspace)) {
+    const account = accountBinding(configuration);
+    if (!account) continue;
+    const profile = environments.find((item) => {
+      if (item.targetId !== configuration.targetId) return false;
+      if (configuration.coverage.kind === "signed-out") return !item.accountId;
+      const accountId = configuration.accountId;
+      const options = item.authenticationOptions ?? [];
+      return (
+        item.accountId === accountId ||
+        options.some((option) => option.id === accountId || option.reference === accountId)
+      );
+    });
+    const claim = profile ? `${profile.id}:${configuration.accountId ?? "signed-out"}` : undefined;
+    if (!profile || !claim || claimed.has(claim)) continue;
+    claimed.add(claim);
+    accounts.push({
+      profileId: profile.id,
+      account,
+      ...(configuration.engine ? { engine: configuration.engine } : {}),
+    });
+  }
+  return accounts;
 }
 
 export function compileRepeatScope(input: {

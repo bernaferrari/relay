@@ -321,6 +321,29 @@ const assertionSpec = z.discriminatedUnion("kind", [
       match: z.enum(["exact", "contains", "not-contains"]),
     })
     .strict(),
+  z
+    .object({
+      kind: z.literal("visual"),
+      criteria: z.array(text("Visual criterion")).min(1).max(20),
+      region: z
+        .object({
+          x: z.number(),
+          y: z.number(),
+          width: z.number().positive(),
+          height: z.number().positive(),
+        })
+        .strict()
+        .optional(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("semantic"),
+      input: text("Extracted or observed reply to judge"),
+      criteria: z.array(text("Semantic criterion")).min(1).max(20),
+      requireAgreement: z.boolean().optional(),
+    })
+    .strict(),
 ]);
 
 const validationRecipeStep = z.discriminatedUnion("kind", [
@@ -339,6 +362,7 @@ const validationRecipeStep = z.discriminatedUnion("kind", [
       scope: stepTarget.optional(),
       labels: z.array(z.string()).min(1),
       timeoutMs: natural("Optional assertion timeout in milliseconds").optional(),
+      extras: z.enum(["forbid", "allow"]).optional(),
     })
     .strict(),
   z
@@ -372,6 +396,10 @@ const validationRecipeStep = z.discriminatedUnion("kind", [
         .min(500)
         .max(30_000)
         .optional(),
+      maxMs: natural("Optional maximum acceptable response duration in milliseconds")
+        .min(1)
+        .max(900_000)
+        .optional(),
     })
     .strict(),
   z
@@ -385,6 +413,41 @@ const validationRecipeStep = z.discriminatedUnion("kind", [
       requireAgreement: z.boolean().optional(),
       secondProvider: z.string().optional(),
       secondModel: z.string().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("evaluate-visual"),
+      criteria: z.array(text("Visual criterion")).min(1).max(20),
+      threshold: z.number().min(0).max(1).optional(),
+      provider: z.string().optional(),
+      model: z.string().optional(),
+      requireAgreement: z.boolean().optional(),
+      secondProvider: z.string().optional(),
+      secondModel: z.string().optional(),
+      region: z
+        .object({
+          x: z.number(),
+          y: z.number(),
+          width: z.number().positive(),
+          height: z.number().positive(),
+        })
+        .strict()
+        .optional(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("identity-ignore"),
+      region: z
+        .object({
+          x: z.number(),
+          y: z.number(),
+          width: z.number().positive(),
+          height: z.number().positive(),
+        })
+        .strict(),
+      name: text("Human name for the ignored region").optional(),
     })
     .strict(),
 ]);

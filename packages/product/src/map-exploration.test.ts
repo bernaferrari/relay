@@ -62,6 +62,30 @@ test("map projection presents bounded known screens, paths, coverage, and failur
   assert.doesNotMatch(JSON.stringify(overview), /targetProfile|graph/iu);
 });
 
+test("map projection lists authored identity-ignore names on a screen", () => {
+  const overview = projectProductMap({
+    id: "chat",
+    name: "Chat",
+    revision: 1,
+    screens: {
+      conversation: {
+        id: "conversation",
+        title: "Continue conversation",
+        variantIds: [],
+        identity: {
+          schemaVersion: 1,
+          fingerprint: "a".repeat(64),
+          ignoreRegions: [{ name: "reply body", x: 0.07, y: 0.125, width: 0.93, height: 0.68 }],
+        },
+      },
+    },
+    connections: {},
+    tests: {},
+    targetResults: {},
+  } as never);
+  assert.deepEqual(overview.screens[0]?.ignoreRegionNames, ["reply body"]);
+});
+
 test("map projection handles realistic empty maps without inventing paths", () => {
   const overview = projectProductMap({
     id: "empty",

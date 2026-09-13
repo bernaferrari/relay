@@ -1,4 +1,5 @@
 import type { ExecutionTargetProvider } from "@relay/protocol";
+import { DEFAULT_BROWSER_HOST_CAPACITY } from "./browser-account-lane.js";
 
 export type TargetWorkerAssignment = {
   /** A one-target execution lane. This is deliberately not a host identity. */
@@ -352,14 +353,25 @@ export function defaultTargetWorkerAssignment(input: {
     : configuredCapacity(`RELAY_${platform.toUpperCase()}_WORKER_CAPACITY`);
   const configuredHostCapacity = canonicalHostCapacity ?? legacyHostCapacity;
   const explicitHostId = input.hostWorkerId?.trim() || input.workerId?.trim();
-  const hostCapacity = input.hostWorkerCapacity ?? input.workerCapacity ?? configuredHostCapacity;
+  const defaultBrowserHost =
+    !isRemoteProvider && platform === "browser" && configuredHostCapacity === undefined
+      ? DEFAULT_BROWSER_HOST_CAPACITY
+      : undefined;
+  const hostCapacity =
+    input.hostWorkerCapacity ??
+    input.workerCapacity ??
+    configuredHostCapacity ??
+    defaultBrowserHost;
   return {
     targetId,
     workerId: isRemoteProvider
       ? providerTargetLaneId(remoteProvider, platform, targetId)
       : localTargetLaneId(platform, targetId),
     capacity: 1,
-    ...((explicitHostId || configuredHostCapacity !== undefined) && hostCapacity !== undefined
+    ...((explicitHostId ||
+      configuredHostCapacity !== undefined ||
+      defaultBrowserHost !== undefined) &&
+    hostCapacity !== undefined
       ? {
           host: {
             workerId: explicitHostId || `local:${platform}:host`,

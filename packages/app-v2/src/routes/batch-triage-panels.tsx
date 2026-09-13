@@ -9,6 +9,10 @@ import { Link } from "@tanstack/react-router";
 import { ChevronDown, ChevronRight, ExternalLink } from "lucide-react";
 import { useState } from "react";
 import {
+  classifyProductResultCell,
+  productResultCellLabel,
+} from "@relay/product/plan-result-cells";
+import {
   batchTriageCaption,
   buildBatchMatrix,
   humanizeBatchIdentity,
@@ -275,6 +279,8 @@ function BatchCaseResult({
   const label = caseValues(item);
   const problem = isBatchCaseProblem(item);
   const review = batchTriageCaption(item);
+  const cellKind = classifyProductResultCell(item);
+  const cellLabel = productResultCellLabel(cellKind);
   return (
     <div
       className={`relay-batch-result grid items-center gap-3 ${
@@ -304,6 +310,9 @@ function BatchCaseResult({
           >
             {label}
           </strong>
+          <small className="text-[12px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
+            {cellLabel}
+          </small>
           {item.error && problem ? (
             <small className="text-[13px] leading-5 text-muted-foreground">{item.error}</small>
           ) : null}
@@ -314,6 +323,9 @@ function BatchCaseResult({
       ) : (
         <span className="grid min-w-0 gap-1">
           <strong className="truncate text-[15px] font-medium text-foreground">{label}</strong>
+          <small className="text-[12px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
+            {cellLabel}
+          </small>
           {review ? (
             <small className="text-[12px] leading-5 text-muted-foreground">{review}</small>
           ) : null}
@@ -348,7 +360,7 @@ export function sortBatchCasesForDisplay(
 function caseValues(item: ProductBatchCase): string {
   if (item.world?.trim()) return item.world;
   const values = Object.values(item.values).map(humanizeBatchIdentity);
-  return values.length ? values.join(" · ") : item.phase === "pilot" ? "Pilot" : "Default data";
+  return values.length ? values.join(" · ") : item.phase === "pilot" ? "One case" : "Default data";
 }
 
 function failureKind(kind: ProductBatchFailureCluster["kind"]): string {

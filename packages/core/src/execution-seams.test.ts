@@ -60,6 +60,35 @@ test("campaign firewall recognizes only a frozen source-proven warm leaf", () =>
   assert.equal(independentlySourceProvenLeafRecipe(check, context), false);
 });
 
+test("in-place chrome wait-for is a source-proven leaf", () => {
+  const check: NonNullable<RecipeStep["check"]> = {
+    id: "ask",
+    title: "Ask",
+    recovery: {
+      groupId: "ask",
+      mode: "warm-transition",
+      recipeId: "warm-leaf",
+      transitionId: "ask-3x5",
+    },
+    transitionDependencies: [
+      {
+        connectionId: "ask-3x5",
+        originScreenId: "home",
+        destination: { kind: "end" },
+      },
+    ],
+  };
+  const context = {
+    log: () => undefined,
+    recipeGraph: {
+      "warm-leaf": {
+        steps: [{ kind: "wait-for", target: { label: "Library" }, timeoutMs: 5_000 }],
+      },
+    },
+  } as unknown as RecipeStepContext;
+  assert.equal(independentlySourceProvenLeafRecipe(check, context), true);
+});
+
 test("reusable flow scopes inherited inputs and delegates nested steps", async () => {
   const resolvedInputs = { inherited: "outside" };
   const artifacts: { kind: string; capturedAt: number; data: unknown }[] = [];
@@ -274,6 +303,9 @@ test("session factory freezes browser environment identity across queue and retr
   assert(Object.isFrozen(job.browserCaseProfile?.viewport));
   assert.equal(job.targetProfile?.browserCaseProfile?.locale, "pt-BR");
   assert(Object.isFrozen(job.targetProfile));
+  assert.equal(job.workerId, "local:browser:target:chat%23signed-out");
+  assert.equal(job.hostWorkerId, "local:browser:host");
+  assert.equal(job.hostWorkerCapacity, 8);
 
   const retry = createSessionJob(retryInputFromJob(job), {
     findJob: (id) => (id === job.id ? job : undefined),

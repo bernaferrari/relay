@@ -116,10 +116,33 @@ describe("Batch review controls", () => {
     await render({
       getReport: async () => report,
       getFailureClusters: async () => ({ campaignId: "batch-1", clusters: [] }),
+      getFindings: async () => ({
+        schemaVersion: 1,
+        batchId: "batch-1",
+        locales: ["en"],
+        analysis: {
+          schemaVersion: 1,
+          sessionId: "s1",
+          generatedAt: 1,
+          baselineLocale: "en",
+          findings: [],
+          critical: 0,
+          warnings: 0,
+          affectedScreens: 0,
+        },
+        coverage: { frames: 0, inspectedFrames: 0 },
+        cases: [],
+      }),
       triage,
     } as unknown as RunAcrossProductService);
 
-    expect(document.querySelector('[aria-label="Review status"]')).not.toBeNull();
+    const reviewStatus = document.querySelector('[aria-label="Review status"]');
+    expect(reviewStatus).not.toBeNull();
+    expect(reviewStatus).not.toBeInstanceOf(HTMLSelectElement);
+    expect(document.body.textContent).toContain("No findings");
+    expect(document.body.textContent).toContain("Check Sign-ins");
+    expect(document.body.textContent).toContain("never accept a visual baseline");
+    expect(document.body.textContent).toContain("Accept a baseline from a Report");
     expect(document.body.textContent).toContain("Assign to me");
     expect(document.body.textContent).toContain("Add note");
     const checkbox = document.querySelector<HTMLButtonElement>(

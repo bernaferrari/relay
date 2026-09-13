@@ -147,7 +147,7 @@ export type CampaignCapacityPlanInput = {
  * than guessed from its text. */
 export type LocalCampaignCapacityTargetInput = {
   targetId: string;
-  platform: "android" | "ios";
+  platform: "android" | "ios" | "browser";
 };
 
 /** The source of one duration estimate. A supplied estimate is useful for
@@ -173,7 +173,7 @@ export type CampaignCapacityDurationInput = {
  */
 export type CampaignCapacityDurationCohort = {
   targetId: string;
-  platform: "android" | "ios";
+  platform: "android" | "ios" | "browser";
   testId: string;
   action: string;
 };
@@ -276,7 +276,7 @@ export type LocalCampaignCapacityPreflightInput = {
   targets: LocalCampaignCapacityTargetInput[];
   workItems: number;
   /** Every work item is explicitly assigned to its platform partition. */
-  workItemsByPlatform: Partial<Record<"android" | "ios", number>>;
+  workItemsByPlatform: Partial<Record<"android" | "ios" | "browser", number>>;
   duration: CampaignCapacityDurationInput;
   /** Whole critical-path budget requested by the caller. */
   deadlineMs: number;
@@ -298,8 +298,8 @@ export type LocalCampaignCapacityTargetReason =
 /** The concrete local observation used to derive one planner target. */
 export type LocalCampaignCapacityTargetFact = {
   targetId: string;
-  requestedPlatform: "android" | "ios";
-  observedPlatform?: "android" | "ios";
+  requestedPlatform: "android" | "ios" | "browser";
+  observedPlatform?: "android" | "ios" | "browser";
   availability: CampaignCapacityTargetAvailability;
   lease: CampaignCapacityTargetLease;
   workerId: string;

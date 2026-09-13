@@ -23,6 +23,7 @@ import {
 } from "./batch-triage";
 import { BatchTriageControls } from "./batch-triage-controls";
 import { BatchFailureClusters, BatchResultMatrix } from "./batch-triage-panels";
+import { BatchFindingsLead, BatchFindingsPanel, BatchStabilityPanel } from "./batch-plan-review";
 import { PageLoading, RecordingProblem } from "./recording-shared";
 
 const routeApi = getRouteApi("/batches/$batchId");
@@ -103,6 +104,12 @@ export function BatchPage() {
     onSuccess: () => refreshBatch(),
   });
   const active = report?.status === "pilot-running" || report?.status === "running";
+  const findings = useQuery({
+    queryKey: ["run-across", "batch", batchId, "findings"],
+    queryFn: () => runAcrossService.getFindings(batchId),
+    enabled: Boolean(report) && !active,
+    staleTime: 10_000,
+  });
   const canContinue = report?.status === "ready-to-continue" || report?.status === "needs-review";
   const clusterValues = clusters.data?.clusters ?? [];
   const selectedClusterCases = selectedClusterCaseIds(clusterValues, selectedClusters);
@@ -199,8 +206,8 @@ export function BatchPage() {
   return (
     <LibraryPage className="relay-batch-page">
       <PageHeader
-        crumbs={[{ label: "Runs", to: "/runs" }, { label: report?.title ?? "Batch" }]}
-        title={report?.title ?? "Batch"}
+        crumbs={[{ label: "Results", to: "/runs" }, { label: report?.title ?? "Plan run" }]}
+        title={report?.title ?? "Plan run"}
         actions={
           report ? (
             <>
@@ -219,7 +226,7 @@ export function BatchPage() {
         }
       />
 
-      {batch.isPending ? <PageLoading label="Loading Batch…" /> : null}
+      {batch.isPending ? <PageLoading label="Loading results…" /> : null}
       <RecordingProblem
         error={
           batch.error ??
@@ -236,27 +243,31 @@ export function BatchPage() {
 
       {report ? (
         <>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {report.report.headline}. {report.report.detail}
+          </p>
+          {findings.data ? <BatchFindingsLead report={findings.data} /> : null}
           {active ? (
             <div
               className="relay-batch-active mt-3.5 flex items-center gap-2.5 text-sm text-muted-foreground"
               role="status"
             >
               <span className="size-2 shrink-0 rounded-full bg-primary" aria-hidden="true" />
-              <p>Relay is running this Batch. Results update automatically.</p>
+              <p>Relay is running this Plan. Results update automatically.</p>
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => cancel.mutate()}
                 disabled={cancel.isPending}
               >
-                {cancel.isPending ? "Stopping…" : "Stop Batch"}
+                {cancel.isPending ? "Stopping…" : "Stop"}
               </Button>
             </div>
           ) : null}
 
           {canContinue ? (
             <section className="relay-batch-next-step mt-5 rounded-xl border border-primary/30 bg-primary/5 p-5">
-              <h2>Review the pilot before continuing</h2>
+              <h2>Review before continuing</h2>
               <p>Check the representative Run before Relay starts the remaining cases.</p>
               <div className="relay-form-actions flex flex-wrap items-center gap-2.5">
                 <Button
@@ -271,7 +282,7 @@ export function BatchPage() {
                   onClick={() => cancel.mutate()}
                   disabled={cancel.isPending}
                 >
-                  {cancel.isPending ? "Stopping…" : "Stop Batch"}
+                  {cancel.isPending ? "Stopping…" : "Stop"}
                 </Button>
               </div>
             </section>
@@ -304,10 +315,24 @@ export function BatchPage() {
             />
           ) : null}
 
+          <BatchStabilityPanel report={report} />
+
+          {findings.data ? (
+            <BatchFindingsPanel
+              report={findings.data}
+              actorId={actorId}
+              notes={notes}
+              onNotes={(next) => {
+                setNotes(next);
+                void platform.storage.set(batchReviewNotesKey(batchId), JSON.stringify(next));
+              }}
+            />
+          ) : null}
+
           <div
             className="relay-batch-selection mt-4 grid gap-3"
             role="region"
-            aria-label="Selected Batch cases"
+            aria-label="Selected cases"
           >
             <BatchTriageControls
               selectedCount={totalSelected}
@@ -372,8 +397,8 @@ export function BatchPage() {
           ) : null}
           {report.status === "cancelled" && !report.runIds.length ? (
             <EmptyState
-              title="Batch stopped"
-              detail="No cases were started. Any pilot evidence remains durable."
+              title="Stopped"
+              detail="No cases were started. Any representative-run evidence remains durable."
             />
           ) : null}
         </>

@@ -29,6 +29,8 @@ import {
   readReconcileReceipt,
   rememberReconcileReceipt,
   completeReconcileReceipt,
+  controlTargetIdForBrowserLane,
+  managedBrowserTargetIdFromSchedulingKey,
   serializeReconciliation,
   openApp,
   recoverSupervisedTargetRuntime,
@@ -50,6 +52,7 @@ import {
   projectRoleAllows,
   summarizeLaunchedForeground,
   type LocalAgentDeviceExecutionTargetRef,
+  type LocalBrowserExecutionTargetRef,
   type OperationInput,
   type TargetSupervisorHealth,
 } from "@relay/protocol";
@@ -190,6 +193,18 @@ function requestedRecoveryFenceAssignmentId(body: {
   return body.recoveryFenceAssignmentId.trim();
 }
 
+function localBrowserExecutionTarget(targetId: string): LocalBrowserExecutionTargetRef {
+  const target = executionTargetRefFromTargetContext({
+    kind: "browser",
+    platform: "browser",
+    targetId,
+  });
+  if (target.kind !== "local-browser") {
+    throw new Error("Local target recovery did not resolve a managed browser identity");
+  }
+  return target;
+}
+
 function localDeviceExecutionTarget(
   serial: string,
   platform: "android" | "ios",
@@ -263,10 +278,13 @@ async function resolveSupervisedRuntimeTarget(input: {
   if (device && (device.platform === "android" || device.platform === "ios")) {
     return { id: device.serial, platform: device.platform };
   }
+  const managedId = managedBrowserTargetIdFromSchedulingKey(input.serial);
   const browser = (await input.runtime.listTargets().catch(() => [])).find(
-    (candidate) => candidate.id === input.serial && candidate.kind === "browser",
+    (candidate) =>
+      candidate.kind === "browser" &&
+      (candidate.id === input.serial || candidate.id === managedId),
   );
-  if (browser) return { id: browser.id, platform: "browser" };
+  if (browser) return { id: managedId ? input.serial : browser.id, platform: "browser" };
   throw new HttpError(404, `Target ${input.serial} is not connected`);
 }
 
@@ -355,7 +373,7 @@ export async function handleTargetRuntimeRoute(context: {
     if (!new Set(["applied", "not-applied", "ambiguous"]).has(body.outcome)) {
       throw new HttpError(400, "outcome must be applied, not-applied, or ambiguous");
     }
-    await runtime.assertTargetControl(scope, serial);
+    await runtime.assertTargetControl(scope, controlTargetIdForBrowserLane(serial));
     return serializeReconciliation(serial, async () => {
       const receiptScope = { organizationId: scope.organizationId, projectId: scope.projectId };
       const latest = readReconcileReceipt({ ...receiptScope, serial, mutationId });
@@ -703,14 +721,22 @@ export async function handleTargetRuntimeRoute(context: {
     const device = (await runtime.listDevices().catch(() => [])).find(
       (candidate) => candidate.serial === serial,
     );
-    if (!device) throw new HttpError(409, `Target ${serial} is not connected`);
-    if (device.platform !== "ios" && device.platform !== "android") {
+    const browserTarget =
+      device === undefined
+        ? (await runtime.listTargets().catch(() => [])).find(
+            (candidate) => candidate.id === serial && candidate.kind === "browser",
+          )
+        : undefined;
+    if (!device && !browserTarget) throw new HttpError(409, `Target ${serial} is not connected`);
+    if (device && device.platform !== "ios" && device.platform !== "android") {
       throw new HttpError(
         400,
         "Automatic runtime recovery is available for connected devices only",
       );
     }
-    const executionTarget = localDeviceExecutionTarget(serial, device.platform);
+    const executionTarget = device
+      ? localDeviceExecutionTarget(serial, device.platform)
+      : localBrowserExecutionTarget(serial);
     if (assignment) {
       try {
         // Check the durable row before acquiring a device lease or starting a
@@ -732,13 +758,22 @@ export async function handleTargetRuntimeRoute(context: {
       }
     }
     await runtime.assertTargetControl(scope, serial);
-    const recovery = await runtime.recoverTarget(
-      serial,
-      reason,
-      force || Boolean(recoveryFenceAssignmentId),
-      device.platform,
-    );
-    runtime.recordTargetRecovery(serial, device.platform, recovery);
+    const recovery = device
+      ? await runtime.recoverTarget(
+          serial,
+          reason,
+          force || Boolean(recoveryFenceAssignmentId),
+          device.platform,
+        )
+      : {
+          serial,
+          recovered: true,
+          ready: true,
+          summary: "Relay verified the managed browser target.",
+          actions: [],
+          session: { status: "restored" as const, detail: "Ready for a fresh proof." },
+        };
+    if (device) runtime.recordTargetRecovery(serial, device.platform, recovery);
     await appendActivity({
       eventType: recovery.ready ? "target.recovery.completed" : "target.recovery.failed",
       resourceKind: "target",

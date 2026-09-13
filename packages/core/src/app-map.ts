@@ -115,6 +115,7 @@ export {
   type AppMapTestStepPatch,
   type AppMapTestStepPlacement,
 } from "./app-map/test-step-operations.js";
+export { freezeMissingBrowserCaseProfiles } from "./app-map/browser-profile-freeze.js";
 export {
   commitAppMapRecording,
   commitAppMapScreenCapture,

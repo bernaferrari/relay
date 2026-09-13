@@ -123,6 +123,52 @@ test("redacted frozen proof runs disable Playwright context video recording", as
     const session = await browserProofSessionForTarget(target.id);
     assert.equal(session.recordVideo, false);
     assert.equal(session.context.pages()[0]?.video(), null);
+    assert.equal(session.headless, true);
+  } finally {
+    await closeBrowserTarget(target.id, { mode: "proof" }).catch(() => undefined);
+    await deleteTarget(target.id).catch(() => undefined);
+  }
+});
+
+test("proof jobs stay headless when the saved browser target is headed", async (t) => {
+  try {
+    await access(CHROME);
+  } catch {
+    t.skip("Google Chrome is not installed");
+    return;
+  }
+  if (t.signal.aborted) return;
+
+  const target = await saveBrowserTarget({
+    id: "browser-headed-proof",
+    name: "Headed authoring browser",
+    startUrl,
+    headless: false,
+    environment: { viewport: { width: 900, height: 600 } },
+  });
+  const profile = compileBrowserEnvironment(target.browser?.environment ?? {});
+  const job = {
+    id: "headed-target-headless-proof",
+    targetKind: "browser",
+    browserTargetId: target.id,
+    targetContext: { kind: "browser", platform: "browser", targetId: target.id },
+    browserCaseProfile: profile,
+    projectId: "default",
+    artifacts: [],
+    evidencePolicy: {
+      schemaVersion: 1,
+      sensitive: {},
+      redaction: { enabled: false, source: "workspace", locked: false },
+    },
+  } as unknown as TestJob;
+  try {
+    await acquirePreparedSessionDevice(
+      job,
+      { browserTarget: target, deviceAvailable: true },
+      () => undefined,
+    );
+    const session = await browserProofSessionForTarget(target.id);
+    assert.equal(session.headless, true);
   } finally {
     await closeBrowserTarget(target.id, { mode: "proof" }).catch(() => undefined);
     await deleteTarget(target.id).catch(() => undefined);

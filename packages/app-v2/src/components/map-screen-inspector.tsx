@@ -7,6 +7,7 @@ import { useState } from "react";
 import { MapScreenPreview } from "./map-screen-preview";
 import { ScrollArea } from "@relay/ui-react/components/scroll-area";
 import { localeLabel } from "../lib/locale-label";
+import { SelectField } from "./filter-select";
 
 export function ScreenInspector({
   loadScreenshot,
@@ -132,33 +133,31 @@ export function ScreenInspector({
             {screen.description ? (
               <p className="text-xs leading-relaxed text-muted-foreground">{screen.description}</p>
             ) : null}
+            {screen.ignoreRegionNames?.length ? (
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                Ignores {screen.ignoreRegionNames.join(", ")}. Visual baselines compare chrome only.
+              </p>
+            ) : null}
             {variants.length > 1 ? (
-              <div className="space-y-2">
-                <label htmlFor="map-screen-capture" className="block text-xs font-medium">
-                  Capture <span className="text-muted-foreground">· {variants.length}</span>
-                </label>
-                <select
-                  id="map-screen-capture"
-                  value={selectedCapture?.id}
-                  className="h-9 w-full rounded-md border border-input bg-background px-2 text-xs focus-visible:outline-2 focus-visible:outline-ring"
-                  onChange={(event) =>
-                    setCaptureSelection({ screenId: screen.id, variantId: event.target.value })
-                  }
-                >
-                  {variants.map((variant, index) => (
-                    <option key={variant.id} value={variant.id}>
-                      {variant.locale ? `${localeLabel(variant.locale)} · ` : ""}
-                      {variant.capturedAt !== undefined
-                        ? new Date(variant.capturedAt).toLocaleString(undefined, {
-                            dateStyle: "medium",
-                            timeStyle: "short",
-                          })
-                        : `Capture ${variants.length - index}`}
-                      {index === 0 ? " · Latest" : ""}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <SelectField
+                id="map-screen-capture"
+                label={`Capture · ${variants.length}`}
+                value={selectedCapture?.id ?? ""}
+                options={variants.map((variant, index) => ({
+                  value: variant.id,
+                  label: `${variant.locale ? `${localeLabel(variant.locale)} · ` : ""}${
+                    variant.capturedAt !== undefined
+                      ? new Date(variant.capturedAt).toLocaleString(undefined, {
+                          dateStyle: "medium",
+                          timeStyle: "short",
+                        })
+                      : `Capture ${variants.length - index}`
+                  }${index === 0 ? " · Latest" : ""}`,
+                }))}
+                onValueChange={(variantId) =>
+                  setCaptureSelection({ screenId: screen.id, variantId })
+                }
+              />
             ) : null}
             {selectedCapture?.sourceRunId ? (
               <Link

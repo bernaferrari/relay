@@ -69,6 +69,16 @@ import { publish, now } from "./events.js";
 import { runAction, isActionId } from "./actions.js";
 import { describeTarget, type RecipeStep } from "./recipes.js";
 import { evaluateSemantic } from "./evaluation.js";
+import { setAndroidMobileData } from "./android-mobile-data.js";
+import { assertRecipeStepPlatformSupport } from "./recipe-platform-support.js";
+import {
+  runAppBackgroundStep,
+  runEvaluateVisualStep,
+  runIdentityIgnoreStep,
+  runJudgeConsensus,
+  runOfflineStep,
+  runUploadStep,
+} from "./recipe-runner-qa-steps.js";
 import {
   nodeText,
   nodeMatchesTarget,
@@ -97,6 +107,7 @@ async function runRequiredRecipeStep(
 ): Promise<void> {
   const { log, job } = ctx;
   rejectForbiddenCoverageEffect(step, ctx);
+  assertRecipeStepPlatformSupport(step);
   if (stepBreaksVerifiedScreen(step)) invalidateVerifiedScreen(ctx);
   switch (step.kind) {
     case "tap":
@@ -217,6 +228,7 @@ async function runRequiredRecipeStep(
       const timeout = Math.min(step.timeoutMs ?? DEFAULT_EXPECT_TIMEOUT_MS, MAX_WAIT_MS);
       const deadline = Date.now() + timeout;
       const expected = [...new Set(step.labels)].sort((a, b) => a.localeCompare(b));
+      const allowExtras = step.extras === "allow";
       let observed: string[] = [];
       let attempt = 0;
       while (attempt === 0 || Date.now() <= deadline) {
@@ -226,11 +238,15 @@ async function runRequiredRecipeStep(
         observed = step.scope
           ? labelsForScope(nodes, step.scope)
           : labelsForIdentifierPrefix(nodes, step.identifierPrefix ?? "");
-        if (JSON.stringify(observed) === JSON.stringify(expected)) break;
+        const missing = expected.filter((label) => !observed.includes(label));
+        const unexpected = observed.filter((label) => !expected.includes(label));
+        if (missing.length === 0 && (allowExtras || unexpected.length === 0)) break;
         if (Date.now() >= deadline) break;
         await sleep(Math.max(0, Math.min(400, deadline - Date.now())), device);
       }
-      if (JSON.stringify(observed) !== JSON.stringify(expected)) {
+      const missing = expected.filter((label) => !observed.includes(label));
+      const unexpected = observed.filter((label) => !expected.includes(label));
+      if (missing.length > 0 || (!allowExtras && unexpected.length > 0)) {
         const missing = expected.filter((label) => !observed.includes(label));
         const unexpected = observed.filter((label) => !expected.includes(label));
         const scopeDescription = step.scope
@@ -242,7 +258,7 @@ async function runRequiredRecipeStep(
             " (missing: " +
             (missing.length ? missing.join(", ") : "none") +
             "; unexpected: " +
-            (unexpected.length ? unexpected.join(", ") : "none") +
+            (allowExtras || unexpected.length === 0 ? "none" : unexpected.join(", ")) +
             ")",
         );
       }
@@ -307,101 +323,34 @@ async function runRequiredRecipeStep(
     }
     case "evaluate-semantic": {
       const input = readInput(ctx, step.input);
-      const evaluate = (provider?: string, model?: string) =>
-        evaluateSemantic({
-          input,
-          criteria: step.criteria,
-          threshold: step.threshold,
-          provider,
-          model,
-        });
-
-      if (step.requireAgreement) {
-        // Independent judges are deliberately started together. This keeps
-        // multi-model verification from doubling latency while preserving a
-        // separate artifact and provenance record for every judge.
-        const [firstOutcome, secondOutcome] = await Promise.allSettled([
-          evaluate(step.provider, step.model),
-          evaluate(step.secondProvider, step.secondModel),
-        ]);
-        if (firstOutcome.status === "rejected") {
-          const summary = `Primary judge unavailable: ${firstOutcome.reason instanceof Error ? firstOutcome.reason.message : String(firstOutcome.reason)}`;
-          job?.artifacts.push({
-            kind: "judge-consensus",
-            capturedAt: now(),
-            data: {
-              status: "uncertain",
-              error: summary,
-              second:
-                secondOutcome.status === "fulfilled"
-                  ? { ...secondOutcome.value, judge: "independent" }
-                  : undefined,
-            },
-          });
-          throw new Error(`judge uncertain: ${summary}`);
-        }
-        const result = firstOutcome.value;
-        (job?.artifacts ?? ctx.artifacts)?.push({
-          kind: "semantic-evaluation",
-          capturedAt: now(),
-          data: result,
-        });
-        log(
-          `semantic evaluation: ${result.status} · ${result.score.toFixed(2)} · ${result.summary}`,
-        );
-        if (secondOutcome.status === "rejected") {
-          const summary = `Independent judge unavailable: ${secondOutcome.reason instanceof Error ? secondOutcome.reason.message : String(secondOutcome.reason)}`;
-          job?.artifacts.push({
-            kind: "judge-consensus",
-            capturedAt: now(),
-            data: { status: "uncertain", first: result, error: summary },
-          });
-          throw new Error(`judge uncertain: ${summary}`);
-        }
-        const second = secondOutcome.value;
-        job?.artifacts.push({
-          kind: "semantic-evaluation",
-          capturedAt: now(),
-          data: { ...second, judge: "independent" },
-        });
-        log(
-          `independent evaluation: ${second.status} · ${second.score.toFixed(2)} · ${second.summary}`,
-        );
-        const agreed = result.status === second.status;
-        job?.artifacts.push({
-          kind: "judge-consensus",
-          capturedAt: now(),
-          data: { status: agreed ? result.status : "uncertain", agreed, first: result, second },
-        });
-        if (!agreed) {
-          throw new Error(
-            `judge uncertain: judges disagree (${result.provider}: ${result.status}; ${second.provider}: ${second.status})`,
-          );
-        }
-        if (result.status === "uncertain") {
-          throw new Error(`judge uncertain: ${result.summary}`);
-        }
-        if (result.status === "fail") {
-          throw new Error(`semantic assertion: ${result.summary}`);
-        }
-        break;
-      }
-
-      const result = await evaluate(step.provider, step.model);
-      (job?.artifacts ?? ctx.artifacts)?.push({
-        kind: "semantic-evaluation",
-        capturedAt: now(),
-        data: result,
-      });
-      log(`semantic evaluation: ${result.status} · ${result.score.toFixed(2)} · ${result.summary}`);
-      if (result.status === "uncertain") {
-        throw new Error(`judge uncertain: ${result.summary}`);
-      }
-      if (result.status === "fail") {
-        throw new Error(`semantic assertion: ${result.summary}`);
-      }
+      await runJudgeConsensus(
+        (provider, model) =>
+          evaluateSemantic({
+            input,
+            criteria: step.criteria,
+            threshold: step.threshold,
+            provider,
+            model,
+          }),
+        step,
+        ctx,
+        "semantic-evaluation",
+        "semantic assertion",
+      );
       break;
     }
+    case "evaluate-visual":
+      await runEvaluateVisualStep(device, step, ctx);
+      break;
+    case "identity-ignore":
+      runIdentityIgnoreStep(step, ctx);
+      break;
+    case "offline":
+      await runOfflineStep(device, step, ctx);
+      break;
+    case "upload":
+      await runUploadStep(device, step, ctx);
+      break;
     case "pause": {
       if (!job) throw new Error("pause: no job to pause (standalone step execution)");
       const checkpointStartedAt = now();
@@ -635,6 +584,10 @@ async function runRequiredRecipeStep(
       break;
     }
     case "app": {
+      if (step.action === "background") {
+        await runAppBackgroundStep(device, step, ctx);
+        break;
+      }
       if (step.action === "switcher") {
         await openAppSwitcher(device);
         break;
@@ -731,6 +684,18 @@ async function runRequiredRecipeStep(
       await rotateDevice(device, step.orientation);
       break;
     case "settings": {
+      if (step.setting === "mobile-data") {
+        if (step.state !== "on" && step.state !== "off") {
+          throw new Error('settings mobile-data requires state: "on" | "off"');
+        }
+        await setAndroidMobileData(step.state);
+        job?.artifacts.push({
+          kind: "device-setting",
+          capturedAt: now(),
+          data: { setting: "mobile-data", state: step.state },
+        });
+        break;
+      }
       const common = { ...base(), setting: step.setting };
       const result =
         step.setting === "appearance"

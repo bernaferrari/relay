@@ -70,7 +70,8 @@ export function buildBatchMatrix(
       columns.set(environmentId, {
         id: environmentId,
         label:
-          environmentId === fallbackEnvironment ? "Device" : humanizeBatchIdentity(environmentId),
+          item.identity?.environmentLabel ??
+          (environmentId === fallbackEnvironment ? "Device" : humanizeBatchIdentity(environmentId)),
         ...(item.identity?.environmentPlatform
           ? { platform: item.identity.environmentPlatform }
           : {}),

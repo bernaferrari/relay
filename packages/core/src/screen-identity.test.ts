@@ -217,6 +217,295 @@ test("volatile clocks, dates, percentages, counters, relative times, and UUIDs r
   assert.ok(first.nodes.some((node) => node.label === "<count> unread messages"));
 });
 
+test("rotating composer hints and generated radix ids do not redefine a browser screen", () => {
+  const chrome = (hint: string, radix: string): SnapshotNode[] => [
+    { role: "button", label: "Sign in", visibleToUser: true },
+    { role: "button", label: "Submit", identifier: "chat-submit", visibleToUser: true },
+    { role: "button", label: "Settings", identifier: radix, visibleToUser: true },
+    { role: "textarea", label: "Ask Grok anything", visibleToUser: true },
+    { role: "text", label: hint, visibleToUser: true },
+    {
+      role: "main",
+      identifier: "grok-content-area",
+      label: `Imagine Sign in ${hint} Fast`,
+      visibleToUser: true,
+    },
+  ];
+  const first = observe(chrome("Type @ to search your apps", "radix-_r_2q_"));
+  const second = observe(chrome("Drag and drop folders into chat", "radix-_r_8k_"));
+  const third = observe(chrome("Type / to use slash commands", "radix-_r_aa_"));
+
+  assert.equal(first.fingerprint, second.fingerprint);
+  assert.equal(first.fingerprint, third.fingerprint);
+  assert.equal(compareScreenIdentity(first, second).decision, "match");
+  assert.ok(first.volatileSignals.some((signal) => signal.kind === "placeholder"));
+  assert.ok(first.volatileSignals.some((signal) => signal.kind === "generated-id"));
+  assert.equal(
+    first.nodes.find((node) => node.role === "button" && node.label === "settings")?.identifier,
+    "<generated-id>",
+  );
+  assert.ok(first.nodes.some((node) => node.label === "<placeholder>"));
+});
+
+test("cookie consent chrome and landmark innerText dumps do not redefine a browser screen", () => {
+  const chrome: SnapshotNode[] = [
+    { role: "button", label: "Sign in", visibleToUser: true },
+    { role: "button", label: "Sign up", visibleToUser: true },
+    {
+      role: "button",
+      label: "Submit",
+      identifier: "chat-submit",
+      hittable: true,
+      visibleToUser: true,
+    },
+    { role: "textarea", label: "Ask Grok anything", visibleToUser: true },
+    { role: "h1", label: "What should we explore?", visibleToUser: true },
+    { role: "text", label: "Type @ to search your apps", visibleToUser: true },
+  ];
+  const dump: SnapshotNode = {
+    role: "main",
+    identifier: "app-root",
+    hittable: false,
+    visibleToUser: true,
+    label:
+      "Imagine\nSign in\nSign up\nWhat should we explore?\nType @ to search your apps\nBy messaging Grok, you agree to our Terms",
+  };
+  const cookies: SnapshotNode[] = [
+    { role: "dialog", label: "Cookie notice", visibleToUser: true },
+    { role: "button", label: "Reject All", value: "Reject All", visibleToUser: true },
+    {
+      role: "button",
+      label: "Accept All Cookies",
+      value: "Accept All Cookies",
+      visibleToUser: true,
+    },
+    { role: "button", label: "Cookies Settings", value: "Cookies Settings", visibleToUser: true },
+    { role: "button", label: "Dismiss cookie notice", value: "Close", visibleToUser: true },
+    { role: "a", label: "Cookie Policy", value: "Cookie Policy", visibleToUser: true },
+    { role: "a", label: "Terms of Service", value: "Terms of Service", visibleToUser: true },
+    { role: "g", identifier: "name=close-sm", visibleToUser: true },
+    { role: "path", identifier: "vector", visibleToUser: true },
+    { role: "text", label: "Close", visibleToUser: true },
+    {
+      role: "p",
+      identifier: "cookie-banner-desc",
+      label: "Essential cookies keep the site working and stay on.",
+      visibleToUser: true,
+    },
+  ];
+  const liveBanner: SnapshotNode[] = [
+    {
+      role: "p",
+      label:
+        "Essential cookies keep the site working and stay on. Optional cookies help with performance and advertising — accept, reject, or manage them. Learn more in our Cookie Policy, Privacy Policy, and Terms of Service.",
+      visibleToUser: true,
+    },
+    { role: "button", label: "Reject All", visibleToUser: true },
+    { role: "button", label: "Accept All Cookies", visibleToUser: true },
+    { role: "button", label: "Cookies Settings", visibleToUser: true },
+  ];
+  const quiet = observe(chrome);
+  const withDump = observe([...chrome, dump]);
+  const withCookies = observe([...chrome, dump, ...cookies]);
+  const otherHint = observe([
+    ...chrome.map((node) =>
+      node.role === "text" ? { ...node, label: "Switch to Build Mode to create apps" } : node,
+    ),
+    {
+      ...dump,
+      label:
+        "Imagine\nSign in\nSign up\nWhat should we explore?\nSwitch to Build Mode to create apps\nBy messaging Grok, you agree to our Terms",
+    },
+  ]);
+
+  const withLiveBanner = observe([...chrome, dump, ...liveBanner]);
+  assert.equal(quiet.fingerprint, withDump.fingerprint);
+  assert.equal(quiet.fingerprint, withCookies.fingerprint);
+  assert.equal(quiet.fingerprint, withLiveBanner.fingerprint);
+  assert.equal(quiet.fingerprint, otherHint.fingerprint);
+  assert.equal(compareScreenIdentity(quiet, withCookies).decision, "match");
+  assert.equal(compareScreenIdentity(quiet, withLiveBanner).decision, "match");
+  assert.ok(!quiet.nodes.some((node) => node.identifier === "app-root"));
+  assert.ok(!withCookies.nodes.some((node) => node.label === "reject all"));
+  assert.ok(!withLiveBanner.nodes.some((node) => /essential cookies/iu.test(node.label ?? "")));
+});
+
+test("typeahead suggestions do not redefine composer-with-prompt identity", () => {
+  const chrome: SnapshotNode[] = [
+    { role: "a", label: "Home page", hittable: true, visibleToUser: true },
+    { role: "a", label: "Imagine", hittable: true, visibleToUser: true },
+    { role: "a", label: "Sign in", visibleToUser: true },
+    { role: "button", label: "Settings", identifier: "radix-_r_9_", visibleToUser: true },
+    { role: "button", label: "Attach", identifier: "attach-button", visibleToUser: true },
+    { role: "button", label: "Submit", identifier: "chat-submit", visibleToUser: true },
+    { role: "button", label: "Model select", value: "Fast", visibleToUser: true },
+    { role: "h1", label: "What should we explore?", visibleToUser: true },
+    { role: "text", label: "explore?", visibleToUser: true },
+    { role: "text", label: "fast", visibleToUser: true },
+    { role: "text", label: "imagine", visibleToUser: true },
+    {
+      role: "textarea",
+      label: "Ask Grok anything",
+      value: "hello",
+      focused: true,
+      visibleToUser: true,
+    },
+  ];
+  const typeahead: SnapshotNode[] = [
+    { role: "alert", identifier: "__next-route-announcer__", visibleToUser: true },
+    { role: "option", label: "hello fresh", visibleToUser: true },
+    { role: "text", label: "hello", visibleToUser: true },
+    { role: "text", label: "fresh", visibleToUser: true },
+    { role: "text", label: "kitty", visibleToUser: true },
+  ];
+  const emptyHome = observe(
+    chrome.map((node) =>
+      node.role === "textarea" ? { ...node, value: undefined, focused: false } : node,
+    ),
+  );
+  const quiet = observe(chrome);
+  const withTypeahead = observe([...chrome, ...typeahead]);
+  assert.equal(quiet.fingerprint, withTypeahead.fingerprint);
+  assert.notEqual(quiet.fingerprint, emptyHome.fingerprint);
+  assert.equal(compareScreenIdentity(quiet, withTypeahead).decision, "match");
+  assert.ok(!withTypeahead.nodes.some((node) => node.label === "fresh"));
+  assert.ok(!withTypeahead.nodes.some((node) => node.identifier === "__next-route-announcer__"));
+  assert.ok(quiet.nodes.some((node) => node.role === "textarea" && node.value === "hello"));
+});
+
+test("composer placeholders and feed tiles do not redefine chrome identity", () => {
+  const chrome = (options: {
+    heading: string;
+    nav: string;
+    placeholder: string;
+    tiles: string[];
+  }): SnapshotNode[] => [
+    {
+      role: "a",
+      label: options.nav,
+      rect: { x: 940, y: 11, width: 93, height: 40 },
+      hittable: true,
+      visibleToUser: true,
+    },
+    {
+      role: "button",
+      label: "Sign in",
+      rect: { x: 1087, y: 11, width: 77, height: 40 },
+      hittable: true,
+      visibleToUser: true,
+    },
+    {
+      role: "h1",
+      label: options.heading,
+      rect: { x: 493, y: 166, width: 283, height: 32 },
+      visibleToUser: true,
+    },
+    {
+      role: "textbox",
+      label: options.placeholder,
+      rect: { x: 270, y: 232, width: 740, height: 42 },
+      hittable: true,
+      visibleToUser: true,
+    },
+    {
+      role: "button",
+      label: "Submit",
+      identifier: "chat-submit",
+      rect: { x: 960, y: 282, width: 40, height: 40 },
+      hittable: true,
+      visibleToUser: true,
+    },
+    ...options.tiles.map((label, index) => ({
+      role: "a" as const,
+      label,
+      rect: {
+        x: 258 + (index % 3) * 254,
+        y: 366 + Math.floor(index / 3) * 254,
+        width: 244,
+        height: 244,
+      },
+      hittable: true,
+      visibleToUser: true,
+    })),
+  ];
+  const imagineA = observe(
+    chrome({
+      heading: "What should we imagine?",
+      nav: "Chat",
+      placeholder: "Type to imagine",
+      tiles: ["Segmentation", "Photo Edit", "Reimagine"],
+    }),
+  );
+  const imagineB = observe(
+    chrome({
+      heading: "What should we imagine?",
+      nav: "Chat",
+      placeholder: "Ask Grok anything",
+      tiles: ["Icon Maker", "Smart Resize", "UGC Photos"],
+    }),
+  );
+  const home = observe(
+    chrome({
+      heading: "What should we explore?",
+      nav: "Imagine",
+      placeholder: "Ask Grok anything",
+      tiles: ["Try Skills", "Create Videos"],
+    }),
+  );
+  const chat = (reply: string): SnapshotNode[] => [
+    {
+      role: "button",
+      label: "New chat",
+      rect: { x: 16, y: 12, width: 40, height: 40 },
+      hittable: true,
+      visibleToUser: true,
+    },
+    {
+      role: "a",
+      label: "Home page",
+      rect: { x: 16, y: 64, width: 48, height: 40 },
+      hittable: true,
+      visibleToUser: true,
+    },
+    {
+      role: "p",
+      label: reply,
+      rect: { x: 280, y: 180, width: 700, height: 80 },
+      visibleToUser: true,
+    },
+    {
+      role: "textbox",
+      label: "Ask Grok anything",
+      rect: { x: 270, y: 700, width: 740, height: 42 },
+      hittable: true,
+      visibleToUser: true,
+    },
+    {
+      role: "button",
+      label: "Submit",
+      identifier: "chat-submit",
+      rect: { x: 960, y: 750, width: 40, height: 40 },
+      hittable: true,
+      visibleToUser: true,
+    },
+  ];
+
+  assert.equal(imagineA.fingerprint, imagineB.fingerprint);
+  assert.equal(compareScreenIdentity(imagineA, imagineB).decision, "match");
+  assert.notEqual(imagineA.fingerprint, home.fingerprint);
+  assert.equal(
+    observe(chat("hello from grok")).fingerprint,
+    observe(chat("a longer, different reply")).fingerprint,
+  );
+  assert.ok(imagineA.nodes.some((node) => node.label === "<placeholder>"));
+  assert.ok(!imagineA.nodes.some((node) => node.label === "segmentation"));
+  assert.ok(
+    !observe(chat("hello from grok")).nodes.some((node) => node.label === "hello from grok"),
+  );
+  assert.ok(imagineA.nodes.some((node) => node.label === "what should we imagine?"));
+  assert.ok(home.nodes.some((node) => node.label === "what should we explore?"));
+});
+
 test("truly different screens produce conflicting evidence and resolve as new", () => {
   const signIn = observe([
     { role: "heading", label: "Sign in", identifier: "auth.title", visibleToUser: true },
@@ -304,6 +593,64 @@ test("fingerprints and normalized nodes are deterministic for arbitrary input or
   assert.deepEqual(forward.nodes, reversed.nodes);
   assert.deepEqual(forward.volatileSignals, reversed.volatileSignals);
   assert.match(forward.fingerprint, /^[0-9a-f]{64}$/u);
+});
+
+test("authored ignore regions keep reply-body copy out of screen identity", () => {
+  const chrome = {
+    role: "button",
+    label: "Home",
+    visibleToUser: true,
+    rect: { x: 8, y: 8, width: 80, height: 32 },
+  } satisfies SnapshotNode;
+  const reply = (label: string): SnapshotNode => ({
+    role: "text",
+    label,
+    visibleToUser: true,
+    rect: { x: 80, y: 200, width: 900, height: 400 },
+  });
+  const ignore = { x: 80, y: 180, width: 900, height: 1400 };
+  const withParis = observeScreenIdentity([chrome, reply("Paris is the capital")], {
+    ignoreRegions: [ignore],
+  });
+  const withBerlin = observeScreenIdentity([chrome, reply("Berlin is the capital")], {
+    ignoreRegions: [ignore],
+  });
+  assert.equal(withParis.fingerprint, withBerlin.fingerprint);
+  assert.equal(
+    withParis.nodes.some((node) => node.label?.includes("Paris")),
+    false,
+  );
+  assert.notEqual(
+    observeScreenIdentity([chrome, reply("Paris is the capital")]).fingerprint,
+    observeScreenIdentity([chrome, reply("Berlin is the capital")]).fingerprint,
+  );
+});
+
+test("unit ignore regions scale onto snapshot pixels so reply copy stays out of identity", () => {
+  const chrome = {
+    role: "button",
+    label: "Home",
+    visibleToUser: true,
+    rect: { x: 8, y: 8, width: 80, height: 32 },
+  } satisfies SnapshotNode;
+  const reply = (label: string): SnapshotNode => ({
+    role: "text",
+    label,
+    visibleToUser: true,
+    rect: { x: 80, y: 200, width: 900, height: 400 },
+  });
+  const ignore = { name: "reply body", x: 0.08, y: 0.3, width: 0.92, height: 0.7 };
+  const withParis = observeScreenIdentity([chrome, reply("Paris is the capital")], {
+    ignoreRegions: [ignore],
+  });
+  const withBerlin = observeScreenIdentity([chrome, reply("Berlin is the capital")], {
+    ignoreRegions: [ignore],
+  });
+  assert.equal(withParis.fingerprint, withBerlin.fingerprint);
+  assert.equal(
+    withParis.nodes.some((node) => node.label?.includes("Paris")),
+    false,
+  );
 });
 
 test("heads-up notification banners never re-key screen identity", () => {

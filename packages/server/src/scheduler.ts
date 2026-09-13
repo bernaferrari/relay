@@ -1,3 +1,4 @@
+import type { LocalSchedule, ScheduleNotification } from "@relay/core";
 import {
   buildTargetProfiles,
   freezeRecipeGraph,
@@ -12,6 +13,7 @@ import {
   readProjectVariables,
   readRecipe,
   redactText,
+  recordScheduleNotification,
   referencedVariableIds,
   resolveScheduledTargetProfile,
   runWithOperationContext,
@@ -29,9 +31,11 @@ export type SchedulerRuntime = {
   prepareJobBatch: typeof prepareJobBatch;
   markScheduleRun: typeof markScheduleRun;
   markScheduleFailure: typeof markScheduleFailure;
+  startCombine?: (schedule: LocalSchedule) => Promise<void>;
+  notify?: (item: ScheduleNotification) => Promise<void>;
 };
 
-const defaultRuntime: SchedulerRuntime = {
+export const defaultSchedulerRuntime: SchedulerRuntime = {
   listSchedules,
   listDevices,
   listTargets,
@@ -42,7 +46,10 @@ const defaultRuntime: SchedulerRuntime = {
   prepareJobBatch,
   markScheduleRun,
   markScheduleFailure,
+  notify: recordScheduleNotification,
 };
+
+const defaultRuntime = defaultSchedulerRuntime;
 
 /** The server owns one scheduler process. This fence also protects direct
  * test/administrative polls from admitting the same occurrence concurrently. */
@@ -68,6 +75,22 @@ export async function runDueSchedules(
     activeScheduleAdmissions.add(schedule.id);
     let staged: ReturnType<typeof prepareJobBatch> | undefined;
     try {
+      if (schedule.combineId) {
+        if (!runtime.startCombine) {
+          throw new Error("Plan schedules require a Combine starter");
+        }
+        if (!schedule.appMapId) throw new Error("A Plan schedule requires appMapId");
+        await runtime.startCombine(schedule);
+        await runtime.markScheduleRun(schedule.id, at);
+        await runtime.notify?.({
+          at,
+          scheduleId: schedule.id,
+          kind: "started",
+          detail: `Plan ${schedule.combineId}`,
+          combineId: schedule.combineId,
+        });
+        continue;
+      }
       const recipe = await runtime.readRecipe(schedule.recipeId);
       if (!recipe || recipe.quarantined) {
         throw new Error(
@@ -143,6 +166,13 @@ export async function runDueSchedules(
       staged.activate();
       await runtime.markScheduleRun(schedule.id, at);
       staged.dispatch();
+      await runtime.notify?.({
+        at,
+        scheduleId: schedule.id,
+        kind: "started",
+        detail: `Test ${schedule.recipeId}`,
+        recipeId: schedule.recipeId,
+      });
     } catch (error) {
       let failureError = error;
       try {
@@ -155,6 +185,14 @@ export async function runDueSchedules(
       const failure = redactText(messageOf(failureError));
       try {
         await runtime.markScheduleFailure(schedule.id, failure, at);
+        await runtime.notify?.({
+          at,
+          scheduleId: schedule.id,
+          kind: "failed",
+          detail: failure,
+          ...(schedule.combineId ? { combineId: schedule.combineId } : {}),
+          ...(schedule.recipeId ? { recipeId: schedule.recipeId } : {}),
+        });
       } catch (recordError) {
         publish({
           type: "error",

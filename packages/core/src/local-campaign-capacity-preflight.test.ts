@@ -294,3 +294,77 @@ test("keeps heterogeneous slow-Test evidence visible on a concrete iPad serial p
     ],
   );
 });
+
+test("treats a browser target as available without a ListedDevice row", () => {
+  const preflight = preflightLocalCampaignCapacity({
+    targets: [{ targetId: "grok-web", platform: "browser" }],
+    workItems: 8,
+    workItemsByPlatform: { browser: 8 },
+    duration: {
+      workItemDurationMs: 1_000,
+      provenance: "supplied",
+    },
+    deadlineMs: 60_000,
+    devices: [],
+    leases: [],
+    workers: [],
+    at: 1_000,
+  });
+  assert.equal(preflight.targets[0]?.availability, "available");
+  assert.equal(preflight.targets[0]?.requestedPlatform, "browser");
+  assert.match(preflight.targets[0]?.workerId ?? "", /local:browser:target:grok-web/);
+});
+
+test("three grok-com fixture lanes quote one-wave duration within 20% of the live 3-account pack", () => {
+  const longPoleCellMs = 14_868;
+  const measuredPackMs = 14_869;
+  const preflight = preflightLocalCampaignCapacity({
+    targets: [
+      { targetId: "grok-com#authfx:a:1", platform: "browser" },
+      { targetId: "grok-com#authfx:b:1", platform: "browser" },
+      { targetId: "grok-com#authfx:c:1", platform: "browser" },
+    ],
+    workItems: 3,
+    workItemsByPlatform: { browser: 3 },
+    duration: {
+      workItemDurationMs: longPoleCellMs,
+      provenance: "supplied",
+    },
+    deadlineMs: 60_000,
+    devices: [],
+    leases: [],
+    workers: [],
+    at: 1_000,
+  });
+  const predicted = preflight.deadline.estimatedParallelDurationMs;
+  assert.equal(predicted, longPoleCellMs);
+  assert.equal(preflight.plan.parallel.slots, 3);
+  assert.ok(
+    typeof predicted === "number" && Math.abs(predicted - measuredPackMs) / measuredPackMs <= 0.2,
+  );
+});
+
+test("one grok-com target still serializes three account cells", () => {
+  const longPoleCellMs = 14_868;
+  const measuredConcurrentPackMs = 14_869;
+  const preflight = preflightLocalCampaignCapacity({
+    targets: [{ targetId: "grok-com", platform: "browser" }],
+    workItems: 3,
+    workItemsByPlatform: { browser: 3 },
+    duration: {
+      workItemDurationMs: longPoleCellMs,
+      provenance: "supplied",
+    },
+    deadlineMs: 60_000,
+    devices: [],
+    leases: [],
+    workers: [],
+    at: 1_000,
+  });
+  const predicted = preflight.deadline.estimatedParallelDurationMs;
+  assert.equal(predicted, longPoleCellMs * 3);
+  assert.ok(
+    typeof predicted === "number" &&
+      Math.abs(predicted - measuredConcurrentPackMs) / measuredConcurrentPackMs > 0.2,
+  );
+});

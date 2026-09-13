@@ -105,7 +105,7 @@ function normalizedInput(
   requireNonNegativeSafeInteger(recoveryHeadroomMs, "Campaign recoveryHeadroomMs");
   const duration = normalizedDuration(input.duration);
   let partitionedWorkItems = 0;
-  for (const platform of ["android", "ios"] as const) {
+  for (const platform of ["android", "ios", "browser"] as const) {
     const count = input.workItemsByPlatform[platform];
     if (count === undefined) continue;
     requireNonNegativeSafeInteger(count, `Campaign ${platform} workItems`);
@@ -119,8 +119,12 @@ function normalizedInput(
     throw new Error("Campaign workItemsByPlatform must add up to workItems");
   }
   for (const target of input.targets) {
-    if (target.platform !== "android" && target.platform !== "ios") {
-      throw new Error("Campaign targets must be Android or iOS");
+    if (
+      target.platform !== "android" &&
+      target.platform !== "ios" &&
+      target.platform !== "browser"
+    ) {
+      throw new Error("Campaign targets must be Android, iOS, or browser");
     }
   }
   return {
@@ -148,8 +152,12 @@ function normalizedCriticalPathEvidence(input: {
     throw new Error("Campaign target critical path requires at least one work item");
   }
   const targetId = nonEmptyString(input.target.targetId, "Campaign critical path targetId");
-  if (input.target.platform !== "android" && input.target.platform !== "ios") {
-    throw new Error("Campaign critical path target must be Android or iOS");
+  if (
+    input.target.platform !== "android" &&
+    input.target.platform !== "ios" &&
+    input.target.platform !== "browser"
+  ) {
+    throw new Error("Campaign critical path target must be Android, iOS, or browser");
   }
   const seenItems = new Set<string>();
   return input.workItems.map((rawItem) => {
@@ -251,6 +259,7 @@ function availabilityFor(
   requested: LocalCampaignCapacityPreflightInput["targets"][number],
   device: ListedDevice | undefined,
 ): TargetAvailability {
+  if (requested.platform === "browser") return { availability: "available" };
   if (!device) return { availability: "unavailable", reason: "missing" };
   if (device.platform !== requested.platform) {
     return { availability: "unavailable", reason: "platform-mismatch" };
@@ -288,7 +297,7 @@ function activeLeaseByTarget(leases: readonly DeviceLease[], at: number): Map<st
 
 function derivedWorker(
   targetId: string,
-  platform: "android" | "ios",
+  platform: "android" | "ios" | "browser",
   workers: readonly TargetWorkerStatus[],
 ): { worker: CampaignCapacityWorker; source: "scheduler" | "derived-local-lane" } {
   const assignment = defaultTargetWorkerAssignment({ targetId, platform });

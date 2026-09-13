@@ -334,7 +334,7 @@ describe("Tests workspace", () => {
     expect(devices?.textContent?.trim()).toBe("Devices");
     expect(devices?.hasAttribute("aria-disabled")).toBe(false);
     expect(document.querySelector('a[href="/tests/new"]')?.textContent).toBe("New Test");
-    expect(document.querySelector('a[href="/suites"]')?.textContent).toBe("Suites");
+    expect(document.querySelector('a[href="/suites"]')?.textContent).toBe("Plans");
     expect(document.querySelector('a[href="/changes"]')?.textContent).toBe("Changes");
     expect(document.body.textContent).toContain("Change language");
     expect(document.body.textContent).toContain("Complete checkout");

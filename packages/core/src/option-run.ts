@@ -183,6 +183,18 @@ export function resolveVariableApply(set: OptionRunSet, map?: AppMap): ResolvedV
   return { entry, exit };
 }
 
+/** Account values that are already this world (signed-out or a browser fixture)
+ * do not open an in-app picker. Language/location/theme still require a recorded In. */
+export function optionSetNeedsRecordedPicker(set: Pick<OptionRunSet, "kind" | "apply">): boolean {
+  if (set.apply.kind === "appLocale" || set.apply.kind === "toggle") return false;
+  if (set.kind !== "account" || set.apply.kind !== "list") return true;
+  return Boolean(
+    set.apply.inConnectionId?.trim() ||
+      set.apply.entryPath?.length ||
+      set.apply.pickerPath?.length,
+  );
+}
+
 export function assertOptionSandwichReady(
   set: OptionRunSet,
   map?: AppMap,
@@ -190,6 +202,7 @@ export function assertOptionSandwichReady(
 ): ResolvedVariableApply {
   const resolved = resolveVariableApply(set, map);
   if (set.apply.kind === "appLocale") return resolved;
+  if (!optionSetNeedsRecordedPicker(set) && !resolved.entry.length) return resolved;
   if (!resolved.entry.length && !(set.apply.kind === "list" && set.apply.inConnectionId && !map)) {
     if (!resolved.entry.length) {
       throw new Error("Record how you open this list");
@@ -427,6 +440,7 @@ export function composeOptionRunRecipes(input: {
     const prefix = sanitizeId(set.id);
     Object.assign(graph, tapHelpers(prefix, at));
     const resolved = assertOptionSandwichReady(set, input.request.map);
+    if (!optionSetNeedsRecordedPicker(set) && !resolved.entry.length) continue;
     steps.push(...navStepsToRecipe(resolved.entry, app));
     steps.push(...selectSteps(prefix));
     steps.push(...navStepsToRecipe(resolved.exit, app));
@@ -471,6 +485,7 @@ export function composeOptionRunRecipes(input: {
         continue;
       }
       if (set.apply.kind === "list") {
+        if (!optionSetNeedsRecordedPicker(set)) continue;
         const resolved = assertOptionSandwichReady(set, input.request.map);
         steps.push(...navStepsToRecipe(resolved.entry, app));
         steps.push(...restoreListSteps(set));

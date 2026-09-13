@@ -18,7 +18,7 @@ const batchRef = z.object({ batchId: identifier("Batch identifier") }).strict();
 const durationCohort = z
   .object({
     targetId: identifier("Target identifier"),
-    platform: z.enum(["android", "ios"]),
+    platform: z.enum(["android", "ios", "browser"]),
     testId: identifier("Test identifier"),
     action: identifier("Execution action"),
   })
@@ -33,13 +33,16 @@ export const executionOperationSchemas = {
           z
             .object({
               targetId: identifier("Target identifier"),
-              platform: z.enum(["android", "ios"]),
+              platform: z.enum(["android", "ios", "browser"]),
             })
             .strict(),
         )
         .min(1),
       workItems: natural("Total campaign work items"),
-      workItemsByPlatform: z.record(z.enum(["android", "ios"]), natural("Platform work items")),
+      workItemsByPlatform: z.partialRecord(
+        z.enum(["android", "ios", "browser"]),
+        natural("Platform work items"),
+      ),
       duration: unknownRecord,
       deadlineMs: natural("Campaign deadline"),
       setupHeadroomMs: natural("Setup headroom").optional(),
@@ -165,7 +168,7 @@ export const executionOperationSchemas = {
       runId: identifier("Persisted Run identifier"),
       expectedRevision: natural("Current visual-policy revision"),
       changeThreshold: z.number().min(0).max(1),
-      pixelThreshold: z.number().min(0).max(1),
+      pixelThreshold: z.number().int().min(0).max(255),
       regions: z.array(unknownRecord),
     })
     .strict(),

@@ -19,6 +19,13 @@ import { FieldLabel } from "@relay/ui-react/components/field";
 import { Textarea } from "@relay/ui-react/components/textarea";
 import { AlertTriangle } from "lucide-react";
 import { useEffect, useState } from "react";
+import {
+  isValidationDraftReady,
+  validationBindingFromDraft,
+  validationDraft,
+  ValidationExpectationEditor,
+  type ValidationDraft,
+} from "./test-editor-assertion";
 
 export type StepEntry = {
   step: AppMapScenarioTestStep;
@@ -35,14 +42,7 @@ export type EditTransaction = {
   reverse: readonly AppMapScenarioTestEdit[];
 };
 
-export type ValidationDraft =
-  | { kind: "screen"; screenId: string }
-  | {
-      kind: "content";
-      input: string;
-      expected: string;
-      match: "exact" | "contains" | "not-contains";
-    };
+export type { ValidationDraft } from "./test-editor-assertion";
 
 export type StepDraft = {
   intent: string;
@@ -101,11 +101,7 @@ export function SelectedStepEditor({
     capture !== (entry.step.capture === true) ||
     !sameValidationDraft(expected, validationDraft(entry.step));
   const expectedReady =
-    entry.step.kind !== "validation" ||
-    !expected ||
-    (expected.kind === "screen"
-      ? Boolean(expected.screenId.trim())
-      : Boolean(expected.input.trim() && expected.expected.trim()));
+    entry.step.kind !== "validation" || !expected || isValidationDraftReady(expected);
 
   return (
     <form
@@ -124,13 +120,7 @@ export function SelectedStepEditor({
                 note: note.trim() || null,
                 capture,
                 ...(entry.step.kind === "validation" && expected
-                  ? {
-                      binding: {
-                        status: "resolved" as const,
-                        kind: "assertion" as const,
-                        assertion: expected,
-                      },
-                    }
+                  ? { binding: validationBindingFromDraft(expected) }
                   : {}),
               },
             },
@@ -260,6 +250,15 @@ export function SelectedStepEditor({
           }}
         />
       </FieldLabel>
+      {entry.step.execution?.status === "disabled" ? (
+        <Alert variant="default" className="grid grid-cols-[18px_minmax(0,1fr)] gap-2 p-2.5">
+          <AlertTriangle aria-hidden="true" />
+          <div>
+            <AlertTitle>Disabled on this platform</AlertTitle>
+            <AlertDescription>{entry.step.execution.reason}</AlertDescription>
+          </div>
+        </Alert>
+      ) : null}
       {entry.step.binding.status === "unresolved" ? (
         <Alert variant="default" className="grid grid-cols-[18px_minmax(0,1fr)] gap-2 p-2.5">
           <AlertTriangle aria-hidden="true" />
@@ -342,141 +341,10 @@ export function SelectedStepEditor({
   );
 }
 
-export function validationDraft(step: AppMapScenarioTestStep): ValidationDraft | undefined {
-  if (step.kind !== "validation" || step.binding.status !== "resolved") return undefined;
-  if (step.binding.kind !== "assertion") return undefined;
-  const assertion = step.binding.assertion;
-  if (assertion.kind === "screen") return { kind: "screen", screenId: assertion.screenId };
-  if (assertion.kind === "content") {
-    return {
-      kind: "content",
-      input: assertion.input,
-      expected: assertion.expected,
-      match: assertion.match,
-    };
-  }
-  return undefined;
-}
+export { validationDraft } from "./test-editor-assertion";
 
 function sameValidationDraft(left?: ValidationDraft, right?: ValidationDraft): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
-}
-
-function ValidationExpectationEditor({
-  value,
-  original,
-  canAdd,
-  busy,
-  onChange,
-}: {
-  value?: ValidationDraft;
-  original?: ValidationDraft;
-  canAdd: boolean;
-  busy: boolean;
-  onChange(value: ValidationDraft | undefined): void;
-}) {
-  if (!value) {
-    return (
-      <div className="grid gap-1.5 text-xs font-semibold">
-        <span>Expected result</span>
-        <p className="text-xs font-normal leading-normal text-muted-foreground">
-          {canAdd
-            ? "This checkpoint has no directly editable assertion yet. Bind a reviewed assertion to make the expected result explicit."
-            : "This checkpoint uses a reviewed structured assertion. Its readable binding remains available under Advanced."}
-        </p>
-        {original === undefined ? null : (
-          <p className="text-xs font-normal leading-normal text-muted-foreground">
-            The saved assertion uses an advanced structure and remains available under Advanced.
-          </p>
-        )}
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={busy || !canAdd}
-          onClick={() => onChange({ kind: "content", input: "", expected: "", match: "contains" })}
-        >
-          Add content assertion
-        </Button>
-      </div>
-    );
-  }
-  return (
-    <fieldset className="grid gap-1.5 text-xs font-semibold" disabled={busy}>
-      <legend>Expected result</legend>
-      <p className="text-xs font-normal leading-normal text-muted-foreground">
-        This is the value Relay validates after the action. It is separate from the human step
-        wording above.
-      </p>
-      <label htmlFor="selected-step-expected-kind">
-        Assertion type
-        <select
-          id="selected-step-expected-kind"
-          value={value.kind}
-          onChange={(event) => {
-            const kind = event.currentTarget.value;
-            onChange(
-              kind === "screen"
-                ? { kind: "screen", screenId: "" }
-                : { kind: "content", input: "", expected: "", match: "contains" },
-            );
-          }}
-        >
-          <option value="screen">Screen</option>
-          <option value="content">Content</option>
-        </select>
-      </label>
-      {value.kind === "screen" ? (
-        <label htmlFor="selected-step-expected-screen">
-          Screen ID
-          <Input
-            id="selected-step-expected-screen"
-            value={value.screenId}
-            onChange={(event) => onChange({ ...value, screenId: event.currentTarget.value })}
-            placeholder="checkout-confirmation"
-          />
-        </label>
-      ) : (
-        <>
-          <label htmlFor="selected-step-expected-input">
-            Read from
-            <Input
-              id="selected-step-expected-input"
-              value={value.input}
-              onChange={(event) => onChange({ ...value, input: event.currentTarget.value })}
-              placeholder="Order total"
-            />
-          </label>
-          <label htmlFor="selected-step-expected-value">
-            Expected value
-            <Input
-              id="selected-step-expected-value"
-              value={value.expected}
-              onChange={(event) => onChange({ ...value, expected: event.currentTarget.value })}
-              placeholder="$42.00"
-            />
-          </label>
-          <label htmlFor="selected-step-expected-match">
-            Match
-            <select
-              id="selected-step-expected-match"
-              value={value.match}
-              onChange={(event) =>
-                onChange({
-                  ...value,
-                  match: event.currentTarget.value as "exact" | "contains" | "not-contains",
-                })
-              }
-            >
-              <option value="exact">Exactly</option>
-              <option value="contains">Contains</option>
-              <option value="not-contains">Does not contain</option>
-            </select>
-          </label>
-        </>
-      )}
-    </fieldset>
-  );
 }
 
 function BindingRepair({
@@ -555,6 +423,17 @@ function bindingForCandidate(
     return { status: "resolved", kind: "routine", routineId: candidate.id };
   }
   return undefined;
+}
+
+export function stepReadinessLabel(
+  step: AppMapScenarioTestStep,
+  options?: { unrecordedNative?: boolean },
+): string {
+  if (step.execution?.status === "disabled") return `Disabled · ${step.execution.reason}`;
+  if (options?.unrecordedNative) {
+    return `${step.binding.status === "resolved" ? "Ready on Web" : "Needs review"} · Android/iOS disabled until recorded`;
+  }
+  return step.binding.status === "resolved" ? "Ready" : "Needs review";
 }
 
 export function stepKindLabel(step: AppMapScenarioTestStep): string {

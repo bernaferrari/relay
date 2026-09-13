@@ -122,6 +122,7 @@ export type AppMapOperationMap = {
       leaseId: string;
       title?: string;
       position?: { x: number; y: number };
+      authenticationFixtureReference?: string;
     };
     output: {
       appMapId: string;
@@ -266,6 +267,7 @@ export type AppMapOperationMap = {
             to: { x: number; y: number };
             durationMs?: number;
           };
+      authenticationFixtureReference?: string;
     };
     output: {
       appMapId: string;
@@ -670,10 +672,18 @@ export type AppMapOperationMap = {
       appMapId: string;
       combineId: string;
       serial?: string;
+      platform?: "android" | "ios";
+      targetKind?: "device" | "browser";
+      browserTargetId?: string;
       selected?: Record<string, string[]>;
       strategy?: "zip" | "cartesian" | "pairwise";
+      selectedCellIds?: string[];
+      profileTargets?: import("./combine-profile-target-schema.js").CombineProfileTargetInput[];
     };
-    output: { preflight: AppMapCombinePreflight };
+    output: {
+      preflight: AppMapCombinePreflight;
+      accountCapacity?: import("./combine-profile-target-schema.js").BrowserAccountPackQuote;
+    };
   };
   "app-map.combine.remove": {
     input: {

@@ -102,6 +102,8 @@ const extraGuidance: Partial<Record<OperationId, string>> = {
     " Read-only metadata. Credentials, cookies, and local storage are never returned through MCP or evidence.",
   "target.browser-auth.revoke":
     " Human-only. Revocation is permanent for the exact fixture revision and future Proof runs fail closed.",
+  "target.browser-auth.probe":
+    " Opens a fresh proof browser with the encrypted sign-in. Signed-out or expired fixtures need Refresh before the next Plan. Does not accept visual baselines.",
   "step.run":
     " Runs one standalone step only. If it returns terminal: review-needed, capture the current screen from stepReview before any retry; never repeat the command automatically.",
   "lease.create":
@@ -491,6 +493,7 @@ const adminOperations = [
   "target.browser-auth.save",
   "target.browser-auth.list",
   "target.browser-auth.revoke",
+  "target.browser-auth.probe",
   "build.list",
   "build.save",
   "build.preflight",
@@ -530,6 +533,7 @@ const proofOperations = [
   "target.devices.list",
   "target.list",
   "target.browser-auth.list",
+  "target.browser-auth.probe",
   "target.screenshot.capture",
   "lease.list",
   "workspace.change.inspect",

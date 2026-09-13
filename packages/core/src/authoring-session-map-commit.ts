@@ -3,13 +3,16 @@ import type {
   AuthoringObservation,
   AuthoringSession,
   AuthoringTakeRevision,
+  TargetProfile,
 } from "@relay/protocol";
 import { authoringCaptureProvenance, captureProofForAuthoring } from "@relay/protocol";
 import { commitAppMapRecording } from "./app-map.js";
 import { mutateStoredAppMap, readAppMap } from "./collaboration.js";
 import { authoringEvidenceExists } from "./authoring-evidence.js";
 import { AuthoringStateError } from "./authoring-session-state.js";
+import { managedBrowserTargetProfile } from "./browser-case-profile-target.js";
 import { now } from "./events.js";
+import { readTarget } from "./targets.js";
 
 export type AuthoringMapCommitFault = (
   boundary: "before-verify" | "after-verify" | "before-rename" | "before-persist",
@@ -44,6 +47,7 @@ export async function commitAuthoringSessionMap(input: {
   fault?.("after-verify");
   fault?.("before-rename");
   const committedAt = Math.max(now(), appMap.updatedAt + 1);
+  const targetProfile = await frozenAuthoringTargetProfile(session, committedAt);
   let connectionId = "";
   let testId: string | undefined;
   const result = await mutateStoredAppMap(session.projectId, session.appMapId, (current) => {
@@ -66,6 +70,7 @@ export async function commitAuthoringSessionMap(input: {
         evidenceUrisById: Object.fromEntries(evidence.map((item) => [item.id, item.uri])),
         evidenceKindsById: Object.fromEntries(evidence.map((item) => [item.id, item.kind])),
         evidenceById: Object.fromEntries(evidence.map((item) => [item.id, item])),
+        ...(targetProfile ? { targetProfile } : {}),
         captureReview: {
           schemaVersion: 1,
           provenance: authoringCaptureProvenance(session.captureProvenance),
@@ -101,4 +106,18 @@ export async function commitAuthoringSessionMap(input: {
     return committed.appMap;
   });
   return { revision: result.revision, connectionId, ...(testId ? { testId } : {}) };
+}
+
+async function frozenAuthoringTargetProfile(
+  session: AuthoringSession,
+  observedAt: number,
+): Promise<TargetProfile | undefined> {
+  if (session.target.kind !== "browser") return undefined;
+  const target = await readTarget(session.target.targetId);
+  if (!target?.browser) {
+    throw new AuthoringStateError(
+      "Managed browser target is required to freeze a recording before it can be saved",
+    );
+  }
+  return managedBrowserTargetProfile(target, observedAt);
 }

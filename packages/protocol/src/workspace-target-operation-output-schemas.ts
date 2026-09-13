@@ -7,7 +7,8 @@ import {
   browserDeviceSemanticOverlaySchema,
   browserDeviceSessionSchema,
 } from "./browser-device.js";
-import { browserAuthenticationFixtureSchema } from "./browser-authentication-fixture.js";
+import { browserAuthenticationFixtureSchema, browserAuthenticationHealthSchema } from "./browser-authentication-fixture.js";
+import { combineProfileTargetInputSchema } from "./combine-profile-target-schema.js";
 
 const text = z.string().min(1);
 const natural = z.number().int().nonnegative();
@@ -363,7 +364,11 @@ const compatibilityMatrix = z
 const schedule = z
   .object({
     id: text,
-    recipeId: text,
+    recipeId: z.string(),
+    combineId: text.optional(),
+    appMapId: text.optional(),
+    hour: z.number().int().min(0).max(23).optional(),
+    timezone: text.optional(),
     targetKind: z.enum(["device", "browser"]),
     targetId: text,
     platform: z.enum(["android", "ios", "browser"]),
@@ -377,6 +382,7 @@ const schedule = z
     lastRunAt: natural.optional(),
     lastFailureAt: natural.optional(),
     lastFailure: text.optional(),
+    profileTargets: z.array(combineProfileTargetInputSchema).max(64).optional(),
   })
   .strict();
 
@@ -735,6 +741,9 @@ export const workspaceTargetOperationOutputSchemas = {
     .strict(),
   "target.browser-auth.revoke": z
     .object({ fixture: browserAuthenticationFixtureSchema, target: targetDefinition })
+    .strict(),
+  "target.browser-auth.probe": z
+    .object({ fixture: browserAuthenticationFixtureSchema, health: browserAuthenticationHealthSchema })
     .strict(),
   "target.boot": z.object({ ok: z.literal(true), serial: text }).strict(),
   "target.avds.list": z.object({ inventory: androidAvdInventory }).strict(),

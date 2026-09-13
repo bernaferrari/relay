@@ -133,6 +133,11 @@ export function screenExpectation(
     ...(screen.handoff?.ownerApp ? { expectedApp: screen.handoff.ownerApp } : {}),
     ...(aliases.size ? { aliases: [...aliases] } : {}),
     ...(observations.length ? { observations } : {}),
+    ...(screen.identity.ignoreRegions?.length
+      ? {
+          ignoreRegions: screen.identity.ignoreRegions.map((region) => ({ ...region })),
+        }
+      : {}),
   };
 }
 
@@ -161,6 +166,23 @@ function assertionStep(map: AppMap, actionId: string, assertion: AssertionSpec):
       first: structuredClone(assertion.first),
       second: structuredClone(assertion.second),
       ...(assertion.timeoutMs === undefined ? {} : { timeoutMs: assertion.timeoutMs }),
+    };
+  }
+  if (assertion.kind === "visual") {
+    return {
+      id: compiledAppMapStepId("relay-action", actionId),
+      kind: "evaluate-visual",
+      criteria: [...assertion.criteria],
+      ...(assertion.region ? { region: { ...assertion.region } } : {}),
+    };
+  }
+  if (assertion.kind === "semantic") {
+    return {
+      id: compiledAppMapStepId("relay-action", actionId),
+      kind: "evaluate-semantic",
+      input: assertion.input,
+      criteria: [...assertion.criteria],
+      ...(assertion.requireAgreement ? { requireAgreement: true } : {}),
     };
   }
   return {
@@ -652,6 +674,13 @@ export function compileAppMapConnection(
     actions: connection.actions,
     ensureRoutine,
   });
+  // In-place (destination end) chrome actions prove presence with wait-for.
+  // Requiring the origin identity strands consecutive runs after a reply
+  // changes the screen, then SOS-recovers by replaying the same connection.
+  if (connection.destination.kind === "end" && compiled.steps[0]?.kind === "wait-for") {
+    root.steps = [];
+    root.stepProvenance = [];
+  }
   const contractStep = navigationStep(connection);
   if (contractStep) {
     root.steps.push(contractStep);

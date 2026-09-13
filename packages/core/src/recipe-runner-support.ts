@@ -135,14 +135,10 @@ async function waitForResponseCompletion(
     step.idleTarget && sameTarget(step.target, step.idleTarget),
   );
   let sawIdleLeave = !initiallyIdle;
-  // Physical-device snapshots can be slower than a short model response. If
-  // the first post-action sample already contains content and the independent
-  // idle signal, the response completed before Relay could observe it growing.
-  // Treat that as a started response instead of waiting for an impossible
-  // second content transition. A target that is also the idle signal is not
-  // independent, though: it may be left over from the previous response. In
-  // that case require the control to leave and return so an old response can
-  // never satisfy a new wait immediately.
+  // Physical snapshots can miss a short reply. If the first sample already
+  // has content and an independent idle signal, treat that as started.
+  // When the completion target is also the idle signal, require it to leave
+  // and return so a leftover previous reply cannot pass immediately.
   let startedAt: number | undefined =
     initialText && initiallyIdle && !completionTargetIsIdle ? beganAt : undefined;
   let stableSince: number | undefined = startedAt;
@@ -167,6 +163,7 @@ async function waitForResponseCompletion(
         durationMs: completedAt - beganAt,
         stableForMs,
         timeoutMs,
+        ...(step.maxMs !== undefined ? { maxMs: step.maxMs } : {}),
         samples,
         signals: lastSignals,
         observedCharacters: text.length,
@@ -236,6 +233,11 @@ async function waitForResponseCompletion(
       if (stable && (!hasIndependentCompletionTarget || completionSignal)) {
         record("complete", capturedAt, text);
         ctx.log(`response completion: complete · ${lastSignals.join(" + ")}`);
+        if (step.maxMs !== undefined && capturedAt - beganAt > step.maxMs) {
+          throw new Error(
+            `response completion: exceeded maxMs ${step.maxMs} (${capturedAt - beganAt}ms)`,
+          );
+        }
         return;
       }
     }

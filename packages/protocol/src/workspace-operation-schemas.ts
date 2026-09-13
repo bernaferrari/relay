@@ -1,4 +1,5 @@
 import * as z from "zod/v4";
+import { combineProfileTargetInputSchema } from "./combine-profile-target-schema.js";
 import { empty, identifier, text } from "./operation-schema-primitives.js";
 
 const targetSelector = z
@@ -134,15 +135,36 @@ export const workspaceOperationSchemas = {
   "schedule.create": z
     .object({
       id: identifier("Schedule identifier").optional(),
-      recipeId: identifier("Compiled execution-plan identifier"),
+      recipeId: identifier("Compiled execution-plan identifier").optional(),
+      combineId: identifier("Plan / Combine identifier").optional(),
+      appMapId: identifier("App Map identifier").optional(),
       targetKind: z.enum(["device", "browser"]),
       targetId: identifier("Exact target identifier"),
       platform: z.enum(["android", "ios", "browser"]),
       intervalMinutes: z.number().int().min(1).max(43_200),
+      hour: z.number().int().min(0).max(23).optional(),
+      timezone: z.string().min(1).max(64).optional(),
       repetitions: z.number().int().min(1).max(20).optional(),
       enabled: z.boolean().optional(),
+      profileTargets: z.array(combineProfileTargetInputSchema).max(64).optional(),
     })
-    .strict(),
+    .strict()
+    .superRefine((input, context) => {
+      if (!input.recipeId && !input.combineId) {
+        context.addIssue({
+          code: "custom",
+          message: "Choose recipeId or combineId",
+          path: ["recipeId"],
+        });
+      }
+      if (input.combineId && !input.appMapId) {
+        context.addIssue({
+          code: "custom",
+          message: "A Plan schedule requires appMapId",
+          path: ["appMapId"],
+        });
+      }
+    }),
   "matrix.list": empty,
   "matrix.create": z
     .object({

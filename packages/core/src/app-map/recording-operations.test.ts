@@ -9,6 +9,9 @@ import type {
 } from "@relay/protocol";
 import { observeScreenIdentity } from "../screen-identity.js";
 import { compileAppMapScenarioTest } from "../app-map-test-compiler.js";
+import { managedBrowserTargetProfile } from "../browser-case-profile-target.js";
+import { freezeMissingBrowserCaseProfiles } from "./browser-profile-freeze.js";
+import { AppMapDomainError } from "./errors.js";
 import {
   commitAppMapRecording as commitAppMapRecordingUnsafe,
   commitAppMapScreenCapture,
@@ -118,6 +121,23 @@ function context(eventId: string, revision = 0, at = 10): AppMapMutationContext 
 
 function mapScope(map: AppMap) {
   return { organizationId: map.organizationId, projectId: map.projectId, appMapId: map.id };
+}
+
+function frozenBrowserProfile(targetId = "chrome", at = 10): TargetProfile {
+  return managedBrowserTargetProfile(
+    {
+      id: targetId,
+      name: targetId,
+      kind: "browser",
+      createdAt: 1,
+      updatedAt: 1,
+      browser: {
+        startUrl: "https://example.com",
+        viewport: { width: 1280, height: 800 },
+      },
+    },
+    at,
+  );
 }
 
 test("captures an entry screen without inventing a connection", () => {
@@ -1143,11 +1163,13 @@ test("fills an existing pending connection and preserves its flow position", () 
 });
 
 test("represents an observe-only recording as a passive transition", () => {
+  const targetProfile = frozenBrowserProfile();
   const result = commitAppMapRecording(
     mapFixture(),
     {
       sessionId: "session-passive",
       target: { kind: "browser", platform: "browser", targetId: "chrome" },
+      targetProfile,
       takeId: "take-passive",
       takeRevision: 1,
       actions: [],
@@ -1165,6 +1187,67 @@ test("represents an observe-only recording as a passive transition", () => {
   ]);
   assert.equal(connection?.recordingSource, undefined);
   assert.deepEqual(connection?.destination, { kind: "end" });
+  const variant = Object.values(result.appMap.screenVariants)[0];
+  assert.deepEqual(variant?.targetProfile.browserCaseProfile, targetProfile.browserCaseProfile);
+});
+
+test("rejects a browser recording that is missing its frozen case profile", () => {
+  assert.throws(
+    () =>
+      commitAppMapRecording(
+        mapFixture(),
+        {
+          sessionId: "session-unfrozen",
+          target: { kind: "browser", platform: "browser", targetId: "chrome" },
+          takeId: "take-unfrozen",
+          takeRevision: 1,
+          actions: [],
+          before: observation("before", beforeFingerprint, "evidence-before"),
+          destination: { kind: "end" },
+          evidenceIds: ["evidence-before"],
+        },
+        context("event-unfrozen"),
+      ),
+    (error: unknown) =>
+      error instanceof AppMapDomainError &&
+      error.message.includes("must freeze a complete browser case profile"),
+  );
+});
+
+test("freezes a legacy browser variant without rewriting its profile id", () => {
+  const recorded = commitAppMapRecording(
+    mapFixture(),
+    {
+      sessionId: "session-legacy",
+      target: { kind: "device", platform: "android", targetId: "pixel" },
+      takeId: "take-legacy",
+      takeRevision: 1,
+      actions: [],
+      before: observation("before", beforeFingerprint, "evidence-before"),
+      destination: { kind: "end" },
+      evidenceIds: ["evidence-before"],
+    },
+    context("event-legacy"),
+  );
+  const variantId = Object.keys(recorded.appMap.screenVariants)[0]!;
+  recorded.appMap.screenVariants[variantId] = {
+    ...recorded.appMap.screenVariants[variantId]!,
+    targetProfile: {
+      id: "browser:grok-com",
+      targetId: "grok-com",
+      source: "browser",
+      platform: "browser",
+      name: "grok-com",
+      capabilities: ["snapshot"],
+      observedAt: 2,
+    },
+  };
+  const frozen = frozenBrowserProfile("grok-com", 20);
+  const next = freezeMissingBrowserCaseProfiles(recorded.appMap, frozen, context("freeze", 1, 20));
+  const repaired = Object.values(next.screenVariants)[0]!.targetProfile;
+  assert.equal(repaired.id, "browser:grok-com");
+  assert.deepEqual(repaired.browserCaseProfile, frozen.browserCaseProfile);
+  assert.deepEqual(repaired.viewport, frozen.viewport);
 });
 
 test("new branch flows retain the complete path from the map entry", () => {

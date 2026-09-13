@@ -204,6 +204,12 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
         },
         { name: "title", type: "string", description: "Optional title for a new screen" },
         { name: "position", type: "{x,y}", description: "Optional initial canvas position" },
+        {
+          name: "authenticationFixtureReference",
+          type: "string",
+          description:
+            "Optional proof-mode account fixture. Does not bind the managed browser default.",
+        },
       ],
       examples: [
         'relay screen capture onboarding --input \'{"expectedRevision":0,"target":{"kind":"device","platform":"ios","targetId":"<serial>"},"leaseId":"<lease>"}\'',
@@ -452,6 +458,12 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
           type: "object",
           description:
             "point, label, or identifier tap; or swipe {from,to,durationMs}. Omit to capture the current screen only.",
+        },
+        {
+          name: "authenticationFixtureReference",
+          type: "string",
+          description:
+            "Optional proof-mode account fixture. Does not bind the managed browser default.",
         },
         {
           name: "expectedRevision",

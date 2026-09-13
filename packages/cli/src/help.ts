@@ -114,6 +114,8 @@ function renderRootHelp(): string {
     "test run",
     "variable save",
     "combine run",
+    "plan run",
+    "plan findings",
     "proposal create",
     "proposal record",
     "session replay",

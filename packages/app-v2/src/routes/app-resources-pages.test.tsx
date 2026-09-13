@@ -259,6 +259,7 @@ describe("App routes", () => {
   });
 
   it("offers an existing browser when saving the first account", async () => {
+    const opened: unknown[] = [];
     await render(
       "/apps/checkout-app/accounts",
       resources({
@@ -266,9 +267,15 @@ describe("App routes", () => {
         saveBrowserAccount: async () => {
           throw new Error("capture failed");
         },
+        openBrowserAccountForSignIn: async (input) => {
+          opened.push(input);
+        },
       }),
     );
     expect(button("Save sign-in").disabled).toBe(false);
+    await click(button("Open headed browser"));
+    expect(opened).toEqual([{ targetId: "first-browser" }]);
+    expect(document.body.textContent).toContain("Complete OAuth in the browser, then Save sign-in");
     await click(button("Save sign-in"));
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain("First browser");
   });
@@ -299,7 +306,8 @@ describe("App routes", () => {
     );
 
     expect(document.querySelector("h1")?.textContent).toBe("Sign-ins");
-    expect(document.body.textContent).toContain("Saved browser sign-ins you can reuse");
+    expect(document.body.textContent).toContain("Check health before the daily Plan");
+    expect(document.body.textContent).toContain("1 ready");
     expect(document.body.textContent).toContain("Staging buyer");
     expect(document.body.textContent).toContain("Checkout browser · https://checkout.example");
     expect(document.body.textContent).not.toContain("authfx:");
@@ -374,6 +382,51 @@ describe("App routes", () => {
     expect(document.body.textContent).not.toContain("authfx:fixture-1:1");
   });
 
+  it("checks sign-in health and opens a headed browser for OAuth", async () => {
+    const probed: unknown[] = [];
+    const opened: unknown[] = [];
+    await render(
+      "/apps/checkout-app/accounts",
+      resources({
+        listBrowserAccounts: async () => [
+          {
+            target: { id: "browser-private", name: "Checkout browser" },
+            fixture: {
+              id: "fixture-1",
+              reference: "authfx:fixture-1:1",
+              revision: 1,
+              targetId: "browser-private",
+              name: "Staging buyer",
+              origins: ["https://checkout.example"],
+              cookieCount: 3,
+              createdAt: now,
+              health: {
+                status: "needs-relogin",
+                checkedAt: now,
+                signedIn: false,
+              },
+            },
+          },
+        ],
+        probeBrowserAccount: async (input) => {
+          probed.push(input);
+          return {} as never;
+        },
+        openBrowserAccountForSignIn: async (input) => {
+          opened.push(input);
+        },
+      }),
+    );
+
+    expect(document.body.textContent).toContain("need sign-in");
+    expect(document.body.textContent).toContain("Needs relogin");
+    await click(button("Check health"));
+    expect(probed).toEqual([{ targetId: "browser-private", reference: "authfx:fixture-1:1" }]);
+    await click(button("Sign in now"));
+    expect(opened).toEqual([{ targetId: "browser-private", reference: "authfx:fixture-1:1" }]);
+    expect(document.body.textContent).toContain("Complete OAuth in the browser, then Refresh");
+  });
+
   it("does not show account mutations when the adapter is read-only", async () => {
     await render(
       "/apps/checkout-app/accounts",
@@ -401,6 +454,8 @@ describe("App routes", () => {
     expect(button("Save sign-in").disabled).toBe(true);
     expect(document.querySelector('button[aria-label="Refresh Staging buyer"]')).toBeNull();
     expect(document.querySelector('button[aria-label="Revoke Staging buyer"]')).toBeNull();
+    expect(document.querySelector('button[aria-label="Check health of Staging buyer"]')).toBeNull();
+    expect(document.querySelector('button[aria-label="Sign in now for Staging buyer"]')).toBeNull();
   });
 
   it.each([

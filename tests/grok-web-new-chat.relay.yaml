@@ -1,0 +1,22 @@
+schemaVersion: 1
+recordingFormatVersion: 2
+id: grok-web-new-chat
+name: Grok web · new chat
+description: Open a new chat from grok.com chrome. Fallback labels match the native conversation-controls recipe. Live recording must confirm which control the headed browser actually exposes.
+variables:
+  new_control_label: New
+  new_control_fallback: New chat
+steps:
+  - kind: module
+    recipeId: grok-web-open-composer
+  - kind: tap
+    target:
+      label: "{{new_control_label}}"
+    fallbackTargets:
+      - label: "{{new_control_fallback}}"
+  - kind: wait-for
+    target:
+      label: Ask Grok anything
+    timeoutMs: 15000
+  - kind: screenshot
+    caption: grok.com new chat composer

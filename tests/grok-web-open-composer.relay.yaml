@@ -1,0 +1,19 @@
+schemaVersion: 1
+recordingFormatVersion: 2
+id: grok-web-open-composer
+name: Grok web · open composer
+description: Open grok.com in a managed browser and wait for the signed-in composer. Native package ids are wrong here. Labels are public Grok copy already used by Relay's signed-in probe; live recording must replace any selector that does not match the fixture.
+variables:
+  grok_url: https://grok.com
+  composer_label: Ask Grok anything
+steps:
+  - kind: app
+    action: open
+    url: "{{grok_url}}"
+    relaunch: false
+    note: Web Grok is a URL, not ai.x.grok.
+  - kind: wait-for
+    target:
+      label: "{{composer_label}}"
+    timeoutMs: 30000
+    note: Signed-in Grok shows Ask Grok anything. If this wait fails, record the Test instead of inventing a selector.

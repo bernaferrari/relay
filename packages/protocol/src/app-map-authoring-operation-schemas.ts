@@ -1,4 +1,5 @@
 import * as z from "zod/v4";
+import { combineProfileTargetInputSchema } from "./combine-profile-target-schema.js";
 import {
   authoringTarget,
   empty,
@@ -42,6 +43,7 @@ export const appMapAuthoringOperationSchemas = {
       leaseId: identifier("Exclusive control lease"),
       title: z.string().optional(),
       position: point.optional(),
+      authenticationFixtureReference: z.string().trim().min(1).optional(),
     })
     .strict(),
   "app-map.screen.refresh.prepare": z
@@ -206,6 +208,7 @@ export const appMapAuthoringOperationSchemas = {
       targetKind: z.enum(["device", "browser"]).optional(),
       browserTargetId: z.string().optional(),
       selectedCellIds: z.array(identifier("Combine cell identifier")).optional(),
+      profileTargets: z.array(combineProfileTargetInputSchema).max(64).optional(),
     })
     .strict(),
   "app-map.combine.save": z

@@ -1,0 +1,22 @@
+schemaVersion: 1
+recordingFormatVersion: 2
+id: grok-web-weekly-manual
+name: Grok web · weekly manual
+description: Weekly cases that stay human. Pause on the phone or headed browser. Do not automate Continue with X, dictation, or camera until a recorded Test exists.
+steps:
+  - kind: module
+    recipeId: grok-web-open-composer
+  - kind: pause
+    message: Continue with X / Google / Apple on this account, then resume.
+    reason: authentication
+    resumeLabel: Signed in
+  - kind: pause
+    message: Use dictation on the composer, then resume.
+    reason: review
+    resumeLabel: Dictation done
+  - kind: pause
+    message: Open the camera or attachment sheet, capture one photo, then resume.
+    reason: permission
+    resumeLabel: Camera done
+  - kind: screenshot
+    caption: Weekly manual Grok checks completed

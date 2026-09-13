@@ -10,6 +10,19 @@ import { listPersistedRuns, type PersistedRun } from "./runs.js";
 import { recordAppMapRun, recordAppMapTestValidation } from "./app-map/run-operations.js";
 import { persistAuthoringEvidence } from "./authoring-evidence.js";
 import { readFrameTreeNodes } from "./run-frame-tree.js";
+import { digestAppMapTestExecutionValue } from "./app-map-test-execution-intent.js";
+
+/** Overlay fixtures must not reuse the unsigned saved profile id. */
+export function overlayHonestBrowserTargetProfile(profile: TargetProfile): TargetProfile {
+  const environment = profile.browserCaseProfile;
+  if (profile.platform !== "browser" || !environment?.authenticationFixtureId) return profile;
+  const viewport = environment.viewport;
+  const viewportKey = viewport ? `-${viewport.width}x${viewport.height}` : "";
+  return {
+    ...profile,
+    id: `browser:${profile.targetId}${viewportKey}-${digestAppMapTestExecutionValue(environment).slice(0, 12)}`,
+  };
+}
 
 function compiledPlan(run: PersistedRun): AppMapCompiledFlow | null {
   const value = run.artifacts.find((artifact) => artifact.kind === "app-map-flow-plan")?.data;
@@ -181,6 +194,7 @@ async function promoteSuccessfulTestCaptures(
   targetProfile: TargetProfile | null,
 ): Promise<boolean> {
   if (run.outcome !== "passed" || !targetProfile || !run.dir) return false;
+  targetProfile = overlayHonestBrowserTargetProfile(targetProfile);
   const locale = runLocale(run);
   const expected = planScreenSteps(run);
   const captures: Array<{ screenId: string; frame: PersistedRun["frames"][number] }> = [];

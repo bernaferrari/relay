@@ -37,6 +37,26 @@ const { calls, invoke } = vi.hoisted(() => {
         target: { id: "browser-1", name: "Chrome" },
       };
     }
+    if (id === "target.browser-auth.probe") {
+      return {
+        fixture: {
+          schemaVersion: 1,
+          id: "00000000-0000-4000-8000-000000000001",
+          reference: "authfx:00000000-0000-4000-8000-000000000001:1",
+          revision: 1,
+          projectId: "project-1",
+          targetId: "browser-1",
+          name: "Member",
+          origins: ["https://example.test"],
+          cookieCount: 1,
+          createdAt: 1,
+          createdBy: "human:test",
+        },
+        health: { status: "needs-relogin", checkedAt: 1, signedIn: false },
+      };
+    }
+    if (id === "target.open")
+      return { session: { targetId: "browser-1", name: "Chrome", url: "https://grok.com" } };
     throw new Error(`Unexpected operation ${id}`);
   });
   return { calls, invoke };
@@ -79,14 +99,38 @@ describe("operational app resources product service", () => {
       targetId: "browser-1",
       reference: "authfx:00000000-0000-4000-8000-000000000001:1",
     });
+    await service.probeBrowserAccount({
+      targetId: "browser-1",
+      reference: "authfx:00000000-0000-4000-8000-000000000001:1",
+    });
+    await service.openBrowserAccountForSignIn({
+      targetId: "browser-1",
+      reference: "authfx:00000000-0000-4000-8000-000000000001:1",
+    });
+    await service.openBrowserAccountForSignIn({ targetId: "browser-1" });
     expect(calls.map(({ id }) => id)).toEqual([
       "target.browser-auth.save",
       "target.browser-auth.save",
       "target.browser-auth.revoke",
+      "target.browser-auth.probe",
+      "target.open",
+      "target.open",
     ]);
-    expect(calls.every(({ input }) => (input as { confirm?: boolean }).confirm === true)).toBe(
-      true,
-    );
+    expect(calls.at(-2)?.input).toMatchObject({
+      presentation: "external",
+      authenticationFixtureReference: "authfx:00000000-0000-4000-8000-000000000001:1",
+    });
+    expect(calls.at(-1)?.input).toEqual({
+      targetId: "browser-1",
+      presentation: "external",
+    });
+    expect(
+      calls
+        .filter(
+          ({ id }) => id === "target.browser-auth.save" || id === "target.browser-auth.revoke",
+        )
+        .every(({ input }) => (input as { confirm?: boolean }).confirm === true),
+    ).toBe(true);
     expect(
       JSON.stringify(await service.saveBrowserAccount({ targetId: "browser-1", name: "Member" })),
     ).not.toMatch(/createdBy|revokedBy|cookieValue|password|token/iu);

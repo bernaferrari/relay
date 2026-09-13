@@ -21,6 +21,25 @@ function localAndroidTarget(id = "emulator-5554") {
   };
 }
 
+function localBrowserTarget() {
+  return {
+    schemaVersion: 1 as const,
+    kind: "local-browser" as const,
+    provider: { key: "relay.local.browser" as const, scope: "local" as const },
+    targetId: "grok-com",
+    platform: "browser" as const,
+    identity: { kind: "browser-target" as const, value: "grok-com" },
+  };
+}
+
+function browserLane(fixture: string) {
+  return {
+    workerId: `local:browser:target:grok-com%23${encodeURIComponent(fixture)}`,
+    capacity: 1,
+    host: { workerId: "local:browser:host", capacity: 8 },
+  };
+}
+
 function input(id = "job-1") {
   return {
     id,
@@ -242,6 +261,42 @@ test("restart quarantine retains the prior execution fence until a fresh reproof
     assert.equal(
       store.claimRunning("fresh-attempt", "server-after-restart", 7_400).status,
       "running",
+    );
+  });
+});
+
+test("two grok-com fixture lanes can claim running at the same time", async () => {
+  await withStore((store) => {
+    store.queue({
+      ...input("account-a"),
+      executionTarget: localBrowserTarget(),
+      lane: browserLane("authfx:a:1"),
+    });
+    store.queue({
+      ...input("account-b"),
+      executionTarget: localBrowserTarget(),
+      lane: browserLane("authfx:b:1"),
+    });
+    assert.equal(store.claimRunning("account-a", "relay-process-a", 8_000).status, "running");
+    assert.equal(store.claimRunning("account-b", "relay-process-a", 8_100).status, "running");
+  });
+});
+
+test("a phone serial stays exclusive even when worker ids diverge", async () => {
+  await withStore((store) => {
+    store.queue({
+      ...input("phone-a"),
+      lane: { workerId: "legacy-host-a", capacity: 1 },
+    });
+    store.queue({
+      ...input("phone-b"),
+      lane: { workerId: "legacy-host-b", capacity: 1 },
+    });
+    store.claimRunning("phone-a", "relay-process-a", 9_000);
+    assert.throws(
+      () => store.claimRunning("phone-b", "relay-process-a", 9_100),
+      (error: unknown) =>
+        error instanceof DurableWorkerAssignmentContentionError && error.scope === "target",
     );
   });
 });

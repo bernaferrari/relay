@@ -12,12 +12,20 @@ import {
   useSidebar,
 } from "@relay/ui-react/components/sidebar";
 import { Link, useLocation } from "@tanstack/react-router";
-import { FlaskConical, GitCompare, History, MonitorSmartphone, Settings } from "lucide-react";
+import {
+  FlaskConical,
+  GitCompare,
+  History,
+  Layers3,
+  MonitorSmartphone,
+  Settings,
+} from "lucide-react";
 import { AppSwitcher } from "./app-switcher";
 import { ActiveWork } from "./active-work";
 
 const mainItems = [
   { to: "/tests", label: "Tests", icon: FlaskConical },
+  { to: "/suites", label: "Plans", icon: Layers3 },
   { to: "/runs", label: "Results", icon: History },
   { to: "/devices", label: "Devices", icon: MonitorSmartphone },
 ] as const;

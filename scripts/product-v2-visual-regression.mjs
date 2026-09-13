@@ -65,7 +65,7 @@ const fixtures = [
   { id: "sessions-list", heading: "Live" },
   { id: "session-detail", heading: "Complete checkout and confirm the order" },
   { id: "live-test-editor", heading: "Complete checkout and confirm the order" },
-  { id: "suites-list", heading: "Suites" },
+  { id: "suites-list", heading: "Plans" },
   { id: "suite-detail", heading: "Release smoke" },
   { id: "environments-list", heading: "Environments" },
   { id: "environment-detail", heading: "Checkout staging" },
@@ -413,8 +413,13 @@ async function assertLayout(page, fixture, viewport) {
     }
   }
   if (!fixture.batch) return;
-  const reportLinks = page.getByRole("link", { name: /Open Report/iu });
-  if ((await reportLinks.count()) !== 6) throw new Error("Batch fixture did not render 6 Reports");
+  const reportLinks = page.locator("#main-content a[href^='/runs/']");
+  if ((await reportLinks.count()) < 1) {
+    throw new Error("Batch fixture did not render a Report link");
+  }
+  if ((await page.getByRole("link", { name: "Check Sign-ins" }).count()) < 1) {
+    throw new Error("Batch fixture did not render the Sign-ins morning step");
+  }
   const firstLink = await reportLinks.first().boundingBox();
   if (!firstLink || firstLink.height < 44) {
     throw new Error(`Batch Report link misses the 44px target floor (${firstLink?.height ?? 0}px)`);

@@ -176,6 +176,18 @@ test("gives each physical target its own local execution lane", () => {
   });
   assert.deepEqual(
     defaultTargetWorkerAssignment({
+      targetId: "grok-web#authfx:member:2",
+      platform: "browser",
+    }),
+    {
+      workerId: "local:browser:target:grok-web%23authfx%3Amember%3A2",
+      targetId: "grok-web#authfx:member:2",
+      capacity: 1,
+      host: { workerId: "local:browser:host", capacity: 8 },
+    },
+  );
+  assert.deepEqual(
+    defaultTargetWorkerAssignment({
       targetId: "same-text-as-local-serial",
       platform: "ios",
       provider: { key: "example.device-farm", scope: "remote" },
@@ -231,6 +243,29 @@ test("runs two default iOS target lanes concurrently", async () => {
   assert.deepEqual(started, ["ipad-a", "ipad-b"]);
   first.resolve();
   second.resolve();
+});
+
+test("runs three browser account lanes concurrently under the host ceiling", async () => {
+  const scheduler = new TargetWorkerScheduler();
+  const gates = [deferred(), deferred(), deferred()];
+  const started: string[] = [];
+  for (const account of ["a", "b", "c"] as const) {
+    const assignment = defaultTargetWorkerAssignment({
+      targetId: `grok-web#authfx:${account}:1`,
+      platform: "browser",
+    });
+    scheduler.enqueue({
+      id: account,
+      ...assignment,
+      run: async () => {
+        started.push(account);
+        await gates[["a", "b", "c"].indexOf(account)]!.promise;
+      },
+    });
+  }
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(started, ["a", "b", "c"]);
+  for (const gate of gates) gate.resolve();
 });
 
 test("applies an explicit host ceiling across independent target lanes", async () => {

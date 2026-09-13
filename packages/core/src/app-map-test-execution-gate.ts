@@ -22,7 +22,7 @@ import type {
 } from "@relay/protocol";
 import {
   appMapRuntimeTargetProfileFromSaved,
-  sameAppMapRuntimeTargetProfile,
+  sameAppMapRuntimeTargetProfileIgnoringAccount,
 } from "./app-map-runtime-target-profile.js";
 import type { Recipe } from "./recipes.js";
 import type { PersistedRun } from "./runs.js";
@@ -115,14 +115,17 @@ function queuedTargetProfileMismatch(
   if (!selected) return undefined;
   if (
     !targetProfile ||
-    !sameAppMapRuntimeTargetProfile(appMapRuntimeTargetProfileFromSaved(targetProfile), selected)
+    !sameAppMapRuntimeTargetProfileIgnoringAccount(
+      appMapRuntimeTargetProfileFromSaved(targetProfile),
+      selected,
+    )
   ) {
     return "The queued target profile no longer matches the selected frozen evidence profile.";
   }
   if (
     selected.browserCaseProfile &&
     (!browserCaseProfile ||
-      !sameAppMapRuntimeTargetProfile(
+      !sameAppMapRuntimeTargetProfileIgnoringAccount(
         {
           id: selected.id,
           targetId: selected.targetId,

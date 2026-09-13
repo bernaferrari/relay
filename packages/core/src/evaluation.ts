@@ -23,9 +23,9 @@ function promptFor(input: SemanticEvaluationRequest): string {
   ].join("\n");
 }
 
-function normalizeResult(
+export function normalizeEvaluationResult(
   raw: unknown,
-  input: SemanticEvaluationRequest,
+  input: Pick<SemanticEvaluationRequest, "criteria" | "threshold">,
   provider: string,
   model: string,
 ): SemanticEvaluationResult {
@@ -77,9 +77,35 @@ function normalizeResult(
   };
 }
 
-function parseJson(text: string): unknown {
+export function parseEvaluationJson(text: string): unknown {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1] ?? text;
   return JSON.parse(fenced.trim());
+}
+
+/** OpenRouter `usage.include` and OpenAI usage objects both expose a USD cost. */
+export function evaluationCostUsd(body: unknown): number | undefined {
+  if (!body || typeof body !== "object") return undefined;
+  const usage = (body as { usage?: unknown }).usage;
+  if (!usage || typeof usage !== "object") return undefined;
+  const record = usage as Record<string, unknown>;
+  for (const key of ["cost", "total_cost", "costUsd", "total_cost_usd"] as const) {
+    const value = record[key];
+    if (typeof value === "number" && Number.isFinite(value) && value >= 0) return value;
+  }
+  return undefined;
+}
+
+export function attachEvaluationCost(
+  result: SemanticEvaluationResult,
+  body: unknown,
+): SemanticEvaluationResult {
+  const costUsd = evaluationCostUsd(body);
+  return costUsd === undefined ? result : { ...result, costUsd };
+}
+
+export function formatEvaluationCost(costUsd: number | undefined): string {
+  if (costUsd === undefined) return "";
+  return ` · $${costUsd < 0.01 ? costUsd.toFixed(4) : costUsd.toFixed(2)}`;
 }
 
 function registerBuiltins(): void {
@@ -99,6 +125,7 @@ function registerBuiltins(): void {
         const body = (await response.json()) as {
           output_text?: string;
           output?: { content?: { text?: string }[] }[];
+          usage?: unknown;
         };
         const text =
           body.output_text ??
@@ -107,7 +134,10 @@ function registerBuiltins(): void {
             .map((item) => item.text ?? "")
             .join("\n") ??
           "";
-        return normalizeResult(parseJson(text), input, "openai", model);
+        return attachEvaluationCost(
+          normalizeEvaluationResult(parseEvaluationJson(text), input, "openai", model),
+          body,
+        );
       },
     });
   }
@@ -125,7 +155,7 @@ function registerBuiltins(): void {
         });
         if (!response.ok)
           throw new Error(`semantic judge unavailable: local provider returned ${response.status}`);
-        return normalizeResult(await response.json(), input, "local", model);
+        return normalizeEvaluationResult(await response.json(), input, "local", model);
       },
     });
   }
@@ -152,11 +182,13 @@ function registerBuiltins(): void {
             model,
             messages: [{ role: "user", content: promptFor(input) }],
             response_format: { type: "json_object" },
+            usage: { include: true },
           }),
         });
         const body = (await response.json().catch(() => ({}))) as {
           choices?: { message?: { content?: unknown } }[];
           error?: { message?: string; code?: string | number };
+          usage?: unknown;
         };
         if (!response.ok) {
           const detail = body.error?.message ?? `HTTP ${response.status}`;
@@ -178,7 +210,10 @@ function registerBuiltins(): void {
         if (!text.trim()) {
           throw new Error("semantic judge unavailable: OpenRouter returned no content");
         }
-        return normalizeResult(parseJson(text), input, "openrouter", model);
+        return attachEvaluationCost(
+          normalizeEvaluationResult(parseEvaluationJson(text), input, "openrouter", model),
+          body,
+        );
       },
     });
   }

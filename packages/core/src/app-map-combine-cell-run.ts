@@ -208,15 +208,32 @@ export function enqueuePreparedAppMapCombineCells(input: EnqueuePreparedAppMapCo
   return { batchId: staged.batchId, jobs: staged.commit() };
 }
 
+export function unrecordedPreparedCombineReason(
+  cell: Pick<PreparedAppMapCombineCell, "plan">,
+): string | undefined {
+  const reason = cell.plan.omittedSteps?.[0]?.reason?.trim();
+  if (!reason) return undefined;
+  if (/No recorded (?:Web|Android|iOS) route/u.test(reason)) return reason;
+  if (cell.plan.performance.executableOperations > 0) return undefined;
+  return reason;
+}
+
+export function queueablePreparedCombineCells<T extends Pick<PreparedAppMapCombineCell, "plan">>(
+  cells: readonly T[],
+): T[] {
+  return cells.filter((cell) => !unrecordedPreparedCombineReason(cell));
+}
+
 export function combineCampaignCaseFromPreparedCell(
   cell: PreparedAppMapCombineCell,
   input: {
     index: number;
     phase: "pilot" | "coverage";
-    status: "pending" | "queued";
+    status: "pending" | "queued" | "blocked";
     jobId?: string;
   },
 ) {
+  const unrecorded = unrecordedPreparedCombineReason(cell);
   return {
     index: input.index,
     cellId: cell.cellId,
@@ -231,7 +248,8 @@ export function combineCampaignCaseFromPreparedCell(
     wrapperGraphDigest: cell.outerIntent.wrapper.recipeGraphDigest,
     staticInputDigest: digestAppMapTestExecutionValue(cell.staticInputs),
     phase: input.phase,
-    status: input.status,
+    status: unrecorded ? ("blocked" as const) : input.status,
+    ...(unrecorded ? { error: `UNSUPPORTED_PLATFORM: ${unrecorded}` } : {}),
     ...(input.jobId ? { jobId: input.jobId } : {}),
   };
 }

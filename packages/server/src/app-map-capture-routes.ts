@@ -16,7 +16,7 @@ import {
 } from "@relay/core";
 import type { AuthoringSession, OperationInput, ScreenVariant } from "@relay/protocol";
 import { assertTargetLease } from "./access-control.js";
-import { createAuthoringRuntime } from "./authoring-routes.js";
+import { createAuthoringRuntime, type AuthoringDeviceOptions } from "./authoring-routes.js";
 import {
   currentTakeRevision,
   findEquivalentTeachConnection,
@@ -41,7 +41,14 @@ import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
 export async function handleAppMapCaptureRoute(input: AppMapRouteInput): Promise<boolean> {
   if (await handleAppMapScreenRefreshRoute(input)) return true;
   const { method, pathname, request, response, scope } = input;
-  const authoringRuntime = input.authoringRuntime ?? createAuthoringRuntime();
+  const proofRuntime = (reference?: string) => {
+    const fixtureId = reference?.trim();
+    const options: AuthoringDeviceOptions = fixtureId
+      ? { authenticationFixtureId: fixtureId, projectId: scope.projectId, headless: true }
+      : {};
+    return input.authoringRuntime ?? createAuthoringRuntime(options);
+  };
+  const authoringRuntime = proofRuntime();
 
   const variableInfer = matchPath(pathname, "/app-maps/:appMapId/variables/:variableId/infer");
   if (method === "POST" && variableInfer) {
@@ -143,6 +150,7 @@ export async function handleAppMapCaptureRoute(input: AppMapRouteInput): Promise
     if (!current) throw new HttpError(404, `App Map ${screenCapture.appMapId} not found`);
     const expectedRevision =
       current.revision !== body.expectedRevision ? current.revision : body.expectedRevision;
+    const captureRuntime = proofRuntime(body.authenticationFixtureReference);
 
     let session: AuthoringSession | undefined;
     try {
@@ -152,13 +160,15 @@ export async function handleAppMapCaptureRoute(input: AppMapRouteInput): Promise
         leaseId: body.leaseId,
         expectedAppMapRevision: expectedRevision,
       });
-      session = await authoringSessions.capture(session.id, authoringRuntime);
+      session = await authoringSessions.capture(session.id, captureRuntime);
       const take = currentTakeRevision(session);
       if (!take?.before) throw new HttpError(502, "The target returned no screen observation");
       const profile = await profileForCapture(
         body.target,
         take.before.capturedAt,
         take.before.bounds,
+        {},
+        body.authenticationFixtureReference,
       );
       let capturedScreenId = "";
       let capturedVariantId = "";
@@ -240,7 +250,7 @@ export async function handleAppMapCaptureRoute(input: AppMapRouteInput): Promise
         // Screenshot-only capture borrows the Authoring Session observation boundary, but it is
         // not a path proposal. Finish its temporary review before cleanup to avoid phantom reviews.
         if (!["committed", "cancelled", "failed"].includes(session.state)) {
-          await authoringSessions.cancel(session.id, authoringRuntime).catch(() => undefined);
+          await authoringSessions.cancel(session.id, captureRuntime).catch(() => undefined);
         }
         await authoringSessions.cleanup(session.id).catch(() => undefined);
       }
@@ -362,6 +372,7 @@ export async function handleAppMapCaptureRoute(input: AppMapRouteInput): Promise
       throw new HttpError(404, `Screen ${body.fromScreenId} not found`);
     }
     teachHandoff.assertValidTeachHandoff(body);
+    const teachRuntime = proofRuntime(body.authenticationFixtureReference);
     let session: AuthoringSession | undefined;
     try {
       if (body.interaction) {
@@ -375,7 +386,7 @@ export async function handleAppMapCaptureRoute(input: AppMapRouteInput): Promise
           expectedAppMapRevision: current.revision,
           sourceScreenId: body.fromScreenId,
         });
-        const runtime = authoringRuntime;
+        const runtime = teachRuntime;
         session = await authoringSessions.observe(session.id, runtime);
         session = await authoringSessions.start(session.id, runtime);
         if (session.state === "failed") {
@@ -407,7 +418,7 @@ export async function handleAppMapCaptureRoute(input: AppMapRouteInput): Promise
           leaseId: body.leaseId,
           expectedAppMapRevision: expectedRevision,
         });
-        session = await authoringSessions.capture(session.id, authoringRuntime);
+        session = await authoringSessions.capture(session.id, teachRuntime);
       }
       const take = currentTakeRevision(session);
       const destinationObservation = body.interaction ? take?.after : take?.before;
@@ -449,6 +460,8 @@ export async function handleAppMapCaptureRoute(input: AppMapRouteInput): Promise
         body.target,
         destinationObservation.capturedAt,
         destinationObservation.bounds,
+        {},
+        body.authenticationFixtureReference,
       );
       let capturedScreenId = "";
       let capturedVariantId = "";

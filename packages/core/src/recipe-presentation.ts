@@ -62,7 +62,9 @@ export function describeRecipeStep(step: RecipeStep): string {
     case "expect":
       return `check ${describeExpectTarget(step.target)} ${step.condition}`;
     case "expect-set":
-      return `Check options are exactly ${step.labels.join(", ")}`;
+      return step.extras === "allow"
+        ? `Check options include ${step.labels.join(", ")}`
+        : `Check options are exactly ${step.labels.join(", ")}`;
     case "expect-screen":
       return `Reach ${step.screenTitle}`;
     case "extract":
@@ -73,6 +75,12 @@ export function describeRecipeStep(step: RecipeStep): string {
       return `Check layout: ${describeTarget(step.first)} does not overlap ${describeTarget(step.second)}`;
     case "evaluate-semantic":
       return `Evaluate ${step.input} against ${step.criteria.length} criterion${step.criteria.length === 1 ? "" : "s"}`;
+    case "evaluate-visual":
+      return `Evaluate screenshot against ${step.criteria.length} visual criterion${step.criteria.length === 1 ? "" : "s"}`;
+    case "identity-ignore":
+      return step.name
+        ? `Ignore ${step.name} for identity`
+        : `Ignore region ${step.region.x},${step.region.y},${step.region.width},${step.region.height} for identity`;
     case "pause":
       return step.reason
         ? `Wait for human (${step.reason}): ${step.message}`
@@ -116,6 +124,7 @@ export function describeRecipeStep(step: RecipeStep): string {
       if (step.action === "install" || step.action === "update")
         return `${step.action === "install" ? "Install" : "Update"} ${step.app} from APK`;
       if (step.action === "uninstall") return `Uninstall ${step.app}`;
+      if (step.action === "background") return `Background ${step.app ?? "app"}`;
       return `${step.action === "open" ? "Open" : "Close"} ${step.app ?? step.url ?? "app"}`;
     case "device":
       return step.action === "keyboard-dismiss"
@@ -139,6 +148,12 @@ export function describeRecipeStep(step: RecipeStep): string {
         : "Mark network log";
     case "logs":
       return `${step.action} device logs`;
+    case "offline":
+      return `${step.state === "on" ? "Go" : "Leave"} offline`;
+    case "upload":
+      return step.target
+        ? `Upload ${step.file} to ${describeTarget(step.target)}`
+        : `Upload ${step.file}`;
     default: {
       const kind = (step as { kind?: string }).kind ?? "unknown";
       throw new Error(`unsupported execution step: ${kind}`);
@@ -176,7 +191,10 @@ export function glyphsForStep(step: RecipeStep): Glyph[] {
     case "assert-content":
     case "assert-layout":
     case "evaluate-semantic":
+    case "evaluate-visual":
       return ["ai", "ok"];
+    case "identity-ignore":
+      return ["ok"];
     case "pause":
     case "review":
       return ["wait"];
@@ -209,7 +227,10 @@ export function glyphsForStep(step: RecipeStep): Glyph[] {
       return ["tap"];
     case "network":
     case "logs":
+    case "upload":
       return ["store"];
+    case "offline":
+      return ["tap"];
     default: {
       const kind = (step as { kind?: string }).kind ?? "unknown";
       throw new Error(`unsupported execution step: ${kind}`);

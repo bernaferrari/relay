@@ -158,6 +158,101 @@ function applyBindings(
   }) as AppMapScenarioTestStep[];
 }
 
+export function unrecordedRouteMessage(
+  platform: "android" | "ios" | "browser",
+): string {
+  const label = platform === "browser" ? "Web" : platform === "android" ? "Android" : "iOS";
+  return `No recorded ${label} route. Do not invent Grok Settings navigation.`;
+}
+
+function disableStep(step: AppMapScenarioTestStep, reason: string): AppMapScenarioTestStep {
+  const execution = {
+    status: "disabled" as const,
+    reason,
+    repairTargetId: step.id,
+    decidedBy: "unrecorded-route",
+    decidedAt: 0,
+  };
+  if (step.kind === "decision") {
+    return {
+      ...step,
+      execution,
+      thenSteps: step.thenSteps.map((item) => disableStep(item, reason)),
+      ...(step.elseSteps
+        ? { elseSteps: step.elseSteps.map((item) => disableStep(item, reason)) }
+        : {}),
+    };
+  }
+  if (step.kind === "loop") {
+    return { ...step, execution, steps: step.steps.map((item) => disableStep(item, reason)) };
+  }
+  return { ...step, execution };
+}
+
+/** Compile-time copy. Never persist this onto a Web-recorded Test. */
+export function disableScenarioTestForUnrecordedRoute(
+  test: AppMapScenarioTest,
+  platform: "android" | "ios" | "browser",
+): AppMapScenarioTest {
+  const reason = unrecordedRouteMessage(platform);
+  return { ...structuredClone(test), steps: test.steps.map((step) => disableStep(step, reason)) };
+}
+
+export function isUnrecordedRuntimePlatform(
+  map: Pick<AppMap, "screens" | "screenVariants" | "connections">,
+  test: Pick<AppMapScenarioTest, "originApplication" | "steps">,
+  platform: string | undefined,
+): platform is "android" | "ios" | "browser" {
+  if (platform !== "android" && platform !== "ios" && platform !== "browser") return false;
+  const recorded = recordedTestRoutePlatforms(map, test);
+  return recorded !== undefined && !recorded.includes(platform);
+}
+
+function connectionIdsFromSteps(steps: readonly AppMapScenarioTestStep[]): string[] {
+  const ids: string[] = [];
+  for (const step of steps) {
+    if (step.binding.status === "resolved" && step.binding.kind === "connections") {
+      ids.push(...step.binding.connectionIds);
+    }
+    if (step.kind === "decision") {
+      ids.push(...connectionIdsFromSteps(step.thenSteps));
+      if (step.elseSteps) ids.push(...connectionIdsFromSteps(step.elseSteps));
+    }
+    if (step.kind === "loop") ids.push(...connectionIdsFromSteps(step.steps));
+  }
+  return ids;
+}
+
+/** Platforms that already have a recorded surface for this Test. `undefined`
+ * means the graph does not prove a surface, so compile stays fail-open. */
+export function recordedTestRoutePlatforms(
+  map: Pick<AppMap, "screens" | "screenVariants" | "connections">,
+  test: Pick<AppMapScenarioTest, "originApplication" | "steps">,
+): ReadonlyArray<"android" | "ios" | "browser"> | undefined {
+  const platforms = new Set<"android" | "ios" | "browser">();
+  if (test.originApplication && /^https?:\/\//iu.test(test.originApplication)) {
+    platforms.add("browser");
+  }
+  for (const connectionId of connectionIdsFromSteps(test.steps)) {
+    const connection = map.connections[connectionId];
+    if (!connection) continue;
+    const destinationScreenId =
+      connection.destination.kind === "screen" ? connection.destination.screenId : undefined;
+    for (const screenId of [connection.fromScreenId, destinationScreenId]) {
+      if (!screenId) continue;
+      const screen = map.screens[screenId];
+      if (!screen) continue;
+      for (const variantId of screen.variantIds) {
+        const platform = map.screenVariants[variantId]?.targetProfile?.platform;
+        if (platform === "android" || platform === "ios" || platform === "browser") {
+          platforms.add(platform);
+        }
+      }
+    }
+  }
+  return platforms.size ? [...platforms] : undefined;
+}
+
 export function testWithSelectedRouteVariant(
   test: AppMapScenarioTest,
   variant: AppMapTestRouteVariant | undefined,

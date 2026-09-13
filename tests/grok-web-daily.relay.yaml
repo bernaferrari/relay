@@ -1,0 +1,14 @@
+schemaVersion: 1
+recordingFormatVersion: 2
+id: grok-web-daily
+name: Grok web · daily seed pack
+description: Seed daily grok.com pack. Not a measured capacity quote and not a recorded App Map. Record Tier A Tests in Relay before treating this as the morning Plan. Do not invent Settings navigation.
+steps:
+  - kind: module
+    recipeId: grok-web-open-composer
+  - kind: module
+    recipeId: grok-web-send-hello
+  - kind: module
+    recipeId: grok-web-new-chat
+  - kind: screenshot
+    caption: grok.com daily seed pack completed

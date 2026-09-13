@@ -197,3 +197,26 @@ export function sameAppMapRuntimeTargetProfile(
 ): boolean {
   return appMapRuntimeTargetProfileKey(left) === appMapRuntimeTargetProfileKey(right);
 }
+
+export function appMapRuntimeTargetProfileWithoutAccount(
+  profile: AppMapCompiledRuntimeTargetProfile,
+): AppMapCompiledRuntimeTargetProfile {
+  if (!profile.browserCaseProfile?.authenticationFixtureId) return profile;
+  const { authenticationFixtureId: _account, ...environment } = profile.browserCaseProfile;
+  return appMapRuntimeTargetProfileFromSaved({
+    ...profile,
+    browserCaseProfile: environment,
+  });
+}
+
+/** Plan account columns overlay a fixture onto a saved browser profile.
+ * Viewport/engine/locale still have to match; the account does not. */
+export function sameAppMapRuntimeTargetProfileIgnoringAccount(
+  left: AppMapCompiledRuntimeTargetProfile,
+  right: AppMapCompiledRuntimeTargetProfile,
+): boolean {
+  return sameAppMapRuntimeTargetProfile(
+    appMapRuntimeTargetProfileWithoutAccount(left),
+    appMapRuntimeTargetProfileWithoutAccount(right),
+  );
+}

@@ -94,7 +94,9 @@ function selectorAssessment(input: {
   const target = step.target;
   const description = targetDescription(target);
   const hasReviewedFallback =
-    target.point?.fallbackPolicy === "reviewed" || Boolean(target.point?.relativeTo);
+    target.point?.fallbackPolicy === "reviewed" ||
+    Boolean(target.point?.relativeTo) ||
+    (step.kind === "tap" && Boolean(step.fallbackTargets?.length));
   const selectorBase = {
     recipeId,
     ...(step.id ? { recipeStepId: step.id } : {}),

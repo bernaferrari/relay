@@ -92,6 +92,10 @@ async function expectedSourceScreen(session: AuthoringSession): Promise<{
   if (!sourceScreenId) return null;
   const screen = appMap.screens[sourceScreenId];
   if (!screen) throw new AuthoringStateError("Source screen no longer exists");
+  const variantObservations = screen.variantIds.flatMap((variantId) => {
+    const observation = appMap.screenVariants[variantId]?.observation;
+    return identityFromVariantObservation(observation);
+  });
   const fingerprints = [
     screen.identity?.fingerprint,
     ...(screen.identity?.aliases ?? []),
@@ -99,12 +103,21 @@ async function expectedSourceScreen(session: AuthoringSession): Promise<{
       const fingerprint = appMap.screenVariants[variantId]?.observation?.fingerprint;
       return fingerprint ? [fingerprint] : [];
     }),
+    ...variantObservations.map((observation) => observation.fingerprint),
   ].filter((fingerprint): fingerprint is string => Boolean(fingerprint));
-  const observations = screen.variantIds.flatMap((variantId) => {
-    const observation = appMap.screenVariants[variantId]?.observation;
-    return observation ? [observation] : [];
-  });
-  return { title: screen.title, fingerprints: [...new Set(fingerprints)], observations };
+  return {
+    title: screen.title,
+    fingerprints: [...new Set(fingerprints)],
+    observations: variantObservations,
+  };
+}
+
+function identityFromVariantObservation(
+  observation: { nodes?: unknown } | undefined,
+): ScreenIdentityObservation[] {
+  const nodes = observation?.nodes;
+  if (!Array.isArray(nodes) || nodes.length === 0) return [];
+  return [observeScreenIdentity(nodes as SnapshotNode[])];
 }
 
 function semanticObservation(

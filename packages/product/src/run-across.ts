@@ -3,6 +3,7 @@ import type {
   AppMapVariable,
   AuthoringTarget,
   CombineTriageStatus,
+  CombineEvidenceAnalysisReport,
   FailureCategory,
   RepeatFailureKind,
   RepeatFailureClusterReport,
@@ -13,6 +14,7 @@ import {
   type RelayOperationPort,
 } from "@relay/workflows/operation-port";
 import { routeUrls } from "./routes.js";
+import { planResultColumnIdentity, summarizeProductResultGrid } from "./plan-result-cells.js";
 
 /** The public name for the saved values applied while running a Test. */
 export type ProductDataSetDimension = {
@@ -83,13 +85,15 @@ export type ProductBatchCase = {
 };
 
 /** Stable product identity for one Test × environment result. The environment
- * id is the saved target profile identity. Legacy records without that binding
- * omit the identity rather than repurposing a provider serial; this is never a
- * credential or readiness claim. */
+ * id is the Result column key: saved target profile, plus account when the
+ * Plan froze one. Legacy records without that binding omit the identity
+ * rather than repurposing a provider serial; this is never a credential or
+ * readiness claim. */
 export type ProductBatchResultIdentity = {
   readonly testId: string;
   readonly environmentId: string;
   readonly environmentPlatform: "android" | "ios" | "browser";
+  readonly environmentLabel?: string;
   readonly runId?: string;
 };
 
@@ -190,6 +194,7 @@ export type ProductRunAcrossService = {
   triage(batchId: string, input: ProductBatchTriageInput): Promise<ProductRunAcrossBatch>;
   cancel(batchId: string): Promise<ProductRunAcrossBatch>;
   getReport(batchId: string): Promise<ProductBatchReport>;
+  getFindings(batchId: string): Promise<CombineEvidenceAnalysisReport>;
   exportReport(batchId: string): Promise<ProductBatchReport>;
   /** Authenticated binary export for UI consumers. */
   downloadExport?(batchId: string): Promise<Blob>;
@@ -208,6 +213,10 @@ type CampaignCase = {
   error?: string;
   testId?: string;
   targetProfileId?: string;
+  engine?: "chromium" | "firefox" | "webkit";
+  account?:
+    | { kind: "fixture"; accountId: string; accountRevision: string; reference?: string }
+    | { kind: "signed-out"; attested: true };
   target?: { targetId?: string; platform?: string };
   assignee?: string;
   triageStatus?: CombineTriageStatus;
@@ -389,7 +398,10 @@ function batchFromCampaign(
           ? {
               identity: {
                 testId: item.testId,
-                environmentId: item.targetProfileId,
+                ...planResultColumnIdentity({
+                  targetProfileId: item.targetProfileId,
+                  ...(item.account ? { account: item.account } : {}),
+                }),
                 environmentPlatform: platform,
                 ...(item.runId ? { runId: item.runId } : {}),
               },
@@ -541,27 +553,14 @@ export function summarizeProductBatch(batch: ProductRunAcrossBatch): {
   readonly headline: string;
   readonly detail: string;
 } {
-  const counts = batch.cases.reduce(
-    (result, item) => {
-      result[item.status] += 1;
-      return result;
-    },
-    { passed: 0, failed: 0, blocked: 0, cancelled: 0, pending: 0, queued: 0, running: 0 },
-  );
-  const total = batch.cases.length;
-  const terminal = counts.passed + counts.failed + counts.blocked + counts.cancelled;
-  const unresolved = counts.pending + counts.queued + counts.running;
-  const detail = `${counts.passed} passed · ${counts.failed} failed · ${counts.blocked} blocked · ${counts.cancelled} cancelled · ${unresolved} remaining`;
-  let headline: string;
-  if (batch.status === "cancelled" || (counts.cancelled === total && total > 0))
-    headline = "Batch was cancelled";
-  else if (total === 0 && batch.status === "completed") headline = "No cases were run";
-  else if (counts.blocked === total && total > 0) headline = "All selected cases are blocked";
-  else if (counts.passed === total && total > 0) headline = "All selected cases passed";
-  else if (counts.cancelled || counts.blocked || counts.failed) {
-    headline = `${terminal === total ? "Batch completed with" : "Batch has"} ${counts.failed + counts.blocked + counts.cancelled} cases needing attention`;
-  } else headline = "Batch is still in progress";
-  return { headline, detail };
+  const grid = summarizeProductResultGrid(batch.cases);
+  if (batch.status === "cancelled" && batch.cases.every((item) => item.status === "cancelled")) {
+    return { headline: "Plan was cancelled", detail: grid.detail };
+  }
+  if (batch.status === "cancelled" && batch.cases.length === 0) {
+    return { headline: "Plan was cancelled", detail: grid.detail };
+  }
+  return { headline: grid.headline, detail: grid.detail };
 }
 
 export function createProductRunAcrossService(
@@ -673,6 +672,9 @@ export function createProductRunAcrossService(
     },
     async getReport(batchId) {
       return reportFor(await campaign(batchId));
+    },
+    async getFindings(batchId) {
+      return operations.invoke("job.combine.analysis", { batchId });
     },
     async exportReport(batchId) {
       const batch = await campaign(batchId);

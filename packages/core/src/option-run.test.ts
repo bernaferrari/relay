@@ -6,6 +6,7 @@ import {
   composeOptionRunRecipes,
   resolveVariableApply,
   assertOptionSandwichReady,
+  optionSetNeedsRecordedPicker,
   navStepsToRecipe,
   stabilizeOptionIds,
   prepareOptionCasePlan,
@@ -1000,6 +1001,31 @@ test("empty Out still runs; language without In does not invent Grok nav", () =>
   assert.equal(resolved.entry.length, 0);
   assert.equal(resolved.exit.length, 0);
   assert.throws(() => assertOptionSandwichReady(language), /Record how you open this list/);
+  const loggedOut: OptionRunSet = {
+    id: "account",
+    name: "Account",
+    kind: "account",
+    apply: { kind: "list" },
+    options: [{ id: "logged-out", label: "Logged out" }],
+  };
+  assert.equal(optionSetNeedsRecordedPicker(loggedOut), false);
+  assert.deepEqual(assertOptionSandwichReady(loggedOut), { entry: [], exit: [] });
+  const { root: loggedOutRoot } = composeOptionRunRecipes({
+    body,
+    request: { sets: [loggedOut], screenshotEach: false, app: "https://grok.com" },
+    batchId: "logged-out-world",
+  });
+  assert.ok(!loggedOutRoot.steps.some((step) => step.kind === "tap"));
+  assert.ok(
+    loggedOutRoot.steps.some((step) => step.kind === "app" && step.app === "https://grok.com"),
+  );
+  assert.equal(
+    optionSetNeedsRecordedPicker({
+      kind: "account",
+      apply: { kind: "list", entryPath: [{ kind: "tap", target: { label: "Accounts" } }] },
+    }),
+    true,
+  );
   const location: OptionRunSet = {
     id: "locations",
     name: "Location",
@@ -1014,6 +1040,72 @@ test("empty Out still runs; language without In does not invent Grok nav", () =>
   });
   assert.ok(root.steps.some((step) => step.kind === "module"));
   assert.ok(!root.steps.some((step) => step.kind === "key" && step.key === "back"));
+});
+
+test("logged-out account worlds do not invent Sign in navigation", async () => {
+  const base = sandwichMap();
+  for (const screen of Object.values(base.screens)) delete screen.identity;
+  base.screens.home = { ...base.screens.home!, variantIds: ["home-grok"] };
+  base.screenVariants = {
+    "home-grok": {
+      ...entity("home-grok"),
+      screenId: "home",
+      targetProfile: {
+        id: "browser:grok-com",
+        targetId: "grok-com",
+        source: "browser",
+        platform: "browser",
+        name: "Grok.com",
+        capabilities: ["snapshot"],
+        observedAt: 1,
+      },
+      observation: { fingerprint: "a".repeat(64), nodes: [], volatileSignals: [] },
+      evidenceIds: [],
+    },
+  };
+  const variable = {
+    ...entity("account"),
+    name: "Account",
+    kind: "account" as const,
+    apply: { kind: "list" as const },
+    options: [{ id: "logged-out", label: "Logged out" }],
+  };
+  const work = {
+    ...entity("open-home"),
+    name: "Open home",
+    kind: "scenario" as const,
+    intentSchemaVersion: 1 as const,
+    steps: [
+      {
+        id: "home-check",
+        kind: "script" as const,
+        intent: "Home is visible",
+        binding: { status: "resolved" as const, kind: "script" as const, source: "return true" },
+      },
+    ],
+  };
+  const combine = {
+    ...entity("grok-web-daily"),
+    name: "Grok.com daily logged-out",
+    variableIds: [variable.id],
+    testIds: [work.id],
+    selected: { [variable.id]: ["logged-out"] },
+    strategy: "cartesian" as const,
+  };
+  const preflight = await preflightAppMapCombine(
+    {
+      ...base,
+      variables: { [variable.id]: variable },
+      tests: { [work.id]: work },
+      combines: { [combine.id]: combine },
+    },
+    combine,
+    { target: { targetId: "grok-com", platform: "browser" } },
+  );
+  assert.equal(preflight.ok, true, JSON.stringify(preflight.blockers));
+  assert.equal(preflight.worlds, 1);
+  assert.ok(!preflight.blockers.some((item) => /Record how you open this list/.test(item.message)));
+  assert.equal(preflight.cells[0]?.binding, "bound");
 });
 
 test("stabilizeOptionIds slugs labels and never invents nav", () => {

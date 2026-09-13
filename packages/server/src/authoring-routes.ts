@@ -10,10 +10,8 @@ import {
   captureAuthoringFullPage,
   captureSnapshot,
   cleanupScreenshot,
-  createDeviceForTarget,
   currentOperationContext,
   describeRecipeStep,
-  getBrowserDevice,
   IosMutationOutcomeUnknownError,
   isBlankScreenshot,
   listDevices,
@@ -33,7 +31,6 @@ import type {
   AuthoringInteraction,
   AuthoringObservationProof,
   AuthoringSession,
-  AuthoringTarget,
   CommitAuthoringSessionInput,
   CreateAuthoringSessionInput,
   EditAuthoringTakeInput,
@@ -44,6 +41,8 @@ import type {
   WorkflowTransitionInput,
 } from "@relay/protocol";
 import { assertTargetControl, assertTargetLease } from "./access-control.js";
+import { deviceFor, targetContext, type AuthoringDeviceOptions } from "./authoring-device.js";
+import { executableInteraction } from "./authoring-interaction-steps.js";
 import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
 import { iosMutationOutcomeUnknownHttpError } from "./interaction-routes.js";
 import { isFinalizedMp4, startIosVideoTake, stopIosVideoTake } from "./ios-video-capture.js";
@@ -53,6 +52,8 @@ import {
   semanticProofStatus,
   type SemanticProofStatus,
 } from "./authoring-observation-proof.js";
+
+export type { AuthoringDeviceOptions } from "./authoring-device.js";
 
 // XCTest video recording owns the command channel on attached Apple hardware:
 // any tap, snapshot, or text command restarts the runner and destroys the
@@ -67,21 +68,6 @@ async function usesExclusivePhysicalIosRunner(session: AuthoringSession): Promis
   const devices = await listDevices().catch(() => []);
   const target = devices.find((device) => device.serial === session.target.targetId);
   return !target || !/simulator/i.test(target.kind ?? "");
-}
-
-function targetContext(target: AuthoringTarget) {
-  return target.kind === "browser"
-    ? ({ kind: "browser", platform: "browser", targetId: target.targetId } as const)
-    : ({ kind: "device", platform: target.platform, serial: target.targetId } as const);
-}
-
-async function deviceFor(session: AuthoringSession) {
-  const context = targetContext(session.target);
-  return runWithTargetContext(context, () =>
-    session.target.kind === "browser"
-      ? getBrowserDevice(session.target.targetId)
-      : Promise.resolve(createDeviceForTarget(context)),
-  );
 }
 
 type AuthoringObservationDependencies = {
@@ -373,79 +359,10 @@ export async function captureAuthoringReplayActionEndpoint(
   });
 }
 
-function executableInteraction(interaction: AuthoringInteraction): RecipeStep[] {
-  switch (interaction.kind) {
-    case "tap":
-      return [
-        {
-          kind: "tap",
-          target: structuredClone(interaction.target),
-          ...(interaction.expectedApp ? { expectedApp: interaction.expectedApp } : {}),
-        },
-      ];
-    case "type":
-      return [
-        {
-          kind: "type",
-          text: interaction.text,
-          ...(interaction.target ? { target: structuredClone(interaction.target) } : {}),
-          ...(interaction.mode ? { mode: interaction.mode } : {}),
-        },
-      ];
-    case "clipboard":
-      return [
-        {
-          kind: "clipboard",
-          action: interaction.action,
-          ...(interaction.text !== undefined ? { text: interaction.text } : {}),
-          ...(interaction.target ? { target: structuredClone(interaction.target) } : {}),
-          ...(interaction.expect !== undefined ? { expect: interaction.expect } : {}),
-          ...(interaction.match ? { match: interaction.match } : {}),
-        },
-      ];
-    case "app":
-      return [
-        {
-          kind: "app",
-          action: interaction.action,
-          ...(interaction.app !== undefined ? { app: interaction.app } : {}),
-          ...(interaction.url !== undefined ? { url: interaction.url } : {}),
-          ...(interaction.relaunch !== undefined ? { relaunch: interaction.relaunch } : {}),
-          ...(interaction.artifact !== undefined ? { artifact: interaction.artifact } : {}),
-          ...(interaction.as !== undefined ? { as: interaction.as } : {}),
-          ...(interaction.version !== undefined ? { version: interaction.version } : {}),
-          ...(interaction.versionMatch ? { versionMatch: interaction.versionMatch } : {}),
-        },
-      ];
-    case "device":
-      return [{ kind: "device", action: interaction.action }];
-    case "rotate":
-      return [{ kind: "rotate", orientation: interaction.orientation }];
-    case "swipe":
-      return [
-        {
-          kind: "swipe",
-          from: { ...interaction.from },
-          to: { ...interaction.to },
-          ...(interaction.durationMs !== undefined ? { durationMs: interaction.durationMs } : {}),
-        },
-      ];
-    case "key":
-      return [{ kind: "key", key: interaction.key }];
-    case "wait":
-      return interaction.ms > 0 ? [{ kind: "sleep", ms: interaction.ms }] : [];
-    case "observe":
-    case "screenshot":
-    case "reusable":
-      return [];
-    case "steps":
-      return structuredClone(interaction.steps);
-  }
-}
-
-export function createAuthoringRuntime(): AuthoringRuntime {
+export function createAuthoringRuntime(options: AuthoringDeviceOptions = {}): AuthoringRuntime {
+  const resolveDevice = (session: AuthoringSession) => deviceFor(session, options);
   const executeSteps = async (session: AuthoringSession, steps: RecipeStep[]) => {
-    const device = await deviceFor(session);
+    const device = await resolveDevice(session);
     const variables: Record<string, string> = {};
     const artifacts: { kind: string; capturedAt: number; data: unknown }[] = [];
     await runWithTargetContext(targetContext(session.target), async () => {
@@ -473,7 +390,10 @@ export function createAuthoringRuntime(): AuthoringRuntime {
       );
     },
     async observe(session) {
-      return captureAuthoringObservation(session);
+      return captureAuthoringObservation(session, {
+        ...authoringObservationDependencies,
+        resolveDevice,
+      });
     },
     async execute(session, interaction) {
       const steps = executableInteraction(interaction);
@@ -498,7 +418,10 @@ export function createAuthoringRuntime(): AuthoringRuntime {
       await executeSteps(session, action.steps);
     },
     async observeReplayActionEndpoint(session) {
-      return captureAuthoringReplayActionEndpoint(session);
+      return captureAuthoringReplayActionEndpoint(session, {
+        ...authoringObservationDependencies,
+        resolveDevice,
+      });
     },
     async settle(ms) {
       await new Promise<void>((resolve) => setTimeout(resolve, ms));

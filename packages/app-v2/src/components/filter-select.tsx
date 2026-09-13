@@ -22,6 +22,7 @@ export function SelectField({
   placeholder,
   compact = false,
   disabled = false,
+  id,
 }: {
   label: string;
   value: string;
@@ -31,6 +32,7 @@ export function SelectField({
   placeholder?: string;
   compact?: boolean;
   disabled?: boolean;
+  id?: string;
 }) {
   if (!options.length) {
     return (
@@ -57,6 +59,7 @@ export function SelectField({
       <div className={compact ? className : `grid min-w-0 gap-1.5 ${className ?? ""}`}>
         {compact ? null : <Label className="text-xs font-medium text-foreground">{label}</Label>}
         <SelectTrigger
+          id={id}
           className={
             compact
               ? "w-auto min-w-[8.75rem]"

@@ -179,6 +179,17 @@ export function composeProductIssue(source: ProductIssueSource): ProductIssueDra
   };
 }
 
+function slackNotificationStub(): ProductIntegration {
+  return {
+    provider: "slack",
+    name: "Slack",
+    state: "unsupported",
+    capabilities: [],
+    detail:
+      "Slack delivery is not a Relay operation. Daily Plan notices append .relay/notifications.json and optionally POST RELAY_NOTIFY_WEBHOOK.",
+  };
+}
+
 function workspaceIntegration(connection: ServerConnection | { url: string }): ProductIntegration {
   try {
     const host = new URL(connection.url).host || "workspace";
@@ -211,7 +222,7 @@ export function createIntegrationsProductService(platform: Platform): Integratio
       const connection = platform.getServerConnection
         ? await platform.getServerConnection()
         : { url: await platform.getServerUrl() };
-      return [workspaceIntegration(connection)];
+      return [workspaceIntegration(connection), slackNotificationStub()];
     },
     composeIssue: composeProductIssue,
   };

@@ -49,7 +49,7 @@ function run(input: {
   ownerId?: string;
 }): CampaignDurationRunRecord & { projectId?: string; ownerId?: string } {
   const targetId = input.targetId ?? iPadDeepTour.targetId;
-  const platform = input.platform ?? iPadDeepTour.platform;
+  const platform: "android" | "ios" = input.platform ?? "ios";
   const testId = input.testId ?? iPadDeepTour.testId;
   const action = input.action ?? iPadDeepTour.action;
   return {

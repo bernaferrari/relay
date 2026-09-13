@@ -38,6 +38,7 @@ const overview: ProductMapOverview = {
       variants: [],
       coveringTests: [{ id: "browse", name: "Browse products" }],
       recentFailures: [],
+      ignoreRegionNames: ["reply body"],
     },
     {
       id: "cart",
@@ -316,6 +317,8 @@ describe("Map exploration", () => {
     await act(async () => home.click());
     const inspector = document.querySelector('[aria-label="Screen details"]')!;
     expect(inspector.textContent).toContain("Continue to");
+    expect(inspector.textContent).toContain("Ignores reply body");
+    expect(inspector.textContent).toContain("Visual baselines compare chrome only");
     expect(inspector.textContent).not.toContain("Arrive from");
     const connection = [...inspector.querySelectorAll("button")].find((button) =>
       button.textContent?.includes("Open cart"),
@@ -344,12 +347,13 @@ describe("Map exploration", () => {
       }),
     });
     await act(async () => button("Home").click());
-    const picker = document.querySelector<HTMLSelectElement>("#map-screen-capture")!;
-    expect(picker.value).toBe("new");
-    await act(async () => {
-      picker.value = "old";
-      picker.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    const picker = document.querySelector<HTMLButtonElement>("#map-screen-capture")!;
+    expect(picker.textContent).toContain("Latest");
+    await act(async () => picker.click());
+    const previous = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+      (item) => item.textContent?.includes("Capture 1") && !item.textContent?.includes("Latest"),
+    );
+    await act(async () => previous?.click());
     expect(document.querySelector('a[href="/runs/old-run"]')).not.toBeNull();
     expect(document.querySelector('[aria-label="Screen details"] h3')?.textContent).toBe("Home");
   });

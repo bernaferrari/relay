@@ -18,6 +18,8 @@ import {
   parseAppMapCombineCellExecutionIntent,
   reachableRecipeGraph,
 } from "./app-map-combine-cell-intent.js";
+import { unrecordedNativeRuntimeProfileId } from "./app-map-unrecorded-runtime-profile.js";
+import { queueablePreparedCombineCells } from "./app-map-combine-cell-run.js";
 import {
   AppMapCombineCellContractError,
   assessAppMapCombineCellBindings,
@@ -37,6 +39,7 @@ import {
   createAppMapTestExecutionIntent,
   digestAppMapTestExecutionValue,
 } from "./app-map-test-execution-intent.js";
+import { compileExecutionRisk } from "./execution-risk-compiler.js";
 import type { Recipe } from "./recipes.js";
 
 test("cell IDs stay identifier-safe for punctuation and large tuples", () => {
@@ -856,6 +859,108 @@ function localeMap(): AppMap {
   };
 }
 
+function browserOnlyMap(): AppMap {
+  const test: AppMapScenarioTest = {
+    ...scope("open-home"),
+    name: "Open home",
+    kind: "scenario",
+    intentSchemaVersion: 1,
+    originApplication: "https://example.com",
+    capture: { mode: "final-screen" },
+    steps: [
+      {
+        id: "open",
+        kind: "instruction",
+        intent: "Open home",
+        binding: { status: "resolved", kind: "connections", connectionIds: ["open-home"] },
+      },
+    ],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const combine: AppMapCombine = {
+    ...scope("daily"),
+    name: "Daily",
+    variableIds: ["account"],
+    testIds: [test.id],
+    selected: { account: ["logged-out"] },
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  return {
+    schemaVersion: 1,
+    id: "settings",
+    organizationId: "org",
+    projectId: "project",
+    name: "Web",
+    revision: 3,
+    notes: {},
+    groups: {},
+    screens: {
+      home: {
+        ...scope("home"),
+        title: "Home",
+        identity: { schemaVersion: 1, fingerprint: "a".repeat(64) },
+        variantIds: ["web-home"],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    },
+    screenVariants: {
+      "web-home": {
+        ...scope("web-home"),
+        screenId: "home",
+        targetProfile: {
+          id: "browser:shop",
+          targetId: "shop",
+          source: "browser",
+          platform: "browser",
+          name: "Shop",
+          capabilities: ["tap", "screenshot"],
+          observedAt: 1,
+        },
+        evidenceIds: [],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    },
+    connections: {
+      "open-home": {
+        ...scope("open-home"),
+        fromScreenId: "home",
+        destination: { kind: "end" },
+        label: "Open",
+        state: "ready",
+        actions: [{ id: "tap-open", kind: "tap", target: { label: "Open" } }],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    },
+    caseStacks: {},
+    variables: {
+      account: {
+        ...scope("account"),
+        name: "Account",
+        kind: "account",
+        apply: { kind: "list" },
+        options: [{ id: "logged-out", label: "Logged out" }],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    },
+    tests: { [test.id]: test },
+    combines: { [combine.id]: combine },
+    routines: {},
+    flows: {},
+    runs: {},
+    targetResults: {},
+    proposals: {},
+    activity: {},
+    createdAt: 1,
+    updatedAt: 1,
+  };
+}
+
 test("prepares a language Variable Combine and a selector-free Test before target control", async () => {
   const map = localeMap();
   const prepared = await prepareAppMapCombineCells({
@@ -888,6 +993,25 @@ test("prepares a language Variable Combine and a selector-free Test before targe
     again.cells.map((cell) => cell.outerIntent.wrapper.recipeGraphDigest),
     prepared.cells.map((cell) => cell.outerIntent.wrapper.recipeGraphDigest),
   );
+});
+
+test("prepares unrecorded Android as omitted, not an invented native route", async () => {
+  const map = browserOnlyMap();
+  const profileId = unrecordedNativeRuntimeProfileId({
+    targetId: "pixel-1",
+    platform: "android",
+  });
+  const prepared = await prepareAppMapCombineCells({
+    map,
+    combine: map.combines.daily!,
+    target: { targetId: "pixel-1", platform: "android" },
+    defaultTargetProfileId: profileId,
+  });
+  assert.equal(prepared.cells.length, 1);
+  assert.equal(prepared.cells[0]?.targetProfileId, profileId);
+  assert.equal(prepared.cells[0]?.plan.performance.executableOperations, 0);
+  assert.match(prepared.cells[0]?.plan.omittedSteps?.[0]?.reason ?? "", /Grok Settings/u);
+  assert.equal(queueablePreparedCombineCells(prepared.cells).length, 0);
 });
 
 test("execution gate accepts a wrapper job from an outer Combine cell intent", () => {
@@ -1009,4 +1133,97 @@ test("wrapper inputs resolve the appLocale set-locale template to a BCP-47 tag",
   // With wrapper inputs merged into job variables, the template resolves to
   // the selected value id — a valid BCP-47 tag the runner can apply.
   assert.equal(resolved.locale, "ja");
+});
+
+test("logged-out account worlds wrap the child Test without tapping a picker", () => {
+  const { child, root } = childFixture();
+  const set = {
+    id: "account",
+    name: "Account",
+    kind: "account" as const,
+    apply: { kind: "list" as const },
+    options: [{ id: "logged-out", label: "Logged out" }],
+  };
+  const cellId = appMapCombineCellId("smoke", { account: "logged-out" });
+  const wrapper = composeAppMapCombineCellWrapper({
+    cellId,
+    childRootId: root.id,
+    childGraph: child.recipeGraph,
+    sets: [set],
+    at: 1,
+  });
+  assert.ok(!wrapper.root.steps.some((step) => step.kind === "tap" || step.kind === "branch"));
+  assert.ok(wrapper.root.steps.some((step) => step.kind === "module" && step.recipeId === root.id));
+  const intent = createAppMapCombineCellExecutionIntent({
+    cellId,
+    testId: "smoke",
+    values: { account: "logged-out" },
+    selectedRuntimeTargetProfile: child.selectedRuntimeTargetProfile!,
+    child,
+    wrapperRoot: wrapper.root,
+    recipeGraph: wrapper.graph,
+    staticInputs: declaredCombineCellStaticInputs([set], { account: "logged-out" }),
+  });
+  assert.equal(parseAppMapCombineCellExecutionIntent(intent)?.cell.cellId, cellId);
+});
+
+test("wrapper preserves a child Test that still carries an unused compiled connection recipe", () => {
+  const { child, root } = childFixture();
+  const orphan: Recipe = {
+    id: "app-map:grok-web:connection:connection-unused:r45",
+    title: "Unused connection",
+    source: "custom",
+    steps: [{ kind: "tap", target: { label: "Home page" } }],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const recipeGraph = { ...child.recipeGraph, [orphan.id]: orphan };
+  const plan = {
+    ...child.plan,
+    recipes: {
+      ...child.plan.recipes,
+      [orphan.id]: {
+        id: orphan.id,
+        title: orphan.title,
+        parameters: [],
+        steps: structuredClone(orphan.steps),
+      },
+    },
+  };
+  const preflight = {
+    ...child.preflight,
+    planDigest: digestAppMapTestExecutionValue(plan),
+    executionRisk: compileExecutionRisk({ kind: "compiled-test", test: plan }),
+  };
+  const childWithOrphan = createAppMapTestExecutionIntent({ plan, recipeGraph, preflight });
+  assert.equal(reachableRecipeGraph(childWithOrphan.recipeGraph, root.id)?.[orphan.id], undefined);
+  const cellId = appMapCombineCellId("smoke", { language: "en" });
+  const set = {
+    id: "language",
+    name: "Language",
+    kind: "language" as const,
+    apply: {
+      kind: "list" as const,
+      entryPath: [{ kind: "tap" as const, target: { label: "Open" } }],
+    },
+    options: [{ id: "en", identifier: "lang.en", label: "English" }],
+  };
+  const wrapper = composeAppMapCombineCellWrapper({
+    cellId,
+    childRootId: root.id,
+    childGraph: childWithOrphan.recipeGraph,
+    sets: [set],
+    at: 1,
+  });
+  const intent = createAppMapCombineCellExecutionIntent({
+    cellId,
+    testId: "smoke",
+    values: { language: "en" },
+    selectedRuntimeTargetProfile: childWithOrphan.selectedRuntimeTargetProfile!,
+    child: childWithOrphan,
+    wrapperRoot: wrapper.root,
+    recipeGraph: wrapper.graph,
+    staticInputs: declaredCombineCellStaticInputs([set], { language: "en" }),
+  });
+  assert.equal(parseAppMapCombineCellExecutionIntent(intent)?.cell.cellId, cellId);
 });

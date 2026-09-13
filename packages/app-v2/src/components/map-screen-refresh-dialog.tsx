@@ -11,6 +11,7 @@ import {
   DialogTitle,
 } from "@relay/ui-react/components/dialog";
 import { Camera, RefreshCw } from "lucide-react";
+import { SelectField } from "./filter-select";
 import { MapScreenPreview } from "./map-screen-preview";
 
 export type ScreenRefreshPreview = { token: string; screenshotUri: string; expiresAt: number };
@@ -60,29 +61,22 @@ export function MapScreenRefreshDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="flex items-end gap-3">
-          <label className="grid min-w-0 flex-1 gap-1.5 text-xs font-medium">
-            Device
-            <select
-              aria-label="Device for screen update"
-              disabled={busy}
-              value={target?.targetId ?? ""}
-              onChange={(event) => {
-                setTargetId(event.target.value);
-                capture.reset();
-                save.reset();
-              }}
-              className="h-9 rounded-md border border-input bg-background px-2 text-sm"
-            >
-              <option value="" disabled>
-                {targets.isPending ? "Finding devices…" : "Choose a device"}
-              </option>
-              {targets.data?.map((item) => (
-                <option key={item.targetId} value={item.targetId}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <SelectField
+            className="min-w-0 flex-1"
+            label="Device"
+            placeholder={targets.isPending ? "Finding devices…" : "Choose a device"}
+            disabled={busy}
+            value={target?.targetId ?? ""}
+            options={(targets.data ?? []).map((item) => ({
+              value: item.targetId,
+              label: item.name,
+            }))}
+            onValueChange={(value) => {
+              setTargetId(value);
+              capture.reset();
+              save.reset();
+            }}
+          />
           <Button
             variant={capture.data ? "outline" : "default"}
             disabled={!target || busy}

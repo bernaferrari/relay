@@ -215,6 +215,18 @@ test("a failed pilot requires review while untouched cases remain pending", asyn
   assert.equal(projected.cases[1]?.status, "pending");
 });
 
+test("jobless preflight blocked cells are a completed Infra Result, not unfinished work", async () => {
+  const campaign = fixture();
+  campaign.status = "completed-with-problems";
+  campaign.cases = campaign.cases.map((item) => ({
+    ...item,
+    status: "blocked",
+    error: "ACCOUNT_NEEDS_RELOGIN: Open Sign-ins",
+  }));
+  const projected = await projectCombineCampaign(campaign);
+  assert.equal(projected.status, "completed-with-problems");
+});
+
 test("failed and all resume modes reopen only reviewed non-passing cases", () => {
   const campaign = fixture("passed");
   campaign.execution.repeat!.resolved.resume = "failed";

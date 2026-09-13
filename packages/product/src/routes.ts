@@ -83,7 +83,7 @@ export type RouteDefinition = {
     | "Change"
     | "Device"
     | "Session"
-    | "Suite"
+    | "Plan"
     | "Environment"
     | "Recording"
     | "Report"
@@ -173,8 +173,8 @@ export const ROUTE_DEFINITIONS = [
     "app",
     "view",
   ]),
-  d("/suites", "/home", "Suites", "Suite", "tests", "create-suite", ["app", "status"]),
-  d("/apps/:appId/suites/:suiteId", "/suites", "Suite", "Suite", "tests", "run-suite", [
+  d("/suites", "/home", "Plans", "Plan", "suites", "create-suite", ["app", "status"]),
+  d("/apps/:appId/suites/:suiteId", "/suites", "Plan", "Plan", "suites", "run-suite", [
     "view",
     "target",
   ]),

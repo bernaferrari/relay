@@ -630,6 +630,31 @@ describe("runRecipeStep text entry", () => {
       },
     ]);
   });
+
+  it("replaces browser composer text without Android adb", async () => {
+    const fills: unknown[] = [];
+    const device = stubDevice({
+      fill: (options) => {
+        fills.push(options);
+        return Promise.resolve({});
+      },
+    });
+    await runWithTargetContext({ kind: "browser", platform: "browser", targetId: "grok-com" }, () =>
+      runRecipeStepWithoutContext(
+        device,
+        {
+          kind: "type",
+          mode: "replace",
+          text: "hello",
+          target: { label: "Ask Grok anything" },
+        },
+        noLog,
+      ),
+    );
+    assert.equal(fills.length, 1);
+    assert.equal((fills[0] as { text?: string }).text, "hello");
+    assert.equal((fills[0] as { selector?: string }).selector, 'label="Ask Grok anything"');
+  });
 });
 
 describe("runRecipeStep swipe", () => {
@@ -3295,6 +3320,20 @@ describe("runRecipeStep expect-set", () => {
     );
   });
 
+  it("can ignore extra options when extras is allow", async () => {
+    await runRecipeStep(
+      stubDevice({ snapshot: () => Promise.resolve({ nodes: grokMenu }) }),
+      {
+        kind: "expect-set",
+        identifierPrefix: "ask.toolbar.add.menu.",
+        labels: ["Camera", "Files"],
+        extras: "allow",
+        timeoutMs: 0,
+      },
+      noLog,
+    );
+  });
+
   it("reports missing and unexpected options together", async () => {
     await assert.rejects(
       () =>
@@ -3309,6 +3348,24 @@ describe("runRecipeStep expect-set", () => {
           noLog,
         ),
       /missing: Gallery; unexpected: Files, Photo or Video/,
+    );
+  });
+
+  it("still fails extras-allow when a required option is missing", async () => {
+    await assert.rejects(
+      () =>
+        runRecipeStep(
+          stubDevice({ snapshot: () => Promise.resolve({ nodes: grokMenu }) }),
+          {
+            kind: "expect-set",
+            identifierPrefix: "ask.toolbar.add.menu.",
+            labels: ["Camera", "Gallery"],
+            extras: "allow",
+            timeoutMs: 0,
+          },
+          noLog,
+        ),
+      /missing: Gallery; unexpected: none/,
     );
   });
 
@@ -3330,6 +3387,55 @@ describe("runRecipeStep expect-set", () => {
         kind: "expect-set",
         scope: { identifier: "attachments-menu" },
         labels: ["Files", "Camera", "Gallery"],
+        timeoutMs: 0,
+      },
+      noLog,
+    );
+  });
+
+  it("matches browser menu options when parentIndex is omitted", async () => {
+    await runRecipeStep(
+      stubDevice({
+        snapshot: () =>
+          Promise.resolve({
+            nodes: [
+              {
+                index: 26,
+                role: "menu",
+                label: "Upload a file\nAdd to project\nRecent files",
+                rect: { x: 400, y: 500, width: 280, height: 160 },
+              },
+              {
+                index: 27,
+                role: "menuitem",
+                label: "Upload a file",
+                rect: { x: 410, y: 510, width: 260, height: 40 },
+              },
+              {
+                index: 28,
+                role: "menuitem",
+                label: "Add to project",
+                rect: { x: 410, y: 550, width: 260, height: 40 },
+              },
+              {
+                index: 29,
+                role: "menuitem",
+                label: "Recent files",
+                rect: { x: 410, y: 590, width: 260, height: 40 },
+              },
+              {
+                index: 8,
+                role: "button",
+                label: "Sign in",
+                rect: { x: 1100, y: 12, width: 80, height: 32 },
+              },
+            ],
+          }),
+      }),
+      {
+        kind: "expect-set",
+        scope: { role: "menu", text: "Upload a file" },
+        labels: ["Add to project", "Recent files", "Upload a file"],
         timeoutMs: 0,
       },
       noLog,

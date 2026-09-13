@@ -252,7 +252,7 @@ describe("Suite and Environment routes", () => {
 
   it("renders Suites and navigates to the canonical Suite detail route", async () => {
     const { history } = await render("/suites");
-    expect(document.querySelector("h1")?.textContent).toBe("Suites");
+    expect(document.querySelector("h1")?.textContent).toBe("Plans");
     expect(document.body.textContent).toContain("Release smoke");
     expect(document.body.textContent).toContain("1 Test");
     const link = document.querySelector<HTMLAnchorElement>('a[href="/apps/app-1/suites/suite-1"]');
@@ -300,7 +300,7 @@ describe("Suite and Environment routes", () => {
     });
 
     await clickButton("Remove");
-    await clickButton("Remove Suite");
+    await clickButton("Remove Plan");
     expect(calls.remove).toEqual([{ appMapId: "app-1", suiteId: "suite-1", expectedRevision: 7 }]);
     expect(calls.start).toBe(0);
     expect(history.location.pathname).toBe("/suites");
@@ -418,5 +418,25 @@ describe("Suite and Environment routes", () => {
     await clickButton("Remove browser");
     expect(calls.remove).toBe(1);
     expect(history.location.pathname).toBe("/environments");
+  });
+
+  it("schedules the Plan daily on the first selected browser", async () => {
+    const schedulePlan = vi.fn(async () => ({ id: "sched-1" }));
+    await render("/apps/app-1/suites/suite-1", {
+      suiteService: suiteService({ schedulePlan }),
+    });
+    expect(document.body.textContent).toContain("Run daily");
+    const hour = document.querySelector<HTMLInputElement>("#plan-daily-hour");
+    if (!hour) throw new Error("Hour field missing");
+    await fill("plan-daily-hour", "9");
+    await clickButton("Schedule Plan");
+    expect(schedulePlan).toHaveBeenCalledWith({
+      appMapId: "app-1",
+      combineId: "suite-1",
+      profileId: "space-1",
+      profileIds: ["space-1"],
+      hour: 9,
+      timezone: expect.any(String),
+    });
   });
 });

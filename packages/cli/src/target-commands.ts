@@ -106,6 +106,24 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
     }),
   ),
   mapped(
+    "target.browser-auth.probe",
+    path("browser auth probe", ["targetId", "reference"], undefined, {
+      summary: "Check whether a saved browser sign-in is still signed in",
+      argumentHelp: [
+        { name: "targetId", type: "string", description: "Managed browser target identifier" },
+        {
+          name: "reference",
+          type: "string",
+          description: "Exact authfx fixture reference",
+        },
+      ],
+      examples: [
+        "relay browser auth probe staging-web authfx:00000000-0000-4000-8000-000000000000:1 --json",
+      ],
+      note: "Opens a fresh headed-off proof context with the encrypted cookies. Signed-out or expired fixtures fail closed before the next Plan.",
+    }),
+  ),
+  mapped(
     "target.boot",
     path("target boot", ["serial"]),
     path("device boot", ["serial"], undefined, {

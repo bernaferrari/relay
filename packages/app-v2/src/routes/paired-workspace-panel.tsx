@@ -3,6 +3,7 @@ import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
 import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
+import { SelectField } from "../components/filter-select";
 import type {
   ProductBrowserAuthFixture,
   ProductBrowserSpace,
@@ -115,34 +116,26 @@ export function PairedWorkspacePanel({
           placeholder="Admin desktop"
           aria-label="Pair name"
         />
-        <select
-          className="min-h-10 rounded-md border border-border bg-background px-3"
+        <SelectField
+          compact
+          label="Browser"
           value={browserId}
-          onChange={(event) => {
-            setBrowserId(event.currentTarget.value);
+          options={spaces.map((space) => ({ value: space.id, label: space.name }))}
+          onValueChange={(value) => {
+            setBrowserId(value);
             setAccountId("");
           }}
-          aria-label="Browser"
-        >
-          {spaces.map((space) => (
-            <option key={space.id} value={space.id}>
-              {space.name}
-            </option>
-          ))}
-        </select>
-        <select
-          className="min-h-10 rounded-md border border-border bg-background px-3"
-          value={accountId}
-          onChange={(event) => setAccountId(event.currentTarget.value)}
-          aria-label="Account"
-        >
-          <option value="">Signed out</option>
-          {accounts.map((account) => (
-            <option key={account.id} value={account.id}>
-              {account.name}
-            </option>
-          ))}
-        </select>
+        />
+        <SelectField
+          compact
+          label="Account"
+          value={accountId || "signed-out"}
+          options={[
+            { value: "signed-out", label: "Signed out" },
+            ...accounts.map((account) => ({ value: account.id, label: account.name })),
+          ]}
+          onValueChange={(value) => setAccountId(value === "signed-out" ? "" : value)}
+        />
         <Button type="submit" variant="outline" disabled={!spaces.length || saveRow.isPending}>
           {saveRow.isPending ? "Saving…" : "Add pair"}
         </Button>

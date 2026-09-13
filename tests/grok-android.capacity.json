@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "packId": "grok-android",
+  "provenance": "unmeasured",
+  "measuredAt": "2026-09-12",
+  "sampleCount": 0,
+  "emulatorFarm": "no-go",
+  "note": "This lab has no AVDs and no attached Android serials (emulator not on PATH, adb devices empty). Emulator farm go/no-go is no-go until a Play-image AVD can sign in to Grok and a 1-lane Android p95 exists. Parallelism is device count. Do not promise a 10-minute Android lane from the web pack. Serial 1 and N-lane Android wall-clock are unmeasured.",
+  "workItems": 0,
+  "serialPackWallClockP50Ms": null,
+  "serialPackWallClockP95Ms": null,
+  "parallelWallClockMs": {
+    "1": null,
+    "4": null,
+    "8": null
+  },
+  "assurance": "no-go-no-android-targets"
+}

@@ -65,6 +65,51 @@ async function locatorOnce(page: Page, input: { ref?: string; selector?: string 
   throw new Error("browser interaction requires a recorded element or label");
 }
 
+export async function performBrowserFind(
+  locator: { count: () => Promise<number>; click: () => Promise<unknown> },
+  query: string,
+  action?: string,
+): Promise<{ ok: true; exists?: true }> {
+  if (action === "exists") {
+    if ((await locator.count()) === 0) throw new Error(`No match for ${query}`);
+    return { ok: true, exists: true };
+  }
+  if (action === undefined || action === "press" || action === "click") {
+    const count = await locator.count();
+    if (count === 0) throw new Error(`No match for ${query}`);
+    if (count > 1) throw new Error(`Ambiguous browser match for ${query}`);
+    await locator.click();
+    return { ok: true };
+  }
+  throw new Error(`unsupported browser find action: ${action}`);
+}
+
+/** Grok's composer puts `data-testid="chat-input"` on a wrapping div. Fill the
+ * unique nested field instead of throwing after the mutation is dispatched. */
+export async function fillBrowserLocator(
+  locator: {
+    fill: (text: string) => Promise<void>;
+    locator: (selector: string) => {
+      filter: (options: { visible: boolean }) => {
+        count: () => Promise<number>;
+        fill: (text: string) => Promise<void>;
+      };
+    };
+  },
+  text: string,
+): Promise<void> {
+  const nested = locator
+    .locator(
+      'textarea, input:not([type="hidden"]):not([type="button"]):not([type="submit"]):not([type="checkbox"]):not([type="radio"]), [contenteditable="true"], [role="textbox"]',
+    )
+    .filter({ visible: true });
+  if ((await nested.count()) === 1) {
+    await nested.fill(text);
+    return;
+  }
+  await locator.fill(text);
+}
+
 export async function locatorFor(page: Page, input: { ref?: string; selector?: string }) {
   const deadline = performance.now() + 5_000;
   for (;;) {

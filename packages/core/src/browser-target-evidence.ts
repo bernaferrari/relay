@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Page, Request, Response } from "playwright-core";
 import type { SnapshotNode } from "./device.js";
+import { installBrowserConsentOverlayHandler } from "./browser-consent-overlay.js";
 
 /** A bounded network event retained for Browser Device evidence. */
 export type BrowserNetworkEntry = {
@@ -44,7 +45,16 @@ const SEMANTIC_SNAPSHOT = `${INTERACTIVE}, [id], [data-testid], h1, h2, h3, p, l
 const MAX_EVIDENCE_ENTRIES = 1_000;
 const MAX_NETWORK_BODY_BYTES = 256 * 1024;
 
+/** Cross-origin taps destroy the page's JS world before the after-snapshot. */
+export function isBrowserExecutionContextDestroyed(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /execution context was destroyed|most likely because of a navigation|Target closed/iu.test(
+    message,
+  );
+}
+
 export function attachBrowserEvidence(session: BrowserEvidenceSession, page: Page): void {
+  void installBrowserConsentOverlayHandler(page);
   page.on("console", (message) => {
     if (session.console.length >= MAX_EVIDENCE_ENTRIES) {
       session.console.shift();
@@ -122,6 +132,17 @@ async function captureResponseBody(response: Response, entry: BrowserNetworkEntr
 }
 
 export async function snapshotBrowserPage(page: Page, maxNodes = 256): Promise<SnapshotNode[]> {
+  const capture = () => collectBrowserSnapshotNodes(page, maxNodes);
+  try {
+    return await capture();
+  } catch (error) {
+    if (!isBrowserExecutionContextDestroyed(error)) throw error;
+    await page.waitForLoadState("domcontentloaded", { timeout: 15_000 }).catch(() => undefined);
+    return await capture();
+  }
+}
+
+async function collectBrowserSnapshotNodes(page: Page, maxNodes: number): Promise<SnapshotNode[]> {
   return await page.locator(`${SEMANTIC_SNAPSHOT}, div, span, li, td, th, dt, dd`).evaluateAll(
     (elements, options) => {
       const identifierCounts = new Map<string, number>();

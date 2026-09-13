@@ -876,7 +876,10 @@ async function executeJobOnTarget(
         // Proof contexts are one-shot and must never leak cookies, storage, or
         // service workers into the next Run. Authoring's persistent profile is
         // intentionally left open for the explicit target.open path.
-        await closeBrowserTarget(job.browserTargetId, { mode: "proof" }).catch(() => undefined);
+        await closeBrowserTarget(job.browserTargetId, {
+          mode: "proof",
+          authenticationFixtureId: job.browserCaseProfile?.authenticationFixtureId,
+        }).catch(() => undefined);
       }
       releaseOccupiedTarget();
       activeJobIds.delete(id);

@@ -23,6 +23,7 @@ export { validateRecipeParameters } from "./recipe-validation-support.js";
 import type { HumanCheckpointReason, RecipeStep, StepTarget } from "@relay/protocol";
 import { parseExpectScreenCampaignFields, parseTourStops } from "./recipe-validation-campaign.js";
 import { parseDeviceRecipeStep } from "./recipe-validation-device-steps.js";
+import { parseJudgeRecipeStep, parseNamedPixelRegions } from "./recipe-validation-judges.js";
 
 export function validateRecipeSteps(steps: unknown): RecipeStep[] {
   if (!Array.isArray(steps)) throw new Error("steps must be an array");
@@ -37,6 +38,11 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
     const deviceStep = parseDeviceRecipeStep(raw, kind, index, note);
     if (deviceStep) {
       out.push(deviceStep);
+      return;
+    }
+    const judgeStep = parseJudgeRecipeStep(raw, kind, index, note);
+    if (judgeStep) {
+      out.push(judgeStep);
       return;
     }
     switch (kind) {
@@ -187,6 +193,12 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
         if (stableForMs !== undefined && (stableForMs < 500 || stableForMs > 30_000)) {
           throw stepErr(index, "wait-response.stableForMs must be between 500 and 30000");
         }
+        const maxMs = raw.maxMs === undefined ? undefined : raw.maxMs;
+        if (!isNumber(maxMs) && maxMs !== undefined)
+          throw stepErr(index, "wait-response.maxMs must be a number");
+        if (maxMs !== undefined && (maxMs < 1 || maxMs > MAX_WAIT_MS)) {
+          throw stepErr(index, `wait-response.maxMs must be between 1 and ${MAX_WAIT_MS}`);
+        }
         out.push({
           kind: "wait-response",
           target,
@@ -194,6 +206,7 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
           ...(idleTarget ? { idleTarget } : {}),
           ...(timeoutMs !== undefined ? { timeoutMs } : {}),
           ...(stableForMs !== undefined ? { stableForMs } : {}),
+          ...(maxMs !== undefined ? { maxMs } : {}),
           ...(note ? { note } : {}),
         });
         break;
@@ -279,12 +292,20 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
             throw stepErr(index, `expect-set.timeoutMs must be <= ${MAX_WAIT_MS} (15 min)`);
           timeoutMs = raw.timeoutMs;
         }
+        let extras: "forbid" | "allow" | undefined;
+        if (raw.extras !== undefined) {
+          if (raw.extras !== "forbid" && raw.extras !== "allow") {
+            throw stepErr(index, 'expect-set.extras must be "forbid" or "allow"');
+          }
+          extras = raw.extras;
+        }
         out.push({
           kind: "expect-set",
           ...(identifierPrefix ? { identifierPrefix } : {}),
           ...(scope ? { scope } : {}),
           labels,
           ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+          ...(extras ? { extras } : {}),
           ...(note ? { note } : {}),
         });
         break;
@@ -371,6 +392,11 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
             ...(raw.recovery.restoreParentViewport === true ? { restoreParentViewport: true } : {}),
           };
         }
+        const ignoreRegions = parseNamedPixelRegions(
+          raw.ignoreRegions,
+          index,
+          "expect-screen.ignoreRegions",
+        );
         out.push({
           kind: "expect-screen",
           screenId: raw.screenId,
@@ -389,6 +415,7 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
             : {}),
           ...(recovery ? { recovery } : {}),
           ...parseExpectScreenCampaignFields(raw, index),
+          ...(ignoreRegions ? { ignoreRegions } : {}),
           ...(note ? { note } : {}),
         });
         break;
@@ -469,51 +496,6 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
           first,
           second,
           ...(timeoutMs !== undefined ? { timeoutMs } : {}),
-          ...(note ? { note } : {}),
-        });
-        break;
-      }
-      case "evaluate-semantic": {
-        if (!isString(raw.input) || !raw.input.trim())
-          throw stepErr(index, "evaluate-semantic.input is required");
-        if (
-          !Array.isArray(raw.criteria) ||
-          raw.criteria.length === 0 ||
-          !raw.criteria.every(isString)
-        ) {
-          throw stepErr(index, "evaluate-semantic.criteria must be a non-empty string array");
-        }
-        if (
-          raw.threshold !== undefined &&
-          (!isNumber(raw.threshold) || raw.threshold < 0 || raw.threshold > 1)
-        ) {
-          throw stepErr(index, "evaluate-semantic.threshold must be between 0 and 1");
-        }
-        if (raw.provider !== undefined && !isString(raw.provider))
-          throw stepErr(index, "evaluate-semantic.provider must be a string");
-        if (raw.model !== undefined && !isString(raw.model))
-          throw stepErr(index, "evaluate-semantic.model must be a string");
-        if (raw.requireAgreement !== undefined && typeof raw.requireAgreement !== "boolean")
-          throw stepErr(index, "evaluate-semantic.requireAgreement must be a boolean");
-        if (raw.secondProvider !== undefined && !isString(raw.secondProvider))
-          throw stepErr(index, "evaluate-semantic.secondProvider must be a string");
-        if (raw.secondModel !== undefined && !isString(raw.secondModel))
-          throw stepErr(index, "evaluate-semantic.secondModel must be a string");
-        if (
-          raw.requireAgreement === true &&
-          (!isString(raw.secondProvider) || !raw.secondProvider.trim())
-        )
-          throw stepErr(index, "evaluate-semantic.secondProvider is required for agreement");
-        out.push({
-          kind: "evaluate-semantic",
-          input: raw.input,
-          criteria: raw.criteria,
-          ...(raw.threshold !== undefined ? { threshold: raw.threshold } : {}),
-          ...(isString(raw.provider) ? { provider: raw.provider } : {}),
-          ...(isString(raw.model) ? { model: raw.model } : {}),
-          ...(raw.requireAgreement === true ? { requireAgreement: true } : {}),
-          ...(isString(raw.secondProvider) ? { secondProvider: raw.secondProvider } : {}),
-          ...(isString(raw.secondModel) ? { secondModel: raw.secondModel } : {}),
           ...(note ? { note } : {}),
         });
         break;

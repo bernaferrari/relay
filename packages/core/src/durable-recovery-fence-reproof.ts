@@ -8,10 +8,12 @@
  * content-addressed manifest. Callers may then use that id to release the
  * journal fence exactly once.
  */
-import type {
-  AuthoringEvidence,
-  LocalAgentDeviceExecutionTargetRef,
-  TargetRuntimeCapabilityReadiness,
+import {
+  executionTargetRefKey,
+  type AuthoringEvidence,
+  type LocalAgentDeviceExecutionTargetRef,
+  type LocalBrowserExecutionTargetRef,
+  type TargetRuntimeCapabilityReadiness,
 } from "@relay/protocol";
 import { persistAuthoringEvidence } from "./authoring-evidence.js";
 import type { DurableWorkerAssignment } from "./durable-worker-assignments.js";
@@ -25,13 +27,17 @@ import { observeVisualScreenFingerprint } from "./screen-identity.js";
 
 export const DURABLE_RECOVERY_FENCE_REPROOF_SCHEMA_VERSION = 1 as const;
 
+export type DurableRecoveryFenceTargetRef =
+  | LocalAgentDeviceExecutionTargetRef
+  | LocalBrowserExecutionTargetRef;
+
 export type DurableRecoveryFenceReproof = {
   schemaVersion: typeof DURABLE_RECOVERY_FENCE_REPROOF_SCHEMA_VERSION;
   /** Content-addressed identity of the immutable manifest, suitable for the
    * durable worker journal's `reproofId` field. */
   id: string;
   assignmentId: string;
-  executionTarget: LocalAgentDeviceExecutionTargetRef;
+  executionTarget: DurableRecoveryFenceTargetRef;
   capturedAt: number;
   captureOrder: "pixels-ax-pixels";
   pixels: {
@@ -78,25 +84,16 @@ export class DurableRecoveryFenceReproofError extends Error {
 }
 
 function sameLocalTarget(
-  expected: LocalAgentDeviceExecutionTargetRef,
-  actual: LocalAgentDeviceExecutionTargetRef,
+  expected: DurableRecoveryFenceTargetRef,
+  actual: DurableRecoveryFenceTargetRef,
 ): boolean {
-  return (
-    expected.schemaVersion === actual.schemaVersion &&
-    expected.kind === actual.kind &&
-    expected.provider.key === actual.provider.key &&
-    expected.provider.scope === actual.provider.scope &&
-    expected.targetId === actual.targetId &&
-    expected.platform === actual.platform &&
-    expected.identity.kind === actual.identity.kind &&
-    expected.identity.value === actual.identity.value
-  );
+  return executionTargetRefKey(expected) === executionTargetRefKey(actual);
 }
 
 /** Fail closed before any new device evidence is captured. */
 export function assertDurableRecoveryFenceReproofEligible(input: {
   assignment: DurableWorkerAssignment;
-  executionTarget: LocalAgentDeviceExecutionTargetRef;
+  executionTarget: DurableRecoveryFenceTargetRef;
 }): void {
   const { assignment, executionTarget } = input;
   if (
@@ -109,10 +106,13 @@ export function assertDurableRecoveryFenceReproofEligible(input: {
       `Durable worker assignment ${assignment.id} has no unreleased recovery fence`,
     );
   }
-  if (assignment.executionTarget.kind !== "local-device") {
+  if (
+    assignment.executionTarget.kind !== "local-device" &&
+    assignment.executionTarget.kind !== "local-browser"
+  ) {
     throw new DurableRecoveryFenceReproofError(
       "DURABLE_RECOVERY_FENCE_TARGET_UNSUPPORTED",
-      "Only a local device recovery fence can be released through Relay target recovery",
+      "Only a local device or managed browser recovery fence can be released through Relay target recovery",
     );
   }
   if (!sameLocalTarget(assignment.executionTarget, executionTarget)) {
@@ -125,7 +125,7 @@ export function assertDurableRecoveryFenceReproofEligible(input: {
 
 function requireExactCaptureTarget(
   serial: string | undefined,
-  expected: LocalAgentDeviceExecutionTargetRef,
+  expected: DurableRecoveryFenceTargetRef,
   plane: "screenshot" | "semantic snapshot",
 ): void {
   if (serial !== expected.identity.value) {
@@ -138,7 +138,7 @@ function requireExactCaptureTarget(
 
 function requireVisualEvidence(
   screenshot: ScreenshotPayload,
-  expected: LocalAgentDeviceExecutionTargetRef,
+  expected: DurableRecoveryFenceTargetRef,
 ): { bytes: Buffer; fingerprint: string } {
   requireExactCaptureTarget(screenshot.serial, expected, "screenshot");
   const bytes = Buffer.from(screenshot.base64, "base64");
@@ -158,15 +158,25 @@ function currentSemanticProof(readiness: TargetRuntimeCapabilityReadiness | unde
 
 function requireSemanticEvidence(
   snapshot: SnapshotPayload,
-  expected: LocalAgentDeviceExecutionTargetRef,
+  expected: DurableRecoveryFenceTargetRef,
 ): void {
   requireExactCaptureTarget(snapshot.serial, expected, "semantic snapshot");
+  const fingerprintOk = /^[a-f0-9]{64}$/iu.test(snapshot.screenIdentity.fingerprint);
+  if (expected.kind === "local-browser") {
+    if (snapshot.inspectable !== true || snapshot.nodes.length === 0 || !fingerprintOk) {
+      throw new DurableRecoveryFenceReproofError(
+        "DURABLE_RECOVERY_FENCE_SEMANTIC_EVIDENCE_INVALID",
+        "Recovery fence release requires a fresh, current semantic snapshot of the fenced target",
+      );
+    }
+    return;
+  }
   if (
     snapshot.inspectable !== true ||
     snapshot.source === "pixels-only" ||
     snapshot.nodes.length === 0 ||
     !currentSemanticProof(snapshot.readiness?.semanticControl) ||
-    !/^[a-f0-9]{64}$/iu.test(snapshot.screenIdentity.fingerprint)
+    !fingerprintOk
   ) {
     throw new DurableRecoveryFenceReproofError(
       "DURABLE_RECOVERY_FENCE_SEMANTIC_EVIDENCE_INVALID",
@@ -190,7 +200,7 @@ function reproofId(manifest: AuthoringEvidence): string {
 
 function snapshotData(input: {
   assignment: DurableWorkerAssignment;
-  target: LocalAgentDeviceExecutionTargetRef;
+  target: DurableRecoveryFenceTargetRef;
   snapshot: SnapshotPayload;
   before: AuthoringEvidence;
   semantic: AuthoringEvidence;
@@ -249,7 +259,7 @@ function snapshotData(input: {
  */
 export async function captureDurableRecoveryFenceReproof(input: {
   assignment: DurableWorkerAssignment;
-  executionTarget: LocalAgentDeviceExecutionTargetRef;
+  executionTarget: DurableRecoveryFenceTargetRef;
   capture: DurableRecoveryFenceReproofCapture;
 }): Promise<DurableRecoveryFenceReproof> {
   assertDurableRecoveryFenceReproofEligible({

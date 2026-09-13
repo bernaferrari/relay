@@ -828,6 +828,7 @@ describe("validateRecipeSteps", () => {
         screenId: "home",
         screenTitle: "Home",
         fingerprint: "a".repeat(64),
+        ignoreRegions: [{ name: "reply body", x: 0.07, y: 0.125, width: 0.93, height: 0.68 }],
         repairCheckpoint: {
           sourceRunId: "run-1",
           sourceCheckId: "visit-home",
@@ -865,6 +866,11 @@ describe("validateRecipeSteps", () => {
       target: { label: "Welcome" },
       timeoutMs: 15_000,
     });
+    const expectedScreen = out.find((step) => step.kind === "expect-screen");
+    assert.deepEqual(
+      expectedScreen?.kind === "expect-screen" ? expectedScreen.ignoreRegions : undefined,
+      [{ name: "reply body", x: 0.07, y: 0.125, width: 0.93, height: 0.68 }],
+    );
   });
 
   it("preserves ordered semantic tap fallbacks", () => {
@@ -1054,6 +1060,24 @@ describe("validateRecipeSteps", () => {
           kind: "expect-set",
           scope: { label: "Attachments" },
           labels: ["Camera", "Gallery", "Files"],
+        },
+      ],
+    );
+    assert.deepEqual(
+      validateRecipeSteps([
+        {
+          kind: "expect-set",
+          scope: { text: "Heavy" },
+          labels: ["Fast", "Auto", "Expert", "Heavy"],
+          extras: "allow",
+        },
+      ]),
+      [
+        {
+          kind: "expect-set",
+          scope: { text: "Heavy" },
+          labels: ["Fast", "Auto", "Expert", "Heavy"],
+          extras: "allow",
         },
       ],
     );
@@ -1294,6 +1318,36 @@ describe("validateRecipeSteps", () => {
     assert.equal(out.at(-1)?.kind, "module");
   });
 
+  it("accepts visual judges, offline, upload, background, and mobile-data", () => {
+    const out = validateRecipeSteps([
+      {
+        kind: "wait-response",
+        target: { text: "Assistant response" },
+        maxMs: 8_000,
+      },
+      {
+        kind: "evaluate-visual",
+        criteria: ["Composer is empty after send"],
+        threshold: 0.9,
+        region: { x: 0, y: 0, width: 100, height: 80 },
+      },
+      { kind: "offline", state: "on" },
+      { kind: "upload", file: "tests/fixtures/sample.pdf", target: { label: "Attach file" } },
+      { kind: "app", action: "background", app: "ai.x.grok", backgroundMs: 1_000 },
+      { kind: "settings", setting: "mobile-data", state: "off" },
+      {
+        kind: "identity-ignore",
+        name: "reply body",
+        region: { x: 80, y: 200, width: 900, height: 1400 },
+      },
+    ]);
+    assert.equal(out.length, 7);
+    assert.equal(out[0]?.kind === "wait-response" ? out[0].maxMs : undefined, 8_000);
+    assert.equal(out[1]?.kind, "evaluate-visual");
+    assert.equal(out[4]?.kind === "app" ? out[4].backgroundMs : undefined, 1_000);
+    assert.equal(out[6]?.kind, "identity-ignore");
+  });
+
   it("rejects invalid cross-field device settings", () => {
     assert.throws(
       () => validateRecipeSteps([{ kind: "settings", setting: "wifi", state: "dark" }]),
@@ -1361,8 +1415,24 @@ describe("describeRecipeStep", () => {
       'Wait for text "Done"',
     );
     assert.equal(
-      describeRecipeStep({ kind: "wait-response", target: { text: "Assistant response" } }),
-      'Wait for text "Assistant response" to finish responding',
+      describeRecipeStep({
+        kind: "evaluate-visual",
+        criteria: ["Empty composer"],
+      }),
+      "Evaluate screenshot against 1 visual criterion",
+    );
+    assert.equal(
+      describeRecipeStep({
+        kind: "identity-ignore",
+        name: "reply body",
+        region: { x: 80, y: 200, width: 900, height: 1400 },
+      }),
+      "Ignore reply body for identity",
+    );
+    assert.equal(describeRecipeStep({ kind: "offline", state: "on" }), "Go offline");
+    assert.equal(
+      describeRecipeStep({ kind: "upload", file: "tests/fixtures/sample.pdf" }),
+      "Upload tests/fixtures/sample.pdf",
     );
     assert.equal(
       describeRecipeStep({ kind: "expect", target: { label: "Sign in" }, condition: "visible" }),
@@ -1379,6 +1449,15 @@ describe("describeRecipeStep", () => {
         labels: ["Camera", "Files"],
       }),
       "Check options are exactly Camera, Files",
+    );
+    assert.equal(
+      describeRecipeStep({
+        kind: "expect-set",
+        identifierPrefix: "menu.",
+        labels: ["Camera", "Files"],
+        extras: "allow",
+      }),
+      "Check options include Camera, Files",
     );
   });
 
@@ -1397,6 +1476,16 @@ describe("describeRecipeStep", () => {
       "ai",
       "wait",
     ]);
+    assert.deepEqual(glyphsForStep({ kind: "evaluate-visual", criteria: ["x"] }), ["ai", "ok"]);
+    assert.deepEqual(
+      glyphsForStep({
+        kind: "identity-ignore",
+        region: { x: 0, y: 0, width: 10, height: 10 },
+      }),
+      ["ok"],
+    );
+    assert.deepEqual(glyphsForStep({ kind: "offline", state: "off" }), ["tap"]);
+    assert.deepEqual(glyphsForStep({ kind: "upload", file: "a.png" }), ["store"]);
     assert.deepEqual(
       glyphsForStep({ kind: "expect", target: { text: "x" }, condition: "visible" }),
       ["ok"],
@@ -1409,5 +1498,33 @@ describe("describeRecipeStep", () => {
     assert.deepEqual(glyphsForStep({ kind: "screenshot" }), ["shot"]);
     assert.deepEqual(glyphsForStep({ kind: "tour" }), ["tap", "shot"]);
     assert.deepEqual(glyphsForStep({ kind: "flow", flow: "logout" }), ["store"]);
+  });
+});
+
+describe("grok web daily seed YAML", () => {
+  it("opens grok.com by URL instead of the native package", async () => {
+    const source = await readFile(
+      new URL("../../../tests/grok-web-open-composer.relay.yaml", import.meta.url),
+      "utf8",
+    );
+    const recipe = parseRecipeYaml(source);
+    const open = recipe.steps[0];
+    assert.equal(open?.kind, "app");
+    if (open?.kind !== "app") throw new Error("expected app open");
+    assert.equal(open.url, "{{grok_url}}");
+    assert.equal(open.app, undefined);
+  });
+
+  it("modules the seed pack without Settings navigation", async () => {
+    const source = await readFile(
+      new URL("../../../tests/grok-web-daily.relay.yaml", import.meta.url),
+      "utf8",
+    );
+    const recipe = parseRecipeYaml(source);
+    assert.deepEqual(
+      recipe.steps.filter((step) => step.kind === "module").map((step) => step.recipeId),
+      ["grok-web-open-composer", "grok-web-send-hello", "grok-web-new-chat"],
+    );
+    assert.doesNotMatch(source, /Preferences|Preferred Language|App Language/u);
   });
 });

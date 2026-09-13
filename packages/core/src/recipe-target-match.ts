@@ -216,26 +216,30 @@ export function labelsForScope(nodes: SnapshotNode[], scope: StepTarget): string
     return undefined;
   };
 
+  const containedBy = (root: SnapshotNode): SnapshotNode[] => {
+    if (!root.rect) return [];
+    return nodes.filter((node) => {
+      const rect = node.rect;
+      return (
+        node !== root &&
+        rect !== undefined &&
+        rect.x >= root.rect!.x &&
+        rect.y >= root.rect!.y &&
+        rect.x + rect.width <= root.rect!.x + root.rect!.width &&
+        rect.y + rect.height <= root.rect!.y + root.rect!.height
+      );
+    });
+  };
+
   const roots = nodes.filter((node) => nodeMatchesTarget(node, scope));
   const options: SnapshotNode[] = [];
   const seen = new Set<SnapshotNode>();
   for (const root of roots) {
-    const directChildren =
-      root.index !== undefined
-        ? (byParent.get(root.index) ?? [])
-        : root.rect
-          ? nodes.filter((node) => {
-              const rect = node.rect;
-              return (
-                node !== root &&
-                rect !== undefined &&
-                rect.x >= root.rect!.x &&
-                rect.y >= root.rect!.y &&
-                rect.x + rect.width <= root.rect!.x + root.rect!.width &&
-                rect.y + rect.height <= root.rect!.y + root.rect!.height
-              );
-            })
-          : [];
+    const linkedChildren = root.index !== undefined ? (byParent.get(root.index) ?? []) : [];
+    // Browser snapshots often assign an index but omit parentIndex. Empty
+    // linked children must not skip rectangle containment or expect-set
+    // sees an empty option set while the menu is visibly open.
+    const directChildren = linkedChildren.length > 0 ? linkedChildren : containedBy(root);
     for (const child of directChildren) {
       if (seen.has(child)) continue;
       seen.add(child);
@@ -243,9 +247,15 @@ export function labelsForScope(nodes: SnapshotNode[], scope: StepTarget): string
     }
   }
 
+  const optionRoles = new Set(["menuitem", "menuitemradio", "option"]);
+  const optionLike = options.filter((node) =>
+    optionRoles.has((node.role ?? node.type ?? "").trim().toLocaleLowerCase()),
+  );
+  const labeled = optionLike.length > 0 ? optionLike : options;
+
   return [
     ...new Set(
-      options
+      labeled
         .map(
           (node) =>
             localizedStringKeyLabel(node.label) ?? readableDescendant(node) ?? node.label?.trim(),

@@ -78,7 +78,8 @@ import {
 import { cleanupAbandonedAndroidPacketCaptures } from "./startup-cleanup.js";
 import { collectVisibleReports } from "./report-access.js";
 import { createSseHub } from "./sse.js";
-import { runDueSchedules, startScheduler } from "./scheduler.js";
+import { startScheduler } from "./scheduler.js";
+import { runDueSchedulesWithCombineStarter } from "./scheduler-combine.js";
 import { createRequestHandlerLifecycle } from "./request-handler-lifecycle.js";
 import { createFailClosedServerShutdown } from "./server-shutdown.js";
 import { createTargetRuntimeScope } from "./target-runtime-scope.js";
@@ -829,7 +830,9 @@ async function startServerWithStateLease(
   });
   // Scheduled admissions originate outside an HTTP request, so give them the
   // same durable target runtime scope before they freeze and queue a Run.
-  const scheduler = startScheduler(30_000, () => targetRuntimeScope.run(runDueSchedules));
+  const scheduler = startScheduler(30_000, () =>
+    targetRuntimeScope.run(runDueSchedulesWithCombineStarter),
+  );
   proofPublicationWorker.start();
   try {
     await new Promise<void>((resolve, reject) => {

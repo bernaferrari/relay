@@ -5,7 +5,9 @@ export type CombineEvidenceFindingCode =
   | "CONTROL_MISSING"
   | "POSSIBLE_UNTRANSLATED_TEXT"
   /** Translated text that the control it landed in probably cannot show in full. */
-  | "POSSIBLE_TEXT_CLIPPED";
+  | "POSSIBLE_TEXT_CLIPPED"
+  /** Expired, revoked, or signed-out account fixture. Infra, not a product failure. */
+  | "ACCOUNT_NEEDS_RELOGIN";
 
 export type CombineEvidenceFinding = {
   id: string;

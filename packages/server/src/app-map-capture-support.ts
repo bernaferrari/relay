@@ -1,10 +1,13 @@
 import {
   BROWSER_TARGET_CAPABILITIES,
   browserAuthoringCaseProfileForTarget,
+  browserCaseProfileForTarget,
   digestAppMapTestExecutionValue,
   listDevices,
+  readTarget,
   type AppMap,
 } from "@relay/core";
+import { compileBrowserEnvironment } from "@relay/protocol";
 import type {
   ActionSpec,
   AuthoringInteraction,
@@ -180,6 +183,7 @@ export async function profileForCapture(
   observedAt: number,
   bounds?: { width: number; height: number },
   dependencies: { listDevices?: typeof listDevices } = {},
+  authenticationFixtureId?: string,
 ): Promise<TargetProfile> {
   const viewport =
     bounds &&
@@ -209,7 +213,16 @@ export async function profileForCapture(
       ...(viewport ? { viewport } : {}),
     };
   }
-  const browserCaseProfile = await browserAuthoringCaseProfileForTarget(target.targetId);
+  const fixtureId = authenticationFixtureId?.trim();
+  const saved = fixtureId ? await readTarget(target.targetId) : undefined;
+  const browserCaseProfile = fixtureId
+    ? compileBrowserEnvironment({
+        ...(saved?.browser
+          ? browserCaseProfileForTarget(saved)
+          : await browserAuthoringCaseProfileForTarget(target.targetId)),
+        authenticationFixtureId: fixtureId,
+      })
+    : await browserAuthoringCaseProfileForTarget(target.targetId);
   const browserViewport = structuredClone(browserCaseProfile.viewport);
   const browserViewportKey = `-${browserViewport.width}x${browserViewport.height}`;
   const environmentKey = digestAppMapTestExecutionValue(browserCaseProfile).slice(0, 12);

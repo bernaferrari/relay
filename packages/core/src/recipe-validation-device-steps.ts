@@ -3,7 +3,13 @@
  * separate makes the recipe parser's product-flow cases easier to review.
  */
 import type { RecipeStep } from "@relay/protocol";
-import { MAX_WAIT_MS, isNumber, isString, stepErr } from "./recipe-validation-primitives.js";
+import {
+  MAX_WAIT_MS,
+  isNumber,
+  isString,
+  parseTarget,
+  stepErr,
+} from "./recipe-validation-primitives.js";
 
 export function parseDeviceRecipeStep(
   raw: Record<string, unknown>,
@@ -24,6 +30,7 @@ export function parseDeviceRecipeStep(
         "install",
         "update",
         "uninstall",
+        "background",
       ] as const;
       if (!actions.includes(raw.action as (typeof actions)[number]))
         throw stepErr(index, "app has an invalid action");
@@ -68,6 +75,14 @@ export function parseDeviceRecipeStep(
       if (raw.action === "assert-not-installed" && raw.version !== undefined) {
         throw stepErr(index, "assert-not-installed cannot include a version");
       }
+      if (raw.backgroundMs !== undefined) {
+        if (raw.action !== "background") {
+          throw stepErr(index, "backgroundMs is only valid with app action background");
+        }
+        if (!isNumber(raw.backgroundMs) || raw.backgroundMs < 0 || raw.backgroundMs > 300_000) {
+          throw stepErr(index, "app.backgroundMs must be between 0 and 300000");
+        }
+      }
       return {
         kind: "app",
         action: raw.action as Extract<RecipeStep, { kind: "app" }>["action"],
@@ -81,6 +96,7 @@ export function parseDeviceRecipeStep(
         ...(raw.versionMatch === "exact" || raw.versionMatch === "contains"
           ? { versionMatch: raw.versionMatch }
           : {}),
+        ...(isNumber(raw.backgroundMs) ? { backgroundMs: raw.backgroundMs } : {}),
         ...(note ? { note } : {}),
       };
     }
@@ -112,7 +128,9 @@ export function parseDeviceRecipeStep(
     }
     case "settings": {
       if (
-        !["wifi", "airplane", "location", "animations", "appearance"].includes(String(raw.setting))
+        !["wifi", "airplane", "mobile-data", "location", "animations", "appearance"].includes(
+          String(raw.setting),
+        )
       )
         throw stepErr(index, "settings has an invalid setting");
       if (!["on", "off", "light", "dark", "toggle"].includes(String(raw.state)))
@@ -125,7 +143,13 @@ export function parseDeviceRecipeStep(
         throw stepErr(index, "settings state is not valid for this setting");
       return {
         kind: "settings",
-        setting: raw.setting as "wifi" | "airplane" | "location" | "animations" | "appearance",
+        setting: raw.setting as
+          | "wifi"
+          | "airplane"
+          | "mobile-data"
+          | "location"
+          | "animations"
+          | "appearance",
         state: raw.state as "on" | "off" | "light" | "dark" | "toggle",
         ...(note ? { note } : {}),
       };
@@ -210,6 +234,22 @@ export function parseDeviceRecipeStep(
         kind: "logs",
         action: raw.action as "start" | "stop" | "mark" | "clear",
         ...(isString(raw.message) ? { message: raw.message } : {}),
+        ...(note ? { note } : {}),
+      };
+    }
+    case "offline": {
+      if (raw.state !== "on" && raw.state !== "off")
+        throw stepErr(index, 'offline requires state: "on" | "off"');
+      return { kind: "offline", state: raw.state, ...(note ? { note } : {}) };
+    }
+    case "upload": {
+      if (!isString(raw.file) || !raw.file.trim()) throw stepErr(index, "upload.file is required");
+      const target =
+        raw.target === undefined ? undefined : parseTarget(raw.target, index, "target");
+      return {
+        kind: "upload",
+        file: raw.file,
+        ...(target ? { target } : {}),
         ...(note ? { note } : {}),
       };
     }

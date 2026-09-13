@@ -207,8 +207,9 @@ export function createAppMapCombineCellExecutionIntent(input: {
     throw new Error("Combine cell wrapper graph is not a parser-validated recipe graph");
   }
   const childRootId = input.child.sourcePlan.rootRecipeId;
+  const frozenChild = reachableRecipeGraph(input.child.recipeGraph, childRootId);
   const reachableChild = reachableRecipeGraph(recipeGraph, childRootId);
-  if (!reachableChild || !sameRecipeGraph(reachableChild, input.child.recipeGraph)) {
+  if (!reachableChild || !frozenChild || !sameRecipeGraph(reachableChild, frozenChild)) {
     throw new Error("Combine cell wrapper does not preserve the frozen child Test graph");
   }
   const moduleRoot = wrapperChildModuleRoot(wrapperRoot);
@@ -325,8 +326,11 @@ function parseAppMapCombineCellExecutionIntentValue(
   if (digestAppMapTestExecutionValue(root) !== wrapper.rootRecipeDigest) return undefined;
   if (wrapper.childRootRecipeId !== child.sourcePlan.rootRecipeId) return undefined;
   if (wrapper.childRecipeGraphDigest !== child.sourcePlan.recipeGraphDigest) return undefined;
+  const frozenChild = reachableRecipeGraph(child.recipeGraph, child.sourcePlan.rootRecipeId);
   const reachableChild = reachableRecipeGraph(recipeGraph, child.sourcePlan.rootRecipeId);
-  if (!reachableChild || !sameRecipeGraph(reachableChild, child.recipeGraph)) return undefined;
+  if (!reachableChild || !frozenChild || !sameRecipeGraph(reachableChild, frozenChild)) {
+    return undefined;
+  }
   if (wrapperChildModuleRoot(root) !== child.sourcePlan.rootRecipeId) return undefined;
   if (
     !child.selectedRuntimeTargetProfile ||

@@ -29,7 +29,7 @@ export class BrowserMutationOutcomeUnknownError extends Error {
     readonly cause: unknown,
   ) {
     super(
-      `The browser mutation may already have reached ${targetId}. Relay did not retry it. Capture the current page, review the outcome, then explicitly reconcile it.`,
+      `The browser mutation may already have reached ${targetId}. Relay did not retry it. Capture the current page, review the outcome, then explicitly reconcile it. (${reason(cause)})`,
     );
     this.name = "BrowserMutationOutcomeUnknownError";
   }

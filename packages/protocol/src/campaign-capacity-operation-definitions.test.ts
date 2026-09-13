@@ -74,6 +74,15 @@ test("campaign capacity preflight retains its public descriptor and transport", 
 test("campaign capacity preflight validates exact local target and duration evidence", () => {
   const definition = campaignCapacityDefinition();
   assert.deepEqual(definition.input.parse(validInput), validInput);
+  assert.deepEqual(
+    definition.input.parse({
+      ...validInput,
+      targets: [{ targetId: "grok-web", platform: "browser" }],
+      workItems: 8,
+      workItemsByPlatform: { browser: 8 },
+    }).targets[0],
+    { targetId: "grok-web", platform: "browser" },
+  );
   assert.deepEqual(definition.output.parse({ preflight: { checkedAt: 1 } }), {
     preflight: { checkedAt: 1 },
   });
@@ -86,9 +95,9 @@ test("campaign capacity preflight validates exact local target and duration evid
     () =>
       definition.input.parse({
         ...validInput,
-        targets: [{ targetId: "browser-1", platform: "browser" }],
+        targets: [{ targetId: "desktop-1", platform: "desktop" }],
       }),
-    /campaign capacity target 0 platform must be android or ios/,
+    /campaign capacity target 0 platform must be android, ios, or browser/,
   );
   assert.throws(
     () =>

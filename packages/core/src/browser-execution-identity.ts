@@ -1,4 +1,5 @@
-import type { BrowserCaseProfile } from "@relay/protocol";
+import type { BrowserCaseProfile, TargetProfile } from "@relay/protocol";
+import { compileBrowserEnvironment } from "@relay/protocol";
 
 /** Bind a requested Browser account/engine to a saved profile, or reject.
  * Recording the request is not the same as executing it. */
@@ -29,6 +30,31 @@ export function parseCanonicalFixtureReference(
 
 export function fixtureRevisionFromReference(reference: string | undefined): string | undefined {
   return parseCanonicalFixtureReference(reference)?.revision;
+}
+
+/** Plan columns freeze the requested account onto the queued job without
+ * rewriting the saved App Map evidence profile. */
+export function overlayRequestedBrowserAccountOnTargetProfile(
+  profile: TargetProfile | undefined,
+  account?: RequestedBrowserAccount,
+): TargetProfile | undefined {
+  if (!profile?.browserCaseProfile || !account) return profile;
+  if (account.kind === "signed-out") {
+    const { authenticationFixtureId: _ignored, ...environment } = profile.browserCaseProfile;
+    return {
+      ...profile,
+      browserCaseProfile: compileBrowserEnvironment(environment),
+    };
+  }
+  const reference =
+    account.reference?.trim() || `authfx:${account.accountId}:${account.accountRevision}`;
+  return {
+    ...profile,
+    browserCaseProfile: compileBrowserEnvironment({
+      ...profile.browserCaseProfile,
+      authenticationFixtureId: reference,
+    }),
+  };
 }
 
 /** Canonical environment identity includes fixture revision and every runtime setting. */
@@ -65,7 +91,11 @@ export function liveBrowserSessionKeysToClose(input: {
   return input.keys.filter((key) => {
     if (key === input.keepKey) return false;
     if (key === `authoring:${input.targetId}`) return false;
-    return key.startsWith(`live:${input.targetId}:`) || key === `proof:${input.targetId}`;
+    return (
+      key.startsWith(`live:${input.targetId}:`) ||
+      key === `proof:${input.targetId}` ||
+      key.startsWith(`proof:${input.targetId}:`)
+    );
   });
 }
 
@@ -79,6 +109,51 @@ export function browserLiveSessionKey(input: {
     return `live:${input.targetId}:${input.authenticationFixtureId}`;
   }
   return `authoring:${input.targetId}`;
+}
+
+/** Scheduled proof contexts are per account so parallel fixtures do not share a Playwright session. */
+export function browserProofSessionKey(input: {
+  targetId: string;
+  authenticationFixtureId?: string;
+}): string {
+  return `proof:${input.targetId}:${input.authenticationFixtureId?.trim() || "signed-out"}`;
+}
+
+export function browserSessionStoreKey(input: {
+  targetId: string;
+  mode: "authoring" | "proof";
+  reuseMatchingIdentity?: boolean;
+  authenticationFixtureId?: string;
+}): string {
+  if (input.reuseMatchingIdentity) {
+    return browserLiveSessionKey({
+      targetId: input.targetId,
+      authenticationFixtureId: input.authenticationFixtureId,
+      signedOut: !input.authenticationFixtureId,
+    });
+  }
+  if (input.mode === "proof") {
+    return browserProofSessionKey(input);
+  }
+  return `${input.mode}:${input.targetId}`;
+}
+
+export function browserSessionBelongsToTarget(
+  key: string,
+  targetId: string | undefined,
+  mode?: "authoring" | "proof",
+): boolean {
+  if (targetId === undefined) {
+    if (mode === "authoring") return key.startsWith("authoring:");
+    if (mode === "proof") return key.startsWith("proof:");
+    return true;
+  }
+  if (key === `authoring:${targetId}`) return mode === undefined || mode === "authoring";
+  if (key === `proof:${targetId}` || key.startsWith(`proof:${targetId}:`)) {
+    return mode === undefined || mode === "proof";
+  }
+  if (key.startsWith(`live:${targetId}:`)) return mode === undefined;
+  return false;
 }
 
 /** Same saved profile must equal the requested identity. Undefined request
@@ -124,6 +199,29 @@ export function accountFixtureIdsFromListed(
   return map;
 }
 
+export function listedFixtureForAccount(
+  fixtures: readonly { id: string; name: string; reference: string }[],
+  account: { accountId: string; accountRevision: string; reference?: string },
+): { id: string; reference: string } | undefined {
+  const accountId = account.accountId.trim();
+  const revision = account.accountRevision.trim();
+  const requestedRef = parseCanonicalFixtureReference(account.reference);
+  for (const fixture of fixtures) {
+    const parsed = parseCanonicalFixtureReference(fixture.reference);
+    if (!parsed || parsed.revision !== revision) continue;
+    if (account.reference && fixture.reference !== account.reference.trim()) continue;
+    if (
+      fixture.id === accountId ||
+      fixture.name === accountId ||
+      parsed.fixtureId === accountId ||
+      (requestedRef !== undefined && parsed.fixtureId === requestedRef.fixtureId)
+    ) {
+      return { id: fixture.id, reference: fixture.reference };
+    }
+  }
+  return undefined;
+}
+
 /** Configuration requests reuse only an equal environment. Exact attachment is separate. */
 export function browserLiveIdentityMatches(
   existing: Partial<BrowserCaseProfile> | undefined,
@@ -138,6 +236,10 @@ export function bindRequestedBrowserIdentity(input: {
   platform?: string;
   /** Reviewed accountId → canonical fixture id. Display names are not authority. */
   accountFixtureIds?: Readonly<Record<string, string>>;
+  listedFixtures?: readonly { id: string; name: string; reference: string }[];
+  /** Plan columns bind listed fixtures even when the saved runtime profile
+   * recorded a different or empty account. Engine mismatch still fails closed. */
+  listedFixtureAuthority?: boolean;
 }): BrowserIdentityBindResult {
   const requested = input.requested;
   if (!requested?.account && !requested?.engine) return { status: "not-applicable" };
@@ -152,6 +254,28 @@ export function bindRequestedBrowserIdentity(input: {
   }
 
   const account = requested.account;
+  if (
+    input.listedFixtureAuthority &&
+    account?.kind === "fixture" &&
+    listedFixtureForAccount(input.listedFixtures ?? [], account)
+  ) {
+    if (!requested.engine && !input.saved?.engine) {
+      return {
+        status: "blocked",
+        reason: `Account ${account.accountId} v${account.accountRevision} cannot bind without a browser engine.`,
+      };
+    }
+    return { status: "bound" };
+  }
+  if (input.listedFixtureAuthority && account?.kind === "signed-out") {
+    if (!requested.engine && !input.saved?.engine) {
+      return {
+        status: "blocked",
+        reason: "Signed out cannot bind without a browser engine.",
+      };
+    }
+    return { status: "bound" };
+  }
   if (!account) {
     if (requested.engine && !input.saved?.engine) {
       return {

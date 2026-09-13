@@ -13,6 +13,8 @@ import {
   listDevices,
   preflightCompiledAppMapTestOffline,
   preflightAppMapCombine,
+  quoteObservedCombinePackDuration,
+  quoteBrowserAccountPackDuration,
   proposalConflictsSince,
   scenarioTestEditEntityKeys,
   readAppMap,
@@ -320,6 +322,7 @@ export async function handleAppMapTestRoute(input: AppMapTestRouteInput): Promis
     if (!combine) throw new HttpError(404, `Combine  not found`);
     const reviewedDocumentOrigins = await activeReviewedDocumentOriginsForAppMap(appMap);
     const serial = body.serial?.trim();
+    const browserTargetId = body.browserTargetId?.trim();
     const devices = serial ? await listDevices().catch(() => []) : [];
     const device = serial ? devices.find((candidate) => candidate.serial === serial) : undefined;
     const preflight = await preflightAppMapCombine(
@@ -330,10 +333,26 @@ export async function handleAppMapTestRoute(input: AppMapTestRouteInput): Promis
         ...(body.strategy ? { strategy: body.strategy } : {}),
         ...(serial && device?.platform
           ? { target: { targetId: serial, platform: device.platform } }
-          : {}),
+          : browserTargetId
+            ? { target: { targetId: browserTargetId, platform: "browser" } }
+            : {}),
       },
       { reviewedDocumentOrigins },
     );
+    if (preflight.checks > 0) {
+      const observed = await quoteObservedCombinePackDuration({
+        projectId: scope.projectId,
+        appMapId: appMap.id,
+        combineId: combine.id,
+        workItemCount: preflight.checks,
+      });
+      if (observed) preflight.observedDuration = observed;
+    }
+    const accountCapacity = quoteBrowserAccountPackDuration({
+      checks: preflight.checks,
+      profileTargets: body.profileTargets ?? [],
+      observed: preflight.observedDuration,
+    });
     if (serial) {
       const state = !device
         ? "missing"
@@ -356,7 +375,10 @@ export async function handleAppMapTestRoute(input: AppMapTestRouteInput): Promis
         preflight.ok = false;
       }
     }
-    json(response, 200, { preflight });
+    json(response, 200, {
+      preflight,
+      ...(accountCapacity ? { accountCapacity } : {}),
+    });
     return true;
   }
   const comboRemove = matchPath(pathname, "/app-maps/:appMapId/combines/:combineId/remove");

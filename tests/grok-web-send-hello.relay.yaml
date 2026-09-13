@@ -1,0 +1,28 @@
+schemaVersion: 1
+recordingFormatVersion: 2
+id: grok-web-send-hello
+name: Grok web · hello
+description: Send a constrained hello on grok.com. Do not treat the LLM reply as a pass. Visual identity should ignore the message body once the Test is recorded.
+variables:
+  prompt: 'Hello. Do not answer anything else but "hello".'
+  send_label: Submit
+steps:
+  - kind: module
+    recipeId: grok-web-open-composer
+  - kind: type
+    text: "{{prompt}}"
+    target:
+      label: Ask Grok anything
+    mode: replace
+  - kind: tap
+    target:
+      label: "{{send_label}}"
+  - kind: wait-response
+    target:
+      label: Ask Grok anything
+    timeoutMs: 90000
+    maxMs: 120000
+    stableForMs: 1500
+    note: Composer returning is the stability signal. Reply text is ignored.
+  - kind: screenshot
+    caption: grok.com after constrained hello

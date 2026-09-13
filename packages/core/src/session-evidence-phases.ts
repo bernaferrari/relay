@@ -52,11 +52,14 @@ export function automaticEvidencePhases(
     case "assert-layout":
     case "extract":
     case "evaluate-semantic":
+    case "evaluate-visual":
     case "wait-for":
     case "wait-response":
     case "pause":
     case "review":
       return ["after"];
+    case "identity-ignore":
+      return [];
     default:
       return ["before", "after"];
   }

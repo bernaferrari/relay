@@ -1,13 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { compileBrowserEnvironment } from "@relay/protocol";
 import {
   accountFixtureIdsFromListed,
   bindRequestedBrowserIdentity,
   browserLiveIdentityMatches,
   browserLiveSessionKey,
+  browserProofSessionKey,
   browserRuntimeConfigurationDigest,
+  browserSessionBelongsToTarget,
   browserSessionProfileMatches,
+  browserSessionStoreKey,
   fixtureRevisionFromReference,
+  overlayRequestedBrowserAccountOnTargetProfile,
   liveBrowserSessionKeysToClose,
   resolveBrowserDeviceOpenIdentity,
 } from "./browser-execution-identity.js";
@@ -79,6 +84,26 @@ test("Admin and Member on the same browser are distinct Live session keys", () =
   );
 });
 
+test("proof sessions keep accounts on separate Playwright contexts", () => {
+  assert.equal(
+    browserProofSessionKey({ targetId: "grok-web", authenticationFixtureId: "authfx:admin:4" }),
+    "proof:grok-web:authfx:admin:4",
+  );
+  assert.notEqual(
+    browserProofSessionKey({ targetId: "grok-web", authenticationFixtureId: "authfx:admin:4" }),
+    browserProofSessionKey({ targetId: "grok-web", authenticationFixtureId: "authfx:member:7" }),
+  );
+  assert.equal(
+    browserSessionStoreKey({ targetId: "grok-web", mode: "proof" }),
+    "proof:grok-web:signed-out",
+  );
+  assert.equal(
+    browserSessionBelongsToTarget("proof:grok-web:authfx:admin:4", "grok-web", "proof"),
+    true,
+  );
+  assert.equal(browserSessionBelongsToTarget("authoring:grok-web", "grok-web", "proof"), false);
+});
+
 test("live identity reuse matches the complete requested profile", () => {
   assert.equal(
     browserLiveIdentityMatches(
@@ -140,6 +165,31 @@ test("device profileTargets without a browser case are not treated as account ex
 
 test("fixture references expose their revision", () => {
   assert.equal(fixtureRevisionFromReference("authfx:00000000-0000-4000-8000-000000000000:7"), "7");
+});
+
+test("Plan account columns freeze the requested fixture onto the queued browser profile", () => {
+  const queued = overlayRequestedBrowserAccountOnTargetProfile(
+    {
+      id: "browser:grok-com",
+      targetId: "grok-com",
+      platform: "browser",
+      source: "browser",
+      name: "Grok.com",
+      capabilities: ["snapshot"],
+      observedAt: 1,
+      browserCaseProfile: compileBrowserEnvironment({ engine: "chromium" }),
+    },
+    {
+      kind: "fixture",
+      accountId: "acct-a",
+      accountRevision: "1",
+      reference: "authfx:11111111-1111-4111-8111-111111111111:1",
+    },
+  );
+  assert.equal(
+    queued?.browserCaseProfile?.authenticationFixtureId,
+    "authfx:11111111-1111-4111-8111-111111111111:1",
+  );
 });
 
 test("Member v7 cannot bind an opaque saved session or a different account at the same revision", () => {
@@ -281,6 +331,54 @@ test("a missing saved engine cannot fully bind a fixture account", () => {
   });
   assert.equal(bound.status, "blocked");
   assert.match((bound as { reason: string }).reason, /engine/i);
+});
+
+test("Plan columns bind listed fixtures without a matching saved runtime account", () => {
+  const listed = [
+    {
+      id: "acct-a",
+      name: "Admin",
+      reference: "authfx:acct-a:1",
+    },
+    {
+      id: "acct-b",
+      name: "Member",
+      reference: "authfx:acct-b:1",
+    },
+  ];
+  const admin = bindRequestedBrowserIdentity({
+    platform: "browser",
+    listedFixtureAuthority: true,
+    listedFixtures: listed,
+    requested: {
+      engine: "chromium",
+      account: { kind: "fixture", accountId: "acct-a", accountRevision: "1" },
+    },
+    saved: { engine: "chromium" },
+  });
+  const member = bindRequestedBrowserIdentity({
+    platform: "browser",
+    listedFixtureAuthority: true,
+    listedFixtures: listed,
+    requested: {
+      engine: "chromium",
+      account: { kind: "fixture", accountId: "acct-b", accountRevision: "1" },
+    },
+    saved: { engine: "chromium" },
+  });
+  assert.equal(admin.status, "bound");
+  assert.equal(member.status, "bound");
+  const unknown = bindRequestedBrowserIdentity({
+    platform: "browser",
+    listedFixtureAuthority: true,
+    listedFixtures: listed,
+    requested: {
+      engine: "chromium",
+      account: { kind: "fixture", accountId: "acct-c", accountRevision: "1" },
+    },
+    saved: { engine: "chromium" },
+  });
+  assert.equal(unknown.status, "blocked");
 });
 
 test("configuration identity distinguishes environment and fixture revisions", () => {

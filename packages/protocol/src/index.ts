@@ -32,6 +32,7 @@ export * from "./execution-summary.js";
 export * from "./run-review.js";
 export * from "./campaign-repair.js";
 export * from "./combine-campaign.js";
+export * from "./combine-profile-target-schema.js";
 export * from "./app-map-combine-cell.js";
 export * from "./app-map-combine-id.js";
 export * from "./navigation-proof.js";
@@ -835,6 +836,15 @@ export type SemanticEvaluationRequest = {
   model?: string;
 };
 
+export type VisualEvaluationRequest = {
+  criteria: string[];
+  threshold?: number;
+  provider?: string;
+  model?: string;
+  image: { mimeType: "image/png" | "image/jpeg"; data: string };
+  region?: { x: number; y: number; width: number; height: number };
+};
+
 export type SemanticEvaluationResult = {
   status: "pass" | "fail" | "uncertain";
   confidence: number;
@@ -844,6 +854,7 @@ export type SemanticEvaluationResult = {
   provider: string;
   model: string;
   evaluatedAt: number;
+  costUsd?: number;
 };
 
 export type ResourceEvent = ResourceEventPayload;

@@ -23,6 +23,33 @@ export function assertIdentity(value: ScreenIdentity, label: string): void {
       appMapFail("invalid-map", `${label}.aliases must contain SHA-256 fingerprints`);
     }
   }
+  if (value.ignoreRegions === undefined) return;
+  if (!Array.isArray(value.ignoreRegions) || value.ignoreRegions.length > 16) {
+    appMapFail("invalid-map", `${label}.ignoreRegions must contain at most 16 regions`);
+  }
+  value.ignoreRegions.forEach((region, index) => {
+    const regionLabel = `${label}.ignoreRegions[${index}]`;
+    objectValue(region, regionLabel);
+    if (
+      typeof region.x !== "number" ||
+      typeof region.y !== "number" ||
+      typeof region.width !== "number" ||
+      typeof region.height !== "number" ||
+      !Number.isFinite(region.x) ||
+      !Number.isFinite(region.y) ||
+      !Number.isFinite(region.width) ||
+      !Number.isFinite(region.height) ||
+      region.x < 0 ||
+      region.y < 0 ||
+      region.width <= 0 ||
+      region.height <= 0
+    ) {
+      appMapFail("invalid-map", `${regionLabel} requires finite x, y, width, and height`);
+    }
+    if (region.name !== undefined && (typeof region.name !== "string" || !region.name.trim())) {
+      appMapFail("invalid-map", `${regionLabel}.name must be a non-empty string`);
+    }
+  });
 }
 
 export function assertConnectionScreenProof(

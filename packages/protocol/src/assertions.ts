@@ -16,4 +16,15 @@ export type AssertionSpec =
       input: string;
       expected: string;
       match: "exact" | "contains" | "not-contains";
+    }
+  | {
+      kind: "visual";
+      criteria: string[];
+      region?: { x: number; y: number; width: number; height: number };
+    }
+  | {
+      kind: "semantic";
+      input: string;
+      criteria: string[];
+      requireAgreement?: boolean;
     };

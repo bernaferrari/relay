@@ -34,3 +34,19 @@ test("omitted relaunch on app open is warm during coverage", () => {
   };
   assert.deepEqual(frozenColdCoverageEffects({ graph, coverageRecipeId: "check" }), []);
 });
+
+test("product file upload stays in coverage instead of a cold device reset", () => {
+  const graph = {
+    check: recipe("check", [
+      { kind: "upload", file: "tests/fixtures/sample.pdf", target: { label: "Upload a file" } },
+    ]),
+    offline: recipe("offline", [{ kind: "offline", state: "on" }]),
+  };
+  assert.deepEqual(frozenColdCoverageEffects({ graph, coverageRecipeId: "check" }), []);
+  assert.equal(
+    frozenColdCoverageEffects({ graph, coverageRecipeId: "offline" }).some((effect) =>
+      effect.reason.includes("offline"),
+    ),
+    true,
+  );
+});

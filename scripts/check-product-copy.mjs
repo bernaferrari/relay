@@ -8,6 +8,7 @@ const sourceRoot = join(root, "packages/app-v2/src");
 const advancedFiles = new Set([
   "components/change-publication-details.tsx",
   "components/test-editor-step.tsx",
+  "components/test-editor-assertion.tsx",
   "components/run-report-formatters.tsx",
 ]);
 

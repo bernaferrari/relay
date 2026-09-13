@@ -10,6 +10,7 @@ import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
 import { Box, Globe2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
+import { SelectField } from "../components/filter-select";
 import type {
   ProductAppVersion,
   ProductBrowserAccount,
@@ -143,22 +144,23 @@ export function VersionEditorDialog({
             />
           </Field>
           <Field>
-            <FieldLabel htmlFor="version-platform">Platform</FieldLabel>
-            <select
+            <SelectField
               id="version-platform"
+              label="Platform"
               value={draft.platform}
-              onChange={(event) =>
+              disabled={editing}
+              options={[
+                { value: "ios", label: "iOS" },
+                { value: "android", label: "Android" },
+                { value: "web", label: "Web" },
+              ]}
+              onValueChange={(platform) =>
                 setDraft({
                   ...draft,
-                  platform: event.currentTarget.value as ProductAppVersion["platform"],
+                  platform: platform as ProductAppVersion["platform"],
                 })
               }
-              disabled={editing}
-            >
-              <option value="ios">iOS</option>
-              <option value="android">Android</option>
-              <option value="web">Web</option>
-            </select>
+            />
           </Field>
           {editing ? (
             <p className="text-xs text-muted-foreground">
@@ -284,19 +286,17 @@ export function BrowserAccountDialog({
             />
           </Field>
           <Field>
-            <FieldLabel htmlFor="account-target">Managed browser</FieldLabel>
-            <select
+            <SelectField
               id="account-target"
+              label="Managed browser"
               value={targetId}
-              onChange={(event) => setTargetId(event.currentTarget.value)}
               disabled={editing}
-            >
-              {targets.map((target) => (
-                <option key={target.id} value={target.id}>
-                  {target.name}
-                </option>
-              ))}
-            </select>
+              options={targets.map((target) => ({
+                value: target.id,
+                label: target.name,
+              }))}
+              onValueChange={setTargetId}
+            />
           </Field>
           <Field>
             <FieldLabel htmlFor="account-expiry">Expires on (optional)</FieldLabel>

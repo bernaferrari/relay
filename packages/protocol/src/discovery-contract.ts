@@ -112,6 +112,17 @@ export type DiscoveryDecisionProvenance = {
   durationMs?: number;
 };
 
+/** Viewport rectangle omitted from identity proofs and visual baselines.
+ * Unit rectangles (every edge ≤ 1) are fractions of the observed frame;
+ * larger values are pixels of that same frame. */
+export type ScreenIdentityIgnoreRegion = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  name?: string;
+};
+
 /** Stable, explainable identity for one semantic application screen. Pixels
  * are observations of this identity, not the identity itself: clocks,
  * counters, animation, and device dimensions may change between captures. */
@@ -121,6 +132,9 @@ export type ScreenIdentity = {
   /** Additional fingerprints that a person or a high-confidence matcher has
    * approved as the same screen. */
   aliases?: string[];
+  /** Authored dynamic regions (reply body, gallery). Identity and visual
+   * compare omit these rectangles so chrome can match across runs. */
+  ignoreRegions?: ScreenIdentityIgnoreRegion[];
 };
 
 /** One concrete observation of a semantic screen. A node can accumulate many

@@ -21,8 +21,9 @@ import { EmptyState, ReadinessMark, RecoveryState } from "../components/product-
 import { RunConfigurationComposer } from "../components/run-configuration-composer";
 import { useRunConfigurationKey } from "../data/use-persisted-run-configuration";
 import { usePersistedRunConfiguration } from "../data/use-persisted-run-configuration";
-import { compileSuiteTargets } from "../data/paired-configuration";
+import { compilePlanProfileAccounts, compileSuiteTargets } from "../data/paired-configuration";
 import { usePairedConfigurationWorkspace } from "../data/use-paired-configuration-workspace";
+import { PlanDailySchedule } from "./plan-daily-schedule";
 import { PageLoading } from "./recording-shared";
 
 const routeApi = getRouteApi("/apps/$appId/suites/$suiteId");
@@ -33,7 +34,7 @@ export function SuitePage() {
   const navigate = useNavigate();
   const scope = useRunConfigurationKey(platform, `suite:${suiteId}`, appId);
   const [editOpen, setEditOpen] = useState(false);
-  const [executionMode, setExecutionMode] = useState<"pilot" | "all">("pilot");
+  const [executionMode, setExecutionMode] = useState<"pilot" | "all">("all");
   const [removeOpen, setRemoveOpen] = useState(false);
   const [name, setName] = useState("");
   const [testIds, setTestIds] = useState<Set<string>>(() => new Set());
@@ -76,19 +77,34 @@ export function SuitePage() {
             : [])),
       ];
   const preview = useQuery({
-    queryKey: ["suites", appId, suiteId, "preview", selectedProfileIds],
+    queryKey: [
+      "suites",
+      appId,
+      suiteId,
+      "preview",
+      selectedProfileIds,
+      configuration.selection.usePairedWorkspace ? paired.workspace.rows : [],
+    ],
     queryFn: () =>
       suiteProfileService.previewSuite({
         appMapId: appId,
         suiteId,
         profileIds: selectedProfileIds,
+        ...(configuration.selection.usePairedWorkspace
+          ? {
+              accounts: compilePlanProfileAccounts(
+                paired.workspace,
+                environments.data ?? [],
+              ),
+            }
+          : {}),
       }),
     enabled: Boolean(suite.data && selectedProfileIds.length && !configuration.targetUnavailable),
     retry: false,
   });
   const save = useMutation({
     mutationFn: () => {
-      if (!suite.data) throw new TypeError("This Suite is unavailable.");
+      if (!suite.data) throw new TypeError("This Plan is unavailable.");
       return suiteProfileService.saveSuite({
         appMapId: appId,
         suiteId,
@@ -108,7 +124,7 @@ export function SuitePage() {
   });
   const remove = useMutation({
     mutationFn: () => {
-      if (!suite.data) throw new TypeError("This Suite is unavailable.");
+      if (!suite.data) throw new TypeError("This Plan is unavailable.");
       return suiteProfileService.removeSuite({
         appMapId: appId,
         suiteId,
@@ -127,8 +143,40 @@ export function SuitePage() {
         suiteId,
         profileIds: selectedProfileIds,
         executionMode,
+        ...(configuration.selection.usePairedWorkspace
+          ? {
+              accounts: compilePlanProfileAccounts(
+                paired.workspace,
+                environments.data ?? [],
+              ),
+            }
+          : {}),
       }),
     onSuccess: ({ batchId }) => navigate({ to: "/batches/$batchId", params: { batchId } }),
+  });
+  const schedule = useMutation({
+    mutationFn: (input: { hour: number; timezone: string }) => {
+      if (!suiteProfileService.schedulePlan)
+        throw new TypeError("Scheduling this Plan is unavailable.");
+      const profileId = selectedProfileIds[0];
+      if (!profileId) throw new TypeError("Choose a browser or device first.");
+      return suiteProfileService.schedulePlan({
+        appMapId: appId,
+        combineId: suiteId,
+        profileId,
+        profileIds: selectedProfileIds,
+        ...(configuration.selection.usePairedWorkspace
+          ? {
+              accounts: compilePlanProfileAccounts(
+                paired.workspace,
+                environments.data ?? [],
+              ),
+            }
+          : {}),
+        hour: input.hour,
+        timezone: input.timezone,
+      });
+    },
   });
   const value = suite.data;
   const needsReview = value?.tests.some((test) => test.status === "needs-review") ?? false;
@@ -158,11 +206,11 @@ export function SuitePage() {
 
   return (
     <LibraryPage className="max-w-5xl">
-      {suite.isPending || editor.isPending ? <PageLoading label="Loading Suite…" /> : null}
+      {suite.isPending || editor.isPending ? <PageLoading label="Loading Plan…" /> : null}
       {suite.error || editor.error ? (
         <RecoveryState
           layout="centered"
-          title="This Suite is unavailable"
+          title="This Plan is unavailable"
           detail="Reload the saved coverage plan before making changes or starting work."
           action={
             <Button
@@ -179,14 +227,14 @@ export function SuitePage() {
       ) : null}
       {!suite.isPending && !suite.error && !value ? (
         <EmptyState
-          title="Suite not found"
+          title="Plan not found"
           detail="It may have been removed from this App."
           action={
             <Link
               className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
               to="/suites"
             >
-              Back to Suites
+              Back to Plans
             </Link>
           }
         />
@@ -194,12 +242,12 @@ export function SuitePage() {
       {value ? (
         <>
           <PageHeader
-            crumbs={[{ label: "Suites", to: "/suites" }, { label: value.name }]}
+            crumbs={[{ label: "Plans", to: "/suites" }, { label: value.name }]}
             title={value.name}
             description={
               value.appName
-                ? `${value.appName}. Choose where to run, then start a representative case.`
-                : "Choose where to run, then start a representative case."
+                ? `${value.appName}. Choose where to run, then run every case.`
+                : "Choose where to run, then run every case."
             }
             actions={
               <>
@@ -338,13 +386,13 @@ export function SuitePage() {
               <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
                 {configuration.selection.usePairedWorkspace
                   ? "Each saved Browser and Account pair runs once. This is not a Browser × Account product."
-                  : "Choose one to four browsers."}
+                  : "Choose browsers. Relay can run up to 64 in parallel."}
               </p>
               <p className="mt-5 border-t border-border pt-4 text-sm font-medium">
                 How much should run?
               </p>
               <p className="mt-1 mb-3 text-xs leading-relaxed text-muted-foreground">
-                Start with one case, or run every case.
+                Run every selected case, or one representative case.
               </p>
               <div className="flex items-center gap-2" role="group" aria-label="Execution scope">
                 <Button
@@ -353,7 +401,7 @@ export function SuitePage() {
                   size="sm"
                   onClick={() => setExecutionMode("pilot")}
                 >
-                  Pilot
+                  One case
                 </Button>
                 <Button
                   aria-pressed={executionMode === "all"}
@@ -376,7 +424,7 @@ export function SuitePage() {
                   <strong className="font-semibold text-text-strong">
                     {preview.data.blockers.length
                       ? "Needs attention"
-                      : `Full suite: ${preview.data.caseCount} ${
+                      : `Full Plan: ${preview.data.caseCount} ${
                           preview.data.caseCount === 1 ? "case" : "cases"
                         } ${
                           preview.data.execution?.capacity === "unavailable" ? "previewed" : "ready"
@@ -390,7 +438,7 @@ export function SuitePage() {
                   </span>
                   {!preview.data.blockers.length && executionMode === "pilot" ? (
                     <span className="mt-1 font-medium text-foreground">
-                      This pilot runs one representative case.
+                      This run uses one representative case.
                     </span>
                   ) : null}
                   {preview.data.execution?.detail ? (
@@ -410,18 +458,27 @@ export function SuitePage() {
                 <FieldError>
                   {preview.error instanceof Error
                     ? preview.error.message
-                    : "Relay could not check this Suite."}
+                    : "Relay could not check this Plan."}
                 </FieldError>
               ) : null}
               {start.error ? (
                 <FieldError>
                   {start.error instanceof Error
                     ? start.error.message
-                    : "Relay could not start this Suite."}
+                    : "Relay could not start this Plan."}
                 </FieldError>
               ) : null}
             </section>
           </div>
+
+          {suiteProfileService.schedulePlan ? (
+            <PlanDailySchedule
+              disabled={!selectedProfileIds.length}
+              pending={schedule.isPending}
+              error={schedule.error}
+              onSave={(input) => schedule.mutate(input)}
+            />
+          ) : null}
 
           <section
             className="mt-8 flex items-center justify-between gap-5 border-t border-border-weak-base pt-5 max-sm:items-start"
@@ -429,7 +486,7 @@ export function SuitePage() {
           >
             <div>
               <h2 id="remove-suite-title" className="text-sm font-semibold text-text-strong">
-                Remove Suite
+                Remove Plan
               </h2>
               <p className="mt-1 text-xs leading-5 text-text-weak">
                 Tests and Reports stay in the App.
@@ -443,13 +500,13 @@ export function SuitePage() {
               <DialogContent showCloseButton={false}>
                 <DialogTitle>Remove {value.name}?</DialogTitle>
                 <DialogDescription>
-                  This removes the Suite grouping. Its Tests and Reports remain available.
+                  This removes the Plan grouping. Its Tests and Reports remain available.
                 </DialogDescription>
                 {remove.error ? (
                   <FieldError>
                     {remove.error instanceof Error
                       ? remove.error.message
-                      : "Relay could not remove this Suite."}
+                      : "Relay could not remove this Plan."}
                   </FieldError>
                 ) : null}
                 <div className="relay-dialog-actions flex flex-wrap items-center justify-end gap-2.5">
@@ -459,7 +516,7 @@ export function SuitePage() {
                     onClick={() => remove.mutate()}
                     disabled={remove.isPending}
                   >
-                    {remove.isPending ? "Removing…" : "Remove Suite"}
+                    {remove.isPending ? "Removing…" : "Remove Plan"}
                   </Button>
                 </div>
               </DialogContent>
@@ -471,13 +528,13 @@ export function SuitePage() {
               showCloseButton={false}
               className="max-h-[min(760px,calc(100vh-32px))] w-[min(720px,calc(100vw-32px))] overflow-auto"
             >
-              <DialogTitle>Edit Suite</DialogTitle>
+              <DialogTitle>Edit Plan</DialogTitle>
               <DialogDescription>
-                Removing a Test from this Suite does not delete it.
+                Removing a Test from this Plan does not delete it.
               </DialogDescription>
               <form onSubmit={submit}>
                 <Field>
-                  <FieldLabel htmlFor="edit-suite-name">Suite name</FieldLabel>
+                  <FieldLabel htmlFor="edit-suite-name">Plan name</FieldLabel>
                   <Input
                     id="edit-suite-name"
                     value={name}
@@ -541,7 +598,7 @@ export function SuitePage() {
                   <FieldError>
                     {save.error instanceof Error
                       ? save.error.message
-                      : "Relay could not save this Suite."}
+                      : "Relay could not save this Plan."}
                   </FieldError>
                 ) : null}
                 <div className="relay-dialog-actions flex flex-wrap items-center justify-end gap-2.5">
@@ -568,7 +625,7 @@ function friendlySuiteIssue(message: string): string {
     return "The selected browser could not reach the app. Check its URL or start the app, then try again.";
   }
   if (/runtime profile/i.test(message)) {
-    return "This browser needs a saved profile before it can run the Suite.";
+    return "This browser needs a saved profile before it can run the Plan.";
   }
   return "This browser is not ready yet. Review its setup and try again.";
 }

@@ -11,6 +11,7 @@ import { compileAppMapTest } from "./map-work.js";
 import {
   AppMapTestRouteSelectionError,
   appMapTestViewportClass,
+  recordedTestRoutePlatforms,
   selectReviewedTestRouteVariant,
 } from "./app-map-test-route-variants.js";
 
@@ -330,4 +331,20 @@ test("legacy Tests compile as isolated single-surface families", () => {
   assert.deepEqual(compiled.plan.testFamily?.mode, "legacy-single-surface");
   assert.equal(compiled.plan.testFamily?.logicalIntentRevision, 9);
   assert.equal(compiled.plan.testFamily?.selectedRouteVariant, undefined);
+});
+
+test("screen variants record platforms without originApplication", () => {
+  const map = mapFixture();
+  const test = scenario();
+  delete test.family;
+  test.originApplication = undefined;
+  test.steps = [
+    {
+      id: "navigate",
+      kind: "instruction",
+      intent: "Open the cart",
+      binding: { status: "resolved", kind: "connections", connectionIds: ["browser-route"] },
+    },
+  ];
+  assert.deepEqual(recordedTestRoutePlatforms(map, test), ["android", "browser"]);
 });

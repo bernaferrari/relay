@@ -115,6 +115,10 @@ export function RunReviewControls({
                   {compare.data.diff.changedFrames} changed · {compare.data.diff.addedFrames} added
                   · {compare.data.diff.removedFrames} removed
                 </span>
+                <p className="text-sm text-muted-foreground">{visualIgnoreCopy(compare.data)}</p>
+                <p className="text-sm text-muted-foreground">
+                  Findings Confirm and Reject never accept a visual baseline.
+                </p>
                 <div
                   className="relay-report-review-actions flex flex-wrap items-center gap-2"
                   aria-label="Visual review decision"
@@ -174,4 +178,22 @@ function visualComparisonLabel(code: string): string {
   if (code === "VISUAL_BASELINE_MISSING") return "No approved visual baseline";
   if (code === "VISUAL_EXPECTED_VARIATION") return "Expected visual variation";
   return "Visual changes need review";
+}
+
+export function visualIgnoreCopy(comparison: {
+  code?: string;
+  policy?: { regions?: readonly { mode?: string; name?: string }[] };
+}): string {
+  const ignored = (comparison.policy?.regions ?? []).filter((region) => region.mode === "ignore");
+  if (!ignored.length) {
+    return comparison.code === "VISUAL_BASELINE_MISSING"
+      ? "No ignore regions. Dynamic reply bodies will be compared if you approve this baseline."
+      : "No ignore regions on this comparison.";
+  }
+  const names = [
+    ...new Set(
+      ignored.map((region) => region.name?.trim()).filter((name): name is string => Boolean(name)),
+    ),
+  ];
+  return `${ignored.length} ignore region${ignored.length === 1 ? "" : "s"}${names.length ? ` (${names.join(", ")})` : ""}. Chrome stays compared.`;
 }

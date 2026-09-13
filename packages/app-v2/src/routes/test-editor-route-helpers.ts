@@ -1,5 +1,5 @@
 import type { AppMapScenarioTestStep, AppMapTestStepPlacement } from "@relay/protocol";
-import { stepKindLabel, type StepEntry } from "../components/test-editor-step";
+import { type StepEntry } from "../components/test-editor-step";
 
 export function collectStepEntries(steps: readonly AppMapScenarioTestStep[]): StepEntry[] {
   const entries: StepEntry[] = [];
@@ -26,7 +26,7 @@ export function collectStepEntries(steps: readonly AppMapScenarioTestStep[]): St
   return entries;
 }
 
-export { stepKindLabel };
+export { stepKindLabel, stepReadinessLabel } from "../components/test-editor-step";
 
 export function branchLabel(placement: AppMapTestStepPlacement): string {
   if (placement.branch === "then") return "Then branch";

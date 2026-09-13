@@ -217,6 +217,7 @@ export async function acquirePreparedSessionDevice(
     // path (openBrowserTarget/getBrowserDevice({ mode: "authoring" })).
     return await getBrowserDevice(target.browserTarget.id, {
       mode: "proof",
+      headless: true,
       profile: job.browserCaseProfile,
       projectId: job.projectId ?? "default",
       // Browser proof contexts are acquired before generic collectors start.

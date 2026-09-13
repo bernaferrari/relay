@@ -216,6 +216,30 @@ test("offline preflight follows the runtime identifier-to-label fallback", () =>
   assert.deepEqual(report.findings, []);
 });
 
+test("offline preflight leaves an absent tap with semantic fallbacks for live confirmation", () => {
+  const report = preflightCompiledAppMapTestOffline(
+    plan([
+      {
+        kind: "expect-screen",
+        screenId: "home",
+        screenTitle: "Home",
+        fingerprint: "home",
+        observations: [observation],
+      },
+      {
+        kind: "tap",
+        id: "submit",
+        target: { label: "Submit" },
+        fallbackTargets: [{ identifier: "appearance" }],
+      },
+    ]),
+  );
+  assert.deepEqual(
+    report.findings.map((finding) => [finding.severity, finding.code]),
+    [["warning", "selector-absent"]],
+  );
+});
+
 test("offline preflight leaves an absent reviewed coordinate for live confirmation", () => {
   const report = preflightCompiledAppMapTestOffline(
     plan([

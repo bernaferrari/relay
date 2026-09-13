@@ -1315,6 +1315,91 @@ test("combine run --lens maps onto the Combine capture policy", async () => {
   assert.equal(parsed.input.executionMode, "all");
 });
 
+test("plan run --findings prints Infra markdown when start refuses a signed-out account", async () => {
+  const io = capture();
+  const code = await runCli(
+    [
+      "plan",
+      "run",
+      "grok-web",
+      "grok-web-daily",
+      "--findings",
+      "--input",
+      '{"browserTargetId":"grok-com","targetKind":"browser"}',
+    ],
+    {
+      streams: io.streams,
+      createClient: () => ({
+        invoke: async () => {
+          throw new ApiError(409, "Member expired. Open Sign-ins, complete OAuth, then Refresh.", {
+            code: "ACCOUNT_NEEDS_RELOGIN",
+            recovery: "Open Sign-ins, complete OAuth, then Refresh.",
+            findings: {
+              schemaVersion: 1,
+              batchId: "preflight",
+              locales: ["en"],
+              analysis: {
+                schemaVersion: 1,
+                sessionId: "preflight",
+                generatedAt: 1,
+                baselineLocale: "en",
+                findings: [
+                  {
+                    id: "account-needs-relogin",
+                    code: "ACCOUNT_NEEDS_RELOGIN",
+                    severity: "critical",
+                    confidence: "high",
+                    canonicalKey: "account",
+                    screenLabel: "Sign-ins",
+                    locale: "en",
+                    baselineLocale: "en",
+                    detail: "Member expired. Open Sign-ins, complete OAuth, then Refresh.",
+                  },
+                ],
+                critical: 1,
+                warnings: 0,
+                affectedScreens: 1,
+              },
+              coverage: { frames: 0, inspectedFrames: 0 },
+              cases: [],
+            },
+          });
+        },
+        events: async () => {},
+      }),
+      registerSignalHandlers: false,
+      env: {},
+    },
+  );
+  assert.equal(code, ExitCode.conflict);
+  assert.match(io.stdout(), /ACCOUNT_NEEDS_RELOGIN/u);
+  assert.match(io.stdout(), /Sign-ins/u);
+  assert.doesNotMatch(io.stdout(), /approve-new-baseline/i);
+});
+
+test("plan run defaults to every case and accepts a watch budget", () => {
+  const parsed = parseCli(
+    [
+      "plan",
+      "run",
+      "grok-web",
+      "grok-web-daily",
+      "--budget",
+      "3m",
+      "--findings",
+      "--input",
+      '{"browserTargetId":"grok-com","targetKind":"browser"}',
+    ],
+    {},
+  );
+  assert.equal(parsed.command, "invoke");
+  if (parsed.command !== "invoke") throw new Error("expected invoke");
+  assert.equal(parsed.operationId, "job.combine.start");
+  assert.equal(parsed.input.executionMode, "all");
+  assert.equal(parsed.config.timeoutMs, 180_000);
+  assert.equal(parsed.findings, true);
+});
+
 test("test run --lens --cell --all without --in are usage errors", async () => {
   assert.throws(
     () => parseCli(["test", "run", "grok-ios", "settings-tour", "--lens", "visual"], {}),

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   admitLiveOpenPlan,
   compilePairedConfigurations,
+  compilePlanProfileAccounts,
   compileRepeatScope,
   compileSuiteTargets,
   compileTestStarts,
@@ -205,6 +206,85 @@ describe("paired Browser and Account workspace", () => {
       scopeLabel: "3 executions · 3 paired configurations",
     });
     expect(compileRepeatScope({ workspace, dataCaseCount: 2 }).executionCount).toBe(6);
+    expect(
+      compilePlanProfileAccounts(workspace, [
+        { id: "env-ff", targetId: "firefox-1", accountId: "acct-member" },
+        { id: "env-wk", targetId: "webkit-1" },
+        { id: "env-ch-member", targetId: "chrome-1", accountId: "acct-member" },
+        { id: "env-ch", targetId: "chrome-1", accountId: "acct-admin" },
+      ]),
+    ).toEqual([
+      {
+        profileId: "env-ch",
+        engine: "chromium",
+        account: { kind: "fixture", accountId: "acct-admin", accountRevision: "3" },
+      },
+      {
+        profileId: "env-ff",
+        engine: "firefox",
+        account: { kind: "fixture", accountId: "acct-member", accountRevision: "7" },
+      },
+      {
+        profileId: "env-wk",
+        engine: "webkit",
+        account: { kind: "signed-out", attested: true },
+      },
+    ]);
+  });
+
+  it("keeps two accounts on one browser as two columns, not an unresolved pair", () => {
+    const twoOnChrome = parsePairedConfigurationWorkspace(
+      JSON.stringify({
+        schemaVersion: 1,
+        updatedAt: 1,
+        rows: [
+          {
+            id: "admin",
+            name: "Admin",
+            browserId: "chrome-1",
+            browserName: "Chrome",
+            engine: "chromium",
+            accountId: "acct-admin",
+            accountRevision: "3",
+          },
+          {
+            id: "member",
+            name: "Member",
+            browserId: "chrome-1",
+            browserName: "Chrome",
+            engine: "chromium",
+            accountId: "acct-member",
+            accountRevision: "7",
+          },
+        ],
+      }),
+    );
+    const environments = [
+      {
+        id: "env-ch",
+        targetId: "chrome-1",
+        authenticationOptions: [
+          { id: "acct-admin", reference: "authfx:acct-admin:3" },
+          { id: "acct-member", reference: "authfx:acct-member:7" },
+        ],
+      },
+    ];
+    expect(compileSuiteTargets(twoOnChrome, environments)).toEqual({
+      profileIds: ["env-ch"],
+      unresolved: [],
+    });
+    expect(compilePlanProfileAccounts(twoOnChrome, environments)).toEqual([
+      {
+        profileId: "env-ch",
+        engine: "chromium",
+        account: { kind: "fixture", accountId: "acct-admin", accountRevision: "3" },
+      },
+      {
+        profileId: "env-ch",
+        engine: "chromium",
+        account: { kind: "fixture", accountId: "acct-member", accountRevision: "7" },
+      },
+    ]);
   });
 
   it("opens the exact saved pairs in Live and restores identities after restart", () => {

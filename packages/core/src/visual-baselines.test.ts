@@ -43,6 +43,7 @@ async function runFixture(
     serial?: string;
     profileId?: string;
     frames: Buffer[];
+    artifacts?: PersistedRun["artifacts"];
   },
 ): Promise<PersistedRun> {
   const dir = join(root, `run-${input.id}`);
@@ -92,7 +93,7 @@ async function runFixture(
     frames,
     dir,
     writtenAt: capturedAt + 100,
-    artifacts: [],
+    artifacts: input.artifacts ?? [],
     inputDigest: `digest-${input.id}`,
     resolvedInputs: {},
   };
@@ -245,6 +246,38 @@ test("visual policies compare selected regions and ignore approved dynamic conte
         return true;
       },
     );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("identity-ignore artifacts cover the reply body without approving a baseline", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-visual-identity-ignore-"));
+  try {
+    const approved = await runFixture(root, {
+      id: "approved",
+      projectId: "project-a",
+      serial: "pixel-1",
+      frames: [pngWithChangedTopLeft(false)],
+    });
+    await approveVisualBaseline(root, approved);
+    const latest = await runFixture(root, {
+      id: "latest",
+      projectId: "project-a",
+      serial: "pixel-1",
+      frames: [pngWithChangedTopLeft(true)],
+      artifacts: [
+        {
+          kind: "identity-ignore",
+          capturedAt: 1,
+          data: { name: "reply body", x: 0, y: 0, width: 0.25, height: 0.25 },
+        },
+      ],
+    });
+    const ignored = await compareVisualBaseline(root, latest);
+    assert.equal(ignored.code, "VISUAL_MATCH");
+    assert.equal(ignored.diff.frames[0]?.changedPixels, 0);
+    assert.equal((await getVisualComparisonPolicy(root, latest)).regions.length, 0);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

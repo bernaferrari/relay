@@ -41,6 +41,7 @@ export function createRunAcrossProductService(platform: Platform): RunAcrossProd
     triage: (batchId, input) => service().then((item) => item.triage(batchId, input)),
     cancel: (batchId) => service().then((item) => item.cancel(batchId)),
     getReport: (batchId) => service().then((item) => item.getReport(batchId)),
+    getFindings: (batchId) => service().then((item) => item.getFindings(batchId)),
     exportReport: (batchId) => service().then((item) => item.exportReport(batchId)),
     downloadExport: async (batchId) => {
       const { client } = await productClientForPlatform(platform);

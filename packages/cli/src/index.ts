@@ -1,7 +1,7 @@
 #!/usr/bin/env tsx
 import { createBrowserCaptureWorkflow, type BrowserCapturePlan } from "@relay/workflows";
 import { pathToFileURL } from "node:url";
-import { targetExecutionReadiness } from "@relay/core";
+import { targetExecutionReadiness, renderPlanFindingsMarkdown } from "@relay/core";
 import { type RelayOutcomeJobs, type WorkflowSnapshot } from "@relay/workflows";
 import { createRelayOutcomeJobs } from "@relay/workflows/outcomes";
 import {
@@ -13,7 +13,9 @@ import {
 } from "@relay/protocol";
 import type { OutputMode } from "./config.js";
 import { parseCli } from "./config.js";
+import { startedPlanBatchId } from "./cli-run-flags.js";
 import { classifyError, CliError, ExitCode, UsageError } from "./errors.js";
+import { planFindingsReportFromError } from "./plan-findings-cli.js";
 import { renderHelp } from "./help.js";
 import {
   createClient,
@@ -484,6 +486,7 @@ export async function runCli(
   const streams = dependencies.streams ?? processStreams;
   let output = new CliOutput(fallbackMode(argv), argv.includes("--quiet"), streams);
   let operationId: string | undefined;
+  let findingsRequested = false;
   try {
     if (firstPositional(argv) === "db") {
       return await runDbCommand(argv, streams, dependencies.env ?? process.env);
@@ -493,6 +496,8 @@ export async function runCli(
     }
     const parsed = parseCli(argv, dependencies.env ?? process.env);
     output = new CliOutput(parsed.config.output, parsed.config.quiet, streams);
+    findingsRequested =
+      parsed.command === "invoke" && "findings" in parsed && parsed.findings === true;
     if (parsed.command === "help") {
       streams.stdout.write(renderHelp(parsed.helpFamily));
       return ExitCode.success;
@@ -626,6 +631,19 @@ export async function runCli(
                 ),
               },
         );
+        if (parsed.findings) {
+          const batchId = startedPlanBatchId(started);
+          if (!batchId) throw new Error("Plan findings need a campaign or batch id");
+          const analysis = await invoke(client, "job.combine.analysis", { batchId }, abort.signal);
+          output.result(
+            "job.combine.analysis",
+            parsed.config.output === "human"
+              ? renderPlanFindingsMarkdown(
+                  analysis as Parameters<typeof renderPlanFindingsMarkdown>[0],
+                )
+              : analysis,
+          );
+        }
       } else {
         const input = await resolveCurrentTestRunInput(client, parsed, abort.signal, output);
         const surveyDir = typeof input.dir === "string" ? input.dir : undefined;
@@ -647,6 +665,11 @@ export async function runCli(
                 force: parsed.surveyForce === true,
               })),
           );
+        } else if (operationId === "job.combine.analysis" && parsed.config.output === "human") {
+          output.result(
+            operationId,
+            renderPlanFindingsMarkdown(result as Parameters<typeof renderPlanFindingsMarkdown>[0]),
+          );
         } else {
           output.result(operationId, summarizeResult(operationId, result, input, commandPath));
         }
@@ -660,6 +683,10 @@ export async function runCli(
     }
   } catch (error) {
     const classified = classifyError(error);
+    if (findingsRequested && fallbackMode(argv) === "human") {
+      const report = planFindingsReportFromError(classified.details);
+      if (report) output.result("job.combine.analysis", renderPlanFindingsMarkdown(report));
+    }
     output.error(classified, operationId);
     return classified.exitCode;
   }

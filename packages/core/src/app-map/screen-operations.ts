@@ -156,8 +156,14 @@ export function patchScreen(
   if (input.patch.handoff === null) delete screen.handoff;
   else if (input.patch.handoff !== undefined) screen.handoff = structuredClone(input.patch.handoff);
   if (input.patch.identity === null) delete screen.identity;
-  else if (input.patch.identity !== undefined)
-    screen.identity = structuredClone(input.patch.identity);
+  else if (input.patch.identity !== undefined) {
+    const next = structuredClone(input.patch.identity);
+    if (next.ignoreRegions === undefined && screen.identity?.ignoreRegions?.length) {
+      next.ignoreRegions = structuredClone(screen.identity.ignoreRegions);
+    }
+    if (next.ignoreRegions?.length === 0) delete next.ignoreRegions;
+    screen.identity = next;
+  }
   if (input.patch.evidenceSurface === null) delete screen.evidenceSurface;
   else if (input.patch.evidenceSurface !== undefined)
     screen.evidenceSurface = input.patch.evidenceSurface;

@@ -1078,6 +1078,11 @@ describe("Run and Report", () => {
       id: "comparison-7",
       code: "VISUAL_CHANGED",
       diff: { changedFrames: 2, addedFrames: 1, removedFrames: 0 },
+      policy: {
+        regions: [
+          { id: "identity-ignore:reply body:0", name: "reply body", mode: "ignore", frameIndex: 0 },
+        ],
+      },
     } as never;
     const compareVisual = vi.fn().mockResolvedValue(comparison);
     const approveVisualBaseline = vi.fn().mockResolvedValue({ status: "approved" } as never);
@@ -1087,16 +1092,15 @@ describe("Run and Report", () => {
     fake.service.reviewVisual = reviewVisual;
     await renderRun("/runs/run-1", fake.service, platformWithStorage().platform);
 
-    await click(button("More run actions"));
-    await click(
-      [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
-        (item) => item.textContent?.trim() === "Review run",
-      )!,
-    );
+    await click(button("Review screenshots"));
     await click(button("Compare screenshots"));
     expect(compareVisual).toHaveBeenCalledWith("run-1");
     expect(document.body.textContent).toContain("Visual changes need review");
     expect(document.body.textContent).toContain("2 changed · 1 added · 0 removed");
+    expect(document.body.textContent).toContain("1 ignore region (reply body)");
+    expect(document.body.textContent).toContain(
+      "Findings Confirm and Reject never accept a visual baseline",
+    );
 
     await click(button("Approve new baseline"));
     expect(approveVisualBaseline).toHaveBeenCalledWith({

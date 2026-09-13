@@ -67,12 +67,12 @@ function batchWithStatuses(...statuses: Array<"passed" | "failed" | "blocked" | 
 test("batch summaries preserve cancelled and blocked outcomes", () => {
   assert.equal(
     summarizeProductBatch({ ...batchWithStatuses(), status: "cancelled" }).headline,
-    "Batch was cancelled",
+    "Plan was cancelled",
   );
   assert.equal(summarizeProductBatch(batchWithStatuses()).headline, "No cases were run");
   assert.equal(
     summarizeProductBatch(batchWithStatuses("cancelled")).headline,
-    "Batch was cancelled",
+    "Plan was cancelled",
   );
   assert.equal(
     summarizeProductBatch(batchWithStatuses("blocked")).headline,
@@ -80,7 +80,7 @@ test("batch summaries preserve cancelled and blocked outcomes", () => {
   );
   assert.match(
     summarizeProductBatch(batchWithStatuses("passed", "blocked", "cancelled")).detail,
-    /1 passed · 0 failed · 1 blocked · 1 cancelled · 0 remaining/u,
+    /1 passed · 0 failed · 1 infra/u,
   );
   assert.equal(
     summarizeProductBatch(batchWithStatuses("passed", "passed")).headline,
@@ -226,11 +226,68 @@ test("canonical cases expose Test × environment identity without inventing lega
   assert.deepEqual(batch.cases[0]!.identity, {
     testId: "test-1",
     environmentId: "pixel-profile",
+    environmentLabel: "pixel-profile",
     environmentPlatform: "android",
     runId: "run-pt",
   });
   assert.deepEqual(batch.cases[0]!.priorRunIds, ["run-old"]);
   assert.equal(batch.cases[1]!.identity, undefined);
+});
+
+test("six accounts plus Android and iOS inspect as eight Result columns", async () => {
+  const invoke = async (id: string) => {
+    assert.equal(id, "job.combine.campaign.get");
+    return {
+      campaign: {
+        id: "batch-8",
+        title: "Grok daily",
+        status: "completed",
+        createdAt: 1,
+        updatedAt: 2,
+        appMapId: "grok-web",
+        cases: [
+          ...["a", "b", "c", "d", "e", "f"].map((letter, index) => ({
+            index,
+            cellId: `cell-${letter}`,
+            testId: "send-hello",
+            targetProfileId: "browser:grok-com",
+            target: { targetId: "grok-com", platform: "browser" },
+            account: { kind: "fixture" as const, accountId: `acct-${letter}`, accountRevision: "1" },
+            phase: "coverage" as const,
+            status: "passed" as const,
+            values: {},
+          })),
+          {
+            index: 6,
+            cellId: "cell-android",
+            testId: "send-hello",
+            targetProfileId: "pixel-8",
+            target: { targetId: "pixel-8", platform: "android" },
+            phase: "coverage" as const,
+            status: "passed" as const,
+            values: {},
+          },
+          {
+            index: 7,
+            cellId: "cell-ios",
+            testId: "send-hello",
+            targetProfileId: "ipad-pro",
+            target: { targetId: "ipad-pro", platform: "ios" },
+            phase: "coverage" as const,
+            status: "passed" as const,
+            values: {},
+          },
+        ],
+      },
+    };
+  };
+  const service = createProductRunAcrossService({ invoke } as never, { invoke } as never);
+  const batch = await service.inspect("batch-8");
+  const environmentIds = batch.cases.map((item) => item.identity?.environmentId);
+  assert.equal(new Set(environmentIds).size, 8);
+  assert.equal(batch.cases[0]!.identity?.environmentLabel, "acct-a");
+  assert.equal(batch.cases[6]!.identity?.environmentPlatform, "android");
+  assert.equal(batch.cases[7]!.identity?.environmentPlatform, "ios");
 });
 
 test("blocked cases are complete problems rather than pending work", async () => {

@@ -2,7 +2,8 @@ import { publish } from "./events.js";
 import { runWithOperationContext, type OperationContext } from "./operation-context.js";
 import { finishDurableSessionJob, queueDurableSessionJob } from "./session-durable-worker.js";
 import type { EnqueueJobInput, TestJob } from "./session-contract.js";
-import { executionTargetRefForJob, executionTargetSchedulingKey } from "./target-driver.js";
+import { executionTargetRefForJob } from "./target-driver.js";
+import { jobSchedulingTargetId } from "./browser-account-lane.js";
 import type { TargetWorkerScheduledWork, TargetWorkerStagedBatch } from "./target-worker.js";
 
 type ScheduledJob = TargetWorkerScheduledWork;
@@ -258,7 +259,10 @@ export function scheduledSessionJob(input: {
   return {
     id: job.id,
     workerId: job.workerId!,
-    targetId: executionTargetSchedulingKey(executionTargetRefForJob(job)),
+    targetId: jobSchedulingTargetId({
+      executionTarget: executionTargetRefForJob(job),
+      browserCaseProfile: job.browserCaseProfile,
+    }),
     capacity: job.workerCapacity!,
     ...(job.hostWorkerId && job.hostWorkerCapacity
       ? {

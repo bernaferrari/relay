@@ -17,6 +17,7 @@ import type { EnqueueJobInput, TestJob } from "./session-contract.js";
 import type { TraceFrameRef, TraceStep } from "./trace.js";
 import { installRegisteredBuild, preflightRegisteredBuild } from "./builds.js";
 import type { Build } from "@relay/protocol";
+import { jobSchedulingTargetId } from "./browser-account-lane.js";
 import { defaultTargetWorkerAssignment } from "./target-worker.js";
 import {
   executionTargetRefForJob,
@@ -80,7 +81,10 @@ function inheritedLegacyWorkerHost(parent: TestJob | undefined): {
   if (!parent?.workerId || parent.hostWorkerId) return {};
   const target = executionTargetRefForJob(parent);
   const derivedLane = defaultTargetWorkerAssignment({
-    targetId: target.identity.value,
+    targetId: jobSchedulingTargetId({
+      executionTarget: target,
+      browserCaseProfile: parent.browserCaseProfile,
+    }),
     platform: target.platform,
     provider: target.provider,
   });
@@ -401,10 +405,12 @@ export function createSessionJob(
       ? inheritedLegacyWorkerHost(parent)
       : {};
   const assignment = defaultTargetWorkerAssignment({
-    // The scheduler separately uses executionTargetSchedulingKey(), which
-    // includes the provider. The lane itself keeps the human-readable target
-    // identity and derives its remote namespace from this frozen provider.
-    targetId: executionTarget.identity.value,
+    // Browser accounts use a fixture lane so N signed-in browsers on one
+    // host do not serialize behind the target id.
+    targetId: jobSchedulingTargetId({
+      executionTarget,
+      browserCaseProfile,
+    }),
     platform: targetContext.platform,
     provider: executionTarget.provider,
     // Legacy worker fields represented an aggregate platform worker. Keep

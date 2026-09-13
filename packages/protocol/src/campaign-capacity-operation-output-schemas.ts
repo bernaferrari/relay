@@ -11,7 +11,7 @@ import type {
 import type { CombineCampaign, LocalCampaignAdmissionRequest } from "./combine-campaign.js";
 import type { LocalAgentDeviceExecutionTargetRef } from "./execution-target.js";
 
-const platform = z.enum(["android", "ios"]);
+const platform = z.enum(["android", "ios", "browser"]);
 const durationProvenance = z.enum(["observed-p50", "observed-p95", "supplied"]);
 
 const durationInputSchema = z
@@ -240,7 +240,7 @@ const localDeviceTargetSchema: z.ZodType<LocalAgentDeviceExecutionTargetRef> = z
       .object({ key: z.literal("relay.local.agent-device"), scope: z.literal("local") })
       .strict(),
     targetId: z.string(),
-    platform,
+    platform: z.enum(["android", "ios"]),
     identity: z.object({ kind: z.literal("device-serial"), value: z.string() }).strict(),
   })
   .strict();

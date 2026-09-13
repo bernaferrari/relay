@@ -1,0 +1,1 @@
+Relay logged-out upload fixture

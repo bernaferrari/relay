@@ -1203,6 +1203,55 @@ test("updates screen fields and normalized variants, including explicit field re
   assert.equal(cleared.screens.home?.evidenceSurface, undefined);
 });
 
+test("screen identity ignore regions persist and survive a fingerprint-only identity patch", () => {
+  const input = mapFixture();
+  const ignore = { name: "reply body", x: 0.07, y: 0.125, width: 0.93, height: 0.68 };
+  const withIgnore = updateAppMapScreen(
+    input,
+    "home",
+    {
+      patch: {
+        identity: {
+          schemaVersion: 1,
+          fingerprint,
+          ignoreRegions: [ignore],
+        },
+      },
+    },
+    context(input, "event-ignore-regions"),
+  );
+  assert.deepEqual(withIgnore.screens.home?.identity?.ignoreRegions, [ignore]);
+
+  const kept = updateAppMapScreen(
+    withIgnore,
+    "home",
+    {
+      patch: {
+        identity: { schemaVersion: 1, fingerprint, aliases: ["b".repeat(64)] },
+      },
+    },
+    context(withIgnore, "event-keep-ignore-regions"),
+  );
+  assert.deepEqual(kept.screens.home?.identity, {
+    schemaVersion: 1,
+    fingerprint,
+    aliases: ["b".repeat(64)],
+    ignoreRegions: [ignore],
+  });
+
+  const cleared = updateAppMapScreen(
+    kept,
+    "home",
+    {
+      patch: {
+        identity: { schemaVersion: 1, fingerprint, ignoreRegions: [] },
+      },
+    },
+    context(kept, "event-clear-ignore-regions"),
+  );
+  assert.deepEqual(cleared.screens.home?.identity, { schemaVersion: 1, fingerprint });
+});
+
 test("updating a variant preserves durable preview, baseline, and prior evidence", () => {
   const input = mapFixture();
   const existing = input.screenVariants["variant-home"]!;

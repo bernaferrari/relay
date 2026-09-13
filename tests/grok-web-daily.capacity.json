@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "packId": "grok-web-daily",
+  "provenance": "measured",
+  "measuredAt": "2026-09-13T01:21:09Z",
+  "sampleCount": 3,
+  "note": "Serial logged-out grok.com Plan measured over three live 8-Test runs (batches below). Upload is the long pole (~49–58s). --budget 3m is too tight for this pack (CLI ~221s); use --budget 10m as a watch timeout, not a pack-duration promise. N parallel browser contexts and 3-account packs are unmeasured. Empty findings are not a license to skip the next daily Plan. This is not the 60-case signed-in pack. Heavy, video, Expert web search, Continue with X, dictation, and camera stay on grok-web-weekly.",
+  "assumedParallelBrowserContexts": 8,
+  "suppliedBudgetMs": 600000,
+  "workItems": 8,
+  "workItemsByPlatform": {
+    "browser": 8
+  },
+  "estimatedWorkItemDurationMs": 58284,
+  "serialPackWallClockP50Ms": 202384,
+  "serialPackWallClockP95Ms": 203284,
+  "parallelWallClockMs": {
+    "1": 203284,
+    "4": null,
+    "8": null,
+    "12": null
+  },
+  "longPole": "Upload a file while logged out",
+  "batches": [
+    "60fcdae7-0d41-4e3b-95f3-b84cf5f41bc6",
+    "19bdd834-c680-4d4f-8f2f-5ca3ac67308b",
+    "cbc4711f-080e-4384-9809-a56cbb2e138e"
+  ],
+  "cellSpansMs": [203384, 201102, 202384],
+  "assurance": "measured-serial-logged-out"
+}

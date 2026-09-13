@@ -40,6 +40,7 @@ export type ProductBrowserAccount = {
     | "createdAt"
     | "expiresAt"
     | "revokedAt"
+    | "health"
   >;
   target: Pick<TargetDefinition, "id" | "name">;
 };
@@ -69,6 +70,11 @@ export type BrowserAccountProductService = {
     targetId: string;
     reference: string;
   }): Promise<ProductBrowserAccount>;
+  probeBrowserAccount(input: {
+    targetId: string;
+    reference: string;
+  }): Promise<ProductBrowserAccount>;
+  openBrowserAccountForSignIn(input: { targetId: string; reference?: string }): Promise<void>;
 };
 
 export type OperationalAppResourcesProductService = AppResourcesProductService &
@@ -92,6 +98,8 @@ export type AppResourcesProductService = {
   saveBrowserAccount?: BrowserAccountProductService["saveBrowserAccount"];
   refreshBrowserAccount?: BrowserAccountProductService["refreshBrowserAccount"];
   revokeBrowserAccount?: BrowserAccountProductService["revokeBrowserAccount"];
+  probeBrowserAccount?: BrowserAccountProductService["probeBrowserAccount"];
+  openBrowserAccountForSignIn?: BrowserAccountProductService["openBrowserAccountForSignIn"];
 };
 
 function projectVersion(build: RegisteredBuild): ProductAppVersion {
@@ -123,6 +131,7 @@ function projectBrowserAccount(
       createdAt: fixture.createdAt,
       ...(fixture.expiresAt === undefined ? {} : { expiresAt: fixture.expiresAt }),
       ...(fixture.revokedAt === undefined ? {} : { revokedAt: fixture.revokedAt }),
+      ...(fixture.health === undefined ? {} : { health: fixture.health }),
     },
     target: { id: target.id, name: target.name },
   };
@@ -195,10 +204,7 @@ export function createAppResourcesProductService(
       );
       return fixtures
         .flatMap(({ target, fixtures: targetFixtures }) =>
-          targetFixtures.map((fixture) => ({
-            fixture,
-            target: { id: target.id, name: target.name },
-          })),
+          targetFixtures.map((fixture) => projectBrowserAccount(fixture, target)),
         )
         .sort(
           (left, right) =>
@@ -250,6 +256,22 @@ export function createAppResourcesProductService(
         confirm: true,
       });
       return projectBrowserAccount(result.fixture, result.target);
+    },
+    async probeBrowserAccount(input) {
+      const result = await (await client()).invoke("target.browser-auth.probe", { ...input });
+      return projectBrowserAccount(
+        { ...result.fixture, health: result.health },
+        { id: input.targetId, name: input.targetId },
+      );
+    },
+    async openBrowserAccountForSignIn(input) {
+      await (
+        await client()
+      ).invoke("target.open", {
+        targetId: input.targetId,
+        ...(input.reference ? { authenticationFixtureReference: input.reference } : {}),
+        presentation: "external",
+      });
     },
   } as OperationalAppResourcesProductService;
 }

@@ -59,11 +59,22 @@ const discoveryControlSchema = z
   })
   .strict();
 
+const screenIdentityIgnoreRegionSchema = z
+  .object({
+    x: z.number(),
+    y: z.number(),
+    width: z.number().positive(),
+    height: z.number().positive(),
+    name: z.string().optional(),
+  })
+  .strict();
+
 const screenIdentitySchema = z
   .object({
     schemaVersion: z.literal(1),
     fingerprint: z.string(),
     aliases: z.array(z.string()).optional(),
+    ignoreRegions: z.array(screenIdentityIgnoreRegionSchema).optional(),
   })
   .strict();
 

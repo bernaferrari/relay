@@ -44,18 +44,21 @@ export function combineLensName(
   return mode;
 }
 
-export function variableCanApply(variable: Pick<AppMapVariable, "apply" | "options">): boolean {
+export function variableCanApply(
+  variable: Pick<AppMapVariable, "apply" | "options"> & Partial<Pick<AppMapVariable, "kind">>,
+): boolean {
   if (variable.apply.kind === "toggle") return true;
   if (!variable.options.length) return false;
   if (variable.apply.kind === "appLocale") return true;
   if (variable.apply.kind !== "list") return false;
   const opens = Boolean(
     variable.apply.inConnectionId?.trim() ||
-    variable.apply.entryPath?.length ||
-    variable.apply.pickerPath?.length,
+      variable.apply.entryPath?.length ||
+      variable.apply.pickerPath?.length,
   );
   const returns = Boolean(
     variable.apply.outConnectionId?.trim() || variable.apply.exitPath?.length,
   );
+  if (variable.kind === "account" && !opens && !returns) return true;
   return opens && returns;
 }

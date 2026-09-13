@@ -5,6 +5,7 @@ import type {
   AppMapScenarioTestEdit,
   Proposal,
 } from "@relay/protocol";
+import { recordedPlanPlatformsFromAppMap, type PlanPlatform } from "@relay/product/test-route-platforms";
 import type { Platform } from "../platform/types";
 import { productClientForPlatform } from "./product-client";
 
@@ -32,6 +33,7 @@ export type ProductTestEditorDocument = {
   appName: string;
   revision: number;
   test: AppMapScenarioTest;
+  recordedPlatforms?: readonly PlanPlatform[];
   history: readonly ProductTestHistoryItem[];
   repairs: readonly ProductTestRepair[];
 };
@@ -194,6 +196,7 @@ export function documentFromMap(
     appName: appMap.name,
     revision: appMap.revision,
     test: structuredClone(test),
+    recordedPlatforms: recordedPlanPlatformsFromAppMap(appMap, test),
     history,
     repairs,
   };

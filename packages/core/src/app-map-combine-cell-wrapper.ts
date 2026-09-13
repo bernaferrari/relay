@@ -5,6 +5,7 @@ import {
   appLocaleShouldRelaunch,
   assertOptionSandwichReady,
   navStepsToRecipe,
+  optionSetNeedsRecordedPicker,
   type OptionRunSet,
 } from "./option-run.js";
 import type { Recipe } from "./recipes.js";
@@ -225,6 +226,7 @@ export function composeAppMapCombineCellWrapper(input: {
       throw new Error("toggles are not runnable yet");
     }
     const resolved = assertOptionSandwichReady(set, input.map);
+    if (!optionSetNeedsRecordedPicker(set) && !resolved.entry.length) continue;
     steps.push(...navStepsToRecipe(resolved.entry, app));
     steps.push(...selectSteps(prefix));
     steps.push(...navStepsToRecipe(resolved.exit, app));
@@ -246,6 +248,7 @@ export function composeAppMapCombineCellWrapper(input: {
       continue;
     }
     if (set.apply.kind === "list") {
+      if (!optionSetNeedsRecordedPicker(set)) continue;
       const resolved = assertOptionSandwichReady(set, input.map);
       steps.push(...navStepsToRecipe(resolved.entry, app));
       steps.push(...restoreListSteps(set));

@@ -10,6 +10,7 @@ import {
   observeVisualScreenFingerprint,
   persistCapturedAuthoringObservation,
   projectAuthoringEvidenceArtifact,
+  managedBrowserTargetIdFromSchedulingKey,
   readTarget,
   type ScreenshotPayload,
   type SnapshotPayload,
@@ -112,7 +113,7 @@ async function captureDurableBrowserObservation(
     });
   let frame: Awaited<ReturnType<typeof capture>>;
   try {
-    frame = await capture(serial);
+    frame = await capture(managedBrowserTargetIdFromSchedulingKey(serial) ?? serial);
   } catch (error) {
     throw new HttpError(
       409,
@@ -184,7 +185,9 @@ export async function captureDurableTargetObservation(
       (await (
         dependencies.readBrowserTarget ??
         (async (targetId) => {
-          const target = await readTarget(targetId);
+          const target = await readTarget(
+            managedBrowserTargetIdFromSchedulingKey(targetId) ?? targetId,
+          );
           return target?.kind === "browser" ? target : null;
         })
       )(serial)) ?? null;

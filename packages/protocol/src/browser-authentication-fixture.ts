@@ -10,6 +10,17 @@ export const browserAuthenticationFixtureReferenceSchema = z
     "Expected an exact versioned browser authentication fixture reference",
   );
 
+export const browserAuthenticationHealthSchema = z
+  .object({
+    status: z.enum(["ready", "needs-relogin", "expired", "revoked", "error"]),
+    checkedAt: z.number().int().nonnegative(),
+    detail: z.string().max(500).optional(),
+    signedIn: z.boolean().optional(),
+  })
+  .strict();
+
+export type BrowserAuthenticationHealth = z.infer<typeof browserAuthenticationHealthSchema>;
+
 export const browserAuthenticationFixtureSchema = z
   .object({
     schemaVersion: z.literal(1),
@@ -26,6 +37,7 @@ export const browserAuthenticationFixtureSchema = z
     expiresAt: z.number().int().positive().optional(),
     revokedAt: z.number().int().nonnegative().optional(),
     revokedBy: z.string().min(1).max(256).optional(),
+    health: browserAuthenticationHealthSchema.optional(),
   })
   .strict()
   .superRefine((fixture, context) => {
@@ -63,6 +75,13 @@ export const browserAuthenticationFixtureOperationInputSchemas = {
       targetId: z.string().min(1).max(96),
       reference: browserAuthenticationFixtureReferenceSchema,
       confirm: z.literal(true),
+    })
+    .strict(),
+  "target.browser-auth.probe": z
+    .object({
+      targetId: z.string().min(1).max(96),
+      reference: browserAuthenticationFixtureReferenceSchema,
+      url: z.url().optional(),
     })
     .strict(),
 } as const;

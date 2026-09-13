@@ -2186,3 +2186,163 @@ test("browser Member v7 is a 409 against a saved Member v4 fixture", async () =>
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("six accounts on one profile plus Android and iOS start as eight execution cases", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-combine-eight-columns-"));
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = root;
+  const server = await startServer({
+    host: "127.0.0.1",
+    port: 0,
+    jobRouteRuntime: {
+      async listDevices() {
+        return [listedMobileTarget("pixel-1", "android"), listedMobileTarget("ipad-b", "ios")];
+      },
+    },
+  });
+  try {
+    const client = new RelayClient({
+      url: `http://127.0.0.1:${server.port}`,
+      auth: { type: "none" },
+      organizationId: "acme",
+      projectId: "mobile",
+      actorId: "human:designer",
+      actorKind: "human",
+    });
+    await saveLocaleCombine(client, {
+      en: { targetId: "pixel-1", platform: "android" },
+      it: { targetId: "ipad-b", platform: "ios" },
+      fr: { targetId: "pixel-1", platform: "android" },
+    });
+    const result = await client.invoke("job.combine.start", {
+      appMapId: "store",
+      combineId: "locales",
+      selected: { language: ["en"] },
+      executionMode: "all",
+      profileTargets: [
+        ...["a", "b", "c", "d", "e", "f"].map((letter) => ({
+          profileId: "grok-com",
+          targetProfileId: "pixel-en",
+          engine: "chromium" as const,
+          account: { kind: "fixture" as const, accountId: `acct-${letter}`, accountRevision: "1" },
+          target: {
+            targetKind: "device" as const,
+            serial: "pixel-1",
+            platform: "android" as const,
+          },
+        })),
+        {
+          profileId: "pixel-8",
+          targetProfileId: "pixel-fr",
+          target: {
+            targetKind: "device" as const,
+            serial: "pixel-1",
+            platform: "android" as const,
+          },
+        },
+        {
+          profileId: "ipad-pro",
+          targetProfileId: "pixel-it",
+          target: { targetKind: "device" as const, serial: "ipad-b", platform: "ios" as const },
+        },
+      ],
+    });
+    const campaign = result.campaign as CombineCampaign;
+    assert.equal(campaign.cases.length, 8);
+    assert.equal(new Set(campaign.cases.map((item) => item.executionCaseId)).size, 8);
+    assert.equal(
+      campaign.cases.filter((item) => item.account && item.account.kind === "fixture").length,
+      6,
+    );
+    for (const job of (result.jobs as Array<{ id?: string }>) ?? []) {
+      if (job.id) {
+        cancelJob(job.id);
+        await waitForJobCompletion(job.id);
+      }
+    }
+  } finally {
+    await server.close();
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("browser-only map refuses to queue unrecorded Android instead of inventing a route", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-combine-unrecorded-android-"));
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = root;
+  const server = await startServer({
+    host: "127.0.0.1",
+    port: 0,
+    jobRouteRuntime: {
+      async listDevices() {
+        return [listedMobileTarget("pixel-1", "android")];
+      },
+    },
+  });
+  try {
+    const client = new RelayClient({
+      url: `http://127.0.0.1:${server.port}`,
+      auth: { type: "none" },
+      organizationId: "acme",
+      projectId: "mobile",
+      actorId: "human:designer",
+      actorKind: "human",
+    });
+    await client.invoke("app-map.create", { appMapId: "store", name: "Store" });
+    await client.invoke("app-map.screen.add", {
+      appMapId: "store",
+      expectedRevision: 0,
+      screen: {
+        id: "home",
+        title: "Home",
+        identity: { schemaVersion: 1, fingerprint: "a".repeat(64) },
+      },
+    });
+    await client.invoke("app-map.test.save", {
+      appMapId: "store",
+      testId: "open-web",
+      expectedRevision: 1,
+      test: {
+        name: "Open web",
+        kind: "scenario",
+        intentSchemaVersion: 1,
+        originApplication: "https://example.com",
+        capture: { mode: "final-screen" },
+        steps: [
+          {
+            id: "prepare",
+            kind: "script",
+            intent: "Prepare without a selector",
+            binding: { status: "resolved", kind: "script", source: "return true" },
+          },
+        ],
+      } as never,
+    });
+    await assert.rejects(
+      () =>
+        client.invoke("job.combine.start", {
+          appMapId: "store",
+          testId: "open-web",
+          executionMode: "all",
+          profileTargets: [
+            {
+              profileId: "pixel-8",
+              target: { targetKind: "device", serial: "pixel-1", platform: "android" },
+            },
+          ],
+        }),
+      (error: unknown) =>
+        error instanceof ApiError &&
+        error.status === 409 &&
+        /No recorded Android route/u.test(error.message) &&
+        (error.body as { code?: string } | undefined)?.code === "UNSUPPORTED_PLATFORM",
+    );
+  } finally {
+    await server.close();
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});

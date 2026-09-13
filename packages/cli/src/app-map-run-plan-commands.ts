@@ -67,10 +67,17 @@ export const appMapRunPlanCommandDescriptors: readonly MappedOperationDescriptor
       ],
       inputHelp: [
         { name: "serial", type: "string", description: "Optional connected device to verify" },
+        {
+          name: "profileTargets",
+          type: "array",
+          description:
+            "Optional browser account lanes. Parallel wall-clock is quoted from observed pack duration when these are fixture-keyed.",
+        },
       ],
       examples: [
         "relay combine preflight grok-android language-x-settings",
         'relay combine preflight grok-android language-x-settings --input \'{"serial":"DEVICE"}\'',
+        'relay combine preflight grok-web grok-web-daily --input \'{"browserTargetId":"grok-com","targetKind":"browser"}\'',
       ],
     }),
   ),

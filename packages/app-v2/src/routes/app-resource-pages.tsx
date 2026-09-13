@@ -183,12 +183,40 @@ export function AppAccountsPage() {
       setRevokeAccount(undefined);
     },
   });
+  const probeAccount = useMutation({
+    mutationFn: async (input: { targetId: string; reference: string }) => {
+      if (!appResourcesService.probeBrowserAccount) {
+        throw new Error("Checking this sign-in is unavailable in this Relay connection.");
+      }
+      return appResourcesService.probeBrowserAccount(input);
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["app-resources", "browser-accounts"] });
+    },
+  });
+  const signInNow = useMutation({
+    mutationFn: async (input: { targetId: string; reference?: string }) => {
+      if (!appResourcesService.openBrowserAccountForSignIn) {
+        throw new Error("Opening this sign-in is unavailable in this Relay connection.");
+      }
+      return appResourcesService.openBrowserAccountForSignIn(input);
+    },
+  });
+  const firstBrowser = targets[0];
   const canSaveAccount = Boolean(appResourcesService.saveBrowserAccount) && targets.length > 0;
+  const actionError = probeAccount.error ?? signInNow.error;
+  const listed = accounts.data ?? [];
+  const stateCounts = {
+    ready: listed.filter((item) => accountState(item.fixture) === "ready").length,
+    needsRelogin: listed.filter((item) => accountState(item.fixture) === "needs-relogin").length,
+    expired: listed.filter((item) => accountState(item.fixture) === "expired").length,
+    revoked: listed.filter((item) => accountState(item.fixture) === "revoked").length,
+  };
 
   return (
     <AppResourceFrame
       title="Sign-ins"
-      description="Saved browser sign-ins you can reuse when running a Test."
+      description="Saved browser sign-ins for daily Plans. Check health before a run; expired or signed-out accounts fail closed."
       action={
         <span className="inline-flex items-center justify-end gap-1.5 max-[780px]:flex-wrap max-[780px]:justify-start">
           <Button
@@ -226,31 +254,80 @@ export function AppAccountsPage() {
       ) : null}
       {!loading && !error ? (
         <section aria-label="Sign-ins">
-          {accounts.data?.length ? (
-            <ul className="list-none overflow-hidden rounded-lg border border-border bg-card p-0">
-              {accounts.data.map((account) => (
-                <AccountRow
-                  key={account.fixture.reference}
-                  account={account}
-                  canRefresh={Boolean(appResourcesService.refreshBrowserAccount)}
-                  canRevoke={Boolean(appResourcesService.revokeBrowserAccount)}
-                  onRefresh={() => setAccountDialog(account)}
-                  onRevoke={() => setRevokeAccount(account)}
-                />
-              ))}
-            </ul>
+          {actionError ? (
+            <p className="mb-3 text-sm text-destructive" role="alert">
+              {actionError instanceof Error ? actionError.message : "Could not check this sign-in."}
+            </p>
+          ) : null}
+          {signInNow.isSuccess ? (
+            <p className="mb-3 text-sm text-muted-foreground">
+              Complete OAuth in the browser, then{" "}
+              {listed.length ? "Refresh this sign-in" : "Save sign-in"}.
+            </p>
+          ) : null}
+          {listed.length ? (
+            <>
+              <p className="mb-3 text-sm text-muted-foreground">
+                {stateCounts.ready} ready · {stateCounts.needsRelogin} need sign-in ·{" "}
+                {stateCounts.expired} expired · {stateCounts.revoked} revoked. Check health before
+                the daily Plan.
+              </p>
+              <ul className="list-none overflow-hidden rounded-lg border border-border bg-card p-0">
+                {listed.map((account) => (
+                  <AccountRow
+                    key={account.fixture.reference}
+                    account={account}
+                    canRefresh={Boolean(appResourcesService.refreshBrowserAccount)}
+                    canRevoke={Boolean(appResourcesService.revokeBrowserAccount)}
+                    canProbe={Boolean(appResourcesService.probeBrowserAccount)}
+                    canSignIn={Boolean(appResourcesService.openBrowserAccountForSignIn)}
+                    probing={
+                      probeAccount.isPending &&
+                      probeAccount.variables?.reference === account.fixture.reference
+                    }
+                    opening={
+                      signInNow.isPending &&
+                      signInNow.variables?.reference === account.fixture.reference
+                    }
+                    onRefresh={() => setAccountDialog(account)}
+                    onRevoke={() => setRevokeAccount(account)}
+                    onProbe={() =>
+                      probeAccount.mutate({
+                        targetId: account.target.id,
+                        reference: account.fixture.reference,
+                      })
+                    }
+                    onSignIn={() =>
+                      signInNow.mutate({
+                        targetId: account.target.id,
+                        reference: account.fixture.reference,
+                      })
+                    }
+                  />
+                ))}
+              </ul>
+            </>
           ) : (
             <EmptyState
               icon={KeyRound}
               title="No saved sign-ins"
-              detail="Open a browser, sign in, then save it here."
+              detail="Open a headed browser, complete OAuth, then save it here. Daily Plans with missing or expired sign-ins fail closed as Infra."
               action={
-                <Link
-                  className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
-                  to="/environments"
-                >
-                  Open browsers
-                </Link>
+                firstBrowser && appResourcesService.openBrowserAccountForSignIn ? (
+                  <Button
+                    onClick={() => signInNow.mutate({ targetId: firstBrowser.id })}
+                    disabled={signInNow.isPending}
+                  >
+                    {signInNow.isPending ? "Opening…" : "Open headed browser"}
+                  </Button>
+                ) : (
+                  <Link
+                    className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
+                    to="/environments"
+                  >
+                    Open browsers
+                  </Link>
+                )
               }
             />
           )}
@@ -344,18 +421,31 @@ function AccountRow({
   account,
   canRefresh,
   canRevoke,
+  canProbe,
+  canSignIn,
+  probing,
+  opening,
   onRefresh,
   onRevoke,
+  onProbe,
+  onSignIn,
 }: {
   account: ProductBrowserAccount;
   canRefresh: boolean;
   canRevoke: boolean;
+  canProbe: boolean;
+  canSignIn: boolean;
+  probing: boolean;
+  opening: boolean;
   onRefresh(): void;
   onRevoke(): void;
+  onProbe(): void;
+  onSignIn(): void;
 }) {
   const state = accountState(account.fixture);
+  const showActions = canProbe || canSignIn || canRefresh || (canRevoke && state !== "revoked");
   return (
-    <li className="grid min-h-[66px] grid-cols-[36px_minmax(0,1fr)_auto_minmax(110px,auto)] items-center gap-3 px-3.5 py-[11px] max-[780px]:grid-cols-[36px_minmax(0,1fr)_auto]">
+    <li className="grid min-h-[66px] grid-cols-[36px_minmax(0,1fr)_auto] items-center gap-3 px-3.5 py-[11px] sm:grid-cols-[36px_minmax(0,1fr)_auto_auto]">
       <span
         className="grid size-9 place-items-center rounded-md border border-border bg-background text-foreground"
         aria-hidden="true"
@@ -378,15 +468,42 @@ function AccountRow({
         </small>
       </span>
       <span
-        className={`inline-flex min-h-6 items-center rounded-full bg-background px-2.5 text-[11px] font-semibold capitalize text-muted-foreground`}
+        className={`inline-flex min-h-6 items-center rounded-full bg-background px-2.5 text-[11px] font-semibold capitalize ${
+          state === "ready" ? "text-muted-foreground" : "text-destructive"
+        }`}
       >
         {statusLabel(state)}
       </span>
-      <time dateTime={new Date(account.fixture.createdAt).toISOString()}>
+      <time
+        className="hidden text-sm text-muted-foreground sm:block"
+        dateTime={new Date(account.fixture.createdAt).toISOString()}
+      >
         Saved {shortDate(account.fixture.createdAt)}
       </time>
-      {canRefresh || (canRevoke && state !== "revoked") ? (
-        <span className="grid min-h-[66px] grid-cols-[36px_minmax(0,1fr)_auto_minmax(110px,auto)] items-center gap-3 px-3.5 py-[11px] max-[780px]:col-start-2 max-[780px]:col-end-[-1]">
+      {showActions ? (
+        <span className="col-span-full flex flex-wrap justify-end gap-1 sm:col-start-2">
+          {canProbe ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={onProbe}
+              disabled={probing}
+              aria-label={`Check health of ${account.fixture.name}`}
+            >
+              {probing ? "Checking…" : "Check health"}
+            </Button>
+          ) : null}
+          {canSignIn && state !== "revoked" ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={onSignIn}
+              disabled={opening}
+              aria-label={`Sign in now for ${account.fixture.name}`}
+            >
+              {opening ? "Opening…" : "Sign in now"}
+            </Button>
+          ) : null}
           {canRefresh ? (
             <Button
               size="sm"
@@ -413,8 +530,14 @@ function AccountRow({
   );
 }
 
-function accountState(fixture: ProductBrowserAccount["fixture"]): "ready" | "revoked" | "expired" {
+function accountState(
+  fixture: ProductBrowserAccount["fixture"],
+): "ready" | "needs-relogin" | "expired" | "revoked" | "error" {
   if (fixture.revokedAt !== undefined) return "revoked";
+  if (fixture.health?.status === "needs-relogin") return "needs-relogin";
+  if (fixture.health?.status === "expired") return "expired";
+  if (fixture.health?.status === "revoked") return "revoked";
+  if (fixture.health?.status === "error") return "error";
   if (fixture.expiresAt !== undefined && fixture.expiresAt <= Date.now()) return "expired";
   return "ready";
 }

@@ -14,7 +14,7 @@ import {
   nativeDevice,
 } from "./device-dispatch.js";
 import { iosSnapshotFallbackPoint, snapshot, typeText, type Device } from "./device.js";
-import { selectedPlatform, targetIdentity } from "./target-context.js";
+import { currentTargetContext, selectedPlatform, targetIdentity } from "./target-context.js";
 
 export async function replaceText(
   device: Device,
@@ -45,7 +45,7 @@ export async function replaceText(
   // new text, even though the command succeeds. Make replacement deterministic
   // at the input boundary: focus the target, clear it with native key events,
   // then use the normal exact-text path for the new value.
-  if (selectedPlatform() === "android") {
+  if (currentTargetContext().kind !== "browser" && selectedPlatform() === "android") {
     await controlledMutation("press", () =>
       nativeDevice(device).interactions.press({ ...base(), ...interactionTarget }),
     );

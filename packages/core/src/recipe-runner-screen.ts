@@ -22,6 +22,7 @@ import {
 } from "./recipe-runner-tour.js";
 
 import type { RecipeStep } from "./recipes.js";
+import { runIdentityIgnoreStep } from "./recipe-runner-qa-steps.js";
 import {
   compareScreenIdentity,
   observeScreenIdentity,
@@ -54,6 +55,16 @@ import {
 
 const DEFAULT_EXPECT_TIMEOUT_MS = 5_000;
 const MAX_WAIT_MS = 15 * 60 * 1_000;
+
+function observeStepIdentity(
+  nodes: readonly SnapshotNode[],
+  ctx: RecipeStepContext,
+  extra?: Extract<RecipeStep, { kind: "expect-screen" }>["ignoreRegions"],
+) {
+  return observeScreenIdentity(nodes, {
+    ignoreRegions: [...(ctx.runtime?.identityIgnoreRegions ?? []), ...(extra ?? [])],
+  });
+}
 
 export async function captureRecipeScreenshot(
   device: Device,
@@ -214,6 +225,18 @@ export async function runExpectScreenStep(
   dependencies: ExpectScreenDependencies = {},
 ): Promise<void> {
   const navigationStartedAt = now();
+  if (ctx.runtime) {
+    for (const region of step.ignoreRegions ?? []) {
+      runIdentityIgnoreStep(
+        {
+          kind: "identity-ignore",
+          region: { x: region.x, y: region.y, width: region.width, height: region.height },
+          ...(region.name ? { name: region.name } : {}),
+        },
+        ctx,
+      );
+    }
+  }
   const priorObservation = ctx.runtime?.observation;
   if (ctx.runtime) {
     ctx.runtime.observation = undefined;
@@ -272,7 +295,7 @@ export async function runExpectScreenStep(
     const observedAt = attempt.observedAt;
     const chrome = describeSnapshotChrome(nodes);
     observedTitle = chrome.header ?? chrome.app ?? "unknown";
-    const observed = observeScreenIdentity(nodes);
+    const observed = observeStepIdentity(nodes, ctx, step.ignoreRegions);
     const semanticMatch = (step.observations ?? []).some(
       (observation) => compareScreenIdentity(observed, observation).decision === "match",
     );
@@ -473,7 +496,7 @@ export async function runExpectScreenStep(
   }
   if (verifiedNodes && ctx.runtime) {
     if (verifiedScreenshot) {
-      const observed = observeScreenIdentity(verifiedNodes);
+      const observed = observeStepIdentity(verifiedNodes, ctx, step.ignoreRegions);
       const visualFingerprint =
         verifiedScreenshot.screenMatch?.visualFingerprint ??
         observeVisualScreenFingerprint(Buffer.from(verifiedScreenshot.base64, "base64"));
@@ -505,7 +528,7 @@ export async function runExpectScreenStep(
       semanticNodes: verifiedNodes,
       includeScreenMatch: true,
     }).catch(() => undefined);
-    const observed = observeScreenIdentity(verifiedNodes);
+    const observed = observeStepIdentity(verifiedNodes, ctx, step.ignoreRegions);
     const capturedAt = now();
     ctx.job.artifacts.push({
       kind: "campaign-repair-checkpoint-proof",

@@ -197,3 +197,32 @@ test("concurrent polls admit one idempotent occurrence", async () => {
   assert.equal(recipeReads, 1);
   assert.equal(admissions, 1);
 });
+
+test("Plan schedules start a Combine instead of a Test recipe", async () => {
+  const started: string[] = [];
+  const marked: string[] = [];
+  await runDueSchedules(
+    2_000,
+    fakeRuntime({
+      listSchedules: async () => [
+        {
+          ...dueSchedule,
+          recipeId: "",
+          combineId: "grok-web-daily",
+          appMapId: "grok-web",
+        },
+      ],
+      startCombine: async (schedule) => {
+        started.push(schedule.combineId ?? "");
+      },
+      markScheduleRun: async (id) => {
+        marked.push(id);
+      },
+      prepareJobBatch: (() => {
+        throw new Error("Plan schedules must not stage a Test recipe batch");
+      }) as SchedulerRuntime["prepareJobBatch"],
+    }),
+  );
+  assert.deepEqual(started, ["grok-web-daily"]);
+  assert.deepEqual(marked, [dueSchedule.id]);
+});

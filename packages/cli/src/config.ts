@@ -1,14 +1,10 @@
-import {
-  capturePolicyForLens,
-  isCombineLensInput,
-  type ActorKind,
-  type ServerConnection,
-} from "@relay/protocol";
+import { type ActorKind, type ServerConnection } from "@relay/protocol";
 import { readFileSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 import { resolveCommand, resolveResourceCommand, type CommandBehavior } from "./commands.js";
 import { UsageError } from "./errors.js";
-import { parseInFlags, parseOutcomeCliIntent, type OutcomeCliIntent } from "./outcome-command.js";
+import { parseOutcomeCliIntent, type OutcomeCliIntent } from "./outcome-command.js";
+import { applyCombineRunFlags, assertPlanCliFlags, parseBudgetMs } from "./cli-run-flags.js";
 
 export type OutputMode = "human" | "json" | "ndjson";
 export type CredentialSource = { type: "none" } | { type: "env"; name: string };
@@ -46,6 +42,7 @@ export type ParsedCli =
       surveyForce?: boolean;
       currentTarget?: boolean;
       currentRevision?: boolean;
+      findings?: boolean;
     }
   | {
       config: GlobalConfig;
@@ -121,6 +118,7 @@ const valueFlags = new Set([
   "--commit",
   "--pr",
   "--branch",
+  "--budget",
   "--device",
   "--map",
   "--base",
@@ -143,6 +141,7 @@ const switchFlags = new Set([
   "--history",
   "--all",
   "--no-restore",
+  "--findings",
 ]);
 const repeatableValueFlags = new Set(["--in", "--each"]);
 
@@ -222,55 +221,6 @@ function booleanEnv(value: string | undefined, fallback: boolean): boolean {
   if (value === "1" || value === "true") return true;
   if (value === "0" || value === "false") return false;
   throw new UsageError("RELAY_WAIT must be true, false, 1, or 0");
-}
-
-function applyCombineRunFlags(
-  operationId: string,
-  input: Record<string, unknown>,
-  tokens: ParsedTokens,
-): Record<string, unknown> {
-  const worlds = parseInFlags(tokens.values.get("--in"));
-  const lens = tokens.values.get("--lens");
-  const cell = tokens.values.get("--cell");
-  const all = tokens.switches.has("--all");
-  const usesWorlds = Object.keys(worlds).length > 0;
-  const inputIn =
-    input.in && typeof input.in === "object" && !Array.isArray(input.in)
-      ? (input.in as Record<string, unknown>)
-      : undefined;
-  const hasIn = usesWorlds || Boolean(inputIn && Object.keys(inputIn).length);
-  if (lens && operationId !== "app-map.test.run" && operationId !== "job.combine.start") {
-    throw new UsageError("--lens is only valid on test run or combine run");
-  }
-  if (usesWorlds && operationId !== "app-map.test.run") {
-    throw new UsageError("--in is only valid on test run");
-  }
-  if (cell && operationId !== "app-map.test.run" && operationId !== "job.combine.start") {
-    throw new UsageError("--cell is only valid on test run or combine run");
-  }
-  if (all && operationId !== "app-map.test.run" && operationId !== "job.combine.start") {
-    throw new UsageError("--all is only valid on test run or combine run");
-  }
-  if (operationId === "app-map.test.run" && !hasIn) {
-    if (lens) throw new UsageError("--lens requires --in variableId=value[,value]");
-    if (cell) throw new UsageError("--cell requires --in variableId=value[,value]");
-    if (all) throw new UsageError("--all requires --in variableId=value[,value]");
-  }
-  if (!usesWorlds && !lens && !cell && !all) return input;
-  const next = { ...input };
-  if (usesWorlds) next.in = worlds;
-  if (lens) {
-    if (!isCombineLensInput(lens)) {
-      throw new UsageError(
-        "--lens must be visual, smoke, every-screen, failures-only, final-screen, or none",
-      );
-    }
-    if (operationId === "job.combine.start") next.capture = capturePolicyForLens(lens);
-    else next.lens = lens;
-  }
-  if (cell) next.cell = cell;
-  if (all) next.executionMode = "all";
-  return next;
 }
 
 const COMMIT_SHA_PATTERN = /^[0-9a-f]{7,40}$/;
@@ -590,6 +540,8 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
       "--lens",
       "--cell",
       "--all",
+      "--budget",
+      "--findings",
     ] as const) {
       if (tokens.values.has(friendlyOnly) || tokens.switches.has(friendlyOnly)) {
         throw new UsageError(
@@ -859,13 +811,18 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
       `${resolved.commandPath} is a stream; use --ndjson (or human output) instead of --json`,
     );
   }
+  assertPlanCliFlags(resolved.operationId, tokens);
+  const budgetRaw = tokens.values.get("--budget");
+  const budgetMs = budgetRaw ? parseBudgetMs(budgetRaw) : undefined;
+  const effectiveTimeout =
+    budgetMs !== undefined && !tokens.values.has("--timeout") ? budgetMs : timeoutMs;
   return {
     config: {
       connection,
       credentialSource,
       output,
       quiet: tokens.switches.has("--quiet"),
-      timeoutMs,
+      timeoutMs: effectiveTimeout,
       wait,
       ensureLocalServer,
     },
@@ -894,6 +851,7 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
     ...(surveyDirForce(resolved.operationId, tokens) ? { surveyForce: true } : {}),
     ...(targetShortcut === "current" ? { currentTarget: true } : {}),
     ...(revisionShortcut === "current" ? { currentRevision: true } : {}),
+    ...(tokens.switches.has("--findings") ? { findings: true } : {}),
   };
 }
 

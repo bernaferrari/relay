@@ -173,6 +173,23 @@ test("browser authentication commands expose only exact reviewed fixture inputs"
       },
     },
   );
+  assert.deepEqual(
+    resolveCommand([
+      "browser",
+      "auth",
+      "probe",
+      "browser-1",
+      "authfx:8bb4854a-182c-4df2-825f-bbc3c2a2dfac:2",
+    ]),
+    {
+      operationId: "target.browser-auth.probe",
+      commandPath: "browser auth probe",
+      input: {
+        targetId: "browser-1",
+        reference: "authfx:8bb4854a-182c-4df2-825f-bbc3c2a2dfac:2",
+      },
+    },
+  );
 });
 
 test("all plan-035 authoring operations have friendly command paths", () => {

@@ -182,7 +182,7 @@ export function TestsPage() {
                 to="/suites"
                 search={app ? { app } : {}}
               >
-                Suites
+                Plans
               </Link>
             </nav>
             <Button

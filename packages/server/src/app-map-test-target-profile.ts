@@ -7,7 +7,7 @@ import type {
 import {
   appMapRuntimeTargetProfileFromSaved,
   appMapRuntimeTargetProfileKey,
-  sameAppMapRuntimeTargetProfile,
+  sameAppMapRuntimeTargetProfileIgnoringAccount,
   unsupportedBrowserCaseProfileFields,
 } from "@relay/core";
 import { HttpError } from "./http.js";
@@ -188,7 +188,7 @@ export function queuedAppMapTestTargetProfile(input: {
       viewport: structuredClone(observedBrowser.viewport),
       browserCaseProfile: structuredClone(observedBrowser),
     };
-    if (!sameAppMapRuntimeTargetProfile(saved, observedRuntimeProfile)) {
+    if (!sameAppMapRuntimeTargetProfileIgnoringAccount(saved, observedRuntimeProfile)) {
       throw new HttpError(
         409,
         `Managed browser target ${saved.targetId} no longer matches frozen profile ${saved.id}`,

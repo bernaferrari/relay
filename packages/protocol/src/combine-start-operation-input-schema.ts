@@ -1,5 +1,6 @@
 import * as z from "zod/v4";
 import { sourceRevisionSchema, testCapturePolicy } from "./app-map-test-operation-schemas.js";
+import { combineProfileTargetInputSchema } from "./combine-profile-target-schema.js";
 import { executionTargetInputSchema } from "./core-target-operation-input-schemas.js";
 import { identifier, unknownRecord } from "./operation-schema-primitives.js";
 
@@ -60,44 +61,7 @@ export const combineStartOperationInputSchemas = {
         .strict()
         .optional(),
       defaultTargetProfileId: identifier("Default target profile identifier").optional(),
-      profileTargets: z
-        .array(
-          z
-            .object({
-              profileId: identifier("Environment profile identifier"),
-              targetProfileId: identifier("Saved runtime profile identifier").optional(),
-              engine: z.enum(["chromium", "firefox", "webkit"]).optional(),
-              account: z
-                .discriminatedUnion("kind", [
-                  z
-                    .object({
-                      kind: z.literal("fixture"),
-                      accountId: z.string().trim().min(1),
-                      accountRevision: z.string().trim().min(1),
-                      reference: z.string().trim().min(1).optional(),
-                    })
-                    .strict(),
-                  z
-                    .object({
-                      kind: z.literal("signed-out"),
-                      attested: z.literal(true),
-                    })
-                    .strict(),
-                ])
-                .optional(),
-              target: z
-                .object({
-                  targetKind: z.enum(["device", "browser"]).optional(),
-                  serial: identifier("Connected device serial").optional(),
-                  platform: z.enum(["android", "ios", "browser"]).optional(),
-                  browserTargetId: identifier("Managed browser target identifier").optional(),
-                })
-                .strict(),
-            })
-            .strict(),
-        )
-        .max(4)
-        .optional(),
+      profileTargets: z.array(combineProfileTargetInputSchema).max(64).optional(),
     })
     .strict()
     .superRefine((input, context) => {

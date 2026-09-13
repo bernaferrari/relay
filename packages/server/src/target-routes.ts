@@ -5,7 +5,6 @@ import {
   BrowserMutationOutcomeUnknownError,
   BrowserSupervisionRequiredError,
   browserCaseProfileForTarget,
-  captureBrowserAuthenticationStorageState,
   captureBrowserDeviceFrame,
   closeBrowserDeviceSession,
   controlBrowserDevice,
@@ -21,13 +20,10 @@ import {
   preflightTarget,
   readTarget,
   saveBrowserTarget,
-  saveBrowserAuthenticationFixture,
-  revokeBrowserAuthenticationFixture,
 } from "@relay/core";
 import {
   browserDeviceControlInputSchema,
   browserDeviceBinaryFrameMetadataSchema,
-  browserAuthenticationFixtureOperationInputSchemas,
   browserDeviceFrameInputSchema,
   browserDeviceInspectInputSchema,
   browserDeviceOpenInputSchema,
@@ -48,6 +44,7 @@ import {
 } from "./access-control.js";
 import { CORS_HEADERS, HttpError, json, matchPath, parseJsonBody } from "./http.js";
 import type { RequestContext } from "./security.js";
+import { handleBrowserAuthRoute } from "./browser-auth-routes.js";
 
 export type TargetRouteContext = {
   method: string;
@@ -80,24 +77,6 @@ async function withOwnership(
   return { ...session, ownership: await browserOwnership(scope, session.targetId) };
 }
 
-function requireHumanBrowserAuthenticationReview(): { actorId: string } {
-  const operation = currentOperationContext();
-  if (!operation || operation.actorKind !== "human") {
-    throw new HttpError(403, "Browser sign-in fixtures require a human reviewer");
-  }
-  return { actorId: operation.actorId };
-}
-
-function browserAuthenticationConflict(error: unknown, fallback: string): HttpError {
-  const message =
-    error instanceof Error &&
-    (/^Browser authentication\b/u.test(error.message) ||
-      /^Open the managed browser\b/u.test(error.message))
-      ? error.message
-      : fallback;
-  return new HttpError(409, message);
-}
-
 async function saveTargetBrowserEnvironment(
   target: Awaited<ReturnType<typeof readTarget>> & {},
   environment: BrowserEnvironmentInput,
@@ -116,6 +95,9 @@ async function saveTargetBrowserEnvironment(
 
 export async function handleTargetRoute(context: TargetRouteContext): Promise<boolean> {
   const { method, pathname, url, request: req, response: res, scope } = context;
+  if (await handleBrowserAuthRoute({ method, pathname, request: req, response: res, scope })) {
+    return true;
+  }
 
   if (method === "GET" && pathname === "/targets") {
     json(res, 200, { targets: await listTargets() });
@@ -230,90 +212,6 @@ export async function handleTargetRoute(context: TargetRouteContext): Promise<bo
         ...(signedOut ? { signedOut: true as const } : {}),
       },
     });
-    return true;
-  }
-
-  const browserAuthenticationMatch = matchPath(pathname, "/targets/:id/browser-auth-fixtures");
-  if (method === "GET" && browserAuthenticationMatch) {
-    const targetId = browserAuthenticationMatch.id!;
-    const target = await readTarget(targetId);
-    if (!target?.browser) throw new HttpError(404, "Managed browser target not found");
-    json(res, 200, {
-      fixtures: await listBrowserAuthenticationFixtures({ projectId: scope.projectId, targetId }),
-    });
-    return true;
-  }
-
-  if (method === "POST" && browserAuthenticationMatch) {
-    const targetId = browserAuthenticationMatch.id!;
-    const target = await readTarget(targetId);
-    if (!target?.browser) throw new HttpError(404, "Managed browser target not found");
-    const { actorId } = requireHumanBrowserAuthenticationReview();
-    await assertTargetControl(scope, targetId);
-    const body = browserAuthenticationFixtureOperationInputSchemas[
-      "target.browser-auth.save"
-    ].parse({
-      targetId,
-      ...((await parseJsonBody(req)) as object),
-    });
-    const fixture = await (async () => {
-      try {
-        return await saveBrowserAuthenticationFixture({
-          projectId: scope.projectId,
-          targetId,
-          name: body.name,
-          createdBy: actorId,
-          storageState: await captureBrowserAuthenticationStorageState(targetId),
-          expiresAt: body.expiresAt,
-          fixtureId: body.fixtureId,
-        });
-      } catch (error) {
-        throw browserAuthenticationConflict(error, "Could not save browser sign-in state");
-      }
-    })();
-    const profile = browserCaseProfileForTarget(target);
-    const updated = await saveTargetBrowserEnvironment(target, {
-      ...profile,
-      authenticationFixtureId: fixture.reference,
-    });
-    json(res, 201, { fixture, target: updated });
-    return true;
-  }
-
-  const browserAuthenticationRevokeMatch = matchPath(
-    pathname,
-    "/targets/:id/browser-auth-fixtures/revoke",
-  );
-  if (method === "POST" && browserAuthenticationRevokeMatch) {
-    const targetId = browserAuthenticationRevokeMatch.id!;
-    const target = await readTarget(targetId);
-    if (!target?.browser) throw new HttpError(404, "Managed browser target not found");
-    const { actorId } = requireHumanBrowserAuthenticationReview();
-    const body = browserAuthenticationFixtureOperationInputSchemas[
-      "target.browser-auth.revoke"
-    ].parse({
-      targetId,
-      ...((await parseJsonBody(req)) as object),
-    });
-    const fixture = await (async () => {
-      try {
-        return await revokeBrowserAuthenticationFixture({
-          projectId: scope.projectId,
-          targetId,
-          reference: body.reference,
-          revokedBy: actorId,
-        });
-      } catch (error) {
-        throw browserAuthenticationConflict(error, "Could not revoke browser sign-in state");
-      }
-    })();
-    const profile = browserCaseProfileForTarget(target);
-    const { authenticationFixtureId: activeReference, ...environment } = profile;
-    const updated =
-      activeReference === fixture.reference
-        ? await saveTargetBrowserEnvironment(target, environment)
-        : target;
-    json(res, 200, { fixture, target: updated });
     return true;
   }
 

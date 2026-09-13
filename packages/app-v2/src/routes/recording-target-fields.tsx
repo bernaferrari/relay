@@ -3,6 +3,7 @@ import type { StepTarget } from "@relay/protocol";
 import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
 import { useState } from "react";
+import { SelectField } from "../components/filter-select";
 
 export function RecordingTargetFields({
   canEdit,
@@ -21,19 +22,17 @@ export function RecordingTargetFields({
     : value.trim().length > 0;
   return (
     <div className="grid gap-3 border-t border-border pt-3">
-      <label className="grid gap-1.5 text-xs text-muted-foreground">
-        Target by
-        <select
-          className="h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground"
-          value={method}
-          onChange={(event) => setMethod(event.target.value)}
-        >
-          <option value="identifier">Accessibility identifier</option>
-          <option value="label">Accessibility label</option>
-          <option value="text">Visible text</option>
-          <option value="point">Screen coordinates</option>
-        </select>
-      </label>
+      <SelectField
+        label="Target by"
+        value={method}
+        options={[
+          { value: "identifier", label: "Accessibility identifier" },
+          { value: "label", label: "Accessibility label" },
+          { value: "text", label: "Visible text" },
+          { value: "point", label: "Screen coordinates" },
+        ]}
+        onValueChange={setMethod}
+      />
       {coordinates ? (
         <>
           <div className="grid grid-cols-2 gap-2">

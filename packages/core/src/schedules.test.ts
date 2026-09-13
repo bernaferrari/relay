@@ -123,3 +123,45 @@ test("local schedules preserve a managed browser target", async () => {
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("Plan schedules persist combineId, hour, and account columns after a disk reread", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-plan-schedule-"));
+  const cwd = process.cwd();
+  process.chdir(root);
+  try {
+    const saved = await saveSchedule({
+      combineId: "grok-web-daily",
+      appMapId: "grok-web",
+      targetKind: "browser",
+      targetId: "grok-com",
+      platform: "browser",
+      intervalMinutes: 1_440,
+      hour: 8,
+      timezone: "UTC",
+      profileTargets: [
+        {
+          profileId: "grok-com",
+          engine: "chromium",
+          account: { kind: "fixture", accountId: "acct-a", accountRevision: "1" },
+          target: { targetKind: "browser", browserTargetId: "grok-com" },
+        },
+        {
+          profileId: "pixel-8",
+          target: { targetKind: "device", serial: "pixel-8", platform: "android" },
+        },
+      ],
+    });
+    const [stored] = await listSchedules();
+    assert.equal(saved.recipeId, "");
+    assert.equal(stored?.combineId, "grok-web-daily");
+    assert.equal(stored?.appMapId, "grok-web");
+    assert.equal(stored?.hour, 8);
+    assert.equal(stored?.timezone, "UTC");
+    assert.equal(stored?.profileTargets?.length, 2);
+    assert.equal(stored?.profileTargets?.[0]?.account?.kind, "fixture");
+    await deleteSchedule(saved.id);
+  } finally {
+    process.chdir(cwd);
+    await rm(root, { recursive: true, force: true });
+  }
+});

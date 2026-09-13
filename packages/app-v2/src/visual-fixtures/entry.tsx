@@ -22,6 +22,7 @@ import { activeRecordingState, createActiveRecordingTarget } from "./active-reco
 import { createWorkflowFixture } from "./workflow-fixture";
 import type { LiveTargetSnapshot } from "../data/live-target-session";
 import type { RunAcrossProductService } from "../data/run-across-product-service";
+import { emptyPlanFindings } from "./empty-findings";
 import type { SessionProductService } from "../data/session-product-service";
 import type { SuiteProfileProductService } from "../data/suite-profile-product-service";
 import type { BrowserSpacesProductService } from "../data/browser-spaces-product-service";
@@ -501,6 +502,7 @@ const runAcrossService = {
   preview: previewProductRunAcross,
   getReport: async () => batchReport,
   getFailureClusters: async () => ({ batchId: batchReport.id, clusters: [] }),
+  getFindings: async () => emptyPlanFindings(batchReport.id),
   exportReport: async () => ({
     ...batchReport,
     export: { rootDir: "/relay/exports/batch-checkout", jobIds: [...batchReport.runIds] },
@@ -786,8 +788,8 @@ const liveTestEditorService = {
             binding: { status: "unresolved" as const, reason: "Review this checkpoint" },
           },
         ],
-        createdAt: FIXTURE_TIME - 86_400_000,
         updatedAt: FIXTURE_TIME,
+        originApplication: "https://checkout.example",
       },
       history: [],
       repairs: [],
