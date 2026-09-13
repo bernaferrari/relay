@@ -123,6 +123,10 @@ describe("Batch review controls", () => {
     expect(document.body.textContent).toContain(
       "rate-limit SOS, or a Cloudflare block is not a product pass",
     );
+    const workbench = [...document.querySelectorAll("a")].find((link) =>
+      (link.getAttribute("href") || "").includes("/runs/run-1"),
+    );
+    expect(workbench?.getAttribute("href")).toContain("reportView=captures");
   });
 
   it("assigns the authenticated actor from the visible control, not the me placeholder", async () => {

@@ -372,8 +372,8 @@ const legacyEvidenceRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/evidence",
   beforeLoad: () => {
-    // Retired workspace Evidence tab. QA evidence lives on Result, Findings,
-    // and visual compare; capture policy remains /settings/evidence.
+    // Retired workspace Evidence tab. Inspect a case on the existing Run
+    // workbench from Results; capture policy remains /settings/evidence.
     throw redirect({ to: "/runs", replace: true });
   },
 });

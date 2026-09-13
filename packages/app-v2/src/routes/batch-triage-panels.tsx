@@ -70,8 +70,9 @@ export function BatchFailureClusters({
               className="inline-flex min-h-11 items-center gap-1.5 text-xs font-semibold text-[var(--text-interactive-base)] max-[780px]:col-start-3"
               to="/runs/$runId"
               params={{ runId: cluster.representativeRunId }}
+              search={{ reportView: "captures" }}
             >
-              Evidence <ExternalLink aria-hidden="true" />
+              Report <ExternalLink aria-hidden="true" />
             </Link>
           </li>
         ))}
@@ -303,6 +304,7 @@ function BatchCaseResult({
         <Link
           to="/runs/$runId"
           params={{ runId: item.runId }}
+          search={{ reportView: "captures" }}
           className={`grid min-w-0 gap-1 rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring ${allowSelect ? "col-start-1 ml-8" : ""}`}
         >
           <strong
