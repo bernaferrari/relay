@@ -23,6 +23,7 @@ import {
   boundCoverageExpectScreen,
   rejectForbiddenCoverageEffect,
 } from "./campaign-recovery-effects.js";
+import { contentAssertionPassed } from "./content-assertion-match.js";
 export { isRightToLeftRun, resolveRecipeStep } from "./recipe-runner-support.js";
 export type { RecipeStepContext } from "./recipe-runner-context.js";
 export { DEFAULT_HUMAN_CHECKPOINT_TIMEOUT_MS } from "./recipe-runner-readiness.js";
@@ -302,12 +303,7 @@ async function runRequiredRecipeStep(
     }
     case "assert-content": {
       const actual = readInput(ctx, step.input);
-      const passed =
-        step.match === "exact"
-          ? actual === step.expected
-          : step.match === "contains"
-            ? actual.includes(step.expected)
-            : !actual.includes(step.expected);
+      const passed = contentAssertionPassed(actual, step.expected, step.match);
       (job?.artifacts ?? ctx.artifacts)?.push({
         kind: "content-assertion",
         capturedAt: now(),
