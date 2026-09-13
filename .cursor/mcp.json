@@ -6,14 +6,14 @@
       "args": [
         "${workspaceFolder}/packages/mcp/dist/relay-mcp.js",
         "--profile",
-        "full",
+        "operator",
         "--credential-source",
         "none"
       ],
       "env": {
         "RELAY_URL": "http://127.0.0.1:8787",
-        "RELAY_MCP_PROFILE": "full",
-        "RELAY_ACTOR_ID": "agent:cursor-mcp",
+        "RELAY_MCP_PROFILE": "operator",
+        "RELAY_ACTOR_ID": "agent:cursor",
         "RELAY_ORGANIZATION_ID": "local",
         "RELAY_PROJECT_ID": "default"
       }

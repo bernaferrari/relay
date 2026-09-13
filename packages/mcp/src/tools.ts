@@ -3,6 +3,7 @@ import * as z from "zod/v4";
 type RelayToolInputSchema = z.ZodType<Record<string, unknown>>;
 
 export const relayMcpProfiles = [
+  "operator",
   "outcome",
   "control",
   "map",
@@ -19,7 +20,7 @@ export const relayMcpProfiles = [
 ] as const;
 
 export type RelayMcpProfile = (typeof relayMcpProfiles)[number];
-export const defaultRelayMcpProfile: RelayMcpProfile = "outcome";
+export const defaultRelayMcpProfile: RelayMcpProfile = "operator";
 
 export const relayMcpExclusions = [
   {
@@ -559,7 +560,7 @@ const proofOperations = [
 ] as const satisfies readonly OperationId[];
 
 const profileOperations: Record<
-  Exclude<RelayMcpProfile, "full" | "outcome">,
+  Exclude<RelayMcpProfile, "full" | "outcome" | "operator">,
   ReadonlySet<OperationId>
 > = {
   control: new Set(controlOperations),
@@ -577,7 +578,7 @@ const profileOperations: Record<
 
 function toolInProfile(tool: RelayMcpToolDescriptor, profile: RelayMcpProfile): boolean {
   if (profile === "full") return true;
-  if (profile === "outcome") return false;
+  if (profile === "outcome" || profile === "operator") return false;
   return profileOperations[profile].has(tool.operationId);
 }
 
@@ -602,7 +603,7 @@ export function relayMcpOperationCatalog(): readonly RelayMcpOperationCatalogEnt
     relayMcpTools.map((tool) => {
       const definition = operationDefinitions.find(({ id }) => id === tool.operationId)!;
       const profiles = relayMcpProfiles.filter(
-        (profile) => profile !== "full" && toolInProfile(tool, profile),
+        (profile) => profile !== "full" && profile !== "operator" && toolInProfile(tool, profile),
       );
       return Object.freeze({
         operationId: tool.operationId,

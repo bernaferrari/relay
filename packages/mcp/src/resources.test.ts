@@ -71,6 +71,7 @@ function fixtureResult(operationId: string): unknown {
       ],
     },
     "app-map.list": { appMaps: [{ id: "map-1", name: "Sign in" }] },
+    "lane.list": { lanes: [{ id: "grok-daily", appMapId: "grok-web" }] },
     "app-map.get": { appMap: { id: "map-1", name: "Sign in", screens: {} } },
     "workspace.variables.get": {
       revision: 2,
@@ -263,6 +264,7 @@ test("lists stable scoped Relay resources and templates with JSON MIME types", a
       relayMcpResourceUris.authoringSessions,
       relayMcpResourceUris.targets,
       relayMcpResourceUris.controlGotchas,
+      relayMcpResourceUris.lanes,
       "relay://app-maps/map-1",
       "relay://authoring-sessions/session-1",
       "relay://runs/run-1",
@@ -311,7 +313,7 @@ test("lists stable scoped Relay resources and templates with JSON MIME types", a
 });
 
 test("publishes device-control gotchas as a mandatory JSON resource", async () => {
-  const session = await connectMcp();
+  const session = await connectMcp(fixtureInvoker(), "outcome");
   try {
     const content = resourceContent(
       await session.request("resources/read", { uri: relayMcpResourceUris.controlGotchas }),
@@ -336,6 +338,29 @@ test("publishes device-control gotchas as a mandatory JSON resource", async () =
           rule.includes("operator"),
       ),
     );
+  } finally {
+    await session.close();
+  }
+});
+
+test("operator profile publishes relay://lanes from lane.list", async () => {
+  const session = await connectMcp(fixtureInvoker(), "operator");
+  try {
+    const listed = await session.request("resources/list", {});
+    const uris = ((listed.result?.resources as Array<{ uri: string }>) ?? []).map(({ uri }) => uri);
+    assert.ok(uris.includes(relayMcpResourceUris.lanes));
+    const content = resourceContent(
+      await session.request("resources/read", { uri: relayMcpResourceUris.lanes }),
+    );
+    const envelope = JSON.parse(content.text) as { data: { lanes: Array<{ id: string }> } };
+    assert.equal(envelope.data.lanes[0]?.id, "grok-daily");
+    const gotchas = JSON.parse(
+      resourceContent(
+        await session.request("resources/read", { uri: relayMcpResourceUris.controlGotchas }),
+      ).text,
+    ) as { data: { rules: string[] } };
+    assert.ok(gotchas.data.rules.some((rule) => rule.includes("auto-create a lease")));
+    assert.ok(gotchas.data.rules.some((rule) => rule.includes("relay_recover")));
   } finally {
     await session.close();
   }

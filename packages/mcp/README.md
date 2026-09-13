@@ -25,15 +25,13 @@ relay-mcp doctor --profile proof
 The plugin descriptor invokes the installed `relay-mcp` binary. A clean host does not need pnpm or
 the Relay workspace after the package is installed.
 
-The local defaults use the loopback Relay service, the local project, a process-scoped agent
-identity, and the compact outcome tool set. That default can prepare, inspect, run, and resume a
-Proof through `relay_prove_change` and `relay_inspect_proof`; use `relay_proof_analyze` only for
-bounded offline evidence analysis. It deliberately cannot self-approve a Verification Plan. A
-human approves in the app or CLI. The advanced Proof profile exposes the raw lifecycle operations
-for hosts that also provide a distinct human reviewer identity. The `proof` profile retains the
-ordinary `relay_prove_change` outcome and adds the raw `proof.*` lifecycle tools for explicit plan
-review, recovery, publication, and selective reruns. The Proof plugin selects
-`RELAY_MCP_PROFILE=proof`:
+The local defaults use the loopback Relay service, the local project, actor `agent:cursor`, and
+the `operator` profile (~19 hand-named verbs plus `relay_advanced`). `lease.takeover` is not on
+that profile. This workspace's Cursor MCP (`.cursor/mcp.json`) matches those defaults; reload MCP
+after changing that file. Proof hosts still launch `--profile proof` as below. The `proof`
+profile retains the ordinary `relay_prove_change` outcome and adds the raw `proof.*` lifecycle
+tools for explicit plan review, recovery, publication, and selective reruns. The Proof plugin
+selects `RELAY_MCP_PROFILE=proof`. A human approves a Verification Plan in the app or CLI.
 
 ```json
 {
@@ -115,26 +113,29 @@ the bridge exposes exactly the profile selected by `RELAY_MCP_PROFILE`.
 
 ## Tool profiles
 
-Relay defaults to a curated outcome tool set that covers Connect, Observe, Record, Checkpoint, Review,
-Replay, Approve, Run, Repeat, failure inspection, repair proposals, and TracePack export. Agents do
-not need to select a profile for the normal workflow. Trusted orchestrators can opt into a
-lower-level profile with `--profile <name>` or `RELAY_MCP_PROFILE`.
+Relay defaults to the `operator` profile (~19 hand-named verbs plus `relay_advanced`; no
+`lease.takeover`). Cursor in this repo uses that default (`.cursor/mcp.json`); reload MCP after
+changing the file. Agents do not need to select a profile for ordinary device and Plan work.
+Trusted orchestrators can opt into a lower-level profile with `--profile <name>` or
+`RELAY_MCP_PROFILE`. `full` is trusted orchestration only and is the only profile that exposes
+`lease.takeover`.
 
-| Profile   | Intended use                                                                             |
-| --------- | ---------------------------------------------------------------------------------------- |
-| `outcome` | Default Test workflow: connect, observe, record, replay, run, repeat, inspect, export    |
-| `control` | Advanced direct target observation, input, recovery, and lease management                |
-| `map`     | Discovery and observation proposals without full authoring edits                         |
-| `observe` | Read-only project, device, App Map, proposal, run, and evidence inspection               |
-| `author`  | Default App Map editing, device recording, and proposal creation                         |
-| `test`    | Graph Test creation, review, compilation, one-pass runs, and evidence                    |
-| `run`     | Test/Combine execution, jobs, and run evidence                                           |
-| `execute` | Alias of `run` for execution-focused agents                                              |
-| `locale`  | Language Variables, profiles, Combine campaigns, and analysis                            |
-| `review`  | Proposal/take repair, replay, approval, and run-baseline review                          |
-| `admin`   | Workspace policy, projects, targets, schedules, matrices, and retention                  |
-| `proof`   | Prove one change with the outcome tool plus explicit proof.* lifecycle/recovery controls |
-| `full`    | Every canonical Relay operation; intended for trusted orchestration only                 |
+| Profile    | Intended use                                                                             |
+| ---------- | ---------------------------------------------------------------------------------------- |
+| `operator` | Default (Cursor / this repo): ~19 verbs + `relay_advanced`; no `lease.takeover`          |
+| `outcome`  | Test workflow: connect, observe, record, replay, run, repeat, inspect, export            |
+| `control`  | Advanced direct target observation, input, recovery, and lease management                |
+| `map`      | Discovery and observation proposals without full authoring edits                         |
+| `observe`  | Read-only project, device, App Map, proposal, run, and evidence inspection               |
+| `author`   | Default App Map editing, device recording, and proposal creation                         |
+| `test`     | Graph Test creation, review, compilation, one-pass runs, and evidence                    |
+| `run`      | Test/Combine execution, jobs, and run evidence                                           |
+| `execute`  | Alias of `run` for execution-focused agents                                              |
+| `locale`   | Language Variables, profiles, Combine campaigns, and analysis                            |
+| `review`   | Proposal/take repair, replay, approval, and run-baseline review                          |
+| `admin`    | Workspace policy, projects, targets, schedules, matrices, and retention                  |
+| `proof`    | Prove one change with the outcome tool plus explicit proof.* lifecycle/recovery controls |
+| `full`     | Every canonical Relay operation; trusted orchestration only; includes `lease.takeover`   |
 
 Outcome tools accept job-level intent and resolve the sole Test workspace, Device, current revision,
 and available control internally. Advanced profile tools advertise and take canonical operation
@@ -145,7 +146,9 @@ remain extensible objects and are still validated by the canonical protocol pars
 
 ## Agent quickstart: verify one flow across languages
 
-Run the Relay service first (`pnpm ensure:serve`), then use the default tools:
+Run the Relay service first (`pnpm ensure:serve`). Operator verbs (`relay_screenshot`,
+`relay_preview`, `relay_run` with `lane`) are the Cursor default. For the recorded Test workflow,
+use `--profile outcome`:
 
 1. `relay_connect_target`
 2. `relay_observe_target`

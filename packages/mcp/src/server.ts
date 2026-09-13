@@ -35,6 +35,12 @@ import {
   relayOutcomeTools,
   type RelayOutcomeToolDescriptor,
 } from "./outcome-tools.js";
+import {
+  invokeRelayOperatorTool,
+  operatorResultIsPng,
+  relayOperatorTools,
+  type RelayOperatorToolDescriptor,
+} from "./operator-tools.js";
 import { proofOutcomeTools } from "./proof-outcome-tools.js";
 import {
   defaultRelayMcpProfile,
@@ -76,14 +82,18 @@ export function relayMcpInstructionsForProfile(profile: RelayMcpProfile): string
   const registered = new Set<OperationId>(
     profile === "outcome"
       ? relayOutcomeTools.map(({ name }) => name as OperationId)
-      : relayMcpToolsForProfile(profile).map(({ operationId }) => operationId),
+      : profile === "operator"
+        ? []
+        : relayMcpToolsForProfile(profile).map(({ operationId }) => operationId),
   );
   const instructions = [
     "Use Relay tools only within the configured organization and project scope.",
     "Treat tool results as server-authoritative and preserve Relay actor identity.",
-    profile === "outcome"
-      ? "Prefer outcome tools: connect, observe, record, run, repeat, inspect, debug, repair, and export evidence."
-      : "Use only tools registered in the selected profile; start with read-only inspection and choose the narrowest tool that can complete the requested task.",
+    profile === "operator"
+      ? "Prefer operator verbs: health, devices, screenshot, snapshot, preview, tap, type, swipe, recover, teach, run (optional lane), plan_run, wait, findings, evidence, visual_compare, visual_review (human only), lanes. Use relay_advanced for other operations; lease.takeover is not available."
+      : profile === "outcome"
+        ? "Prefer outcome tools: connect, observe, record, run, repeat, inspect, debug, repair, and export evidence."
+        : "Use only tools registered in the selected profile; start with read-only inspection and choose the narrowest tool that can complete the requested task.",
     "Omit the advanced appMapId and targetId fields when exactly one Test workspace and one ready Device exist.",
     "Never retry an outcome whose snapshot says the mutation outcome is unknown; inspect its continuation reference.",
     "Repeat runs one representative pilot first and requires explicit confirmation before remaining values.",
@@ -153,7 +163,29 @@ function recoveryOptionsForProfile(
   tools: readonly RelayMcpToolDescriptor[],
 ): RelayMcpErrorOptions {
   const availableOperationIds = new Set(
-    profile === "outcome" ? [] : tools.map(({ operationId }) => operationId),
+    profile === "outcome"
+      ? []
+      : profile === "operator"
+        ? [
+            "system.health.get",
+            "target.devices.list",
+            "target.screenshot.capture",
+            "target.snapshot.capture",
+            "target.interact",
+            "target.recover",
+            "app-map.teach",
+            "app-map.test.run",
+            "job.combine.start",
+            "job.get",
+            "job.combine.analysis",
+            "job.combine.export",
+            "run.evidence.get",
+            "run.visual.compare",
+            "run.visual.review",
+            "lane.list",
+            "lease.create",
+          ]
+        : tools.map(({ operationId }) => operationId),
   );
   return {
     availableOperationIds,
@@ -162,6 +194,7 @@ function recoveryOptionsForProfile(
       relayMcpProfiles.filter(
         (candidate) =>
           candidate !== "outcome" &&
+          candidate !== "operator" &&
           relayMcpToolsForProfile(candidate).some((tool) => tool.operationId === operationId),
       ),
     // The selected raw tool or outcome façade is always registered. This
@@ -661,6 +694,58 @@ function registerRelayOutcomeTool(
   );
 }
 
+function registerRelayOperatorTool(
+  server: McpServer,
+  descriptor: RelayOperatorToolDescriptor,
+  invoker: OperationInvoker,
+  actorId: string,
+  recoveryOptions: RelayMcpErrorOptions,
+  profile: RelayMcpProfile,
+): void {
+  const schema = descriptor.inputSchema;
+  const confirmation = descriptor.requiresConfirmation
+    ? z.literal(true).describe("Explicit approval for this protected operator verb")
+    : z.literal(true).optional().describe("Optional explicit approval");
+  const inputSchema =
+    typeof (schema as { safeExtend?: unknown }).safeExtend === "function"
+      ? (schema as z.ZodObject).safeExtend({ confirm: confirmation })
+      : schema.and(z.object({ confirm: confirmation }).strict());
+  server.registerTool(
+    descriptor.name,
+    {
+      title: descriptor.title,
+      description: descriptor.description,
+      outputSchema: relayToolOutputSchema,
+      annotations: descriptor.annotations,
+      inputSchema,
+    },
+    async (
+      argumentsValue: Record<string, unknown>,
+      context: { mcpReq: { signal: AbortSignal } },
+    ) => {
+      const { confirm, ...argumentsWithoutConfirmation } = argumentsValue as Record<
+        string,
+        unknown
+      >;
+      try {
+        const result = await invokeRelayOperatorTool({
+          name: descriptor.name,
+          argumentsValue: argumentsWithoutConfirmation,
+          confirmed: confirm === true,
+          invoker,
+          actorId,
+          signal: context.mcpReq.signal,
+          profile,
+        });
+        if (operatorResultIsPng(descriptor.name, result)) return screenshotResult(result);
+        return normalResult(result);
+      } catch (error) {
+        return errorResult(relayMcpError(descriptor.name, error, recoveryOptions));
+      }
+    },
+  );
+}
+
 export function createMcpServer({
   invoker,
   scope,
@@ -676,6 +761,10 @@ export function createMcpServer({
   if (profile === "outcome") {
     for (const descriptor of relayOutcomeTools) {
       registerRelayOutcomeTool(server, descriptor, invoker, actorId, recoveryOptions);
+    }
+  } else if (profile === "operator") {
+    for (const descriptor of relayOperatorTools) {
+      registerRelayOperatorTool(server, descriptor, invoker, actorId, recoveryOptions, profile);
     }
   } else {
     if (profile === "proof") {

@@ -48,6 +48,7 @@ import {
   type RelayMcpToolDescriptor,
 } from "./tools.js";
 import { relayMcpPrompts, relayMcpPromptsForTools } from "./prompts.js";
+import { relayOperatorTools } from "./operator-tools.js";
 
 export const relayMcpResourceUris = {
   project: "relay://project/current",
@@ -72,6 +73,7 @@ export const relayMcpResourceUris = {
   targets: "relay://targets",
   targetObservation: "relay://targets/{targetId}/observation",
   controlGotchas: "relay://control/gotchas",
+  lanes: "relay://lanes",
 } as const;
 
 export type RelayResourceScope = {
@@ -90,12 +92,18 @@ export function registerRelayResources(
   { invoker, scope, profile, tools }: RegisterRelayResourcesOptions,
 ): void {
   const activeOperations = new Set(tools.map(({ operationId }) => operationId));
-  const leaseRecoveryRule = activeOperations.has("lease.create")
-    ? 'On TARGET_CONTROL_LEASE_REQUIRED, call lease.create with poolId "local", deviceSerial, and confirm:true, then retry.'
-    : `On TARGET_CONTROL_LEASE_REQUIRED, lease.create is not exposed in selected MCP profile "${profile}". Use a profile that exposes the canonical lease.create and lease.release pair, or ask an operator to acquire the lease.`;
-  const targetRecoveryRule = activeOperations.has("target.recover")
-    ? "Launch does not wait on XCTest. No active session is not a failed launch — recover the runner."
-    : `Launch does not wait on XCTest. No active session is not a failed launch — target.recover is not exposed in selected MCP profile "${profile}"; use an authorized operator or profile to recover the runner.`;
+  const leaseRecoveryRule =
+    profile === "operator"
+      ? "On TARGET_CONTROL_LEASE_REQUIRED, operator verbs auto-create a lease for this actor. If another actor holds the device, the error names who holds it and since when."
+      : activeOperations.has("lease.create")
+        ? 'On TARGET_CONTROL_LEASE_REQUIRED, call lease.create with poolId "local", deviceSerial, and confirm:true, then retry.'
+        : `On TARGET_CONTROL_LEASE_REQUIRED, lease.create is not exposed in selected MCP profile "${profile}". Use a profile that exposes the canonical lease.create and lease.release pair, or ask an operator to acquire the lease.`;
+  const targetRecoveryRule =
+    profile === "operator"
+      ? "Launch does not wait on XCTest. No active session is not a failed launch — use relay_recover."
+      : activeOperations.has("target.recover")
+        ? "Launch does not wait on XCTest. No active session is not a failed launch — recover the runner."
+        : `Launch does not wait on XCTest. No active session is not a failed launch — target.recover is not exposed in selected MCP profile "${profile}"; use an authorized operator or profile to recover the runner.`;
   const readRunCollection = (signal: AbortSignal, requestedUri: URL) => {
     const cursor = cursorForUri(requestedUri, "runs", scope, profile);
     return invokeRead(
@@ -138,11 +146,15 @@ export function registerRelayResources(
     async () => {
       return {
         activeProfile: profile,
-        activeToolCount: tools.length,
-        activeOperations: tools.map(({ operationId }) => operationId),
+        activeToolCount: profile === "operator" ? relayOperatorTools.length : tools.length,
+        activeOperations:
+          profile === "operator"
+            ? relayOperatorTools.map(({ name }) => name)
+            : tools.map(({ operationId }) => operationId),
         profiles: relayMcpProfiles.map((id) => ({
           id,
-          toolCount: relayMcpToolsForProfile(id).length,
+          toolCount:
+            id === "operator" ? relayOperatorTools.length : relayMcpToolsForProfile(id).length,
         })),
         additionalOperations: relayMcpOperationCatalog().filter(
           ({ operationId }) => !activeOperations.has(operationId),
@@ -165,6 +177,17 @@ export function registerRelayResources(
     scope,
     profile,
     tools,
+  );
+  registerStaticResource(
+    server,
+    "lanes",
+    "Relay Lanes",
+    relayMcpResourceUris.lanes,
+    async (signal) => invokeRead(invoker, "lane.list", {}, signal),
+    scope,
+    profile,
+    tools,
+    ["lane.list"],
   );
   registerStaticResource(
     server,

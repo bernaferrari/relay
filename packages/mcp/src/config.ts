@@ -65,7 +65,7 @@ function parseProfile(value: string): RelayMcpProfile {
 export function parseMcpConfig(
   argv: readonly string[],
   env: Environment = process.env,
-  processId = process.pid,
+  _processId = process.pid,
 ): McpConfig {
   const values = parseArguments(argv);
   const explicitCredentialSource =
@@ -84,7 +84,7 @@ export function parseMcpConfig(
     throw new TypeError("--timeout must be a positive integer in milliseconds");
   }
 
-  const actorId = choose(values.get("--actor"), env.RELAY_ACTOR_ID, `agent:mcp:${processId}`);
+  const actorId = choose(values.get("--actor"), env.RELAY_ACTOR_ID, "agent:cursor");
   const profile = parseProfile(
     choose(values.get("--profile"), env.RELAY_MCP_PROFILE, defaults.profile),
   );

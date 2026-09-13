@@ -1,4 +1,5 @@
 export type RelayMcpProfile =
+  | "operator"
   | "outcome"
   | "control"
   | "map"

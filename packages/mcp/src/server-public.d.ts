@@ -36,6 +36,7 @@ export type McpServerDependencies = {
   invoker: OperationInvoker;
   scope: { projectId: string };
   profile?:
+    | "operator"
     | "outcome"
     | "control"
     | "map"

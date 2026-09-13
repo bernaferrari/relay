@@ -630,10 +630,16 @@ export function resourceAllowed(
   tools: readonly RelayMcpToolDescriptor[],
   requiredOperations: readonly OperationId[],
 ): boolean {
-  // Outcome resources are the read-only continuation surface for the compact
-  // workflow façade. They intentionally remain available even though the
-  // façade does not expose the underlying operation tools.
-  if (profile === "outcome" || profile === "full" || requiredOperations.length === 0) return true;
+  // Outcome and operator resources stay available even though those profiles
+  // do not expose the underlying operation tools.
+  if (
+    profile === "outcome" ||
+    profile === "operator" ||
+    profile === "full" ||
+    requiredOperations.length === 0
+  ) {
+    return true;
+  }
   const active = new Set<OperationId>(tools.map(({ operationId }) => operationId));
   return requiredOperations.every((operationId) => active.has(operationId));
 }

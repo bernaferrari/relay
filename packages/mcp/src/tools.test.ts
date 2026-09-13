@@ -483,8 +483,9 @@ test("control profile includes reusable actions; locale profile reads app-declar
   assert.ok(locale.has("target.interact"), "locale profile is missing target.interact");
 });
 
-test("defines deterministic advanced profiles behind the compact outcome default", () => {
+test("defines deterministic advanced profiles behind the compact operator default", () => {
   assert.deepEqual(relayMcpProfiles, [
+    "operator",
     "outcome",
     "control",
     "map",
@@ -499,7 +500,8 @@ test("defines deterministic advanced profiles behind the compact outcome default
     "proof",
     "full",
   ]);
-  assert.equal(defaultRelayMcpProfile, "outcome");
+  assert.equal(defaultRelayMcpProfile, "operator");
+  assert.deepEqual(relayMcpToolsForProfile("operator"), []);
   assert.deepEqual(relayMcpToolsForProfile("outcome"), []);
   assert.deepEqual(relayMcpToolsForProfile("full"), relayMcpTools);
   assert.equal(

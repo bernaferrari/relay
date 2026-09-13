@@ -3,6 +3,7 @@ import type { ServerConnection } from "./server.js";
 export type CredentialSource = { type: "none" } | { type: "env"; name: string };
 
 export type RelayMcpProfile =
+  | "operator"
   | "outcome"
   | "control"
   | "map"
