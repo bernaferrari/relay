@@ -450,17 +450,31 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
           throw stepErr(index, "assert-content.input is required");
         if (!isString(raw.expected))
           throw stepErr(index, "assert-content.expected must be a string");
-        if (!["exact", "contains", "not-contains"].includes(String(raw.match))) {
+        if (
+          !["exact", "equals", "contains", "not-contains", "number-equals", "field"].includes(
+            String(raw.match),
+          )
+        ) {
           throw stepErr(
             index,
-            'assert-content.match must be "exact" | "contains" | "not-contains"',
+            'assert-content.match must be "exact" | "equals" | "contains" | "not-contains" | "number-equals" | "field"',
           );
+        }
+        if (raw.match === "field" && (!isString(raw.field) || !raw.field.trim())) {
+          throw stepErr(index, "assert-content.field is required when match is field");
         }
         out.push({
           kind: "assert-content",
           input: raw.input,
           expected: raw.expected,
-          match: raw.match as "exact" | "contains" | "not-contains",
+          match: raw.match as
+            | "exact"
+            | "equals"
+            | "contains"
+            | "not-contains"
+            | "number-equals"
+            | "field",
+          ...(isString(raw.field) && raw.field.trim() ? { field: raw.field.trim() } : {}),
           ...(note ? { note } : {}),
         });
         break;

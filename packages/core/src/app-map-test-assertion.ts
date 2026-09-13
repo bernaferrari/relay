@@ -80,5 +80,6 @@ export function assertionRecipeStep(
     input: assertion.input,
     expected: assertion.expected,
     match: assertion.match,
+    ...(assertion.field ? { field: assertion.field } : {}),
   };
 }

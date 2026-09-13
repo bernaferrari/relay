@@ -1,7 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { validationBindingFromDraft } from "./test-editor-assertion";
+import { VALIDATION_KIND_GROUPS, validationBindingFromDraft } from "./test-editor-assertion";
 
 describe("test editor assertions", () => {
+  it("groups Check, Wait, Comparison settings, and Advanced identity", () => {
+    expect(VALIDATION_KIND_GROUPS.map((group) => group.label)).toEqual([
+      "Check",
+      "Wait",
+      "Comparison settings",
+      "Advanced identity",
+    ]);
+    expect(
+      VALIDATION_KIND_GROUPS.flatMap((group) => group.kinds.map((kind) => kind.value)),
+    ).toEqual(["screen", "content", "wait-response", "semantic", "visual", "identity-ignore"]);
+  });
+
   it("compiles a semantic judge and a reply wait without YAML", () => {
     expect(
       validationBindingFromDraft({

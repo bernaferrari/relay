@@ -24,6 +24,7 @@ import {
   rejectForbiddenCoverageEffect,
 } from "./campaign-recovery-effects.js";
 import { contentAssertionPassed } from "./content-assertion-match.js";
+import { extractJoinedTargetText, extractNewestCompletedAssistantTurn } from "./recipe-extract.js";
 export { isRightToLeftRun, resolveRecipeStep } from "./recipe-runner-support.js";
 export type { RecipeStepContext } from "./recipe-runner-context.js";
 export { DEFAULT_HUMAN_CHECKPOINT_TIMEOUT_MS } from "./recipe-runner-readiness.js";
@@ -80,12 +81,7 @@ import {
   runOfflineStep,
   runUploadStep,
 } from "./recipe-runner-qa-steps.js";
-import {
-  nodeText,
-  nodeMatchesTarget,
-  labelsForIdentifierPrefix,
-  labelsForScope,
-} from "./recipe-target-match.js";
+import { labelsForIdentifierPrefix, labelsForScope } from "./recipe-target-match.js";
 import { runLayoutAssertionStep } from "./recipe-runner-layout-assertion.js";
 import { runTourStep } from "./recipe-runner-tour.js";
 import { captureRecipeScreenshot, runExpectScreenStep } from "./recipe-runner-screen.js";
@@ -280,12 +276,10 @@ async function runRequiredRecipeStep(
       const variables = job?.resolvedInputs ?? ctx.variables;
       if (!variables) throw new Error("extract: no execution context");
       const nodes = await snapshot(device);
-      const matches = nodes.filter((node) => nodeMatchesTarget(node, step.target));
-      const values = [...new Set(matches.flatMap(nodeText))];
-      if (values.length === 0) {
-        throw new Error(`extract: no accessible content matched ${describeTarget(step.target)}`);
-      }
-      const text = values.join("\n");
+      const text =
+        step.role === "assistant"
+          ? extractNewestCompletedAssistantTurn(nodes, step.target)
+          : extractJoinedTargetText(nodes, step.target);
       variables[step.as] = text;
       (job?.artifacts ?? ctx.artifacts)?.push({
         kind: "conversation-turn",
@@ -303,7 +297,7 @@ async function runRequiredRecipeStep(
     }
     case "assert-content": {
       const actual = readInput(ctx, step.input);
-      const passed = contentAssertionPassed(actual, step.expected, step.match);
+      const passed = contentAssertionPassed(actual, step.expected, step.match, step.field);
       (job?.artifacts ?? ctx.artifacts)?.push({
         kind: "content-assertion",
         capturedAt: now(),

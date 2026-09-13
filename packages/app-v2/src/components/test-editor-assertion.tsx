@@ -15,7 +15,8 @@ export type ValidationDraft =
       kind: "content";
       input: string;
       expected: string;
-      match: "exact" | "contains" | "not-contains";
+      match: "exact" | "equals" | "contains" | "not-contains" | "number-equals" | "field";
+      field?: string;
     }
   | { kind: "visual"; criteria: string; region: string }
   | { kind: "semantic"; input: string; criteria: string }
@@ -75,6 +76,8 @@ export function isValidationDraftReady(draft: ValidationDraft): boolean {
   if (draft.kind === "semantic") return Boolean(draft.input.trim() && draft.criteria.trim());
   if (draft.kind === "wait-response") return Boolean(draft.label.trim());
   if (draft.kind === "identity-ignore") return Boolean(parseRegion(draft.region));
+  if (draft.match === "field")
+    return Boolean(draft.input.trim() && draft.expected.trim() && draft.field?.trim());
   return Boolean(draft.input.trim() && draft.expected.trim());
 }
 
@@ -132,6 +135,35 @@ export function validationBindingFromDraft(
   return { status: "resolved", kind: "assertion", assertion: draft };
 }
 
+export const VALIDATION_KIND_GROUPS = [
+  {
+    id: "check",
+    label: "Check",
+    kinds: [
+      { value: "screen", label: "Screen" },
+      { value: "content", label: "Content" },
+    ],
+  },
+  {
+    id: "wait",
+    label: "Wait",
+    kinds: [{ value: "wait-response", label: "Reply wait" }],
+  },
+  {
+    id: "comparison",
+    label: "Comparison settings",
+    kinds: [
+      { value: "semantic", label: "Semantic judge" },
+      { value: "visual", label: "Visual judge" },
+    ],
+  },
+  {
+    id: "identity",
+    label: "Advanced identity",
+    kinds: [{ value: "identity-ignore", label: "Ignore for identity" }],
+  },
+] as const;
+
 export function emptyValidationDraft(kind: ValidationDraft["kind"]): ValidationDraft {
   if (kind === "screen") return { kind: "screen", screenId: "" };
   if (kind === "visual") return { kind: "visual", criteria: "", region: "" };
@@ -187,20 +219,28 @@ export function ValidationExpectationEditor({
         This is the value Relay validates after the action. It is separate from the human step
         wording above.
       </p>
-      <SelectField
-        id="selected-step-expected-kind"
-        label="Assertion type"
-        value={value.kind}
-        options={[
-          { value: "screen", label: "Screen" },
-          { value: "content", label: "Content" },
-          { value: "wait-response", label: "Reply wait" },
-          { value: "semantic", label: "Semantic judge" },
-          { value: "visual", label: "Visual judge" },
-          { value: "identity-ignore", label: "Ignore for identity" },
-        ]}
-        onValueChange={(kind) => onChange(emptyValidationDraft(kind as ValidationDraft["kind"]))}
-      />
+      <div className="grid gap-3">
+        {VALIDATION_KIND_GROUPS.map((group) => (
+          <fieldset key={group.id} className="grid gap-1">
+            <legend className="text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
+              {group.label}
+            </legend>
+            <div className="flex flex-wrap gap-1.5">
+              {group.kinds.map((kind) => (
+                <Button
+                  key={kind.value}
+                  type="button"
+                  size="sm"
+                  variant={value.kind === kind.value ? "default" : "outline"}
+                  onClick={() => onChange(emptyValidationDraft(kind.value))}
+                >
+                  {kind.label}
+                </Button>
+              ))}
+            </div>
+          </fieldset>
+        ))}
+      </div>
       {value.kind === "screen" ? (
         <label htmlFor="selected-step-expected-screen">
           Screen ID
@@ -327,17 +367,31 @@ export function ValidationExpectationEditor({
             label="Match"
             value={value.match}
             options={[
+              { value: "equals", label: "Equals" },
               { value: "exact", label: "Exactly" },
               { value: "contains", label: "Contains" },
               { value: "not-contains", label: "Does not contain" },
+              { value: "number-equals", label: "Number equals" },
+              { value: "field", label: "Structured field" },
             ]}
             onValueChange={(match) =>
               onChange({
                 ...value,
-                match: match as "exact" | "contains" | "not-contains",
+                match: match as ValidationDraft extends { match: infer M } ? M : never,
               })
             }
           />
+          {value.match === "field" ? (
+            <label htmlFor="selected-step-expected-field">
+              Field
+              <Input
+                id="selected-step-expected-field"
+                value={value.field ?? ""}
+                onChange={(event) => onChange({ ...value, field: event.currentTarget.value })}
+                placeholder="answer"
+              />
+            </label>
+          ) : null}
         </>
       ) : null}
     </fieldset>

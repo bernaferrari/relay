@@ -318,7 +318,8 @@ const assertionSpec = z.discriminatedUnion("kind", [
       kind: z.literal("content"),
       input: text("Observed or extracted value"),
       expected: z.string(),
-      match: z.enum(["exact", "contains", "not-contains"]),
+      match: z.enum(["exact", "equals", "contains", "not-contains", "number-equals", "field"]),
+      field: z.string().min(1).optional(),
     })
     .strict(),
   z
@@ -370,7 +371,8 @@ const validationRecipeStep = z.discriminatedUnion("kind", [
       kind: z.literal("assert-content"),
       input: text("Observed or extracted value"),
       expected: z.string(),
-      match: z.enum(["exact", "contains", "not-contains"]),
+      match: z.enum(["exact", "equals", "contains", "not-contains", "number-equals", "field"]),
+      field: z.string().min(1).optional(),
     })
     .strict(),
   z

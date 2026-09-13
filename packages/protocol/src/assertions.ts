@@ -15,7 +15,8 @@ export type AssertionSpec =
       kind: "content";
       input: string;
       expected: string;
-      match: "exact" | "contains" | "not-contains";
+      match: "exact" | "equals" | "contains" | "not-contains" | "number-equals" | "field";
+      field?: string;
     }
   | {
       kind: "visual";

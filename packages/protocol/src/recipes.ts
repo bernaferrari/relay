@@ -409,7 +409,8 @@ export type RecipeStep = RecipeStepMetadata &
         kind: "assert-content";
         input: string;
         expected: string;
-        match: "exact" | "contains" | "not-contains";
+        match: "exact" | "equals" | "contains" | "not-contains" | "number-equals" | "field";
+        field?: string;
       }
     | {
         /** Require two uniquely resolved semantic elements not to overlap. */

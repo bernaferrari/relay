@@ -39,6 +39,49 @@ test("digit-only contains uses numeric tokens, not substrings", () => {
   assert.equal(contentAssertionPassed(ASSISTANT_FOUR, "4", "exact"), true);
 });
 
+test("equals and number-equals reject impostor fours that contains would debate", () => {
+  assert.equal(contentAssertionPassed("4", "4", "equals"), true);
+  assert.equal(contentAssertionPassed("4", "4", "number-equals"), true);
+  assert.equal(contentAssertionPassed("4.5", "4", "equals"), false);
+  assert.equal(contentAssertionPassed("4.5", "4", "number-equals"), false);
+  assert.equal(contentAssertionPassed("-4", "4", "equals"), false);
+  assert.equal(contentAssertionPassed("-4", "4", "number-equals"), false);
+  assert.equal(contentAssertionPassed("4 minutes remaining", "4", "equals"), false);
+  assert.equal(contentAssertionPassed("4 minutes remaining", "4", "number-equals"), false);
+  assert.equal(
+    contentAssertionPassed("Model v4 failed; no answer generated", "4", "equals"),
+    false,
+  );
+  assert.equal(
+    contentAssertionPassed("Model v4 failed; no answer generated", "4", "number-equals"),
+    false,
+  );
+  assert.equal(contentAssertionPassed("Try again in 4 minutes", "4", "equals"), false);
+  assert.equal(contentAssertionPassed("Try again in 4 minutes", "4", "number-equals"), false);
+  assert.equal(contentAssertionPassed(ASSISTANT_FOUR_SENTENCE, "4", "number-equals"), false);
+});
+
+test("a structured field check reads the named answer, not page chrome", () => {
+  assert.equal(
+    contentAssertionPassed(
+      JSON.stringify({ answer: "4", quota: "Try again in 4 minutes" }),
+      "4",
+      "field",
+      "answer",
+    ),
+    true,
+  );
+  assert.equal(
+    contentAssertionPassed(JSON.stringify({ answer: "4.5", quota: "4" }), "4", "field", "answer"),
+    false,
+  );
+  assert.equal(
+    contentAssertionPassed("answer: 4\nquota: Try again in 4 minutes", "4", "field", "answer"),
+    true,
+  );
+  assert.equal(contentAssertionPassed("quota: 4", "4", "field", "answer"), false);
+});
+
 test("recipe and App Map validation still accept a digit contains needle", () => {
   assert.deepEqual(
     validateRecipeSteps([
@@ -93,7 +136,7 @@ test("runRecipeStep evaluate path fails the SuperGrok 42 false pass", async () =
     /did not satisfy contains "4"/u,
   );
 
-  const fourArtifacts: { kind: string; data?: { passed?: boolean } }[] = [];
+  const fourArtifacts: { kind: string; capturedAt: number; data: unknown }[] = [];
   await runWithTargetContext({ kind: "browser", platform: "browser", targetId: "grok-com" }, () =>
     runRecipeStep(device, step, {
       log() {},
@@ -101,9 +144,9 @@ test("runRecipeStep evaluate path fails the SuperGrok 42 false pass", async () =
       variables: { response: ASSISTANT_FOUR },
     }),
   );
-  assert.equal(fourArtifacts[0]?.data?.passed, true);
+  assert.equal((fourArtifacts[0]?.data as { passed?: boolean } | undefined)?.passed, true);
 
-  const fortyTwoArtifacts: { kind: string; data?: { passed?: boolean } }[] = [];
+  const fortyTwoArtifacts: { kind: string; capturedAt: number; data: unknown }[] = [];
   await runWithTargetContext({ kind: "browser", platform: "browser", targetId: "grok-com" }, () =>
     runRecipeStep(
       device,
@@ -115,9 +158,9 @@ test("runRecipeStep evaluate path fails the SuperGrok 42 false pass", async () =
       },
     ),
   );
-  assert.equal(fortyTwoArtifacts[0]?.data?.passed, true);
+  assert.equal((fortyTwoArtifacts[0]?.data as { passed?: boolean } | undefined)?.passed, true);
 
-  const franceArtifacts: { kind: string; data?: { passed?: boolean } }[] = [];
+  const franceArtifacts: { kind: string; capturedAt: number; data: unknown }[] = [];
   await runWithTargetContext({ kind: "browser", platform: "browser", targetId: "grok-com" }, () =>
     runRecipeStep(
       device,
@@ -129,5 +172,5 @@ test("runRecipeStep evaluate path fails the SuperGrok 42 false pass", async () =
       },
     ),
   );
-  assert.equal(franceArtifacts[0]?.data?.passed, true);
+  assert.equal((franceArtifacts[0]?.data as { passed?: boolean } | undefined)?.passed, true);
 });

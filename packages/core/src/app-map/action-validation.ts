@@ -273,11 +273,17 @@ export function assertActions(actions: ActionSpec[], label: string): void {
           if (
             !(
               assertion.match === "exact" ||
+              assertion.match === "equals" ||
               assertion.match === "contains" ||
-              assertion.match === "not-contains"
+              assertion.match === "not-contains" ||
+              assertion.match === "number-equals" ||
+              assertion.match === "field"
             )
           )
             appMapFail("invalid-map", `${item}.assertion.match is unsupported`);
+          if (assertion.match === "field") {
+            requiredText(assertion.field, `${item}.assertion.field`);
+          }
         } else if (assertion.kind === "visual") {
           if (!Array.isArray(assertion.criteria) || assertion.criteria.length === 0) {
             appMapFail(

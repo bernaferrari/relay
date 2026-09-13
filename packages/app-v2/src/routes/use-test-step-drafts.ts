@@ -12,7 +12,9 @@ function validExpected(value: StepDraft["expected"]): boolean {
     : value.kind === "content" &&
         typeof value.input === "string" &&
         typeof value.expected === "string" &&
-        ["exact", "contains", "not-contains"].includes(value.match);
+        ["exact", "equals", "contains", "not-contains", "number-equals", "field"].includes(
+          value.match,
+        );
 }
 
 function isStepDraftRecord(value: unknown): value is Record<string, StepDraft> {
