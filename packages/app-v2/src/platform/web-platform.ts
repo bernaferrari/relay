@@ -1,19 +1,66 @@
 import type { Platform, PlatformStorage } from "./types";
 
+/** Vite same-origin prefix. The Cursor browser cannot call :8787 (CORS). */
+export const LOCAL_VITE_RELAY_PROXY = "/relay";
+
 function normalizedBase(value: string): string {
   return value.trim().replace(/\/+$/, "");
+}
+
+function isLoopbackRelayApi(url: string): boolean {
+  try {
+    const parsed = new URL(url, "http://127.0.0.1");
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+    const host = parsed.hostname;
+    return (host === "127.0.0.1" || host === "localhost") && parsed.port === "8787";
+  } catch {
+    return false;
+  }
+}
+
+export function sameOriginRelayProxyUrl(pageOrigin?: string): string {
+  const origin = pageOrigin?.trim().replace(/\/+$/, "");
+  return origin ? `${origin}${LOCAL_VITE_RELAY_PROXY}` : LOCAL_VITE_RELAY_PROXY;
+}
+
+/** Direct :8787 is for desktop and curl. Local Vite uses `/relay` so a browser
+ * tab never has to survive a cross-origin loopback call. */
+export function resolveWebServerUrl(input: {
+  stored?: string | null;
+  configured?: string | null;
+  development: boolean;
+  pageOrigin?: string;
+}): string {
+  const configured = input.configured?.trim() || undefined;
+  const stored = input.stored?.trim() || undefined;
+  const candidate = configured ?? stored;
+  if (input.development && (!candidate || isLoopbackRelayApi(candidate))) {
+    return sameOriginRelayProxyUrl(input.pageOrigin);
+  }
+  if (candidate) return normalizedBase(candidate);
+  return "http://127.0.0.1:8787";
 }
 
 export function createWebPlatform(
   options: {
     defaultServerUrl?: string;
     storagePrefix?: string;
+    development?: boolean;
+    pageOrigin?: string;
   } = {},
 ): Platform {
   const prefix = options.storagePrefix ?? "relay:";
-  const fallbackUrl = normalizedBase(
-    options.defaultServerUrl ?? import.meta.env.VITE_SERVER_URL ?? "http://127.0.0.1:8787",
-  );
+  const development = options.development ?? import.meta.env.DEV;
+  const pageOrigin = () =>
+    options.pageOrigin ?? (typeof window !== "undefined" ? window.location.origin : undefined);
+  const configured = () => options.defaultServerUrl ?? import.meta.env.VITE_SERVER_URL;
+  const resolve = (stored?: string | null) =>
+    resolveWebServerUrl({
+      stored,
+      configured: configured(),
+      development,
+      pageOrigin: pageOrigin(),
+    });
   const storage: PlatformStorage = {
     get(key) {
       try {
@@ -47,8 +94,8 @@ export function createWebPlatform(
     getServerUrl() {
       const stored = storage.get("serverUrl");
       return stored instanceof Promise
-        ? stored.then((value) => normalizedBase(value ?? fallbackUrl))
-        : normalizedBase(stored ?? fallbackUrl);
+        ? stored.then((value) => resolve(value))
+        : resolve(stored);
     },
     async getServerConnection() {
       const url = await Promise.resolve(this.getServerUrl());

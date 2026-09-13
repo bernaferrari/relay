@@ -111,6 +111,20 @@ afterEach(async () => {
 });
 
 describe("Batch review controls", () => {
+  it("still shows morning Findings copy when analysis is missing", async () => {
+    await render({
+      getReport: async () => report,
+      getFailureClusters: async () => ({ campaignId: "batch-1", clusters: [] }),
+      getFindings: async () => {
+        throw new Error("Failed to fetch");
+      },
+    } as unknown as RunAcrossProductService);
+    expect(document.body.textContent).toContain("No findings");
+    expect(document.body.textContent).toContain(
+      "rate-limit SOS, or a Cloudflare block is not a product pass",
+    );
+  });
+
   it("assigns the authenticated actor from the visible control, not the me placeholder", async () => {
     const triage = vi.fn(async () => report);
     await render({

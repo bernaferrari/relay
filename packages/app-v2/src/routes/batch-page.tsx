@@ -1,4 +1,5 @@
 /** @jsxImportSource react */
+import { emptyPlanFindingsReport } from "@relay/product/plan-findings";
 import { Button } from "@relay/ui-react/components/button";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { getRouteApi, useRouteContext } from "@tanstack/react-router";
@@ -110,6 +111,8 @@ export function BatchPage() {
     enabled: Boolean(report) && !active,
     staleTime: 10_000,
   });
+  const findingsReport =
+    findings.data ?? (report && !active ? emptyPlanFindingsReport(report.id) : undefined);
   const canContinue = report?.status === "ready-to-continue" || report?.status === "needs-review";
   const clusterValues = clusters.data?.clusters ?? [];
   const selectedClusterCases = selectedClusterCaseIds(clusterValues, selectedClusters);
@@ -246,7 +249,7 @@ export function BatchPage() {
           <p className="mt-2 text-sm text-muted-foreground">
             {report.report.headline}. {report.report.detail}
           </p>
-          {findings.data ? <BatchFindingsLead report={findings.data} /> : null}
+          {findingsReport ? <BatchFindingsLead report={findingsReport} /> : null}
           {active ? (
             <div
               className="relay-batch-active mt-3.5 flex items-center gap-2.5 text-sm text-muted-foreground"
@@ -317,9 +320,9 @@ export function BatchPage() {
 
           <BatchStabilityPanel report={report} />
 
-          {findings.data ? (
+          {findingsReport ? (
             <BatchFindingsPanel
-              report={findings.data}
+              report={findingsReport}
               actorId={actorId}
               notes={notes}
               onNotes={(next) => {

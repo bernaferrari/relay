@@ -129,6 +129,28 @@ export const PLAN_FINDINGS_EMPTY_GUIDANCE = [
   "Check Sign-ins before the next unattended run. Expired accounts fail closed as Infra.",
 ] as const;
 
+/** Used when a finished Result has no analysis artifact. Missing findings are
+ * not a product pass. */
+export function emptyPlanFindingsReport(batchId: string): CombineEvidenceAnalysisReport {
+  return {
+    schemaVersion: 1,
+    batchId,
+    locales: ["en"],
+    analysis: {
+      schemaVersion: 1,
+      sessionId: batchId,
+      generatedAt: 0,
+      baselineLocale: "en",
+      findings: [],
+      critical: 0,
+      warnings: 0,
+      affectedScreens: 0,
+    },
+    coverage: { frames: 0, inspectedFrames: 0 },
+    cases: [],
+  };
+}
+
 export function renderPlanFindingsMarkdown(report: CombineEvidenceAnalysisReport): string {
   const findings = report.analysis.findings;
   const heading = [

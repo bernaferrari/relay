@@ -11,6 +11,22 @@ export default defineConfig({
     host: "0.0.0.0",
     port: 5173,
     strictPort: true,
+    proxy: {
+      // Same-origin API for Vite tabs (including the Cursor browser). Direct
+      // :8787 stays origin-locked; do not widen server CORS for localhost UI.
+      "/relay": {
+        target: (process.env.RELAY_URL ?? "http://127.0.0.1:8787").replace(/\/+$/, ""),
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/relay/, "") || "/",
+        ws: true,
+        configure(proxy) {
+          proxy.on("proxyReq", (proxyReq) => {
+            proxyReq.removeHeader("origin");
+            proxyReq.removeHeader("referer");
+          });
+        },
+      },
+    },
   },
   build: {
     target: "esnext",
