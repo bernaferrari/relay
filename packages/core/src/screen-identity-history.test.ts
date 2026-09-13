@@ -1,14 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { GROK_WEB_APP_POLICY } from "./app-identity-policy.js";
 import type { SnapshotNode } from "./device.js";
-import {
-  conversationHistoryLabels,
-  isConversationHistoryNode,
-} from "./screen-identity-history.js";
+import { conversationHistoryLabels, isConversationHistoryNode } from "./screen-identity-history.js";
 import { compareScreenIdentity, observeScreenIdentity } from "./screen-identity.js";
 
 function observe(nodes: SnapshotNode[]) {
-  return observeScreenIdentity(nodes);
+  return observeScreenIdentity(nodes, { policy: GROK_WEB_APP_POLICY });
 }
 
 function signedInChrome(history: readonly string[]): SnapshotNode[] {
@@ -19,7 +17,13 @@ function signedInChrome(history: readonly string[]): SnapshotNode[] {
     { role: "a", label: "Skip to main content", hittable: true, visibleToUser: true },
     { role: "a", label: "Switch to private chat", hittable: true, visibleToUser: true },
     { role: "a", label: "Chat", identifier: "new-chat", hittable: true, visibleToUser: true },
-    { role: "button", label: "Attach", identifier: "attach-button", hittable: true, visibleToUser: true },
+    {
+      role: "button",
+      label: "Attach",
+      identifier: "attach-button",
+      hittable: true,
+      visibleToUser: true,
+    },
     {
       role: "button",
       label: "Model select",
@@ -61,7 +65,7 @@ test("conversation history labels are not chrome", () => {
     { role: "a", label: "paris: france's capital and cultural hub" },
     { role: "text", label: "Friday, July 31, 2026" },
   ];
-  const history = conversationHistoryLabels(nodes);
+  const history = conversationHistoryLabels(nodes, GROK_WEB_APP_POLICY);
   assert.equal(history.has("paris capital of france"), true);
   assert.equal(history.has("cape verde has 10 islands"), true);
   assert.equal(history.has("paris: france's capital and cultural hub"), true);
@@ -84,9 +88,7 @@ test("conversation history labels are not chrome", () => {
 
 test("sidebar history does not redefine signed-in home, even in the nav rail", () => {
   const first = observe(signedInChrome(["3x5 equals 15", "Paris capital of France"]));
-  const second = observe(
-    signedInChrome(["paris, france's capital", "Generate 42 bird images"]),
-  );
+  const second = observe(signedInChrome(["paris, france's capital", "Generate 42 bird images"]));
   assert.equal(first.fingerprint, second.fingerprint);
   assert.equal(compareScreenIdentity(first, second).decision, "match");
   assert.ok(first.nodes.some((node) => node.label === "library"));
@@ -101,7 +103,13 @@ function openConversationChrome(transcript: string): SnapshotNode[] {
     { role: "a", label: "Imagine", hittable: true, visibleToUser: true },
     { role: "a", label: "Library", hittable: true, visibleToUser: true },
     { role: "a", label: "Chat", identifier: "new-chat", hittable: true, visibleToUser: true },
-    { role: "button", label: "Attach", identifier: "attach-button", hittable: true, visibleToUser: true },
+    {
+      role: "button",
+      label: "Attach",
+      identifier: "attach-button",
+      hittable: true,
+      visibleToUser: true,
+    },
     {
       role: "button",
       label: "Model select",
@@ -203,7 +211,8 @@ test("offscreen You/Grok articles do not put transcript text in identity", () =>
   ];
   const other: SnapshotNode[] = leaked.map((node) => {
     const next = { ...node };
-    if (next.value?.includes("Zinnia") || next.value === "2+2\n\n4") next.value = "Paris is the capital";
+    if (next.value?.includes("Zinnia") || next.value === "2+2\n\n4")
+      next.value = "Paris is the capital";
     if (
       (next.label?.includes("Zinnia") || next.label === "2+2\n\n4") &&
       !/^(?:you|grok)$/iu.test(next.label ?? "")
@@ -216,7 +225,11 @@ test("offscreen You/Grok articles do not put transcript text in identity", () =>
   const second = observe(other);
   assert.ok(first.nodes.some((node) => node.identifier === "last-reply-container"));
   assert.ok(first.nodes.some((node) => node.label === "copy response"));
-  assert.ok(!first.nodes.some((node) => /zinnia|2\+2|paris/i.test(`${node.label ?? ""} ${node.value ?? ""}`)));
+  assert.ok(
+    !first.nodes.some((node) =>
+      /zinnia|2\+2|paris/i.test(`${node.label ?? ""} ${node.value ?? ""}`),
+    ),
+  );
   assert.equal(first.fingerprint, second.fingerprint);
   assert.notEqual(
     compareScreenIdentity(observe(signedInChrome(["Relay older Zinnia load"])), first).decision,

@@ -8,6 +8,7 @@ import {
   currentVerifiedScreen,
   markNavigationUnknown,
   proveNavigationScreen,
+  recipeScreenIdentityOptions,
 } from "./recipe-runner-context.js";
 import {
   handoffShellIdentityMatch,
@@ -61,9 +62,7 @@ function observeStepIdentity(
   ctx: RecipeStepContext,
   extra?: Extract<RecipeStep, { kind: "expect-screen" }>["ignoreRegions"],
 ) {
-  return observeScreenIdentity(nodes, {
-    ignoreRegions: [...(ctx.runtime?.identityIgnoreRegions ?? []), ...(extra ?? [])],
-  });
+  return observeScreenIdentity(nodes, recipeScreenIdentityOptions(ctx, extra));
 }
 
 export async function captureRecipeScreenshot(

@@ -43,6 +43,7 @@ import type { TargetProfile } from "@relay/protocol";
 import {
   currentVerifiedScreen,
   invalidateVerifiedScreen,
+  recipeScreenIdentityOptions,
   type RecipeStepContext,
 } from "./recipe-runner-context.js";
 import {
@@ -79,9 +80,7 @@ function semanticRevealRepair(
     })),
     attempts: structuredClone(attempts),
     lastObservation: {
-      fingerprint: observeScreenIdentity(nodes, {
-        ignoreRegions: ctx.runtime?.identityIgnoreRegions,
-      }).fingerprint,
+      fingerprint: observeScreenIdentity(nodes, recipeScreenIdentityOptions(ctx)).fingerprint,
       nodeCount: nodes.length,
       accessibilityTree: structuredClone(nodes),
     },
@@ -135,9 +134,10 @@ export async function runSemanticScrollStep(
   let repeated = 0;
   for (let attempt = 0; attempt <= maxAttempts; attempt += 1) {
     await cooperativeCheckpoint();
-    const observed = observeScreenIdentity(await snapshot(device), {
-      ignoreRegions: ctx.runtime?.identityIgnoreRegions,
-    });
+    const observed = observeScreenIdentity(
+      await snapshot(device),
+      recipeScreenIdentityOptions(ctx),
+    );
     if (
       screenIdentityMatches(expected, observed.fingerprint) ||
       (step.until.observations ?? []).some(
@@ -251,9 +251,7 @@ export async function runRevealStep(
           nodes,
         );
       }
-      const observed = observeScreenIdentity(nodes, {
-        ignoreRegions: ctx.runtime?.identityIgnoreRegions,
-      });
+      const observed = observeScreenIdentity(nodes, recipeScreenIdentityOptions(ctx));
       repeated = observed.fingerprint === previousFingerprint ? repeated + 1 : 0;
       previousFingerprint = observed.fingerprint;
       if (repeated >= 2) {
@@ -309,9 +307,7 @@ export async function runRevealStep(
         return;
       }
       if (attempts === maxAttempts) break;
-      const observed = observeScreenIdentity(nodes, {
-        ignoreRegions: ctx.runtime?.identityIgnoreRegions,
-      });
+      const observed = observeScreenIdentity(nodes, recipeScreenIdentityOptions(ctx));
       repeated = observed.fingerprint === previousFingerprint ? repeated + 1 : 0;
       previousFingerprint = observed.fingerprint;
       if (repeated >= 2) break;
@@ -501,9 +497,7 @@ export async function runCaptureSurfaceStep(
             inspectable: true,
             source: "sdk" as const,
             ...(screenshot.foregroundApp ? { foregroundApp: screenshot.foregroundApp } : {}),
-            screenIdentity: observeScreenIdentity(nodes, {
-              ignoreRegions: ctx.runtime?.identityIgnoreRegions,
-            }),
+            screenIdentity: observeScreenIdentity(nodes, recipeScreenIdentityOptions(ctx)),
           },
         }
       : undefined;

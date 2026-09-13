@@ -7,6 +7,7 @@ import type {
   SemanticField,
   VolatileSemanticKind,
 } from "@relay/protocol";
+import type { AppIdentityPolicy } from "./app-identity-policy.js";
 import type { SnapshotNode } from "./device.js";
 import {
   composerBands,
@@ -107,8 +108,6 @@ const TRAILING_COUNTER = new RegExp(
 );
 const PAGE_COUNTER = /\b(page|step)\s+\d+\s+(of)\s+\d+\b/giu;
 const PURE_COUNTER = /^\s*\d+(?:[.,]\d+)?\s*$/u;
-const COMPOSER_HINT =
-  /\b(?:type [@/#] to [a-z0-9 ]+|type to (?:imagine|grok)\b|drag and drop [a-z0-9 ]+|switch to (?:build|ask) mode(?: to [a-z0-9 ]*)?|ask grok anything)\b/giu;
 const GENERATED_DOM_ID = /\bradix-_[a-z0-9_-]+/giu;
 const LANDMARK_DUMP_ROLE = /^(?:div|main|section)$/u;
 const CONSENT_LABEL =
@@ -134,7 +133,11 @@ function replaceVolatile(
   state.kinds.add(kind);
 }
 
-function normalizeText(value: string | undefined, field: SemanticField): MutableNormalization {
+function normalizeText(
+  value: string | undefined,
+  field: SemanticField,
+  policy?: AppIdentityPolicy,
+): MutableNormalization {
   const state: MutableNormalization = {
     value: (value ?? "").normalize("NFKC").trim().replace(/\s+/gu, " ").toLocaleLowerCase("en-US"),
     kinds: new Set(),
@@ -155,7 +158,9 @@ function normalizeText(value: string | undefined, field: SemanticField): Mutable
     replaceVolatile(state, PAGE_COUNTER, "$1 <count> $2 <count>", "counter");
     replaceVolatile(state, LEADING_COUNTER, "<count> $1", "counter");
     replaceVolatile(state, TRAILING_COUNTER, "$1 <count>", "counter");
-    replaceVolatile(state, COMPOSER_HINT, "<placeholder>", "placeholder");
+    if (policy?.composer?.placeholderHint) {
+      replaceVolatile(state, policy.composer.placeholderHint, "<placeholder>", "placeholder");
+    }
     if (PURE_COUNTER.test(state.value)) {
       state.value = "<count>";
       state.kinds.add("counter");
@@ -327,6 +332,8 @@ function isLandmarkDumpNode(node: SnapshotNode): boolean {
 
 export type ObserveScreenIdentityOptions = {
   ignoreRegions?: readonly ScreenIdentityIgnoreRegion[];
+  /** Reviewed App pack. Generic inference never applies grok.com heuristics. */
+  policy?: AppIdentityPolicy;
 };
 
 function snapshotFrame(
@@ -415,10 +422,11 @@ export function observeScreenIdentity(
   };
   const candidateNodes = applicationNodes.some((node) => node.bundleId) ? applicationNodes : nodes;
   const consentOverlay = candidateNodes.some((node) => isConsentChromeNode(node));
-  const bodyBands = composerBands(candidateNodes);
+  const policy = options?.policy;
+  const bodyBands = composerBands(candidateNodes, policy);
   const typedValues = typedComposerValues(candidateNodes);
-  const historyLabels = conversationHistoryLabels(candidateNodes);
-  const conversationOpen = candidateNodes.some(isConversationChromeNode);
+  const historyLabels = conversationHistoryLabels(candidateNodes, policy);
+  const conversationOpen = candidateNodes.some((node) => isConversationChromeNode(node, policy));
   const identityNodes = candidateNodes.filter(
     (node) =>
       (includeDeviceState || !bannerNode(node)) &&
@@ -427,20 +435,20 @@ export function observeScreenIdentity(
       !(consentOverlay && isConsentOverlayAccessory(node)) &&
       !isLandmarkDumpNode(node) &&
       !isTypeaheadOrAnnouncerNode(node, typedValues) &&
-      !isConversationHistoryNode(node, historyLabels) &&
-      !isDynamicContentBody(node, bodyBands, conversationOpen) &&
+      !isConversationHistoryNode(node, historyLabels, policy) &&
+      !isDynamicContentBody(node, bodyBands, conversationOpen, policy) &&
       !nodeOverlapsIgnoreRegion(node, pixelIgnoreRegions(options?.ignoreRegions ?? [], nodes)),
   );
   const entries = nodes
     .filter((node) => identityNodes.includes(node))
     .filter((node) => node.index === undefined || !ignoredSystemInput.has(node.index))
     .filter((node) => node.visibleToUser !== false)
-    .map(redactConversationTranscript)
+    .map((node) => redactConversationTranscript(node, policy))
     .flatMap((node) => {
-      const label = normalizeText(node.label, "label");
-      const value = normalizeText(node.value, "value");
-      const identifier = normalizeText(node.identifier, "identifier");
-      const role = normalizeText(node.role ?? node.type, "label").value;
+      const label = normalizeText(node.label, "label", policy);
+      const value = normalizeText(node.value, "value", policy);
+      const identifier = normalizeText(node.identifier, "identifier", policy);
+      const role = normalizeText(node.role ?? node.type, "label", policy).value;
       if (!role && !label.value && !value.value && !identifier.value) return [];
       return [
         {

@@ -26,6 +26,7 @@ import { extractTourStops, onTourOrigin, tourFallbackOverlap } from "./tour.js";
 import type { TourStop } from "./tour.js";
 import type { RecipeStep } from "./recipes.js";
 import type { TestJob } from "./session.js";
+import { identityPolicyForTarget } from "./app-identity-policy.js";
 import {
   compareScreenIdentity,
   localeNeutralStructureSignature,
@@ -287,7 +288,10 @@ function liveTourOrigin(
   rightToLeft = false,
   job?: TestJob,
 ): boolean {
-  const liveObservation = nodes.length ? observeScreenIdentity(nodes) : undefined;
+  const policy = identityPolicyForTarget({ browserTargetId: job?.browserTargetId });
+  const liveObservation = nodes.length
+    ? observeScreenIdentity(nodes, policy ? { policy } : undefined)
+    : undefined;
   if (isLocalizedJob(job)) {
     if (!liveObservation) return false;
     const structureSignature = localeNeutralStructureSignature(liveObservation);

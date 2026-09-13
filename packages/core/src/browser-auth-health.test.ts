@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { GROK_WEB_APP_POLICY } from "./app-identity-policy.js";
 import {
   attachBrowserAuthenticationHealth,
   classifyBrowserAuthenticationHealth,
@@ -15,25 +16,29 @@ import {
 import { saveBrowserAuthenticationFixture } from "./browser-authentication-fixtures.js";
 
 test("signed-in markers distinguish grok.com chrome from the login wall", () => {
-  assert.equal(signedInFromPage({ title: "Grok", bodyText: "Ask Grok anything" }), true);
-  assert.equal(signedInFromPage({ title: "Grok", bodyText: "Ask anything" }), true);
-  assert.equal(signedInFromPage({ title: "Grok", bodyText: "Sign in\nContinue with Google" }), false);
-  assert.equal(signedInFromPage({ title: "Grok", bodyText: "Settings" }), undefined);
+  const grok = GROK_WEB_APP_POLICY;
+  assert.equal(signedInFromPage({ title: "Grok", bodyText: "Ask Grok anything" }, grok), true);
+  assert.equal(signedInFromPage({ title: "Grok", bodyText: "Ask anything" }, grok), true);
   assert.equal(
-    signedInFromPage({
-      title: "Grok",
-      bodyText:
-        "What should we explore?\nImagine\nSign in\nSign up\nAsk Grok anything\nReject All\nEssential cookies keep the site working",
-    }),
+    signedInFromPage({ title: "Grok", bodyText: "Sign in\nContinue with Google" }, grok),
+    false,
+  );
+  assert.equal(signedInFromPage({ title: "Grok", bodyText: "Settings" }, grok), undefined);
+  assert.equal(
+    signedInFromPage(
+      {
+        title: "Grok",
+        bodyText:
+          "What should we explore?\nImagine\nSign in\nSign up\nAsk Grok anything\nReject All\nEssential cookies keep the site working",
+      },
+      grok,
+    ),
     false,
   );
 });
 
 test("expired and revoked fixtures fail closed before a live page probe", () => {
-  const expired = classifyBrowserAuthenticationHealth(
-    { name: "Member", expiresAt: 10 },
-    20,
-  );
+  const expired = classifyBrowserAuthenticationHealth({ name: "Member", expiresAt: 10 }, 20);
   assert.equal(expired.status, "expired");
   assert.match(planAccountHealthBlocker(expired) ?? "", /Refresh/u);
   const revoked = classifyBrowserAuthenticationHealth({ name: "Member", revokedAt: 1 }, 20);

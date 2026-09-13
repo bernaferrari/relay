@@ -5,22 +5,13 @@ import {
   type BrowserAuthenticationFixture,
   type BrowserAuthenticationHealth,
 } from "@relay/protocol";
+import { identityPolicyForTarget, type AppIdentityPolicy } from "./app-identity-policy.js";
 import { findWorkspaceRoot } from "./workspace-root.js";
 import {
   browserAuthenticationStorageState,
   listBrowserAuthenticationFixtures,
 } from "./browser-authentication-fixtures.js";
 import { listedFixtureForAccount } from "./browser-execution-identity.js";
-
-const SIGNED_IN_MARKERS = ["ask grok anything", "ask anything", "imagine", "speak", "new chat"];
-const SIGNED_OUT_MARKERS = [
-  "sign in",
-  "sign up",
-  "log in",
-  "continue with google",
-  "continue with x",
-  "continue with apple",
-];
 
 export type BrowserAuthPageSnapshot = {
   title: string;
@@ -60,10 +51,15 @@ function protocolFixture(
   };
 }
 
-export function signedInFromPage(snapshot: BrowserAuthPageSnapshot): boolean | undefined {
+export function signedInFromPage(
+  snapshot: BrowserAuthPageSnapshot,
+  policy?: AppIdentityPolicy,
+): boolean | undefined {
+  const markers = policy?.signIn;
+  if (!markers) return undefined;
   const haystack = `${snapshot.title}\n${snapshot.bodyText}`.toLocaleLowerCase();
-  const signedIn = SIGNED_IN_MARKERS.some((marker) => haystack.includes(marker));
-  const signedOut = SIGNED_OUT_MARKERS.some((marker) => haystack.includes(marker));
+  const signedIn = markers.signedInMarkers.some((marker) => haystack.includes(marker));
+  const signedOut = markers.signedOutMarkers.some((marker) => haystack.includes(marker));
   // Logged-out grok.com still shows Imagine / Ask Grok anything next to Sign in.
   // Visible sign-in chrome wins so a fixture that bounced to the wall is needs-relogin.
   if (signedOut) return false;
@@ -75,6 +71,7 @@ export function classifyBrowserAuthenticationHealth(
   fixture: Pick<BrowserAuthenticationFixture, "name" | "expiresAt" | "revokedAt">,
   now = Date.now(),
   page?: BrowserAuthPageSnapshot,
+  policy?: AppIdentityPolicy,
 ): BrowserAuthenticationHealth {
   if (fixture.revokedAt !== undefined) {
     return {
@@ -91,7 +88,7 @@ export function classifyBrowserAuthenticationHealth(
     };
   }
   if (page) {
-    const signedIn = signedInFromPage(page);
+    const signedIn = signedInFromPage(page, policy);
     if (signedIn === false) {
       return {
         status: "needs-relogin",
@@ -121,9 +118,7 @@ export function classifyBrowserAuthenticationHealth(
   };
 }
 
-export function planAccountHealthBlocker(
-  health: BrowserAuthenticationHealth,
-): string | undefined {
+export function planAccountHealthBlocker(health: BrowserAuthenticationHealth): string | undefined {
   if (health.status === "ready" || health.status === "error") return undefined;
   if (health.status === "needs-relogin" || health.status === "expired") {
     return `${health.detail ?? "This sign-in needs re-login"} Open Sign-ins, complete OAuth, then Refresh.`;
@@ -140,7 +135,12 @@ export function planAccountStartBlocker(input: {
     accountRevision?: string;
   };
   savedFixtureReference?: string;
-  fixtures: readonly { id?: string; name?: string; reference: string; health: BrowserAuthenticationHealth }[];
+  fixtures: readonly {
+    id?: string;
+    name?: string;
+    reference: string;
+    health: BrowserAuthenticationHealth;
+  }[];
 }): string | undefined {
   if (input.account?.kind !== "fixture") return undefined;
   const listedMatch =
@@ -204,7 +204,10 @@ export async function rememberedBrowserAuthenticationHealth(
 
 export async function attachBrowserAuthenticationHealth<
   T extends Pick<BrowserAuthenticationFixture, "reference" | "name" | "expiresAt" | "revokedAt">,
->(fixtures: readonly T[], now = Date.now()): Promise<Array<T & { health: BrowserAuthenticationHealth }>> {
+>(
+  fixtures: readonly T[],
+  now = Date.now(),
+): Promise<Array<T & { health: BrowserAuthenticationHealth }>> {
   const remembered = await readHealthIndex();
   return fixtures.map((fixture) => {
     const stored = remembered[fixture.reference];
@@ -231,7 +234,8 @@ export async function probeBrowserAuthenticationFixture(input: {
     targetId: input.targetId,
   });
   const fixture = fixtures.find((item) => item.reference === input.reference);
-  if (!fixture) throw new Error("Browser authentication fixture was not found in this project and target");
+  if (!fixture)
+    throw new Error("Browser authentication fixture was not found in this project and target");
   let page: BrowserAuthPageSnapshot | undefined;
   const metadataHealth = classifyBrowserAuthenticationHealth(fixture, now);
   if (metadataHealth.status === "ready" && input.inspectPage) {
@@ -258,13 +262,16 @@ export async function probeBrowserAuthenticationFixture(input: {
         status: "error" as const,
         checkedAt: now,
         detail:
-          error instanceof Error ? error.message : `${fixture.name} could not be opened for a health probe.`,
+          error instanceof Error
+            ? error.message
+            : `${fixture.name} could not be opened for a health probe.`,
       };
       await writeHealth(fixture.reference, health);
       return { fixture: protocolFixture(fixture, health), health };
     }
   }
-  const health = classifyBrowserAuthenticationHealth(fixture, now, page);
+  const policy = identityPolicyForTarget({ browserTargetId: input.targetId });
+  const health = classifyBrowserAuthenticationHealth(fixture, now, page, policy);
   await writeHealth(fixture.reference, health);
   return { fixture: protocolFixture(fixture, health), health };
 }

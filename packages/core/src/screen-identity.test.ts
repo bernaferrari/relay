@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { PNG } from "pngjs";
 import type { SnapshotNode } from "./device.js";
+import { GROK_WEB_APP_POLICY } from "./app-identity-policy.js";
 import {
   compareScreenIdentity,
   observeScreenIdentity,
@@ -11,6 +12,10 @@ import {
 
 function observe(nodes: SnapshotNode[]) {
   return observeScreenIdentity(nodes);
+}
+
+function observeGrok(nodes: SnapshotNode[]) {
+  return observeScreenIdentity(nodes, { policy: GROK_WEB_APP_POLICY });
 }
 
 function visualScreen(options: { top?: [number, number, number]; panelX: number }): Buffer {
@@ -218,6 +223,7 @@ test("volatile clocks, dates, percentages, counters, relative times, and UUIDs r
 });
 
 test("rotating composer hints and generated radix ids do not redefine a browser screen", () => {
+  const observe = observeGrok;
   const chrome = (hint: string, radix: string): SnapshotNode[] => [
     { role: "button", label: "Sign in", visibleToUser: true },
     { role: "button", label: "Submit", identifier: "chat-submit", visibleToUser: true },
@@ -248,6 +254,7 @@ test("rotating composer hints and generated radix ids do not redefine a browser 
 });
 
 test("cookie consent chrome and landmark innerText dumps do not redefine a browser screen", () => {
+  const observe = observeGrok;
   const chrome: SnapshotNode[] = [
     { role: "button", label: "Sign in", visibleToUser: true },
     { role: "button", label: "Sign up", visibleToUser: true },
@@ -331,6 +338,7 @@ test("cookie consent chrome and landmark innerText dumps do not redefine a brows
 });
 
 test("typeahead suggestions do not redefine composer-with-prompt identity", () => {
+  const observe = observeGrok;
   const chrome: SnapshotNode[] = [
     { role: "a", label: "Home page", hittable: true, visibleToUser: true },
     { role: "a", label: "Imagine", hittable: true, visibleToUser: true },
@@ -374,6 +382,7 @@ test("typeahead suggestions do not redefine composer-with-prompt identity", () =
 });
 
 test("composer placeholders and feed tiles do not redefine chrome identity", () => {
+  const observe = observeGrok;
   const chrome = (options: {
     heading: string;
     nav: string;

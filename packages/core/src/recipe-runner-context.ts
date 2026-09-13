@@ -6,6 +6,8 @@ import type { Recipe, RecipeStep } from "./recipes.js";
 import type { SnapshotNode } from "./device.js";
 import type { ScreenshotPayload } from "./workspace-capture.js";
 import type { TestJob } from "./session.js";
+import type { AppIdentityPolicy } from "./app-identity-policy.js";
+import { identityPolicyForTarget } from "./app-identity-policy.js";
 
 export type FreshDeviceObservation = {
   nodes?: SnapshotNode[];
@@ -72,6 +74,8 @@ export type RecipeRuntimeState = {
     height: number;
     name?: string;
   }>;
+  /** Reviewed App identity pack. Generic runs omit grok.com heuristics. */
+  identityPolicy?: AppIdentityPolicy;
 };
 
 function previousProof(
@@ -253,6 +257,22 @@ export function invalidateVerifiedScreen(ctx: RecipeStepContext): void {
     ctx.runtime.observation = undefined;
     markNavigationUnknown(ctx, "A device mutation invalidated the last proven screen.");
   }
+}
+
+export function recipeScreenIdentityOptions(
+  ctx: RecipeStepContext,
+  extra?: RecipeRuntimeState["identityIgnoreRegions"],
+): {
+  ignoreRegions: NonNullable<RecipeRuntimeState["identityIgnoreRegions"]>;
+  policy?: AppIdentityPolicy;
+} {
+  const policy =
+    ctx.runtime?.identityPolicy ??
+    identityPolicyForTarget({ browserTargetId: ctx.job?.browserTargetId });
+  return {
+    ignoreRegions: [...(ctx.runtime?.identityIgnoreRegions ?? []), ...(extra ?? [])],
+    ...(policy ? { policy } : {}),
+  };
 }
 
 export function campaignExecutionStep(
