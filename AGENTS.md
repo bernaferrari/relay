@@ -49,11 +49,12 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) and [README.md](./README.md).
 
 ```bash
 vp install
-pnpm dev            # interactive CLI
+./bin/relay --help    # repo-local CLI (or `relay` after pnpm link --global)
+pnpm dev              # interactive CLI
 pnpm ensure:serve     # kill :8787, start a fresh detached watched server
 pnpm dev:serve        # foreground watch, logs in this terminal
 pnpm dev:tui
-pnpm dev:app
+pnpm dev:app          # NEVER while a Plan is live (currently restarts :8787). Use ensure:serve.
 pnpm dev:desktop
 pnpm typecheck
 ```
@@ -66,19 +67,20 @@ Leave this standing so agents do not rediscover it after compaction.
 
 ```bash
 export RELAY_URL=http://127.0.0.1:8787
-export RELAY_ACTOR_ID=agent:grok-ios-mapper
+export RELAY_ACTOR_ID=agent:cursor
 ```
 
-- One server on `:8787`. Do **not** wrap `tsx src/index.ts` in a long-lived agent bash task. Run `pnpm ensure:serve` or `node scripts/ensure-server.mjs` — it kills the port listener **and stray `tsx watch --port 8787` processes**. Use `--reuse` only when you explicitly want the current process. Detached + `tsx watch` so core/server edits reload it. Logs: `.relay/server.log`. `GET /health` includes `pid` and `startedAt`.
-- Exclusive lease owner must match `--actor`. Default CLI actor `human:local-cli` will 403 on a mapper lease. Local trusted server **mints** a 2-hour lease on first control if nobody else holds the device, and **renews** it while you work. Still set `RELAY_ACTOR_ID` so you do not fight yourself.
-- Drive the CLI with **direct** `node node_modules/tsx/dist/cli.mjs packages/cli/src/index.ts` and `--json`. Avoid `pnpm exec tsx` — `@yume-chan/fetch-scrcpy-server` postinstall can restart the watched server mid-job. Never `pnpm --filter … exec` (failure footer on stdout). **Parse the first JSON object on stdout**. **Read stderr** for waits (`Waiting on iOS accessibility tree…`, last job log). Do not merge stderr into the JSON parser. Default HTTP timeout is 180s; pass `--timeout 240000` if a cold iOS snapshot still dies. `relay test run` infers iOS vs Android from the serial — do not omit `serial`.
+- One server on `:8787`. Do **not** wrap `tsx src/index.ts` in a long-lived agent bash task. Start with `pnpm ensure:serve` or `node scripts/ensure-server.mjs` when you need a fresh detached watched server — it kills the port listener **and stray `tsx watch --port 8787` processes**. Do **not** run `pnpm dev:app` while a Plan is live: it currently restarts `:8787`. Do not kill a live Plan. Use `--reuse` only when you explicitly want the current process. Detached + `tsx watch` so core/server edits reload it. Logs: `.relay/server.log`. `GET /health` includes `pid` and `startedAt`.
+- Exclusive lease owner must match `--actor`. Default CLI actor `human:local-cli` will 403 on an MCP lease. Cursor MCP uses profile `operator` (~19 verbs + `relay_advanced`; no `lease.takeover`) and actor `agent:cursor` (`.cursor/mcp.json`). Reload MCP after changing that file. Local trusted server **mints** a 2-hour lease on first control if nobody else holds the device, and **renews** it while you work.
+- Drive the CLI with `./bin/relay` or `relay` from the repo root. With `--json`, stdout is **exactly one JSON document** (bin tests pin this); progress stays on stderr. `--out <dir>` writes `result.json`, `stderr.log`, and job PNGs. `relay --help` documents `--timeout` (default 180s) and `--budget`. `relay test run` infers iOS vs Android from the serial — do not omit `serial`.
+- Saved Lanes replace overlay.json / `--input-file` profileTargets. `--lane grok-daily` is unsigned `browser:grok-com`. `--lane grok-lab` is the unique signed-in profile + fixture. grok-com `authenticationFixtureId` stays empty. `plan run --export <dir>` writes the review checklist; visual accept only `relay run visual review`.
 
 **Where am I**
 
 - XCTest is **optional**. Pixels + point is a complete control path. Snapshot summary includes `app`, `header`, ranked `controls` (tabs first), `fingerprint` (16 chars), `nodeCount`, `inspectable`, `inspectionState`. If `inspectable` is false, screenshot + tap `{kind:"point",x,y}` still works (`proposedRows` are label-side tap points). Do not retry snapshot in a loop. Do not fail a tour only because the tree is missing.
 - **Android has one UiAutomation slot.** The bundled helper APK (`packages/core/android-helpers/`, `com.callstack.agentdevice.snapshothelper`) owns it. Never run `uiautomator dump` while the helper is alive — dump dies with exit 137 / `UiAutomationService already registered`. Stock dump also returns `null root` when Niagara is bound; the helper uses `getWindows()` instead. Do **not** turn off Niagara. `--mark x,y` is screenshot pixels, same as `adb input tap`. If `nodeCount` is still 0 after recover, use pixels.
 - Live “Here” on the map is fingerprint/alias (tree first, visual hash second). Nav title is not identity — Grok child sheets keep header “Settings”. Unchanged identity after hamburger is a toggle, not a new screen.
-- Preview any selection (tree or point) before tapping: `relay device interact <serial> --preview --file preview.png --input '{"kind":"label","label":"Back"}'`. Same command without `--preview` commits. Point-only shortcut: `device screenshot --mark 78,88 --file preview.png`.
+- Preview any selection (tree or point) before tapping: `relay device interact <serial> --preview --file preview.png --input '{"kind":"label","label":"Back"}'`. With a saved Lane: `relay device interact --preview --lane grok-lab --file preview.png --input '{"kind":"label","label":"Back"}'`. Same command without `--preview` commits. Point-only shortcut: `device screenshot --mark 78,88 --file preview.png`.
 - If the screenshot is not that app/header, it is a **handoff** (Grok → iOS Settings is the usual case). XCTest stays on Grok. Do not keep tapping the Grok tree. `relay device launch <serial> com.apple.Preferences` (or `ai.x.GrokApp`), then snapshot again.
 - Launch does **not** wait on XCTest. Relay tries 10s `devicectl process launch`, then go-ios, then **primes** the XCTest session (5s, non-blocking). Screenshot and live MJPEG use go-ios Instruments. Taps (point, identifier, label, swipe) use **one** agent-device XCTest session. Do not treat “No active session” as “launch failed” — Reconnect prepares the runner.
 - Build the safe pixel-only iOS live producer once with `pnpm ios-preview:build` (Go 1.26+). It writes one bounded stdout stream to Relay and is the only permitted live-preview producer; never use `ios screenshot --stream`, DeviceKit, WDA, or preview as a control path. If the producer is absent, preserve the actionable unavailable diagnostic rather than falling back.
@@ -100,8 +102,8 @@ export RELAY_ACTOR_ID=agent:grok-ios-mapper
 Product V2 uses public job language while the CLI keeps the stable engine commands:
 
 - **Data set** = values applied while running a Test. The CLI stores these through `relay variable save`; Variable is an advanced implementation term.
-- **Test** = go here, click there, finish. `relay test run grok-android-manual-v2 supergrok-locale-tour`
-- **Run Across** = run selected Tests with selected Data set values and Devices. The CLI continues to use `relay test run ... --in ...` and `relay combine run ...`; Combine, Cell, and Lens stay in Advanced/Audit UI. Default is one case. `--all` is explicit. Do **not** fire all cases unless asked. Capture remains an engine lens (`visual` / `smoke`). After a batch, `relay combine export <batch-id>` writes per-value screenshots + accessibility trees (and `full.png` when the destination was surveyed).
+- **Test** = go here, click there, finish. `relay test run grok-web grok-web-open --lane grok-daily`
+- **Run Across** = run selected Tests with selected Data set values and Devices. The CLI continues to use `relay test run ... --lane …` / `--in ...` and `relay combine run ... --lane …`; Combine, Cell, and Lens stay in Advanced/Audit UI. Default is one case. `--all` is explicit. Do **not** fire all cases unless asked. Capture remains an engine lens (`visual` / `smoke`). After a batch, `relay combine export <batch-id>` or `relay plan run … --export <dir>` writes per-value screenshots + accessibility trees and an `index.html` checklist (and `full.png` when the destination was surveyed). Confirm/Reject never accept a visual baseline.
 - Do **not** write a per-screen `.mjs` capture script. The YAML Test + language Variable is the recipe. `device survey --dir --no-restore` is the full-surface verb when you are already on the screen.
 
 Tour seek reaches the origin screen (fingerprint, then mapped row overlap, then Back/Settings/prelude) before walking rows. Tour back is label-overlap, not nav title — Grok child sheets often keep header “Settings”.

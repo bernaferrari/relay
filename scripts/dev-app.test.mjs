@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   allowedBrowserOriginsWith,
+  ensureServerLaunchArgs,
   relayAppPackage,
   relayBrowserOrigin,
   relayBrowserOrigins,
@@ -45,4 +46,8 @@ test("browser development always uses the React product", () => {
   assert.equal(relayAppPackage(["--v2"]), "@relay/app-v2");
   assert.throws(() => relayAppPackage(["--legacy"]), /Unknown Relay app option/u);
   assert.throws(() => relayAppPackage(["--unknown"]), /Unknown Relay app option/u);
+});
+
+test("dev-app reuses the running Relay on :8787", () => {
+  assert.deepEqual(ensureServerLaunchArgs(), ["--reuse"]);
 });

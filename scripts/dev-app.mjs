@@ -40,6 +40,11 @@ export function relayAppPackage(args = []) {
   return "@relay/app-v2";
 }
 
+/** Keep the existing :8787 process. `node scripts/dev-app.mjs` must not kill Relay. */
+export function ensureServerLaunchArgs() {
+  return ["--reuse"];
+}
+
 async function portAvailable(port) {
   return await new Promise((resolve) => {
     const server = createServer();
@@ -76,11 +81,15 @@ async function main() {
   };
 
   process.stdout.write(`Starting Relay for the browser at ${browserUrl}\n`);
-  const service = spawnSync(process.execPath, [join(root, "scripts/ensure-server.mjs")], {
-    cwd: root,
-    env,
-    stdio: "inherit",
-  });
+  const service = spawnSync(
+    process.execPath,
+    [join(root, "scripts/ensure-server.mjs"), ...ensureServerLaunchArgs()],
+    {
+      cwd: root,
+      env,
+      stdio: "inherit",
+    },
+  );
   if (service.status !== 0) {
     throw new Error("Relay service could not start; see the diagnostic above");
   }
