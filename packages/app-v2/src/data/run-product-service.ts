@@ -97,6 +97,10 @@ type ProductRuntime = {
 };
 export function createRunProductService(platform: Platform): RunProductService {
   let runtimePromise: Promise<ProductRuntime> | undefined;
+  /** Terminal Result reads must not load run-journey (that graph pulls Playwright). */
+  function relayClient() {
+    return productClientForPlatform(platform).then((product) => product.client);
+  }
   function runtime() {
     runtimePromise ??= Promise.all([
       productClientForPlatform(platform),
@@ -119,8 +123,7 @@ export function createRunProductService(platform: Platform): RunProductService {
     runId: string,
     input: Omit<OperationInput<"run.evidence.get">, "runId"> = {},
   ): Promise<OperationOutput<"run.evidence.get">["evidence"]> {
-    return (await (await runtime()).client.invoke("run.evidence.get", { runId, ...input }))
-      .evidence;
+    return (await (await relayClient()).invoke("run.evidence.get", { runId, ...input })).evidence;
   }
   return {
     async getTest(testId) {
@@ -243,9 +246,8 @@ export function createRunProductService(platform: Platform): RunProductService {
       return (await runtime()).journey.inspect(workflowId);
     },
     async inspectExecution(runId) {
-      const { client } = await runtime();
       try {
-        const { job } = await client.invoke("job.get", { jobId: runId });
+        const { job } = await (await relayClient()).invoke("job.get", { jobId: runId });
         return projectWorkflowlessExecution(job, runId);
       } catch {
         return undefined;
@@ -299,7 +301,7 @@ export function createRunProductService(platform: Platform): RunProductService {
       return runEvidenceExportDocument(runId, result);
     },
     async getReport(runId, canonical) {
-      const { client } = await runtime();
+      const client = await relayClient();
       const [{ run }, evidenceResult, appsResult] = await Promise.all([
         client.invoke("run.get", { runId }),
         client.invoke("run.evidence.get", { runId, includeBodies: false }).catch(() => undefined),

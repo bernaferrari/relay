@@ -42,6 +42,7 @@ import {
 import type { ProductRunState, RunProductService } from "../data/run-product-service";
 import { runQueryKeys } from "../data/run-queries";
 import { clearRunPointerIfCurrent, readRunPointer } from "../data/run-pointer";
+import { shouldRestorePersistedRun } from "../data/run-restore-gating";
 import { RecordingProblem, targetLabel } from "./recording-shared";
 import { RunReviewControls } from "./run-review-controls";
 import { RunLoading } from "./run-loading";
@@ -75,7 +76,9 @@ export function RunInspection({
     staleTime: Infinity,
   });
   const restoreEnabled =
-    !pointer.isPending && pointer.data?.runId !== runId && typeof runService.restore === "function";
+    !pointer.isPending &&
+    shouldRestorePersistedRun(pointer.data, runId) &&
+    typeof runService.restore === "function";
   const restore = useQuery({
     queryKey: runQueryKeys.restore(runId),
     queryFn: async () => (await runService.restore?.(runId)) ?? null,

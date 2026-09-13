@@ -810,14 +810,15 @@ describe("Run and Report", () => {
 
   it("restores an active Run from canonical server state without local storage", async () => {
     const fake = fakeRunService();
-    fake.service.restore = async (runId) => {
-      fake.calls.push(`restore:${runId}`);
-      return runState("running", ["inspect", "cancel"]);
+    fake.service.inspectExecution = async (runId) => {
+      fake.calls.push(`execution:${runId}`);
+      return workflowless(runState("running", ["inspect", "cancel"]));
     };
 
     await renderRun("/runs/run-1", fake.service, platformWithStorage().platform);
 
-    expect(fake.calls).toContain("restore:run-1");
+    expect(fake.calls).not.toContain("restore:run-1");
+    expect(fake.calls).toContain("execution:run-1");
     expect(document.body.textContent).toContain("Checking Language");
     expect(document.body.textContent).toContain("Cancel Run");
     expect(document.body.textContent).not.toContain("Run unavailable");
@@ -874,10 +875,33 @@ describe("Run and Report", () => {
       fake.calls.push(`restore:${runId}`);
       return undefined;
     };
-    await renderRun("/runs/run-1", fake.service, platformWithStorage().platform);
+    await renderRun(
+      "/runs/run-1",
+      fake.service,
+      platformWithStorage({
+        activeRunWorkflow: JSON.stringify({
+          workflowId: "workflow-run-other",
+          runId: "run-other",
+          testId: "test-1",
+        }),
+      }).platform,
+    );
     expect(fake.calls).toContain("restore:run-1");
     expect(fake.calls).toContain("report:run-1");
     expect(document.body.textContent).toContain("Test passed");
+  });
+
+  it("renders the saved Result when restore would throw and the pointer is empty", async () => {
+    const fake = fakeRunService(runState("succeeded"));
+    fake.service.restore = async (runId) => {
+      fake.calls.push(`restore:${runId}`);
+      throw new Error("Failed to fetch");
+    };
+    await renderRun("/runs/run-1", fake.service, platformWithStorage().platform);
+    expect(fake.calls).not.toContain("restore:run-1");
+    expect(fake.calls).toContain("report:run-1");
+    expect(document.body.textContent).toContain("Test passed");
+    expect(document.body.textContent).not.toContain("could not complete this request");
   });
 
   it("restores a workflow-less active job with progress and explicit cancellation", async () => {
