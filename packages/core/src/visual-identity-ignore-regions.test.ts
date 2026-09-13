@@ -74,7 +74,7 @@ test("identity-ignore never overwrites a reviewed visual policy id", () => {
   assert.equal(merged.regions[0]?.name, "reviewed");
 });
 
-test("a grok.com ui-tree covers the reply body without a recipe identity-ignore step", () => {
+test("logged-out continue ignores the user bubble and leaves the paywall compared", () => {
   const regions = visualIgnoreRegionsFromIdentityArtifacts(
     [
       {
@@ -100,11 +100,63 @@ test("a grok.com ui-tree covers the reply body without a recipe identity-ignore 
     ],
     [{ index: 0, width: 1280, height: 800 }],
   );
+  assert.equal(regions.length, 1);
+  assert.equal(regions[0]?.name, "user bubble");
+  assert.equal(regions[0]?.mode, "ignore");
+  assert.ok((regions[0]?.x ?? 0) > 0.7);
+  assert.ok((regions[0]?.width ?? 1) < 0.1);
+  assert.ok((regions[0]?.height ?? 1) < 0.12);
+  assert.ok((regions[0]?.y ?? 0) + (regions[0]?.height ?? 0) < 0.2);
+});
+
+test("authored user-bubble identity-ignore is not stacked with a ui-tree column", () => {
+  const regions = visualIgnoreRegionsFromIdentityArtifacts(
+    [
+      {
+        kind: "identity-ignore",
+        data: { name: "user bubble", x: 0.7, y: 0.08, width: 0.28, height: 0.1 },
+      },
+      {
+        kind: "ui-tree",
+        data: {
+          nodes: [
+            { role: "article", label: "You", rect: { x: 80, y: 80, width: 40, height: 40 } },
+            {
+              role: "h2",
+              label: "Continue your conversation",
+              rect: { x: 297, y: 165, width: 427, height: 22 },
+            },
+          ],
+        },
+      },
+    ],
+    [{ index: 0, width: 1280, height: 800 }],
+  );
+  assert.equal(regions.length, 1);
+  assert.equal(regions[0]?.name, "user bubble");
+  assert.equal(regions[0]?.x, 0.7);
+  assert.equal(regions[0]?.width, 0.28);
+});
+
+test("a grok.com ui-tree covers the reply body without a recipe identity-ignore step", () => {
+  const regions = visualIgnoreRegionsFromIdentityArtifacts(
+    [
+      {
+        kind: "ui-tree",
+        data: {
+          nodes: [
+            { role: "article", label: "You", rect: { x: 80, y: 80, width: 40, height: 40 } },
+            { role: "article", label: "Grok", rect: { x: 80, y: 200, width: 400, height: 120 } },
+          ],
+        },
+      },
+    ],
+    [{ index: 0, width: 1280, height: 800 }],
+  );
   assert.equal(regions[0]?.name, "reply body");
   assert.equal(regions[0]?.mode, "ignore");
   assert.ok((regions[0]?.y ?? 1) < 0.15);
-  assert.ok((regions[0]?.y ?? 0) + (regions[0]?.height ?? 0) < 0.85);
-  assert.ok((regions[0]?.x ?? 0) > 0);
+  assert.ok((regions[0]?.width ?? 0) > 0.8);
 });
 
 test("ui-tree ignore stays off screens that are not a conversation", () => {

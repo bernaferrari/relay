@@ -30,8 +30,12 @@ const report = (findings: CombineEvidenceAnalysisReport["analysis"]["findings"])
   }) satisfies CombineEvidenceAnalysisReport;
 
 test("Confirm never accepts a visual baseline", () => {
-  assert.equal(planFindingReviewEffect("confirm").acceptsVisualBaseline, false);
-  assert.equal(planFindingReviewEffect("reject").visualReviewAction, null);
+  const confirm = planFindingReviewEffect("confirm");
+  const reject = planFindingReviewEffect("reject");
+  assert.equal(confirm.acceptsVisualBaseline, false);
+  assert.equal(confirm.visualReviewAction, null);
+  assert.equal(reject.acceptsVisualBaseline, false);
+  assert.equal(reject.visualReviewAction, null);
 });
 
 test("markdown names Confirm and Reject", () => {

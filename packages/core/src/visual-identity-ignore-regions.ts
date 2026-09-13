@@ -20,6 +20,8 @@ function finitePositive(value: unknown): value is number {
 
 const COMPOSER_ROLE = /^(?:textbox|textarea|searchbox)$/iu;
 const REPLY_SIGNAL = /continue your conversation|you said|^you$/iu;
+const PAYWALL_SIGNAL = /continue your conversation/iu;
+const USER_BUBBLE_SIGNAL = /^(?:you|you said)$/iu;
 const HEADER_MAX_Y = 100;
 const NAV_RAIL_MAX_X = 88;
 
@@ -38,13 +40,50 @@ function snapshotNodes(data: unknown): readonly Record<string, unknown>[] {
   );
 }
 
-/** Measured transcript / paywall column from a live ui-tree. Chrome stays compared. */
+function nodeBox(node: Record<string, unknown>): Record<string, unknown> | undefined {
+  const rect = node.rect;
+  if (!rect || typeof rect !== "object" || Array.isArray(rect)) return undefined;
+  const box = rect as Record<string, unknown>;
+  if (
+    !finitePositive(box.x) ||
+    !finitePositive(box.y) ||
+    !finitePositive(box.width) ||
+    !finitePositive(box.height)
+  ) {
+    return undefined;
+  }
+  return box;
+}
+
+/** User bubble only. The Continue-your-conversation paywall card stays compared. */
+function userBubbleIgnoreFromSnapshot(
+  nodes: readonly Record<string, unknown>[],
+): PixelRegion | undefined {
+  for (const node of nodes) {
+    if (nodeRole(node) !== "article") continue;
+    if (!USER_BUBBLE_SIGNAL.test(String(node.label ?? node.value ?? "").trim())) continue;
+    const box = nodeBox(node);
+    if (!box) continue;
+    return {
+      x: Number(box.x),
+      y: Number(box.y),
+      width: Number(box.width),
+      height: Number(box.height),
+      name: "user bubble",
+    };
+  }
+  return undefined;
+}
+
+/** Measured transcript column from a live ui-tree. Chrome stays compared. */
 export function replyBodyIgnoreFromSnapshot(
   data: unknown,
   frame: { width: number; height: number },
 ): PixelRegion | undefined {
   if (!frame.width || !frame.height || frame.width <= 0 || frame.height <= 0) return undefined;
   const nodes = snapshotNodes(data);
+  const paywall = nodes.some((node) => PAYWALL_SIGNAL.test(String(node.label ?? node.value ?? "")));
+  if (paywall) return userBubbleIgnoreFromSnapshot(nodes);
   const conversation = nodes.some((node) => {
     const role = nodeRole(node);
     const label = String(node.label ?? node.value ?? "");
@@ -137,12 +176,14 @@ export function visualIgnoreRegionsFromIdentityArtifacts(
   frames: readonly FrameSize[],
 ): VisualRegion[] {
   const regions: VisualRegion[] = [];
+  const authored = artifacts.some((artifact) => artifact.kind === "identity-ignore");
   const ignores = artifacts.flatMap((artifact) => {
     if (artifact.kind === "identity-ignore") {
       const region = identityIgnoreRegion(artifact.data);
       return region ? [region] : [];
     }
     if (artifact.kind === "ui-tree") {
+      if (authored) return [];
       const frame = frames.find((item) => item.width && item.height);
       if (!frame?.width || !frame.height) return [];
       const region = replyBodyIgnoreFromSnapshot(artifact.data, {
