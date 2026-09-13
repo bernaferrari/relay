@@ -63,7 +63,13 @@ const report = {
     dataSet: { name: "Default", dimensions: [] },
   },
   navigation: { route: "/batches/batch-1", href: "/batches/batch-1" },
-  report: { headline: "1 case needs attention", detail: "0 passed · 1 failed" },
+  report: {
+    headline: "1 case needs attention",
+    detail: "0 passed · 1 failed",
+    executionLine: "0 passed, 1 check failed",
+    checksLine: "0 passed, 1 check failed",
+    coverageLine: "0 of 1 planned cases verified",
+  },
 };
 
 function platform(): Platform {

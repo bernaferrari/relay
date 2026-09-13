@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { CombineEvidenceFinding } from "@relay/protocol";
 import {
   isProductAssertionJob,
   jobOutcomeFindings,
@@ -112,7 +113,7 @@ test("cancelled SOS combine cells are HARNESS_FAILURE, not a silent empty page",
   assert.match(findings[1]?.screenLabel ?? "", /Open existing sidebar conversation/);
 });
 
-test("cancelled without SOS artifacts is still Infra, never a product-pass", () => {
+test("cancelled without SOS artifacts is operator cancellation, not infra", () => {
   const findings = jobOutcomeFindings(
     [
       {
@@ -125,13 +126,51 @@ test("cancelled without SOS artifacts is still Infra, never a product-pass", () 
     ],
     () => "en",
   );
-  assert.equal(findings[0]?.code, "HARNESS_FAILURE");
-  assert.match(findings[0]?.detail ?? "", /Infra, not a product pass/u);
+  assert.equal(findings[0]?.code, "USER_CANCELLED");
+  assert.match(findings[0]?.detail ?? "", /not an infra root cause/u);
+});
+
+test("a rate-limit assertion stays PRODUCT_ASSERTION", () => {
+  const findings = jobOutcomeFindings(
+    [
+      {
+        id: "rate-limit-assert",
+        action: "assert-limit",
+        status: "error",
+        outcome: "product-failure",
+        failureCategory: "deterministic-assertion",
+        error: 'content assertion: response did not satisfy contains "rate limit"',
+      },
+    ],
+    () => "en",
+  );
+  assert.equal(findings[0]?.code, "PRODUCT_ASSERTION");
+});
+
+test("blocked cells are BLOCKED coverage gaps", () => {
+  const findings = jobOutcomeFindings(
+    [
+      {
+        id: "blocked-1",
+        action: "cell-blocked",
+        status: "blocked",
+        error: "Device not connected",
+      },
+    ],
+    () => "en",
+  );
+  assert.equal(findings[0]?.code, "BLOCKED");
 });
 
 test("merge recounts critical findings so empty locale analysis cannot hide a failed cell", () => {
+  const empty = {
+    findings: [] as CombineEvidenceFinding[],
+    critical: 0,
+    warnings: 0,
+    affectedScreens: 0,
+  };
   const merged = mergeJobOutcomeFindings(
-    { findings: [], critical: 0, warnings: 0, affectedScreens: 0 },
+    empty,
     jobOutcomeFindings(
       [
         {

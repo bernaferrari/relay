@@ -52,6 +52,20 @@ export function proposePlanFinding(finding: CombineEvidenceFinding): PlanFinding
         "This is Infra (harness or runner), not a grok.com product failure. This still does not accept a visual baseline.",
     };
   }
+  if (finding.code === "USER_CANCELLED") {
+    return {
+      verdict: "reject",
+      reason:
+        "The operator cancelled this case. That is not an infra root cause and not a product pass. This still does not accept a visual baseline.",
+    };
+  }
+  if (finding.code === "BLOCKED") {
+    return {
+      verdict: "reject",
+      reason:
+        "This case could not run. Resolve blockers. Coverage stays unverified. This still does not accept a visual baseline.",
+    };
+  }
   if (finding.code === "PRODUCT_ASSERTION") {
     return {
       verdict: "confirm",

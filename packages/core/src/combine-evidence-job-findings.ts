@@ -21,7 +21,11 @@ export function isCancelledJobOutcome(job: JobOutcomeFindingSource): boolean {
 }
 
 export function isHarnessJobOutcome(job: JobOutcomeFindingSource): boolean {
-  return job.outcome === "harness-failure" || isCancelledJobOutcome(job);
+  return job.outcome === "harness-failure" || Boolean(sosInterventionDetail(job));
+}
+
+export function isBlockedJobOutcome(job: JobOutcomeFindingSource): boolean {
+  return job.status === "blocked" || job.outcome === "blocked";
 }
 
 export function isProductAssertionJob(job: JobOutcomeFindingSource): boolean {
@@ -78,10 +82,10 @@ function screenLabelFor(job: JobOutcomeFindingSource, expected?: string): string
   return job.action;
 }
 
-/** One finding per recipe/expect-screen product-failure, harness-failure, or SOS/cancelled cell. */
-export function jobOutcomeFindings(
-  jobs: readonly JobOutcomeFindingSource[],
-  localeFor: (job: JobOutcomeFindingSource) => string,
+/** One finding per recipe/expect-screen product-failure, harness-failure, blocked, or cancelled cell. */
+export function jobOutcomeFindings<T extends JobOutcomeFindingSource>(
+  jobs: readonly T[],
+  localeFor: (job: T) => string,
 ): CombineEvidenceFinding[] {
   const findings: CombineEvidenceFinding[] = [];
   for (const job of jobs) {
@@ -97,6 +101,36 @@ export function jobOutcomeFindings(
         locale,
         baselineLocale: locale,
         detail: harnessDetail(job),
+      });
+      continue;
+    }
+    if (isCancelledJobOutcome(job)) {
+      findings.push({
+        id: `user-cancelled-${job.id}`,
+        code: "USER_CANCELLED",
+        severity: "warning",
+        confidence: "high",
+        canonicalKey: `job:${job.id}`,
+        screenLabel: screenLabelFor(job),
+        locale,
+        baselineLocale: locale,
+        detail: job.error?.trim()
+          ? `Cancelled — ${job.error.trim()}. Operator cancellation is not an infra root cause.`
+          : "Cancelled by the operator. This is not an infra root cause.",
+      });
+      continue;
+    }
+    if (isBlockedJobOutcome(job)) {
+      findings.push({
+        id: `blocked-${job.id}`,
+        code: "BLOCKED",
+        severity: "critical",
+        confidence: "high",
+        canonicalKey: `job:${job.id}`,
+        screenLabel: screenLabelFor(job),
+        locale,
+        baselineLocale: locale,
+        detail: job.error?.trim() || "This case could not run. Resolve blockers.",
       });
       continue;
     }
@@ -117,6 +151,12 @@ export function jobOutcomeFindings(
     });
   }
   return findings;
+}
+
+export function primaryJobFindingCode(
+  job: JobOutcomeFindingSource,
+): CombineEvidenceFinding["code"] | undefined {
+  return jobOutcomeFindings([job], () => "")[0]?.code;
 }
 
 export function mergeJobOutcomeFindings<

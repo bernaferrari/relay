@@ -4,6 +4,7 @@ import type {
   AuthoringTarget,
   CombineTriageStatus,
   CombineEvidenceAnalysisReport,
+  CombineEvidenceFindingCode,
   FailureCategory,
   RepeatFailureKind,
   RepeatFailureClusterReport,
@@ -78,6 +79,9 @@ export type ProductBatchCase = {
   readonly identity?: ProductBatchResultIdentity;
   readonly priorRunIds?: readonly string[];
   readonly error?: string;
+  readonly findingCode?: CombineEvidenceFindingCode;
+  readonly failureCategory?: FailureCategory;
+  readonly outcome?: string;
   /** Review ownership. Independent of execution status. */
   readonly assignee?: string;
   /** Review state. Independent of execution status. */
@@ -94,6 +98,8 @@ export type ProductBatchResultIdentity = {
   readonly environmentId: string;
   readonly environmentPlatform: "android" | "ios" | "browser";
   readonly environmentLabel?: string;
+  readonly accountLabel?: string;
+  readonly targetLabel?: string;
   readonly runId?: string;
 };
 
@@ -162,6 +168,10 @@ export type ProductBatchReport = ProductRunAcrossBatch & {
   readonly report: {
     readonly headline: string;
     readonly detail: string;
+    readonly executionLine?: string;
+    readonly checksLine?: string;
+    readonly coverageLine?: string;
+    readonly action?: string;
   };
   readonly export?: { readonly rootDir: string; readonly jobIds: readonly string[] };
 };
@@ -211,13 +221,22 @@ type CampaignCase = {
   runId?: string;
   priorRunIds?: string[];
   error?: string;
+  findingCode?: CombineEvidenceFindingCode;
+  failureCategory?: FailureCategory;
+  outcome?: string;
   testId?: string;
   targetProfileId?: string;
   engine?: "chromium" | "firefox" | "webkit";
   account?:
-    | { kind: "fixture"; accountId: string; accountRevision: string; reference?: string }
+    | {
+        kind: "fixture";
+        accountId: string;
+        accountRevision: string;
+        reference?: string;
+        accountLabel?: string;
+      }
     | { kind: "signed-out"; attested: true };
-  target?: { targetId?: string; platform?: string };
+  target?: { targetId?: string; platform?: string; label?: string };
   assignee?: string;
   triageStatus?: CombineTriageStatus;
 };
@@ -400,14 +419,24 @@ function batchFromCampaign(
                 testId: item.testId,
                 ...planResultColumnIdentity({
                   targetProfileId: item.targetProfileId,
+                  ...(item.target?.label || item.target?.targetId
+                    ? { targetLabel: item.target.label ?? item.target.targetId }
+                    : {}),
                   ...(item.account ? { account: item.account } : {}),
                 }),
                 environmentPlatform: platform,
                 ...(item.runId ? { runId: item.runId } : {}),
+                ...(item.account && item.account.kind === "fixture" && item.account.accountLabel
+                  ? { accountLabel: item.account.accountLabel }
+                  : {}),
+                ...(item.target?.label ? { targetLabel: item.target.label } : {}),
               },
             }
           : {}),
         ...(item.error ? { error: item.error } : {}),
+        ...(item.findingCode ? { findingCode: item.findingCode } : {}),
+        ...(item.failureCategory ? { failureCategory: item.failureCategory } : {}),
+        ...(item.outcome ? { outcome: item.outcome } : {}),
         ...(item.assignee ? { assignee: item.assignee } : {}),
         ...(item.triageStatus ? { triageStatus: item.triageStatus } : {}),
       };
@@ -543,7 +572,11 @@ function reportFor(
     ...batch,
     report: {
       headline: summary.headline,
-      detail: summary.detail,
+      detail: summary.action ? `${summary.detail}. ${summary.action}` : summary.detail,
+      executionLine: summary.executionLine,
+      checksLine: summary.checksLine,
+      coverageLine: summary.coverageLine,
+      ...(summary.action ? { action: summary.action } : {}),
     },
     ...(exported ? { export: exported } : {}),
   };
@@ -552,15 +585,38 @@ function reportFor(
 export function summarizeProductBatch(batch: ProductRunAcrossBatch): {
   readonly headline: string;
   readonly detail: string;
+  readonly action?: string;
+  readonly executionLine: string;
+  readonly checksLine: string;
+  readonly coverageLine: string;
 } {
   const grid = summarizeProductResultGrid(batch.cases);
   if (batch.status === "cancelled" && batch.cases.every((item) => item.status === "cancelled")) {
-    return { headline: "Plan was cancelled", detail: grid.detail };
+    return {
+      headline: "Plan was cancelled",
+      detail: grid.detail,
+      executionLine: grid.executionLine,
+      checksLine: grid.checksLine,
+      coverageLine: grid.coverageLine,
+    };
   }
   if (batch.status === "cancelled" && batch.cases.length === 0) {
-    return { headline: "Plan was cancelled", detail: grid.detail };
+    return {
+      headline: "Plan was cancelled",
+      detail: grid.detail,
+      executionLine: grid.executionLine,
+      checksLine: grid.checksLine,
+      coverageLine: grid.coverageLine,
+    };
   }
-  return { headline: grid.headline, detail: grid.detail };
+  return {
+    headline: grid.headline,
+    detail: grid.action ? `${grid.detail}. ${grid.action}` : grid.detail,
+    ...(grid.action ? { action: grid.action } : {}),
+    executionLine: grid.executionLine,
+    checksLine: grid.checksLine,
+    coverageLine: grid.coverageLine,
+  };
 }
 
 export function createProductRunAcrossService(

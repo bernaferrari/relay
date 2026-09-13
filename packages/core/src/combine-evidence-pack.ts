@@ -63,7 +63,6 @@ export type CombineEvidenceCase = Pick<
   | "error"
   | "outcome"
   | "failureCategory"
-  | "title"
 > & {
   /** Widened from `JobStatus`: the run store reads its own files back as text,
    * and the pack only ever reports this status, never branches on it. */

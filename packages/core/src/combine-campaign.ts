@@ -12,6 +12,7 @@ import { getJob } from "./session.js";
 import { readPersistedRun } from "./runs.js";
 import { durableWorkerAssignmentStore } from "./durable-worker-assignments.js";
 import { combineCampaignCaseIdentity } from "./combine-campaign-case-identity.js";
+import { primaryJobFindingCode } from "./combine-evidence-job-findings.js";
 
 export type StoredCombineCampaign = CombineCampaign & {
   execution: NonNullable<CombineCampaign["execution"]>;
@@ -449,6 +450,10 @@ type ObservableJob = {
   id?: string;
   status?: string;
   error?: string;
+  action?: string;
+  title?: string;
+  outcome?: string;
+  failureCategory?: string;
   persisted?: boolean;
   artifacts?: Array<{ kind?: string; data?: unknown }>;
 };
@@ -531,6 +536,21 @@ export async function projectCombineCampaign(
       const provingRunEvidence = isTerminalCaseStatus(observedStatus) && !observed?.runId;
       const status = provingRunEvidence ? "running" : observedStatus;
       const { runId: _unverifiedRunId, ...unprovedCase } = item;
+      const findingSource = observed?.job
+        ? {
+            id: observed.job.id ?? item.jobId,
+            action: observed.job.action ?? item.testId,
+            status: observed.job.status ?? observedStatus,
+            ...(observed.job.title ? { title: observed.job.title } : {}),
+            ...(observed.job.error ? { error: observed.job.error } : {}),
+            ...(observed.job.outcome ? { outcome: observed.job.outcome } : {}),
+            ...(observed.job.failureCategory
+              ? { failureCategory: observed.job.failureCategory }
+              : {}),
+            ...(observed.job.artifacts ? { artifacts: observed.job.artifacts } : {}),
+          }
+        : undefined;
+      const findingCode = findingSource ? primaryJobFindingCode(findingSource) : undefined;
       return {
         ...unprovedCase,
         status,
@@ -540,6 +560,9 @@ export async function projectCombineCampaign(
             ? { error: observed.job.error }
             : {}),
         ...(observed?.runId ? { runId: observed.runId } : {}),
+        ...(findingCode ? { findingCode } : {}),
+        ...(observed?.job.failureCategory ? { failureCategory: observed.job.failureCategory } : {}),
+        ...(observed?.job.outcome ? { outcome: observed.job.outcome } : {}),
       };
     }),
   );

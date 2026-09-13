@@ -11,7 +11,17 @@ export type CombineEvidenceFindingCode =
   /** Recipe or expect-screen product-failure. Not Infra. */
   | "PRODUCT_ASSERTION"
   /** Runner, lease, or harness failure. Infra, not a grok.com product defect. */
-  | "HARNESS_FAILURE";
+  | "HARNESS_FAILURE"
+  /** Operator cancelled the cell. Not an infra root cause. */
+  | "USER_CANCELLED"
+  /** The case never ran a product check. Coverage remains unverified. */
+  | "BLOCKED"
+  /** Visual difference awaiting human review. */
+  | "VISUAL_CHANGED"
+  /** Semantic or visual judge was uncertain. */
+  | "JUDGE_UNCERTAIN"
+  /** Pause or human checkpoint. */
+  | "MANUAL_CHECKPOINT";
 
 export type CombineEvidenceFinding = {
   id: string;

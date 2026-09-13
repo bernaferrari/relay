@@ -32,6 +32,7 @@ export * from "./execution-summary.js";
 export * from "./run-review.js";
 export * from "./campaign-repair.js";
 export * from "./combine-campaign.js";
+export * from "./plan-result-summary.js";
 export * from "./combine-profile-target-schema.js";
 export * from "./app-map-combine-cell.js";
 export * from "./app-map-combine-id.js";

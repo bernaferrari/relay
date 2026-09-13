@@ -246,9 +246,30 @@ export function BatchPage() {
 
       {report ? (
         <>
-          <p className="mt-2 text-sm text-muted-foreground">
-            {report.report.headline}. {report.report.detail}
-          </p>
+          <p className="mt-2 text-sm text-muted-foreground">{report.report.headline}</p>
+          <dl className="relay-batch-facts mt-3 grid gap-2 text-sm sm:grid-cols-3">
+            <div>
+              <dt className="text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
+                Execution
+              </dt>
+              <dd>{report.report.executionLine ?? report.report.detail}</dd>
+            </div>
+            <div>
+              <dt className="text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
+                Checks
+              </dt>
+              <dd>{report.report.checksLine ?? report.report.detail}</dd>
+            </div>
+            <div>
+              <dt className="text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
+                Coverage
+              </dt>
+              <dd>{report.report.coverageLine ?? report.report.headline}</dd>
+            </div>
+          </dl>
+          {report.report.action ? (
+            <p className="mt-2 text-sm font-medium text-foreground">{report.report.action}</p>
+          ) : null}
           {findingsReport ? <BatchFindingsLead report={findingsReport} /> : null}
           {active ? (
             <div

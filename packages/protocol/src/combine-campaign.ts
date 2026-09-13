@@ -7,6 +7,7 @@ import type { ExecutionTargetRef, LocalAgentDeviceExecutionTargetRef } from "./e
 import type { SourceRevision } from "./source-revision.js";
 import type { AuthoringTarget } from "./authoring.js";
 import type { RepeatSpec, ResolvedRepeatSpec } from "./repeat-spec.js";
+import type { CombineEvidenceFindingCode } from "./combine-evidence-contract.js";
 
 /**
  * Shared, serialized local-deadline request. Every selected target ×
@@ -104,6 +105,9 @@ export type CombineCampaignCase = {
    * re-executes this exact frozen case tuple. */
   priorRunIds?: string[];
   error?: string;
+  findingCode?: CombineEvidenceFindingCode;
+  failureCategory?: string;
+  outcome?: string;
   /** Review ownership. Independent of execution status. */
   assignee?: string;
   /** Review state. Independent of execution status. */

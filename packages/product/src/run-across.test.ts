@@ -80,7 +80,7 @@ test("batch summaries preserve cancelled and blocked outcomes", () => {
   );
   assert.match(
     summarizeProductBatch(batchWithStatuses("passed", "blocked", "cancelled")).detail,
-    /1 passed · 0 failed · 1 infra/u,
+    /1 passed, 1 blocked, 1 cancelled/u,
   );
   assert.equal(
     summarizeProductBatch(batchWithStatuses("passed", "passed")).headline,
@@ -226,7 +226,7 @@ test("canonical cases expose Test × environment identity without inventing lega
   assert.deepEqual(batch.cases[0]!.identity, {
     testId: "test-1",
     environmentId: "pixel-profile",
-    environmentLabel: "pixel-profile",
+    environmentLabel: "pixel-9",
     environmentPlatform: "android",
     runId: "run-pt",
   });
@@ -252,7 +252,11 @@ test("six accounts plus Android and iOS inspect as eight Result columns", async 
             testId: "send-hello",
             targetProfileId: "browser:grok-com",
             target: { targetId: "grok-com", platform: "browser" },
-            account: { kind: "fixture" as const, accountId: `acct-${letter}`, accountRevision: "1" },
+            account: {
+              kind: "fixture" as const,
+              accountId: `acct-${letter}`,
+              accountRevision: "1",
+            },
             phase: "coverage" as const,
             status: "passed" as const,
             values: {},
@@ -285,7 +289,7 @@ test("six accounts plus Android and iOS inspect as eight Result columns", async 
   const batch = await service.inspect("batch-8");
   const environmentIds = batch.cases.map((item) => item.identity?.environmentId);
   assert.equal(new Set(environmentIds).size, 8);
-  assert.equal(batch.cases[0]!.identity?.environmentLabel, "acct-a");
+  assert.equal(batch.cases[0]!.identity?.environmentLabel, "acct-a · grok-com");
   assert.equal(batch.cases[6]!.identity?.environmentPlatform, "android");
   assert.equal(batch.cases[7]!.identity?.environmentPlatform, "ios");
 });

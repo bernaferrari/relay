@@ -84,7 +84,13 @@ describe("integration and issue handoff product service", () => {
           },
         ],
         navigation: { route: "/batches/batch-1", href: "/batches/batch-1" },
-        report: { headline: "1 case needs attention", detail: "1 passed · 1 failed" },
+        report: {
+          headline: "1 case needs attention",
+          detail: "1 passed · 1 failed",
+          executionLine: "1 passed, 1 check failed",
+          checksLine: "1 passed, 1 check failed",
+          coverageLine: "1 of 2 planned cases verified",
+        },
       },
     });
     const change = composeProductIssue({

@@ -247,7 +247,13 @@ describe("stability product service", () => {
         dataSet: { name: "Default", dimensions: [] },
       },
       navigation: { route: "/batches/batch-1", href: "/batches/batch-1" },
-      report: { headline: "1 case needs attention", detail: "1 passed · 1 failed" },
+      report: {
+        headline: "1 case needs attention",
+        detail: "1 passed · 1 failed",
+        executionLine: "1 passed, 1 check failed",
+        checksLine: "1 passed, 1 check failed",
+        coverageLine: "1 of 2 planned cases verified",
+      },
     } as unknown as ProductBatchReport;
 
     const summary = summarizeProductStability({
@@ -318,7 +324,13 @@ describe("stability product service", () => {
         dataSet: { name: "Languages", dimensions: [] },
       },
       navigation: { route: "/batches/batch-owned", href: "/batches/batch-owned" },
-      report: { headline: "2 cases need attention", detail: "0 passed · 2 failed" },
+      report: {
+        headline: "2 cases need attention",
+        detail: "0 passed · 2 failed",
+        executionLine: "0 passed, 2 check failed",
+        checksLine: "0 passed, 2 check failed",
+        coverageLine: "0 of 2 planned cases verified",
+      },
     } as unknown as ProductBatchReport;
 
     const samples = stabilitySamplesFromBatch(report);
