@@ -7,7 +7,11 @@ export type CombineEvidenceFindingCode =
   /** Translated text that the control it landed in probably cannot show in full. */
   | "POSSIBLE_TEXT_CLIPPED"
   /** Expired, revoked, or signed-out account fixture. Infra, not a product failure. */
-  | "ACCOUNT_NEEDS_RELOGIN";
+  | "ACCOUNT_NEEDS_RELOGIN"
+  /** Recipe or expect-screen product-failure. Not Infra. */
+  | "PRODUCT_ASSERTION"
+  /** Runner, lease, or harness failure. Infra, not a grok.com product defect. */
+  | "HARNESS_FAILURE";
 
 export type CombineEvidenceFinding = {
   id: string;

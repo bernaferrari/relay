@@ -81,6 +81,40 @@ test("empty findings keep the morning review copy", () => {
   assert.doesNotMatch(markdown, /approve-new-baseline/i);
 });
 
+test("empty findings do not hide a failed cell", () => {
+  const markdown = renderPlanFindingsMarkdown({
+    ...report([]),
+    cases: [
+      {
+        jobId: "98a2abc2",
+        locale: "logged-out",
+        status: "error",
+        frames: [],
+      },
+    ],
+  });
+  assert.match(markdown, /QA bug, not a pass/);
+  assert.doesNotMatch(markdown, /No findings\. Passing cases/);
+});
+
+test("expect-screen product findings propose Confirm and never accept a baseline", () => {
+  const proposal = proposePlanFinding({
+    id: "f-product",
+    code: "PRODUCT_ASSERTION",
+    severity: "critical",
+    confidence: "high",
+    canonicalKey: "job:98a2abc2",
+    screenLabel: "Logged-out continue conversation",
+    locale: "logged-out",
+    baselineLocale: "logged-out",
+    expected: "Logged-out continue conversation",
+    observed: "unknown",
+    detail: "expect-screen: on “unknown”, not “Logged-out continue conversation”",
+  });
+  assert.equal(proposal.verdict, "confirm");
+  assert.match(proposal.reason, /does not accept a visual baseline/);
+});
+
 test("expired sign-in is one Infra finding, not a product failure", () => {
   const report = accountReloginFindingsReport({
     detail: "Member expired. Open Sign-ins, complete OAuth, then Refresh.",

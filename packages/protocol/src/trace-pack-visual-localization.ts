@@ -48,6 +48,8 @@ const localizationFindingSchema = z
       "POSSIBLE_UNTRANSLATED_TEXT",
       "POSSIBLE_TEXT_CLIPPED",
       "ACCOUNT_NEEDS_RELOGIN",
+      "PRODUCT_ASSERTION",
+      "HARNESS_FAILURE",
     ]),
     severity: z.enum(["critical", "warning"]),
     confidence: z.enum(["high", "medium"]),

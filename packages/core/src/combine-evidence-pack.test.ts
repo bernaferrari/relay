@@ -329,6 +329,22 @@ test("a combine over a language variable is still compared as translations", () 
   assert.equal(report.analysis.findings.at(0)?.code, "POSSIBLE_UNTRANSLATED_TEXT");
 });
 
+test("a recipe product-failure is a finding even when locale analysis is empty", () => {
+  const job = localeCase({ locale: "logged-out", runDir: "/tmp/send-hello" });
+  job.id = "98a2abc2";
+  job.status = "error";
+  job.outcome = "product-failure";
+  job.failureCategory = "deterministic-assertion";
+  job.title = "Send hello while logged out";
+  job.error =
+    "1 campaign check failed: Submit: expect-screen: on “unknown”, not “Logged-out continue conversation”";
+  const report = analyzeCombineEvidenceJobs("72bd7a1d", [job]);
+  assert.equal(report.analysis.findings.length, 1);
+  assert.equal(report.analysis.findings[0]?.code, "PRODUCT_ASSERTION");
+  assert.equal(report.analysis.critical, 1);
+  assert.equal(report.cases[0]?.status, "error");
+});
+
 test("export copies a raw tree next to each PNG and does not treat control lists as the tree", async () => {
   const directory = await mkdtemp(join(tmpdir(), "relay-locale-tree-"));
   const previousWorkspace = process.env.RELAY_WORKSPACE_ROOT;

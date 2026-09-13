@@ -45,6 +45,20 @@ export function proposePlanFinding(finding: CombineEvidenceFinding): PlanFinding
         "This is Infra (expired or signed-out account), not a grok.com product failure. Open Sign-ins, complete OAuth, then Refresh. This still does not accept a visual baseline.",
     };
   }
+  if (finding.code === "HARNESS_FAILURE") {
+    return {
+      verdict: "reject",
+      reason:
+        "This is Infra (harness or runner), not a grok.com product failure. This still does not accept a visual baseline.",
+    };
+  }
+  if (finding.code === "PRODUCT_ASSERTION") {
+    return {
+      verdict: "confirm",
+      reason:
+        "Recipe or expect-screen product-failure. Confirm if grok.com missed the expected screen or assertion. This still does not accept a visual baseline.",
+    };
+  }
   if (finding.code.startsWith("POSSIBLE_")) {
     return {
       verdict: "reject",
@@ -129,6 +143,23 @@ export const PLAN_FINDINGS_EMPTY_GUIDANCE = [
   "Check Sign-ins before the next unattended run. Expired accounts fail closed as Infra.",
 ] as const;
 
+/** Empty Findings plus a failed cell is a QA gap, never a pass. */
+export const PLAN_FINDINGS_FAILED_CELL_GUIDANCE = [
+  "This Result has failed cells and no findings. That is a QA bug, not a pass.",
+  "A recipe or expect-screen product-failure must appear here. Confirm and Reject never auto-pass.",
+] as const;
+
+export function planFindingsHasFailedCases(report: CombineEvidenceAnalysisReport): boolean {
+  return report.cases.some((item) => item.status === "error" || item.status === "failed");
+}
+
+export function planFindingsEmptyCopy(report: CombineEvidenceAnalysisReport): readonly string[] {
+  if (!report.analysis.findings.length && planFindingsHasFailedCases(report)) {
+    return PLAN_FINDINGS_FAILED_CELL_GUIDANCE;
+  }
+  return PLAN_FINDINGS_EMPTY_GUIDANCE;
+}
+
 /** Markdown an agent can review in about three minutes. Empty findings stay explicit. */
 export function renderPlanFindingsMarkdown(report: CombineEvidenceAnalysisReport): string {
   const findings = report.analysis.findings;
@@ -141,7 +172,7 @@ export function renderPlanFindingsMarkdown(report: CombineEvidenceAnalysisReport
     "",
   ];
   if (!findings.length) {
-    return [...heading, ...PLAN_FINDINGS_EMPTY_GUIDANCE, ""].join("\n");
+    return [...heading, ...planFindingsEmptyCopy(report), ""].join("\n");
   }
   return [...heading, ...findings.map(findingBlock)].join("\n\n");
 }

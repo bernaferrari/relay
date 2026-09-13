@@ -25,6 +25,7 @@ import {
   combineEvidenceCanonicalKey,
   type CombineEvidenceCapture,
 } from "./combine-evidence-batch-analysis.js";
+import { jobOutcomeFindings, mergeJobOutcomeFindings } from "./combine-evidence-job-findings.js";
 import { readAccountReloginFindings } from "./plan-account-relogin-campaign.js";
 import { listPersistedRuns } from "./runs.js";
 import { slugEvidencePathSegment } from "./screen-identity.js";
@@ -59,6 +60,10 @@ export type CombineEvidenceCase = Pick<
   | "resolvedInputs"
   | "recipeId"
   | "runDir"
+  | "error"
+  | "outcome"
+  | "failureCategory"
+  | "title"
 > & {
   /** Widened from `JobStatus`: the run store reads its own files back as text,
    * and the pack only ever reports this status, never branches on it. */
@@ -414,7 +419,11 @@ export function analyzeCombineEvidenceJobs(
     captures,
     compareText: comparesLanguage(jobs),
   });
-  return { schemaVersion: 1, batchId, locales, analysis, coverage, cases };
+  const withJobOutcomes = mergeJobOutcomeFindings(
+    analysis,
+    jobOutcomeFindings(jobs, evidenceCaseLocale),
+  );
+  return { schemaVersion: 1, batchId, locales, analysis: withJobOutcomes, coverage, cases };
 }
 
 function mergedNodesFromUnknown(value: unknown): SnapshotNode[] | undefined {

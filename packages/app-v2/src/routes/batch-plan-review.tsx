@@ -4,8 +4,8 @@ import type { ProductBatchReport } from "@relay/product/run-across";
 import { Button } from "@relay/ui-react/components/button";
 import { Link } from "@tanstack/react-router";
 import {
-  PLAN_FINDINGS_EMPTY_GUIDANCE,
   planFindingReviewEffect,
+  planFindingsEmptyCopy,
   renderPlanFindingsMarkdown,
 } from "@relay/product/plan-findings";
 import {
@@ -25,8 +25,8 @@ export function BatchFindingsLead({ report }: { report: CombineEvidenceAnalysisR
         className="relay-batch-findings-lead mt-3 rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground"
         role="status"
       >
-        {PLAN_FINDINGS_EMPTY_GUIDANCE[0]} {PLAN_FINDINGS_EMPTY_GUIDANCE[1]} Confirm and
-        Reject never accept a visual baseline. Accept a baseline from a Report.{" "}
+        {planFindingsEmptyCopy(report)[0]} {planFindingsEmptyCopy(report)[1]} Confirm and Reject
+        never accept a visual baseline. Accept a baseline from a Report.{" "}
         <Link className={`${findingsLinkClass} whitespace-nowrap`} to="/accounts">
           Check Sign-ins
         </Link>
