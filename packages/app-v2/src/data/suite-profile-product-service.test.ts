@@ -464,6 +464,70 @@ describe("suite and environment product projections", () => {
     expect(preview.execution?.detail).not.toMatch(/12/u);
   });
 
+  it("quotes eight-Test daily serial p95 and never twoLane 17s", async () => {
+    const browserMap = { ...map, combines: { [combine.id]: combine } } as unknown as AppMap;
+    const browser = target("browser-1", "browser");
+    relay.invoke.mockReset().mockImplementation(async (operation: string) => {
+      if (operation === "app-map.get") return { appMap: browserMap };
+      if (operation === "target.list") return { targets: [browser] };
+      if (operation === "build.list") return { builds: [] };
+      if (operation === "target.browser-auth.list") return { fixtures: [] };
+      if (operation === "app-map.combine.preflight") {
+        return {
+          preflight: {
+            deviceRuns: 1,
+            checks: 8,
+            blockers: [],
+            warnings: [],
+            estimatedDurationMs: 17_254,
+            observedDuration: {
+              durationMs: 203_184,
+              provenance: "observed-p95",
+              sampleCount: 5,
+              workItemCount: 8,
+              campaignIds: ["a01ab9ca"],
+            },
+          },
+          accountCapacity: {
+            estimatedParallelDurationMs: 17_254,
+            laneCount: 1,
+            workItems: 8,
+            workItemDurationMs: 17_254,
+            observedDurationMs: 17_254,
+            observedWorkItemCount: 2,
+          },
+        };
+      }
+      if (operation === "target.preflight") {
+        return {
+          preflight: {
+            targetId: "browser-1",
+            ok: true,
+            checkedAt: 4,
+            capabilities: [],
+            checks: [],
+          },
+        };
+      }
+      throw new Error(`Unexpected operation ${operation}`);
+    });
+    const preview = await createSuiteProfileProductService({} as never).previewSuite({
+      appMapId: "app-1",
+      suiteId: combine.id,
+      profileId: "browser-1",
+    });
+    expect(preview.execution).toMatchObject({
+      capacity: "single-target",
+      duration: "observed",
+      estimatedDurationMs: 203_184,
+    });
+    expect(preview.execution?.detail).toMatch(/Observed serial about 3\.4 min/u);
+    expect(preview.execution?.detail).toMatch(/5 completed Plan runs \(p95\)/u);
+    expect(preview.execution?.detail).toMatch(/Parallel wall-clock is unmeasured/u);
+    expect(preview.execution?.detail).not.toMatch(/about 17s/u);
+    expect(preview.execution?.estimatedDurationMs).not.toBe(17_254);
+  });
+
   it("keeps Plan preview on observed serial when parallel wall-clock is unmeasured", async () => {
     const browserMap = { ...map, combines: { [combine.id]: combine } } as unknown as AppMap;
     const browser = target("browser-1", "browser");

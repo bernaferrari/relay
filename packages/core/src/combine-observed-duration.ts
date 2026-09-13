@@ -48,7 +48,9 @@ async function campaignPackWallClockMs(
 ): Promise<number | undefined> {
   if (!campaign.cases.length) return undefined;
   const runs = await Promise.all(
-    campaign.cases.map((item) => (item.jobId ? readPersistedRun(item.jobId) : Promise.resolve(null))),
+    campaign.cases.map((item) =>
+      item.jobId ? readPersistedRun(item.jobId) : Promise.resolve(null),
+    ),
   );
   if (runs.some((run) => !run || (run.status !== "ok" && !run.healed))) return undefined;
   const started = runs.map((run) => run!.startedAt ?? run!.queuedAt);
@@ -58,6 +60,18 @@ async function campaignPackWallClockMs(
   }
   const durationMs = Math.max(...finished.map((value) => value!)) - Math.min(...started);
   return durationMs > 0 ? durationMs : undefined;
+}
+
+/** A two-lane chrome pair must not enter the eight-Test daily serial quote. */
+export function combineCampaignBelongsToObservedPack(
+  campaign: { appMapId: string; combineId: string; cases: readonly unknown[] },
+  pack: { appMapId: string; combineId: string; workItemCount: number },
+): boolean {
+  return (
+    campaign.appMapId === pack.appMapId &&
+    campaign.combineId === pack.combineId &&
+    campaign.cases.length === pack.workItemCount
+  );
 }
 
 /** Serial wall-clock of completed Plan runs whose cell count matches this Combine. */
@@ -70,8 +84,7 @@ export async function quoteObservedCombinePackDuration(input: {
   const campaigns = await listStoredCombineCampaigns(input.projectId);
   const samples: { campaignId: string; durationMs: number }[] = [];
   for (const campaign of campaigns) {
-    if (campaign.appMapId !== input.appMapId || campaign.combineId !== input.combineId) continue;
-    if (campaign.cases.length !== input.workItemCount) continue;
+    if (!combineCampaignBelongsToObservedPack(campaign, input)) continue;
     const durationMs = await campaignPackWallClockMs(campaign);
     if (durationMs === undefined) continue;
     samples.push({ campaignId: campaign.id, durationMs });
