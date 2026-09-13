@@ -459,6 +459,8 @@ describe("suite and environment product projections", () => {
     });
     expect(preview.execution?.detail).toMatch(/Observed serial about 2\.4 min/u);
     expect(preview.execution?.detail).toMatch(/p95 needs 3 runs/u);
+    expect(preview.execution?.detail).toMatch(/Parallel wall-clock is unmeasured/u);
+    expect(preview.execution?.detail).not.toMatch(/Quoted parallel/u);
     expect(preview.execution?.detail).not.toMatch(/12/u);
   });
 
@@ -555,6 +557,7 @@ describe("suite and environment product projections", () => {
       /3 browser account lanes selected; parallel wall-clock is unmeasured/u,
     );
     expect(preview.execution?.detail).not.toMatch(/Quoted parallel/u);
+    expect(preview.execution?.detail.match(/parallel wall-clock is unmeasured/gu)?.length).toBe(1);
   });
 
   it("previews up to four independently selected environments with a runnable multi-target plan", async () => {

@@ -415,9 +415,10 @@ function serialWithUnmeasuredParallel(
 } {
   const serial = observedExecution(observed);
   const lanes = `${laneCount} browser account ${laneCount === 1 ? "lane" : "lanes"}`;
+  const base = serial.detail.replace(/\s*Parallel wall-clock is unmeasured\.\s*$/u, "");
   return {
     ...serial,
-    detail: `${serial.detail} ${lanes} selected; parallel wall-clock is unmeasured.`,
+    detail: `${base} ${lanes} selected; parallel wall-clock is unmeasured.`,
   };
 }
 
@@ -438,7 +439,7 @@ function observedExecution(observed: AppMapCombineObservedDuration): {
   return {
     duration: "observed",
     estimatedDurationMs: observed.durationMs,
-    detail: `Observed serial ${timing} from ${provenance}.`,
+    detail: `Observed serial ${timing} from ${provenance}. Parallel wall-clock is unmeasured.`,
   };
 }
 

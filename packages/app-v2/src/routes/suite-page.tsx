@@ -92,10 +92,7 @@ export function SuitePage() {
         profileIds: selectedProfileIds,
         ...(configuration.selection.usePairedWorkspace
           ? {
-              accounts: compilePlanProfileAccounts(
-                paired.workspace,
-                environments.data ?? [],
-              ),
+              accounts: compilePlanProfileAccounts(paired.workspace, environments.data ?? []),
             }
           : {}),
       }),
@@ -145,10 +142,7 @@ export function SuitePage() {
         executionMode,
         ...(configuration.selection.usePairedWorkspace
           ? {
-              accounts: compilePlanProfileAccounts(
-                paired.workspace,
-                environments.data ?? [],
-              ),
+              accounts: compilePlanProfileAccounts(paired.workspace, environments.data ?? []),
             }
           : {}),
       }),
@@ -167,10 +161,7 @@ export function SuitePage() {
         profileIds: selectedProfileIds,
         ...(configuration.selection.usePairedWorkspace
           ? {
-              accounts: compilePlanProfileAccounts(
-                paired.workspace,
-                environments.data ?? [],
-              ),
+              accounts: compilePlanProfileAccounts(paired.workspace, environments.data ?? []),
             }
           : {}),
         hour: input.hour,
@@ -386,7 +377,7 @@ export function SuitePage() {
               <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
                 {configuration.selection.usePairedWorkspace
                   ? "Each saved Browser and Account pair runs once. This is not a Browser × Account product."
-                  : "Choose browsers. Relay can run up to 64 in parallel."}
+                  : "Choose browsers (up to 64). Parallel wall-clock is unmeasured."}
               </p>
               <p className="mt-5 border-t border-border pt-4 text-sm font-medium">
                 How much should run?
