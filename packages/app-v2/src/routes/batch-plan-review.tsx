@@ -25,8 +25,8 @@ export function BatchFindingsLead({ report }: { report: CombineEvidenceAnalysisR
         className="relay-batch-findings-lead mt-3 rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground"
         role="status"
       >
-        {PLAN_FINDINGS_EMPTY_GUIDANCE[0]} Confirm and Reject never accept a visual baseline. Accept
-        a baseline from a Report.{" "}
+        {PLAN_FINDINGS_EMPTY_GUIDANCE[0]} {PLAN_FINDINGS_EMPTY_GUIDANCE[1]} Confirm and
+        Reject never accept a visual baseline. Accept a baseline from a Report.{" "}
         <Link className={`${findingsLinkClass} whitespace-nowrap`} to="/accounts">
           Check Sign-ins
         </Link>

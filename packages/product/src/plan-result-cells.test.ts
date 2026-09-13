@@ -34,6 +34,17 @@ test("classifies typed Result cells and excludes infra from the product pass rat
   assert.equal(classifyProductResultCell(item("failed", "ACCOUNT_NEEDS_RELOGIN")), "infra");
   assert.equal(
     classifyProductResultCell(
+      item("failed", "You've reached your SuperGrok limit. 21 hours 11 minutes before limit is gone"),
+    ),
+    "infra",
+  );
+  assert.equal(
+    classifyProductResultCell(item("failed", "SOS: cold recovery blocked — intervention required")),
+    "infra",
+  );
+  assert.equal(classifyProductResultCell(item("failed", "Cloudflare blocked the x.ai handoff")), "infra");
+  assert.equal(
+    classifyProductResultCell(
       item(
         "failed",
         "UNSUPPORTED_PLATFORM: No recorded Android route. Do not invent Grok Settings navigation.",

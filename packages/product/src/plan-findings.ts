@@ -124,6 +124,7 @@ function findingBlock(finding: CombineEvidenceFinding): string {
 /** Morning copy when a Plan Result has zero findings. Confirm/Reject still never accept a baseline. */
 export const PLAN_FINDINGS_EMPTY_GUIDANCE = [
   "No findings. Passing cases are not a license to skip the next daily Plan.",
+  "A missing Thread, a draft Delete, or a rate-limit SOS is not a product pass.",
   "Confirm and Reject never accept a visual baseline. Accept a baseline from a Report's visual review, or relay run visual review.",
   "Check Sign-ins before the next unattended run. Expired accounts fail closed as Infra.",
 ] as const;

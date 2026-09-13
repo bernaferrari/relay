@@ -50,7 +50,7 @@ export type ProductResultGridSummary = {
 };
 
 const INFRA_PATTERN =
-  /harness|xctest|uiautomation|lease|session expired|device not found|not connected|target-state|environment|could not complete|no active session|needs re-login|needs-relogin|account_needs_relogin|open sign-ins|unsupported_platform|no recorded/iu;
+  /harness|xctest|uiautomation|lease|session expired|device not found|not connected|target-state|environment|could not complete|no active session|needs re-login|needs-relogin|account_needs_relogin|open sign-ins|unsupported_platform|no recorded|rate.?limit|before limit is gone|cloudflare|intervention required|sos:|mutation outcome unknown/iu;
 const CHANGED_PATTERN = /visual_changed|visual difference|visual-assertion|visual changed/iu;
 const JUDGED_PATTERN =
   /judge uncertain|judge-uncertainty|semantic-assertion|evaluate-semantic|evaluate-visual|uncertain/iu;
