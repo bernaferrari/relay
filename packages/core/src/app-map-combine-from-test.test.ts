@@ -368,6 +368,48 @@ test("compatible profile ranking prefers the same device and matching value toke
   );
 });
 
+test("logged-out grok.com prefers the unsigned browser profile over a unique signed-in id", () => {
+  assert.equal(
+    compatibleDefaultTargetProfileId({
+      profiles: [
+        {
+          id: "browser:grok-com",
+          name: "Grok.com",
+          targetId: "grok-com",
+          platform: "browser",
+        },
+        {
+          id: "browser:grok-com-1280x800-339a5a430a41",
+          name: "Grok.com unique",
+          targetId: "grok-com",
+          platform: "browser",
+        },
+      ],
+      target: { targetId: "grok-com", platform: "browser" },
+      values: { account: "logged-out" },
+    }),
+    "browser:grok-com",
+  );
+});
+
+test("a browser with no saved runtime profile stays unbound", () => {
+  assert.equal(
+    compatibleDefaultTargetProfileId({
+      profiles: [
+        {
+          id: "browser:grok-com",
+          name: "Grok.com",
+          targetId: "grok-com",
+          platform: "browser",
+        },
+      ],
+      target: { targetId: "chatgpt-qa-pilot", platform: "browser" },
+      values: {},
+    }),
+    undefined,
+  );
+});
+
 test("a cell selector picks one world without firing the rest", () => {
   const cells = [
     {

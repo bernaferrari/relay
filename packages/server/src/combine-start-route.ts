@@ -20,7 +20,7 @@ import {
   combineCampaignCaseFromPreparedCell,
   combineProfileTargetExecutionCaseId,
   savedAppMapTargetProfileIdsForTarget,
-  unrecordedNativeRuntimeProfileIdIfMissing,
+  inheritSavedRuntimeProfileId,
   unrecordedPreparedCombineReason,
   buildTargetProfiles,
   createCombineCampaign,
@@ -381,15 +381,12 @@ async function executeCombineStartUnlocked(
                 targetId: profileTargetId,
                 platform: target.platform ?? "browser",
               });
-              const targetProfileId =
-                profileTarget.targetProfileId ??
-                (runtimeProfileIds.length === 1
-                  ? runtimeProfileIds[0]
-                  : unrecordedNativeRuntimeProfileIdIfMissing({
-                      savedIds: runtimeProfileIds,
-                      platform: target.platform ?? "browser",
-                      targetId: profileTargetId,
-                    }));
+              const targetProfileId = inheritSavedRuntimeProfileId({
+                savedIds: runtimeProfileIds,
+                platform: target.platform ?? "browser",
+                targetId: profileTargetId,
+                explicitProfileId: profileTarget.targetProfileId,
+              });
               if (!targetProfileId) {
                 throw new HttpError(
                   409,
@@ -557,9 +554,11 @@ async function executeCombineStartUnlocked(
       const reason = (isPilotRun ? selectedCells.slice(0, 1) : selectedCells)
         .map((cell) => unrecordedPreparedCombineReason(cell))
         .find(Boolean);
-      throw new HttpError(reason ? 409 : 400, reason ?? "No selected Combine cells to queue", {
-        ...(reason ? { code: "UNSUPPORTED_PLATFORM" } : {}),
-      });
+      throw new HttpError(
+        reason ? 409 : 400,
+        reason ?? "No selected Combine cells to queue",
+        reason ? { code: "UNSUPPORTED_PLATFORM" } : {},
+      );
     }
     if (hasExplicitCellTargets && !body.localAdmission) {
       throw new HttpError(

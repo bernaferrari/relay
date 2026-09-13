@@ -25,6 +25,7 @@ import { compilePlanProfileAccounts, compileSuiteTargets } from "../data/paired-
 import { usePairedConfigurationWorkspace } from "../data/use-paired-configuration-workspace";
 import { PlanDailySchedule } from "./plan-daily-schedule";
 import { PageLoading } from "./recording-shared";
+import { friendlySuiteIssue } from "../data/suite-preflight-copy";
 
 const routeApi = getRouteApi("/apps/$appId/suites/$suiteId");
 
@@ -609,14 +610,4 @@ export function SuitePage() {
       ) : null}
     </LibraryPage>
   );
-}
-
-function friendlySuiteIssue(message: string): string {
-  if (/ERR_CONNECTION_REFUSED|connection refused/i.test(message)) {
-    return "The selected browser could not reach the app. Check its URL or start the app, then try again.";
-  }
-  if (/runtime profile/i.test(message)) {
-    return "This browser needs a saved profile before it can run the Plan.";
-  }
-  return "This browser is not ready yet. Review its setup and try again.";
 }

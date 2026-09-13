@@ -10,6 +10,8 @@ import { compileAppMapCombine, compileAppMapTest } from "./map-work.js";
 import {
   assessAppMapCombineCellBindings,
   enumerateAppMapCombineCells,
+  savedAppMapTargetProfileIdsForTarget,
+  unresolvedTargetProfileMessage,
 } from "./app-map-combine-cell-prepare.js";
 import { synthesizeCombineCellRuntimeProfiles } from "./app-map-combine-from-test.js";
 import {
@@ -280,6 +282,18 @@ export async function preflightAppMapCombine(
       });
       cells = assessed.states;
       blockers.push(...assessed.issues);
+      if (overrides.target) {
+        const target = {
+          targetId: overrides.target.targetId,
+          platform: overrides.target.platform,
+        };
+        const named = unresolvedTargetProfileMessage(
+          target,
+          savedAppMapTargetProfileIdsForTarget(map, target),
+        );
+        const generic = blockers.findIndex((item) => item.code === "zero-bindings");
+        if (generic >= 0) blockers[generic] = issue("zero-bindings", named);
+      }
     } catch (error) {
       blockers.push(
         issue(

@@ -168,7 +168,7 @@ function targetProfileLabel(target: { targetId: string; platform: string }): str
   return `${target.platform}:${target.targetId}`;
 }
 
-function unresolvedTargetProfileMessage(
+export function unresolvedTargetProfileMessage(
   target: { targetId: string; platform: string },
   candidates: string[],
 ): string {

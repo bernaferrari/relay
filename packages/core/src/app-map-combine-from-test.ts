@@ -1,3 +1,4 @@
+import { canonicalUnsignedBrowserRuntimeProfileId } from "./browser-case-profile-target.js";
 import {
   capturePolicyForLens,
   combineIdFor,
@@ -178,6 +179,11 @@ export function compatibleDefaultTargetProfileId(input: {
   );
   if (matching.length === 1) return matching[0]!.id;
   if (!matching.length) return undefined;
+  const unsigned = canonicalUnsignedBrowserRuntimeProfileId(
+    input.target.targetId,
+    matching.map((profile) => profile.id),
+  );
+  if (unsigned) return unsigned;
   const valueTokens = [...new Set(Object.values(input.values).flatMap(tokensFrom))];
   const scored = matching
     .map((profile) => {

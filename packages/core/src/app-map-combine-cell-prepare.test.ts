@@ -13,6 +13,7 @@ import {
   AppMapCombineCellContractError,
   prepareAppMapCombineCells,
   resolveSavedAppMapRuntimeTargetProfile,
+  unresolvedTargetProfileMessage,
 } from "./app-map-combine-cell-prepare.js";
 import { stagePreparedAppMapCombineCells } from "./app-map-combine-cell-run.js";
 
@@ -394,5 +395,19 @@ test("a concrete target with no saved profile fails with capture guidance", asyn
           item.message.includes("No saved runtime profile for target android:vacuum-1") &&
           item.message.includes("capture a screen on this target first"),
       ),
+  );
+});
+
+test("unresolved runtime-profile copy names the target and saved ids", () => {
+  assert.match(
+    unresolvedTargetProfileMessage({ targetId: "chatgpt-qa-pilot", platform: "browser" }, []),
+    /No saved runtime profile for target browser:chatgpt-qa-pilot/u,
+  );
+  assert.match(
+    unresolvedTargetProfileMessage({ targetId: "grok-com", platform: "browser" }, [
+      "browser:grok-com",
+      "browser:grok-com-1280x800-339a5a430a41",
+    ]),
+    /browser:grok-com-1280x800-339a5a430a41/u,
   );
 });
