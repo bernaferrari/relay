@@ -24,6 +24,23 @@ function isHierarchyDismissConnection(connection: Connection): boolean {
   return false;
 }
 
+/** Leftover Android launch often opens the sidebar. New conversation is
+ * visible there; Imagine Ask is not. Prefer that inbound over sibling tabs. */
+function inboundRecoveryRank(connection: Connection): number {
+  const id = connection.id.toLowerCase();
+  const label = connection.label?.trim().toLowerCase() ?? "";
+  if (
+    id.includes("new-conversation") ||
+    id.includes("new-chat") ||
+    label === "new conversation" ||
+    label === "new chat"
+  ) {
+    return 0;
+  }
+  if (id.includes("ask") || label === "ask") return 8;
+  return 5;
+}
+
 function readyInboundConnections(map: AppMap, screenId: string): Connection[] {
   return Object.values(map.connections)
     .filter(
@@ -33,7 +50,10 @@ function readyInboundConnections(map: AppMap, screenId: string): Connection[] {
         connection.destination.screenId === screenId &&
         !isHierarchyDismissConnection(connection),
     )
-    .sort((left, right) => left.id.localeCompare(right.id));
+    .sort(
+      (left, right) =>
+        inboundRecoveryRank(left) - inboundRecoveryRank(right) || left.id.localeCompare(right.id),
+    );
 }
 
 /** Walk reviewed forward edges backward from the first landing. Overlay

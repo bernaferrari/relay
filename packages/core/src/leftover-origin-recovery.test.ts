@@ -254,11 +254,100 @@ test("a home-starting Test compiles leftover New Chat prelude", () => {
   );
 });
 
-test("warm confirmation prepends leftover New Chat before replaying the connection", () => {
-  const map = mapWith({ "open-conversation": openConversation, "new-chat": newChat });
-  assert.deepEqual(leftoverWarmConfirmationSteps(map, "home"), [
-    { kind: "tap", target: { identifier: "new-chat", label: "Chat" } },
+test("Android new_conversation dest-end is leftover New Chat", () => {
+  const androidNewChat = connection({
+    id: "connection-grok-android-new-chat",
+    fromScreenId: "home",
+    destination: { kind: "end" },
+    label: "New conversation",
+    state: "ready",
+    actions: [
+      {
+        id: "reset",
+        kind: "steps",
+        steps: [
+          { kind: "wait-for", target: { label: "Ask" }, timeoutMs: 5_000 },
+          { kind: "tap", target: { identifier: "new_conversation_button" } },
+        ],
+      },
+    ],
+  });
+  const prelude = leftoverConversationHomePrelude(
+    mapWith({
+      "open-conversation": openConversation,
+      "connection-grok-android-new-chat": androidNewChat,
+    }),
+    "home",
+  );
+  assert.ok(prelude);
+  assert.deepEqual(prelude.preludeSteps, [
+    { kind: "tap", target: { identifier: "new_conversation_button" } },
   ]);
+});
+
+test("home inbound prefers sidebar New conversation over Imagine Ask", () => {
+  const imagine = screen("imagine", "Imagine", "b".repeat(64));
+  const sidebar = screen("sidebar", "Grok sidebar", conversationFingerprint);
+  const askInbound = connection({
+    id: "open-ask",
+    fromScreenId: "imagine",
+    destination: { kind: "screen", screenId: "home" },
+    label: "Ask",
+    state: "ready",
+    actions: [{ id: "tap-ask", kind: "tap", target: { label: "Ask" } }],
+  });
+  const newConversationInbound = connection({
+    id: "open-new-conversation",
+    fromScreenId: "sidebar",
+    destination: { kind: "screen", screenId: "home" },
+    label: "New conversation",
+    state: "ready",
+    actions: [{ id: "tap-new", kind: "tap", target: { identifier: "new_conversation_button" } }],
+  });
+  const map = {
+    ...mapWith({ "open-ask": askInbound, "open-new-conversation": newConversationInbound }),
+    screens: {
+      home: screen("home", "Signed-in home", homeFingerprint),
+      imagine,
+      sidebar,
+    },
+  };
+  const work: AppMapScenarioTest = {
+    ...scope,
+    id: "signed-in-home",
+    name: "Open home",
+    kind: "scenario",
+    intentSchemaVersion: 1,
+    steps: [
+      {
+        id: "on-home",
+        kind: "validation",
+        intent: "On signed-in home",
+        binding: {
+          status: "resolved",
+          kind: "assertion",
+          assertion: { kind: "screen", screenId: "home" },
+        },
+      },
+    ],
+    createdAt: at,
+    updatedAt: at,
+  };
+  const compiled = compileAppMapTest(map, work);
+  const first = compiled.root.steps[0];
+  assert.ok(first && "preludeSteps" in first);
+  assert.deepEqual(first.preludeSteps, [
+    { kind: "tap", target: { identifier: "new_conversation_button" } },
+  ]);
+  assert.equal(
+    first && "preludeStartFingerprint" in first ? first.preludeStartFingerprint : undefined,
+    conversationFingerprint,
+  );
+});
+
+test("warm confirmation does not prepend leftover New Chat", () => {
+  const map = mapWith({ "open-conversation": openConversation, "new-chat": newChat });
+  assert.deepEqual(leftoverWarmConfirmationSteps(map, "home"), []);
   const work: AppMapScenarioTest = {
     ...scope,
     id: "open-from-home",
@@ -295,10 +384,9 @@ test("warm confirmation prepends leftover New Chat before replaying the connecti
     recipe.title.includes("warm transition confirmation"),
   );
   assert.ok(confirm);
-  assert.equal(confirm.steps[0]?.kind, "tap");
+  assert.equal(confirm.steps[0]?.kind, "wait-for");
   assert.equal(
-    confirm.steps[0]?.kind === "tap" ? confirm.steps[0].target.identifier : undefined,
-    "new-chat",
+    confirm.steps.some((step) => step.kind === "tap" && step.target.identifier === "new-chat"),
+    false,
   );
-  assert.equal(confirm.steps[1]?.kind, "wait-for");
 });

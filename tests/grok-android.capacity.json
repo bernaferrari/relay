@@ -1,18 +1,24 @@
 {
   "schemaVersion": 1,
-  "packId": "grok-android",
-  "provenance": "unmeasured",
+  "packId": "grok-android-daily",
+  "provenance": "measured",
   "measuredAt": "2026-09-13",
-  "sampleCount": 0,
+  "sampleCount": 1,
   "emulatorFarm": "no-go",
-  "note": "2026-09-13 re-check: adb devices empty, emulator not on PATH, no AVDs. Emulator farm remains no-go. Parallelism is device count. Do not promise a 10-minute Android lane from the web pack. Serial 1 and N-lane Android wall-clock are unmeasured.",
-  "workItems": 0,
-  "serialPackWallClockP50Ms": null,
-  "serialPackWallClockP95Ms": null,
+  "note": "Physical SM S931B serial RQCY104BG8X. Plan grok-android-daily is 3 dest-end Tests (home chrome, sidebar open-close, Imagine) on signed-in Account. Batch 026f18b6 3/3 ok, cell span 143848ms (~2.4 min). Emulator farm remains no-go (no AVDs). Parallelism is device count. Do not promise a 10-minute N-lane from this one-phone sample. grok-com authenticationFixtureId stays empty.",
+  "workItems": 3,
+  "serialPackWallClockP50Ms": 143848,
+  "serialPackWallClockP95Ms": 143848,
   "parallelWallClockMs": {
-    "1": null,
+    "1": 143848,
     "4": null,
     "8": null
   },
-  "assurance": "no-go-no-android-targets"
+  "assurance": "one-phone-three-test-smoke",
+  "batchId": "026f18b6-ac1e-4612-a93e-f1374d7c2c09",
+  "jobs": {
+    "test-grok-android-home-chrome": "bff021dd-7a65-4e9d-8493-edb20c9c422d",
+    "test-grok-android-sidebar": "f2051337-0a32-46a3-8fff-e65e33a5ceec",
+    "test-grok-android-imagine": "6caf6c27-1a3d-482b-b8f0-7e26195cda88"
+  }
 }

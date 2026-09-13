@@ -24,13 +24,22 @@ function firstAuthoredStep(connection: Connection): RecipeStep | undefined {
   return undefined;
 }
 
+function isNewChatTarget(target: { identifier?: string; label?: string }): boolean {
+  const identifier = target.identifier?.trim().toLowerCase() ?? "";
+  const label = target.label?.trim().toLowerCase() ?? "";
+  return (
+    identifier === "new-chat" ||
+    identifier === "new_conversation_button" ||
+    label === "new conversation" ||
+    label === "new chat"
+  );
+}
+
 function connectionHasNewChatTap(connection: Connection): boolean {
   for (const action of connection.actions) {
-    if (action.kind === "tap" && action.target.identifier === "new-chat") return true;
+    if (action.kind === "tap" && isNewChatTarget(action.target)) return true;
     if (action.kind === "steps" || action.kind === "recorded") {
-      if (
-        action.steps.some((step) => step.kind === "tap" && step.target.identifier === "new-chat")
-      ) {
+      if (action.steps.some((step) => step.kind === "tap" && isNewChatTarget(step.target))) {
         return true;
       }
     }
@@ -176,17 +185,19 @@ export function leftoverConversationHomePrelude(
 }
 
 /** Warm confirmation used to replay wait-for + tap from leftover conversation.
- * New Chat first makes leftover a safe origin instead of SOS-replaying the
- * same connection from an unknown cursor. */
+ * New Chat is already present on leftover (sidebar Chat / new-chat) so a
+ * prepended return tap is a no-op and SOS-replays the same dest-end from an
+ * unknown leftover fingerprint. Wait-for Library on leftover is independently
+ * source-proven — leftover is a valid origin, not unknown. */
 export function leftoverWarmConfirmationSteps(
-  map: AppMap,
-  originScreenId: string,
+  _map: AppMap,
+  _originScreenId: string,
 ): MappedPreludeGesture[] {
-  return leftoverConversationHomePrelude(map, originScreenId)?.preludeSteps ?? [];
+  return [];
 }
 
 function isLeftoverWarmReturnTap(step: RecipeStep | undefined): boolean {
-  return step?.kind === "tap" && step.target.identifier === "new-chat";
+  return step?.kind === "tap" && isNewChatTarget(step.target);
 }
 
 /** New Chat return taps may precede wait-for on warm confirmation. The leaf

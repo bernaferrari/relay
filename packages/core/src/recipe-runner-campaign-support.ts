@@ -200,7 +200,8 @@ export function independentlySourceProvenLeafRecipe(
   // Wait-for chrome (Library) is present on leftover conversation and empty
   // home. Dest-screen leftover used to fail closed here because only dest-end
   // counted, then SOS-replayed the same connection from an unknown cursor.
-  // Leftover New Chat may precede that wait-for on warm confirmation.
+  // Leftover New Chat is a no-op on leftover (sidebar Chat already present), so
+  // warm confirmation must not prepend it — leftover wait-for is the origin.
   if (waitForIsIndependentlySourceProven(sourceProof)) return true;
   return (
     sourceProof?.kind === "expect-screen" &&

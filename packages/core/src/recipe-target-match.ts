@@ -152,6 +152,36 @@ function localizedStringKeyLabel(value: string | undefined): string | undefined 
   return /^LocalizedStringKey\(key: "([^"]+)"/u.exec(value)?.[1];
 }
 
+const READABLE_TEXT_TYPES = new Set(["statictext", "text", "textview"]);
+
+/** Android helper nodes use `android.widget.TextView`; browsers use `text`. */
+function snapshotTypeToken(node: SnapshotNode): string {
+  const raw = (node.type ?? node.role ?? "").trim().toLocaleLowerCase();
+  return raw.split(".").pop() ?? raw;
+}
+
+function readableTextLabel(node: SnapshotNode): string | undefined {
+  if (!READABLE_TEXT_TYPES.has(snapshotTypeToken(node))) return undefined;
+  const label = localizedStringKeyLabel(node.label) ?? node.label?.trim();
+  return label || undefined;
+}
+
+function readableDescendantLabels(
+  root: SnapshotNode,
+  byParent: Map<number, SnapshotNode[]>,
+): string[] {
+  if (root.index === undefined) return [];
+  const labels: string[] = [];
+  const queue = [...(byParent.get(root.index) ?? [])];
+  while (queue.length > 0) {
+    const node = queue.shift()!;
+    const label = readableTextLabel(node);
+    if (label) labels.push(label);
+    if (node.index !== undefined) queue.push(...(byParent.get(node.index) ?? []));
+  }
+  return labels;
+}
+
 export function labelsForIdentifierPrefix(nodes: SnapshotNode[], prefix: string): string[] {
   const byParent = new Map<number, SnapshotNode[]>();
   for (const node of nodes) {
@@ -161,29 +191,15 @@ export function labelsForIdentifierPrefix(nodes: SnapshotNode[], prefix: string)
     byParent.set(node.parentIndex, siblings);
   }
 
-  const readableDescendant = (root: SnapshotNode): string | undefined => {
-    if (root.index === undefined) return undefined;
-    const queue = [...(byParent.get(root.index) ?? [])];
-    while (queue.length > 0) {
-      const node = queue.shift()!;
-      const type = (node.type ?? node.role ?? "").toLocaleLowerCase();
-      const label = localizedStringKeyLabel(node.label) ?? node.label?.trim();
-      if (label && (type === "statictext" || type === "text" || type === "textview")) {
-        return label;
-      }
-      if (node.index !== undefined) queue.push(...(byParent.get(node.index) ?? []));
-    }
-    return undefined;
-  };
-
   return [
     ...new Set(
       nodes
         .filter((node) => node.identifier?.startsWith(prefix))
-        .map(
-          (node) =>
-            localizedStringKeyLabel(node.label) ?? readableDescendant(node) ?? node.label?.trim(),
-        )
+        .flatMap((node) => {
+          const own = localizedStringKeyLabel(node.label) ?? node.label?.trim();
+          if (own) return [own];
+          return readableDescendantLabels(node, byParent);
+        })
         .filter((label): label is string => Boolean(label)),
     ),
   ].sort((a, b) => a.localeCompare(b));
@@ -200,21 +216,6 @@ export function labelsForScope(nodes: SnapshotNode[], scope: StepTarget): string
     children.push(node);
     byParent.set(node.parentIndex, children);
   }
-
-  const readableDescendant = (root: SnapshotNode): string | undefined => {
-    if (root.index === undefined) return undefined;
-    const queue = [...(byParent.get(root.index) ?? [])];
-    while (queue.length > 0) {
-      const node = queue.shift()!;
-      const type = (node.type ?? node.role ?? "").toLocaleLowerCase();
-      const label = localizedStringKeyLabel(node.label) ?? node.label?.trim();
-      if (label && (type === "statictext" || type === "text" || type === "textview")) {
-        return label;
-      }
-      if (node.index !== undefined) queue.push(...(byParent.get(node.index) ?? []));
-    }
-    return undefined;
-  };
 
   const containedBy = (root: SnapshotNode): SnapshotNode[] => {
     if (!root.rect) return [];
@@ -256,10 +257,11 @@ export function labelsForScope(nodes: SnapshotNode[], scope: StepTarget): string
   return [
     ...new Set(
       labeled
-        .map(
-          (node) =>
-            localizedStringKeyLabel(node.label) ?? readableDescendant(node) ?? node.label?.trim(),
-        )
+        .flatMap((node) => {
+          const own = localizedStringKeyLabel(node.label) ?? node.label?.trim();
+          if (own) return [own];
+          return readableDescendantLabels(node, byParent);
+        })
         .filter((label): label is string => Boolean(label)),
     ),
   ].sort((a, b) => a.localeCompare(b));

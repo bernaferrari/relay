@@ -108,3 +108,47 @@ test("labelsForScope prefers menu option roles over group chrome", () => {
     "System",
   ]);
 });
+
+test("labelsForScope reads Android Compose text descendants under a chrome id", () => {
+  const nodes = [
+    {
+      index: 114,
+      parentIndex: 113,
+      identifier: "conversation_top_bar",
+      type: "android.view.View",
+      rect: { x: 0, y: 0, width: 1080, height: 295 },
+    },
+    { index: 115, parentIndex: 114, type: "android.view.View" },
+    { index: 116, parentIndex: 115, type: "android.view.View" },
+    { index: 121, parentIndex: 116, type: "android.view.View" },
+    { index: 122, parentIndex: 121, type: "android.view.View" },
+    {
+      index: 123,
+      parentIndex: 122,
+      type: "android.widget.TextView",
+      label: "Ask",
+      rect: { x: 268, y: 167, width: 88, height: 64 },
+    },
+    { index: 124, parentIndex: 121, type: "android.view.View" },
+    {
+      index: 125,
+      parentIndex: 124,
+      type: "android.widget.TextView",
+      label: "Imagine",
+      rect: { x: 428, y: 167, width: 194, height: 64 },
+    },
+    { index: 126, parentIndex: 121, type: "android.view.View" },
+    {
+      index: 127,
+      parentIndex: 126,
+      type: "android.widget.TextView",
+      label: "Build",
+      rect: { x: 694, y: 167, width: 119, height: 64 },
+    },
+  ];
+  assert.deepEqual(labelsForScope(nodes, { identifier: "conversation_top_bar" }), [
+    "Ask",
+    "Build",
+    "Imagine",
+  ]);
+});
