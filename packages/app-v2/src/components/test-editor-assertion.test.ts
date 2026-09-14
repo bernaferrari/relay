@@ -105,6 +105,9 @@ describe("test editor assertions", () => {
     const composer = IDENTITY_IGNORE_PRESETS.find((item) => item.id === "composer-placeholder");
     expect(composer).toBeDefined();
     expect(parseRegion(composer!.region)).toEqual({ x: 0.21, y: 0.29, width: 0.57, height: 0.06 });
+    const caret = IDENTITY_IGNORE_PRESETS.find((item) => item.id === "heading-caret");
+    expect(caret).toBeDefined();
+    expect(parseRegion(caret!.region)).toEqual({ x: 0.53, y: 0.25, width: 0.08, height: 0.01 });
     expect(
       isValidationDraftReady({
         kind: "identity-ignore",

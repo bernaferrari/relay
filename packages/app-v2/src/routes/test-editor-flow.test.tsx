@@ -492,6 +492,7 @@ describe("Test editor", () => {
     expect(document.body.textContent).toContain("Reply body");
     expect(document.body.textContent).toContain("Cookie banner");
     expect(document.body.textContent).toContain("Composer placeholder");
+    expect(document.body.textContent).toContain("Heading caret");
     await click("Cookie banner");
     expect(
       document.querySelector<HTMLInputElement>("#selected-step-expected-identity-region")?.value,
@@ -500,6 +501,10 @@ describe("Test editor", () => {
     expect(
       document.querySelector<HTMLInputElement>("#selected-step-expected-identity-region")?.value,
     ).toBe("0.21,0.29,0.57,0.06");
+    await click("Heading caret");
+    expect(
+      document.querySelector<HTMLInputElement>("#selected-step-expected-identity-region")?.value,
+    ).toBe("0.53,0.25,0.08,0.01");
     await click("User bubble");
     expect(
       document.querySelector<HTMLInputElement>("#selected-step-expected-identity-region")?.value,

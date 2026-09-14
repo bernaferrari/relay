@@ -178,6 +178,28 @@ test("authored cookie banner stays a bottom-right unit rectangle", () => {
   assert.equal(regions[0]?.height, 0.2);
 });
 
+test("authored heading caret stays a thin underline below the heading text", () => {
+  const regions = visualIgnoreRegionsFromIdentityArtifacts(
+    [
+      {
+        kind: "identity-ignore",
+        data: { name: "heading caret", x: 0.53, y: 0.25, width: 0.08, height: 0.01 },
+      },
+    ],
+    [{ index: 0, width: 1280, height: 800 }],
+  );
+  assert.equal(regions.length, 1);
+  assert.equal(regions[0]?.name, "heading caret");
+  assert.equal(regions[0]?.mode, "ignore");
+  assert.equal(regions[0]?.x, 0.53);
+  assert.equal(regions[0]?.y, 0.25);
+  assert.equal(regions[0]?.width, 0.08);
+  assert.equal(regions[0]?.height, 0.01);
+  assert.ok((regions[0]?.y ?? 0) >= 0.25);
+  assert.ok((regions[0]?.width ?? 1) < 0.1);
+  assert.ok((regions[0]?.height ?? 1) <= 0.01);
+});
+
 test("chat-input identifier ignores the tight composer placeholder, not the viewport", () => {
   const regions = visualIgnoreRegionsFromIdentityArtifacts(
     [

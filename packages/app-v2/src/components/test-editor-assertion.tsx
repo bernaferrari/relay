@@ -270,6 +270,13 @@ export const IDENTITY_IGNORE_PRESETS = [
     detail:
       "Rotating Build Mode / Ask anything text. Do not cover Imagine gallery, paywall, or SuperGrok upsell.",
   },
+  {
+    id: "heading-caret",
+    name: "heading caret",
+    region: "0.53,0.25,0.08,0.01",
+    label: "Heading caret",
+    detail: "Blinking underline under explore?. Does not cover the Grok heading text.",
+  },
 ] as const;
 
 export function emptyValidationDraft(kind: ValidationDraft["kind"]): ValidationDraft {
@@ -525,9 +532,9 @@ export function ValidationExpectationEditor({
           </label>
           <p className="text-xs font-normal leading-normal text-muted-foreground">
             Identity and visual compare skip this rectangle so only chrome is compared. Pixels or
-            0–1 fractions. On logged-out grok.com, ignore the cookie banner and rotating composer
-            placeholder. On a logged-out paywall, ignore the user bubble — a full reply-body ignore
-            can strip the Continue card.
+            0–1 fractions. On logged-out grok.com, ignore the cookie banner, rotating composer
+            placeholder, and heading caret. On a logged-out paywall, ignore the user bubble — a full
+            reply-body ignore can strip the Continue card.
           </p>
           <RegionFrame region={value.region} />
         </>
