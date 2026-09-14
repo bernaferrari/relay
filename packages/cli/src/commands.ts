@@ -689,7 +689,32 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     ),
   ),
   mapped("run.visual.compare", path("run visual compare", ["runId"])),
-  mapped("run.visual.review", path("run visual review", ["runId"])),
+  mapped(
+    "run.visual.review",
+    path("run visual review", ["runId"], undefined, {
+      summary: "Record an explicit visual comparison decision",
+      argumentHelp: [{ name: "runId", type: "string", description: "Persisted run identifier" }],
+      inputHelp: [
+        {
+          name: "comparisonId",
+          type: "string",
+          required: true,
+          description: "Id returned by run visual compare",
+        },
+        {
+          name: "action",
+          type: '"approve-new-baseline" | "keep-baseline" | "fix-connection" | "retry" | "mark-expected-variation"',
+          required: true,
+          description: "Human pixel decision. Findings Confirm/Reject never set this.",
+        },
+        { name: "note", type: "string", description: "Optional reviewer note" },
+      ],
+      examples: [
+        'relay run visual review <run-id> --input \'{"comparisonId":"<id>","action":"approve-new-baseline"}\' --actor human:local-cli',
+      ],
+      note: "agent:* cannot accept a baseline. Confirm/Reject stay notes-only.",
+    }),
+  ),
   mapped("run.visual-policy.get", path("run visual-policy get", ["runId"])),
   mapped("run.visual-policy.update", path("run visual-policy update", ["runId"])),
   mapped(

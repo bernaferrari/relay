@@ -13,6 +13,7 @@ import {
   listVisualReviews,
   reviewVisualComparison,
   updateVisualComparisonPolicy,
+  VisualVerificationError,
   visualTargetKey,
 } from "./visual-baselines.js";
 
@@ -337,6 +338,49 @@ test("review actions are explicit, attributable, and only approval changes the b
       "latest",
     );
     assert.equal((await listVisualReviews(root, comparison.id)).length, 5);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("visual review refuses agent:* and lets human:local-cli approve a new baseline", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-visual-review-actor-"));
+  try {
+    const latest = await runFixture(root, {
+      id: "latest",
+      projectId: "project-a",
+      serial: "pixel-1",
+      frames: [png("new")],
+    });
+    const comparison = await compareVisualBaseline(root, latest);
+    await assert.rejects(
+      () =>
+        reviewVisualComparison(root, latest, {
+          comparisonId: comparison.id,
+          action: "approve-new-baseline",
+          actor: { id: "agent:cursor", kind: "agent" },
+        }),
+      (error: unknown) => {
+        assert.ok(error instanceof VisualVerificationError);
+        assert.equal(error.code, "VISUAL_REVIEW_AGENT_FORBIDDEN");
+        return true;
+      },
+    );
+    assert.equal(
+      (await getVisualBaseline(root, "sign-in", "pixel-1", "project-a"))?.runId,
+      undefined,
+    );
+    const approval = await reviewVisualComparison(root, latest, {
+      comparisonId: comparison.id,
+      action: "approve-new-baseline",
+      actor: { id: "human:local-cli", kind: "human" },
+    });
+    assert.equal(approval.decision.resultCode, "VISUAL_BASELINE_APPROVED");
+    assert.equal(approval.decision.actor.id, "human:local-cli");
+    assert.equal(
+      (await getVisualBaseline(root, "sign-in", "pixel-1", "project-a"))?.runId,
+      "latest",
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }

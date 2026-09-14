@@ -109,14 +109,15 @@ async function requestRoute(
   pathname: string,
   body: Record<string, unknown> = {},
   requestScope: RequestContext = scope,
+  actor: { id: string; kind: "human" | "agent" } = { id: "reviewer-1", kind: "human" },
 ): Promise<{ status: number; value: Record<string, unknown> }> {
   const request = Readable.from([
     Buffer.from(JSON.stringify(body)),
   ]) as unknown as http.IncomingMessage;
   request.headers = {
     "content-type": "application/json",
-    "x-relay-actor-id": "reviewer-1",
-    "x-relay-actor-kind": "human",
+    "x-relay-actor-id": actor.id,
+    "x-relay-actor-kind": actor.kind,
   };
   const response = new CapturedResponse();
   const url = new URL(`http://localhost${pathname}`);
@@ -220,6 +221,57 @@ test("run routes compare durable visual evidence and require explicit review dec
     assert.equal(
       (promoted.value.decision as { resultCode: string }).resultCode,
       "VISUAL_BASELINE_APPROVED",
+    );
+    assert.equal(
+      (await getVisualBaseline(root, "sign-in", "pixel-1", "project-a"))?.runId,
+      "latest-run",
+    );
+  } finally {
+    if (previous === undefined) delete process.env.RELAY_RUNS_DIR;
+    else process.env.RELAY_RUNS_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("visual review refuses agent:* and lets human:local-cli approve-new-baseline", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-run-route-visual-actor-"));
+  const previous = process.env.RELAY_RUNS_DIR;
+  process.env.RELAY_RUNS_DIR = root;
+  try {
+    await persistFixture(root, "latest-run", "changed-image");
+    const compared = await requestRoute("POST", "/runs/latest-run/visual-comparison");
+    const comparisonId = (compared.value.comparison as { id: string }).id;
+    await assert.rejects(
+      () =>
+        requestRoute(
+          "POST",
+          "/runs/latest-run/visual-review",
+          { comparisonId, action: "approve-new-baseline" },
+          scope,
+          { id: "agent:cursor", kind: "agent" },
+        ),
+      (error: unknown) => {
+        assert.ok(error instanceof HttpError);
+        assert.equal(error.status, 403);
+        assert.equal(error.body?.code, "VISUAL_REVIEW_AGENT_FORBIDDEN");
+        return true;
+      },
+    );
+    const promoted = await requestRoute(
+      "POST",
+      "/runs/latest-run/visual-review",
+      { comparisonId, action: "approve-new-baseline" },
+      scope,
+      { id: "human:local-cli", kind: "human" },
+    );
+    assert.equal(promoted.status, 200);
+    assert.equal(
+      (promoted.value.decision as { resultCode: string; actor: { id: string } }).resultCode,
+      "VISUAL_BASELINE_APPROVED",
+    );
+    assert.equal(
+      (promoted.value.decision as { actor: { id: string } }).actor.id,
+      "human:local-cli",
     );
     assert.equal(
       (await getVisualBaseline(root, "sign-in", "pixel-1", "project-a"))?.runId,

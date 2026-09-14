@@ -341,6 +341,18 @@ test("friendly command families invoke through the operation client", async () =
       input: { runId: "run-7", action: "approve-new-baseline" },
     },
     {
+      argv: [
+        "run",
+        "visual",
+        "review",
+        "run-7",
+        "--input",
+        '{"comparisonId":"cmp-1","action":"approve-new-baseline"}',
+      ],
+      operationId: "run.visual.review",
+      input: { runId: "run-7", comparisonId: "cmp-1", action: "approve-new-baseline" },
+    },
+    {
       argv: ["discovery", "capture", "discovery-1", "pixel-9"],
       operationId: "discovery.capture",
       input: { sessionId: "discovery-1" },

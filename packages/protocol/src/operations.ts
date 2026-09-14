@@ -69,6 +69,7 @@ import {
   record,
   string,
 } from "./operation-parser-primitives.js";
+import { VISUAL_REVIEW_ACTIONS } from "./visual-verification.js";
 export {
   projectRoleAllows,
   projectRoles,
@@ -508,15 +509,7 @@ const visualReviewInputParser = objectParser<OperationInput<"run.visual.review">
     string(input.runId, "visual review runId");
     string(input.comparisonId, "visual review comparisonId");
     const action = string(input.action, "visual review action");
-    if (
-      ![
-        "approve-new-baseline",
-        "keep-baseline",
-        "fix-connection",
-        "retry",
-        "mark-expected-variation",
-      ].includes(action)
-    ) {
+    if (!(VISUAL_REVIEW_ACTIONS as readonly string[]).includes(action)) {
       fail("visual review action", "is unsupported");
     }
     if (input.note !== undefined) string(input.note, "visual review note");

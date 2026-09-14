@@ -6,6 +6,7 @@ import {
   queryBoolean,
   unknownRecord,
 } from "./operation-schema-primitives.js";
+import { VISUAL_REVIEW_ACTIONS } from "./visual-verification.js";
 
 const runRef = z.object({ runId: identifier("Persisted Run identifier") }).strict();
 const replayRunRef = z
@@ -158,7 +159,7 @@ export const executionOperationSchemas = {
     .object({
       runId: identifier("Persisted Run identifier"),
       comparisonId: identifier("Visual comparison identifier"),
-      action: z.enum(["approve", "reject"]),
+      action: z.enum(VISUAL_REVIEW_ACTIONS),
       note: z.string().optional(),
     })
     .strict(),

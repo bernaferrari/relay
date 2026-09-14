@@ -529,6 +529,27 @@ test("persisted run replay has one friendly watched command", () => {
   });
 });
 
+test("run visual review round-trips approve-new-baseline", () => {
+  assert.deepEqual(
+    resolveCommand(["run", "visual", "review", "run-7"], {
+      comparisonId: "cmp-1",
+      action: "approve-new-baseline",
+    }),
+    {
+      operationId: "run.visual.review",
+      commandPath: "run visual review",
+      input: { runId: "run-7", comparisonId: "cmp-1", action: "approve-new-baseline" },
+    },
+  );
+  const help = renderHelp("run");
+  assert.match(help, /approve-new-baseline/u);
+  assert.match(help, /human:local-cli/u);
+  const visual = mappedCommandDescriptors.find((item) => item.operationId === "run.visual.review");
+  const actionHelp = visual?.paths[0]?.inputHelp?.find((field) => field.name === "action");
+  assert.match(actionHelp?.type ?? "", /approve-new-baseline/u);
+  assert.doesNotMatch(actionHelp?.type ?? "", /"approve" \| "reject"/u);
+});
+
 test("one failed check is inspectable and selectively retryable", () => {
   assert.deepEqual(resolveCommand(["repair", "retry", "run-1", "usage"]), {
     operationId: "run.repair.retry",

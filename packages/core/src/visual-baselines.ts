@@ -45,6 +45,7 @@ export type VisualVerificationErrorCode =
   | "VISUAL_FRAME_INVALID_PNG"
   | "VISUAL_COMPARISON_NOT_FOUND"
   | "VISUAL_COMPARISON_RUN_MISMATCH"
+  | "VISUAL_REVIEW_AGENT_FORBIDDEN"
   | "VISUAL_POLICY_INVALID"
   | "VISUAL_POLICY_REVISION_CONFLICT";
 
@@ -830,7 +831,17 @@ const REVIEW_RESULT_CODES: Record<VisualReviewAction, VisualReviewResultCode> = 
   "mark-expected-variation": "VISUAL_EXPECTED_VARIATION_RECORDED",
 };
 
-/** Records an explicit human/agent review decision. Only approval mutates a baseline. */
+function assertHumanVisualReviewActor(actor: VisualReviewActor): void {
+  if (actor.kind === "agent" || actor.id.startsWith("agent:")) {
+    throw new VisualVerificationError(
+      "VISUAL_REVIEW_AGENT_FORBIDDEN",
+      "Visual review requires a human actor; agent:* cannot approve or reject visual comparisons.",
+      "Retry as human:local-cli, or approve from Report → Compare screenshots.",
+    );
+  }
+}
+
+/** Records an explicit human review decision. Only approval mutates a baseline. */
 export async function reviewVisualComparison(
   root: string,
   run: PersistedRun,
@@ -841,6 +852,7 @@ export async function reviewVisualComparison(
     note?: string;
   },
 ): Promise<{ decision: VisualReviewDecision; baseline: VisualBaseline | null }> {
+  assertHumanVisualReviewActor(input.actor);
   const comparison = await getVisualComparison(root, input.comparisonId);
   if (!comparison) {
     throw new VisualVerificationError(

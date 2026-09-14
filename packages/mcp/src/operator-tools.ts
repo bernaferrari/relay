@@ -1,5 +1,5 @@
 import { ApiError } from "@relay/client";
-import { operationDefinition, type OperationId } from "@relay/protocol";
+import { operationDefinition, VISUAL_REVIEW_ACTIONS, type OperationId } from "@relay/protocol";
 import * as z from "zod/v4";
 import { relayMcpExclusions, relayMcpTools } from "./tools.js";
 
@@ -294,13 +294,7 @@ export const relayOperatorTools = Object.freeze([
       .object({
         runId: identifier,
         comparisonId: identifier,
-        action: z.enum([
-          "approve-new-baseline",
-          "keep-baseline",
-          "fix-connection",
-          "retry",
-          "mark-expected-variation",
-        ]),
+        action: z.enum(VISUAL_REVIEW_ACTIONS),
         note: z.string().optional(),
       })
       .strict(),

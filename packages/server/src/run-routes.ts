@@ -132,7 +132,12 @@ function assertLocalMaintenance(scope: RequestContext): void {
 }
 
 function visualVerificationHttpError(error: VisualVerificationError): HttpError {
-  const status = error.code === "VISUAL_COMPARISON_NOT_FOUND" ? 404 : 409;
+  const status =
+    error.code === "VISUAL_COMPARISON_NOT_FOUND"
+      ? 404
+      : error.code === "VISUAL_REVIEW_AGENT_FORBIDDEN"
+        ? 403
+        : 409;
   return new HttpError(status, error.message, {
     code: error.code,
     recovery: error.recovery,
