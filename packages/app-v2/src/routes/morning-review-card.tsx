@@ -60,7 +60,16 @@ export function MorningReviewCard() {
             </li>
             <li>
               Visual and semantic judges fail closed without OPENROUTER_API_KEY. That is Infra,
-              never a silent pass.
+              never a silent pass. Plan{" "}
+              <Link className="font-medium text-foreground hover:underline" to="/suites">
+                Grok.com logged-out judged chrome
+              </Link>{" "}
+              (<code>grok-web-judged</code>, <code>--lane grok-daily</code>) is those eight judged
+              Tests. With the key:{" "}
+              <code>
+                relay plan run grok-web grok-web-judged --lane grok-daily --budget 10m --findings
+              </code>
+              . Today it fail-closes as Infra. It is not grok-web-daily and not a judged pass.
             </li>
             <li>
               Weekly pauses stay off daily. Continue with X, dictation, and camera are Plan{" "}

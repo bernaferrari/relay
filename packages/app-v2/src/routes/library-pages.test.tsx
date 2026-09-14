@@ -483,6 +483,9 @@ describe("Runs workspace", () => {
     expect(document.body.textContent).toContain("Needs attention on this Mac");
     expect(document.body.textContent).toContain("Signed desktop build");
     expect(document.body.textContent).toContain("OPENROUTER_API_KEY");
+    expect(document.body.textContent).toContain("Grok.com logged-out judged chrome");
+    expect(document.body.textContent).toContain("grok-web-judged");
+    expect(document.body.textContent).toContain("not grok-web-daily");
     expect(document.body.textContent).toContain("Weekly pauses stay off daily");
     expect(
       [...document.querySelectorAll('a[href="/suites"]')].some((link) =>

@@ -1,7 +1,8 @@
-import type {
-  CombineEvidenceAnalysisReport,
-  CombineEvidenceFinding,
-  CombineTriageStatus,
+import {
+  planFindingsSummaryLines,
+  type CombineEvidenceAnalysisReport,
+  type CombineEvidenceFinding,
+  type CombineTriageStatus,
 } from "@relay/protocol";
 
 export type PlanFindingDecision = "confirm" | "reject";
@@ -232,6 +233,8 @@ export function renderPlanFindingsMarkdown(report: CombineEvidenceAnalysisReport
   const findings = report.analysis.findings;
   const heading = [
     `# Plan findings — ${report.batchId}`,
+    "",
+    ...planFindingsSummaryLines({ cases: report.cases, findings }),
     "",
     `${findings.length} finding${findings.length === 1 ? "" : "s"} · ${report.analysis.critical} critical · ${report.analysis.warnings} warning${report.analysis.warnings === 1 ? "" : "s"} · ${report.coverage.inspectedFrames}/${report.coverage.frames} frames inspected.`,
     "",

@@ -649,20 +649,30 @@ export async function runCli(
             ),
           );
         }
-        for (const result of results) assertOperationSucceeded(operationId, result);
-        output.result(
-          operationId,
-          results.length === 1
-            ? summarizeResult("job.get", results[0])
-            : {
-                jobs: results.map((result) =>
-                  result && typeof result === "object" && "job" in result ? result.job : result,
-                ),
-              },
-        );
+        let watchFailure: unknown;
+        try {
+          for (const result of results) assertOperationSucceeded(operationId, result);
+        } catch (error) {
+          watchFailure = error;
+        }
+        if (!watchFailure) {
+          output.result(
+            operationId,
+            results.length === 1
+              ? summarizeResult("job.get", results[0])
+              : {
+                  jobs: results.map((result) =>
+                    result && typeof result === "object" && "job" in result ? result.job : result,
+                  ),
+                },
+          );
+        }
         if (parsed.findings) {
           const batchId = startedPlanBatchId(started);
-          if (!batchId) throw new Error("Plan findings need a campaign or batch id");
+          if (!batchId) {
+            if (watchFailure) throw watchFailure;
+            throw new Error("Plan findings need a campaign or batch id");
+          }
           const analysis = await invoke(client, "job.combine.analysis", { batchId }, abort.signal);
           output.result(
             "job.combine.analysis",
@@ -673,6 +683,7 @@ export async function runCli(
               : analysis,
           );
         }
+        if (watchFailure) throw watchFailure;
         await exportWatchedCombinePack({
           operationId,
           exportDir: "exportDir" in parsed ? parsed.exportDir : undefined,

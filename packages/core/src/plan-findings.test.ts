@@ -139,6 +139,43 @@ test("qualified locale findings propose Reject without accepting a baseline", ()
   assert.doesNotMatch(proposal.reason, /accept a visual baseline/i);
 });
 
+test("OPENROUTER harness findings stay Incomplete, never a product pass", () => {
+  const jobs = ["home", "settings"];
+  const markdown = renderPlanFindingsMarkdown({
+    schemaVersion: 1,
+    batchId: "judged-1",
+    locales: ["logged-out"],
+    analysis: {
+      schemaVersion: 1,
+      sessionId: "judged-1",
+      generatedAt: 1,
+      baselineLocale: "logged-out",
+      findings: jobs.map((id) => ({
+        id: `harness-failure-${id}`,
+        code: "HARNESS_FAILURE" as const,
+        severity: "critical" as const,
+        confidence: "high" as const,
+        canonicalKey: `job:${id}`,
+        screenLabel: id,
+        locale: "logged-out",
+        baselineLocale: "logged-out",
+        detail: "visual judge unavailable: OPENROUTER_API_KEY is not configured",
+      })),
+      critical: 2,
+      warnings: 0,
+      affectedScreens: 2,
+    },
+    coverage: { frames: 2, inspectedFrames: 2 },
+    cases: jobs.map((id) => ({ jobId: id, locale: "logged-out", status: "error", frames: [] })),
+  });
+  assert.match(markdown, /Incomplete — 0 of 2 planned cases verified/u);
+  assert.match(markdown, /Incomplete \/ harness — not a product pass/u);
+  assert.match(markdown, /HARNESS_FAILURE/);
+  assert.match(markdown, /OPENROUTER_API_KEY/);
+  assert.doesNotMatch(markdown, /100%/u);
+  assert.doesNotMatch(markdown, /All selected cases passed/u);
+});
+
 test("expired sign-in is one Infra finding, not a product failure", () => {
   const report = accountReloginFindingsReport({
     detail: "Member expired. Open Sign-ins, complete OAuth, then Refresh.",

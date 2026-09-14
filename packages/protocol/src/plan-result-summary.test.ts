@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   classifyPlanResultCell,
+  planFindingsSummaryLines,
   planResultCellLabel,
   summarizePlanResult,
   type PlanResultCase,
@@ -66,6 +67,34 @@ test("user cancellation is cancelled, not an infra root cause", () => {
   );
   assert.equal(planResultCellLabel("cancelled"), "Cancelled");
   assert.equal(planResultCellLabel("could-not-run"), "Could not run");
+});
+
+test("all harness-failure cells are incomplete coverage, never a product pass", () => {
+  const jobs = ["home", "settings", "attach", "model", "imagine", "chat", "upload", "hello"];
+  const grid = summarizePlanResult(
+    jobs.map(() => ({
+      status: "error",
+      findingCode: "HARNESS_FAILURE" as const,
+      outcome: "harness-failure",
+    })),
+  );
+  assert.equal(grid.headline, "Incomplete — 0 of 8 planned cases verified");
+  assert.equal(grid.cells["could-not-run"], 8);
+  assert.equal(grid.checks.failed, 0);
+  assert.doesNotMatch(`${grid.headline} ${grid.detail}`, /100%/u);
+  assert.doesNotMatch(grid.headline, /All selected cases passed/u);
+  const lines = planFindingsSummaryLines({
+    cases: jobs.map((id) => ({ jobId: id, status: "error" })),
+    findings: jobs.map((id) => ({
+      id: `harness-failure-${id}`,
+      canonicalKey: `job:${id}`,
+      code: "HARNESS_FAILURE" as const,
+    })),
+  });
+  assert.match(lines.join("\n"), /Incomplete — 0 of 8 planned cases verified/u);
+  assert.match(lines.join("\n"), /Incomplete \/ harness — not a product pass/u);
+  assert.doesNotMatch(lines.join("\n"), /100%/u);
+  assert.doesNotMatch(lines.join("\n"), /All selected cases passed/u);
 });
 
 test("session-expired prose without a harness finding is not classified as infra", () => {

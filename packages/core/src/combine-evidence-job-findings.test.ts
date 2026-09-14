@@ -32,6 +32,25 @@ test("expect-screen product-failure becomes a PRODUCT_ASSERTION finding", () => 
   assert.match(findings[0]?.detail ?? "", /expect-screen/);
 });
 
+test("visual judge unavailable without OPENROUTER is HARNESS_FAILURE", () => {
+  const findings = jobOutcomeFindings(
+    [
+      {
+        id: "c1d4213d",
+        action: "cell-home-judged",
+        status: "error",
+        title: "Grok.com logged-out judged chrome · logged-out · Judge logged-out home chrome",
+        error: "visual judge unavailable: OPENROUTER_API_KEY is not configured",
+        outcome: "harness-failure",
+        failureCategory: "environment",
+      },
+    ],
+    () => "logged-out",
+  );
+  assert.equal(findings[0]?.code, "HARNESS_FAILURE");
+  assert.match(findings[0]?.detail ?? "", /OPENROUTER_API_KEY/);
+});
+
 test("ok cells and harness failures stay typed", () => {
   assert.equal(
     isProductAssertionJob({ id: "ok", action: "t", status: "ok", outcome: "passed" }),

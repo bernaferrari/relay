@@ -172,3 +172,42 @@ function resultHeadline(facts: PlanResultFacts, cells: Record<PlanResultCellKind
   }
   return `Incomplete — ${verified} of ${planned} planned cases verified`;
 }
+
+/** Map Combine analysis cells onto Plan summary cases using typed finding ids. */
+export function planResultCasesFromFindings(input: {
+  cases: readonly { jobId: string; status: string }[];
+  findings: readonly { id: string; canonicalKey: string; code: CombineEvidenceFindingCode }[];
+}): PlanResultCase[] {
+  return input.cases.map((item) => {
+    const finding = input.findings.find(
+      (entry) =>
+        entry.canonicalKey === `job:${item.jobId}` ||
+        entry.id === `harness-failure-${item.jobId}` ||
+        entry.id === `product-assertion-${item.jobId}` ||
+        entry.id === `user-cancelled-${item.jobId}` ||
+        entry.id === `blocked-${item.jobId}`,
+    );
+    return {
+      status: item.status,
+      ...(finding ? { findingCode: finding.code } : {}),
+    };
+  });
+}
+
+/** Honest Plan summary for `--findings` markdown. Never a 100% product pass on harness. */
+export function planFindingsSummaryLines(input: {
+  cases: readonly { jobId: string; status: string }[];
+  findings: readonly { id: string; canonicalKey: string; code: CombineEvidenceFindingCode }[];
+}): readonly string[] {
+  const grid = summarizePlanResult(planResultCasesFromFindings(input));
+  const lines = [`**Plan summary:** ${grid.headline}`, grid.detail];
+  if (
+    grid.coverage.planned > 0 &&
+    grid.cells.passed < grid.coverage.planned &&
+    grid.checks.failed === 0 &&
+    (grid.cells["could-not-run"] > 0 || grid.cells.cancelled > 0)
+  ) {
+    lines.push("Incomplete / harness — not a product pass.");
+  }
+  return lines;
+}

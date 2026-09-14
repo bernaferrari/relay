@@ -1329,6 +1329,109 @@ test("combine run --lens maps onto the Combine capture policy", async () => {
   assert.equal(parsed.input.executionMode, "all");
 });
 
+test("plan run --findings prints Infra markdown after cells fail closed without OPENROUTER", async () => {
+  const io = capture();
+  const analyzed: string[] = [];
+  const code = await runCli(
+    [
+      "plan",
+      "run",
+      "grok-web",
+      "grok-web-judged",
+      "--findings",
+      "--input",
+      '{"browserTargetId":"grok-com","targetKind":"browser"}',
+    ],
+    {
+      streams: io.streams,
+      createClient: () => ({
+        invoke: async (operationId, input) => {
+          if (operationId === "job.combine.start") {
+            return {
+              campaign: { id: "judged-batch" },
+              jobs: [
+                { id: "home-judged", status: "queued" },
+                { id: "hello-judged", status: "queued" },
+              ],
+            };
+          }
+          if (operationId === "job.get") {
+            const jobId = (input as { jobId: string }).jobId;
+            return {
+              job: {
+                id: jobId,
+                status: "error",
+                outcome: "harness-failure",
+                failureCategory: "environment",
+                error: "visual judge unavailable: OPENROUTER_API_KEY is not configured",
+              },
+            };
+          }
+          if (operationId === "job.combine.analysis") {
+            analyzed.push((input as { batchId: string }).batchId);
+            return {
+              schemaVersion: 1,
+              batchId: "judged-batch",
+              locales: ["logged-out"],
+              analysis: {
+                schemaVersion: 1,
+                sessionId: "judged-batch",
+                generatedAt: 1,
+                baselineLocale: "logged-out",
+                findings: [
+                  {
+                    id: "harness-failure-home-judged",
+                    code: "HARNESS_FAILURE",
+                    severity: "critical",
+                    confidence: "high",
+                    canonicalKey: "job:home-judged",
+                    screenLabel: "Judge logged-out home chrome",
+                    locale: "logged-out",
+                    baselineLocale: "logged-out",
+                    detail: "visual judge unavailable: OPENROUTER_API_KEY is not configured",
+                  },
+                  {
+                    id: "harness-failure-hello-judged",
+                    code: "HARNESS_FAILURE",
+                    severity: "critical",
+                    confidence: "high",
+                    canonicalKey: "job:hello-judged",
+                    screenLabel: "Judge logged-out hello paywall chrome",
+                    locale: "logged-out",
+                    baselineLocale: "logged-out",
+                    detail: "visual judge unavailable: OPENROUTER_API_KEY is not configured",
+                  },
+                ],
+                critical: 2,
+                warnings: 0,
+                affectedScreens: 2,
+              },
+              coverage: { frames: 2, inspectedFrames: 2 },
+              cases: [
+                { jobId: "home-judged", locale: "logged-out", status: "error", frames: [] },
+                { jobId: "hello-judged", locale: "logged-out", status: "error", frames: [] },
+              ],
+            };
+          }
+          throw new Error(`unexpected ${operationId}`);
+        },
+        events: async () => {},
+      }),
+      registerSignalHandlers: false,
+      pollIntervalMs: 0,
+      env: {},
+    },
+  );
+  assert.equal(code, ExitCode.operationFailure);
+  assert.deepEqual(analyzed, ["judged-batch"]);
+  assert.match(io.stdout(), /HARNESS_FAILURE/u);
+  assert.match(io.stdout(), /Incomplete — 0 of 2 planned cases verified/u);
+  assert.match(io.stdout(), /Incomplete \/ harness — not a product pass/u);
+  assert.match(io.stdout(), /OPENROUTER_API_KEY/u);
+  assert.doesNotMatch(io.stdout(), /100%/u);
+  assert.doesNotMatch(io.stdout(), /All selected cases passed/u);
+});
+
 test("plan run --findings prints Infra markdown when start refuses a signed-out account", async () => {
   const io = capture();
   const code = await runCli(
