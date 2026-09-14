@@ -217,6 +217,14 @@ export type AppMapTestFamily = {
   routeVariants: AppMapTestRouteVariant[];
 };
 
+/** Cross-map same-intent Test. Pointers never record a route on this map and
+ * never join unrelated Tests into one compiled plan. */
+export type AppMapNativeRouteCompanion = {
+  platform: "android" | "ios";
+  appMapId: string;
+  testId: string;
+};
+
 export type AppMapScenarioTest = AppMapEntity & {
   name: string;
   kind: "scenario";
@@ -227,6 +235,8 @@ export type AppMapScenarioTest = AppMapEntity & {
   originApplication?: string;
   /** Absent means an intentionally unjoined, legacy single-surface family. */
   family?: AppMapTestFamily;
+  /** Honest native links. Compile and Combine stay unrecorded on this map. */
+  nativeRouteCompanions?: AppMapNativeRouteCompanion[];
   capture?: AppMapCapturePolicy;
   /** Logical surface coverage is independent from graph navigation. */
   surfaceBindings?: ScrollSurfaceTestBinding[];
@@ -268,6 +278,7 @@ export type AppMapScenarioTestEdit =
         name?: string;
         capture?: AppMapCapturePolicy | null;
         family?: AppMapTestFamily | null;
+        nativeRouteCompanions?: AppMapNativeRouteCompanion[] | null;
       };
     }
   | {

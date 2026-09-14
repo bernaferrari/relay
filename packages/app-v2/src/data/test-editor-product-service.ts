@@ -7,7 +7,9 @@ import type {
 } from "@relay/protocol";
 import { testHasRememberableReply } from "@relay/protocol";
 import {
+  PLAN_PLATFORMS,
   recordedPlanPlatformsFromAppMap,
+  recordedRoutePlatformBlocker,
   testStepPlatformBlockers,
   type PlanPlatform,
 } from "@relay/product/test-route-platforms";
@@ -39,6 +41,7 @@ export type ProductTestEditorDocument = {
   revision: number;
   test: AppMapScenarioTest;
   recordedPlatforms?: readonly PlanPlatform[];
+  routePlatformBlockers?: Partial<Record<PlanPlatform, string>>;
   stepPlatformBlockers?: Readonly<Record<string, string>>;
   hasRememberableReply?: boolean;
   history: readonly ProductTestHistoryItem[];
@@ -91,7 +94,15 @@ export function createTestEditorProductService(platform: Platform): TestEditorPr
       return requireDocument(appMap, document.test.id);
     },
     async saveSettings({ document, name, originApplication }) {
-      const { kind, intentSchemaVersion, steps, family, capture, validation } = document.test;
+      const {
+        kind,
+        intentSchemaVersion,
+        steps,
+        family,
+        nativeRouteCompanions,
+        capture,
+        validation,
+      } = document.test;
       const { appMap } = await (
         await client()
       ).invoke("app-map.test.save", {
@@ -106,6 +117,7 @@ export function createTestEditorProductService(platform: Platform): TestEditorPr
           intentSchemaVersion,
           steps,
           ...(family ? { family } : {}),
+          ...(nativeRouteCompanions ? { nativeRouteCompanions } : {}),
           ...(capture ? { capture } : {}),
           ...(validation ? { validation } : {}),
           name: name.trim(),
@@ -200,6 +212,12 @@ export function documentFromMap(
     }));
   const recordedPlatforms = recordedPlanPlatformsFromAppMap(appMap, test);
   const stepPlatformBlockers = testStepPlatformBlockers(test, appMap, recordedPlatforms);
+  const routePlatformBlockers = Object.fromEntries(
+    PLAN_PLATFORMS.flatMap((platform) => {
+      const reason = recordedRoutePlatformBlocker(test, appMap, platform);
+      return reason ? [[platform, reason] as const] : [];
+    }),
+  ) as Partial<Record<PlanPlatform, string>>;
   const hasRememberableReply = testHasRememberableReply(test, appMap);
   return {
     appMapId: appMap.id,
@@ -207,6 +225,7 @@ export function documentFromMap(
     revision: appMap.revision,
     test: structuredClone(test),
     recordedPlatforms,
+    ...(Object.keys(routePlatformBlockers).length ? { routePlatformBlockers } : {}),
     ...(Object.keys(stepPlatformBlockers).length ? { stepPlatformBlockers } : {}),
     ...(hasRememberableReply ? { hasRememberableReply: true } : {}),
     history,

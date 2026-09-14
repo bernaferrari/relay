@@ -6,6 +6,7 @@ import {
   text,
   stepTarget,
 } from "./operation-schema-primitives.js";
+import { nativeRouteCompanions } from "./app-map-native-route-companion-schema.js";
 import { repeatPilotSpecSchema, repeatSpecSchema } from "./repeat-spec.js";
 
 const forceRecaptureScreenIds = z
@@ -739,6 +740,7 @@ export const graphTest = z
     originApplication: z.string().trim().min(1).optional(),
     steps: z.array(graphTestStep).max(200),
     family: testFamily.optional(),
+    nativeRouteCompanions: nativeRouteCompanions.optional(),
     capture: testCapturePolicy.optional(),
     validation: z
       .object({
@@ -812,6 +814,7 @@ const testSemanticEdit = z.discriminatedUnion("kind", [
           name: text("New Test name").optional(),
           capture: testCapturePolicy.nullable().optional(),
           family: testFamily.nullable().optional(),
+          nativeRouteCompanions: nativeRouteCompanions.nullable().optional(),
         })
         .strict()
         .refine((patch) => Object.keys(patch).length > 0, "Test patch must change a field"),

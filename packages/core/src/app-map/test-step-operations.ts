@@ -386,7 +386,9 @@ export function applyScenarioTestStepEdits(
       switch (edit.kind) {
         case "test.patch": {
           const keys = Object.keys(edit.patch);
-          const unknown = keys.find((key) => !["name", "capture", "family"].includes(key));
+          const unknown = keys.find(
+            (key) => !["name", "capture", "family", "nativeRouteCompanions"].includes(key),
+          );
           if (unknown) {
             fail(
               "invalid-patch",
@@ -403,18 +405,29 @@ export function applyScenarioTestStepEdits(
                   return withoutCapture;
                 })()
               : current;
-          const base =
+          const withoutFamily =
             edit.patch.family === null
               ? (() => {
                   const { family: _family, ...withoutFamily } = withoutCapture;
                   return withoutFamily;
                 })()
               : withoutCapture;
+          const base =
+            edit.patch.nativeRouteCompanions === null
+              ? (() => {
+                  const { nativeRouteCompanions: _companions, ...withoutCompanions } =
+                    withoutFamily;
+                  return withoutCompanions;
+                })()
+              : withoutFamily;
           return validated({
             ...base,
             ...(edit.patch.name !== undefined ? { name: edit.patch.name } : {}),
             ...(edit.patch.capture && { capture: structuredClone(edit.patch.capture) }),
             ...(edit.patch.family && { family: structuredClone(edit.patch.family) }),
+            ...(edit.patch.nativeRouteCompanions && {
+              nativeRouteCompanions: structuredClone(edit.patch.nativeRouteCompanions),
+            }),
           });
         }
         case "step.add":

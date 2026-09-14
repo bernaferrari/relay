@@ -53,6 +53,9 @@ function summarizeEdit(test: AppMapScenarioTest, edit: AppMapScenarioTestEdit): 
           : []),
         ...(edit.patch.capture !== undefined ? ["Change evidence capture policy"] : []),
         ...(edit.patch.family !== undefined ? ["Change reviewed Test family routes"] : []),
+        ...(edit.patch.nativeRouteCompanions !== undefined
+          ? ["Change native route companions"]
+          : []),
       ];
       return changes.join("; ") || "Update Test settings";
     }

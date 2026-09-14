@@ -77,7 +77,21 @@ describe("Test editor product history transport", () => {
       test: {
         ...test,
         originApplication: "com.example.original",
-        steps: [{ id: "tap", kind: "action", action: "tap" } as never],
+        nativeRouteCompanions: [
+          {
+            platform: "android" as const,
+            appMapId: "grok-android",
+            testId: "test-grok-android-home-chrome",
+          },
+        ],
+        steps: [
+          {
+            id: "tap",
+            kind: "instruction" as const,
+            intent: "Tap checkout",
+            binding: { status: "unresolved" as const, reason: "Choose a binding" },
+          },
+        ],
       },
       history: [],
       repairs: [],
@@ -115,6 +129,7 @@ describe("Test editor product history transport", () => {
         kind: document.test.kind,
         intentSchemaVersion: document.test.intentSchemaVersion,
         steps: document.test.steps,
+        nativeRouteCompanions: document.test.nativeRouteCompanions,
         name: "Checkout renamed",
         originApplication: "com.example.updated",
       },

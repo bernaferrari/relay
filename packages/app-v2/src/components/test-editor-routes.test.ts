@@ -13,6 +13,48 @@ describe("test editor platform routes", () => {
     );
   });
 
+  it("shows Android as Linked, never Recorded, when a companion is set", () => {
+    const statuses = testRoutePlatformStatuses({
+      originApplication: "https://grok.com/",
+      nativeRouteCompanions: [
+        {
+          platform: "android",
+          appMapId: "grok-android",
+          testId: "test-grok-android-home-chrome",
+        },
+      ],
+    });
+    expect(statuses.find((item) => item.platform === "android")?.status).toBe("linked");
+    expect(statuses.find((item) => item.platform === "ios")?.status).toBe("unrecorded");
+  });
+
+  it("shows compile-blocked iOS as Blocked, never Recorded", () => {
+    const statuses = testRoutePlatformStatuses(
+      {
+        family: {
+          logicalIntentRevision: 1,
+          bindingRevision: 1,
+          routeVariants: [
+            {
+              id: "ios",
+              revision: 1,
+              predicate: { platforms: ["ios"] },
+              bindings: {},
+              reviewedAt: 1,
+              reviewedBy: "reviewer",
+            },
+          ],
+        },
+      },
+      {
+        platformBlockers: {
+          ios: "airplane on iOS is a Settings handoff, not settings airplane on the Grok runner",
+        },
+      },
+    );
+    expect(statuses.find((item) => item.platform === "ios")?.status).toBe("blocked");
+  });
+
   it("marks Web recorded from saved browser surfaces when origin is missing", () => {
     const statuses = testRoutePlatformStatuses({}, { recordedPlatforms: ["browser"] });
     expect(statuses.find((item) => item.platform === "browser")?.status).toBe("reviewed");

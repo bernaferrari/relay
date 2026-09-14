@@ -6,6 +6,7 @@ import type {
 } from "@relay/protocol";
 
 export {
+  recordedRoutePlatformBlocker,
   recordedTestStepPlatformBlocker,
   testStepPlatformBlockers,
 } from "./test-step-platform-blockers.js";
@@ -17,8 +18,9 @@ export type PlanPlatform = (typeof PLAN_PLATFORMS)[number];
 export type TestRoutePlatformStatus = {
   readonly platform: PlanPlatform;
   readonly label: string;
-  readonly status: "reviewed" | "unrecorded";
+  readonly status: "reviewed" | "unrecorded" | "linked" | "blocked";
   readonly variantId?: string;
+  readonly companion?: { readonly appMapId: string; readonly testId: string };
   readonly reason?: string;
 };
 
@@ -83,34 +85,66 @@ export function recordedPlanPlatformsFromAppMap(
 
 /** One Test intent, three platform rows. Unrecorded native routes stay visible. */
 export function testRoutePlatformStatuses(
-  test: Pick<AppMapScenarioTest, "family" | "originApplication">,
-  options?: { recordedPlatforms?: readonly PlanPlatform[] },
+  test: Pick<AppMapScenarioTest, "family" | "originApplication" | "nativeRouteCompanions">,
+  options?: {
+    recordedPlatforms?: readonly PlanPlatform[];
+    platformBlockers?: Partial<Record<PlanPlatform, string>>;
+  },
 ): TestRoutePlatformStatus[] {
   const variants = test.family?.routeVariants ?? [];
   const implicit = test.family ? undefined : implicitRecordedPlatform(test.originApplication);
   return PLAN_PLATFORMS.map((platform) => {
+    const label = PLATFORM_LABEL[platform];
     const match = variants.find((variant) => {
       const platforms = variant.predicate.platforms as TargetProfile["platform"][] | undefined;
       return !platforms || platforms.includes(platform);
     });
+    const blocker = options?.platformBlockers?.[platform];
     if (match) {
+      if (blocker) {
+        return {
+          platform,
+          label,
+          status: "blocked" as const,
+          variantId: match.id,
+          reason: blocker,
+        };
+      }
       return {
         platform,
-        label: PLATFORM_LABEL[platform],
+        label,
         status: "reviewed" as const,
         variantId: match.id,
       };
     }
-    if (!test.family && (implicit === platform || options?.recordedPlatforms?.includes(platform))) {
+    const companion = test.nativeRouteCompanions?.find((item) => item.platform === platform);
+    if (companion) {
       return {
         platform,
-        label: PLATFORM_LABEL[platform],
+        label,
+        status: "linked" as const,
+        companion: { appMapId: companion.appMapId, testId: companion.testId },
+        reason: `Same intent lives on ${companion.appMapId} ${companion.testId}. This Test stays unrecorded on ${label}.`,
+      };
+    }
+    if (!test.family && (implicit === platform || options?.recordedPlatforms?.includes(platform))) {
+      if (blocker) {
+        return {
+          platform,
+          label,
+          status: "blocked" as const,
+          reason: blocker,
+        };
+      }
+      return {
+        platform,
+        label,
         status: "reviewed" as const,
       };
     }
     return {
       platform,
-      label: PLATFORM_LABEL[platform],
+      label,
       status: "unrecorded" as const,
       reason: unrecordedReason(platform),
     };

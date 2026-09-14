@@ -1382,6 +1382,13 @@ test("browser-recorded Tests compile Android as disabled, not invented routes", 
   };
   const work = scenario();
   work.capture = { mode: "final-screen" };
+  work.nativeRouteCompanions = [
+    {
+      platform: "android",
+      appMapId: "grok-android",
+      testId: "test-grok-android-home-chrome",
+    },
+  ];
   const compiled = compileAppMapTest(map, work, {
     runtimeTargetProfile: {
       id: "pixel",

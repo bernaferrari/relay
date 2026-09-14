@@ -26,6 +26,7 @@ function uniquePlatformBlockNotice(
 export function TestEditorStepOutline({
   test,
   recordedPlatforms,
+  routePlatformBlockers,
   stepPlatformBlockers,
   entries,
   selectedStepId,
@@ -39,6 +40,7 @@ export function TestEditorStepOutline({
 }: {
   test: AppMapScenarioTest;
   recordedPlatforms?: readonly PlanPlatform[];
+  routePlatformBlockers?: Partial<Record<PlanPlatform, string>>;
   stepPlatformBlockers?: Readonly<Record<string, string>>;
   entries: readonly StepEntry[];
   selectedStepId?: string;
@@ -166,7 +168,11 @@ export function TestEditorStepOutline({
         />
       )}
       <div className="mt-5">
-        <TestEditorRoutes test={test} recordedPlatforms={recordedPlatforms} />
+        <TestEditorRoutes
+          test={test}
+          recordedPlatforms={recordedPlatforms}
+          routePlatformBlockers={routePlatformBlockers}
+        />
         {compileBlockNotice ? (
           <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
             {compileBlockNotice}

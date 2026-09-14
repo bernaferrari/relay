@@ -600,6 +600,7 @@ function TestEditorDocument() {
               <TestEditorStepOutline
                 test={editorDocument.test}
                 recordedPlatforms={editorDocument.recordedPlatforms}
+                routePlatformBlockers={editorDocument.routePlatformBlockers}
                 stepPlatformBlockers={editorDocument.stepPlatformBlockers}
                 entries={entries}
                 selectedStepId={selected?.step.id}

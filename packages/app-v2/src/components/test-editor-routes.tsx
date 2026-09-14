@@ -6,14 +6,26 @@ import {
   type PlanPlatform,
 } from "@relay/product/test-route-platforms";
 
+function platformRowLabel(status: "reviewed" | "unrecorded" | "linked" | "blocked"): string {
+  if (status === "reviewed") return "Recorded";
+  if (status === "linked") return "Linked";
+  if (status === "blocked") return "Blocked";
+  return "Not recorded";
+}
+
 export function TestEditorRoutes({
   test,
   recordedPlatforms,
+  routePlatformBlockers,
 }: {
   test: AppMapScenarioTest;
   recordedPlatforms?: readonly PlanPlatform[];
+  routePlatformBlockers?: Partial<Record<PlanPlatform, string>>;
 }) {
-  const statuses = testRoutePlatformStatuses(test, { recordedPlatforms });
+  const statuses = testRoutePlatformStatuses(test, {
+    recordedPlatforms,
+    platformBlockers: routePlatformBlockers,
+  });
   const nativeNotice = unrecordedNativeEditorNotice(statuses);
   return (
     <section className="grid gap-2" aria-labelledby="test-routes-title">
@@ -32,7 +44,7 @@ export function TestEditorRoutes({
             <strong className="text-xs font-semibold">
               {item.label}
               <span className="ml-1.5 font-normal text-muted-foreground">
-                {item.status === "reviewed" ? "Recorded" : "Not recorded"}
+                {platformRowLabel(item.status)}
               </span>
             </strong>
             {item.reason ? (

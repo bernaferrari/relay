@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AppMap, AppMapScenarioTest } from "@relay/protocol";
-import { testStepPlatformBlockers } from "./test-step-platform-blockers.js";
+import {
+  recordedRoutePlatformBlocker,
+  testStepPlatformBlockers,
+} from "./test-step-platform-blockers.js";
 
 const androidOfflineTest: Pick<AppMapScenarioTest, "steps"> = {
   steps: [
@@ -157,8 +160,13 @@ test("iOS recorded lock is a runner compile-block, not a Ready step", () => {
     },
     ["ios"],
   );
+  assert.equal(blockers["ios-lock"], "lock-screen control is not supported by this iOS runner");
+});
+
+test("recordedRoutePlatformBlocker names the first iOS compile-block", () => {
   assert.equal(
-    blockers["ios-lock"],
-    "lock-screen control is not supported by this iOS runner",
+    recordedRoutePlatformBlocker(iosAirplaneTest, iosAirplaneMap, "ios"),
+    "airplane on iOS is a Settings handoff, not settings airplane on the Grok runner",
   );
+  assert.equal(recordedRoutePlatformBlocker(iosAirplaneTest, iosAirplaneMap, "android"), undefined);
 });

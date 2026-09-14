@@ -426,6 +426,7 @@ export function assertScenarioTest(test: AppMapScenarioTest, label: string): voi
       "steps",
       "originApplication",
       "family",
+      "nativeRouteCompanions",
       "capture",
       "surfaceBindings",
       "validation",
@@ -534,4 +535,43 @@ export function assertScenarioTest(test: AppMapScenarioTest, label: string): voi
   }
   assertSteps(test.steps, `${label}.steps`, new Set(), 0, { value: 0 });
   assertFamily(test, label);
+  assertNativeRouteCompanions(test, label);
+}
+
+function assertNativeRouteCompanions(test: AppMapScenarioTest, label: string): void {
+  if (test.nativeRouteCompanions === undefined) return;
+  if (
+    !Array.isArray(test.nativeRouteCompanions) ||
+    test.nativeRouteCompanions.length === 0 ||
+    test.nativeRouteCompanions.length > 2
+  ) {
+    appMapFail(
+      "invalid-map",
+      `${label}.nativeRouteCompanions must contain 1 or 2 native companions`,
+    );
+  }
+  const platforms = new Set<string>();
+  test.nativeRouteCompanions.forEach((raw, index) => {
+    const item = `${label}.nativeRouteCompanions[${index}]`;
+    const companion = objectValue(raw, item);
+    allowedKeys(companion, ["platform", "appMapId", "testId"], item);
+    if (companion.platform !== "android" && companion.platform !== "ios") {
+      appMapFail("invalid-map", `${item}.platform must be android or ios`);
+    }
+    if (platforms.has(companion.platform)) {
+      appMapFail(
+        "duplicate-id",
+        `${label}.nativeRouteCompanions contains duplicate ${companion.platform}`,
+      );
+    }
+    platforms.add(companion.platform);
+    identifier(companion.appMapId, `${item}.appMapId`);
+    identifier(companion.testId, `${item}.testId`);
+    if (companion.appMapId === test.appMapId) {
+      appMapFail(
+        "invalid-map",
+        `${item} must point at a different App Map; Relay never joins Tests on the same map`,
+      );
+    }
+  });
 }

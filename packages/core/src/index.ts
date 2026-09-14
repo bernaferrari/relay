@@ -1,6 +1,7 @@
 export * from "./device.js";
 export * from "./play-store.js";
 export * from "./grok.js";
+export * from "./grok-native-route-companions.js";
 export * from "./actions.js";
 export * from "./recipes.js";
 export * from "./recipe-yaml.js";

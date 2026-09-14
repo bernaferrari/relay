@@ -257,6 +257,64 @@ test("graph Test transport accepts reviewed layout assertions for route variants
   );
 });
 
+test("graph Test transport accepts cross-map native route companions", () => {
+  const companions = [
+    {
+      platform: "android" as const,
+      appMapId: "grok-android",
+      testId: "test-grok-android-home-chrome",
+    },
+  ];
+  const input = {
+    appMapId: "grok-web",
+    testId: "test-grok-web-signed-in-home",
+    expectedRevision: 620,
+    test: {
+      name: "Open grok.com signed-in",
+      kind: "scenario" as const,
+      intentSchemaVersion: 1 as const,
+      originApplication: "https://grok.com",
+      steps: [
+        {
+          id: "open-home",
+          kind: "instruction" as const,
+          intent: "Open grok.com",
+          binding: {
+            status: "resolved" as const,
+            kind: "connections" as const,
+            connectionIds: ["open-home"],
+          },
+        },
+      ],
+      nativeRouteCompanions: companions,
+    },
+  };
+  assert.deepEqual(operationDefinition("app-map.test.save").input.parse(input), input);
+  assert.deepEqual(
+    operationDefinition("app-map.test.edit").input.parse({
+      appMapId: "grok-web",
+      testId: "test-grok-web-signed-in-home",
+      expectedRevision: 620,
+      edits: [{ kind: "test.patch", patch: { nativeRouteCompanions: companions } }],
+    }).edits[0],
+    { kind: "test.patch", patch: { nativeRouteCompanions: companions } },
+  );
+  assert.throws(
+    () =>
+      operationDefinition("app-map.test.save").input.parse({
+        ...input,
+        test: {
+          ...input.test,
+          nativeRouteCompanions: [
+            ...companions,
+            { platform: "android", appMapId: "other", testId: "dup" },
+          ],
+        },
+      }),
+    /unique/u,
+  );
+});
+
 test("campaign capacity preflight remains composed into the central operation registry", () => {
   const definition = operationDefinition("campaign.capacity.preflight");
   assert.equal(definition.transport.method, "POST");

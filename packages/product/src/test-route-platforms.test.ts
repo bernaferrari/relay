@@ -91,3 +91,52 @@ test("editor notice names disabled native platforms", () => {
   assert.match(unrecordedNativeEditorNotice(statuses) ?? "", /Android and iOS/u);
   assert.match(unrecordedNativeEditorNotice(statuses) ?? "", /Grok Settings/u);
 });
+
+test("an Android companion is Linked, not Recorded, and iOS stays unrecorded", () => {
+  const statuses = testRoutePlatformStatuses({
+    originApplication: "https://grok.com",
+    nativeRouteCompanions: [
+      {
+        platform: "android",
+        appMapId: "grok-android",
+        testId: "test-grok-android-home-chrome",
+      },
+    ],
+  });
+  assert.equal(statuses[0]?.status, "reviewed");
+  assert.equal(statuses[1]?.status, "linked");
+  assert.equal(statuses[1]?.companion?.testId, "test-grok-android-home-chrome");
+  assert.match(statuses[1]?.reason ?? "", /grok-android/u);
+  assert.equal(statuses[2]?.status, "unrecorded");
+  assert.match(statuses[2]?.reason ?? "", /Grok Settings/u);
+  assert.match(unrecordedNativeEditorNotice(statuses) ?? "", /^iOS/u);
+});
+
+test("a compile-blocked iOS route variant is Blocked, not Recorded", () => {
+  const statuses = testRoutePlatformStatuses(
+    {
+      family: {
+        logicalIntentRevision: 1,
+        bindingRevision: 1,
+        routeVariants: [
+          {
+            id: "ios-airplane",
+            revision: 1,
+            predicate: { platforms: ["ios"] },
+            bindings: {},
+            reviewedAt: 1,
+            reviewedBy: "reviewer",
+          },
+        ],
+      },
+    },
+    {
+      platformBlockers: {
+        ios: "airplane on iOS is a Settings handoff, not settings airplane on the Grok runner",
+      },
+    },
+  );
+  assert.equal(statuses[2]?.status, "blocked");
+  assert.match(statuses[2]?.reason ?? "", /Settings handoff/u);
+  assert.notEqual(statuses[2]?.status, "reviewed");
+});

@@ -56,6 +56,21 @@ export function recordedTestStepPlatformBlocker(
   return undefined;
 }
 
+/** First compile-block on this platform. Unrecorded platforms ignore this. */
+export function recordedRoutePlatformBlocker(
+  test: Pick<AppMapScenarioTest, "steps">,
+  map: Pick<AppMap, "connections">,
+  platform: PlanPlatform,
+): string | undefined {
+  let first: string | undefined;
+  visitTestSteps(test.steps, (step) => {
+    if (first) return;
+    const reason = recordedTestStepPlatformBlocker(step, map, [platform]);
+    if (reason) first = reason;
+  });
+  return first;
+}
+
 export function testStepPlatformBlockers(
   test: Pick<AppMapScenarioTest, "steps">,
   map: Pick<AppMap, "connections">,
