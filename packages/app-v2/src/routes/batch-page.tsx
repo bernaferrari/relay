@@ -24,7 +24,12 @@ import {
 } from "./batch-triage";
 import { BatchTriageControls } from "./batch-triage-controls";
 import { BatchFailureClusters, BatchResultMatrix } from "./batch-triage-panels";
-import { BatchFindingsLead, BatchFindingsPanel, BatchStabilityPanel } from "./batch-plan-review";
+import {
+  BatchFindingsLead,
+  BatchFindingsPanel,
+  BatchResultSummary,
+  BatchStabilityPanel,
+} from "./batch-plan-review";
 import { PageLoading, RecordingProblem } from "./recording-shared";
 
 const routeApi = getRouteApi("/batches/$batchId");
@@ -246,36 +251,13 @@ export function BatchPage() {
 
       {report ? (
         <>
-          <p className="mt-2 text-sm text-muted-foreground">{report.report.headline}</p>
-          <dl className="relay-batch-facts mt-3 grid gap-2 text-sm sm:grid-cols-3">
-            <div>
-              <dt className="text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
-                Execution
-              </dt>
-              <dd>{report.report.executionLine ?? report.report.detail}</dd>
-            </div>
-            <div>
-              <dt className="text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
-                Checks
-              </dt>
-              <dd>{report.report.checksLine ?? report.report.detail}</dd>
-            </div>
-            <div>
-              <dt className="text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
-                Coverage
-              </dt>
-              <dd>{report.report.coverageLine ?? report.report.headline}</dd>
-            </div>
-          </dl>
-          {report.report.action ? (
-            <p className="mt-2 text-sm font-medium text-foreground">{report.report.action}</p>
-          ) : null}
+          <BatchResultSummary report={report} />
           {findingsReport ? (
             <BatchFindingsLead report={findingsReport} gridHasProblems={hasProblems} />
           ) : null}
           {active ? (
             <div
-              className="relay-batch-active mt-3.5 flex items-center gap-2.5 text-sm text-muted-foreground"
+              className="relay-batch-active mt-5 flex flex-wrap items-center gap-2.5 text-sm text-muted-foreground"
               role="status"
             >
               <span className="size-2 shrink-0 rounded-full bg-primary" aria-hidden="true" />
@@ -292,10 +274,14 @@ export function BatchPage() {
           ) : null}
 
           {canContinue ? (
-            <section className="relay-batch-next-step mt-5 rounded-xl border border-primary/30 bg-primary/5 p-5">
-              <h2>Review before continuing</h2>
-              <p>Check the representative Run before Relay starts the remaining cases.</p>
-              <div className="relay-form-actions flex flex-wrap items-center gap-2.5">
+            <section className="relay-batch-next-step mt-5 rounded-xl border border-border border-l-[3px] border-l-border-interactive-base bg-[var(--surface-raised-strong)] p-5">
+              <h2 className="text-[20px] font-semibold tracking-tight text-foreground">
+                Review before continuing
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Check the representative Run before Relay starts the remaining cases.
+              </p>
+              <div className="relay-form-actions mt-3 flex flex-wrap items-center gap-2.5">
                 <Button
                   variant="default"
                   onClick={() => continueRun.mutate()}
@@ -314,9 +300,22 @@ export function BatchPage() {
             </section>
           ) : null}
 
+          {findingsReport ? (
+            <BatchFindingsPanel
+              report={findingsReport}
+              actorId={actorId}
+              notes={notes}
+              onNotes={(next) => {
+                setNotes(next);
+                void platform.storage.set(batchReviewNotesKey(batchId), JSON.stringify(next));
+              }}
+            />
+          ) : null}
+
           {hasProblems ? (
             <BatchFailureClusters
               clusters={clusterValues}
+              cases={report.cases}
               selected={selectedClusters}
               onToggle={(cluster, checked) => toggleCluster(cluster.id, checked)}
             />
@@ -324,7 +323,7 @@ export function BatchPage() {
 
           {clusters.isError ? (
             <p
-              className="relay-batch-cluster-notice my-4 rounded-lg border border-border bg-muted/50 px-4 py-3 text-sm text-muted-foreground"
+              className="relay-batch-cluster-notice my-4 text-sm text-muted-foreground"
               role="status"
             >
               Failure grouping is unavailable. Cases are still listed below.
@@ -342,18 +341,6 @@ export function BatchPage() {
           ) : null}
 
           <BatchStabilityPanel report={report} />
-
-          {findingsReport ? (
-            <BatchFindingsPanel
-              report={findingsReport}
-              actorId={actorId}
-              notes={notes}
-              onNotes={(next) => {
-                setNotes(next);
-                void platform.storage.set(batchReviewNotesKey(batchId), JSON.stringify(next));
-              }}
-            />
-          ) : null}
 
           <div
             className="relay-batch-selection mt-4 grid gap-3"
@@ -398,7 +385,7 @@ export function BatchPage() {
 
           {report.export ? (
             <div
-              className="relay-batch-export-ready mt-1 flex flex-wrap items-center gap-3 text-xs font-semibold text-emerald-700 dark:text-emerald-300"
+              className="relay-batch-export-ready mt-1 flex flex-wrap items-center gap-3 text-xs font-semibold text-[var(--text-success-base)]"
               role="status"
             >
               <p>Export ready: {report.export.jobIds.length} run artifacts prepared.</p>

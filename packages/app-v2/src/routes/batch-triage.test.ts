@@ -109,6 +109,28 @@ describe("Batch triage presentation", () => {
     ]);
   });
 
+  it("labels Result columns with Sign-in names instead of fixture ids", () => {
+    const matrix = buildBatchMatrix([
+      {
+        id: "login-member",
+        index: 0,
+        phase: "coverage",
+        status: "failed",
+        values: {},
+        identity: {
+          testId: "test-authoring-1a2bc3ea12ff",
+          environmentId: "browser:grok-com#acct-a:1",
+          environmentPlatform: "browser",
+          environmentLabel: "f47ac10b-58cc-4372-a567-0e02b2c3d479 · grok-com",
+          accountLabel: "Member A",
+          targetLabel: "Grok.com",
+        },
+      },
+    ]);
+    expect(matrix.columns[0]?.label).toBe("Member A · Grok.com");
+    expect(matrix.rows[0]?.label).toBe("Test");
+  });
+
   it("keeps legacy batches useful without fabricating durable identities", () => {
     const matrix = buildBatchMatrix([{ ...cases[0]!, identity: undefined }]);
     expect(matrix.completeIdentity).toBe(false);

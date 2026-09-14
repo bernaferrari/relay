@@ -22,9 +22,48 @@ import {
   latestFindingDecision,
   latestFindingNote,
 } from "./batch-finding-review";
+import { batchResultContext, batchResultFacts, batchResultHeadline } from "./batch-result-view";
 
 const findingsLinkClass =
   "relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 font-semibold text-[var(--text-interactive-base)] underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]";
+
+export function BatchResultSummary({ report }: { report: ProductBatchReport }) {
+  const facts = batchResultFacts(report);
+  const context = batchResultContext(report);
+  const columns =
+    facts.length <= 2 ? "grid-cols-2" : facts.length === 3 ? "grid-cols-3" : "grid-cols-4";
+  return (
+    <div className="relay-batch-summary mt-1 grid gap-4">
+      <div className="grid max-w-[62ch] gap-1.5">
+        <p className="text-[17px] font-medium leading-6 text-pretty text-foreground">
+          {batchResultHeadline(report)}
+        </p>
+        {context ? <p className="text-[13px] leading-5 text-muted-foreground">{context}</p> : null}
+        {report.report.action ? (
+          <p className="text-sm font-medium text-foreground">{report.report.action}</p>
+        ) : null}
+      </div>
+      <dl
+        className={`relay-batch-facts grid gap-x-6 gap-y-3 max-[780px]:grid-cols-2 ${columns}`}
+      >
+        {facts.map((fact) => (
+          <div className="flex min-w-0 flex-col-reverse gap-1" key={fact.label}>
+            <dt className="text-[13px] leading-5 text-muted-foreground">{fact.label}</dt>
+            <dd
+              className={`text-[28px] font-semibold leading-8 tracking-tight tabular-nums ${
+                fact.tone === "critical"
+                  ? "text-[var(--text-critical-base)]"
+                  : "text-foreground"
+              }`}
+            >
+              {fact.value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
 
 export function BatchFindingsLead({
   report,
@@ -37,21 +76,21 @@ export function BatchFindingsLead({
   if (!count) {
     const empty = planFindingsEmptyCopy(report, { hasProblems: gridHasProblems });
     return (
-      <p
-        className="relay-batch-findings-lead mt-3 rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground"
-        role="status"
-      >
-        {empty[0]} {empty[1]} Confirm and Reject never accept a visual baseline. Review screenshots
-        opens the Report and does not accept a baseline.{" "}
-        <Link className={`${findingsLinkClass} whitespace-nowrap`} to="/accounts">
-          Check Sign-ins
-        </Link>
-      </p>
+      <div className="relay-batch-findings-lead mt-5 grid max-w-[62ch] gap-1.5" role="status">
+        <p className="text-sm leading-6 text-foreground">{empty[0]}</p>
+        <p className="text-[13px] leading-5 text-muted-foreground">
+          {empty[1]} Confirm and Reject never accept a visual baseline. Review screenshots opens the
+          Report and does not accept a baseline.{" "}
+          <Link className={`${findingsLinkClass} whitespace-nowrap`} to="/accounts">
+            Check Sign-ins
+          </Link>
+        </p>
+      </div>
     );
   }
   return (
     <p
-      className="relay-batch-findings-lead mt-3 rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground"
+      className="relay-batch-findings-lead mt-5 max-w-[62ch] text-sm leading-6 text-muted-foreground"
       role="status"
     >
       {count} finding{count === 1 ? "" : "s"} to review below. Confirm is a product issue. Reject is
@@ -70,10 +109,13 @@ export function BatchStabilityPanel({ report }: { report: ProductBatchReport }) 
   const recommendation = stability.recommendations[0];
   return (
     <section className="relay-batch-stability mt-8" aria-labelledby="batch-stability-title">
-      <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
-        Trend
-      </p>
-      <h2 id="batch-stability-title">Stability</h2>
+      <p className="text-[13px] leading-5 text-muted-foreground">Trend</p>
+      <h2
+        id="batch-stability-title"
+        className="text-[20px] font-semibold tracking-tight text-foreground"
+      >
+        Stability
+      </h2>
       <p className="mt-1 text-sm text-muted-foreground">
         <span className="tabular-nums">{stability.passedCount}</span> passed ·{" "}
         <span className="tabular-nums">{stability.failedCount}</span> product issues
@@ -118,10 +160,13 @@ export function BatchFindingsPanel({
   if (!report.analysis.findings.length) return null;
   return (
     <section className="relay-batch-findings mt-8" aria-labelledby="batch-findings-title">
-      <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
-        Findings
-      </p>
-      <h2 id="batch-findings-title">Review</h2>
+      <p className="text-[13px] leading-5 text-muted-foreground">Findings</p>
+      <h2
+        id="batch-findings-title"
+        className="text-[20px] font-semibold tracking-tight text-foreground"
+      >
+        Review
+      </h2>
       <p className="mt-1 text-sm text-muted-foreground">
         Record a verdict per finding. That note is review only — it never accepts a screenshot
         baseline.
@@ -179,7 +224,7 @@ function FindingReviewCard({
     >
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
+          <p className="text-[12px] leading-4 text-muted-foreground">
             {planFindingLaneLabel(lane)}
             {finding.severity === "critical" ? " · Critical" : ""}
           </p>

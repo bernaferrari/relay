@@ -5,6 +5,7 @@ import type {
   ProductRunAcrossSetup,
 } from "@relay/product/run-across";
 import type { CombineTriageStatus } from "@relay/protocol";
+import { formatBatchColumnLabel, formatBatchTestLabel } from "./batch-result-view";
 
 export type BatchMatrixColumn = {
   id: string;
@@ -49,7 +50,7 @@ export function isBatchCaseRerunnable(item: ProductBatchCase): boolean {
 }
 
 function testLabel(testId: string, setup?: ProductRunAcrossSetup): string {
-  return setup?.testId === testId ? setup.testName : humanizeBatchIdentity(testId);
+  return formatBatchTestLabel(testId, setup?.testId === testId ? setup.testName : undefined);
 }
 
 export function buildBatchMatrix(
@@ -69,9 +70,12 @@ export function buildBatchMatrix(
     if (!column) {
       columns.set(environmentId, {
         id: environmentId,
-        label:
-          item.identity?.environmentLabel ??
-          (environmentId === fallbackEnvironment ? "Device" : humanizeBatchIdentity(environmentId)),
+        label: formatBatchColumnLabel({
+          environmentId,
+          environmentLabel: item.identity?.environmentLabel,
+          targetLabel: item.identity?.targetLabel,
+          accountLabel: item.identity?.accountLabel,
+        }),
         ...(item.identity?.environmentPlatform
           ? { platform: item.identity.environmentPlatform }
           : {}),

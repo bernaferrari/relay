@@ -128,6 +128,10 @@ describe("Batch review controls", () => {
     expect(document.body.textContent).toContain("QA bug, not a pass");
     expect(document.body.textContent).toContain("must appear here as a finding");
     expect(document.body.textContent).not.toContain("No findings. Passing cases");
+    expect(document.body.textContent).toContain("2 product issues to review");
+    expect(document.body.textContent).toContain("Product issues");
+    expect(document.body.textContent).not.toContain("Execution");
+    expect(document.body.textContent).not.toContain("31 of 33 planned cases");
     const workbench = [...document.querySelectorAll("a")].find((link) =>
       (link.getAttribute("href") || "").includes("/runs/run-1"),
     );
@@ -267,5 +271,45 @@ describe("Batch review controls", () => {
       (button) => button.textContent?.trim() === "Reject",
     );
     expect(recordedReject?.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("presents a same-failure cluster as a Findings group, not an engine dump", async () => {
+    await render({
+      getReport: async () => report,
+      getFailureClusters: async () => ({
+        campaignId: "batch-1",
+        clusters: [
+          {
+            id: "cluster-1",
+            kind: "causal",
+            signature: {
+              kind: "causal",
+              digest: `sha256:${"a".repeat(64)}`,
+              summary: "causal failure",
+              checkIds: [],
+            },
+            environmentId: "browser:grok-com-1280x800-339a5a430a41",
+            representativeCaseId: "login-ios",
+            representativeRunId: "run-1",
+            caseIds: ["login-ios", "checkout-ios"],
+          },
+        ],
+      }),
+      getFindings: async () => {
+        throw new Error("Failed to fetch");
+      },
+    } as unknown as RunAcrossProductService);
+    expect(document.body.textContent).toContain("Same failure");
+    expect(document.body.textContent).toContain("1 group");
+    expect(document.body.textContent).not.toContain("1 groups");
+    expect(document.body.textContent).toContain("Product behavior");
+    expect(document.body.textContent).toContain("2 cases · grok-com");
+    expect(document.body.textContent).not.toContain("causal failure");
+    expect(document.body.textContent).not.toContain("339a5a430a41");
+    const reportLink = [...document.querySelectorAll("a")].find(
+      (link) => link.textContent?.trim() === "Report",
+    );
+    expect(reportLink?.getAttribute("href")).toContain("/runs/run-1");
+    expect(reportLink?.getAttribute("href")).toContain("reportView=captures");
   });
 });

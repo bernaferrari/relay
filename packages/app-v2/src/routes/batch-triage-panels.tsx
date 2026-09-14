@@ -6,12 +6,16 @@ import type {
 } from "@relay/product/run-across";
 import { Checkbox } from "@relay/ui-react/components/checkbox";
 import { Link } from "@tanstack/react-router";
-import { ChevronDown, ChevronRight, ExternalLink } from "lucide-react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
 import {
   classifyProductResultCell,
   productResultCellLabel,
 } from "@relay/product/plan-result-cells";
+import {
+  batchClusterCopy,
+  batchClusterGroupCount,
+} from "./batch-result-view";
 import {
   batchTriageCaption,
   buildBatchMatrix,
@@ -23,59 +27,79 @@ import {
   visibleBatchCases,
 } from "./batch-triage";
 
+const reportLinkClass =
+  "inline-flex min-h-11 items-center gap-1 text-[13px] font-semibold text-[var(--text-interactive-base)] underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px] transition-[color] duration-150 ease-out hover:text-[var(--text-interactive-hover)]";
+
 export function BatchFailureClusters({
   clusters,
   selected,
   onToggle,
+  cases = [],
 }: {
   clusters: readonly ProductBatchFailureCluster[];
   selected: ReadonlySet<string>;
   onToggle(cluster: ProductBatchFailureCluster, checked: boolean): void;
+  cases?: readonly ProductBatchCase[];
 }) {
   if (!clusters.length) return null;
   return (
     <section className="relay-batch-clusters mt-8" aria-labelledby="batch-clusters-title">
-      <div className="flex items-end justify-between gap-5 max-[620px]:flex-col max-[620px]:items-start max-[620px]:gap-2">
-        <div>
-          <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
-            Failure clusters
-          </p>
-          <h2 id="batch-clusters-title">Same failure</h2>
-        </div>
-        <span>{clusters.length} groups</span>
-      </div>
-      <ul className="mt-3 grid list-none gap-2 p-0">
-        {clusters.map((cluster) => (
-          <li
-            className="grid min-h-[66px] grid-cols-[auto_30px_minmax(0,1fr)_auto] items-center gap-3 rounded-lg border border-red-500/20 bg-red-500/5 p-3 max-[780px]:grid-cols-[auto_30px_minmax(0,1fr)]"
-            key={cluster.id}
+      <div className="flex flex-wrap items-end justify-between gap-x-5 gap-y-2">
+        <div className="min-w-0">
+          <p className="text-[13px] leading-5 text-muted-foreground">Findings</p>
+          <h2
+            id="batch-clusters-title"
+            className="text-[20px] font-semibold tracking-tight text-pretty text-foreground"
           >
-            <Checkbox
-              className="size-6 after:inset-0"
-              checked={selected.has(cluster.id)}
-              onCheckedChange={(checked) => onToggle(cluster, checked === true)}
-              aria-label={`Select ${cluster.signature.summary}`}
-            />
-            <span className="relay-batch-cluster-mark">{cluster.caseIds.length}</span>
-            <div className="grid min-w-0 gap-0.5">
-              <strong>{cluster.signature.summary}</strong>
-              <p>
-                {failureKind(cluster.kind)} · {humanizeBatchIdentity(cluster.environmentId)} ·{" "}
-                {cluster.caseIds.length === 1
-                  ? "1 affected case"
-                  : `${cluster.caseIds.length} affected cases`}
-              </p>
-            </div>
-            <Link
-              className="inline-flex min-h-11 items-center gap-1.5 text-xs font-semibold text-[var(--text-interactive-base)] max-[780px]:col-start-3"
-              to="/runs/$runId"
-              params={{ runId: cluster.representativeRunId }}
-              search={{ reportView: "captures" }}
+            Same failure
+          </h2>
+        </div>
+        <p className="text-[13px] tabular-nums leading-5 text-muted-foreground">
+          {batchClusterGroupCount(clusters.length)}
+        </p>
+      </div>
+      <ul className="mt-4 grid list-none gap-2.5 p-0">
+        {clusters.map((cluster) => {
+          const copy = batchClusterCopy(cluster, cases);
+          const checked = selected.has(cluster.id);
+          return (
+            <li
+              className={`grid min-h-14 grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-3 rounded-xl border border-border bg-[var(--surface-raised-strong)] py-3 pr-3 pl-3 max-[780px]:grid-cols-[auto_minmax(0,1fr)] ${
+                copy.lane === "Product"
+                  ? "border-l-[3px] border-l-border-critical-selected"
+                  : "border-l-[3px] border-l-border"
+              } ${
+                checked
+                  ? "bg-[color-mix(in_oklch,var(--surface-raised-strong)_90%,var(--text-strong)_10%)]"
+                  : ""
+              }`}
+              key={cluster.id}
             >
-              Report <ExternalLink aria-hidden="true" />
-            </Link>
-          </li>
-        ))}
+              <Checkbox
+                className="mt-1 size-6 after:-inset-2"
+                checked={checked}
+                onCheckedChange={(value) => onToggle(cluster, value === true)}
+                aria-label={`Select ${copy.title} for rerun`}
+              />
+              <div className="grid min-w-0 gap-1">
+                <p className="text-[12px] leading-4 text-muted-foreground">{copy.lane}</p>
+                <strong className="text-[15px] font-semibold leading-5 text-pretty text-foreground">
+                  {copy.title}
+                </strong>
+                <p className="text-[13px] leading-5 text-muted-foreground">{copy.meta}</p>
+              </div>
+              <Link
+                className={`${reportLinkClass} max-[780px]:col-start-2`}
+                to="/runs/$runId"
+                params={{ runId: cluster.representativeRunId }}
+                search={{ reportView: "captures" }}
+              >
+                Report
+                <ChevronRight className="size-3.5" aria-hidden="true" />
+              </Link>
+            </li>
+          );
+        })}
       </ul>
     </section>
   );
@@ -114,7 +138,16 @@ export function BatchResultMatrix({
     : [];
 
   return (
-    <section className="relay-batch-matrix grid gap-1" aria-label="Results">
+    <section className="relay-batch-matrix mt-8 grid gap-3" aria-labelledby="batch-cases-title">
+      <div>
+        <p className="text-[13px] leading-5 text-muted-foreground">Cases</p>
+        <h2
+          id="batch-cases-title"
+          className="text-[20px] font-semibold tracking-tight text-foreground"
+        >
+          Results
+        </h2>
+      </div>
       {showMatrix ? (
         <div className="relay-batch-matrix-scroll overflow-auto rounded-xl border border-border">
           <table className="min-w-[560px] w-full border-separate border-spacing-0">
@@ -312,9 +345,7 @@ function BatchCaseResult({
           >
             {label}
           </strong>
-          <small className="text-[12px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
-            {cellLabel}
-          </small>
+          <small className="text-[12px] leading-4 text-muted-foreground">{cellLabel}</small>
           {item.error && problem ? (
             <small className="text-[13px] leading-5 text-muted-foreground">{item.error}</small>
           ) : null}
@@ -325,9 +356,7 @@ function BatchCaseResult({
       ) : (
         <span className="grid min-w-0 gap-1">
           <strong className="truncate text-[15px] font-medium text-foreground">{label}</strong>
-          <small className="text-[12px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
-            {cellLabel}
-          </small>
+          <small className="text-[12px] leading-4 text-muted-foreground">{cellLabel}</small>
           {review ? (
             <small className="text-[12px] leading-5 text-muted-foreground">{review}</small>
           ) : null}
@@ -363,14 +392,6 @@ function caseValues(item: ProductBatchCase): string {
   if (item.world?.trim()) return item.world;
   const values = Object.values(item.values).map(humanizeBatchIdentity);
   return values.length ? values.join(" · ") : item.phase === "pilot" ? "One case" : "Default data";
-}
-
-function failureKind(kind: ProductBatchFailureCluster["kind"]): string {
-  if (kind === "causal") return "Product behavior";
-  if (kind === "visual") return "Visual difference";
-  if (kind === "localization") return "Localization";
-  if (kind === "network") return "Network";
-  return "Crash";
 }
 
 function platformLabel(platform: "android" | "ios" | "browser"): string {
