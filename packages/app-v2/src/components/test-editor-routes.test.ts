@@ -52,4 +52,18 @@ describe("disabled steps", () => {
       }),
     ).toMatch(/^Disabled · No recorded iOS route/u);
   });
+
+  it("names a recorded-route compile-block instead of Ready", () => {
+    expect(
+      stepReadinessLabel(
+        {
+          id: "offline",
+          kind: "instruction",
+          intent: "Toggle browser offline",
+          binding: { status: "resolved", kind: "connections", connectionIds: ["offline"] },
+        },
+        { platformBlocker: "offline is a browser step" },
+      ),
+    ).toMatch(/^Blocked · offline is a browser step/u);
+  });
 });

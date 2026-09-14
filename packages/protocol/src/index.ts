@@ -4,6 +4,7 @@ export {
 } from "./core-operation-output-schemas.js";
 export type { DestinationRepairProposalsArtifactData } from "./core-operation-output-schemas.js";
 export * from "./recipes.js";
+export * from "./recipe-platform-support.js";
 export * from "./operations.js";
 export * from "./coordination.js";
 export * from "./activity.js";

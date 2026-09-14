@@ -15,9 +15,18 @@ function branchLabel(placement: StepEntry["placement"]): string {
   return "Main path";
 }
 
+function uniquePlatformBlockNotice(
+  blockers: Readonly<Record<string, string>> | undefined,
+): string | undefined {
+  const reasons = [...new Set(Object.values(blockers ?? {}))];
+  if (!reasons.length) return undefined;
+  return `Compile fails closed on the recorded route: ${reasons.join(" ")}`;
+}
+
 export function TestEditorStepOutline({
   test,
   recordedPlatforms,
+  stepPlatformBlockers,
   entries,
   selectedStepId,
   busy,
@@ -29,6 +38,7 @@ export function TestEditorStepOutline({
 }: {
   test: AppMapScenarioTest;
   recordedPlatforms?: readonly PlanPlatform[];
+  stepPlatformBlockers?: Readonly<Record<string, string>>;
   entries: readonly StepEntry[];
   selectedStepId?: string;
   busy: boolean;
@@ -38,6 +48,7 @@ export function TestEditorStepOutline({
   onMove(entry: StepEntry, delta: -1 | 1): void;
   onDrop(entry: StepEntry, after: boolean): void;
 }) {
+  const compileBlockNotice = uniquePlatformBlockNotice(stepPlatformBlockers);
   return (
     <section className="min-w-0" aria-labelledby="test-steps-title">
       <div className="flex items-end justify-between gap-5 max-[620px]:items-start max-[620px]:gap-3">
@@ -112,6 +123,7 @@ export function TestEditorStepOutline({
                           !recordedPlatforms.includes("android") &&
                           !recordedPlatforms.includes("ios"),
                         ),
+                        platformBlocker: stepPlatformBlockers?.[entry.step.id],
                       })}
                     </small>
                   </span>
@@ -149,6 +161,11 @@ export function TestEditorStepOutline({
       )}
       <div className="mt-5">
         <TestEditorRoutes test={test} recordedPlatforms={recordedPlatforms} />
+        {compileBlockNotice ? (
+          <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
+            {compileBlockNotice}
+          </p>
+        ) : null}
       </div>
     </section>
   );

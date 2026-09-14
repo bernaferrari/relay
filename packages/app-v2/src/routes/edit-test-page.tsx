@@ -400,6 +400,7 @@ function TestEditorDocument() {
           onBind={(transaction) => apply(transaction)}
           onRemove={() => removeStep(selected)}
           onAddChild={(branch) => addChildStep(selected, branch)}
+          platformBlocker={editorDocument.stepPlatformBlockers?.[selected.step.id]}
         />
       ) : (
         <EmptyState
@@ -572,6 +573,7 @@ function TestEditorDocument() {
               <TestEditorStepOutline
                 test={editorDocument.test}
                 recordedPlatforms={editorDocument.recordedPlatforms}
+                stepPlatformBlockers={editorDocument.stepPlatformBlockers}
                 entries={entries}
                 selectedStepId={selected?.step.id}
                 busy={edit.isPending || repair.isPending}

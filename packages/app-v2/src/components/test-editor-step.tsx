@@ -60,6 +60,7 @@ export function SelectedStepEditor({
   onBind,
   onRemove,
   onAddChild,
+  platformBlocker,
 }: {
   entry: StepEntry;
   draft?: StepDraft;
@@ -69,6 +70,7 @@ export function SelectedStepEditor({
   onBind(transaction: EditTransaction): void;
   onRemove(): void;
   onAddChild(branch: "then" | "else" | "steps"): void;
+  platformBlocker?: string;
 }) {
   const [intent, setIntent] = useState(draft?.intent ?? entry.step.intent);
   const [note, setNote] = useState(draft?.note ?? entry.step.note ?? "");
@@ -258,6 +260,14 @@ export function SelectedStepEditor({
             <AlertDescription>{entry.step.execution.reason}</AlertDescription>
           </div>
         </Alert>
+      ) : platformBlocker ? (
+        <Alert variant="default" className="grid grid-cols-[18px_minmax(0,1fr)] gap-2 p-2.5">
+          <AlertTriangle aria-hidden="true" />
+          <div>
+            <AlertTitle>Compile blocked on the recorded route</AlertTitle>
+            <AlertDescription>{platformBlocker}</AlertDescription>
+          </div>
+        </Alert>
       ) : null}
       {entry.step.binding.status === "unresolved" ? (
         <Alert variant="default" className="grid grid-cols-[18px_minmax(0,1fr)] gap-2 p-2.5">
@@ -394,8 +404,7 @@ function BindingRepair({
                   {
                     kind: "step.unbind",
                     stepId: step.id,
-                    reason:
-                      step.binding.status === "unresolved" ? step.binding.reason : "Unbound",
+                    reason: step.binding.status === "unresolved" ? step.binding.reason : "Unbound",
                     ...(step.binding.status === "unresolved" && step.binding.candidates
                       ? { candidates: structuredClone(step.binding.candidates) }
                       : {}),
@@ -427,9 +436,10 @@ function bindingForCandidate(
 
 export function stepReadinessLabel(
   step: AppMapScenarioTestStep,
-  options?: { unrecordedNative?: boolean },
+  options?: { unrecordedNative?: boolean; platformBlocker?: string },
 ): string {
   if (step.execution?.status === "disabled") return `Disabled · ${step.execution.reason}`;
+  if (options?.platformBlocker) return `Blocked · ${options.platformBlocker}`;
   if (options?.unrecordedNative) {
     return `${step.binding.status === "resolved" ? "Ready on Web" : "Unbound"} · Android/iOS disabled until recorded`;
   }

@@ -5,6 +5,11 @@ import type {
   TargetProfile,
 } from "@relay/protocol";
 
+export {
+  recordedTestStepPlatformBlocker,
+  testStepPlatformBlockers,
+} from "./test-step-platform-blockers.js";
+
 export const PLAN_PLATFORMS = ["browser", "android", "ios"] as const;
 
 export type PlanPlatform = (typeof PLAN_PLATFORMS)[number];
@@ -36,7 +41,7 @@ function unrecordedReason(platform: PlanPlatform): string {
 function connectionIdsFromSteps(steps: readonly AppMapScenarioTestStep[]): string[] {
   const ids: string[] = [];
   for (const step of steps) {
-    if (step.binding.status === "resolved" && step.binding.kind === "connections") {
+    if (step.binding?.status === "resolved" && step.binding.kind === "connections") {
       ids.push(...step.binding.connectionIds);
     }
     if (step.kind === "decision") {

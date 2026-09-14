@@ -5,7 +5,11 @@ import type {
   AppMapScenarioTestEdit,
   Proposal,
 } from "@relay/protocol";
-import { recordedPlanPlatformsFromAppMap, type PlanPlatform } from "@relay/product/test-route-platforms";
+import {
+  recordedPlanPlatformsFromAppMap,
+  testStepPlatformBlockers,
+  type PlanPlatform,
+} from "@relay/product/test-route-platforms";
 import type { Platform } from "../platform/types";
 import { productClientForPlatform } from "./product-client";
 
@@ -34,6 +38,7 @@ export type ProductTestEditorDocument = {
   revision: number;
   test: AppMapScenarioTest;
   recordedPlatforms?: readonly PlanPlatform[];
+  stepPlatformBlockers?: Readonly<Record<string, string>>;
   history: readonly ProductTestHistoryItem[];
   repairs: readonly ProductTestRepair[];
 };
@@ -191,12 +196,15 @@ export function documentFromMap(
         0,
       ),
     }));
+  const recordedPlatforms = recordedPlanPlatformsFromAppMap(appMap, test);
+  const stepPlatformBlockers = testStepPlatformBlockers(test, appMap, recordedPlatforms);
   return {
     appMapId: appMap.id,
     appName: appMap.name,
     revision: appMap.revision,
     test: structuredClone(test),
-    recordedPlatforms: recordedPlanPlatformsFromAppMap(appMap, test),
+    recordedPlatforms,
+    ...(Object.keys(stepPlatformBlockers).length ? { stepPlatformBlockers } : {}),
     history,
     repairs,
   };

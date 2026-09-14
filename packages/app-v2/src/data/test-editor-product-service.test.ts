@@ -120,4 +120,71 @@ describe("Test editor product history transport", () => {
       },
     });
   });
+
+  it("names Android offline as a compile-block on the editor document", async () => {
+    const service = createTestEditorProductService(platform);
+    clientRef.current.invoke.mockResolvedValueOnce({
+      appMaps: [
+        {
+          id: "android-primitives",
+          name: "Android primitives",
+          revision: 34,
+          tests: {
+            "test-android-browser-offline": {
+              id: "test-android-browser-offline",
+              organizationId: "local",
+              projectId: "default",
+              appMapId: "android-primitives",
+              createdAt: 1,
+              updatedAt: 1,
+              name: "Browser mid-run offline",
+              kind: "scenario",
+              intentSchemaVersion: 1,
+              steps: [
+                {
+                  id: "browser-offline",
+                  kind: "instruction",
+                  intent: "Toggle browser offline on then off",
+                  binding: {
+                    status: "resolved",
+                    kind: "connections",
+                    connectionIds: ["connection-android-browser-offline"],
+                  },
+                },
+              ],
+            },
+          },
+          screens: {
+            home: { variantIds: ["android-home"] },
+          },
+          screenVariants: {
+            "android-home": { targetProfile: { platform: "android" } },
+          },
+          connections: {
+            "connection-android-browser-offline": {
+              fromScreenId: "home",
+              destination: { kind: "end" },
+              actions: [
+                {
+                  kind: "steps",
+                  steps: [
+                    { kind: "wait-for", target: { label: "Google search" } },
+                    { kind: "offline", state: "on" },
+                  ],
+                },
+              ],
+            },
+          },
+          activity: {},
+          proposals: {},
+        },
+      ],
+    });
+
+    const document = await service.get("test-android-browser-offline");
+    expect(document?.recordedPlatforms).toEqual(["android"]);
+    expect(document?.stepPlatformBlockers).toEqual({
+      "browser-offline": "offline is a browser step",
+    });
+  });
 });
