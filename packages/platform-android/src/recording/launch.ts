@@ -20,7 +20,7 @@ export async function startInitialTransaction(params: {
   startedAt: number;
   signal: AbortSignal;
   prepareOutput: () => Promise<void>;
-}): Promise<Readonly<{ chunk: NativeChunk; manifestPath: string }>> {
+}): Promise<Readonly<{ chunk: NativeChunk; manifestPath: string; startedAtMs: number }>> {
   const { transport, device, input, startedAt, signal, prepareOutput } = params;
   await reconcileStartEvidence(transport, device);
   await prepareOutput();
@@ -34,7 +34,11 @@ export async function startInitialTransaction(params: {
       signal,
     );
     let chunk: NativeChunk;
+    let startedAtMs: number;
     try {
+      // Timestamp immediately before launching, the way the stop signal is timestamped, so the
+      // window a short clip is measured against holds only the recording.
+      startedAtMs = Date.now();
       chunk = await startChunkAt(transport, remotePath, input, signal);
     } catch (error) {
       if (signal.aborted) {
@@ -56,7 +60,7 @@ export async function startInitialTransaction(params: {
       await rollbackPublishedChunk(transport, manifestPath, chunk);
       throw error;
     }
-    return { chunk, manifestPath };
+    return { chunk, manifestPath, startedAtMs };
   }
   throw last ?? new Error('Android screenrecord did not begin producing frames');
 }
