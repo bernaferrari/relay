@@ -201,6 +201,7 @@ export function markNavigationExternalHandoff(
 
 export function destEndPrimitiveCoverageAllowed(step: RecipeStep): boolean {
   if (step.kind === "settings") return true;
+  if (step.kind === "offline") return true;
   if (step.kind === "app" && step.action === "background") return true;
   if (step.kind === "key" && step.key === "home") return true;
   return false;

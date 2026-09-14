@@ -1459,6 +1459,78 @@ test("dest-end mobile-data and app.background compile as coverage primitives", (
   );
 });
 
+test("dest-end browser offline compiles as a coverage primitive", () => {
+  const map = fixture();
+  const work = destEndPrimitiveWork(map, "browser-offline", [
+    {
+      id: "toggle-offline",
+      kind: "steps",
+      steps: [
+        { kind: "wait-for", target: { label: "Library" } },
+        { kind: "offline", state: "on" },
+        { kind: "offline", state: "off" },
+        { kind: "wait-for", target: { label: "Library" } },
+      ],
+    },
+  ]);
+  const compiled = compileAppMapTest(map, work);
+  assert.equal(
+    Object.values(compiled.graph).some((recipe) =>
+      recipe.steps.some((step) => step.kind === "offline"),
+    ),
+    true,
+  );
+});
+
+test("dest-end offline on Android is a compile-time blocker, not a runtime surprise", () => {
+  const map = fixture();
+  const androidProfile = {
+    id: "emulator-5554",
+    targetId: "emulator-5554",
+    source: "device",
+    platform: "android",
+    name: "Android emulator",
+    capabilities: ["tap", "screenshot"],
+    observedAt: at,
+  } satisfies TargetProfile;
+  map.screens.home = { ...map.screens.home!, variantIds: ["android-home"] };
+  map.screenVariants["android-home"] = {
+    ...scope,
+    id: "android-home",
+    screenId: "home",
+    targetProfile: androidProfile,
+    evidenceIds: [],
+    createdAt: at,
+    updatedAt: at,
+  };
+  const work = destEndPrimitiveWork(map, "browser-offline", [
+    {
+      id: "toggle-offline",
+      kind: "steps",
+      steps: [
+        { kind: "wait-for", target: { label: "Google search" } },
+        { kind: "offline", state: "on" },
+        { kind: "offline", state: "off" },
+      ],
+    },
+  ]);
+  assert.throws(
+    () =>
+      compileAppMapTest(map, work, {
+        runtimeTargetProfile: {
+          id: "emulator-5554",
+          targetId: "emulator-5554",
+          platform: "android",
+          capabilities: ["screenshot", "tap"],
+        },
+      }),
+    (error: unknown) =>
+      error instanceof AppMapTestCompileError &&
+      error.code === "unsupported-platform" &&
+      /offline is a browser step/u.test(error.message),
+  );
+});
+
 test("dest-end app.close still fails closed as a cold coverage effect", () => {
   const map = fixture();
   const work = destEndPrimitiveWork(map, "kill-chrome", [

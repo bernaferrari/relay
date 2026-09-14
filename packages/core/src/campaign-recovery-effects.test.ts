@@ -68,6 +68,10 @@ test("dest-end coverage may freeze mobile-data and app.background primitives", (
       { kind: "app", action: "background", app: "com.android.chrome", backgroundMs: 1_000 },
     ]),
     close: recipe("close", [{ kind: "app", action: "close", app: "com.android.chrome" }]),
+    offline: recipe("offline", [
+      { kind: "offline", state: "on" },
+      { kind: "offline", state: "off" },
+    ]),
   };
   assert.deepEqual(
     frozenColdCoverageEffects({
@@ -82,6 +86,14 @@ test("dest-end coverage may freeze mobile-data and app.background primitives", (
       graph,
       coverageRecipeId: "background",
       destEndRecipeIds: ["background"],
+    }),
+    [],
+  );
+  assert.deepEqual(
+    frozenColdCoverageEffects({
+      graph,
+      coverageRecipeId: "offline",
+      destEndRecipeIds: ["offline"],
     }),
     [],
   );
@@ -112,10 +124,7 @@ test("dest-end coverage does not reject mobile-data or app.background at runtime
       destEndRecipeIds: ["android-mobile-data"],
     },
   };
-  rejectForbiddenCoverageEffect(
-    { kind: "settings", setting: "mobile-data", state: "off" },
-    ctx,
-  );
+  rejectForbiddenCoverageEffect({ kind: "settings", setting: "mobile-data", state: "off" }, ctx);
   rejectForbiddenCoverageEffect(
     { kind: "app", action: "background", app: "com.android.chrome", backgroundMs: 1_000 },
     ctx,
