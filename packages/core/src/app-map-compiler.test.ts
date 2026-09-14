@@ -813,3 +813,26 @@ test("leftover conversation dest-screen still uses wait-for as the origin proof"
   );
   assert.equal(steps.at(-1)?.kind === "expect-screen" ? steps.at(-1).screenId : undefined, "home");
 });
+
+test("dest-end Test/Flow skips origin expect-screen when wait-for is first", () => {
+  const map = fixture();
+  map.connections["open-home"]!.destination = { kind: "end" };
+  map.connections["open-home"]!.caseStackId = undefined;
+  map.connections["open-home"]!.actions = [
+    {
+      id: "ask",
+      kind: "steps",
+      steps: [
+        { kind: "wait-for", target: { label: "Library" }, timeoutMs: 5_000 },
+        { kind: "type", text: "3*5", target: { identifier: "chat-input" } },
+      ],
+    },
+  ];
+  const plan = compileAppMapFlow(map, "checkout");
+  const steps = plan.recipes[plan.rootRecipeId]!.steps;
+  assert.equal(steps[0]?.kind, "wait-for");
+  assert.equal(
+    steps.some((step) => step.kind === "expect-screen" && step.screenId === "welcome"),
+    false,
+  );
+});

@@ -229,6 +229,15 @@ function semanticRevealPlans(
   return plans;
 }
 
+function connectionActionsStartWithWaitFor(connection: Connection | undefined): boolean {
+  const first = connection?.actions[0];
+  if (!first) return false;
+  if (first.kind === "steps" || first.kind === "recorded") {
+    return first.steps[0]?.kind === "wait-for";
+  }
+  return false;
+}
+
 function actionSteps(map: AppMap, action: ActionSpec, sourceScreenId?: string): RecipeStep[] {
   const steps: RecipeStep[] = (() => {
     switch (action.kind) {
@@ -501,17 +510,27 @@ export function compileAppMapFlow(
     });
   }
   const source = map.screens[flow.startScreenId]!;
-  const sourceStep = screenExpectation(map, source, compiledAppMapStepId("relay-source", flow.id));
-  const sourceStepIndex = root.steps.length;
-  root.steps.push(sourceStep);
-  root.stepProvenance.push({
-    recipeId: rootRecipeId,
-    stepIndex: sourceStepIndex,
-    stepId: sourceStep.id!,
-    origin: "source",
-    ownerKind: "flow",
-    ownerId: flow.id,
-  });
+  const firstConnection = connectionIds[0] ? map.connections[connectionIds[0]] : undefined;
+  // Dest-end chrome that starts with wait-for must not require the origin
+  // fingerprint. compileAppMapConnection already skips that identity; the
+  // Test/Flow compiler has to skip it too or leftover origin chrome SOS.
+  if (!connectionActionsStartWithWaitFor(firstConnection)) {
+    const sourceStep = screenExpectation(
+      map,
+      source,
+      compiledAppMapStepId("relay-source", flow.id),
+    );
+    const sourceStepIndex = root.steps.length;
+    root.steps.push(sourceStep);
+    root.stepProvenance.push({
+      recipeId: rootRecipeId,
+      stepIndex: sourceStepIndex,
+      stepId: sourceStep.id!,
+      origin: "source",
+      ownerKind: "flow",
+      ownerId: flow.id,
+    });
+  }
   const connections: AppMapCompiledFlow["connections"] = [];
   const caseStackIds = new Set<string>();
   let terminal: AppMapCompiledFlow["terminal"] = {
@@ -679,7 +698,7 @@ export function compileAppMapConnection(
   // Wait-for as the first action is the origin proof. Requiring origin
   // identity strands leftover conversation after a reply (open chat is no
   // longer empty home), then SOS-recovers by replaying the same connection.
-  if (compiled.steps[0]?.kind === "wait-for") {
+  if (connectionActionsStartWithWaitFor(connection) || compiled.steps[0]?.kind === "wait-for") {
     root.steps = [];
     root.stepProvenance = [];
   }
