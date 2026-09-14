@@ -20,6 +20,7 @@ export type AppIdentityPolicy = {
     readonly conversationArticleLabel: RegExp;
     readonly transcriptParagraphRole: RegExp;
     readonly placeholderHint?: RegExp;
+    readonly inputIdentifier?: RegExp;
   };
   readonly signIn?: {
     readonly signedInMarkers: readonly string[];
@@ -49,6 +50,7 @@ export const GROK_WEB_APP_POLICY: AppIdentityPolicy = {
     transcriptParagraphRole: /^(?:p|paragraph)$/u,
     placeholderHint:
       /\b(?:type [@/#] to [a-z0-9 ]+|type to (?:imagine|grok)\b|drag and drop [a-z0-9 ]+|switch to (?:build|ask) mode(?: to [a-z0-9 ]*)?|ask grok anything)\b/giu,
+    inputIdentifier: /^chat-input$/u,
   },
   signIn: {
     signedInMarkers: ["ask grok anything", "ask anything", "imagine", "speak", "new chat"],

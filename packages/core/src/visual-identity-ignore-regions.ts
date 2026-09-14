@@ -1,4 +1,5 @@
 import type { VisualComparisonPolicy, VisualRegion } from "@relay/protocol";
+import { GROK_WEB_APP_POLICY } from "./app-identity-policy.js";
 
 type PixelRegion = {
   x: number;
@@ -24,6 +25,10 @@ const PAYWALL_SIGNAL = /continue your conversation/iu;
 const USER_BUBBLE_SIGNAL = /^(?:you|you said)$/iu;
 const HEADER_MAX_Y = 100;
 const NAV_RAIL_MAX_X = 88;
+const COMPOSER_MIN_WIDTH = 40;
+const COMPOSER_MIN_HEIGHT = 8;
+const COMPOSER_MAX_HEIGHT = 80;
+const COMPOSER_MAX_WIDTH_RATIO = 0.72;
 
 function nodeRole(node: Record<string, unknown>): string {
   return String(node.role ?? node.type ?? "")
@@ -53,6 +58,73 @@ function nodeBox(node: Record<string, unknown>): Record<string, unknown> | undef
     return undefined;
   }
   return box;
+}
+
+function nodeLabel(node: Record<string, unknown>): string {
+  return String(node.label ?? node.value ?? "").trim();
+}
+
+function placeholderHint(): RegExp | undefined {
+  const hint = GROK_WEB_APP_POLICY.composer?.placeholderHint;
+  if (!hint) return undefined;
+  return new RegExp(hint.source, hint.flags.replaceAll("g", ""));
+}
+
+function isTightComposerBox(
+  box: Record<string, unknown>,
+  frame: { width: number; height: number },
+): boolean {
+  const width = Number(box.width);
+  const height = Number(box.height);
+  if (width < COMPOSER_MIN_WIDTH || height < COMPOSER_MIN_HEIGHT || height > COMPOSER_MAX_HEIGHT) {
+    return false;
+  }
+  if (width / frame.width > COMPOSER_MAX_WIDTH_RATIO || height / frame.height > 0.2) return false;
+  return true;
+}
+
+function namedComposerBox(box: Record<string, unknown>): PixelRegion {
+  return {
+    x: Number(box.x),
+    y: Number(box.y),
+    width: Number(box.width),
+    height: Number(box.height),
+    name: "composer placeholder",
+  };
+}
+
+/** Tight composer field only. Full-viewport roots and paywall cards stay compared. */
+function composerPlaceholderIgnoreFromSnapshot(
+  data: unknown,
+  frame: { width: number; height: number },
+): PixelRegion | undefined {
+  if (!frame.width || !frame.height || frame.width <= 0 || frame.height <= 0) return undefined;
+  const nodes = snapshotNodes(data);
+  const ident = GROK_WEB_APP_POLICY.composer?.inputIdentifier ?? /^chat-input$/u;
+  for (const node of nodes) {
+    if (!ident.test(String(node.identifier ?? ""))) continue;
+    const box = nodeBox(node);
+    if (!box || !isTightComposerBox(box, frame)) continue;
+    return namedComposerBox(box);
+  }
+  const hint = placeholderHint();
+  const role = GROK_WEB_APP_POLICY.composer?.role ?? COMPOSER_ROLE;
+  const matches: PixelRegion[] = [];
+  for (const node of nodes) {
+    if (!role.test(nodeRole(node))) continue;
+    if (!hint?.test(nodeLabel(node))) continue;
+    const box = nodeBox(node);
+    if (!box || !isTightComposerBox(box, frame)) continue;
+    matches.push(namedComposerBox(box));
+  }
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
+function artifactsIncludePaywall(artifacts: readonly { kind?: string; data?: unknown }[]): boolean {
+  return artifacts.some((artifact) => {
+    if (artifact.kind !== "ui-tree") return false;
+    return snapshotNodes(artifact.data).some((node) => PAYWALL_SIGNAL.test(nodeLabel(node)));
+  });
 }
 
 /** User bubble only. The Continue-your-conversation paywall card stays compared. */
@@ -177,20 +249,26 @@ export function visualIgnoreRegionsFromIdentityArtifacts(
 ): VisualRegion[] {
   const regions: VisualRegion[] = [];
   const authored = artifacts.some((artifact) => artifact.kind === "identity-ignore");
+  const paywall = artifactsIncludePaywall(artifacts);
   const ignores = artifacts.flatMap((artifact) => {
     if (artifact.kind === "identity-ignore") {
       const region = identityIgnoreRegion(artifact.data);
       return region ? [region] : [];
     }
     if (artifact.kind === "ui-tree") {
-      if (authored) return [];
       const frame = frames.find((item) => item.width && item.height);
       if (!frame?.width || !frame.height) return [];
-      const region = replyBodyIgnoreFromSnapshot(artifact.data, {
-        width: frame.width,
-        height: frame.height,
-      });
-      return region ? [region] : [];
+      const size = { width: frame.width, height: frame.height };
+      const extra: PixelRegion[] = [];
+      if (!paywall) {
+        const composer = composerPlaceholderIgnoreFromSnapshot(artifact.data, size);
+        if (composer) extra.push(composer);
+      }
+      if (!authored) {
+        const reply = replyBodyIgnoreFromSnapshot(artifact.data, size);
+        if (reply) extra.push(reply);
+      }
+      return extra;
     }
     return [];
   });

@@ -102,6 +102,9 @@ describe("test editor assertions", () => {
     const cookie = IDENTITY_IGNORE_PRESETS.find((item) => item.id === "cookie-banner");
     expect(cookie).toBeDefined();
     expect(parseRegion(cookie!.region)).toEqual({ x: 0.57, y: 0.8, width: 0.43, height: 0.2 });
+    const composer = IDENTITY_IGNORE_PRESETS.find((item) => item.id === "composer-placeholder");
+    expect(composer).toBeDefined();
+    expect(parseRegion(composer!.region)).toEqual({ x: 0.21, y: 0.29, width: 0.57, height: 0.06 });
     expect(
       isValidationDraftReady({
         kind: "identity-ignore",

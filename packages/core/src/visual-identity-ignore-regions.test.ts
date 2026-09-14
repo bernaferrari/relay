@@ -178,6 +178,106 @@ test("authored cookie banner stays a bottom-right unit rectangle", () => {
   assert.equal(regions[0]?.height, 0.2);
 });
 
+test("chat-input identifier ignores the tight composer placeholder, not the viewport", () => {
+  const regions = visualIgnoreRegionsFromIdentityArtifacts(
+    [
+      {
+        kind: "ui-tree",
+        data: {
+          nodes: [
+            {
+              role: "div",
+              identifier: "grok-app-root",
+              label: "Switch to Build Mode to create apps",
+              rect: { x: 0, y: 0, width: 1280, height: 800 },
+            },
+            {
+              role: "div",
+              identifier: "chat-input",
+              label: "Switch to Build Mode to create apps",
+              rect: { x: 275, y: 232, width: 726, height: 42 },
+            },
+            { role: "button", label: "Sign in", rect: { x: 1100, y: 11, width: 76, height: 40 } },
+          ],
+        },
+      },
+    ],
+    [{ index: 0, width: 1280, height: 800 }],
+  );
+  assert.equal(regions.length, 1);
+  assert.equal(regions[0]?.name, "composer placeholder");
+  assert.ok((regions[0]?.width ?? 1) < 0.72);
+  assert.ok((regions[0]?.height ?? 1) < 0.08);
+  assert.ok((regions[0]?.y ?? 0) > 0.25);
+  assert.ok((regions[0]?.y ?? 0) + (regions[0]?.height ?? 0) < 0.4);
+});
+
+test("cookie banner stacks with composer placeholder and skips a reply-body column", () => {
+  const regions = visualIgnoreRegionsFromIdentityArtifacts(
+    [
+      {
+        kind: "identity-ignore",
+        data: { name: "cookie banner", x: 0.57, y: 0.8, width: 0.43, height: 0.2 },
+      },
+      {
+        kind: "ui-tree",
+        data: {
+          nodes: [
+            {
+              role: "div",
+              identifier: "chat-input",
+              label: "Type / to use slash commands",
+              rect: { x: 275, y: 232, width: 726, height: 42 },
+            },
+            { role: "article", label: "You", rect: { x: 80, y: 80, width: 40, height: 40 } },
+          ],
+        },
+      },
+    ],
+    [{ index: 0, width: 1280, height: 800 }],
+  );
+  assert.deepEqual([...new Set(regions.map((region) => region.name))].sort(), [
+    "composer placeholder",
+    "cookie banner",
+  ]);
+});
+
+test("a paywall ui-tree does not ignore the composer slot", () => {
+  const regions = visualIgnoreRegionsFromIdentityArtifacts(
+    [
+      {
+        kind: "ui-tree",
+        data: {
+          nodes: [
+            {
+              role: "div",
+              identifier: "chat-input",
+              label: "Ask Grok anything",
+              rect: { x: 275, y: 232, width: 726, height: 42 },
+            },
+          ],
+        },
+      },
+      {
+        kind: "ui-tree",
+        data: {
+          nodes: [
+            {
+              role: "h2",
+              label: "Continue your conversation",
+              rect: { x: 297, y: 165, width: 427, height: 22 },
+            },
+            { role: "article", label: "You", rect: { x: 926, y: 80, width: 65, height: 54 } },
+          ],
+        },
+      },
+    ],
+    [{ index: 0, width: 1280, height: 800 }],
+  );
+  assert.equal(regions.length, 1);
+  assert.equal(regions[0]?.name, "user bubble");
+});
+
 test("cookie banner stacks with user bubble and skips ui-tree inference", () => {
   const regions = visualIgnoreRegionsFromIdentityArtifacts(
     [
@@ -209,6 +309,49 @@ test("cookie banner stacks with user bubble and skips ui-tree inference", () => 
     "cookie banner",
     "user bubble",
   ]);
+});
+
+test("a unique Ask Grok anything textbox is ignored when chat-input is absent", () => {
+  const regions = visualIgnoreRegionsFromIdentityArtifacts(
+    [
+      {
+        kind: "ui-tree",
+        data: {
+          nodes: [
+            {
+              role: "textarea",
+              label: "Ask Grok anything",
+              rect: { x: 275, y: 232, width: 726, height: 42 },
+            },
+          ],
+        },
+      },
+    ],
+    [{ index: 0, width: 1280, height: 800 }],
+  );
+  assert.equal(regions[0]?.name, "composer placeholder");
+  assert.ok((regions[0]?.height ?? 1) < 0.08);
+});
+
+test("an email textbox is not treated as the composer placeholder", () => {
+  const regions = visualIgnoreRegionsFromIdentityArtifacts(
+    [
+      {
+        kind: "ui-tree",
+        data: {
+          nodes: [
+            {
+              role: "textbox",
+              label: "Email",
+              rect: { x: 275, y: 232, width: 726, height: 42 },
+            },
+          ],
+        },
+      },
+    ],
+    [{ index: 0, width: 1280, height: 800 }],
+  );
+  assert.equal(regions.length, 0);
 });
 
 test("ui-tree ignore stays off screens that are not a conversation", () => {

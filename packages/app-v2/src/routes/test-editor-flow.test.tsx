@@ -491,10 +491,15 @@ describe("Test editor", () => {
     expect(document.body.textContent).toContain("User bubble");
     expect(document.body.textContent).toContain("Reply body");
     expect(document.body.textContent).toContain("Cookie banner");
+    expect(document.body.textContent).toContain("Composer placeholder");
     await click("Cookie banner");
     expect(
       document.querySelector<HTMLInputElement>("#selected-step-expected-identity-region")?.value,
     ).toBe("0.57,0.80,0.43,0.20");
+    await click("Composer placeholder");
+    expect(
+      document.querySelector<HTMLInputElement>("#selected-step-expected-identity-region")?.value,
+    ).toBe("0.21,0.29,0.57,0.06");
     await click("User bubble");
     expect(
       document.querySelector<HTMLInputElement>("#selected-step-expected-identity-region")?.value,
