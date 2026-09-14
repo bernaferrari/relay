@@ -621,6 +621,7 @@ export function compileAppMapScenarioTest(
             warmRecoveryRecipeId: recoveryRecipeId,
             cleanupRecipeId: cleanup?.recipeId,
             excludedRecipeIds: [coldRecoveryRecipeId],
+            destEndRecipeIds,
           });
           if (coldCoverage[0]) {
             fail(

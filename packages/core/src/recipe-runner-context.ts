@@ -76,6 +76,8 @@ export type RecipeRuntimeState = {
   }>;
   /** Reviewed App identity pack. Generic runs omit grok.com heuristics. */
   identityPolicy?: AppIdentityPolicy;
+  /** Compiled dest-end coverage recipes. P3.1 primitives may live here. */
+  destEndRecipeIds?: string[];
 };
 
 function previousProof(
@@ -197,7 +199,18 @@ export function markNavigationExternalHandoff(
   recordNavigationCursor(ctx, cursor);
 }
 
-export function campaignCoverageForbiddenEffect(step: RecipeStep): string | undefined {
+export function destEndPrimitiveCoverageAllowed(step: RecipeStep): boolean {
+  if (step.kind === "settings") return true;
+  if (step.kind === "app" && step.action === "background") return true;
+  if (step.kind === "key" && step.key === "home") return true;
+  return false;
+}
+
+export function campaignCoverageForbiddenEffect(
+  step: RecipeStep,
+  options?: { destEnd?: boolean },
+): string | undefined {
+  if (options?.destEnd && destEndPrimitiveCoverageAllowed(step)) return undefined;
   if (step.kind === "app") {
     if (step.action === "open") {
       if (step.url) return "opening a URL is a reviewed handoff effect";

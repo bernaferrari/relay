@@ -2,6 +2,7 @@ import type { Recipe, RecipeStep } from "./recipes.js";
 import { now } from "./events.js";
 import {
   campaignCoverageForbiddenEffect,
+  destEndPrimitiveCoverageAllowed,
   type RecipeStepContext,
 } from "./recipe-runner-context.js";
 
@@ -19,16 +20,18 @@ export function frozenColdCoverageEffects(input: {
   warmRecoveryRecipeId?: string;
   cleanupRecipeId?: string;
   excludedRecipeIds?: Array<string | undefined>;
+  destEndRecipeIds?: Iterable<string>;
 }): FrozenCampaignEffect[] {
   const excluded = new Set(input.excludedRecipeIds?.filter((id): id is string => Boolean(id)));
+  const destEnd = new Set(input.destEndRecipeIds ?? []);
   const seen = new Set<string>();
   const found: FrozenCampaignEffect[] = [];
-  walkRecipe(input.graph, input.coverageRecipeId, excluded, seen, found);
+  walkRecipe(input.graph, input.coverageRecipeId, excluded, destEnd, seen, found);
   if (input.warmRecoveryRecipeId) {
-    walkRecipe(input.graph, input.warmRecoveryRecipeId, excluded, seen, found);
+    walkRecipe(input.graph, input.warmRecoveryRecipeId, excluded, destEnd, seen, found);
   }
   if (input.cleanupRecipeId) {
-    walkRecipe(input.graph, input.cleanupRecipeId, excluded, seen, found);
+    walkRecipe(input.graph, input.cleanupRecipeId, excluded, destEnd, seen, found);
   }
   return found;
 }
@@ -37,6 +40,7 @@ function walkRecipe(
   graph: Readonly<Record<string, Recipe>>,
   recipeId: string,
   excluded: Set<string>,
+  destEnd: Set<string>,
   seen: Set<string>,
   found: FrozenCampaignEffect[],
 ): void {
@@ -44,7 +48,8 @@ function walkRecipe(
   seen.add(recipeId);
   const recipe = graph[recipeId];
   if (!recipe) return;
-  for (const step of recipe.steps) walkStep(graph, recipeId, step, excluded, seen, found);
+  for (const step of recipe.steps)
+    walkStep(graph, recipeId, step, excluded, destEnd, seen, found);
 }
 
 function walkStep(
@@ -52,10 +57,11 @@ function walkStep(
   recipeId: string,
   step: RecipeStep,
   excluded: Set<string>,
+  destEnd: Set<string>,
   seen: Set<string>,
   found: FrozenCampaignEffect[],
 ): void {
-  const reason = campaignCoverageForbiddenEffect(step);
+  const reason = campaignCoverageForbiddenEffect(step, { destEnd: destEnd.has(recipeId) });
   if (reason) {
     found.push({
       recipeId,
@@ -64,17 +70,25 @@ function walkStep(
     });
   }
   if (step.kind === "module" || step.kind === "repeat") {
-    walkRecipe(graph, step.recipeId, excluded, seen, found);
+    walkRecipe(graph, step.recipeId, excluded, destEnd, seen, found);
   }
   if (step.kind === "branch") {
-    walkRecipe(graph, step.thenRecipeId, excluded, seen, found);
-    if (step.elseRecipeId) walkRecipe(graph, step.elseRecipeId, excluded, seen, found);
+    walkRecipe(graph, step.thenRecipeId, excluded, destEnd, seen, found);
+    if (step.elseRecipeId) walkRecipe(graph, step.elseRecipeId, excluded, destEnd, seen, found);
   }
+}
+
+function destEndCoverageContext(ctx: RecipeStepContext): boolean {
+  const destEnd = ctx.runtime?.destEndRecipeIds ?? [];
+  if (destEnd.length === 0) return false;
+  return (ctx.moduleStack ?? []).some((recipeId) => destEnd.includes(recipeId));
 }
 
 export function rejectForbiddenCoverageEffect(step: RecipeStep, ctx: RecipeStepContext): void {
   if (!ctx.runtime?.campaignCoverageStarted) return;
-  const blockedEffect = campaignCoverageForbiddenEffect(step);
+  const destEnd = destEndCoverageContext(ctx);
+  if (destEnd && destEndPrimitiveCoverageAllowed(step)) return;
+  const blockedEffect = campaignCoverageForbiddenEffect(step, { destEnd });
   if (!blockedEffect) return;
   const capturedAt = now();
   ctx.job?.artifacts.push({

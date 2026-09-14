@@ -692,3 +692,65 @@ test("dest-end after-tap selectors do not use origin unique-variant raw", () => 
     false,
   );
 });
+
+test("dest-end after-app wait-for does not use origin unique-variant raw", () => {
+  const homeTree = [
+    {
+      index: 0,
+      type: "Application",
+      rect: { x: 0, y: 0, width: 1080, height: 2400 },
+    },
+    {
+      index: 1,
+      parentIndex: 0,
+      type: "button",
+      label: "Google search",
+      enabled: true,
+      visibleToUser: true,
+      hittable: true,
+      rect: { x: 71, y: 2125, width: 938, height: 165 },
+    },
+  ];
+  const evidence = {
+    rawSourcesByScreenId: {
+      home: [{ source: { reference: "relay-evidence://home" }, nodes: homeTree }],
+    },
+  };
+  const destEnd = {
+    ...plan([
+      {
+        kind: "expect-screen" as const,
+        screenId: "home",
+        screenTitle: "Launcher",
+        fingerprint: "home",
+      },
+      { kind: "wait-for" as const, id: "wait-launcher", target: { label: "Google search" } },
+      { kind: "app" as const, id: "open-chrome", action: "open" as const, app: "com.android.chrome" },
+      { kind: "wait-for" as const, id: "wait-chrome", target: { label: "Stay signed out" } },
+      {
+        kind: "app" as const,
+        id: "background-chrome",
+        action: "background" as const,
+        app: "com.android.chrome",
+        backgroundMs: 1_000,
+      },
+      { kind: "wait-for" as const, id: "wait-chrome-after", target: { label: "Stay signed out" } },
+    ]),
+    destEndRecipeIds: ["root"],
+  };
+  const report = preflightCompiledAppMapTestOffline(destEnd, evidence);
+  assert.equal(
+    report.findings.some(
+      (finding) =>
+        finding.severity === "blocker" &&
+        (finding.recipeStepId === "wait-chrome" || finding.recipeStepId === "wait-chrome-after"),
+    ),
+    false,
+  );
+  assert.equal(
+    report.findings.some(
+      (finding) => finding.severity === "blocker" && finding.recipeStepId === "wait-launcher",
+    ),
+    false,
+  );
+});

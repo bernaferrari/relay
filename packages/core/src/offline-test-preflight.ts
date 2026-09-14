@@ -858,6 +858,14 @@ export function preflightCompiledAppMapTestOffline(
           state: "unknown",
           reason: `${step.kind} can change navigation; the cursor remains unknown until a later screen expectation is proved at runtime.`,
         });
+        if (destEndRecipe) {
+          // Dest-end app/key/swipe can leave the origin identity. Later
+          // wait-for must use dest-end observations or live wait-for, never
+          // the origin unique-variant raw tree.
+          sourceScreenId = undefined;
+          sourceScreenTitle = undefined;
+          observations = plan.destEndObservationsByRecipeId?.[recipe.id] ?? [];
+        }
       }
       if (step.kind === "capture-surface" && step.baselineTrust === "recapture-required") {
         findings.push({

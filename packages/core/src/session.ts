@@ -96,6 +96,7 @@ import {
   runProviderTargetJobIfNeeded,
   type ProviderSessionExecution,
 } from "./session-provider-execution.js";
+import { parseAppMapTestExecutionIntentArtifact } from "./app-map-test-execution-intent.js";
 import { attachDestinationRepairProposals } from "./session-repair-attachment.js";
 import { automaticEvidencePhases } from "./session-evidence-phases.js";
 export { automaticEvidencePhases } from "./session-evidence-phases.js";
@@ -494,7 +495,12 @@ export async function runRecipeSteps(
   if (!recipe) throw new Error(`recipe not found: ${recipeId}`);
   if (!job.recipeSnapshot) job.recipeSnapshot = structuredClone(recipe);
   job.resolvedInputs = { ...recipe.variables, ...job.resolvedInputs };
-  const runtime: RecipeRuntimeState = {};
+  const destEndRecipeIds = parseAppMapTestExecutionIntentArtifact(
+    job.artifacts.find((artifact) => artifact.kind === "app-map-test-execution-intent"),
+  )?.plan.destEndRecipeIds;
+  const runtime: RecipeRuntimeState = {
+    ...(destEndRecipeIds?.length ? { destEndRecipeIds } : {}),
+  };
   pushLog(`==> recipe: ${recipe.title} · ${recipe.steps.length} step(s)`);
   const execute = async (
     step: import("./recipes.js").RecipeStep,

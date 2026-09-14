@@ -1382,6 +1382,118 @@ test("disabled steps stay in the document and are omitted from execution", () =>
   assert.match(compiled.plan.omittedSteps?.[0]?.reason ?? "", /Android/u);
 });
 
+function destEndPrimitiveWork(
+  map: ReturnType<typeof fixture>,
+  connectionId: string,
+  actions: NonNullable<ReturnType<typeof fixture>["connections"][string]>["actions"],
+): ReturnType<typeof scenario> {
+  map.connections[connectionId] = {
+    ...scope,
+    id: connectionId,
+    fromScreenId: "home",
+    destination: { kind: "end" },
+    label: connectionId,
+    state: "ready",
+    actions,
+    createdAt: at,
+    updatedAt: at,
+  };
+  const work = scenario();
+  const instruction = structuredClone(work.steps[0]!);
+  assert.equal(instruction.kind, "instruction");
+  if (instruction.kind !== "instruction") {
+    throw new Error("Expected the first scenario step to be an instruction");
+  }
+  instruction.id = connectionId;
+  instruction.intent = connectionId;
+  instruction.binding = {
+    status: "resolved",
+    kind: "connections",
+    connectionIds: [connectionId],
+  };
+  work.steps = [instruction];
+  return work;
+}
+
+test("dest-end mobile-data and app.background compile as coverage primitives", () => {
+  const map = fixture();
+  const mobileData = destEndPrimitiveWork(map, "mobile-data", [
+    {
+      id: "toggle-data",
+      kind: "steps",
+      steps: [
+        { kind: "wait-for", target: { label: "Google search" } },
+        { kind: "settings", setting: "mobile-data", state: "off" },
+        { kind: "settings", setting: "mobile-data", state: "on" },
+        { kind: "wait-for", target: { label: "Google search" } },
+      ],
+    },
+  ]);
+  const compiledMobile = compileAppMapTest(map, mobileData);
+  assert.equal(
+    Object.values(compiledMobile.graph).some((recipe) =>
+      recipe.steps.some((step) => step.kind === "settings" && step.setting === "mobile-data"),
+    ),
+    true,
+  );
+  assert.ok(compiledMobile.plan.destEndRecipeIds?.length);
+
+  const background = destEndPrimitiveWork(map, "app-background", [
+    {
+      id: "background-chrome",
+      kind: "steps",
+      steps: [
+        { kind: "wait-for", target: { label: "Google search" } },
+        { kind: "app", action: "open", app: "com.android.chrome" },
+        { kind: "app", action: "background", app: "com.android.chrome", backgroundMs: 1_000 },
+        { kind: "wait-for", target: { label: "Search or type URL" } },
+      ],
+    },
+  ]);
+  const compiledBackground = compileAppMapTest(map, background);
+  assert.equal(
+    Object.values(compiledBackground.graph).some((recipe) =>
+      recipe.steps.some((step) => step.kind === "app" && step.action === "background"),
+    ),
+    true,
+  );
+});
+
+test("dest-end app.close still fails closed as a cold coverage effect", () => {
+  const map = fixture();
+  const work = destEndPrimitiveWork(map, "kill-chrome", [
+    {
+      id: "close",
+      kind: "steps",
+      steps: [{ kind: "app", action: "close", app: "com.android.chrome" }],
+    },
+  ]);
+  assert.throws(
+    () => compileAppMapTest(map, work),
+    (error: unknown) =>
+      error instanceof AppMapTestCompileError && error.code === "cold-coverage-effect",
+  );
+});
+
+test("dest-screen settings stays a cold coverage effect", () => {
+  const map = fixture();
+  map.connections["open-cart"] = {
+    ...map.connections["open-cart"]!,
+    actions: [
+      {
+        id: "toggle-data",
+        kind: "steps",
+        steps: [{ kind: "settings", setting: "mobile-data", state: "off" }],
+      },
+    ],
+  };
+  assert.throws(
+    () => compileAppMapTest(map, scenario()),
+    (error: unknown) =>
+      error instanceof AppMapTestCompileError && error.code === "cold-coverage-effect",
+  );
+});
+
 test("nested cleanup cannot hide a cold app close in coverage", () => {
   const map = fixture();
   map.routines["kill-app"] = {
