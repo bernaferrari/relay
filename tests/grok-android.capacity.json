@@ -5,7 +5,7 @@
   "measuredAt": "2026-09-13",
   "sampleCount": 1,
   "emulatorFarm": "no-go",
-  "note": "Physical SM S931B serial RQCY104BG8X. Plan grok-android-daily is 3 dest-end Tests (home chrome, sidebar open-close, Imagine) on signed-in Account. Batch 026f18b6 3/3 ok, cell span 143848ms (~2.4 min). Emulator farm remains no-go (no AVDs). Parallelism is device count. Do not promise a 10-minute N-lane from this one-phone sample. grok-com authenticationFixtureId stays empty.",
+  "note": "Physical SM S931B serial RQCY104BG8X. Plan grok-android-daily is 3 dest-end Tests (home chrome, sidebar open-close, Imagine) on signed-in Account. Batch 026f18b6 3/3 ok, cell span 143848ms (~2.4 min). 2026-09-13: Play AVD Resizable_Experimental boots emulator-5554 (~33s, unlocked). Play Store signed in. Grok AI: This app won't work for your device; ai.x.grok not installed (only ai.x.grok.bot). Do not add a grok-android Lane on this AVD. Farm remains no-go for Grok. android-primitives test-android-upload-pdf dest-screen 3-pass 1e7819ba/a27139f5/adc164b8. Parallelism is device count. Do not promise a 10-minute N-lane. grok-com authenticationFixtureId stays empty.",
   "workItems": 3,
   "serialPackWallClockP50Ms": 143848,
   "serialPackWallClockP95Ms": 143848,
