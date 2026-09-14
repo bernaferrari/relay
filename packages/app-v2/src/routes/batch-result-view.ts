@@ -6,8 +6,7 @@ import type {
 } from "@relay/product/run-across";
 
 const KNOWN_LANES = ["grok-lab", "grok-daily"] as const;
-const ENGINE_SUMMARY =
-  /^(causal|visual|localization|network|crash)\s+failure(?:\s+in\s+\S+)?$/iu;
+const ENGINE_SUMMARY = /^(causal|visual|localization|network|crash)\s+failure(?:\s+in\s+\S+)?$/iu;
 const VIEWPORT_TOKEN = /[-_:\s]*\d{3,4}\s*[x×]\s*\d{3,4}\b/giu;
 const HEX_TOKEN = /(?:[-_:.])[0-9a-f]{8,}\b/giu;
 const HARNESS_CATEGORIES = new Set([
@@ -24,6 +23,8 @@ export type BatchResultFact = {
   readonly value: number;
   readonly tone?: "critical" | "warning";
 };
+
+export type BatchTestNames = Readonly<Record<string, string>>;
 
 export type BatchClusterCopy = {
   readonly lane: string;
@@ -71,10 +72,15 @@ export function batchResultFacts(report: ProductBatchReport): readonly BatchResu
     facts.push({
       label: "Could not run",
       value: grid.cells["could-not-run"],
+      tone: "warning",
     });
   }
   if (grid.cells.cancelled) {
-    facts.push({ label: "Cancelled", value: grid.cells.cancelled });
+    facts.push({
+      label: "Cancelled",
+      value: grid.cells.cancelled,
+      tone: "warning",
+    });
   }
   const waiting = grid.cells.running + grid.cells.pending;
   if (waiting) {
@@ -106,7 +112,8 @@ export function batchResultContext(report: ProductBatchReport): string | undefin
     ),
   ];
   if (environments.length === 1) parts.push(environments[0]!);
-  else if (environments.length > 1 && environments.length <= 3) parts.push(environments.join(" · "));
+  else if (environments.length > 1 && environments.length <= 3)
+    parts.push(environments.join(" · "));
   return parts.length ? parts.join(" · ") : undefined;
 }
 
@@ -118,9 +125,11 @@ export function batchClusterCopy(
   cluster: ProductBatchFailureCluster,
   cases: readonly ProductBatchCase[] = [],
 ): BatchClusterCopy {
-  const lane = batchClusterLane(cluster);
-  const title = batchClusterTitle(cluster);
+  const members = clusterMembers(cluster, cases);
+  const lane = batchClusterLane(cluster, members);
+  const title = batchClusterTitle(cluster, members);
   const match =
+    members[0] ??
     cases.find((item) => item.id === cluster.representativeCaseId) ??
     cases.find((item) => cluster.caseIds.includes(item.id));
   const environment = formatBatchEnvironmentLabel(cluster.environmentId, {
@@ -133,7 +142,12 @@ export function batchClusterCopy(
   return { lane, title, meta: metaParts.join(" · ") };
 }
 
-export function batchClusterTitle(cluster: ProductBatchFailureCluster): string {
+export function batchClusterTitle(
+  cluster: ProductBatchFailureCluster,
+  members: readonly ProductBatchCase[] = [],
+): string {
+  if (members.length && members.every((item) => item.status === "cancelled")) return "Cancelled";
+  if (members.length && members.every((item) => harnessCase(item))) return "Could not run";
   const summary = cluster.signature.summary.trim();
   if (summary && !ENGINE_SUMMARY.test(summary)) return summary;
   if (cluster.kind === "visual") return "Visual difference";
@@ -143,7 +157,16 @@ export function batchClusterTitle(cluster: ProductBatchFailureCluster): string {
   return "Product behavior";
 }
 
-export function batchClusterLane(cluster: ProductBatchFailureCluster): string {
+export function batchClusterLane(
+  cluster: ProductBatchFailureCluster,
+  members: readonly ProductBatchCase[] = [],
+): string {
+  if (members.length && members.every((item) => item.findingCode === "USER_CANCELLED")) {
+    return "Needs review";
+  }
+  if (members.length && members.every((item) => harnessCase(item) || item.status === "cancelled")) {
+    return "Infra";
+  }
   const category = cluster.signature.failureCategory;
   if (category && HARNESS_CATEGORIES.has(category)) return "Infra";
   if (
@@ -194,7 +217,24 @@ export function formatBatchTestLabel(testId: string, testName?: string): string 
   const named = testName?.trim();
   if (named && !isEngineTestDump(named)) return named;
   if (isEngineTestDump(testId) || (named && isEngineTestDump(named))) return "Test";
-  return titleCaseIdentity(testId);
+  return titleCaseIdentity(tidyTestId(testId));
+}
+
+export function formatBatchWorldLabel(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return trimmed;
+  if (/logged[\s_-]*out/iu.test(trimmed)) return "Logged out";
+  return titleCaseIdentity(trimmed);
+}
+
+export function formatBatchFindingCode(code: string): string {
+  if (code === "HARNESS_FAILURE") return "Harness";
+  if (code === "PRODUCT_ASSERTION") return "Product check";
+  if (code === "ACCOUNT_NEEDS_RELOGIN") return "Sign-in";
+  if (code === "BLOCKED") return "Blocked";
+  if (code === "USER_CANCELLED") return "Cancelled";
+  if (code.startsWith("POSSIBLE_")) return "Needs review";
+  return titleCaseIdentity(code);
 }
 
 function formatBatchAccountLabel(
@@ -214,6 +254,31 @@ function devicePart(environmentLabel?: string): string | undefined {
   return environmentLabel.split("·").at(-1)?.trim() || undefined;
 }
 
+function clusterMembers(
+  cluster: ProductBatchFailureCluster,
+  cases: readonly ProductBatchCase[],
+): readonly ProductBatchCase[] {
+  const ids = new Set(cluster.caseIds);
+  return cases.filter((item) => ids.has(item.id) || item.id === cluster.representativeCaseId);
+}
+
+function harnessCase(item: ProductBatchCase): boolean {
+  return (
+    item.findingCode === "HARNESS_FAILURE" ||
+    item.findingCode === "ACCOUNT_NEEDS_RELOGIN" ||
+    item.findingCode === "BLOCKED" ||
+    item.outcome === "harness-failure"
+  );
+}
+
+function tidyTestId(value: string): string {
+  return value
+    .trim()
+    .replace(/^test-/u, "")
+    .replace(/^grok-web-signed-in-/u, "")
+    .replace(/^grok-web-/u, "");
+}
+
 function isEngineTestDump(value: string): boolean {
   return /authoring/iu.test(value) && /[0-9a-f]{6,}/iu.test(value);
 }
@@ -231,7 +296,10 @@ function isProfileDump(value: string): boolean {
 
 function tidyProfileId(value: string): string {
   let next = value.trim().replace(VIEWPORT_TOKEN, "").replace(HEX_TOKEN, "");
-  next = next.replaceAll(/[-_.:]+/gu, " ").replaceAll(/\s+/gu, " ").trim();
+  next = next
+    .replaceAll(/[-_.:]+/gu, " ")
+    .replaceAll(/\s+/gu, " ")
+    .trim();
   next = next.replace(/^(browser|ios|android)\s+/iu, "");
   const compact = next.replaceAll(/\s+/gu, "-").toLowerCase();
   if (compact === "grok-com" || compact === "grokcom") return "grok-com";

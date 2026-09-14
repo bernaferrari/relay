@@ -15,6 +15,8 @@ import {
 import {
   batchClusterCopy,
   batchClusterGroupCount,
+  formatBatchWorldLabel,
+  type BatchTestNames,
 } from "./batch-result-view";
 import {
   batchTriageCaption,
@@ -46,7 +48,6 @@ export function BatchFailureClusters({
     <section className="relay-batch-clusters mt-8" aria-labelledby="batch-clusters-title">
       <div className="flex flex-wrap items-end justify-between gap-x-5 gap-y-2">
         <div className="min-w-0">
-          <p className="text-[13px] leading-5 text-muted-foreground">Findings</p>
           <h2
             id="batch-clusters-title"
             className="text-[20px] font-semibold tracking-tight text-pretty text-foreground"
@@ -62,10 +63,11 @@ export function BatchFailureClusters({
         {clusters.map((cluster) => {
           const copy = batchClusterCopy(cluster, cases);
           const checked = selected.has(cluster.id);
+          const product = copy.lane === "Product";
           return (
             <li
-              className={`grid min-h-14 grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-3 rounded-xl border border-border bg-[var(--surface-raised-strong)] py-3 pr-3 pl-3 max-[780px]:grid-cols-[auto_minmax(0,1fr)] ${
-                copy.lane === "Product"
+              className={`grid min-h-14 grid-cols-[auto_minmax(0,1fr)] items-start gap-3 rounded-xl border border-border bg-[var(--surface-raised-strong)] py-3.5 pr-3 pl-3 sm:grid-cols-[auto_minmax(0,1fr)_auto] ${
+                product
                   ? "border-l-[3px] border-l-border-critical-selected"
                   : "border-l-[3px] border-l-border"
               } ${
@@ -89,7 +91,7 @@ export function BatchFailureClusters({
                 <p className="text-[13px] leading-5 text-muted-foreground">{copy.meta}</p>
               </div>
               <Link
-                className={`${reportLinkClass} max-[780px]:col-start-2`}
+                className={`${reportLinkClass} col-start-2 sm:col-start-auto sm:justify-self-end`}
                 to="/runs/$runId"
                 params={{ runId: cluster.representativeRunId }}
                 search={{ reportView: "captures" }}
@@ -111,15 +113,17 @@ export function BatchResultMatrix({
   onToggleCase,
   onRerun,
   rerunning,
+  testNames = {},
 }: {
   report: ProductBatchReport;
   selected: ReadonlySet<string>;
   onToggleCase(item: ProductBatchCase, checked: boolean): void;
   onRerun(item: ProductBatchCase): void;
   rerunning: boolean;
+  testNames?: BatchTestNames;
 }) {
   const [showPassed, setShowPassed] = useState(false);
-  const matrix = buildBatchMatrix(report.cases, report.setup);
+  const matrix = buildBatchMatrix(report.cases, report.setup, testNames);
   const problems = visibleBatchCases(report.cases, true);
   const passed = report.cases.filter((item) => item.status === "passed");
   const allowSelect = problems.filter(isBatchCaseRerunnable).length > 1;
@@ -139,15 +143,12 @@ export function BatchResultMatrix({
 
   return (
     <section className="relay-batch-matrix mt-8 grid gap-3" aria-labelledby="batch-cases-title">
-      <div>
-        <p className="text-[13px] leading-5 text-muted-foreground">Cases</p>
-        <h2
-          id="batch-cases-title"
-          className="text-[20px] font-semibold tracking-tight text-foreground"
-        >
-          Results
-        </h2>
-      </div>
+      <h2
+        id="batch-cases-title"
+        className="text-[20px] font-semibold tracking-tight text-foreground"
+      >
+        Results
+      </h2>
       {showMatrix ? (
         <div className="relay-batch-matrix-scroll overflow-auto rounded-xl border border-border">
           <table className="min-w-[560px] w-full border-separate border-spacing-0">
@@ -184,7 +185,7 @@ export function BatchResultMatrix({
                     className="sticky left-0 z-[1] w-[190px] min-w-[140px] border-r border-b border-border bg-background p-3 text-left align-top"
                     scope="row"
                   >
-                    <strong className="block truncate font-semibold text-foreground">
+                    <strong className="block truncate font-semibold text-pretty text-foreground">
                       {row.label}
                     </strong>
                   </th>
@@ -315,6 +316,7 @@ function BatchCaseResult({
   const review = batchTriageCaption(item);
   const cellKind = classifyProductResultCell(item);
   const cellLabel = productResultCellLabel(cellKind);
+  const title = compact ? cellLabel : label;
   return (
     <div
       className={`relay-batch-result grid items-center gap-3 ${
@@ -341,11 +343,15 @@ function BatchCaseResult({
           className={`grid min-w-0 gap-1 rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring ${allowSelect ? "col-start-1 ml-8" : ""}`}
         >
           <strong
-            className={`truncate font-medium text-foreground ${quiet ? "text-[13px]" : "text-[15px]"}`}
+            className={`truncate font-medium text-pretty text-foreground ${quiet ? "text-[13px]" : "text-[15px]"}`}
           >
-            {label}
+            {title}
           </strong>
-          <small className="text-[12px] leading-4 text-muted-foreground">{cellLabel}</small>
+          {compact ? (
+            <small className="text-[12px] leading-4 text-muted-foreground">{label}</small>
+          ) : (
+            <small className="text-[12px] leading-4 text-muted-foreground">{cellLabel}</small>
+          )}
           {item.error && problem ? (
             <small className="text-[13px] leading-5 text-muted-foreground">{item.error}</small>
           ) : null}
@@ -355,7 +361,9 @@ function BatchCaseResult({
         </Link>
       ) : (
         <span className="grid min-w-0 gap-1">
-          <strong className="truncate text-[15px] font-medium text-foreground">{label}</strong>
+          <strong className="truncate text-[15px] font-medium text-pretty text-foreground">
+            {title}
+          </strong>
           <small className="text-[12px] leading-4 text-muted-foreground">{cellLabel}</small>
           {review ? (
             <small className="text-[12px] leading-5 text-muted-foreground">{review}</small>
@@ -389,7 +397,7 @@ export function sortBatchCasesForDisplay(
 }
 
 function caseValues(item: ProductBatchCase): string {
-  if (item.world?.trim()) return item.world;
+  if (item.world?.trim()) return formatBatchWorldLabel(item.world);
   const values = Object.values(item.values).map(humanizeBatchIdentity);
   return values.length ? values.join(" · ") : item.phase === "pilot" ? "One case" : "Default data";
 }

@@ -15,9 +15,7 @@ const finding = (
   ...partial,
 });
 
-const report = (
-  cases: CombineEvidenceAnalysisReport["cases"],
-): CombineEvidenceAnalysisReport => ({
+const report = (cases: CombineEvidenceAnalysisReport["cases"]): CombineEvidenceAnalysisReport => ({
   schemaVersion: 1,
   batchId: "batch-1",
   locales: ["logged-out"],

@@ -1,5 +1,4 @@
 /** @jsxImportSource react */
-import { emptyPlanFindingsReport } from "@relay/product/plan-findings";
 import { Button } from "@relay/ui-react/components/button";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { getRouteApi, useRouteContext } from "@tanstack/react-router";
@@ -31,11 +30,14 @@ import {
   BatchStabilityPanel,
 } from "./batch-plan-review";
 import { PageLoading, RecordingProblem } from "./recording-shared";
+import { resolvePlanFindings } from "./batch-finding-review";
 
 const routeApi = getRouteApi("/batches/$batchId");
 
 export function BatchPage() {
-  const { runAcrossService, queryClient, platform } = useRouteContext({ from: "__root__" });
+  const { runAcrossService, queryClient, platform, catalogService } = useRouteContext({
+    from: "__root__",
+  });
   const { batchId } = routeApi.useParams();
   const [selectedCases, setSelectedCases] = useState<Set<string>>(() => new Set());
   const [selectedClusters, setSelectedClusters] = useState<Set<string>>(() => new Set());
@@ -116,8 +118,18 @@ export function BatchPage() {
     enabled: Boolean(report) && !active,
     staleTime: 10_000,
   });
+  const tests = useQuery({
+    queryKey: ["tests", report?.appMapId],
+    queryFn: () => catalogService.listTests({ appMapId: report?.appMapId }),
+    enabled: Boolean(report?.appMapId),
+    staleTime: 60_000,
+  });
+  const testNames = useMemo(
+    () => Object.fromEntries((tests.data ?? []).map((item) => [item.id, item.name])),
+    [tests.data],
+  );
   const findingsReport =
-    findings.data ?? (report && !active ? emptyPlanFindingsReport(report.id) : undefined);
+    report && !active ? resolvePlanFindings(report, findings.data, testNames) : undefined;
   const canContinue = report?.status === "ready-to-continue" || report?.status === "needs-review";
   const clusterValues = clusters.data?.clusters ?? [];
   const selectedClusterCases = selectedClusterCaseIds(clusterValues, selectedClusters);
@@ -312,6 +324,15 @@ export function BatchPage() {
             />
           ) : null}
 
+          {hasProblems && clusters.isPending && !clusterValues.length ? (
+            <p
+              className="relay-batch-clusters-pending mt-8 text-sm text-muted-foreground"
+              role="status"
+            >
+              Grouping same failures…
+            </p>
+          ) : null}
+
           {hasProblems ? (
             <BatchFailureClusters
               clusters={clusterValues}
@@ -334,6 +355,7 @@ export function BatchPage() {
             <BatchResultMatrix
               report={report}
               selected={selectedCases}
+              testNames={testNames}
               onToggleCase={(item, checked) => toggleCase(item.id, checked)}
               onRerun={(item) => rerun.mutate([item.id])}
               rerunning={rerun.isPending}

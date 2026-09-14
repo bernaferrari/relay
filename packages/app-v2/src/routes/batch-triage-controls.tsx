@@ -80,7 +80,7 @@ export function BatchTriageControls({
       ) : null}
       <p className="text-xs text-muted-foreground">
         {selectedCount
-          ? `${selectedCount} selected · I investigate · R resolve · W won’t fix · U unreviewed · A assign to me · N add note`
+          ? `${selectedCount} selected. Set review status, assign, or add a note. Resolved is a review state, not a passing Run.`
           : "Select cases, then set review status, assignee, or a note. Resolved is a review state, not a passing Run."}
       </p>
     </div>

@@ -129,7 +129,7 @@ describe("Batch review controls", () => {
     expect(document.body.textContent).toContain("must appear here as a finding");
     expect(document.body.textContent).not.toContain("No findings. Passing cases");
     expect(document.body.textContent).toContain("2 product issues to review");
-    expect(document.body.textContent).toContain("Product issues");
+    expect(document.body.textContent).toContain("product issues");
     expect(document.body.textContent).not.toContain("Execution");
     expect(document.body.textContent).not.toContain("31 of 33 planned cases");
     const workbench = [...document.querySelectorAll("a")].find((link) =>
@@ -260,6 +260,9 @@ describe("Batch review controls", () => {
     );
     expect(confirm).toBeInstanceOf(HTMLButtonElement);
     expect(reject).toBeInstanceOf(HTMLButtonElement);
+    if (!(reject instanceof HTMLButtonElement)) throw new Error("Reject not found");
+    expect(confirm?.className).not.toMatch(/bg-primary(?:\/|\s|$)/u);
+    expect(reject.className).not.toMatch(/bg-primary(?:\/|\s|$)/u);
     expect(document.body.textContent).toContain("Proposed Reject");
     expect(document.body.textContent).toContain("Infra");
     expect(document.body.textContent).not.toContain("Recorded as a product issue");
@@ -311,5 +314,38 @@ describe("Batch review controls", () => {
     );
     expect(reportLink?.getAttribute("href")).toContain("/runs/run-1");
     expect(reportLink?.getAttribute("href")).toContain("reportView=captures");
+  });
+
+  it("reviews typed cell Findings when analysis is missing", async () => {
+    await render({
+      getReport: async () => ({
+        ...report,
+        cases: [
+          {
+            ...report.cases[0]!,
+            status: "cancelled" as const,
+            findingCode: "HARNESS_FAILURE" as const,
+            error: "Cancelled by user",
+          },
+          report.cases[1]!,
+        ],
+      }),
+      getFailureClusters: async () => ({ campaignId: "batch-1", clusters: [] }),
+      getFindings: async () => {
+        throw new Error("Failed to fetch");
+      },
+    } as unknown as RunAcrossProductService);
+    expect(document.body.textContent).toContain("HARNESS_FAILURE");
+    expect(document.body.textContent).toContain("finding to review");
+    expect(document.body.textContent).not.toContain("QA bug, not a pass");
+    expect(document.body.textContent).toContain("never accept a visual baseline");
+    const confirm = [...document.querySelectorAll("button")].find(
+      (button) => button.textContent?.trim() === "Confirm",
+    );
+    const reject = [...document.querySelectorAll("button")].find(
+      (button) => button.textContent?.trim() === "Reject",
+    );
+    expect(confirm).toBeInstanceOf(HTMLButtonElement);
+    expect(reject).toBeInstanceOf(HTMLButtonElement);
   });
 });

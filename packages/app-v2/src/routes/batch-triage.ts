@@ -49,13 +49,21 @@ export function isBatchCaseRerunnable(item: ProductBatchCase): boolean {
   return isBatchCaseProblem(item) && Boolean(item.runId);
 }
 
-function testLabel(testId: string, setup?: ProductRunAcrossSetup): string {
-  return formatBatchTestLabel(testId, setup?.testId === testId ? setup.testName : undefined);
+function testLabel(
+  testId: string,
+  setup?: ProductRunAcrossSetup,
+  testNames: Readonly<Record<string, string>> = {},
+): string {
+  return formatBatchTestLabel(
+    testId,
+    testNames[testId] ?? (setup?.testId === testId ? setup.testName : undefined),
+  );
 }
 
 export function buildBatchMatrix(
   cases: readonly ProductBatchCase[],
   setup?: ProductRunAcrossSetup,
+  testNames: Readonly<Record<string, string>> = {},
 ): BatchMatrix {
   const completeIdentity = cases.length > 0 && cases.every((item) => item.identity);
   const fallbackTest = setup?.testId ?? "selected-test";
@@ -101,7 +109,7 @@ export function buildBatchMatrix(
       }
       return {
         id: testId,
-        label: testLabel(testId, setup),
+        label: testLabel(testId, setup, testNames),
         cells,
         hasProblems: [...cells.values()].some((cell) => cell.cases.some(isBatchCaseProblem)),
       } satisfies BatchMatrixRow;

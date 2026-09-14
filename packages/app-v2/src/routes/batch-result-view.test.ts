@@ -12,6 +12,7 @@ import {
   batchResultHeadline,
   formatBatchColumnLabel,
   formatBatchEnvironmentLabel,
+  formatBatchFindingCode,
   formatBatchTestLabel,
 } from "./batch-result-view";
 
@@ -170,6 +171,11 @@ describe("Batch result presentation", () => {
       "Test",
     );
     expect(formatBatchTestLabel("login", "Open home")).toBe("Open home");
+    expect(formatBatchTestLabel("test-grok-web-signed-in-toolbar-existing")).toBe(
+      "Toolbar existing",
+    );
+    expect(formatBatchFindingCode("HARNESS_FAILURE")).toBe("Harness");
+    expect(formatBatchFindingCode("PRODUCT_ASSERTION")).toBe("Product check");
   });
 
   it("uses a case Lane label when the cluster only has a profile id", () => {
@@ -189,5 +195,38 @@ describe("Batch result presentation", () => {
       },
     ]);
     expect(copy.meta).toBe("2 cases · acct-a · grok-com");
+  });
+
+  it("names a cancelled SOS cluster as Infra, not Product behavior", () => {
+    expect(
+      batchClusterCopy(cluster({ id: "c4" }), [
+        {
+          id: "case-1",
+          index: 0,
+          phase: "coverage",
+          status: "cancelled",
+          values: {},
+          findingCode: "HARNESS_FAILURE",
+          error: "Cancelled by user",
+          identity: {
+            testId: "toolbar",
+            environmentId: "browser:grok-com-1280x800-339a5a430a41",
+            environmentPlatform: "browser",
+          },
+        },
+        {
+          id: "case-2",
+          index: 1,
+          phase: "coverage",
+          status: "cancelled",
+          values: {},
+          findingCode: "HARNESS_FAILURE",
+        },
+      ]),
+    ).toEqual({
+      lane: "Infra",
+      title: "Cancelled",
+      meta: "2 cases · grok-com",
+    });
   });
 });

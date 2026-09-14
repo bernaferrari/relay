@@ -476,7 +476,13 @@ const batchReport: ProductBatchReport = {
     values: { account: account!, language: language! },
     world,
     runId: `batch-run-${index + 1}`,
-    ...(status === "failed" ? { error: "Checkout confirmation did not appear" } : {}),
+    ...(status === "failed"
+      ? {
+          error: "Checkout confirmation did not appear",
+          findingCode: "PRODUCT_ASSERTION" as const,
+          outcome: "product-failure",
+        }
+      : {}),
   })),
   navigation: { route: "/batches/:batchId", href: "/batches/batch-checkout" },
   report: {
