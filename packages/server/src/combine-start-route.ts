@@ -31,7 +31,7 @@ import {
   attachBrowserAuthenticationHealth,
   bindRequestedBrowserIdentity,
   overlayRequestedBrowserAccountOnTargetProfile,
-  unsignedBrowserLaneId,
+  combineStartAdmissionLaneId,
   listBrowserAuthenticationFixtures,
   planAccountStartBlocker,
   accountReloginFindingsReport,
@@ -229,14 +229,17 @@ export async function executeCombineStart(
   const combineId = body.combineId?.trim();
   const appMapId = body.appMapId?.trim();
   const repeatTestId = body.repeatRecovery?.testId.trim();
+  const unsignedLaneId = combineStartAdmissionLaneId(body);
   if (repeatTestId && appMapId) {
     return combineStartLocks.run(`${scope.projectId}:${appMapId}:test:${repeatTestId}`, () =>
       executeCombineStartUnlocked(scope, runtime, body),
     );
   }
   if (combineId && appMapId) {
-    return combineStartLocks.run(`${scope.projectId}:${appMapId}:combine:${combineId}`, () =>
-      executeCombineStartUnlocked(scope, runtime, body),
+    const laneLock = unsignedLaneId ? `:lane:${unsignedLaneId}` : "";
+    return combineStartLocks.run(
+      `${scope.projectId}:${appMapId}:combine:${combineId}${laneLock}`,
+      () => executeCombineStartUnlocked(scope, runtime, body),
     );
   }
   return executeCombineStartUnlocked(scope, runtime, body);
@@ -288,11 +291,13 @@ async function executeCombineStartUnlocked(
       });
     }
   }
+  const unsignedLaneId = combineStartAdmissionLaneId(body);
   if (combine) {
     const active = await findActiveCombineCampaignForCombine(
       scope.projectId,
       loaded.id,
       combine.id,
+      unsignedLaneId,
     );
     if (active) {
       throw new HttpError(409, "This Repeat already has unfinished work", {
@@ -594,12 +599,7 @@ async function executeCombineStartUnlocked(
           : {}),
         targetForCell: (cell) => cell.executionTarget,
         operationContextForCell: acceptedAdmission?.operationContextForCell,
-        unsignedLaneId: unsignedBrowserLaneId({
-          laneId: body.laneId,
-          accountKind: body.profileTargets?.some((target) => target.account?.kind === "fixture")
-            ? "fixture"
-            : undefined,
-        }),
+        unsignedLaneId,
         queuedTargetProfile: (cell, executionTarget) => {
           const queued = queuedAppMapTestTargetProfile({
             runtimeTargetProfile: cell.selectedRuntimeTargetProfile,
@@ -778,6 +778,7 @@ async function executeCombineStartUnlocked(
           strategy: body.strategy ?? scopedCombine.strategy,
           seed: prepared.matrix.seed,
           title: body.title?.trim() || scopedCombine.name,
+          ...(unsignedLaneId ? { unsignedLaneId } : {}),
           ...(repeat ? { repeat } : {}),
           ...(admission
             ? {

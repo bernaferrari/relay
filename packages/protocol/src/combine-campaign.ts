@@ -185,6 +185,9 @@ export type CombineCampaign = {
     strategy?: "zip" | "cartesian" | "pairwise";
     seed: number;
     title?: string;
+    /** Unsigned browser Lane that admitted this campaign. Distinct Lanes of
+     * the same Plan may run concurrently; the same Lane still 409s. */
+    unsignedLaneId?: string;
     repeat?: RepeatCampaignExecutionIdentity;
     /** Immutable admission evidence captured before any Combine jobs queued. */
     localAdmission?: {

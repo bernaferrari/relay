@@ -20,6 +20,20 @@ export function unsignedBrowserLaneId(input: {
   return laneId || undefined;
 }
 
+/** Combine/Plan start identity that matches job unsignedLaneId. Fixture
+ * accounts stay combine-wide so same-lane Repeat still 409s. */
+export function combineStartAdmissionLaneId(input: {
+  laneId?: string;
+  profileTargets?: Array<{ account?: { kind?: string } }>;
+}): string | undefined {
+  return unsignedBrowserLaneId({
+    laneId: input.laneId,
+    accountKind: input.profileTargets?.some((target) => target.account?.kind === "fixture")
+      ? "fixture"
+      : undefined,
+  });
+}
+
 export function browserAccountSchedulingKey(
   targetId: string,
   authenticationFixtureId?: string,

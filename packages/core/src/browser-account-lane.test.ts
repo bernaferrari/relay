@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   browserAccountSchedulingKey,
+  combineStartAdmissionLaneId,
   controlTargetIdForBrowserLane,
   jobSchedulingTargetId,
   managedBrowserTargetIdFromSchedulingKey,
@@ -50,6 +51,21 @@ test("unsigned Lanes are distinct scheduler identities without a fixture", () =>
     undefined,
   );
   assert.equal(unsignedBrowserLaneId({ laneId: "grok-lab", accountKind: "fixture" }), undefined);
+  assert.equal(combineStartAdmissionLaneId({ laneId: "grok-daily" }), "grok-daily");
+  assert.equal(
+    combineStartAdmissionLaneId({
+      laneId: "grok-daily-b",
+      profileTargets: [{ account: { kind: "signed-out" } }],
+    }),
+    "grok-daily-b",
+  );
+  assert.equal(
+    combineStartAdmissionLaneId({
+      laneId: "grok-lab",
+      profileTargets: [{ account: { kind: "fixture" } }],
+    }),
+    undefined,
+  );
   assert.equal(
     browserAccountSchedulingKey("grok-com", undefined, "grok-daily"),
     "grok-com#signed-out:grok-daily",
@@ -73,7 +89,9 @@ test("unsigned Lanes are distinct scheduler identities without a fixture", () =>
 
 test("account-lane keys recover the managed browser for control and observation", () => {
   assert.equal(
-    managedBrowserTargetIdFromSchedulingKey("grok-com#authfx:7189423f-193e-45ed-b674-154505cc5107:1"),
+    managedBrowserTargetIdFromSchedulingKey(
+      "grok-com#authfx:7189423f-193e-45ed-b674-154505cc5107:1",
+    ),
     "grok-com",
   );
   assert.equal(managedBrowserTargetIdFromSchedulingKey("grok-com#signed-out"), "grok-com");
@@ -83,10 +101,7 @@ test("account-lane keys recover the managed browser for control and observation"
 });
 
 test("fixture-keyed grok-com lanes stay distinct from the bare target and from each other", () => {
-  assert.equal(
-    browserAccountSchedulingKey("grok-com", "authfx:a:1"),
-    "grok-com#authfx:a:1",
-  );
+  assert.equal(browserAccountSchedulingKey("grok-com", "authfx:a:1"), "grok-com#authfx:a:1");
   assert.equal(browserAccountSchedulingKey("grok-com"), "grok-com#signed-out");
   assert.notEqual(
     browserAccountSchedulingKey("grok-com", "authfx:a:1"),

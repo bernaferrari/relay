@@ -261,19 +261,30 @@ export async function listStoredCombineCampaigns(
   return campaigns.filter((campaign): campaign is StoredCombineCampaign => Boolean(campaign));
 }
 
-/** Find unfinished work for one canonical Combine. This is used as a
- * server-side backstop when a browser loses its opaque workflow reference. */
+export function combineCampaignUnsignedLaneId(
+  campaign: Pick<StoredCombineCampaign, "execution"> | { execution?: { unsignedLaneId?: string } },
+): string | undefined {
+  const lane = campaign.execution?.unsignedLaneId?.trim();
+  return lane || undefined;
+}
+
+/** Find unfinished work for one Combine at one unsigned Lane. Distinct
+ * unsigned Lanes of the same Plan may overlap; the same Lane still collides.
+ * Omit unsignedLaneId to match campaigns that also have no Lane identity. */
 export async function findActiveCombineCampaignForCombine(
   projectId: string,
   appMapId: string,
   combineId: string,
+  unsignedLaneId?: string,
 ): Promise<StoredCombineCampaign | null> {
+  const lane = unsignedLaneId?.trim() || undefined;
   for (const campaignId of await campaignEntries(projectId)) {
     const campaign = await readCombineCampaign(projectId, campaignId);
     const projected = campaign ? await projectCombineCampaign(campaign) : null;
     if (
       projected?.appMapId === appMapId &&
       projected.combineId === combineId &&
+      combineCampaignUnsignedLaneId(projected) === lane &&
       (activeCampaignStatuses.has(projected.status) || hasReviewableRepeatResume(projected))
     ) {
       return projected;

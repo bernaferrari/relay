@@ -587,6 +587,7 @@ export const combineCampaignSchema = z
         strategy: z.enum(["zip", "cartesian", "pairwise"]).optional(),
         seed: z.number(),
         title: z.string().optional(),
+        unsignedLaneId: z.string().trim().min(1).optional(),
         repeat: z
           .object({
             schemaVersion: z.literal(1),

@@ -7,6 +7,7 @@ import {
   applyCombineCampaignTriage,
   CombineCampaignTriageError,
   createCombineCampaign,
+  combineCampaignUnsignedLaneId,
   findActiveCombineCampaignForCombine,
   findActiveRepeatCampaigns,
   pendingSelectedCombineCampaignCells,
@@ -105,9 +106,14 @@ test("Combine campaigns persist pilot state and derive a truthful resume boundar
     const read = await readCombineCampaign("project-1", "campaign-1");
     assert.equal(read?.execution.seed, 42);
     assert.equal((await projectCombineCampaign(read!)).status, "ready-to-resume");
+    assert.equal(combineCampaignUnsignedLaneId(read!), undefined);
     assert.equal(
       (await findActiveCombineCampaignForCombine("project-1", "settings", "languages"))?.id,
       "campaign-1",
+    );
+    assert.equal(
+      await findActiveCombineCampaignForCombine("project-1", "settings", "languages", "grok-daily"),
+      null,
     );
     assert.deepEqual(
       (await findActiveRepeatCampaigns("project-1", "settings", "settings")).map(
@@ -538,4 +544,52 @@ test("expanded selective retries reject ambiguous authored cell scope", () => {
     () => prepareSelectedCombineCampaignResume(campaign, { cellIds: [campaign.cases[0]!.cellId] }),
     /execution case ids/u,
   );
+});
+
+test("active Combine lookup collides on one unsigned Lane and ignores the others", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "relay-combine-unsigned-lane-"));
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = directory;
+  try {
+    const daily = fixture();
+    daily.execution.unsignedLaneId = "grok-daily";
+    daily.status = "running";
+    await createCombineCampaign(daily);
+    const dailyB = fixture();
+    dailyB.id = "campaign-2";
+    dailyB.status = "running";
+    dailyB.execution = { ...dailyB.execution, unsignedLaneId: "grok-daily-b" };
+    await createCombineCampaign(dailyB);
+    assert.equal(combineCampaignUnsignedLaneId(daily), "grok-daily");
+    assert.equal(
+      (
+        await findActiveCombineCampaignForCombine(
+          "project-1",
+          "settings",
+          "languages",
+          "grok-daily",
+        )
+      )?.id,
+      "campaign-1",
+    );
+    assert.equal(
+      (
+        await findActiveCombineCampaignForCombine(
+          "project-1",
+          "settings",
+          "languages",
+          "grok-daily-b",
+        )
+      )?.id,
+      "campaign-2",
+    );
+    assert.equal(
+      await findActiveCombineCampaignForCombine("project-1", "settings", "languages"),
+      null,
+    );
+  } finally {
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
+    await rm(directory, { recursive: true, force: true });
+  }
 });
