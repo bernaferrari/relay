@@ -4,7 +4,7 @@ import type {
   Lane,
   LaneSaveInput,
 } from "@relay/protocol";
-import { browserAccountSchedulingKey } from "./browser-account-lane.js";
+import { browserAccountSchedulingKey, unsignedBrowserLaneId } from "./browser-account-lane.js";
 import {
   attachBrowserAuthenticationHealth,
   probeBrowserAuthenticationFixture,
@@ -88,7 +88,11 @@ export function browserAccountLaneBindings(input: {
     }
     lanes.push({
       id: lane.id,
-      schedulingKey: browserAccountSchedulingKey(targetId),
+      schedulingKey: browserAccountSchedulingKey(
+        targetId,
+        undefined,
+        unsignedBrowserLaneId({ laneId: lane.id }),
+      ),
       kind: "signed-out",
       live: true,
     });

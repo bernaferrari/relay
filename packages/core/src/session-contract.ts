@@ -53,6 +53,9 @@ export type TestJob = {
   browserCaseProfile?: BrowserCaseProfile;
   /** Frozen facts used to select this run from a compatibility matrix. */
   targetProfile?: TargetProfile;
+  /** Unsigned Lane identity so two signed-out grok.com Lanes do not share a
+   * scheduler slot or Playwright session. Fixture Lanes omit this. */
+  unsignedLaneId?: string;
   /** Immutable commit/build binding captured when the run was accepted.
    * Audit-grade provenance: every proof names the exact source it exercised. */
   sourceRevision?: SourceRevision;
@@ -142,6 +145,8 @@ export type EnqueueJobInput = {
   /** Exact browser environment frozen before the job enters the queue. */
   browserCaseProfile?: BrowserCaseProfile;
   targetProfile?: TargetProfile;
+  /** Distinct unsigned Lane for signed-out overlap. Ignored when a fixture is set. */
+  unsignedLaneId?: string;
   /** Frozen at enqueue time into the run manifest; never rewritten. */
   sourceRevision?: SourceRevision;
   prodAccountMatch?: string;

@@ -109,6 +109,8 @@ describe("Batch result presentation", () => {
   it("formats known Lanes and strips profile uuid dumps", () => {
     expect(formatBatchEnvironmentLabel("browser:grok-com-1280x800-339a5a430a41")).toBe("grok-com");
     expect(formatBatchEnvironmentLabel("browser:grok-lab")).toBe("grok-lab");
+    expect(formatBatchEnvironmentLabel("grok-com#signed-out:grok-daily-b")).toBe("grok-daily-b");
+    expect(formatBatchEnvironmentLabel("grok-com#signed-out:grok-daily")).toBe("grok-daily");
     expect(
       formatBatchEnvironmentLabel("pixel-profile", {
         environmentLabel: "Pixel 8",

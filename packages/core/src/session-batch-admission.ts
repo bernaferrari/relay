@@ -262,6 +262,7 @@ export function scheduledSessionJob(input: {
     targetId: jobSchedulingTargetId({
       executionTarget: executionTargetRefForJob(job),
       browserCaseProfile: job.browserCaseProfile,
+      unsignedLaneId: job.unsignedLaneId,
     }),
     capacity: job.workerCapacity!,
     ...(job.hostWorkerId && job.hostWorkerCapacity

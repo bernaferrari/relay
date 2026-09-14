@@ -130,7 +130,7 @@ test("--lane interact resolves serial and fixture without a client overlay", asy
   });
 });
 
-test("seed helper writes grok-daily and grok-lab without touching grok-com fixture", async () => {
+test("seed helper writes grok-daily, grok-daily-b, and grok-lab without touching grok-com fixture", async () => {
   await withStateRoot(async () => {
     await createAppMap({
       organizationId: "local",
@@ -146,11 +146,12 @@ test("seed helper writes grok-daily and grok-lab without touching grok-com fixtu
     const seeded = await seedGrokLanes("default");
     assert.deepEqual(
       seeded.map((lane) => lane.id),
-      ["grok-daily", "grok-lab"],
+      ["grok-daily", "grok-daily-b", "grok-lab"],
     );
     assert.equal(seeded[0]?.actorId, GROK_DAILY_LANE.actorId);
-    assert.equal(seeded[1]?.targetProfileId, GROK_LAB_LANE.targetProfileId);
-    assert.deepEqual(seeded[1]?.account, GROK_LAB_LANE.account);
+    assert.equal(seeded[1]?.targetProfileId, GROK_DAILY_LANE.targetProfileId);
+    assert.equal(seeded[2]?.targetProfileId, GROK_LAB_LANE.targetProfileId);
+    assert.deepEqual(seeded[2]?.account, GROK_LAB_LANE.account);
     assert.equal(
       (await readTarget("grok-com"))?.browser?.environment?.authenticationFixtureId,
       undefined,
@@ -161,6 +162,12 @@ test("seed helper writes grok-daily and grok-lab without touching grok-com fixtu
     });
     assert.equal(daily.targetProfileId, "browser:grok-com");
     assert.equal(daily.account, undefined);
+    const dailyB = await applyLaneToTestRun("default", "grok-web", {
+      testId: "open-home",
+      laneId: "grok-daily-b",
+    });
+    assert.equal(dailyB.targetProfileId, "browser:grok-com");
+    assert.equal(dailyB.account, undefined);
     const lab = await applyLaneToCombineStart("default", {
       appMapId: "grok-web",
       combineId: "grok-hourly",

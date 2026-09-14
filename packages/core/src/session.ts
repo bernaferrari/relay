@@ -885,6 +885,7 @@ async function executeJobOnTarget(
         await closeBrowserTarget(job.browserTargetId, {
           mode: "proof",
           authenticationFixtureId: job.browserCaseProfile?.authenticationFixtureId,
+          unsignedLaneId: job.unsignedLaneId,
         }).catch(() => undefined);
       }
       releaseOccupiedTarget();

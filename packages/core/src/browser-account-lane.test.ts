@@ -5,6 +5,7 @@ import {
   controlTargetIdForBrowserLane,
   jobSchedulingTargetId,
   managedBrowserTargetIdFromSchedulingKey,
+  unsignedBrowserLaneId,
 } from "./browser-account-lane.js";
 import {
   EXECUTION_TARGET_REF_VERSION,
@@ -36,6 +37,37 @@ test("browser account lanes keep fixtures independent and signed-out distinct", 
   assert.notEqual(
     browserAccountSchedulingKey("grok-web", "fx-a"),
     browserAccountSchedulingKey("grok-web", "fx-b"),
+  );
+});
+
+test("unsigned Lanes are distinct scheduler identities without a fixture", () => {
+  assert.equal(unsignedBrowserLaneId({ laneId: "grok-daily" }), "grok-daily");
+  assert.equal(
+    unsignedBrowserLaneId({
+      laneId: "grok-daily",
+      authenticationFixtureId: "authfx:a:1",
+    }),
+    undefined,
+  );
+  assert.equal(unsignedBrowserLaneId({ laneId: "grok-lab", accountKind: "fixture" }), undefined);
+  assert.equal(
+    browserAccountSchedulingKey("grok-com", undefined, "grok-daily"),
+    "grok-com#signed-out:grok-daily",
+  );
+  assert.notEqual(
+    browserAccountSchedulingKey("grok-com", undefined, "grok-daily"),
+    browserAccountSchedulingKey("grok-com", undefined, "grok-daily-b"),
+  );
+  assert.equal(
+    managedBrowserTargetIdFromSchedulingKey("grok-com#signed-out:grok-daily-b"),
+    "grok-com",
+  );
+  assert.equal(
+    jobSchedulingTargetId({
+      executionTarget: localBrowser,
+      unsignedLaneId: "grok-daily-b",
+    }),
+    "grok-web#signed-out:grok-daily-b",
   );
 });
 

@@ -256,3 +256,67 @@ test("scheduled browser fixture jobs use distinct lanes and start concurrently",
   assert.deepEqual(started, ["job-0", "job-1", "job-2"]);
   for (const gate of gates) gate.resolve();
 });
+
+function browserUnsignedJob(id: string, laneId: string): TestJob {
+  const schedulingKey = `grok-com#signed-out:${laneId}`;
+  return {
+    ...browserFixtureJob(id, "authfx:unused:1"),
+    browserCaseProfile: { engine: "chromium" } as TestJob["browserCaseProfile"],
+    unsignedLaneId: laneId,
+    workerId: `local:browser:target:${encodeURIComponent(schedulingKey)}`,
+  };
+}
+
+test("scheduled unsigned Lane jobs use distinct signed-out identities and start concurrently", async () => {
+  const jobs = [
+    browserUnsignedJob("job-daily", "grok-daily"),
+    browserUnsignedJob("job-daily-b", "grok-daily-b"),
+  ];
+  const scheduled = jobs.map((job) => scheduledSessionJob({ job, run: async () => undefined }));
+  assert.deepEqual(
+    scheduled.map((work) => work.targetId),
+    ["grok-com#signed-out:grok-daily", "grok-com#signed-out:grok-daily-b"],
+  );
+
+  const scheduler = new TargetWorkerScheduler();
+  const gates = [deferred(), deferred()];
+  const started: string[] = [];
+  for (const [index, job] of jobs.entries()) {
+    scheduler.enqueue(
+      scheduledSessionJob({
+        job,
+        run: async () => {
+          started.push(job.id);
+          await gates[index]!.promise;
+        },
+      }),
+    );
+  }
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(started, ["job-daily", "job-daily-b"]);
+  for (const gate of gates) gate.resolve();
+});
+
+test("two jobs on the same unsigned Lane still serialize", async () => {
+  const jobs = [browserUnsignedJob("job-a", "grok-daily"), browserUnsignedJob("job-b", "grok-daily")];
+  const scheduler = new TargetWorkerScheduler();
+  const gates = [deferred(), deferred()];
+  const started: string[] = [];
+  for (const [index, job] of jobs.entries()) {
+    scheduler.enqueue(
+      scheduledSessionJob({
+        job,
+        run: async () => {
+          started.push(job.id);
+          await gates[index]!.promise;
+        },
+      }),
+    );
+  }
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(started, ["job-a"]);
+  gates[0]!.resolve();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(started, ["job-a", "job-b"]);
+  gates[1]!.resolve();
+});

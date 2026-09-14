@@ -84,6 +84,8 @@ export type EnqueuePreparedAppMapCombineCellsInput = {
   ownerId?: string;
   /** Frozen at enqueue time into every cell manifest as audit provenance. */
   sourceRevision?: SourceRevision;
+  /** Distinct unsigned Lane so signed-out Combine cells can overlap another unsigned Lane. */
+  unsignedLaneId?: string;
 };
 
 export type StagedAppMapCombineCellBatch = {
@@ -128,6 +130,7 @@ export function stagePreparedAppMapCombineCells(
       // The job factory verifies they agree before the job becomes durable.
       executionTarget: structuredClone(target),
       targetProfile: input.queuedTargetProfile?.(cell, target),
+      ...(input.unsignedLaneId ? { unsignedLaneId: input.unsignedLaneId } : {}),
       ...(input.sourceRevision ? { sourceRevision: structuredClone(input.sourceRevision) } : {}),
       // Wrapper steps reference generated prefixes ({{v0_…}}, {{v0_…_label}});
       // without these inputs every template stays literal and the appLocale

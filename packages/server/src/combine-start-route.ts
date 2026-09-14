@@ -31,6 +31,7 @@ import {
   attachBrowserAuthenticationHealth,
   bindRequestedBrowserIdentity,
   overlayRequestedBrowserAccountOnTargetProfile,
+  unsignedBrowserLaneId,
   listBrowserAuthenticationFixtures,
   planAccountStartBlocker,
   accountReloginFindingsReport,
@@ -593,6 +594,12 @@ async function executeCombineStartUnlocked(
           : {}),
         targetForCell: (cell) => cell.executionTarget,
         operationContextForCell: acceptedAdmission?.operationContextForCell,
+        unsignedLaneId: unsignedBrowserLaneId({
+          laneId: body.laneId,
+          accountKind: body.profileTargets?.some((target) => target.account?.kind === "fixture")
+            ? "fixture"
+            : undefined,
+        }),
         queuedTargetProfile: (cell, executionTarget) => {
           const queued = queuedAppMapTestTargetProfile({
             runtimeTargetProfile: cell.selectedRuntimeTargetProfile,

@@ -8,6 +8,7 @@ import {
   accountFixtureIdsFromListed,
   bindRequestedBrowserIdentity,
   listBrowserAuthenticationFixtures,
+  unsignedBrowserLaneId,
   CasePlanError,
   buildTargetProfiles,
   compileAppMapConnection,
@@ -571,6 +572,11 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
       testId: plan.test.id,
       rootRecipeId: plan.rootRecipeId,
     };
+    const unsignedLaneId = unsignedBrowserLaneId({
+      laneId: body.laneId,
+      authenticationFixtureId: targetProfile?.browserCaseProfile?.authenticationFixtureId,
+      accountKind: body.account?.kind,
+    });
     const job = runtime.enqueueJob({
       recipe: recipeSnapshot.id,
       title: recipeSnapshot.title,
@@ -581,6 +587,7 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
       targetKind: body.target.kind,
       browserTargetId: body.target.kind === "browser" ? targetId : undefined,
       ...(targetProfile ? { targetProfile } : {}),
+      ...(unsignedLaneId ? { unsignedLaneId } : {}),
       ...(queuedSourceRevision ? { sourceRevision: queuedSourceRevision } : {}),
       ...(proofEvidencePolicy ? { evidencePolicy: proofEvidencePolicy } : {}),
       artifacts: [

@@ -111,12 +111,19 @@ export function browserLiveSessionKey(input: {
   return `authoring:${input.targetId}`;
 }
 
-/** Scheduled proof contexts are per account so parallel fixtures do not share a Playwright session. */
+/** Scheduled proof contexts are per account (and per unsigned Lane) so
+ * parallel fixtures or unsigned Lanes do not share a Playwright session. */
 export function browserProofSessionKey(input: {
   targetId: string;
   authenticationFixtureId?: string;
+  unsignedLaneId?: string;
 }): string {
-  return `proof:${input.targetId}:${input.authenticationFixtureId?.trim() || "signed-out"}`;
+  const fixture = input.authenticationFixtureId?.trim();
+  if (fixture) return `proof:${input.targetId}:${fixture}`;
+  const lane = input.unsignedLaneId?.trim();
+  return lane
+    ? `proof:${input.targetId}:signed-out:${lane}`
+    : `proof:${input.targetId}:signed-out`;
 }
 
 export function browserSessionStoreKey(input: {
@@ -124,6 +131,7 @@ export function browserSessionStoreKey(input: {
   mode: "authoring" | "proof";
   reuseMatchingIdentity?: boolean;
   authenticationFixtureId?: string;
+  unsignedLaneId?: string;
 }): string {
   if (input.reuseMatchingIdentity) {
     return browserLiveSessionKey({

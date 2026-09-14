@@ -64,6 +64,7 @@ export type BrowserSession = {
   networkDropped: number;
   mutationVersion: number;
   traceStarted: boolean;
+  unsignedLaneId?: string;
 };
 
 const sessions = new Map<string, Promise<BrowserSession>>();
@@ -93,6 +94,7 @@ async function createSession(
     profile?: BrowserCaseProfile;
     recordVideo?: boolean;
     projectId?: string;
+    unsignedLaneId?: string;
   },
 ): Promise<BrowserSession> {
   const target = await readTarget(targetId);
@@ -160,6 +162,7 @@ async function createSession(
     networkDropped: 0,
     mutationVersion: 0,
     traceStarted: false,
+    ...(options.unsignedLaneId ? { unsignedLaneId: options.unsignedLaneId } : {}),
   };
   context.on("page", (next) => attachBrowserEvidence(session, next));
   if (options.mode === "proof") {
@@ -191,6 +194,7 @@ export async function sessionFor(
     projectId?: string;
     reuseMatchingIdentity?: boolean;
     requirePresentationMatch?: boolean;
+    unsignedLaneId?: string;
   } = {},
 ): Promise<BrowserSession> {
   const mode = options.mode ?? "authoring";
@@ -199,6 +203,7 @@ export async function sessionFor(
     mode,
     reuseMatchingIdentity: options.reuseMatchingIdentity,
     authenticationFixtureId: options.profile?.authenticationFixtureId,
+    unsignedLaneId: options.unsignedLaneId,
   });
   const existing = sessions.get(key);
   if (existing) {
@@ -447,6 +452,7 @@ export type BrowserDeviceOptions = {
   recordVideo?: boolean;
   projectId?: string;
   headless?: boolean;
+  unsignedLaneId?: string;
 };
 
 /** Persistent authoring storage state after an explicit human sign-in. */
@@ -468,6 +474,7 @@ export async function getBrowserDevice(
   const accountLane = browserAccountSchedulingKey(
     targetId,
     session.profile.authenticationFixtureId,
+    session.unsignedLaneId,
   );
   const mutatePrepared = <T>(
     intent: string,
@@ -862,9 +869,17 @@ export async function getBrowserDevice(
 export async function browserProofSessionForTarget(
   targetId: string,
   authenticationFixtureId?: string,
+  unsignedLaneId?: string,
 ): Promise<BrowserSession> {
   const pending =
-    sessions.get(browserSessionStoreKey({ targetId, mode: "proof", authenticationFixtureId })) ??
+    sessions.get(
+      browserSessionStoreKey({
+        targetId,
+        mode: "proof",
+        authenticationFixtureId,
+        unsignedLaneId,
+      }),
+    ) ??
     sessions.get(`proof:${targetId}`) ??
     sessions.get(
       browserSessionStoreKey({
@@ -880,13 +895,18 @@ export async function browserProofSessionForTarget(
 
 export async function closeBrowserTarget(
   targetId?: string,
-  options: { mode?: BrowserContextPurpose; authenticationFixtureId?: string } = {},
+  options: {
+    mode?: BrowserContextPurpose;
+    authenticationFixtureId?: string;
+    unsignedLaneId?: string;
+  } = {},
 ): Promise<void> {
   const proofKey =
     options.mode === "proof" && targetId
       ? browserProofSessionKey({
           targetId,
           authenticationFixtureId: options.authenticationFixtureId,
+          unsignedLaneId: options.unsignedLaneId,
         })
       : undefined;
   for (const [key, pending] of [...sessions.entries()].filter(([key]) =>

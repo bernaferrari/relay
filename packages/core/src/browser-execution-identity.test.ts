@@ -98,6 +98,14 @@ test("proof sessions keep accounts on separate Playwright contexts", () => {
     "proof:grok-web:signed-out",
   );
   assert.equal(
+    browserProofSessionKey({ targetId: "grok-com", unsignedLaneId: "grok-daily" }),
+    "proof:grok-com:signed-out:grok-daily",
+  );
+  assert.notEqual(
+    browserProofSessionKey({ targetId: "grok-com", unsignedLaneId: "grok-daily" }),
+    browserProofSessionKey({ targetId: "grok-com", unsignedLaneId: "grok-daily-b" }),
+  );
+  assert.equal(
     browserSessionBelongsToTarget("proof:grok-web:authfx:admin:4", "grok-web", "proof"),
     true,
   );

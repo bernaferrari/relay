@@ -5,7 +5,7 @@ import type {
   ProductBatchReport,
 } from "@relay/product/run-across";
 
-const KNOWN_LANES = ["grok-lab", "grok-daily"] as const;
+const KNOWN_LANES = ["grok-lab", "grok-daily-b", "grok-daily"] as const;
 const ENGINE_SUMMARY = /^(causal|visual|localization|network|crash)\s+failure(?:\s+in\s+\S+)?$/iu;
 const VIEWPORT_TOKEN = /[-_:\s]*\d{3,4}\s*[x×]\s*\d{3,4}\b/giu;
 const HEX_TOKEN = /(?:[-_:.])[0-9a-f]{8,}\b/giu;

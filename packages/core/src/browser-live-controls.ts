@@ -20,7 +20,11 @@ async function liveBrowserSession(device?: Device): Promise<BrowserSession> {
 }
 
 function mutationLane(session: BrowserSession): string {
-  return browserAccountSchedulingKey(session.targetId, session.profile.authenticationFixtureId);
+  return browserAccountSchedulingKey(
+    session.targetId,
+    session.profile.authenticationFixtureId,
+    session.unsignedLaneId,
+  );
 }
 
 /** Playwright context.setOffline on the live proof/authoring context. */

@@ -220,6 +220,7 @@ export async function acquirePreparedSessionDevice(
       headless: true,
       profile: job.browserCaseProfile,
       projectId: job.projectId ?? "default",
+      ...(job.unsignedLaneId ? { unsignedLaneId: job.unsignedLaneId } : {}),
       // Browser proof contexts are acquired before generic collectors start.
       // Carry the Run-frozen privacy decision into Playwright so a redacted
       // Run never opens a context that records visual bytes in the first place.

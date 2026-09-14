@@ -10,6 +10,17 @@ export const GROK_DAILY_LANE = {
   actorId: "human:local-cli",
 } as const satisfies LaneSaveInput;
 
+/** Second unsigned grok.com Lane. Same saved evidence profile as grok-daily;
+ * a distinct scheduler/session identity so unsigned work can overlap. Never
+ * binds grok-lab or writes grok-com authenticationFixtureId. */
+export const GROK_DAILY_B_LANE = {
+  id: "grok-daily-b",
+  appMapId: "grok-web",
+  target: { kind: "browser", browserTargetId: "grok-com" },
+  targetProfileId: "browser:grok-com",
+  actorId: "human:local-cli",
+} as const satisfies LaneSaveInput;
+
 /** Unique-profile lab overlay. Fixture ids only — passwords stay in the fixture. */
 export const GROK_LAB_LANE = {
   id: "grok-lab",
@@ -26,10 +37,11 @@ export const GROK_LAB_LANE = {
   actorId: "human:hourly-heavy",
 } as const satisfies LaneSaveInput;
 
-/** Write the grok-daily and grok-lab Lane records for the project. */
+/** Write the grok-daily, grok-daily-b, and grok-lab Lane records for the project. */
 export async function seedGrokLanes(projectId: string): Promise<Lane[]> {
   return [
     await saveLane({ projectId, ...GROK_DAILY_LANE }),
+    await saveLane({ projectId, ...GROK_DAILY_B_LANE }),
     await saveLane({ projectId, ...GROK_LAB_LANE }),
   ];
 }

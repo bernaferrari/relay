@@ -368,6 +368,19 @@ test("session factory freezes browser environment identity across queue and retr
   assert.equal(job.hostWorkerId, "local:browser:host");
   assert.equal(job.hostWorkerCapacity, 8);
 
+  const parallel = createSessionJob(
+    {
+      recipe: "browser-proof",
+      targetKind: "browser",
+      browserTargetId: "chat",
+      targetProfile,
+      unsignedLaneId: "grok-daily-b",
+    },
+    { findJob: () => undefined, toTransport: (value) => value },
+  );
+  assert.equal(parallel.unsignedLaneId, "grok-daily-b");
+  assert.equal(parallel.workerId, "local:browser:target:chat%23signed-out%3Agrok-daily-b");
+
   const retry = createSessionJob(retryInputFromJob(job), {
     findJob: (id) => (id === job.id ? job : undefined),
     toTransport: (value) => value,

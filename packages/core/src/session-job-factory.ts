@@ -17,7 +17,7 @@ import type { EnqueueJobInput, TestJob } from "./session-contract.js";
 import type { TraceFrameRef, TraceStep } from "./trace.js";
 import { installRegisteredBuild, preflightRegisteredBuild } from "./builds.js";
 import type { Build } from "@relay/protocol";
-import { jobSchedulingTargetId } from "./browser-account-lane.js";
+import { jobSchedulingTargetId, unsignedBrowserLaneId } from "./browser-account-lane.js";
 import { defaultTargetWorkerAssignment } from "./target-worker.js";
 import {
   executionTargetRefForJob,
@@ -84,6 +84,7 @@ function inheritedLegacyWorkerHost(parent: TestJob | undefined): {
     targetId: jobSchedulingTargetId({
       executionTarget: target,
       browserCaseProfile: parent.browserCaseProfile,
+      unsignedLaneId: parent.unsignedLaneId,
     }),
     platform: target.platform,
     provider: target.provider,
@@ -331,6 +332,7 @@ export function retryInputFromJob(job: TestJob): EnqueueJobInput {
     caseCount: job.caseCount,
     targetProfile: job.targetProfile,
     browserCaseProfile: job.browserCaseProfile,
+    unsignedLaneId: job.unsignedLaneId,
     sourceRevision: structuredClone(job.sourceRevision),
     hostWorkerId: job.hostWorkerId,
     hostWorkerCapacity: job.hostWorkerCapacity,
@@ -389,6 +391,10 @@ export function createSessionJob(
   const selectedTargetProfile = suppliedTargetProfile
     ? freezeTargetProfile(suppliedTargetProfile)
     : undefined;
+  const unsignedLaneId = unsignedBrowserLaneId({
+    laneId: input.unsignedLaneId ?? parent?.unsignedLaneId,
+    authenticationFixtureId: browserCaseProfile?.authenticationFixtureId,
+  });
   if (
     browserCaseProfile &&
     selectedTargetProfile?.browserCaseProfile &&
@@ -406,10 +412,12 @@ export function createSessionJob(
       : {};
   const assignment = defaultTargetWorkerAssignment({
     // Browser accounts use a fixture lane so N signed-in browsers on one
-    // host do not serialize behind the target id.
+    // host do not serialize behind the target id. Unsigned Lanes are a second
+    // signed-out identity so grok-daily and grok-daily-b can overlap.
     targetId: jobSchedulingTargetId({
       executionTarget,
       browserCaseProfile,
+      unsignedLaneId,
     }),
     platform: targetContext.platform,
     provider: executionTarget.provider,
@@ -441,6 +449,7 @@ export function createSessionJob(
     browserTargetId: targetContext.kind === "browser" ? targetContext.targetId : undefined,
     browserCaseProfile,
     targetProfile: selectedTargetProfile,
+    ...(unsignedLaneId ? { unsignedLaneId } : {}),
     sourceRevision: input.sourceRevision
       ? structuredClone(input.sourceRevision)
       : parent?.sourceRevision,
