@@ -67,4 +67,12 @@ describe("status marks", () => {
     expect(host.textContent).toContain("Unrecorded");
     expect(host.textContent).not.toContain("Unbound");
   });
+
+  it("does not show Ready when the Test name is Imagine Speed even if status is ready", async () => {
+    const host = await render(
+      <ReadinessMark status="ready" name="Imagine Speed image generation signed-in" />,
+    );
+    expect(host.textContent).toContain("Unrecorded");
+    expect(host.textContent).not.toContain("Ready");
+  });
 });

@@ -2,6 +2,25 @@ import type { RecipeStep, StepTarget } from "./recipes.js";
 
 const CLAIMED_CONTROLS = ["Start Thread"] as const;
 
+export const HEAVY_GENERATION_UNRECORDED =
+  "No Non-QA SuperGrok Heavy account — do not burn the QA lab fixture on Imagine/video/Heavy — unrecorded.";
+
+const HEAVY_GENERATION_NEEDLES = [
+  /imagine speed/iu,
+  /speed-mode imagine/iu,
+  /generate a speed/iu,
+  /chat heavy/iu,
+  /video generation/iu,
+];
+
+/** Imagine/video/Heavy generation is not a Ready Test without a Non-QA Heavy account. */
+export function claimedBlockedHeavyGeneration(titleAndIntents: string): string | undefined {
+  if (HEAVY_GENERATION_NEEDLES.some((needle) => needle.test(titleAndIntents))) {
+    return HEAVY_GENERATION_UNRECORDED;
+  }
+  return undefined;
+}
+
 function targetLabels(target: StepTarget | undefined): string[] {
   if (!target) return [];
   return [target.label, target.text].filter((value): value is string => Boolean(value?.trim()));
@@ -10,7 +29,13 @@ function targetLabels(target: StepTarget | undefined): string[] {
 /** Product naming for Tests that must not present as Ready. */
 export function unrecordedProductName(name: string): boolean {
   const trimmed = name.trim();
-  return /^(?:UNRECORDED|DRAFT)\b/u.test(trimmed) || /\bstill absent\b/iu.test(trimmed);
+  return (
+    /^(?:UNRECORDED|DRAFT)\b/u.test(trimmed) ||
+    /\bstill absent\b/iu.test(trimmed) ||
+    /imagine speed/iu.test(trimmed) ||
+    /chat heavy/iu.test(trimmed) ||
+    /video generation/iu.test(trimmed)
+  );
 }
 
 /** Labels a recorded recipe actually addresses — never invented nav. */

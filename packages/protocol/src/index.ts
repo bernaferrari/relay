@@ -6,6 +6,7 @@ export type { DestinationRepairProposalsArtifactData } from "./core-operation-ou
 export * from "./recipes.js";
 export * from "./recipe-platform-support.js";
 export * from "./unrecorded-claimed-control.js";
+export * from "./test-rememberable-reply.js";
 export * from "./operations.js";
 export * from "./coordination.js";
 export * from "./activity.js";

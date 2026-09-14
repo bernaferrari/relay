@@ -427,6 +427,7 @@ function TestEditorDocument() {
           onRemove={() => removeStep(selected)}
           onAddChild={(branch) => addChildStep(selected, branch)}
           platformBlocker={editorDocument.stepPlatformBlockers?.[selected.step.id]}
+          hasRememberableReply={editorDocument.hasRememberableReply === true}
         />
       ) : (
         <EmptyState

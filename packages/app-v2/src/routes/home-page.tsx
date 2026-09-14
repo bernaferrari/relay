@@ -1,5 +1,9 @@
 /** @jsxImportSource react */
-import type { ProductRunSummary, ProductTestSummary } from "@relay/product/catalog";
+import {
+  productTestStatusLabel,
+  type ProductRunSummary,
+  type ProductTestSummary,
+} from "@relay/product/catalog";
 import { Button } from "@relay/ui-react/components/button";
 import { Card, CardContent } from "@relay/ui-react/components/card";
 import { useQuery } from "@tanstack/react-query";
@@ -260,7 +264,7 @@ export function HomePage() {
                       </p>
                     </div>
                     <span className="shrink-0 text-xs text-muted-foreground">
-                      {test.status === "ready" ? "Ready" : "Unbound"}
+                      {productTestStatusLabel(test.status, test.name)}
                     </span>
                   </li>
                 ))}

@@ -19,8 +19,8 @@ export function productTestStatusLabel(
   status: ProductTestStatus,
   name?: string,
 ): "Ready" | "Unbound" | "Unrecorded" {
-  if (status === "ready") return "Ready";
   if (name && unrecordedProductName(name)) return "Unrecorded";
+  if (status === "ready") return "Ready";
   return "Unbound";
 }
 

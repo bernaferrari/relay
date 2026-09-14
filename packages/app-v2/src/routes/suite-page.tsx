@@ -12,6 +12,7 @@ import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
 import { Checkbox } from "@relay/ui-react/components/checkbox";
 import { FieldLabel as ChoiceLabel } from "@relay/ui-react/components/field";
+import { productTestStatusLabel } from "@relay/product/catalog";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { Play, RotateCcw, Trash2 } from "lucide-react";
@@ -575,7 +576,7 @@ export function SuitePage() {
                             {test.name}
                           </span>
                           <span className="truncate text-xs leading-snug text-muted-foreground">
-                            {test.status === "ready" ? "Ready" : "Unbound"}
+                            {productTestStatusLabel(test.status, test.name)}
                           </span>
                         </span>
                         <Checkbox

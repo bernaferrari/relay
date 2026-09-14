@@ -167,3 +167,30 @@ test("Start Thread in the title without a recorded node is unrecorded, not Ready
   const compiled = compileAppMapTest(map(), headerMore);
   assert.equal(compiledTestClaimedAbsentControl(headerMore, compiled.graph), undefined);
 });
+
+test("Imagine Speed generation is unrecorded, not Ready, even when the prompt path is bound", () => {
+  const work = boundTest(
+    "test-imagine-speed",
+    "Imagine Speed image generation signed-in",
+    "more-header",
+    "Prompt hourly relay red cube then wait for Speed",
+  );
+  assert.throws(
+    () => compileAppMapTest(map(), work),
+    (error: unknown) =>
+      error instanceof AppMapTestCompileError &&
+      error.code === "unresolved-step" &&
+      /do not burn the QA lab fixture on Imagine\/video\/Heavy/u.test(error.message),
+  );
+});
+
+test("Inspect model choices still compiles when Heavy is only an expect-set label", () => {
+  const inspect = boundTest(
+    "test-model-iterate",
+    "Inspect model choices",
+    "more-header",
+    "Open the model group, expect Fast/Auto/Expert/Heavy, Escape",
+  );
+  const compiled = compileAppMapTest(map(), inspect);
+  assert.equal(compiledTestClaimedAbsentControl(inspect, compiled.graph), undefined);
+});

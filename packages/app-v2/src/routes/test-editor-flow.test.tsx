@@ -480,8 +480,8 @@ describe("Test editor", () => {
     await render(service().editor);
 
     expect(document.body.textContent).toContain("Visual judge");
-    expect(document.body.textContent).toContain("Semantic judge");
-    expect(document.body.textContent).toContain("Remember reply");
+    expect(document.body.textContent).not.toContain("Semantic judge");
+    expect(document.body.textContent).not.toContain("Remember reply");
     expect(document.body.textContent).toContain("Ignore for identity");
     expect(document.body.textContent).toContain("not in YAML");
     await click("Visual judge");
@@ -510,6 +510,14 @@ describe("Test editor", () => {
     expect(
       document.querySelector<HTMLInputElement>("#selected-step-expected-identity-region")?.value,
     ).toBe("0.70,0.08,0.28,0.10");
+  });
+
+  it("offers Remember reply when the Test already extracts a reply", async () => {
+    const source = structuredClone(initialDocument);
+    source.hasRememberableReply = true;
+    await render(service(source).editor);
+    expect(document.body.textContent).toContain("Remember reply");
+    expect(document.body.textContent).toContain("Semantic judge");
   });
 
   it("adds a checkpoint so a visual judge can be authored without YAML", async () => {

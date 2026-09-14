@@ -144,11 +144,21 @@ test("UNRECORDED and still-absent names stay Unrecorded, not Ready", () => {
     "older",
     "UNRECORDED — Older conversation then 2+2 (banner-only; number-equals 4 failed)",
   );
-  const map = app("grok-web", "Grok.com daily", { thread, older });
+  const imagine = scenario("imagine", "Imagine Speed image generation signed-in");
+  const map = app("grok-web", "Grok.com daily", { thread, older, imagine });
   const tests = projectProductTests([map]);
   assert.equal(tests.find((test) => test.id === "thread")?.status, "needs-review");
   assert.equal(tests.find((test) => test.id === "older")?.status, "needs-review");
+  assert.equal(tests.find((test) => test.id === "imagine")?.status, "needs-review");
   assert.equal(productTestStatusLabel("needs-review", thread.name), "Unrecorded");
+  assert.equal(
+    productTestStatusLabel("needs-review", "Imagine Speed image generation signed-in"),
+    "Unrecorded",
+  );
+  assert.equal(
+    productTestStatusLabel("ready", "Imagine Speed image generation signed-in"),
+    "Unrecorded",
+  );
   assert.equal(productTestStatusLabel("ready", "Header More on existing chat"), "Ready");
 });
 

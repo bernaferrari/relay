@@ -8,6 +8,7 @@ import {
   stepBindingCopy,
   validationBindingFromDraft,
 } from "./test-editor-assertion";
+import { validationKindGroupsForEditor } from "./test-editor-checkpoint-kinds";
 
 describe("test editor assertions", () => {
   it("groups Check, Wait, Judges, and Ignore region", () => {
@@ -28,6 +29,20 @@ describe("test editor assertions", () => {
       "visual",
       "identity-ignore",
     ]);
+  });
+
+  it("hides Remember reply and Semantic judge on visual chrome Tests", () => {
+    expect(
+      validationKindGroupsForEditor({ hasRememberableReply: false }).flatMap((group) =>
+        group.kinds.map((kind) => kind.value),
+      ),
+    ).toEqual(["screen", "content", "wait-response", "visual", "identity-ignore"]);
+    expect(
+      validationKindGroupsForEditor({
+        hasRememberableReply: false,
+        selected: "extract",
+      }).flatMap((group) => group.kinds.map((kind) => kind.value)),
+    ).toContain("extract");
   });
 
   it("compiles a semantic judge and a reply wait without YAML", () => {

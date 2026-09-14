@@ -58,6 +58,7 @@ export function SelectedStepEditor({
   onRemove,
   onAddChild,
   platformBlocker,
+  hasRememberableReply = false,
 }: {
   entry: StepEntry;
   draft?: StepDraft;
@@ -68,6 +69,7 @@ export function SelectedStepEditor({
   onRemove(): void;
   onAddChild(branch: "then" | "else" | "steps"): void;
   platformBlocker?: string;
+  hasRememberableReply?: boolean;
 }) {
   const [intent, setIntent] = useState(draft?.intent ?? entry.step.intent);
   const [note, setNote] = useState(draft?.note ?? entry.step.note ?? "");
@@ -216,6 +218,7 @@ export function SelectedStepEditor({
           canAdd={entry.step.binding.status === "unresolved"}
           busy={busy}
           bindingSummary={checkpointBindingCopy(entry.step)}
+          hasRememberableReply={hasRememberableReply}
           onChange={(value) => {
             setExpected(value);
             updateDraft({ expected: value });
@@ -435,7 +438,9 @@ export function stepReadinessLabel(
   );
   const unrecordedReason =
     step.binding.status === "unresolved" &&
-    /unrecorded|absent from the recorded tree/iu.test(step.binding.reason);
+    /unrecorded|absent from the recorded tree|do not burn|Heavy account|Cloudflare/iu.test(
+      step.binding.reason,
+    );
   if (unrecordedName || unrecordedReason) {
     const reason = step.binding.status === "unresolved" ? step.binding.reason : undefined;
     return reason ? `Unrecorded · ${reason}` : "Unrecorded";

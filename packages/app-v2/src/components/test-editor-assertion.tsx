@@ -8,7 +8,10 @@ import { Input } from "@relay/ui-react/components/input";
 import { Textarea } from "@relay/ui-react/components/textarea";
 import { Button } from "@relay/ui-react/components/button";
 import { SelectField } from "./filter-select";
+import { validationKindGroupsForEditor } from "./test-editor-checkpoint-kinds";
 import { JudgeAgreementControls } from "./test-editor-judge-agreement";
+
+export { VALIDATION_KIND_GROUPS } from "./test-editor-checkpoint-kinds";
 
 export type ValidationDraft =
   | { kind: "screen"; screenId: string }
@@ -236,38 +239,6 @@ export function validationBindingFromDraft(
   return { status: "resolved", kind: "assertion", assertion: draft };
 }
 
-export const VALIDATION_KIND_GROUPS = [
-  {
-    id: "check",
-    label: "Check",
-    kinds: [
-      { value: "screen", label: "Screen" },
-      { value: "content", label: "Content" },
-    ],
-  },
-  {
-    id: "wait",
-    label: "Wait",
-    kinds: [
-      { value: "wait-response", label: "Reply wait" },
-      { value: "extract", label: "Remember reply" },
-    ],
-  },
-  {
-    id: "comparison",
-    label: "Judges",
-    kinds: [
-      { value: "semantic", label: "Semantic judge" },
-      { value: "visual", label: "Visual judge" },
-    ],
-  },
-  {
-    id: "identity",
-    label: "Ignore region",
-    kinds: [{ value: "identity-ignore", label: "Ignore for identity" }],
-  },
-] as const;
-
 export const IDENTITY_IGNORE_PRESETS = [
   {
     id: "reply-body",
@@ -323,13 +294,16 @@ export function emptyValidationDraft(kind: ValidationDraft["kind"]): ValidationD
 function ValidationKindGroups({
   selected,
   onSelect,
+  hasRememberableReply,
 }: {
   selected?: ValidationDraft["kind"];
   onSelect(kind: ValidationDraft["kind"]): void;
+  hasRememberableReply: boolean;
 }) {
+  const groups = validationKindGroupsForEditor({ hasRememberableReply, selected });
   return (
     <div className="grid gap-3">
-      {VALIDATION_KIND_GROUPS.map((group) => (
+      {groups.map((group) => (
         <fieldset key={group.id} className="grid gap-1">
           <legend className="text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
             {group.label}
@@ -359,6 +333,7 @@ export function ValidationExpectationEditor({
   canAdd,
   busy,
   bindingSummary,
+  hasRememberableReply = false,
   onChange,
 }: {
   value?: ValidationDraft;
@@ -366,6 +341,7 @@ export function ValidationExpectationEditor({
   canAdd: boolean;
   busy: boolean;
   bindingSummary?: string;
+  hasRememberableReply?: boolean;
   onChange(next: ValidationDraft): void;
 }) {
   if (!value) {
@@ -380,7 +356,10 @@ export function ValidationExpectationEditor({
         {canAdd ? (
           <fieldset className="grid gap-1.5 text-xs font-semibold" disabled={busy}>
             <legend>Expected result</legend>
-            <ValidationKindGroups onSelect={(kind) => onChange(emptyValidationDraft(kind))} />
+            <ValidationKindGroups
+              hasRememberableReply={hasRememberableReply}
+              onSelect={(kind) => onChange(emptyValidationDraft(kind))}
+            />
           </fieldset>
         ) : (
           <p className="text-xs font-normal leading-normal text-muted-foreground">
@@ -400,6 +379,7 @@ export function ValidationExpectationEditor({
       </p>
       <ValidationKindGroups
         selected={value.kind}
+        hasRememberableReply={hasRememberableReply}
         onSelect={(kind) => onChange(emptyValidationDraft(kind))}
       />
       {value.kind === "screen" ? (

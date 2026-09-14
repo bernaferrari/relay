@@ -186,14 +186,11 @@ export function OutcomeMark({ outcome }: { outcome: OutcomeValue }) {
 }
 
 export function ReadinessMark({ status, name }: { status: ReadinessValue; name?: string }) {
+  const label = productTestStatusLabel(status, name);
   const presentation =
-    status === "needs-review"
-      ? {
-          label: productTestStatusLabel(status, name),
-          icon: CircleHelp,
-          tone: "notice" as const,
-        }
-      : { label: "Ready", icon: ListChecks, tone: "quiet" as const };
+    label === "Ready"
+      ? { label, icon: ListChecks, tone: "quiet" as const }
+      : { label, icon: CircleHelp, tone: "notice" as const };
   return (
     <Badge
       className={`relay-readiness-mark ${outcomeBadgeClass(presentation.tone)}`}

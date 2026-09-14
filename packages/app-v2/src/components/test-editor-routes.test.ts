@@ -107,5 +107,17 @@ describe("disabled steps", () => {
         { productName: "Header More on existing chat (Start Thread still absent)" },
       ),
     ).toBe("Unrecorded");
+    expect(
+      stepReadinessLabel({
+        id: "heavy",
+        kind: "instruction",
+        intent: "Chat Heavy signed-in",
+        binding: {
+          status: "unresolved",
+          reason:
+            "No Non-QA SuperGrok Heavy account — do not burn the QA lab fixture on Imagine/video/Heavy — unrecorded.",
+        },
+      }),
+    ).toMatch(/^Unrecorded · No Non-QA SuperGrok Heavy account/u);
   });
 });

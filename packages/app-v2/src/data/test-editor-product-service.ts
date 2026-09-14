@@ -5,6 +5,7 @@ import type {
   AppMapScenarioTestEdit,
   Proposal,
 } from "@relay/protocol";
+import { testHasRememberableReply } from "@relay/protocol";
 import {
   recordedPlanPlatformsFromAppMap,
   testStepPlatformBlockers,
@@ -39,6 +40,7 @@ export type ProductTestEditorDocument = {
   test: AppMapScenarioTest;
   recordedPlatforms?: readonly PlanPlatform[];
   stepPlatformBlockers?: Readonly<Record<string, string>>;
+  hasRememberableReply?: boolean;
   history: readonly ProductTestHistoryItem[];
   repairs: readonly ProductTestRepair[];
 };
@@ -198,6 +200,7 @@ export function documentFromMap(
     }));
   const recordedPlatforms = recordedPlanPlatformsFromAppMap(appMap, test);
   const stepPlatformBlockers = testStepPlatformBlockers(test, appMap, recordedPlatforms);
+  const hasRememberableReply = testHasRememberableReply(test, appMap);
   return {
     appMapId: appMap.id,
     appName: appMap.name,
@@ -205,6 +208,7 @@ export function documentFromMap(
     test: structuredClone(test),
     recordedPlatforms,
     ...(Object.keys(stepPlatformBlockers).length ? { stepPlatformBlockers } : {}),
+    ...(hasRememberableReply ? { hasRememberableReply: true } : {}),
     history,
     repairs,
   };
