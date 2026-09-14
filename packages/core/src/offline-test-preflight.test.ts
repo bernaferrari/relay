@@ -676,8 +676,7 @@ test("dest-end after-tap selectors do not use origin unique-variant raw", () => 
   assert.deepEqual(
     liveWaitFor.findings
       .filter(
-        (finding) =>
-          finding.recipeStepId === "wait-speed" || finding.recipeStepId === "tap-speed",
+        (finding) => finding.recipeStepId === "wait-speed" || finding.recipeStepId === "tap-speed",
       )
       .map((finding) => [finding.severity, finding.code]),
     [
@@ -725,7 +724,12 @@ test("dest-end after-app wait-for does not use origin unique-variant raw", () =>
         fingerprint: "home",
       },
       { kind: "wait-for" as const, id: "wait-launcher", target: { label: "Google search" } },
-      { kind: "app" as const, id: "open-chrome", action: "open" as const, app: "com.android.chrome" },
+      {
+        kind: "app" as const,
+        id: "open-chrome",
+        action: "open" as const,
+        app: "com.android.chrome",
+      },
       { kind: "wait-for" as const, id: "wait-chrome", target: { label: "Stay signed out" } },
       {
         kind: "app" as const,
@@ -750,6 +754,58 @@ test("dest-end after-app wait-for does not use origin unique-variant raw", () =>
   assert.equal(
     report.findings.some(
       (finding) => finding.severity === "blocker" && finding.recipeStepId === "wait-launcher",
+    ),
+    false,
+  );
+});
+
+test("dest-end after-offline wait-for does not use origin unique-variant raw", () => {
+  const homeTree = [
+    {
+      index: 0,
+      type: "Application",
+      rect: { x: 0, y: 0, width: 1280, height: 800 },
+    },
+    {
+      index: 1,
+      parentIndex: 0,
+      type: "heading",
+      label: "What should we explore?",
+      enabled: true,
+      visibleToUser: true,
+      hittable: true,
+      rect: { x: 200, y: 200, width: 400, height: 40 },
+    },
+  ];
+  const evidence = {
+    rawSourcesByScreenId: {
+      home: [{ source: { reference: "relay-evidence://home" }, nodes: homeTree }],
+    },
+  };
+  const destEnd = {
+    ...plan([
+      {
+        kind: "expect-screen" as const,
+        screenId: "home",
+        screenTitle: "Logged-out home",
+        fingerprint: "home",
+      },
+      { kind: "wait-for" as const, id: "wait-home", target: { label: "What should we explore?" } },
+      { kind: "offline" as const, id: "offline-on", state: "on" as const },
+      { kind: "wait-for" as const, id: "wait-offline-toast", target: { label: "You are offline" } },
+      { kind: "offline" as const, id: "offline-off", state: "off" as const },
+      {
+        kind: "wait-for" as const,
+        id: "wait-home-after",
+        target: { label: "What should we explore?" },
+      },
+    ]),
+    destEndRecipeIds: ["root"],
+  };
+  const report = preflightCompiledAppMapTestOffline(destEnd, evidence);
+  assert.equal(
+    report.findings.some(
+      (finding) => finding.severity === "blocker" && finding.recipeStepId === "wait-offline-toast",
     ),
     false,
   );

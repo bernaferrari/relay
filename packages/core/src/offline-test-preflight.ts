@@ -849,7 +849,13 @@ export function preflightCompiledAppMapTestOffline(
         continue;
       }
       if (step.kind === "type") postTextMutation = true;
-      if (step.kind === "key" || step.kind === "swipe" || step.kind === "app") {
+      if (
+        step.kind === "key" ||
+        step.kind === "swipe" ||
+        step.kind === "app" ||
+        step.kind === "offline" ||
+        step.kind === "settings"
+      ) {
         postTextMutation = false;
         cursorTimeline.push({
           recipeId: recipe.id,
@@ -859,9 +865,9 @@ export function preflightCompiledAppMapTestOffline(
           reason: `${step.kind} can change navigation; the cursor remains unknown until a later screen expectation is proved at runtime.`,
         });
         if (destEndRecipe) {
-          // Dest-end app/key/swipe can leave the origin identity. Later
-          // wait-for must use dest-end observations or live wait-for, never
-          // the origin unique-variant raw tree.
+          // Dest-end app/key/swipe/offline/settings can leave the origin
+          // identity. Later wait-for must use dest-end observations or live
+          // wait-for, never the origin unique-variant raw tree.
           sourceScreenId = undefined;
           sourceScreenTitle = undefined;
           observations = plan.destEndObservationsByRecipeId?.[recipe.id] ?? [];
