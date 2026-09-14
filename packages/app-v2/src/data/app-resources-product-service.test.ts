@@ -55,6 +55,51 @@ const { calls, invoke } = vi.hoisted(() => {
         health: { status: "needs-relogin", checkedAt: 1, signedIn: false },
       };
     }
+    if (id === "target.browser-auth.health") {
+      return {
+        fixtures: [],
+        summary: {
+          liveCount: 1,
+          revokedCount: 0,
+          readyCount: 1,
+          needsReloginCount: 0,
+          expiredCount: 0,
+          errorCount: 0,
+          concurrentAccountsPossible: false,
+          concurrentReason:
+            "One live account. Concurrent N-account Plans need another saved sign-in.",
+          lanes: [
+            {
+              id: "grok-lab",
+              schedulingKey: "browser-1#authfx:00000000-0000-4000-8000-000000000001:1",
+              kind: "fixture",
+              live: true,
+            },
+          ],
+        },
+      };
+    }
+    if (id === "lane.list") {
+      return {
+        lanes: [
+          {
+            id: "grok-lab",
+            projectId: "project-1",
+            appMapId: "grok-web",
+            target: { kind: "browser", browserTargetId: "browser-1" },
+            account: {
+              kind: "fixture",
+              accountId: "00000000-0000-4000-8000-000000000001",
+              accountRevision: "1",
+              reference: "authfx:00000000-0000-4000-8000-000000000001:1",
+            },
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        ],
+      };
+    }
+    if (id === "target.list") return { targets: [{ id: "browser-1", name: "Chrome" }] };
     if (id === "target.open")
       return { session: { targetId: "browser-1", name: "Chrome", url: "https://grok.com" } };
     throw new Error(`Unexpected operation ${id}`);
@@ -103,6 +148,17 @@ describe("operational app resources product service", () => {
       targetId: "browser-1",
       reference: "authfx:00000000-0000-4000-8000-000000000001:1",
     });
+    const health = await service.probeBrowserAccountHealth({ targetId: "browser-1" });
+    expect(health.summary.liveCount).toBe(1);
+    expect(health.summary.concurrentAccountsPossible).toBe(false);
+    expect(await service.listAccountLanes()).toEqual([
+      {
+        id: "grok-lab",
+        targetId: "browser-1",
+        kind: "fixture",
+        reference: "authfx:00000000-0000-4000-8000-000000000001:1",
+      },
+    ]);
     await service.openBrowserAccountForSignIn({
       targetId: "browser-1",
       reference: "authfx:00000000-0000-4000-8000-000000000001:1",
@@ -113,6 +169,9 @@ describe("operational app resources product service", () => {
       "target.browser-auth.save",
       "target.browser-auth.revoke",
       "target.browser-auth.probe",
+      "target.browser-auth.health",
+      "target.list",
+      "lane.list",
       "target.open",
       "target.open",
     ]);

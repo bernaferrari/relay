@@ -59,6 +59,32 @@ export const browserAuthenticationFixtureSchema = z
 
 export type BrowserAuthenticationFixture = z.infer<typeof browserAuthenticationFixtureSchema>;
 
+export const browserAccountHealthLaneSchema = z
+  .object({
+    id: z.string().min(1).max(96),
+    schedulingKey: z.string().min(1).max(256),
+    kind: z.enum(["fixture", "signed-out"]),
+    live: z.boolean(),
+  })
+  .strict();
+
+export const browserAccountHealthSummarySchema = z
+  .object({
+    liveCount: z.number().int().nonnegative(),
+    revokedCount: z.number().int().nonnegative(),
+    readyCount: z.number().int().nonnegative(),
+    needsReloginCount: z.number().int().nonnegative(),
+    expiredCount: z.number().int().nonnegative(),
+    errorCount: z.number().int().nonnegative(),
+    concurrentAccountsPossible: z.boolean(),
+    concurrentReason: z.string().min(1).max(500),
+    lanes: z.array(browserAccountHealthLaneSchema).max(64),
+  })
+  .strict();
+
+export type BrowserAccountHealthLane = z.infer<typeof browserAccountHealthLaneSchema>;
+export type BrowserAccountHealthSummary = z.infer<typeof browserAccountHealthSummarySchema>;
+
 export const browserAuthenticationFixtureOperationInputSchemas = {
   "target.browser-auth.save": z
     .object({
@@ -82,6 +108,12 @@ export const browserAuthenticationFixtureOperationInputSchemas = {
       targetId: z.string().min(1).max(96),
       reference: browserAuthenticationFixtureReferenceSchema,
       url: z.url().optional(),
+    })
+    .strict(),
+  "target.browser-auth.health": z
+    .object({
+      targetId: z.string().min(1).max(96),
+      probe: z.boolean().optional(),
     })
     .strict(),
 } as const;

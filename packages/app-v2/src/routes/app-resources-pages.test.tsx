@@ -427,6 +427,78 @@ describe("App routes", () => {
     expect(document.body.textContent).toContain("Complete OAuth in the browser, then Refresh");
   });
 
+  it("hides revoked lab accounts and checks live health without inventing a second account", async () => {
+    const probed: unknown[] = [];
+    await render(
+      "/apps/checkout-app/accounts",
+      resources({
+        listBrowserAccounts: async () => [
+          {
+            target: { id: "grok-com", name: "Grok.com" },
+            fixture: {
+              id: "7189423f-193e-45ed-b674-154505cc5107",
+              reference: "authfx:7189423f-193e-45ed-b674-154505cc5107:1",
+              revision: 1,
+              targetId: "grok-com",
+              name: "SuperGrok lab signed-in",
+              origins: ["https://grok.com"],
+              cookieCount: 33,
+              createdAt: now,
+              health: { status: "ready", checkedAt: now, signedIn: true },
+            },
+          },
+          {
+            target: { id: "grok-com", name: "Grok.com" },
+            fixture: {
+              id: "addeb648-90e6-43fe-9a6a-6e2c11d8bd09",
+              reference: "authfx:addeb648-90e6-43fe-9a6a-6e2c11d8bd09:1",
+              revision: 1,
+              targetId: "grok-com",
+              name: "P2.1 lab A",
+              origins: ["https://grok.com"],
+              cookieCount: 1,
+              createdAt: now,
+              revokedAt: now,
+              health: { status: "revoked", checkedAt: now },
+            },
+          },
+        ],
+        listAccountLanes: async () => [
+          { id: "grok-daily", targetId: "grok-com", kind: "signed-out" },
+          {
+            id: "grok-lab",
+            targetId: "grok-com",
+            kind: "fixture",
+            reference: "authfx:7189423f-193e-45ed-b674-154505cc5107:1",
+          },
+        ],
+        probeBrowserAccountHealth: async (input) => {
+          probed.push(input);
+          return {
+            accounts: [],
+            summary: {
+              liveCount: 1,
+              revokedCount: 1,
+              concurrentAccountsPossible: false,
+              concurrentReason: "One live account.",
+              lanes: [],
+            },
+          };
+        },
+        probeBrowserAccount: async () => ({}) as never,
+      }),
+    );
+
+    expect(document.body.textContent).toContain("SuperGrok lab signed-in");
+    expect(document.body.textContent).toContain("Lane grok-lab");
+    expect(document.body.textContent).toContain("One live account");
+    expect(document.body.textContent).not.toContain("P2.1 lab A");
+    await click(button("Show 1 revoked"));
+    expect(document.body.textContent).toContain("P2.1 lab A");
+    await click(button("Check live health"));
+    expect(probed).toEqual([{ targetId: "grok-com" }]);
+  });
+
   it("does not show account mutations when the adapter is read-only", async () => {
     await render(
       "/apps/checkout-app/accounts",

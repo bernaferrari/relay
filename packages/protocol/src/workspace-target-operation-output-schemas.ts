@@ -7,7 +7,11 @@ import {
   browserDeviceSemanticOverlaySchema,
   browserDeviceSessionSchema,
 } from "./browser-device.js";
-import { browserAuthenticationFixtureSchema, browserAuthenticationHealthSchema } from "./browser-authentication-fixture.js";
+import {
+  browserAccountHealthSummarySchema,
+  browserAuthenticationFixtureSchema,
+  browserAuthenticationHealthSchema,
+} from "./browser-authentication-fixture.js";
 import { combineProfileTargetInputSchema } from "./combine-profile-target-schema.js";
 
 const text = z.string().min(1);
@@ -743,7 +747,16 @@ export const workspaceTargetOperationOutputSchemas = {
     .object({ fixture: browserAuthenticationFixtureSchema, target: targetDefinition })
     .strict(),
   "target.browser-auth.probe": z
-    .object({ fixture: browserAuthenticationFixtureSchema, health: browserAuthenticationHealthSchema })
+    .object({
+      fixture: browserAuthenticationFixtureSchema,
+      health: browserAuthenticationHealthSchema,
+    })
+    .strict(),
+  "target.browser-auth.health": z
+    .object({
+      fixtures: z.array(browserAuthenticationFixtureSchema),
+      summary: browserAccountHealthSummarySchema,
+    })
     .strict(),
   "target.boot": z.object({ ok: z.literal(true), serial: text }).strict(),
   "target.avds.list": z.object({ inventory: androidAvdInventory }).strict(),

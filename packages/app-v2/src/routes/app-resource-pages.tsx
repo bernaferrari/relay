@@ -7,6 +7,7 @@ import { useMemo, useState } from "react";
 import { LibraryPage, PageHeader } from "../components/page-layout";
 import { EmptyState, RecoveryState } from "../components/product-patterns";
 import type {
+  ProductAccountLane,
   ProductAppVersion,
   ProductBrowserAccount,
 } from "../data/app-resources-product-service";
@@ -20,6 +21,15 @@ import {
   type VersionDraft,
 } from "./app-resource-dialogs";
 import { PageLoading } from "./recording-shared";
+import {
+  accountHealthState,
+  concurrentAccountCopy,
+  healthCheckedAt,
+  lanesForAccount,
+  liveSignIns,
+  revokedSignIns,
+  signInStatusLabel,
+} from "./sign-ins-health";
 
 export function AppVersionsPage() {
   const { appResourcesService } = useRouteContext({ from: "__root__" });
@@ -129,6 +139,7 @@ export function AppAccountsPage() {
   const queryClient = useQueryClient();
   const [accountDialog, setAccountDialog] = useState<"save" | ProductBrowserAccount>();
   const [revokeAccount, setRevokeAccount] = useState<ProductBrowserAccount>();
+  const [showRevoked, setShowRevoked] = useState(false);
   const accounts = useQuery({
     queryKey: ["app-resources", "browser-accounts"],
     queryFn: () => appResourcesService.listBrowserAccounts(),
@@ -138,6 +149,11 @@ export function AppAccountsPage() {
     queryKey: ["app-resources", "browser-targets"],
     queryFn: () => appResourcesService.listBrowserTargets?.() ?? Promise.resolve([]),
     staleTime: 10_000,
+  });
+  const lanes = useQuery({
+    queryKey: ["app-resources", "account-lanes"],
+    queryFn: () => appResourcesService.listAccountLanes?.() ?? Promise.resolve([]),
+    staleTime: 15_000,
   });
   const error = accounts.error ?? browsers.error;
   const loading = accounts.isPending || browsers.isPending;
@@ -202,15 +218,35 @@ export function AppAccountsPage() {
       return appResourcesService.openBrowserAccountForSignIn(input);
     },
   });
+  const checkAll = useMutation({
+    mutationFn: async () => {
+      if (!appResourcesService.probeBrowserAccountHealth) {
+        throw new Error("Checking sign-ins is unavailable in this Relay connection.");
+      }
+      const targetIds = [
+        ...new Set(liveSignIns(accounts.data ?? []).map((account) => account.target.id)),
+      ];
+      for (const targetId of targetIds) {
+        await appResourcesService.probeBrowserAccountHealth({ targetId });
+      }
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["app-resources", "browser-accounts"] });
+    },
+  });
   const firstBrowser = targets[0];
   const canSaveAccount = Boolean(appResourcesService.saveBrowserAccount) && targets.length > 0;
-  const actionError = probeAccount.error ?? signInNow.error;
+  const actionError = probeAccount.error ?? signInNow.error ?? checkAll.error;
   const listed = accounts.data ?? [];
+  const live = liveSignIns(listed);
+  const revoked = revokedSignIns(listed);
+  const visible = showRevoked ? listed : live;
   const stateCounts = {
-    ready: listed.filter((item) => accountState(item.fixture) === "ready").length,
-    needsRelogin: listed.filter((item) => accountState(item.fixture) === "needs-relogin").length,
-    expired: listed.filter((item) => accountState(item.fixture) === "expired").length,
-    revoked: listed.filter((item) => accountState(item.fixture) === "revoked").length,
+    ready: listed.filter((item) => accountHealthState(item.fixture) === "ready").length,
+    needsRelogin: listed.filter((item) => accountHealthState(item.fixture) === "needs-relogin")
+      .length,
+    expired: listed.filter((item) => accountHealthState(item.fixture) === "expired").length,
+    revoked: revoked.length,
   };
 
   return (
@@ -219,6 +255,15 @@ export function AppAccountsPage() {
       description="Saved browser sign-ins for daily Plans. Check health before a run; expired or signed-out accounts fail closed."
       action={
         <span className="inline-flex items-center justify-end gap-1.5 max-[780px]:flex-wrap max-[780px]:justify-start">
+          {appResourcesService.probeBrowserAccountHealth && live.length ? (
+            <Button
+              variant="outline"
+              onClick={() => checkAll.mutate()}
+              disabled={checkAll.isPending}
+            >
+              {checkAll.isPending ? "Checking…" : "Check live health"}
+            </Button>
+          ) : null}
           <Button
             variant="default"
             onClick={() => setAccountDialog("save")}
@@ -272,11 +317,26 @@ export function AppAccountsPage() {
                 {stateCounts.expired} expired · {stateCounts.revoked} revoked. Check health before
                 the daily Plan.
               </p>
+              <p className="mb-3 text-sm text-muted-foreground">
+                {concurrentAccountCopy(live.length)}
+              </p>
+              {revoked.length ? (
+                <p className="mb-3">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setShowRevoked((current) => !current)}
+                  >
+                    {showRevoked ? "Hide revoked" : `Show ${revoked.length} revoked`}
+                  </Button>
+                </p>
+              ) : null}
               <ul className="list-none overflow-hidden rounded-lg border border-border bg-card p-0">
-                {listed.map((account) => (
+                {visible.map((account) => (
                   <AccountRow
                     key={account.fixture.reference}
                     account={account}
+                    lanes={lanes.data ?? []}
                     canRefresh={Boolean(appResourcesService.refreshBrowserAccount)}
                     canRevoke={Boolean(appResourcesService.revokeBrowserAccount)}
                     canProbe={Boolean(appResourcesService.probeBrowserAccount)}
@@ -419,6 +479,7 @@ function ResourceRecovery({
 
 function AccountRow({
   account,
+  lanes,
   canRefresh,
   canRevoke,
   canProbe,
@@ -431,6 +492,7 @@ function AccountRow({
   onSignIn,
 }: {
   account: ProductBrowserAccount;
+  lanes: readonly ProductAccountLane[];
   canRefresh: boolean;
   canRevoke: boolean;
   canProbe: boolean;
@@ -442,7 +504,9 @@ function AccountRow({
   onProbe(): void;
   onSignIn(): void;
 }) {
-  const state = accountState(account.fixture);
+  const state = accountHealthState(account.fixture);
+  const bound = lanesForAccount(account, lanes);
+  const checkedAt = healthCheckedAt(account.fixture);
   const showActions = canProbe || canSignIn || canRefresh || (canRevoke && state !== "revoked");
   return (
     <li className="grid min-h-[66px] grid-cols-[36px_minmax(0,1fr)_auto] items-center gap-3 px-3.5 py-[11px] sm:grid-cols-[36px_minmax(0,1fr)_auto_auto]">
@@ -465,6 +529,7 @@ function AccountRow({
           {account.fixture.origins.length
             ? ` · ${account.fixture.origins.slice(0, 2).join(", ")}`
             : ""}
+          {bound.length ? ` · Lane ${bound.map((lane) => lane.id).join(", ")}` : ""}
         </small>
       </span>
       <span
@@ -472,13 +537,15 @@ function AccountRow({
           state === "ready" ? "text-muted-foreground" : "text-destructive"
         }`}
       >
-        {statusLabel(state)}
+        {signInStatusLabel(state)}
       </span>
       <time
         className="hidden text-sm text-muted-foreground sm:block"
-        dateTime={new Date(account.fixture.createdAt).toISOString()}
+        dateTime={new Date(checkedAt ?? account.fixture.createdAt).toISOString()}
       >
-        Saved {shortDate(account.fixture.createdAt)}
+        {checkedAt
+          ? `Checked ${shortDate(checkedAt)}`
+          : `Saved ${shortDate(account.fixture.createdAt)}`}
       </time>
       {showActions ? (
         <span className="col-span-full flex flex-wrap justify-end gap-1 sm:col-start-2">
@@ -528,22 +595,6 @@ function AccountRow({
       ) : null}
     </li>
   );
-}
-
-function accountState(
-  fixture: ProductBrowserAccount["fixture"],
-): "ready" | "needs-relogin" | "expired" | "revoked" | "error" {
-  if (fixture.revokedAt !== undefined) return "revoked";
-  if (fixture.health?.status === "needs-relogin") return "needs-relogin";
-  if (fixture.health?.status === "expired") return "expired";
-  if (fixture.health?.status === "revoked") return "revoked";
-  if (fixture.health?.status === "error") return "error";
-  if (fixture.expiresAt !== undefined && fixture.expiresAt <= Date.now()) return "expired";
-  return "ready";
-}
-
-function statusLabel(status: string): string {
-  return status.replace(/-/gu, " ").replace(/^./u, (letter) => letter.toLocaleUpperCase());
 }
 
 function shortDate(timestamp: number): string {

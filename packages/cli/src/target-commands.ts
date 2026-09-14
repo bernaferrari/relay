@@ -124,6 +124,25 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
     }),
   ),
   mapped(
+    "target.browser-auth.health",
+    path("browser auth health", ["targetId"], undefined, {
+      summary: "Check live sign-ins and which Lanes they bind",
+      argumentHelp: [
+        { name: "targetId", type: "string", description: "Managed browser target identifier" },
+      ],
+      inputHelp: [
+        {
+          name: "probe",
+          type: "boolean",
+          description:
+            "Open a proof browser for each live sign-in. Defaults to true. Revoked fixtures are not opened.",
+        },
+      ],
+      examples: ["relay browser auth health grok-com --json"],
+      note: "Does not write authenticationFixtureId onto the saved browser environment. Concurrent N-account is unmeasured until more than one live fixture exists. Revoked lab A/B/C are not accounts.",
+    }),
+  ),
+  mapped(
     "target.boot",
     path("target boot", ["serial"]),
     path("device boot", ["serial"], undefined, {

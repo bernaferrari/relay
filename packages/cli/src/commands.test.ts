@@ -190,6 +190,11 @@ test("browser authentication commands expose only exact reviewed fixture inputs"
       },
     },
   );
+  assert.deepEqual(resolveCommand(["browser", "auth", "health", "grok-com"]), {
+    operationId: "target.browser-auth.health",
+    commandPath: "browser auth health",
+    input: { targetId: "grok-com" },
+  });
 });
 
 test("all plan-035 authoring operations have friendly command paths", () => {

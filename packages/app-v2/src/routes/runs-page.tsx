@@ -14,6 +14,7 @@ import { RunHistoryList, type RunHistoryRowInteraction } from "../components/run
 import { LibraryPage, PageHeader } from "../components/page-layout";
 import { catalogQueryKeys } from "../data/catalog-queries";
 import { PageLoading, RecordingProblem } from "./recording-shared";
+import { MorningReviewCard } from "./morning-review-card";
 import { useCollectionReturnFocus } from "../hooks/use-collection-return-focus";
 
 const routeApi = getRouteApi("/runs");
@@ -125,6 +126,7 @@ export function RunsPage() {
       onClickCapture={returnFocus.onClickCapture}
     >
       <PageHeader title="Results" description="See what happened each time you ran a Test." />
+      <MorningReviewCard />
 
       <LibraryToolbar
         label="Filter Runs"

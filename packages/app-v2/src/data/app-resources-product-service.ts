@@ -45,6 +45,24 @@ export type ProductBrowserAccount = {
   target: Pick<TargetDefinition, "id" | "name">;
 };
 
+export type ProductAccountLane = {
+  id: string;
+  targetId: string;
+  kind: "fixture" | "signed-out";
+  reference?: string;
+};
+
+export type ProductBrowserAccountHealth = {
+  accounts: readonly ProductBrowserAccount[];
+  summary: {
+    liveCount: number;
+    revokedCount: number;
+    concurrentAccountsPossible: boolean;
+    concurrentReason: string;
+    lanes: readonly ProductAccountLane[];
+  };
+};
+
 export type AppVersionProductService = {
   /** `build.save` is the canonical create/upsert operation. */
   saveVersion(input: ProductAppVersionInput): Promise<ProductAppVersion>;
@@ -74,12 +92,22 @@ export type BrowserAccountProductService = {
     targetId: string;
     reference: string;
   }): Promise<ProductBrowserAccount>;
+  probeBrowserAccountHealth?(input: {
+    targetId: string;
+    probe?: boolean;
+  }): Promise<ProductBrowserAccountHealth>;
+  listAccountLanes?(): Promise<readonly ProductAccountLane[]>;
   openBrowserAccountForSignIn(input: { targetId: string; reference?: string }): Promise<void>;
 };
 
 export type OperationalAppResourcesProductService = AppResourcesProductService &
   AppVersionProductService &
-  BrowserAccountProductService;
+  BrowserAccountProductService & {
+    probeBrowserAccountHealth: NonNullable<
+      BrowserAccountProductService["probeBrowserAccountHealth"]
+    >;
+    listAccountLanes: NonNullable<BrowserAccountProductService["listAccountLanes"]>;
+  };
 
 /** Project-scoped app resources. Builds and browser sign-ins are not silently
  * attributed to an App because the canonical contracts do not store that link. */
@@ -99,6 +127,8 @@ export type AppResourcesProductService = {
   refreshBrowserAccount?: BrowserAccountProductService["refreshBrowserAccount"];
   revokeBrowserAccount?: BrowserAccountProductService["revokeBrowserAccount"];
   probeBrowserAccount?: BrowserAccountProductService["probeBrowserAccount"];
+  probeBrowserAccountHealth?: BrowserAccountProductService["probeBrowserAccountHealth"];
+  listAccountLanes?: BrowserAccountProductService["listAccountLanes"];
   openBrowserAccountForSignIn?: BrowserAccountProductService["openBrowserAccountForSignIn"];
 };
 
@@ -263,6 +293,50 @@ export function createAppResourcesProductService(
         { ...result.fixture, health: result.health },
         { id: input.targetId, name: input.targetId },
       );
+    },
+    async probeBrowserAccountHealth(input) {
+      const result = await (await client()).invoke("target.browser-auth.health", { ...input });
+      const targets = await (await client()).invoke("target.list", {});
+      const named = new Map(targets.targets.map((target) => [target.id, target.name]));
+      return {
+        accounts: result.fixtures.map((fixture) =>
+          projectBrowserAccount(fixture, {
+            id: fixture.targetId,
+            name: named.get(fixture.targetId) ?? fixture.targetId,
+          }),
+        ),
+        summary: {
+          liveCount: result.summary.liveCount,
+          revokedCount: result.summary.revokedCount,
+          concurrentAccountsPossible: result.summary.concurrentAccountsPossible,
+          concurrentReason: result.summary.concurrentReason,
+          lanes: result.summary.lanes.map((lane) => ({
+            id: lane.id,
+            targetId: input.targetId,
+            kind: lane.kind,
+            ...(lane.kind === "fixture" ? { reference: lane.schedulingKey.split("#")[1] } : {}),
+          })),
+        },
+      };
+    },
+    async listAccountLanes() {
+      const { lanes } = await (await client()).invoke("lane.list", {});
+      return lanes.flatMap((lane) => {
+        if (lane.target.kind !== "browser") return [];
+        const reference =
+          lane.account?.kind === "fixture"
+            ? (lane.account.reference ??
+              `authfx:${lane.account.accountId}:${lane.account.accountRevision}`)
+            : undefined;
+        return [
+          {
+            id: lane.id,
+            targetId: lane.target.browserTargetId,
+            kind: reference ? ("fixture" as const) : ("signed-out" as const),
+            ...(reference ? { reference } : {}),
+          },
+        ];
+      });
     },
     async openBrowserAccountForSignIn(input) {
       await (

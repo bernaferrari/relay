@@ -3,6 +3,7 @@ import {
   attachBrowserAuthenticationHealth,
   browserCaseProfileForTarget,
   captureBrowserAuthenticationStorageState,
+  collectBrowserTargetAccountHealth,
   currentOperationContext,
   inspectManagedBrowserAuthPage,
   listBrowserAuthenticationFixtures,
@@ -84,12 +85,12 @@ export async function handleBrowserAuthRoute(context: BrowserAuthRouteContext): 
     if (!target?.browser) throw new HttpError(404, "Managed browser target not found");
     const { actorId } = requireHumanBrowserAuthenticationReview();
     await assertTargetControl(scope, targetId);
-    const body = browserAuthenticationFixtureOperationInputSchemas["target.browser-auth.save"].parse(
-      {
-        targetId,
-        ...((await parseJsonBody(req)) as object),
-      },
-    );
+    const body = browserAuthenticationFixtureOperationInputSchemas[
+      "target.browser-auth.save"
+    ].parse({
+      targetId,
+      ...((await parseJsonBody(req)) as object),
+    });
     const fixture = await (async () => {
       try {
         return await saveBrowserAuthenticationFixture({
@@ -153,12 +154,12 @@ export async function handleBrowserAuthRoute(context: BrowserAuthRouteContext): 
     const targetId = probeMatch.id!;
     const target = await readTarget(targetId);
     if (!target?.browser) throw new HttpError(404, "Managed browser target not found");
-    const body = browserAuthenticationFixtureOperationInputSchemas["target.browser-auth.probe"].parse(
-      {
-        targetId,
-        ...((await parseJsonBody(req)) as object),
-      },
-    );
+    const body = browserAuthenticationFixtureOperationInputSchemas[
+      "target.browser-auth.probe"
+    ].parse({
+      targetId,
+      ...((await parseJsonBody(req)) as object),
+    });
     try {
       const probed = await probeBrowserAuthenticationFixture({
         projectId: scope.projectId,
@@ -177,6 +178,41 @@ export async function handleBrowserAuthRoute(context: BrowserAuthRouteContext): 
       return true;
     } catch (error) {
       throw browserAuthenticationConflict(error, "Could not check this sign-in");
+    }
+  }
+
+  const healthMatch = matchPath(pathname, "/targets/:id/browser-auth-fixtures/health");
+  if (method === "POST" && healthMatch) {
+    const targetId = healthMatch.id!;
+    const target = await readTarget(targetId);
+    if (!target?.browser) throw new HttpError(404, "Managed browser target not found");
+    const body = browserAuthenticationFixtureOperationInputSchemas[
+      "target.browser-auth.health"
+    ].parse({
+      targetId,
+      ...((await parseJsonBody(req)) as object),
+    });
+    try {
+      const probe = body.probe !== false;
+      const collected = await collectBrowserTargetAccountHealth({
+        projectId: scope.projectId,
+        targetId,
+        probe,
+        url: target.browser.startUrl,
+        inspectPage: probe
+          ? (url, context) =>
+              inspectManagedBrowserAuthPage({
+                projectId: scope.projectId,
+                targetId,
+                reference: context.reference,
+                url,
+              })
+          : undefined,
+      });
+      json(res, 200, collected);
+      return true;
+    } catch (error) {
+      throw browserAuthenticationConflict(error, "Could not check sign-in health");
     }
   }
 

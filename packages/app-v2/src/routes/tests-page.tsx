@@ -16,6 +16,7 @@ import { runQueryKeys } from "../data/run-queries";
 import { readRunPointer } from "../data/run-pointer";
 import { readWorkflowPointer } from "../data/workflow-pointer";
 import { PageLoading, RecordingProblem } from "./recording-shared";
+import { MorningReviewCard } from "./morning-review-card";
 import { useCollectionReturnFocus } from "../hooks/use-collection-return-focus";
 
 const routeApi = getRouteApi("/tests");
@@ -195,6 +196,8 @@ export function TestsPage() {
           </div>
         }
       />
+
+      {tests.data?.length ? <MorningReviewCard /> : null}
 
       {resumeRecordingId || resumeRunId || resumeAttention ? (
         <div

@@ -1,0 +1,116 @@
+import assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test from "node:test";
+import { saveBrowserAuthenticationFixture } from "./browser-authentication-fixtures.js";
+import {
+  browserAuthenticationFixtureIsLive,
+  collectBrowserTargetAccountHealth,
+  concurrentBrowserAccountCopy,
+  summarizeBrowserAccountHealth,
+} from "./browser-account-health-summary.js";
+import { GROK_DAILY_LANE, GROK_LAB_LANE } from "./lane-seed.js";
+
+const superGrok = "authfx:7189423f-193e-45ed-b674-154505cc5107:1";
+
+test("revoked lab A/B/C are not live accounts", () => {
+  assert.equal(browserAuthenticationFixtureIsLive({ health: { status: "ready" } }), true);
+  assert.equal(
+    browserAuthenticationFixtureIsLive({
+      revokedAt: 1,
+      health: { status: "ready" },
+    }),
+    false,
+  );
+  assert.equal(browserAuthenticationFixtureIsLive({ health: { status: "revoked" } }), false);
+});
+
+test("one live SuperGrok fixture is honest one-account, not a 3-account pack", () => {
+  const summary = summarizeBrowserAccountHealth({
+    targetId: "grok-com",
+    fixtures: [
+      {
+        reference: superGrok,
+        health: { status: "ready" },
+      },
+      {
+        reference: "authfx:addeb648-90e6-43fe-9a6a-6e2c11d8bd09:1",
+        revokedAt: 1,
+        health: { status: "revoked" },
+      },
+      {
+        reference: "authfx:5cc150b9-16f8-487e-8595-511da5e15981:1",
+        revokedAt: 1,
+        health: { status: "revoked" },
+      },
+      {
+        reference: "authfx:bf31754a-03d1-4aaf-b6e3-6c3073335af2:1",
+        revokedAt: 1,
+        health: { status: "revoked" },
+      },
+    ],
+    lanes: [GROK_DAILY_LANE, GROK_LAB_LANE],
+  });
+  assert.equal(summary.liveCount, 1);
+  assert.equal(summary.revokedCount, 3);
+  assert.equal(summary.readyCount, 1);
+  assert.equal(summary.concurrentAccountsPossible, false);
+  assert.equal(summary.concurrentReason, concurrentBrowserAccountCopy(1));
+  assert.deepEqual(
+    summary.lanes.map((lane) => `${lane.id}:${lane.schedulingKey}:${lane.kind}:${lane.live}`),
+    [
+      "grok-daily:grok-com#signed-out:signed-out:true",
+      `grok-lab:grok-com#${superGrok}:fixture:true`,
+    ],
+  );
+});
+
+test("three live fixtures are the only concurrent-account yes", () => {
+  const summary = summarizeBrowserAccountHealth({
+    targetId: "grok-com",
+    fixtures: ["a", "b", "c"].map((id) => ({
+      reference: `authfx:00000000-0000-4000-8000-00000000000${id}:1`,
+      health: { status: "ready" as const },
+    })),
+  });
+  assert.equal(summary.liveCount, 3);
+  assert.equal(summary.concurrentAccountsPossible, true);
+});
+
+test("collect probes only live fixtures and never invents a second account", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-account-health-"));
+  const previous = process.env.RELAY_WORKSPACE_ROOT;
+  process.env.RELAY_WORKSPACE_ROOT = root;
+  try {
+    const live = await saveBrowserAuthenticationFixture({
+      projectId: "default",
+      targetId: "grok-com",
+      name: "SuperGrok lab signed-in",
+      createdBy: "human:local-cli",
+      storageState: {
+        cookies: [],
+        origins: [{ origin: "https://grok.com", localStorage: [] }],
+      },
+    });
+    const inspected: string[] = [];
+    const collected = await collectBrowserTargetAccountHealth({
+      projectId: "default",
+      targetId: "grok-com",
+      probe: true,
+      inspectPage: async (_url, context) => {
+        inspected.push(context.reference);
+        return { title: "Grok", bodyText: "Ask Grok anything\nNew chat" };
+      },
+    });
+    assert.deepEqual(inspected, [live.reference]);
+    assert.equal(collected.summary.liveCount, 1);
+    assert.equal(collected.summary.concurrentAccountsPossible, false);
+    assert.equal(collected.fixtures[0]?.health?.signedIn, true);
+    assert.equal(collected.summary.concurrentReason, concurrentBrowserAccountCopy(1));
+  } finally {
+    if (previous === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
+    else process.env.RELAY_WORKSPACE_ROOT = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});

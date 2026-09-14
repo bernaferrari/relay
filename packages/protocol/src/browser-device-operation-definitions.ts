@@ -11,7 +11,8 @@ type BrowserDeviceOperationId =
   | "target.browser-auth.save"
   | "target.browser-auth.list"
   | "target.browser-auth.revoke"
-  | "target.browser-auth.probe";
+  | "target.browser-auth.probe"
+  | "target.browser-auth.health";
 
 const { command, query } =
   createOperationBuilders<Pick<RelayOperationMap, BrowserDeviceOperationId>>();
@@ -92,6 +93,18 @@ export const browserDeviceOperationDefinitions = [
     "Probe browser sign-in health",
     "POST",
     "/targets/:targetId/browser-auth-fixtures/probe",
+    {
+      category: "target",
+      lease: "shared",
+      minimumRole: "viewer",
+      targetCapabilities: ["snapshot"],
+    },
+  ),
+  command(
+    "target.browser-auth.health",
+    "Summarize live sign-ins and account lanes",
+    "POST",
+    "/targets/:targetId/browser-auth-fixtures/health",
     {
       category: "target",
       lease: "shared",

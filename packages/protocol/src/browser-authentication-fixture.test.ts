@@ -77,6 +77,12 @@ test("browser authentication mutations require explicit confirmation and reject 
     targetId: "browser-1",
     reference,
   });
+  const health = browserAuthenticationFixtureOperationInputSchemas["target.browser-auth.health"];
+  assert.deepEqual(health.parse({ targetId: "browser-1" }), { targetId: "browser-1" });
+  assert.deepEqual(health.parse({ targetId: "browser-1", probe: false }), {
+    targetId: "browser-1",
+    probe: false,
+  });
 });
 
 test("fixture health is metadata-only and optional", () => {

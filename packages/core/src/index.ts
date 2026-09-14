@@ -83,6 +83,7 @@ export * from "./browser-mutation-admission.js";
 export * from "./browser-context.js";
 export * from "./browser-execution-identity.js";
 export * from "./browser-account-lane.js";
+export * from "./browser-account-health-summary.js";
 export * from "./browser-authentication-fixtures.js";
 export * from "./browser-auth-health.js";
 export * from "./browser-auth-health-live.js";

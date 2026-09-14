@@ -477,6 +477,9 @@ describe("Runs workspace", () => {
     expect(document.body.textContent).toContain("Open account");
     expect(document.body.textContent).toContain("Needs review");
     expect(document.body.textContent).toContain("In progress");
+    expect(document.body.textContent).toContain("Morning review");
+    expect(document.body.textContent).toContain("Check Sign-ins");
+    expect(document.body.textContent).toContain("Neither accepts a screenshot baseline");
     expect(document.body.textContent?.match(/2\.5 s/g)).toHaveLength(1);
     expect(document.body.textContent).not.toContain("run-passed-internal");
     expect(document.querySelector('a[href="/runs/run-passed-internal"]')).not.toBeNull();
