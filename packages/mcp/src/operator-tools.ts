@@ -466,14 +466,18 @@ async function invokeWithAutoLease(
         const retry = leaseId && typeof input.leaseId !== "string" ? { ...input, leaseId } : input;
         return await run(retry);
       } catch (leaseError) {
-        if (leaseError instanceof ApiError && leaseError.status === 403) {
+        if (
+          leaseError instanceof ApiError &&
+          leaseError.status === 403 &&
+          object(leaseError.body)?.code === "TARGET_CONTROL_LEASE_CONFLICT"
+        ) {
           const holder = await resolveHolder(leaseError, invoker, serial, signal);
           throw heldByError(leaseError, holder.owner, holder.since);
         }
         throw leaseError;
       }
     }
-    if (error.status === 403) {
+    if (error.status === 403 && code === "TARGET_CONTROL_LEASE_CONFLICT") {
       const holder = await resolveHolder(error, invoker, serial, signal);
       throw heldByError(error, holder.owner, holder.since);
     }
@@ -612,7 +616,7 @@ async function invokeAdvanced(
 
 /**
  * Validate and dispatch an operator verb. Auto-creates a lease on
- * TARGET_CONTROL_LEASE_REQUIRED and rewrites other 403s to held-by copy.
+ * TARGET_CONTROL_LEASE_REQUIRED and rewrites lease-conflict 403s to held-by copy.
  */
 export async function invokeRelayOperatorTool(input: {
   name: RelayOperatorToolDescriptor["name"];

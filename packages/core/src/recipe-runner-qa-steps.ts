@@ -59,6 +59,31 @@ export async function runJudgeConsensus(
 ): Promise<void> {
   const job = ctx.job;
   const log = ctx.log;
+  const prior = job?.artifacts ?? ctx.artifacts ?? [];
+  if (
+    prior.some(
+      (item) =>
+        item.kind === "content-assertion" &&
+        item.data &&
+        typeof item.data === "object" &&
+        "passed" in item.data &&
+        (item.data as { passed?: boolean }).passed === false,
+    )
+  ) {
+    throw new Error("deterministic content assertion already failed");
+  }
+  if (
+    prior.some(
+      (item) =>
+        item.kind === "conversation-turn" &&
+        item.data &&
+        typeof item.data === "object" &&
+        "observation" in item.data &&
+        (item.data as { observation?: string }).observation !== "completed",
+    )
+  ) {
+    throw new Error("deterministic content assertion already failed");
+  }
   if (!step.requireAgreement) {
     const result = await evaluate(step.provider, step.model);
     (job?.artifacts ?? ctx.artifacts)?.push({

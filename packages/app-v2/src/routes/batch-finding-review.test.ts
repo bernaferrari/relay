@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { CombineEvidenceAnalysisReport, CombineEvidenceFinding } from "@relay/protocol";
-import { findingScreenshotRunId, latestFindingDecision } from "./batch-finding-review";
+import type { ProductBatchReport } from "@relay/product/run-across";
+import {
+  findingScreenshotRunId,
+  latestFindingDecision,
+  planFindingsAnalysisState,
+  resolvePlanFindings,
+} from "./batch-finding-review";
 
 const finding = (
   partial: Partial<CombineEvidenceFinding> & Pick<CombineEvidenceFinding, "id" | "canonicalKey">,
@@ -75,5 +81,119 @@ describe("findingScreenshotRunId", () => {
         "harness-1",
       ),
     ).toBe("reject");
+  });
+});
+
+function batchReport(id = "batch-1"): ProductBatchReport {
+  return {
+    id,
+    title: "Languages",
+    status: "completed-with-problems",
+    createdAt: 1,
+    updatedAt: 2,
+    totalCases: 2,
+    completedCases: 2,
+    passedCases: 0,
+    failedCases: 2,
+    pendingCases: 0,
+    targetNames: ["Selected environment"],
+    runIds: ["job-a", "job-b"],
+    cases: [
+      {
+        id: "case-a",
+        index: 0,
+        phase: "coverage",
+        status: "failed",
+        values: {},
+        runId: "job-a",
+        findingCode: "PRODUCT_ASSERTION",
+        error: "provisional A",
+        identity: { testId: "login", environmentId: "env-a", environmentPlatform: "browser" },
+      },
+      {
+        id: "case-b",
+        index: 1,
+        phase: "coverage",
+        status: "failed",
+        values: {},
+        runId: "job-b",
+        findingCode: "HARNESS_FAILURE",
+        error: "provisional B",
+        identity: { testId: "toolbar", environmentId: "env-b", environmentPlatform: "browser" },
+      },
+    ],
+    setup: {
+      appMapId: "app-1",
+      appMapRevision: 1,
+      testId: "login",
+      testName: "Login",
+      appName: "Grok",
+      dataSet: { name: "Default", dimensions: [] },
+    },
+    navigation: { route: "/batches/batch-1", href: "/batches/batch-1" },
+    report: {
+      headline: "Incomplete",
+      detail: "2 failed",
+      executionLine: "2 failed",
+      checksLine: "2 failed",
+      coverageLine: "0 of 2 planned cases verified",
+    },
+  };
+}
+
+describe("resolvePlanFindings", () => {
+  it("treats missing analysis as pending and keeps typed cells", () => {
+    const batch = batchReport();
+    expect(planFindingsAnalysisState(batch)).toBe("pending");
+    const resolved = resolvePlanFindings(batch);
+    expect(resolved.analysis.findings.map((item) => item.canonicalKey)).toEqual([
+      "job:job-a",
+      "job:job-b",
+    ]);
+  });
+
+  it("rejects analysis from another batch and keeps derived cells", () => {
+    const batch = batchReport();
+    const analysis = report([]);
+    analysis.batchId = "other-batch";
+    analysis.analysis.findings = [
+      finding({ id: "only-a", canonicalKey: "job:job-a", code: "PRODUCT_ASSERTION", detail: "rich A" }),
+    ];
+    expect(planFindingsAnalysisState(batch, analysis)).toBe("failed");
+    const resolved = resolvePlanFindings(batch, analysis);
+    expect(resolved.analysis.findings.map((item) => item.detail)).toEqual([
+      "provisional A",
+      "provisional B",
+    ]);
+  });
+
+  it("replaces A with richer analysis and does not drop B", () => {
+    const batch = batchReport();
+    const analysis = report([
+      { jobId: "job-a", locale: "en", status: "failed", frames: [] },
+    ]);
+    analysis.analysis.findings = [
+      finding({
+        id: "rich-a",
+        canonicalKey: "job:job-a",
+        code: "PRODUCT_ASSERTION",
+        detail: "richer A",
+        screenLabel: "Login",
+      }),
+    ];
+    const resolved = resolvePlanFindings(batch, analysis);
+    expect(resolved.analysis.findings.map((item) => [item.canonicalKey, item.detail])).toEqual([
+      ["job:job-a", "richer A"],
+      ["job:job-b", "provisional B"],
+    ]);
+  });
+
+  it("keeps a complete analysis with no findings when cells have no codes", () => {
+    const batch = batchReport();
+    batch.cases = batch.cases.map((item) => ({ ...item, findingCode: undefined, status: "passed" }));
+    const analysis = report([]);
+    analysis.analysis.findings = [];
+    expect(planFindingsAnalysisState(batch, analysis)).toBe("complete");
+    expect(resolvePlanFindings(batch, analysis).analysis.findings).toEqual([]);
   });
 });

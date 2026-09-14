@@ -34,8 +34,6 @@ import {
   nodeMatchesTarget,
   refMatchesRecordedTarget,
   resolveElementRelativePoint,
-  textForTarget,
-  sameTarget,
 } from "./recipe-target-match.js";
 import type { RecipeStepContext } from "./recipe-runner-context.js";
 import { currentVerifiedScreen } from "./recipe-runner-context.js";
@@ -113,141 +111,6 @@ async function resolvePointForDevice(
 export function isRightToLeftRun(variables?: Record<string, string>): boolean {
   const locale = (variables?.language ?? variables?.locale ?? "").trim().toLowerCase();
   return /^(?:ar|fa|he|iw|ps|ur)(?:-|$)/.test(locale);
-}
-
-async function waitForResponseCompletion(
-  device: Device,
-  step: Extract<RecipeStep, { kind: "wait-response" }>,
-  ctx: RecipeStepContext,
-): Promise<void> {
-  const timeoutMs = Math.min(step.timeoutMs ?? 90_000, MAX_WAIT_MS);
-  const stableForMs = step.stableForMs ?? 2_000;
-  const pollMs = 250;
-  const beganAt = now();
-  const deadline = beganAt + timeoutMs;
-  const initialNodes = await snapshot(device);
-  const initialText = textForTarget(initialNodes, step.target);
-  let previousText = initialText;
-  const initiallyIdle = step.idleTarget
-    ? initialNodes.some((node) => nodeMatchesTarget(node, step.idleTarget!))
-    : false;
-  const completionTargetIsIdle = Boolean(
-    step.idleTarget && sameTarget(step.target, step.idleTarget),
-  );
-  let sawIdleLeave = !initiallyIdle;
-  // Physical snapshots can miss a short reply. If the first sample already
-  // has content and an independent idle signal, treat that as started.
-  // When the completion target is also the idle signal, require it to leave
-  // and return so a leftover previous reply cannot pass immediately.
-  let startedAt: number | undefined =
-    initialText && initiallyIdle && !completionTargetIsIdle ? beganAt : undefined;
-  let stableSince: number | undefined = startedAt;
-  let samples = 1;
-  let lastSignals: string[] = startedAt ? ["response-started", "idle-visible"] : [];
-  const pollDiagnostics: Array<Record<string, unknown>> = [];
-  const firstPollDiagnostics: Array<Record<string, unknown>> = [];
-
-  if (startedAt) {
-    ctx.log(`response completion: content already complete (${initialText.length} characters)`);
-  }
-
-  const record = (status: "complete" | "timeout", completedAt: number, text: string) => {
-    ctx.job?.artifacts.push({
-      kind: "response-completion",
-      capturedAt: completedAt,
-      data: {
-        status,
-        beganAt,
-        startedAt,
-        completedAt,
-        durationMs: completedAt - beganAt,
-        stableForMs,
-        timeoutMs,
-        ...(step.maxMs !== undefined ? { maxMs: step.maxMs } : {}),
-        samples,
-        signals: lastSignals,
-        observedCharacters: text.length,
-        usedBusyTarget: Boolean(step.busyTarget),
-        usedIdleTarget: Boolean(step.idleTarget),
-        pollDiagnostics: [
-          ...new Map(
-            [...firstPollDiagnostics, ...pollDiagnostics].map((entry) => [entry.sample, entry]),
-          ).values(),
-        ],
-      },
-    });
-  };
-
-  while (now() < deadline) {
-    await sleep(pollMs, device);
-    const capturedAt = now();
-    const nodes = await snapshot(device);
-    samples += 1;
-    const text = textForTarget(nodes, step.target);
-    const matched = nodes.filter((node) => nodeMatchesTarget(node, step.target));
-    const diagnostic = {
-      sample: samples,
-      characters: text.length,
-      matchedCount: matched.length,
-      matchedNodes: matched.slice(0, 8).map((node) => ({
-        role: node.role ?? node.type,
-        ...(node.identifier ? { identifier: node.identifier } : {}),
-      })),
-    };
-    if (firstPollDiagnostics.length < 3) firstPollDiagnostics.push(diagnostic);
-    pollDiagnostics.push(diagnostic);
-    if (pollDiagnostics.length > 3) pollDiagnostics.shift();
-    const changedFromInitial = text.length > 0 && text !== initialText;
-    const idleVisible = step.idleTarget
-      ? nodes.some((node) => nodeMatchesTarget(node, step.idleTarget!))
-      : false;
-    if (step.idleTarget && !idleVisible) sawIdleLeave = true;
-
-    if (
-      !startedAt &&
-      (changedFromInitial ||
-        (!initialText && text.length > 0) ||
-        (completionTargetIsIdle && sawIdleLeave && idleVisible && text.length > 0))
-    ) {
-      startedAt = capturedAt;
-      stableSince = capturedAt;
-      ctx.log(`response completion: content started (${text.length} characters)`);
-    }
-    if (startedAt) {
-      if (text !== previousText) stableSince = capturedAt;
-      const stable = Boolean(text && stableSince && capturedAt - stableSince >= stableForMs);
-      const busyGone = step.busyTarget
-        ? !nodes.some((node) => nodeMatchesTarget(node, step.busyTarget!))
-        : false;
-      lastSignals = [
-        "response-started",
-        ...(stable ? ["text-stable"] : []),
-        ...(busyGone ? ["busy-gone"] : []),
-        ...(idleVisible ? ["idle-visible"] : []),
-      ];
-      const hasIndependentCompletionTarget = Boolean(step.busyTarget || step.idleTarget);
-      // When both guards are supplied, a stale idle control must not outrank
-      // an explicitly visible busy control. Otherwise a response can pass as
-      // soon as its text pauses while generation is still in progress.
-      const completionSignal = step.busyTarget ? busyGone : idleVisible;
-      if (stable && (!hasIndependentCompletionTarget || completionSignal)) {
-        record("complete", capturedAt, text);
-        ctx.log(`response completion: complete · ${lastSignals.join(" + ")}`);
-        if (step.maxMs !== undefined && capturedAt - beganAt > step.maxMs) {
-          throw new Error(
-            `response completion: exceeded maxMs ${step.maxMs} (${capturedAt - beganAt}ms)`,
-          );
-        }
-        return;
-      }
-    }
-    previousText = text;
-  }
-
-  record("timeout", now(), previousText);
-  throw new Error(
-    `response completion: timed out after ${Math.round(timeoutMs / 1000)}s (${lastSignals.join(" + ") || "no response observed"})`,
-  );
 }
 
 function readInput(ctx: RecipeStepContext, input: string): string {
@@ -895,5 +758,4 @@ export {
   scrollUp,
   tapRecordedTarget,
   targetPresent,
-  waitForResponseCompletion,
 };

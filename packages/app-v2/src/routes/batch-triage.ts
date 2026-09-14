@@ -83,6 +83,7 @@ export function buildBatchMatrix(
           environmentLabel: item.identity?.environmentLabel,
           targetLabel: item.identity?.targetLabel,
           accountLabel: item.identity?.accountLabel,
+          locale: item.world,
         }),
         ...(item.identity?.environmentPlatform
           ? { platform: item.identity.environmentPlatform }

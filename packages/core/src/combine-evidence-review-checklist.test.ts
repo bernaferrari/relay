@@ -57,11 +57,11 @@ test("HARNESS_FAILURE is could not run", () => {
   );
 });
 
-test("cancelled without a product finding is could not run", () => {
-  assert.equal(classifyReviewChecklistStatus({ status: "cancelled" }), "could not run");
+test("manual cancellation stays cancelled, not could not run", () => {
+  assert.equal(classifyReviewChecklistStatus({ status: "cancelled" }), "cancelled");
   assert.equal(
     classifyReviewChecklistStatus({ status: "cancelled", findingCode: "USER_CANCELLED" }),
-    "could not run",
+    "cancelled",
   );
 });
 

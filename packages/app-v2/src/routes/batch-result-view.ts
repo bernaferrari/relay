@@ -236,7 +236,10 @@ export function formatBatchColumnLabel(input: {
   const viewport = formatBatchViewport(input.environmentId, input.environmentLabel);
   const locale = formatBatchLocaleLabel(input.locale);
   const parts = [account, device, viewport, locale].filter(
-    (part, index, all): part is string => Boolean(part) && all.indexOf(part) === index,
+    (part, index, all): part is string =>
+      Boolean(part) &&
+      all.indexOf(part) === index &&
+      (part !== viewport || !deviceHasViewport(device, viewport)),
   );
   return parts.join(" · ") || device;
 }
@@ -297,6 +300,12 @@ function clusterMembers(
 ): readonly ProductBatchCase[] {
   const ids = new Set(cluster.caseIds);
   return cases.filter((item) => ids.has(item.id) || item.id === cluster.representativeCaseId);
+}
+
+function deviceHasViewport(device: string, viewport?: string): boolean {
+  if (!viewport) return false;
+  const compact = viewport.replaceAll(/\s+/gu, "").replace("×", "x");
+  return device.replaceAll(/\s+/gu, "").replace("×", "x").includes(compact);
 }
 
 function formatBatchViewport(environmentId: string, environmentLabel?: string): string | undefined {

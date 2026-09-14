@@ -345,3 +345,27 @@ test("operator 403 names who holds the lease and since when", async () => {
     },
   );
 });
+
+test("operator role or consent 403 keeps the original message", async () => {
+  const { invoker } = recordingInvoker(() => {
+    throw new ApiError(403, "This actor is missing the operator role for this project", {
+      code: "ACTOR_ROLE_FORBIDDEN",
+    });
+  });
+  await assert.rejects(
+    invokeRelayOperatorTool({
+      name: "relay_tap",
+      argumentsValue: { serial: "ipad", identifier: "settings.gear" },
+      confirmed: false,
+      invoker,
+      actorId: "agent:cursor",
+      signal: new AbortController().signal,
+    }),
+    (error: unknown) => {
+      assert.ok(error instanceof ApiError);
+      assert.equal(error.message, "This actor is missing the operator role for this project");
+      assert.doesNotMatch(error.message, /held by/u);
+      return true;
+    },
+  );
+});

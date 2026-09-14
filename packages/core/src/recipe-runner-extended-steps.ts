@@ -46,6 +46,7 @@ import {
   recipeScreenIdentityOptions,
   type RecipeStepContext,
 } from "./recipe-runner-context.js";
+import { recordInitiatingResponseBoundary } from "./recipe-response-completion.js";
 import {
   advanceSemanticRevealNavigation,
   estimateSemanticRevealMovement,
@@ -115,6 +116,11 @@ export async function runTypeStep(
   if (step.mode === "replace") {
     if (!step.target) throw new Error("replace text requires a target");
     return replaceText(device, step.target, step.text);
+  }
+  try {
+    recordInitiatingResponseBoundary(await snapshot(device), ctx, step.id);
+  } catch {
+    // Snapshot is evidence for the next extract. Typing still proceeds.
   }
   if (step.target) await tapRecordedTarget(device, { ...step, target: step.target }, ctx);
   await typeText(device, step.text);

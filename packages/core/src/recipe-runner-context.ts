@@ -8,6 +8,7 @@ import type { ScreenshotPayload } from "./workspace-capture.js";
 import type { TestJob } from "./session.js";
 import type { AppIdentityPolicy } from "./app-identity-policy.js";
 import { identityPolicyForTarget } from "./app-identity-policy.js";
+import type { ResponseBoundary } from "./recipe-response-boundary.js";
 
 export type FreshDeviceObservation = {
   nodes?: SnapshotNode[];
@@ -78,6 +79,8 @@ export type RecipeRuntimeState = {
   identityPolicy?: AppIdentityPolicy;
   /** Compiled dest-end coverage recipes. P3.1 primitives may live here. */
   destEndRecipeIds?: string[];
+  /** Turns present before the current type/send. Visual Y is not order. */
+  responseBoundary?: ResponseBoundary;
 };
 
 function previousProof(

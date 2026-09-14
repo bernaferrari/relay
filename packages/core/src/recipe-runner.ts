@@ -11,8 +11,8 @@ import {
   resolvePointForDevice,
   runVariableScript,
   targetPresent,
-  waitForResponseCompletion,
 } from "./recipe-runner-support.js";
+import { waitForResponseCompletion } from "./recipe-response-completion.js";
 import {
   campaignExecutionStep,
   invalidateVerifiedScreen,
@@ -24,7 +24,11 @@ import {
   rejectForbiddenCoverageEffect,
 } from "./campaign-recovery-effects.js";
 import { contentAssertionPassed } from "./content-assertion-match.js";
-import { extractJoinedTargetText, extractNewestCompletedAssistantTurn } from "./recipe-extract.js";
+import {
+  conversationProvenanceFromArtifacts,
+  extractCurrentActionAssistantTurn,
+  extractJoinedTargetText,
+} from "./recipe-extract.js";
 export { isRightToLeftRun, resolveRecipeStep } from "./recipe-runner-support.js";
 export type { RecipeStepContext } from "./recipe-runner-context.js";
 export { DEFAULT_HUMAN_CHECKPOINT_TIMEOUT_MS } from "./recipe-runner-readiness.js";
@@ -276,10 +280,11 @@ async function runRequiredRecipeStep(
       const variables = job?.resolvedInputs ?? ctx.variables;
       if (!variables) throw new Error("extract: no execution context");
       const nodes = await snapshot(device);
-      const text =
+      const assistant =
         step.role === "assistant"
-          ? extractNewestCompletedAssistantTurn(nodes, step.target)
-          : extractJoinedTargetText(nodes, step.target);
+          ? extractCurrentActionAssistantTurn(nodes, step.target, ctx.runtime?.responseBoundary)
+          : undefined;
+      const text = assistant?.text ?? extractJoinedTargetText(nodes, step.target);
       variables[step.as] = text;
       (job?.artifacts ?? ctx.artifacts)?.push({
         kind: "conversation-turn",
@@ -290,6 +295,14 @@ async function runRequiredRecipeStep(
           source: "accessibility",
           blocks: [{ type: "text", text }],
           variable: step.as,
+          ...(assistant
+            ? {
+                responseId: assistant.responseId,
+                initiatingActionId: assistant.initiatingActionId,
+                observation: assistant.observation,
+                target: assistant.target,
+              }
+            : {}),
         },
       });
       log(`extract: saved ${step.as} (${text.length} characters)`);
@@ -298,10 +311,11 @@ async function runRequiredRecipeStep(
     case "assert-content": {
       const actual = readInput(ctx, step.input);
       const passed = contentAssertionPassed(actual, step.expected, step.match, step.field);
+      const provenance = conversationProvenanceFromArtifacts(job?.artifacts ?? ctx.artifacts);
       (job?.artifacts ?? ctx.artifacts)?.push({
         kind: "content-assertion",
         capturedAt: now(),
-        data: { input: step.input, expected: step.expected, match: step.match, passed },
+        data: { input: step.input, expected: step.expected, match: step.match, passed, ...provenance },
       });
       if (!passed) {
         throw new Error(

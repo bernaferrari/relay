@@ -45,17 +45,72 @@ export function findingScreenshotRunId(
   return report.cases.find((item) => item.jobId && finding.id.includes(item.jobId))?.jobId;
 }
 
-/** Prefer analyzed Findings. If analysis is missing, surface typed cell codes
- * so a cancelled SOS still has Confirm/Reject. Empty remains a QA gap. */
+export type PlanFindingsAnalysisState = "pending" | "incomplete" | "failed" | "complete";
+
+export function planFindingsAnalysisState(
+  report: ProductBatchReport,
+  analysis?: CombineEvidenceAnalysisReport,
+): PlanFindingsAnalysisState {
+  if (!analysis) return "pending";
+  if (analysis.batchId !== report.id) return "failed";
+  if (analysis.coverage.frames > 0 && analysis.coverage.inspectedFrames < analysis.coverage.frames) {
+    return "incomplete";
+  }
+  return "complete";
+}
+
+function findingMergeKey(finding: CombineEvidenceFinding): string {
+  if (finding.canonicalKey.startsWith("job:")) return finding.canonicalKey;
+  return finding.canonicalKey || finding.id;
+}
+
+function mergePlanFindings(
+  derived: CombineEvidenceAnalysisReport,
+  analysis: CombineEvidenceAnalysisReport,
+): CombineEvidenceAnalysisReport {
+  const byKey = new Map<string, CombineEvidenceFinding>();
+  for (const finding of derived.analysis.findings) {
+    byKey.set(findingMergeKey(finding), finding);
+  }
+  for (const finding of analysis.analysis.findings) {
+    byKey.set(findingMergeKey(finding), finding);
+  }
+  const findings = [...byKey.values()];
+  const critical = findings.filter((item) => item.severity === "critical").length;
+  return {
+    ...analysis,
+    batchId: derived.batchId,
+    locales: [...new Set([...analysis.locales, ...derived.locales])],
+    analysis: {
+      ...analysis.analysis,
+      findings,
+      critical,
+      warnings: findings.length - critical,
+      affectedScreens: findings.length ? new Set(findings.map((item) => item.screenLabel)).size : 0,
+    },
+    cases: analysis.cases.length ? analysis.cases : derived.cases,
+  };
+}
+
+/** Merge analyzed Findings over typed cells by job identity. A richer analysis
+ * of A replaces A's provisional row and must not drop B. Wrong-batch analysis
+ * is ignored. Empty remains a QA gap. */
 export function resolvePlanFindings(
   report: ProductBatchReport,
   analysis?: CombineEvidenceAnalysisReport,
   testNames: BatchTestNames = {},
 ): CombineEvidenceAnalysisReport {
-  if (analysis?.analysis.findings.length) return analysis;
   const derived = planFindingsFromBatch(report, testNames);
-  if (derived.analysis.findings.length) return derived;
-  return emptyPlanFindingsReport(report.id);
+  const state = planFindingsAnalysisState(report, analysis);
+  if (!analysis || state === "failed") {
+    if (derived.analysis.findings.length) return derived;
+    return emptyPlanFindingsReport(report.id);
+  }
+  if (!analysis.analysis.findings.length && !derived.analysis.findings.length) {
+    return analysis;
+  }
+  if (!analysis.analysis.findings.length) return derived;
+  return mergePlanFindings(derived, analysis);
 }
 
 export function planFindingsFromBatch(

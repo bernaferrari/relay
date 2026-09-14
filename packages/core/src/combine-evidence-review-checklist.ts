@@ -13,6 +13,7 @@ export const REVIEW_CHECKLIST_STATUSES = [
   "passed",
   "check failed",
   "could not run",
+  "cancelled",
   "todo",
 ] as const;
 
@@ -101,15 +102,15 @@ export function classifyReviewChecklistStatus(input: {
   findingCode?: CombineEvidenceFindingCode;
 }): ReviewChecklistStatus {
   if (input.findingCode === "PRODUCT_ASSERTION") return "check failed";
+  if (input.findingCode === "USER_CANCELLED") return "cancelled";
   if (
     input.findingCode === "HARNESS_FAILURE" ||
     input.findingCode === "BLOCKED" ||
-    input.findingCode === "ACCOUNT_NEEDS_RELOGIN" ||
-    input.findingCode === "USER_CANCELLED" ||
-    input.status === "cancelled"
+    input.findingCode === "ACCOUNT_NEEDS_RELOGIN"
   ) {
     return "could not run";
   }
+  if (input.status === "cancelled") return "cancelled";
   if (input.status === "ok" || input.status === "healed" || input.status === "passed") {
     return "passed";
   }

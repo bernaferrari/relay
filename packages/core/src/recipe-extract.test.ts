@@ -1,115 +1,109 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { SnapshotNode } from "./device.js";
-import { extractNewestCompletedAssistantTurn } from "./recipe-extract.js";
+import {
+  extractCurrentActionAssistantTurn,
+  extractNewestCompletedAssistantTurn,
+} from "./recipe-extract.js";
+import { captureResponseBoundary } from "./recipe-response-boundary.js";
 
-function grokPageAfterAsk(options: {
-  newest: string;
-  older?: string;
-  quota?: string;
-  echo?: string;
-  failed?: string;
-}): SnapshotNode[] {
-  return [
-    { role: "a", label: "Paris capital of France", hittable: true, visibleToUser: true },
-    ...(options.quota
-      ? [{ role: "text", label: options.quota, visibleToUser: true } satisfies SnapshotNode]
-      : []),
-    ...(options.echo
-      ? [
-          {
-            role: "article",
-            label: "You",
-            identifier: "user-message",
-            value: options.echo,
-            rect: { x: 400, y: 180, width: 200, height: 32 },
-            visibleToUser: true,
-          } satisfies SnapshotNode,
-        ]
-      : []),
-    ...(options.older
-      ? [
-          {
-            role: "article",
-            label: "Grok",
-            identifier: "assistant-message",
-            value: options.older,
-            rect: { x: 200, y: 240, width: 400, height: 48 },
-            visibleToUser: true,
-          } satisfies SnapshotNode,
-        ]
-      : []),
-    {
-      role: "article",
-      label: "Grok",
-      identifier: "assistant-message",
-      value: options.newest,
-      rect: { x: 200, y: 420, width: 400, height: 48 },
-      visibleToUser: true,
-    },
-    ...(options.failed
-      ? [{ role: "text", label: options.failed, visibleToUser: true } satisfies SnapshotNode]
-      : []),
-  ];
+function turn(value: string, ref: string, y = 240): SnapshotNode {
+  return {
+    role: "article",
+    label: "Grok",
+    identifier: "assistant-message",
+    value,
+    ref,
+    rect: { x: 200, y, width: 400, height: 48 },
+    visibleToUser: true,
+  };
 }
 
-const TARGET = { text: "4" };
+function quota(label: string): SnapshotNode {
+  return { role: "text", label, visibleToUser: true };
+}
 
-test("assistant extract uses the newest completed turn, not quota, echo, or history", () => {
-  const text = extractNewestCompletedAssistantTurn(
-    grokPageAfterAsk({
-      newest: "4",
-      older: "The previous answer was 4.5",
-      quota: "Try again in 4 minutes",
-      echo: "What is 2+2? 4",
-      failed: "Model v4 failed; no answer generated",
-    }),
-    TARGET,
-  );
-  assert.equal(text, "4");
-});
+const TARGET = { identifier: "assistant-message" };
 
-test("assistant extract does not treat a quota four as the generated answer", () => {
-  const text = extractNewestCompletedAssistantTurn(
-    grokPageAfterAsk({
-      newest: "Paris is in France.",
-      quota: "Try again in 4 minutes",
-      failed: "4 minutes remaining",
-    }),
-    { identifier: "assistant-message" },
-  );
-  assert.equal(text, "Paris is in France.");
-});
-
-test("leftover 15 is history, not the current 2+2 assistant turn", () => {
-  const leftoverOnly = grokPageAfterAsk({
-    newest: "15",
-    echo: "2+2",
-    quota: "Free tier limit reached. Try again later.",
-  }).map((node) =>
-    node.identifier === "user-message"
-      ? { ...node, rect: { x: 400, y: 500, width: 200, height: 32 } }
-      : node,
-  );
-  const leftover = leftoverOnly.find((node) => node.identifier === "assistant-message");
-  assert.ok(leftover);
-  leftover.rect = { x: 200, y: 240, width: 400, height: 48 };
+test("old 4 plus new quota is not a verified new answer", () => {
+  const leftover = [turn("4", "@old")];
+  const boundary = captureResponseBoundary(leftover, "initiating-action", "ask-1");
   assert.throws(
-    () => extractNewestCompletedAssistantTurn(leftoverOnly, { identifier: "assistant-message" }),
-    /no completed assistant turn matched the current action/u,
+    () =>
+      extractNewestCompletedAssistantTurn(
+        [turn("4", "@old"), quota("Try again in 10 minutes; no answer generated")],
+        TARGET,
+        boundary,
+      ),
+    /no verified new answer/u,
   );
+});
 
-  const generated = grokPageAfterAsk({
-    older: "15",
-    newest: "4",
-    echo: "2+2",
-  }).map((node) =>
-    node.identifier === "user-message"
-      ? { ...node, rect: { x: 400, y: 330, width: 200, height: 32 } }
-      : node,
+test("old 4 plus new 5 fails an unchanged number-equals check", () => {
+  const leftover = [turn("4", "@old")];
+  const boundary = captureResponseBoundary(leftover, "initiating-action", "ask-1");
+  const text = extractNewestCompletedAssistantTurn(
+    [turn("4", "@old"), turn("5", "@new", 80)],
+    TARGET,
+    boundary,
   );
-  assert.equal(
-    extractNewestCompletedAssistantTurn(generated, { identifier: "assistant-message" }),
-    "4",
+  assert.equal(text, "5");
+});
+
+test("old 4 plus a new identified 4 is a distinct current-action response", () => {
+  const leftover = [turn("4", "@old")];
+  const boundary = captureResponseBoundary(leftover, "initiating-action", "ask-1");
+  const extracted = extractCurrentActionAssistantTurn(
+    [turn("4", "@old"), turn("4", "@new", 80)],
+    TARGET,
+    boundary,
   );
+  assert.equal(extracted.text, "4");
+  assert.match(extracted.responseId, /@new/u);
+  assert.equal(extracted.initiatingActionId, "ask-1");
+});
+
+test("missing extract target does not fall back to the rest of the page", () => {
+  assert.throws(
+    () => extractNewestCompletedAssistantTurn([turn("4", "@old")], { identifier: "missing-slot" }),
+    /target did not match any node/u,
+  );
+});
+
+test("reordered history does not pick an older answer by screen Y", () => {
+  const leftover = [turn("4", "@old", 80)];
+  const boundary = captureResponseBoundary(leftover, "initiating-action", "ask-1");
+  const extracted = extractCurrentActionAssistantTurn(
+    [turn("5", "@new", 420), turn("4", "@old", 80)],
+    TARGET,
+    boundary,
+  );
+  assert.equal(extracted.text, "5");
+  assert.match(extracted.responseId, /@new/u);
+});
+
+test("without a boundary, quota plus a leftover completed turn is not current", () => {
+  assert.throws(
+    () =>
+      extractNewestCompletedAssistantTurn(
+        [turn("15", "@old"), quota("Free tier limit reached. Try again later.")],
+        TARGET,
+      ),
+    /no verified new answer/u,
+  );
+});
+
+test("without a boundary, two completed turns are not ordered by Y", () => {
+  assert.throws(
+    () =>
+      extractNewestCompletedAssistantTurn(
+        [turn("15", "@old", 240), turn("4", "@new", 420)],
+        TARGET,
+      ),
+    /initiating-action boundary required/u,
+  );
+});
+
+test("a single completed turn with no quota still extracts without a boundary", () => {
+  assert.equal(extractNewestCompletedAssistantTurn([turn("5", "@only")], TARGET), "5");
 });

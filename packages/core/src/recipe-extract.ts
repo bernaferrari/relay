@@ -1,67 +1,77 @@
 import type { StepTarget } from "@relay/protocol";
 import type { SnapshotNode } from "./device.js";
 import { nodeMatchesTarget, nodeText } from "./recipe-target-match.js";
+import {
+  type CurrentActionAssistantTurn,
+  type ResponseBoundary,
+  listAssistantTurns,
+  listQuotaObservations,
+  quotasAfterBoundary,
+  targetMatched,
+  turnsAfterBoundary,
+} from "./recipe-response-boundary.js";
 
-const ASSISTANT_SLOT = /^(?:assistant-message|last-reply-container|response-.+)$/iu;
-const USER_SLOT = /^(?:user-message)$/iu;
-const QUOTA_OR_FAILURE =
-  /try again(?:\s+in|\s+later)?\b|\bbefore limit is gone\b|\blimit (?:is )?reached\b|\bminutes remaining\b|no answer generated|free tier/iu;
-
-function compact(node: SnapshotNode): string {
-  const value = typeof node.value === "string" ? node.value.trim() : "";
-  const content = typeof node.content === "string" ? node.content.trim() : "";
-  if (isAssistantSlot(node)) return content || value;
-  return nodeText(node).join("\n").trim();
-}
-
-function isUserEcho(node: SnapshotNode): boolean {
-  const identifier = (node.identifier ?? "").trim();
-  if (USER_SLOT.test(identifier)) return true;
-  return (
-    (node.role ?? "").toLocaleLowerCase() === "article" && /^(?:you)$/iu.test(node.label ?? "")
+export function extractCurrentActionAssistantTurn(
+  nodes: readonly SnapshotNode[],
+  target: StepTarget,
+  boundary?: ResponseBoundary,
+): CurrentActionAssistantTurn {
+  if (!targetMatched(nodes, target)) {
+    throw new Error("extract: target did not match any node");
+  }
+  if (boundary) {
+    const next = turnsAfterBoundary(nodes, target, boundary).filter(
+      (turn) => turn.observation === "completed",
+    );
+    const quota = quotasAfterBoundary(nodes, boundary);
+    if (next.length === 1) {
+      return {
+        text: next[0]!.text,
+        responseId: next[0]!.id,
+        initiatingActionId: boundary.initiatingActionId,
+        observation: "completed",
+        target,
+      };
+    }
+    if (next.length > 1) {
+      throw new Error("extract: multiple new completed assistant turns matched the current action");
+    }
+    if (quota.length) {
+      throw new Error("extract: no verified new answer (quota or error, leftover is not current)");
+    }
+    throw new Error("extract: no verified new answer for the current action");
+  }
+  const completed = listAssistantTurns(nodes, target).filter(
+    (turn) => turn.observation === "completed",
   );
-}
-
-function isQuotaOrFailureChrome(node: SnapshotNode): boolean {
-  return QUOTA_OR_FAILURE.test(`${node.label ?? ""} ${node.value ?? ""} ${node.content ?? ""}`);
-}
-
-function isAssistantSlot(node: SnapshotNode): boolean {
-  const identifier = (node.identifier ?? "").trim();
-  if (ASSISTANT_SLOT.test(identifier)) return true;
-  return (
-    (node.role ?? "").toLocaleLowerCase() === "article" && /^(?:grok)$/iu.test(node.label ?? "")
-  );
-}
-
-function documentOrder(left: SnapshotNode, right: SnapshotNode): number {
-  const leftY = left.rect?.y ?? -Infinity;
-  const rightY = right.rect?.y ?? -Infinity;
-  if (leftY !== rightY) return leftY - rightY;
-  return (left.index ?? 0) - (right.index ?? 0);
+  const quota = listQuotaObservations(nodes);
+  if (quota.length && completed.length) {
+    throw new Error("extract: no verified new answer (quota or error, leftover is not current)");
+  }
+  if (completed.length === 0) {
+    throw new Error("extract: no completed assistant turn matched the current action");
+  }
+  if (completed.length > 1) {
+    throw new Error(
+      "extract: multiple completed assistant turns; initiating-action boundary required",
+    );
+  }
+  return {
+    text: completed[0]!.text,
+    responseId: completed[0]!.id,
+    initiatingActionId: undefined,
+    observation: "completed",
+    target,
+  };
 }
 
 /** Newest completed assistant turn from the current action, never quota/echo/history. */
 export function extractNewestCompletedAssistantTurn(
   nodes: readonly SnapshotNode[],
   target: StepTarget,
+  boundary?: ResponseBoundary,
 ): string {
-  const matched = nodes.filter((node) => nodeMatchesTarget(node, target));
-  const candidates = (matched.length ? matched : [...nodes]).filter(
-    (node) => !isUserEcho(node) && !isQuotaOrFailureChrome(node),
-  );
-  const slots = candidates.filter(isAssistantSlot);
-  const pool = slots.length ? slots : candidates;
-  const latestEcho = [...nodes.filter(isUserEcho)].sort(documentOrder).at(-1);
-  const currentAction = latestEcho
-    ? pool.filter((node) => documentOrder(node, latestEcho) > 0)
-    : pool;
-  const newest = [...currentAction].sort(documentOrder).at(-1);
-  const text = newest ? compact(newest) : "";
-  if (!text) {
-    throw new Error("extract: no completed assistant turn matched the current action");
-  }
-  return text;
+  return extractCurrentActionAssistantTurn(nodes, target, boundary).text;
 }
 
 export function extractJoinedTargetText(
@@ -74,4 +84,20 @@ export function extractJoinedTargetText(
     throw new Error("extract: no accessible content matched the target");
   }
   return values.join("\n");
+}
+
+export function conversationProvenanceFromArtifacts(
+  artifacts: readonly { kind: string; data?: unknown }[] | undefined,
+): { responseId?: string; initiatingActionId?: string } {
+  const data = [...(artifacts ?? [])]
+    .reverse()
+    .find((item) => item.kind === "conversation-turn")?.data;
+  if (!data || typeof data !== "object") return {};
+  const record = data as { responseId?: unknown; initiatingActionId?: unknown };
+  return {
+    ...(typeof record.responseId === "string" ? { responseId: record.responseId } : {}),
+    ...(typeof record.initiatingActionId === "string"
+      ? { initiatingActionId: record.initiatingActionId }
+      : {}),
+  };
 }
