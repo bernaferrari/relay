@@ -329,7 +329,7 @@ export function BatchPage() {
               className="relay-batch-clusters-pending mt-8 text-sm text-muted-foreground"
               role="status"
             >
-              Grouping same failures…
+              Grouping…
             </p>
           ) : null}
 

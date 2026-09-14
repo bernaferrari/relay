@@ -304,6 +304,7 @@ describe("Batch review controls", () => {
     } as unknown as RunAcrossProductService);
     expect(document.body.textContent).toContain("Same failure");
     expect(document.body.textContent).toContain("1 group");
+    expect(document.body.textContent).toContain("Select a group to rerun");
     expect(document.body.textContent).not.toContain("1 groups");
     expect(document.body.textContent).toContain("Product behavior");
     expect(document.body.textContent).toContain("2 cases · grok-com");

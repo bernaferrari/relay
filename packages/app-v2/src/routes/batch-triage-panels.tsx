@@ -46,17 +46,16 @@ export function BatchFailureClusters({
   if (!clusters.length) return null;
   return (
     <section className="relay-batch-clusters mt-8" aria-labelledby="batch-clusters-title">
-      <div className="flex flex-wrap items-end justify-between gap-x-5 gap-y-2">
-        <div className="min-w-0">
-          <h2
-            id="batch-clusters-title"
-            className="text-[20px] font-semibold tracking-tight text-pretty text-foreground"
-          >
-            Same failure
-          </h2>
-        </div>
-        <p className="text-[13px] tabular-nums leading-5 text-muted-foreground">
-          {batchClusterGroupCount(clusters.length)}
+      <div className="grid max-w-[62ch] gap-1">
+        <h2
+          id="batch-clusters-title"
+          className="text-[20px] font-semibold tracking-tight text-pretty text-foreground"
+        >
+          Same failure
+        </h2>
+        <p className="text-[13px] leading-5 text-muted-foreground">
+          <span className="sr-only">{batchClusterGroupCount(clusters.length)}. </span>
+          Select a group to rerun the same cases.
         </p>
       </div>
       <ul className="mt-4 grid list-none gap-2.5 p-0">
@@ -78,10 +77,10 @@ export function BatchFailureClusters({
               key={cluster.id}
             >
               <Checkbox
-                className="mt-1 size-6 after:-inset-2"
+                className="mt-1 size-5 after:-inset-2"
                 checked={checked}
                 onCheckedChange={(value) => onToggle(cluster, value === true)}
-                aria-label={`Select ${copy.title} for rerun`}
+                aria-label={`Select ${copy.title} to rerun`}
               />
               <div className="grid min-w-0 gap-1">
                 <p className="text-[12px] leading-4 text-muted-foreground">{copy.lane}</p>
@@ -185,7 +184,7 @@ export function BatchResultMatrix({
                     className="sticky left-0 z-[1] w-[190px] min-w-[140px] border-r border-b border-border bg-background p-3 text-left align-top"
                     scope="row"
                   >
-                    <strong className="block truncate font-semibold text-pretty text-foreground">
+                    <strong className="block text-pretty font-semibold text-foreground">
                       {row.label}
                     </strong>
                   </th>

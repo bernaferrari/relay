@@ -73,33 +73,24 @@ export function BatchFindingsLead({
   gridHasProblems?: boolean;
 }) {
   const count = report.analysis.findings.length;
-  if (!count) {
-    const empty = planFindingsEmptyCopy(report, { hasProblems: gridHasProblems });
-    return (
-      <div className="relay-batch-findings-lead mt-5 max-w-[62ch]" role="status">
-        <RecoveryState
-          title={empty[0]}
-          detail={empty[1]}
-          action={
-            <Link className={findingsLinkClass} to="/accounts">
-              Check Sign-ins
-            </Link>
-          }
-        />
-        <p className="mt-2 text-[13px] leading-5 text-muted-foreground">
-          Confirm and Reject never accept a visual baseline. Review screenshots opens the Report and
-          does not accept a baseline.
-        </p>
-      </div>
-    );
-  }
+  if (count) return null;
+  const empty = planFindingsEmptyCopy(report, { hasProblems: gridHasProblems });
   return (
-    <p
-      className="relay-batch-findings-lead mt-5 max-w-[62ch] text-sm leading-6 text-muted-foreground"
-      role="status"
-    >
-      {count} finding{count === 1 ? "" : "s"} to review.
-    </p>
+    <div className="relay-batch-findings-lead mt-5 max-w-[62ch]" role="status">
+      <RecoveryState
+        title={empty[0]}
+        detail={empty[1]}
+        action={
+          <Link className={findingsLinkClass} to="/accounts">
+            Check Sign-ins
+          </Link>
+        }
+      />
+      <p className="mt-2 text-[13px] leading-5 text-muted-foreground">
+        Confirm and Reject never accept a visual baseline. Review screenshots opens the Report and
+        does not accept a baseline.
+      </p>
+    </div>
   );
 }
 
@@ -110,6 +101,9 @@ export function BatchStabilityPanel({ report }: { report: ProductBatchReport }) 
   });
   const flake = stability.signals.find((signal) => itemKind(signal.kind));
   const recommendation = stability.recommendations[0];
+  if (!flake && stability.trend !== "improving" && stability.trend !== "regressing") {
+    return null;
+  }
   return (
     <section className="relay-batch-stability mt-8" aria-labelledby="batch-stability-title">
       <h2
@@ -167,8 +161,10 @@ export function BatchFindingsPanel({
       >
         Findings
       </h2>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Confirm and Reject record a review note. They never accept a visual baseline.
+      <p className="mt-1 max-w-[62ch] text-sm leading-6 text-muted-foreground">
+        {report.analysis.findings.length} finding
+        {report.analysis.findings.length === 1 ? "" : "s"} to review. Confirm and Reject never
+        accept a visual baseline.
       </p>
       <ul className="mt-4 grid list-none gap-3 p-0">
         {report.analysis.findings.map((finding) => (
@@ -182,11 +178,11 @@ export function BatchFindingsPanel({
           />
         ))}
       </ul>
-      <details className="mt-4 rounded-lg border border-border bg-muted/20 px-3 py-2">
-        <summary className="cursor-pointer text-xs font-medium text-foreground">
+      <details className="mt-3">
+        <summary className="cursor-pointer text-[13px] text-muted-foreground hover:text-foreground">
           Copy as markdown
         </summary>
-        <pre className="mt-2 overflow-auto whitespace-pre-wrap text-xs leading-5">
+        <pre className="mt-2 overflow-auto whitespace-pre-wrap text-xs leading-5 text-muted-foreground">
           {renderPlanFindingsMarkdown(report)}
         </pre>
       </details>
@@ -243,52 +239,53 @@ function FindingReviewCard({
         Proposed {proposal.verdict === "confirm" ? "Confirm" : "Reject"} —{" "}
         {findingProposalCopy(proposal.reason)}
       </p>
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         {runId ? (
-          <Button
-            nativeButton={false}
-            size="sm"
-            className="min-h-11"
-            variant="outline"
-            render={
-              <Link to="/runs/$runId" params={{ runId }} search={{ reportView: "captures" }} />
-            }
+          <Link
+            className={`${findingsLinkClass} inline-flex min-h-11 items-center`}
+            to="/runs/$runId"
+            params={{ runId }}
+            search={{ reportView: "captures" }}
           >
             Review screenshots
-          </Button>
+          </Link>
         ) : null}
-        <Button
-          size="sm"
-          variant="outline"
-          className="min-h-11 aria-pressed:bg-muted"
-          aria-pressed={decision === "confirm"}
-          onClick={() => record(finding.id, "confirm", actorId, notes, onNotes)}
-        >
-          Confirm
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          className="min-h-11 aria-pressed:bg-muted"
-          aria-pressed={decision === "reject"}
-          onClick={() => record(finding.id, "reject", actorId, notes, onNotes)}
-        >
-          Reject
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            className="min-h-11 aria-pressed:bg-muted"
+            aria-pressed={decision === "confirm"}
+            onClick={() => record(finding.id, "confirm", actorId, notes, onNotes)}
+          >
+            Confirm
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="min-h-11 aria-pressed:bg-muted"
+            aria-pressed={decision === "reject"}
+            onClick={() => record(finding.id, "reject", actorId, notes, onNotes)}
+          >
+            Reject
+          </Button>
+        </div>
       </div>
       {recorded ? (
         <p className="text-xs leading-snug text-muted-foreground" role="status">
           {recorded.text.replace(/^(?:confirm|reject):\s*/u, "")}
         </p>
-      ) : (
-        <p className="text-xs leading-snug text-muted-foreground">Not recorded yet.</p>
-      )}
+      ) : null}
     </li>
   );
 }
 
 function findingProposalCopy(reason: string): string {
-  return reason.replace(/\s*This still does not accept a visual baseline\.?/gu, "").trim();
+  const trimmed = reason
+    .replace(/\s*This still does not accept a visual baseline\.?/gu, "")
+    .replace(/^This is Infra \([^)]+\), /u, "")
+    .trim();
+  return trimmed.replace(/^./u, (character) => character.toUpperCase());
 }
 
 function record(
