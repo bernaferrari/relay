@@ -78,6 +78,13 @@ describe("App scope", () => {
       appScopeDetailsForLocation({
         pathname: "/batches/batch-1",
         search: {},
+        batches: [{ id: "batch-1", appMapId: "grok-web" }],
+      }),
+    ).toEqual({ kind: "single", appId: "grok-web" });
+    expect(
+      appScopeDetailsForLocation({
+        pathname: "/batches/batch-1",
+        search: {},
         runs: [
           { id: "run-1", batchId: "batch-1", appMapId: "app-1" },
           { id: "run-2", batchId: "batch-1", appMapId: "app-2" },

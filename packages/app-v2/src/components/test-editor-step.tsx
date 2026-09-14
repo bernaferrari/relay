@@ -20,6 +20,7 @@ import { Textarea } from "@relay/ui-react/components/textarea";
 import { AlertTriangle } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
+  checkpointBindingCopy,
   isValidationDraftReady,
   validationBindingFromDraft,
   validationDraft,
@@ -219,6 +220,7 @@ export function SelectedStepEditor({
           original={validationDraft(entry.step)}
           canAdd={entry.step.binding.status === "unresolved"}
           busy={busy}
+          bindingSummary={checkpointBindingCopy(entry.step)}
           onChange={(value) => {
             setExpected(value);
             updateDraft({ expected: value });

@@ -5,7 +5,10 @@ import {
   accountReloginFindingsReport,
   accountReloginBatchIdFromError,
   emptyPlanFindingsReport,
+  planFindingLane,
+  planFindingLaneLabel,
   planFindingReviewEffect,
+  planFindingsEmptyCopy,
   proposePlanFinding,
   renderPlanFindingsMarkdown,
 } from "./plan-findings.js";
@@ -101,6 +104,12 @@ test("empty findings do not hide a failed cell", () => {
   assert.doesNotMatch(markdown, /No findings\. Passing cases/);
 });
 
+test("empty findings treat a failed Plan grid as a QA gap even when analysis omitted the cell", () => {
+  const copy = planFindingsEmptyCopy(report([]), { hasProblems: true });
+  assert.match(copy.join(" "), /QA bug, not a pass/);
+  assert.doesNotMatch(copy.join(" "), /No findings\. Passing cases/);
+});
+
 test("empty findings do not hide a cancelled SOS cell", () => {
   const markdown = renderPlanFindingsMarkdown({
     ...report([]),
@@ -116,6 +125,38 @@ test("empty findings do not hide a cancelled SOS cell", () => {
   assert.match(markdown, /QA bug, not a pass/);
   assert.match(markdown, /SOS\/cancelled/);
   assert.doesNotMatch(markdown, /No findings\. Passing cases/);
+});
+
+test("morning review lanes stay Product vs Infra", () => {
+  assert.equal(
+    planFindingLane({
+      id: "f-product",
+      code: "PRODUCT_ASSERTION",
+      severity: "critical",
+      confidence: "high",
+      canonicalKey: "job:1",
+      screenLabel: "Home",
+      locale: "en",
+      baselineLocale: "en",
+      detail: "expect-screen missed",
+    }),
+    "product",
+  );
+  assert.equal(planFindingLaneLabel("infra"), "Infra");
+  assert.equal(
+    planFindingLane({
+      id: "f-harness",
+      code: "HARNESS_FAILURE",
+      severity: "critical",
+      confidence: "high",
+      canonicalKey: "job:2",
+      screenLabel: "Toolbar",
+      locale: "en",
+      baselineLocale: "en",
+      detail: "SOS",
+    }),
+    "infra",
+  );
 });
 
 test("HARNESS_FAILURE from SOS/cancelled proposes Reject and never accepts a baseline", () => {

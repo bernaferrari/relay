@@ -64,6 +64,28 @@ function batchWithStatuses(...statuses: Array<"passed" | "failed" | "blocked" | 
   };
 }
 
+test("Plan Result title uses the saved Plan name instead of Run Across", async () => {
+  const invoke = async (id: string) => {
+    assert.equal(id, "job.combine.campaign.get");
+    return {
+      campaign: {
+        id: "a01ab9ca-3d2a-457f-8d06-a998555794c7",
+        status: "completed",
+        createdAt: 1,
+        updatedAt: 2,
+        appMapId: "grok-web",
+        combineId: "grok-web-daily",
+        execution: { title: "Grok.com daily logged-out" },
+        cases: [],
+      },
+    };
+  };
+  const service = createProductRunAcrossService({ invoke } as never, { invoke } as never);
+  const batch = await service.inspect("a01ab9ca-3d2a-457f-8d06-a998555794c7");
+  assert.equal(batch.title, "Grok.com daily logged-out");
+  assert.equal(batch.appMapId, "grok-web");
+});
+
 test("batch summaries preserve cancelled and blocked outcomes", () => {
   assert.equal(
     summarizeProductBatch({ ...batchWithStatuses(), status: "cancelled" }).headline,

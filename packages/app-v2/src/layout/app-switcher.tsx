@@ -27,10 +27,16 @@ import {
 export function AppSwitcher() {
   const router = useRouter();
   const location = useLocation();
-  const { productService, catalogService, changeService, sessionService, runService } =
-    useRouteContext({
-      from: "__root__",
-    });
+  const {
+    productService,
+    catalogService,
+    changeService,
+    sessionService,
+    runService,
+    runAcrossService,
+  } = useRouteContext({
+    from: "__root__",
+  });
   const canListApps = typeof productService.listApps === "function";
   const apps = useQuery({
     queryKey: recordingQueryKeys.apps,
@@ -59,6 +65,15 @@ export function AppSwitcher() {
     queryFn: () => catalogService.listRuns(),
     enabled: needsCatalogScope,
     staleTime: 15_000,
+  });
+  const batchId = safeDecodeURIComponent(
+    /^\/batches\/([^/]+)$/u.exec(location.pathname)?.[1] ?? "",
+  );
+  const batch = useQuery({
+    queryKey: ["run-across", "batch", batchId ?? "unselected"],
+    queryFn: () => runAcrossService.getReport(batchId!),
+    enabled: Boolean(batchId),
+    staleTime: 30_000,
   });
   const changeId = safeDecodeURIComponent(
     /^\/changes\/([^/]+)$/u.exec(location.pathname)?.[1] ?? "",
@@ -99,6 +114,18 @@ export function AppSwitcher() {
     search: location.search,
     tests: test.data ? [test.data] : tests.data,
     runs: runs.data,
+    batches: batch.data
+      ? [
+          {
+            id: batch.data.id,
+            appMapId: batch.data.setup?.appMapId ?? batch.data.appMapId,
+          },
+        ]
+      : batchId
+        ? batch.isFetched
+          ? []
+          : undefined
+        : undefined,
     changes: change.data?.state.change ? [change.data.state.change] : undefined,
     recordings: recording.data?.snapshot?.frozen
       ? [
@@ -125,6 +152,12 @@ export function AppSwitcher() {
     apps.data?.find((app) => app.id === selectedAppId) ??
     (test.data && test.data.appMapId === selectedAppId
       ? { id: test.data.appMapId, name: test.data.appName }
+      : undefined) ??
+    (batch.data && (batch.data.setup?.appMapId ?? batch.data.appMapId) === selectedAppId
+      ? {
+          id: batch.data.setup?.appMapId ?? batch.data.appMapId ?? selectedAppId,
+          name: batch.data.setup?.appName ?? batch.data.title,
+        }
       : undefined);
   const contextName =
     selectedApp?.name ?? appScopeDisplayName(scope, apps.data, apps.isSuccess || apps.isError);

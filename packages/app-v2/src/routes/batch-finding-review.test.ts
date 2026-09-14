@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CombineEvidenceAnalysisReport, CombineEvidenceFinding } from "@relay/protocol";
-import { findingScreenshotRunId } from "./batch-finding-review";
+import { findingScreenshotRunId, latestFindingDecision } from "./batch-finding-review";
 
 const finding = (
   partial: Partial<CombineEvidenceFinding> & Pick<CombineEvidenceFinding, "id" | "canonicalKey">,
@@ -55,5 +55,27 @@ describe("findingScreenshotRunId", () => {
         report([{ jobId: "job-home", locale: "en", status: "cancelled", frames: [] }]),
       ),
     ).toBe("job-home");
+  });
+
+  it("reads the latest Confirm/Reject note without treating it as a baseline accept", () => {
+    expect(
+      latestFindingDecision(
+        [
+          {
+            caseId: "finding:harness-1",
+            text: "confirm: Confirmed as a product issue. This does not accept a new visual baseline.",
+            at: 1,
+            actorId: "human:qa",
+          },
+          {
+            caseId: "finding:harness-1",
+            text: "reject: Rejected as not a product failure this run. This does not accept a new visual baseline.",
+            at: 2,
+            actorId: "human:qa",
+          },
+        ],
+        "harness-1",
+      ),
+    ).toBe("reject");
   });
 });

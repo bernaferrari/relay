@@ -32,9 +32,9 @@ export function PlanDailySchedule({
         Run daily
       </h2>
       <p className="mt-1 text-xs leading-5 text-text-weak">
-        Starts this Plan every day at the chosen hour on the first selected browser or device. Slack
-        is unsupported; Relay writes `.relay/notifications.json` and can POST
-        `RELAY_NOTIFY_WEBHOOK`.
+        Starts this Plan every day at {clockLabel(Number(hour))} ({timezone}) on the first selected
+        browser or device. Slack is unsupported; Relay writes `.relay/notifications.json` and can
+        POST `RELAY_NOTIFY_WEBHOOK`.
       </p>
       <form className="mt-3 flex flex-wrap items-end gap-3" onSubmit={submit}>
         <Field>
@@ -44,12 +44,13 @@ export function PlanDailySchedule({
             type="number"
             min={0}
             max={23}
+            className="tabular-nums"
             value={hour}
             onChange={(event) => setHour(event.target.value)}
             disabled={disabled || pending}
           />
         </Field>
-        <p className="mb-2 text-xs text-muted-foreground">{timezone}</p>
+        <p className="mb-2 text-xs text-muted-foreground">{clockLabel(Number(hour))}</p>
         <Button type="submit" variant="outline" disabled={disabled || pending}>
           {pending ? "Scheduling…" : "Schedule Plan"}
         </Button>
@@ -61,4 +62,11 @@ export function PlanDailySchedule({
       ) : null}
     </section>
   );
+}
+
+function clockLabel(hour: number): string {
+  if (!Number.isInteger(hour) || hour < 0 || hour > 23) return "the chosen hour";
+  const suffix = hour < 12 ? "AM" : "PM";
+  const twelve = hour % 12 || 12;
+  return `${twelve}:00 ${suffix}`;
 }

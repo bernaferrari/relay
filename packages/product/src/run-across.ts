@@ -152,6 +152,7 @@ export type ProductRunAcrossBatch = {
   readonly status: ProductBatchStatus;
   readonly createdAt: number;
   readonly updatedAt: number;
+  readonly appMapId?: string;
   readonly totalCases: number;
   readonly completedCases: number;
   readonly passedCases: number;
@@ -248,9 +249,10 @@ type Campaign = {
   createdAt: number;
   updatedAt: number;
   appMapId: string;
+  combineId?: string;
   cases: readonly CampaignCase[];
   target?: { targetId?: string; platform?: string };
-  execution?: { selected?: Record<string, string[]> };
+  execution?: { title?: string; selected?: Record<string, string[]> };
 };
 
 type CampaignResponse = { campaign: Campaign };
@@ -263,6 +265,18 @@ function targetPlatform(value: string | undefined): ProductTargetPlatform | unde
 
 function nonEmpty(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim() ? value.trim().slice(0, 8_192) : fallback;
+}
+
+/** Engine default "Run Across" is not a Plan name. Prefer execution.title from the saved Plan. */
+export function planResultTitle(
+  campaign: { title?: string; execution?: { title?: string } },
+  setup?: Pick<ProductRunAcrossSetup, "appName">,
+): string {
+  for (const candidate of [campaign.title, campaign.execution?.title, setup?.appName]) {
+    const text = typeof candidate === "string" ? candidate.trim() : "";
+    if (text && text !== "Run Across") return text.slice(0, 8_192);
+  }
+  return "Plan Result";
 }
 
 function valueLabel(value: {
@@ -389,10 +403,11 @@ function batchFromCampaign(
   ];
   return {
     id: campaign.id,
-    title: nonEmpty(campaign.title, setup?.testName ?? "Run Across"),
+    title: planResultTitle(campaign, setup),
     status: mapStatus(campaign.status),
     createdAt: campaign.createdAt,
     updatedAt: campaign.updatedAt,
+    ...(campaign.appMapId ? { appMapId: campaign.appMapId } : {}),
     totalCases: cases.length,
     completedCases,
     passedCases,

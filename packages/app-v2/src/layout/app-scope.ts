@@ -5,6 +5,7 @@ export type AppScopeRun = { id: string; appMapId?: string; batchId?: string };
 export type AppScopeChange = { id: string; appIds?: readonly string[] };
 export type AppScopeRecording = { id: string; appMapId?: string };
 export type AppScopeSession = { id: string; appMapId?: string };
+export type AppScopeBatch = { id: string; appMapId?: string };
 
 export type AppScope =
   | { kind: "all" }
@@ -22,6 +23,7 @@ export function appScopeForLocation(input: {
   changes?: readonly AppScopeChange[];
   recordings?: readonly AppScopeRecording[];
   sessions?: readonly AppScopeSession[];
+  batches?: readonly AppScopeBatch[];
 }): string | undefined {
   const scope = appScopeDetailsForLocation(input);
   return scope.kind === "single" ? scope.appId : undefined;
@@ -53,6 +55,7 @@ export function appScopeDetailsForLocation(input: {
   changes?: readonly AppScopeChange[];
   recordings?: readonly AppScopeRecording[];
   sessions?: readonly AppScopeSession[];
+  batches?: readonly AppScopeBatch[];
 }): AppScope {
   const route = routeContractForPath(input.pathname);
   const routeApp = /^\/apps\/([^/]+)/u.exec(input.pathname)?.[1];
@@ -88,11 +91,16 @@ export function appScopeDetailsForLocation(input: {
 
   const batchId = /^\/batches\/([^/]+)$/u.exec(input.pathname)?.[1];
   if (batchId) {
-    if (input.runs === undefined) return { kind: "loading" };
+    const ownedBatch = input.batches?.find((batch) => batch.id === decode(batchId));
+    if (ownedBatch?.appMapId) return { kind: "single", appId: ownedBatch.appMapId };
+    if (input.runs === undefined) {
+      return input.batches === undefined ? { kind: "loading" } : { kind: "unavailable" };
+    }
     const appIds = uniqueAppIds(
       input.runs.filter((run) => run.batchId === decode(batchId)).map((run) => run.appMapId),
     );
-    return fromAppIds(appIds);
+    if (appIds.length) return fromAppIds(appIds);
+    return input.batches === undefined ? { kind: "loading" } : { kind: "unavailable" };
   }
 
   const changeId = /^\/changes\/([^/]+)$/u.exec(input.pathname)?.[1];

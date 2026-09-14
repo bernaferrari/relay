@@ -527,6 +527,52 @@ describe("Runs workspace", () => {
     expect(document.body.textContent).toContain("Complete checkout");
   });
 
+  it("opens a Plan Result grid instead of one Test Run from a Run Across pack", async () => {
+    await render(
+      "/runs",
+      catalog({
+        listRuns: async () => [
+          ...runs,
+          productRun({
+            id: "run-plan-upload",
+            title: "Upload a file while logged out",
+            testName: "Upload a file while logged out",
+            testId: "test-grok-web-upload",
+            appMapId: "grok-web",
+            appName: "Grok.com daily",
+            phase: "completed",
+            outcome: "passed",
+            queuedAt: now - 20_000,
+            finishedAt: now - 5_000,
+            batchId: "batch-daily",
+            caseCount: 8,
+            links: { self: "/runs/run-plan-upload", batch: "/batches/batch-daily" },
+          }),
+          productRun({
+            id: "run-plan-imagine",
+            title: "Open Imagine",
+            testName: "Open Imagine",
+            testId: "test-grok-web-imagine",
+            appMapId: "grok-web",
+            appName: "Grok.com daily",
+            phase: "completed",
+            outcome: "passed",
+            queuedAt: now - 19_000,
+            finishedAt: now - 6_000,
+            batchId: "batch-daily",
+          }),
+        ],
+      }),
+    );
+
+    expect(document.querySelector('a[href="/batches/batch-daily"]')).not.toBeNull();
+    expect(document.querySelector('a[href="/runs/run-plan-upload"]')).toBeNull();
+    expect(document.body.textContent).toContain("Grok.com daily Result");
+    expect(document.body.textContent).toContain("Plan Result");
+    expect(document.body.textContent).toContain("8 Tests");
+    expect(document.body.textContent).not.toContain("Run Across");
+  });
+
   it("windows very large histories and keeps every rendered Report as a keyboard URL", async () => {
     const largeHistory = Array.from({ length: 500 }, (_, index) =>
       productRun({

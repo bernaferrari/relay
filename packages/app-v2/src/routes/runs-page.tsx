@@ -16,6 +16,7 @@ import { catalogQueryKeys } from "../data/catalog-queries";
 import { PageLoading, RecordingProblem } from "./recording-shared";
 import { MorningReviewCard } from "./morning-review-card";
 import { useCollectionReturnFocus } from "../hooks/use-collection-return-focus";
+import { collapsePlanResultRows } from "./runs-plan-results";
 
 const routeApi = getRouteApi("/runs");
 const allAppsValue = "all-apps";
@@ -88,19 +89,28 @@ export function RunsPage() {
             .toLocaleLowerCase()
             .includes(deferredQuery)),
     );
-    if (view === "latest") return latestRuns(searched);
-    if (view === "failed") return searched.filter((run) => run.phase === "failed");
+    if (view === "latest") return collapsePlanResultRows(latestRuns(searched));
+    if (view === "failed") {
+      return collapsePlanResultRows(searched.filter((run) => run.phase === "failed"));
+    }
     if (view === "needs-review") {
-      return searched.filter(
-        (run) => run.review?.status === "pending" || run.outcome === "uncertain",
+      return collapsePlanResultRows(
+        searched.filter(
+          (run) => run.review?.status === "pending" || run.outcome === "uncertain",
+        ),
       );
     }
     if (view === "active") {
-      return searched.filter((run) => run.phase === "queued" || run.phase === "running");
+      return collapsePlanResultRows(
+        searched.filter((run) => run.phase === "queued" || run.phase === "running"),
+      );
     }
-    return searched;
-  }, [app, deferredQuery, runs.data, view]);
-  const returnFocus = useCollectionReturnFocus("relay:focus:/runs", visibleRuns, "/runs/");
+    return collapsePlanResultRows(searched);
+  }, [app, deferredQuery, runs.data, testId, view]);
+  const returnFocus = useCollectionReturnFocus("relay:focus:/runs", visibleRuns, [
+    "/runs/",
+    "/batches/",
+  ]);
   function setView(next: RunView) {
     void navigate({
       search: (previous) => ({ ...previous, view: next === "all" ? undefined : next }),
@@ -125,7 +135,10 @@ export function RunsPage() {
       className="relay-library-page relay-runs-page mx-auto flex min-h-full w-full max-w-[1040px] flex-col"
       onClickCapture={returnFocus.onClickCapture}
     >
-      <PageHeader title="Results" description="See what happened each time you ran a Test." />
+      <PageHeader
+        title="Results"
+        description="Yesterday’s Plan grids, then individual Test Runs. Open a Plan Result to read Findings."
+      />
       <MorningReviewCard />
 
       <LibraryToolbar
@@ -198,7 +211,7 @@ export function RunsPage() {
         >
           <div className="relay-library-results-heading flex min-h-8 items-center justify-between gap-5 px-0.5 pb-2.5">
             <h2 id="run-history-title" className="text-[13px] font-semibold">
-              {visibleRuns.length === 1 ? "1 Run" : `${visibleRuns.length} Runs`}
+              {visibleRuns.length === 1 ? "1 Result" : `${visibleRuns.length} Results`}
             </h2>
             <span className="text-xs text-[var(--text-weak)]" aria-live="polite">
               {runViewDescription(view, historyComplete)}
@@ -249,16 +262,13 @@ function RunRow({
   run: ProductRunSummary;
   interaction?: RunHistoryRowInteraction;
 }) {
-  const title = run.testName ?? run.title;
+  const plan = Boolean(run.batchId);
+  const title = plan ? run.title : (run.testName ?? run.title);
   const device = run.targetName ?? platformName(run.platform);
   const cause = runCause(run);
-  return (
-    <Link
-      to="/runs/$runId"
-      params={{ runId: run.id }}
-      className={`relay-run-row ${libraryRowSurface} ${libraryRowContent} grid-cols-[minmax(0,1fr)_100px]`}
-      {...interaction}
-    >
+  const className = `relay-run-row ${libraryRowSurface} ${libraryRowContent} grid-cols-[minmax(0,1fr)_100px]`;
+  const body = (
+    <>
       <span className="relay-library-row-main grid min-w-0 gap-1">
         <strong className="overflow-hidden text-ellipsis whitespace-nowrap text-sm font-semibold text-[var(--text-strong)]">
           {title}
@@ -266,21 +276,42 @@ function RunRow({
         <span className="relay-run-row-context flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap text-xs text-[var(--text-weak)]">
           <OutcomeMark outcome={run.outcome ?? phaseOutcome(run)} />
           <span className="truncate">
-            {[device, cause].filter(Boolean).join(" · ") || "Saved Run"}
+            {[device, cause].filter(Boolean).join(" · ") || (plan ? "Plan Result" : "Saved Run")}
           </span>
-          {run.batchId ? (
-            <span className="shrink-0 font-semibold text-[var(--text-base)]">Run Across</span>
+          {plan ? (
+            <span className="shrink-0 font-semibold text-[var(--text-base)]">Plan Result</span>
           ) : null}
         </span>
       </span>
       <span className="relay-library-row-recent grid min-w-0 justify-items-start gap-1 tabular-nums">
         <strong className="text-xs font-semibold text-[var(--text-base)]">
-          {run.durationMs === undefined ? phaseDetail(run) : formatDuration(run.durationMs)}
+          {plan && run.caseCount
+            ? `${run.caseCount} Tests`
+            : run.durationMs === undefined
+              ? phaseDetail(run)
+              : formatDuration(run.durationMs)}
         </strong>
         <small className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-[var(--text-weak)]">
           {relativeTime(run.finishedAt ?? run.startedAt ?? run.queuedAt)}
         </small>
       </span>
+    </>
+  );
+  if (run.batchId) {
+    return (
+      <Link
+        to="/batches/$batchId"
+        params={{ batchId: run.batchId }}
+        className={className}
+        {...interaction}
+      >
+        {body}
+      </Link>
+    );
+  }
+  return (
+    <Link to="/runs/$runId" params={{ runId: run.id }} className={className} {...interaction}>
+      {body}
     </Link>
   );
 }

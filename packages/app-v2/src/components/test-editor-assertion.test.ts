@@ -1,17 +1,20 @@
 import { describe, expect, it } from "vitest";
 import {
+  IDENTITY_IGNORE_PRESETS,
   VALIDATION_KIND_GROUPS,
+  checkpointBindingCopy,
   isValidationDraftReady,
+  parseRegion,
   validationBindingFromDraft,
 } from "./test-editor-assertion";
 
 describe("test editor assertions", () => {
-  it("groups Check, Wait, Comparison settings, and Advanced identity", () => {
+  it("groups Check, Wait, Judges, and Ignore region", () => {
     expect(VALIDATION_KIND_GROUPS.map((group) => group.label)).toEqual([
       "Check",
       "Wait",
-      "Comparison settings",
-      "Advanced identity",
+      "Judges",
+      "Ignore region",
     ]);
     expect(
       VALIDATION_KIND_GROUPS.flatMap((group) => group.kinds.map((kind) => kind.value)),
@@ -89,5 +92,69 @@ describe("test editor assertions", () => {
         requireAgreement: true,
       }),
     ).toBe(false);
+  });
+
+  it("fills a named ignore-region preset that compiles without YAML", () => {
+    const preset = IDENTITY_IGNORE_PRESETS.find((item) => item.id === "user-bubble");
+    expect(preset).toBeDefined();
+    expect(parseRegion(preset!.region)).toEqual({ x: 0.7, y: 0.08, width: 0.28, height: 0.1 });
+    expect(isValidationDraftReady({ kind: "identity-ignore", name: preset!.name, region: preset!.region })).toBe(
+      true,
+    );
+    expect(
+      validationBindingFromDraft({
+        kind: "identity-ignore",
+        name: preset!.name,
+        region: preset!.region,
+      }),
+    ).toEqual({
+      status: "resolved",
+      kind: "recipe-step",
+      step: {
+        kind: "identity-ignore",
+        region: { x: 0.7, y: 0.08, width: 0.28, height: 0.1 },
+        name: "user bubble",
+      },
+    });
+  });
+
+  it("names a saved wait-for checkpoint instead of dumping it as Advanced JSON", () => {
+    expect(
+      checkpointBindingCopy({
+        id: "step-imagine",
+        kind: "validation",
+        intent: "Wait until Imagine is visible on logged-out home",
+        capture: true,
+        binding: {
+          status: "resolved",
+          kind: "recipe-step",
+          step: {
+            kind: "expect",
+            target: { label: "Imagine" },
+            condition: "visible",
+          },
+        },
+      }),
+    ).toBe("Waits until Imagine is visible.");
+  });
+
+  it("names a recorded wait-until-visible assertion the same way", () => {
+    expect(
+      checkpointBindingCopy({
+        id: "step-imagine-assert",
+        kind: "validation",
+        intent: "Wait until Imagine is visible on logged-out home",
+        capture: true,
+        binding: {
+          status: "resolved",
+          kind: "assertion",
+          assertion: {
+            kind: "target",
+            target: { label: "Imagine" },
+            condition: "visible",
+          },
+        },
+      }),
+    ).toBe("Waits until Imagine is visible.");
   });
 });

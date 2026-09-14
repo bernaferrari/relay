@@ -426,6 +426,7 @@ describe("Suite and Environment routes", () => {
       suiteService: suiteService({ schedulePlan }),
     });
     expect(document.body.textContent).toContain("Run daily");
+    expect(document.body.textContent).toContain("8:00 AM");
     const hour = document.querySelector<HTMLInputElement>("#plan-daily-hour");
     if (!hour) throw new Error("Hour field missing");
     await fill("plan-daily-hour", "9");

@@ -6,7 +6,7 @@ type ReturnFocusState = { href: string; scrollTop: number };
 export function useCollectionReturnFocus(
   storageKey: string,
   visibleKey: unknown,
-  hrefPrefix: string,
+  hrefPrefix: string | readonly string[],
 ) {
   const pending = useRef<ReturnFocusState | undefined>(undefined);
   const remember = useCallback(
@@ -71,7 +71,8 @@ export function useCollectionReturnFocus(
     (event: MouseEvent<HTMLElement>) => {
       const anchor = (event.target as HTMLElement).closest<HTMLAnchorElement>("a[href]");
       const href = anchor?.getAttribute("href");
-      if (href?.startsWith(hrefPrefix)) remember(href);
+      const prefixes = typeof hrefPrefix === "string" ? [hrefPrefix] : hrefPrefix;
+      if (href && prefixes.some((prefix) => href.startsWith(prefix))) remember(href);
     },
     [hrefPrefix, remember],
   );

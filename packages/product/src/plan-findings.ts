@@ -13,6 +13,28 @@ export type PlanFindingReviewEffect = {
   readonly note: string;
 };
 
+export type PlanFindingLane = "product" | "infra" | "review";
+
+/** Product vs Infra for morning review. Qualified / cancelled stay Needs review. */
+export function planFindingLane(finding: CombineEvidenceFinding): PlanFindingLane {
+  if (finding.code === "PRODUCT_ASSERTION") return "product";
+  if (
+    finding.code === "ACCOUNT_NEEDS_RELOGIN" ||
+    finding.code === "HARNESS_FAILURE" ||
+    finding.code === "BLOCKED"
+  ) {
+    return "infra";
+  }
+  if (finding.code === "USER_CANCELLED" || finding.code.startsWith("POSSIBLE_")) return "review";
+  return "product";
+}
+
+export function planFindingLaneLabel(lane: PlanFindingLane): string {
+  if (lane === "product") return "Product";
+  if (lane === "infra") return "Infra";
+  return "Needs review";
+}
+
 /** Confirm/Reject never accept a visual baseline or flip a product failure to pass. */
 export function planFindingReviewEffect(decision: PlanFindingDecision): PlanFindingReviewEffect {
   if (decision === "confirm") {
@@ -173,8 +195,12 @@ export function planFindingsHasFailedCases(report: CombineEvidenceAnalysisReport
   );
 }
 
-export function planFindingsEmptyCopy(report: CombineEvidenceAnalysisReport): readonly string[] {
-  if (!report.analysis.findings.length && planFindingsHasFailedCases(report)) {
+export function planFindingsEmptyCopy(
+  report: CombineEvidenceAnalysisReport,
+  grid?: { hasProblems?: boolean },
+): readonly string[] {
+  const gridFailed = planFindingsHasFailedCases(report) || grid?.hasProblems;
+  if (!report.analysis.findings.length && gridFailed) {
     return PLAN_FINDINGS_FAILED_CELL_GUIDANCE;
   }
   return PLAN_FINDINGS_EMPTY_GUIDANCE;

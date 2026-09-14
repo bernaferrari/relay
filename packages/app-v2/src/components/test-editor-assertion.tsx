@@ -25,6 +25,59 @@ export type ValidationDraft =
   | { kind: "wait-response"; label: string; maxMs: string }
   | { kind: "identity-ignore"; name: string; region: string };
 
+function controlLabel(target: {
+  label?: string;
+  text?: string;
+  identifier?: string;
+}): string | undefined {
+  return target.label ?? target.text ?? target.identifier;
+}
+
+function waitCopy(
+  target: { label?: string; text?: string; identifier?: string },
+  gone: boolean,
+): string {
+  const label = controlLabel(target);
+  const condition = gone ? "gone" : "visible";
+  return label ? `Waits until ${label} is ${condition}.` : `Waits until a control is ${condition}.`;
+}
+
+export function checkpointBindingCopy(step: AppMapScenarioTestStep): string | undefined {
+  if (step.kind !== "validation" || step.binding.status !== "resolved") return undefined;
+  if (step.binding.kind === "assertion") {
+    const assertion = step.binding.assertion;
+    if (assertion.kind === "screen") return `Checks that screen ${assertion.screenId} is showing.`;
+    if (assertion.kind === "target") {
+      return waitCopy(assertion.target, assertion.condition === "gone");
+    }
+    if (assertion.kind === "layout") return "Checks that two controls do not overlap.";
+    if (assertion.kind === "content")
+      return `Checks ${assertion.input} ${assertion.match} ${assertion.expected}.`;
+    if (assertion.kind === "visual") return "A visual judge will score this screenshot.";
+    if (assertion.kind === "semantic") return `A semantic judge will score ${assertion.input}.`;
+    return undefined;
+  }
+  if (step.binding.kind !== "recipe-step") return undefined;
+  const recipe = step.binding.step;
+  if (recipe.kind === "expect") return waitCopy(recipe.target, recipe.condition === "gone");
+  if (recipe.kind === "expect-set") {
+    const count = recipe.labels.length;
+    return count
+      ? `Checks ${count} listed control${count === 1 ? "" : "s"} ${recipe.extras === "allow" ? "and allows extras" : "with no extras"}.`
+      : "Checks a listed set of controls.";
+  }
+  if (recipe.kind === "assert-content") return "Checks extracted text against an expected value.";
+  if (recipe.kind === "assert-layout") return "Checks layout against a recorded arrangement.";
+  if (recipe.kind === "wait-response") return "Waits for a reply to finish.";
+  if (recipe.kind === "identity-ignore")
+    return recipe.name
+      ? `Ignores ${recipe.name} so only chrome is compared.`
+      : "Ignores a rectangle so only chrome is compared.";
+  if (recipe.kind === "evaluate-visual") return "A visual judge will score this screenshot.";
+  if (recipe.kind === "evaluate-semantic") return "A semantic judge will score the reply.";
+  return undefined;
+}
+
 export function validationDraft(step: AppMapScenarioTestStep): ValidationDraft | undefined {
   if (step.kind !== "validation" || step.binding.status !== "resolved") return undefined;
   if (step.binding.kind === "recipe-step" && step.binding.step.kind === "wait-response") {
@@ -161,7 +214,7 @@ export const VALIDATION_KIND_GROUPS = [
   },
   {
     id: "comparison",
-    label: "Comparison settings",
+    label: "Judges",
     kinds: [
       { value: "semantic", label: "Semantic judge" },
       { value: "visual", label: "Visual judge" },
@@ -169,8 +222,25 @@ export const VALIDATION_KIND_GROUPS = [
   },
   {
     id: "identity",
-    label: "Advanced identity",
+    label: "Ignore region",
     kinds: [{ value: "identity-ignore", label: "Ignore for identity" }],
+  },
+] as const;
+
+export const IDENTITY_IGNORE_PRESETS = [
+  {
+    id: "reply-body",
+    name: "reply body",
+    region: "0.08,0.30,0.84,0.55",
+    label: "Reply body",
+    detail: "Chrome stays compared. Do not use this on a logged-out paywall.",
+  },
+  {
+    id: "user-bubble",
+    name: "user bubble",
+    region: "0.70,0.08,0.28,0.10",
+    label: "User bubble",
+    detail: "Paywall card stays compared.",
   },
 ] as const;
 
@@ -251,24 +321,27 @@ function JudgeAgreementControls({
 
 export function ValidationExpectationEditor({
   value,
-  original,
+  original: _original,
   canAdd,
   busy,
+  bindingSummary,
   onChange,
 }: {
   value?: ValidationDraft;
   original?: ValidationDraft;
   canAdd: boolean;
   busy: boolean;
+  bindingSummary?: string;
   onChange(next: ValidationDraft): void;
 }) {
   if (!value) {
     return (
       <div className="grid gap-3">
         <p className="text-xs font-normal leading-normal text-muted-foreground">
-          {original === undefined
+          {canAdd
             ? "Add a result Relay should prove after this step. Visual judges, reply checks, and ignore regions live here — not in YAML."
-            : "This checkpoint uses a reviewed structured assertion. Its readable binding remains available under Advanced."}
+            : (bindingSummary ??
+              "This checkpoint uses a reviewed structured assertion. Its readable binding remains available under Advanced.")}
         </p>
         {canAdd ? (
           <fieldset className="grid gap-1.5 text-xs font-semibold" disabled={busy}>
@@ -277,7 +350,8 @@ export function ValidationExpectationEditor({
           </fieldset>
         ) : (
           <p className="text-xs font-normal leading-normal text-muted-foreground">
-            The saved assertion uses an advanced structure and remains available under Advanced.
+            Visual judges, reply checks, and ignore regions are a separate Checkpoint. Use Add
+            checkpoint — do not overwrite this saved wait.
           </p>
         )}
       </div>
@@ -323,12 +397,13 @@ export function ValidationExpectationEditor({
               id="selected-step-expected-crop"
               value={value.region}
               onChange={(event) => onChange({ ...value, region: event.currentTarget.value })}
-              placeholder="0.07,0.12,0.93,0.68"
+              placeholder="0.07,0.12,0.86,0.68"
             />
           </label>
           <p className="text-xs font-normal leading-normal text-muted-foreground">
             Optional. Pixels or 0–1 fractions. Leave blank to judge the whole screenshot.
           </p>
+          <RegionFrame region={value.region} />
           <JudgeAgreementControls value={value} onChange={onChange} />
         </>
       ) : null}
@@ -343,6 +418,9 @@ export function ValidationExpectationEditor({
               placeholder="reply"
             />
           </label>
+          <p className="text-xs font-normal leading-normal text-muted-foreground">
+            Usually <code>reply</code> after a reply wait.
+          </p>
           <label htmlFor="selected-step-expected-semantic">
             Semantic criteria
             <Textarea
@@ -389,19 +467,39 @@ export function ValidationExpectationEditor({
               placeholder="reply body"
             />
           </label>
+          <div className="flex flex-wrap gap-1.5">
+            {IDENTITY_IGNORE_PRESETS.map((preset) => (
+              <Button
+                key={preset.id}
+                type="button"
+                size="sm"
+                title={preset.detail}
+                variant={
+                  value.name === preset.name && value.region === preset.region
+                    ? "default"
+                    : "outline"
+                }
+                onClick={() => onChange({ ...value, name: preset.name, region: preset.region })}
+              >
+                {preset.label}
+              </Button>
+            ))}
+          </div>
           <label htmlFor="selected-step-expected-identity-region">
             Region x,y,w,h
             <Input
               id="selected-step-expected-identity-region"
               value={value.region}
               onChange={(event) => onChange({ ...value, region: event.currentTarget.value })}
-              placeholder="0.07,0.12,0.93,0.68"
+              placeholder="0.08,0.30,0.84,0.55"
             />
           </label>
           <p className="text-xs font-normal leading-normal text-muted-foreground">
             Identity and visual compare skip this rectangle so only chrome is compared. Pixels or
-            0–1 fractions.
+            0–1 fractions. On a logged-out paywall, ignore the user bubble — a full reply-body ignore
+            can strip the Continue card.
           </p>
+          <RegionFrame region={value.region} />
         </>
       ) : null}
       {value.kind === "content" ? (
@@ -467,7 +565,7 @@ function lines(value: string): string[] {
     .filter(Boolean);
 }
 
-function parseRegion(
+export function parseRegion(
   value: string,
 ): { x: number; y: number; width: number; height: number } | undefined {
   const parts = value.split(",").map((part) => Number.parseFloat(part.trim()));
@@ -475,6 +573,49 @@ function parseRegion(
   const [x, y, width, height] = parts as [number, number, number, number];
   if (width <= 0 || height <= 0) return undefined;
   return { x, y, width, height };
+}
+
+function regionToFractions(
+  region: { x: number; y: number; width: number; height: number },
+): { x: number; y: number; width: number; height: number } {
+  const fractions = [region.x, region.y, region.width, region.height].every(
+    (value) => value >= 0 && value <= 1,
+  );
+  if (fractions) return region;
+  return {
+    x: region.x / 1280,
+    y: region.y / 800,
+    width: region.width / 1280,
+    height: region.height / 800,
+  };
+}
+
+function RegionFrame({ region }: { region: string }) {
+  const parsed = parseRegion(region);
+  const box = parsed ? regionToFractions(parsed) : undefined;
+  return (
+    <div
+      className="relative aspect-[16/10] w-full max-w-[220px] overflow-hidden rounded-md border border-border bg-muted/50"
+      aria-hidden="true"
+    >
+      <span className="pointer-events-none absolute inset-x-[7%] top-[8%] h-[10%] rounded-sm bg-foreground/10" />
+      {box ? (
+        <span
+          className="pointer-events-none absolute rounded-sm bg-primary/30 ring-1 ring-primary/50"
+          style={{
+            left: `${Math.max(0, box.x) * 100}%`,
+            top: `${Math.max(0, box.y) * 100}%`,
+            width: `${Math.max(0, box.width) * 100}%`,
+            height: `${Math.max(0, box.height) * 100}%`,
+          }}
+        />
+      ) : (
+        <span className="pointer-events-none absolute inset-0 grid place-items-center text-[10px] text-muted-foreground">
+          Enter x,y,w,h
+        </span>
+      )}
+    </div>
+  );
 }
 
 export function validationPatch(

@@ -270,7 +270,9 @@ export function BatchPage() {
           {report.report.action ? (
             <p className="mt-2 text-sm font-medium text-foreground">{report.report.action}</p>
           ) : null}
-          {findingsReport ? <BatchFindingsLead report={findingsReport} /> : null}
+          {findingsReport ? (
+            <BatchFindingsLead report={findingsReport} gridHasProblems={hasProblems} />
+          ) : null}
           {active ? (
             <div
               className="relay-batch-active mt-3.5 flex items-center gap-2.5 text-sm text-muted-foreground"

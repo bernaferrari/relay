@@ -125,10 +125,9 @@ describe("Batch review controls", () => {
         throw new Error("Failed to fetch");
       },
     } as unknown as RunAcrossProductService);
-    expect(document.body.textContent).toContain("No findings");
-    expect(document.body.textContent).toContain(
-      "rate-limit SOS, or a Cloudflare block is not a product pass",
-    );
+    expect(document.body.textContent).toContain("QA bug, not a pass");
+    expect(document.body.textContent).toContain("must appear here as a finding");
+    expect(document.body.textContent).not.toContain("No findings. Passing cases");
     const workbench = [...document.querySelectorAll("a")].find((link) =>
       (link.getAttribute("href") || "").includes("/runs/run-1"),
     );
@@ -163,10 +162,9 @@ describe("Batch review controls", () => {
     const reviewStatus = document.querySelector('[aria-label="Review status"]');
     expect(reviewStatus).not.toBeNull();
     expect(reviewStatus).not.toBeInstanceOf(HTMLSelectElement);
-    expect(document.body.textContent).toContain("No findings");
-    expect(document.body.textContent).toContain(
-      "rate-limit SOS, or a Cloudflare block is not a product pass",
-    );
+    expect(document.body.textContent).toContain("QA bug, not a pass");
+    expect(document.body.textContent).toContain("must appear here as a finding");
+    expect(document.body.textContent).not.toContain("No findings. Passing cases");
     expect(document.body.textContent).toContain("Check Sign-ins");
     expect(document.body.textContent).toContain("never accept a visual baseline");
     expect(document.body.textContent).toContain(
@@ -258,5 +256,16 @@ describe("Batch review controls", () => {
     );
     expect(confirm).toBeInstanceOf(HTMLButtonElement);
     expect(reject).toBeInstanceOf(HTMLButtonElement);
+    expect(document.body.textContent).toContain("Proposed Reject");
+    expect(document.body.textContent).toContain("Infra");
+    expect(document.body.textContent).not.toContain("Recorded as a product issue");
+    await act(async () => reject.click());
+    await act(async () => void (await new Promise((resolve) => setTimeout(resolve, 0))));
+    expect(document.body.textContent).toContain("Rejected as not a product failure this run");
+    expect(document.body.textContent).toContain("does not accept a new visual baseline");
+    const recordedReject = [...document.querySelectorAll("button")].find(
+      (button) => button.textContent?.trim() === "Reject",
+    );
+    expect(recordedReject?.getAttribute("aria-pressed")).toBe("true");
   });
 });

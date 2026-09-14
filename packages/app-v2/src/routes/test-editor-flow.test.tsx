@@ -490,6 +490,12 @@ describe("Test editor", () => {
     expect(document.body.textContent).toContain("Two independent judges must agree");
     await click("Ignore for identity");
     expect(document.body.textContent).toContain("Identity and visual compare skip");
+    expect(document.body.textContent).toContain("User bubble");
+    expect(document.body.textContent).toContain("Reply body");
+    await click("User bubble");
+    expect(document.querySelector<HTMLInputElement>("#selected-step-expected-identity-region")?.value).toBe(
+      "0.70,0.08,0.28,0.10",
+    );
   });
 
   it("adds a checkpoint so a visual judge can be authored without YAML", async () => {
