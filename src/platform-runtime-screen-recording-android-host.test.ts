@@ -97,13 +97,83 @@ test('finds only exact screenrecord processes for the canonical remote path', as
     { serial: android.id },
     async () => {
       const transport = await createAndroidScreenRecordingTransport(android);
-      await expect(transport.findRunning(remotePath)).resolves.toEqual([
-        { pid: '41', remotePath, startTime: '41' },
-        { pid: '44', remotePath, startTime: '44' },
-      ]);
+      await expect(transport.probeRunningWriters(remotePath)).resolves.toEqual({
+        writers: [
+          { pid: '41', remotePath, startTime: '41' },
+          { pid: '44', remotePath, startTime: '44' },
+        ],
+        conclusive: true,
+      });
     },
   );
 });
+const writerScanRemotePath = '/sdcard/agent-device-recording-123.mp4';
+
+type WriterScanDevice = Readonly<{ pids?: string; unreadablePid?: string; writerPid?: string }>;
+
+const inconclusiveWriterScans: readonly (readonly [
+  string,
+  WriterScanDevice,
+  {
+    writers: readonly { pid: string; remotePath: string; startTime: string }[];
+    conclusive: boolean;
+  },
+])[] = [
+  ['no process table at all', {}, { writers: [], conclusive: false }],
+  [
+    'an unreadable candidate',
+    { pids: '41\n42\n', unreadablePid: '42' },
+    { writers: [], conclusive: false },
+  ],
+  [
+    'one writer and an unreadable candidate',
+    { pids: '41\n42\n', unreadablePid: '42', writerPid: '41' },
+    {
+      writers: [{ pid: '41', remotePath: writerScanRemotePath, startTime: '41' }],
+      conclusive: false,
+    },
+  ],
+];
+
+function unreadableProcStat(device: WriterScanDevice, pid: string) {
+  return pid === device.unreadablePid
+    ? result('', `cat: /proc/${pid}/stat: Permission denied`, 1)
+    : result(procStat(Number(pid), pid));
+}
+
+function screenrecordArgv(device: WriterScanDevice, pid: string): string {
+  return device.writerPid === pid
+    ? ['/system/bin/screenrecord', '--bit-rate', '8000000', writerScanRemotePath, ''].join('\0')
+    : ['/system/bin/sh', '-c', 'screenrecord', writerScanRemotePath, ''].join('\0');
+}
+
+test.each(inconclusiveWriterScans)(
+  'reports the writer scan inconclusive on %s',
+  async (_name, device: WriterScanDevice, expected) => {
+    await withAndroidAdbProvider(
+      {
+        exec: async (args) => {
+          const command = args[1] ?? '';
+          if (command === 'ps -A -o pid=') {
+            return device.pids ? result(device.pids) : result('', 'adb: device offline', 1);
+          }
+          if (/^test -d \/proc\/\d+$/.test(command)) return result();
+          const pid = /\/proc\/(\d+)\//.exec(command)?.[1] ?? '';
+          return command.endsWith('/stat')
+            ? unreadableProcStat(device, pid)
+            : result(screenrecordArgv(device, pid));
+        },
+      },
+      { serial: android.id },
+      async () => {
+        const transport = await createAndroidScreenRecordingTransport(android);
+        await expect(transport.probeRunningWriters(writerScanRemotePath)).resolves.toEqual(
+          expected,
+        );
+      },
+    );
+  },
+);
 
 test('revalidates start-time and exact argv before SIGINT', async () => {
   const commands: string[] = [];
