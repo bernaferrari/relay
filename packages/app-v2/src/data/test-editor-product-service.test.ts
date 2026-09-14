@@ -187,4 +187,69 @@ describe("Test editor product history transport", () => {
       "browser-offline": "offline is a browser step",
     });
   });
+
+  it("names iOS upload as a Files-app compile-block on the editor document", async () => {
+    const service = createTestEditorProductService(platform);
+    clientRef.current.invoke.mockResolvedValueOnce({
+      appMaps: [
+        {
+          id: "ios-primitives",
+          name: "iOS primitives",
+          revision: 1,
+          tests: {
+            "test-ios-upload-pdf": {
+              id: "test-ios-upload-pdf",
+              organizationId: "local",
+              projectId: "default",
+              appMapId: "ios-primitives",
+              createdAt: 1,
+              updatedAt: 1,
+              name: "Upload a PDF",
+              kind: "scenario",
+              intentSchemaVersion: 1,
+              steps: [
+                {
+                  id: "upload-pdf",
+                  kind: "instruction",
+                  intent: "Upload a PDF",
+                  binding: {
+                    status: "resolved",
+                    kind: "connections",
+                    connectionIds: ["connection-ios-upload"],
+                  },
+                },
+              ],
+            },
+          },
+          screens: {
+            home: { variantIds: ["ios-home"] },
+          },
+          screenVariants: {
+            "ios-home": { targetProfile: { platform: "ios" } },
+          },
+          connections: {
+            "connection-ios-upload": {
+              fromScreenId: "home",
+              destination: { kind: "end" },
+              actions: [
+                {
+                  kind: "steps",
+                  steps: [{ kind: "upload", file: "tests/fixtures/sample.pdf" }],
+                },
+              ],
+            },
+          },
+          activity: {},
+          proposals: {},
+        },
+      ],
+    });
+
+    const document = await service.get("test-ios-upload-pdf");
+    expect(document?.recordedPlatforms).toEqual(["ios"]);
+    expect(document?.stepPlatformBlockers).toEqual({
+      "upload-pdf":
+        "upload on iOS requires a reviewed Files-app handoff; disable this step or record that path",
+    });
+  });
 });

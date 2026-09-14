@@ -69,6 +69,37 @@ export function setupChecks(value: unknown): readonly SetupCheck[] {
   });
 }
 
+const MISSING_OPERATOR_BUILD =
+  "A Developer ID Application identity is required to ship a signed operator build. Apple Development is not enough. Morning review stays on the Vite UI and local server until that identity exists.";
+
+/** Signed operator .dmg. Missing payload fails closed — never treat Apple Development as ready. */
+export function operatorBuildChecks(value: unknown): readonly SetupCheck[] {
+  const operatorBuild = recordValue(recordValue(value)?.operatorBuild);
+  if (
+    typeof operatorBuild?.status === "string" &&
+    typeof operatorBuild.detail === "string" &&
+    operatorBuild.status.trim() &&
+    operatorBuild.detail.trim()
+  ) {
+    return [
+      {
+        id: "developer-id",
+        label: "Developer ID Application",
+        status: operatorBuild.status,
+        detail: operatorBuild.detail,
+      },
+    ];
+  }
+  return [
+    {
+      id: "developer-id",
+      label: "Developer ID Application",
+      status: "needs-attention",
+      detail: MISSING_OPERATOR_BUILD,
+    },
+  ];
+}
+
 export function errorMessage(error: unknown): string {
   if (error instanceof Error && /failed to fetch|network|load failed/i.test(error.message)) {
     return "The Relay server could not be reached. Your existing settings are unchanged.";

@@ -66,4 +66,21 @@ describe("disabled steps", () => {
       ),
     ).toMatch(/^Blocked · offline is a browser step/u);
   });
+
+  it("names a recorded iOS upload compile-block instead of Ready", () => {
+    expect(
+      stepReadinessLabel(
+        {
+          id: "upload",
+          kind: "instruction",
+          intent: "Upload a file",
+          binding: { status: "resolved", kind: "connections", connectionIds: ["upload"] },
+        },
+        {
+          platformBlocker:
+            "upload on iOS requires a reviewed Files-app handoff; disable this step or record that path",
+        },
+      ),
+    ).toMatch(/^Blocked · upload on iOS requires a reviewed Files-app handoff/u);
+  });
 });

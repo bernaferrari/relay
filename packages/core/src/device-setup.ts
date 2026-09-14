@@ -11,6 +11,10 @@ import {
   parseIosLivePreviewSettings,
   type IosLivePreviewSettings,
 } from "./ios-live-preview.js";
+import {
+  inspectOperatorDesktopPackaging,
+  type OperatorDesktopPackaging,
+} from "./apple-operator-packaging.js";
 
 const execFileAsync = promisify(execFile);
 const DEVICE_SETUP_VERSION = 1 as const;
@@ -53,6 +57,11 @@ export type AppleSetupStatus = {
     /** A human-readable identity Relay found in the local keychain. */
     label: string;
   };
+  /**
+   * Signed operator .dmg, not the local XCTest runner.
+   * Apple Development never makes this ready.
+   */
+  operatorBuild: OperatorDesktopPackaging;
 };
 
 export type AndroidSetupStatus = {
@@ -364,6 +373,7 @@ export async function inspectAppleDeviceSetup(): Promise<AppleSetupStatus> {
       },
     ],
     ...(suggestion ? { suggestion } : {}),
+    operatorBuild: inspectOperatorDesktopPackaging(identities),
   };
 }
 

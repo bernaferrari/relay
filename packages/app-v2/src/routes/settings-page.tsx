@@ -24,6 +24,7 @@ import {
   SetupRow,
   errorMessage,
   setupChecks,
+  operatorBuildChecks,
 } from "./settings-support";
 
 function GeneralSettings() {
@@ -429,6 +430,11 @@ function AdvancedSettings() {
               </Button>
             )
           }
+        />
+        <SetupRow
+          title="Signed desktop build"
+          checks={operatorBuildChecks(apple.data)}
+          loading={apple.isPending}
         />
         <SetupRow
           title="Android devices"

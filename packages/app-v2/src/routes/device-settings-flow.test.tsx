@@ -650,12 +650,37 @@ describe("Settings", () => {
     await renderPath("/settings/advanced");
 
     expect(document.body.textContent).toContain("Apple devices");
+    expect(document.body.textContent).toContain("Signed desktop build");
+    expect(document.body.textContent).toContain("Apple Development is not enough");
     expect(document.body.textContent).toContain("Android devices");
     expect(document.body.textContent).toContain("Install Platform Tools, then reopen Relay.");
     expect(document.body.textContent).not.toContain("Relay has the local support it needs.");
     expect(document.body.textContent).not.toContain("adb");
     expect(document.body.textContent).not.toContain("teamId");
     expect(document.querySelector('[data-slot="item"]')).toBeNull();
+  });
+
+  it("does not treat Apple Development as a signed operator build", async () => {
+    const service: SettingsProductService = {
+      ...fakeSettingsService(),
+      async appleSetup() {
+        return {
+          checks: [{ id: "relay", label: "Relay runner", status: "ready", detail: "Ready" }],
+          operatorBuild: {
+            status: "needs-attention",
+            detail:
+              "A Developer ID Application identity is required to ship a signed operator build. Apple Development is not enough. Morning review stays on the Vite UI and local server until that identity exists.",
+          },
+        };
+      },
+    };
+    await renderPath("/settings/advanced", { settingsService: service });
+    const row = [...document.querySelectorAll("h3")]
+      .find((heading) => heading.textContent === "Signed desktop build")
+      ?.closest("div");
+    expect(row?.textContent).toContain("Needs attention");
+    expect(row?.textContent).toContain("Apple Development is not enough");
+    expect(row?.textContent).not.toContain("Ready");
   });
 
   it("lists the workspace as a flush settings row", async () => {

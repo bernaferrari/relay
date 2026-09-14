@@ -15,6 +15,11 @@ export const fixtureSettingsService: SettingsProductService = {
         detail: "Open Xcode to finish preparing the device runner.",
       },
     ],
+    operatorBuild: {
+      status: "needs-attention",
+      detail:
+        "A Developer ID Application identity is required to ship a signed operator build. Apple Development is not enough. Morning review stays on the Vite UI and local server until that identity exists.",
+    },
   }),
   androidSetup: async () => ({
     checks: [
