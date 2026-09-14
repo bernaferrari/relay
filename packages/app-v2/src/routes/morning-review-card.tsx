@@ -24,6 +24,12 @@ const steps = [
     label: "Add a case by recording",
     detail: "Do not write a new YAML library.",
   },
+  {
+    href: "/suites",
+    label: "Weekly pauses stay off daily",
+    detail:
+      "Continue with X, dictation, and camera are Plan Grok.com weekly manual. They need a phone. Do not schedule them daily.",
+  },
 ] as const;
 
 export function MorningReviewCard() {
@@ -61,6 +67,10 @@ export function MorningReviewCard() {
             <li>
               Visual and semantic judges fail closed without OPENROUTER_API_KEY. That is Infra,
               never a silent pass.
+            </li>
+            <li>
+              Weekly Plan pause prompts and native Grok columns wait for a phone and iPad. This
+              Mac has neither. The emulator cannot install Grok.
             </li>
           </ul>
         </div>
