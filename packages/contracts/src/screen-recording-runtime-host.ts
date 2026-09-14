@@ -95,6 +95,16 @@ export type AndroidScreenRecordingProcessIdentity = Readonly<{
 }>;
 
 /**
+ * Which recorders write a path that no committed identity names, and whether the scan can prove that
+ * list is the whole story. `conclusive` means every candidate process was read; an unreadable one
+ * clears neither, so only a conclusive scan with no writers proves the path is free.
+ */
+export type AndroidScreenRecordingWriterSearch = Readonly<{
+  writers: readonly AndroidScreenRecordingProcessIdentity[];
+  conclusive: boolean;
+}>;
+
+/**
  * `ownership-lost`: the pid is present, yet the identity readable there names something else — a
  * reassigned pid, or an exited task whose command line is already gone. `foreign-writer`: the pid
  * runs `screenrecord` on the recorded remote path but started at a different time, so a recorder
@@ -168,10 +178,10 @@ export type AndroidScreenRecordingTransport = Readonly<{
   ): Promise<AndroidScreenRecordingStopOutcome>;
   exists(remotePath: string, signal?: AbortSignal): Promise<boolean | 'uncertain'>;
   size(remotePath: string, signal?: AbortSignal): Promise<number | undefined | 'uncertain'>;
-  findRunning(
+  probeRunningWriters(
     remotePath: string,
     signal?: AbortSignal,
-  ): Promise<readonly AndroidScreenRecordingProcessIdentity[]>;
+  ): Promise<AndroidScreenRecordingWriterSearch>;
   pullPlayable(
     input: Readonly<{ remotePath: string; outputPath: string }>,
     signal?: AbortSignal,
