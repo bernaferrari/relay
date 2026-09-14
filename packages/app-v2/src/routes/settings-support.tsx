@@ -73,7 +73,7 @@ const MISSING_OPERATOR_BUILD =
   "A Developer ID Application identity is required to ship a signed operator build. Apple Development is not enough. Morning review stays on the Vite UI and local server until that identity exists.";
 
 const MISSING_LAB_SERVER =
-  "Lab Mac launchd job dev.relay.lab-server is not loaded. Morning review stays on this Vite UI plus pnpm ensure:serve. Do not load that job while a Plan is live — it would restart :8787.";
+  "Lab Mac launchd stays unloaded. Job dev.relay.lab-server is not loaded. Morning review stays on this Vite UI plus pnpm ensure:serve. Do not load that job while a Plan is live — it would restart :8787.";
 
 /** Signed operator .dmg. Missing payload fails closed — never treat Apple Development as ready. */
 export function operatorBuildChecks(value: unknown): readonly SetupCheck[] {
@@ -99,6 +99,34 @@ export function operatorBuildChecks(value: unknown): readonly SetupCheck[] {
       label: "Developer ID Application",
       status: "needs-attention",
       detail: MISSING_OPERATOR_BUILD,
+    },
+  ];
+}
+
+export function judgeProviderChecks(value: unknown): readonly SetupCheck[] {
+  const judgeProvider = recordValue(recordValue(value)?.judgeProvider);
+  if (
+    typeof judgeProvider?.status === "string" &&
+    typeof judgeProvider.detail === "string" &&
+    judgeProvider.status.trim() &&
+    judgeProvider.detail.trim()
+  ) {
+    return [
+      {
+        id: "openrouter",
+        label: "OPENROUTER_API_KEY",
+        status: judgeProvider.status,
+        detail: judgeProvider.detail,
+      },
+    ];
+  }
+  return [
+    {
+      id: "openrouter",
+      label: "OPENROUTER_API_KEY",
+      status: "needs-attention",
+      detail:
+        "Visual and semantic judges fail closed without OPENROUTER_API_KEY. That is Infra, never a silent pass.",
     },
   ];
 }

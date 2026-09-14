@@ -26,6 +26,7 @@ import {
   setupChecks,
   operatorBuildChecks,
   labServerChecks,
+  judgeProviderChecks,
 } from "./settings-support";
 
 function GeneralSettings() {
@@ -440,6 +441,11 @@ function AdvancedSettings() {
         <SetupRow
           title="Lab Mac server"
           checks={labServerChecks(apple.data)}
+          loading={apple.isPending}
+        />
+        <SetupRow
+          title="Visual and semantic judges"
+          checks={judgeProviderChecks(apple.data)}
           loading={apple.isPending}
         />
         <SetupRow

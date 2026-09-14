@@ -1,7 +1,10 @@
 /** @jsxImportSource react */
 import { Button } from "@relay/ui-react/components/button";
 import { Card, CardContent } from "@relay/ui-react/components/card";
-import { Link } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import { Link, useRouteContext } from "@tanstack/react-router";
+import { settingsQueryKeys } from "../data/settings-product-service";
+import { morningAttentionItems } from "./morning-review-attention";
 
 const steps = [
   {
@@ -27,6 +30,15 @@ const steps = [
 ] as const;
 
 export function MorningReviewCard() {
+  const { settingsService } = useRouteContext({ from: "__root__" });
+  const apple = useQuery({
+    queryKey: settingsQueryKeys.appleSetup,
+    queryFn: () => settingsService.appleSetup(),
+    staleTime: 30_000,
+    retry: false,
+  });
+  const items = morningAttentionItems({ apple: apple.data });
+
   return (
     <Card className="mb-4 gap-0 py-0" size="sm">
       <CardContent className="space-y-2.5 py-3">
@@ -51,45 +63,14 @@ export function MorningReviewCard() {
         <div className="rounded-lg border border-border bg-muted/40 px-3 py-2">
           <p className="text-xs font-medium text-foreground">Needs attention on this Mac</p>
           <ul className="mt-1 grid list-disc gap-0.5 pl-4 text-xs leading-snug text-muted-foreground">
-            <li>
-              <Link className="font-medium text-foreground hover:underline" to="/settings/advanced">
-                Signed desktop build
-              </Link>{" "}
-              stays Needs attention without Developer ID Application. Apple Development is not
-              enough. Review stays on this Vite UI.
-            </li>
-            <li>
-              Visual and semantic judges fail closed without OPENROUTER_API_KEY. That is Infra,
-              never a silent pass. Plan{" "}
-              <Link className="font-medium text-foreground hover:underline" to="/suites">
-                Grok.com logged-out judged chrome
-              </Link>{" "}
-              (<code>grok-web-judged</code>, <code>--lane grok-daily</code>) is those eight judged
-              Tests. With the key:{" "}
-              <code>
-                relay plan run grok-web grok-web-judged --lane grok-daily --budget 10m --findings
-              </code>
-              . Today it fail-closes as Infra. It is not grok-web-daily and not a judged pass.
-            </li>
-            <li>
-              Weekly pauses stay off daily. Continue with X, dictation, and camera are Plan{" "}
-              <Link className="font-medium text-foreground hover:underline" to="/suites">
-                Grok.com weekly manual
-              </Link>
-              . They need a phone. Do not schedule them daily.
-            </li>
-            <li>
-              Native Grok columns wait for a phone and iPad. This Mac has neither. The emulator
-              cannot install Grok.
-            </li>
-            <li>
-              Lab Mac launchd stays unloaded. Settings → Advanced →{" "}
-              <Link className="font-medium text-foreground hover:underline" to="/settings/advanced">
-                Lab Mac server
-              </Link>{" "}
-              is Needs attention until <code>dev.relay.lab-server</code> is loaded. Do not load it
-              during a live Plan — it restarts :8787.
-            </li>
+            {items.map((item) => (
+              <li key={item.id}>
+                <Link className="font-medium text-foreground hover:underline" to={item.href}>
+                  {item.label}
+                </Link>{" "}
+                {item.detail}
+              </li>
+            ))}
           </ul>
         </div>
         <Button nativeButton={false} render={<Link to="/runs" />} size="sm" variant="outline">

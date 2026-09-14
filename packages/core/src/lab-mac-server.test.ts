@@ -27,6 +27,7 @@ test("missing lab-server launchd stays needs-attention", () => {
   assert.equal(status.status, "needs-attention");
   assert.equal(status.loaded, false);
   assert.equal(status.detail, LAB_MAC_SERVER_NOT_LOADED);
+  assert.match(status.detail, /Lab Mac launchd stays unloaded/u);
   assert.equal(inspectLabMacLaunchd(null).loaded, false);
   assert.equal(inspectLabMacLaunchd("").loaded, false);
 });

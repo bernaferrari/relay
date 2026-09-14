@@ -24,7 +24,13 @@ export const fixtureSettingsService: SettingsProductService = {
       status: "needs-attention",
       loaded: false,
       detail:
-        "Lab Mac launchd job dev.relay.lab-server is not loaded. Morning review stays on this Vite UI plus pnpm ensure:serve. Do not load that job while a Plan is live — it would restart :8787.",
+        "Lab Mac launchd stays unloaded. Job dev.relay.lab-server is not loaded. Morning review stays on this Vite UI plus pnpm ensure:serve. Do not load that job while a Plan is live — it would restart :8787.",
+    },
+    judgeProvider: {
+      status: "needs-attention",
+      configured: false,
+      detail:
+        "Visual and semantic judges fail closed without OPENROUTER_API_KEY. That is Infra, never a silent pass.",
     },
   }),
   androidSetup: async () => ({

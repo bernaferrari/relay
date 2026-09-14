@@ -20,6 +20,10 @@ import {
   LAB_MAC_LAUNCHD_LABEL,
   type LabMacServerStatus,
 } from "./lab-mac-server.js";
+import {
+  inspectOpenRouterJudgeSetup,
+  type OpenRouterJudgeSetup,
+} from "./openrouter-judge-setup.js";
 
 const execFileAsync = promisify(execFile);
 const DEVICE_SETUP_VERSION = 1 as const;
@@ -71,6 +75,8 @@ export type AppleSetupStatus = {
    * Unattended lab Mac launchd job. Read-only — loading it restarts :8787.
    */
   labServer: LabMacServerStatus;
+  /** Presence-only. Never includes OPENROUTER_API_KEY. */
+  judgeProvider: OpenRouterJudgeSetup;
 };
 
 export type AndroidSetupStatus = {
@@ -385,6 +391,7 @@ export async function inspectAppleDeviceSetup(): Promise<AppleSetupStatus> {
     ...(suggestion ? { suggestion } : {}),
     operatorBuild: inspectOperatorDesktopPackaging(identities),
     labServer: inspectLabMacLaunchd(labPrint),
+    judgeProvider: inspectOpenRouterJudgeSetup(),
   };
 }
 

@@ -2,8 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import {
   admitLiveOpenPlan,
   compilePairedConfigurations,
+  compilePlanAccountColumns,
   compilePlanProfileAccounts,
   compileRepeatScope,
+  missingPlanAccountMessage,
   compileSuiteTargets,
   compileTestStarts,
   liveOpenPlan,
@@ -230,6 +232,36 @@ describe("paired Browser and Account workspace", () => {
         account: { kind: "signed-out", attested: true },
       },
     ]);
+  });
+
+  it("does not shrink six requested accounts to the one bound column", () => {
+    const six = parsePairedConfigurationWorkspace(
+      JSON.stringify({
+        schemaVersion: 1,
+        updatedAt: 1,
+        rows: ["a", "b", "c", "d", "e", "f"].map((letter) => ({
+          id: letter,
+          name: `Account ${letter}`,
+          browserId: "chrome-1",
+          browserName: "Chrome",
+          engine: "chromium",
+          accountId: `acct-${letter}`,
+          accountRevision: "1",
+        })),
+      }),
+    );
+    const columns = compilePlanAccountColumns(six, [
+      {
+        id: "env-ch",
+        targetId: "chrome-1",
+        authenticationOptions: [{ id: "acct-a", reference: "authfx:acct-a:1" }],
+      },
+    ]);
+    expect(columns.requested).toBe(6);
+    expect(columns.accounts).toHaveLength(1);
+    expect(columns.unresolved).toHaveLength(5);
+    expect(missingPlanAccountMessage(columns)).toMatch(/asked for 6 account columns/u);
+    expect(missingPlanAccountMessage(columns)).toMatch(/not a 1-column pass/u);
   });
 
   it("keeps two accounts on one browser as two columns, not an unresolved pair", () => {

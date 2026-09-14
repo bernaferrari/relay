@@ -13,7 +13,7 @@ export type LabMacServerStatus = {
 };
 
 export const LAB_MAC_SERVER_NOT_LOADED =
-  "Lab Mac launchd job dev.relay.lab-server is not loaded. Morning review stays on this Vite UI plus pnpm ensure:serve. Do not load that job while a Plan is live — it would restart :8787.";
+  "Lab Mac launchd stays unloaded. Job dev.relay.lab-server is not loaded. Morning review stays on this Vite UI plus pnpm ensure:serve. Do not load that job while a Plan is live — it would restart :8787.";
 
 const LAB_MAC_SERVER_RUNNING = `${LAB_MAC_LAUNCHD_LABEL} is running. Morning review can use this host unattended.`;
 

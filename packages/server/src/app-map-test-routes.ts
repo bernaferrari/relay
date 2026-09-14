@@ -15,6 +15,7 @@ import {
   preflightAppMapCombine,
   quoteObservedCombinePackDuration,
   quoteBrowserAccountPackDuration,
+  preflightRequestedPlanColumnsAgainstWorkspace,
   proposalConflictsSince,
   scenarioTestEditEntityKeys,
   readAppMap,
@@ -353,6 +354,14 @@ export async function handleAppMapTestRoute(input: AppMapTestRouteInput): Promis
       profileTargets: body.profileTargets ?? [],
       observed: preflight.observedDuration,
     });
+    const columnBlockers = await preflightRequestedPlanColumnsAgainstWorkspace({
+      projectId: scope.projectId,
+      profileTargets: body.profileTargets ?? [],
+    });
+    if (columnBlockers.length) {
+      preflight.blockers.push(...columnBlockers);
+      preflight.ok = false;
+    }
     if (serial) {
       const state = !device
         ? "missing"

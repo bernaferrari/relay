@@ -19,7 +19,15 @@ describe("test editor assertions", () => {
     ]);
     expect(
       VALIDATION_KIND_GROUPS.flatMap((group) => group.kinds.map((kind) => kind.value)),
-    ).toEqual(["screen", "content", "wait-response", "semantic", "visual", "identity-ignore"]);
+    ).toEqual([
+      "screen",
+      "content",
+      "wait-response",
+      "extract",
+      "semantic",
+      "visual",
+      "identity-ignore",
+    ]);
   });
 
   it("compiles a semantic judge and a reply wait without YAML", () => {
@@ -49,6 +57,23 @@ describe("test editor assertions", () => {
       status: "resolved",
       kind: "recipe-step",
       step: { kind: "wait-response", target: { label: "Ask anything" }, maxMs: 1000 },
+    });
+    expect(
+      validationBindingFromDraft({
+        kind: "extract",
+        as: "reply",
+        label: "Ask anything",
+        role: "assistant",
+      }),
+    ).toEqual({
+      status: "resolved",
+      kind: "recipe-step",
+      step: {
+        kind: "extract",
+        as: "reply",
+        target: { label: "Ask anything" },
+        role: "assistant",
+      },
     });
     expect(
       validationBindingFromDraft({

@@ -654,6 +654,8 @@ describe("Settings", () => {
     expect(document.body.textContent).toContain("Lab Mac server");
     expect(document.body.textContent).toContain("dev.relay.lab-server is not loaded");
     expect(document.body.textContent).toContain("Apple Development is not enough");
+    expect(document.body.textContent).toContain("Visual and semantic judges");
+    expect(document.body.textContent).toContain("OPENROUTER_API_KEY");
     expect(document.body.textContent).toContain("Android devices");
     expect(document.body.textContent).toContain("Install Platform Tools, then reopen Relay.");
     expect(document.body.textContent).not.toContain("Relay has the local support it needs.");
@@ -694,6 +696,17 @@ describe("Settings", () => {
     expect(row?.textContent).toContain("dev.relay.lab-server is not loaded");
     expect(row?.textContent).toContain("restart :8787");
     expect(row?.textContent).not.toContain("is running");
+  });
+
+  it("does not treat a missing OpenRouter key as ready", async () => {
+    await renderPath("/settings/advanced");
+    const row = [...document.querySelectorAll("h3")]
+      .find((heading) => heading.textContent === "Visual and semantic judges")
+      ?.closest("div");
+    expect(row?.textContent).toContain("Needs attention");
+    expect(row?.textContent).toContain("OPENROUTER_API_KEY");
+    expect(row?.textContent).toContain("never a silent pass");
+    expect(row?.textContent).not.toContain("is set");
   });
 
   it("lists the workspace as a flush settings row", async () => {

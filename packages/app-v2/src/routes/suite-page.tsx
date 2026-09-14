@@ -21,7 +21,11 @@ import { EmptyState, ReadinessMark, RecoveryState } from "../components/product-
 import { RunConfigurationComposer } from "../components/run-configuration-composer";
 import { useRunConfigurationKey } from "../data/use-persisted-run-configuration";
 import { usePersistedRunConfiguration } from "../data/use-persisted-run-configuration";
-import { compilePlanProfileAccounts, compileSuiteTargets } from "../data/paired-configuration";
+import {
+  compilePlanAccountColumns,
+  compileSuiteTargets,
+  missingPlanAccountMessage,
+} from "../data/paired-configuration";
 import { usePairedConfigurationWorkspace } from "../data/use-paired-configuration-workspace";
 import { PlanDailySchedule } from "./plan-daily-schedule";
 import { PageLoading } from "./recording-shared";
@@ -69,6 +73,13 @@ export function SuitePage() {
   }, [configuration.pristine, configuration.setSelection, environments.data]);
   const paired = usePairedConfigurationWorkspace(platform);
   const compiledSuite = compileSuiteTargets(paired.workspace, environments.data ?? []);
+  const accountColumns = compilePlanAccountColumns(paired.workspace, environments.data ?? []);
+  const missingAccountMessage = configuration.selection.usePairedWorkspace
+    ? missingPlanAccountMessage(accountColumns)
+    : undefined;
+  const missingAccountBlockers = missingAccountMessage
+    ? [{ code: "missing-binding", message: missingAccountMessage }]
+    : [];
   const selectedProfileIds = configuration.selection.usePairedWorkspace
     ? compiledSuite.profileIds
     : [
@@ -93,7 +104,7 @@ export function SuitePage() {
         profileIds: selectedProfileIds,
         ...(configuration.selection.usePairedWorkspace
           ? {
-              accounts: compilePlanProfileAccounts(paired.workspace, environments.data ?? []),
+              accounts: accountColumns.accounts,
             }
           : {}),
       }),
@@ -135,24 +146,27 @@ export function SuitePage() {
     },
   });
   const start = useMutation({
-    mutationFn: () =>
-      suiteProfileService.startSuite({
+    mutationFn: () => {
+      if (missingAccountMessage) throw new TypeError(missingAccountMessage);
+      return suiteProfileService.startSuite({
         appMapId: appId,
         suiteId,
         profileIds: selectedProfileIds,
         executionMode,
         ...(configuration.selection.usePairedWorkspace
           ? {
-              accounts: compilePlanProfileAccounts(paired.workspace, environments.data ?? []),
+              accounts: accountColumns.accounts,
             }
           : {}),
-      }),
+      });
+    },
     onSuccess: ({ batchId }) => navigate({ to: "/batches/$batchId", params: { batchId } }),
   });
   const schedule = useMutation({
     mutationFn: (input: { hour: number; timezone: string }) => {
       if (!suiteProfileService.schedulePlan)
         throw new TypeError("Scheduling this Plan is unavailable.");
+      if (missingAccountMessage) throw new TypeError(missingAccountMessage);
       const profileId = selectedProfileIds[0];
       if (!profileId) throw new TypeError("Choose a browser or device first.");
       return suiteProfileService.schedulePlan({
@@ -162,7 +176,7 @@ export function SuitePage() {
         profileIds: selectedProfileIds,
         ...(configuration.selection.usePairedWorkspace
           ? {
-              accounts: compilePlanProfileAccounts(paired.workspace, environments.data ?? []),
+              accounts: accountColumns.accounts,
             }
           : {}),
         hour: input.hour,
@@ -172,6 +186,7 @@ export function SuitePage() {
   });
   const value = suite.data;
   const needsReview = value?.tests.some((test) => test.status === "needs-review") ?? false;
+  const previewBlockers = [...missingAccountBlockers, ...(preview.data?.blockers ?? [])];
 
   function beginEdit() {
     if (!value) return;
@@ -252,7 +267,7 @@ export function SuitePage() {
                   disabled={
                     !selectedProfileIds.length ||
                     !preview.data ||
-                    Boolean(preview.data?.blockers.length) ||
+                    Boolean(previewBlockers.length) ||
                     preview.data?.execution?.capacity === "unavailable" ||
                     start.isPending
                   }
@@ -342,19 +357,26 @@ export function SuitePage() {
                       : undefined,
                   },
                   blockers: selectedProfileIds.length
-                    ? configuration.targetUnavailable
-                      ? [
-                          {
-                            id: "target",
-                            label: "Saved browser is unavailable",
-                            detail: "Choose another browser to continue.",
-                          },
-                        ]
-                      : []
+                    ? [
+                        ...(configuration.targetUnavailable
+                          ? [
+                              {
+                                id: "target",
+                                label: "Saved browser is unavailable",
+                                detail: "Choose another browser to continue.",
+                              },
+                            ]
+                          : []),
+                        ...missingAccountBlockers.map((blocker) => ({
+                          id: blocker.code,
+                          label: "Accounts are missing",
+                          detail: blocker.message,
+                        })),
+                      ]
                     : [{ id: "target", label: "Choose where to run before starting" }],
                   validated: Boolean(
                     preview.data &&
-                    !preview.data.blockers.length &&
+                    !previewBlockers.length &&
                     preview.data.execution?.capacity !== "unavailable",
                   ),
                 }}
@@ -404,42 +426,44 @@ export function SuitePage() {
                   All cases
                 </Button>
               </div>
-              {preview.data ? (
+              {preview.data || missingAccountBlockers.length ? (
                 <div
                   className={`mt-4 grid gap-1 rounded-lg border p-3 text-xs ${
-                    preview.data.blockers.length
+                    previewBlockers.length
                       ? "border-border-critical-base bg-surface-critical-weak"
                       : "border-border bg-muted/30"
                   }`}
                   role="status"
                 >
                   <strong className="font-semibold text-text-strong">
-                    {preview.data.blockers.length
+                    {previewBlockers.length
                       ? "Needs attention"
-                      : `Full Plan: ${preview.data.caseCount} ${
-                          preview.data.caseCount === 1 ? "case" : "cases"
+                      : `Full Plan: ${preview.data?.caseCount} ${
+                          preview.data?.caseCount === 1 ? "case" : "cases"
                         } ${
-                          preview.data.execution?.capacity === "unavailable" ? "previewed" : "ready"
+                          preview.data?.execution?.capacity === "unavailable" ? "previewed" : "ready"
                         }`}
                   </strong>
-                  <span className="text-text-weak">
-                    {preview.data.checkCount} {preview.data.checkCount === 1 ? "check" : "checks"}
-                    {preview.data.expectedScreenshots === undefined
-                      ? ""
-                      : ` · about ${preview.data.expectedScreenshots} screenshots`}
-                  </span>
-                  {!preview.data.blockers.length && executionMode === "pilot" ? (
+                  {preview.data ? (
+                    <span className="text-text-weak">
+                      {preview.data.checkCount} {preview.data.checkCount === 1 ? "check" : "checks"}
+                      {preview.data.expectedScreenshots === undefined
+                        ? ""
+                        : ` · about ${preview.data.expectedScreenshots} screenshots`}
+                    </span>
+                  ) : null}
+                  {!previewBlockers.length && executionMode === "pilot" ? (
                     <span className="mt-1 font-medium text-foreground">
                       This run uses one representative case.
                     </span>
                   ) : null}
-                  {preview.data.execution?.detail ? (
+                  {preview.data?.execution?.detail ? (
                     <small className="text-text-weak">{preview.data.execution.detail}</small>
                   ) : null}
-                  {preview.data.blockers.slice(0, 1).map((blocker) => (
+                  {previewBlockers.slice(0, 1).map((blocker) => (
                     <small
                       className="leading-5 text-text-weak"
-                      key={`${blocker.code}:${blocker.suiteCellId ?? "suite"}`}
+                      key={`${blocker.code}:${"suiteCellId" in blocker ? blocker.suiteCellId : "suite"}`}
                     >
                       {friendlySuiteIssue(blocker.message)}
                     </small>
@@ -465,7 +489,7 @@ export function SuitePage() {
 
           {suiteProfileService.schedulePlan ? (
             <PlanDailySchedule
-              disabled={!selectedProfileIds.length}
+              disabled={!selectedProfileIds.length || Boolean(missingAccountBlockers.length)}
               pending={schedule.isPending}
               error={schedule.error}
               onSave={(input) => schedule.mutate(input)}

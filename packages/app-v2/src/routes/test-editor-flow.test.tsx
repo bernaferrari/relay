@@ -481,6 +481,7 @@ describe("Test editor", () => {
 
     expect(document.body.textContent).toContain("Visual judge");
     expect(document.body.textContent).toContain("Semantic judge");
+    expect(document.body.textContent).toContain("Remember reply");
     expect(document.body.textContent).toContain("Ignore for identity");
     expect(document.body.textContent).toContain("not in YAML");
     await click("Visual judge");

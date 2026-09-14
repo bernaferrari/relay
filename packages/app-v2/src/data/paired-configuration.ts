@@ -323,6 +323,60 @@ export function compileSuiteTargets(
   return { profileIds, unresolved };
 }
 
+export type PlanAccountColumns = {
+  accounts: { profileId: string; engine?: BrowserEngine; account: ProductRunAccountBinding }[];
+  unresolved: string[];
+  requested: number;
+};
+
+/** Bound columns plus names that did not bind. Never drop unresolved silently. */
+export function compilePlanAccountColumns(
+  workspace: PairedConfigurationWorkspace,
+  environments: readonly {
+    id: string;
+    targetId: string;
+    accountId?: string;
+    authenticationOptions?: readonly { id?: string; reference?: string }[];
+  }[],
+): PlanAccountColumns {
+  const accounts: PlanAccountColumns["accounts"] = [];
+  const unresolved: string[] = [];
+  const claimed = new Set<string>();
+  const requested = compilePairedConfigurations(workspace);
+  for (const configuration of requested) {
+    const account = accountBinding(configuration);
+    const profile = account
+      ? environments.find((item) => {
+          if (item.targetId !== configuration.targetId) return false;
+          if (configuration.coverage.kind === "signed-out") return !item.accountId;
+          const accountId = configuration.accountId;
+          const options = item.authenticationOptions ?? [];
+          return (
+            item.accountId === accountId ||
+            options.some((option) => option.id === accountId || option.reference === accountId)
+          );
+        })
+      : undefined;
+    const claim = profile ? `${profile.id}:${configuration.accountId ?? "signed-out"}` : undefined;
+    if (!account || !profile || !claim || claimed.has(claim)) {
+      unresolved.push(configuration.name);
+      continue;
+    }
+    claimed.add(claim);
+    accounts.push({
+      profileId: profile.id,
+      account,
+      ...(configuration.engine ? { engine: configuration.engine } : {}),
+    });
+  }
+  return { accounts, unresolved, requested: requested.length };
+}
+
+export function missingPlanAccountMessage(columns: PlanAccountColumns): string | undefined {
+  if (!columns.unresolved.length) return undefined;
+  return `This Plan asked for ${columns.requested} account columns. ${columns.unresolved.length} ${columns.unresolved.length === 1 ? "is" : "are"} not bound. Missing accounts are Infra, not a ${columns.accounts.length}-column pass.`;
+}
+
 export function compilePlanProfileAccounts(
   workspace: PairedConfigurationWorkspace,
   environments: readonly {
@@ -332,32 +386,7 @@ export function compilePlanProfileAccounts(
     authenticationOptions?: readonly { id?: string; reference?: string }[];
   }[],
 ): { profileId: string; engine?: BrowserEngine; account: ProductRunAccountBinding }[] {
-  const accounts: { profileId: string; engine?: BrowserEngine; account: ProductRunAccountBinding }[] =
-    [];
-  const claimed = new Set<string>();
-  for (const configuration of compilePairedConfigurations(workspace)) {
-    const account = accountBinding(configuration);
-    if (!account) continue;
-    const profile = environments.find((item) => {
-      if (item.targetId !== configuration.targetId) return false;
-      if (configuration.coverage.kind === "signed-out") return !item.accountId;
-      const accountId = configuration.accountId;
-      const options = item.authenticationOptions ?? [];
-      return (
-        item.accountId === accountId ||
-        options.some((option) => option.id === accountId || option.reference === accountId)
-      );
-    });
-    const claim = profile ? `${profile.id}:${configuration.accountId ?? "signed-out"}` : undefined;
-    if (!profile || !claim || claimed.has(claim)) continue;
-    claimed.add(claim);
-    accounts.push({
-      profileId: profile.id,
-      account,
-      ...(configuration.engine ? { engine: configuration.engine } : {}),
-    });
-  }
-  return accounts;
+  return compilePlanAccountColumns(workspace, environments).accounts;
 }
 
 export function compileRepeatScope(input: {

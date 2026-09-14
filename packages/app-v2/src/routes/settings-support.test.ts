@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { operatorBuildChecks, labServerChecks, setupChecks } from "./settings-support";
+import { operatorBuildChecks, labServerChecks, judgeProviderChecks, setupChecks } from "./settings-support";
 
 it("keeps Apple device checks separate from operator packaging", () => {
   const payload = {
@@ -55,6 +55,27 @@ it("is ready only when lab-server launchd is running", () => {
         status: "ready",
         loaded: true,
         detail: "dev.relay.lab-server is running. Morning review can use this host unattended.",
+      },
+    })[0]?.status,
+  ).toBe("ready");
+});
+
+it("fails closed when the OpenRouter judge key is missing from the payload", () => {
+  const checks = judgeProviderChecks({
+    checks: [{ id: "relay", label: "Relay runner", status: "ready", detail: "Ready" }],
+  });
+  expect(checks[0]?.status).toBe("needs-attention");
+  expect(checks[0]?.detail).toMatch(/OPENROUTER_API_KEY/u);
+  expect(checks[0]?.detail).toMatch(/never a silent pass/u);
+});
+
+it("is ready only when OPENROUTER_API_KEY is configured", () => {
+  expect(
+    judgeProviderChecks({
+      judgeProvider: {
+        status: "ready",
+        configured: true,
+        detail: "OPENROUTER_API_KEY is set. Visual and semantic judges can run.",
       },
     })[0]?.status,
   ).toBe("ready");

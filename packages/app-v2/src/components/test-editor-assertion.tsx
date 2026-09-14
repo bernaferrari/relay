@@ -7,9 +7,8 @@ import type {
 import { Input } from "@relay/ui-react/components/input";
 import { Textarea } from "@relay/ui-react/components/textarea";
 import { Button } from "@relay/ui-react/components/button";
-import { Checkbox } from "@relay/ui-react/components/checkbox";
-import { FieldLabel } from "@relay/ui-react/components/field";
 import { SelectField } from "./filter-select";
+import { JudgeAgreementControls } from "./test-editor-judge-agreement";
 
 export type ValidationDraft =
   | { kind: "screen"; screenId: string }
@@ -23,6 +22,7 @@ export type ValidationDraft =
   | { kind: "visual"; criteria: string; region: string; requireAgreement: boolean }
   | { kind: "semantic"; input: string; criteria: string; requireAgreement: boolean }
   | { kind: "wait-response"; label: string; maxMs: string }
+  | { kind: "extract"; as: string; label: string; role: "assistant" | "user" | "" }
   | { kind: "identity-ignore"; name: string; region: string };
 
 function controlLabel(target: {
@@ -69,6 +69,10 @@ export function checkpointBindingCopy(step: AppMapScenarioTestStep): string | un
   if (recipe.kind === "assert-content") return "Checks extracted text against an expected value.";
   if (recipe.kind === "assert-layout") return "Checks layout against a recorded arrangement.";
   if (recipe.kind === "wait-response") return "Waits for a reply to finish.";
+  if (recipe.kind === "extract")
+    return recipe.as
+      ? `Remembers the reply as ${recipe.as}.`
+      : "Remembers the reply for a semantic judge.";
   if (recipe.kind === "identity-ignore")
     return recipe.name
       ? `Ignores ${recipe.name} so only chrome is compared.`
@@ -98,6 +102,14 @@ export function validationDraft(step: AppMapScenarioTestStep): ValidationDraft |
       kind: "wait-response",
       label: step.binding.step.target.label ?? step.binding.step.target.text ?? "",
       maxMs: step.binding.step.maxMs === undefined ? "" : String(step.binding.step.maxMs),
+    };
+  }
+  if (step.binding.kind === "recipe-step" && step.binding.step.kind === "extract") {
+    return {
+      kind: "extract",
+      as: step.binding.step.as,
+      label: step.binding.step.target.label ?? step.binding.step.target.text ?? "",
+      role: step.binding.step.role === "user" ? "user" : "assistant",
     };
   }
   if (step.binding.kind === "recipe-step" && step.binding.step.kind === "identity-ignore") {
@@ -149,6 +161,7 @@ export function isValidationDraftReady(draft: ValidationDraft): boolean {
   }
   if (draft.kind === "semantic") return Boolean(draft.input.trim() && draft.criteria.trim());
   if (draft.kind === "wait-response") return Boolean(draft.label.trim());
+  if (draft.kind === "extract") return Boolean(draft.as.trim() && draft.label.trim());
   if (draft.kind === "identity-ignore") return Boolean(parseRegion(draft.region));
   if (draft.match === "field")
     return Boolean(draft.input.trim() && draft.expected.trim() && draft.field?.trim());
@@ -167,6 +180,18 @@ export function validationBindingFromDraft(
         kind: "wait-response",
         target: { label: draft.label.trim() },
         ...(Number.isFinite(maxMs) && maxMs > 0 ? { maxMs } : {}),
+      },
+    };
+  }
+  if (draft.kind === "extract") {
+    return {
+      status: "resolved",
+      kind: "recipe-step",
+      step: {
+        kind: "extract",
+        as: draft.as.trim(),
+        target: { label: draft.label.trim() },
+        ...(draft.role === "user" || draft.role === "assistant" ? { role: draft.role } : {}),
       },
     };
   }
@@ -223,7 +248,10 @@ export const VALIDATION_KIND_GROUPS = [
   {
     id: "wait",
     label: "Wait",
-    kinds: [{ value: "wait-response", label: "Reply wait" }],
+    kinds: [
+      { value: "wait-response", label: "Reply wait" },
+      { value: "extract", label: "Remember reply" },
+    ],
   },
   {
     id: "comparison",
@@ -286,6 +314,7 @@ export function emptyValidationDraft(kind: ValidationDraft["kind"]): ValidationD
   if (kind === "semantic")
     return { kind: "semantic", input: "reply", criteria: "", requireAgreement: true };
   if (kind === "wait-response") return { kind: "wait-response", label: "", maxMs: "" };
+  if (kind === "extract") return { kind: "extract", as: "reply", label: "", role: "assistant" };
   if (kind === "identity-ignore")
     return { kind: "identity-ignore", name: "reply body", region: "" };
   return { kind: "content", input: "", expected: "", match: "contains" };
@@ -321,37 +350,6 @@ function ValidationKindGroups({
         </fieldset>
       ))}
     </div>
-  );
-}
-
-function JudgeAgreementControls({
-  value,
-  onChange,
-}: {
-  value: Extract<ValidationDraft, { kind: "visual" | "semantic" }>;
-  onChange(next: ValidationDraft): void;
-}) {
-  return (
-    <>
-      <p className="text-xs font-normal leading-normal text-muted-foreground">
-        Fails closed without OPENROUTER_API_KEY. That is Infra, never a silent pass or a product
-        fail.
-      </p>
-      <FieldLabel className="flex min-h-14 min-w-0 cursor-pointer items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground">
-        <span className="grid min-w-0 flex-1 gap-0.5">
-          <span className="text-sm font-medium text-foreground">
-            Two independent judges must agree
-          </span>
-          <span className="text-xs font-normal leading-snug text-muted-foreground">
-            Disagreement is Needs review. A missing judge key is not.
-          </span>
-        </span>
-        <Checkbox
-          checked={value.requireAgreement}
-          onCheckedChange={(checked) => onChange({ ...value, requireAgreement: checked === true })}
-        />
-      </FieldLabel>
-    </>
   );
 }
 
@@ -440,7 +438,10 @@ export function ValidationExpectationEditor({
             Optional. Pixels or 0–1 fractions. Leave blank to judge the whole screenshot.
           </p>
           <RegionFrame region={value.region} />
-          <JudgeAgreementControls value={value} onChange={onChange} />
+          <JudgeAgreementControls
+            requireAgreement={value.requireAgreement}
+            onRequireAgreement={(requireAgreement) => onChange({ ...value, requireAgreement })}
+          />
         </>
       ) : null}
       {value.kind === "semantic" ? (
@@ -455,7 +456,7 @@ export function ValidationExpectationEditor({
             />
           </label>
           <p className="text-xs font-normal leading-normal text-muted-foreground">
-            Usually <code>reply</code> after a reply wait.
+            Usually <code>reply</code> after Remember reply.
           </p>
           <label htmlFor="selected-step-expected-semantic">
             Semantic criteria
@@ -467,7 +468,10 @@ export function ValidationExpectationEditor({
               rows={3}
             />
           </label>
-          <JudgeAgreementControls value={value} onChange={onChange} />
+          <JudgeAgreementControls
+            requireAgreement={value.requireAgreement}
+            onRequireAgreement={(requireAgreement) => onChange({ ...value, requireAgreement })}
+          />
         </>
       ) : null}
       {value.kind === "wait-response" ? (
@@ -490,6 +494,32 @@ export function ValidationExpectationEditor({
               placeholder="1000"
             />
           </label>
+        </>
+      ) : null}
+      {value.kind === "extract" ? (
+        <>
+          <label htmlFor="selected-step-expected-extract-as">
+            Remember as
+            <Input
+              id="selected-step-expected-extract-as"
+              value={value.as}
+              onChange={(event) => onChange({ ...value, as: event.currentTarget.value })}
+              placeholder="reply"
+            />
+          </label>
+          <label htmlFor="selected-step-expected-extract-label">
+            Reply control
+            <Input
+              id="selected-step-expected-extract-label"
+              value={value.label}
+              onChange={(event) => onChange({ ...value, label: event.currentTarget.value })}
+              placeholder="Ask anything"
+            />
+          </label>
+          <p className="text-xs font-normal leading-normal text-muted-foreground">
+            YAML seed uses wait-response → extract → semantic judge. Name this the same as Judge
+            this text, usually <code>reply</code>.
+          </p>
         </>
       ) : null}
       {value.kind === "identity-ignore" ? (
