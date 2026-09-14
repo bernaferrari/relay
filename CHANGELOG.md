@@ -41,6 +41,30 @@
   lock-policy caller, the exact audience that avoids naming sessions, would land on the wrong leaf.
   Explicit `--session <name>` is untouched and still addresses one session verbatim.
 
+- Fixed: a `record stop` that could not produce its export no longer destroys what its own retry reads
+  back (#2591). The shared coordinator compensated every failed finish by force-cleaning the resource,
+  which on Android deleted the device-side MP4 and the native manifest the hint just told you to re-pull:
+  the second `record stop` had nothing left to collect and the recording was gone. Each durable kind now
+  declares what its retry needs. `screen-recording` and `perf-capture` preserve, so a failed stop keeps
+  the device artifact, keeps the manifest `open`, returns its own error, and the next `record stop` in
+  that session exports it — proven on an emulator whose `adb pull` failed its first attempts and then
+  exported the 90 KB the first stop left on the device. `app-log` and `audio-probe` say
+  `dispose-on-failed-finish` themselves, because their retries re-read a log file and a status file that
+  cleanup never touches. A finish also states why it was asked for: `capture` may preserve, while
+  `disposal` — session teardown, the one caller that owns forced cleanup — disposes whatever a failed
+  finish left. Two Apple paths had to become genuinely retryable for that to be true: the runner path
+  memoized its refused stop and handed the same rejection to every later `record stop` without asking
+  the runner again, and the simulator path rejected a recording purely because `simctl recordVideo` had
+  exited non-zero — discarding a video the recorder had already written and leaving an exit code no
+  retry could change. A stopped recorder is now an observation rather than a failure: the exit is
+  disclosed on the completion and the file is collected, so those recordings export instead of erroring.
+  Expect one trade: while a preserved recording is open, `record start` on that device is refused until
+  its session runs `record stop` or closes. A simulator recording no retry can rescue now names the
+  exit that made it unreadable — `simctl recordVideo exited with code 1`, `was killed by SIGKILL`, plus
+  the recorder's stderr — drops its retriable flag, and points at closing the session, while a recorder
+  still finalizing its file keeps the retry hint. `perf stop` no longer memoizes a refused finish, so its
+  second attempt re-pulls the trace the first one preserved.
+
 - Changed: `record stop` no longer carries a start-trim step no recorder could arm. The trim cut the
   interval between recorder start and target-app readiness, but the runner's `recordStart` answer has
   never carried either timing and the simulator path supplies none, so every built-in recording took
