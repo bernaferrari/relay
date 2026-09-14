@@ -15,6 +15,7 @@ import type { RecordingAppIdentity } from '@agent-device/contracts/recording';
 import type { DeviceInfo } from '@agent-device/kernel/device';
 import type { DurableCaptureRecoveryControl } from '@agent-device/capture-kit/durable-capture';
 import { createDurableCaptureResource } from './durable-capture-resource.ts';
+import type { DurableCaptureFinishIntent } from './durable-capture-resource.ts';
 import type { ScreenRecordingAdmissionLedger } from './screen-recording-admission-ledger.ts';
 import { screenRecordingResourceStore } from './screen-recording-resource-store.ts';
 import type { SessionStore } from './session-store.ts';
@@ -33,6 +34,9 @@ export const screenRecordingDurableResource = createDurableCaptureResource<
     replace: (session, screenRecording) => ({ ...session, screenRecording }),
   },
   completionMetadata: encodeScreenRecordingCompletionMetadata,
+  // ADR 0024 rule 6: the next stop re-collects the native artifact a failed export left behind, and
+  // forced cleanup would delete exactly that. Disposal belongs to teardown and start rollback.
+  failedFinishPolicy: 'preserve-retry-material',
   messages: {
     noActive: 'no active recording',
     cleanupPendingHint:
@@ -59,6 +63,7 @@ export function finishLiveScreenRecording(params: {
   session: SessionState;
   sessionName: string;
   sessionStore: SessionStore;
+  intent: DurableCaptureFinishIntent;
 }): Promise<ScreenRecordingCompletion> {
   return screenRecordingDurableResource.finishLive(params);
 }
