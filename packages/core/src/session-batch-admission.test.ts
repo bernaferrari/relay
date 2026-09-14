@@ -297,8 +297,38 @@ test("scheduled unsigned Lane jobs use distinct signed-out identities and start 
   for (const gate of gates) gate.resolve();
 });
 
+test("four unsigned Lane jobs start concurrently on distinct signed-out identities", async () => {
+  const laneIds = ["grok-daily", "grok-daily-b", "grok-daily-c", "grok-daily-d"] as const;
+  const jobs = laneIds.map((laneId) => browserUnsignedJob(laneId, laneId));
+  assert.deepEqual(
+    jobs.map((job) => scheduledSessionJob({ job, run: async () => undefined }).targetId),
+    laneIds.map((laneId) => `grok-com#signed-out:${laneId}`),
+  );
+
+  const scheduler = new TargetWorkerScheduler();
+  const gates = laneIds.map(() => deferred());
+  const started: string[] = [];
+  for (const [index, job] of jobs.entries()) {
+    scheduler.enqueue(
+      scheduledSessionJob({
+        job,
+        run: async () => {
+          started.push(job.id);
+          await gates[index]!.promise;
+        },
+      }),
+    );
+  }
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(started, [...laneIds]);
+  for (const gate of gates) gate.resolve();
+});
+
 test("two jobs on the same unsigned Lane still serialize", async () => {
-  const jobs = [browserUnsignedJob("job-a", "grok-daily"), browserUnsignedJob("job-b", "grok-daily")];
+  const jobs = [
+    browserUnsignedJob("job-a", "grok-daily"),
+    browserUnsignedJob("job-b", "grok-daily"),
+  ];
   const scheduler = new TargetWorkerScheduler();
   const gates = [deferred(), deferred()];
   const started: string[] = [];

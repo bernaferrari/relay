@@ -1,24 +1,33 @@
 import type { Lane, LaneSaveInput } from "@relay/protocol";
 import { saveLane } from "./lane.js";
 
+const UNSIGNED_GROK_COM = {
+  appMapId: "grok-web",
+  target: { kind: "browser", browserTargetId: "grok-com" },
+  targetProfileId: "browser:grok-com",
+  actorId: "human:local-cli",
+} as const;
+
 /** Unsigned grok.com daily pack. Credentials are not stored on the Lane. */
 export const GROK_DAILY_LANE = {
   id: "grok-daily",
-  appMapId: "grok-web",
-  target: { kind: "browser", browserTargetId: "grok-com" },
-  targetProfileId: "browser:grok-com",
-  actorId: "human:local-cli",
+  ...UNSIGNED_GROK_COM,
 } as const satisfies LaneSaveInput;
 
-/** Second unsigned grok.com Lane. Same saved evidence profile as grok-daily;
- * a distinct scheduler/session identity so unsigned work can overlap. Never
- * binds grok-lab or writes grok-com authenticationFixtureId. */
+/** Extra unsigned grok.com Lanes. Same saved evidence profile as grok-daily;
+ * distinct scheduler/session identities so unsigned work can overlap. Never
+ * bind grok-lab or write grok-com authenticationFixtureId. */
 export const GROK_DAILY_B_LANE = {
   id: "grok-daily-b",
-  appMapId: "grok-web",
-  target: { kind: "browser", browserTargetId: "grok-com" },
-  targetProfileId: "browser:grok-com",
-  actorId: "human:local-cli",
+  ...UNSIGNED_GROK_COM,
+} as const satisfies LaneSaveInput;
+export const GROK_DAILY_C_LANE = {
+  id: "grok-daily-c",
+  ...UNSIGNED_GROK_COM,
+} as const satisfies LaneSaveInput;
+export const GROK_DAILY_D_LANE = {
+  id: "grok-daily-d",
+  ...UNSIGNED_GROK_COM,
 } as const satisfies LaneSaveInput;
 
 /** Unique-profile lab overlay. Fixture ids only — passwords stay in the fixture. */
@@ -37,11 +46,18 @@ export const GROK_LAB_LANE = {
   actorId: "human:hourly-heavy",
 } as const satisfies LaneSaveInput;
 
-/** Write the grok-daily, grok-daily-b, and grok-lab Lane records for the project. */
+const GROK_UNSIGNED_DAILY_LANES = [
+  GROK_DAILY_LANE,
+  GROK_DAILY_B_LANE,
+  GROK_DAILY_C_LANE,
+  GROK_DAILY_D_LANE,
+] as const;
+
+/** Write unsigned grok-daily{,-b,-c,-d} plus grok-lab Lane records. */
 export async function seedGrokLanes(projectId: string): Promise<Lane[]> {
-  return [
-    await saveLane({ projectId, ...GROK_DAILY_LANE }),
-    await saveLane({ projectId, ...GROK_DAILY_B_LANE }),
-    await saveLane({ projectId, ...GROK_LAB_LANE }),
-  ];
+  const unsigned: Lane[] = [];
+  for (const lane of GROK_UNSIGNED_DAILY_LANES) {
+    unsigned.push(await saveLane({ projectId, ...lane }));
+  }
+  return [...unsigned, await saveLane({ projectId, ...GROK_LAB_LANE })];
 }

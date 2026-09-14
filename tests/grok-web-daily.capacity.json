@@ -4,7 +4,7 @@
   "provenance": "measured",
   "measuredAt": "2026-09-13T11:16:00Z",
   "sampleCount": 5,
-  "note": "Serial logged-out grok.com Plan measured over five live 8-Test runs (batches below). Latest 8/8 is batch a01ab9ca-3d2a-457f-8d06-a998555794c7 after inherit browser:grok-com (not the unique signed-in profile): cell span 198919ms, upload long pole 51374ms, all eight jobs targetProfileId browser:grok-com, authenticationFixtureId empty. Earlier 8/8 1445e569-c818-4c13-bff4-9f990dbf5d5c cell span 195736ms. Upload remains the long pole (~49–58s). --budget 3m is too tight for this pack (CLI ~221s historically); use --budget 10m as a watch timeout, not a pack-duration promise. Two concurrent browser lanes are measured separately in twoLane (logged-out open + signed-in home chrome). That is not an eight-Test parallel quote and not 3-account. Two concurrent unsigned --lane grok-daily Open grok.com jobs serialized on grok-com#signed-out (signedOutSerialize, overlap 0). Two concurrent Open grok.com jobs on distinct unsigned Lanes grok-daily + grok-daily-b overlapped (unsignedTwoLane, overlap 9007ms, span 9547ms). That is a scheduler/session probe, not the eight-Test pack. parallelWallClockMs 4/8/12 stay null. Empty findings are not a license to skip the next daily Plan. This is not the 60-case signed-in pack. Heavy, video, Expert web search, Continue with X, dictation, and camera stay on grok-web-weekly.",
+  "note": "Serial logged-out grok.com Plan measured over five live 8-Test runs (batches below). Latest 8/8 is batch a01ab9ca-3d2a-457f-8d06-a998555794c7 after inherit browser:grok-com (not the unique signed-in profile): cell span 198919ms, upload long pole 51374ms, all eight jobs targetProfileId browser:grok-com, authenticationFixtureId empty. Earlier 8/8 1445e569-c818-4c13-bff4-9f990dbf5d5c cell span 195736ms. Upload remains the long pole (~49–58s). --budget 3m is too tight for this pack (CLI ~221s historically); use --budget 10m as a watch timeout, not a pack-duration promise. Two concurrent browser lanes are measured separately in twoLane (logged-out open + signed-in home chrome). That is not an eight-Test parallel quote and not 3-account. Two concurrent unsigned --lane grok-daily Open grok.com jobs serialized on grok-com#signed-out (signedOutSerialize, overlap 0). Two concurrent Open grok.com jobs on distinct unsigned Lanes grok-daily + grok-daily-b overlapped (unsignedTwoLane, overlap 9007ms, span 9547ms). Four concurrent Open grok.com jobs on grok-daily + grok-daily-b + grok-daily-c + grok-daily-d overlapped (unsignedFourLane, 4-way intersection overlap 11630ms, span 12897ms). Those are scheduler/session probes, not the eight-Test pack. parallelWallClockMs 4/8/12 stay null. Empty findings are not a license to skip the next daily Plan. This is not the 60-case signed-in pack. Heavy, video, Expert web search, Continue with X, dictation, and camera stay on grok-web-weekly.",
   "assumedParallelBrowserContexts": 8,
   "suppliedBudgetMs": 600000,
   "workItems": 8,
@@ -83,6 +83,44 @@
     "authenticationFixtureId": "",
     "measuredAt": "2026-09-14T07:42:11Z",
     "note": "Two concurrent `relay test run grok-web Open grok.com logged-out` on --lane grok-daily and --lane grok-daily-b (actor human:local-cli). Both passed (Logged-out home). Queued within 17ms; started 3ms apart; overlap 9007ms; wall/span 9547ms. Distinct scheduler/session identities on the same unsigned evidence profile browser:grok-com. grok-com authenticationFixtureId stayed empty. Did not overlay grok-lab. Scheduler/session probe, not the eight-Test pack. Do not copy 9547 into parallelWallClockMs 4/8/12."
+  },
+  "unsignedFourLane": {
+    "n": 4,
+    "overlapMs": 11630,
+    "wallClockMs": 12897,
+    "queuedTogetherMs": 57,
+    "startSpreadMs": 6,
+    "jobs": {
+      "grokDaily": "5029b65f-a995-48c7-9326-98d987228720",
+      "grokDailyB": "4c0da218-01a1-4f2a-96f5-18c18f706614",
+      "grokDailyC": "431b6492-6b56-4f9f-9b09-46ac7b745ece",
+      "grokDailyD": "78951aae-7b32-4ccd-8f5c-f309fbfc58c5"
+    },
+    "durationsMs": [11633, 12891, 12486, 11893],
+    "startedAt": [1789372140697, 1789372140700, 1789372140697, 1789372140694],
+    "finishedAt": [1789372152330, 1789372153591, 1789372153183, 1789372152587],
+    "lanes": ["grok-daily", "grok-daily-b", "grok-daily-c", "grok-daily-d"],
+    "schedulingKeys": [
+      "grok-com#signed-out:grok-daily",
+      "grok-com#signed-out:grok-daily-b",
+      "grok-com#signed-out:grok-daily-c",
+      "grok-com#signed-out:grok-daily-d"
+    ],
+    "workerIds": [
+      "local:browser:target:grok-com%23signed-out%3Agrok-daily",
+      "local:browser:target:grok-com%23signed-out%3Agrok-daily-b",
+      "local:browser:target:grok-com%23signed-out%3Agrok-daily-c",
+      "local:browser:target:grok-com%23signed-out%3Agrok-daily-d"
+    ],
+    "host": {
+      "workerId": "local:browser:host",
+      "capacity": 8,
+      "active": 4
+    },
+    "testId": "test-authoring-6256148c-62c1-4a5e-b274-dfa2b303a28e",
+    "authenticationFixtureId": "",
+    "measuredAt": "2026-09-14T07:49:13Z",
+    "note": "Four concurrent `relay test run grok-web Open grok.com logged-out` on --lane grok-daily, grok-daily-b, grok-daily-c, grok-daily-d (actor human:local-cli). All four passed (Logged-out home). Queued within 57ms; started 6ms apart; 4-way intersection overlap 11630ms; wall/span 12897ms. Distinct scheduler/session identities on the same unsigned evidence profile browser:grok-com. grok-com authenticationFixtureId stayed empty. Did not overlay grok-lab. Scheduler/session probe, not the eight-Test pack. Do not copy 12897 into parallelWallClockMs 4/8/12."
   },
   "longPole": "Upload a file while logged out",
   "batches": [

@@ -413,7 +413,7 @@ export function createSessionJob(
   const assignment = defaultTargetWorkerAssignment({
     // Browser accounts use a fixture lane so N signed-in browsers on one
     // host do not serialize behind the target id. Unsigned Lanes are a second
-    // signed-out identity so grok-daily and grok-daily-b can overlap.
+    // signed-out identity so distinct unsigned Lanes (grok-daily, grok-daily-b, …) can overlap.
     targetId: jobSchedulingTargetId({
       executionTarget,
       browserCaseProfile,

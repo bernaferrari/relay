@@ -10,7 +10,13 @@ import {
   concurrentBrowserAccountCopy,
   summarizeBrowserAccountHealth,
 } from "./browser-account-health-summary.js";
-import { GROK_DAILY_B_LANE, GROK_DAILY_LANE, GROK_LAB_LANE } from "./lane-seed.js";
+import {
+  GROK_DAILY_B_LANE,
+  GROK_DAILY_C_LANE,
+  GROK_DAILY_D_LANE,
+  GROK_DAILY_LANE,
+  GROK_LAB_LANE,
+} from "./lane-seed.js";
 
 const superGrok = "authfx:7189423f-193e-45ed-b674-154505cc5107:1";
 
@@ -50,7 +56,13 @@ test("one live SuperGrok fixture is honest one-account, not a 3-account pack", (
         health: { status: "revoked" },
       },
     ],
-    lanes: [GROK_DAILY_LANE, GROK_DAILY_B_LANE, GROK_LAB_LANE],
+    lanes: [
+      GROK_DAILY_LANE,
+      GROK_DAILY_B_LANE,
+      GROK_DAILY_C_LANE,
+      GROK_DAILY_D_LANE,
+      GROK_LAB_LANE,
+    ],
   });
   assert.equal(summary.liveCount, 1);
   assert.equal(summary.revokedCount, 3);
@@ -62,6 +74,8 @@ test("one live SuperGrok fixture is honest one-account, not a 3-account pack", (
     [
       "grok-daily:grok-com#signed-out:grok-daily:signed-out:true",
       "grok-daily-b:grok-com#signed-out:grok-daily-b:signed-out:true",
+      "grok-daily-c:grok-com#signed-out:grok-daily-c:signed-out:true",
+      "grok-daily-d:grok-com#signed-out:grok-daily-d:signed-out:true",
       `grok-lab:grok-com#${superGrok}:fixture:true`,
     ],
   );
