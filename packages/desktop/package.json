@@ -13,7 +13,7 @@
     "package": "node scripts/build.mjs && node scripts/sign-mac-dist.mjs --mac dir",
     "dist": "node scripts/build.mjs && node scripts/sign-mac-dist.mjs --mac dmg zip",
     "preview": "node scripts/build.mjs && electron .",
-    "test": "node --experimental-strip-types --test src/main/server-readiness.test.ts src/main/ios-preview-sidecar.test.ts src/main/window-state.test.ts src/main/windows-v2-launcher.test.ts && node --test scripts/ensure-dev-service.test.mjs scripts/dev-app-entry.test.mjs scripts/macos-icon-packaging.test.mjs scripts/require-developer-id.test.mjs && node scripts/verify-server-bundle.mjs",
+    "test": "node --experimental-strip-types --test src/main/server-readiness.test.ts src/main/ios-preview-sidecar.test.ts src/main/window-state.test.ts src/main/windows-v2-launcher.test.ts src/main/lane-session.test.ts && node --test scripts/ensure-dev-service.test.mjs scripts/dev-app-entry.test.mjs scripts/macos-icon-packaging.test.mjs scripts/require-developer-id.test.mjs && node scripts/verify-server-bundle.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {

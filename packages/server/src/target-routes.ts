@@ -36,6 +36,7 @@ import {
   type BrowserEnvironmentInput,
   type BrowserViewport,
 } from "@relay/protocol";
+import { applyLaneToBrowserOpenOrThrow } from "./lane-run-route.js";
 import {
   assertTargetControl,
   assertTargetLease,
@@ -152,10 +153,19 @@ export async function handleTargetRoute(context: TargetRouteContext): Promise<bo
     if (target.kind !== "browser") throw new HttpError(400, "Target is not a browser");
     await assertTargetControl(scope, target.id);
     const body = (await parseJsonBody(req)) as {
+      laneId?: unknown;
       authenticationFixtureReference?: unknown;
       signedOut?: unknown;
       presentation?: unknown;
     };
+    const laneId = typeof body.laneId === "string" ? body.laneId.trim() : "";
+    const lane = laneId
+      ? await applyLaneToBrowserOpenOrThrow({
+          projectId: scope.projectId,
+          laneId,
+          targetId: target.id,
+        })
+      : undefined;
     const authenticationFixtureReference =
       typeof body.authenticationFixtureReference === "string"
         ? browserAuthenticationFixtureReferenceSchema.parse(body.authenticationFixtureReference)
@@ -172,7 +182,7 @@ export async function handleTargetRoute(context: TargetRouteContext): Promise<bo
       throw new HttpError(400, "Choose an account fixture or attested signed-out, not both.");
     }
     const profile = browserCaseProfileForTarget(target);
-    if (authenticationFixtureReference) {
+    if (!lane && authenticationFixtureReference) {
       const fixtures = await listBrowserAuthenticationFixtures({
         projectId: scope.projectId,
         targetId: target.id,
@@ -185,7 +195,7 @@ export async function handleTargetRoute(context: TargetRouteContext): Promise<bo
         ...profile,
         authenticationFixtureId: fixture.reference,
       });
-    } else if (signedOut) {
+    } else if (!lane && signedOut) {
       if (target.browser?.profileRetention === "retain") {
         throw new HttpError(
           409,
@@ -198,18 +208,22 @@ export async function handleTargetRoute(context: TargetRouteContext): Promise<bo
     const session = await openBrowserTarget(target.id, {
       projectId: scope.projectId,
       ...(body.presentation ? { presentation: body.presentation } : {}),
-      ...(authenticationFixtureReference
-        ? { authenticationFixtureId: authenticationFixtureReference }
-        : {}),
-      ...(signedOut ? { signedOut: true as const } : {}),
+      ...(lane?.laneId ? { laneId: lane.laneId } : {}),
+      ...(lane?.unsignedLaneId ? { unsignedLaneId: lane.unsignedLaneId } : {}),
+      ...(lane?.authenticationFixtureId
+        ? { authenticationFixtureId: lane.authenticationFixtureId }
+        : authenticationFixtureReference && !lane
+          ? { authenticationFixtureId: authenticationFixtureReference }
+          : {}),
+      ...(signedOut && !lane ? { signedOut: true as const } : {}),
     });
     json(res, 200, {
       session: {
         ...session,
-        ...(authenticationFixtureReference
+        ...(authenticationFixtureReference && !lane
           ? { authenticationFixtureId: authenticationFixtureReference }
           : {}),
-        ...(signedOut ? { signedOut: true as const } : {}),
+        ...(signedOut && !lane ? { signedOut: true as const } : {}),
       },
     });
     return true;
@@ -229,14 +243,24 @@ export async function handleTargetRoute(context: TargetRouteContext): Promise<bo
     const profile = parsed.environment
       ? compileBrowserEnvironment({ ...base, ...parsed.environment })
       : base;
+    const deviceLane = parsed.laneId
+      ? await applyLaneToBrowserOpenOrThrow({
+          projectId: scope.projectId,
+          laneId: parsed.laneId,
+          targetId,
+        })
+      : undefined;
     const session = await openBrowserDeviceSession(targetId, profile, {
       ...(parsed.authenticationFixtureId
         ? { authenticationFixtureId: parsed.authenticationFixtureId }
-        : profile.authenticationFixtureId
-          ? { authenticationFixtureId: profile.authenticationFixtureId }
-          : {}),
+        : deviceLane?.authenticationFixtureId
+          ? { authenticationFixtureId: deviceLane.authenticationFixtureId }
+          : profile.authenticationFixtureId
+            ? { authenticationFixtureId: profile.authenticationFixtureId }
+            : {}),
       ...(parsed.signedOut ? { signedOut: true } : {}),
       ...(parsed.sessionId ? { sessionId: parsed.sessionId } : {}),
+      ...(deviceLane?.unsignedLaneId ? { unsignedLaneId: deviceLane.unsignedLaneId } : {}),
       projectId: scope.projectId,
     });
     json(res, 200, { session: await withOwnership(scope, session) });

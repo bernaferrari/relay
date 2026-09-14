@@ -5,6 +5,7 @@ import type {
   OperationInput,
 } from "@relay/protocol";
 import { laneFixtureReference, resolveLaneExecution, type LaneExecution } from "./lane.js";
+import { unsignedBrowserLaneId } from "./browser-account-lane.js";
 
 export const LANE_RUN_FIELDS_REQUIRED =
   "expectedRevision and target are required unless laneId is set";
@@ -34,6 +35,7 @@ export type LaneAwareCombineStartInput = {
 export type LaneInteractResolution = {
   serial: string;
   authenticationFixtureId?: string;
+  unsignedLaneId?: string;
 };
 
 function assertAppMapMatchesLane(execution: LaneExecution, appMapId: string | undefined): void {
@@ -161,8 +163,14 @@ export async function applyLaneToInteract(input: {
     throw new Error(`Lane ${execution.laneId} is bound to ${serial}, not ${requested}`);
   }
   const authenticationFixtureId = laneFixtureReference(execution);
+  const unsignedLaneId = unsignedBrowserLaneId({
+    laneId: execution.laneId,
+    authenticationFixtureId,
+    accountKind: execution.account?.kind,
+  });
   return {
     serial,
     ...(authenticationFixtureId ? { authenticationFixtureId } : {}),
+    ...(unsignedLaneId ? { unsignedLaneId } : {}),
   };
 }

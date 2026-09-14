@@ -91,6 +91,7 @@ export type BrowserSpacesProductService = {
       | string
       | {
           spaceId: string;
+          laneId?: string;
           presentation?: "embedded" | "external";
           account?: { kind: "fixture"; reference: string } | { kind: "signed-out" };
         },
@@ -102,6 +103,10 @@ export type BrowserSpacesProductService = {
     configurationDigest?: string;
     authenticationFixtureId?: string;
     signedOut?: true;
+    laneId?: string;
+    unsignedLaneId?: string;
+    tabSessionKey?: string;
+    electronPartition?: string;
   }>;
   removeSpace(spaceId: string): Promise<void>;
   listAuthenticationFixtures(spaceId: string): Promise<readonly ProductBrowserAuthFixture[]>;
@@ -275,6 +280,7 @@ export function createBrowserSpacesProductService(platform: Platform): BrowserSp
         ).invoke("target.open", {
           targetId: request.spaceId,
           presentation: request.presentation ?? "embedded",
+          ...(request.laneId ? { laneId: request.laneId } : {}),
           ...(account?.kind === "fixture"
             ? { authenticationFixtureReference: account.reference }
             : {}),

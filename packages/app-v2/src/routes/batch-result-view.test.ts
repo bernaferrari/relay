@@ -115,6 +115,16 @@ describe("Batch result presentation", () => {
     expect(formatBatchEnvironmentLabel("grok-com#signed-out:grok-daily-e")).toBe("grok-daily-e");
     expect(formatBatchEnvironmentLabel("grok-com#signed-out:grok-daily-h")).toBe("grok-daily-h");
     expect(formatBatchEnvironmentLabel("grok-com#signed-out:grok-daily")).toBe("grok-daily");
+    expect(formatBatchEnvironmentLabel("grok-com#signed-out:grok-auth-email")).toBe(
+      "grok-auth-email",
+    );
+    expect(formatBatchEnvironmentLabel("grok-com#signed-out:grok-auth-gmail")).toBe(
+      "grok-auth-gmail",
+    );
+    expect(formatBatchEnvironmentLabel("grok-com#signed-out:grok-auth-x-out")).toBe(
+      "grok-auth-x-out",
+    );
+    expect(formatBatchEnvironmentLabel("grok-com#signed-out:grok-auth-x")).toBe("grok-auth-x");
     expect(
       formatBatchEnvironmentLabel("pixel-profile", {
         environmentLabel: "Pixel 8",
@@ -204,6 +214,96 @@ describe("Batch result presentation", () => {
       },
     ]);
     expect(copy.meta).toBe("2 cases · acct-a · grok-com");
+  });
+
+  it("keeps viewport, locale, and account in Result columns", () => {
+    expect(
+      formatBatchColumnLabel({
+        environmentId: "browser:firefox-390x844-abcdef1234",
+        environmentLabel: "Member · Firefox · 390 × 844",
+        accountLabel: "Member",
+        targetLabel: "Firefox",
+        locale: "ar",
+      }),
+    ).toBe("Member · Firefox · 390 × 844 · Arabic");
+  });
+
+  it("does not label a product crash Infra just because the group kind is crash", () => {
+    expect(
+      batchClusterCopy(
+        cluster({
+          id: "crash-product",
+          kind: "crash",
+          signature: {
+            kind: "crash",
+            digest: `sha256:${"c".repeat(64)}`,
+            summary: "crash failure",
+            checkIds: [],
+          },
+        }),
+        [
+          {
+            id: "case-1",
+            index: 0,
+            phase: "coverage",
+            status: "failed",
+            values: {},
+            findingCode: "PRODUCT_ASSERTION",
+            outcome: "product-failure",
+          },
+        ],
+      ).lane,
+    ).toBe("Product");
+  });
+
+  it("keeps mixed product and harness members Mixed", () => {
+    expect(
+      batchClusterCopy(cluster({ id: "mixed" }), [
+        {
+          id: "case-1",
+          index: 0,
+          phase: "coverage",
+          status: "failed",
+          values: {},
+          findingCode: "PRODUCT_ASSERTION",
+        },
+        {
+          id: "case-2",
+          index: 1,
+          phase: "coverage",
+          status: "failed",
+          values: {},
+          findingCode: "HARNESS_FAILURE",
+        },
+      ]).lane,
+    ).toBe("Mixed");
+  });
+
+  it("keeps expired fixture, cancellation, and assertion lanes distinct", () => {
+    expect(
+      batchClusterCopy(cluster({ id: "relogin" }), [
+        {
+          id: "case-1",
+          index: 0,
+          phase: "coverage",
+          status: "blocked",
+          values: {},
+          findingCode: "ACCOUNT_NEEDS_RELOGIN",
+        },
+      ]).lane,
+    ).toBe("Infra");
+    expect(
+      batchClusterCopy(cluster({ id: "cancel" }), [
+        {
+          id: "case-1",
+          index: 0,
+          phase: "coverage",
+          status: "cancelled",
+          values: {},
+          findingCode: "USER_CANCELLED",
+        },
+      ]).lane,
+    ).toBe("Needs review");
   });
 
   it("names a cancelled SOS cluster as Infra, not Product behavior", () => {

@@ -7,6 +7,19 @@ export type ElectronAPI = {
   /** Open a URL in the system browser. */
   openExternal: (url: string) => void;
 
+  /** Isolated Chromium jar for one Lane. Same Lane shares cookies. */
+  openLaneTab: (input: { url: string; laneId: string }) => Promise<{ partition: string }>;
+  setLaneCookie: (input: {
+    laneId: string;
+    url: string;
+    name: string;
+    value: string;
+  }) => Promise<void>;
+  getLaneCookies: (input: {
+    laneId: string;
+    url: string;
+  }) => Promise<Array<{ name: string; value: string }>>;
+
   /** Open Xcode to its Accounts settings workflow. */
   openXcode: () => Promise<boolean>;
 

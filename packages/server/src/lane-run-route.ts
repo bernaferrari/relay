@@ -61,3 +61,17 @@ export async function applyLaneToInteractOrThrow(input: {
     laneRunHttpError(error);
   }
 }
+
+/** Overlay for target.open / Browser Device. Never writes grok-com fixture. */
+export async function applyLaneToBrowserOpenOrThrow(input: {
+  projectId: string;
+  laneId: string;
+  targetId: string;
+}): Promise<LaneInteractResolution & { laneId: string }> {
+  const resolved = await applyLaneToInteractOrThrow({
+    projectId: input.projectId,
+    laneId: input.laneId,
+    serial: input.targetId,
+  });
+  return { ...resolved, laneId: input.laneId };
+}

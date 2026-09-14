@@ -18,6 +18,7 @@ export type DesktopUpdateState = {
 export type Platform = {
   platform: "web" | "desktop";
   openExternal?(url: string): void | Promise<void>;
+  openLaneTab?(input: { url: string; laneId: string }): Promise<{ partition: string }>;
   openXcode?(): void | Promise<void>;
   notify?(title: string, body?: string): void | Promise<void>;
   copyImage?(base64: string, mime: string): void | Promise<void>;

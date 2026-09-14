@@ -4,6 +4,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RelayV2App } from "../app";
+import type { AppResourcesProductService } from "../data/app-resources-product-service";
 import type { RecordingProductService } from "../data/recording-product-service";
 import type {
   ProductEnvironmentProfile,
@@ -190,6 +191,11 @@ async function render(
         productService={productService}
         suiteProfileService={options.suiteService ?? suiteService()}
         browserSpacesService={options.browserService ?? browserService()}
+        appResourcesService={
+          {
+            listAccountLanes: async () => [],
+          } as AppResourcesProductService
+        }
       />,
     );
   });

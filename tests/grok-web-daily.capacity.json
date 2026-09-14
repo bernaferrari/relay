@@ -84,6 +84,37 @@
     "measuredAt": "2026-09-14T07:42:11Z",
     "note": "Two concurrent `relay test run grok-web Open grok.com logged-out` on --lane grok-daily and --lane grok-daily-b (actor human:local-cli). Both passed (Logged-out home). Queued within 17ms; started 3ms apart; overlap 9007ms; wall/span 9547ms. Distinct scheduler/session identities on the same unsigned evidence profile browser:grok-com. grok-com authenticationFixtureId stayed empty. Did not overlay grok-lab. Scheduler/session probe, not the eight-Test pack. Do not copy 9547 into parallelWallClockMs 4/8/12."
   },
+  "authTwoLane": {
+    "n": 2,
+    "overlapMs": 11464,
+    "wallClockMs": 11955,
+    "queuedTogetherMs": 19,
+    "jobs": {
+      "grokAuthEmail": "4dfad636-0549-4d38-b37d-dad42f437ddf",
+      "grokAuthXOut": "020027fd-98d2-439c-b1bf-5c69a5c5ba96"
+    },
+    "durationsMs": [11955, 11464],
+    "startedAt": [1789401636932, 1789401636933],
+    "finishedAt": [1789401648887, 1789401648397],
+    "lanes": ["grok-auth-email", "grok-auth-x-out"],
+    "schedulingKeys": [
+      "grok-com#signed-out:grok-auth-email",
+      "grok-com#signed-out:grok-auth-x-out"
+    ],
+    "workerIds": [
+      "local:browser:target:grok-com%23signed-out%3Agrok-auth-email",
+      "local:browser:target:grok-com%23signed-out%3Agrok-auth-x-out"
+    ],
+    "host": {
+      "workerId": "local:browser:host",
+      "capacity": 8,
+      "active": 2
+    },
+    "testId": "test-authoring-6256148c-62c1-4a5e-b274-dfa2b303a28e",
+    "authenticationFixtureId": "",
+    "measuredAt": "2026-09-14T16:00:36Z",
+    "note": "Two concurrent `relay test run grok-web Open grok.com logged-out` on --lane grok-auth-email and --lane grok-auth-x-out (actor human:local-cli). Both passed (Logged-out home). CLI stdout timed out across a tsx watch restart; jobs still completed. Queued within 19ms; started 1ms apart; overlap 11464ms; wall/span 11955ms. Job ids attributed by queuedAt vs CLI launch order. Distinct scheduler/session identities on unsigned browser:grok-com. grok-com authenticationFixtureId stayed empty. Did not overlay grok-lab. Scheduler/session probe, not the eight-Test pack. Do not copy 11955 into parallelWallClockMs 2/4/8/12."
+  },
   "unsignedFourLane": {
     "n": 4,
     "overlapMs": 11630,

@@ -243,6 +243,7 @@ export const browserDeviceInputSchema = z.discriminatedUnion("kind", [
 export const browserDeviceOpenInputSchema = z
   .object({
     targetId: id,
+    laneId: id.optional(),
     environment: browserEnvironmentInputSchema.optional(),
     authenticationFixtureId: z.string().trim().min(1).max(256).optional(),
     signedOut: z.literal(true).optional(),

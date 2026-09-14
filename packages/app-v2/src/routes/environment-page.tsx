@@ -28,6 +28,7 @@ import { useState, type FormEvent } from "react";
 import { FormPage, PageHeader } from "../components/page-layout";
 import { EmptyState, RecoveryState } from "../components/product-patterns";
 import { readSetupContinuation } from "../data/setup-continuation";
+import { BrowserLaneTabs } from "../components/browser-lane-tabs";
 import { PageLoading } from "./recording-shared";
 
 const routeApi = getRouteApi("/environments/$profileId");
@@ -47,9 +48,10 @@ function signInStatus(fixture: { revokedAt?: number; expiresAt?: number }): stri
 }
 
 export function EnvironmentPage() {
-  const { browserSpacesService, suiteProfileService, queryClient } = useRouteContext({
-    from: "__root__",
-  });
+  const { appResourcesService, browserSpacesService, suiteProfileService, queryClient, platform } =
+    useRouteContext({
+      from: "__root__",
+    });
   const { profileId } = routeApi.useParams();
   const navigate = useNavigate();
   const rawSearch = useLocation({ select: (state) => state.search });
@@ -87,6 +89,26 @@ export function EnvironmentPage() {
   const openExternal = useMutation({
     mutationFn: () =>
       browserSpacesService.openSpace({ spaceId: profileId, presentation: "external" }),
+  });
+  const lanes = useQuery({
+    queryKey: ["app-resources", "account-lanes"],
+    queryFn: () => appResourcesService.listAccountLanes?.() ?? Promise.resolve([]),
+    staleTime: 10_000,
+  });
+  const openLane = useMutation({
+    mutationFn: async (laneId: string) => {
+      const session = await browserSpacesService.openSpace({
+        spaceId: profileId,
+        laneId,
+        presentation: "embedded",
+      });
+      if (platform.openLaneTab && session.url) {
+        await platform.openLaneTab({ url: session.url, laneId });
+      }
+      return session;
+    },
+    onSuccess: (session) =>
+      navigate({ to: "/devices/$deviceId", params: { deviceId: session.targetId } }),
   });
   const saveAccount = useMutation({
     mutationFn: () =>
@@ -217,10 +239,10 @@ export function EnvironmentPage() {
               </div>
             }
           />
-          {open.error || openExternal.error ? (
+          {open.error || openExternal.error || openLane.error ? (
             <FieldError>
-              {(open.error ?? openExternal.error) instanceof Error
-                ? (open.error ?? openExternal.error)?.message
+              {(open.error ?? openExternal.error ?? openLane.error) instanceof Error
+                ? (open.error ?? openExternal.error ?? openLane.error)?.message
                 : "Relay could not open this browser."}
             </FieldError>
           ) : null}
@@ -265,6 +287,13 @@ export function EnvironmentPage() {
               }
             />
           ) : null}
+
+          <BrowserLaneTabs
+            lanes={lanes.data ?? []}
+            targetId={space.id}
+            disabled={openLane.isPending}
+            onOpen={(tab) => openLane.mutate(tab.laneId)}
+          />
 
           <section className="mt-2" aria-labelledby="environment-account-title">
             <h2

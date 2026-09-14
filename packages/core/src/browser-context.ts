@@ -37,6 +37,8 @@ export type BrowserContextOpenOptions = {
   profile?: BrowserCaseProfile;
   /** Project scope is mandatory when a Proof imports an encrypted authentication fixture. */
   projectId?: string;
+  /** Isolates headed Chrome user-data for an unsigned Lane. Proof stays fresh. */
+  unsignedLaneId?: string;
 };
 
 const BROWSER_TYPES: Record<BrowserEngine, BrowserType> = { chromium, firefox, webkit };
@@ -101,10 +103,13 @@ async function openPersistentAuthoringContext(
 ): Promise<BrowserContextHandle> {
   const browserType = BROWSER_TYPES[profile.engine];
   const contextOptionsValue = browserContextOptionsForProfile(profile, options);
-  const context = await browserType.launchPersistentContext(browserProfileDir(target.id), {
-    ...launchOptions(target, profile, options),
-    ...contextOptionsValue,
-  });
+  const context = await browserType.launchPersistentContext(
+    browserProfileDir(target.id, options.unsignedLaneId),
+    {
+      ...launchOptions(target, profile, options),
+      ...contextOptionsValue,
+    },
+  );
   return {
     context,
     profile,

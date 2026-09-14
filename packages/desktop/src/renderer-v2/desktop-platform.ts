@@ -19,6 +19,7 @@ export function createDesktopPlatform(): Platform {
     openExternal: (url) => {
       api.openExternal(url);
     },
+    openLaneTab: (input) => api.openLaneTab(input),
     openXcode: () => {
       void api.openXcode();
     },

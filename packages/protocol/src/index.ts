@@ -73,6 +73,7 @@ export * from "./target-contract.js";
 export * from "./browser-case-profile.js";
 export * from "./browser-device.js";
 export * from "./browser-device-telemetry.js";
+export * from "./browser-lane-session.js";
 export * from "./browser-authentication-fixture.js";
 export * from "./target-observation.js";
 export * from "./target-supervisor.js";

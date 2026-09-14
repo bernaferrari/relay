@@ -2,18 +2,16 @@ import { waitForBrowserContent } from "./browser-readiness.js";
 import { mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { BrowserContext, Page, Request, Video } from "playwright-core";
-import { compileBrowserEnvironment, parseBrowserCaseProfile, type BrowserCaseProfile } from "@relay/protocol";
+import { parseBrowserCaseProfile, type BrowserCaseProfile } from "@relay/protocol";
 import type { Device, SnapshotNode } from "./device.js";
 import { createBrowserContextFactory, type BrowserContextPurpose } from "./browser-context.js";
 import {
   browserLiveIdentityMatches,
   browserLiveSessionKey,
   browserProofSessionKey,
-  browserRuntimeConfigurationDigest,
   browserSessionBelongsToTarget,
   browserSessionProfileMatches,
   browserSessionStoreKey,
-  liveBrowserSessionKeysToClose,
 } from "./browser-execution-identity.js";
 import { bindBrowserLiveSession } from "./browser-live-handles.js";
 import { browserAccountSchedulingKey } from "./browser-account-lane.js";
@@ -68,6 +66,7 @@ export type BrowserSession = {
 };
 
 const sessions = new Map<string, Promise<BrowserSession>>();
+export { sessions as browserSessions };
 
 /** Live identity already opened for this target, if any. Authoring is ignored. */
 export function existingLiveBrowserIdentity(targetId: string):
@@ -102,7 +101,7 @@ async function createSession(
   const factory = createBrowserContextFactory(target);
   const profile = options.profile ?? factory.profile;
   const recordingDir = join(
-    browserProfileDir(targetId),
+    browserProfileDir(targetId, options.mode === "authoring" ? options.unsignedLaneId : undefined),
     options.mode === "authoring" ? "recordings" : "proof-recordings",
   );
   const recordVideo = options.recordVideo !== false;
@@ -117,6 +116,7 @@ async function createSession(
             headless: options.headless,
             ...(recordVideo ? { recordVideoDir: recordingDir } : {}),
             profile,
+            ...(options.unsignedLaneId ? { unsignedLaneId: options.unsignedLaneId } : {}),
           })
         : await factory.openProof(profile, {
             headless: options.headless,
@@ -130,7 +130,11 @@ async function createSession(
       "Video recording is unavailable on this machine. Screenshots, steps, and logs are still captured.";
     contextHandle =
       options.mode === "authoring"
-        ? await factory.openAuthoring({ headless: options.headless, profile })
+        ? await factory.openAuthoring({
+            headless: options.headless,
+            profile,
+            ...(options.unsignedLaneId ? { unsignedLaneId: options.unsignedLaneId } : {}),
+          })
         : await factory.openProof(profile, {
             headless: options.headless,
             projectId: options.projectId,
@@ -237,100 +241,15 @@ export async function sessionFor(
   return pending;
 }
 
-/** Server-owned Playwright handle; UI never receives it. */
-export type BrowserAuthoringRuntime = Readonly<{
-  sessionId: string;
-  targetId: string;
-  profile: BrowserCaseProfile;
-  context: BrowserContext;
-  activePage: () => Promise<Page>;
-  setActivePage: (page: Page) => void;
-  mutationVersion: () => number;
-  markMutation: () => void;
-}>;
-
-function runtimeFromSession(targetId: string, session: BrowserSession): BrowserAuthoringRuntime {
-  return {
-    sessionId: session.sessionId,
-    targetId,
-    profile: session.profile,
-    context: session.context,
-    activePage: () => activePage(session),
-    setActivePage: (page) => {
-      session.page = page;
-      attachBrowserEvidence(session, page);
-    },
-    mutationVersion: () => session.mutationVersion,
-    markMutation: () => {
-      session.mutationVersion += 1;
-    },
-  };
-}
-
-/** Attach only to an existing runtime; never create or replace a session on lookup. */
-export async function attachBrowserRuntime(
-  targetId: string,
-  sessionId: string,
-): Promise<BrowserAuthoringRuntime> {
-  for (const [key, pending] of sessions) {
-    if (
-      key !== `authoring:${targetId}` &&
-      key !== `proof:${targetId}` &&
-      !key.startsWith(`live:${targetId}:`)
-    )
-      continue;
-    const session = await pending;
-    if (session.sessionId === sessionId) return runtimeFromSession(targetId, session);
-  }
-  throw new Error("This browser session is no longer available. Open the browser again.");
-}
-
-export async function openBrowserAuthoringRuntime(
-  targetId: string,
-  options: { headless: boolean; profile?: BrowserCaseProfile },
-): Promise<BrowserAuthoringRuntime> {
-  const session = await sessionFor(targetId, {
-    mode: "authoring",
-    headless: options.headless,
-    profile: options.profile,
-    // Browser Device and canonical authoring intentionally share this one
-    // recordable context. Starting a Take must not replace the page supervisor
-    // (or vice versa) merely because their video options differ.
-    recordVideo: true,
-  });
-  return runtimeFromSession(targetId, session);
-}
-
-/** Attach the in-app Browser Device to the same live identity as target.open. */
-export async function openBrowserLiveRuntime(
-  targetId: string,
-  options: {
-    headless: boolean;
-    profile?: BrowserCaseProfile;
-    authenticationFixtureId?: string;
-    signedOut?: boolean;
-    projectId?: string;
-  },
-): Promise<BrowserAuthoringRuntime> {
-  const target = await readTarget(targetId);
-  if (!target?.browser) throw new Error(`managed browser target not found: ${targetId}`);
-  const baseProfile = options.profile ?? browserCaseProfileForTarget(target);
-  const fixtureId = options.authenticationFixtureId?.trim();
-  const { authenticationFixtureId: _ignored, ...unsigned } = baseProfile;
-  const profile = fixtureId
-    ? compileBrowserEnvironment({ ...baseProfile, authenticationFixtureId: fixtureId })
-    : options.signedOut
-      ? compileBrowserEnvironment(unsigned)
-      : baseProfile;
-  const session = await sessionFor(targetId, {
-    mode: "proof",
-    headless: options.headless,
-    profile,
-    reuseMatchingIdentity: true,
-    ...(options.projectId ? { projectId: options.projectId } : {}),
-  });
-  return runtimeFromSession(targetId, session);
-}
+export {
+  attachBrowserRuntime,
+  captureBrowserAuthenticationStorageState,
+  openBrowserAuthoringRuntime,
+  openBrowserLiveRuntime,
+  openBrowserTarget,
+  type BrowserAuthoringRuntime,
+  type OpenBrowserTargetResult,
+} from "./browser-target-open.js";
 
 /** Authoring profile when an authoring session is open; otherwise the saved target. */
 export async function browserAuthoringCaseProfileForTarget(
@@ -341,88 +260,6 @@ export async function browserAuthoringCaseProfileForTarget(
   const target = await readTarget(targetId);
   if (!target) throw new Error(`managed browser target not found: ${targetId}`);
   return parseBrowserCaseProfile(browserCaseProfileForTarget(target));
-}
-
-export type OpenBrowserTargetResult = {
-  targetId: string;
-  name: string;
-  url: string;
-  sessionId: string;
-  configurationDigest: string;
-};
-
-/** Opens a Relay-owned browser profile. External presentation is for human login. */
-export async function openBrowserTarget(
-  targetId: string,
-  options: {
-    projectId?: string;
-    authenticationFixtureId?: string;
-    signedOut?: true;
-    presentation?: "embedded" | "external";
-  } = {},
-): Promise<OpenBrowserTargetResult> {
-  const target = await readTarget(targetId);
-  if (!target?.browser) throw new Error(`managed browser target not found: ${targetId}`);
-  const baseProfile = browserCaseProfileForTarget(target);
-  const fixtureId = options.authenticationFixtureId?.trim();
-  const accountBound = Boolean(fixtureId || options.signedOut);
-  const keepKey = accountBound
-    ? browserLiveSessionKey({
-        targetId,
-        authenticationFixtureId: fixtureId,
-        signedOut: options.signedOut,
-      })
-    : `authoring:${targetId}`;
-  if (accountBound) {
-    await closeConflictingLiveBrowserSessions(targetId, keepKey);
-  }
-  const { authenticationFixtureId: _ignored, ...unsigned } = baseProfile;
-  const profile = fixtureId
-    ? compileBrowserEnvironment({ ...baseProfile, authenticationFixtureId: fixtureId })
-    : options.signedOut
-      ? compileBrowserEnvironment(unsigned)
-      : baseProfile;
-  const session = await sessionFor(targetId, {
-    headless: options.presentation === "embedded",
-    requirePresentationMatch: true,
-    mode: accountBound ? "proof" : "authoring",
-    profile,
-    ...(accountBound ? { reuseMatchingIdentity: true, projectId: options.projectId } : {}),
-  });
-  const page = await activePage(session);
-  if (page.url() === "about:blank") {
-    await page.goto(target.browser.startUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
-  }
-  if (options.presentation !== "embedded") await page.bringToFront();
-  return {
-    targetId,
-    name: target.name,
-    url: page.url(),
-    sessionId: session.sessionId,
-    configurationDigest: browserRuntimeConfigurationDigest({
-      targetId,
-      ...session.profile,
-      signedOut: options.signedOut,
-    }),
-  };
-}
-
-async function closeConflictingLiveBrowserSessions(
-  targetId: string,
-  keepKey: string,
-): Promise<void> {
-  const closing = liveBrowserSessionKeysToClose({
-    keys: [...sessions.keys()],
-    targetId,
-    keepKey,
-  });
-  await Promise.all(
-    closing.map(async (key) => {
-      const pending = sessions.get(key);
-      sessions.delete(key);
-      await pending?.then((session) => session.close()).catch(() => undefined);
-    }),
-  );
 }
 
 export async function activePage(session: BrowserSession): Promise<Page> {
@@ -455,16 +292,6 @@ export type BrowserDeviceOptions = {
   unsignedLaneId?: string;
 };
 
-/** Persistent authoring storage state after an explicit human sign-in. */
-export async function captureBrowserAuthenticationStorageState(targetId: string): Promise<unknown> {
-  const pending = sessions.get(`authoring:${targetId}`);
-  if (!pending) {
-    throw new Error("Open the managed browser and complete sign-in before saving authentication");
-  }
-  const session = await pending;
-  return session.context.storageState({ indexedDB: true });
-}
-
 export async function getBrowserDevice(
   targetId: string,
   options: BrowserDeviceOptions = {},
@@ -482,31 +309,31 @@ export async function getBrowserDevice(
   ): Promise<T> => {
     let prepared: (() => Promise<T>) | undefined;
     return runBrowserMutationAdmission(accountLane, () =>
-        runSupervisedBrowserMutation({
-          targetId: accountLane,
-          intent,
-          beforeDispatch: async () => {
-            await dismissBrowserConsentIfPresent(await activePage(session));
-            prepared = await prepare();
-          },
-          dispatch: async () => {
-            if (!prepared) throw new Error("Browser mutation was not prepared before dispatch");
-            session.mutationVersion += 1;
-            return prepared();
-          },
-        }),
+      runSupervisedBrowserMutation({
+        targetId: accountLane,
+        intent,
+        beforeDispatch: async () => {
+          await dismissBrowserConsentIfPresent(await activePage(session));
+          prepared = await prepare();
+        },
+        dispatch: async () => {
+          if (!prepared) throw new Error("Browser mutation was not prepared before dispatch");
+          session.mutationVersion += 1;
+          return prepared();
+        },
+      }),
     );
   };
   const mutate = <T>(intent: string, dispatch: () => Promise<T>) =>
     runBrowserMutationAdmission(accountLane, () =>
-        runSupervisedBrowserMutation({
-          targetId: accountLane,
-          intent,
-          dispatch: async () => {
-            session.mutationVersion += 1;
-            return dispatch();
-          },
-        }),
+      runSupervisedBrowserMutation({
+        targetId: accountLane,
+        intent,
+        dispatch: async () => {
+          session.mutationVersion += 1;
+          return dispatch();
+        },
+      }),
     );
   const api = {
     devices: {

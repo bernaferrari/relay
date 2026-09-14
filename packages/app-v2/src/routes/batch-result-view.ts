@@ -1,4 +1,8 @@
-import { summarizeProductResultGrid } from "@relay/product/plan-result-cells";
+import {
+  classifyProductResultCell,
+  summarizeProductResultGrid,
+} from "@relay/product/plan-result-cells";
+import type { ProductResultCellKind } from "@relay/product/plan-result-cells";
 import type {
   ProductBatchCase,
   ProductBatchFailureCluster,
@@ -7,6 +11,10 @@ import type {
 
 const KNOWN_LANES = [
   "grok-lab",
+  "grok-auth-x-out",
+  "grok-auth-gmail",
+  "grok-auth-email",
+  "grok-auth-x",
   "grok-daily-b",
   "grok-daily-c",
   "grok-daily-d",
@@ -171,11 +179,10 @@ export function batchClusterLane(
   cluster: ProductBatchFailureCluster,
   members: readonly ProductBatchCase[] = [],
 ): string {
-  if (members.length && members.every((item) => item.findingCode === "USER_CANCELLED")) {
-    return "Needs review";
-  }
-  if (members.length && members.every((item) => harnessCase(item) || item.status === "cancelled")) {
-    return "Infra";
+  if (members.length) {
+    const lanes = [...new Set(members.map((item) => resultCellLane(classifyProductResultCell(item))))];
+    if (lanes.length > 1) return "Mixed";
+    if (lanes[0]) return lanes[0];
   }
   const category = cluster.signature.failureCategory;
   if (category && HARNESS_CATEGORIES.has(category)) return "Infra";
@@ -186,7 +193,13 @@ export function batchClusterLane(
   ) {
     return "Needs review";
   }
-  if (cluster.kind === "network" || cluster.kind === "crash") return "Infra";
+  return "Product";
+}
+
+function resultCellLane(kind: ProductResultCellKind): string {
+  if (kind === "check-failed") return "Product";
+  if (kind === "could-not-run") return "Infra";
+  if (kind === "needs-review" || kind === "cancelled") return "Needs review";
   return "Product";
 }
 
@@ -212,6 +225,7 @@ export function formatBatchColumnLabel(input: {
   environmentLabel?: string;
   targetLabel?: string;
   accountLabel?: string;
+  locale?: string;
 }): string {
   if (input.environmentId === "selected-environment") return "Device";
   const device = formatBatchEnvironmentLabel(input.environmentId, {
@@ -219,8 +233,12 @@ export function formatBatchColumnLabel(input: {
     targetLabel: input.targetLabel,
   });
   const account = formatBatchAccountLabel(input.accountLabel, input.environmentLabel);
-  if (account && account !== device) return `${account} · ${device}`;
-  return device;
+  const viewport = formatBatchViewport(input.environmentId, input.environmentLabel);
+  const locale = formatBatchLocaleLabel(input.locale);
+  const parts = [account, device, viewport, locale].filter(
+    (part, index, all): part is string => Boolean(part) && all.indexOf(part) === index,
+  );
+  return parts.join(" · ") || device;
 }
 
 export function formatBatchTestLabel(testId: string, testName?: string): string {
@@ -279,6 +297,28 @@ function clusterMembers(
 ): readonly ProductBatchCase[] {
   const ids = new Set(cluster.caseIds);
   return cases.filter((item) => ids.has(item.id) || item.id === cluster.representativeCaseId);
+}
+
+function formatBatchViewport(environmentId: string, environmentLabel?: string): string | undefined {
+  const match = `${environmentId} ${environmentLabel ?? ""}`.match(
+    /(\d{3,4})\s*[x×]\s*(\d{3,4})/iu,
+  );
+  return match ? `${match[1]} × ${match[2]}` : undefined;
+}
+
+function formatBatchLocaleLabel(locale?: string): string | undefined {
+  const trimmed = locale?.trim();
+  if (!trimmed) return undefined;
+  if (/logged[\s_-]*out/iu.test(trimmed)) return "Logged out";
+  try {
+    const named = new Intl.DisplayNames(["en"], { type: "language" }).of(
+      trimmed.replaceAll("_", "-"),
+    );
+    if (named && named !== trimmed) return named;
+  } catch {
+    /* keep title-case fallback */
+  }
+  return titleCaseIdentity(trimmed);
 }
 
 function harnessCase(item: ProductBatchCase): boolean {

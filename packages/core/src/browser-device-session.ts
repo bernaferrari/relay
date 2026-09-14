@@ -220,6 +220,7 @@ export async function openBrowserDeviceSession(
     signedOut?: boolean;
     projectId?: string;
     sessionId?: string;
+    unsignedLaneId?: string;
   },
 ): Promise<BrowserDeviceRuntimeSession> {
   const previous = states.get(targetId);
@@ -254,7 +255,11 @@ export async function openBrowserDeviceSession(
           ...(signedOut ? { signedOut: true } : {}),
           ...(identity?.projectId ? { projectId: identity.projectId } : {}),
         })
-      : await openBrowserAuthoringRuntime(targetId, { headless: true, profile });
+      : await openBrowserAuthoringRuntime(targetId, {
+          headless: true,
+          profile,
+          ...(identity?.unsignedLaneId ? { unsignedLaneId: identity.unsignedLaneId } : {}),
+        });
   const requestedSessionId = identity?.sessionId?.trim();
   if (requestedSessionId && runtime.sessionId !== requestedSessionId) {
     throw new Error(

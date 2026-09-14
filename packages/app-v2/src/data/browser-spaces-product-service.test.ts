@@ -158,6 +158,12 @@ describe("browser spaces and compare set product service", () => {
     expect(calls.filter(({ id }) => id === "target.open").at(-1)?.input).toMatchObject({
       presentation: "external",
     });
+    await service.openSpace({ spaceId: "space-1", laneId: "grok-auth-gmail" });
+    expect(calls.filter(({ id }) => id === "target.open").at(-1)?.input).toMatchObject({
+      targetId: "space-1",
+      laneId: "grok-auth-gmail",
+      presentation: "embedded",
+    });
   });
 
   it("keeps auth fixture operations versioned and metadata-only", async () => {

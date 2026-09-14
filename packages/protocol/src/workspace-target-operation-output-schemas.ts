@@ -711,6 +711,10 @@ export const workspaceTargetOperationOutputSchemas = {
           configurationDigest: z.string().min(1).optional(),
           authenticationFixtureId: z.string().optional(),
           signedOut: z.literal(true).optional(),
+          laneId: text.optional(),
+          unsignedLaneId: text.optional(),
+          tabSessionKey: text.optional(),
+          electronPartition: text.optional(),
         })
         .strict(),
     })

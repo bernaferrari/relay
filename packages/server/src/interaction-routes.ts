@@ -209,9 +209,18 @@ export async function handleInteractionRoute(input: InteractionRouteInput): Prom
       ...(typeof laneId === "string" ? { laneId } : {}),
       ...(typeof serial === "string" ? { serial } : {}),
     });
-    const overlay = resolved.authenticationFixtureId
-      ? { authenticationFixtureId: resolved.authenticationFixtureId, projectId: scope.projectId }
-      : undefined;
+    const overlay =
+      resolved.authenticationFixtureId || resolved.unsignedLaneId
+        ? {
+            ...(resolved.authenticationFixtureId
+              ? {
+                  authenticationFixtureId: resolved.authenticationFixtureId,
+                  projectId: scope.projectId,
+                }
+              : {}),
+            ...(resolved.unsignedLaneId ? { unsignedLaneId: resolved.unsignedLaneId } : {}),
+          }
+        : undefined;
     const interaction = rest as InteractInput;
     if (preview === true) {
       assertTargetObservation(scope, resolved.serial);

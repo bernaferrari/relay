@@ -123,14 +123,13 @@ test("--lane interact resolves serial and fixture without a client overlay", asy
       projectId: "default",
       laneId: "shop-lab",
     });
-    assert.deepEqual(resolved, {
-      serial: "shop-web",
-      authenticationFixtureId: "authfx:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa:1",
-    });
+    assert.equal(resolved.serial, "shop-web");
+    assert.equal(resolved.authenticationFixtureId, "authfx:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa:1");
+    assert.equal(resolved.unsignedLaneId, undefined);
   });
 });
 
-test("seed helper writes grok-daily{,-b,-c,-d} and grok-lab without touching grok-com fixture", async () => {
+test("seed helper writes grok-daily, grok-auth, and grok-lab without touching grok-com fixture", async () => {
   await withStateRoot(async () => {
     await createAppMap({
       organizationId: "local",
@@ -155,6 +154,10 @@ test("seed helper writes grok-daily{,-b,-c,-d} and grok-lab without touching gro
         "grok-daily-f",
         "grok-daily-g",
         "grok-daily-h",
+        "grok-auth-email",
+        "grok-auth-gmail",
+        "grok-auth-x",
+        "grok-auth-x-out",
         "grok-lab",
       ],
     );
@@ -162,8 +165,9 @@ test("seed helper writes grok-daily{,-b,-c,-d} and grok-lab without touching gro
     assert.equal(seeded[1]?.targetProfileId, GROK_DAILY_LANE.targetProfileId);
     assert.equal(seeded[3]?.targetProfileId, GROK_DAILY_LANE.targetProfileId);
     assert.equal(seeded[7]?.targetProfileId, GROK_DAILY_LANE.targetProfileId);
-    assert.equal(seeded[8]?.targetProfileId, GROK_LAB_LANE.targetProfileId);
-    assert.deepEqual(seeded[8]?.account, GROK_LAB_LANE.account);
+    assert.equal(seeded[11]?.targetProfileId, GROK_DAILY_LANE.targetProfileId);
+    assert.equal(seeded[12]?.targetProfileId, GROK_LAB_LANE.targetProfileId);
+    assert.deepEqual(seeded[12]?.account, GROK_LAB_LANE.account);
     assert.equal(
       (await readTarget("grok-com"))?.browser?.environment?.authenticationFixtureId,
       undefined,

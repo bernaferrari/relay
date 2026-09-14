@@ -10,6 +10,10 @@ const api: ElectronAPI = {
     void ipcRenderer.invoke("open-external", url);
   },
 
+  openLaneTab: (input) => ipcRenderer.invoke("lane-tab-open", input),
+  setLaneCookie: (input) => ipcRenderer.invoke("lane-tab-set-cookie", input),
+  getLaneCookies: (input) => ipcRenderer.invoke("lane-tab-cookies", input),
+
   openXcode: () => ipcRenderer.invoke("open-xcode"),
 
   notify: (title, body) => {

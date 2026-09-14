@@ -469,8 +469,18 @@ test("ephemeral browser deletion purges its profile while retained authoring dat
     const ephemeralRecording = join(browserProfileDir(ephemeral.id), "recordings", "secret.txt");
     await mkdir(join(browserProfileDir(ephemeral.id), "recordings"), { recursive: true });
     await writeFile(ephemeralRecording, "authoring recording sentinel", "utf8");
+    const ephemeralLaneRecording = join(
+      browserProfileDir(ephemeral.id, "grok-auth-email"),
+      "recordings",
+      "secret-lane.txt",
+    );
+    await mkdir(join(browserProfileDir(ephemeral.id, "grok-auth-email"), "recordings"), {
+      recursive: true,
+    });
+    await writeFile(ephemeralLaneRecording, "lane recording sentinel", "utf8");
     await deleteTarget(ephemeral.id);
     await assert.rejects(access(ephemeralRecording));
+    await assert.rejects(access(ephemeralLaneRecording));
 
     const retained = await saveBrowserTarget({
       id: "retained-browser",

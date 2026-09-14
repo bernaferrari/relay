@@ -32,6 +32,7 @@ export const targetOperationInputSchemas = {
   "target.open": z
     .object({
       targetId: identifier("Managed browser target identifier"),
+      laneId: identifier("Saved Lane whose cookie jar this tab uses").optional(),
       authenticationFixtureReference: browserAuthenticationFixtureReferenceSchema.optional(),
       signedOut: z.literal(true).optional(),
       presentation: z.enum(["embedded", "external"]).optional(),

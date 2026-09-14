@@ -11,6 +11,10 @@ import {
   summarizeBrowserAccountHealth,
 } from "./browser-account-health-summary.js";
 import {
+  GROK_AUTH_EMAIL_LANE,
+  GROK_AUTH_GMAIL_LANE,
+  GROK_AUTH_X_LANE,
+  GROK_AUTH_X_OUT_LANE,
   GROK_DAILY_B_LANE,
   GROK_DAILY_C_LANE,
   GROK_DAILY_D_LANE,
@@ -69,6 +73,10 @@ test("one live SuperGrok fixture is honest one-account, not a 3-account pack", (
       GROK_DAILY_F_LANE,
       GROK_DAILY_G_LANE,
       GROK_DAILY_H_LANE,
+      GROK_AUTH_EMAIL_LANE,
+      GROK_AUTH_GMAIL_LANE,
+      GROK_AUTH_X_LANE,
+      GROK_AUTH_X_OUT_LANE,
       GROK_LAB_LANE,
     ],
   });
@@ -88,6 +96,10 @@ test("one live SuperGrok fixture is honest one-account, not a 3-account pack", (
       "grok-daily-f:grok-com#signed-out:grok-daily-f:signed-out:true",
       "grok-daily-g:grok-com#signed-out:grok-daily-g:signed-out:true",
       "grok-daily-h:grok-com#signed-out:grok-daily-h:signed-out:true",
+      "grok-auth-email:grok-com#signed-out:grok-auth-email:signed-out:true",
+      "grok-auth-gmail:grok-com#signed-out:grok-auth-gmail:signed-out:true",
+      "grok-auth-x:grok-com#signed-out:grok-auth-x:signed-out:true",
+      "grok-auth-x-out:grok-com#signed-out:grok-auth-x-out:signed-out:true",
       `grok-lab:grok-com#${superGrok}:fixture:true`,
     ],
   );

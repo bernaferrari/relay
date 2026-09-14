@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type {
   TargetCapability,
@@ -30,8 +30,33 @@ function targetFile(): string {
   return join(targetRoot(), ".relay", "targets.json");
 }
 
-export function browserProfileDir(targetId: string): string {
-  return join(targetRoot(), ".relay", "browser-profiles", targetId);
+/** Authoring user-data. Unsigned Lanes are siblings (`id__lane_<lane>`), never
+ * nested inside another Chrome profile. Proof stays a fresh host-pool context. */
+export function browserProfileDir(targetId: string, unsignedLaneId?: string): string {
+  const root = join(targetRoot(), ".relay", "browser-profiles");
+  const lane = unsignedLaneId?.trim();
+  if (!lane) return join(root, targetId);
+  if (!SAFE_TARGET_ID.test(lane)) {
+    throw new Error("Lane identifier is not a safe browser profile path");
+  }
+  return join(root, `${targetId}__lane_${lane}`);
+}
+
+async function removeBrowserProfileDirs(targetId: string): Promise<void> {
+  const root = join(targetRoot(), ".relay", "browser-profiles");
+  await rm(join(root, targetId), { recursive: true, force: true });
+  let entries: string[] = [];
+  try {
+    entries = await readdir(root);
+  } catch {
+    return;
+  }
+  const prefix = `${targetId}__lane_`;
+  await Promise.all(
+    entries
+      .filter((name) => name.startsWith(prefix))
+      .map((name) => rm(join(root, name), { recursive: true, force: true })),
+  );
 }
 
 function targetRoot(): string {
@@ -171,7 +196,7 @@ export async function deleteTarget(id: string): Promise<void> {
     target.browser?.profileRetention === "ephemeral" &&
     SAFE_TARGET_ID.test(target.id)
   ) {
-    await rm(browserProfileDir(target.id), { recursive: true, force: true });
+    await removeBrowserProfileDirs(target.id);
   }
   await writeTargets(targets.filter((item) => item.id !== id));
 }

@@ -42,6 +42,7 @@ test("opening a live account does not close authoring or the requested live key"
   const keys = liveBrowserSessionKeysToClose({
     keys: [
       "authoring:browser-1",
+      "authoring:browser-1:signed-out:grok-auth-gmail",
       "live:browser-1:authfx:admin:4",
       "live:browser-1:authfx:member:7",
       "live:browser-2:authfx:admin:4",
@@ -104,6 +105,38 @@ test("proof sessions keep accounts on separate Playwright contexts", () => {
   assert.notEqual(
     browserProofSessionKey({ targetId: "grok-com", unsignedLaneId: "grok-daily" }),
     browserProofSessionKey({ targetId: "grok-com", unsignedLaneId: "grok-daily-b" }),
+  );
+  assert.equal(
+    browserSessionStoreKey({
+      targetId: "grok-com",
+      mode: "authoring",
+      unsignedLaneId: "grok-auth-gmail",
+    }),
+    "authoring:grok-com:signed-out:grok-auth-gmail",
+  );
+  assert.notEqual(
+    browserSessionStoreKey({
+      targetId: "grok-com",
+      mode: "authoring",
+      unsignedLaneId: "grok-auth-gmail",
+    }),
+    browserSessionStoreKey({
+      targetId: "grok-com",
+      mode: "authoring",
+      unsignedLaneId: "grok-auth-email",
+    }),
+  );
+  assert.equal(
+    browserSessionBelongsToTarget(
+      "authoring:grok-com:signed-out:grok-auth-gmail",
+      "grok-com",
+      "authoring",
+    ),
+    true,
+  );
+  assert.equal(
+    browserSessionBelongsToTarget("authoring:grok-com-extra", "grok-com", "authoring"),
+    false,
   );
   assert.equal(
     browserSessionBelongsToTarget("proof:grok-web:authfx:admin:4", "grok-web", "proof"),

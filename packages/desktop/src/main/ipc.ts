@@ -8,6 +8,11 @@ import {
   shell,
   type IpcMainInvokeEvent,
 } from "electron";
+import {
+  getLaneSessionCookies,
+  openLaneBrowserTab,
+  setLaneSessionCookie,
+} from "./lane-session-windows.js";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { DesktopUpdater } from "./updates.js";
@@ -143,6 +148,24 @@ export function registerIpcHandlers(deps: IpcDeps): void {
     const win = BrowserWindow.fromWebContents(event.sender);
     win?.setBackgroundColor(color);
   });
+
+  ipcMain.handle(
+    "lane-tab-open",
+    (_event: IpcMainInvokeEvent, input: { url: string; laneId: string }) =>
+      openLaneBrowserTab(input),
+  );
+  ipcMain.handle(
+    "lane-tab-set-cookie",
+    (
+      _event: IpcMainInvokeEvent,
+      input: { laneId: string; url: string; name: string; value: string },
+    ) => setLaneSessionCookie(input),
+  );
+  ipcMain.handle(
+    "lane-tab-cookies",
+    (_event: IpcMainInvokeEvent, input: { laneId: string; url: string }) =>
+      getLaneSessionCookies(input),
+  );
 
   ipcMain.handle("updates:get-state", () => deps.updates.getState());
   ipcMain.handle("updates:check", () => deps.updates.check());

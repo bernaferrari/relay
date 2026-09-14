@@ -90,7 +90,9 @@ export function liveBrowserSessionKeysToClose(input: {
 }): string[] {
   return input.keys.filter((key) => {
     if (key === input.keepKey) return false;
-    if (key === `authoring:${input.targetId}`) return false;
+    if (key === `authoring:${input.targetId}` || key.startsWith(`authoring:${input.targetId}:`)) {
+      return false;
+    }
     return (
       key.startsWith(`live:${input.targetId}:`) ||
       key === `proof:${input.targetId}` ||
@@ -121,9 +123,17 @@ export function browserProofSessionKey(input: {
   const fixture = input.authenticationFixtureId?.trim();
   if (fixture) return `proof:${input.targetId}:${fixture}`;
   const lane = input.unsignedLaneId?.trim();
-  return lane
-    ? `proof:${input.targetId}:signed-out:${lane}`
-    : `proof:${input.targetId}:signed-out`;
+  return lane ? `proof:${input.targetId}:signed-out:${lane}` : `proof:${input.targetId}:signed-out`;
+}
+
+/** Headed authoring user-data is per unsigned Lane so Google/X cookies do not
+ * leak across Sign-in Lanes. The default target profile stays shared. */
+export function browserAuthoringSessionKey(input: {
+  targetId: string;
+  unsignedLaneId?: string;
+}): string {
+  const lane = input.unsignedLaneId?.trim();
+  return lane ? `authoring:${input.targetId}:signed-out:${lane}` : `authoring:${input.targetId}`;
 }
 
 export function browserSessionStoreKey(input: {
@@ -143,7 +153,7 @@ export function browserSessionStoreKey(input: {
   if (input.mode === "proof") {
     return browserProofSessionKey(input);
   }
-  return `${input.mode}:${input.targetId}`;
+  return browserAuthoringSessionKey(input);
 }
 
 export function browserSessionBelongsToTarget(
@@ -156,7 +166,9 @@ export function browserSessionBelongsToTarget(
     if (mode === "proof") return key.startsWith("proof:");
     return true;
   }
-  if (key === `authoring:${targetId}`) return mode === undefined || mode === "authoring";
+  if (key === `authoring:${targetId}` || key.startsWith(`authoring:${targetId}:`)) {
+    return mode === undefined || mode === "authoring";
+  }
   if (key === `proof:${targetId}` || key.startsWith(`proof:${targetId}:`)) {
     return mode === undefined || mode === "proof";
   }

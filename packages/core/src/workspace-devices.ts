@@ -544,6 +544,7 @@ export async function resolveJobDevicePlatform(
 export type RuntimeTargetOverlay = {
   authenticationFixtureId?: string;
   projectId?: string;
+  unsignedLaneId?: string;
 };
 
 async function browserDeviceForOverlay(
@@ -551,7 +552,12 @@ async function browserDeviceForOverlay(
   overlay?: RuntimeTargetOverlay,
 ): Promise<Device> {
   const fixtureId = overlay?.authenticationFixtureId?.trim();
-  if (!fixtureId) return getBrowserDevice(targetId);
+  const unsignedLaneId = overlay?.unsignedLaneId?.trim();
+  if (!fixtureId) {
+    return getBrowserDevice(targetId, {
+      ...(unsignedLaneId ? { unsignedLaneId } : {}),
+    });
+  }
   const target = await readTarget(targetId);
   if (!target?.browser) return getBrowserDevice(targetId);
   return getBrowserDevice(targetId, {
