@@ -15,7 +15,11 @@ import {
   type RelayOperationPort,
 } from "@relay/workflows/operation-port";
 import { routeUrls } from "./routes.js";
-import { planResultColumnIdentity, summarizeProductResultGrid } from "./plan-result-cells.js";
+import {
+  isOpaqueAccountId,
+  planResultColumnIdentity,
+  summarizeProductResultGrid,
+} from "./plan-result-cells.js";
 
 /** The public name for the saved values applied while running a Test. */
 export type ProductDataSetDimension = {
@@ -372,6 +376,57 @@ function mapStatus(status: string): ProductBatchStatus {
   return "running";
 }
 
+async function attachFixtureAccountLabels(
+  operations: RelayOperationPort,
+  campaign: Campaign,
+): Promise<Campaign> {
+  const unlabeled = (campaign.cases ?? []).filter(
+    (item) =>
+      item.account?.kind === "fixture" &&
+      !item.account.accountLabel?.trim() &&
+      isOpaqueAccountId(item.account.accountId),
+  );
+  if (!unlabeled.length) return campaign;
+  const names = new Map<string, string>();
+  const targetIds = [
+    ...new Set(
+      unlabeled.flatMap((item) => {
+        const targetId = item.target?.targetId?.trim();
+        return targetId ? [targetId] : [];
+      }),
+    ),
+  ];
+  for (const targetId of targetIds) {
+    try {
+      const { fixtures } = (await operations.invoke("target.browser-auth.list", {
+        targetId,
+      })) as {
+        fixtures?: ReadonlyArray<{ id?: string; name?: string; reference?: string }>;
+      };
+      for (const fixture of fixtures ?? []) {
+        const name = fixture.name?.trim();
+        if (!name || isOpaqueAccountId(name)) continue;
+        if (fixture.id?.trim()) names.set(fixture.id.trim(), name);
+        if (fixture.reference?.trim()) names.set(fixture.reference.trim(), name);
+      }
+    } catch {
+      // Keep the column as the Device name when Sign-in metadata is unavailable.
+    }
+  }
+  if (!names.size) return campaign;
+  return {
+    ...campaign,
+    cases: (campaign.cases ?? []).map((item) => {
+      if (item.account?.kind !== "fixture" || item.account.accountLabel?.trim()) return item;
+      const name =
+        names.get(item.account.accountId) ??
+        (item.account.reference ? names.get(item.account.reference) : undefined);
+      if (!name) return item;
+      return { ...item, account: { ...item.account, accountLabel: name } };
+    }),
+  };
+}
+
 function batchFromCampaign(
   campaign: Campaign,
   setup?: ProductRunAcrossSetup,
@@ -648,7 +703,10 @@ export function createProductRunAcrossService(
     const response = (await operations.invoke("job.combine.campaign.get", {
       batchId,
     })) as CampaignResponse;
-    return batchFromCampaign(response.campaign, setup);
+    return batchFromCampaign(
+      await attachFixtureAccountLabels(operations, response.campaign),
+      setup,
+    );
   }
 
   async function failureClusters(
@@ -735,7 +793,7 @@ export function createProductRunAcrossService(
         ...(input.triageStatus ? { triageStatus: input.triageStatus } : {}),
         ...(input.assignee !== undefined ? { assignee: input.assignee } : {}),
       })) as CampaignResponse;
-      return batchFromCampaign(response.campaign);
+      return batchFromCampaign(await attachFixtureAccountLabels(operations, response.campaign));
     },
     async cancel(batchId) {
       await operations.invoke("job.combine.campaign.cancel", { batchId });

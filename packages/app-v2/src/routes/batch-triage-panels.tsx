@@ -15,6 +15,7 @@ import {
 import {
   batchClusterCopy,
   batchClusterGroupCount,
+  formatBatchCaseError,
   formatBatchWorldLabel,
   type BatchTestNames,
 } from "./batch-result-view";
@@ -352,7 +353,9 @@ function BatchCaseResult({
             <small className="text-[12px] leading-4 text-muted-foreground">{cellLabel}</small>
           )}
           {item.error && problem ? (
-            <small className="text-[13px] leading-5 text-muted-foreground">{item.error}</small>
+            <small className="text-[13px] leading-5 text-muted-foreground">
+              {formatBatchCaseError(item.error)}
+            </small>
           ) : null}
           {review ? (
             <small className="text-[12px] leading-5 text-muted-foreground">{review}</small>

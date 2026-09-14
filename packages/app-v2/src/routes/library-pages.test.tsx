@@ -484,6 +484,11 @@ describe("Runs workspace", () => {
     expect(document.body.textContent).toContain("Signed desktop build");
     expect(document.body.textContent).toContain("OPENROUTER_API_KEY");
     expect(document.body.textContent).toContain("Weekly pauses stay off daily");
+    expect(
+      [...document.querySelectorAll('a[href="/suites"]')].some((link) =>
+        Boolean(link.textContent?.includes("Grok.com weekly manual")),
+      ),
+    ).toBe(true);
     expect(document.body.textContent).toContain("emulator cannot install Grok");
     expect(document.body.textContent?.match(/2\.5 s/g)).toHaveLength(1);
     expect(document.body.textContent).not.toContain("run-passed-internal");

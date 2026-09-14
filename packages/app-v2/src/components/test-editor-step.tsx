@@ -5,14 +5,8 @@ import type {
   AppMapTestBindingCandidate,
   AppMapTestStepPlacement,
 } from "@relay/protocol";
-import { ScrollArea } from "@relay/ui-react/components/scroll-area";
 import { Alert, AlertDescription, AlertTitle } from "@relay/ui-react/components/alert";
 import { Button } from "@relay/ui-react/components/button";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@relay/ui-react/components/collapsible";
 import { Input } from "@relay/ui-react/components/input";
 import { Checkbox } from "@relay/ui-react/components/checkbox";
 import { FieldLabel } from "@relay/ui-react/components/field";
@@ -22,6 +16,7 @@ import { useEffect, useState } from "react";
 import {
   checkpointBindingCopy,
   isValidationDraftReady,
+  stepBindingCopy,
   validationBindingFromDraft,
   validationDraft,
   ValidationExpectationEditor,
@@ -197,8 +192,7 @@ export function SelectedStepEditor({
       ) : null}
       {entry.step.kind === "instruction" ? (
         <p className="text-xs font-normal leading-normal text-muted-foreground">
-          Visual judges, reply checks, and ignore regions live on a Checkpoint, not on this
-          action.
+          Visual judges, reply checks, and ignore regions live on a Checkpoint, not on this action.
         </p>
       ) : null}
       <label className="grid gap-1.5 text-xs font-semibold" htmlFor="selected-step-intent">
@@ -294,22 +288,9 @@ export function SelectedStepEditor({
           onBind={onBind}
         />
       ) : null}
-      <Collapsible className="border-t border-border pt-3">
-        <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 py-2 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
-          Advanced
-        </CollapsibleTrigger>
-        <CollapsibleContent className="space-y-3 border-t pt-3 text-sm">
-          <div>
-            <span>Technical details</span>
-            <p className="-mt-0.5 text-xs leading-normal text-muted-foreground">
-              The saved configuration Relay uses to carry out or check this step.
-            </p>
-            <ScrollArea className="max-h-44 rounded-md bg-muted">
-              <pre>{JSON.stringify(entry.step.binding, null, 2)}</pre>
-            </ScrollArea>
-          </div>
-        </CollapsibleContent>
-      </Collapsible>
+      {stepBindingCopy(entry.step) ? (
+        <p className="text-xs leading-snug text-muted-foreground">{stepBindingCopy(entry.step)}</p>
+      ) : null}
       <div className="flex flex-wrap items-center gap-2">
         <Button
           variant="default"

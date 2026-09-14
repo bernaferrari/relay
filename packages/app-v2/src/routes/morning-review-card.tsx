@@ -63,8 +63,11 @@ export function MorningReviewCard() {
               never a silent pass.
             </li>
             <li>
-              Weekly pauses stay off daily. Continue with X, dictation, and camera are Plan
-              Grok.com weekly manual. They need a phone. Do not schedule them daily.
+              Weekly pauses stay off daily. Continue with X, dictation, and camera are Plan{" "}
+              <Link className="font-medium text-foreground hover:underline" to="/suites">
+                Grok.com weekly manual
+              </Link>
+              . They need a phone. Do not schedule them daily.
             </li>
             <li>
               Native Grok columns wait for a phone and iPad. This Mac has neither. The emulator

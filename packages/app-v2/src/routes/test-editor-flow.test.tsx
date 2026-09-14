@@ -374,17 +374,15 @@ describe("Test editor", () => {
       "Composer is visible",
     );
     await settle();
-    expect([...storage.values()].some((value) => value.includes("Composer is visible"))).toBe(
-      true,
-    );
+    expect([...storage.values()].some((value) => value.includes("Composer is visible"))).toBe(true);
     const firstRoot = roots.pop();
     await act(async () => firstRoot?.unmount());
     document.body.replaceChildren();
 
     await render(service().editor, undefined, persist);
-    expect(document.querySelector<HTMLTextAreaElement>("#selected-step-expected-visual")?.value).toBe(
-      "Composer is visible",
-    );
+    expect(
+      document.querySelector<HTMLTextAreaElement>("#selected-step-expected-visual")?.value,
+    ).toBe("Composer is visible");
     expect(document.body.textContent).toContain("Two independent judges must agree");
   });
 
@@ -493,9 +491,9 @@ describe("Test editor", () => {
     expect(document.body.textContent).toContain("User bubble");
     expect(document.body.textContent).toContain("Reply body");
     await click("User bubble");
-    expect(document.querySelector<HTMLInputElement>("#selected-step-expected-identity-region")?.value).toBe(
-      "0.70,0.08,0.28,0.10",
-    );
+    expect(
+      document.querySelector<HTMLInputElement>("#selected-step-expected-identity-region")?.value,
+    ).toBe("0.70,0.08,0.28,0.10");
   });
 
   it("adds a checkpoint so a visual judge can be authored without YAML", async () => {
@@ -505,6 +503,8 @@ describe("Test editor", () => {
     expect(document.body.textContent).toContain(
       "Visual judges, reply checks, and ignore regions live on a Checkpoint",
     );
+    expect(document.body.textContent).toContain("Uses one saved path.");
+    expect(document.body.textContent).not.toContain('"kind": "connections"');
     await click("Add checkpoint");
     const added = harness.edits.at(-1)?.[0];
     expect(added?.kind).toBe("step.add");

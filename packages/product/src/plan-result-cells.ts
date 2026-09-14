@@ -32,11 +32,26 @@ export function planResultColumnIdentity(item: {
       environmentLabel: `Logged out · ${device}`,
     };
   }
-  const account = item.account.accountLabel?.trim() || item.account.accountId;
+  const account = planResultAccountName(item.account);
   return {
     environmentId: `${item.targetProfileId}#${item.account.accountId}:${item.account.accountRevision}`,
-    environmentLabel: `${account} · ${device}`,
+    environmentLabel: account ? `${account} · ${device}` : device,
   };
+}
+
+export function isOpaqueAccountId(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(value.trim());
+}
+
+export function planResultAccountName(account: {
+  accountId: string;
+  accountLabel?: string;
+}): string | undefined {
+  const labeled = account.accountLabel?.trim();
+  if (labeled && !isOpaqueAccountId(labeled)) return labeled;
+  const id = account.accountId.trim();
+  if (id && !isOpaqueAccountId(id)) return id;
+  return undefined;
 }
 
 export function classifyProductResultCell(item: ProductBatchCase): ProductResultCellKind {

@@ -136,4 +136,29 @@ test("six accounts on one browser stay six Result columns with human labels", ()
     }).environmentLabel,
     "Member A · Grok.com",
   );
+  assert.equal(
+    planResultColumnIdentity({
+      targetProfileId: "browser:grok-com",
+      targetLabel: "Grok.com",
+      account: {
+        kind: "fixture",
+        accountId: "7189423f-193e-45ed-b674-154505cc5107",
+        accountRevision: "1",
+      },
+    }).environmentLabel,
+    "Grok.com",
+  );
+  assert.equal(
+    planResultColumnIdentity({
+      targetProfileId: "browser:grok-com",
+      targetLabel: "Grok.com",
+      account: {
+        kind: "fixture",
+        accountId: "7189423f-193e-45ed-b674-154505cc5107",
+        accountRevision: "1",
+        accountLabel: "SuperGrok lab signed-in",
+      },
+    }).environmentLabel,
+    "SuperGrok lab signed-in · Grok.com",
+  );
 });

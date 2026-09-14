@@ -10,6 +10,7 @@ import {
   batchResultContext,
   batchResultFacts,
   batchResultHeadline,
+  formatBatchCaseError,
   formatBatchColumnLabel,
   formatBatchEnvironmentLabel,
   formatBatchFindingCode,
@@ -176,6 +177,8 @@ describe("Batch result presentation", () => {
     );
     expect(formatBatchFindingCode("HARNESS_FAILURE")).toBe("Harness");
     expect(formatBatchFindingCode("PRODUCT_ASSERTION")).toBe("Product check");
+    expect(formatBatchCaseError("causal failure in step-8be8bb50")).toBe("This check failed");
+    expect(formatBatchCaseError("Timeout waiting for check-12")).toBe("Timeout waiting for");
   });
 
   it("uses a case Lane label when the cluster only has a profile id", () => {

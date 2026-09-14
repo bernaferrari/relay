@@ -46,7 +46,7 @@ export function checkpointBindingCopy(step: AppMapScenarioTestStep): string | un
   if (step.kind !== "validation" || step.binding.status !== "resolved") return undefined;
   if (step.binding.kind === "assertion") {
     const assertion = step.binding.assertion;
-    if (assertion.kind === "screen") return `Checks that screen ${assertion.screenId} is showing.`;
+    if (assertion.kind === "screen") return "Checks that the expected screen is showing.";
     if (assertion.kind === "target") {
       return waitCopy(assertion.target, assertion.condition === "gone");
     }
@@ -76,6 +76,19 @@ export function checkpointBindingCopy(step: AppMapScenarioTestStep): string | un
   if (recipe.kind === "evaluate-visual") return "A visual judge will score this screenshot.";
   if (recipe.kind === "evaluate-semantic") return "A semantic judge will score the reply.";
   return undefined;
+}
+
+export function stepBindingCopy(step: AppMapScenarioTestStep): string | undefined {
+  if (step.binding.status !== "resolved") return undefined;
+  if (step.kind === "validation") return undefined;
+  if ("kind" in step.binding && step.binding.kind === "connections") {
+    const count = step.binding.connectionIds.length;
+    return count === 1 ? "Uses one saved path." : `Uses ${count} saved paths.`;
+  }
+  if ("kind" in step.binding && step.binding.kind === "routine") {
+    return "Uses a saved section.";
+  }
+  return "This step has a saved target.";
 }
 
 export function validationDraft(step: AppMapScenarioTestStep): ValidationDraft | undefined {
@@ -246,7 +259,8 @@ export const IDENTITY_IGNORE_PRESETS = [
 
 export function emptyValidationDraft(kind: ValidationDraft["kind"]): ValidationDraft {
   if (kind === "screen") return { kind: "screen", screenId: "" };
-  if (kind === "visual") return { kind: "visual", criteria: "", region: "", requireAgreement: true };
+  if (kind === "visual")
+    return { kind: "visual", criteria: "", region: "", requireAgreement: true };
   if (kind === "semantic")
     return { kind: "semantic", input: "reply", criteria: "", requireAgreement: true };
   if (kind === "wait-response") return { kind: "wait-response", label: "", maxMs: "" };
@@ -496,8 +510,8 @@ export function ValidationExpectationEditor({
           </label>
           <p className="text-xs font-normal leading-normal text-muted-foreground">
             Identity and visual compare skip this rectangle so only chrome is compared. Pixels or
-            0–1 fractions. On a logged-out paywall, ignore the user bubble — a full reply-body ignore
-            can strip the Continue card.
+            0–1 fractions. On a logged-out paywall, ignore the user bubble — a full reply-body
+            ignore can strip the Continue card.
           </p>
           <RegionFrame region={value.region} />
         </>
@@ -575,9 +589,12 @@ export function parseRegion(
   return { x, y, width, height };
 }
 
-function regionToFractions(
-  region: { x: number; y: number; width: number; height: number },
-): { x: number; y: number; width: number; height: number } {
+function regionToFractions(region: { x: number; y: number; width: number; height: number }): {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+} {
   const fractions = [region.x, region.y, region.width, region.height].every(
     (value) => value >= 0 && value <= 1,
   );

@@ -5,6 +5,7 @@ import {
   checkpointBindingCopy,
   isValidationDraftReady,
   parseRegion,
+  stepBindingCopy,
   validationBindingFromDraft,
 } from "./test-editor-assertion";
 
@@ -98,9 +99,13 @@ describe("test editor assertions", () => {
     const preset = IDENTITY_IGNORE_PRESETS.find((item) => item.id === "user-bubble");
     expect(preset).toBeDefined();
     expect(parseRegion(preset!.region)).toEqual({ x: 0.7, y: 0.08, width: 0.28, height: 0.1 });
-    expect(isValidationDraftReady({ kind: "identity-ignore", name: preset!.name, region: preset!.region })).toBe(
-      true,
-    );
+    expect(
+      isValidationDraftReady({
+        kind: "identity-ignore",
+        name: preset!.name,
+        region: preset!.region,
+      }),
+    ).toBe(true);
     expect(
       validationBindingFromDraft({
         kind: "identity-ignore",
@@ -156,5 +161,34 @@ describe("test editor assertions", () => {
         },
       }),
     ).toBe("Waits until Imagine is visible.");
+  });
+
+  it("describes a saved action as a path, not JSON", () => {
+    expect(
+      stepBindingCopy({
+        id: "step-open",
+        kind: "instruction",
+        intent: "Open Imagine",
+        capture: false,
+        binding: {
+          status: "resolved",
+          kind: "connections",
+          connectionIds: ["connection-imagine"],
+        },
+      }),
+    ).toBe("Uses one saved path.");
+    expect(
+      checkpointBindingCopy({
+        id: "step-screen",
+        kind: "validation",
+        intent: "On signed-in home",
+        capture: true,
+        binding: {
+          status: "resolved",
+          kind: "assertion",
+          assertion: { kind: "screen", screenId: "screen-cb4f24083a69e660" },
+        },
+      }),
+    ).toBe("Checks that the expected screen is showing.");
   });
 });

@@ -316,6 +316,60 @@ test("six accounts plus Android and iOS inspect as eight Result columns", async 
   assert.equal(batch.cases[7]!.identity?.environmentPlatform, "ios");
 });
 
+test("Result columns use Sign-in names, not fixture UUIDs", async () => {
+  const fixtureId = "7189423f-193e-45ed-b674-154505cc5107";
+  const calls: string[] = [];
+  const invoke = async (id: string, input?: Record<string, unknown>) => {
+    calls.push(id);
+    if (id === "target.browser-auth.list") {
+      assert.equal(input?.targetId, "grok-com");
+      return {
+        fixtures: [
+          {
+            id: fixtureId,
+            name: "SuperGrok lab signed-in",
+            reference: `authfx:${fixtureId}:1`,
+          },
+        ],
+      };
+    }
+    assert.equal(id, "job.combine.campaign.get");
+    return {
+      campaign: {
+        id: "batch-sign-in",
+        title: "Grok signed-in",
+        status: "completed",
+        createdAt: 1,
+        updatedAt: 2,
+        appMapId: "grok-web",
+        cases: [
+          {
+            index: 0,
+            cellId: "cell-lab",
+            testId: "open-home",
+            targetProfileId: "browser:grok-com",
+            target: { targetId: "grok-com", platform: "browser", label: "Grok.com" },
+            account: {
+              kind: "fixture" as const,
+              accountId: fixtureId,
+              accountRevision: "1",
+            },
+            phase: "coverage" as const,
+            status: "passed" as const,
+            values: {},
+          },
+        ],
+      },
+    };
+  };
+  const service = createProductRunAcrossService({ invoke } as never, { invoke } as never);
+  const batch = await service.inspect("batch-sign-in");
+  assert.deepEqual(calls, ["job.combine.campaign.get", "target.browser-auth.list"]);
+  assert.equal(batch.cases[0]!.identity?.accountLabel, "SuperGrok lab signed-in");
+  assert.equal(batch.cases[0]!.identity?.environmentLabel, "SuperGrok lab signed-in · Grok.com");
+  assert.doesNotMatch(batch.cases[0]!.identity?.environmentLabel ?? "", /7189423f/u);
+});
+
 test("blocked cases are complete problems rather than pending work", async () => {
   const invoke = async () => ({
     campaign: {
