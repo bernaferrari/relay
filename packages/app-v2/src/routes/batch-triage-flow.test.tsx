@@ -169,7 +169,9 @@ describe("Batch review controls", () => {
     );
     expect(document.body.textContent).toContain("Check Sign-ins");
     expect(document.body.textContent).toContain("never accept a visual baseline");
-    expect(document.body.textContent).toContain("Accept a baseline from a Report");
+    expect(document.body.textContent).toContain(
+      "Review screenshots opens the Report and does not accept a baseline",
+    );
     expect(document.body.textContent).toContain("Assign to me");
     expect(document.body.textContent).toContain("Add note");
     const checkbox = document.querySelector<HTMLButtonElement>(
@@ -241,6 +243,13 @@ describe("Batch review controls", () => {
     expect(document.body.textContent).toContain("finding to review");
     expect(document.body.textContent).not.toContain("No findings. Passing cases");
     expect(document.body.textContent).toContain("never accept a visual baseline");
+    expect(document.body.textContent).toContain("Review screenshots");
+    const review = [...document.querySelectorAll("a")].find(
+      (link) => link.textContent?.trim() === "Review screenshots",
+    );
+    expect(review).toBeInstanceOf(HTMLAnchorElement);
+    expect(review?.getAttribute("href")).toContain("/runs/099e8094-8018-4d44-b00b-73d2290b2f3f");
+    expect(review?.getAttribute("href")).toContain("reportView=captures");
     const confirm = [...document.querySelectorAll("button")].find(
       (button) => button.textContent?.trim() === "Confirm",
     );

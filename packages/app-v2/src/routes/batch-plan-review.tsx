@@ -13,6 +13,7 @@ import {
   stabilitySamplesFromBatch,
 } from "../data/stability-product-service";
 import { appendBatchReviewNote, type BatchReviewNote } from "../data/batch-review-notes";
+import { findingScreenshotRunId } from "./batch-finding-review";
 
 const findingsLinkClass =
   "relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 font-semibold text-[var(--text-interactive-base)] underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]";
@@ -26,7 +27,8 @@ export function BatchFindingsLead({ report }: { report: CombineEvidenceAnalysisR
         role="status"
       >
         {planFindingsEmptyCopy(report)[0]} {planFindingsEmptyCopy(report)[1]} Confirm and Reject
-        never accept a visual baseline. Accept a baseline from a Report.{" "}
+        never accept a visual baseline. Review screenshots opens the Report and does not accept a
+        baseline.{" "}
         <Link className={`${findingsLinkClass} whitespace-nowrap`} to="/accounts">
           Check Sign-ins
         </Link>
@@ -39,7 +41,8 @@ export function BatchFindingsLead({ report }: { report: CombineEvidenceAnalysisR
       role="status"
     >
       {count} finding{count === 1 ? "" : "s"} to review below. Confirm is a product issue. Reject is
-      not a product failure this run. Confirm and Reject never accept a visual baseline.
+      not a product failure this run. Confirm and Reject never accept a visual baseline. Review
+      screenshots opens the Report — same as <code>relay run visual review</code>, not an accept.
     </p>
   );
 }
@@ -91,25 +94,44 @@ export function BatchFindingsPanel({
         {renderPlanFindingsMarkdown(report)}
       </pre>
       <ul className="mt-4 grid list-none gap-3 p-0">
-        {report.analysis.findings.map((finding) => (
-          <li key={finding.id} className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-medium">{finding.code}</span>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => record(finding.id, "confirm", actorId, notes, onNotes)}
-            >
-              Confirm
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => record(finding.id, "reject", actorId, notes, onNotes)}
-            >
-              Reject
-            </Button>
-          </li>
-        ))}
+        {report.analysis.findings.map((finding) => {
+          const runId = findingScreenshotRunId(finding, report);
+          return (
+            <li key={finding.id} className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-medium">{finding.code}</span>
+              {runId ? (
+                <Button
+                  nativeButton={false}
+                  size="sm"
+                  variant="outline"
+                  render={
+                    <Link
+                      to="/runs/$runId"
+                      params={{ runId }}
+                      search={{ reportView: "captures" }}
+                    />
+                  }
+                >
+                  Review screenshots
+                </Button>
+              ) : null}
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => record(finding.id, "confirm", actorId, notes, onNotes)}
+              >
+                Confirm
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => record(finding.id, "reject", actorId, notes, onNotes)}
+              >
+                Reject
+              </Button>
+            </li>
+          );
+        })}
       </ul>
     </section>
   );
