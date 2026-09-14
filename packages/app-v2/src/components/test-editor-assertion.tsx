@@ -255,6 +255,13 @@ export const IDENTITY_IGNORE_PRESETS = [
     label: "User bubble",
     detail: "Paywall card stays compared.",
   },
+  {
+    id: "cookie-banner",
+    name: "cookie banner",
+    region: "0.57,0.80,0.43,0.20",
+    label: "Cookie banner",
+    detail: "Essential cookies dialog. Do not bake the banner into a visual baseline.",
+  },
 ] as const;
 
 export function emptyValidationDraft(kind: ValidationDraft["kind"]): ValidationDraft {
@@ -510,8 +517,8 @@ export function ValidationExpectationEditor({
           </label>
           <p className="text-xs font-normal leading-normal text-muted-foreground">
             Identity and visual compare skip this rectangle so only chrome is compared. Pixels or
-            0–1 fractions. On a logged-out paywall, ignore the user bubble — a full reply-body
-            ignore can strip the Continue card.
+            0–1 fractions. On logged-out grok.com, ignore the cookie banner. On a logged-out
+            paywall, ignore the user bubble — a full reply-body ignore can strip the Continue card.
           </p>
           <RegionFrame region={value.region} />
         </>

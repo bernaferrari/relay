@@ -99,6 +99,9 @@ describe("test editor assertions", () => {
     const preset = IDENTITY_IGNORE_PRESETS.find((item) => item.id === "user-bubble");
     expect(preset).toBeDefined();
     expect(parseRegion(preset!.region)).toEqual({ x: 0.7, y: 0.08, width: 0.28, height: 0.1 });
+    const cookie = IDENTITY_IGNORE_PRESETS.find((item) => item.id === "cookie-banner");
+    expect(cookie).toBeDefined();
+    expect(parseRegion(cookie!.region)).toEqual({ x: 0.57, y: 0.8, width: 0.43, height: 0.2 });
     expect(
       isValidationDraftReady({
         kind: "identity-ignore",
@@ -109,16 +112,16 @@ describe("test editor assertions", () => {
     expect(
       validationBindingFromDraft({
         kind: "identity-ignore",
-        name: preset!.name,
-        region: preset!.region,
+        name: cookie!.name,
+        region: cookie!.region,
       }),
     ).toEqual({
       status: "resolved",
       kind: "recipe-step",
       step: {
         kind: "identity-ignore",
-        region: { x: 0.7, y: 0.08, width: 0.28, height: 0.1 },
-        name: "user bubble",
+        region: { x: 0.57, y: 0.8, width: 0.43, height: 0.2 },
+        name: "cookie banner",
       },
     });
   });

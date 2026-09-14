@@ -159,6 +159,58 @@ test("a grok.com ui-tree covers the reply body without a recipe identity-ignore 
   assert.ok((regions[0]?.width ?? 0) > 0.8);
 });
 
+test("authored cookie banner stays a bottom-right unit rectangle", () => {
+  const regions = visualIgnoreRegionsFromIdentityArtifacts(
+    [
+      {
+        kind: "identity-ignore",
+        data: { name: "cookie banner", x: 0.57, y: 0.8, width: 0.43, height: 0.2 },
+      },
+    ],
+    [{ index: 0, width: 1280, height: 800 }],
+  );
+  assert.equal(regions.length, 1);
+  assert.equal(regions[0]?.name, "cookie banner");
+  assert.equal(regions[0]?.mode, "ignore");
+  assert.equal(regions[0]?.x, 0.57);
+  assert.equal(regions[0]?.y, 0.8);
+  assert.equal(regions[0]?.width, 0.43);
+  assert.equal(regions[0]?.height, 0.2);
+});
+
+test("cookie banner stacks with user bubble and skips ui-tree inference", () => {
+  const regions = visualIgnoreRegionsFromIdentityArtifacts(
+    [
+      {
+        kind: "identity-ignore",
+        data: { name: "user bubble", x: 0.7, y: 0.08, width: 0.28, height: 0.1 },
+      },
+      {
+        kind: "identity-ignore",
+        data: { name: "cookie banner", x: 0.57, y: 0.8, width: 0.43, height: 0.2 },
+      },
+      {
+        kind: "ui-tree",
+        data: {
+          nodes: [
+            { role: "article", label: "You", rect: { x: 926, y: 80, width: 65, height: 54 } },
+            {
+              role: "h2",
+              label: "Continue your conversation",
+              rect: { x: 297, y: 165, width: 427, height: 22 },
+            },
+          ],
+        },
+      },
+    ],
+    [{ index: 0, width: 1280, height: 800 }],
+  );
+  assert.deepEqual([...new Set(regions.map((region) => region.name))].sort(), [
+    "cookie banner",
+    "user bubble",
+  ]);
+});
+
 test("ui-tree ignore stays off screens that are not a conversation", () => {
   const regions = visualIgnoreRegionsFromIdentityArtifacts(
     [
