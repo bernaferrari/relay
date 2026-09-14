@@ -385,7 +385,9 @@ function TestRow({ test }: { test: ProductTestSummary }) {
             </span>
           </span>
           <span className="relay-library-row-status flex justify-start">
-            {test.status !== "ready" ? <ReadinessMark status={test.status} /> : null}
+            {test.status !== "ready" ? (
+              <ReadinessMark status={test.status} name={test.name} />
+            ) : null}
           </span>
           <span className="relay-library-row-recent grid min-w-0 justify-items-start gap-1">
             {recent ? (

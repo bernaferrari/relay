@@ -5,6 +5,7 @@ import { createScriptedRelayClient } from "@relay/workflows/testing";
 import {
   createProductCatalog,
   productRunDetail,
+  productTestStatusLabel,
   projectProductRuns,
   projectProductTests,
 } from "./catalog.js";
@@ -135,6 +136,20 @@ test("validation receipts are exact revision markers while legacy tests stay com
     projectProductTests([{ ...map, revision: 5 }]).find((test) => test.id === "validated")?.status,
     "ready",
   );
+});
+
+test("UNRECORDED and still-absent names stay Unrecorded, not Ready", () => {
+  const thread = scenario("thread", "Header More on existing chat (Start Thread still absent)");
+  const older = scenario(
+    "older",
+    "UNRECORDED — Older conversation then 2+2 (banner-only; number-equals 4 failed)",
+  );
+  const map = app("grok-web", "Grok.com daily", { thread, older });
+  const tests = projectProductTests([map]);
+  assert.equal(tests.find((test) => test.id === "thread")?.status, "needs-review");
+  assert.equal(tests.find((test) => test.id === "older")?.status, "needs-review");
+  assert.equal(productTestStatusLabel("needs-review", thread.name), "Unrecorded");
+  assert.equal(productTestStatusLabel("ready", "Header More on existing chat"), "Ready");
 });
 
 test("projects Run views with durable identity, human joins, phases, and filters", () => {

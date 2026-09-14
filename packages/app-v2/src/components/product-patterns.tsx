@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import type { RunOutcome } from "@relay/protocol";
-import type { ProductRunPhase } from "@relay/product/catalog";
+import { productTestStatusLabel, type ProductRunPhase } from "@relay/product/catalog";
 
 type OutcomeValue = RunOutcome | ProductRunPhase | undefined;
 type ReadinessValue = "ready" | "needs-review";
@@ -185,10 +185,14 @@ export function OutcomeMark({ outcome }: { outcome: OutcomeValue }) {
   );
 }
 
-export function ReadinessMark({ status }: { status: ReadinessValue }) {
+export function ReadinessMark({ status, name }: { status: ReadinessValue; name?: string }) {
   const presentation =
     status === "needs-review"
-      ? { label: "Unbound", icon: CircleHelp, tone: "notice" as const }
+      ? {
+          label: productTestStatusLabel(status, name),
+          icon: CircleHelp,
+          tone: "notice" as const,
+        }
       : { label: "Ready", icon: ListChecks, tone: "quiet" as const };
   return (
     <Badge

@@ -5,6 +5,7 @@ import type {
   AppMapTestBindingCandidate,
   AppMapTestStepPlacement,
 } from "@relay/protocol";
+import { unrecordedProductName } from "@relay/protocol";
 import { Alert, AlertDescription, AlertTitle } from "@relay/ui-react/components/alert";
 import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
@@ -425,10 +426,20 @@ function bindingForCandidate(
 
 export function stepReadinessLabel(
   step: AppMapScenarioTestStep,
-  options?: { unrecordedNative?: boolean; platformBlocker?: string },
+  options?: { unrecordedNative?: boolean; platformBlocker?: string; productName?: string },
 ): string {
   if (step.execution?.status === "disabled") return `Disabled · ${step.execution.reason}`;
   if (options?.platformBlocker) return `Blocked · ${options.platformBlocker}`;
+  const unrecordedName = Boolean(
+    options?.productName && unrecordedProductName(options.productName),
+  );
+  const unrecordedReason =
+    step.binding.status === "unresolved" &&
+    /unrecorded|absent from the recorded tree/iu.test(step.binding.reason);
+  if (unrecordedName || unrecordedReason) {
+    const reason = step.binding.status === "unresolved" ? step.binding.reason : undefined;
+    return reason ? `Unrecorded · ${reason}` : "Unrecorded";
+  }
   if (options?.unrecordedNative) {
     return `${step.binding.status === "resolved" ? "Ready on Web" : "Unbound"} · Android/iOS disabled until recorded`;
   }

@@ -106,6 +106,31 @@ describe("suite and environment product projections", () => {
     expect(suite.selected).not.toBe(combine.selected);
   });
 
+  it("names UNRECORDED Tests as needs-review even when the step is bound", () => {
+    const threadMap = {
+      ...map,
+      tests: {
+        thread: {
+          id: "thread",
+          name: "UNRECORDED — Start Thread (absent from tree)",
+          steps: [
+            {
+              id: "step-action",
+              kind: "instruction",
+              intent: "Start Thread signed-in",
+              binding: { status: "resolved", kind: "connections", connectionIds: ["more"] },
+            },
+          ],
+        },
+      },
+    } as unknown as AppMap;
+    const suite = projectProductSuite(threadMap, {
+      ...combine,
+      testIds: ["thread"],
+    } as AppMapCombine);
+    expect(suite.tests[0]).toMatchObject({ id: "thread", status: "needs-review" });
+  });
+
   it("keeps browser environment and auth metadata target-scoped while leaving builds unbound", () => {
     const profiles = projectProductEnvironmentProfiles({
       targets: [target("browser-1", "browser"), target("ios-1", "ios")],

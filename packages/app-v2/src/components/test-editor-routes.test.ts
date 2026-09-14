@@ -83,4 +83,29 @@ describe("disabled steps", () => {
       ),
     ).toMatch(/^Blocked · airplane on iOS is a Settings handoff/u);
   });
+
+  it("names Start Thread absent as Unrecorded, not Ready", () => {
+    expect(
+      stepReadinessLabel({
+        id: "thread",
+        kind: "instruction",
+        intent: "Start Thread signed-in",
+        binding: {
+          status: "unresolved",
+          reason: "Start Thread is absent from the recorded tree — unrecorded.",
+        },
+      }),
+    ).toMatch(/^Unrecorded · Start Thread is absent/u);
+    expect(
+      stepReadinessLabel(
+        {
+          id: "more",
+          kind: "instruction",
+          intent: "Header More on existing chat",
+          binding: { status: "resolved", kind: "connections", connectionIds: ["more"] },
+        },
+        { productName: "Header More on existing chat (Start Thread still absent)" },
+      ),
+    ).toBe("Unrecorded");
+  });
 });

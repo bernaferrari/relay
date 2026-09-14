@@ -10,6 +10,7 @@ import type {
   TargetDefinition,
   TargetPreflight,
 } from "@relay/protocol";
+import { unrecordedProductName } from "@relay/protocol";
 import { accountReloginBatchIdFromError } from "@relay/product/plan-findings";
 import type { ProductRunAccountBinding } from "@relay/product/run-journey";
 import type { Platform } from "../platform/types";
@@ -264,6 +265,7 @@ function text(value: unknown, fallback: string): string {
 }
 
 function testStatus(test: AppMap["tests"][string]): ProductSuiteTest["status"] {
+  if (unrecordedProductName(test.name)) return "needs-review";
   const unresolved = (step: AppMap["tests"][string]["steps"][number]): boolean => {
     if (step.binding.status === "unresolved" || step.execution?.status === "disabled") return true;
     if (step.kind === "decision") {

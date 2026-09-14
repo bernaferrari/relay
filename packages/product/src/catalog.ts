@@ -7,13 +7,22 @@ import type {
   RunSummary,
   RunTestStepEvidence,
 } from "@relay/protocol";
-import { parseOptionalRunTestStepEvidence } from "@relay/protocol";
+import { parseOptionalRunTestStepEvidence, unrecordedProductName } from "@relay/protocol";
 import { createRelayOperationPort, type RelayInvokeClient } from "@relay/workflows/operation-port";
 import { routeUrls } from "./routes.js";
 import { findUniqueProductTestOwner, type ProductTestOwner } from "./test-identity.js";
 
 /** Public Test state. A missing binding is review work, not an execution error. */
 export type ProductTestStatus = "ready" | "needs-review";
+
+export function productTestStatusLabel(
+  status: ProductTestStatus,
+  name?: string,
+): "Ready" | "Unbound" | "Unrecorded" {
+  if (status === "ready") return "Ready";
+  if (name && unrecordedProductName(name)) return "Unrecorded";
+  return "Unbound";
+}
 
 export type ProductTestFilter = {
   appMapId?: string;
@@ -200,6 +209,7 @@ function stepHasReview(step: AppMapScenarioTestStep): boolean {
 }
 
 function testStatus(test: AppMapScenarioTest): ProductTestStatus {
+  if (unrecordedProductName(test.name)) return "needs-review";
   if (test.steps.length === 0 || test.steps.some(stepHasReview)) return "needs-review";
   const validation = test.validation;
   if (

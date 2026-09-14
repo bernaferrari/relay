@@ -325,7 +325,10 @@ export function SuitePage() {
                       <span className="truncate text-sm font-medium text-text-strong">
                         {test.name}
                       </span>
-                      <ReadinessMark status={test.status === "ready" ? "ready" : "needs-review"} />
+                      <ReadinessMark
+                        status={test.status === "ready" ? "ready" : "needs-review"}
+                        name={test.name}
+                      />
                     </Link>
                   </li>
                 ))}
@@ -441,7 +444,9 @@ export function SuitePage() {
                       : `Full Plan: ${preview.data?.caseCount} ${
                           preview.data?.caseCount === 1 ? "case" : "cases"
                         } ${
-                          preview.data?.execution?.capacity === "unavailable" ? "previewed" : "ready"
+                          preview.data?.execution?.capacity === "unavailable"
+                            ? "previewed"
+                            : "ready"
                         }`}
                   </strong>
                   {preview.data ? (

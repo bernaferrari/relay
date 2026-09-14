@@ -123,6 +123,7 @@ export function TestEditorStepOutline({
                       {entry.placement ? `${branchLabel(entry.placement)} · ` : ""}
                       {stepKindLabel(entry.step)} ·{" "}
                       {stepReadinessLabel(entry.step, {
+                        productName: test.name,
                         unrecordedNative: Boolean(
                           recordedPlatforms?.length &&
                           !recordedPlatforms.includes("android") &&

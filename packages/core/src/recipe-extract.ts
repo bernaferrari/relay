@@ -5,7 +5,7 @@ import { nodeMatchesTarget, nodeText } from "./recipe-target-match.js";
 const ASSISTANT_SLOT = /^(?:assistant-message|last-reply-container|response-.+)$/iu;
 const USER_SLOT = /^(?:user-message)$/iu;
 const QUOTA_OR_FAILURE =
-  /try again in\b|\bbefore limit is gone\b|\bminutes remaining\b|no answer generated/iu;
+  /try again(?:\s+in|\s+later)?\b|\bbefore limit is gone\b|\blimit (?:is )?reached\b|\bminutes remaining\b|no answer generated|free tier/iu;
 
 function compact(node: SnapshotNode): string {
   const value = typeof node.value === "string" ? node.value.trim() : "";
@@ -52,7 +52,11 @@ export function extractNewestCompletedAssistantTurn(
   );
   const slots = candidates.filter(isAssistantSlot);
   const pool = slots.length ? slots : candidates;
-  const newest = [...pool].sort(documentOrder).at(-1);
+  const latestEcho = [...nodes.filter(isUserEcho)].sort(documentOrder).at(-1);
+  const currentAction = latestEcho
+    ? pool.filter((node) => documentOrder(node, latestEcho) > 0)
+    : pool;
+  const newest = [...currentAction].sort(documentOrder).at(-1);
   const text = newest ? compact(newest) : "";
   if (!text) {
     throw new Error("extract: no completed assistant turn matched the current action");

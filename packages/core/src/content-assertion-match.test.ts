@@ -39,6 +39,13 @@ test("digit-only contains uses numeric tokens, not substrings", () => {
   assert.equal(contentAssertionPassed(ASSISTANT_FOUR, "4", "exact"), true);
 });
 
+test("leftover 15 does not satisfy newest-turn number-equals or equals 4", () => {
+  assert.equal(contentAssertionPassed("15", "4", "number-equals"), false);
+  assert.equal(contentAssertionPassed("15", "4", "equals"), false);
+  assert.equal(contentAssertionPassed("15", "4", "contains"), false);
+  assert.equal(contentAssertionPassed("3*5 equals 15", "15", "contains"), true);
+});
+
 test("equals and number-equals reject impostor fours that contains would debate", () => {
   assert.equal(contentAssertionPassed("4", "4", "equals"), true);
   assert.equal(contentAssertionPassed("4", "4", "number-equals"), true);

@@ -56,4 +56,15 @@ describe("status marks", () => {
       passed?.querySelector("svg")?.getAttribute("class"),
     );
   });
+
+  it("names an unrecorded claimed control Unrecorded, not Unbound", async () => {
+    const host = await render(
+      <ReadinessMark
+        status="needs-review"
+        name="Header More on existing chat (Start Thread still absent)"
+      />,
+    );
+    expect(host.textContent).toContain("Unrecorded");
+    expect(host.textContent).not.toContain("Unbound");
+  });
 });

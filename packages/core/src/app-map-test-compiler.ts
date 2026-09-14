@@ -41,6 +41,7 @@ import {
   AppMapTestCompileError,
   type AppMapTestCompileErrorCode,
 } from "./app-map-test-compile-error.js";
+import { compiledTestClaimedAbsentControl } from "./app-map-unrecorded-claimed-control.js";
 
 export { appMapTestReturnRepairEndpoints } from "./app-map-test-return-repair.js";
 export { proposeAppMapTestExecutionSchedule } from "./app-map-test-schedule.js";
@@ -809,6 +810,15 @@ export function compileAppMapScenarioTest(
   }
 
   const root = graph[rootRecipeId]!;
+  const claimedAbsent = compiledTestClaimedAbsentControl(test, graph);
+  if (claimedAbsent) {
+    throw new AppMapTestCompileError(
+      "unresolved-step",
+      test.id,
+      claimedAbsent.stepId,
+      claimedAbsent.reason,
+    );
+  }
   const plan: AppMapCompiledTest = {
     schemaVersion: 1,
     appMapId: map.id,
