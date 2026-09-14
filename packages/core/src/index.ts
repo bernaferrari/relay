@@ -131,6 +131,7 @@ export * from "./android-sdk-tools.js";
 export * from "./workspace-settings.js";
 export * from "./device-setup.js";
 export * from "./apple-operator-packaging.js";
+export * from "./lab-mac-server.js";
 export * from "./ios-device-adapter.js";
 export * from "./ios-app-launch.js";
 export * from "./ios-mutation-policy.js";

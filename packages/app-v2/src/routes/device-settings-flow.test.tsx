@@ -651,6 +651,8 @@ describe("Settings", () => {
 
     expect(document.body.textContent).toContain("Apple devices");
     expect(document.body.textContent).toContain("Signed desktop build");
+    expect(document.body.textContent).toContain("Lab Mac server");
+    expect(document.body.textContent).toContain("dev.relay.lab-server is not loaded");
     expect(document.body.textContent).toContain("Apple Development is not enough");
     expect(document.body.textContent).toContain("Android devices");
     expect(document.body.textContent).toContain("Install Platform Tools, then reopen Relay.");
@@ -681,6 +683,17 @@ describe("Settings", () => {
     expect(row?.textContent).toContain("Needs attention");
     expect(row?.textContent).toContain("Apple Development is not enough");
     expect(row?.textContent).not.toContain("Ready");
+  });
+
+  it("does not treat a missing lab-server launchd job as ready", async () => {
+    await renderPath("/settings/advanced");
+    const row = [...document.querySelectorAll("h3")]
+      .find((heading) => heading.textContent === "Lab Mac server")
+      ?.closest("div");
+    expect(row?.textContent).toContain("Needs attention");
+    expect(row?.textContent).toContain("dev.relay.lab-server is not loaded");
+    expect(row?.textContent).toContain("restart :8787");
+    expect(row?.textContent).not.toContain("is running");
   });
 
   it("lists the workspace as a flush settings row", async () => {

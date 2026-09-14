@@ -490,6 +490,8 @@ describe("Runs workspace", () => {
       ),
     ).toBe(true);
     expect(document.body.textContent).toContain("emulator cannot install Grok");
+    expect(document.body.textContent).toContain("Lab Mac launchd stays unloaded");
+    expect(document.body.textContent).toContain("dev.relay.lab-server");
     expect(document.body.textContent?.match(/2\.5 s/g)).toHaveLength(1);
     expect(document.body.textContent).not.toContain("run-passed-internal");
     expect(document.querySelector('a[href="/runs/run-passed-internal"]')).not.toBeNull();

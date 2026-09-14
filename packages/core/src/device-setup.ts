@@ -15,6 +15,11 @@ import {
   inspectOperatorDesktopPackaging,
   type OperatorDesktopPackaging,
 } from "./apple-operator-packaging.js";
+import {
+  inspectLabMacLaunchd,
+  LAB_MAC_LAUNCHD_LABEL,
+  type LabMacServerStatus,
+} from "./lab-mac-server.js";
 
 const execFileAsync = promisify(execFile);
 const DEVICE_SETUP_VERSION = 1 as const;
@@ -62,6 +67,10 @@ export type AppleSetupStatus = {
    * Apple Development never makes this ready.
    */
   operatorBuild: OperatorDesktopPackaging;
+  /**
+   * Unattended lab Mac launchd job. Read-only — loading it restarts :8787.
+   */
+  labServer: LabMacServerStatus;
 };
 
 export type AndroidSetupStatus = {
@@ -306,7 +315,7 @@ export function suggestAppleDeviceSetup(
  */
 export async function inspectAppleDeviceSetup(): Promise<AppleSetupStatus> {
   const setup = await readDeviceSetup();
-  const [xcode, devicectl, identities, xcodeTeamsOutput] = await Promise.all([
+  const [xcode, devicectl, identities, xcodeTeamsOutput, labPrint] = await Promise.all([
     commandAvailable("xcodebuild", ["-version"]),
     // `devicectl version` is not a valid CoreDevice command in current Xcode.
     // Listing devices is fast, read-only, and confirms the command we actually
@@ -314,6 +323,7 @@ export async function inspectAppleDeviceSetup(): Promise<AppleSetupStatus> {
     commandAvailable("xcrun", ["devicectl", "list", "devices"]),
     commandAvailable("security", ["find-identity", "-v", "-p", "codesigning"]),
     commandAvailable("defaults", ["read", "com.apple.dt.Xcode", "IDEProvisioningTeamByIdentifier"]),
+    readLabMacLaunchdPrint(),
   ]);
   const availableIdentities = findAppleSigningIdentities(identities);
   const xcodeTeams = findXcodeProvisioningTeams(xcodeTeamsOutput);
@@ -374,7 +384,29 @@ export async function inspectAppleDeviceSetup(): Promise<AppleSetupStatus> {
     ],
     ...(suggestion ? { suggestion } : {}),
     operatorBuild: inspectOperatorDesktopPackaging(identities),
+    labServer: inspectLabMacLaunchd(labPrint),
   };
+}
+
+/** Read-only. Never `launchctl load` / `unload` — that restarts :8787. */
+async function readLabMacLaunchdPrint(): Promise<string | null> {
+  const uid = process.getuid?.();
+  if (typeof uid !== "number") return null;
+  try {
+    const result = await execFileAsync(
+      "launchctl",
+      ["print", `gui/${uid}/${LAB_MAC_LAUNCHD_LABEL}`],
+      {
+        timeout: 6_000,
+        maxBuffer: 32 * 1024,
+      },
+    );
+    return `${result.stdout}\n${result.stderr}`.trim() || null;
+  } catch (error) {
+    const failure = error as { stdout?: string; stderr?: string };
+    const text = `${failure.stdout ?? ""}\n${failure.stderr ?? ""}`.trim();
+    return text || null;
+  }
 }
 
 /**

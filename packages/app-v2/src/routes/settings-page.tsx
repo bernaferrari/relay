@@ -25,6 +25,7 @@ import {
   errorMessage,
   setupChecks,
   operatorBuildChecks,
+  labServerChecks,
 } from "./settings-support";
 
 function GeneralSettings() {
@@ -434,6 +435,11 @@ function AdvancedSettings() {
         <SetupRow
           title="Signed desktop build"
           checks={operatorBuildChecks(apple.data)}
+          loading={apple.isPending}
+        />
+        <SetupRow
+          title="Lab Mac server"
+          checks={labServerChecks(apple.data)}
           loading={apple.isPending}
         />
         <SetupRow

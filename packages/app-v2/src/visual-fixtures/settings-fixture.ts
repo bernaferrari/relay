@@ -20,6 +20,12 @@ export const fixtureSettingsService: SettingsProductService = {
       detail:
         "A Developer ID Application identity is required to ship a signed operator build. Apple Development is not enough. Morning review stays on the Vite UI and local server until that identity exists.",
     },
+    labServer: {
+      status: "needs-attention",
+      loaded: false,
+      detail:
+        "Lab Mac launchd job dev.relay.lab-server is not loaded. Morning review stays on this Vite UI plus pnpm ensure:serve. Do not load that job while a Plan is live — it would restart :8787.",
+    },
   }),
   androidSetup: async () => ({
     checks: [

@@ -72,6 +72,9 @@ export function setupChecks(value: unknown): readonly SetupCheck[] {
 const MISSING_OPERATOR_BUILD =
   "A Developer ID Application identity is required to ship a signed operator build. Apple Development is not enough. Morning review stays on the Vite UI and local server until that identity exists.";
 
+const MISSING_LAB_SERVER =
+  "Lab Mac launchd job dev.relay.lab-server is not loaded. Morning review stays on this Vite UI plus pnpm ensure:serve. Do not load that job while a Plan is live — it would restart :8787.";
+
 /** Signed operator .dmg. Missing payload fails closed — never treat Apple Development as ready. */
 export function operatorBuildChecks(value: unknown): readonly SetupCheck[] {
   const operatorBuild = recordValue(recordValue(value)?.operatorBuild);
@@ -96,6 +99,34 @@ export function operatorBuildChecks(value: unknown): readonly SetupCheck[] {
       label: "Developer ID Application",
       status: "needs-attention",
       detail: MISSING_OPERATOR_BUILD,
+    },
+  ];
+}
+
+/** Unattended lab Mac launchd. Missing payload fails closed — never load the job from the UI. */
+export function labServerChecks(value: unknown): readonly SetupCheck[] {
+  const labServer = recordValue(recordValue(value)?.labServer);
+  if (
+    typeof labServer?.status === "string" &&
+    typeof labServer.detail === "string" &&
+    labServer.status.trim() &&
+    labServer.detail.trim()
+  ) {
+    return [
+      {
+        id: "lab-server",
+        label: "dev.relay.lab-server",
+        status: labServer.status,
+        detail: labServer.detail,
+      },
+    ];
+  }
+  return [
+    {
+      id: "lab-server",
+      label: "dev.relay.lab-server",
+      status: "needs-attention",
+      detail: MISSING_LAB_SERVER,
     },
   ];
 }

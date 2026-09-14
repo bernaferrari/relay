@@ -73,6 +73,14 @@ export function MorningReviewCard() {
               Native Grok columns wait for a phone and iPad. This Mac has neither. The emulator
               cannot install Grok.
             </li>
+            <li>
+              Lab Mac launchd stays unloaded. Settings → Advanced →{" "}
+              <Link className="font-medium text-foreground hover:underline" to="/settings/advanced">
+                Lab Mac server
+              </Link>{" "}
+              is Needs attention until <code>dev.relay.lab-server</code> is loaded. Do not load it
+              during a live Plan — it restarts :8787.
+            </li>
           </ul>
         </div>
         <Button nativeButton={false} render={<Link to="/runs" />} size="sm" variant="outline">
