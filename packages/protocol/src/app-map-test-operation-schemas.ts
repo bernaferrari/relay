@@ -361,6 +361,11 @@ const assertionSpec = z.discriminatedUnion("kind", [
     .object({
       kind: z.literal("visual"),
       criteria: z.array(text("Visual criterion")).min(1).max(20),
+      requireAgreement: z.boolean().optional(),
+      provider: z.string().min(1).optional(),
+      model: z.string().min(1).optional(),
+      secondProvider: z.string().min(1).optional(),
+      secondModel: z.string().min(1).optional(),
       region: z
         .object({
           x: z.number(),
@@ -378,6 +383,10 @@ const assertionSpec = z.discriminatedUnion("kind", [
       input: text("Extracted or observed reply to judge"),
       criteria: z.array(text("Semantic criterion")).min(1).max(20),
       requireAgreement: z.boolean().optional(),
+      provider: z.string().min(1).optional(),
+      model: z.string().min(1).optional(),
+      secondProvider: z.string().min(1).optional(),
+      secondModel: z.string().min(1).optional(),
     })
     .strict(),
 ]);

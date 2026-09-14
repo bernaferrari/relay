@@ -16,6 +16,7 @@ import type {
 import { createHash } from "node:crypto";
 import { validateAppMap } from "./app-map.js";
 import { semanticTargetMatches } from "./scroll-surface-semantic-index.js";
+import { compiledJudgeFields } from "./judge-assertion-fields.js";
 
 export type AppMapCompileErrorCode =
   | "missing-flow"
@@ -174,6 +175,7 @@ function assertionStep(map: AppMap, actionId: string, assertion: AssertionSpec):
       kind: "evaluate-visual",
       criteria: [...assertion.criteria],
       ...(assertion.region ? { region: { ...assertion.region } } : {}),
+      ...compiledJudgeFields(assertion),
     };
   }
   if (assertion.kind === "semantic") {
@@ -182,7 +184,7 @@ function assertionStep(map: AppMap, actionId: string, assertion: AssertionSpec):
       kind: "evaluate-semantic",
       input: assertion.input,
       criteria: [...assertion.criteria],
-      ...(assertion.requireAgreement ? { requireAgreement: true } : {}),
+      ...compiledJudgeFields(assertion),
     };
   }
   return {

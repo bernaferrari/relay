@@ -67,20 +67,20 @@ describe("disabled steps", () => {
     ).toMatch(/^Blocked · offline is a browser step/u);
   });
 
-  it("names a recorded iOS upload compile-block instead of Ready", () => {
+  it("names a recorded iOS airplane compile-block instead of Ready", () => {
     expect(
       stepReadinessLabel(
         {
-          id: "upload",
+          id: "airplane",
           kind: "instruction",
-          intent: "Upload a file",
-          binding: { status: "resolved", kind: "connections", connectionIds: ["upload"] },
+          intent: "Toggle airplane mode",
+          binding: { status: "resolved", kind: "connections", connectionIds: ["airplane"] },
         },
         {
           platformBlocker:
-            "upload on iOS requires a reviewed Files-app handoff; disable this step or record that path",
+            "airplane on iOS is a Settings handoff, not settings airplane on the Grok runner",
         },
       ),
-    ).toMatch(/^Blocked · upload on iOS requires a reviewed Files-app handoff/u);
+    ).toMatch(/^Blocked · airplane on iOS is a Settings handoff/u);
   });
 });

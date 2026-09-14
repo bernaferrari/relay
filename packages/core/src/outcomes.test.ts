@@ -60,6 +60,21 @@ describe("classifyRunOutcome", () => {
       classifyRunOutcome({ status: "error", error: "judge uncertain: insufficient evidence" }),
       { outcome: "uncertain", failureCategory: "judge-uncertainty" },
     );
+    assert.deepEqual(
+      classifyRunOutcome({
+        status: "error",
+        error: "visual judge unavailable: OPENROUTER_API_KEY is not configured",
+      }),
+      { outcome: "harness-failure", failureCategory: "environment" },
+    );
+    assert.deepEqual(
+      classifyRunOutcome({
+        status: "error",
+        error:
+          "judge uncertain: Primary judge unavailable: visual judge unavailable: OPENROUTER_API_KEY is not configured",
+      }),
+      { outcome: "harness-failure", failureCategory: "environment" },
+    );
     assert.deepEqual(classifyRunOutcome({ status: "cancelled", errorCode: "CANCELLED" }), {
       outcome: "cancelled",
     });

@@ -95,3 +95,70 @@ test("mixed recorded platforms do not block iOS upload when a browser route can 
   const blockers = testStepPlatformBlockers(iosUploadTest, iosMap, ["ios", "browser"]);
   assert.deepEqual(blockers, {});
 });
+
+const iosAirplaneTest: Pick<AppMapScenarioTest, "steps"> = {
+  steps: [
+    {
+      id: "ios-airplane",
+      kind: "instruction",
+      intent: "Toggle airplane mode",
+      binding: {
+        status: "resolved",
+        kind: "connections",
+        connectionIds: ["connection-ios-airplane"],
+      },
+    },
+  ],
+};
+
+const iosAirplaneMap = {
+  connections: {
+    "connection-ios-airplane": {
+      actions: [
+        {
+          kind: "steps",
+          steps: [{ kind: "settings", setting: "airplane", state: "on" }],
+        },
+      ],
+    } as AppMap["connections"][string],
+  },
+};
+
+test("iOS recorded airplane is a Settings-handoff compile-block, not a Ready step", () => {
+  const blockers = testStepPlatformBlockers(iosAirplaneTest, iosAirplaneMap, ["ios"]);
+  assert.equal(
+    blockers["ios-airplane"],
+    "airplane on iOS is a Settings handoff, not settings airplane on the Grok runner",
+  );
+});
+
+test("iOS recorded lock is a runner compile-block, not a Ready step", () => {
+  const blockers = testStepPlatformBlockers(
+    {
+      steps: [
+        {
+          id: "ios-lock",
+          kind: "instruction",
+          intent: "Lock the device",
+          binding: {
+            status: "resolved",
+            kind: "connections",
+            connectionIds: ["connection-ios-lock"],
+          },
+        },
+      ],
+    },
+    {
+      connections: {
+        "connection-ios-lock": {
+          actions: [{ kind: "steps", steps: [{ kind: "device", action: "lock" }] }],
+        } as AppMap["connections"][string],
+      },
+    },
+    ["ios"],
+  );
+  assert.equal(
+    blockers["ios-lock"],
+    "lock-screen control is not supported by this iOS runner",
+  );
+});

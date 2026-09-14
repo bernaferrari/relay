@@ -7,14 +7,33 @@ export type { StepDraft } from "../components/test-editor-step";
 function validExpected(value: StepDraft["expected"]): boolean {
   if (value === undefined) return true;
   if (!value || typeof value !== "object") return false;
-  return value.kind === "screen"
-    ? typeof value.screenId === "string"
-    : value.kind === "content" &&
-        typeof value.input === "string" &&
-        typeof value.expected === "string" &&
-        ["exact", "equals", "contains", "not-contains", "number-equals", "field"].includes(
-          value.match,
-        );
+  if (value.kind === "screen") return typeof value.screenId === "string";
+  if (value.kind === "visual") {
+    return (
+      typeof value.criteria === "string" &&
+      typeof value.region === "string" &&
+      typeof value.requireAgreement === "boolean"
+    );
+  }
+  if (value.kind === "semantic") {
+    return (
+      typeof value.input === "string" &&
+      typeof value.criteria === "string" &&
+      typeof value.requireAgreement === "boolean"
+    );
+  }
+  if (value.kind === "wait-response") {
+    return typeof value.label === "string" && typeof value.maxMs === "string";
+  }
+  if (value.kind === "identity-ignore") {
+    return typeof value.name === "string" && typeof value.region === "string";
+  }
+  return (
+    value.kind === "content" &&
+    typeof value.input === "string" &&
+    typeof value.expected === "string" &&
+    ["exact", "equals", "contains", "not-contains", "number-equals", "field"].includes(value.match)
+  );
 }
 
 function isStepDraftRecord(value: unknown): value is Record<string, StepDraft> {

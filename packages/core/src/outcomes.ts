@@ -38,6 +38,9 @@ export function classifyRunOutcome(input: {
   if (/tap failed|no strategy matched|no match/.test(message)) {
     return { outcome: "harness-failure", failureCategory: "locator" };
   }
+  if (/judge unavailable/.test(message)) {
+    return { outcome: "harness-failure", failureCategory: "environment" };
+  }
   if (/judge uncertain|insufficient evidence|judge disagreement/.test(message)) {
     return { outcome: "uncertain", failureCategory: "judge-uncertainty" };
   }

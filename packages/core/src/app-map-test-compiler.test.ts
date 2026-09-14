@@ -359,6 +359,39 @@ test("compiles visual and semantic assertion steps", () => {
   );
 });
 
+test("compiles visual judge consensus onto evaluate-visual", () => {
+  const current = fixture();
+  const work = scenario();
+  work.steps.push({
+    id: "visual-consensus",
+    kind: "validation",
+    intent: "Composer chrome is intact",
+    binding: {
+      status: "resolved",
+      kind: "assertion",
+      assertion: {
+        kind: "visual",
+        criteria: ["Composer is visible"],
+        requireAgreement: true,
+      },
+    },
+  });
+  const compiled = compileAppMapTest(current, work);
+  const root = compiled.graph[compiled.plan.rootRecipeId]!;
+  assert.deepEqual(
+    root.steps.find((step) => step.kind === "evaluate-visual"),
+    {
+      kind: "evaluate-visual",
+      criteria: ["Composer is visible"],
+      requireAgreement: true,
+      provider: "openrouter",
+      secondProvider: "openrouter",
+      secondModel: "google/gemini-2.5-flash",
+      id: "relay-test-visual-consensus-1",
+    },
+  );
+});
+
 test("proposes monotonic document order only inside a proven Settings segment", () => {
   const current = fixture();
   current.screenVariants.settings = {

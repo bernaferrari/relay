@@ -32,6 +32,7 @@ export function TestEditorStepOutline({
   busy,
   draggedStepId,
   onAdd,
+  onAddCheckpoint,
   onSelect,
   onMove,
   onDrop,
@@ -44,6 +45,7 @@ export function TestEditorStepOutline({
   busy: boolean;
   draggedStepId: RefObject<string | undefined>;
   onAdd(): void;
+  onAddCheckpoint(): void;
   onSelect(stepId: string): void;
   onMove(entry: StepEntry, delta: -1 | 1): void;
   onDrop(entry: StepEntry, after: boolean): void;
@@ -55,12 +57,15 @@ export function TestEditorStepOutline({
         <div>
           <h2 id="test-steps-title">Steps</h2>
         </div>
-        <div className="flex items-center gap-2.5">
+        <div className="flex flex-wrap items-center justify-end gap-2.5">
           <span className="text-[11px] tabular-nums text-muted-foreground">
             {entries.length === 1 ? "1 step" : `${entries.length} steps`}
           </span>
           <Button size="sm" variant="outline" onClick={onAdd} disabled={busy}>
             Add step
+          </Button>
+          <Button size="sm" variant="outline" onClick={onAddCheckpoint} disabled={busy}>
+            Add checkpoint
           </Button>
         </div>
       </div>

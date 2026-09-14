@@ -32,6 +32,18 @@ function logEvaluation(
   );
 }
 
+function judgeReasonMessage(reason: unknown): string {
+  return reason instanceof Error ? reason.message : String(reason);
+}
+
+function throwJudgeOutcome(reason: unknown, prefix: string): never {
+  const summary = judgeReasonMessage(reason);
+  if (/judge unavailable/i.test(summary)) {
+    throw reason instanceof Error ? reason : new Error(summary);
+  }
+  throw new Error(`judge uncertain: ${prefix}: ${summary}`);
+}
+
 export async function runJudgeConsensus(
   evaluate: (provider?: string, model?: string) => Promise<SemanticEvaluationResult>,
   step: {
@@ -64,7 +76,7 @@ export async function runJudgeConsensus(
     evaluate(step.secondProvider, step.secondModel),
   ]);
   if (firstOutcome.status === "rejected") {
-    const summary = `Primary judge unavailable: ${firstOutcome.reason instanceof Error ? firstOutcome.reason.message : String(firstOutcome.reason)}`;
+    const summary = `Primary judge unavailable: ${judgeReasonMessage(firstOutcome.reason)}`;
     job?.artifacts.push({
       kind: "judge-consensus",
       capturedAt: now(),
@@ -77,19 +89,19 @@ export async function runJudgeConsensus(
             : undefined,
       },
     });
-    throw new Error(`judge uncertain: ${summary}`);
+    throwJudgeOutcome(firstOutcome.reason, "Primary judge unavailable");
   }
   const result = firstOutcome.value;
   (job?.artifacts ?? ctx.artifacts)?.push({ kind: artifactKind, capturedAt: now(), data: result });
   logEvaluation(log, artifactKind, result);
   if (secondOutcome.status === "rejected") {
-    const summary = `Independent judge unavailable: ${secondOutcome.reason instanceof Error ? secondOutcome.reason.message : String(secondOutcome.reason)}`;
+    const summary = `Independent judge unavailable: ${judgeReasonMessage(secondOutcome.reason)}`;
     job?.artifacts.push({
       kind: "judge-consensus",
       capturedAt: now(),
       data: { status: "uncertain", first: result, error: summary },
     });
-    throw new Error(`judge uncertain: ${summary}`);
+    throwJudgeOutcome(secondOutcome.reason, "Independent judge unavailable");
   }
   const second = secondOutcome.value;
   job?.artifacts.push({

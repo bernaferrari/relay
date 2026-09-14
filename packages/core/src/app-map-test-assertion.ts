@@ -7,6 +7,7 @@ import type {
 } from "@relay/protocol";
 import { layoutAssertionRecipeStep } from "./app-map-test-layout-assertion.js";
 import { appMapTestCompileFail } from "./app-map-test-compile-error.js";
+import { compiledJudgeFields } from "./judge-assertion-fields.js";
 
 export function assertionRecipeStep(
   map: AppMap,
@@ -65,6 +66,7 @@ export function assertionRecipeStep(
       kind: "evaluate-visual",
       criteria: [...assertion.criteria],
       ...(assertion.region ? { region: { ...assertion.region } } : {}),
+      ...compiledJudgeFields(assertion),
     };
   }
   if (assertion.kind === "semantic") {
@@ -72,7 +74,7 @@ export function assertionRecipeStep(
       kind: "evaluate-semantic",
       input: assertion.input,
       criteria: [...assertion.criteria],
-      ...(assertion.requireAgreement ? { requireAgreement: true } : {}),
+      ...compiledJudgeFields(assertion),
     };
   }
   return {

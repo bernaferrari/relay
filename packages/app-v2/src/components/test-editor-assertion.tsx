@@ -7,6 +7,8 @@ import type {
 import { Input } from "@relay/ui-react/components/input";
 import { Textarea } from "@relay/ui-react/components/textarea";
 import { Button } from "@relay/ui-react/components/button";
+import { Checkbox } from "@relay/ui-react/components/checkbox";
+import { FieldLabel } from "@relay/ui-react/components/field";
 import { SelectField } from "./filter-select";
 
 export type ValidationDraft =
@@ -18,8 +20,8 @@ export type ValidationDraft =
       match: "exact" | "equals" | "contains" | "not-contains" | "number-equals" | "field";
       field?: string;
     }
-  | { kind: "visual"; criteria: string; region: string }
-  | { kind: "semantic"; input: string; criteria: string }
+  | { kind: "visual"; criteria: string; region: string; requireAgreement: boolean }
+  | { kind: "semantic"; input: string; criteria: string; requireAgreement: boolean }
   | { kind: "wait-response"; label: string; maxMs: string }
   | { kind: "identity-ignore"; name: string; region: string };
 
@@ -58,6 +60,7 @@ export function validationDraft(step: AppMapScenarioTestStep): ValidationDraft |
       region: assertion.region
         ? `${assertion.region.x},${assertion.region.y},${assertion.region.width},${assertion.region.height}`
         : "",
+      requireAgreement: assertion.requireAgreement === true,
     };
   }
   if (assertion.kind === "semantic") {
@@ -65,6 +68,7 @@ export function validationDraft(step: AppMapScenarioTestStep): ValidationDraft |
       kind: "semantic",
       input: assertion.input,
       criteria: assertion.criteria.join("\n"),
+      requireAgreement: assertion.requireAgreement === true,
     };
   }
   return undefined;
@@ -72,7 +76,11 @@ export function validationDraft(step: AppMapScenarioTestStep): ValidationDraft |
 
 export function isValidationDraftReady(draft: ValidationDraft): boolean {
   if (draft.kind === "screen") return Boolean(draft.screenId.trim());
-  if (draft.kind === "visual") return Boolean(draft.criteria.trim());
+  if (draft.kind === "visual") {
+    if (!draft.criteria.trim()) return false;
+    if (draft.region.trim() && !parseRegion(draft.region)) return false;
+    return true;
+  }
   if (draft.kind === "semantic") return Boolean(draft.input.trim() && draft.criteria.trim());
   if (draft.kind === "wait-response") return Boolean(draft.label.trim());
   if (draft.kind === "identity-ignore") return Boolean(parseRegion(draft.region));
@@ -105,6 +113,7 @@ export function validationBindingFromDraft(
         kind: "visual",
         criteria: lines(draft.criteria),
         ...(region ? { region } : {}),
+        ...(draft.requireAgreement ? { requireAgreement: true } : {}),
       },
     };
   }
@@ -129,6 +138,7 @@ export function validationBindingFromDraft(
         kind: "semantic",
         input: draft.input.trim(),
         criteria: lines(draft.criteria),
+        ...(draft.requireAgreement ? { requireAgreement: true } : {}),
       },
     };
   }
@@ -166,12 +176,77 @@ export const VALIDATION_KIND_GROUPS = [
 
 export function emptyValidationDraft(kind: ValidationDraft["kind"]): ValidationDraft {
   if (kind === "screen") return { kind: "screen", screenId: "" };
-  if (kind === "visual") return { kind: "visual", criteria: "", region: "" };
-  if (kind === "semantic") return { kind: "semantic", input: "reply", criteria: "" };
+  if (kind === "visual") return { kind: "visual", criteria: "", region: "", requireAgreement: true };
+  if (kind === "semantic")
+    return { kind: "semantic", input: "reply", criteria: "", requireAgreement: true };
   if (kind === "wait-response") return { kind: "wait-response", label: "", maxMs: "" };
   if (kind === "identity-ignore")
     return { kind: "identity-ignore", name: "reply body", region: "" };
   return { kind: "content", input: "", expected: "", match: "contains" };
+}
+
+function ValidationKindGroups({
+  selected,
+  onSelect,
+}: {
+  selected?: ValidationDraft["kind"];
+  onSelect(kind: ValidationDraft["kind"]): void;
+}) {
+  return (
+    <div className="grid gap-3">
+      {VALIDATION_KIND_GROUPS.map((group) => (
+        <fieldset key={group.id} className="grid gap-1">
+          <legend className="text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
+            {group.label}
+          </legend>
+          <div className="flex flex-wrap gap-1.5">
+            {group.kinds.map((kind) => (
+              <Button
+                key={kind.value}
+                type="button"
+                size="sm"
+                variant={selected === kind.value ? "default" : "outline"}
+                onClick={() => onSelect(kind.value)}
+              >
+                {kind.label}
+              </Button>
+            ))}
+          </div>
+        </fieldset>
+      ))}
+    </div>
+  );
+}
+
+function JudgeAgreementControls({
+  value,
+  onChange,
+}: {
+  value: Extract<ValidationDraft, { kind: "visual" | "semantic" }>;
+  onChange(next: ValidationDraft): void;
+}) {
+  return (
+    <>
+      <p className="text-xs font-normal leading-normal text-muted-foreground">
+        Fails closed without OPENROUTER_API_KEY. That is Infra, never a silent pass or a product
+        fail.
+      </p>
+      <FieldLabel className="flex min-h-14 min-w-0 cursor-pointer items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground">
+        <span className="grid min-w-0 flex-1 gap-0.5">
+          <span className="text-sm font-medium text-foreground">
+            Two independent judges must agree
+          </span>
+          <span className="text-xs font-normal leading-snug text-muted-foreground">
+            Disagreement is Needs review. A missing judge key is not.
+          </span>
+        </span>
+        <Checkbox
+          checked={value.requireAgreement}
+          onCheckedChange={(checked) => onChange({ ...value, requireAgreement: checked === true })}
+        />
+      </FieldLabel>
+    </>
+  );
 }
 
 export function ValidationExpectationEditor({
@@ -189,26 +264,22 @@ export function ValidationExpectationEditor({
 }) {
   if (!value) {
     return (
-      <div className="grid gap-2">
+      <div className="grid gap-3">
         <p className="text-xs font-normal leading-normal text-muted-foreground">
           {original === undefined
-            ? "Add a result Relay should prove after this step."
+            ? "Add a result Relay should prove after this step. Visual judges, reply checks, and ignore regions live here — not in YAML."
             : "This checkpoint uses a reviewed structured assertion. Its readable binding remains available under Advanced."}
         </p>
-        {original === undefined ? null : (
+        {canAdd ? (
+          <fieldset className="grid gap-1.5 text-xs font-semibold" disabled={busy}>
+            <legend>Expected result</legend>
+            <ValidationKindGroups onSelect={(kind) => onChange(emptyValidationDraft(kind))} />
+          </fieldset>
+        ) : (
           <p className="text-xs font-normal leading-normal text-muted-foreground">
             The saved assertion uses an advanced structure and remains available under Advanced.
           </p>
         )}
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={busy || !canAdd}
-          onClick={() => onChange(emptyValidationDraft("content"))}
-        >
-          Add content assertion
-        </Button>
       </div>
     );
   }
@@ -219,28 +290,10 @@ export function ValidationExpectationEditor({
         This is the value Relay validates after the action. It is separate from the human step
         wording above.
       </p>
-      <div className="grid gap-3">
-        {VALIDATION_KIND_GROUPS.map((group) => (
-          <fieldset key={group.id} className="grid gap-1">
-            <legend className="text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
-              {group.label}
-            </legend>
-            <div className="flex flex-wrap gap-1.5">
-              {group.kinds.map((kind) => (
-                <Button
-                  key={kind.value}
-                  type="button"
-                  size="sm"
-                  variant={value.kind === kind.value ? "default" : "outline"}
-                  onClick={() => onChange(emptyValidationDraft(kind.value))}
-                >
-                  {kind.label}
-                </Button>
-              ))}
-            </div>
-          </fieldset>
-        ))}
-      </div>
+      <ValidationKindGroups
+        selected={value.kind}
+        onSelect={(kind) => onChange(emptyValidationDraft(kind))}
+      />
       {value.kind === "screen" ? (
         <label htmlFor="selected-step-expected-screen">
           Screen ID
@@ -270,9 +323,13 @@ export function ValidationExpectationEditor({
               id="selected-step-expected-crop"
               value={value.region}
               onChange={(event) => onChange({ ...value, region: event.currentTarget.value })}
-              placeholder="80,200,900,1400"
+              placeholder="0.07,0.12,0.93,0.68"
             />
           </label>
+          <p className="text-xs font-normal leading-normal text-muted-foreground">
+            Optional. Pixels or 0–1 fractions. Leave blank to judge the whole screenshot.
+          </p>
+          <JudgeAgreementControls value={value} onChange={onChange} />
         </>
       ) : null}
       {value.kind === "semantic" ? (
@@ -296,6 +353,7 @@ export function ValidationExpectationEditor({
               rows={3}
             />
           </label>
+          <JudgeAgreementControls value={value} onChange={onChange} />
         </>
       ) : null}
       {value.kind === "wait-response" ? (
@@ -337,9 +395,13 @@ export function ValidationExpectationEditor({
               id="selected-step-expected-identity-region"
               value={value.region}
               onChange={(event) => onChange({ ...value, region: event.currentTarget.value })}
-              placeholder="80,200,900,1400"
+              placeholder="0.07,0.12,0.93,0.68"
             />
           </label>
+          <p className="text-xs font-normal leading-normal text-muted-foreground">
+            Identity and visual compare skip this rectangle so only chrome is compared. Pixels or
+            0–1 fractions.
+          </p>
         </>
       ) : null}
       {value.kind === "content" ? (

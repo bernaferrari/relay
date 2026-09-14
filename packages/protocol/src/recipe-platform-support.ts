@@ -19,6 +19,9 @@ export function recipeStepPlatformBlocker(
   if (step.kind === "app" && step.action === "background" && platform === "browser") {
     return "app background is not supported on browser";
   }
+  if (step.kind === "settings" && step.setting === "airplane" && platform === "ios") {
+    return "airplane on iOS is a Settings handoff, not settings airplane on the Grok runner";
+  }
   if (step.kind === "device" && (step.action === "lock" || step.action === "unlock")) {
     if (platform === "ios") return "lock-screen control is not supported by this iOS runner";
     if (platform === "browser") return "lock-screen control is not supported on browser";

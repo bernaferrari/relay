@@ -210,9 +210,10 @@ async function settle() {
   }
 }
 
-async function fill(input: HTMLInputElement, value: string) {
+async function fill(input: HTMLInputElement | HTMLTextAreaElement, value: string) {
   await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(input, value);
+    const proto = input instanceof HTMLTextAreaElement ? HTMLTextAreaElement : HTMLInputElement;
+    Object.getOwnPropertyDescriptor(proto.prototype, "value")?.set?.call(input, value);
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
   await settle();
@@ -347,6 +348,46 @@ describe("Test editor", () => {
     );
   });
 
+  it("restores a visual-judge draft after reload", async () => {
+    const storage = new Map<string, string>();
+    const persist: Platform = {
+      ...platform,
+      getServerConnection: () => ({
+        url: "http://relay.test",
+        auth: { type: "none" },
+        organizationId: "org",
+        projectId: "project-a",
+        actorId: "human:test",
+        actorKind: "human",
+      }),
+      storage: {
+        get: (key) => storage.get(key) ?? null,
+        set: (key, value) => void storage.set(key, value),
+        remove: (key) => void storage.delete(key),
+      },
+    };
+    const first = service();
+    await render(first.editor, undefined, persist);
+    await click("Visual judge");
+    await fill(
+      document.querySelector<HTMLTextAreaElement>("#selected-step-expected-visual")!,
+      "Composer is visible",
+    );
+    await settle();
+    expect([...storage.values()].some((value) => value.includes("Composer is visible"))).toBe(
+      true,
+    );
+    const firstRoot = roots.pop();
+    await act(async () => firstRoot?.unmount());
+    document.body.replaceChildren();
+
+    await render(service().editor, undefined, persist);
+    expect(document.querySelector<HTMLTextAreaElement>("#selected-step-expected-visual")?.value).toBe(
+      "Composer is visible",
+    );
+    expect(document.body.textContent).toContain("Two independent judges must agree");
+  });
+
   it("opens a route-selected step and saves a stable-ID patch", async () => {
     const harness = service();
     const history = await render(harness.editor);
@@ -430,6 +471,87 @@ describe("Test editor", () => {
               input: "Order total",
               expected: "$42.00",
               match: "exact",
+            },
+          },
+        }),
+      }),
+    ]);
+  });
+
+  it("offers visual, reply, and ignore-region checks on an unbound checkpoint", async () => {
+    await render(service().editor);
+
+    expect(document.body.textContent).toContain("Visual judge");
+    expect(document.body.textContent).toContain("Semantic judge");
+    expect(document.body.textContent).toContain("Ignore for identity");
+    expect(document.body.textContent).toContain("not in YAML");
+    await click("Visual judge");
+    expect(document.body.textContent).toContain("Fails closed without OPENROUTER_API_KEY");
+    expect(document.body.textContent).toContain("Two independent judges must agree");
+    await click("Ignore for identity");
+    expect(document.body.textContent).toContain("Identity and visual compare skip");
+  });
+
+  it("adds a checkpoint so a visual judge can be authored without YAML", async () => {
+    const harness = service();
+    await render(harness.editor, "/tests/test-checkout/edit?step=step-cart");
+
+    expect(document.body.textContent).toContain(
+      "Visual judges, reply checks, and ignore regions live on a Checkpoint",
+    );
+    await click("Add checkpoint");
+    const added = harness.edits.at(-1)?.[0];
+    expect(added?.kind).toBe("step.add");
+    if (added?.kind !== "step.add") throw new Error("Expected step.add");
+    expect(added.step.kind).toBe("validation");
+    expect(added.step.intent).toBe("Prove the result");
+    expect(added.step.capture).toBe(true);
+    expect(added.step.binding).toEqual({
+      status: "unresolved",
+      reason: "Choose what Relay should prove after this step.",
+    });
+    expect(document.body.textContent).toContain("Visual judge");
+    await click("Visual judge");
+    expect(document.body.textContent).toContain("Two independent judges must agree");
+  });
+
+  it("authors a visual judge with independent consensus without YAML", async () => {
+    const source = structuredClone(initialDocument);
+    const validation = source.test.steps.find((step) => step.id === "step-pay");
+    if (!validation || validation.kind !== "validation")
+      throw new Error("Expected validation step");
+    validation.binding = {
+      status: "resolved",
+      kind: "assertion",
+      assertion: {
+        kind: "visual",
+        criteria: ["Composer is visible"],
+        requireAgreement: true,
+      },
+    };
+    const harness = service(source);
+    await render(harness.editor);
+
+    expect(document.body.textContent).toContain("Fails closed without OPENROUTER_API_KEY");
+    expect(document.body.textContent).toContain("Two independent judges must agree");
+    await fill(
+      document.querySelector<HTMLTextAreaElement>("#selected-step-expected-visual")!,
+      "Composer is empty",
+    );
+    await click("Save step");
+
+    expect(harness.edits.at(-1)).toEqual([
+      expect.objectContaining({
+        kind: "step.patch",
+        stepId: "step-pay",
+        patch: expect.objectContaining({
+          binding: {
+            status: "resolved",
+            kind: "assertion",
+            assertion: {
+              kind: "visual",
+              criteria: ["Composer is empty"],
+              requireAgreement: true,
             },
           },
         }),

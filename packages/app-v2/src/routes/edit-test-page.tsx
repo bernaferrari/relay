@@ -242,17 +242,34 @@ function TestEditorDocument() {
     edit.mutate(transaction);
   }
 
-  function addStepAt(placement: AppMapTestStepPlacement | undefined, index: number, label: string) {
+  function addStepAt(
+    placement: AppMapTestStepPlacement | undefined,
+    index: number,
+    label: string,
+    kind: "instruction" | "validation" = "instruction",
+  ) {
     const id = `step-${globalThis.crypto?.randomUUID?.() ?? Date.now()}`;
-    const step: AppMapScenarioTestStep = {
-      id,
-      kind: "instruction",
-      intent: "Describe the next action",
-      binding: {
-        status: "unresolved",
-        reason: "Choose a saved action for this step before running the Test.",
-      },
-    };
+    const step: AppMapScenarioTestStep =
+      kind === "validation"
+        ? {
+            id,
+            kind: "validation",
+            intent: "Prove the result",
+            capture: true,
+            binding: {
+              status: "unresolved",
+              reason: "Choose what Relay should prove after this step.",
+            },
+          }
+        : {
+            id,
+            kind: "instruction",
+            intent: "Describe the next action",
+            binding: {
+              status: "unresolved",
+              reason: "Choose a saved action for this step before running the Test.",
+            },
+          };
     apply(
       {
         label,
@@ -272,6 +289,15 @@ function TestEditorDocument() {
 
   function addStep() {
     addStepAt(selected?.placement, selected ? selected.index + 1 : entries.length, "Added a step");
+  }
+
+  function addCheckpoint() {
+    addStepAt(
+      selected?.placement,
+      selected ? selected.index + 1 : entries.length,
+      "Added a checkpoint",
+      "validation",
+    );
   }
 
   function addChildStep(entry: StepEntry, branch: "then" | "else" | "steps") {
@@ -579,6 +605,7 @@ function TestEditorDocument() {
                 busy={edit.isPending || repair.isPending}
                 draggedStepId={draggedStepId}
                 onAdd={addStep}
+                onAddCheckpoint={addCheckpoint}
                 onSelect={selectStep}
                 onMove={move}
                 onDrop={dropOn}

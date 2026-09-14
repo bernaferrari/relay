@@ -234,6 +234,37 @@ describe("daily QA recipe steps", () => {
     }
   });
 
+  it("fails evaluate-visual consensus closed without OPENROUTER, not as Needs review", async () => {
+    const previous = process.env.OPENROUTER_API_KEY;
+    delete process.env.OPENROUTER_API_KEY;
+    try {
+      await assert.rejects(
+        () =>
+          runWithTargetContext({ kind: "browser", platform: "browser", targetId: "grok-web" }, () =>
+            runRecipeStep(
+              stubBrowserDevice(),
+              {
+                kind: "evaluate-visual",
+                criteria: ["Composer is empty"],
+                requireAgreement: true,
+                secondProvider: "openrouter",
+              },
+              { log: () => {}, job: job() },
+            ),
+          ),
+        (error: unknown) => {
+          const message = error instanceof Error ? error.message : String(error);
+          assert.match(message, /visual judge unavailable: OPENROUTER_API_KEY is not configured/u);
+          assert.doesNotMatch(message, /^judge uncertain:/u);
+          return true;
+        },
+      );
+    } finally {
+      if (previous === undefined) delete process.env.OPENROUTER_API_KEY;
+      else process.env.OPENROUTER_API_KEY = previous;
+    }
+  });
+
   it("rejects iOS lock at the platform seam", async () => {
     await assert.rejects(
       () =>

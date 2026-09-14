@@ -48,6 +48,22 @@ export function MorningReviewCard() {
             </li>
           ))}
         </ol>
+        <div className="rounded-lg border border-border bg-muted/40 px-3 py-2.5">
+          <p className="text-xs font-medium text-foreground">Needs attention on this Mac</p>
+          <ul className="mt-1.5 grid list-disc gap-1 pl-4 text-xs leading-snug text-muted-foreground">
+            <li>
+              <Link className="font-medium text-foreground hover:underline" to="/settings/advanced">
+                Signed desktop build
+              </Link>{" "}
+              stays Needs attention without Developer ID Application. Apple Development is not
+              enough. Review stays on this Vite UI.
+            </li>
+            <li>
+              Visual and semantic judges fail closed without OPENROUTER_API_KEY. That is Infra,
+              never a silent pass.
+            </li>
+          </ul>
+        </div>
         <Button nativeButton={false} render={<Link to="/runs" />} size="sm" variant="outline">
           Open Results
         </Button>

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { VALIDATION_KIND_GROUPS, validationBindingFromDraft } from "./test-editor-assertion";
+import {
+  VALIDATION_KIND_GROUPS,
+  isValidationDraftReady,
+  validationBindingFromDraft,
+} from "./test-editor-assertion";
 
 describe("test editor assertions", () => {
   it("groups Check, Wait, Comparison settings, and Advanced identity", () => {
@@ -20,6 +24,7 @@ describe("test editor assertions", () => {
         kind: "semantic",
         input: "reply",
         criteria: "Reply must mention a location",
+        requireAgreement: false,
       }),
     ).toEqual({
       status: "resolved",
@@ -46,6 +51,7 @@ describe("test editor assertions", () => {
         kind: "visual",
         criteria: "Composer is visible",
         region: "80,200,900,1400",
+        requireAgreement: true,
       }),
     ).toEqual({
       status: "resolved",
@@ -54,6 +60,7 @@ describe("test editor assertions", () => {
         kind: "visual",
         criteria: ["Composer is visible"],
         region: { x: 80, y: 200, width: 900, height: 1400 },
+        requireAgreement: true,
       },
     });
     expect(
@@ -71,5 +78,16 @@ describe("test editor assertions", () => {
         name: "reply body",
       },
     });
+  });
+
+  it("keeps an incomplete visual crop from saving", () => {
+    expect(
+      isValidationDraftReady({
+        kind: "visual",
+        criteria: "Composer is visible",
+        region: "80,200",
+        requireAgreement: true,
+      }),
+    ).toBe(false);
   });
 });

@@ -47,6 +47,10 @@ test("blocks mobile-data, offline, iOS upload, and browser background at the pla
     recipeStepPlatformBlocker({ kind: "device", action: "unlock" }, "browser") ?? "",
     /not supported on browser/u,
   );
+  assert.match(
+    recipeStepPlatformBlocker({ kind: "settings", setting: "airplane", state: "on" }, "ios") ?? "",
+    /Settings handoff/u,
+  );
 });
 
 test("compiled recipes fail closed on unsupported platform steps", () => {

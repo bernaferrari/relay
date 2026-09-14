@@ -194,6 +194,12 @@ export function SelectedStepEditor({
           </div>
         </div>
       ) : null}
+      {entry.step.kind === "instruction" ? (
+        <p className="text-xs font-normal leading-normal text-muted-foreground">
+          Visual judges, reply checks, and ignore regions live on a Checkpoint, not on this
+          action.
+        </p>
+      ) : null}
       <label className="grid gap-1.5 text-xs font-semibold" htmlFor="selected-step-intent">
         <span>What should happen</span>
         <Input

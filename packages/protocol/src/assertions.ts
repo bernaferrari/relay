@@ -22,10 +22,19 @@ export type AssertionSpec =
       kind: "visual";
       criteria: string[];
       region?: { x: number; y: number; width: number; height: number };
+      requireAgreement?: boolean;
+      provider?: string;
+      model?: string;
+      secondProvider?: string;
+      secondModel?: string;
     }
   | {
       kind: "semantic";
       input: string;
       criteria: string[];
       requireAgreement?: boolean;
+      provider?: string;
+      model?: string;
+      secondProvider?: string;
+      secondModel?: string;
     };
