@@ -112,6 +112,8 @@ describe("Batch result presentation", () => {
     expect(formatBatchEnvironmentLabel("grok-com#signed-out:grok-daily-b")).toBe("grok-daily-b");
     expect(formatBatchEnvironmentLabel("grok-com#signed-out:grok-daily-c")).toBe("grok-daily-c");
     expect(formatBatchEnvironmentLabel("grok-com#signed-out:grok-daily-d")).toBe("grok-daily-d");
+    expect(formatBatchEnvironmentLabel("grok-com#signed-out:grok-daily-e")).toBe("grok-daily-e");
+    expect(formatBatchEnvironmentLabel("grok-com#signed-out:grok-daily-h")).toBe("grok-daily-h");
     expect(formatBatchEnvironmentLabel("grok-com#signed-out:grok-daily")).toBe("grok-daily");
     expect(
       formatBatchEnvironmentLabel("pixel-profile", {

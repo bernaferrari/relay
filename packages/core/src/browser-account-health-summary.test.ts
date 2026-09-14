@@ -14,6 +14,10 @@ import {
   GROK_DAILY_B_LANE,
   GROK_DAILY_C_LANE,
   GROK_DAILY_D_LANE,
+  GROK_DAILY_E_LANE,
+  GROK_DAILY_F_LANE,
+  GROK_DAILY_G_LANE,
+  GROK_DAILY_H_LANE,
   GROK_DAILY_LANE,
   GROK_LAB_LANE,
 } from "./lane-seed.js";
@@ -61,6 +65,10 @@ test("one live SuperGrok fixture is honest one-account, not a 3-account pack", (
       GROK_DAILY_B_LANE,
       GROK_DAILY_C_LANE,
       GROK_DAILY_D_LANE,
+      GROK_DAILY_E_LANE,
+      GROK_DAILY_F_LANE,
+      GROK_DAILY_G_LANE,
+      GROK_DAILY_H_LANE,
       GROK_LAB_LANE,
     ],
   });
@@ -76,6 +84,10 @@ test("one live SuperGrok fixture is honest one-account, not a 3-account pack", (
       "grok-daily-b:grok-com#signed-out:grok-daily-b:signed-out:true",
       "grok-daily-c:grok-com#signed-out:grok-daily-c:signed-out:true",
       "grok-daily-d:grok-com#signed-out:grok-daily-d:signed-out:true",
+      "grok-daily-e:grok-com#signed-out:grok-daily-e:signed-out:true",
+      "grok-daily-f:grok-com#signed-out:grok-daily-f:signed-out:true",
+      "grok-daily-g:grok-com#signed-out:grok-daily-g:signed-out:true",
+      "grok-daily-h:grok-com#signed-out:grok-daily-h:signed-out:true",
       `grok-lab:grok-com#${superGrok}:fixture:true`,
     ],
   );

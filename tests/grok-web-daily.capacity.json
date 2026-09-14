@@ -4,7 +4,7 @@
   "provenance": "measured",
   "measuredAt": "2026-09-13T11:16:00Z",
   "sampleCount": 5,
-  "note": "Serial logged-out grok.com Plan measured over five live 8-Test runs (batches below). Latest 8/8 is batch a01ab9ca-3d2a-457f-8d06-a998555794c7 after inherit browser:grok-com (not the unique signed-in profile): cell span 198919ms, upload long pole 51374ms, all eight jobs targetProfileId browser:grok-com, authenticationFixtureId empty. Earlier 8/8 1445e569-c818-4c13-bff4-9f990dbf5d5c cell span 195736ms. Upload remains the long pole (~49\u201358s). --budget 3m is too tight for this pack (CLI ~221s historically); use --budget 10m as a watch timeout, not a pack-duration promise. Two concurrent browser lanes are measured separately in twoLane (logged-out open + signed-in home chrome). That is not an eight-Test parallel quote and not 3-account. Two concurrent unsigned --lane grok-daily Open grok.com jobs serialized on grok-com#signed-out (signedOutSerialize, overlap 0). Two concurrent Open grok.com jobs on distinct unsigned Lanes grok-daily + grok-daily-b overlapped (unsignedTwoLane, overlap 9007ms, span 9547ms). Four concurrent Open grok.com jobs on grok-daily + grok-daily-b + grok-daily-c + grok-daily-d overlapped (unsignedFourLane, 4-way intersection overlap 11630ms, span 12897ms). Those are scheduler/session probes. An earlier four concurrent `plan run grok-web grok-web-daily` admitted one campaign (unsignedFourLanePlan) and 409'd the other three (ACTIVE_REPEAT_EXISTS on combine grok-web-daily). After Combine admission keyed unsigned Lanes, four concurrent full packs on those Lanes all admitted (unsignedFourLanePack): 4/4 8/8 ok, 0 findings, 17/17 frames, 4-way overlap 216356ms, wall/span 232540ms. parallelWallClockMs.4 is that wall. .8/.12 stay null. Empty findings are not a license to skip the next daily Plan. This is not the 60-case signed-in pack. Heavy, video, Expert web search, Continue with X, dictation, and camera stay on grok-web-weekly.",
+  "note": "Serial logged-out grok.com Plan measured over five live 8-Test runs (batches below). Latest 8/8 is batch a01ab9ca-3d2a-457f-8d06-a998555794c7 after inherit browser:grok-com (not the unique signed-in profile): cell span 198919ms, upload long pole 51374ms, all eight jobs targetProfileId browser:grok-com, authenticationFixtureId empty. Earlier 8/8 1445e569-c818-4c13-bff4-9f990dbf5d5c cell span 195736ms. Upload remains the long pole (~49\u201358s). --budget 3m is too tight for this pack (CLI ~221s historically); use --budget 10m as a watch timeout, not a pack-duration promise. Two concurrent browser lanes are measured separately in twoLane (logged-out open + signed-in home chrome). That is not an eight-Test parallel quote and not 3-account. Two concurrent unsigned --lane grok-daily Open grok.com jobs serialized on grok-com#signed-out (signedOutSerialize, overlap 0). Two concurrent Open grok.com jobs on distinct unsigned Lanes grok-daily + grok-daily-b overlapped (unsignedTwoLane, overlap 9007ms, span 9547ms). Four concurrent Open grok.com jobs on grok-daily + grok-daily-b + grok-daily-c + grok-daily-d overlapped (unsignedFourLane, 4-way intersection overlap 11630ms, span 12897ms). Those are scheduler/session probes. An earlier four concurrent `plan run grok-web grok-web-daily` admitted one campaign (unsignedFourLanePlan) and 409'd the other three (ACTIVE_REPEAT_EXISTS on combine grok-web-daily). After Combine admission keyed unsigned Lanes, four concurrent full packs on those Lanes all admitted (unsignedFourLanePack): 4/4 8/8 ok, 0 findings, 17/17 frames, 4-way overlap 216356ms, wall/span 232540ms. parallelWallClockMs.4 is that wall. Eight concurrent full packs on grok-daily through grok-daily-h (unsignedEightLanePack): 8/8 8/8 ok, 0 findings, 17/17 frames, 8-way overlap 377286ms, wall/span 401137ms. parallelWallClockMs.8 is that wall. .12 stays null (host capacity 8). Empty findings are not a license to skip the next daily Plan. This is not the 60-case signed-in pack. Heavy, video, Expert web search, Continue with X, dictation, and camera stay on grok-web-weekly.",
   "assumedParallelBrowserContexts": 8,
   "suppliedBudgetMs": 600000,
   "workItems": 8,
@@ -17,7 +17,7 @@
   "parallelWallClockMs": {
     "1": 203184,
     "4": 232540,
-    "8": null,
+    "8": 401137,
     "12": null
   },
   "twoLane": {
@@ -34,10 +34,7 @@
       "test-authoring-6256148c-62c1-4a5e-b274-dfa2b303a28e",
       "test-grok-web-signed-in-home"
     ],
-    "lanes": [
-      "grok-com#signed-out",
-      "grok-com#authfx:7189423f-193e-45ed-b674-154505cc5107:1"
-    ],
+    "lanes": ["grok-com#signed-out", "grok-com#authfx:7189423f-193e-45ed-b674-154505cc5107:1"],
     "measuredAt": "2026-09-13T11:15:32Z",
     "note": "Concurrent proof contexts. Logged-out used unsigned browser:grok-com. Signed-in used unique profile + fixture overlay, chrome only, no type/Enter. grok-com authenticationFixtureId stayed empty. Combine profileTargets on two Tests would 2\u00d72-poison; these were two concurrent test runs, not grok-web-daily. Not 3-account. Do not copy 17254 into parallelWallClockMs for the eight-Test pack."
   },
@@ -50,18 +47,9 @@
       "first": "e72ef28d-28b1-4758-a8a6-5dd3cd0600a5",
       "second": "b0987d44-a5c1-4944-82be-faed04c201df"
     },
-    "durationsMs": [
-      8984,
-      8408
-    ],
-    "startedAt": [
-      1789368506013,
-      1789368515230
-    ],
-    "finishedAt": [
-      1789368514997,
-      1789368523638
-    ],
+    "durationsMs": [8984, 8408],
+    "startedAt": [1789368506013, 1789368515230],
+    "finishedAt": [1789368514997, 1789368523638],
     "testId": "test-authoring-6256148c-62c1-4a5e-b274-dfa2b303a28e",
     "lane": "grok-daily",
     "authenticationFixtureId": "",
@@ -77,26 +65,11 @@
       "grokDaily": "3e042a04-47a4-4917-9c30-37ce3ee7077d",
       "grokDailyB": "e299a3f4-4d5b-4a89-a8b2-5ab4198a8f53"
     },
-    "durationsMs": [
-      9007,
-      9547
-    ],
-    "startedAt": [
-      1789371731831,
-      1789371731828
-    ],
-    "finishedAt": [
-      1789371740838,
-      1789371741375
-    ],
-    "lanes": [
-      "grok-daily",
-      "grok-daily-b"
-    ],
-    "schedulingKeys": [
-      "grok-com#signed-out:grok-daily",
-      "grok-com#signed-out:grok-daily-b"
-    ],
+    "durationsMs": [9007, 9547],
+    "startedAt": [1789371731831, 1789371731828],
+    "finishedAt": [1789371740838, 1789371741375],
+    "lanes": ["grok-daily", "grok-daily-b"],
+    "schedulingKeys": ["grok-com#signed-out:grok-daily", "grok-com#signed-out:grok-daily-b"],
     "workerIds": [
       "local:browser:target:grok-com%23signed-out%3Agrok-daily",
       "local:browser:target:grok-com%23signed-out%3Agrok-daily-b"
@@ -123,30 +96,10 @@
       "grokDailyC": "431b6492-6b56-4f9f-9b09-46ac7b745ece",
       "grokDailyD": "78951aae-7b32-4ccd-8f5c-f309fbfc58c5"
     },
-    "durationsMs": [
-      11633,
-      12891,
-      12486,
-      11893
-    ],
-    "startedAt": [
-      1789372140697,
-      1789372140700,
-      1789372140697,
-      1789372140694
-    ],
-    "finishedAt": [
-      1789372152330,
-      1789372153591,
-      1789372153183,
-      1789372152587
-    ],
-    "lanes": [
-      "grok-daily",
-      "grok-daily-b",
-      "grok-daily-c",
-      "grok-daily-d"
-    ],
+    "durationsMs": [11633, 12891, 12486, 11893],
+    "startedAt": [1789372140697, 1789372140700, 1789372140697, 1789372140694],
+    "finishedAt": [1789372152330, 1789372153591, 1789372153183, 1789372152587],
+    "lanes": ["grok-daily", "grok-daily-b", "grok-daily-c", "grok-daily-d"],
     "schedulingKeys": [
       "grok-com#signed-out:grok-daily",
       "grok-com#signed-out:grok-daily-b",
@@ -179,11 +132,7 @@
     "repeatId": "192b6f4f-07ee-40cf-a965-71bd8fb081db",
     "admittedCampaignId": "192b6f4f-07ee-40cf-a965-71bd8fb081db",
     "admittedLane": "grok-daily-b",
-    "rejectedLanes": [
-      "grok-daily",
-      "grok-daily-c",
-      "grok-daily-d"
-    ],
+    "rejectedLanes": ["grok-daily", "grok-daily-c", "grok-daily-d"],
     "rejectedExitCode": 6,
     "rejectedCliWallMs": {
       "grok-daily": 19130
@@ -221,47 +170,21 @@
       "settings": "0be0c871-1fa1-4919-a083-e81adf72a945",
       "hello": "c555e621-da2f-4442-abb6-4b92a4a2f5f6"
     },
-    "admittedDurationsMs": [
-      11915,
-      25593,
-      28669,
-      17219,
-      50412,
-      19551,
-      18166,
-      17854
-    ],
+    "admittedDurationsMs": [11915, 25593, 28669, 17219, 50412, 19551, 18166, 17854],
     "admittedStartedAt": [
-      1789372977966,
-      1789372990306,
-      1789373016319,
-      1789373045238,
-      1789373062828,
-      1789373113636,
-      1789373133439,
-      1789373151847
+      1789372977966, 1789372990306, 1789373016319, 1789373045238, 1789373062828, 1789373113636,
+      1789373133439, 1789373151847
     ],
     "admittedFinishedAt": [
-      1789372989881,
-      1789373015899,
-      1789373044988,
-      1789373062457,
-      1789373113240,
-      1789373133187,
-      1789373151605,
-      1789373169701
+      1789372989881, 1789373015899, 1789373044988, 1789373062457, 1789373113240, 1789373133187,
+      1789373151605, 1789373169701
     ],
     "admittedCellSpanMs": 191735,
     "admittedCliWallMs": 229874,
     "admittedPass": "8/8",
     "findings": 0,
     "frames": "17/17",
-    "lanes": [
-      "grok-daily",
-      "grok-daily-b",
-      "grok-daily-c",
-      "grok-daily-d"
-    ],
+    "lanes": ["grok-daily", "grok-daily-b", "grok-daily-c", "grok-daily-d"],
     "schedulingKey": "grok-com#signed-out:grok-daily-b",
     "workerId": "local:browser:target:grok-com%23signed-out%3Agrok-daily-b",
     "host": {
@@ -283,13 +206,7 @@
     "1445e569-c818-4c13-bff4-9f990dbf5d5c",
     "a01ab9ca-3d2a-457f-8d06-a998555794c7"
   ],
-  "cellSpansMs": [
-    203384,
-    201102,
-    202384,
-    195736,
-    198919
-  ],
+  "cellSpansMs": [203384, 201102, 202384, 195736, 198919],
   "assurance": "measured-serial-logged-out",
   "unsignedFourLanePack": {
     "n": 4,
@@ -304,28 +221,13 @@
       "grokDailyC": "2b211bce-5556-4dcb-b5fc-ddf57c6ec75a",
       "grokDailyD": "1e72702e-0271-4846-a4e3-4cf0237bd231"
     },
-    "cellSpansMs": [
-      232538,
-      221611,
-      216356,
-      227194
-    ],
-    "cliWallMs": [
-      296447,
-      285516,
-      280261,
-      291097
-    ],
+    "cellSpansMs": [232538, 221611, 216356, 227194],
+    "cliWallMs": [296447, 285516, 280261, 291097],
     "pass": "8/8",
     "findings": 0,
     "frames": "17/17",
     "longPole": "Upload a file while logged out",
-    "longPoleMs": [
-      54359,
-      51125,
-      51616,
-      53529
-    ],
+    "longPoleMs": [54359, 51125, 51616, 53529],
     "jobs": {
       "grokDaily": [
         "9c36d3db-31fa-4310-8e3d-0e75db7f8ef6",
@@ -368,24 +270,9 @@
         "5b18550d-b363-4f9e-8746-1e2a308e1387"
       ]
     },
-    "startedAt": [
-      1789374165553,
-      1789374165551,
-      1789374165553,
-      1789374165552
-    ],
-    "finishedAt": [
-      1789374398091,
-      1789374387162,
-      1789374381909,
-      1789374392746
-    ],
-    "lanes": [
-      "grok-daily",
-      "grok-daily-b",
-      "grok-daily-c",
-      "grok-daily-d"
-    ],
+    "startedAt": [1789374165553, 1789374165551, 1789374165553, 1789374165552],
+    "finishedAt": [1789374398091, 1789374387162, 1789374381909, 1789374392746],
+    "lanes": ["grok-daily", "grok-daily-b", "grok-daily-c", "grok-daily-d"],
     "schedulingKeys": [
       "grok-com#signed-out:grok-daily",
       "grok-com#signed-out:grok-daily-b",
@@ -402,5 +289,150 @@
     "actorId": "human:local-cli",
     "measuredAt": "2026-09-14T08:27:39Z",
     "note": "Four concurrent `relay plan run grok-web grok-web-daily --lane <lane> --budget 10m --json --findings` (actor human:local-cli) on grok-daily / grok-daily-b / grok-daily-c / grok-daily-d after Combine admission keyed unsigned Lanes. Queued within 5ms. All four admitted (campaigns ff159fbe / f1adb4eb / 2b211bce / 1e72702e). Each pack 8/8 ok, 0 findings, 17/17 frames. Cell starts 2ms apart; 4-way intersection overlap 216356ms; wall/span 232540ms. Same-lane 8 cells serialized (capacity 1). Host local:browser:host capacity 8 max active 4. unsignedLaneId persisted per campaign. targetProfileId browser:grok-com, authenticationFixtureId empty. Did not overlay grok-lab. This is the eight-Test pack at 4 concurrent unsigned contexts; copied 232540 into parallelWallClockMs.4. .8/.12 stay null. unsignedFourLanePlan remains the earlier ACTIVE_REPEAT_EXISTS collision. unsignedFourLane (Open\u00d74) stays the scheduler sidecar."
+  },
+  "unsignedEightLanePack": {
+    "n": 8,
+    "admitted": 8,
+    "overlapMs": 377286,
+    "wallClockMs": 401137,
+    "queuedTogetherMs": 17,
+    "startSpreadMs": 13,
+    "batches": {
+      "grokDaily": "a90dd1ee-cd9b-4fd1-a857-5de3aa850be7",
+      "grokDailyB": "442b6c21-41bc-4343-afd1-4116ab1cac4f",
+      "grokDailyC": "41e8a535-fca6-4556-bc30-64a40acf12bf",
+      "grokDailyD": "59abac55-1e5a-409f-8760-d728e6b9af46",
+      "grokDailyE": "e899ee3a-27d8-4738-a425-2ae7742e9f33",
+      "grokDailyF": "a853da27-58a4-4027-af08-065e0c20d296",
+      "grokDailyG": "eaa6cff9-28b9-4157-8fb8-cb559ac56d28",
+      "grokDailyH": "03870974-49eb-48ad-82a3-77a338b674de"
+    },
+    "cellSpansMs": [383216, 388252, 400804, 384323, 380983, 386435, 377295, 401131],
+    "cliWallMs": [687473, 693695, 698492, 698490, 698489, 698486, 698484, 698482],
+    "pass": "8/8",
+    "findings": 0,
+    "frames": "17/17",
+    "longPole": "Upload a file while logged out",
+    "longPoleMs": [67979, 69822, 75685, 67443, 67987, 68778, 64110, 75080],
+    "jobs": {
+      "grokDaily": [
+        "fa36ac48-72ec-46a5-a11d-40921d1c7090",
+        "7daafcb9-f1b6-4f5a-a82c-70cc1e9ba7a1",
+        "c8f20d7f-32ca-4efe-9f25-9cc9dac087f3",
+        "01cf2eaf-ee57-4983-a0cf-c7438fd4adb4",
+        "9c422d46-501c-4990-be05-01c0df5914d8",
+        "5bb4f412-63b8-4a07-b6c6-babc87ec14dd",
+        "3dc26cad-30a1-4652-bd70-d65b0fdb790e",
+        "b8b19b9a-96a1-461e-b817-ce4295e17c4a"
+      ],
+      "grokDailyB": [
+        "047480bd-8b38-4814-81f0-fdc6f3ba5740",
+        "73240692-dd02-4b0c-b7a1-fd679bdeaebe",
+        "6f9f7344-78c7-43e6-ac4c-a431eb0bc7d2",
+        "5af4d243-91f2-4728-aa8c-3c4233a274b2",
+        "50498743-5812-47f4-8012-41f31fdf617d",
+        "3a552fb1-2879-420e-8b09-40646028bbc3",
+        "73e7655e-0fb3-44be-9d51-45abf7698eaf",
+        "05398a55-662d-4bcf-8019-17a493ff265d"
+      ],
+      "grokDailyC": [
+        "78a6bfab-648e-432f-9aa2-6f42cdb95894",
+        "2cf5d2af-319f-42f2-b8ff-d37db3cb96de",
+        "464b768f-65f0-4846-af63-ff56a1ae6b8e",
+        "17940da1-dfaf-4955-878b-bff384fdd25b",
+        "7737a99c-8fa2-4295-b30b-fa5210e9a546",
+        "44644871-8542-4c36-9285-0bd9ccdff2fb",
+        "4b93d044-5938-4155-b322-b29c0231e257",
+        "5436d7e0-73cd-44b7-bc4c-b7804ecab8f3"
+      ],
+      "grokDailyD": [
+        "e61ae5e6-03f0-49a6-9565-a453c2e6f3a7",
+        "0662d1e3-370c-41d0-afc4-2e965ec82593",
+        "1dea77b9-3190-492f-9fb5-3ba72309d039",
+        "cbc384fb-6b22-433a-ada0-64589ca0b732",
+        "dcea3575-08d1-44c2-92a8-c7fc18395519",
+        "03b62a04-e466-455a-9507-5980210e19b7",
+        "df0f9683-e374-4cc2-b84e-10e57cbd17c1",
+        "8ff24ebe-d8d5-4402-a9aa-ce6ddba9e56d"
+      ],
+      "grokDailyE": [
+        "c6f9643e-153b-4b10-8b7c-d11252b87583",
+        "195abf62-e652-4b4a-93fd-d1892c850c32",
+        "bd47e282-072b-4af0-8d50-28835fbde2e7",
+        "d3b91d62-b084-4cbb-9e20-2ff87acfa97d",
+        "d8bbbe97-1580-4b6b-9c44-b0f4138bbb98",
+        "f63d4384-9d64-4fe4-8797-8241025dde6b",
+        "eb077d53-e51e-4814-8201-969f02a74f0e",
+        "e10cac6d-18d0-4288-b1aa-e16d406d381a"
+      ],
+      "grokDailyF": [
+        "def24eb7-27e6-498d-9225-0bead1f0e9b1",
+        "9261714a-5e5f-4d96-94ad-6eefdc789453",
+        "9efc2826-898e-4adc-ad6a-683f28c5ec09",
+        "63e22bdc-a0ba-45dd-a4f8-074df60a336a",
+        "dca963aa-3420-4304-afc3-73d2480e0e44",
+        "bb361f1d-0d39-48aa-941c-cb78026087a6",
+        "6c4a614d-9062-46e5-b85d-f5bdee5db2f6",
+        "a7fee7da-924b-40a7-a11a-08394553deba"
+      ],
+      "grokDailyG": [
+        "2384d33e-67c7-4e6c-bccd-25a07c524e7a",
+        "8daeda90-0d51-4112-a149-61ef2324e6f3",
+        "abb5c2bd-a9fa-4e46-a447-a75778ddf8df",
+        "682ed107-b510-4895-8b42-36c6f8babb36",
+        "f54dd914-1edc-4e62-89f8-2f13bf953927",
+        "d550c87e-6c84-4de0-b0d4-b5d93d4d88c6",
+        "dd02e695-bb24-45a6-9e8a-4a5fdafd20c6",
+        "d2990966-a6f7-46fa-9d51-64550cc74370"
+      ],
+      "grokDailyH": [
+        "85c028a1-5dfb-4898-ab10-7a09b6587575",
+        "7ae8b1f6-7b8b-4e52-9017-c258aa930f46",
+        "063e387b-d60e-4816-8df3-9662fa2a2e4c",
+        "866508dc-9502-462d-aa77-e57f4adfdb81",
+        "ec27ba6e-105b-4439-8e54-f96511c4689a",
+        "c81d2835-60d9-4802-95b1-268867ac3093",
+        "bbcebc74-3a1d-4a6e-aff1-32f8bedde3d2",
+        "595f90e4-9167-4da1-bca9-943effa56680"
+      ]
+    },
+    "startedAt": [
+      1789375634711, 1789375634702, 1789375634698, 1789375634702, 1789375634698, 1789375634700,
+      1789375634702, 1789375634704
+    ],
+    "finishedAt": [
+      1789376017927, 1789376022954, 1789376035502, 1789376019025, 1789376015681, 1789376021135,
+      1789376011997, 1789376035835
+    ],
+    "lanes": [
+      "grok-daily",
+      "grok-daily-b",
+      "grok-daily-c",
+      "grok-daily-d",
+      "grok-daily-e",
+      "grok-daily-f",
+      "grok-daily-g",
+      "grok-daily-h"
+    ],
+    "schedulingKeys": [
+      "grok-com#signed-out:grok-daily",
+      "grok-com#signed-out:grok-daily-b",
+      "grok-com#signed-out:grok-daily-c",
+      "grok-com#signed-out:grok-daily-d",
+      "grok-com#signed-out:grok-daily-e",
+      "grok-com#signed-out:grok-daily-f",
+      "grok-com#signed-out:grok-daily-g",
+      "grok-com#signed-out:grok-daily-h"
+    ],
+    "host": {
+      "workerId": "local:browser:host",
+      "capacity": 8,
+      "maxActive": 8
+    },
+    "authenticationFixtureId": "",
+    "targetProfileId": "browser:grok-com",
+    "actorId": "human:local-cli",
+    "measuredAt": "2026-09-14T08:56:13Z",
+    "note": "Eight concurrent `relay plan run grok-web grok-web-daily --lane <lane> --budget 10m --json --findings` (actor human:local-cli) on grok-daily{,-b,-c,-d,-e,-f,-g,-h}. First attempt (~05:42) fetch-failed after a tsx watch restart from lane-seed edits (maxActive 0, no campaigns) and is not a sample. Retry queued within 17ms with no source edits. All eight admitted (campaigns a90dd1ee / 442b6c21 / 41e8a535 / 59abac55 / e899ee3a / a853da27 / eaa6cff9 / 03870974). Each pack 8/8 ok, 0 findings, 17/17 frames. Cell starts 13ms apart; 8-way intersection overlap 377286ms; wall/span 401137ms. Same-lane 8 cells serialized (capacity 1). Host local:browser:host capacity 8 max active 8. Combine start took ~150s under eight-way compile; cell spans 377\u2013401s (slower than N=4 under load). unsignedLaneId persisted per campaign. targetProfileId browser:grok-com, authenticationFixtureId empty. Did not overlay grok-lab. This is the eight-Test pack at 8 concurrent unsigned contexts; copied 401137 into parallelWallClockMs.8. .12 stays null (host cap 8). unsignedFourLanePack remains the N=4 quote. Did not scale .8 from .4."
   }
 }

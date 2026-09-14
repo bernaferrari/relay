@@ -29,6 +29,22 @@ export const GROK_DAILY_D_LANE = {
   id: "grok-daily-d",
   ...UNSIGNED_GROK_COM,
 } as const satisfies LaneSaveInput;
+export const GROK_DAILY_E_LANE = {
+  id: "grok-daily-e",
+  ...UNSIGNED_GROK_COM,
+} as const satisfies LaneSaveInput;
+export const GROK_DAILY_F_LANE = {
+  id: "grok-daily-f",
+  ...UNSIGNED_GROK_COM,
+} as const satisfies LaneSaveInput;
+export const GROK_DAILY_G_LANE = {
+  id: "grok-daily-g",
+  ...UNSIGNED_GROK_COM,
+} as const satisfies LaneSaveInput;
+export const GROK_DAILY_H_LANE = {
+  id: "grok-daily-h",
+  ...UNSIGNED_GROK_COM,
+} as const satisfies LaneSaveInput;
 
 /** Unique-profile lab overlay. Fixture ids only — passwords stay in the fixture. */
 export const GROK_LAB_LANE = {
@@ -51,9 +67,13 @@ const GROK_UNSIGNED_DAILY_LANES = [
   GROK_DAILY_B_LANE,
   GROK_DAILY_C_LANE,
   GROK_DAILY_D_LANE,
+  GROK_DAILY_E_LANE,
+  GROK_DAILY_F_LANE,
+  GROK_DAILY_G_LANE,
+  GROK_DAILY_H_LANE,
 ] as const;
 
-/** Write unsigned grok-daily{,-b,-c,-d} plus grok-lab Lane records. */
+/** Write unsigned grok-daily{,-b,-c,-d,-e,-f,-g,-h} plus grok-lab Lane records. */
 export async function seedGrokLanes(projectId: string): Promise<Lane[]> {
   const unsigned: Lane[] = [];
   for (const lane of GROK_UNSIGNED_DAILY_LANES) {

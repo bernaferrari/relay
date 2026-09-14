@@ -10,6 +10,10 @@ const KNOWN_LANES = [
   "grok-daily-b",
   "grok-daily-c",
   "grok-daily-d",
+  "grok-daily-e",
+  "grok-daily-f",
+  "grok-daily-g",
+  "grok-daily-h",
   "grok-daily",
 ] as const;
 const ENGINE_SUMMARY = /^(causal|visual|localization|network|crash)\s+failure(?:\s+in\s+\S+)?$/iu;
