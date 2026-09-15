@@ -5,6 +5,35 @@
 - Fixed (android): a chunked `record stop` (recordings over 170 s) no longer warns that screenrecord
   stopped before record stop at the 180 s limit. Rotation always ends every earlier chunk before
   stop, so the warning now fires only when the last chunk's recorder had already exited.
+- Fixed (android): a snapshot helper that could not prove it released device automation no longer
+  refuses the next command on the strength of an `adb` call. The old code read the outcome of
+  `am force-stop` as the fact it was supposed to measure, and on a loaded host that round trip can
+  outlive its budget while the device is healthy — the shape of #2553 — so the helper process was
+  already gone and the command still failed with `Android automation helper is still holding device
+  automation ownership`. Ownership is read off the device now: the probe asks the device shell for
+  `pidof com.callstack.agentdevice.snapshothelper` and tells it to echo a marker when nothing matched.
+  A process id is `occupied`, the bare marker is `released`, and everything else is `unknown` —
+  `error: closed`, `cannot connect to daemon`, `device offline`, or an adb client killed by a signal
+  before it wrote anything. A release is therefore claimed only by an answer the transport cannot
+  produce about itself, and no exit status is trusted: `adb shell` answers 0 for a device command that
+  failed, and an adb that dies by signal leaves the executor inventing an exit code it never saw. A
+  refusal requires two reads that both name the process, which keeps a helper still inside Android's
+  exit path from costing a command. Scripts that match the failure reason see
+  `android_snapshot_helper_runtime_occupied`, which replaces
+  `android_snapshot_helper_retirement_unconfirmed`.
+- Changed (android): a snapshot helper session that reaches ready settles a release the previous
+  teardown could not prove. `am instrument` force-stops whatever is already instrumenting the helper
+  package, so a session that reported itself ready is the only helper process the device has left,
+  and the unproven release went away with the process that owed it; the next command no longer
+  force-stops the session it has just started because `pidof` happens to be unreadable. A helper start
+  that fails is also retried after a backoff scaled to how long it spent failing (10 s to 60 s)
+  instead of on every command, which had roughly doubled command time on hosts where the helper never
+  starts. And the wait for a started helper to announce itself no longer uses a fixed 10 s: it takes
+  half of the helper-command budget the capture was built with, 15 s today, which is what had been
+  pushing devices slower than a capture off the persistent path. On a host where the helper took 12 s
+  to announce itself, the command used to answer with the one-shot transport and now answers from the
+  session. The CLI's `--timeout` reaches that wait as its deadline aborting it, not as the number.
+
 - Fixed: an iOS snapshot whose XCTest query-sweep tier cannot read the screen no longer ends the
   runner process. On a live React Native feed (Bluesky Home, images re-rendering) the AX server
   rejects each of the sweep's 19 element-type queries with `kAXErrorIllegalArgument`, and XCTest
