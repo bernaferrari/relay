@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { expect, test, vi } from 'vitest';
 import type { ScreenRecordingRuntimeHost } from '@agent-device/contracts/screen-recording-runtime-host';
 import { localRuntimeOwner } from '@agent-device/contracts/platform-runtime';
+import { recordingFileStore } from '@agent-device/capture-kit/recording-artifact-fixtures';
 import { bindWebScreenRecordingRuntime } from './runtime.ts';
 
 const device = {
@@ -185,8 +186,8 @@ async function runtime(
     host: {
       screenRecording: {
         web: { resolve: async () => transport },
-        finalize: { complete },
-        outputs: { prepare },
+        finalize: { sniff: async () => {}, complete },
+        outputs: { ...recordingFileStore().outputs, prepare },
       },
     },
     device,
